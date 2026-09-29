@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "target": "esp32s31",
-  "scenario": "udp-tx-ht40-ceiling",
-  "run-id": "1790701220613-000c6cb9",
-  "started-unix-millis": 1790701220613,
+  "scenario": "boot-smoke",
+  "run-id": "1790702612327-000c99b7",
+  "started-unix-millis": 1790702612327,
   "outcome": "passed",
   "failure": null,
   "repetitions": [
@@ -15,1088 +15,22 @@
           "name": "target.capture.events",
           "threshold": null,
           "unit": "count",
-          "value": 49,
+          "value": 0,
           "verdict": null
         },
         {
           "name": "target.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 10661,
+          "value": 1029,
           "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.checksum-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.cobs-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.decode-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 13,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.overflows",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.text.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.text.truncated",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.tx.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.tx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 48,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.elapsed",
-          "threshold": null,
-          "unit": "microseconds",
-          "value": 16000170,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.rx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.rx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.rx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.tx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 228452928,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.tx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 114225250,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.tx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 155199,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.checksum-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.cobs-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.decode-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 9,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.overflows",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.text.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.text.truncated",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.tx.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.tx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 29,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0-irq.capacity",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32768,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0-irq.free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32304,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0-irq.minimum-free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 4096,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0.capacity",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 196608,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0.free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 30456,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0.minimum-free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 16384,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1-irq.capacity",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32768,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1-irq.free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32584,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1-irq.minimum-free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 4096,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1.capacity",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 16384,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1.free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 6552,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1.minimum-free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 4096,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.elapsed",
-          "threshold": null,
-          "unit": "microseconds",
-          "value": 16000170,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.rx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.rx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.rx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.tx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 228452928,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.tx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 114225250,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.tx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 155199,
-          "verdict": null
-        },
-        {
-          "name": "udp.tx.host-rate",
-          "threshold": {
-            "comparison": "at-least",
-            "value": 100000000
-          },
-          "unit": "bits-per-second",
-          "value": 114108000,
-          "verdict": "passed"
-        },
-        {
-          "name": "udp.tx.target-rate",
-          "threshold": {
-            "comparison": "at-least",
-            "value": 100000000
-          },
-          "unit": "bits-per-second",
-          "value": 114225000,
-          "verdict": "passed"
-        }
-      ]
-    },
-    {
-      "outcome": "passed",
-      "failure": null,
-      "measurements": [
-        {
-          "name": "target.capture.events",
-          "threshold": null,
-          "unit": "count",
-          "value": 49,
-          "verdict": null
-        },
-        {
-          "name": "target.capture.received-bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 10655,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.checksum-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.cobs-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.decode-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 13,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.overflows",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.text.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.text.truncated",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.tx.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.tx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 48,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.elapsed",
-          "threshold": null,
-          "unit": "microseconds",
-          "value": 16000192,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.rx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.rx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.rx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.tx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 228878336,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.tx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 114437794,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.tx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 155488,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.checksum-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.cobs-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.decode-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 9,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.overflows",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.text.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.text.truncated",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.tx.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.tx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 29,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0-irq.capacity",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32768,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0-irq.free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32304,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0-irq.minimum-free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 4096,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0.capacity",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 196608,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0.free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 30456,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0.minimum-free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 16384,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1-irq.capacity",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32768,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1-irq.free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32584,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1-irq.minimum-free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 4096,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1.capacity",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 16384,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1.free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 6552,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1.minimum-free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 4096,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.elapsed",
-          "threshold": null,
-          "unit": "microseconds",
-          "value": 16000192,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.rx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.rx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.rx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.tx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 228878336,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.tx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 114437794,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.tx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 155488,
-          "verdict": null
-        },
-        {
-          "name": "udp.tx.host-rate",
-          "threshold": {
-            "comparison": "at-least",
-            "value": 100000000
-          },
-          "unit": "bits-per-second",
-          "value": 114327000,
-          "verdict": "passed"
-        },
-        {
-          "name": "udp.tx.target-rate",
-          "threshold": {
-            "comparison": "at-least",
-            "value": 100000000
-          },
-          "unit": "bits-per-second",
-          "value": 114437000,
-          "verdict": "passed"
-        }
-      ]
-    },
-    {
-      "outcome": "passed",
-      "failure": null,
-      "measurements": [
-        {
-          "name": "target.capture.events",
-          "threshold": null,
-          "unit": "count",
-          "value": 49,
-          "verdict": null
-        },
-        {
-          "name": "target.capture.received-bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 10656,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.checksum-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.cobs-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.decode-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 13,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.overflows",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.text.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.text.truncated",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.tx.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.tx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 48,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.elapsed",
-          "threshold": null,
-          "unit": "microseconds",
-          "value": 16000249,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.rx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.rx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.rx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.tx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 228831232,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.tx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 114413835,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.tx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 155456,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.checksum-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.cobs-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.decode-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 9,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.overflows",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.text.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.text.truncated",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.tx.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.tx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 29,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0-irq.capacity",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32768,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0-irq.free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32304,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0-irq.minimum-free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 4096,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0.capacity",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 196608,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0.free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 30456,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0.minimum-free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 16384,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1-irq.capacity",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32768,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1-irq.free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32584,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1-irq.minimum-free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 4096,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1.capacity",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 16384,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1.free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 6552,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1.minimum-free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 4096,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.elapsed",
-          "threshold": null,
-          "unit": "microseconds",
-          "value": 16000249,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.rx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.rx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.rx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.tx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 228831232,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.tx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 114413835,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.tx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 155456,
-          "verdict": null
-        },
-        {
-          "name": "udp.tx.host-rate",
-          "threshold": {
-            "comparison": "at-least",
-            "value": 100000000
-          },
-          "unit": "bits-per-second",
-          "value": 114307000,
-          "verdict": "passed"
-        },
-        {
-          "name": "udp.tx.target-rate",
-          "threshold": {
-            "comparison": "at-least",
-            "value": 100000000
-          },
-          "unit": "bits-per-second",
-          "value": 114413000,
-          "verdict": "passed"
         }
       ]
     }
   ],
   "completion-seal": {
-    "path": "attempts/udp-tx-ht40-ceiling.json",
-    "sha256": "8d4b602ccd85722c233c37c175001c4e487af3724b811646d6e763f3568ea39a"
+    "path": "attempts/boot-smoke.json",
+    "sha256": "16e5157f55c7e2577ed1e0f4906b0586c7e644db7ff899b7fecbcdf4713220ed"
   },
   "subject": {
     "observer": {
@@ -1111,30 +45,30 @@
     },
     "firmware": [
       {
-        "image": "correctness",
-        "build_id": "243b82fd129a2416554c4cdf409c1e4815240d7816bdc8cdfe999d051be1b454",
+        "image": "boot-smoke",
+        "build_id": "94641a66378f2e6d32e8c29f5142c903968c5964d6436e71f651678b2452556f",
         "application": {
-          "path": "firmware/correctness/application.bin",
-          "size_bytes": 3690592,
-          "sha256": "4a2c8351ac51a62a0d45d2b27af3dba61843a2f868c8d419bef046860e2400c6"
+          "path": "firmware/boot-smoke/application.bin",
+          "size_bytes": 217152,
+          "sha256": "3a3106117840f403cf2c9aaeb374383d6e7a9b8e4d7419852c4f78919a006743"
         },
         "build_provenance": {
-          "path": "firmware/correctness/build-provenance.json",
-          "size_bytes": 5793,
-          "sha256": "27fba450c28e3f6fb2b3b72d91d2719bfcfa972e43d8589e6361e8de5516c05c"
+          "path": "firmware/boot-smoke/build-provenance.json",
+          "size_bytes": 5759,
+          "sha256": "3ebc7d883c34b2a2e4b0627ecc03cb8abb5878d47f58667291969e8b21bea17b"
         },
         "replayed": false
       }
     ],
     "procedure": {
-      "path": "scenarios/udp-tx-ht40-ceiling/scenario.json",
-      "size_bytes": 1186,
-      "sha256": "ba80282230c52f098f2930e500c4e00e1324cf7f0df271fc436c71d619799e1a"
+      "path": "scenarios/boot-smoke/scenario.json",
+      "size_bytes": 284,
+      "sha256": "b746ed3e5642312fc82611dc2224e74fcde678d61a7ddf49e1d1aee58f99d7fb"
     },
     "fixture": {
       "path": "lab-provenance.json",
-      "size_bytes": 3347,
-      "sha256": "917750f8c42997473d361e97b0dffb29ae81c623d47dd2ea6f1c0e07e7e56376"
+      "size_bytes": 2018,
+      "sha256": "703cc87445db679bd64daeae589d2f87407930d1fc20f33d3c92aa0365f1247b"
     },
     "source_snapshot_manifest": {
       "path": "source/snapshot/manifest.json",
@@ -1143,54 +77,18 @@
     }
   },
   "procedure": {
-    "description": "HT40 UDP station-to-host ceiling and 100 Mbit/s regression check",
-    "id": "udp-tx-ht40-ceiling",
-    "repetitions": 3,
+    "description": "Bootstrap, PSRAM mapping, PSRAM task stack, SRAM IRQ stack and runtime startup",
+    "id": "boot-smoke",
+    "repetitions": 1,
     "schema": 5,
+    "system": {
+      "kind": "boot-smoke"
+    },
     "tags": [
-      "qualification",
-      "characterization",
-      "udp",
-      "station",
-      "ht40",
-      "split-core",
-      "ceiling",
-      "air-strict"
+      "smoke",
+      "psram-stack"
     ],
-    "transfer": "identical-image",
-    "wifi": {
-      "datapath": {
-        "l1_cache_counters": false,
-        "placement": "split-radio-network",
-        "rx_checksum": "software",
-        "rx_continuation": "immediate-software-probe",
-        "tx_buffer": "owned-sram-promotion",
-        "tx_udp_checksum": "software"
-      },
-      "image": "correctness",
-      "workload": {
-        "criteria": {
-          "exact_delivery": false,
-          "minimum_tx_bps": 100000000,
-          "require_no_beacon_loss": true
-        },
-        "duration_seconds": 16,
-        "fixed_fixture_guard_interval": false,
-        "kind": "station-udp",
-        "link": {
-          "guard_interval": "any",
-          "phy": "ht40"
-        },
-        "observation": {
-          "independent_air_monitor": false,
-          "openwrt_tx_monitor": false
-        },
-        "offer": {
-          "tx_bps": 130000000
-        },
-        "payload_bytes": 1472
-      }
-    }
+    "transfer": "identical-image"
   },
   "sources": [
     {
@@ -1216,10 +114,6 @@
     {
       "path": "crates/adapters/embassy/esp32s31/executor/src/time_driver.rs",
       "sha256": "49b4a9c871b63ece88b1de9222837b1917cacd7c9442c102195fd50793d1f842"
-    },
-    {
-      "path": "crates/adapters/embassy/esp32s31/executor/src/timer_observation.rs",
-      "sha256": "fdd26c9b11ca72ac9add702cb396c1306ed4ae6abd21a98941617018f1458b27"
     },
     {
       "path": "crates/adapters/embassy/esp32s31/executor/src/timer_queue.rs",
@@ -1374,10 +268,6 @@
       "sha256": "d7a4daad41f543dc944778069e025fe40bf5e6635e9daa888ef8b8d5572aab94"
     },
     {
-      "path": "crates/composition/esp32s31/embassy/ieee80211/src/diagnostics.rs",
-      "sha256": "b8173bd8261c78eb7ddf7768ad43e82f5c8db766acc60c82ae3cf65367564017"
-    },
-    {
       "path": "crates/composition/esp32s31/embassy/ieee80211/src/efuse.rs",
       "sha256": "904e6f34772b9a0a768a83e2aa4cddf7723993cd44ee453fb3fee3ad26675f2a"
     },
@@ -1442,10 +332,6 @@
       "sha256": "103dabc2c285dbf430d256618e00969cd186b6a59731d8aac234aa2d10b4cceb"
     },
     {
-      "path": "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/access_point_observation.rs",
-      "sha256": "5c6fc132a4672486a79c3035a9b21947fccc6cab54ea3025a2a32493de58df19"
-    },
-    {
       "path": "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/concurrent.rs",
       "sha256": "2eddafd4f4ac10b57856b949f0cbbef9ee4868b04b9273c465268d19816097ed"
     },
@@ -1492,18 +378,6 @@
     {
       "path": "crates/composition/esp32s31/embassy/ieee80211/src/wifi_network.rs",
       "sha256": "d0eac25f8d455085b3f8e8baf5205247dfe9c15c83c1946376c5aae4d397c846"
-    },
-    {
-      "path": "crates/composition/esp32s31/embassy/radio/Cargo.toml",
-      "sha256": "eed9dd133ee5516327df4e43ba038565d539b31bcf4a41e26ea94c09d1a43ea5"
-    },
-    {
-      "path": "crates/composition/esp32s31/embassy/radio/src/lib.rs",
-      "sha256": "93f44605425bee83f19a7e878051e01664aad5bfcf53bcc8dc43c103500b65e5"
-    },
-    {
-      "path": "crates/composition/esp32s31/embassy/radio/src/system.rs",
-      "sha256": "a6ab3093edb52914611b92e42578ba561c5f9ee2a13cffdd086010cd4d44d0ec"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/Cargo.toml",
@@ -2830,10 +1704,6 @@
       "sha256": "6a7ca7ab62ff78de7dc4c13b69b2ae8a8e9156979c465cba5a60433547e68108"
     },
     {
-      "path": "crates/hardware/esp32s31/phy/src/calibration/registration/diagnostics.rs",
-      "sha256": "a6585b014830b7d9f7e71990b16bc40171e8031e5df6101c63de3116022a2a2b"
-    },
-    {
       "path": "crates/hardware/esp32s31/phy/src/calibration/registration.rs",
       "sha256": "4bd01705a282947cc85ba7c83750f472a7eaf3d2927a1f2bf38b7a90792dfc46"
     },
@@ -3240,14 +2110,6 @@
     {
       "path": "crates/network/interface/src/lib.rs",
       "sha256": "946cdf3d0b833ebc95b59fcdbc2bd3f2db2a43bce82abafb21c8e9a4d5b32700"
-    },
-    {
-      "path": "crates/oer/Cargo.toml",
-      "sha256": "c3767f309def903326b86b0ba0fc7994a064efacacbc5aaca3008ee2a52d7ce5"
-    },
-    {
-      "path": "crates/oer/src/lib.rs",
-      "sha256": "78a91c5e047887e348e9d5018b56499b813fe9ea54c9563c1f9b3a724e1578c7"
     },
     {
       "path": "crates/protocols/bluetooth/hci/Cargo.toml",
@@ -4258,10 +3120,6 @@
       "sha256": "6405c991b3e3e560e5bcb006c48b40168e9b66f3995be129f5eb34b0db587bc5"
     },
     {
-      "path": "crates/runtime/esp32s31/ieee80211/src/diagnostics/access_point.rs",
-      "sha256": "f0159de4153933f95dce644fdf986baa287227bb31b0b975e4474d9493ca167b"
-    },
-    {
       "path": "crates/runtime/esp32s31/ieee80211/src/diagnostics/aggregate_tx.rs",
       "sha256": "412d9b195212707700e3aa4c3608147599d809db3462e7c3d9958a128080a1ae"
     },
@@ -4288,10 +3146,6 @@
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/diagnostics/disabled/core0_rx_service_histogram.rs",
       "sha256": "8eb113803f373c5dc5dbfad9506f36eca888ce512c02716199fab3ed46044877"
-    },
-    {
-      "path": "crates/runtime/esp32s31/ieee80211/src/diagnostics/network.rs",
-      "sha256": "aebda83241da816c52cb2fea972e11f86d55d9d3003e94d47e1668064e5033e8"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/diagnostics/profile.rs",
@@ -4866,90 +3720,6 @@
       "sha256": "2314850904302e0e8cf7b68b7a7e6f8ffcc70dd37b69160f94faf3110bdba746"
     },
     {
-      "path": "hil/protocol/Cargo.toml",
-      "sha256": "2fab77f794cfd89b2e53400903c9d4d2f3ba3af10909f71e6f7b1f963a834bcb"
-    },
-    {
-      "path": "hil/protocol/src/absent.rs",
-      "sha256": "bfcdfa31cb639111a6d7a6d0a3f65f0ef2b19e948a5063a96c46f9dadc4e934a"
-    },
-    {
-      "path": "hil/protocol/src/framing.rs",
-      "sha256": "b6ce8209f9bcd95d0325956200f6511b086915d25c637c7be50c9dfda301e778"
-    },
-    {
-      "path": "hil/protocol/src/io.rs",
-      "sha256": "8f9cccbb716d183b3641e44d867d0f059b7db89de8279b67acdec2b70f18e3db"
-    },
-    {
-      "path": "hil/protocol/src/lib.rs",
-      "sha256": "2c40e9b0ddf997863286c3e6275ff471ef17c6c1c0f648b0025ade4b011d72aa"
-    },
-    {
-      "path": "hil/protocol/src/message/artifact.rs",
-      "sha256": "8ed8b30f2774ff7788fa2faba6bc0ae72f205bc51faa3307d2e55f478c352703"
-    },
-    {
-      "path": "hil/protocol/src/message/diagnostic.rs",
-      "sha256": "73c9227a6ea776bf53310c15992c801ea4d129c7ff98d27100d111d94e35a70c"
-    },
-    {
-      "path": "hil/protocol/src/message/session.rs",
-      "sha256": "fabdfa24501e716d82c5ad636843261ba196e85848fa1bf61d7c3735d22e6a68"
-    },
-    {
-      "path": "hil/protocol/src/message/wifi.rs",
-      "sha256": "64ec04923e250516e714200a01dedf4f72c5d40697ab8289184790b4befb6e57"
-    },
-    {
-      "path": "hil/protocol/src/message/wifi_traffic.rs",
-      "sha256": "7debeee49bfe2d67cbbbeb380b388efff8dffa3567ec7b44dbac06a7301195fc"
-    },
-    {
-      "path": "hil/protocol/src/message.rs",
-      "sha256": "bb11092c8f37dd5699ab287d0e3753e9cdc293c34297e1af749e0ed00d1df280"
-    },
-    {
-      "path": "hil/protocol/src/phy_fault.rs",
-      "sha256": "85a142b1b9857d95937f9dac1dd929002de6a497e2a1b027a213e2ccf2f46848"
-    },
-    {
-      "path": "hil/protocol/src/phy_register_image.rs",
-      "sha256": "10128bd6d56496f70933c959f1487fbec98cc8b936e1afc2486b1e3d765a5203"
-    },
-    {
-      "path": "hil/protocol/src/profile.rs",
-      "sha256": "99d66ac615e18feb497aca4422911b1d89b2ba0ef21a87c67c3883717ff61ce0"
-    },
-    {
-      "path": "hil/protocol/src/stream_pattern.rs",
-      "sha256": "c57dfd9acc818a8edc98cf2db76cc0aa42aff3f2b17fc7b1612efdb961ee0eba"
-    },
-    {
-      "path": "hil/protocol/src/system.rs",
-      "sha256": "e0f458ff17b700ca14291d89b22861ee2bd0d19b7bbff2da21b5c6b3a7cb710e"
-    },
-    {
-      "path": "hil/protocol/src/trace.rs",
-      "sha256": "c6357c739ad0f0573a8d92987bd7629cf06ae617fad5647dc6a2d80473218cd0"
-    },
-    {
-      "path": "hil/protocol/src/udp_probe.rs",
-      "sha256": "af251828d20332157101010202d81c2efc67f01e4eb35f9c7e1f8922283137a6"
-    },
-    {
-      "path": "hil/protocol/src/wifi_airtime.rs",
-      "sha256": "17d2dd84da352ad585668fe9de27f2d2a7f250da8e47debbcd272aac9d2e48af"
-    },
-    {
-      "path": "hil/protocol/src/wifi_rx.rs",
-      "sha256": "5851420da8e7bd2d248e3132ae92a88457964765f675eb222b343f2fc401fcf7"
-    },
-    {
-      "path": "hil/protocol/src/wifi_tx.rs",
-      "sha256": "33b47d97a6b3562c4c9557dab1a987b1940ede2823a57c0787031ab1ec6b9380"
-    },
-    {
       "path": "hil/schema",
       "sha256": "c2c6010194e729ba5744493fc63a5d44b4f591d5e01ce46a84bbf2de0e3e0098"
     },
@@ -4962,96 +3732,12 @@
       "sha256": "33ce76d506ebe05d0d357f451924b88f6596e0317e6c86060bf9d3ec1c34b324"
     },
     {
-      "path": "hil/target-core/Cargo.toml",
-      "sha256": "ed6d9ea7514c21e7591e2ff3a50a5cde4796e807caa1be8885c90a63ee1c7115"
-    },
-    {
-      "path": "hil/target-core/src/console/progress.rs",
-      "sha256": "915f8d0d59eb5fa7a973541facf95985bb047005181bc05559c0be47e52bff19"
-    },
-    {
-      "path": "hil/target-core/src/console/writer.rs",
-      "sha256": "7d1db825f3cacff097b369601947e6ddb7ed06ee5a0db68321b70bc41a411411"
-    },
-    {
-      "path": "hil/target-core/src/console.rs",
-      "sha256": "3b462f5ec6728b7d0508c26d03c6126005be78c66a913fd975bbb5e925ef4576"
-    },
-    {
-      "path": "hil/target-core/src/lib.rs",
-      "sha256": "a815c992e16dfdafceaad68a13cf4ee38061f1fde6346b1512a36170a45a987c"
-    },
-    {
-      "path": "hil/target-core/src/liveness.rs",
-      "sha256": "aa765edd6a208de7266ec28fbe623dbe1ef47f8f6207085aebcca54dfeb0d82c"
-    },
-    {
-      "path": "hil/target-core/src/network/embassy_ipv4.rs",
-      "sha256": "af6df84985350ffdac25459f05c2f312f8385b3539c4f6d50cb20224ba26e196"
-    },
-    {
-      "path": "hil/target-core/src/network/progress/owned.rs",
-      "sha256": "22c5b30ec56219a852af8a76fe13ca92663d02940e6e28fa4227e3f377d04b02"
-    },
-    {
-      "path": "hil/target-core/src/network/progress.rs",
-      "sha256": "e40f79bac2664f739446c06826389845e63239d778b374f6efd6a61f72246f70"
-    },
-    {
-      "path": "hil/target-core/src/network/sockets/xarxa.rs",
-      "sha256": "b4e4b3cae5c986c518b7a7c75ac3f974b0607bc904917f7b0d89b05cfb5652eb"
-    },
-    {
-      "path": "hil/target-core/src/network/sockets.rs",
-      "sha256": "8885f169a55c54d682dec9fca2f6b23aea9acd0e6d96f2f3797c50b37e3a085b"
-    },
-    {
-      "path": "hil/target-core/src/network.rs",
-      "sha256": "3e1cd7ef3c2b2d12c4ddc91f70acde4b53a489967399ab01b21051a09605f5fb"
-    },
-    {
-      "path": "hil/target-core/src/postmortem.rs",
-      "sha256": "520bda613c48a566322101c666401642d2010e7aa1c47756828788812507e026"
-    },
-    {
-      "path": "hil/target-core/src/profile.rs",
-      "sha256": "dff0e3b0427a637e53c40367bb0edb61b64a03922c006eaab5e723a84ca57deb"
-    },
-    {
-      "path": "hil/target-core/src/trace.rs",
-      "sha256": "eb1108ee9d98b8301e230e57c1925b342706f72479271526a5f6f6af18f76f0b"
-    },
-    {
-      "path": "hil/target-core/src/traffic/connection.rs",
-      "sha256": "e36c85f66b7b3f71dfa2cdd66fdf019a61e65accc30032d6653c8b512cd4836c"
-    },
-    {
-      "path": "hil/target-core/src/traffic/multi_tx.rs",
-      "sha256": "8fb1d9fcce73a9bc6c55614a59c021b02b3cb4248a351e3180b325c42444dc7a"
-    },
-    {
-      "path": "hil/target-core/src/traffic/payload.rs",
-      "sha256": "d68202cf2f13b930346e523cf3ea64ac9486271077b6e8a8bb8a6bc9c547f292"
-    },
-    {
-      "path": "hil/target-core/src/traffic.rs",
-      "sha256": "d3174edec0a0e962c5036d5aa783347f5101f5027e0ff7168712573337443709"
-    },
-    {
       "path": "hil/targets/esp32s31/Cargo.lock",
       "sha256": "1500aa71ddfbc224d87ee838f62ffe71372b3d4789b93c88ff2bb0b1322910c8"
     },
     {
       "path": "hil/targets/esp32s31/Cargo.toml",
       "sha256": "67229081fc355f53977e4cddd28b1425f83594a2c62f3516b490c89cb3c2017f"
-    },
-    {
-      "path": "hil/targets/esp32s31/calibration-artifact/Cargo.toml",
-      "sha256": "51d8219cb5a705873bc4571a3045284ed78519e8c39302ed12304a2bc98ee855"
-    },
-    {
-      "path": "hil/targets/esp32s31/calibration-artifact/src/lib.rs",
-      "sha256": "c842bb61cdd438483eae7033089a27ac8a44b8aacb19025b8723894193fd824a"
     },
     {
       "path": "hil/targets/esp32s31/runtime/Cargo.toml",
@@ -5062,224 +3748,24 @@
       "sha256": "fb5c3d2b887979f7ecad79e55f1234332e83dff18b88b5b1d86f004f24c1876c"
     },
     {
-      "path": "hil/targets/esp32s31/runtime/src/capabilities.rs",
-      "sha256": "090715222ac5b9a511f2d7d7020cec0517a0d54f540f9ecfcb8de295e0b2e097"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/console/radio.rs",
-      "sha256": "231d2e292c7ae793e5747fc6a5de8b82d6219697010c55108508178dbe4ae4d3"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/console.rs",
-      "sha256": "8c28546a189d2d0dbac0617a719a6011e246e9c802fab901ec28db7d02df8a3f"
+      "path": "hil/targets/esp32s31/runtime/src/boot_smoke_console.rs",
+      "sha256": "bfcc33609f4115aeaefba25ab184ed07b9c7702bf7abc9edf333d785e485d6e2"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/exception.rs",
       "sha256": "c81e99d6b13cbead862e52d5c6c8e57df1eb07973ccf9fa458cad37848dc66a8"
     },
     {
-      "path": "hil/targets/esp32s31/runtime/src/hang_watchdog.rs",
-      "sha256": "6a7fc9d1e58b19a27c33b2eda2391d8c7f6e969a052b3024263bcc0a7d07ff24"
-    },
-    {
       "path": "hil/targets/esp32s31/runtime/src/main.rs",
       "sha256": "8125bf25a50fc8b3a90d2dd20cc8b206dad87f405743d28644bafea9de963d01"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/phy_calibration_artifact.rs",
-      "sha256": "b5def035dfff7760fde8353ffe9909d1be8ba839424697f81892e50b55e0d1fc"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/phy_fault.rs",
-      "sha256": "4314edc807e2b0687ab602563b2fe0f96613e8c06449d937165ee91cadeff7f1"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/phy_tracking.rs",
-      "sha256": "6ee41f48a026733209ca47ea531aa40596ef6495331e3a53d4770b2113c049d9"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/product_hil/ap_scheduler.rs",
-      "sha256": "f2015941f31305f2e17cbbac9160d5fffac4c82756cf7385a28f5d30e563e5b3"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/product_hil/ieee802154.rs",
-      "sha256": "11cc48917394ea9165efa3e2dc62c237fab7d539eb109da9b93fe12f56f52bb3"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/product_hil/network/embassy.rs",
-      "sha256": "cda08bc4bb4b5eff933e0e861fd39b9301e859e79d82385a4b431290debba1a7"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/product_hil/network.rs",
-      "sha256": "cbcfe5990f589ad034eabe485aea686d47a131c3708cbe8efeabb6ab4dbcf32b"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/product_hil/phy_diagnostics.rs",
-      "sha256": "71d07ee820dba0c77351c1facc7f7d04b9701dd10b19a9712d8c36471ceeb5e2"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/product_hil/phy_register_image.rs",
-      "sha256": "1c903ad0d98c89e4eccc9d067c6d1098c859caa0e43594ce69fce1cb648f5162"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/product_hil/rx_qualification.rs",
-      "sha256": "a6e03fe5b4b6b31f0f7eb9ee1859c6950a53cdb8f6583ca027eaacbeb902321c"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/product_hil/rx_rejection.rs",
-      "sha256": "9537878783c241fb7862d44347d5fbf580a2730d26ff0d47b0ad057c75de4a1c"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/product_hil/rx_statistics.rs",
-      "sha256": "7d3091ed55e6441a4c3853c10ce0795446af6daec8fef493a029358c20f052e8"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/product_hil/traffic/bidirectional.rs",
-      "sha256": "3e9facf991001f9d95c31c6683a5a6b3c92da1d2ed84efae2273e39552ebd86d"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/product_hil/traffic/evidence.rs",
-      "sha256": "21103aff71d5c1284a3dca9f7a0dccb80f5637653cc26d69a2745142f32e4ed3"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/product_hil/traffic/mod.rs",
-      "sha256": "0df635c1e5189926128754341dcd3090a159f5bf34c72dc42ad726ee4e8bb9ed"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/product_hil/traffic/reporting.rs",
-      "sha256": "77846f57bc23b004aab97d4fc50275a2a42bd4b762046ffc1e35aeeffb5d138c"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/product_hil/traffic/runtime.rs",
-      "sha256": "c2166d19835323ad23b8cf6e811db82a42926f1552d7064b10fa408be87f8c34"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/product_hil/traffic/tcp.rs",
-      "sha256": "4a50a9e8f9810a8d272393877cf2ff489a50b065f89bb455b56d3780604d10c6"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/product_hil/traffic/udp/mod.rs",
-      "sha256": "8dbb1f1dea9bffaaa6881804e66786fdeea43538db15f5e98112a3e7e571bd31"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/product_hil/traffic/udp/rx/receive.rs",
-      "sha256": "c1d9a0fb06b76bcfcdbb957a9683c1cba34177d78a4b341a905bf8e9ef113211"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/product_hil/traffic/udp/rx.rs",
-      "sha256": "306d680a0d2ec790e89f6fa909f6f5c201c6b26579c24e70ad5c806e43ab1968"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/product_hil/traffic/udp/tx.rs",
-      "sha256": "ad831c82e1afeab96a1b491a17f56f37e35f7546b5b861f5cf5e22bba1668d9d"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/product_hil.rs",
-      "sha256": "491c4e55d70bedb9202cf1a40ea2410fac35b57e1b3a7bb6e972438d26f49d9f"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/software_interrupt.rs",
       "sha256": "a125e5795cdfd6699510c4c5cd79d14b6529b384df8c45d9e8857c3e92a839fd"
     },
     {
-      "path": "hil/targets/esp32s31/runtime/src/stack_evidence.rs",
-      "sha256": "bcd1dceb04a76cc1afe9c2d51f2749a48e86a91dc9cef921007df8b0e696a5e7"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/system/mod.rs",
-      "sha256": "0f34694168157b2d6be72355efa0a682cea8a17f0dfcc1146b89e96334440f9e"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/system/postmortem.rs",
-      "sha256": "f74e09518a75663c2a0068c9d18c2e50847025f88f1fd571b1a95b52d0f78b70"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/trace.rs",
-      "sha256": "d805add28024296b524f5ff33f1612aed356c8f4719c964cefda9c726aa3d4ce"
-    },
-    {
-      "path": "hil/targets/esp32s31/runtime/src/watchdog.rs",
-      "sha256": "e34b89495f86a79f0e539d99b0ab547962f3d263f7daa5c7ca36cd20fe258b0a"
-    },
-    {
       "path": "hil/targets/esp32s31/stack.toml",
       "sha256": "6cb294db1ac6f1b2a1ef8cf6977ceb619990da16579aae7fae0e949b9104a92d"
-    },
-    {
-      "path": "hil/targets/esp32s31/telemetry/Cargo.toml",
-      "sha256": "0596fc4e97a444dc003bc8227805d3520fafbf906a4bac45cf68f37d425e42b4"
-    },
-    {
-      "path": "hil/targets/esp32s31/telemetry/src/aggregate_tx/ordinary.rs",
-      "sha256": "3cce5a84de4f69376f1396cb264ef86ec0a71d75493bd0267245bbe2303033a5"
-    },
-    {
-      "path": "hil/targets/esp32s31/telemetry/src/aggregate_tx/terminal.rs",
-      "sha256": "a03e40724fe14fd1836a53ccbcf159a151ce8d213a9e5aa2805d700d93048d97"
-    },
-    {
-      "path": "hil/targets/esp32s31/telemetry/src/aggregate_tx/work.rs",
-      "sha256": "2c225e653dd041f432bb18d2b410c6e79383531d5b0db06e332bd08a991d4218"
-    },
-    {
-      "path": "hil/targets/esp32s31/telemetry/src/aggregate_tx.rs",
-      "sha256": "6ae1f4e1708c35fb8816bc8299c74be5fc04b05b758c06db2fc263f50e63e2c2"
-    },
-    {
-      "path": "hil/targets/esp32s31/telemetry/src/airtime.rs",
-      "sha256": "29abd5528e851273024f4fd42fe9c77628181f84b86691e3bcf592b60b439864"
-    },
-    {
-      "path": "hil/targets/esp32s31/telemetry/src/arp_frontier.rs",
-      "sha256": "6521d2a9ee485387725ccffad2f46b99eed41226ac24e6bb0ddc94478c8239e1"
-    },
-    {
-      "path": "hil/targets/esp32s31/telemetry/src/lib.rs",
-      "sha256": "6a1366dde28dca22bb1fba77e933c89702e8a2f0348054a7e5fd25d8c90c0a66"
-    },
-    {
-      "path": "hil/targets/esp32s31/telemetry/src/mac_irq.rs",
-      "sha256": "21f355cf2e7e53537bba2137aeee1ed6586d2b2dc9372487c2667f3664f28195"
-    },
-    {
-      "path": "hil/targets/esp32s31/telemetry/src/rx_anomaly.rs",
-      "sha256": "c06ccd6cb9cfc703c84affd07f45fdba84fe477f73d8b1f730a8713a6ac5ff5b"
-    },
-    {
-      "path": "hil/targets/esp32s31/telemetry/src/rx_delivery.rs",
-      "sha256": "a3fea1c2ebee130d0eec90fa281e4c44a14989cf262771f96c8daaff23eb6615"
-    },
-    {
-      "path": "hil/targets/esp32s31/telemetry/src/rx_evidence.rs",
-      "sha256": "f505176b2b71374f20fad992fa13fc2e8974ffb9d6da220839edd2b2a126b4fb"
-    },
-    {
-      "path": "hil/targets/esp32s31/telemetry/src/rx_pipeline.rs",
-      "sha256": "408bb626b0d900540d34f9f556b36db8da8bc45d0b9493e64bad0d2c4cc5b12e"
-    },
-    {
-      "path": "hil/targets/esp32s31/telemetry/src/rx_rejection.rs",
-      "sha256": "a1cf75b9362a732a780f231d347ea33bff4d20ba62c2783fe536517f26f2cdea"
-    },
-    {
-      "path": "hil/targets/esp32s31/telemetry/src/task_poll.rs",
-      "sha256": "535987636b5a336ec2186d5b7537df50cf55e60a04d5759ea946311de5d9d351"
-    },
-    {
-      "path": "hil/targets/esp32s31/telemetry/src/tx_progress.rs",
-      "sha256": "ec94e1b032af8652321e07026877c709e3eda012f4af3af9a8a3f138d4073ee2"
-    },
-    {
-      "path": "hil/targets/esp32s31/telemetry/src/tx_retention.rs",
-      "sha256": "2306699c46add6072d51f96e22ebaf9cbea71d73b3565f6b9dac4c040cf4f210"
-    },
-    {
-      "path": "hil/targets/esp32s31/telemetry/src/udp_rx_window.rs",
-      "sha256": "f7f54999bbc1b35797e449128146098409570d931b1adfdcf622b8603eceba1a"
-    },
-    {
-      "path": "hil/targets/esp32s31/telemetry/src/wait.rs",
-      "sha256": "55116876af4067653b642cc70887bffd5bd00feb89b3c79a70e02cf0c7fa3cae"
     },
     {
       "path": "platform/esp32s31/Cargo.lock",

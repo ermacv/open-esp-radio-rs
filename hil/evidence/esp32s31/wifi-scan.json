@@ -1,7 +1,7 @@
 {
   "schema": 2,
   "target": "esp32s31",
-  "scenario": "udp-tx-ht40-ceiling",
+  "scenario": "wifi-scan",
   "run-id": "1790701220613-000c6cb9",
   "started-unix-millis": 1790701220613,
   "outcome": "passed",
@@ -15,14 +15,182 @@
           "name": "target.capture.events",
           "threshold": null,
           "unit": "count",
-          "value": 49,
+          "value": 26,
           "verdict": null
         },
         {
           "name": "target.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 10661,
+          "value": 9405,
+          "verdict": null
+        },
+        {
+          "name": "target.request-10.stack.cpu0-irq.capacity",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 32768,
+          "verdict": null
+        },
+        {
+          "name": "target.request-10.stack.cpu0-irq.free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 32304,
+          "verdict": null
+        },
+        {
+          "name": "target.request-10.stack.cpu0-irq.minimum-free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 4096,
+          "verdict": null
+        },
+        {
+          "name": "target.request-10.stack.cpu0.capacity",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 196608,
+          "verdict": null
+        },
+        {
+          "name": "target.request-10.stack.cpu0.free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 25620,
+          "verdict": null
+        },
+        {
+          "name": "target.request-10.stack.cpu0.minimum-free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 16384,
+          "verdict": null
+        },
+        {
+          "name": "target.request-10.stack.cpu1-irq.capacity",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 32768,
+          "verdict": null
+        },
+        {
+          "name": "target.request-10.stack.cpu1-irq.free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 32584,
+          "verdict": null
+        },
+        {
+          "name": "target.request-10.stack.cpu1-irq.minimum-free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 4096,
+          "verdict": null
+        },
+        {
+          "name": "target.request-10.stack.cpu1.capacity",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 16384,
+          "verdict": null
+        },
+        {
+          "name": "target.request-10.stack.cpu1.free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 15104,
+          "verdict": null
+        },
+        {
+          "name": "target.request-10.stack.cpu1.minimum-free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 4096,
+          "verdict": null
+        },
+        {
+          "name": "target.request-12.stack.cpu0-irq.capacity",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 32768,
+          "verdict": null
+        },
+        {
+          "name": "target.request-12.stack.cpu0-irq.free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 32304,
+          "verdict": null
+        },
+        {
+          "name": "target.request-12.stack.cpu0-irq.minimum-free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 4096,
+          "verdict": null
+        },
+        {
+          "name": "target.request-12.stack.cpu0.capacity",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 196608,
+          "verdict": null
+        },
+        {
+          "name": "target.request-12.stack.cpu0.free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 25620,
+          "verdict": null
+        },
+        {
+          "name": "target.request-12.stack.cpu0.minimum-free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 16384,
+          "verdict": null
+        },
+        {
+          "name": "target.request-12.stack.cpu1-irq.capacity",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 32768,
+          "verdict": null
+        },
+        {
+          "name": "target.request-12.stack.cpu1-irq.free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 32584,
+          "verdict": null
+        },
+        {
+          "name": "target.request-12.stack.cpu1-irq.minimum-free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 4096,
+          "verdict": null
+        },
+        {
+          "name": "target.request-12.stack.cpu1.capacity",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 16384,
+          "verdict": null
+        },
+        {
+          "name": "target.request-12.stack.cpu1.free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 15104,
+          "verdict": null
+        },
+        {
+          "name": "target.request-12.stack.cpu1.minimum-free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 4096,
           "verdict": null
         },
         {
@@ -85,1018 +253,211 @@
           "name": "target.request-13.link.lifetime.tx.frames",
           "threshold": null,
           "unit": "count",
-          "value": 48,
+          "value": 25,
           "verdict": null
         },
         {
-          "name": "target.session-1.flow-0.transport.elapsed",
-          "threshold": null,
-          "unit": "microseconds",
-          "value": 16000170,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.rx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.rx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.rx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.tx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 228452928,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.tx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 114225250,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.tx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 155199,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.checksum-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.cobs-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.decode-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 9,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.overflows",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.text.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.text.truncated",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.tx.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.tx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 29,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0-irq.capacity",
+          "name": "target.request-6.stack.cpu0-irq.capacity",
           "threshold": null,
           "unit": "bytes",
           "value": 32768,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu0-irq.free",
+          "name": "target.request-6.stack.cpu0-irq.free",
           "threshold": null,
           "unit": "bytes",
           "value": 32304,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu0-irq.minimum-free",
+          "name": "target.request-6.stack.cpu0-irq.minimum-free",
           "threshold": null,
           "unit": "bytes",
           "value": 4096,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu0.capacity",
+          "name": "target.request-6.stack.cpu0.capacity",
           "threshold": null,
           "unit": "bytes",
           "value": 196608,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu0.free",
+          "name": "target.request-6.stack.cpu0.free",
           "threshold": null,
           "unit": "bytes",
           "value": 30456,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu0.minimum-free",
+          "name": "target.request-6.stack.cpu0.minimum-free",
           "threshold": null,
           "unit": "bytes",
           "value": 16384,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu1-irq.capacity",
+          "name": "target.request-6.stack.cpu1-irq.capacity",
           "threshold": null,
           "unit": "bytes",
           "value": 32768,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu1-irq.free",
+          "name": "target.request-6.stack.cpu1-irq.free",
           "threshold": null,
           "unit": "bytes",
           "value": 32584,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu1-irq.minimum-free",
+          "name": "target.request-6.stack.cpu1-irq.minimum-free",
           "threshold": null,
           "unit": "bytes",
           "value": 4096,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu1.capacity",
+          "name": "target.request-6.stack.cpu1.capacity",
           "threshold": null,
           "unit": "bytes",
           "value": 16384,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu1.free",
+          "name": "target.request-6.stack.cpu1.free",
           "threshold": null,
           "unit": "bytes",
-          "value": 6552,
+          "value": 15104,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu1.minimum-free",
+          "name": "target.request-6.stack.cpu1.minimum-free",
           "threshold": null,
           "unit": "bytes",
           "value": 4096,
           "verdict": null
         },
         {
-          "name": "target.session-1.transport.elapsed",
-          "threshold": null,
-          "unit": "microseconds",
-          "value": 16000170,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.rx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.rx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.rx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.tx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 228452928,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.tx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 114225250,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.tx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 155199,
-          "verdict": null
-        },
-        {
-          "name": "udp.tx.host-rate",
-          "threshold": {
-            "comparison": "at-least",
-            "value": 100000000
-          },
-          "unit": "bits-per-second",
-          "value": 114108000,
-          "verdict": "passed"
-        },
-        {
-          "name": "udp.tx.target-rate",
-          "threshold": {
-            "comparison": "at-least",
-            "value": 100000000
-          },
-          "unit": "bits-per-second",
-          "value": 114225000,
-          "verdict": "passed"
-        }
-      ]
-    },
-    {
-      "outcome": "passed",
-      "failure": null,
-      "measurements": [
-        {
-          "name": "target.capture.events",
-          "threshold": null,
-          "unit": "count",
-          "value": 49,
-          "verdict": null
-        },
-        {
-          "name": "target.capture.received-bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 10655,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.checksum-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.cobs-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.decode-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 13,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.overflows",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.text.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.text.truncated",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.tx.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.tx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 48,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.elapsed",
-          "threshold": null,
-          "unit": "microseconds",
-          "value": 16000192,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.rx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.rx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.rx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.tx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 228878336,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.tx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 114437794,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.tx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 155488,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.checksum-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.cobs-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.decode-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 9,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.overflows",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.text.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.text.truncated",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.tx.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.tx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 29,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0-irq.capacity",
+          "name": "target.request-8.stack.cpu0-irq.capacity",
           "threshold": null,
           "unit": "bytes",
           "value": 32768,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu0-irq.free",
+          "name": "target.request-8.stack.cpu0-irq.free",
           "threshold": null,
           "unit": "bytes",
           "value": 32304,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu0-irq.minimum-free",
+          "name": "target.request-8.stack.cpu0-irq.minimum-free",
           "threshold": null,
           "unit": "bytes",
           "value": 4096,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu0.capacity",
+          "name": "target.request-8.stack.cpu0.capacity",
           "threshold": null,
           "unit": "bytes",
           "value": 196608,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu0.free",
+          "name": "target.request-8.stack.cpu0.free",
           "threshold": null,
           "unit": "bytes",
-          "value": 30456,
+          "value": 25620,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu0.minimum-free",
+          "name": "target.request-8.stack.cpu0.minimum-free",
           "threshold": null,
           "unit": "bytes",
           "value": 16384,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu1-irq.capacity",
+          "name": "target.request-8.stack.cpu1-irq.capacity",
           "threshold": null,
           "unit": "bytes",
           "value": 32768,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu1-irq.free",
+          "name": "target.request-8.stack.cpu1-irq.free",
           "threshold": null,
           "unit": "bytes",
           "value": 32584,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu1-irq.minimum-free",
+          "name": "target.request-8.stack.cpu1-irq.minimum-free",
           "threshold": null,
           "unit": "bytes",
           "value": 4096,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu1.capacity",
+          "name": "target.request-8.stack.cpu1.capacity",
           "threshold": null,
           "unit": "bytes",
           "value": 16384,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu1.free",
+          "name": "target.request-8.stack.cpu1.free",
           "threshold": null,
           "unit": "bytes",
-          "value": 6552,
+          "value": 15104,
           "verdict": null
         },
         {
-          "name": "target.session-1.stack.cpu1.minimum-free",
+          "name": "target.request-8.stack.cpu1.minimum-free",
           "threshold": null,
           "unit": "bytes",
           "value": 4096,
           "verdict": null
         },
         {
-          "name": "target.session-1.transport.elapsed",
+          "name": "target.request-9.scan.bss",
+          "threshold": null,
+          "unit": "count",
+          "value": 6,
+          "verdict": null
+        },
+        {
+          "name": "target.request-9.scan.dropped-bss",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.request-9.scan.elapsed",
           "threshold": null,
           "unit": "microseconds",
-          "value": 16000192,
+          "value": 2690785,
           "verdict": null
         },
         {
-          "name": "target.session-1.transport.errors",
+          "name": "target.request-9.scan.frames",
           "threshold": null,
           "unit": "count",
-          "value": 0,
+          "value": 24,
           "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.rx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.rx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.rx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.tx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 228878336,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.tx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 114437794,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.tx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 155488,
-          "verdict": null
-        },
-        {
-          "name": "udp.tx.host-rate",
-          "threshold": {
-            "comparison": "at-least",
-            "value": 100000000
-          },
-          "unit": "bits-per-second",
-          "value": 114327000,
-          "verdict": "passed"
-        },
-        {
-          "name": "udp.tx.target-rate",
-          "threshold": {
-            "comparison": "at-least",
-            "value": 100000000
-          },
-          "unit": "bits-per-second",
-          "value": 114437000,
-          "verdict": "passed"
-        }
-      ]
-    },
-    {
-      "outcome": "passed",
-      "failure": null,
-      "measurements": [
-        {
-          "name": "target.capture.events",
-          "threshold": null,
-          "unit": "count",
-          "value": 49,
-          "verdict": null
-        },
-        {
-          "name": "target.capture.received-bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 10656,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.checksum-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.cobs-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.decode-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 13,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.rx.overflows",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.text.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.text.truncated",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.tx.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-13.link.lifetime.tx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 48,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.elapsed",
-          "threshold": null,
-          "unit": "microseconds",
-          "value": 16000249,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.rx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.rx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.rx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.tx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 228831232,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.tx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 114413835,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.flow-0.transport.tx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 155456,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.checksum-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.cobs-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.decode-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 9,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.rx.overflows",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.text.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.text.truncated",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.tx.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.link.lifetime.tx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 29,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0-irq.capacity",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32768,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0-irq.free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32304,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0-irq.minimum-free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 4096,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0.capacity",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 196608,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0.free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 30456,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu0.minimum-free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 16384,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1-irq.capacity",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32768,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1-irq.free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32584,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1-irq.minimum-free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 4096,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1.capacity",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 16384,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1.free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 6552,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.stack.cpu1.minimum-free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 4096,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.elapsed",
-          "threshold": null,
-          "unit": "microseconds",
-          "value": 16000249,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.rx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.rx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.rx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.tx.bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 228831232,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.tx.rate",
-          "threshold": null,
-          "unit": "bits-per-second",
-          "value": 114413835,
-          "verdict": null
-        },
-        {
-          "name": "target.session-1.transport.tx.units",
-          "threshold": null,
-          "unit": "count",
-          "value": 155456,
-          "verdict": null
-        },
-        {
-          "name": "udp.tx.host-rate",
-          "threshold": {
-            "comparison": "at-least",
-            "value": 100000000
-          },
-          "unit": "bits-per-second",
-          "value": 114307000,
-          "verdict": "passed"
-        },
-        {
-          "name": "udp.tx.target-rate",
-          "threshold": {
-            "comparison": "at-least",
-            "value": 100000000
-          },
-          "unit": "bits-per-second",
-          "value": 114413000,
-          "verdict": "passed"
         }
       ]
     }
   ],
   "completion-seal": {
-    "path": "attempts/udp-tx-ht40-ceiling.json",
-    "sha256": "8d4b602ccd85722c233c37c175001c4e487af3724b811646d6e763f3568ea39a"
+    "path": "attempts/wifi-scan.json",
+    "sha256": "c1c1277e3a90538c4ad0cbbf2ea3c22b63cb434ab147b54b1bae5dd96e609d96"
   },
   "subject": {
     "observer": {
@@ -1127,9 +488,9 @@
       }
     ],
     "procedure": {
-      "path": "scenarios/udp-tx-ht40-ceiling/scenario.json",
-      "size_bytes": 1186,
-      "sha256": "ba80282230c52f098f2930e500c4e00e1324cf7f0df271fc436c71d619799e1a"
+      "path": "scenarios/wifi-scan/scenario.json",
+      "size_bytes": 764,
+      "sha256": "62e40dcf944c7a7922733c2ab212b1377fd6fb642276f1bb2bde589549478cd5"
     },
     "fixture": {
       "path": "lab-provenance.json",
@@ -1143,21 +504,16 @@
     }
   },
   "procedure": {
-    "description": "HT40 UDP station-to-host ceiling and 100 Mbit/s regression check",
-    "id": "udp-tx-ht40-ceiling",
-    "repetitions": 3,
+    "description": "Standalone full-band scan with target-side dwell timing",
+    "id": "wifi-scan",
+    "repetitions": 1,
     "schema": 5,
     "tags": [
       "qualification",
-      "characterization",
-      "udp",
-      "station",
-      "ht40",
-      "split-core",
-      "ceiling",
-      "air-strict"
+      "wifi",
+      "scanner"
     ],
-    "transfer": "identical-image",
+    "transfer": "unchanged-functional-contract",
     "wifi": {
       "datapath": {
         "l1_cache_counters": false,
@@ -1169,26 +525,15 @@
       },
       "image": "correctness",
       "workload": {
-        "criteria": {
-          "exact_delivery": false,
-          "minimum_tx_bps": 100000000,
-          "require_no_beacon_loss": true
-        },
-        "duration_seconds": 16,
-        "fixed_fixture_guard_interval": false,
-        "kind": "station-udp",
+        "kind": "role",
         "link": {
           "guard_interval": "any",
           "phy": "ht40"
         },
-        "observation": {
-          "independent_air_monitor": false,
-          "openwrt_tx_monitor": false
+        "operation": {
+          "kind": "scan"
         },
-        "offer": {
-          "tx_bps": 130000000
-        },
-        "payload_bytes": 1472
+        "timeout_seconds": 90
       }
     }
   },

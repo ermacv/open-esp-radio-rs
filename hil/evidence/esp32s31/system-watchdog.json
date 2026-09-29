@@ -2,8 +2,8 @@
   "schema": 2,
   "target": "esp32s31",
   "scenario": "system-watchdog",
-  "run-id": "1790549472009-00342d67",
-  "started-unix-millis": 1790549472009,
+  "run-id": "1790702612327-000c99b7",
+  "started-unix-millis": 1790702612327,
   "outcome": "passed",
   "failure": null,
   "repetitions": [
@@ -22,7 +22,7 @@
           "name": "target.blocked-poll.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 3333,
+          "value": 3802,
           "verdict": null
         },
         {
@@ -99,7 +99,7 @@
           "name": "target.cancelled.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 3333,
+          "value": 3802,
           "verdict": null
         },
         {
@@ -176,7 +176,7 @@
           "name": "target.complete.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 809,
+          "value": 1399,
           "verdict": null
         },
         {
@@ -253,7 +253,7 @@
           "name": "target.late-restoration.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 3333,
+          "value": 3802,
           "verdict": null
         },
         {
@@ -330,7 +330,7 @@
           "name": "target.lost-completion.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 3333,
+          "value": 3802,
           "verdict": null
         },
         {
@@ -413,7 +413,7 @@
           "name": "target.blocked-poll.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 3333,
+          "value": 3802,
           "verdict": null
         },
         {
@@ -490,7 +490,7 @@
           "name": "target.cancelled.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 3333,
+          "value": 3802,
           "verdict": null
         },
         {
@@ -567,7 +567,7 @@
           "name": "target.complete.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 809,
+          "value": 1399,
           "verdict": null
         },
         {
@@ -644,7 +644,7 @@
           "name": "target.late-restoration.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 3333,
+          "value": 3802,
           "verdict": null
         },
         {
@@ -721,7 +721,7 @@
           "name": "target.lost-completion.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 3333,
+          "value": 3802,
           "verdict": null
         },
         {
@@ -804,7 +804,7 @@
           "name": "target.blocked-poll.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 3333,
+          "value": 3802,
           "verdict": null
         },
         {
@@ -881,7 +881,7 @@
           "name": "target.cancelled.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 3333,
+          "value": 3802,
           "verdict": null
         },
         {
@@ -958,7 +958,7 @@
           "name": "target.complete.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 809,
+          "value": 1399,
           "verdict": null
         },
         {
@@ -1035,7 +1035,7 @@
           "name": "target.late-restoration.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 3333,
+          "value": 3802,
           "verdict": null
         },
         {
@@ -1105,14 +1105,14 @@
           "name": "target.lost-completion.capture.events",
           "threshold": null,
           "unit": "count",
-          "value": 7,
+          "value": 6,
           "verdict": null
         },
         {
           "name": "target.lost-completion.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 3333,
+          "value": 3799,
           "verdict": null
         },
         {
@@ -1183,32 +1183,32 @@
   ],
   "completion-seal": {
     "path": "attempts/system-watchdog.json",
-    "sha256": "37b76138ee6266d3855c1147385714ad69b3b1a6ace7ffc8dfd491cad9bbc819"
+    "sha256": "eaf96a17f98492dd19073f1b0c365e81e3892aaec7609140d139c6bc298e9aeb"
   },
   "subject": {
     "observer": {
-      "build_sha256": "66bcdab0eeae2c45befaf9b23add0f24d8ed829abf81f27748235e0d03901fb6",
-      "executable_sha256": "dcefdc1b66bf16e41b45a465cd1501394007707ac6e4205c8311e0110c8622a6",
+      "build_sha256": "9a38922b696d7ee168fefdab6f5c608aa4ec3dc113cbb4bb10c9e6d8fc84d30f",
+      "executable_sha256": "045008850edd09e306eb692dfc9e4b7177546de829310f6785de356d40b4b44a",
       "schema": 2
     },
     "repository": {
-      "commit": "6df8b439c8f94a4e2356c6f5ed2f8850cdbe10af",
-      "dirty": true,
-      "workspace_sha256": "29d0e17bbc9bd55dddfbe9d7d751b500c594fb37d7386229159878f99c70875d"
+      "commit": "f261a1c4abfc21a5b4780f944d9fa1a434a52c86",
+      "dirty": false,
+      "workspace_sha256": "3e6f4a5cfc998b87ba812c13afb711a164603cc5db5efc93674ecba4e3346bc7"
     },
     "firmware": [
       {
         "image": "system-watchdog",
-        "build_id": "a62cf390b7c4de3541344daac1dab5ef9df082cbc642b054ffa5a9adea72d820",
+        "build_id": "9e641f5355e5f4c68267d69176cc9a25acd57ad13e79161b391d6414df48bf41",
         "application": {
           "path": "firmware/system-watchdog/application.bin",
-          "size_bytes": 278288,
-          "sha256": "68fc6f645fc597258ba675b4c3ce0211d07aa91147028079c0159b5c508a6a8e"
+          "size_bytes": 219536,
+          "sha256": "085eb49648f80ccdd676185f139d22f9d3be5c9de0e086f921e31c99e740a95f"
         },
         "build_provenance": {
           "path": "firmware/system-watchdog/build-provenance.json",
-          "size_bytes": 5599,
-          "sha256": "7909f413c995e2d4e54448152a7920fe8abeeae46447190b6b2635c51d6b7ec2"
+          "size_bytes": 5786,
+          "sha256": "e071d01f4a42fe3c8c975e3437e3879c401b9a319595eaa7ae2b441328fae856"
         },
         "replayed": false
       }
@@ -1221,12 +1221,12 @@
     "fixture": {
       "path": "lab-provenance.json",
       "size_bytes": 2018,
-      "sha256": "840e78ee4937b5087eced9c15c27e472d67c0efc2773f822504d5b32f1b0bf9c"
+      "sha256": "703cc87445db679bd64daeae589d2f87407930d1fc20f33d3c92aa0365f1247b"
     },
     "source_snapshot_manifest": {
       "path": "source/snapshot/manifest.json",
-      "size_bytes": 800538,
-      "sha256": "908028f4351eba6aef95e533d069c9c00a75c3b727c758187b988b08aa0dc9e5"
+      "size_bytes": 839673,
+      "sha256": "71492f43a351285db843f6f9e441ee5e7ed741ee5d3c83a619e5a7d8028c4552"
     }
   },
   "procedure": {
@@ -1247,15 +1247,15 @@
   "sources": [
     {
       "path": ".cargo/config.toml",
-      "sha256": "5df4bde4735925017628aa3c7d769fbc20bca4d16fffa0fe09cc4ce88db7ae29"
+      "sha256": "7105697868a2bde21488abcc6dc17c42d349f6d15502c1d7f0062a4a93c767c6"
     },
     {
       "path": "Cargo.lock",
-      "sha256": "6ee70b72ef279e1852698c6a21f7d41c2d5ad5428400966a6b67a62edbabb0a8"
+      "sha256": "c28d98edba39959c589a185d2f12c8298fcc6bb631ce2e05e47434aa4f150307"
     },
     {
       "path": "crates/adapters/embassy/esp32s31/executor/Cargo.toml",
-      "sha256": "dbf4b361f992a93783af4221e2ed815ee9c65f00785effc5184f45a60c58e17b"
+      "sha256": "566b9cb731ed42dd99742f5a8b48b1d14de08a1e9783da7756cd2ddb29b4e97d"
     },
     {
       "path": "crates/adapters/embassy/esp32s31/executor/src/executor.rs",
@@ -1275,7 +1275,7 @@
     },
     {
       "path": "crates/adapters/esp-hal/esp32s31/soc/Cargo.toml",
-      "sha256": "aab4ded25ed1454411577f89a6543a68175cd7ec67ffef6e2cc9fdd1fb910897"
+      "sha256": "f62fe6afedbdeb1f794a832e255446e0b6754db51a9a0fff16a07646066d8e36"
     },
     {
       "path": "crates/adapters/esp-hal/esp32s31/soc/src/cache/performance.rs",
@@ -1299,7 +1299,7 @@
     },
     {
       "path": "crates/adapters/esp-hal/esp32s31/soc/src/lib.rs",
-      "sha256": "b66e281fc62679b0bfff38e3aafbcf2129861076f622099da45081acad562f51"
+      "sha256": "a8d690ca5d5a93433105eaf7519a5999e546e3cf0d65a8d1ec0f69f8205f9a86"
     },
     {
       "path": "crates/adapters/esp-hal/esp32s31/soc/src/reset.rs",
@@ -1307,71 +1307,107 @@
     },
     {
       "path": "crates/adapters/esp-hal/esp32s31/soc/src/watchdog.rs",
-      "sha256": "5756a16299a737d13ae2304dd5cf25a0888f6569302187175b66cb19bbbd458d"
+      "sha256": "855be17b6d4d93294f64064bb1fadca62c267c6c457cd2547a313dd4325a8831"
+    },
+    {
+      "path": "crates/hardware/ieee802154/trace",
+      "sha256": "c272ca0748029f3ff34600121e8e477dce20038a328caf8ec9563c1edd6253ff"
+    },
+    {
+      "path": "crates/hardware/radio/trace",
+      "sha256": "66fe0b8d361b72e6f6b88bbd5285bb05e66f859e012f3f96f3a896fcb5221cb0"
+    },
+    {
+      "path": "crates/hardware/soc/deadline/Cargo.toml",
+      "sha256": "05b78acde5e5c62ee0f72f10aa287b7b341b971b98c600d5544ac0cd0a7989ef"
+    },
+    {
+      "path": "crates/hardware/soc/deadline/src/lib.rs",
+      "sha256": "73e95f426cea4c1ea352c57ebc82e30c58c4948ac7492e4028fc4e6f08db8f72"
     },
     {
       "path": "crates/protocols/ieee80211/mac",
-      "sha256": "4f0072279b94765aa8d8949d3fad1005fc99f9a6a1de05c11ff92409628bb883"
+      "sha256": "4351a484c0013fd42a5350c9bf5f16bba73fb17dc7c79ea7b46724d2e27dbb2f"
+    },
+    {
+      "path": "crates/protocols/ieee80211/trace",
+      "sha256": "1abfdc8c3a72440d54256f58b31d5e3aadb6369764b4cec675b4346f1cebcb36"
+    },
+    {
+      "path": "crates/trace",
+      "sha256": "825e20fb338b6e999ad36861ca9b133443ecdf78fe767f0d1bdfce65829b6398"
+    },
+    {
+      "path": "crates/trace/Cargo.toml",
+      "sha256": "715c90ab18ee2357b3310850b4861692e9df7a95d410e59e825307def3fae4ed"
+    },
+    {
+      "path": "crates/trace/src/decode.rs",
+      "sha256": "e179bdc6afebd33059bb0f4517b765562628151d22018a3082fa4041de0168e4"
+    },
+    {
+      "path": "crates/trace/src/event.rs",
+      "sha256": "5c7f20087f81c817f0f823bd2bbdc8634e3054ea5bfc0492a4a5589ff9a6de6a"
+    },
+    {
+      "path": "crates/trace/src/lib.rs",
+      "sha256": "0991d35e0cdd9e91eb00f1444697a4df763d297b1465bf0ced59f5061f4a072b"
+    },
+    {
+      "path": "crates/trace/src/store.rs",
+      "sha256": "a2f42711aaad4a3fd8a96fea988b33a9b62d04144209d76f4b4c75fed381026f"
     },
     {
       "path": "hil/host/arbiter",
-      "sha256": "5b840105133495b590f18cfdc50652f29c6afbb3b0f3d38c1daa6d864cedce60"
+      "sha256": "0eb1ba54d600c4185582a49c9eab5d970fdf21f2987fe2fdf8d4227ceb067415"
     },
     {
       "path": "hil/host/fixture",
-      "sha256": "57c10932f3d2789fb911c04d50682ecb76cbe230d21216af3089b98d169ec7f4"
+      "sha256": "d0e5078b4d5549e36dd99341074a58fcc2653c39beba02adf800b065bfd35e78"
     },
     {
       "path": "hil/host/fixture-install",
-      "sha256": "9dbb6687d62f5271b5bf913ac8e433e3e8a844ab08029b4844d0c1fd46316931"
+      "sha256": "e31a66e7bd8fb8c5bd528c99a5c3e4c85bcc0837e6b2004844d46ddd6a72f927"
     },
     {
       "path": "hil/host/runner",
-      "sha256": "375dcce2dc4a10865c738f60501432db718a1955fc1594b8f875e626f0900d0c"
+      "sha256": "4a1c6c9ed6e5604a4b6774e134b13d7392aa76ab0336d694abcf7c5bf0429df5"
     },
     {
       "path": "hil/host/runner-bluetooth",
-      "sha256": "1775bf9af12a4697ef345b1ce8b841afa43dfa3cec12d7aee40aec716b51572c"
+      "sha256": "5ebd497742ed6a7d7174052052f5348e84f206573e3b007014bae75adbe86b2b"
     },
     {
       "path": "hil/host/runner-core",
-      "sha256": "927a670362c9180ee2f6485369786f3356099106aa4dc4a238ca2e012cf45a96"
+      "sha256": "a37c42e70654df58dddf3efad3e61cd658802e51fc1dc0e885a7724a9405fda4"
     },
     {
       "path": "hil/host/runner-ieee80211",
-      "sha256": "a403686b8bd493cc585893991a8ce9facd21b3153574f557bdd37eab337a9a5d"
+      "sha256": "fccc35f49fd60588a087d6930710a50b5e859462f262713d061856d6d03e6a3c"
     },
     {
       "path": "hil/host/runner-ieee802154",
-      "sha256": "a055e315678e07840116491fbe636aa24cdde41c4a6cd12744c061efabc3dff8"
+      "sha256": "0d2f1dc22ac6e719f0e0f63fdd4d8ef9bccff6d69564134a55979da20218ba3f"
     },
     {
       "path": "hil/host/runner-system",
-      "sha256": "162cef2bf2c30b98ef401d5f76d7ef9d80c8d19e8a7a2f83c6ab1628189ba212"
+      "sha256": "cc36d89712e0ecba8e599263820cf6b30228bdcf6af58d45d7b7ea4dacaa18d7"
     },
     {
       "path": "hil/protocol",
-      "sha256": "3dc5e4d5c18e9bfa2fe17432b3ecbf9d8e7da8b2507c523710e97b0a0044f513"
+      "sha256": "2314850904302e0e8cf7b68b7a7e6f8ffcc70dd37b69160f94faf3110bdba746"
     },
     {
       "path": "hil/protocol/Cargo.toml",
-      "sha256": "324804d62e39b6870f0d090806e35506d6f62f7edba4407b49e036f22a8c9acb"
+      "sha256": "2fab77f794cfd89b2e53400903c9d4d2f3ba3af10909f71e6f7b1f963a834bcb"
     },
     {
-      "path": "hil/protocol/src/bluetooth.rs",
-      "sha256": "e4bda289fb0f715f7c28228201b2d1d98f0c0e427229dbaa8eb2b1a896108b0d"
-    },
-    {
-      "path": "hil/protocol/src/bluetooth_gatt.rs",
-      "sha256": "116c8e4ee90774aac1acdb6ac65aa7bf4687680a91761c31850f88ca7423f699"
-    },
-    {
-      "path": "hil/protocol/src/bluetooth_secure_gatt.rs",
-      "sha256": "34ae3ca1b69f2acd987018b234dcbb4feec50e6114b21593fc9f62ffe3a9c6e9"
+      "path": "hil/protocol/src/absent.rs",
+      "sha256": "bfcdfa31cb639111a6d7a6d0a3f65f0ef2b19e948a5063a96c46f9dadc4e934a"
     },
     {
       "path": "hil/protocol/src/framing.rs",
-      "sha256": "44857af3f873e9912f4b2eeacd17046cc6a8c065e406772141ae2f46c78a4bd0"
+      "sha256": "b6ce8209f9bcd95d0325956200f6511b086915d25c637c7be50c9dfda301e778"
     },
     {
       "path": "hil/protocol/src/io.rs",
@@ -1379,7 +1415,7 @@
     },
     {
       "path": "hil/protocol/src/lib.rs",
-      "sha256": "9b7653e59b2244c70ef8d2a8c7c08992461e6eb48810c1b8674ecf611de70ede"
+      "sha256": "2c40e9b0ddf997863286c3e6275ff471ef17c6c1c0f648b0025ade4b011d72aa"
     },
     {
       "path": "hil/protocol/src/memory_benchmark.rs",
@@ -1390,20 +1426,12 @@
       "sha256": "8ed8b30f2774ff7788fa2faba6bc0ae72f205bc51faa3307d2e55f478c352703"
     },
     {
-      "path": "hil/protocol/src/message/ieee802154.rs",
-      "sha256": "1047d4bb0b081abb1c66c5357b8a8ca417ad49d9c70179fb6772e6652a3ae97e"
-    },
-    {
-      "path": "hil/protocol/src/message/session.rs",
-      "sha256": "fabdfa24501e716d82c5ad636843261ba196e85848fa1bf61d7c3735d22e6a68"
-    },
-    {
-      "path": "hil/protocol/src/message/wifi.rs",
-      "sha256": "e629bb0c98f28f6f342c185ef56b7d68cdb1db2c438d6a86c63e1df2ecac987f"
+      "path": "hil/protocol/src/message/diagnostic.rs",
+      "sha256": "73c9227a6ea776bf53310c15992c801ea4d129c7ff98d27100d111d94e35a70c"
     },
     {
       "path": "hil/protocol/src/message.rs",
-      "sha256": "d4ce72318c497e431e05fe90e228eac3f7b0b1e14373439ddf61ce3137095c6a"
+      "sha256": "bb11092c8f37dd5699ab287d0e3753e9cdc293c34297e1af749e0ed00d1df280"
     },
     {
       "path": "hil/protocol/src/phy_fault.rs",
@@ -1414,40 +1442,32 @@
       "sha256": "10128bd6d56496f70933c959f1487fbec98cc8b936e1afc2486b1e3d765a5203"
     },
     {
-      "path": "hil/protocol/src/stream_pattern.rs",
-      "sha256": "c57dfd9acc818a8edc98cf2db76cc0aa42aff3f2b17fc7b1612efdb961ee0eba"
+      "path": "hil/protocol/src/profile.rs",
+      "sha256": "99d66ac615e18feb497aca4422911b1d89b2ba0ef21a87c67c3883717ff61ce0"
     },
     {
       "path": "hil/protocol/src/system.rs",
-      "sha256": "cf9e3a215f0ba1b4cc3ebe213bc39e2e0e523a845cf33914c7766c72ec070f91"
+      "sha256": "e0f458ff17b700ca14291d89b22861ee2bd0d19b7bbff2da21b5c6b3a7cb710e"
     },
     {
-      "path": "hil/protocol/src/udp_probe.rs",
-      "sha256": "af251828d20332157101010202d81c2efc67f01e4eb35f9c7e1f8922283137a6"
-    },
-    {
-      "path": "hil/protocol/src/wifi_airtime.rs",
-      "sha256": "17d2dd84da352ad585668fe9de27f2d2a7f250da8e47debbcd272aac9d2e48af"
-    },
-    {
-      "path": "hil/protocol/src/wifi_rx.rs",
-      "sha256": "5851420da8e7bd2d248e3132ae92a88457964765f675eb222b343f2fc401fcf7"
-    },
-    {
-      "path": "hil/protocol/src/wifi_tx.rs",
-      "sha256": "33b47d97a6b3562c4c9557dab1a987b1940ede2823a57c0787031ab1ec6b9380"
+      "path": "hil/protocol/src/trace.rs",
+      "sha256": "c6357c739ad0f0573a8d92987bd7629cf06ae617fad5647dc6a2d80473218cd0"
     },
     {
       "path": "hil/schema",
-      "sha256": "b530fda74e697659b977926121f826d0db3909ed4ed7f95c4e44a6526fb4671b"
+      "sha256": "c2c6010194e729ba5744493fc63a5d44b4f591d5e01ce46a84bbf2de0e3e0098"
     },
     {
       "path": "hil/schema/observer-inputs.json",
-      "sha256": "ca796647d180610b5462ee503bbe22f5319a562294d20f347afa3c788c84d978"
+      "sha256": "dd8b071cc9e8157f57db5bc144d78aaa272c891c415c1db0ccb0544da5a53fae"
+    },
+    {
+      "path": "hil/target-core",
+      "sha256": "33ce76d506ebe05d0d357f451924b88f6596e0317e6c86060bf9d3ec1c34b324"
     },
     {
       "path": "hil/target-core/Cargo.toml",
-      "sha256": "2579a2137b6a3975c1580f6983751bc12442701eac7b640c21f1cd1bddcac8ab"
+      "sha256": "ed6d9ea7514c21e7591e2ff3a50a5cde4796e807caa1be8885c90a63ee1c7115"
     },
     {
       "path": "hil/target-core/src/console/progress.rs",
@@ -1463,51 +1483,39 @@
     },
     {
       "path": "hil/target-core/src/lib.rs",
-      "sha256": "3f0c5303f4ba0b7b5dc637159fb4dab42997d1f9189b028de63ba4a2ce012f04"
+      "sha256": "a815c992e16dfdafceaad68a13cf4ee38061f1fde6346b1512a36170a45a987c"
     },
     {
-      "path": "hil/target-core/src/memory_benchmark.rs",
-      "sha256": "91672ce1d254fc104d8134de6d20b110f50f4c5554bc01d439ca722a1321d1dd"
-    },
-    {
-      "path": "hil/target-core/src/network/progress.rs",
-      "sha256": "e40f79bac2664f739446c06826389845e63239d778b374f6efd6a61f72246f70"
-    },
-    {
-      "path": "hil/target-core/src/network.rs",
-      "sha256": "3e1cd7ef3c2b2d12c4ddc91f70acde4b53a489967399ab01b21051a09605f5fb"
+      "path": "hil/target-core/src/liveness.rs",
+      "sha256": "aa765edd6a208de7266ec28fbe623dbe1ef47f8f6207085aebcca54dfeb0d82c"
     },
     {
       "path": "hil/target-core/src/postmortem.rs",
-      "sha256": "20cee5136d580997f423f22517bab8da719b13a8611f3f0eadceab753ecb30be"
+      "sha256": "520bda613c48a566322101c666401642d2010e7aa1c47756828788812507e026"
     },
     {
-      "path": "hil/target-core/src/traffic/connection.rs",
-      "sha256": "e36c85f66b7b3f71dfa2cdd66fdf019a61e65accc30032d6653c8b512cd4836c"
+      "path": "hil/target-core/src/profile.rs",
+      "sha256": "dff0e3b0427a637e53c40367bb0edb61b64a03922c006eaab5e723a84ca57deb"
     },
     {
-      "path": "hil/target-core/src/traffic/multi_tx.rs",
-      "sha256": "8fb1d9fcce73a9bc6c55614a59c021b02b3cb4248a351e3180b325c42444dc7a"
-    },
-    {
-      "path": "hil/target-core/src/traffic.rs",
-      "sha256": "b108b7be2207abb74e340bfe94028744c6cd5e21726a3d1bcb89a878d61f8e7f"
+      "path": "hil/target-core/src/trace.rs",
+      "sha256": "eb1108ee9d98b8301e230e57c1925b342706f72479271526a5f6f6af18f76f0b"
     },
     {
       "path": "hil/targets/esp32s31/Cargo.lock",
-      "sha256": "8d9849278b447ade1195ca58090c50084c72edb15020b8dae0affbca4d580b74"
+      "sha256": "1500aa71ddfbc224d87ee838f62ffe71372b3d4789b93c88ff2bb0b1322910c8"
     },
     {
       "path": "hil/targets/esp32s31/Cargo.toml",
-      "sha256": "bc5e8b10732f907ef2bbaa60ca883091dea101b2935f6dd93c8840fdbc954a77"
+      "sha256": "67229081fc355f53977e4cddd28b1425f83594a2c62f3516b490c89cb3c2017f"
     },
     {
       "path": "hil/targets/esp32s31/runtime/Cargo.toml",
-      "sha256": "db7e4b6dd404aaa06dcf6cb1c967697ac5a7f0d4970ca057a440eb3493efc8a1"
+      "sha256": "546464de913d81011638f280415128b206dc4c4dd308e455fae9ec8f19af1759"
     },
     {
       "path": "hil/targets/esp32s31/runtime/build.rs",
-      "sha256": "92ef6a9bc411d3a7bbd3a81781b1303934f4cbb9e7a13ced65be22a17709055f"
+      "sha256": "fb5c3d2b887979f7ecad79e55f1234332e83dff18b88b5b1d86f004f24c1876c"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/exception.rs",
@@ -1515,11 +1523,15 @@
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/main.rs",
-      "sha256": "8cbb267d9c0b5f9700b434fb2cd3b2e2dcff75768ca3fab14eaff87813736882"
+      "sha256": "8125bf25a50fc8b3a90d2dd20cc8b206dad87f405743d28644bafea9de963d01"
+    },
+    {
+      "path": "hil/targets/esp32s31/runtime/src/software_interrupt.rs",
+      "sha256": "a125e5795cdfd6699510c4c5cd79d14b6529b384df8c45d9e8857c3e92a839fd"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/system/console.rs",
-      "sha256": "59f1990d751f0d55c8d91d5338354d4685e8d38c2de5517acb9c6838e1817553"
+      "sha256": "25e33a03fa1900cf41edf5f29f4e0c534c4066cdf2a25b8ea4cb9f00b61b4c2c"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/system/mod.rs",
@@ -1527,7 +1539,7 @@
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/system/postmortem.rs",
-      "sha256": "a74ba48a7b19f0a8976e3c5a1799241f6aa2b03c99930fe9dba19322280454f2"
+      "sha256": "f74e09518a75663c2a0068c9d18c2e50847025f88f1fd571b1a95b52d0f78b70"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/system/watchdog.rs",
@@ -1535,15 +1547,15 @@
     },
     {
       "path": "hil/targets/esp32s31/stack.toml",
-      "sha256": "fd22954332fd090ab1f2156ddd76b4251080b3b6142e6dd4668a6cc79e636231"
+      "sha256": "6cb294db1ac6f1b2a1ef8cf6977ceb619990da16579aae7fae0e949b9104a92d"
     },
     {
       "path": "platform/esp32s31/Cargo.lock",
-      "sha256": "2d9f482a1e328efb1f2156fd595f3fc7b9fb842a3b01f6a8310cc0e0222c31b8"
+      "sha256": "14db3c031a9f36dbe983a31d83ad1aaac5645ecd2a60c9d17b20c390c253ed33"
     },
     {
       "path": "platform/esp32s31/Cargo.toml",
-      "sha256": "212f1130a0e4ccc78fc983d1b35e374dac13102862e23fdcd2dc79e7a49f8891"
+      "sha256": "4e0e4cd844ddbd4a152d675c5d69264c88cb78904a0bdbb9870c6bd3883ae502"
     },
     {
       "path": "platform/esp32s31/board/Cargo.toml",
@@ -1563,11 +1575,11 @@
     },
     {
       "path": "platform/esp32s31/bootstrap/src/main.rs",
-      "sha256": "7dca7423a63b7dc3711cf453791d98dbf2b440e9f1e8b310ccc8c053daa74b75"
+      "sha256": "0b8481c93c381ab6735e6fbed5899f4342d1f448fcf6f7105d071baa5e4e3d9b"
     },
     {
       "path": "platform/esp32s31/layout",
-      "sha256": "1a63dd332cca966376b93829ac62659fe4b585a23cda8f965d9a033afd646375"
+      "sha256": "38944cbadf3dee99d34c712150c9ba0ac598d2b1893fd638934fba9ccb47373c"
     },
     {
       "path": "platform/esp32s31/layout/Cargo.toml",
@@ -1575,15 +1587,15 @@
     },
     {
       "path": "platform/esp32s31/layout/src/build.rs",
-      "sha256": "227ffe8a3c8f840d1da0ebc0d6b82cc91ee2d5fd535d9e650adacbb6d934e892"
+      "sha256": "a846ac360f43a646ae2690a2b42554e9f29aa3e9c8a190bc2cead25cab60e700"
     },
     {
       "path": "platform/esp32s31/layout/src/lib.rs",
-      "sha256": "2e151bcd21984d258cdca2db4d817e811391f4c9965b6f617f681b7afec5c519"
+      "sha256": "4b7be8ee837825bbe696c76bec535d11dc04ac8d2ca0f14f86fceaafb2544aea"
     },
     {
       "path": "platform/esp32s31/layout/src/memory.rs",
-      "sha256": "5c8966533b10bcbe22d59eace8782831b034befa6414bb0ef8e71b9fce97c02c"
+      "sha256": "305b602b97a6cbd76a65e9f2b522c97736b6b2d6c9f42a353aadf04e31bc395f"
     },
     {
       "path": "platform/esp32s31/layout/src/stage_two.rs",
@@ -1591,7 +1603,7 @@
     },
     {
       "path": "platform/esp32s31/linker/bootstrap/flash-sections.x",
-      "sha256": "283d788910c9c0e6d3d1e418468e016e4c116c692fb34bb864fa0e19202fbdfb"
+      "sha256": "bce4ddddb41277e072f56b85cca5fae0ca7ebb02b776679bc5e06183817d23f4"
     },
     {
       "path": "platform/esp32s31/linker/bootstrap/link.x",
@@ -1599,15 +1611,11 @@
     },
     {
       "path": "platform/esp32s31/linker/bootstrap/memory.x",
-      "sha256": "258553c8089aed64f8b42f1eddecd793037e2e7f820376db5a68f8dca0a8221c"
-    },
-    {
-      "path": "platform/esp32s31/linker/bootstrap/psram-sections.x",
-      "sha256": "8cbbd9c2b6cefa0f94db4c17f156f181e46e0014a9585015d419a3392fb00619"
+      "sha256": "5ddbc92d6c43d921dad97c16c5bbfa7ce075e77d7ba516690497143c2d01fb7a"
     },
     {
       "path": "platform/esp32s31/linker/bootstrap/sections.x",
-      "sha256": "0bcaaaf4cd54f250ea14eb509afa9d8b39e71f2519333018d35dcb82a8113a23"
+      "sha256": "7f98f495566b5644d72a657363b913a08c40070685ef987b40f9af884566a3ae"
     },
     {
       "path": "platform/esp32s31/linker/rom/esp32s31-eco0.x",
@@ -1615,31 +1623,31 @@
     },
     {
       "path": "platform/esp32s31/linker/runtime/link.x",
-      "sha256": "0c6ff1656abfd9ab3e28f71077a000b6c630b2e9b668f574b94bc36d11ca4701"
+      "sha256": "571acbf12cd42ba717f30177203bc6ab30b8b3dba265d2c56642858bd8dac9e1"
     },
     {
       "path": "platform/esp32s31/linker/runtime/memory.x",
-      "sha256": "20efdff103fc35ba71e9962d5f785182b016edac22186483f29a5f8ec4513ed0"
+      "sha256": "b875c80221befe52d8f1efeaa2f893b0bfb90d0e8060f4c2c708a6c3cce48bc6"
     },
     {
       "path": "platform/esp32s31/linker/runtime/sections.x",
-      "sha256": "5b14cad979c6edded45ad9262ebcd25aeb7d352b1fb1aaeaff94f4cd03d506e4"
+      "sha256": "4dffcd2ef2194caba00b0e3bfb3df78a815b6e39c6dadafe370f63159441cdd7"
     },
     {
       "path": "platform/esp32s31/partitions/applications.csv",
-      "sha256": "c37ebb86c884e27d21b401b0e3ad48e53b484ddb6fa1596fbdbf7f878b4d0116"
+      "sha256": "2a9a324aed64cab923305388fc0c9bc006ee73d21acb59af495a2e3eacd669b3"
     },
     {
       "path": "platform/esp32s31/runtime/Cargo.toml",
-      "sha256": "23badd759756e370c4377a83a2a23820173622c2fc6a221e71a719be55441142"
+      "sha256": "a5531de24ec04ec9abf49771881a4e180a8b82d0d9165a114515c72811b86950"
     },
     {
       "path": "platform/esp32s31/runtime/src/entry.rs",
-      "sha256": "ea3a5543f876dfcf703836881c0f69c95bd4d91b05bcf0ad1b335c1bfcbc8705"
+      "sha256": "4fe06668824641db975fe273b490e2fd1bcc1e5c9097674f1991025c7aedf53e"
     },
     {
       "path": "platform/esp32s31/runtime/src/lib.rs",
-      "sha256": "80206e0439228ce611a82c9cf49e7abcbc79b6c379cc7799a54d4d53c34001d3"
+      "sha256": "eb8e490759fd27f6c09f090c6a4669bc651879551226611e5686e7b8317e4ee6"
     },
     {
       "path": "platform/esp32s31/runtime/src/stacks/watermark.rs",
@@ -1647,7 +1655,7 @@
     },
     {
       "path": "platform/esp32s31/runtime/src/stacks.rs",
-      "sha256": "92db68cc1ebd185c9b5e8049ffb4ad6fcd4ff1a4013031645ecab9ebbc903520"
+      "sha256": "d03c8016efe289481ce1092313d74cf5e2e8bb23db04bc9a5525fb3c373b08bf"
     },
     {
       "path": "rust-toolchain.toml",
@@ -1655,15 +1663,19 @@
     },
     {
       "path": "tools/chip-profile",
-      "sha256": "6af98baf2f8a53278d58401f4314be43a8744e83e468f6a4d80a8ff217e6cf39"
+      "sha256": "b83aa4ee5898f5d8481e13dbcb78e27b106237687f5e16a9dbbb4216eaadc6e1"
+    },
+    {
+      "path": "tools/command-tree",
+      "sha256": "07df16f9f0a7a7b4e1cfaf59bc24bc707b87deb4f8399c9dc6d3811473864ad2"
     },
     {
       "path": "tools/firmware",
-      "sha256": "a8ccc7d82521e8f858aac10d326d98136f9999a20731c264f314629e97b22e96"
+      "sha256": "e523fe39a08bddf9e8a9accf755f040f001e627507e4177ca540dd89742e5da0"
     },
     {
       "path": "tools/memory-report",
-      "sha256": "75f4052961fa2d83aafbc5adf1f51b7c615c5af0b63de1f23abd4257a9dedf98"
+      "sha256": "18068e592375d57bc6ed9d174907ef29305a305c0b380a40b458a9517630ec7d"
     },
     {
       "path": "tools/process",

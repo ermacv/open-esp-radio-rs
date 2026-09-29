@@ -62,7 +62,7 @@ pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
             if !restarted.running || restarted.holding_previous {
                 return Err(format!("the trace did not restart: {restarted:?}").into());
             }
-            hil_core::durable::atomic_json(
+            oer_hil_durable::atomic_json(
                 &directory.join("hang.json"),
                 &serde_json::json!({
                     "schema": 1, "target": target, "reboot": reboot, "fresh_boot": fresh,

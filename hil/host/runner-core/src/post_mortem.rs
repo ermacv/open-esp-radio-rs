@@ -94,7 +94,7 @@ pub fn jtag_snapshot(
         .iter()
         .filter_map(|name| Some((*name, symbol(loader.as_ref(), value(name)?))))
         .collect::<std::collections::BTreeMap<_, _>>();
-    let _ = crate::durable::atomic_json(
+    let _ = oer_hil_durable::atomic_json(
         &output.join(JTAG_POST_MORTEM_FILE),
         &serde_json::json!({
             "schema": 1,
@@ -220,7 +220,7 @@ fn drain_trace(capture: &SerialCapture, directory: &Path) {
         })
         .collect::<Vec<_>>();
     let _ = std::fs::create_dir_all(directory);
-    let _ = crate::durable::atomic_json(
+    let _ = oer_hil_durable::atomic_json(
         &directory.join("trace.json"),
         &serde_json::json!({"schema": 1, "status": status, "entries": entries,
                             "snapshots": snapshots}),

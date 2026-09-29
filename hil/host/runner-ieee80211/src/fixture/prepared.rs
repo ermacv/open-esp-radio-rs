@@ -53,13 +53,13 @@ impl Prepared {
                 ap.restart()?;
             }
             if let ControlledAp::OpenWrt(owner) = &ap {
-                hil_core::durable::atomic_json(
+                oer_hil_durable::atomic_json(
                     &output.join("fixture-applied.json"),
                     &owner.report()?,
                 )?;
             }
             if let ControlledAp::Local(owner) = &ap {
-                hil_core::durable::atomic_json(
+                oer_hil_durable::atomic_json(
                     &output.join("fixture-applied.json"),
                     &owner.report(),
                 )?;
@@ -124,7 +124,7 @@ fn protection_peer(lab: &LabConfig, plan: &Plan, output: &Path) -> Result<Option
         let protection = BeaconProtection::from_beacons(&beacons);
         observed.push(protection);
         if protection.satisfies(required) {
-            hil_core::durable::atomic_json(
+            oer_hil_durable::atomic_json(
                 &output.join("fixture-protection.json"),
                 &serde_json::json!({"schema": 1, "bssid": bssid.to_string(),
                     "non_ht_member": required.non_ht_member, "legacy_bss": required.legacy_bss,
@@ -133,7 +133,7 @@ fn protection_peer(lab: &LabConfig, plan: &Plan, output: &Path) -> Result<Option
             return Ok(Some(peer));
         }
     }
-    hil_core::durable::atomic_json(
+    oer_hil_durable::atomic_json(
         &output.join("fixture-protection.json"),
         &serde_json::json!({"schema": 1, "bssid": bssid.to_string(), "established": false,
             "non_ht_member": required.non_ht_member, "legacy_bss": required.legacy_bss,

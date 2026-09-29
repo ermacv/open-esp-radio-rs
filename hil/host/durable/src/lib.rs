@@ -12,7 +12,8 @@ use std::{
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use crate::Result;
+/// The error type of every durable file operation.
+pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// Distinguishes concurrent temporary files written by one process.
 pub static UNIQUE_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);

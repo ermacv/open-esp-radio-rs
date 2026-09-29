@@ -65,7 +65,7 @@ impl<'a> Echo<'a> {
         wait(capture, |e| e.connected && e.connections == 1)?;
         let mut exchanges = Vec::new();
         let handle = discover(&peer, 1, &mut exchanges)?;
-        hil_core::durable::atomic_json(
+        oer_hil_durable::atomic_json(
             &output.join("ble-echo-discovery.json"),
             &serde_json::json!({"schema": 1, "handle": handle, "exchanges": exchanges}),
         )?;
@@ -109,7 +109,7 @@ impl<'a> Echo<'a> {
             max_round_trip,
             application,
         };
-        hil_core::durable::atomic_json(&self.output.join("ble-echo.json"), &report)?;
+        oer_hil_durable::atomic_json(&self.output.join("ble-echo.json"), &report)?;
         Ok(report)
     }
 

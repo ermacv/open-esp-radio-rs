@@ -1,6 +1,6 @@
 //! Firmware and replay-material archival for a run session.
 
-use crate::durable::atomic_json;
+use oer_hil_durable::atomic_json;
 use std::path::{Path, PathBuf};
 
 use crate::Result;

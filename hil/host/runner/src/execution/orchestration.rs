@@ -33,7 +33,7 @@ pub(crate) fn selection_description(tags: &[String]) -> String {
 
 pub(crate) struct Invocation {
     pub(crate) arguments: Vec<OsString>,
-    pub(crate) snapshot: Option<hil_core::image::snapshot::Snapshot>,
+    pub(crate) snapshot: Option<oer_hil_source_snapshot::Snapshot>,
     /// Shell command run after the scenarios within the run's lease.
     pub(crate) then: Option<String>,
 }
@@ -341,7 +341,7 @@ fn lease_stand(
     let request = lease_request(lab, selected);
     let fixture = hil_core::lab::lock::FixtureLock::lease(lab, request.clone())?;
     session.record_event(RunEventKind::StandLeaseGranted, None, None, None)?;
-    hil_core::durable::atomic_json(
+    oer_hil_durable::atomic_json(
         &session.directory().join("air.json"),
         &hil_core::lab::lock::air_record(&request)?,
     )?;
@@ -459,7 +459,7 @@ impl SuiteEffects for LiveSuite<'_> {
         {
             let directory = session.scenario_directory(scenario.id());
             fs::create_dir_all(&directory)?;
-            hil_core::durable::atomic_json(&directory.join("peer-image.json"), record)?;
+            oer_hil_durable::atomic_json(&directory.join("peer-image.json"), record)?;
         }
         run_scenario(self.lab, scenario, session)
     }
@@ -774,7 +774,7 @@ fn start_run(
     for scenario in selected {
         let directory = session.scenario_directory(scenario.id());
         fs::create_dir_all(&directory)?;
-        hil_core::durable::atomic_json(&directory.join("scenario.json"), scenario)?;
+        oer_hil_durable::atomic_json(&directory.join("scenario.json"), scenario)?;
     }
     Ok(session)
 }
@@ -808,7 +808,7 @@ fn run_scenario(
 ) -> Result<ScenarioResult> {
     let scenario_output = session.scenario_directory(selected.id());
     fs::create_dir_all(&scenario_output)?;
-    hil_core::durable::atomic_json(&scenario_output.join("scenario.json"), selected)?;
+    oer_hil_durable::atomic_json(&scenario_output.join("scenario.json"), selected)?;
     let mut repetitions = Vec::with_capacity(usize::from(selected.repetitions()));
     for number in 1..=selected.repetitions() {
         oer_process::check_cancelled()?;
@@ -829,7 +829,7 @@ fn run_scenario(
         selected.repetitions(),
         repetitions,
     );
-    hil_core::durable::atomic_json(&scenario_output.join("result.json"), &result)?;
+    oer_hil_durable::atomic_json(&scenario_output.join("result.json"), &result)?;
     Ok(result)
 }
 
@@ -843,7 +843,7 @@ fn run_scenario_repetition(
     let plan = selected.plan();
     let resolved = lab.resolve(plan.wifi);
     let lab = &resolved;
-    let started_unix_millis = hil_core::durable::unix_millis()?;
+    let started_unix_millis = oer_hil_durable::unix_millis()?;
     let started = std::time::Instant::now();
     let peer_serial = lab.peer.as_ref().and_then(|peer| peer.serial().ok());
     let usb = hil_core::usb_events::UsbWatch::start(
@@ -959,7 +959,7 @@ fn finalize_repetition(
         measurements,
         failure,
     };
-    hil_core::durable::atomic_json(&output.join("result.json"), &result)?;
+    oer_hil_durable::atomic_json(&output.join("result.json"), &result)?;
     Ok(result)
 }
 
@@ -987,7 +987,7 @@ fn write_blocked_scenario(
 ) -> Result<ScenarioResult> {
     let output = session.scenario_directory(selected.id());
     fs::create_dir_all(&output)?;
-    hil_core::durable::atomic_json(&output.join("scenario.json"), selected)?;
+    oer_hil_durable::atomic_json(&output.join("scenario.json"), selected)?;
     let result = ScenarioResult::blocked(
         selected.id().to_owned(),
         selected.image(),

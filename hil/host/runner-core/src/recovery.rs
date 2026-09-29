@@ -335,7 +335,7 @@ pub fn escalate_boot_loop(
         steps,
         cleared,
     };
-    let _ = crate::durable::atomic_json(&output.join(RESET_ESCALATION_FILE), &escalation);
+    let _ = oer_hil_durable::atomic_json(&output.join(RESET_ESCALATION_FILE), &escalation);
     if let (Some(arbiter), Some(mac)) = (&arbiter, mac.as_deref()) {
         match escalation.steps.iter().find(|step| step.cleared) {
             Some(step) => {

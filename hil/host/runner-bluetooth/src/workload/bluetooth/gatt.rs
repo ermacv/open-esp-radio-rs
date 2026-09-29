@@ -29,7 +29,7 @@ pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
             wait(capture, &mut samples, |e| !e.connected)?;
             Ok(())
         });
-        hil_core::durable::atomic_json(&output.join("trouble-gatt.json"), &serde_json::json!({
+        oer_hil_durable::atomic_json(&output.join("trouble-gatt.json"), &serde_json::json!({
             "schema": 1, "security": "plaintext", "connections": 3,
             "samples": samples, "exchanges": exchanges,
             "passed": probe.is_ok() && cleanup.is_ok(),

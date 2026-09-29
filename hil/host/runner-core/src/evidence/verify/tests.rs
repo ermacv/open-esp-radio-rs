@@ -1,5 +1,4 @@
 use super::*;
-use crate::durable::atomic_json;
 use crate::{
     evidence::run::{
         Attachment, Measurement, MeasurementUnit, Outcome, RepetitionResult, ScenarioResult,
@@ -11,6 +10,7 @@ use crate::{
         StationIpv4Definition,
     },
 };
+use oer_hil_durable::atomic_json;
 use oer_hil_image_class::ImageClass;
 use oer_hil_protocol::wifi::WifiChannelWidth;
 use std::sync::atomic::{AtomicU64, Ordering};

@@ -28,7 +28,6 @@ use crate::evidence::reporting::render;
 
 pub use integrity::collect_attachments;
 // Evidence submodules share the durable-file helpers through this owner.
-pub(super) use crate::durable::{atomic_json, atomic_write, sha256_file, unix_millis};
 pub(super) use integrity::{collect_integrity_files, write_integrity_index};
 pub use model::RunManifest;
 pub use model::RunnerProvenance;
@@ -44,12 +43,13 @@ pub(super) use model::{
     RepositoryProvenance, aggregate_outcome,
 };
 use model::{EventRecord, ToolVersion};
+pub(super) use oer_hil_durable::{atomic_json, atomic_write, sha256_file, unix_millis};
 
 pub struct RunSession {
     target_directory: PathBuf,
     directory: PathBuf,
     source_materials: Vec<SourceMaterial>,
-    frozen_sources: Option<crate::image::snapshot::FrozenSources>,
+    frozen_sources: Option<oer_hil_source_snapshot::FrozenSources>,
     snapshot_materials: Vec<build::BuildFileMaterial>,
     manifest: RunManifest,
     started: Instant,

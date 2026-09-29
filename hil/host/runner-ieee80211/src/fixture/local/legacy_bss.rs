@@ -65,7 +65,7 @@ impl LegacyBss {
                 format!("hostapd did not enable an 802.11b BSS on channel {channel}").into(),
             );
         }
-        hil_core::durable::atomic_json(
+        oer_hil_durable::atomic_json(
             &output.join("legacy-bss.json"),
             &serde_json::json!({"schema": 1, "ssid": SSID, "channel": channel,
                 "phy": "dsss", "rates_mbps": [1, 2, 5.5, 11], "erp_element": false,

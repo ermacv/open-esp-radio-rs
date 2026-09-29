@@ -394,7 +394,12 @@ impl Bisection<'_> {
     /// This checkout's runner, building the revision's firmware from a
     /// snapshot of the worktree.
     fn with_current_runner(&self) -> Result<Verdict> {
-        let snapshot = oer_hil_runner_core::image::snapshot::capture(&self.worktree, &[], false)?;
+        let snapshot = oer_hil_source_snapshot::capture(
+            &self.worktree,
+            &[],
+            false,
+            &oer_hil_runner_core::image::source_snapshot_store()?,
+        )?;
         let receipt = tempfile::NamedTempFile::new()?;
         let status = self
             .ctx

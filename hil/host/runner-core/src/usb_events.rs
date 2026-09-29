@@ -88,7 +88,7 @@ impl UsbWatch {
             .map(|events| watched(events, &self.devices))
             .and_then(|events| {
                 if !events.is_empty() {
-                    crate::durable::atomic_json(&output.join(USB_EVENTS_FILE), &events)?;
+                    oer_hil_durable::atomic_json(&output.join(USB_EVENTS_FILE), &events)?;
                 }
                 Ok(())
             }) {
@@ -294,7 +294,7 @@ mod tests {
             device: "3-8".into(),
             kind: UsbEventKind::Disconnected { device_number: 2 },
         }];
-        crate::durable::atomic_json(&directory.path().join(USB_EVENTS_FILE), &events).unwrap();
+        oer_hil_durable::atomic_json(&directory.path().join(USB_EVENTS_FILE), &events).unwrap();
         assert_eq!(recorded(directory.path()).unwrap(), events);
     }
 }

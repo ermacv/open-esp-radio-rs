@@ -55,7 +55,7 @@ pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
                 )
                 .into());
             }
-            hil_core::durable::atomic_json(
+            oer_hil_durable::atomic_json(
                 &directory.join("watchdog.json"),
                 &serde_json::json!({
                     "schema": 2, "mode": mode, "budget_micros": 1_000_000,

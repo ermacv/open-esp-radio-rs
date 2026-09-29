@@ -469,7 +469,7 @@ pub fn record_flash(
     dirty: Option<bool>,
     origin: String,
 ) {
-    match crate::durable::sha256_file(application) {
+    match oer_hil_durable::sha256_file(application) {
         Ok(application_sha256) => record_board(
             port,
             oer_hil_arbiter::BoardEventKind::Flashed {

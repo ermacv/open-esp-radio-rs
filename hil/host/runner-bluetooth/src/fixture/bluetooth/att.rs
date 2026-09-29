@@ -111,7 +111,7 @@ impl Owner {
             restored: false,
             parameters: None,
         };
-        hil_core::durable::atomic_json(
+        oer_hil_durable::atomic_json(
             &output.join("adapter-before.json"),
             &serde_json::json!({"adapter": adapter.to_string(), "address": address.to_string(), "powered": false, "soft_blocked": owner.blocked}),
         )?;

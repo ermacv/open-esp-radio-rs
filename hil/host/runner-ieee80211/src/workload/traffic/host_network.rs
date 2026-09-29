@@ -104,7 +104,7 @@ impl BenchmarkIpv4Route {
 
     pub fn record(&self, output: &Path, target: Ipv4Addr, socket_source: Ipv4Addr) -> Result<()> {
         self.verify_socket_source(socket_source)?;
-        hil_core::durable::atomic_json(
+        oer_hil_durable::atomic_json(
             &output.join("host-route.json"),
             &HostRouteEvidence {
                 schema: 1,

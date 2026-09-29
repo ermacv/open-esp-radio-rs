@@ -7,6 +7,7 @@
 
 use std::path::PathBuf;
 
+use oer_hil_source_snapshot::Dependency;
 use serde::{Deserialize, Serialize};
 
 use crate::Result;
@@ -68,47 +69,6 @@ pub struct DependencyOverride {
     pub dirty: bool,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Dependency {
-    EspHal,
-    Embassy,
-    Xarxa,
-}
-
-impl Dependency {
-    pub const ALL: [Self; 3] = [Self::EspHal, Self::Embassy, Self::Xarxa];
-
-    /// The name the variant syntax and the source snapshot use.
-    pub const fn id(self) -> &'static str {
-        match self {
-            Self::EspHal => "esp-hal",
-            Self::Embassy => "embassy",
-            Self::Xarxa => "xarxa",
-        }
-    }
-
-    /// The environment variable that names the override's root.
-    pub const fn root_env(self) -> &'static str {
-        match self {
-            Self::EspHal => "ESP_HAL_ROOT",
-            Self::Embassy => "EMBASSY_ROOT",
-            Self::Xarxa => "OPEN_RADIO_XARXA_ROOT",
-        }
-    }
-}
-
-impl std::str::FromStr for Dependency {
-    type Err = String;
-
-    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
-        Self::ALL
-            .into_iter()
-            .find(|dependency| dependency.id() == value)
-            .ok_or_else(|| format!("`{value}` is not esp-hal, embassy or xarxa"))
-    }
-}
-
 impl Experiment {
     /// The experiment this process runs for, if [`EXPERIMENT_ENV`] names one.
     pub fn from_environment() -> Result<Option<Self>> {
@@ -148,7 +108,5 @@ mod tests {
             serde_json::from_str::<Experiment>(&json).unwrap(),
             experiment
         );
-        assert_eq!("embassy".parse::<Dependency>(), Ok(Dependency::Embassy));
-        assert!("tokio".parse::<Dependency>().is_err());
     }
 }

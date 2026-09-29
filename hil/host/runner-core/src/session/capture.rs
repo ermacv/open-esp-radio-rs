@@ -208,7 +208,7 @@ impl SerialCapture {
                 Err(error) => serde_json::json!({"schema": 1, "request": profile,
                     "error": error.to_string()}),
             };
-            crate::durable::atomic_json(&self.output.join("profile.json"), &record)?;
+            oer_hil_durable::atomic_json(&self.output.join("profile.json"), &record)?;
         }
         self.stop_and_join();
         let uart = self.persist(target_health.as_ref(), true)?;
@@ -265,8 +265,8 @@ impl SerialCapture {
             .map(|recorder| recorder.record(&state.messages, bytes.len() as u64));
         // Rewrite from memory as well: a failed raw-file write still gets a
         // final attempt to preserve every byte accepted by the serial reader.
-        crate::durable::atomic_write(&self.output.join("uart.bin"), &bytes)?;
-        crate::durable::atomic_write(&self.output.join("uart.log"), uart.as_bytes())?;
+        oer_hil_durable::atomic_write(&self.output.join("uart.bin"), &bytes)?;
+        oer_hil_durable::atomic_write(&self.output.join("uart.log"), uart.as_bytes())?;
         let mut log = Vec::new();
         for sent in &state.sent {
             serde_json::to_writer(
@@ -295,9 +295,9 @@ impl SerialCapture {
             serde_json::to_writer(&mut log, &record)?;
             log.push(b'\n');
         }
-        crate::durable::atomic_write(&self.output.join("protocol.jsonl"), &log)?;
+        oer_hil_durable::atomic_write(&self.output.join("protocol.jsonl"), &log)?;
         if let Some(observations) = observations {
-            crate::durable::atomic_json(
+            oer_hil_durable::atomic_json(
                 &self.output.join("measurements.json"),
                 &serde_json::json!({
                     "schema": 1, "finalized": finalized, "failure": state.failure,

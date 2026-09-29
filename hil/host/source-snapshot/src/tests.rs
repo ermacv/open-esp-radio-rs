@@ -200,7 +200,7 @@ fn materialized_inputs_do_not_follow_later_changes_to_the_live_tree() {
         fs::read_to_string(build.path().join("repository/src/lib.rs")).unwrap(),
         "pub const INPUT: u32 = 42;\n"
     );
-    let result = Command::new(super::super::program_from_env("CARGO", "cargo"))
+    let result = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
         .current_dir(build.path().join("repository"))
         .args(["check", "--offline", "--quiet"])
         .env("CARGO_TARGET_DIR", build.path().join("target"))
@@ -400,4 +400,9 @@ fn a_capture_is_taken_again_while_a_source_changes_under_it() {
         .is_err()
     );
     assert_eq!(calls, 1);
+}
+
+#[test]
+fn the_repository_directory_is_this_package() {
+    assert!(env!("CARGO_MANIFEST_DIR").ends_with(super::REPOSITORY_DIRECTORY));
 }

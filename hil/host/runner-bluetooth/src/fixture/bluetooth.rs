@@ -90,7 +90,7 @@ fn run_profile_in(
         "error": result.as_ref().err().map(ToString::to_string),
         "helper": report,
     });
-    hil_core::durable::atomic_json(&output.join("result.json"), &summary)?;
+    oer_hil_durable::atomic_json(&output.join("result.json"), &summary)?;
     result
 }
 
@@ -283,7 +283,7 @@ pub fn connect_profile_in(
         "rf_loss_verified": result.is_ok() && report.peer_rfkill_blocked,
         "error": result.as_ref().err().map(ToString::to_string), "helper": report,
     });
-    hil_core::durable::atomic_json(&output.join("result.json"), &summary)?;
+    oer_hil_durable::atomic_json(&output.join("result.json"), &summary)?;
     result.map_err(|error| format!("{error}; evidence: {}", output.display()).into())
 }
 
@@ -344,7 +344,7 @@ pub fn security_failure_in(
         .ok()
         .and_then(|bytes| serde_json::from_slice::<model::security_failure::Report>(&bytes).ok())
         .unwrap_or_else(|| model::security_failure::Report::new(adapter, peer, failure));
-    hil_core::durable::atomic_json(
+    oer_hil_durable::atomic_json(
         &output.join("result.json"),
         &serde_json::json!({
             "schema": 1, "failure": failure, "read_version_before_disconnect":read_version_before_disconnect, "passed": result.is_ok(), "helper": observed,

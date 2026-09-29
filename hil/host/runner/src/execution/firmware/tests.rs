@@ -60,7 +60,7 @@ fn session(root: &Path) -> RunSession {
         vec![OsString::from("test")],
     )
     .unwrap();
-    let (_snapshot_root, snapshot) = hil_core::image::snapshot::test_snapshot(root);
+    let (_snapshot_root, snapshot) = oer_hil_source_snapshot::test_snapshot(root);
     session.bind_source_snapshot(snapshot.directory()).unwrap();
     session
 }

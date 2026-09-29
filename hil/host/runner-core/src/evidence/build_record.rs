@@ -4,11 +4,9 @@ use super::{
     firmware,
     run::{FirmwareArtifact, RepositoryProvenance, atomic_json, sha256_file},
 };
-use crate::{
-    Result,
-    image::{Artifacts, snapshot::FrozenSources},
-};
+use crate::{Result, image::Artifacts};
 use oer_hil_image_class::ImageClass;
+use oer_hil_source_snapshot::FrozenSources;
 use serde::Serialize;
 use std::{
     fs,
@@ -44,7 +42,7 @@ pub(super) fn archive_snapshot(
     // rebuilds only the packages whose sources changed on each run.
     let frozen = FrozenSources::open_in_free_workspace(
         &destination,
-        &crate::image::snapshot::build_slots("esp32s31")?,
+        &crate::image::frozen::build_slots("esp32s31")?,
     )?;
     let sources = frozen
         .sources()
@@ -56,7 +54,7 @@ pub(super) fn archive_snapshot(
                 remote: None,
                 commit: source.commit.clone(),
                 dirty: source.dirty,
-                workspace_sha256: crate::image::snapshot::identity(source)?,
+                workspace_sha256: oer_hil_source_snapshot::identity(source)?,
                 rebuild_status: SourceRebuildStatus::SourceSnapshot,
                 tracked_patch_path: None,
                 tracked_patch_size_bytes: None,

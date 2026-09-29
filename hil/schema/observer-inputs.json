@@ -8,6 +8,8 @@
       "oer-hil-runner-core",
       "oer-hil-board",
       "oer-hil-image-class",
+      "oer-hil-durable",
+      "oer-hil-source-snapshot",
       "oer-esp32s31-hil-board",
       "rustix",
       "oer-process",

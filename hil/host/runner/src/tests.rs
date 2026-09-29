@@ -16,7 +16,7 @@ fn runner_identity_comes_from_executable_and_embedded_build() {
     #[cfg(target_os = "linux")]
     assert_eq!(
         observer["executable_sha256"],
-        hil_core::durable::sha256_file(std::path::Path::new("/proc/self/exe")).unwrap()
+        oer_hil_durable::sha256_file(std::path::Path::new("/proc/self/exe")).unwrap()
     );
     let embedded: serde_json::Value = serde_json::from_str(crate::RUNNER_BUILD).unwrap();
     assert_eq!(observer["build"], embedded);

@@ -169,7 +169,7 @@ pub fn run(
             let power = radio.restore();
             join(bond,power)
         });
-        hil_core::durable::atomic_json(&output.join("trouble-secure-gatt.json"), &serde_json::json!({
+        oer_hil_durable::atomic_json(&output.join("trouble-secure-gatt.json"), &serde_json::json!({
             "schema":6, "pairing":"numeric-comparison-only", "dut_store":"ram", "linux_bond":"temporary", "shutdown":shutdown,
             "irq_sampling":irq_sampling,
             "confirmation":"automated-hil-number-comparison", "human_presence_verified":false,

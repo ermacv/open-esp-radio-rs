@@ -88,6 +88,8 @@ members = [
     "hil/host/fixture",
     "hil/host/fixture-install",
     "hil/host/image-class",
+    "hil/host/durable",
+    "hil/host/source-snapshot",
     "hil/host/runner",
     "hil/host/runner-bluetooth",
     "hil/host/runner-core",

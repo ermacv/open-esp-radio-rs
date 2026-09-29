@@ -9,6 +9,7 @@ publish = false
 description = "Wi-Fi HIL workloads and laptop and OpenWrt fixtures"
 
 [dependencies]
+oer-hil-durable = { path = "../durable" }
 oer-hil-image-class = { path = "../image-class" }
 hil-core = { package = "oer-hil-runner-core", path = "../runner-core" }
 rustix = { version = "1.1.4", features = ["event", "fs", "net", "process", "stdio"] }

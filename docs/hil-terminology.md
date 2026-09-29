@@ -102,10 +102,10 @@ table; the verdict depends on no stand operation.
 | Board support | How one chip is flashed, reset, observed and examined after a failure | `oer-hil-board` (the port, the ESP-IDF bootloader flow, resets), `oer-esp32s31-hil-board` (the staged flow, calibration slots), `oer-hil-runner-core` (`post_mortem`) |
 | Stand | Who holds which board, fixture and air; recovery and quarantine | `oer-hil-arbiter`, `oer-hil-runner-core` (`lab`, `recovery`) and `cargo hil` |
 | Fixtures | Preparation and restoration of host equipment; privileged installation | `oer-hil-fixture`, `oer-hil-fixture-install` and each family's fixture module |
-| Image builder | Which bytes an image class produces and from which sources | `oer-hil-runner-core` (`image`) and `tools/firmware` |
+| Image builder | Which bytes an image class produces and from which sources | `oer-hil-runner-core` (`image`, including `image::frozen` for builds from a source snapshot) and `tools/firmware` |
 | Execution | How a workload drives the DUT, peers and fixtures and records observations | `oer-hil-runner`, `oer-hil-runner-core` (`session`, `context`) and the `oer-hil-runner-<family>` packages |
 | Verdict | Which checks pass for a scenario's observations | `oer-hil-image-class` (the image a scenario needs and the keys it must serve), the scenario model in `oer-hil-runner-core` and each family's workloads |
-| Evidence | How a run is written, sealed and verified | `oer-hil-runner-core` (`evidence`) and `oer-hil-schema` |
+| Evidence | How a run is written, sealed and verified | `oer-hil-runner-core` (`evidence`), `oer-hil-source-snapshot` (the sources a run and its images were built from), `oer-hil-durable` and `oer-hil-schema` |
 | Qualification | Whether sealed evidence establishes readiness | `oer-qualification` |
 
 ## Retired words

@@ -1,6 +1,6 @@
 //! Secret-free, pre-run observations of the physical HIL cell.
 
-use crate::durable::unix_millis;
+use oer_hil_durable::unix_millis;
 use oer_process::CommandExt as _;
 use std::{collections::BTreeMap, fs, net::Ipv4Addr, path::Path, process::Command};
 

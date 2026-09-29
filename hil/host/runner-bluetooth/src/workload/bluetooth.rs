@@ -53,7 +53,7 @@ pub fn run(
             let result = probe(capture, adapter, &directory, &mut counts, quiet_cycles)
                 .and_then(|()| validate(&counts, minimum_packets, quiet_cycles));
             let cleanup = oer_process::cleanup(|| capture.bluetooth_dtm(Operation::Reset));
-            hil_core::durable::atomic_json(&directory.join("bluetooth-dtm.json"), &serde_json::json!({
+            oer_hil_durable::atomic_json(&directory.join("bluetooth-dtm.json"), &serde_json::json!({
                 "schema": 2, "quiet_cycles": quiet_cycles, "adapter": adapter.to_string(), "phy": "LE-1M", "channel": 0,
                 "payload": "PRBS9", "payload_bytes": 37, "minimum_packets": minimum_packets,
                 "counts": counts, "passed": result.is_ok() && cleanup.is_ok(),

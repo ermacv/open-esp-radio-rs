@@ -20,7 +20,7 @@ use oer_hil_image_class::{FeatureDelta, ImageClass};
 
 pub mod esp_idf;
 pub use esp_idf::XTASK_ENV;
-pub mod snapshot;
+pub mod frozen;
 pub mod source_inputs;
 pub mod stack;
 
@@ -361,6 +361,11 @@ pub fn host_build_root() -> Result<PathBuf> {
         .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
         .ok_or("HOME is required to locate the host build root")?
         .join("open-esp-radio/build"))
+}
+
+/// Where the host keeps the source snapshots its builds read.
+pub fn source_snapshot_store() -> Result<PathBuf> {
+    Ok(host_build_root()?.join("source-snapshots"))
 }
 
 /// The host build root of `chip` images.

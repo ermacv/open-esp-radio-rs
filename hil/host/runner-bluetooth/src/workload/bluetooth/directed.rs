@@ -42,7 +42,7 @@ pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
             "cleanup_error".into(),
             cleanup.as_ref().err().map(ToString::to_string).into(),
         );
-        hil_core::durable::atomic_json(
+        oer_hil_durable::atomic_json(
             &output.join("directed-advertising.json"),
             &serde_json::Value::Object(report),
         )?;

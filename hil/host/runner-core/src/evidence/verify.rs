@@ -811,7 +811,7 @@ fn validate_snapshot_materials(run: &Path, provenance: &BuildProvenance) -> Resu
             return Err("source snapshot materials must share one directory".into());
         }
     }
-    let frozen = crate::image::snapshot::FrozenSources::open(&run.join(directory.unwrap()))?;
+    let frozen = oer_hil_source_snapshot::FrozenSources::open(&run.join(directory.unwrap()))?;
     if frozen.sources().len() != provenance.sources.len() {
         return Err("source snapshot roles disagree with provenance".into());
     }
@@ -819,7 +819,7 @@ fn validate_snapshot_materials(run: &Path, provenance: &BuildProvenance) -> Resu
         if input.name != source.name
             || input.commit != source.commit
             || input.dirty != source.dirty
-            || crate::image::snapshot::identity(input)? != source.workspace_sha256
+            || oer_hil_source_snapshot::identity(input)? != source.workspace_sha256
         {
             return Err("source snapshot identity disagrees with provenance".into());
         }

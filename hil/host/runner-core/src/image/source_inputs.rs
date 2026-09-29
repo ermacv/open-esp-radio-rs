@@ -151,14 +151,15 @@ pub fn configuration(
 }
 
 /// The sources of the code that builds, packs and audits every image: this
-/// module, the image classifier, the firmware packer and the memory
-/// auditor, without their tests and prose.
+/// module, the image classifier, the source snapshot, the firmware packer
+/// and the memory auditor, without their tests and prose.
 fn builder(repository: &Path) -> Result<BTreeSet<PathBuf>> {
     let mut files = BTreeSet::new();
     let mut pending = vec![PathBuf::from(BUILDER_MODULE)];
     for package in [
         BUILDER_PACKAGE,
         oer_hil_image_class::REPOSITORY_DIRECTORY,
+        oer_hil_source_snapshot::REPOSITORY_DIRECTORY,
         oer_esp32s31_firmware::REPOSITORY_DIRECTORY,
         oer_memory_report::REPOSITORY_DIRECTORY,
     ] {
@@ -197,7 +198,7 @@ fn builder(repository: &Path) -> Result<BTreeSet<PathBuf>> {
 /// Write `files` as `source-inputs.json` below `output`.
 pub fn write(output: &Path, files: &BTreeSet<PathBuf>) -> Result<PathBuf> {
     let path = output.join("source-inputs.json");
-    crate::durable::atomic_json(
+    oer_hil_durable::atomic_json(
         &path,
         &serde_json::json!({"schema": SCHEMA, "files": files}),
     )?;

@@ -129,7 +129,7 @@ pub fn run(minimum_packets: u16, output: &Path, context: &Context<'_>) -> Result
     });
     transcript.save(&output.join(DTM_PEER_TRANSCRIPT))?;
     let outcome = result.and_then(|()| validate(&report, minimum_packets));
-    hil_core::durable::atomic_json(
+    oer_hil_durable::atomic_json(
         &output.join("dtm-peer.json"),
         &serde_json::json!({
             "schema": 1,

@@ -172,7 +172,7 @@ impl SerialCapture {
                 &target.lab.dut.serial,
                 oer_hil_arbiter::BoardEventKind::StartupArtifactUploaded {
                     path: path.display().to_string(),
-                    sha256: crate::durable::sha256_bytes(&bytes),
+                    sha256: oer_hil_durable::sha256_bytes(&bytes),
                 },
             );
         }
@@ -202,7 +202,7 @@ impl SerialCapture {
                 &target.lab.dut.serial,
                 oer_hil_arbiter::BoardEventKind::StartupArtifactWritten {
                     path: path.display().to_string(),
-                    sha256: crate::durable::sha256_bytes(&bytes),
+                    sha256: oer_hil_durable::sha256_bytes(&bytes),
                     disposition: format!("{:?}", status.disposition),
                 },
             );

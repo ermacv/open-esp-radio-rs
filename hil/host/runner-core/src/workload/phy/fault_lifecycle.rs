@@ -74,7 +74,7 @@ pub fn run<S: Scenario>(output: &Path, context: &Context<'_>, scenario: S) -> Re
             })();
             evidence["passed"] = serde_json::json!(result.is_ok());
             evidence["error"] = serde_json::json!(result.as_ref().err().map(ToString::to_string));
-            crate::durable::atomic_json(&directory.join("phy-watchdog.json"), &evidence)?;
+            oer_hil_durable::atomic_json(&directory.join("phy-watchdog.json"), &evidence)?;
             result
         })?;
     }

@@ -8,7 +8,8 @@ use std::{
 };
 
 use oer_hil_image_class::ImageClass;
-use oer_hil_runner_core::image::{Integration, snapshot::FrozenSources};
+use oer_hil_runner_core::image::Integration;
+use oer_hil_source_snapshot::FrozenSources;
 
 use crate::{Context, Result};
 
@@ -132,10 +133,15 @@ pub fn run(ctx: &Context, selected: &[ImageClass], depth: Depth, jobs: usize) ->
     // build slots, whose paths and caches every checkout shares.
     let frozen = match depth {
         Depth::Build => {
-            let snapshot = oer_hil_runner_core::image::snapshot::capture(&ctx.root, &[], true)?;
+            let snapshot = oer_hil_source_snapshot::capture(
+                &ctx.root,
+                &[],
+                true,
+                &oer_hil_runner_core::image::source_snapshot_store()?,
+            )?;
             Some(FrozenSources::open_in_free_workspace(
                 snapshot.directory(),
-                &oer_hil_runner_core::image::snapshot::build_slots("esp32s31")?,
+                &oer_hil_runner_core::image::frozen::build_slots("esp32s31")?,
             )?)
         }
         Depth::TypeCheck => None,
@@ -236,8 +242,8 @@ fn share_units(
     class: ImageClass,
     network: Integration,
 ) -> Result<()> {
-    let from = frozen.compile_cache(seed, network);
-    let to = frozen.compile_cache(class, network);
+    let from = oer_hil_runner_core::image::frozen::compile_cache(frozen, seed, network);
+    let to = oer_hil_runner_core::image::frozen::compile_cache(frozen, class, network);
     for build in ["runtime", "bootstrap"] {
         let Ok(entries) = std::fs::read_dir(from.join(build)) else {
             continue;
@@ -298,9 +304,14 @@ fn build_one(
     let started = Instant::now();
     let result = match depth {
         Depth::Build => match frozen {
-            Some(frozen) => frozen
-                .build(class, network, None, &Default::default())
-                .map(|_| ()),
+            Some(frozen) => oer_hil_runner_core::image::frozen::build(
+                frozen,
+                class,
+                network,
+                None,
+                &Default::default(),
+            )
+            .map(|_| ()),
             None => Err("a full build needs the frozen sources".into()),
         },
 

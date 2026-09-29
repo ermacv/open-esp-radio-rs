@@ -26,7 +26,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use oer_hil_runner_core::experiment::{Arm, Dependency, DependencyOverride, Experiment, Variant};
+use oer_hil_runner_core::experiment::{Arm, DependencyOverride, Experiment, Variant};
+use oer_hil_source_snapshot::Dependency;
 use serde::Serialize;
 
 use crate::{
@@ -453,7 +454,7 @@ fn prepare(
             path,
         });
     }
-    let snapshot = oer_hil_runner_core::image::snapshot::capture_with_overrides(
+    let snapshot = oer_hil_source_snapshot::capture_with_overrides(
         &worktree,
         &[],
         false,
@@ -461,6 +462,7 @@ fn prepare(
             .iter()
             .map(|entry| (entry.dependency, entry.path.clone()))
             .collect::<Vec<_>>(),
+        &oer_hil_runner_core::image::source_snapshot_store()?,
     )?;
     Ok(PreparedArm {
         arm,

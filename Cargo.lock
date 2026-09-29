@@ -2984,6 +2984,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-hil-durable"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "oer-hil-fixture"
 version = "0.1.0"
 dependencies = [
@@ -3063,6 +3072,7 @@ dependencies = [
  "oer-command-tree",
  "oer-esp32s31-hil-board",
  "oer-hil-board",
+ "oer-hil-durable",
  "oer-hil-fixture-install",
  "oer-hil-image-class",
  "oer-hil-protocol",
@@ -3072,6 +3082,7 @@ dependencies = [
  "oer-hil-runner-ieee802154",
  "oer-hil-runner-system",
  "oer-hil-schema",
+ "oer-hil-source-snapshot",
  "oer-process",
  "rustix",
  "serde",
@@ -3090,6 +3101,7 @@ dependencies = [
  "async-io",
  "futures-lite",
  "heapless 0.9.3",
+ "oer-hil-durable",
  "oer-hil-fixture",
  "oer-hil-image-class",
  "oer-hil-protocol",
@@ -3118,12 +3130,14 @@ dependencies = [
  "oer-esp32s31-platform-layout",
  "oer-hil-arbiter",
  "oer-hil-board",
+ "oer-hil-durable",
  "oer-hil-fixture",
  "oer-hil-fixture-install",
  "oer-hil-image-class",
  "oer-hil-image-keys",
  "oer-hil-protocol",
  "oer-hil-schema",
+ "oer-hil-source-snapshot",
  "oer-hil-trace",
  "oer-ieee80211-trace",
  "oer-ieee802154-trace",
@@ -3150,6 +3164,7 @@ name = "oer-hil-runner-ieee80211"
 version = "0.1.0"
 dependencies = [
  "mio",
+ "oer-hil-durable",
  "oer-hil-fixture",
  "oer-hil-image-class",
  "oer-hil-protocol",
@@ -3180,6 +3195,7 @@ dependencies = [
 name = "oer-hil-runner-system"
 version = "0.1.0"
 dependencies = [
+ "oer-hil-durable",
  "oer-hil-image-class",
  "oer-hil-protocol",
  "oer-hil-runner-core",
@@ -3201,6 +3217,21 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "toml_edit",
+]
+
+[[package]]
+name = "oer-hil-source-snapshot"
+version = "0.1.0"
+dependencies = [
+ "fs2",
+ "oer-hil-durable",
+ "oer-hil-schema",
+ "oer-process",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tar",
+ "tempfile",
 ]
 
 [[package]]
@@ -3571,6 +3602,7 @@ dependencies = [
  "oer-hil-image-class",
  "oer-hil-runner-core",
  "oer-hil-schema",
+ "oer-hil-source-snapshot",
  "oer-memory-report",
  "oer-probe-codegen",
  "oer-process",

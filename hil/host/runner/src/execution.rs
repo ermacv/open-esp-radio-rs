@@ -106,7 +106,7 @@ pub(crate) fn execute_workload(
         failure: result.err().map(|error| classify(&*error)),
     };
     if let Some(finding) = post_mortem {
-        let _ = hil_core::durable::atomic_json(
+        let _ = oer_hil_durable::atomic_json(
             &output.join("post-mortem/post-mortem.json"),
             &serde_json::json!({
                 "schema": 1,

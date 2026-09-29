@@ -1,6 +1,6 @@
 use super::*;
-use crate::durable::UNIQUE_FILE_COUNTER;
 use crate::evidence::build::{SourceLimitation, SourceRebuildStatus, capture_source_material};
+use oer_hil_durable::UNIQUE_FILE_COUNTER;
 
 fn temporary_directory(label: &str) -> PathBuf {
     let path = std::env::temp_dir().join(format!(
@@ -402,7 +402,7 @@ fn firmware_record_archives_the_exact_application() {
     fs::write(&bootstrap_elf, b"bootstrap elf").unwrap();
 
     let mut first_session = session(&run_directory);
-    let (_snapshot_root, snapshot) = crate::image::snapshot::test_snapshot(&root);
+    let (_snapshot_root, snapshot) = oer_hil_source_snapshot::test_snapshot(&root);
     first_session
         .bind_source_snapshot(snapshot.directory())
         .unwrap();
@@ -559,7 +559,7 @@ fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
     let mut source = session(&source_directory);
     source.target_directory = target_directory.clone();
     source.source_materials[0].checkout_path = repository_root.clone();
-    let (_snapshot_root, snapshot) = crate::image::snapshot::test_snapshot(&repository_root);
+    let (_snapshot_root, snapshot) = oer_hil_source_snapshot::test_snapshot(&repository_root);
     source.bind_source_snapshot(snapshot.directory()).unwrap();
     source
         .record_firmware(

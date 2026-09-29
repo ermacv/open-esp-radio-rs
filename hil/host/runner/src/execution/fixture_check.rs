@@ -17,7 +17,7 @@ pub(crate) fn check_without_device(
     let _lease = hil_core::lab::lock::FixtureLock::acquire_without_device(lab, required)?;
     let output = root.join("target/hil/fixture-checks").join(format!(
         "{}-{}",
-        hil_core::durable::unix_millis()?,
+        oer_hil_durable::unix_millis()?,
         scenario.id()
     ));
     std::fs::create_dir_all(&output)?;
@@ -57,7 +57,7 @@ pub(crate) fn check_without_device(
     let report = serde_json::json!({"schema": 1, "scenario": scenario.id(), "device_accessed": false,
         "prepared": result.is_ok(), "restored": restored,
         "failure": result.as_ref().err().map(|error| error.to_string()), "cleanup": records});
-    hil_core::durable::atomic_json(&output.join("result.json"), &report)?;
+    oer_hil_durable::atomic_json(&output.join("result.json"), &report)?;
     crate::emit_json(
         &serde_json::json!({"report": report, "artifacts": output}),
         true,

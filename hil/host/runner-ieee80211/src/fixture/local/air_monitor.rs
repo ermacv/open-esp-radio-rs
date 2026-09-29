@@ -37,7 +37,7 @@ pub fn check_without_device(config: &OpenWrtConfig, output: &Path) -> Result<()>
         true,
     )?;
     let evidence = capture.finish()?;
-    hil_core::durable::atomic_json(&output.join("fixture-monitor.json"), &evidence)
+    oer_hil_durable::atomic_json(&output.join("fixture-monitor.json"), &evidence)
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize)]

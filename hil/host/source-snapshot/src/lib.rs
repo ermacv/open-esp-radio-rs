@@ -7,8 +7,14 @@
 //! packages and scenarios, which the run reads. The manifest lists every
 //! untracked file it archived and why. This is a source
 //! snapshot, not a hermetic build or a qualification decision.
+//!
+//! Image builds read a snapshot through [`FrozenSources`]; run evidence
+//! records it and verification re-derives each source's [`identity`].
 
-use crate::{Result, durable::atomic_json};
+/// This package's directory in the repository.
+pub const REPOSITORY_DIRECTORY: &str = "hil/host/source-snapshot";
+
+use oer_hil_durable::{Result, atomic_json};
 use oer_process::CommandExt as _;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -89,6 +95,11 @@ pub struct Snapshot {
 impl Snapshot {
     pub fn directory(&self) -> &Path {
         &self.directory
+    }
+
+    /// The snapshot's identity: the SHA-256 of its manifest.
+    pub fn id(&self) -> &str {
+        &self.snapshot_id
     }
 
     /// The snapshot captured earlier into `directory`, whose archive and
@@ -266,6 +277,31 @@ impl FrozenSources {
         self.checkout.path().join("repository")
     }
 
+    /// The snapshot this checkout materializes.
+    pub fn snapshot(&self) -> &Snapshot {
+        &self.snapshot
+    }
+
+    /// Where the checkout of `role` (`repository`, `esp-hal`, `embassy` or
+    /// `xarxa`) lies, if the snapshot holds that source.
+    pub fn source_root(&self, role: &str) -> Option<PathBuf> {
+        self.manifest
+            .sources
+            .iter()
+            .any(|source| source.name == role)
+            .then(|| self.checkout.path().join(role))
+    }
+
+    /// Where this checkout's compile caches belong: beside a build
+    /// workspace, so the units compiled from its paths stay with it, or
+    /// inside a temporary checkout.
+    pub fn cache_base(&self) -> PathBuf {
+        match &self.checkout {
+            Checkout::Workspace { path, .. } => path.with_extension("cache"),
+            Checkout::Temporary(directory) => directory.path().join("cache"),
+        }
+    }
+
     pub fn sources(&self) -> &[SourceInput] {
         &self.manifest.sources
     }
@@ -277,7 +313,7 @@ impl FrozenSources {
                 let metadata = fs::symlink_metadata(&path)?;
                 if !metadata.is_file()
                     || metadata.len() != file.size_bytes
-                    || crate::durable::sha256_file(&path)? != file.sha256
+                    || oer_hil_durable::sha256_file(&path)? != file.sha256
                 {
                     return Err(format!(
                         "frozen build input changed: {}:{}",
@@ -363,17 +399,22 @@ struct Selection {
     untracked: BTreeSet<PathBuf>,
 }
 
-/// Capture the sources at `root`, with the untracked files `include` names
-/// and, when `include_untracked`, every untracked file inside an image
-/// package.
-pub fn capture(root: &Path, include: &[String], include_untracked: bool) -> Result<Snapshot> {
-    let overrides = crate::experiment::Dependency::ALL
+/// Capture the sources at `root` into `store`, with the untracked files
+/// `include` names and, when `include_untracked`, every untracked file inside
+/// an image package.
+pub fn capture(
+    root: &Path,
+    include: &[String],
+    include_untracked: bool,
+    store: &Path,
+) -> Result<Snapshot> {
+    let overrides = Dependency::ALL
         .into_iter()
         .filter_map(|dependency| {
             std::env::var_os(dependency.root_env()).map(|path| (dependency, PathBuf::from(path)))
         })
         .collect::<Vec<_>>();
-    capture_with_overrides(root, include, include_untracked, &overrides)
+    capture_with_overrides(root, include, include_untracked, &overrides, store)
 }
 
 /// [`capture`] with the local dependency checkouts named by `overrides`
@@ -382,7 +423,8 @@ pub fn capture_with_overrides(
     root: &Path,
     include: &[String],
     include_untracked: bool,
-    overrides: &[(crate::experiment::Dependency, PathBuf)],
+    overrides: &[(Dependency, PathBuf)],
+    store: &Path,
 ) -> Result<Snapshot> {
     let scopes = if include_untracked {
         untracked_scopes(image_packages(root)?)
@@ -393,12 +435,7 @@ pub fn capture_with_overrides(
     for (dependency, path) in overrides {
         roots.push((dependency.id().into(), path.canonicalize()?));
     }
-    capture_roots(
-        &roots,
-        include,
-        &scopes,
-        &crate::image::host_build_root()?.join("source-snapshots"),
-    )
+    capture_roots(&roots, include, &scopes, store)
 }
 
 /// The repository directories whose untracked files `--include-untracked`
@@ -678,7 +715,7 @@ fn capture_roots_once(
         sources,
     };
     let snapshot_id = digest(&serde_json::to_vec(&manifest)?);
-    let archive_sha256 = crate::durable::sha256_file(&archive_path)?;
+    let archive_sha256 = oer_hil_durable::sha256_file(&archive_path)?;
     atomic_json(&staging.path().join("manifest.json"), &manifest)?;
     let snapshot = Snapshot {
         schema: 1,
@@ -693,7 +730,7 @@ fn capture_roots_once(
             != fs::read(staging.path().join("manifest.json"))?
             || fs::read(snapshot.directory.join("snapshot.json"))?
                 != fs::read(staging.path().join("snapshot.json"))?
-            || crate::durable::sha256_file(&snapshot.directory.join("sources.tar"))?
+            || oer_hil_durable::sha256_file(&snapshot.directory.join("sources.tar"))?
                 != snapshot.archive_sha256
         {
             return Err("existing source snapshot has conflicting or corrupted content".into());
@@ -783,9 +820,9 @@ mod tests;
 #[cfg(any(test, feature = "test-support"))]
 pub use tests::test_snapshot;
 
-mod builder;
+mod dependency;
 mod materialize;
-pub use builder::{build, build_slots};
+pub use dependency::Dependency;
 #[cfg(test)]
 use materialize::materialize;
 

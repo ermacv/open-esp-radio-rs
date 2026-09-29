@@ -9,6 +9,8 @@ publish = false
 description = "Host build, placement-audit and HIL runner for open ESP radio"
 
 [dependencies]
+oer-hil-source-snapshot = { path = "../source-snapshot" }
+oer-hil-durable = { path = "../durable" }
 oer-hil-image-class = { path = "../image-class" }
 oer-esp32s31-hil-board = { path = "../board/esp32s31" }
 oer-hil-board = { path = "../board" }
@@ -29,6 +31,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 [dev-dependencies]
+oer-hil-source-snapshot = { path = "../source-snapshot", features = ["test-support"] }
 libc = "0.2"
 toml = "1.1"
 hil-core = { package = "oer-hil-runner-core", path = "../runner-core", features = ["test-support"] }

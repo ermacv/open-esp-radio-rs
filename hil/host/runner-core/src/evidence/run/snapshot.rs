@@ -37,15 +37,17 @@ impl RunSession {
         class: ImageClass,
         build: crate::image::CurrentBuild,
     ) -> Result<Artifacts> {
-        self.frozen_sources
+        let frozen = self
+            .frozen_sources
             .as_ref()
-            .ok_or("HIL build requires a bound source snapshot")?
-            .build_for_chip(
-                &self.manifest.target,
-                class,
-                build.network,
-                build.layout_seed,
-                &build.features,
-            )
+            .ok_or("HIL build requires a bound source snapshot")?;
+        crate::image::frozen::build_for_chip(
+            frozen,
+            &self.manifest.target,
+            class,
+            build.network,
+            build.layout_seed,
+            &build.features,
+        )
     }
 }

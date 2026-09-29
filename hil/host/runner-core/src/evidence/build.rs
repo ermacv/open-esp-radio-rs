@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::Result;
-use crate::durable::{atomic_write, sha256_file};
+use oer_hil_durable::{atomic_write, sha256_file};
 use oer_hil_image_class::ImageClass;
 
 pub(super) const BUILD_PROVENANCE_SCHEMA: u16 = 1;

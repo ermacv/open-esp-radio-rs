@@ -115,7 +115,12 @@ pub(crate) fn run() -> Result<()> {
                 source_include,
                 include_untracked,
             } => {
-                let snapshot = image::snapshot::capture(&root, &source_include, include_untracked)?;
+                let snapshot = oer_hil_source_snapshot::capture(
+                    &root,
+                    &source_include,
+                    include_untracked,
+                    &image::source_snapshot_store()?,
+                )?;
                 emit_json(&snapshot, true)
             }
             ImageCommand::Build {
@@ -126,16 +131,17 @@ pub(crate) fn run() -> Result<()> {
                 let frozen = source_snapshot
                     .as_deref()
                     .map(|snapshot| {
-                        image::snapshot::FrozenSources::open_in_free_workspace(
+                        oer_hil_source_snapshot::FrozenSources::open_in_free_workspace(
                             snapshot,
-                            &image::snapshot::build_slots("esp32s31")?,
+                            &image::frozen::build_slots("esp32s31")?,
                         )
                     })
                     .transpose()?;
                 for class in classes {
                     let artifacts = match (&frozen, &source_snapshot) {
                         (Some(frozen), Some(snapshot)) => {
-                            let artifacts = frozen.build(
+                            let artifacts = image::frozen::build(
+                                frozen,
                                 class,
                                 image::Integration::default(),
                                 layout_seed,
@@ -224,11 +230,14 @@ pub(crate) fn run() -> Result<()> {
             }
             let snapshot = match (&firmware_from, source_snapshot) {
                 (Some(_), _) => None,
-                (None, Some(directory)) => Some(image::snapshot::Snapshot::load(&directory)?),
-                (None, None) => Some(image::snapshot::capture(
+                (None, Some(directory)) => {
+                    Some(oer_hil_source_snapshot::Snapshot::load(&directory)?)
+                }
+                (None, None) => Some(oer_hil_source_snapshot::capture(
                     &root,
                     &source_include,
                     include_untracked,
+                    &image::source_snapshot_store()?,
                 )?),
             };
             if build_only {
@@ -236,12 +245,13 @@ pub(crate) fn run() -> Result<()> {
                     .as_ref()
                     .ok_or("--build-only builds from the sources, not a replay")?;
                 let selected = selected.iter().collect::<Vec<_>>();
-                let frozen = image::snapshot::FrozenSources::open_in_free_workspace(
+                let frozen = oer_hil_source_snapshot::FrozenSources::open_in_free_workspace(
                     snapshot.directory(),
-                    &image::snapshot::build_slots(&chip)?,
+                    &image::frozen::build_slots(&chip)?,
                 )?;
                 for class in orchestration::image_classes(&selected) {
-                    let artifacts = frozen.build_for_chip(
+                    let artifacts = image::frozen::build_for_chip(
+                        &frozen,
                         &chip,
                         class,
                         image::Integration::default(),
@@ -304,7 +314,12 @@ pub(crate) fn run() -> Result<()> {
             let selected = excluding(selected, &exclude)?;
             let chip = orchestration::select_chip(&root, &selected, chip.as_deref())?;
             let lab = lab::config::LabConfig::load(&lab_path, &chip)?;
-            let snapshot = image::snapshot::capture(&root, &source_include, include_untracked)?;
+            let snapshot = oer_hil_source_snapshot::capture(
+                &root,
+                &source_include,
+                include_untracked,
+                &image::source_snapshot_store()?,
+            )?;
             let required = requirements(&selected);
             hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
             // Orchestration builds the images, then leases the stand and

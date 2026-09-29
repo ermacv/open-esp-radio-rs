@@ -1,0 +1,27 @@
+schema = 5
+id = "diagnostic-ap-two-client-ceiling-tx-air"
+description = "Two-client AP HT40 saturated UDP transmit with the independent air monitor, for per-client A-MPDU fill; throughput belongs to the observer-free ceiling"
+repetitions = 1
+transfer = "identical-image"
+tags = ["diagnostic-ap-two-client", "wifi", "access-point", "multi-client", "ht40", "tx", "ampdu", "air-strict"]
+
+[wifi]
+image = "performance"
+
+[wifi.workload]
+kind = "access-point"
+link = { phy = "ht40" }
+cycles = 2
+boots = 1
+timeout_seconds = 150
+clients = { kind = "laptop-and-openwrt" }
+independent_air_monitor = true
+
+[wifi.workload.traffic]
+kind = "udp-multi-client"
+duration_seconds = 16
+payload_bytes = 1472
+offer = { tx_bps = 65000000 }
+
+[wifi.workload.traffic.criteria]
+minimum_tx_bps = 1

@@ -198,7 +198,10 @@ an unknown scenario fails in the terminal instead of in the job. It also
 fixes what the job runs with before it waits: a copy of the xtask below
 `target/hil/jobs/xtask/`, the runner built now and, for a `run` that builds,
 a source snapshot of the checkout taken now with the run's own
-`--source-include` and `--include-untracked`. Edits, pulls and rebuilds of the
+`--source-include` and `--include-untracked`. It then builds the run's images
+from that snapshot and runs their audits (`run --build-only`), so a failing
+build or audit ends the command in the terminal instead of the job after its
+wait. Edits, pulls and rebuilds of the
 checkout while the job waits or runs do not reach it; a job whose fixed parts
 were deleted meanwhile fails and asks to be enqueued again. `wait JOB` blocks until the job ends and exits with its outcome:
 0 passed, 1 failed, 2 interrupted (or on a quarantined board), 3 blocked or

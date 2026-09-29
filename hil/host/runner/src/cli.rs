@@ -107,6 +107,11 @@ pub(crate) enum CliCommand {
         /// snapshot, a build or a run: what `--enqueue` checks at once.
         #[arg(long, hide = true)]
         validate_only: bool,
+        /// Build and audit every image the scenarios use from their sources,
+        /// then exit without a run: `--enqueue` builds this way before the
+        /// job waits, so a failing build or audit shows at once.
+        #[arg(long, hide = true, conflicts_with_all = ["firmware_from", "validate_only"])]
+        build_only: bool,
     },
     /// Execute catalog scenarios, flashing once per selected image class.
     /// The whole catalog runs only with an explicit `--all`.

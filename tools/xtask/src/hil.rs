@@ -1686,7 +1686,11 @@ fn freeze_enqueued(ctx: &Context, args: &[OsString]) -> Result<crate::hil_jobs::
         )
         .into());
     }
-    if has_flag(args, "--firmware-from") || has_flag(args, "--source-snapshot") {
+    if has_flag(args, "--firmware-from") {
+        return Ok(frozen);
+    }
+    if has_flag(args, "--source-snapshot") {
+        build_before_queue(ctx, &frozen, args)?;
         return Ok(frozen);
     }
     let output = oer_process::output(
@@ -1707,7 +1711,32 @@ fn freeze_enqueued(ctx: &Context, args: &[OsString]) -> Result<crate::hil_jobs::
         .as_str()
         .ok_or("the source snapshot names no directory")?;
     frozen.snapshot = Some(PathBuf::from(directory));
+    build_before_queue(
+        ctx,
+        &frozen,
+        &with_source_snapshot(args, Path::new(directory)),
+    )?;
     Ok(frozen)
+}
+
+/// Build and audit a run's images with its fixed runner before the job
+/// waits: a build or audit that fails does so now, in the terminal, not
+/// after the queue.
+fn build_before_queue(
+    ctx: &Context,
+    frozen: &crate::hil_jobs::Frozen,
+    run_args: &[OsString],
+) -> Result<()> {
+    eprintln!("hil: building the run's images before it queues");
+    let status = ctx
+        .command(&frozen.runner)
+        .args(run_args)
+        .arg("--build-only")
+        .status()?;
+    if !status.success() {
+        return Err("not enqueued: the run's images did not build (see above)".into());
+    }
+    Ok(())
 }
 
 /// The main checkout of the worktree at `root`: the directory holding the

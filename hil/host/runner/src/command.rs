@@ -176,6 +176,7 @@ pub(crate) fn run() -> Result<()> {
             then,
             target,
             validate_only,
+            build_only,
         } => {
             let catalog = Catalog::load(&catalog_path)?;
             let mut selected = orchestration::named_scenarios(&catalog, &scenarios)?;
@@ -219,6 +220,28 @@ pub(crate) fn run() -> Result<()> {
                     include_untracked,
                 )?),
             };
+            if build_only {
+                let snapshot = snapshot
+                    .as_ref()
+                    .ok_or("--build-only builds from the sources, not a replay")?;
+                let selected = selected.iter().collect::<Vec<_>>();
+                orchestration::require_image_pipeline(&root, &target, &selected)?;
+                let frozen = image::snapshot::FrozenSources::open_in_free_workspace(
+                    snapshot.directory(),
+                    &image::snapshot::build_slots(&target)?,
+                )?;
+                for class in orchestration::image_classes(&selected) {
+                    let artifacts = frozen.build_for_chip(
+                        &target,
+                        class,
+                        image::Integration::default(),
+                        layout_seed,
+                        &features.clone().unwrap_or_default(),
+                    )?;
+                    image::print_artifacts(class, &artifacts, false)?;
+                }
+                return Ok(());
+            }
             let firmware = match firmware_from {
                 Some(run_id) => {
                     let class = orchestration::single_image_class(&selected)?;

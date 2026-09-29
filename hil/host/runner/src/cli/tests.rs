@@ -242,3 +242,23 @@ fn run_repetitions_replace_the_scenarios_counts_within_the_evidence_range() {
         );
     }
 }
+
+#[test]
+fn a_build_only_run_builds_its_own_sources_and_is_no_replay() {
+    let cli = Cli::try_parse_from(["cargo-hil", "run", "a", "--build-only"]).unwrap();
+    let CliCommand::Run { build_only, .. } = cli.command else {
+        panic!("expected run");
+    };
+    assert!(build_only);
+    assert!(
+        Cli::try_parse_from([
+            "cargo-hil",
+            "run",
+            "a",
+            "--build-only",
+            "--firmware-from",
+            "r"
+        ])
+        .is_err()
+    );
+}

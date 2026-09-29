@@ -738,6 +738,14 @@ fn execute_one(
     Ok(vec![result])
 }
 
+/// The image classes `selected` runs on, in the order runs build them.
+pub(crate) fn image_classes(selected: &[&Scenario]) -> Vec<ImageClass> {
+    group_selected_scenarios(selected)
+        .into_iter()
+        .map(|(class, _)| class)
+        .collect()
+}
+
 fn group_selected_scenarios<'a>(selected: &[&'a Scenario]) -> Vec<(ImageClass, Vec<&'a Scenario>)> {
     ImageClass::ALL
         .into_iter()

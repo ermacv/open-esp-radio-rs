@@ -1553,6 +1553,21 @@ const PRUNE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(24 * 
 
 /// Delete, at most once a day, the runs of the shared store that no rule
 /// keeps; see `cargo hil runs prune`.
+/// The run store's size budget: `OER_HIL_RUN_STORE_BUDGET_GIB` gibibytes,
+/// 40 by default.
+fn run_store_budget() -> Result<u64> {
+    let gibibytes = match std::env::var(RUN_STORE_BUDGET_ENV) {
+        Ok(text) => text
+            .parse::<u64>()
+            .map_err(|_| format!("{RUN_STORE_BUDGET_ENV} is not a number of GiB: {text}"))?,
+        Err(_) => RUN_STORE_BUDGET_GIB,
+    };
+    Ok(gibibytes << 30)
+}
+
+const RUN_STORE_BUDGET_ENV: &str = "OER_HIL_RUN_STORE_BUDGET_GIB";
+const RUN_STORE_BUDGET_GIB: u64 = 40;
+
 fn prune_automatically(ctx: &Context) -> Result<()> {
     use crate::hil_runs;
     let runs = crate::hil_store::shared_runs(HIL_TARGET)?;
@@ -1584,6 +1599,33 @@ fn prune_automatically(ctx: &Context) -> Result<()> {
     let (mut removed, mut freed) = (0, 0);
     for run in all.iter().filter(|run| !keep.contains_key(&run.id)) {
         freed += hil_runs::exclusive_bytes(&run.directory);
+        std::fs::remove_dir_all(&run.directory)?;
+        removed += 1;
+    }
+    // Over its size budget the store also loses its oldest runs that only
+    // their age kept; every other rule still holds.
+    let remaining = all
+        .iter()
+        .filter(|run| keep.contains_key(&run.id))
+        .cloned()
+        .collect::<Vec<_>>();
+    let sizes = remaining
+        .iter()
+        .map(|run| (run.id.clone(), hil_runs::exclusive_bytes(&run.directory)))
+        .collect();
+    let kept = hil_runs::retained(
+        &remaining,
+        &hil_runs::Retention {
+            keep_days: 0,
+            keep_failed: PRUNE_KEEP_FAILED,
+        },
+        now,
+        &hil_runs::pins(store).into_keys().collect(),
+        &hil_runs::cited_by_shards(&ctx.root),
+    );
+    let budget = run_store_budget()?;
+    for run in hil_runs::over_budget(&remaining, &kept, &sizes, budget) {
+        freed += sizes[&run.id];
         std::fs::remove_dir_all(&run.directory)?;
         removed += 1;
     }

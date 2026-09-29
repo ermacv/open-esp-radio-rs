@@ -998,6 +998,32 @@ pub fn retained(
     keep
 }
 
+/// The runs to delete, oldest first, so that a store of these `runs`
+/// (oldest first) with these exclusive `sizes` fits `budget` bytes. Only a
+/// run that no rule but its age keeps is deleted: `kept` holds the runs the
+/// other rules keep.
+pub fn over_budget<'a>(
+    runs: &'a [Run],
+    kept: &BTreeMap<String, String>,
+    sizes: &BTreeMap<String, u64>,
+    budget: u64,
+) -> Vec<&'a Run> {
+    let size = |run: &Run| sizes.get(&run.id).copied().unwrap_or(0);
+    let mut total: u64 = runs.iter().map(size).sum();
+    let mut deleted = Vec::new();
+    for run in runs {
+        if total <= budget {
+            break;
+        }
+        if kept.contains_key(&run.id) {
+            continue;
+        }
+        total = total.saturating_sub(size(run));
+        deleted.push(run);
+    }
+    deleted
+}
+
 /// Bytes only this directory holds: files without other hard links.
 pub fn exclusive_bytes(directory: &Path) -> u64 {
     use std::os::unix::fs::MetadataExt as _;
@@ -1044,6 +1070,34 @@ pub fn cited_by_shards(root: &Path) -> BTreeSet<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn over_its_budget_a_store_loses_its_oldest_runs_only_age_kept() {
+        let store = tempfile::tempdir().unwrap();
+        for (id, started) in [("1-a", 1), ("2-b", 2), ("3-c", 3), ("4-d", 4)] {
+            let directory = store.path().join(id);
+            fs::create_dir_all(&directory).unwrap();
+            fs::write(
+                directory.join("manifest.json"),
+                serde_json::json!({"state": "completed", "started_unix_millis": started})
+                    .to_string(),
+            )
+            .unwrap();
+        }
+        let runs = all(store.path()).unwrap();
+        let sizes = [("1-a", 10), ("2-b", 20), ("3-c", 30), ("4-d", 40)]
+            .map(|(id, size)| (String::from(id), size))
+            .into();
+        let kept = BTreeMap::from([(String::from("2-b"), String::from("pinned"))]);
+        let deleted = over_budget(&runs, &kept, &sizes, 65)
+            .into_iter()
+            .map(|run| run.id.as_str())
+            .collect::<Vec<_>>();
+        // 100 bytes: the oldest goes (90), the pinned one stays, the next
+        // goes (60) and the store fits.
+        assert_eq!(deleted, ["1-a", "3-c"]);
+        assert!(over_budget(&runs, &kept, &sizes, 100).is_empty());
+    }
 
     #[test]
     fn every_chips_store_answers_for_its_own_runs() {

@@ -485,7 +485,7 @@
     },
     {
       "path": "tools/blobray/crates/artifacts/src/data.rs",
-      "sha256": "44e43b5ded7cdac3480d18f30e91173b04b6fd694c9aca427237c6927d580e64"
+      "sha256": "f24ea18555d63fb4b9e6125014aa8c0d637f4cec022899de9fdc1c5c218f7300"
     },
     {
       "path": "tools/blobray/crates/artifacts/src/definition.rs",
@@ -493,7 +493,7 @@
     },
     {
       "path": "tools/blobray/crates/artifacts/src/function.rs",
-      "sha256": "8594343b42611ee114ca97daab427a0ade0acd3c3b5eb4cc42433a6f511142a8"
+      "sha256": "dc1ccbf839b047e994f655aabdee5751565f99f06211cdff971cb9080ee78f91"
     },
     {
       "path": "tools/blobray/crates/artifacts/src/image.rs",
@@ -501,7 +501,7 @@
     },
     {
       "path": "tools/blobray/crates/artifacts/src/lib.rs",
-      "sha256": "74c57034203d48ae20a0b0729a4dead89b88ab82e0b3b6cbc71fc8595a714937"
+      "sha256": "2038ba5bfb118153da61d14e230ae0cc2372c118935f545eb637a892555bf4ac"
     },
     {
       "path": "tools/blobray/crates/artifacts/src/mapping.rs",

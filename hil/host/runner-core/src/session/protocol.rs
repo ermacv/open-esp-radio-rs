@@ -978,10 +978,15 @@ impl SerialCapture {
         request: oer_hil_protocol::bluetooth::BluetoothHciRequest,
     ) -> Result<oer_hil_protocol::bluetooth::BluetoothHciResponse> {
         let wait = match &request {
-            oer_hil_protocol::bluetooth::BluetoothHciRequest::NextEvent { wait_ms } => {
+            oer_hil_protocol::bluetooth::BluetoothHciRequest::NextPacket { wait_ms } => {
                 Duration::from_millis(u64::from(*wait_ms))
             }
-            oer_hil_protocol::bluetooth::BluetoothHciRequest::Command { .. } => Duration::ZERO,
+            oer_hil_protocol::bluetooth::BluetoothHciRequest::Command { .. }
+            | oer_hil_protocol::bluetooth::BluetoothHciRequest::Acl { .. } => Duration::ZERO,
+            // Stopping and starting the Controller on the shared radio.
+            oer_hil_protocol::bluetooth::BluetoothHciRequest::Lifecycle(_) => {
+                Duration::from_secs(15)
+            }
         };
         match self.call(
             0,

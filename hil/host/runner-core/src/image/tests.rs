@@ -71,7 +71,7 @@ fn the_radio_less_classes_need_no_driver_observation() {
         assert_eq!(class.runtime_features(), features);
         assert!(!class.requires_driver_observation(), "{}", class.id());
     }
-    for class in [ImageClass::BluetoothSecureGatt, ImageClass::BluetoothDtm] {
+    for class in [ImageClass::BluetoothSecureGatt, ImageClass::BluetoothHci] {
         assert!(!class.requires_driver_observation(), "{}", class.id());
         assert!(!class.runtime_features().contains("open-radio-hil"));
     }
@@ -84,7 +84,7 @@ fn qualified_profile_name_is_stable() {
 
 #[test]
 fn image_classes_are_stable_and_do_not_use_workload_environment() {
-    assert_eq!(crate::image::ImageClass::ALL.len(), 24);
+    assert_eq!(crate::image::ImageClass::ALL.len(), 25);
     assert_eq!(crate::image::ImageClass::Performance.id(), "performance");
     assert_eq!(crate::image::ImageClass::Correctness.id(), "correctness");
     assert_eq!(

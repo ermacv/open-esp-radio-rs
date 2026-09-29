@@ -71,8 +71,9 @@ counters mean Host queue acceptance; the independent peer must receive the value
 
 ## Direct Test Mode and raw HCI
 
-The `bluetooth-dtm` image declares `bluetooth_dtm` and `bluetooth_hci` and
-runs the production Controller behind an in-image HCI Host.
+The `bluetooth-hci` image advertises `bluetooth/dtm` and `bluetooth/hci` and
+runs the production Controller behind an in-image HCI passthrough; the host
+runner is the HCI Host.
 `bluetooth::RunDtm(operation)` runs one fixed LE 1M, channel 0, 37-byte PRBS9
 Receiver Test, Transmitter Test, Test End or Reset and returns
 `BluetoothDtmEvidence` with the boot's reset reason and the counted packets.
@@ -80,9 +81,40 @@ Receiver Test, Transmitter Test, Test End or Reset and returns
 `bluetooth::ExchangeHci(Command { opcode, parameters })` sends one HCI command with at
 most `BLUETOOTH_HCI_PARAMETER_BYTES` parameter octets and returns its Command
 Complete or Command Status packet (`Completed`), `Timeout` or
-`TransportFailed`. Other events that arrive meanwhile are queued.
-`bluetooth::ExchangeHci(NextEvent { wait_ms })` returns the oldest queued event, or the
-next one within `wait_ms` (`Event { packet, dropped }`), or `NoEvent`;
-`dropped` counts events lost to the bounded queue since the last returned one.
-Host workloads drive advertising, scanning and connections through these two
-requests with standard HCI.
+`TransportFailed`; Host Number Of Completed Packets, which has no completion
+event, returns `Accepted` once written. Other packets that arrive meanwhile are
+queued.
+`bluetooth::ExchangeHci(Acl { packet })` sends one ACL data packet of at most
+`BLUETOOTH_HCI_ACL_BYTES` octets, its four-octet header included, and returns
+`Accepted` once the Controller transport holds it, or `Timeout` or
+`TransportFailed`. The Host must respect the Controller's ACL credits.
+`bluetooth::ExchangeHci(NextPacket { wait_ms })` returns the oldest queued Controller
+packet, or the next one within `wait_ms`, as `Event { packet, dropped }` or
+`Acl { packet, dropped }`, or `NoPacket`. Events and ACL data share one queue
+in arrival order, so data received before a Disconnection Complete is returned
+before it; `dropped` counts packets lost to the bounded queue since the last
+returned one. A Host that enables Controller-to-Host flow control bounds the
+queued ACL data by the credits it grants.
+
+The `bluetooth-hci-diagnostics` image also advertises `bluetooth/hci-lifecycle`
+and `bluetooth/mic-fault`. `bluetooth::ExchangeHci(Lifecycle(Restart | Retire))` resets the Controller through HCI,
+retires the drained Host end, stops the Controller on the shared radio and
+reports `Lifecycle { old_host_closed, restarted }`: `old_host_closed` when
+both directions of the retired end report the transport closed. `Restart` then
+starts the Controller again on the same storage and later requests reach the
+fresh Host end; `Retire`, or an old end that stayed open, keeps the Controller
+stopped and every later HCI request returns `TransportFailed`. A failed Reset
+returns its Command Complete, `Timeout` or `TransportFailed` and keeps the
+epoch running. Other images reject the request. `bluetooth/mic-fault` marks
+the Controller's diagnostic vendor command 0xFC01, sent as an ordinary raw
+HCI command: it corrupts the MIC of the next received encrypted data PDU of one
+connection.
+
+Both HCI images serve `phy::ControlTracking` for their periodic PHY tracking: the
+counters cover every tracking tick since boot, and a suspension stops the timer
+between ticks.
+
+Host workloads drive advertising, scanning, connections and ACL data through
+these requests with standard HCI. ACL timing observed this way includes the
+HIL console link, so it supports no throughput or latency claim without a
+reference measurement of that link.

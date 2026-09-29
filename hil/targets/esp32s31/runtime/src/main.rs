@@ -127,7 +127,10 @@ compile_error!(
 );
 #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
 mod phy_calibration_artifact;
-#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+#[cfg(any(
+    all(feature = "open-radio-hil", not(feature = "memory-benchmark")),
+    feature = "bluetooth-hil"
+))]
 mod phy_tracking;
 #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
 mod product_hil;

@@ -25,7 +25,7 @@ fn boot_smoke_preflight_never_opens_a_serial_capture() {
 #[test]
 fn a_flashed_image_must_declare_the_role_its_scenario_drives() {
     let catalog = catalog();
-    let dtm = ImageClass::BluetoothDtm
+    let dtm = ImageClass::BluetoothHci
         .capabilities_on("esp32s31")
         .unwrap();
     check_flashed_capabilities(

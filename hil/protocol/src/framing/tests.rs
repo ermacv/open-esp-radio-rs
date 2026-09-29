@@ -2025,6 +2025,42 @@ fn the_largest_hci_exchange_fits_one_frame_each_way() {
 }
 
 #[test]
+fn the_largest_acl_packet_fits_one_frame_each_way() {
+    let mut encoder = FrameEncoder::new();
+    let packet =
+        heapless::Vec::from_slice(&[0xa5; crate::bluetooth::BLUETOOTH_HCI_ACL_BYTES]).unwrap();
+    let command = Envelope::new(
+        u64::MAX,
+        u32::MAX,
+        u64::MAX,
+        u32::MAX,
+        crate::bluetooth::ExchangeHci(crate::bluetooth::BluetoothHciRequest::Acl {
+            packet: packet.clone(),
+        }),
+    );
+    let frame = encoder.encode(&command).unwrap();
+    assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
+    let mut decoder = FrameDecoder::new();
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
+    assert_eq!(observed, Some(command));
+    let event = Envelope::new(
+        u64::MAX,
+        u32::MAX,
+        u64::MAX,
+        u32::MAX,
+        crate::bluetooth::HciResponse(crate::bluetooth::BluetoothHciResponse::Acl {
+            packet,
+            dropped: u16::MAX,
+        }),
+    );
+    let frame = encoder.encode(&event).unwrap();
+    assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
+    let mut decoder = FrameDecoder::new();
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
+    assert_eq!(observed, Some(event));
+}
+
+#[test]
 fn an_intact_frame_whose_payload_is_not_its_type_is_a_payload_error() {
     // Equal keys mean equal schemas, so only a defective sender produces
     // this: an intact frame whose body is no value of the type it names.

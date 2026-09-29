@@ -17,11 +17,18 @@ The Bluetooth images reach the radio only through HCI.
 `oer_esp32s31_radio_system::start`, which spawns the coexistence schedule,
 starts the production Bluetooth client on it, runs the radio runner, the HCI
 Controller service and its own periodic PHY tracking task, which reports a
-tracking failure as `reason=phy-tracking`, and serves the typed console. The `bluetooth-dtm` image (`bluetooth-hil`) serves the
-`bluetooth-dtm-*` scenarios: `bluetooth/dtm.rs` resets the Controller and turns
-each DTM operation into LE Transmitter Test v1 (channel 0, 37-byte PRBS9), LE
-Receiver Test v1 (channel 0), LE Test End or HCI Reset, reporting the Test End
-packet count. The `bluetooth-gatt` image serves `bluetooth-trouble-gatt`:
+tracking failure as `reason=phy-tracking`, and serves the typed console. The `bluetooth-hci` image (`bluetooth-hil`) serves the
+`bluetooth-dtm-*` and raw HCI scenarios: `bluetooth/hci.rs` resets the
+Controller and turns each DTM operation into LE Transmitter Test v1 (channel 0,
+37-byte PRBS9), LE Receiver Test v1 (channel 0), LE Test End or HCI Reset,
+reporting the Test End packet count, passes raw HCI commands, events and
+ACL data between the host runner and the Controller, and counts its periodic
+PHY tracking ticks for `phy::ControlTracking`. The `bluetooth-hci-diagnostics`
+image (`bluetooth-hil,bluetooth-hci-lifecycle,bluetooth-mic-fault`) serves the
+same exchanges, restarts or retires the Controller epoch on request
+(`bluetooth/hci/lifecycle.rs`: one owner lends the Controller and its HCI
+service to their own tasks for each epoch) and enables the Controller's
+diagnostic MIC-fault command 0xFC01 for the active-data MIC scenario. The `bluetooth-gatt` image serves `bluetooth-trouble-gatt`:
 `bluetooth/gatt.rs` runs the Trouble Host and the plaintext GATT application
 over the Host end of the transport. Both images use the development Controller
 identity Core 5.4, company `0xffff`, subversion 1, and a 500-ppm sleep-clock

@@ -60,6 +60,11 @@ pub fn image_keys(enabled: &dyn Fn(&str) -> bool) -> ImageKeys {
         } else {
             add(bluetooth::Dtm::KEY, true);
             add(bluetooth::Hci::KEY, true);
+            add(
+                bluetooth::HciLifecycle::KEY,
+                enabled("bluetooth-hci-lifecycle"),
+            );
+            add(bluetooth::MicFault::KEY, enabled("bluetooth-mic-fault"));
             add(phy::RxHotSram::KEY, enabled("phy-rx-hot-sram"));
         }
         return sorted(keys);
@@ -152,6 +157,8 @@ pub const READ_FEATURES: &[&str] = &[
     "open-radio-hil",
     "bluetooth-secure-gatt",
     "bluetooth-gatt",
+    "bluetooth-hci-lifecycle",
+    "bluetooth-mic-fault",
     "phy-rx-hot-sram",
     "memory-benchmark",
     "wifi-ble-coex",
@@ -191,6 +198,15 @@ mod tests {
         assert!(has::<system::WatchdogTest>(&watchdog) && !has::<network::Udp>(&watchdog));
         let dtm = with(&["bluetooth-radio"]);
         assert!(has::<bluetooth::Dtm>(&dtm) && has::<bluetooth::Hci>(&dtm));
+        assert!(!has::<bluetooth::HciLifecycle>(&dtm) && !has::<bluetooth::MicFault>(&dtm));
+        let diagnostic = with(&[
+            "bluetooth-radio",
+            "bluetooth-hci-lifecycle",
+            "bluetooth-mic-fault",
+        ]);
+        assert!(
+            has::<bluetooth::HciLifecycle>(&diagnostic) && has::<bluetooth::MicFault>(&diagnostic)
+        );
         assert!(!has::<network::Udp>(&dtm));
         assert!(has::<bluetooth::Gatt>(&with(&[
             "bluetooth-radio",

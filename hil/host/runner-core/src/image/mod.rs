@@ -1106,7 +1106,8 @@ fn audit_radio_observers<'a>(
         ImageClass::SystemWatchdog
             | ImageClass::BluetoothGatt
             | ImageClass::BluetoothSecureGatt
-            | ImageClass::BluetoothDtm
+            | ImageClass::BluetoothHci
+            | ImageClass::BluetoothHciDiagnostics
             | ImageClass::BootSmoke
             | ImageClass::DiagnosticMemoryBenchmark
     ) {

@@ -30,8 +30,10 @@ bluetooth/gatt 3baf52b29a3c1fdb property
 bluetooth/gatt/get 2b9030162a84d0ee endpoint
 bluetooth/gatt/state fedccde5556d064e topic
 bluetooth/hci 7f96e7fbcb5e2f2b property
-bluetooth/hci/exchange cf3f377fd51db876 endpoint
-bluetooth/hci/response 638f5bc4bfa0329b topic
+bluetooth/hci-lifecycle 1c6ac44ca637ca9c property
+bluetooth/hci/exchange 184dbb73e9e3d995 endpoint
+bluetooth/hci/response 7ca8a3559543149a topic
+bluetooth/mic-fault 44043e6623566fcd property
 bluetooth/secure-gatt 60dd851aa141d13f property
 bluetooth/secure-gatt/confirm 6f01f85ff04bab22 endpoint
 bluetooth/secure-gatt/decision-recorded 6da4adf8780e060d topic

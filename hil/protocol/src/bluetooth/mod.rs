@@ -29,6 +29,12 @@ crate::messages! {
     property Dtm = "bluetooth/dtm";
     /// Raw HCI exchanges with the image's Controller.
     property Hci = "bluetooth/hci";
+    /// Controller epoch restart and retirement through raw HCI
+    /// ([`crate::bluetooth::BluetoothHciLifecycle`]); a diagnostic image only.
+    property HciLifecycle = "bluetooth/hci-lifecycle";
+    /// The Controller's diagnostic vendor command 0xFC01, which corrupts the
+    /// MIC of the next received encrypted data PDU; a diagnostic image only.
+    property MicFault = "bluetooth/mic-fault";
     #[cfg(feature = "bluetooth")]
     endpoint FailGattResetRead = "bluetooth/secure-gatt/fail-reset-read" => crate::bluetooth::SecureGattState;
     #[cfg(feature = "bluetooth")]

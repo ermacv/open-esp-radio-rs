@@ -209,7 +209,7 @@ mod tests {
         assert!(keys(ImageClass::Correctness).has::<wifi::DriverObservation>());
         let coex = keys(ImageClass::WifiBleCoex);
         assert!(coex.has::<bluetooth::Gatt>() && coex.has::<network::Udp>());
-        let dtm = keys(ImageClass::BluetoothDtm);
+        let dtm = keys(ImageClass::BluetoothHci);
         assert!(dtm.has::<bluetooth::Dtm>() && dtm.has::<bluetooth::Hci>());
         assert!(!dtm.has::<network::Udp>());
         let watchdog = keys(ImageClass::SystemWatchdog);
@@ -218,6 +218,24 @@ mod tests {
         assert!(keys(ImageClass::DiagnosticMemoryBenchmark).has::<system::MemoryBenchmark>());
         assert!(keys(ImageClass::DiagnosticTaskResidence).has::<telemetry::PcProfile>());
         assert!(!performance.has::<telemetry::PcProfile>());
+    }
+
+    #[test]
+    fn the_diagnostic_hooks_tell_the_diagnostic_hci_image_apart() {
+        let plain = keys(ImageClass::BluetoothHci);
+        let diagnostic = keys(ImageClass::BluetoothHciDiagnostics);
+        assert!(!plain.has::<bluetooth::HciLifecycle>() && !plain.has::<bluetooth::MicFault>());
+        assert!(diagnostic.has::<bluetooth::HciLifecycle>());
+        assert!(diagnostic.has::<bluetooth::MicFault>());
+        assert!(diagnostic.has::<bluetooth::Hci>() && diagnostic.has::<bluetooth::Dtm>());
+        assert_eq!(
+            classify_flashed("esp32s31", &plain),
+            Some(ImageClass::BluetoothHci)
+        );
+        assert_eq!(
+            classify_flashed("esp32s31", &diagnostic),
+            Some(ImageClass::BluetoothHciDiagnostics)
+        );
     }
 
     #[test]

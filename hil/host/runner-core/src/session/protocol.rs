@@ -37,6 +37,62 @@ impl SerialCapture {
         }
     }
 
+    /// Ask a boot whose Hello the link lost for its capabilities.
+    ///
+    /// The USB Serial/JTAG can drop the first bytes of a frame, so the
+    /// boot's unsolicited Hello never decodes while the boot runs and
+    /// answers. Only a capture that began at a reset, whose console already
+    /// shows a boot starting and which has seen no boot yet, may begin that
+    /// boot with the answer, and only while the answer is among the boot's
+    /// first messages; the capture then records the solicited Hello.
+    /// Otherwise the missing Hello stands as the failure.
+    fn solicit_lost_hello(&self, timeout: Duration) -> Result<Capabilities> {
+        const MISSING: &str = "device did not publish a HIL protocol hello";
+        {
+            let booted = console_shows_boot(
+                &self
+                    .bytes
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+            );
+            let mut state = self
+                .protocol
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if state.health.origin != CaptureOrigin::Boot
+                || state.health.boot_id.is_some()
+                || !booted
+            {
+                return Err(MISSING.into());
+            }
+            state.health.accept_solicited_hello = true;
+        }
+        let answer = self.exchange(0, 0, Command::GetCapabilities, timeout);
+        let solicited = {
+            let mut state = self
+                .protocol
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            state.health.accept_solicited_hello = false;
+            state.health.solicited_hello
+        };
+        let answer = answer
+            .map_err(|error| format!("{MISSING}, nor answered a capability request: {error}"))?;
+        match (answer.body, solicited) {
+            (Event::Hello(capabilities), Some(solicited)) => {
+                eprintln!(
+                    "hil: the link lost the boot's hello; its capability answer at target message \
+                     {} began the boot",
+                    solicited.message_sequence
+                );
+                Ok(capabilities)
+            }
+            _ => Err(format!("{MISSING}, and its capability answer began no fresh boot").into()),
+        }
+    }
+
     pub fn inspect_stack_usage(&self, timeout: Duration) -> Result<Option<StackUsage>> {
         match self
             .send_command(0, Command::QueryStackUsage, timeout)?
@@ -54,11 +110,12 @@ impl SerialCapture {
     /// Performs one typed host-to-target round trip and returns the current
     /// image capabilities.
     pub fn request_capabilities(&self, timeout: Duration) -> Result<Capabilities> {
-        let _hello = self
-            .wait_for_protocol_after(0, timeout, |message| {
-                matches!(message.body, Event::Hello(_))
-            })?
-            .ok_or("device did not publish a HIL protocol hello")?;
+        let hello = self.wait_for_protocol_after(0, timeout, |message| {
+            matches!(message.body, Event::Hello(_))
+        })?;
+        if hello.is_none() {
+            return self.solicit_lost_hello(timeout);
+        }
         let response = self.send_command(0, Command::GetCapabilities, timeout)?;
         match response.body {
             Event::Hello(capabilities) => Ok(capabilities),
@@ -2342,3 +2399,11 @@ pub(super) fn station_unchanged_since_in(
 /// A drained profile: the target's status and each hart's raw `(pc, ra)`
 /// samples.
 pub(crate) type DrainedProfile = (oer_hil_protocol::ProfileStatus, [Vec<(u32, u32)>; 2]);
+
+/// Whether console bytes show a chip starting: the ROM banner or the ESP-IDF
+/// bootloader's lines.
+fn console_shows_boot(bytes: &[u8]) -> bool {
+    [b"ESP-ROM:".as_slice(), b" boot: ".as_slice()]
+        .iter()
+        .any(|marker| bytes.windows(marker.len()).any(|window| window == *marker))
+}

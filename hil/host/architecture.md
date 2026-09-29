@@ -503,6 +503,15 @@ by the runner and qualification evaluator. Shared synthetic input documents
 exercise both readers; qualification never imports execution or validation
 implementation from the runner. Tests are adjacent files within each owner.
 
+A capture that begins at a reset expects the boot's unsolicited Hello at
+target message zero. The USB Serial/JTAG can drop the first bytes of that
+frame, so when no Hello decodes in time, `request_capabilities` asks the boot
+for its capabilities instead: only when the console already shows the chip
+starting (the ROM banner or the bootloader's lines) and no boot was seen yet,
+and the answer begins the boot only while it is among the boot's first eight
+messages. The capture's link health records it as `solicited_hello`; any other
+missing Hello still fails as before.
+
 The watchdog, hang-watchdog and PHY fault-lifecycle workloads use
 `session::reboot` to arm one expected new boot within an explicit interval. It sends no reset command. A fresh Hello
 at sequence zero is required; prior transport/protocol failures, an early/late

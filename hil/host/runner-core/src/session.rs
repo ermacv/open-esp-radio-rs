@@ -147,7 +147,27 @@ struct ProtocolHealth {
     #[serde(skip)]
     decoder_baseline: DecodeCounters,
     failure: Option<String>,
+    /// The boot began with the answer to the host's capability request,
+    /// because the link lost the boot's own Hello.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    solicited_hello: Option<SolicitedHello>,
+    /// Whether a boot may begin with a solicited Hello; set only while the
+    /// host asks a boot whose Hello it missed.
+    #[serde(skip)]
+    accept_solicited_hello: bool,
 }
+
+/// A boot that began with the answer to the host's capability request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+struct SolicitedHello {
+    /// The answer's target message sequence: the boot's messages before it
+    /// were lost on the link.
+    message_sequence: u32,
+}
+
+/// The latest target message sequence a solicited Hello may begin a boot
+/// at: the boot's own Hello and the few messages a boot sends unasked.
+const SOLICITED_HELLO_SEQUENCE_LIMIT: u32 = 8;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -190,6 +210,16 @@ impl ProtocolHealth {
         } else if self.origin == CaptureOrigin::Boot
             && (message.message_sequence != 0 || !matches!(message.body, Event::Hello(_)))
         {
+            if self.accept_solicited_hello
+                && matches!(message.body, Event::Hello(_))
+                && message.request_id != 0
+                && message.message_sequence <= SOLICITED_HELLO_SEQUENCE_LIMIT
+            {
+                self.solicited_hello = Some(SolicitedHello {
+                    message_sequence: message.message_sequence,
+                });
+                return;
+            }
             self.fail(format!(
                 "boot {} began with {:?} at target message sequence {}, expected Hello at 0",
                 message.boot_id, message.body, message.message_sequence

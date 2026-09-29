@@ -1408,3 +1408,83 @@ fn queued_commands_make_progress_without_inbound_bytes_or_read_timeouts() {
         "outbound data must not enter the transcript"
     );
 }
+
+/// A target that answers the host's capability request of boot `boot` with
+/// its Hello at target message `sequence`.
+fn answer_capabilities(
+    input: Input,
+    writes: std::sync::mpsc::Receiver<Vec<u8>>,
+    boot: u64,
+    sequence: u32,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let command = receive_command(&writes);
+        assert_eq!(command.body, Command::GetCapabilities);
+        let mut answer = hello(boot, sequence);
+        answer.request_id = command.request_id;
+        input.send(Ok(frame(answer))).unwrap();
+    })
+}
+
+/// A Hello whose first bytes the link dropped, as the USB Serial/JTAG does.
+fn truncated_hello(boot: u64) -> Vec<u8> {
+    frame(hello(boot, 0))[4..].to_vec()
+}
+
+#[test]
+fn a_boot_whose_hello_the_link_lost_begins_with_its_capability_answer() {
+    let output = Output::new();
+    let (capture, input, writes) = capture_with_commands(&output);
+    input
+        .send(Ok(
+            b"I (236) boot: Loaded app from partition at offset 0x10000\r\n".to_vec(),
+        ))
+        .unwrap();
+    input.send(Ok(truncated_hello(9))).unwrap();
+    let target = answer_capabilities(input, writes, 9, 1);
+    let capabilities = capture
+        .request_capabilities(Duration::from_millis(300))
+        .unwrap();
+    target.join().unwrap();
+    assert!(capabilities.features.structured_evidence);
+    let health = capture.protocol.state.lock().unwrap().health.clone();
+    assert_eq!(health.boot_id, Some(9));
+    assert_eq!(
+        health.solicited_hello,
+        Some(crate::session::SolicitedHello {
+            message_sequence: 1
+        })
+    );
+    assert!(health.failure.is_none());
+}
+
+#[test]
+fn a_lost_hello_stands_without_a_boot_on_the_console() {
+    let output = Output::new();
+    let (capture, input, writes) = capture_with_commands(&output);
+    input.send(Ok(truncated_hello(9))).unwrap();
+    let error = capture
+        .request_capabilities(Duration::from_millis(200))
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("did not publish a HIL protocol hello")
+    );
+    // The host asked nothing: an old boot could have answered.
+    assert!(writes.try_recv().is_err());
+}
+
+#[test]
+fn an_answer_late_in_a_boot_begins_no_boot() {
+    let output = Output::new();
+    let (capture, input, writes) = capture_with_commands(&output);
+    input.send(Ok(b"ESP-ROM:esp32s31\r\n".to_vec())).unwrap();
+    let target = answer_capabilities(input, writes, 9, 40);
+    assert!(
+        capture
+            .request_capabilities(Duration::from_millis(300))
+            .is_err()
+    );
+    target.join().unwrap();
+}

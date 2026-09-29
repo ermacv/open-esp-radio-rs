@@ -187,7 +187,12 @@ pub fn run(
 
     let serial = match quiet {
         Some(serial) => serial,
-        None => reset_into_application(&board.port)?,
+        // After the ROM download mode an esp32c5 needs a power-on reset
+        // before an RTS reset starts it with a working console.
+        None => {
+            oer_hil_runner_core::session::reset::power_on_reset(&board.port)?;
+            reset_into_application(&board.port)?
+        }
     };
     let Some(duration) = monitor else {
         return Ok(std::process::ExitCode::SUCCESS);

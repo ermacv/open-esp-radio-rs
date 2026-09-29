@@ -38,6 +38,51 @@ pub fn reset_into_application(port: &Path) -> serialport::Result<Box<dyn serialp
     Ok(serial)
 }
 
+/// How long a board's port may stay away after an EN reset while USB
+/// enumerates it again.
+const REENUMERATION: Duration = Duration::from_secs(10);
+
+/// Start the application just written to the board at `port` with a
+/// power-on reset through the board's registered EN reset path, and wait for
+/// its port to return; `false` when the board has none, and nothing was
+/// done.
+///
+/// After a flash that leaves the ROM in download mode, an RTS reset through
+/// the USB Serial/JTAG starts an esp32c5's application but leaves its USB
+/// console silent, and later RTS resets do not bring it back; the host sees
+/// EOF or `EPROTO` on the port. A power-on reset clears it, after which RTS
+/// resets work again. A board without an EN path is started by the caller
+/// through RTS as before.
+pub fn power_on_reset(port: &Path) -> crate::Result<bool> {
+    let Some(mac) = oer_hil_arbiter::port_mac(port) else {
+        return Ok(false);
+    };
+    let reset = oer_hil_arbiter::Arbiter::open()?
+        .devices()?
+        .into_iter()
+        .find(|device| device.mac == mac)
+        .and_then(|device| device.control?.reset);
+    let Some(reset) = reset else {
+        return Ok(false);
+    };
+    reset.reset(oer_hil_arbiter::BootMode::Normal)?;
+    let started = std::time::Instant::now();
+    // The port leaves while USB re-enumerates the chip, then returns.
+    thread::sleep(Duration::from_millis(500));
+    while oer_hil_arbiter::port_mac(port).as_deref() != Some(mac.as_str()) {
+        if started.elapsed() > REENUMERATION {
+            return Err(format!(
+                "{} did not return within {}s of its EN reset",
+                port.display(),
+                REENUMERATION.as_secs()
+            )
+            .into());
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    Ok(true)
+}
+
 #[derive(Clone, Copy)]
 enum Step {
     Dtr(bool),

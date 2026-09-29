@@ -274,6 +274,14 @@ image with the digest from its `build.json`, the repository commit and whether
 the project differs from it. A board whose registered chip differs from the
 image's target is refused.
 
+Every flash that ends in the ROM download mode (`firmware flash`, `flash` and
+the runner's own) starts the new image through the board's registered EN
+reset path when it has one, a power-on reset, and waits for its port to
+return. After the download mode an RTS reset through the USB Serial/JTAG
+starts an esp32c5's application with a silent console that later RTS resets
+do not revive (the host sees EOF or `EPROTO` on the port); after a power-on
+reset RTS resets work. A board without an EN path is started through RTS.
+
 The runner records its own flashes and registers the board it flashes as
 `esp32s31` when its chip is unknown.
 Any other flash (a peer, a vendor image, a manual `espflash`) is recorded

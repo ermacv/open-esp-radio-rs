@@ -320,8 +320,12 @@ pub fn flash(
                 .arg(file);
             crate::process::run(&mut command)?;
         }
-        // espflash's reset leaves an esp32c5 in its ROM download mode.
-        drop(crate::hil_flash::reset_into_application(&port)?);
+        // espflash's reset leaves an esp32c5 in its ROM download mode, and
+        // an RTS reset after it leaves its USB console silent: a board with
+        // an EN path starts through a power-on reset.
+        if !oer_hil_runner_core::session::reset::power_on_reset(&port)? {
+            drop(crate::hil_flash::reset_into_application(&port)?);
+        }
     }
     arbiter.register_device(oer_hil_arbiter::Device {
         mac: mac.clone(),

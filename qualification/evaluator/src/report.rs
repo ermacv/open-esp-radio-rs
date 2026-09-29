@@ -55,6 +55,7 @@ struct HilInputsReport {
     shards: usize,
     current_shards: usize,
     evaluator_dirty: bool,
+    invalid: Vec<crate::hil::InvalidRun>,
 }
 
 #[derive(Serialize)]
@@ -142,6 +143,7 @@ fn report(qualification: &Qualification) -> Report<'_> {
                 sealed_attempts: qualification.evidence_inputs.hil.sealed_attempts,
                 shards: qualification.evidence_inputs.hil.shards,
                 current_shards: qualification.evidence_inputs.hil.current_shards,
+                invalid: qualification.evidence_inputs.hil.invalid.clone(),
                 observer_configuration_problem: qualification
                     .evidence_inputs
                     .hil
@@ -208,6 +210,12 @@ pub(crate) fn print(qualification: &Qualification) {
         .observer_configuration_problem
     {
         println!("NOTICE\tcurrent-observer-configuration-unavailable\treason={problem}");
+    }
+    for invalid in &qualification.evidence_inputs.hil.invalid {
+        println!(
+            "HIL-INVALID\t{}\tdisposition=excluded-from-evidence\treason={}",
+            invalid.run, invalid.reason
+        );
     }
     if qualification.evidence_inputs.hil.incomplete != 0 {
         println!(

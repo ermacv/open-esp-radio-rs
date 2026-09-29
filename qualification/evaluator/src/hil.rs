@@ -23,7 +23,7 @@ use std::{
     process::Command,
 };
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::Result;
@@ -240,6 +240,92 @@ pub(crate) struct HilEvidenceSummary {
     pub(crate) current_shards: usize,
     pub(crate) sealed_attempts: usize,
     pub(crate) evaluator_dirty: bool,
+    /// Published runs whose bundle or seals fail validation, with the
+    /// reason. They contribute no evidence; every other run still counts.
+    pub(crate) invalid: Vec<InvalidRun>,
+}
+
+/// A published run excluded from evidence because it failed validation.
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct InvalidRun {
+    pub(crate) run: String,
+    pub(crate) reason: String,
+}
+
+#[cfg(test)]
+impl HilEvidenceIndex {
+    /// Why a run store was refused: the load error, or the reason the first
+    /// run was excluded from evidence.
+    pub(crate) fn rejection(result: Result<Self>) -> Option<String> {
+        match result {
+            Err(error) => Some(error.to_string()),
+            Ok(index) => index.summary.invalid.first().map(|run| run.reason.clone()),
+        }
+    }
+}
+
+/// What one run directory contributes before evidence decisions.
+enum LoadedRun {
+    /// No manifest yet: the producer has not published the run.
+    Unpublished,
+    /// Published but not yet completion evidence (still running, or ended
+    /// without completing).
+    NotEvidence,
+    /// Validated evidence units and whether they are independent seals.
+    Units {
+        units: Vec<(RunManifest, SuiteResult)>,
+        independently_sealed: bool,
+    },
+}
+
+/// Validates one run directory's manifest, seals and integrity; an error
+/// means the published bundle cannot be trusted as evidence.
+fn load_run(run_directory: &Path, target: &str) -> Result<LoadedRun> {
+    let Some(manifest): Option<RunManifest> =
+        read_optional_json(&run_directory.join("manifest.json"))?
+    else {
+        return Ok(LoadedRun::Unpublished);
+    };
+    if manifest.schema != HIL_RUN_SCHEMA {
+        return Err(format!("unsupported manifest schema {}", manifest.schema).into());
+    }
+    if manifest.run_id
+        != run_directory
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+        || manifest.target != target
+    {
+        return Err("manifest does not match run directory or configured target".into());
+    }
+    let attempts = attempt::load(run_directory, &manifest)?;
+    let independently_sealed = attempts.is_some();
+    let units = if let Some(attempts) = attempts {
+        attempts
+    } else {
+        // Whole-invocation evidence and independently sealed attempts
+        // are different completion boundaries in the current format.
+        if manifest.state == RunState::Running {
+            return Ok(LoadedRun::NotEvidence);
+        }
+        verify_integrity(run_directory)?;
+        if manifest.state != RunState::Completed {
+            return Ok(LoadedRun::NotEvidence);
+        }
+        let suite: SuiteResult = read_json(&run_directory.join("suite.json"))?;
+        validate_suite(&suite, &manifest, run_directory)?;
+        vec![(manifest, suite)]
+    };
+    if units
+        .iter()
+        .any(|(manifest, _)| !valid_sha256(&manifest.repository.workspace_sha256))
+    {
+        return Err("invalid workspace digest".into());
+    }
+    Ok(LoadedRun::Units {
+        units,
+        independently_sealed,
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -474,57 +560,38 @@ impl HilEvidenceIndex {
             }
             let run_directory = entry.path();
             summary.directories += 1;
-            let Some(manifest): Option<RunManifest> =
-                read_optional_json(&run_directory.join("manifest.json"))?
-            else {
-                // HIL producers can create their output directory before the
-                // first durable run document is published. Such a directory
-                // makes no evidence claim yet, so report it as incomplete and
-                // keep evaluating the target. Once a manifest exists its state
-                // and immutable-bundle contract remain fail-closed below.
-                summary.incomplete += 1;
-                continue;
-            };
-            summary.bundles += 1;
-            if manifest.schema != HIL_RUN_SCHEMA {
-                return Err(format!(
-                    "HIL run {} has unsupported manifest schema {}",
-                    run_directory.display(),
-                    manifest.schema
-                )
-                .into());
-            }
-            if manifest.run_id
-                != run_directory
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or_default()
-                || manifest.target != target
-            {
-                return Err(format!(
-                    "HIL manifest does not match run directory or configured target: {}",
-                    run_directory.display()
-                )
-                .into());
-            }
-            let attempts = attempt::load(&run_directory, &manifest)?;
-            let independently_sealed = attempts.is_some();
-            let units = if let Some(attempts) = attempts {
-                summary.sealed_attempts += attempts.len();
-                attempts
-            } else {
-                // Whole-invocation evidence and independently sealed attempts
-                // are different completion boundaries in the current format.
-                if manifest.state == RunState::Running {
+            // One untrustworthy bundle is reported and excluded; it cannot
+            // count as evidence, and the other runs stay evaluable.
+            let (units, independently_sealed) = match load_run(&run_directory, target) {
+                Ok(LoadedRun::Unpublished) => {
+                    // HIL producers can create their output directory before
+                    // the first durable run document is published; such a
+                    // directory makes no evidence claim yet.
+                    summary.incomplete += 1;
                     continue;
                 }
-                verify_integrity(&run_directory)?;
-                if manifest.state != RunState::Completed {
+                Ok(LoadedRun::NotEvidence) => {
+                    summary.bundles += 1;
                     continue;
                 }
-                let suite: SuiteResult = read_json(&run_directory.join("suite.json"))?;
-                validate_suite(&suite, &manifest, &run_directory)?;
-                vec![(manifest, suite)]
+                Ok(LoadedRun::Units {
+                    units,
+                    independently_sealed,
+                }) => {
+                    summary.bundles += 1;
+                    if independently_sealed {
+                        summary.sealed_attempts += units.len();
+                    }
+                    (units, independently_sealed)
+                }
+                Err(error) => {
+                    summary.bundles += 1;
+                    summary.invalid.push(InvalidRun {
+                        run: entry.file_name().to_string_lossy().into_owned(),
+                        reason: error.to_string(),
+                    });
+                    continue;
+                }
             };
             let mut current_producer = false;
             let mut qualifying = false;
@@ -537,13 +604,6 @@ impl HilEvidenceIndex {
                 }
             }
             for (manifest, suite) in units {
-                if !valid_sha256(&manifest.repository.workspace_sha256) {
-                    return Err(format!(
-                        "HIL run has an invalid workspace digest: {}",
-                        run_directory.display()
-                    )
-                    .into());
-                }
                 let artifact_replays_firmware = manifest
                     .firmware
                     .iter()

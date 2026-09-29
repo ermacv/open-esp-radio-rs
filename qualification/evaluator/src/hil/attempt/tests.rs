@@ -230,7 +230,10 @@ fn altered_removed_added_or_unsealed_material_fails_closed() {
             }
             _ => unreachable!(),
         }
-        assert!(fixture.load().is_err(), "{change}");
+        assert!(
+            HilEvidenceIndex::rejection(fixture.load()).is_some(),
+            "{change}"
+        );
     }
 }
 
@@ -279,5 +282,5 @@ fn symlinked_material_root_is_rejected() {
         fixture.run.join("firmware"),
     )
     .unwrap();
-    assert!(fixture.load().is_err());
+    assert!(HilEvidenceIndex::rejection(fixture.load()).is_some());
 }

@@ -566,16 +566,21 @@ A generated run directory without a manifest is incomplete mutable execution
 state, ignored as evidence and counted as `hil-incomplete` in console
 output and `evidence_inputs.hil.incomplete` in schema-4 JSON reports;
 `hil-directories` counts every entry while `hil-bundles` counts only entries
-that have published a manifest. An existing malformed manifest still fails
-validation. Whole-invocation evidence requires a valid integrity seal and a
-completed run; a running invocation alone supplies no evidence.
+that have published a manifest. A published run that fails validation (a
+malformed manifest, a broken integrity or attempt seal, material that does not
+match its seal) contributes no evidence: it is printed as `HIL-INVALID` with
+its reason, listed in `evidence_inputs.hil.invalid` of JSON reports, and every
+other run is still evaluated. Whole-invocation evidence requires a valid
+integrity seal and a completed run; a running invocation alone supplies no
+evidence.
 
 When `attempts/` is present, the evaluator consumes its independently published
 scenario seals instead of the aggregate suite. It validates their complete
 material inventory, image identity, result and repetition-set boundary without
 depending on completion of the enclosing campaign. Failed attempts are indexed
-too. Temporary publications are not evidence, and a corrupt seal fails closed;
-the aggregate suite is not used to replace a missing or invalid attempt.
+too. Temporary publications are not evidence, and a corrupt seal excludes its
+run as `HIL-INVALID`; the aggregate suite is not used to replace a missing or
+invalid attempt.
 `hil-sealed-attempts` / `hil.sealed_attempts` counts these records. Each observation
 in `hil_decisions` includes its completion seal's path and digest. The same
 attempt is indexed once, not again when the enclosing run completes. Fixture

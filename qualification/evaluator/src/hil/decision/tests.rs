@@ -557,10 +557,8 @@ fn forged_pass_fails_even_when_no_named_checks_are_requested() {
     }]);
     fixture.write_run("run-1", vec![claimed]);
     assert!(
-        fixture
-            .load()
-            .unwrap_err()
-            .to_string()
+        HilEvidenceIndex::rejection(fixture.load())
+            .unwrap()
             .contains("contradicts repetition outcome")
     );
 }

@@ -218,15 +218,14 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
     )
     .unwrap();
     assert_eq!(stale.summary().qualifying, 0);
-    let wrong_target = HilEvidenceIndex::load(
+    let wrong_target = HilEvidenceIndex::rejection(HilEvidenceIndex::load(
         &root,
         Path::new("runs"),
         Path::new("evidence"),
         "other-target",
         &repository,
-    )
-    .unwrap_err()
-    .to_string();
+    ))
+    .unwrap();
     assert!(wrong_target.contains("configured target"));
 
     let mut manifest: serde_json::Value =
@@ -287,14 +286,14 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
 
     fs::write(run.join("suite.json"), b"{}").unwrap();
     assert!(
-        HilEvidenceIndex::load(
+        HilEvidenceIndex::rejection(HilEvidenceIndex::load(
             &root,
             Path::new("runs"),
             Path::new("evidence"),
             "esp32s31",
             &repository,
-        )
-        .is_err()
+        ))
+        .is_some()
     );
 
     suite["counts"]["passed"] = json!(0);
@@ -305,14 +304,14 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
     .unwrap();
     seal(&run);
     assert!(
-        HilEvidenceIndex::load(
+        HilEvidenceIndex::rejection(HilEvidenceIndex::load(
             &root,
             Path::new("runs"),
             Path::new("evidence"),
             "esp32s31",
             &repository,
-        )
-        .is_err()
+        ))
+        .is_some()
     );
     fs::remove_dir_all(root).unwrap();
 }
@@ -418,15 +417,15 @@ fn malformed_existing_manifest_still_fails_closed() {
         commit: "abc123".to_owned(),
         dirty: false,
     };
-    let error = HilEvidenceIndex::load(
+    let error = HilEvidenceIndex::rejection(HilEvidenceIndex::load(
         &root,
         Path::new("runs"),
         Path::new("evidence"),
         "esp32s31",
         &repository,
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("cannot parse HIL evidence"));
+    ))
+    .unwrap();
+    assert!(error.contains("cannot parse HIL evidence"));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -465,15 +464,15 @@ fn unsealed_completed_run_still_fails_closed() {
         commit: "abc123".to_owned(),
         dirty: false,
     };
-    let error = HilEvidenceIndex::load(
+    let error = HilEvidenceIndex::rejection(HilEvidenceIndex::load(
         &root,
         Path::new("runs"),
         Path::new("evidence"),
         "esp32s31",
         &repository,
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("integrity.json"));
+    ))
+    .unwrap();
+    assert!(error.contains("integrity.json"));
     fs::remove_dir_all(root).unwrap();
 }
 

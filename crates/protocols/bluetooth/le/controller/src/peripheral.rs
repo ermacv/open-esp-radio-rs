@@ -55,19 +55,20 @@ use oer_bluetooth_ll::{
     },
     control::{
         LeChannelMapUpdate, LeConnectionUpdate, LePeripheralControl, LePeripheralControlError,
-        LePeripheralReceive, LeRemoteFeaturesAdmission, LeRemoteFeaturesResult,
+        LePeripheralReceive, LePhyUpdate, LeRemoteFeaturesAdmission, LeRemoteFeaturesResult,
         LeRemoteVersionAdmission, LeRemoteVersionResult, LeVersionInformation,
     },
     data_length::{LE_DATA_LENGTH_MAXIMUM_OCTETS, LeDataLength, LeDataLengths},
+    phy::LePhyPreference,
     security::{
         LE_ACL_MIC_BYTES, LeLongTermKey, LePeripheralEncryptionProcedure,
         LePeripheralEncryptionRandom, LePeripheralEncryptionTermination,
     },
 };
 use oer_bluetooth_radio::{
-    AccessAddress, ConnectionConfiguration, ConnectionEvent, ConnectionId, CrcInit, DataChannel,
-    DataPdu, DataPduKind, EventId, EventResult, RadioDuration, RadioInstant, RadioOutcome,
-    RadioRequest, RadioTiming, RadioWindow, TxPower,
+    AccessAddress, ConnectionConfiguration, ConnectionEvent, ConnectionId, ConnectionPhys, CrcInit,
+    DataChannel, DataPdu, DataPduKind, EventId, EventResult, RadioDuration, RadioInstant,
+    RadioOutcome, RadioRequest, RadioTiming, RadioWindow, TxPower,
 };
 
 use crate::{advertising::ConnectionIndication, coexistence};
@@ -121,6 +122,8 @@ pub(crate) enum PeripheralEvent {
     EncryptionChanged(Status, bool),
     KeyRefreshed(Status),
     DataLengthChanged(LeDataLengths),
+    /// A PHY Update ended with the status on the PHYs of the connection.
+    PhyUpdated(Status, ConnectionPhys),
     CompletedPackets(u16),
 }
 
@@ -182,6 +185,9 @@ struct Connection {
     corrupt_next_mic: bool,
     channel_map: Option<LeChannelMapUpdate>,
     connection_update: Option<LeConnectionUpdate>,
+    phy_update: Option<LePhyUpdate>,
+    /// The PHYs of the next event.
+    phys: ConnectionPhys,
     peer_termination: Option<u8>,
     closing: Option<Closing>,
     tx: [u8; LL_PAYLOAD + LE_ACL_MIC_BYTES],
@@ -231,6 +237,8 @@ pub(crate) struct Peripheral {
     local_version: Option<LeVersionInformation>,
     /// The Host's suggested transmit length for new connections.
     suggested_data_length: LeDataLength,
+    /// The Host's default PHY preference for new connections.
+    default_phy: LePhyPreference,
     /// The request at the backend.
     requested: Option<RequestKind>,
     /// Data received for the Host, taken after every outcome.
@@ -244,6 +252,7 @@ impl Peripheral {
             events: Events::new(),
             local_version,
             suggested_data_length: LeDataLength::MINIMUM,
+            default_phy: LePhyPreference::ANY,
             requested: None,
             received: None,
         }
@@ -284,6 +293,36 @@ impl Peripheral {
         };
         connection.control.set_data_length(transmit);
         Admission::Accepted
+    }
+
+    /// Prefer `preference` in the PHY Updates of later connections; Reset
+    /// restores every PHY.
+    pub(crate) fn set_default_phy(&mut self, preference: LePhyPreference) {
+        self.default_phy = preference;
+    }
+
+    /// The PHYs of the live connection.
+    pub(crate) fn phys(&self) -> Option<ConnectionPhys> {
+        self.connection
+            .as_ref()
+            .filter(|c| c.opened && c.closing.is_none())
+            .map(|c| c.phys)
+    }
+
+    /// Start a PHY Update of the live connection for `preference`, as LE Set
+    /// PHY does; it ends with LE PHY Update Complete.
+    pub(crate) fn set_phy(&mut self, preference: LePhyPreference) -> Admission {
+        let Some(connection) = self
+            .connection
+            .as_mut()
+            .filter(|c| c.opened && c.closing.is_none())
+        else {
+            return Admission::UnknownConnection;
+        };
+        match connection.control.request_phy_update(preference) {
+            Ok(()) => Admission::Accepted,
+            Err(_) => Admission::Disallowed,
+        }
     }
 
     pub(crate) fn take_event(&mut self) -> Option<PeripheralEvent> {
@@ -332,7 +371,8 @@ impl Peripheral {
             open_sent: false,
             control: LePeripheralControl::new()
                 .with_local_version(self.local_version)
-                .with_data_length(self.suggested_data_length),
+                .with_data_length(self.suggested_data_length)
+                .with_phy_preference(self.default_phy),
             security: LePeripheralEncryptionProcedure::new(),
             procedure_since: None,
             pending: None,
@@ -342,6 +382,8 @@ impl Peripheral {
             corrupt_next_mic: false,
             channel_map: None,
             connection_update: None,
+            phy_update: None,
+            phys: ConnectionPhys::LE_1M,
             peer_termination: None,
             closing: None,
             tx: [0; LL_PAYLOAD + LE_ACL_MIC_BYTES],
@@ -517,6 +559,7 @@ impl Peripheral {
         );
         let channel = DataChannel::new(prepared.channel().get()).expect("a data channel index");
         let interval = RadioDuration::from_micros(prepared.timing().interval_micros());
+        let phys = prepared.phys();
         let plan = if first {
             timing::first(event.anchor, transmit_window, timing.connection)?
         } else {
@@ -551,6 +594,7 @@ impl Peripheral {
             window: plan.window,
             interval,
             timing: plan.timing,
+            phys,
             priority: if first { FIRST_PRIORITY } else { PRIORITY },
             coexistence,
         }))
@@ -970,6 +1014,9 @@ impl Connection {
                 Ok(LePeripheralReceive::ConnectionUpdate(update)) => {
                     self.connection_update = Some(update);
                 }
+                Ok(LePeripheralReceive::PhyUpdate(update)) => {
+                    self.phy_update = Some(update);
+                }
                 Err(LePeripheralControlError::PeerTermination { reason }) => {
                     self.peer_termination = Some(reason);
                 }
@@ -1019,6 +1066,9 @@ impl Connection {
         if let Some(lengths) = self.control.take_data_length_change() {
             events.push(PeripheralEvent::DataLengthChanged(lengths));
         }
+        if let Some(status) = self.control.take_phy_update_failure() {
+            events.push(PeripheralEvent::PhyUpdated(Status::new(status), self.phys));
+        }
     }
 
     /// Procedure timeouts, checked before planning.
@@ -1056,6 +1106,7 @@ impl Connection {
             || self.control.local_feature_request_transmitted()
             || self.control.local_version_request_transmitted()
             || self.control.local_data_length_request_transmitted()
+            || self.control.local_phy_request_transmitted()
     }
 
     fn close_procedures(&mut self, events: &mut Events) {
@@ -1095,6 +1146,32 @@ impl Connection {
         {
             failure = LePeripheralControlError::ConnectionUpdate(error).termination_reason();
         }
+        if let Some(update) = self.phy_update.take() {
+            if update.is_unchanged() {
+                // The procedure ends without an instant.
+                if self.control.complete_phy_update(false) {
+                    events.push(PeripheralEvent::PhyUpdated(
+                        Status::SUCCESS,
+                        completed.phys(),
+                    ));
+                }
+            } else if let Err(error) =
+                completed.schedule_phy_update(update.phys(completed.phys()), update.instant())
+            {
+                failure = LePeripheralControlError::PhyUpdate(error).termination_reason();
+            }
+        }
+        // The PHYs applied by the closed event, or by an update whose
+        // instant is the next event.
+        if let Some(transition) = completed.phy_transition()
+            && self.control.complete_phy_update(transition.changed())
+        {
+            events.push(PeripheralEvent::PhyUpdated(
+                Status::SUCCESS,
+                transition.updated(),
+            ));
+        }
+        self.phys = completed.phys();
         if let Some(reason) = failure {
             self.control.request_local_termination(reason);
         }

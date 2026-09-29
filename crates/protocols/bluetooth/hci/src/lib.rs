@@ -114,6 +114,10 @@ pub use controller::le::peripheral::{
     LeReadRemoteFeaturesCompleteEvent, LeReadRemoteVersionInformationCommand,
     LeReadRemoteVersionInformationCommandStatusEvent, LeReadRemoteVersionInformationCompleteEvent,
 };
+pub use controller::le::phy::{
+    LE_PHY_COMMAND_RESPONSE_CAPACITY, LE_PHY_UPDATE_COMPLETE_EVENT_CAPACITY, LePhyCommand,
+    LePhyCommandResponse, LePhyMasks, LePhyUpdateCompleteEvent,
+};
 pub use controller::le::scanning::{
     LE_LEGACY_ADVERTISING_REPORT_EVENT_CAPACITY,
     LE_LEGACY_SCANNING_COMMAND_COMPLETE_EVENT_CAPACITY, LeLegacyAdvertisingReportEvent,

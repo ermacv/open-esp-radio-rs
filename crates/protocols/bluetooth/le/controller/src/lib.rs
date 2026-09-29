@@ -18,8 +18,9 @@
 //! - one peripheral connection created by a connection indication to the
 //!   connectable set: connection events widened for clock drift, supervision
 //!   and establishment timeouts, Channel Map and Connection Update instants,
-//!   feature, version, ping and termination procedures, LE encryption start,
-//!   pause and restart, and ACL data both ways with Host flow control;
+//!   feature, version, ping and termination procedures, PHY Update to LE 2M,
+//!   LE encryption start, pause and restart, and ACL data both ways with Host
+//!   flow control;
 //! - legacy passive and active scanning with LE Advertising Reports and the
 //!   duplicate filter, reporting every advertiser or only the filter accept
 //!   list, whose Clear, Add and Remove commands the radio backend executes;
@@ -30,8 +31,8 @@
 //! a scan window starts after busy reservations and ends before the next
 //! advertising or connection event, and an advertising event that cannot
 //! start within the advertising delay range is skipped. The connection uses
-//! no peripheral latency and no PHY other than LE 1M, and connectable
-//! advertising needs the random source that encryption draws from.
+//! no peripheral latency and no LE Coded PHY, and connectable advertising
+//! needs the random source that encryption draws from.
 //!
 //! Commands complete in order. Reset, advertising and scanning enable
 //! changes, filter accept list changes, advertising-data updates while

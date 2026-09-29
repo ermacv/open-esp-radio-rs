@@ -216,7 +216,7 @@ fn trouble_no_security_bootstrap_and_conservative_extensions_are_supported() {
             .await,
             &[
                 (1 << 0) | (1 << 3) | (1 << 4) | (1 << 5),
-                1 << 6,
+                (1 << 0) | (1 << 6),
                 0,
                 0,
                 0,
@@ -599,13 +599,15 @@ fn supported_commands_report_matches_the_closed_operational_inventory() {
     assert!(mask.le_test_end());
     assert!(mask.le_receiver_test_v2());
     assert!(mask.le_transmitter_test_v2());
+    assert!(mask.le_read_phy());
+    assert!(mask.le_set_default_phy());
+    assert!(mask.le_set_phy());
 
     assert!(!mask.inquiry());
     assert!(!mask.read_local_supported_features());
     assert!(!mask.le_read_adv_physical_channel_tx_power());
     assert!(!mask.le_create_conn());
     assert!(!mask.le_encrypt());
-    assert!(!mask.le_read_phy());
 }
 
 #[test]
@@ -744,6 +746,12 @@ fn dispatch_test_packet(
             command_error(command.opcode(), HciError::UNKNOWN_CMD)
         }
         LeControllerCommandClassification::MalformedAcceptList(response) => {
+            command_error(response.opcode(), HciError::UNKNOWN_CMD)
+        }
+        LeControllerCommandClassification::Phy(command) => {
+            command_error(command.opcode(), HciError::UNKNOWN_CMD)
+        }
+        LeControllerCommandClassification::MalformedPhy(response) => {
             command_error(response.opcode(), HciError::UNKNOWN_CMD)
         }
         LeControllerCommandClassification::MalformedDataLength(response) => {

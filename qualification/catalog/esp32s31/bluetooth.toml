@@ -2308,7 +2308,7 @@ section = "bluetooth-le-phy-rf-dtm"
 title = "LE 2M PHY"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "Direct Test Mode transmits and receives on LE 2M. Advertising, scanning and the connection stay on LE 1M; PHY Update is absent."
+scope-and-limitations = "Direct Test Mode transmits and receives on LE 2M, and a PHY Update moves each direction of the peripheral connection to LE 2M: every connection event writes the PHYs to its scheduler item as the vendor connection events do. Advertising and scanning stay on LE 1M."
 
 [[items]]
 id = "bluetooth-le-coded-s-8-125-kbit-s"
@@ -2482,7 +2482,7 @@ section = "bluetooth-le-roles-connections-reliability"
 title = "Peripheral"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The [peripheral connection](../../../../protocols/bluetooth/le/controller/src/peripheral.rs) serves one connection created by `CONNECT_IND` with ACL data, control procedures, encryption and Host flow control on LE 1M. Peripheral latency, PHY Update and a second connection are absent."
+scope-and-limitations = "The [peripheral connection](../../../../protocols/bluetooth/le/controller/src/peripheral.rs) serves one connection created by `CONNECT_IND` with ACL data, control procedures, encryption and Host flow control on LE 1M or, after a PHY Update, LE 2M. Peripheral latency, LE Coded and a second connection are absent."
 
 [[items]]
 id = "bluetooth-central-initiator"
@@ -2610,7 +2610,7 @@ section = "bluetooth-le-roles-connections-reliability"
 title = "LLCP framework"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The [control procedures](../../../../protocols/bluetooth/le/ll/src/control.rs) answer feature, version, LE Ping and Data Length requests, apply Connection Update and Channel Map Update at their instants and answer other procedures with `LL_UNKNOWN_RSP`. PHY Update, Connection Parameters Request and later procedures are absent."
+scope-and-limitations = "The [control procedures](../../../../protocols/bluetooth/le/ll/src/control.rs) answer feature, version, LE Ping and Data Length requests, apply Connection Update, Channel Map Update and PHY Update at their instants and answer other procedures with `LL_UNKNOWN_RSP`. Connection Parameters Request and later procedures are absent."
 
 [[items]]
 id = "bluetooth-connection-update-channel-map-update"
@@ -2624,9 +2624,9 @@ scope-and-limitations = "Central Connection Update and Channel Map Update wait f
 id = "bluetooth-phy-update"
 section = "bluetooth-le-roles-connections-reliability"
 title = "PHY Update"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "No PHY Update procedure exists; `LL_PHY_REQ` is answered with `LL_UNKNOWN_RSP` and the connection stays on LE 1M."
+scope-and-limitations = "The [peripheral](../../../../protocols/bluetooth/le/ll/src/control.rs) answers `LL_PHY_REQ` with the Host's LE Set Default PHY preference, sends its own for LE Set PHY and applies `LL_PHY_UPDATE_IND` at its instant, which collides with a pending Connection Update or Channel Map Update as they do with each other. LE Read PHY reports the PHYs, and LE PHY Update Complete ends a Host request and reports a change; a rejected, unsupported or unanswered request reports its status. LE Coded is neither offered nor accepted, and the Data Length times are not recomputed for LE 2M."
 
 [[items]]
 id = "bluetooth-data-length-extension-data-length-update"

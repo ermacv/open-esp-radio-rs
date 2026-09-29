@@ -60,6 +60,10 @@ pub enum LeControllerCommandClassification {
     AcceptList(crate::LeAcceptListCommand),
     /// A filter accept list command had an invalid or unsupported parameter body.
     MalformedAcceptList(crate::LeAcceptListCommandCompleteEvent),
+    /// LE Read PHY, LE Set Default PHY or LE Set PHY.
+    Phy(crate::LePhyCommand),
+    /// A PHY command refused before execution.
+    MalformedPhy(crate::LePhyCommandResponse),
     /// A validated Data Length Extension command.
     DataLength(LeDataLengthCommand),
     /// A Data Length Extension command had an invalid parameter body.
@@ -106,6 +110,8 @@ impl LeControllerCommandClassification {
             Self::MalformedLongTermKeyReply(response) => response.opcode(),
             Self::AcceptList(command) => command.opcode(),
             Self::MalformedAcceptList(response) => response.opcode(),
+            Self::Phy(command) => command.opcode(),
+            Self::MalformedPhy(response) => response.opcode(),
             Self::DataLength(command) => command.opcode(),
             Self::MalformedDataLength(response) => response.opcode(),
             Self::Bootstrap(command) => command.opcode(),
@@ -157,6 +163,13 @@ pub fn classify_le_controller_command(
         Err(LeDisconnectDecodeError::Unsupported) => {}
     }
 
+    match crate::LePhyCommand::decode(command) {
+        Ok(command) => return LeControllerCommandClassification::Phy(command),
+        Err(crate::controller::le::phy::LePhyDecodeError::Malformed(response)) => {
+            return LeControllerCommandClassification::MalformedPhy(response);
+        }
+        Err(crate::controller::le::phy::LePhyDecodeError::Unsupported) => {}
+    }
     match crate::LeAcceptListCommand::decode(command) {
         Ok(command) => return LeControllerCommandClassification::AcceptList(command),
         Err(crate::controller::le::accept_list::LeAcceptListDecodeError::Malformed(response)) => {

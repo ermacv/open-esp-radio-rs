@@ -4,8 +4,8 @@ use std::vec::Vec;
 
 use bt_hci::cmd::{Opcode, OpcodeGroup};
 use oer_bluetooth_radio::{
-    ConnectionEventTiming, DataPduKind, EventId, EventResult, RadioInstant, RadioOutcome,
-    ReceivedPdu,
+    ConnectionEventTiming, ConnectionPhy, ConnectionPhys, DataPduKind, EventId, EventResult,
+    RadioInstant, RadioOutcome, ReceivedPdu,
 };
 
 use super::{Harness, Request, SET_ADV_ENABLE, SET_EVENT_MASK, SUCCESS};
@@ -776,4 +776,162 @@ fn mic_corruption_arms_an_open_connection_before_encryption() {
 fn mic_corruption_is_an_unknown_command_without_the_diagnostic_feature() {
     let (mut harness, _first) = Harness::connected();
     assert_eq!(harness.command(ARM_MIC_CORRUPTION, &[0, 0]), Some(0x01));
+}
+
+const READ_PHY: Opcode = Opcode::new(OpcodeGroup::LE, 0x0030);
+const SET_DEFAULT_PHY: Opcode = Opcode::new(OpcodeGroup::LE, 0x0031);
+const SET_PHY: Opcode = Opcode::new(OpcodeGroup::LE, 0x0032);
+
+impl Harness {
+    /// Enable LE PHY Update Complete beside the default LE events.
+    fn enable_phy_update_event(&mut self) {
+        assert_eq!(
+            self.command(LE_SET_EVENT_MASK, &[0x1f, 0x08, 0, 0, 0, 0, 0, 0]),
+            Some(SUCCESS)
+        );
+    }
+
+    /// The Command Complete of LE Read PHY for handle 0.
+    fn read_phy(&mut self) -> Vec<u8> {
+        self.send(READ_PHY, &[0, 0]);
+        let packets = self.drain();
+        assert_eq!(packets.len(), 1);
+        packets[0][5..].to_vec()
+    }
+}
+
+fn phy_update_ind(c_to_p: u8, p_to_c: u8, instant: u16) -> Vec<u8> {
+    let mut pdu = std::vec![0x03, 5, 0x18, c_to_p, p_to_c];
+    pdu.extend_from_slice(&instant.to_le_bytes());
+    pdu
+}
+
+#[test]
+fn a_central_phy_update_switches_the_events_to_le_2m_at_its_instant() {
+    let (mut harness, first) = Harness::connected();
+    harness.enable_phy_update_event();
+    assert_eq!(harness.read_phy(), [SUCCESS, 0, 0, 1, 1]);
+    // LL_PHY_REQ from the central, both directions LE 2M.
+    harness.receive(first, &[0x03, 3, 0x16, 2, 2]);
+    harness.end_at(first, Some(INDICATION_AT + 2_000));
+    assert_eq!(
+        harness.step(),
+        Some(Request::Transmit(
+            DataPduKind::Control,
+            std::vec![0x17, 3, 3]
+        ))
+    );
+    let Some(Request::ConnectionEvent(second)) = harness.step() else {
+        panic!("event 1");
+    };
+    assert_eq!(second.phys, ConnectionPhys::LE_1M);
+    harness.acknowledge();
+    harness.receive(second.id, &phy_update_ind(2, 2, 3));
+    harness.end_at(second.id, Some(INDICATION_AT + 2_000 + INTERVAL));
+    let Some(Request::ConnectionEvent(third)) = harness.step() else {
+        panic!("event 2");
+    };
+    assert_eq!(third.phys, ConnectionPhys::LE_1M);
+    harness.end_at(third.id, Some(INDICATION_AT + 2_000 + 2 * INTERVAL));
+    assert!(harness.drain().is_empty(), "no event before the instant");
+    let Some(Request::ConnectionEvent(instant)) = harness.step() else {
+        panic!("the instant");
+    };
+    let two = ConnectionPhys {
+        transmit: ConnectionPhy::Le2M,
+        receive: ConnectionPhy::Le2M,
+    };
+    assert_eq!(instant.phys, two);
+    harness.end_at(instant.id, Some(INDICATION_AT + 2_000 + 3 * INTERVAL));
+    // LE PHY Update Complete: success, handle 0, LE 2M both ways.
+    assert_eq!(harness.drain(), [std::vec![0x3e, 6, 0x0c, 0, 0, 0, 2, 2]]);
+    assert_eq!(harness.read_phy(), [SUCCESS, 0, 0, 2, 2]);
+    let Some(Request::ConnectionEvent(after)) = harness.step() else {
+        panic!("the event after the instant");
+    };
+    assert_eq!(after.phys, two);
+}
+
+#[test]
+fn a_host_phy_request_completes_even_when_the_central_keeps_the_phys() {
+    let (mut harness, first) = Harness::connected();
+    harness.enable_phy_update_event();
+    harness.end_at(first, Some(INDICATION_AT + 2_000));
+    // LE Set PHY: handle 0, preferences, LE 2M both ways.
+    assert_eq!(
+        harness.command(SET_PHY, &[0, 0, 0, 2, 2, 0, 0]),
+        Some(SUCCESS)
+    );
+    assert_eq!(harness.command(SET_PHY, &[0, 0, 0, 2, 2, 0, 0]), Some(0x0c));
+    assert_eq!(
+        harness.step(),
+        Some(Request::Transmit(
+            DataPduKind::Control,
+            std::vec![0x16, 2, 2]
+        ))
+    );
+    let Some(Request::ConnectionEvent(second)) = harness.step() else {
+        panic!("event 1");
+    };
+    harness.acknowledge();
+    // No change: LL_PHY_UPDATE_IND with both directions zero.
+    harness.receive(second.id, &phy_update_ind(0, 0, 0));
+    harness.end_at(second.id, Some(INDICATION_AT + 2_000 + INTERVAL));
+    assert_eq!(harness.drain(), [std::vec![0x3e, 6, 0x0c, 0, 0, 0, 1, 1]]);
+    assert_eq!(harness.read_phy(), [SUCCESS, 0, 0, 1, 1]);
+}
+
+#[test]
+fn a_central_without_phy_update_fails_the_host_request() {
+    let (mut harness, first) = Harness::connected();
+    harness.enable_phy_update_event();
+    harness.end_at(first, Some(INDICATION_AT + 2_000));
+    assert_eq!(
+        harness.command(SET_PHY, &[0, 0, 3, 0, 0, 0, 0]),
+        Some(SUCCESS)
+    );
+    assert_eq!(
+        harness.step(),
+        Some(Request::Transmit(
+            DataPduKind::Control,
+            std::vec![0x16, 3, 3]
+        ))
+    );
+    let Some(Request::ConnectionEvent(second)) = harness.step() else {
+        panic!("event 1");
+    };
+    harness.acknowledge();
+    // LL_UNKNOWN_RSP for LL_PHY_REQ.
+    harness.receive(second.id, &[0x03, 2, 0x07, 0x16]);
+    // Unsupported Remote Feature, on the unchanged PHYs.
+    assert_eq!(
+        harness.drain(),
+        [std::vec![0x3e, 6, 0x0c, 0x1a, 0, 0, 1, 1]]
+    );
+}
+
+#[test]
+fn phy_commands_check_their_connection_and_preferences() {
+    let mut harness = Harness::configured();
+    // The default preference is kept without a connection.
+    assert_eq!(harness.command(SET_DEFAULT_PHY, &[0, 2, 2]), Some(SUCCESS));
+    assert_eq!(harness.command(SET_DEFAULT_PHY, &[0, 4, 2]), Some(0x11));
+    assert_eq!(harness.read_phy(), [0x02, 0, 0, 0, 0]);
+    assert_eq!(harness.command(SET_PHY, &[0, 0, 3, 0, 0, 0, 0]), Some(0x02));
+
+    // A connection answers LL_PHY_REQ with the Host's default preference.
+    let (mut harness, first) = Harness::connected_from({
+        let mut harness = Harness::configured();
+        assert_eq!(harness.command(SET_DEFAULT_PHY, &[0, 2, 1]), Some(SUCCESS));
+        harness
+    });
+    harness.receive(first, &[0x03, 3, 0x16, 3, 3]);
+    harness.end_at(first, Some(INDICATION_AT + 2_000));
+    assert_eq!(
+        harness.step(),
+        Some(Request::Transmit(
+            DataPduKind::Control,
+            std::vec![0x17, 2, 1]
+        ))
+    );
 }

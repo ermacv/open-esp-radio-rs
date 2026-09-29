@@ -19,7 +19,8 @@ use oer_bluetooth_hci::{
     LeLegacyAdvertisingEnableRequest, LeLegacyScanningCommandCompleteEvent,
     LeLegacyScanningCommandKind, LeLegacyScanningConfiguration, LeLongTermKeyCommandCompleteEvent,
     LeLongTermKeyRequestEvent, LeLongTermKeyRequestReplyCommand, LeNumberOfCompletedPacketsEvent,
-    LePeripheralConnectionCompleteEvent, LeRandCommandCompleteEvent, LeRandomSource,
+    LePeripheralConnectionCompleteEvent, LePhyCommand, LePhyCommandResponse,
+    LePhyUpdateCompleteEvent, LeRandCommandCompleteEvent, LeRandomSource,
     LeReadRemoteFeaturesCompleteEvent, LeReadRemoteVersionInformationCompleteEvent,
     OwnedBootstrapCommand, classify_le_controller_command,
 };
@@ -27,10 +28,11 @@ use oer_bluetooth_ll::{
     control::LeVersionInformation,
     data_length::{LeDataLength, LeDataLengths},
     dtm::DTM_MAX_PAYLOAD,
+    phy::LePhyPreference,
 };
 use oer_bluetooth_radio::{
-    AcceptListChange, AcceptListDevice, EventId, RadioActivity, RadioDuration, RadioFault,
-    RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError,
+    AcceptListChange, AcceptListDevice, ConnectionPhy, EventId, RadioActivity, RadioDuration,
+    RadioFault, RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError,
 };
 
 use crate::{
@@ -310,6 +312,10 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
             }
             LeControllerCommandClassification::DataLength(command) => {
                 self.data_length_command(command);
+            }
+            LeControllerCommandClassification::Phy(command) => self.phy_command(command),
+            LeControllerCommandClassification::MalformedPhy(response) => {
+                self.respond(response.as_bytes());
             }
             LeControllerCommandClassification::MalformedDataLength(response) => {
                 self.respond(response.as_bytes());
@@ -606,6 +612,19 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                         );
                     }
                 }
+                PeripheralEvent::PhyUpdated(status, phys) => {
+                    if meta && le.is_le_phy_update_complete_enabled() {
+                        self.output.push_event(
+                            LePhyUpdateCompleteEvent::new(
+                                status,
+                                handle(),
+                                hci_phy(phys.transmit),
+                                hci_phy(phys.receive),
+                            )
+                            .as_bytes(),
+                        );
+                    }
+                }
                 PeripheralEvent::CompletedPackets(count) => {
                     self.output.push_event(
                         LeNumberOfCompletedPacketsEvent::new(handle(), count).as_bytes(),
@@ -655,6 +674,47 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
 
     fn is_configured(&self) -> bool {
         !self.bootstrap.is_pristine()
+    }
+
+    /// LE Read PHY, LE Set Default PHY or LE Set PHY.
+    fn phy_command(&mut self, command: LePhyCommand) {
+        let preference = |masks: oer_bluetooth_hci::LePhyMasks| {
+            LePhyPreference::new(masks.transmit, masks.receive)
+        };
+        let live = |handle| self.peripheral.handle() == Some(handle);
+        let response = match command {
+            LePhyCommand::Read(handle) => match self.peripheral.phys().filter(|_| live(handle)) {
+                Some(phys) => LePhyCommandResponse::read(
+                    Status::SUCCESS,
+                    handle,
+                    hci_phy(phys.transmit),
+                    hci_phy(phys.receive),
+                ),
+                None => LePhyCommandResponse::read(
+                    HciError::UNKNOWN_CONN_IDENTIFIER.to_status(),
+                    handle,
+                    0,
+                    0,
+                ),
+            },
+            LePhyCommand::SetDefault(masks) => {
+                self.peripheral.set_default_phy(preference(masks));
+                LePhyCommandResponse::set_default(Status::SUCCESS)
+            }
+            LePhyCommand::Set(handle, masks) => {
+                let admission = if live(handle) {
+                    self.peripheral.set_phy(preference(masks))
+                } else {
+                    Admission::UnknownConnection
+                };
+                LePhyCommandResponse::set(match admission {
+                    Admission::Accepted => Status::SUCCESS,
+                    Admission::Disallowed => HciError::CMD_DISALLOWED.to_status(),
+                    Admission::UnknownConnection => HciError::UNKNOWN_CONN_IDENTIFIER.to_status(),
+                })
+            }
+        };
+        self.respond(response.as_bytes());
     }
 
     fn data_length_command(&mut self, command: LeDataLengthCommand) {
@@ -708,6 +768,7 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                 self.dtm.abort();
                 self.peripheral.abort();
                 self.peripheral.suggest_data_length(LeDataLength::MINIMUM);
+                self.peripheral.set_default_phy(LePhyPreference::ANY);
                 self.accept_list.reset();
                 self.pending = Some(Pending::Reset);
             }
@@ -1131,6 +1192,14 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
         let value = self.prng.wrapping_mul(0x2545_f491_4f6c_dd1d) >> 32;
         let span = u64::from(ADVERTISING_DELAY_MAX.as_micros()) + 1;
         RadioDuration::from_micros((value % span) as u32)
+    }
+}
+
+/// The HCI value of a connection PHY.
+const fn hci_phy(phy: ConnectionPhy) -> u8 {
+    match phy {
+        ConnectionPhy::Le1M => 1,
+        ConnectionPhy::Le2M => 2,
     }
 }
 

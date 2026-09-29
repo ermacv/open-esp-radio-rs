@@ -335,6 +335,13 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
             test.args(["-p", package]);
         }
         process::run(&mut test)?;
+        for package in metadata
+            .packages
+            .iter()
+            .filter(|package| plan.packages.contains(package.name.as_str()))
+        {
+            super::feature_sets::test(ctx, package)?;
+        }
         for mut group in doc::groups(&root_manifest, &metadata)? {
             group
                 .packages

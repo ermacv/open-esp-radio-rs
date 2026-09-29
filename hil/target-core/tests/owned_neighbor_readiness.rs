@@ -51,14 +51,17 @@ fn burst(resolve_before: bool) -> Vec<u32> {
     let peer = Ipv4Addr::new(10, 43, 0, 2);
     let resolve = |stack: &mut Stack<'_>| {
         // Model receipt of the ARP mapping, without any radio or host UDP queue.
-        stack.neighbor_cache_mut().insert(
-            iface,
-            peer.into(),
-            xarxa_owned::wire::HardwareAddress::Ethernet(EthernetAddress([2, 0, 0, 0, 0, 2])),
-            // Xarxa's clock is wrapping milliseconds: the farthest
-            // expiry a comparison still orders after now.
-            Instant::ZERO + Duration::MAX,
-        );
+        stack
+            .neighbor_cache_mut()
+            .insert(
+                iface,
+                peer.into(),
+                xarxa_owned::wire::HardwareAddress::Ethernet(EthernetAddress([2, 0, 0, 0, 0, 2])),
+                // Xarxa's clock is wrapping milliseconds: the farthest
+                // expiry a comparison still orders after now.
+                Instant::ZERO + Duration::MAX,
+            )
+            .expect("the peer and its hardware address are unicast");
     };
     if resolve_before {
         resolve(&mut stack);

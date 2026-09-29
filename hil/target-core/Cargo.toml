@@ -54,3 +54,5 @@ workspace = true
 scope = "development"
 layer = "hil"
 platform = "portable"
+# The protocol and network code behind these features has its own tests.
+test-feature-sets = ["secure-gatt", "owned-network"]

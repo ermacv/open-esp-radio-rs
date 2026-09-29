@@ -441,16 +441,30 @@ pub fn compilation_profiles(package: &Package) -> Result<Vec<Vec<String>>> {
 }
 
 pub fn declared_profiles(package: &Package) -> Result<Vec<String>> {
-    let Some(profiles) = package
-        .metadata
-        .get("open-radio")
-        .and_then(|v| v.get("supported-feature-profiles"))
-    else {
+    feature_sets(
+        package,
+        "supported-feature-profiles",
+        "supported feature profile",
+    )
+}
+
+/// Feature sets a package's tests also run with besides its default
+/// features, as `open-radio.test-feature-sets` declares them: `check
+/// changed` tests a changed package with each, and CI tests every package
+/// with each (`cargo xtask check feature-sets`).
+pub fn test_feature_sets(package: &Package) -> Result<Vec<String>> {
+    feature_sets(package, "test-feature-sets", "test feature set")
+}
+
+/// Comma-separated feature sets under `open-radio.<key>`: unique, nonempty,
+/// naming only features the package declares.
+fn feature_sets(package: &Package, key: &str, noun: &str) -> Result<Vec<String>> {
+    let Some(profiles) = package.metadata.get("open-radio").and_then(|v| v.get(key)) else {
         return Ok(Vec::new());
     };
     let profiles = profiles
         .as_array()
-        .ok_or("supported-feature-profiles must be an array")?;
+        .ok_or_else(|| format!("open-radio.{key} must be an array"))?;
     let profiles = profiles
         .iter()
         .map(|profile| {
@@ -458,17 +472,13 @@ pub fn declared_profiles(package: &Package) -> Result<Vec<String>> {
                 .as_str()
                 .filter(|s| !s.is_empty())
                 .map(str::to_owned)
-                .ok_or_else(|| "feature profile must be a nonempty string".into())
+                .ok_or_else(|| format!("each {noun} must be a nonempty string").into())
         })
         .collect::<Result<Vec<_>>>()?;
     let mut unique_profiles = BTreeSet::new();
     for profile in &profiles {
         if !unique_profiles.insert(profile) {
-            return Err(format!(
-                "package {} repeats supported feature profile {profile}",
-                package.name
-            )
-            .into());
+            return Err(format!("package {} repeats {noun} {profile}", package.name).into());
         }
         let mut unique_features = BTreeSet::new();
         for feature in profile.split(',') {
@@ -476,11 +486,9 @@ pub fn declared_profiles(package: &Package) -> Result<Vec<String>> {
                 || !unique_features.insert(feature)
                 || !package.features.contains_key(feature)
             {
-                return Err(format!(
-                    "package {} has invalid supported feature profile {profile}",
-                    package.name
-                )
-                .into());
+                return Err(
+                    format!("package {} has invalid {noun} {profile}", package.name).into(),
+                );
             }
         }
     }

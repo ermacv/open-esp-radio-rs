@@ -229,6 +229,9 @@ enum Check {
         base: String,
     },
     Metadata,
+    /// Test every root-workspace package with the feature sets its
+    /// `open-radio.test-feature-sets` declares.
+    FeatureSets,
     Architecture,
     /// Audit the resolved dependency graph of every network profile.
     Network,
@@ -447,6 +450,7 @@ fn run() -> Result<std::process::ExitCode> {
         Task::Check { check } => match check {
             Check::Changed { base } => checks::changed::run(&ctx, &base),
             Check::Metadata => checks::metadata::run(&ctx).map(|_| ()),
+            Check::FeatureSets => checks::feature_sets::run(&ctx),
             Check::Architecture => checks::architecture::run(&ctx),
             Check::Network => checks::network::run(&ctx),
             Check::Docs => checks::docs::run(&ctx),

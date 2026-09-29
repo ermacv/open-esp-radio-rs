@@ -90,11 +90,8 @@ jobs:
       - run: cargo test --locked --no-fail-fast -p oer-example-bluetooth-gatt --all-features
       # The HIL target core compiles its network modules against exactly one
       # stack, so each configuration is a separate test run.
-      - name: HIL target core configurations
-        run: |
-          for features in secure-gatt owned-network; do
-            cargo test --locked --no-fail-fast -p oer-hil-target-core --features "$features"
-          done
+      - name: Declared test feature sets
+        run: cargo xtask check feature-sets
 
   # Repository policy gates: locked metadata and network dependency boundaries.
   policy:

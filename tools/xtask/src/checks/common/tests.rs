@@ -419,6 +419,13 @@ fn declared_alternatives_preserve_minimum_and_default_compilation() {
         "{error}"
     );
 
+    let mut sets = package.clone();
+    sets.metadata["open-radio"]["test-feature-sets"] = serde_json::json!(["left", "left,right"]);
+    assert_eq!(test_feature_sets(&sets).unwrap(), ["left", "left,right"]);
+    sets.metadata["open-radio"]["test-feature-sets"] = serde_json::json!(["missing"]);
+    let error = test_feature_sets(&sets).unwrap_err().to_string();
+    assert!(error.contains("invalid test feature set"), "{error}");
+
     let mut unknown = package.clone();
     unknown.metadata["open-radio"]["supported-feature-profiles"] =
         serde_json::json!(["left,missing"]);

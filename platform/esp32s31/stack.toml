@@ -198,8 +198,8 @@ reason = "generic terminal transaction retains the exact expanded stopped-or-fau
 [[reviewed_frames]]
 function_contains = "::roles::access_point::AccessPointControl<"
 source_ends_with = ["crates/runtime/esp32s31/ieee80211/src/roles/access_point/service_epoch.rs", "oer-esp32s31-ieee80211-runtime-0.1.0/src/roles/access_point/service_epoch.rs"]
-max_bytes = 26624
-reason = "standalone AP service future owns the complete bounded power-save lease queues, protocol action quantum, aggregate state and exact stop return on the PSRAM task stack"
+max_bytes = 27136
+reason = "standalone AP service future owns the complete bounded power-save lease queues, protocol action quantum, aggregate state (including an aggregate kept while its BlockAckReq is answered) and exact stop return on the PSRAM task stack; measured 26640 bytes"
 
 [[reviewed_frames]]
 function_contains = "::run_initial_join_epoch::{closure#0}"

@@ -40,7 +40,7 @@ async fn main(_spawner: Spawner) {
     let mut console: UsbSerialJtag<'static, Blocking> = UsbSerialJtag::new(peripherals.USB_DEVICE);
     let _ = console.write(b"OPEN_RADIO_HIL hal=INIT\r\n");
     let timers = TimerGroup::new(peripherals.TIMG0);
-    esp_rtos::start(timers.timer0, peripherals.FROM_CPU_INTR0);
+    esp_rtos::start(timers.timer0);
     let _ = console.write(b"OPEN_RADIO_HIL embassy=START\r\n");
     Timer::after(TIMER_WAKE).await;
     let _ = console.write(b"OPEN_RADIO_HIL boot-smoke=PASS timer=PASS\r\n");

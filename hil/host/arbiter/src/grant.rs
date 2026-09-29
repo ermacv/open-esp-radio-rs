@@ -34,6 +34,14 @@ pub const NO_BUDGETS: &str =
 
 /// Time a terminated holder has to clean up before it is killed.
 pub(crate) const SHUTDOWN_GRACE: Duration = Duration::from_secs(300);
+/// How long divisible work holds a lease before it renews it at a
+/// boundary: a third of the hard limit, leaving two thirds for its next step.
+pub const RENEW_AFTER: Duration = Duration::from_secs(HARD_LIMIT.as_secs() / 3);
+
+fn renewal_due(held: Duration) -> bool {
+    held >= RENEW_AFTER
+}
+
 /// How often a holder checks the hard limit and waiters that outrank it.
 const SUPERVISION: Duration = Duration::from_secs(1);
 const POLL: Duration = Duration::from_millis(500);
@@ -576,6 +584,15 @@ impl Grant {
             .is_some_and(|held| held.ending.yield_requested.load(Ordering::Relaxed))
     }
 
+    /// Whether divisible work should renew this lease at its next
+    /// boundary: it has held a third of the hard limit, so the next step
+    /// gets the rest of a fresh lease instead of meeting the limit.
+    pub fn renewal_due(&self) -> bool {
+        self.held
+            .as_ref()
+            .is_some_and(|held| renewal_due(held.held_since.elapsed()))
+    }
+
     /// Record that the holder is being terminated at the hard limit.
     pub fn mark_hard_limit(&self) {
         if let Some(held) = &self.held {
@@ -584,6 +601,20 @@ impl Grant {
                 "hil-arbiter: {}: `{}` reached the hard limit {}; terminating",
                 held.owner,
                 held.work,
+                format_duration(HARD_LIMIT)
+            );
+        }
+    }
+
+    /// Record that the holder releases at a boundary to renew its lease
+    /// before the hard limit.
+    pub fn mark_renewed(&self) {
+        if let Some(held) = &self.held {
+            held.ending.yielded.store(true, Ordering::Relaxed);
+            eprintln!(
+                "hil-arbiter: lease #{} of {} renews before the hard limit {} and queues again",
+                held.id,
+                held.owner,
                 format_duration(HARD_LIMIT)
             );
         }

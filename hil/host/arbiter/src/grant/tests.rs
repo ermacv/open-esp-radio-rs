@@ -524,3 +524,11 @@ fn a_lease_owned_by_no_agent_is_refused() {
     assert!(error.is::<crate::NotAnOwner>(), "{error}");
     assert!(state(&arbiter).queue.is_empty() && state(&arbiter).holders.is_empty());
 }
+
+#[test]
+fn divisible_work_renews_a_lease_after_a_third_of_the_hard_limit() {
+    assert!(!renewal_due(Duration::from_secs(19 * 60)));
+    assert!(renewal_due(RENEW_AFTER));
+    // The step after a renewal has the rest of a fresh lease.
+    assert!(HARD_LIMIT - RENEW_AFTER >= Duration::from_secs(40 * 60));
+}

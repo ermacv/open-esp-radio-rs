@@ -122,6 +122,14 @@ impl FixtureLock {
             .is_some_and(oer_hil_arbiter::Grant::yield_requested)
     }
 
+    /// Whether divisible work should renew this lease at its next boundary
+    /// before the stand's hard limit ends it.
+    pub fn renewal_due(&self) -> bool {
+        self.grant
+            .as_ref()
+            .is_some_and(oer_hil_arbiter::Grant::renewal_due)
+    }
+
     /// Release the lease, queue again behind the waiting requests and return
     /// the new lease. The boards' state is unknown afterwards.
     pub fn requeue(self, lab: &super::config::LabConfig) -> Result<Self> {
@@ -130,7 +138,11 @@ impl FixtureLock {
             .clone()
             .ok_or("only a queued lease can yield")?;
         if let Some(grant) = &self.grant {
-            grant.mark_yielded();
+            if grant.yield_requested() {
+                grant.mark_yielded();
+            } else {
+                grant.mark_renewed();
+            }
         }
         drop(self);
         Self::lease(lab, request)

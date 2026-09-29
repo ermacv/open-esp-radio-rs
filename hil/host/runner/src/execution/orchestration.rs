@@ -509,10 +509,12 @@ impl SuiteEffects for LiveSuite<'_> {
         class: Option<ImageClass>,
         session: &mut RunSession,
     ) -> Result<Option<Failure>> {
+        // An over-budget lease yields to a waiter that outranks it; one that
+        // has held long renews itself, so no step meets the hard limit.
         if !self
             .lease
             .as_ref()
-            .is_some_and(hil_core::lab::lock::FixtureLock::yield_requested)
+            .is_some_and(|lease| lease.yield_requested() || lease.renewal_due())
         {
             return Ok(None);
         }

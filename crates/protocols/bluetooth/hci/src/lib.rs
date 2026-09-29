@@ -21,15 +21,15 @@
 //!
 //! - [`classify_le_controller_command`] maps one command packet to bootstrap,
 //!   LE Rand, Direct Test Mode, legacy advertising, legacy scanning, filter
-//!   accept list, Data Length, Disconnect, remote feature and version
+//!   accept list, Data Length, PHY, Disconnect, remote feature and version
 //!   discovery or LTK reply values; a
 //!   malformed known command becomes its exact error response and any other
 //!   opcode an Unknown Command completion;
 //! - [`LeControllerBootstrap`] is the reset-scoped state of the software-only
 //!   bootstrap subset and reports the production command inventory;
 //! - LE event and ACL codecs build advertising reports, connection, update,
-//!   disconnection, feature, version, encryption and data length change
-//!   events, Number Of
+//!   disconnection, feature, version, encryption, data length change and
+//!   PHY update events, Number Of
 //!   Completed Packets and fragmented Controller ACL packets.
 //!
 //! The crate owns no command ordering, role state, Link Layer, radio, MMIO,

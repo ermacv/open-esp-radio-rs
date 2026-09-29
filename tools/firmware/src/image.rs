@@ -4,6 +4,8 @@ use oer_process::CommandExt;
 use std::{collections::BTreeMap, env, ffi::OsString, fs, path::Path, process::Command};
 pub const TARGET: &str = "riscv32imafc-unknown-none-elf";
 pub const BOOTSTRAP_BIN: &str = "oer-esp32s31-platform-bootstrap";
+/// The partition table every application image is encoded against.
+pub const PARTITION_TABLE: &str = "platform/esp32s31/partitions/applications.csv";
 fn program_from_env(variable: &str, fallback: &str) -> OsString {
     env::var_os(variable).unwrap_or_else(|| fallback.into())
 }
@@ -207,7 +209,7 @@ fn encode_image(command: &mut Command, root: &Path, bootstrap: &Path, output: &P
             "65536",
             "--partition-table",
         ])
-        .arg(root.join("platform/esp32s31/partitions/applications.csv"))
+        .arg(root.join(PARTITION_TABLE))
         .args(["--target-app-partition", "ota_0"]);
     if rom {
         command.args(["--merge", "--skip-padding"]);

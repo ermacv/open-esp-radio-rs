@@ -40,15 +40,6 @@ const FILES: [&str; 4] = [
     "rust-toolchain",
 ];
 
-/// The firmware workspaces' manifests and lock files, which every image
-/// build reads.
-const FIRMWARE_CONFIGURATION: [&str; 4] = [
-    "hil/targets/esp32s31/Cargo.toml",
-    "hil/targets/esp32s31/Cargo.lock",
-    "platform/esp32s31/bootstrap/Cargo.toml",
-    "platform/esp32s31/bootstrap/Cargo.lock",
-];
-
 /// Runner files that only operate the stand and never shape a passed
 /// observation, left out of every closure so that stand work does not stale
 /// the evidence: the arbiter's leases, queue and board registry, the flash
@@ -116,22 +107,20 @@ impl Closure {
         })
     }
 
-    /// The closure of one run, narrower than the checkout's: the files its
-    /// firmware images were compiled from, which each build recorded as
-    /// `source-inputs.json`, the files of the scenarios it executed, the
-    /// firmware workspaces' configuration, Cargo's configuration and the
-    /// runner's packages (`runner`, from [`runner_directories`]). A change
-    /// to another image class, crate or scenario leaves it current. `None`
-    /// when an image of the run has no recorded inputs.
+    /// The closure of one run, narrower than the checkout's: every file its
+    /// firmware image builds read, which each build recorded as
+    /// `source-inputs.json` (sources, workspace and Cargo configuration,
+    /// policies and the image builder), the files of the scenarios it
+    /// executed and the runner's packages (`runner`, from
+    /// [`runner_directories`]). A change to another image class, crate or
+    /// scenario leaves it current. `None` when an image of the run has no
+    /// complete record.
     pub(super) fn of_run(
         root: &Path,
         run: &Path,
         runner: &BTreeSet<PathBuf>,
     ) -> Result<Option<Self>> {
-        let mut files = FIRMWARE_CONFIGURATION
-            .map(PathBuf::from)
-            .into_iter()
-            .collect::<BTreeSet<_>>();
+        let mut files = BTreeSet::new();
         let mut images = 0;
         for image in fs::read_dir(run.join("firmware"))? {
             let image = image?.path();
@@ -142,7 +131,7 @@ impl Closure {
                 return Ok(None);
             };
             let inputs: SourceInputs = serde_json::from_str(&inputs)?;
-            if inputs.schema != 1 {
+            if inputs.schema != COMPLETE_INPUTS {
                 return Ok(None);
             }
             files.extend(inputs.files);
@@ -159,9 +148,10 @@ impl Closure {
             }
         }
         files.extend(scenario_files(root, &scenarios)?);
-        let mut directories = runner.clone();
-        directories.insert(PathBuf::from(".cargo"));
-        Ok(Some(Self { directories, files }))
+        Ok(Some(Self {
+            directories: runner.clone(),
+            files,
+        }))
     }
 
     pub(super) fn contains(&self, path: &Path) -> bool {
@@ -184,6 +174,10 @@ impl Closure {
         }
     }
 }
+
+/// The `source-inputs.json` schema that lists every file an image build
+/// read; the earlier schema listed only the compiled sources.
+pub(super) const COMPLETE_INPUTS: u32 = 2;
 
 /// The `source-inputs.json` an image build writes beside its artifacts.
 #[derive(Deserialize)]

@@ -956,19 +956,30 @@ fn build_resolved(
         .map_err(|error| log.failed("application image audit", error))?;
     fs::copy(runtime_lock.path(), &effective_embedded_lock)?;
     fs::copy(bootstrap_lock.path(), &effective_bootstrap_lock)?;
-    let source_inputs = source_inputs::write(
-        &output,
-        &source_inputs::collect(
-            root,
-            &[
-                (&runtime_target.join(TARGET).join("release"), RUNTIME_BIN),
-                (
-                    &bootstrap_target.join(TARGET).join("release"),
-                    BOOTSTRAP_BIN,
-                ),
-            ],
-        )?,
+    let compiled = source_inputs::collect(
+        root,
+        &[
+            (&runtime_target.join(TARGET).join("release"), RUNTIME_BIN),
+            (
+                &bootstrap_target.join(TARGET).join("release"),
+                BOOTSTRAP_BIN,
+            ),
+        ],
     )?;
+    let mut inputs = source_inputs::configuration(
+        root,
+        &compiled,
+        &[
+            Path::new("hil/targets/esp32s31"),
+            Path::new("platform/esp32s31"),
+        ],
+        &[
+            Path::new("hil/targets/esp32s31/stack.toml"),
+            Path::new(oer_esp32s31_firmware::PARTITION_TABLE),
+        ],
+    )?;
+    inputs.extend(compiled);
+    let source_inputs = source_inputs::write(&output, &inputs)?;
 
     eprintln!("runtime_crc32={crc:08x}");
     eprintln!("placement_audit=PASS");

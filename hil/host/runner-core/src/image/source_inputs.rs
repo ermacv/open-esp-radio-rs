@@ -6,6 +6,14 @@
 //! produced the image, so evidence recorded from it stays valid while those
 //! files are unchanged. Files outside the repository belong to locked
 //! registry or Git packages and are identified by the lockfiles instead.
+//!
+//! The build also reads files no dep-info names: the firmware workspaces'
+//! manifests and locks, the Cargo configuration and toolchain files, the
+//! workspace manifest each compiled package inherits from, the stack policy
+//! and partition table, and the code that builds, packs and audits the image.
+//! The record lists those too, so whoever asks what an image depends on (the
+//! evidence closure, `check changed`) reads it here instead of keeping its
+//! own list.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -15,8 +23,14 @@ use std::{
 
 use crate::Result;
 
-/// Format of `source-inputs.json`.
-pub const SCHEMA: u32 = 1;
+/// Format of `source-inputs.json`. Schema 2 lists every repository file the
+/// build read; schema 1 listed only the compiled sources.
+pub const SCHEMA: u32 = 2;
+
+/// This package's directory in the repository.
+const BUILDER_PACKAGE: &str = "hil/host/runner-core";
+/// This module's directory: the code that builds every image.
+const BUILDER_MODULE: &str = "hil/host/runner-core/src/image";
 
 /// Repository-relative files the binaries below each `(release directory,
 /// binary name)` were built from, plus the manifest and build script of each
@@ -71,6 +85,108 @@ pub fn collect(repository: &Path, builds: &[(&Path, &str)]) -> Result<BTreeSet<P
                 {
                     files.insert(relative);
                 }
+            }
+        }
+    }
+    Ok(files)
+}
+
+/// The files a build read besides the `compiled` sources: each of the
+/// `workspaces`' manifest and lock file, every Cargo configuration and
+/// toolchain file above those workspaces and the compiled packages, the
+/// workspace manifest each compiled package inherits from, the `read`
+/// policy files and the sources of the image builder, packer and auditor.
+pub fn configuration(
+    repository: &Path,
+    compiled: &BTreeSet<PathBuf>,
+    workspaces: &[&Path],
+    read: &[&Path],
+) -> Result<BTreeSet<PathBuf>> {
+    let repository = repository.canonicalize()?;
+    let is_file = |path: &Path| repository.join(path).is_file();
+    let mut files = BTreeSet::new();
+    let packages = packages(&repository, compiled)?;
+    for workspace in workspaces {
+        for name in ["Cargo.toml", "Cargo.lock"] {
+            let path = workspace.join(name);
+            if is_file(&path) {
+                files.insert(path);
+            }
+        }
+    }
+    for directory in workspaces
+        .iter()
+        .map(|workspace| workspace.to_path_buf())
+        .chain(packages.values().cloned())
+    {
+        for ancestor in directory.ancestors() {
+            for name in [
+                ".cargo/config.toml",
+                ".cargo/config",
+                "rust-toolchain.toml",
+                "rust-toolchain",
+            ] {
+                let path = ancestor.join(name);
+                if is_file(&path) {
+                    files.insert(path);
+                }
+            }
+        }
+    }
+    for package in packages.values() {
+        if let Some(workspace) = package.ancestors().skip(1).find(|ancestor| {
+            fs::read_to_string(repository.join(ancestor).join("Cargo.toml"))
+                .is_ok_and(|manifest| manifest.contains("[workspace"))
+        }) {
+            files.insert(workspace.join("Cargo.toml"));
+        }
+    }
+    files.extend(
+        read.iter()
+            .map(|path| path.to_path_buf())
+            .filter(|path| is_file(path)),
+    );
+    files.extend(builder(&repository)?);
+    Ok(files)
+}
+
+/// The sources of the code that builds, packs and audits every image: this
+/// module, the firmware packer and the memory auditor, without their tests
+/// and prose.
+fn builder(repository: &Path) -> Result<BTreeSet<PathBuf>> {
+    let mut files = BTreeSet::new();
+    let mut pending = vec![PathBuf::from(BUILDER_MODULE)];
+    for package in [
+        BUILDER_PACKAGE,
+        oer_esp32s31_firmware::REPOSITORY_DIRECTORY,
+        oer_memory_report::REPOSITORY_DIRECTORY,
+    ] {
+        let package = Path::new(package);
+        for name in ["Cargo.toml", "build.rs"] {
+            if repository.join(package).join(name).is_file() {
+                files.insert(package.join(name));
+            }
+        }
+        if package != Path::new(BUILDER_PACKAGE) {
+            pending.push(package.join("src"));
+        }
+    }
+    while let Some(directory) = pending.pop() {
+        let Ok(entries) = fs::read_dir(repository.join(&directory)) else {
+            continue;
+        };
+        for entry in entries {
+            let entry = entry?;
+            let name = entry.file_name();
+            let path = directory.join(&name);
+            if entry.file_type()?.is_dir() {
+                if name != "tests" {
+                    pending.push(path);
+                }
+            } else if name != "tests.rs"
+                && path.extension().is_none_or(|extension| extension != "md")
+            {
+                files.insert(path);
             }
         }
     }
@@ -163,6 +279,72 @@ fn packages(repository: &Path, files: &BTreeSet<PathBuf>) -> Result<BTreeMap<Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_builder_package_is_this_crate() {
+        assert!(env!("CARGO_MANIFEST_DIR").ends_with(BUILDER_PACKAGE));
+    }
+
+    #[test]
+    fn configuration_names_what_the_build_reads_beside_the_sources() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        for (path, content) in [
+            ("Cargo.toml", "[workspace]\nmembers = []\n"),
+            ("rust-toolchain.toml", ""),
+            (".cargo/config.toml", ""),
+            ("docs/guide.md", ""),
+            (
+                "crates/radio/Cargo.toml",
+                "[package]\nname = \"oer-radio\"\n",
+            ),
+            ("crates/radio/src/lib.rs", ""),
+            ("hil/targets/chip/Cargo.toml", "[workspace]\nmembers = []\n"),
+            ("hil/targets/chip/Cargo.lock", ""),
+            ("hil/targets/chip/stack.toml", ""),
+            ("hil/host/runner-core/Cargo.toml", ""),
+            ("hil/host/runner-core/src/image/mod.rs", ""),
+            ("hil/host/runner-core/src/image/tests.rs", ""),
+            ("hil/host/runner-core/src/session.rs", ""),
+            ("tools/firmware/Cargo.toml", ""),
+            ("tools/firmware/src/lib.rs", ""),
+            ("tools/firmware/src/flash/tests.rs", ""),
+            ("tools/firmware/README.md", ""),
+            ("tools/memory-report/Cargo.toml", ""),
+            ("tools/memory-report/src/lib.rs", ""),
+        ] {
+            write_file(&root.join(path), content);
+        }
+        let compiled = BTreeSet::from([PathBuf::from("crates/radio/src/lib.rs")]);
+        let files = configuration(
+            &root,
+            &compiled,
+            &[Path::new("hil/targets/chip")],
+            &[
+                Path::new("hil/targets/chip/stack.toml"),
+                Path::new("platform/missing.csv"),
+            ],
+        )
+        .unwrap();
+        let expected = [
+            ".cargo/config.toml",
+            "Cargo.toml",
+            "hil/host/runner-core/Cargo.toml",
+            "hil/host/runner-core/src/image/mod.rs",
+            "hil/targets/chip/Cargo.lock",
+            "hil/targets/chip/Cargo.toml",
+            "hil/targets/chip/stack.toml",
+            "rust-toolchain.toml",
+            "tools/firmware/Cargo.toml",
+            "tools/firmware/src/lib.rs",
+            "tools/memory-report/Cargo.toml",
+            "tools/memory-report/src/lib.rs",
+        ];
+        assert_eq!(
+            files,
+            expected.iter().map(PathBuf::from).collect::<BTreeSet<_>>()
+        );
+    }
 
     fn write_file(path: &Path, content: &str) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();

@@ -301,7 +301,7 @@ mod tests {
         std::fs::create_dir_all(run.path().join("scenarios/boot-smoke")).unwrap();
         std::fs::write(
             image.join("source-inputs.json"),
-            r#"{"schema":1,"files":["crates/radio/src/lib.rs"]}"#,
+            r#"{"schema":2,"files":["crates/radio/src/lib.rs"]}"#,
         )
         .unwrap();
         let closure = super::super::closure::Closure::of_run(root, run.path(), &Default::default())
@@ -324,6 +324,24 @@ mod tests {
         assert!(
             !super::unchanged_within(root, &closure, "0000000000000000000000000000000000000000")
                 .unwrap()
+        );
+    }
+
+    #[test]
+    fn a_record_of_the_compiled_sources_only_has_no_closure_of_its_own() {
+        let run = tempfile::tempdir().unwrap();
+        let image = run.path().join("firmware/boot-smoke");
+        std::fs::create_dir_all(&image).unwrap();
+        std::fs::create_dir_all(run.path().join("scenarios")).unwrap();
+        std::fs::write(
+            image.join("source-inputs.json"),
+            r#"{"schema":1,"files":["crates/radio/src/lib.rs"]}"#,
+        )
+        .unwrap();
+        assert!(
+            super::super::closure::Closure::of_run(run.path(), run.path(), &Default::default())
+                .unwrap()
+                .is_none()
         );
     }
 

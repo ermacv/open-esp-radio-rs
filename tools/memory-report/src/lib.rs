@@ -6,6 +6,10 @@
 //! Compiler mono estimates and linked symbol ranges remain separate views.
 #![forbid(unsafe_code)]
 
+/// This crate's directory in the repository: an image build records the
+/// crate's sources among its inputs, since they audit every image.
+pub const REPOSITORY_DIRECTORY: &str = "tools/memory-report";
+
 mod analyze;
 mod code;
 mod mono;
@@ -58,4 +62,12 @@ pub enum Error {
     StackAudit(String),
     #[error("failed to serialize JSON: {0}")]
     Json(#[from] serde_json::Error),
+}
+
+#[cfg(test)]
+mod repository_directory_tests {
+    #[test]
+    fn the_declared_directory_is_this_crate() {
+        assert!(env!("CARGO_MANIFEST_DIR").ends_with(super::REPOSITORY_DIRECTORY));
+    }
 }

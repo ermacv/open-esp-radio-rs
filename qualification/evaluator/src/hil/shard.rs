@@ -34,6 +34,13 @@ const BUILD_FILES: &[&str] = &[
     "hil/targets/esp32s31/Cargo.toml",
     "platform/esp32s31/Cargo.toml",
 ];
+/// Files the observer's own build reads beside its manifest directories: the
+/// root lock and toolchain it is built with and the inputs it validates.
+const OBSERVER_FILES: &[&str] = &[
+    "Cargo.lock",
+    "rust-toolchain.toml",
+    "hil/schema/observer-inputs.json",
+];
 /// The packages the runner builds in each firmware workspace.
 const RUNTIME_PACKAGE: &str = "oer-hil-esp32s31-runtime";
 const BOOTSTRAP_PACKAGE: &str = "oer-esp32s31-platform-bootstrap";
@@ -108,10 +115,6 @@ impl Snapshot {
             files.insert(relative, bytes);
         }
         Ok(Some(Self(files)))
-    }
-
-    fn is_file(&self, path: &Path) -> bool {
-        self.0.contains_key(path)
     }
 
     /// The digest [`digest`] computes in a checkout holding exactly these
@@ -308,17 +311,11 @@ fn observation_sources(
     let (Some(run), Some(subject)) = (&observation.run_directory, &observation.subject) else {
         return Ok(None);
     };
-    let snapshot = Snapshot::load(run)?;
-    let exists = |path: &Path| match &snapshot {
-        Some(snapshot) => snapshot.is_file(path),
-        None => root.join(path).is_file(),
-    };
     recorded_sources(
         run,
         &subject.firmware,
         subject.observer.as_deref(),
         &|provenance| image_packages(root, provenance),
-        &exists,
     )
 }
 
@@ -407,29 +404,11 @@ fn image_packages(root: &Path, provenance: &Value) -> Result<Option<BTreeSet<Pat
     Ok(Some(packages))
 }
 
-/// Cargo configuration files the builds of the firmware workspaces discover
-/// by walking up from each workspace directory.
-fn cargo_configuration(exists: &dyn Fn(&Path) -> bool) -> BTreeSet<PathBuf> {
-    let mut files = BTreeSet::new();
-    for workspace in FIRMWARE_WORKSPACES {
-        for directory in Path::new(workspace).ancestors().skip(1) {
-            for name in [".cargo/config.toml", ".cargo/config"] {
-                let path = directory.join(name);
-                if exists(&path) {
-                    files.insert(path);
-                }
-            }
-        }
-    }
-    files
-}
-
 fn recorded_sources(
     run: &Path,
     images: &[subject::FirmwareIdentity],
     observer: Option<&Value>,
     packages: &dyn Fn(&Value) -> Result<Option<BTreeSet<PathBuf>>>,
-    exists: &dyn Fn(&Path) -> bool,
 ) -> Result<Option<Vec<PathBuf>>> {
     if images.is_empty() {
         return Ok(None);
@@ -444,8 +423,10 @@ fn recorded_sources(
         else {
             return Ok(None);
         };
-        if inputs["schema"] != 1 {
-            return Err(format!("{image}: unsupported source-inputs schema").into());
+        // An older record lists only the compiled sources, not everything
+        // the build read, so it cannot bind a shard.
+        if inputs["schema"] != super::closure::COMPLETE_INPUTS {
+            return Ok(None);
         }
         let mut files = BTreeSet::new();
         for file in inputs["files"]
@@ -478,8 +459,7 @@ fn recorded_sources(
     }
     let observers = observer.into_iter().collect::<Vec<_>>();
     paths.extend(observer_directories(&observers)?);
-    paths.extend(BUILD_FILES.iter().map(PathBuf::from));
-    paths.extend(cargo_configuration(exists));
+    paths.extend(OBSERVER_FILES.iter().map(PathBuf::from));
     paths.remove(Path::new(""));
     Ok(Some(paths.into_iter().collect()))
 }
@@ -837,7 +817,7 @@ mod tests {
             fs::create_dir_all(&directory).unwrap();
             fs::write(
                 directory.join("source-inputs.json"),
-                serde_json::to_vec(&json!({"schema": 1, "files": files})).unwrap(),
+                serde_json::to_vec(&json!({"schema": 2, "files": files})).unwrap(),
             )
             .unwrap();
             fs::write(
@@ -851,20 +831,20 @@ mod tests {
             json!([
                 "crates/radio/Cargo.toml",
                 "crates/radio/src/lib.rs",
-                "platform/linker/link.x"
+                "platform/linker/link.x",
+                "hil/targets/esp32s31/Cargo.toml",
+                ".cargo/config.toml"
             ]),
         );
         let observer = json!({"build": {"resolved": {"manifests": {
             "hil/host/runner/Cargo.toml": {}
         }}}});
         let radio = |_: &Value| Ok(Some(BTreeSet::from([PathBuf::from("crates/radio")])));
-        let exists = |path: &Path| root.join(path).is_file();
         let sources = recorded_sources(
             &run,
             &[image("correctness", false)],
             Some(&observer),
             &radio,
-            &exists,
         )
         .unwrap()
         .unwrap();
@@ -893,7 +873,7 @@ mod tests {
         let recorded =
             |images: &[subject::FirmwareIdentity],
              packages: &dyn Fn(&Value) -> Result<Option<BTreeSet<PathBuf>>>| {
-                recorded_sources(&run, images, None, packages, &exists).unwrap()
+                recorded_sources(&run, images, None, packages).unwrap()
             };
         assert!(recorded(&[image("correctness", false)], &more).is_none());
         // A replay or an image without recorded inputs keeps the broad set.
@@ -901,9 +881,15 @@ mod tests {
         assert!(recorded(&[image("performance", false)], &radio).is_none());
         assert!(recorded(&[], &radio).is_none());
         inputs("performance", json!(["../outside.rs"]));
-        assert!(
-            recorded_sources(&run, &[image("performance", false)], None, &radio, &exists).is_err()
-        );
+        assert!(recorded_sources(&run, &[image("performance", false)], None, &radio).is_err());
+        // A record of the compiled sources only cannot bind a shard.
+        fs::write(
+            run.join("firmware/correctness/source-inputs.json"),
+            serde_json::to_vec(&json!({"schema": 1, "files": ["crates/radio/src/lib.rs"]}))
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(recorded(&[image("correctness", false)], &radio).is_none());
         fs::remove_dir_all(root).unwrap();
     }
 

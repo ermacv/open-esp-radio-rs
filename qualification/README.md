@@ -499,15 +499,14 @@ only when attempted. They do not establish RF quality, a qualified PHY execution
 bound, or relative performance non-regression. Default applicability is
 `current-source-composition`: verified current source binding and no unbound
 replay. Currency is judged on the run's closure, the files that can change its
-observation: the files each of its images was compiled from (the
+observation: every file each of its image builds read (the
 `source-inputs.json` the build recorded), the files of the scenarios it ran,
-the firmware workspaces' manifests and lock files, Cargo's configuration, the
-workspace manifest, lockfile and toolchain, and the HIL runner's packages
+the workspace manifest, lockfile and toolchain, and the HIL runner's packages
 except the code that only operates the stand (the arbiter's leases and queue,
 flash transactions, and the post-mortem, recovery and profile reports of
 failed repetitions) and their tests and prose. A
-run whose images recorded no inputs falls back to the checkout-wide closure of
-every firmware and runner package. A build from a clean commit binds while no
+run whose images recorded no complete inputs falls back to the checkout-wide
+closure of every firmware and runner package. A build from a clean commit binds while no
 closure file differs between that commit and the checkout, tracked or
 untracked, so commits that touch only other crates, image classes or
 scenarios leave it current. A `source-snapshot` build can establish this direct binding:
@@ -543,14 +542,17 @@ completion seal, the observation subject (observer proof, firmware identity,
 repository provenance) and the executed scenario document, and the digests of
 the sources the firmware and observer were built from. The runner records, per
 image, the repository files its build read in the bundle's
-`firmware/<image>/source-inputs.json`: the sources Cargo's dep-info lists for
-the runtime and bootstrap binaries, the repository inputs their build scripts
-declare (linker scripts), and each compiled package's manifest and build
-script. A shard binds those files, its own observer's manifest directories,
-the lockfiles, stack policy, partition table, toolchain file, observer input
-registry, both firmware workspace manifests (release profile and `[patch]`)
-and the `.cargo/config.toml` files the builds discover, so a change in another
-radio's driver leaves it current. The evaluator independently runs `cargo tree`
+`firmware/<image>/source-inputs.json` (schema 2): the sources Cargo's dep-info
+lists for the runtime and bootstrap binaries, the repository inputs their build
+scripts declare (linker scripts), each compiled package's manifest and build
+script, both firmware workspaces' manifests (release profile and `[patch]`)
+and lock files, the Cargo configuration and toolchain files above them, the
+workspace manifest the compiled packages inherit from, the stack policy and
+partition table, and the sources of the image builder, packer and memory
+auditor. A shard binds those files, its own observer's manifest directories
+and the observer's lock, toolchain and input registry, so a change in another
+radio's driver leaves it current. A schema 1 record listed only the compiled
+sources and binds no shard. The evaluator independently runs `cargo tree`
 for the image's runtime (with the features its build provenance records) and
 bootstrap; when the recorded list lacks the manifest of any package found
 there, the shard falls back to the broad binding. An observation whose

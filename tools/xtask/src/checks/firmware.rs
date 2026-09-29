@@ -64,54 +64,11 @@ fn seed_of(class: ImageClass) -> ImageClass {
     }
 }
 
-/// Inputs outside the compiled sources that every image build or its audits
-/// read: Cargo's configuration, the root and firmware workspace manifests and
-/// locks, the stack and memory policies, and the build and audit tooling. A
-/// change to one affects every class. The sources, manifests, build scripts
-/// and linker scripts of the compiled packages are in each build's
-/// `source-inputs.json` instead, and the root `Cargo.lock` only locks host
-/// packages; `check changed` audits it for vendor packages directly.
-const SHARED_INPUTS: [&str; 12] = [
-    ".cargo/",
-    "rust-toolchain",
-    "Cargo.toml",
-    "hil/targets/esp32s31/Cargo.toml",
-    "hil/targets/esp32s31/Cargo.lock",
-    "hil/targets/esp32s31/stack.toml",
-    "hil/targets/esp32s31/memory/",
-    "platform/esp32s31/Cargo.toml",
-    "platform/esp32s31/Cargo.lock",
-    "tools/memory-report/",
-    "tools/firmware/",
-    "hil/host/runner-core/src/image/",
-];
-
-/// Whether `path` below a shared input builds nothing: prose, and test
-/// modules and directories.
-fn builds_nothing(path: &std::path::Path) -> bool {
-    path.extension().is_some_and(|extension| extension == "md")
-        || path.file_name().is_some_and(|name| name == "tests.rs")
-        || path.components().any(|component| {
-            matches!(
-                component.as_os_str().to_str(),
-                Some("tests" | "testdata" | "fixtures")
-            )
-        })
-}
-
-/// Whether a change of `path` affects every class.
-fn is_shared_input(path: &std::path::Path) -> bool {
-    !builds_nothing(path)
-        && SHARED_INPUTS.iter().any(|input| {
-            path.starts_with(input.trim_end_matches('/'))
-                || (!input.ends_with('/') && path.to_string_lossy().starts_with(input))
-        })
-}
-
 /// The classes whose image a change of `changed` (repository-relative
 /// paths) can alter or whose audits it can change: those whose last build in
-/// the host build root compiled a changed file, every class when a shared
-/// input changed, and every class that has no recorded build yet.
+/// the host build root read a changed file, as its `source-inputs.json`
+/// records (sources, workspace and Cargo configuration, policies and the
+/// image builder itself), and every class that has no complete record yet.
 pub fn affected(changed: &[PathBuf]) -> Result<Vec<ImageClass>> {
     Ok(affected_in(
         &oer_hil_runner_core::image::chip_build_root("esp32s31")?,
@@ -120,27 +77,25 @@ pub fn affected(changed: &[PathBuf]) -> Result<Vec<ImageClass>> {
 }
 
 fn affected_in(builds: &std::path::Path, changed: &[PathBuf]) -> Vec<ImageClass> {
-    let shared = changed.iter().any(|path| is_shared_input(path));
     ImageClass::ALL
         .into_iter()
-        .filter(|class| {
-            shared
-                || match last_inputs(builds, *class) {
-                    Some(inputs) => changed.iter().any(|path| inputs.contains(path)),
-                    None => true,
-                }
+        .filter(|class| match last_inputs(builds, *class) {
+            Some(inputs) => changed.iter().any(|path| inputs.contains(path)),
+            None => true,
         })
         .collect()
 }
 
-/// The source inputs the newest build of `class` in the host build root
-/// recorded, or `None` when it has none.
+/// Every input the newest build of `class` in the host build root recorded,
+/// or `None` when it has none or an older record that listed only the
+/// compiled sources.
 fn last_inputs(
     builds: &std::path::Path,
     class: ImageClass,
 ) -> Option<std::collections::BTreeSet<PathBuf>> {
     #[derive(serde::Deserialize)]
     struct SourceInputs {
+        schema: u32,
         files: Vec<PathBuf>,
     }
     let name = format!("{}-{}", class.id(), Integration::OwnedXarxa.id());
@@ -151,7 +106,8 @@ fn last_inputs(
         .filter_map(|path| Some((std::fs::metadata(&path).ok()?.modified().ok()?, path)))
         .max()?;
     let inputs: SourceInputs = serde_json::from_slice(&std::fs::read(newest.1).ok()?).ok()?;
-    Some(inputs.files.into_iter().collect())
+    (inputs.schema == oer_hil_runner_core::image::source_inputs::SCHEMA)
+        .then(|| inputs.files.into_iter().collect())
 }
 
 /// Classes waiting to build, and the outcomes of those that did.
@@ -432,7 +388,11 @@ mod tests {
             std::fs::create_dir_all(&directory).unwrap();
             std::fs::write(
                 directory.join("source-inputs.json"),
-                serde_json::json!({"schema": 1, "files": files}).to_string(),
+                serde_json::json!({
+                    "schema": oer_hil_runner_core::image::source_inputs::SCHEMA,
+                    "files": files,
+                })
+                .to_string(),
             )
             .unwrap();
         };
@@ -456,29 +416,33 @@ mod tests {
             changed(&["crates/common/src/lib.rs"]).len(),
             ImageClass::ALL.len()
         );
-        assert_eq!(
-            changed(&["hil/targets/esp32s31/stack.toml"]).len(),
-            ImageClass::ALL.len()
-        );
         assert!(!changed(&["crates/wifi/src/lib.rs"]).contains(&bluetooth));
-        for unshared in [
-            "Cargo.lock",
-            "platform/esp32s31/README.md",
-            "hil/host/runner-core/src/image/tests.rs",
-            "tools/firmware/tests/pack.rs",
-            "hil/host/runner/src/main.rs",
-        ] {
-            assert!(changed(&[unshared]).is_empty(), "{unshared}");
+        // Configuration and builder files are inputs like any other: a
+        // class is rebuilt when its record names one.
+        record(
+            wifi,
+            &[
+                "crates/wifi/src/lib.rs",
+                "hil/targets/esp32s31/stack.toml",
+                "tools/firmware/src/lib.rs",
+            ],
+        );
+        assert_eq!(changed(&["tools/firmware/src/lib.rs"]), [wifi]);
+        for unread in ["Cargo.lock", "hil/host/runner/src/main.rs", "docs/guide.md"] {
+            assert!(changed(&[unread]).is_empty(), "{unread}");
         }
-        for shared in [
-            "Cargo.toml",
-            "rust-toolchain.toml",
-            ".cargo/config.toml",
-            "platform/esp32s31/Cargo.lock",
-            "hil/host/runner-core/src/image/mod.rs",
-        ] {
-            assert_eq!(changed(&[shared]).len(), ImageClass::ALL.len(), "{shared}");
-        }
+        // A record that lists only the compiled sources is incomplete.
+        let old = builds.path().join("snapshot-builds/abc").join(format!(
+            "{}-{}",
+            wifi.id(),
+            Integration::OwnedXarxa.id()
+        ));
+        std::fs::write(
+            old.join("source-inputs.json"),
+            serde_json::json!({"schema": 1, "files": ["crates/wifi/src/lib.rs"]}).to_string(),
+        )
+        .unwrap();
+        assert_eq!(changed(&["docs/guide.md"]), [wifi]);
         std::fs::remove_dir_all(builds.path().join("snapshot-builds/abc").join(format!(
             "{}-{}",
             bluetooth.id(),

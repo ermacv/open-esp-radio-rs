@@ -351,22 +351,22 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
         }
     }
     if plan.firmware {
-        // Build and audit the images the change can alter, in the host's
-        // build slots: a stack or placement regression fails here rather
-        // than on main.
+        // Type-check the images the change can alter. Building and auditing
+        // them (stack, placement) runs after the push, off the pushing
+        // session's path: see `verify_main`.
         if changed.iter().any(|path| path == Path::new("Cargo.lock")) {
             oer_hil_runner_core::image::ensure_vendor_dependencies_absent(&ctx.root)?;
         }
         let affected = super::firmware::affected(&changed)?;
         if !affected.is_empty() {
             println!(
-                "check changed: building and auditing {} HIL image classes the change reaches",
+                "check changed: type-checking {} HIL image classes the change reaches",
                 affected.len()
             );
             super::firmware::run(
                 ctx,
                 &affected,
-                super::firmware::Depth::Build,
+                super::firmware::Depth::TypeCheck,
                 super::firmware::default_jobs(),
             )?;
         }
@@ -403,6 +403,12 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
             "check changed: formatted {}; build it with its own target and feature profile",
             workspace.display()
         );
+    }
+    if let Some(report) = crate::verify_main::status()
+        .ok()
+        .and_then(|status| status.report())
+    {
+        println!("check changed: {report}");
     }
     // A reminder only: runs never write tracked files, so evidence is an
     // explicit step that is easy to forget.

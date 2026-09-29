@@ -97,7 +97,10 @@ push`: a pipeline's status is its last command's. `check changed` formats every
 workspace a changed file belongs to, runs workspace Clippy, and tests and
 documents the changed root packages, plus the docs and metadata checks when
 prose or manifests changed, and the capability anchors when Rust sources or
-catalogs changed. Other workspaces (HIL target, examples) still need their own
+catalogs changed, and it type-checks the HIL image classes the change reaches.
+Building and auditing those images runs after the push in the background
+(`cargo xtask verify-main`); a failure it reports names the commit range to
+fix, and fixing it comes before other work. Other workspaces (examples) still need their own
 target build. A qualification catalog entry that claims support names its
 owning code with a `// CAPABILITY: <id>` comment above that item (see
 [code anchors](qualification/README.md#code-anchors)); keep the anchor and the
@@ -141,9 +144,10 @@ shift. Keep `unsafe` narrowly scoped and documented; the workspace denies
 
 ## Testing Guidelines
 
-Every behavioral change needs a focused regression test. Hardware-facing
-changes should pair host tests with dated HIL evidence when qualification is
-claimed. Vendor comparison must fail closed (`MATCH`, `DIFF`, or `INCOMPLETE`)
+Every behavioral change needs a focused regression test. Run the HIL
+scenarios a hardware-facing change needs to be trusted, but recording HIL
+evidence is not required for a change: at this stage stale evidence is
+information, and qualification is run on a baseline the user chooses. Vendor comparison must fail closed (`MATCH`, `DIFF`, or `INCOMPLETE`)
 and must exercise compiled production code, not a shadow implementation. Do
 not test generated register addresses, masks, shifts, field positions, or PAC
 type names. Tests for memory protocols should verify behavior and ownership,

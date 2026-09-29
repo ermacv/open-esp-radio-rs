@@ -10,6 +10,7 @@
 //! path, so it calibrates fully and publishes the new retained calibration.
 use crate::registers::{Register, Space};
 use crate::{Result, repository_root, vendor};
+use oer_hil_runner_core::device::{EraseCalibration, Slot, booted_slot};
 use oer_hil_runner_core::lab::config::LabConfig;
 use oer_hil_runner_core::session::{SerialCapture, Settings, Target};
 use serde::{Deserialize, Serialize};
@@ -32,6 +33,13 @@ const JOURNAL_PREFIX: &str = "vendor-";
 const VENDOR_BOOT_TIMEOUT: Duration = Duration::from_secs(20);
 /// Serial read poll interval; the USB-Serial/JTAG console ignores the rate.
 const READ_TIMEOUT: Duration = Duration::from_millis(100);
+/// The raw console a production session capture keeps.
+const SESSION_CONSOLE: &str = "uart.bin";
+/// The two-slot layout's slots of the vendor firmware and the production
+/// image: both are written once and a round selects one, so the rounds boot
+/// them without flashing.
+const VENDOR_SLOT: Slot = Slot::Ota0;
+const PRODUCTION_SLOT: Slot = Slot::Ota1;
 /// Bootstrap ELF the HIL image build leaves beside the application.
 const BOOTSTRAP_ELF: &str = "bootstrap.elf";
 /// Longest wait for one Wi-Fi radio restart on either side.
@@ -71,6 +79,21 @@ impl Lifecycle {
         matches!(self, Self::Ieee802154 | Self::Ieee802154Restart)
     }
 
+    /// Whether the point restarts the radio that holds the PHY.
+    fn restarts(self) -> bool {
+        matches!(self, Self::Restart | Self::Ieee802154Restart)
+    }
+
+    /// The point's name, also its directory in a capture of several points.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Cold => "cold",
+            Self::Restart => "restart",
+            Self::Ieee802154 => "ieee802154",
+            Self::Ieee802154Restart => "ieee802154-restart",
+        }
+    }
+
     /// The vendor firmware project and HIL image class of the point.
     fn images(self) -> (&'static str, &'static str) {
         if self.ieee802154() {
@@ -79,6 +102,42 @@ impl Lifecycle {
             (CALIBRATION_VENDOR_PROJECT, CALIBRATION_PRODUCTION_IMAGE)
         }
     }
+}
+
+/// The points one capture reads in each boot, in order: one point, or a
+/// radio's bring-up followed by its restart in the same boot.
+fn boot_points(requested: &[Lifecycle]) -> Result<Vec<Lifecycle>> {
+    match requested {
+        [point] => Ok(vec![*point]),
+        [Lifecycle::Cold, Lifecycle::Restart]
+        | [Lifecycle::Ieee802154, Lifecycle::Ieee802154Restart] => Ok(requested.to_vec()),
+        _ => Err(format!(
+            "lifecycle points {requested:?}: one point, cold,restart or ieee802154,ieee802154-restart"
+        )
+        .into()),
+    }
+}
+
+/// The capture directories under `captures`: itself when it records one
+/// point, otherwise its point directories in lifecycle order.
+pub fn point_directories(captures: &Path) -> Result<Vec<PathBuf>> {
+    if captures.join(RECORD).is_file() {
+        return Ok(vec![captures.to_owned()]);
+    }
+    let directories: Vec<PathBuf> = [
+        Lifecycle::Cold,
+        Lifecycle::Restart,
+        Lifecycle::Ieee802154,
+        Lifecycle::Ieee802154Restart,
+    ]
+    .into_iter()
+    .map(|point| captures.join(point.name()))
+    .filter(|directory| directory.join(RECORD).is_file())
+    .collect();
+    if directories.is_empty() {
+        return Err(format!("{} holds no capture", captures.display()).into());
+    }
+    Ok(directories)
 }
 
 /// Vendor firmware projects of `verification/esp32s31/hil-vendor` and HIL
@@ -122,9 +181,11 @@ pub struct Arguments {
     /// own by default.
     #[arg(long)]
     production_image: Option<String>,
-    /// Lifecycle point at which the registers are read.
-    #[arg(long, value_enum, default_value_t = Lifecycle::Cold)]
-    lifecycle: Lifecycle,
+    /// Lifecycle points at which the registers are read: one point, or
+    /// `cold,restart` and `ieee802154,ieee802154-restart`, which read both
+    /// points in each boot into one directory per point.
+    #[arg(long, value_enum, value_delimiter = ',', default_value = "cold")]
+    lifecycle: Vec<Lifecycle>,
     /// Further device windows the vendor reference firmware reads with
     /// `PEEK` at an IEEE 802.15.4 point, as `ADDRESS:WORDS` (hexadecimal
     /// address, decimal word count), recorded in `vendor-NN.windows`.
@@ -340,25 +401,88 @@ fn vendor_registers(
     Ok(())
 }
 
+/// Restart the radio that holds production's PHY at a restarting `point`
+/// and require that RF was closed.
+fn production_restart(capture: &SerialCapture, point: Lifecycle) -> Result<()> {
+    if point.ieee802154() {
+        // The session stops and starts its radio client, then configures
+        // and receives again without transmitting.
+        let restarted = capture.restart_ieee802154_session_radio(SESSION_TIMEOUT)?;
+        if !restarted.rf_closed {
+            return Err(
+                format!("the production session restart kept RF open: {restarted:?}").into(),
+            );
+        }
+    } else {
+        let evidence =
+            capture.wait_wifi_radio_restart(capture.request_radio_restart()?, RESTART_TIMEOUT)?;
+        if evidence.rf != oer_hil_protocol::wifi::WifiRadioRestartRf::ClosedAndWoken {
+            return Err(format!("the production restart kept RF open: {evidence:?}").into());
+        }
+    }
+    Ok(())
+}
+
+/// Production's register replies at the `readable` image indices and its
+/// whole analog image, in the vendor line formats.
+fn production_registers(
+    capture: &SerialCapture,
+    registers: &[Register],
+    readable: &[usize],
+    analog: &[Register],
+) -> Result<(String, String)> {
+    let mut replies = String::new();
+    for window in windows(readable) {
+        let words = capture.read_phy_register_image(window, REGISTER_IMAGE_TIMEOUT)?;
+        for (offset, value) in words.values.iter().enumerate() {
+            let register = &registers[usize::from(words.first) + offset];
+            replies.push_str(&Space::Mmio.line(register.address, *value));
+        }
+    }
+    let mut analog_replies = String::new();
+    let every: Vec<usize> = (0..analog.len()).collect();
+    for window in windows(&every) {
+        let bytes = capture.read_phy_analog_image(window, REGISTER_IMAGE_TIMEOUT)?;
+        if usize::from(bytes.length) != analog.len() {
+            return Err(format!(
+                "production reads {} analog registers, the published model {}",
+                bytes.length,
+                analog.len()
+            )
+            .into());
+        }
+        for (offset, value) in bytes.values.iter().enumerate() {
+            let register = &analog[usize::from(bytes.first) + offset];
+            analog_replies.push_str(&Space::Analog.line(register.address, u32::from(*value)));
+        }
+    }
+    Ok((replies, analog_replies))
+}
+
 /// One cold production boot publishing its retained calibration to
-/// `artifact`, then reading the register image at `readable` indices and
-/// the whole analog image; the replies use the vendor line formats.
+/// `artifact`, then, at each of `points` in turn, reading the register image
+/// at that point's `readable` indices and the whole analog image; the
+/// replies use the vendor line formats. The boot's console must show the
+/// bootloader loading `slot`.
+#[allow(clippy::too_many_arguments)]
 fn production_boot(
     lab: &LabConfig,
     artifact: &Path,
     output: &Path,
     registers: &[Register],
-    readable: &[usize],
+    readable: &[Vec<usize>],
     analog: &[Register],
-    lifecycle: Lifecycle,
-) -> Result<(String, String)> {
+    points: &[Lifecycle],
+    slot: Slot,
+) -> Result<Vec<(String, String)>> {
     let mut lab = lab.clone();
     lab.dut.startup_artifact = Some(artifact.to_owned());
+    let bring_up = points[0];
     let capture = SerialCapture::start_with_reset(&lab.dut.serial, output)?;
     let result = (|| {
         // The IEEE 802.15.4 session replaces the image's own initialization:
         // it is admitted only before it, and publishes no startup artifact.
-        let status = if lifecycle.ieee802154() {
+        let status = if bring_up.ieee802154() {
             capture.request_image_keys(SESSION_TIMEOUT)?;
             None
         } else {
@@ -368,56 +492,28 @@ fn production_boot(
             })?;
             status
         };
-        if lifecycle == Lifecycle::Restart {
-            let evidence = capture
-                .wait_wifi_radio_restart(capture.request_radio_restart()?, RESTART_TIMEOUT)?;
-            if evidence.rf != oer_hil_protocol::wifi::WifiRadioRestartRf::ClosedAndWoken {
-                return Err(format!("the production restart kept RF open: {evidence:?}").into());
-            }
-        }
-        if lifecycle.ieee802154() {
+        if bring_up.ieee802154() {
             ieee802154_session(&capture)?;
-            if lifecycle == Lifecycle::Ieee802154Restart {
-                // The session stops and starts its radio client, then
-                // configures and receives again without transmitting.
-                let restarted = capture.restart_ieee802154_session_radio(SESSION_TIMEOUT)?;
-                if !restarted.rf_closed {
-                    return Err(format!(
-                        "the production session restart kept RF open: {restarted:?}"
-                    )
-                    .into());
-                }
-            }
         }
-        let mut replies = String::new();
-        for window in windows(readable) {
-            let words = capture.read_phy_register_image(window, REGISTER_IMAGE_TIMEOUT)?;
-            for (offset, value) in words.values.iter().enumerate() {
-                let register = &registers[usize::from(words.first) + offset];
-                replies.push_str(&Space::Mmio.line(register.address, *value));
+        let mut replies = Vec::with_capacity(points.len());
+        for (point, readable) in points.iter().zip(readable) {
+            if point.restarts() {
+                production_restart(&capture, *point)?;
             }
+            replies.push(production_registers(&capture, registers, readable, analog)?);
         }
-        let mut analog_replies = String::new();
-        let every: Vec<usize> = (0..analog.len()).collect();
-        for window in windows(&every) {
-            let bytes = capture.read_phy_analog_image(window, REGISTER_IMAGE_TIMEOUT)?;
-            if usize::from(bytes.length) != analog.len() {
-                return Err(format!(
-                    "production reads {} analog registers, the published model {}",
-                    bytes.length,
-                    analog.len()
-                )
-                .into());
-            }
-            for (offset, value) in bytes.values.iter().enumerate() {
-                let register = &analog[usize::from(bytes.first) + offset];
-                analog_replies.push_str(&Space::Analog.line(register.address, u32::from(*value)));
-            }
-        }
-        Ok((status, (replies, analog_replies)))
+        Ok((status, replies))
     })();
     let (status, replies) = capture.finish_with(result)?;
-    if lifecycle.ieee802154() {
+    let console = std::fs::read(output.join(SESSION_CONSOLE))?;
+    if booted_slot(&console) != Some(slot) {
+        return Err(format!(
+            "the production boot did not load slot {slot:?}; its console is {}",
+            output.join(SESSION_CONSOLE).display()
+        )
+        .into());
+    }
+    if bring_up.ieee802154() {
         return Ok(replies);
     }
     let status = status.ok_or("the production image published no startup artifact")?;
@@ -502,11 +598,49 @@ fn window_registers(windows: &[(u32, u32)]) -> Vec<Register> {
         .collect()
 }
 
+/// The vendor calibration firmware's boot console, from the reset, and its
+/// register and analog replies at each of `points` in turn: the Wi-Fi
+/// bring-up, then its restart in the same boot.
+fn vendor_wifi_boot(
+    port: &Path,
+    points: &[Lifecycle],
+    registers: &[Register],
+    analog: &[Register],
+) -> Result<(String, Vec<(String, String)>)> {
+    let (console, mut serial) = vendor_boot(port)?;
+    let mut replies = Vec::with_capacity(points.len());
+    for &point in points {
+        let mut register_replies = String::new();
+        if point.restarts() {
+            vendor_restart(&mut *serial, &mut register_replies)?;
+        }
+        vendor_registers(
+            &mut *serial,
+            Space::Mmio,
+            registers,
+            point,
+            &mut register_replies,
+        )?;
+        let mut analog_replies = String::new();
+        vendor_registers(
+            &mut *serial,
+            Space::Analog,
+            analog,
+            point,
+            &mut analog_replies,
+        )?;
+        replies.push((register_replies, analog_replies));
+    }
+    Ok((console, replies))
+}
+
 pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
     let root = repository_root().canonicalize()?;
+    let points = boot_points(&arguments.lifecycle)?;
+    let bring_up = points[0];
     let investigates = !arguments.vendor_windows.is_empty() || arguments.vendor_transmit;
-    if investigates && !arguments.lifecycle.ieee802154() {
-        return Err("vendor windows and transmission need an IEEE 802.15.4 point".into());
+    if investigates && !(bring_up.ieee802154() && points.len() == 1) {
+        return Err("vendor windows and transmission need one IEEE 802.15.4 point".into());
     }
     let windows = window_registers(&arguments.vendor_windows);
     let lab_path = match &arguments.lab_config {
@@ -515,7 +649,7 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
     };
     let lab = LabConfig::load(&lab_path, "esp32s31")?;
     let port = lab.dut.serial.clone();
-    let (vendor_project, production_image) = arguments.lifecycle.images();
+    let (vendor_project, production_image) = bring_up.images();
     let vendor_project = arguments
         .vendor_project
         .as_deref()
@@ -530,8 +664,8 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
     } else {
         Some(build_production(&root, production_image)?)
     };
-    // The image's bootstrap ELF, from which the runner restores the HIL
-    // bootloader on every production flash.
+    // The image's bootstrap ELF, from which the runner writes the HIL
+    // bootloader with the production slot.
     let production_bootstrap = built
         .as_ref()
         .map(|(production, _)| production.with_file_name(BOOTSTRAP_ELF))
@@ -544,30 +678,65 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
     std::fs::create_dir(&arguments.output)
         .map_err(|error| format!("{}: {error}", arguments.output.display()))?;
     let output = arguments.output.canonicalize()?;
+    // A boot that reads several points writes one capture directory each.
+    let directories: Vec<PathBuf> = if points.len() == 1 {
+        vec![output.clone()]
+    } else {
+        points
+            .iter()
+            .map(|point| output.join(point.name()))
+            .collect()
+    };
+    for directory in &directories {
+        std::fs::create_dir_all(directory)?;
+    }
     let started_unix_seconds = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     let _lease = oer_esp32s31_firmware::device::DeviceLease::acquire(&port)?;
+
+    // Both firmwares are written once, each into its slot of the two-slot
+    // layout. Each round selects a slot and erases the calibration the other
+    // firmware left, so every boot calibrates cold without a flash.
+    let production_slot = match &built {
+        Some((production, _)) => Some(oer_hil_runner_core::device::flash_slot(
+            &root,
+            production,
+            production_bootstrap.as_deref(),
+            PRODUCTION_SLOT,
+            &output.join("flash-production"),
+            &port,
+        )?),
+        None => None,
+    };
+    let vendor_slot = oer_hil_runner_core::device::flash_slot(
+        &root,
+        &vendor_build.application,
+        // The vendor image keeps the board's HIL bootloader.
+        None,
+        VENDOR_SLOT,
+        &output.join("flash-vendor"),
+        &port,
+    )?;
 
     // Vendor and production boots alternate, so both sides see the same
     // board temperature drift.
     let journal_name = format!("{JOURNAL_PREFIX}{vendor_project}");
     for boot in 1..=arguments.boots {
-        oer_hil_runner_core::device::flash_application(
-            &root,
-            &vendor_build.application,
-            // The vendor image keeps the board's HIL bootloader.
-            None,
-            &output.join("flash-vendor"),
-            &port,
-        )?;
+        oer_hil_runner_core::device::select_slot(&port, &vendor_slot, EraseCalibration::Yes)?;
         journal(&root, &journal_name, &vendor_build.application, &port)?;
-        let (console, replies, analog_replies) = if arguments.lifecycle.ieee802154() {
-            let mut peer = crate::peer::Peer::boot(
-                reset_console(&port)?,
-                arguments.lifecycle == Lifecycle::Ieee802154Restart,
-            )?;
-            let replies = peer.registers(Space::Mmio, &registers)?;
-            let analog_replies = peer.registers(Space::Analog, &analog)?;
-            let stem = output.join(format!("{VENDOR_PREFIX}{boot:02}"));
+        let stem = format!("{VENDOR_PREFIX}{boot:02}");
+        let (console, replies) = if bring_up.ieee802154() {
+            let mut peer = crate::peer::Peer::boot(reset_console(&port)?, bring_up.restarts())?;
+            let mut replies = Vec::with_capacity(points.len());
+            for index in 0..points.len() {
+                if index > 0 {
+                    peer.restart()?;
+                }
+                replies.push((
+                    peer.registers(Space::Mmio, &registers)?,
+                    peer.registers(Space::Analog, &analog)?,
+                ));
+            }
+            let stem = directories[0].join(&stem);
             if !windows.is_empty() {
                 let lines = peer.registers(Space::Mmio, &windows)?;
                 std::fs::write(stem.with_extension(WINDOW_EXTENSION), lines)?;
@@ -587,98 +756,99 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
                     )?;
                 }
             }
-            (peer.console, replies, analog_replies)
+            (peer.console, replies)
         } else {
-            let (console, mut serial) = vendor_boot(&port)?;
-            let mut replies = String::new();
-            if arguments.lifecycle == Lifecycle::Restart {
-                vendor_restart(&mut *serial, &mut replies)?;
-            }
-            vendor_registers(
-                &mut *serial,
-                Space::Mmio,
-                &registers,
-                arguments.lifecycle,
-                &mut replies,
-            )?;
-            let mut analog_replies = String::new();
-            vendor_registers(
-                &mut *serial,
-                Space::Analog,
-                &analog,
-                arguments.lifecycle,
-                &mut analog_replies,
-            )?;
-            (console, replies, analog_replies)
+            vendor_wifi_boot(&port, &points, &registers, &analog)?
         };
-        let stem = format!("{VENDOR_PREFIX}{boot:02}");
-        std::fs::write(output.join(format!("{stem}.{CONSOLE_EXTENSION}")), console)?;
-        std::fs::write(
-            output.join(format!("{stem}.{REGISTER_EXTENSION}")),
-            &replies,
-        )?;
-        std::fs::write(
-            output.join(format!("{stem}.{ANALOG_EXTENSION}")),
-            &analog_replies,
-        )?;
+        if booted_slot(console.as_bytes()) != Some(VENDOR_SLOT) {
+            return Err(format!("vendor boot {boot} did not load slot {VENDOR_SLOT:?}").into());
+        }
+        for (directory, (register_replies, analog_replies)) in directories.iter().zip(&replies) {
+            std::fs::write(
+                directory.join(format!("{stem}.{CONSOLE_EXTENSION}")),
+                &console,
+            )?;
+            std::fs::write(
+                directory.join(format!("{stem}.{REGISTER_EXTENSION}")),
+                register_replies,
+            )?;
+            std::fs::write(
+                directory.join(format!("{stem}.{ANALOG_EXTENSION}")),
+                analog_replies,
+            )?;
+        }
         println!(
-            "vendor boot {boot}: report, {} registers and {} analog registers captured",
+            "vendor boot {boot}: report, {} registers and {} analog registers captured at {} point(s)",
             registers.len(),
-            analog.len()
+            analog.len(),
+            points.len()
         );
-        let Some((production, _)) = &built else {
+        let (Some((production, _)), Some(production_slot)) = (&built, &production_slot) else {
             continue;
         };
 
-        oer_hil_runner_core::device::flash_application(
-            &root,
-            production,
-            production_bootstrap.as_deref(),
-            &output.join("flash-production"),
-            &port,
-        )?;
+        oer_hil_runner_core::device::select_slot(&port, production_slot, EraseCalibration::Yes)?;
         journal(&root, production_image, production, &port)?;
-        let answered = vendor::registers(&replies)?;
-        let readable: Vec<usize> = registers
+        let readable = replies
             .iter()
-            .enumerate()
-            .filter(|(_, register)| answered.contains_key(&register.address))
-            .map(|(index, _)| index)
-            .collect();
-        let (production_replies, production_analog) = production_boot(
+            .map(|(register_replies, _)| {
+                let answered = vendor::registers(register_replies)?;
+                Ok(registers
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, register)| answered.contains_key(&register.address))
+                    .map(|(index, _)| index)
+                    .collect())
+            })
+            .collect::<Result<Vec<Vec<usize>>>>()?;
+        let artifact_name = format!("{PRODUCTION_PREFIX}{boot:02}.bin");
+        let artifact = directories[0].join(&artifact_name);
+        let production_replies = production_boot(
             &lab,
-            &output.join(format!("{PRODUCTION_PREFIX}{boot:02}.bin")),
+            &artifact,
             &output.join(format!("session-production-{boot:02}")),
             &registers,
             &readable,
             &analog,
-            arguments.lifecycle,
+            &points,
+            PRODUCTION_SLOT,
         )?;
-        std::fs::write(
-            output.join(format!("{PRODUCTION_PREFIX}{boot:02}.{REGISTER_EXTENSION}")),
-            production_replies,
-        )?;
-        std::fs::write(
-            output.join(format!("{PRODUCTION_PREFIX}{boot:02}.{ANALOG_EXTENSION}")),
-            production_analog,
-        )?;
+        for (index, (directory, (register_replies, analog_replies))) in
+            directories.iter().zip(&production_replies).enumerate()
+        {
+            // Every point of the boot compares the calibration it made.
+            if index > 0 && artifact.is_file() {
+                std::fs::copy(&artifact, directory.join(&artifact_name))?;
+            }
+            std::fs::write(
+                directory.join(format!("{PRODUCTION_PREFIX}{boot:02}.{REGISTER_EXTENSION}")),
+                register_replies,
+            )?;
+            std::fs::write(
+                directory.join(format!("{PRODUCTION_PREFIX}{boot:02}.{ANALOG_EXTENSION}")),
+                analog_replies,
+            )?;
+        }
         println!(
-            "production boot {boot}: retained calibration and {} registers captured",
-            readable.len()
+            "production boot {boot}: retained calibration and {} registers captured at {} point(s)",
+            readable[0].len(),
+            points.len()
         );
     }
 
-    let record = Capture {
-        started_unix_seconds,
-        lifecycle: arguments.lifecycle,
-        vendor_application_sha256: vendor_build.application_sha256,
-        vendor_idf_revision: vendor_build.idf_revision,
-        production_image: built.as_ref().map(|_| production_image.to_owned()),
-        production_application_sha256: built.map(|(_, sha256)| sha256),
-    };
-    let mut bytes = serde_json::to_vec_pretty(&record)?;
-    bytes.push(b'\n');
-    std::fs::write(output.join(RECORD), bytes)?;
+    for (directory, point) in directories.iter().zip(&points) {
+        let record = Capture {
+            started_unix_seconds,
+            lifecycle: *point,
+            vendor_application_sha256: vendor_build.application_sha256.clone(),
+            vendor_idf_revision: vendor_build.idf_revision.clone(),
+            production_image: built.as_ref().map(|_| production_image.to_owned()),
+            production_application_sha256: built.as_ref().map(|(_, sha256)| sha256.clone()),
+        };
+        let mut bytes = serde_json::to_vec_pretty(&record)?;
+        bytes.push(b'\n');
+        std::fs::write(directory.join(RECORD), bytes)?;
+    }
     Ok(std::process::ExitCode::SUCCESS)
 }
 
@@ -720,6 +890,42 @@ mod tests {
         let registers = window_registers(&[(0x2010_fc00, 2), (0x2010_08b8, 1)]);
         let addresses: Vec<u32> = registers.iter().map(|r| r.address).collect();
         assert_eq!(addresses, [0x2010_fc00, 0x2010_fc04, 0x2010_08b8]);
+    }
+
+    #[test]
+    fn a_boot_reads_one_point_or_a_bring_up_and_its_restart() {
+        use Lifecycle::*;
+        assert_eq!(boot_points(&[Restart]).unwrap(), [Restart]);
+        assert_eq!(boot_points(&[Cold, Restart]).unwrap(), [Cold, Restart]);
+        assert_eq!(
+            boot_points(&[Ieee802154, Ieee802154Restart]).unwrap(),
+            [Ieee802154, Ieee802154Restart]
+        );
+        assert!(boot_points(&[Restart, Cold]).is_err());
+        assert!(boot_points(&[Cold, Ieee802154Restart]).is_err());
+        assert!(boot_points(&[]).is_err());
+    }
+
+    #[test]
+    fn a_capture_of_several_points_compares_each_point_directory() {
+        let directory =
+            std::env::temp_dir().join(format!("oer-capture-points-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        assert!(point_directories(&directory).is_err());
+        for point in [Lifecycle::Restart, Lifecycle::Cold] {
+            std::fs::create_dir_all(directory.join(point.name())).unwrap();
+            std::fs::write(directory.join(point.name()).join(RECORD), "{}").unwrap();
+        }
+        assert_eq!(
+            point_directories(&directory).unwrap(),
+            [directory.join("cold"), directory.join("restart")]
+        );
+        std::fs::write(directory.join(RECORD), "{}").unwrap();
+        assert_eq!(
+            point_directories(&directory).unwrap(),
+            std::slice::from_ref(&directory)
+        );
+        std::fs::remove_dir_all(&directory).unwrap();
     }
 
     #[test]

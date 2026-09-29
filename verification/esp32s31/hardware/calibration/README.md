@@ -11,7 +11,8 @@ It does not depend on Blobray peripheral models.
 ```console
 cargo build -p oer-esp32s31-phy-vendor-calibration
 cargo hil --owner <name> lease --board esp32s31 --air exclusive -- \
-    target/debug/oer-esp32s31-phy-vendor-calibration capture --output <new directory>
+    target/debug/oer-esp32s31-phy-vendor-calibration capture \
+    --lifecycle cold,restart --output <new directory>
 cargo run -p oer-esp32s31-phy-vendor-calibration -- compare --captures <directory>
 ```
 
@@ -25,12 +26,18 @@ command.
 `capture` runs under a lease of the esp32s31 board with exclusive air,
 since cold calibration measures TX and RX DC and IQ that another
 transmission would bias. It holds the board's device lease and records
-every flash in the
-board journal. For each of `--boots` rounds (ten by default) it takes these
-steps:
+every boot's image in the board journal.
 
-1. Flash the [vendor calibration firmware](../../hil-vendor/README.md) into
-   `ota_0`, reset the board and keep the boot's `phy_param` report. Then
+It first writes both firmwares once into the two-slot layout
+(`platform/esp32s31/partitions/calibration-slots.csv`): the production image
+into `ota_1` with the HIL bootloader, the vendor firmware into `ota_0`. A
+round then selects a slot, erasing the `phy_init` and `nvs` calibration the
+other firmware left, instead of flashing an application, and requires the
+bootloader's console to name that slot. For each of `--boots` rounds (ten by
+default) it takes these steps:
+
+1. Select the [vendor calibration firmware](../../hil-vendor/README.md),
+   reset the board and keep the boot's `phy_param` report. Then
    request every readable register of the published radio-PHY ownership
    partition (`RadioPhyPeripherals` of `registers/esp32s31/policy/api.toml`,
    registers from the published SVD). A read that resets the chip, such as
@@ -39,8 +46,8 @@ steps:
    request every register of the analog image: each analog-I2C register a
    reviewed `PhyI2cField` of the PAC API policy occupies (its
    `register-image`), read through the ESP-IDF analog-I2C driver.
-2. Flash the production image class (`--production-image`, `correctness` by
-   default) and prepare one reset with a fresh startup artifact path, so the
+2. Select the production image class (`--production-image`, `correctness`
+   by default) and prepare one reset with a fresh startup artifact path, so the
    boot calibrates fully and publishes its retained calibration. Then read
    the radio-PHY register image (HIL `PhyRegisterImage`) at the indices the
    vendor boot of the round read, and the whole analog image (HIL
@@ -75,6 +82,14 @@ PHY modem, which closes RF; production runs its idle radio restart
 (`RestartRadio`) and requires that RF was closed and woken. A vendor read
 that resets the chip is followed by another restart before the reads
 continue.
+
+`--lifecycle cold,restart` and `ieee802154,ieee802154-restart` read both
+points in each boot: the bring-up's registers, then the restart and its
+registers. Each point gets a directory named after it (`cold`, `restart`,
+`ieee802154`, `ieee802154-restart`) holding a complete capture of that
+point; the production artifact of the boot is copied into each. `compare
+--captures` on the parent directory compares every point directory in turn.
+Vendor windows and transmission take one IEEE 802.15.4 point.
 
 Alternating the sides exposes both to the same board temperature drift.
 Captures stay in the ignored output directory.

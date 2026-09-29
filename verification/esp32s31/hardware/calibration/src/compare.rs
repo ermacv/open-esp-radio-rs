@@ -65,7 +65,7 @@ struct ReviewFile {
     registers: BTreeMap<String, Reviews>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(untagged)]
 enum Reviews {
     One(Tolerance),
@@ -100,7 +100,7 @@ struct Tolerance {
 impl ReviewFile {
     /// The reviews that apply at `lifecycle`: a review without a point, or
     /// the one naming it. Two reviews of one name applying at one point fail.
-    fn at(self, lifecycle: Lifecycle) -> Result<Tolerances> {
+    fn at(&self, lifecycle: Lifecycle) -> Result<Tolerances> {
         let select = |reviews: BTreeMap<String, Reviews>| -> Result<BTreeMap<String, Tolerance>> {
             let mut applied = BTreeMap::new();
             for (name, reviews) in reviews {
@@ -123,8 +123,8 @@ impl ReviewFile {
             Ok(applied)
         };
         Ok(Tolerances {
-            fields: select(self.fields)?,
-            registers: select(self.registers)?,
+            fields: select(self.fields.clone())?,
+            registers: select(self.registers.clone())?,
         })
     }
 }
@@ -478,9 +478,34 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
     {
         return Err(format!("tolerance for {unknown}, which the relation does not compare").into());
     }
-    let capture: Capture = serde_json::from_slice(&std::fs::read(
-        arguments.captures.join(crate::capture::RECORD),
-    )?)?;
+    // A capture of several lifecycle points holds one capture directory per
+    // point; each is compared on its own.
+    let directories = crate::capture::point_directories(&arguments.captures)?;
+    if directories.len() > 1 && arguments.output.is_some() {
+        return Err("--output names one summary; compare the points one at a time".into());
+    }
+    let mut matched = true;
+    for captures in &directories {
+        matched &= compare_directory(&root, &reviews, captures, arguments.output.clone())?
+            == Verdict::Match;
+    }
+    Ok(if matched {
+        std::process::ExitCode::SUCCESS
+    } else {
+        std::process::ExitCode::FAILURE
+    })
+}
+
+/// Compare the captures of one lifecycle point and write its summary.
+fn compare_directory(
+    root: &Path,
+    reviews: &ReviewFile,
+    captures: &Path,
+    output: Option<PathBuf>,
+) -> Result<Verdict> {
+    let capture: Capture =
+        serde_json::from_slice(&std::fs::read(captures.join(crate::capture::RECORD))?)?;
+    let fields = fields();
     let tolerances = reviews.at(capture.lifecycle)?;
     // The IEEE 802.15.4 reference firmware reports no calibration objects:
     // those points compare register state only.
@@ -488,7 +513,7 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
     let vendor: Vec<Vec<u8>> = if !calibrated {
         vec![]
     } else {
-        numbered(&arguments.captures, VENDOR_PREFIX, CONSOLE_EXTENSION)?
+        numbered(captures, VENDOR_PREFIX, CONSOLE_EXTENSION)?
             .iter()
             .map(|path| {
                 let mut objects = vendor::parse(&std::fs::read_to_string(path)?)?;
@@ -499,26 +524,26 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
             .collect::<Result<Vec<_>>>()?
     };
     let texts = |prefix: &str, extension: &str| -> Result<Vec<String>> {
-        numbered(&arguments.captures, prefix, extension)?
+        numbered(captures, prefix, extension)?
             .iter()
             .map(|path| Ok(std::fs::read_to_string(path)?))
             .collect()
     };
     let registers = compare_registers(
         Space::Mmio,
-        &crate::registers::partition(&root, crate::registers::PARTITION)?,
+        &crate::registers::partition(root, crate::registers::PARTITION)?,
         &texts(VENDOR_PREFIX, REGISTER_EXTENSION)?,
         &texts(PRODUCTION_PREFIX, REGISTER_EXTENSION)?,
         &tolerances.registers,
     )?;
     let analog = compare_registers(
         Space::Analog,
-        &crate::registers::analog(&root, crate::registers::ANALOG_DOMAIN)?,
+        &crate::registers::analog(root, crate::registers::ANALOG_DOMAIN)?,
         &texts(VENDOR_PREFIX, ANALOG_EXTENSION)?,
         &texts(PRODUCTION_PREFIX, ANALOG_EXTENSION)?,
         &tolerances.registers,
     )?;
-    let production = numbered(&arguments.captures, PRODUCTION_PREFIX, ARTIFACT_EXTENSION)?
+    let production = numbered(captures, PRODUCTION_PREFIX, ARTIFACT_EXTENSION)?
         .iter()
         .map(|path| production::output(&std::fs::read(path)?))
         .collect::<Result<Vec<_>>>()?;
@@ -593,16 +618,11 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
     };
     // The tracked summary records the cold lifecycle point; other points
     // stay beside their captures unless an output is named.
-    let output = arguments
-        .output
-        .clone()
-        .unwrap_or_else(|| match capture.lifecycle {
-            Lifecycle::Cold => root.join(SUMMARY),
-            Lifecycle::Restart => root.join(RESTART_SUMMARY),
-            Lifecycle::Ieee802154 | Lifecycle::Ieee802154Restart => {
-                arguments.captures.join(DIAGNOSTIC_SUMMARY)
-            }
-        });
+    let output = output.unwrap_or_else(|| match capture.lifecycle {
+        Lifecycle::Cold => root.join(SUMMARY),
+        Lifecycle::Restart => root.join(RESTART_SUMMARY),
+        Lifecycle::Ieee802154 | Lifecycle::Ieee802154Restart => captures.join(DIAGNOSTIC_SUMMARY),
+    });
     if let Some(parent) = output.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -617,11 +637,7 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         summary.verdict,
         output.display()
     );
-    Ok(if summary.verdict == Verdict::Match {
-        std::process::ExitCode::SUCCESS
-    } else {
-        std::process::ExitCode::FAILURE
-    })
+    Ok(summary.verdict)
 }
 
 #[cfg(test)]

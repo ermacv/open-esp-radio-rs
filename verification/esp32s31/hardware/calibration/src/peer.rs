@@ -89,6 +89,23 @@ impl Peer {
                 "RX\n".into(),
             ]);
         }
+        self.commands(commands)
+    }
+
+    /// Take the configured, receiving radio through one disable and enable,
+    /// then configure it and receive again; a later reset of the chip
+    /// repeats this after the bring-up.
+    pub fn restart(&mut self) -> Result<()> {
+        self.restart = true;
+        self.commands([
+            "OFF\n".into(),
+            "ON\n".into(),
+            configuration(),
+            "RX\n".into(),
+        ])
+    }
+
+    fn commands(&mut self, commands: impl IntoIterator<Item = String>) -> Result<()> {
         for command in commands {
             let name = command
                 .split_whitespace()

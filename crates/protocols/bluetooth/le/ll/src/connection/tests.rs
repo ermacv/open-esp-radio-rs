@@ -793,3 +793,87 @@ fn phy_update_handles_same_event_past_instant_and_procedure_collisions() {
         Err(LePeripheralPhyUpdateError::IncompatibleProcedurePending)
     );
 }
+
+#[test]
+fn an_encoded_connect_ind_decodes_to_the_same_request() {
+    for channel_selection_two in [true, false] {
+        let pdu = connection_request(channel_selection_two);
+        let request = LeLegacyConnectionRequest::decode(&pdu).unwrap();
+        assert_eq!(request.encode(), pdu);
+    }
+    // Random addresses on both sides set both address-type header bits.
+    let request = LeLegacyConnectionRequest::new(
+        LeDeviceAddress::from_wire_bytes(INITIATOR, LeDeviceAddressKind::Random),
+        LeDeviceAddress::from_wire_bytes(ADVERTISER, LeDeviceAddressKind::Random),
+        LeUncodedAccessAddress::new(0xa1b2_c3d4).unwrap(),
+        LeCrcInitialization::from_wire_bytes([1, 2, 3]),
+        LeConnectionTiming::new(2, 3, 24, 1, 200).unwrap(),
+        LeDataChannelMap::new([0xff, 0xff, 0x0f, 0, 0]).unwrap(),
+        16,
+        LeSleepClockAccuracy::covering(50).unwrap(),
+        LeChannelSelectionAlgorithm::AlgorithmOne,
+    )
+    .unwrap();
+    let pdu = request.encode();
+    assert_eq!(
+        pdu[0] & (TX_ADD_RANDOM | RX_ADD_RANDOM),
+        TX_ADD_RANDOM | RX_ADD_RANDOM
+    );
+    assert_eq!(LeLegacyConnectionRequest::decode(&pdu), Ok(request));
+}
+
+#[test]
+fn a_central_request_keeps_the_hop_increment_in_range() {
+    let base = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
+    let with_hop = |hop| {
+        LeLegacyConnectionRequest::new(
+            base.initiator(),
+            base.advertiser(),
+            base.access_address(),
+            base.crc_initialization(),
+            base.timing(),
+            base.channel_map(),
+            hop,
+            base.sleep_clock_accuracy(),
+            base.channel_selection(),
+        )
+    };
+    for hop in [4, 17, 0x1f] {
+        assert_eq!(
+            with_hop(hop),
+            Err(LeLegacyConnectionRequestError::HopIncrementOutsideRange)
+        );
+    }
+    assert_eq!(with_hop(5).unwrap().hop_increment(), 5);
+}
+
+#[test]
+fn access_address_generation_skips_invalid_draws_and_gives_up() {
+    // The advertising address, then all-equal octets, then a valid one.
+    let mut draws = [ADVERTISING_ACCESS_ADDRESS, 0x5555_5555, 0xa1b2_c3d4].into_iter();
+    let generated = LeUncodedAccessAddress::generate(|| draws.next().unwrap(), 8).unwrap();
+    assert_eq!(generated.value(), 0xa1b2_c3d4);
+    assert_eq!(
+        LeUncodedAccessAddress::generate(|| ADVERTISING_ACCESS_ADDRESS, 4),
+        None
+    );
+}
+
+#[test]
+fn the_covering_sleep_clock_class_is_the_tightest_that_holds() {
+    assert_eq!(
+        LeSleepClockAccuracy::covering(20).unwrap().worst_case_ppm(),
+        20
+    );
+    assert_eq!(
+        LeSleepClockAccuracy::covering(40).unwrap().worst_case_ppm(),
+        50
+    );
+    assert_eq!(
+        LeSleepClockAccuracy::covering(500)
+            .unwrap()
+            .worst_case_ppm(),
+        500
+    );
+    assert_eq!(LeSleepClockAccuracy::covering(501), None);
+}

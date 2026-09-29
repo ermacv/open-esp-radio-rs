@@ -62,6 +62,14 @@ impl LeUncodedAccessAddress {
         self.0
     }
 
+    /// Draw values from `random` until one is a valid Access Address, as a
+    /// Central chooses one for a new connection; `None` after `attempts`
+    /// invalid draws. The caller keeps it distinct from its other
+    /// connections'.
+    pub fn generate(mut random: impl FnMut() -> u32, attempts: usize) -> Option<Self> {
+        (0..attempts).find_map(|_| Self::new(random()).ok())
+    }
+
     /// Fixed channel identifier used by Channel Selection Algorithm #2.
     pub const fn channel_identifier(self) -> u16 {
         (self.0 >> 16) as u16 ^ self.0 as u16
@@ -220,6 +228,19 @@ pub enum LeChannelSelectionAlgorithm {
 pub struct LeSleepClockAccuracy(u8);
 
 impl LeSleepClockAccuracy {
+    /// The tightest class whose worst case covers a clock accurate to
+    /// `ppm`; `None` above 500 ppm.
+    pub const fn covering(ppm: u16) -> Option<Self> {
+        let mut class = 8;
+        while class > 0 {
+            class -= 1;
+            if Self(class).worst_case_ppm() >= ppm {
+                return Some(Self(class));
+            }
+        }
+        None
+    }
+
     pub const fn encoded(self) -> u8 {
         self.0
     }
@@ -380,6 +401,73 @@ pub struct LeLegacyConnectionRequest {
 }
 
 impl LeLegacyConnectionRequest {
+    /// The request a Central sends from `initiator` to `advertiser`.
+    #[allow(clippy::too_many_arguments, reason = "one field per CONNECT_IND field")]
+    pub const fn new(
+        initiator: LeDeviceAddress,
+        advertiser: LeDeviceAddress,
+        access_address: LeUncodedAccessAddress,
+        crc_initialization: LeCrcInitialization,
+        timing: LeConnectionTiming,
+        channel_map: LeDataChannelMap,
+        hop_increment: u8,
+        sleep_clock_accuracy: LeSleepClockAccuracy,
+        channel_selection: LeChannelSelectionAlgorithm,
+    ) -> Result<Self, LeLegacyConnectionRequestError> {
+        if hop_increment < 5 || hop_increment > 16 {
+            return Err(LeLegacyConnectionRequestError::HopIncrementOutsideRange);
+        }
+        Ok(Self {
+            initiator,
+            advertiser,
+            access_address,
+            crc_initialization,
+            timing,
+            channel_map,
+            hop_increment,
+            sleep_clock_accuracy,
+            channel_selection,
+        })
+    }
+
+    /// The complete `CONNECT_IND` PDU; [`Self::decode`] reverses it.
+    pub const fn encode(self) -> [u8; LEGACY_CONNECT_IND_PDU_BYTES] {
+        let mut pdu = [0; LEGACY_CONNECT_IND_PDU_BYTES];
+        pdu[0] = CONNECT_IND_TYPE
+            | if matches!(
+                self.channel_selection,
+                LeChannelSelectionAlgorithm::AlgorithmTwo
+            ) {
+                CHANNEL_SELECTION_TWO
+            } else {
+                0
+            }
+            | if matches!(self.initiator.kind(), LeDeviceAddressKind::Random) {
+                TX_ADD_RANDOM
+            } else {
+                0
+            }
+            | if matches!(self.advertiser.kind(), LeDeviceAddressKind::Random) {
+                RX_ADD_RANDOM
+            } else {
+                0
+            };
+        pdu[1] = LEGACY_CONNECT_IND_PAYLOAD_BYTES as u8;
+        let mut at = 2;
+        at = put(&mut pdu, at, &self.initiator.wire_bytes());
+        at = put(&mut pdu, at, &self.advertiser.wire_bytes());
+        at = put(&mut pdu, at, &self.access_address.0.to_le_bytes());
+        at = put(&mut pdu, at, &self.crc_initialization.0);
+        pdu[at] = self.timing.window_size;
+        at = put(&mut pdu, at + 1, &self.timing.window_offset.to_le_bytes());
+        at = put(&mut pdu, at, &self.timing.interval.to_le_bytes());
+        at = put(&mut pdu, at, &self.timing.peripheral_latency.to_le_bytes());
+        at = put(&mut pdu, at, &self.timing.supervision_timeout.to_le_bytes());
+        at = put(&mut pdu, at, &self.channel_map.wire_bytes());
+        pdu[at] = self.hop_increment | self.sleep_clock_accuracy.0 << 5;
+        pdu
+    }
+
     /// Decode and validate exactly one complete legacy `CONNECT_IND` PDU.
     pub const fn decode(pdu: &[u8]) -> Result<Self, LeLegacyConnectionRequestError> {
         if pdu.len() < 2 {
@@ -496,6 +584,16 @@ impl LeLegacyConnectionRequest {
     pub const fn channel_selection(self) -> LeChannelSelectionAlgorithm {
         self.channel_selection
     }
+}
+
+/// Copy `bytes` into `pdu` at `at`; the index after them.
+const fn put(pdu: &mut [u8], at: usize, bytes: &[u8]) -> usize {
+    let mut index = 0;
+    while index < bytes.len() {
+        pdu[at + index] = bytes[index];
+        index += 1;
+    }
+    at + bytes.len()
 }
 
 const fn copy_four(source: &[u8], start: usize) -> [u8; 4] {

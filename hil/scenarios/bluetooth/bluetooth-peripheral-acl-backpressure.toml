@@ -1,0 +1,8 @@
+schema = 5
+id = "bluetooth-peripheral-acl-backpressure"
+description = "Runner-driven HCI Host holds its only ACL credit on an ATT write from the Linux kernel central until the link's supervision expires, requiring Disconnection Complete with supervision timeout while held, then advertises again without Reset and a second connection delivers the same write in order"
+repetitions = 3
+tags = ["bluetooth", "peripheral", "acl", "flow-control", "backpressure", "lifecycle", "air-exclusive"]
+
+[bluetooth]
+kind = "acl-backpressure"

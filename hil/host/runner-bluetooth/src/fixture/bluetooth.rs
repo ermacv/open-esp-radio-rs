@@ -208,6 +208,32 @@ fn require_security_failure_admission(code: Option<i32>, stderr: &[u8]) -> crate
     }
 }
 
+/// Require password-free admission of the helper's `connect-reset`
+/// operation, which the peripheral scenarios run as central.
+pub fn preflight_connect_reset(adapter: Adapter) -> crate::Result<()> {
+    preflight(adapter)?;
+    let mut command = Command::new("sudo");
+    command.args([
+        "-n",
+        "-l",
+        "/usr/local/libexec/open-radio-bluetooth",
+        "connect-reset",
+        "--adapter",
+        &adapter.to_string(),
+        "--peer",
+        "00:00:00:00:00:00",
+        "--hold-ms",
+        "0",
+        "--termination",
+        "peer-reset",
+    ]);
+    let output = oer_process::output(&mut command, Some(Duration::from_secs(5)))?;
+    if !output.status.success() {
+        return Err("installed Bluetooth helper lacks connect-reset permission; rerun cargo hil fixture install --provider linux-bluetooth with the selected --adapter".into());
+    }
+    Ok(())
+}
+
 pub fn connect_profile_in(
     output: &Path,
     adapter: Adapter,

@@ -1,0 +1,11 @@
+schema = 5
+id = "bluetooth-peripheral-rf-loss"
+description = "Runner-driven HCI Host: two LE peripheral connections with two backpressured 251-octet ACL echoes around Connection and Channel Map Updates, then Linux adapter soft rfkill, supervision timeout or remote termination and advertising again; not an abrupt over-the-air outage"
+repetitions = 3
+tags = ["bluetooth", "peripheral", "connection", "connection-update", "channel-map-update", "acl", "flow-control", "rf-loss", "recovery", "air-exclusive"]
+
+[bluetooth]
+kind = "peripheral"
+connections = 2
+hold_millis = 100
+termination = "peer-rfkill"

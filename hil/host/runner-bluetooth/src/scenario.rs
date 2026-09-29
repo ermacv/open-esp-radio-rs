@@ -11,7 +11,7 @@ use hil_core::{
     lab::requirements::Requirements,
     scenario::{Plan, bounded},
 };
-use oer_hil_protocol::bluetooth;
+use oer_hil_protocol::bluetooth::{self, BluetoothPeripheralTermination, BluetoothSecurityFailure};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -53,6 +53,39 @@ pub enum BluetoothScenario {
     /// receives LE 1M, 2M and Coded (S=8 and S=2) and transmits LE 1M and
     /// 2M, with a silence control on each receiver.
     DtmPeer { minimum_packets: u16 },
+    /// LE peripheral connections with the runner as the HCI Host and the
+    /// Linux helper as central: two backpressured 251-octet ACL echoes around
+    /// its Connection and Channel Map Updates, then the termination, and
+    /// advertising again for the next connection.
+    Peripheral {
+        connections: u8,
+        hold_millis: u16,
+        termination: BluetoothPeripheralTermination,
+        #[serde(default)]
+        security: workload::peripheral::Security,
+        /// Require periodic PHY tracking to complete a pass during every
+        /// connection.
+        #[serde(default)]
+        phy_tracking: bool,
+        /// Restart the Controller epoch between connections; needs the
+        /// diagnostic image.
+        #[serde(default)]
+        restart_between_connections: bool,
+        /// Retire the Controller after the last connection; needs the
+        /// diagnostic image.
+        #[serde(default)]
+        retire_after: bool,
+    },
+    /// The Host keeps its only ACL credit until the link's supervision
+    /// expires, then a second connection delivers in order without Reset.
+    AclBackpressure {},
+    /// One peripheral connection whose encryption fails as `failure` asks,
+    /// then an encrypted connection that must succeed.
+    SecurityFailure {
+        failure: BluetoothSecurityFailure,
+        #[serde(default)]
+        read_version_before_disconnect: bool,
+    },
 }
 
 /// Mutually exclusive terminal proofs; neither substitutes for the other.
@@ -82,6 +115,14 @@ impl BluetoothScenario {
             Self::DtmPeer { minimum_packets } => {
                 bounded(*minimum_packets, 1, 1000, "minimum_packets")
             }
+            Self::Peripheral {
+                connections,
+                hold_millis,
+                ..
+            } => {
+                bounded(*connections, 1, 100, "connections")?;
+                bounded(*hold_millis, 0, 5000, "hold_millis")
+            }
             _ => Ok(()),
         }
     }
@@ -93,7 +134,25 @@ impl BluetoothScenario {
             Self::Dtm { .. }
             | Self::DtmPeer { .. }
             | Self::ScannableAdvertising {}
-            | Self::DirectedAdvertising {} => ImageClass::BluetoothDtm,
+            | Self::DirectedAdvertising {}
+            | Self::Peripheral {
+                restart_between_connections: false,
+                retire_after: false,
+                ..
+            }
+            | Self::SecurityFailure {
+                failure:
+                    BluetoothSecurityFailure::MissingKey
+                    | BluetoothSecurityFailure::WrongKey
+                    | BluetoothSecurityFailure::MissingRefreshKey,
+                ..
+            }
+            | Self::AclBackpressure {} => ImageClass::BluetoothHci,
+            Self::Peripheral { .. }
+            | Self::SecurityFailure {
+                failure: BluetoothSecurityFailure::ActiveDataMic,
+                ..
+            } => ImageClass::BluetoothHciDiagnostics,
         }
     }
 
@@ -124,8 +183,23 @@ impl BluetoothScenario {
     pub fn served_by(&self, capabilities: &DeviceCapabilities) -> bool {
         match self {
             Self::Gatt {} | Self::SecureGatt { .. } => true,
-            Self::ScannableAdvertising {} | Self::DirectedAdvertising {} | Self::DtmPeer { .. } => {
+            Self::ScannableAdvertising {}
+            | Self::DirectedAdvertising {}
+            | Self::DtmPeer { .. }
+            | Self::AclBackpressure {} => capabilities.has::<bluetooth::Hci>(),
+            Self::SecurityFailure { failure, .. } => {
                 capabilities.has::<bluetooth::Hci>()
+                    && (capabilities.has::<bluetooth::MicFault>()
+                        || *failure != BluetoothSecurityFailure::ActiveDataMic)
+            }
+            Self::Peripheral {
+                restart_between_connections,
+                retire_after,
+                ..
+            } => {
+                capabilities.has::<bluetooth::Hci>()
+                    && (capabilities.has::<bluetooth::HciLifecycle>()
+                        || !(*restart_between_connections || *retire_after))
             }
             Self::Dtm { .. } => capabilities.has::<bluetooth::Dtm>(),
         }
@@ -138,8 +212,14 @@ impl BluetoothScenario {
             Self::Gatt {}
             | Self::SecureGatt { .. }
             | Self::ScannableAdvertising {}
-            | Self::DirectedAdvertising {} => fixture::att::preflight,
+            | Self::DirectedAdvertising {}
+            | Self::AclBackpressure {} => fixture::att::preflight,
             Self::Dtm { .. } => fixture::preflight,
+            Self::Peripheral { .. } => fixture::preflight_connect_reset,
+            Self::SecurityFailure { .. } => |adapter| {
+                fixture::preflight_connect_reset(adapter)?;
+                fixture::preflight_security_failure(adapter)
+            },
             Self::DtmPeer { .. } => return None,
         })
     }
@@ -161,6 +241,39 @@ impl BluetoothScenario {
             Self::DtmPeer { minimum_packets } => {
                 workload::dtm_peer::run(*minimum_packets, output, context)
             }
+            Self::Peripheral {
+                connections,
+                hold_millis,
+                termination,
+                security,
+                phy_tracking,
+                restart_between_connections,
+                retire_after,
+            } => workload::peripheral::run(
+                workload::peripheral::Config::Connections {
+                    connections: *connections,
+                    hold_millis: *hold_millis,
+                    termination: *termination,
+                    security: *security,
+                    phy_tracking: *phy_tracking,
+                    restart_between_connections: *restart_between_connections,
+                    retire_after: *retire_after,
+                },
+                output,
+                context,
+            ),
+            Self::AclBackpressure {} => workload::backpressure::run(output, context),
+            Self::SecurityFailure {
+                failure,
+                read_version_before_disconnect,
+            } => workload::peripheral::run(
+                workload::peripheral::Config::SecurityFailure {
+                    failure: *failure,
+                    read_version_before_disconnect: *read_version_before_disconnect,
+                },
+                output,
+                context,
+            ),
         }
     }
 }

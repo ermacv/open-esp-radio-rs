@@ -1,0 +1,13 @@
+schema = 5
+id = "bluetooth-peripheral-powered-restart"
+description = "Runner-driven HCI Host on the diagnostic image: three LE peripheral connections with two backpressured 251-octet ACL echoes and peer Reset in one boot, each followed by Controller Reset, retirement of the Host end, powered stop and restart on the same storage with a fresh Host end, and final retirement; every old Host end must be closed both ways"
+repetitions = 3
+tags = ["bluetooth", "peripheral", "acl", "lifecycle", "powered-restart", "air-exclusive"]
+
+[bluetooth]
+kind = "peripheral"
+connections = 3
+hold_millis = 100
+termination = "peer-reset"
+restart_between_connections = true
+retire_after = true

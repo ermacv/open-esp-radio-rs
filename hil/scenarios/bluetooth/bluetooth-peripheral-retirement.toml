@@ -1,0 +1,12 @@
+schema = 5
+id = "bluetooth-peripheral-retirement"
+description = "Runner-driven HCI Host on the diagnostic image: two LE peripheral connections with two backpressured 251-octet ACL echoes and peer Reset, then Controller Reset, retirement of the drained Host end and powered stop, with both directions of the old Host end closed"
+repetitions = 3
+tags = ["bluetooth", "peripheral", "acl", "lifecycle", "retirement", "air-exclusive"]
+
+[bluetooth]
+kind = "peripheral"
+connections = 2
+hold_millis = 100
+termination = "peer-reset"
+retire_after = true

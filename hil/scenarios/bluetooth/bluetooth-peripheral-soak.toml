@@ -1,0 +1,11 @@
+schema = 5
+id = "bluetooth-peripheral-soak"
+description = "Runner-driven HCI Host: one hundred sequential LE peripheral connections, each with two backpressured 251-octet ACL echoes around Connection and Channel Map Updates, peer Reset and handle reuse"
+repetitions = 1
+tags = ["bluetooth", "peripheral", "connection", "connection-update", "channel-map-update", "acl", "flow-control", "soak", "air-exclusive"]
+
+[bluetooth]
+kind = "peripheral"
+connections = 100
+hold_millis = 100
+termination = "peer-reset"

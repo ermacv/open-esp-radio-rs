@@ -1,0 +1,11 @@
+schema = 5
+id = "bluetooth-peripheral-local-reset"
+description = "Runner-driven HCI Host: two LE peripheral connections with two backpressured 251-octet ACL echoes around Connection and Channel Map Updates, then target HCI Reset, central supervision timeout and reinitialized advertising"
+repetitions = 3
+tags = ["bluetooth", "peripheral", "connection", "connection-update", "channel-map-update", "acl", "flow-control", "reset", "recovery", "air-exclusive"]
+
+[bluetooth]
+kind = "peripheral"
+connections = 2
+hold_millis = 100
+termination = "target-reset"

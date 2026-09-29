@@ -1,10 +1,12 @@
 //! Independent RF observations with silence controls in both directions.
 
+pub mod backpressure;
 pub mod coexistence;
 pub mod directed;
 pub mod dtm_peer;
 pub mod gatt;
 mod hci;
+pub mod peripheral;
 pub mod scannable;
 pub mod secure_gatt;
 

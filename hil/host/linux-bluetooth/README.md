@@ -116,6 +116,62 @@ values; the runner requires both the ready and restored handshakes plus a
 successful helper exit. These values are test configuration, not production
 connection policy or qualified PHY budgets.
 
+## Connection loss fixture
+
+The `bluetooth-peripheral-*` scenarios run the helper's `connect-reset`
+operation as central against a public-address LE peripheral that is already
+advertising; the runner's scenario preflight checks its password-free
+admission. Rebuild and reinstall the helper after updating its command set.
+The fixture
+owns the adapter's exclusive HCI user channel, uses legacy LE initiation with
+a 100-ms connection interval, zero latency and a 2-second supervision timeout,
+and waits at most 10 seconds for the exact peer's connection completion. It
+then sends an exact 251-byte L2CAP-shaped HCI ACL packet. In the
+`bluetooth-peripheral-*` scenarios the runner's peripheral Host on the no-DLE
+target declares one 27-byte Host buffer and enables Controller-to-Host flow control.
+It receives the packet as ten Link Layer fragments, holds the first consumed
+fragment's sole Host credit for 300 ms, returns each credit explicitly,
+reassembles the exact payload and returns it as one Host ACL packet. The helper
+requires exactly ten returned HCI fragments plus their exact handle, boundary
+and reassembled payload within 5 seconds. After the echo, the central requests
+an exact 120-ms connection interval with zero latency and the same 2-second
+supervision timeout. It requires the matching successful LE Connection Update
+Complete within 5 seconds. The helper next marks data channels 2 through 36
+bad, polls LE Read Channel Map until the active connection reports the exact
+two-channel map, and sends a distinct second 251-byte payload through the full
+ten-fragment echo. In
+peer-reset mode it then sends HCI Reset without
+issuing HCI Disconnect. In peer-rfkill mode it closes the exclusive HCI
+channel, soft-blocks the exact adapter through `/dev/rfkill`, verifies the
+blocked state before and after 2500 ms, exceeding the requested
+2-second supervision timeout. In target-disconnect mode it requires the exact handle
+and reason `0x13` from the target's termination PDU. In target-reset mode it
+requires supervision-timeout reason `0x08` after the target resets its
+Controller. The two target modes never issue peer-side Disconnect or Reset
+before observing that result.
+`--hold-ms` is bounded
+to 0..5000; the default sends Reset as soon as the echo is received.
+Both success and failure restore the adapter's original power and rfkill state.
+
+The runner archives the helper report and errors in each connection's run
+directory. The report separates
+connection completion, both exact ACL send/echo exchanges, Connection Update
+completion, Channel Map Update application, Reset completion, local elapsed
+times and restoration. The ACL and update
+fields prove what the central observed over
+the selected link. Target-side evidence correlates that exchange with the
+production HCI and radio path and determines whether failed establishment or
+established-link supervision was exercised. Only peer-rfkill mode sets
+`rf_loss_verified`; HCI Reset remains a logical command. This fixture does not
+start, flash or reset the ESP.
+
+`rf_loss_verified` proves the helper's observed adapter block and hold, not
+an abrupt over-the-air outage. Closing the exclusive user channel first lets
+Linux close the controller, which may terminate the link before rfkill.
+The target can therefore receive remote termination `0x13` instead of
+supervision timeout `0x08`. This software-only stimulus is not sufficient to qualify
+abrupt RF loss on an adapter that terminates gracefully during close.
+
 ## ESP and adapter RF scenario
 
 Add the selected adapter to the private lab configuration:
@@ -133,7 +189,7 @@ cargo hil run bluetooth-dtm-bidirectional
 ```
 
 The runner reserves the board and adapter, builds and audits the separate
-`bluetooth-dtm` image, flashes it and drives framed, boot-correlated DTM
+`bluetooth-hci` image, flashes it and drives framed, boot-correlated DTM
 commands. This image composes the production Bluetooth controller without
 the Wi-Fi runtime. It provides Reset, Receive, Transmit and Test End on LE 1M,
 channel 0 with the same 37-byte PRBS9 payload as the helper. Active ESP tests
@@ -196,8 +252,10 @@ is required for this path.
 
 ## Encryption and key-failure modes
 
-No catalog scenario uses the `connect-reset` encryption modes or the
-`security-failure` operation at present. `connect-reset --encrypted` starts
+The `bluetooth-peripheral-*` scenarios use these modes against the
+`bluetooth-hci` image, whose HCI Host is the runner: it answers the central's
+key requests with the same public keys, or refuses or substitutes them for the
+failure a scenario names. `connect-reset --encrypted` starts
 AES-CCM with the public test LTK/Rand/EDIV from `oer-hil-protocol`, requires a
 successful Command Status followed by Encryption Change for the exact handle,
 and only then sends application data. `--key-refresh` issues LE Enable

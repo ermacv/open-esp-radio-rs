@@ -1,0 +1,12 @@
+schema = 5
+id = "bluetooth-peripheral-active-phy-maintenance"
+description = "Runner-driven HCI Host: three LE peripheral connections held for 5 s each, with two backpressured 251-octet ACL echoes around Connection and Channel Map Updates; the shared PHY's periodic tracking completes a pass during every connection without a skip, then peer Reset and advertising again"
+repetitions = 3
+tags = ["bluetooth", "peripheral", "acl", "phy-tracking", "recovery", "air-exclusive"]
+
+[bluetooth]
+kind = "peripheral"
+connections = 3
+hold_millis = 5000
+termination = "peer-reset"
+phy_tracking = true

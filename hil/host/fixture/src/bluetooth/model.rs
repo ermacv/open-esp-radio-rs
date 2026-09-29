@@ -411,11 +411,7 @@ impl ConnectionReset {
             && self.acl_payload_bytes
                 == Some(oer_hil_protocol::bluetooth::BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES as u16)
             && self.acl_echo_hci_packets
-                == Some(if encrypted {
-                    11
-                } else {
-                    oer_hil_protocol::bluetooth::BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS as u16
-                })
+                == Some(oer_hil_protocol::bluetooth::BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS as u16)
             && self.acl_echo_after_micros.is_some()
             && self.connection_update_complete
             && self.updated_interval_millis
@@ -426,11 +422,7 @@ impl ConnectionReset {
             && self.post_update_acl_sent
             && self.post_update_acl_echo_received
             && self.post_update_acl_echo_hci_packets
-                == Some(if encrypted {
-                    11
-                } else {
-                    oer_hil_protocol::bluetooth::BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS as u16
-                })
+                == Some(oer_hil_protocol::bluetooth::BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS as u16)
             && self.post_update_acl_echo_after_micros.is_some()
             && termination_complete
             && self.connection_after_micros.is_some()
@@ -587,8 +579,9 @@ mod connection_reset_tests {
             false
         ));
         report.encrypted = true;
+        // Encryption adds a MIC beside each 27-octet payload; the echo keeps
+        // its ten fragments.
         report.acl_echo_hci_packets = Some(11);
-        report.post_update_acl_echo_hci_packets = Some(11);
         report.encryption_command_status = true;
         report.encryption_change = true;
         assert!(!report.passed_profile(
@@ -600,6 +593,15 @@ mod connection_reset_tests {
             false
         ));
         report.encryption_after_micros = Some(50);
+        assert!(!report.passed_profile(
+            adapter,
+            peer,
+            0,
+            BluetoothPeripheralTermination::PeerReset,
+            true,
+            false
+        ));
+        report.acl_echo_hci_packets = Some(10);
         assert!(report.passed_profile(
             adapter,
             peer,

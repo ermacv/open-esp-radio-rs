@@ -125,6 +125,12 @@ debug = true
 lto = "fat"
 codegen-units = 1
 
+# Full debug info was most of each checkout's target/debug, tens of GB in
+# millions of files, and a large share of host link time. Line tables keep
+# panics and backtraces readable.
+[profile.dev]
+debug = "line-tables-only"
+
 # Host-side binary analysis is prohibitively slow at dev opt-level 0. Keep a
 # separate incremental profile for the normal blobray aliases so firmware
 # development and unit tests retain their ordinary dev/release behavior.

@@ -7,7 +7,8 @@
 //! may follow it.
 
 use oer_esp32s31_bluetooth_memory::{
-    ControllerSramLinkAddress, LeRxChain, RxMemoryListClass, SchedulerItemSpace,
+    ControllerSramLinkAddress, LeDeviceTablePublication, LeRxChain, RxMemoryListClass,
+    SchedulerItemSpace,
 };
 use oer_esp32s31_hal::bluetooth::{
     BluetoothSchedulerHardwareListIndex, BluetoothSchedulerStop, BluetoothSchedulerStopStep,
@@ -196,6 +197,20 @@ impl ControllerPoweredTaskRuntime<'_> {
         // first RUN of this epoch, and the task endpoint serializes the
         // scanner registers.
         let _published = unsafe { controller.publish_scan_start() };
+    }
+
+    /// Publish where the device table starts and how many entries it holds.
+    #[allow(
+        unsafe_code,
+        reason = "the device table owner binds its storage in controller SRAM for 'static"
+    )]
+    pub fn publish_device_table(&mut self, publication: LeDeviceTablePublication) {
+        let mut controller = self.task.controller();
+        // SAFETY: the publication comes from a device table bound to 'static
+        // controller SRAM, whose first `count` entries are written, and the
+        // task endpoint serializes the device-table registers.
+        let _published =
+            unsafe { controller.publish_device_table(publication.first_entry, publication.count) };
     }
 
     /// Route and enable the BLE PHY ETM channel again after a test.

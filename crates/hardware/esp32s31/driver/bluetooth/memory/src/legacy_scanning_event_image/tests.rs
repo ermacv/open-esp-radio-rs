@@ -15,9 +15,10 @@ fn restricted_profile_retains_only_semantic_dynamic_inputs() {
         ControllerSramLinkAddress::new(0x2f00_0100)
             .expect("the model header is a nonzero controller link"),
     );
-    let config = LegacyScanResetConfig::le_1m_public_accept_all(
+    let config = LegacyScanResetConfig::le_1m_public(
         crate::LeTxPower::from_dbm(0).expect("provider level"),
         crate::LegacyScanType::Passive,
+        crate::LegacyScanFilterPolicy::AcceptAll,
     );
 
     let image = LegacyScanLinkStateImage::restricted_le_1m(head, config);
@@ -42,7 +43,11 @@ fn an_event_records_the_window_and_copies_the_reset_power() {
         let power = crate::LeTxPower::from_dbm(dbm).expect("provider level");
         let image = LegacyScanLinkStateImage::restricted_le_1m(
             head(),
-            LegacyScanResetConfig::le_1m_public_accept_all(power, crate::LegacyScanType::Passive),
+            LegacyScanResetConfig::le_1m_public(
+                power,
+                crate::LegacyScanType::Passive,
+                crate::LegacyScanFilterPolicy::AcceptAll,
+            ),
         )
         .with_window(LegacyScanWindowTicks::from_raw_ticks(20_000));
         assert_eq!(image.window_ticks(), 20_000);

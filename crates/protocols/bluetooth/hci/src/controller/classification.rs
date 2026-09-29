@@ -56,6 +56,10 @@ pub enum LeControllerCommandClassification {
     LongTermKeyNegativeReply(LeLongTermKeyRequestNegativeReplyCommand),
     /// A claimed LTK reply opcode had malformed parameters.
     MalformedLongTermKeyReply(LeLongTermKeyCommandCompleteEvent),
+    /// A validated filter accept list command.
+    AcceptList(crate::LeAcceptListCommand),
+    /// A filter accept list command had an invalid or unsupported parameter body.
+    MalformedAcceptList(crate::LeAcceptListCommandCompleteEvent),
     /// A validated Data Length Extension command.
     DataLength(LeDataLengthCommand),
     /// A Data Length Extension command had an invalid parameter body.
@@ -100,6 +104,8 @@ impl LeControllerCommandClassification {
             Self::LongTermKeyReply(_) => LeLongTermKeyRequestReplyCommand::OPCODE,
             Self::LongTermKeyNegativeReply(_) => LeLongTermKeyRequestNegativeReplyCommand::OPCODE,
             Self::MalformedLongTermKeyReply(response) => response.opcode(),
+            Self::AcceptList(command) => command.opcode(),
+            Self::MalformedAcceptList(response) => response.opcode(),
             Self::DataLength(command) => command.opcode(),
             Self::MalformedDataLength(response) => response.opcode(),
             Self::Bootstrap(command) => command.opcode(),
@@ -149,6 +155,14 @@ pub fn classify_le_controller_command(
             );
         }
         Err(LeDisconnectDecodeError::Unsupported) => {}
+    }
+
+    match crate::LeAcceptListCommand::decode(command) {
+        Ok(command) => return LeControllerCommandClassification::AcceptList(command),
+        Err(crate::controller::le::accept_list::LeAcceptListDecodeError::Malformed(response)) => {
+            return LeControllerCommandClassification::MalformedAcceptList(response);
+        }
+        Err(crate::controller::le::accept_list::LeAcceptListDecodeError::Unsupported) => {}
     }
 
     match LeDataLengthCommand::decode(command) {

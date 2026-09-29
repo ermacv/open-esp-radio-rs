@@ -4,8 +4,8 @@ use std::boxed::Box;
 
 use oer_esp32s31_bluetooth_memory::{
     DirectionFindingWorkspaceModelAddress, DirectionFindingWorkspaceStorage, DtmPool, DtmStorage,
-    LeRxChain, LeRxChainModelAddress, LeRxChainStorage, LegacyAdvertisingPool,
-    LegacyAdvertisingStorage, LegacyConnectableAdvertisingPool,
+    LeDeviceTable, LeDeviceTableStorage, LeRxChain, LeRxChainModelAddress, LeRxChainStorage,
+    LegacyAdvertisingPool, LegacyAdvertisingStorage, LegacyConnectableAdvertisingPool,
     LegacyConnectableAdvertisingStorage, LegacyScanPool, LegacyScanStorage,
     PeripheralConnectionPool, PeripheralConnectionStorage, RxMemoryListClass,
     SchedulerAllocationConfig, SchedulerPoolModelAddress, SchedulerRolePoolStorage,
@@ -84,5 +84,10 @@ pub fn model_memory() -> ModelMemory {
         .unwrap()
         .binding()
         .link(),
+        device_table: LeDeviceTable::bind_model(
+            Box::leak(Box::new(LeDeviceTableStorage::new())),
+            0x2f00_c000,
+        )
+        .unwrap(),
     }
 }

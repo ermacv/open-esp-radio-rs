@@ -44,9 +44,10 @@ fn chain(class: RxMemoryListClass) -> LeRxChain<2> {
 }
 
 fn config() -> LegacyScanResetConfig {
-    LegacyScanResetConfig::le_1m_public_accept_all(
+    LegacyScanResetConfig::le_1m_public(
         crate::LeTxPower::from_dbm(0).expect("provider level"),
         crate::LegacyScanType::Passive,
+        crate::LegacyScanFilterPolicy::AcceptAll,
     )
 }
 
@@ -229,9 +230,10 @@ fn only_an_active_scanner_queues_its_scan_request() {
     pool.reset(
         &active,
         &chain(RxMemoryListClass::Scanning),
-        LegacyScanResetConfig::le_1m_public_accept_all(
+        LegacyScanResetConfig::le_1m_public(
             crate::LeTxPower::from_dbm(0).expect("provider level"),
             crate::LegacyScanType::Active,
+            crate::LegacyScanFilterPolicy::AcceptAll,
         ),
     )
     .unwrap();
@@ -265,9 +267,10 @@ fn every_item_carries_the_kind_of_its_scan_type() {
         pool.reset(
             &instance,
             &chain(RxMemoryListClass::Scanning),
-            LegacyScanResetConfig::le_1m_public_accept_all(
+            LegacyScanResetConfig::le_1m_public(
                 crate::LeTxPower::from_dbm(0).expect("provider level"),
                 scan_type,
+                crate::LegacyScanFilterPolicy::AcceptAll,
             ),
         )
         .unwrap();
@@ -281,5 +284,49 @@ fn every_item_carries_the_kind_of_its_scan_type() {
                 binding.link_state.compressed_image()
             );
         }
+    }
+}
+
+#[test]
+fn the_filter_policy_changes_only_the_filter_words_and_a_later_reset_restores_them() {
+    let link_state = |filter_policy| {
+        let mut pool = pool();
+        let reset = |pool: &mut LegacyScanPool<1>, filter_policy| {
+            let instance = pool.acquire().unwrap();
+            pool.reset(
+                &instance,
+                &chain(RxMemoryListClass::Scanning),
+                LegacyScanResetConfig::le_1m_public(
+                    crate::LeTxPower::from_dbm(0).expect("provider level"),
+                    crate::LegacyScanType::Active,
+                    filter_policy,
+                ),
+            )
+            .unwrap();
+            instance
+        };
+        // A filtering scanner before, released, leaves nothing behind.
+        let earlier = reset(&mut pool, crate::LegacyScanFilterPolicy::AcceptListOnly);
+        pool.release(earlier).unwrap();
+        let instance = reset(&mut pool, filter_policy);
+        let (graph, _, _) = pool.shared(&instance).unwrap();
+        graph
+            .link_state
+            .words
+            .iter()
+            .map(|word| word.get())
+            .collect::<std::vec::Vec<_>>()
+    };
+    let all = link_state(crate::LegacyScanFilterPolicy::AcceptAll);
+    let listed = link_state(crate::LegacyScanFilterPolicy::AcceptListOnly);
+    let changed = all
+        .iter()
+        .zip(&listed)
+        .filter(|(all, listed)| all != listed)
+        .count();
+    assert_eq!(changed, 2);
+    // Filtering only adds bits to the accept-all image.
+    for (all, listed) in all.iter().zip(&listed) {
+        assert_eq!(all & listed, *all);
     }
 }

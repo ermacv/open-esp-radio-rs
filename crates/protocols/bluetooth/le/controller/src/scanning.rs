@@ -24,7 +24,8 @@ use oer_bluetooth_ll::{
 };
 use oer_bluetooth_radio::{
     AdvertisingChannel, EventId, RadioDuration, RadioInstant, RadioOutcome, RadioRequest,
-    RadioTiming, RadioWindow, ScanType, ScanWindow, ScannerConfiguration, ScannerId, TxPower,
+    RadioTiming, RadioWindow, ScanFilterPolicy, ScanType, ScanWindow, ScannerConfiguration,
+    ScannerId, TxPower,
 };
 
 use crate::arbiter::{Proposal, place};
@@ -55,6 +56,7 @@ struct Outstanding {
 pub(crate) struct Scanner {
     phase: Phase,
     scan_type: ScanType,
+    filter_policy: ScanFilterPolicy,
     interval: RadioDuration,
     window: RadioDuration,
     filter_duplicates: bool,
@@ -70,6 +72,7 @@ impl Scanner {
         Self {
             phase: Phase::Idle,
             scan_type: ScanType::Passive,
+            filter_policy: ScanFilterPolicy::AcceptAll,
             interval: RadioDuration::from_micros(0),
             window: RadioDuration::from_micros(0),
             filter_duplicates: false,
@@ -85,12 +88,22 @@ impl Scanner {
         !matches!(self.phase, Phase::Idle)
     }
 
+    /// Whether the running scanner reports only the filter accept list.
+    pub(crate) fn uses_accept_list(&self) -> bool {
+        self.is_active() && self.filter_policy == ScanFilterPolicy::AcceptListOnly
+    }
+
     pub(crate) fn enable(&mut self, request: LeLegacyScanningEnableRequest) {
         let parameters = request.parameters();
         self.scan_type = if parameters.is_active() {
             ScanType::Active
         } else {
             ScanType::Passive
+        };
+        self.filter_policy = if parameters.is_accept_list_only() {
+            ScanFilterPolicy::AcceptListOnly
+        } else {
+            ScanFilterPolicy::AcceptAll
         };
         self.interval =
             RadioDuration::from_micros(u32::from(parameters.interval_units_625_us()) * 625);
@@ -120,6 +133,7 @@ impl Scanner {
                 Some(RadioRequest::ConfigureScanner(ScannerConfiguration {
                     scanner: SCANNER,
                     scan_type: self.scan_type,
+                    filter_policy: self.filter_policy,
                     tx_power: TxPower::from_dbm(0),
                 }))
             }

@@ -6,14 +6,15 @@ use oer_bluetooth_hci::{
     LeRandomUnavailable,
 };
 use oer_bluetooth_radio::{
-    AdvertisingChannel, AdvertisingChannels, AdvertisingEvent, AdvertisingReception,
-    ConnectionAllowances, ConnectionConfiguration, ConnectionEvent, DataPduKind, EventId,
-    EventResult, RadioDuration, RadioInstant, RadioOutcome, RadioRequest, RadioTiming, ReceivedPdu,
-    RequestError, ScanType, ScanWindow,
+    AcceptListChange, AdvertisingChannel, AdvertisingChannels, AdvertisingEvent,
+    AdvertisingReception, ConnectionAllowances, ConnectionConfiguration, ConnectionEvent,
+    DataPduKind, EventId, EventResult, RadioDuration, RadioInstant, RadioOutcome, RadioRequest,
+    RadioTiming, ReceivedPdu, RequestError, ScanFilterPolicy, ScanType, ScanWindow,
 };
 
 use crate::{LeController, LeControllerConfig, LeVersionInformation, PLANNING_SLACK};
 
+mod accept_list;
 mod connection;
 
 const TIMING: RadioTiming = RadioTiming {
@@ -88,7 +89,8 @@ enum Request {
     CloseConnection,
     Advertise(AdvertisingEvent),
     RemoveAdvertising,
-    ConfigureScanner(ScanType),
+    ConfigureScanner(ScanType, ScanFilterPolicy),
+    FilterAcceptList(AcceptListChange),
     Scan(ScanWindow),
     RemoveScanner,
     TestTransmit(EventId),
@@ -121,8 +123,9 @@ impl From<RadioRequest<'_>> for Request {
             RadioRequest::Advertise(event) => Self::Advertise(event),
             RadioRequest::RemoveAdvertising(_) => Self::RemoveAdvertising,
             RadioRequest::ConfigureScanner(configuration) => {
-                Self::ConfigureScanner(configuration.scan_type)
+                Self::ConfigureScanner(configuration.scan_type, configuration.filter_policy)
             }
+            RadioRequest::FilterAcceptList(change) => Self::FilterAcceptList(change),
             RadioRequest::Scan(window) => Self::Scan(window),
             RadioRequest::RemoveScanner(_) => Self::RemoveScanner,
             RadioRequest::TestTransmit(test) => Self::TestTransmit(test.id),
@@ -256,8 +259,26 @@ impl Harness {
         window_units: u16,
         filter_duplicates: bool,
     ) {
+        self.scan_with(
+            active,
+            ScanFilterPolicy::AcceptAll,
+            interval_units,
+            window_units,
+            filter_duplicates,
+        );
+    }
+
+    fn scan_with(
+        &mut self,
+        active: bool,
+        filter_policy: ScanFilterPolicy,
+        interval_units: u16,
+        window_units: u16,
+        filter_duplicates: bool,
+    ) {
         let mut parameters = [0; 7];
         parameters[0] = u8::from(active);
+        parameters[6] = u8::from(filter_policy == ScanFilterPolicy::AcceptListOnly);
         parameters[1..3].copy_from_slice(&interval_units.to_le_bytes());
         parameters[3..5].copy_from_slice(&window_units.to_le_bytes());
         assert_eq!(self.command(SET_SCAN_PARAMS, &parameters), Some(SUCCESS));
@@ -267,11 +288,14 @@ impl Harness {
         );
         assert_eq!(
             self.step(),
-            Some(Request::ConfigureScanner(if active {
-                ScanType::Active
-            } else {
-                ScanType::Passive
-            }))
+            Some(Request::ConfigureScanner(
+                if active {
+                    ScanType::Active
+                } else {
+                    ScanType::Passive
+                },
+                filter_policy
+            ))
         );
         assert_eq!(self.status_of(SET_SCAN_ENABLE), Some(SUCCESS));
     }

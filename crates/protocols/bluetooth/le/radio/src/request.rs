@@ -161,8 +161,41 @@ pub struct ScannerConfiguration {
     pub scanner: ScannerId,
     /// Whether the scanner requests scan responses.
     pub scan_type: ScanType,
+    /// Which advertisers the scanner receives from.
+    pub filter_policy: ScanFilterPolicy,
     /// Transmit power retained by the scanner profile.
     pub tx_power: TxPower,
+}
+
+/// Which advertisers a scanner receives from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScanFilterPolicy {
+    /// Every advertiser.
+    AcceptAll,
+    /// Only the devices of the filter accept list; the backend filters in
+    /// hardware, so other advertisers are neither reported nor scanned.
+    AcceptListOnly,
+}
+
+/// One device of the filter accept list.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AcceptListDevice {
+    /// The address is random rather than public.
+    pub random: bool,
+    /// The address, least significant octet first.
+    pub address: [u8; 6],
+}
+
+/// One change of the filter accept list. The Controller changes the list only
+/// while no role filters against it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AcceptListChange {
+    /// Add a device; a device already listed stays listed.
+    Add(AcceptListDevice),
+    /// Remove a listed device.
+    Remove(AcceptListDevice),
+    /// Remove every device.
+    Clear,
 }
 
 /// How a scanner treats scannable advertising.
@@ -397,6 +430,8 @@ pub enum RadioRequest<'data> {
     EndTest,
     /// Withdraw a scheduled event. Its outcome still follows.
     Cancel(EventId),
+    /// Change the filter accept list.
+    FilterAcceptList(AcceptListChange),
 }
 
 /// Why the backend refused a request. Nothing changed.
@@ -422,6 +457,10 @@ pub enum RequestError {
     UnknownEvent,
     /// The backend is stopped or faulted.
     Unavailable,
+    /// The filter accept list has no free entry.
+    ListFull,
+    /// The filter accept list does not hold the device to remove.
+    NotListed,
 }
 
 #[cfg(test)]

@@ -20,8 +20,9 @@
 //!   and establishment timeouts, Channel Map and Connection Update instants,
 //!   feature, version, ping and termination procedures, LE encryption start,
 //!   pause and restart, and ACL data both ways with Host flow control;
-//! - legacy passive scanning with LE Advertising Reports and the duplicate
-//!   filter;
+//! - legacy passive and active scanning with LE Advertising Reports and the
+//!   duplicate filter, reporting every advertiser or only the filter accept
+//!   list, whose Clear, Add and Remove commands the radio backend executes;
 //! - Direct Test Mode transmitter and receiver tests, which run alone.
 //!
 //! One arbiter places every event so that no two reservations overlap.
@@ -33,7 +34,8 @@
 //! advertising needs the random source that encryption draws from.
 //!
 //! Commands complete in order. Reset, advertising and scanning enable
-//! changes, advertising-data updates while advertising and Test End complete
+//! changes, filter accept list changes, advertising-data updates while
+//! advertising and Test End complete
 //! only after their radio work has finished; until then
 //! [`LeController::is_command_ready`] is false. Host ACL packets enter through
 //! [`LeController::acl`] while [`LeController::is_acl_ready`].
@@ -41,6 +43,7 @@
 #[cfg(test)]
 extern crate std;
 
+mod accept_list;
 mod advertising;
 mod arbiter;
 mod coexistence;

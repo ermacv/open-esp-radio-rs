@@ -3,12 +3,13 @@ use std::vec::Vec;
 use oer_esp32s31_bluetooth_memory::BlePhyLe1MPacketStartCalibration;
 
 use oer_bluetooth_radio::{
-    AccessAddress, AdvertisingChannel, AdvertisingChannels, AdvertisingConfiguration,
-    AdvertisingEvent, AdvertisingPdu, AdvertisingReception, AdvertisingSetId, CoexistenceLevel,
-    ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming, ConnectionId, CrcInit,
-    DataChannel, DataPdu, DataPduKind, EventId, EventResult, RadioDuration, RadioInstant,
-    RadioOutcome, RadioRequest, RadioWindow, RequestError, ScanType, ScanWindow,
-    ScannerConfiguration, ScannerId, TestChannel, TestPhy, TestReceive, TestReport, TxPower,
+    AcceptListChange, AcceptListDevice, AccessAddress, AdvertisingChannel, AdvertisingChannels,
+    AdvertisingConfiguration, AdvertisingEvent, AdvertisingPdu, AdvertisingReception,
+    AdvertisingSetId, CoexistenceLevel, ConnectionConfiguration, ConnectionEvent,
+    ConnectionEventTiming, ConnectionId, CrcInit, DataChannel, DataPdu, DataPduKind, EventId,
+    EventResult, RadioDuration, RadioInstant, RadioOutcome, RadioRequest, RadioWindow,
+    RequestError, ScanFilterPolicy, ScanType, ScanWindow, ScannerConfiguration, ScannerId,
+    TestChannel, TestPhy, TestReceive, TestReport, TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerTimeSample,
@@ -199,6 +200,7 @@ fn reservations_are_admitted_in_time_and_apart() {
         .request(
             RadioRequest::ConfigureScanner(ScannerConfiguration {
                 scan_type: ScanType::Passive,
+                filter_policy: ScanFilterPolicy::AcceptAll,
                 scanner: ScannerId::new(0),
                 tx_power: TxPower::from_dbm(0),
             }),
@@ -790,6 +792,7 @@ fn a_power_below_the_provider_table_is_refused_before_any_instance() {
         radio.request(
             RadioRequest::ConfigureScanner(ScannerConfiguration {
                 scan_type: ScanType::Passive,
+                filter_policy: ScanFilterPolicy::AcceptAll,
                 scanner: ScannerId::new(0),
                 tx_power: TxPower::from_dbm(-25),
             }),
@@ -802,6 +805,7 @@ fn a_power_below_the_provider_table_is_refused_before_any_instance() {
         .request(
             RadioRequest::ConfigureScanner(ScannerConfiguration {
                 scan_type: ScanType::Passive,
+                filter_policy: ScanFilterPolicy::AcceptAll,
                 scanner: ScannerId::new(0),
                 tx_power: TxPower::from_dbm(-24),
             }),
@@ -998,4 +1002,36 @@ fn a_session_without_a_published_event_has_no_route_to_restore() {
         radio.drive(view(false), &mut sink),
         RadioStep::Idle
     ));
+}
+
+#[test]
+fn list_changes_edit_the_device_table_up_to_its_capacity() {
+    let mut radio = radio();
+    let mut sink = Sink::default();
+    let device = |index: u8| AcceptListDevice {
+        random: index.is_multiple_of(2),
+        address: [index, 1, 2, 3, 4, 5],
+    };
+    let mut change = |radio: &mut Radio, change| {
+        radio.request(RadioRequest::FilterAcceptList(change), &mut sink)
+    };
+    for index in 0..12 {
+        change(&mut radio, AcceptListChange::Add(device(index))).unwrap();
+    }
+    // Adding a listed device again keeps one entry.
+    change(&mut radio, AcceptListChange::Add(device(0))).unwrap();
+    assert_eq!(
+        change(&mut radio, AcceptListChange::Add(device(12))),
+        Err(RequestError::ListFull)
+    );
+    change(&mut radio, AcceptListChange::Remove(device(3))).unwrap();
+    assert_eq!(
+        change(&mut radio, AcceptListChange::Remove(device(3))),
+        Err(RequestError::NotListed)
+    );
+    assert_eq!(radio.device_table_publication().count.get(), 11);
+    change(&mut radio, AcceptListChange::Add(device(12))).unwrap();
+    change(&mut radio, AcceptListChange::Clear).unwrap();
+    assert_eq!(radio.device_table_publication().count.get(), 0);
+    assert!(sink.0.is_empty());
 }

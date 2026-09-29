@@ -367,9 +367,8 @@ fn real_trouble_runner_reaches_initialized_over_the_source_owned_hci_boundary() 
 
         // This public Trouble operation cannot emit its command until the
         // Runner has completed its initial ACL/mask bootstrap and published
-        // the internal initialized state. The conservative bootstrap then
-        // rejects the operational command because no filter-list owner or
-        // Link Layer exists yet.
+        // the internal initialized state. This bootstrap-only Controller then
+        // rejects the operational command because it owns no filter list.
         let controller_and_probe = join(
             drive_bootstrap_until(&controller, &mut bootstrap, &entropy, &stop),
             initialized_probe,
@@ -382,7 +381,7 @@ fn real_trouble_runner_reaches_initialized_over_the_source_owned_hci_boundary() 
                 assert!(matches!(
                     probe_result,
                     Err(BleHostError::BleHost(TroubleError::Hci(
-                        HciError::UNKNOWN_CMD
+                        HciError::CMD_DISALLOWED
                     )))
                 ));
             }
@@ -441,6 +440,15 @@ async fn drive_bootstrap_until(
                     .await
             }
             LeControllerCommandClassification::Unsupported(response) => {
+                controller
+                    .publish(bt_hci::PacketKind::Event, response.as_bytes())
+                    .await
+            }
+            LeControllerCommandClassification::AcceptList(command) => {
+                let response = crate::LeAcceptListCommandCompleteEvent::new(
+                    command.opcode(),
+                    HciError::CMD_DISALLOWED.to_status(),
+                );
                 controller
                     .publish(bt_hci::PacketKind::Event, response.as_bytes())
                     .await
@@ -601,6 +609,29 @@ fn supported_commands_report_matches_the_closed_operational_inventory() {
 }
 
 #[test]
+fn a_profile_with_a_filter_accept_list_reports_its_size_and_commands() {
+    let without = LeControllerBootstrapConfig::new(
+        BluetoothPublicDeviceAddress::from_canonical_bytes([0; 6]),
+        27,
+        1,
+    )
+    .unwrap();
+    for (config, size) in [(without, 0), (without.with_filter_accept_list_size(12), 12)] {
+        let mut bootstrap = LeControllerBootstrap::new(config);
+        bootstrap.dispatch(OwnedBootstrapCommand::Reset, false);
+        let response = bootstrap.dispatch(OwnedBootstrapCommand::LeReadFilterAcceptListSize, false);
+        assert_eq!(response.status(), Status::SUCCESS);
+        assert_eq!(response.as_bytes()[6..], [size]);
+        let response = bootstrap.dispatch(OwnedBootstrapCommand::ReadLocalSupportedCommands, false);
+        let mask = <&CmdMask>::from_hci_bytes_complete(&response.as_bytes()[6..]).unwrap();
+        assert!(mask.le_read_filter_accept_list_size());
+        assert_eq!(mask.le_clear_filter_accept_list(), size > 0);
+        assert_eq!(mask.le_add_device_to_filter_accept_list(), size > 0);
+        assert_eq!(mask.le_remove_device_from_filter_accept_list(), size > 0);
+    }
+}
+
+#[test]
 fn bootstrap_config_rejects_profiles_without_acl_capacity() {
     assert_eq!(
         LeControllerBootstrapConfig::new(
@@ -708,6 +739,12 @@ fn dispatch_test_packet(
         }
         LeControllerCommandClassification::DataLength(command) => {
             command_error(command.opcode(), HciError::UNKNOWN_CMD)
+        }
+        LeControllerCommandClassification::AcceptList(command) => {
+            command_error(command.opcode(), HciError::UNKNOWN_CMD)
+        }
+        LeControllerCommandClassification::MalformedAcceptList(response) => {
+            command_error(response.opcode(), HciError::UNKNOWN_CMD)
         }
         LeControllerCommandClassification::MalformedDataLength(response) => {
             command_error(response.opcode(), HciError::UNKNOWN_CMD)

@@ -13,7 +13,7 @@ use oer_esp32s31_bluetooth::{
         SchedulerTransactionFault, SchedulerWait,
     },
 };
-use oer_esp32s31_bluetooth_memory::{LeRxChain, SchedulerItemSpace};
+use oer_esp32s31_bluetooth_memory::{LeDeviceTablePublication, LeRxChain, SchedulerItemSpace};
 use oer_esp32s31_hal::bluetooth::{
     BluetoothControllerTimeScale, BluetoothSchedulerStop, BluetoothSchedulerStopStep,
     BluetoothSchedulerStopped,
@@ -67,6 +67,9 @@ pub trait BluetoothRadioHardware {
 
     /// Publish the scan-backoff state of a starting scanner.
     fn publish_scan_start(&mut self);
+
+    /// Publish the device table after a change of the filter accept list.
+    fn publish_device_table(&mut self, publication: LeDeviceTablePublication);
 
     /// Take the coalesced scheduler wake the interrupt published.
     fn take_wake(&mut self) -> Option<SchedulerWakeBatch>;
@@ -216,6 +219,10 @@ mod live {
 
         fn publish_scan_start(&mut self) {
             self.task.publish_scan_start();
+        }
+
+        fn publish_device_table(&mut self, publication: LeDeviceTablePublication) {
+            self.task.publish_device_table(publication);
         }
 
         fn take_wake(&mut self) -> Option<SchedulerWakeBatch> {

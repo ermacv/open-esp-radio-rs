@@ -63,6 +63,7 @@ impl LeLegacyScanningCommandKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LeLegacyScanParameters {
     active: bool,
+    accept_list_only: bool,
     interval_units_625_us: u16,
     window_units_625_us: u16,
 }
@@ -71,6 +72,11 @@ impl LeLegacyScanParameters {
     /// Whether the scanner sends scan requests.
     pub const fn is_active(self) -> bool {
         self.active
+    }
+
+    /// Whether only filter accept list devices are received (filter policy 1).
+    pub const fn is_accept_list_only(self) -> bool {
+        self.accept_list_only
     }
 
     /// Start-to-start scan interval in 0.625 ms units.
@@ -246,9 +252,14 @@ impl LeLegacyScanningCommand {
             scanning_filter_policy,
         } = parameters;
 
-        if own_addr_kind != AddrKind::PUBLIC
-            || scanning_filter_policy != ScanningFilterPolicy::BasicUnfiltered
-        {
+        let accept_list_only = if scanning_filter_policy == ScanningFilterPolicy::BasicUnfiltered {
+            false
+        } else if scanning_filter_policy == ScanningFilterPolicy::BasicFiltered {
+            true
+        } else {
+            return Err(LeLegacyScanningDecodeError::UnsupportedFeature { command });
+        };
+        if own_addr_kind != AddrKind::PUBLIC {
             return Err(LeLegacyScanningDecodeError::UnsupportedFeature { command });
         }
 
@@ -263,6 +274,7 @@ impl LeLegacyScanningCommand {
 
         Ok(Self::SetParameters(LeLegacyScanParameters {
             active: le_scan_kind == LeScanKind::Active,
+            accept_list_only,
             interval_units_625_us,
             window_units_625_us,
         }))

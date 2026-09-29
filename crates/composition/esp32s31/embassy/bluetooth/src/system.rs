@@ -32,10 +32,11 @@ use oer_esp32s31_bluetooth::{
 use oer_esp32s31_bluetooth_memory::{
     BlePhyEngineBindFailure, BlePhyEngineCpuOwned, BlePhyEngineStorage,
     DirectionFindingWorkspaceBindFailure, DirectionFindingWorkspaceCpuOwned,
-    DirectionFindingWorkspaceStorage, DtmPool, DtmStorage, LeRxChain, LeRxChainBindError,
-    LeRxChainStorage, LegacyAdvertisingPool, LegacyAdvertisingStorage,
-    LegacyConnectableAdvertisingPool, LegacyConnectableAdvertisingStorage, LegacyScanPool,
-    LegacyScanStorage, PeripheralConnectionPool, PeripheralConnectionStorage, RxMemoryListClass,
+    DirectionFindingWorkspaceStorage, DtmPool, DtmStorage, LeDeviceTable, LeDeviceTableBindError,
+    LeDeviceTableStorage, LeRxChain, LeRxChainBindError, LeRxChainStorage, LegacyAdvertisingPool,
+    LegacyAdvertisingStorage, LegacyConnectableAdvertisingPool,
+    LegacyConnectableAdvertisingStorage, LegacyScanPool, LegacyScanStorage,
+    PeripheralConnectionPool, PeripheralConnectionStorage, RxMemoryListClass,
     SchedulerAllocationConfig, SchedulerPoolBindError, SchedulerRolePoolStorage,
 };
 use oer_esp32s31_bluetooth_radio::{BluetoothRadio, BluetoothRadioMemory};
@@ -152,6 +153,8 @@ controller_memory!(CONNECTION_POOL:
     SchedulerRolePoolStorage::new(), ".dma.data.open_radio_bluetooth_peripheral_connection");
 controller_memory!(DTM_POOL: SchedulerRolePoolStorage<DtmStorage, 1> =
     SchedulerRolePoolStorage::new(), ".dma.data.open_radio_bluetooth_dtm");
+controller_memory!(DEVICE_TABLE: LeDeviceTableStorage = LeDeviceTableStorage::new(),
+    ".dma.data.open_radio_bluetooth_device_table");
 controller_memory!(SCANNING_CHAIN: LeRxChainStorage<SCAN_PACKETS> = LeRxChainStorage::new(),
     ".dma.data.open_radio_bluetooth_scanning_chain");
 controller_memory!(NON_SCANNING_CHAIN: LeRxChainStorage<RX_PACKETS> = LeRxChainStorage::new(),
@@ -177,6 +180,8 @@ pub enum BluetoothMemoryError {
     Pool(SchedulerPoolBindError),
     /// Linker placement failed a receive chain.
     Chain(LeRxChainBindError),
+    /// Linker placement failed the device table.
+    DeviceTable(LeDeviceTableBindError),
 }
 
 /// The controller memory of the composition, reused by every epoch.
@@ -252,6 +257,8 @@ impl BluetoothParked {
             )
             .map_err(BluetoothMemoryError::Chain)?,
             direction_finding: direction_finding.binding().link(),
+            device_table: LeDeviceTable::bind(claim(DEVICE_TABLE.try_take())?)
+                .map_err(BluetoothMemoryError::DeviceTable)?,
         };
         Ok(Self {
             partition,

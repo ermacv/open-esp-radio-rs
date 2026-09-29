@@ -8,10 +8,11 @@ use embassy_futures::{
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_time::Timer;
 use oer_bluetooth_radio::{
-    AdvertisingChannel, AdvertisingChannels, AdvertisingConfiguration, AdvertisingEvent,
-    AdvertisingPdu, AdvertisingReception, AdvertisingSetId, CoexistenceLevel, EventId, EventResult,
-    RadioDuration, RadioFault, RadioInstant, RadioOutcome, RadioRequest, RadioWindow, ReceivedPdu,
-    RequestError, ScanType, ScannerConfiguration, ScannerId, TestChannel, TestPhy, TestReceive,
+    AcceptListChange, AcceptListDevice, AdvertisingChannel, AdvertisingChannels,
+    AdvertisingConfiguration, AdvertisingEvent, AdvertisingPdu, AdvertisingReception,
+    AdvertisingSetId, CoexistenceLevel, EventId, EventResult, RadioDuration, RadioFault,
+    RadioInstant, RadioOutcome, RadioRequest, RadioWindow, ReceivedPdu, RequestError,
+    ScanFilterPolicy, ScanType, ScannerConfiguration, ScannerId, TestChannel, TestPhy, TestReceive,
     TxPower,
 };
 use oer_esp32s31_bluetooth::{
@@ -28,7 +29,10 @@ use oer_esp32s31_bluetooth::{
         SchedulerWait,
     },
 };
-use oer_esp32s31_bluetooth_memory::{ControllerSramLinkAddress, LeRxChain, SchedulerItemSpace};
+use oer_esp32s31_bluetooth_memory::{
+    BLUETOOTH_FILTER_ACCEPT_LIST_CAPACITY, ControllerSramLinkAddress, LeDeviceTablePublication,
+    LeRxChain, SchedulerItemSpace,
+};
 use oer_esp32s31_bluetooth_radio::validation::model_memory;
 use oer_esp32s31_hal::bluetooth::{
     BluetoothControllerHalInitConfig, BluetoothControllerTimeScale,
@@ -58,6 +62,7 @@ struct State {
     routes_restored: usize,
     refuse_start: bool,
     scan_starts: usize,
+    device_tables: Vec<LeDeviceTablePublication>,
 }
 
 /// The model's owner of a disabled BLE PHY ETM route.
@@ -117,6 +122,10 @@ impl BluetoothRadioHardware for Model {
 
     fn publish_scan_start(&mut self) {
         self.0.borrow_mut().scan_starts += 1;
+    }
+
+    fn publish_device_table(&mut self, publication: LeDeviceTablePublication) {
+        self.0.borrow_mut().device_tables.push(publication);
     }
 
     fn take_wake(&mut self) -> Option<SchedulerWakeBatch> {
@@ -320,6 +329,7 @@ fn an_accepted_scanner_publishes_the_scan_start_once() {
         RadioRequest::ConfigureScanner(ScannerConfiguration {
             scanner: ScannerId::new(0),
             scan_type: ScanType::Active,
+            filter_policy: ScanFilterPolicy::AcceptAll,
             tx_power: TxPower::from_dbm(0),
         })
     };
@@ -328,6 +338,68 @@ fn an_accepted_scanner_publishes_the_scan_start_once() {
     // A refused configuration publishes nothing.
     assert!(block_on(runtime.request(scanner())).is_err());
     assert_eq!(model.0.borrow().scan_starts, 1);
+}
+
+#[test]
+fn installation_and_every_accepted_list_change_publish_the_device_table() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    let counts = || {
+        model
+            .0
+            .borrow()
+            .device_tables
+            .iter()
+            .map(|publication| publication.count.get())
+            .collect::<Vec<_>>()
+    };
+    // The empty table is published before any scanner can filter by it.
+    assert_eq!(counts(), [0]);
+    let device = |index: u8| AcceptListDevice {
+        random: true,
+        address: [index, 0, 0, 0, 0, 0xc0],
+    };
+    for index in 0..BLUETOOTH_FILTER_ACCEPT_LIST_CAPACITY as u8 {
+        block_on(
+            runtime.request(RadioRequest::FilterAcceptList(AcceptListChange::Add(
+                device(index),
+            ))),
+        )
+        .unwrap();
+    }
+    assert_eq!(
+        counts().last().copied(),
+        Some(BLUETOOTH_FILTER_ACCEPT_LIST_CAPACITY as u32)
+    );
+    let published = counts().len();
+    // A refused addition publishes nothing.
+    assert!(matches!(
+        block_on(
+            runtime.request(RadioRequest::FilterAcceptList(AcceptListChange::Add(
+                device(0xff)
+            )))
+        ),
+        Err(BluetoothRuntimeError::Rejected(RequestError::ListFull))
+    ));
+    assert_eq!(counts().len(), published);
+    block_on(
+        runtime.request(RadioRequest::FilterAcceptList(AcceptListChange::Remove(
+            device(0),
+        ))),
+    )
+    .unwrap();
+    block_on(runtime.request(RadioRequest::FilterAcceptList(AcceptListChange::Clear))).unwrap();
+    assert_eq!(
+        counts()[published..],
+        [BLUETOOTH_FILTER_ACCEPT_LIST_CAPACITY as u32 - 1, 0]
+    );
+    let tables = model.0.borrow();
+    assert!(
+        tables
+            .device_tables
+            .iter()
+            .all(|publication| publication.first_entry == tables.device_tables[0].first_entry)
+    );
 }
 
 #[test]

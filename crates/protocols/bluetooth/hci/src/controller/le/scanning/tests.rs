@@ -79,6 +79,18 @@ fn unsupported_profiles_and_invalid_timing_fail_closed() {
         panic!("active scanning parameters decode");
     };
     assert!(active.is_active());
+    assert!(!active.is_accept_list_only());
+
+    let Ok(LeLegacyScanningCommand::SetParameters(filtered)) = decode(&LeSetScanParams::new(
+        LeScanKind::Passive,
+        Duration::from_u16(0x20),
+        Duration::from_u16(0x10),
+        AddrKind::PUBLIC,
+        ScanningFilterPolicy::BasicFiltered,
+    )) else {
+        panic!("accept-list scanning parameters decode");
+    };
+    assert!(filtered.is_accept_list_only());
 
     for command in [
         LeSetScanParams::new(
@@ -93,7 +105,14 @@ fn unsupported_profiles_and_invalid_timing_fail_closed() {
             Duration::from_u16(0x20),
             Duration::from_u16(0x10),
             AddrKind::PUBLIC,
-            ScanningFilterPolicy::BasicFiltered,
+            ScanningFilterPolicy::ExtUnfiltered,
+        ),
+        LeSetScanParams::new(
+            LeScanKind::Passive,
+            Duration::from_u16(0x20),
+            Duration::from_u16(0x10),
+            AddrKind::PUBLIC,
+            ScanningFilterPolicy::ExtFiltered,
         ),
     ] {
         let response = decode(&command)

@@ -4,12 +4,12 @@ use core::convert::Infallible;
 
 use crate::coexistence::{self, CoexistenceProfile};
 use oer_bluetooth_radio::{
-    AdvertisingChannel, AdvertisingConfiguration, AdvertisingEvent, AdvertisingReception,
-    AdvertisingSetId, ConnectionAllowances, ConnectionConfiguration, ConnectionEvent,
-    ConnectionEventTiming, ConnectionId, DataPduKind, EventId, EventResult, RadioDuration,
-    RadioFault, RadioInstant, RadioOutcome, RadioRequest, RadioTiming, ReceivedPdu, RequestError,
-    ScanType, ScanWindow, ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestReport,
-    TestTransmit, TxPower,
+    AcceptListChange, AcceptListDevice, AdvertisingChannel, AdvertisingConfiguration,
+    AdvertisingEvent, AdvertisingReception, AdvertisingSetId, ConnectionAllowances,
+    ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming, ConnectionId, DataPduKind,
+    EventId, EventResult, RadioDuration, RadioFault, RadioInstant, RadioOutcome, RadioRequest,
+    RadioTiming, ReceivedPdu, RequestError, ScanFilterPolicy, ScanType, ScanWindow,
+    ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestReport, TestTransmit, TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerSchedulerEpoch, ControllerTimeSample,
@@ -22,12 +22,13 @@ use oer_esp32s31_bluetooth::{
 use oer_esp32s31_bluetooth_memory::{
     BlePhyLe1MPacketStartCalibration, DirectionFindingWorkspaceLink, DtmPool,
     DtmReceiverEventPhase, DtmRole, DtmSchedulerItemCompletionStatus, DtmSchedulerItemEventType,
-    DtmSchedulerReceiverPhy, DtmSchedulerTransmitterPhy, LeRxChain, LeRxOutcome, LeRxSource,
+    DtmSchedulerReceiverPhy, DtmSchedulerTransmitterPhy, LeDeviceTable, LeDeviceTableError,
+    LeDeviceTablePublication, LeFilterAcceptListDevice, LeRxChain, LeRxOutcome, LeRxSource,
     LeTxPower, LegacyAdvertisingPool, LegacyAdvertisingPrimaryChannelPlan,
     LegacyConnectableAdvIndPacketInput, LegacyConnectableAdvertisingMemoryInput,
     LegacyConnectableAdvertisingOwnAddress, LegacyConnectableAdvertisingPool,
-    LegacyConnectableScanResponsePacketInput, LegacyScanEventTiming, LegacyScanPool,
-    LegacyScanPrimaryChannel, LegacyScanResetConfig, LegacyScanSchedulerWindow,
+    LegacyConnectableScanResponsePacketInput, LegacyScanEventTiming, LegacyScanFilterPolicy,
+    LegacyScanPool, LegacyScanPrimaryChannel, LegacyScanResetConfig, LegacyScanSchedulerWindow,
     LegacyScanStartSelection, LegacyScanType, LegacyScanWindowTicks,
     PeripheralConnectionCapturedAnchorAvailability, PeripheralConnectionDataChannel,
     PeripheralConnectionEventSpan, PeripheralConnectionFirstEvent, PeripheralConnectionIdentity,
@@ -76,6 +77,8 @@ pub struct BluetoothRadioMemory<
     pub non_scanning: LeRxChain<RX_PACKETS>,
     /// The controller-global direction-finding workspace.
     pub direction_finding: DirectionFindingWorkspaceLink,
+    /// The device table that holds the filter accept list.
+    pub device_table: LeDeviceTable,
 }
 
 /// Receives the outcomes of one entry. PDUs are lent only for the call.
@@ -504,7 +507,14 @@ impl<
             RadioRequest::TestReceive(test) => self.test_receive(test),
             RadioRequest::EndTest => self.end_test(),
             RadioRequest::Cancel(id) => self.cancel(id, sink),
+            RadioRequest::FilterAcceptList(change) => self.change_accept_list(change),
         }
+    }
+
+    /// Hardware's view of the device table; the caller publishes it after
+    /// every accepted list change.
+    pub fn device_table_publication(&self) -> LeDeviceTablePublication {
+        self.memory.device_table.publication()
     }
 
     /// The next hardware work: a pending cancellation first, then pending
@@ -1225,7 +1235,11 @@ impl<
             ScanType::Passive => LegacyScanType::Passive,
             ScanType::Active => LegacyScanType::Active,
         };
-        let config = LegacyScanResetConfig::le_1m_public_accept_all(tx_power, scan_type);
+        let filter_policy = match configuration.filter_policy {
+            ScanFilterPolicy::AcceptAll => LegacyScanFilterPolicy::AcceptAll,
+            ScanFilterPolicy::AcceptListOnly => LegacyScanFilterPolicy::AcceptListOnly,
+        };
+        let config = LegacyScanResetConfig::le_1m_public(tx_power, scan_type, filter_policy);
         if pool
             .reset(&instance, &self.memory.scanning, config)
             .is_err()
@@ -1239,6 +1253,26 @@ impl<
             event: None,
         });
         Ok(())
+    }
+
+    fn change_accept_list(&mut self, change: AcceptListChange) -> Result<(), RequestError> {
+        let device = |device: AcceptListDevice| LeFilterAcceptListDevice {
+            random: device.random,
+            address: device.address,
+        };
+        let table = &mut self.memory.device_table;
+        match change {
+            AcceptListChange::Add(entry) => table.add(device(entry)),
+            AcceptListChange::Remove(entry) => table.remove(device(entry)),
+            AcceptListChange::Clear => {
+                table.clear();
+                Ok(())
+            }
+        }
+        .map_err(|error| match error {
+            LeDeviceTableError::Full => RequestError::ListFull,
+            LeDeviceTableError::NotFound => RequestError::NotListed,
+        })
     }
 
     fn scan(&mut self, scan: ScanWindow) -> Result<(), RequestError> {

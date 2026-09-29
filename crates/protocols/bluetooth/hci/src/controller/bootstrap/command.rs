@@ -243,7 +243,8 @@ impl OwnedBootstrapCommand {
 /// Read Local Supported Commands itself has no assigned bit. Commands remain
 /// advertised when their execution is state-dependent; unsupported optional
 /// commands stay clear even when adjacent commands share an octet.
-/// The combined endpoint adds LE Rand only when its entropy source is bound.
+/// The combined endpoint adds LE Rand only when its entropy source is bound,
+/// and the filter accept list commands only when its profile has a list.
 pub const fn le_controller_supported_commands() -> [u8; 64] {
     let mut commands = [0; 64];
     commands[0] = 1 << 5; // Disconnect.

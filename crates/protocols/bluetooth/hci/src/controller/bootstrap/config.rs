@@ -54,6 +54,7 @@ pub struct LeControllerBootstrapConfig {
     pub(super) public_address: BluetoothPublicDeviceAddress,
     pub(super) le_acl_data_packet_length: u16,
     pub(super) total_num_le_acl_data_packets: u8,
+    pub(super) filter_accept_list_size: u8,
 }
 
 impl LeControllerBootstrapConfig {
@@ -85,7 +86,17 @@ impl LeControllerBootstrapConfig {
             public_address,
             le_acl_data_packet_length,
             total_num_le_acl_data_packets,
+            filter_accept_list_size: 0,
         })
+    }
+
+    /// Report `size` filter accept list entries, the capacity of the list
+    /// the radio backend owns. Without it the profile reports none.
+    pub const fn with_filter_accept_list_size(self, size: u8) -> Self {
+        Self {
+            filter_accept_list_size: size,
+            ..self
+        }
     }
 
     /// Public address in canonical EUI-48 display order.
@@ -103,10 +114,8 @@ impl LeControllerBootstrapConfig {
         self.total_num_le_acl_data_packets
     }
 
-    /// Number of implemented filter accept list entries.
-    ///
-    /// The initial profile has no list owner and therefore reports zero.
+    /// Number of filter accept list entries the radio backend keeps.
     pub const fn filter_accept_list_size(&self) -> u8 {
-        0
+        self.filter_accept_list_size
     }
 }

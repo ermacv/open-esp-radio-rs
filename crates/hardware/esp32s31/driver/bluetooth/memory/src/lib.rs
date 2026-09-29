@@ -27,6 +27,7 @@ mod direction_finding_workspace;
 mod dtm;
 mod dtm_event_image;
 mod dtm_rx_result;
+mod le_device_table;
 mod le_phy_packet;
 mod le_rx_chain;
 mod le_rx_packet;
@@ -104,6 +105,10 @@ pub use dtm::{
     DtmSchedulerItemCompletionStatus, DtmStorage, DtmTxPacketPrepareError,
 };
 
+pub use le_device_table::{
+    BLUETOOTH_FILTER_ACCEPT_LIST_CAPACITY, LeDeviceTable, LeDeviceTableBindError,
+    LeDeviceTableError, LeDeviceTablePublication, LeDeviceTableStorage, LeFilterAcceptListDevice,
+};
 #[cfg(not(target_arch = "riscv32"))]
 pub use le_rx_chain::LeRxChainModelAddress;
 pub use le_rx_chain::{
@@ -130,8 +135,8 @@ pub use legacy_advertising::{
 };
 
 pub use legacy_scanning_event_image::{
-    LegacyScanPrimaryChannel, LegacyScanResetConfig, LegacyScanSchedulerWindow,
-    LegacyScanStartSelection, LegacyScanType, LegacyScanWindowTicks,
+    LegacyScanFilterPolicy, LegacyScanPrimaryChannel, LegacyScanResetConfig,
+    LegacyScanSchedulerWindow, LegacyScanStartSelection, LegacyScanType, LegacyScanWindowTicks,
 };
 
 pub use legacy_scanning::{

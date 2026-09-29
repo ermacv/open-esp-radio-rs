@@ -13,6 +13,8 @@ pub(super) const BLUETOOTH_LEGACY_SCAN_LINK_STATE_WORDS: usize = 0x84 / 4;
 const RX_HEAD_MASK: u32 = 0x000f_ffff;
 const LINK_STATE_18_BIT_20: u32 = 1 << 20;
 const LINK_STATE_18_BIT_31: u32 = 1 << 31;
+const LINK_STATE_18_ACCEPT_LIST_FILTER: u32 = 1 << 25;
+const LINK_STATE_2C_FILTER_POLICY_SHIFT: u32 = 24;
 const WORD_00: usize = 0;
 const WORD_08: usize = 2;
 const WORD_0C: usize = 3;
@@ -90,14 +92,44 @@ pub enum LegacyScanStartSelection {
 
 /// Dynamic inputs to the single supported passive-scanning reset profile.
 ///
-/// Construction fixes LE 1M, public own address, accept-all filtering,
-/// disabled privacy and disabled periodic synchronization. Callers cannot
-/// supply positional descriptor words or vendor option images.
+/// Construction fixes LE 1M, public own address, disabled privacy and
+/// disabled periodic synchronization. Callers cannot supply positional
+/// descriptor words or vendor option images.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 // CAPABILITY: bluetooth-le-privacy-1-2
 pub struct LegacyScanResetConfig {
     default_tx_power: LeTxPower,
     scan_type: LegacyScanType,
+    filter_policy: LegacyScanFilterPolicy,
+}
+
+/// Which advertisers the scanner reports.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LegacyScanFilterPolicy {
+    /// Every advertiser.
+    AcceptAll,
+    /// Only the devices of the filter accept list; hardware drops the others
+    /// by the published device table.
+    AcceptListOnly,
+}
+
+impl LegacyScanFilterPolicy {
+    /// The link-state writes of this policy: `+0x18` bit 25 and the Host's
+    /// filter policy in `+0x2c` bits 25:24.
+    ///
+    /// SOURCE: the pinned vendor Controller's scanner link state with scan
+    /// filter policy 1 on the stand (`HIL_VENDOR_ACCEPT_LIST_2026_09_29`):
+    /// `+0x18` becomes `0xc200_0000` instead of `0xc000_0000` and `+0x2c`
+    /// `0x0155_5555` instead of `0x0055_5555`.
+    const fn apply(self, word_18: u32, word_2c: u32) -> (u32, u32) {
+        match self {
+            Self::AcceptAll => (word_18, word_2c),
+            Self::AcceptListOnly => (
+                word_18 | LINK_STATE_18_ACCEPT_LIST_FILTER,
+                word_2c | 1 << LINK_STATE_2C_FILTER_POLICY_SHIFT,
+            ),
+        }
+    }
 }
 
 /// Whether the scanner requests scan responses.
@@ -121,14 +153,17 @@ impl LegacyScanType {
 }
 
 impl LegacyScanResetConfig {
-    /// Construct the restricted LE 1M profile of `scan_type`.
-    pub const fn le_1m_public_accept_all(
+    /// Construct the restricted LE 1M profile of `scan_type` and
+    /// `filter_policy`.
+    pub const fn le_1m_public(
         default_tx_power: LeTxPower,
         scan_type: LegacyScanType,
+        filter_policy: LegacyScanFilterPolicy,
     ) -> Self {
         Self {
             default_tx_power,
             scan_type,
+            filter_policy,
         }
     }
 
@@ -194,9 +229,13 @@ impl LegacyScanLinkStateImage {
         words[WORD_08] = rx_head.apply(0x4ff0_0000);
         words[WORD_0C] = 0xa010_0000;
         words[WORD_14] = 0x0400_0000;
-        words[WORD_18] = 0x4000_0000;
+        let (word_18, word_2c) = config.filter_policy.apply(
+            0x4000_0000,
+            LeCrcInit::LE_PRESET.apply_to_controller_word(0),
+        );
+        words[WORD_18] = word_18;
         words[WORD_24] = 0x0110_0000;
-        words[WORD_2C] = LeCrcInit::LE_PRESET.apply_to_controller_word(0);
+        words[WORD_2C] = word_2c;
         words[WORD_30] = 0x0000_1e00;
         // SOURCE: pinned `r_sym_ble_KkAldzIlkQuEkNQp1g6q`
         // (`r_ble_lll_scan_reset_link_state`) stores the zero tick difference

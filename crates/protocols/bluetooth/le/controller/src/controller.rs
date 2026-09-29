@@ -6,7 +6,8 @@ use bt_hci::{
     param::{ControllerToHostFlowControl, Duration, Error as HciError, Status},
 };
 use oer_bluetooth_hci::{
-    BootstrapCommandCompleteEvent, HciCommandPacket, LeConnectionUpdateCompleteEvent,
+    BootstrapCommandCompleteEvent, HciCommandPacket, LeAcceptListCommand,
+    LeAcceptListCommandCompleteEvent, LeAcceptListEntry, LeConnectionUpdateCompleteEvent,
     LeControllerAclPacket, LeControllerBootstrap, LeControllerBootstrapConfig,
     LeControllerCommandClassification, LeDataLengthChangeEvent, LeDataLengthCommand,
     LeDataLengthCommandCompleteEvent, LeDataLengthParameters, LeDisconnectionCompleteEvent,
@@ -28,12 +29,13 @@ use oer_bluetooth_ll::{
     dtm::DTM_MAX_PAYLOAD,
 };
 use oer_bluetooth_radio::{
-    EventId, RadioActivity, RadioDuration, RadioFault, RadioInstant, RadioOutcome, RadioRequest,
-    RadioTiming, RequestError,
+    AcceptListChange, AcceptListDevice, EventId, RadioActivity, RadioDuration, RadioFault,
+    RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError,
 };
 
 use crate::{
     HciPacket,
+    accept_list::AcceptList,
     advertising::{ADVERTISING_DELAY_MAX, Advertiser},
     arbiter::place,
     dtm::{DtmRadioWork, DtmRole},
@@ -76,6 +78,7 @@ pub struct ControllerBusy;
 /// The request in flight at the backend.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Owner {
+    AcceptList,
     Dtm,
     AdvertiserControl,
     AdvertiserEvent,
@@ -88,6 +91,7 @@ enum Owner {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Pending {
     Reset,
+    AcceptList(Opcode),
     Advertising(Opcode),
     Scanning(Opcode),
     TestEnd,
@@ -119,6 +123,7 @@ pub struct LeController<'r, const OUTPUT: usize> {
     advertiser: Advertiser,
     scanner: Scanner,
     peripheral: Peripheral,
+    accept_list: AcceptList,
     /// Controller-to-Host ACL waiting for Host credits, with the offset
     /// already delivered of the first packet.
     held: [Option<LeControllerAclPacket>; HELD_ACL],
@@ -162,6 +167,7 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
             advertiser: Advertiser::new(),
             scanner: Scanner::new(),
             peripheral: Peripheral::new(version),
+            accept_list: AcceptList::new(),
             held: [None; HELD_ACL],
             held_offset: 0,
             host_credits: None,
@@ -295,6 +301,12 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                     )
                     .as_bytes(),
                 );
+            }
+            LeControllerCommandClassification::AcceptList(command) => {
+                self.accept_list_command(command);
+            }
+            LeControllerCommandClassification::MalformedAcceptList(response) => {
+                self.respond(response.as_bytes());
             }
             LeControllerCommandClassification::DataLength(command) => {
                 self.data_length_command(command);
@@ -696,6 +708,7 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                 self.dtm.abort();
                 self.peripheral.abort();
                 self.peripheral.suggest_data_length(LeDataLength::MINIMUM);
+                self.accept_list.reset();
                 self.pending = Some(Pending::Reset);
             }
             OwnedBootstrapCommand::LeSetRandomAddress(_)
@@ -827,12 +840,51 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
         self.output.push_response(bytes);
     }
 
+    /// LE Clear, Add or Remove on the filter accept list. A scanner that
+    /// filters by the list keeps it fixed while it runs.
+    fn accept_list_command(&mut self, command: LeAcceptListCommand) {
+        let opcode = command.opcode();
+        if !self.is_configured() || self.scanner.uses_accept_list() {
+            self.respond(
+                LeAcceptListCommandCompleteEvent::new(opcode, HciError::CMD_DISALLOWED.to_status())
+                    .as_bytes(),
+            );
+            return;
+        }
+        let device = |device: oer_bluetooth_hci::LeAcceptListDevice| AcceptListDevice {
+            random: device.random,
+            address: device.address,
+        };
+        let change = match command {
+            LeAcceptListCommand::Clear => AcceptListChange::Clear,
+            LeAcceptListCommand::Add(LeAcceptListEntry::Device(entry)) => {
+                AcceptListChange::Add(device(entry))
+            }
+            LeAcceptListCommand::Remove(LeAcceptListEntry::Device(entry)) => {
+                AcceptListChange::Remove(device(entry))
+            }
+            // Only extended advertising is anonymous, and no scanner here
+            // receives it: the vendor Controller, too, accepts the entry
+            // without a device-table entry.
+            LeAcceptListCommand::Add(LeAcceptListEntry::Anonymous)
+            | LeAcceptListCommand::Remove(LeAcceptListEntry::Anonymous) => {
+                self.respond(
+                    LeAcceptListCommandCompleteEvent::new(opcode, Status::SUCCESS).as_bytes(),
+                );
+                return;
+            }
+        };
+        self.accept_list.change(change);
+        self.pending = Some(Pending::AcceptList(opcode));
+    }
+
     /// No role runs and no request is in flight.
     fn is_quiescent(&self) -> bool {
         !self.dtm.is_active()
             && !self.advertiser.is_active()
             && !self.scanner.is_active()
             && !self.peripheral.is_active()
+            && !self.accept_list.is_active()
             && self.in_flight.is_none()
     }
 
@@ -841,7 +893,14 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
         let advertising = self.advertiser.take_completion();
         let scanning = self.scanner.take_completion();
         let test_end = self.dtm.take_completion();
+        let accept_list = self.accept_list.take_completion();
         match self.pending {
+            Some(Pending::AcceptList(opcode)) => {
+                if let Some(status) = accept_list {
+                    self.pending = None;
+                    self.respond(LeAcceptListCommandCompleteEvent::new(opcode, status).as_bytes());
+                }
+            }
             Some(Pending::Advertising(opcode)) => {
                 if let Some(status) = advertising {
                     self.pending = None;
@@ -882,7 +941,8 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
     /// [`Self::next_request`] with a fresh backend time.
     pub fn wants_radio(&self) -> bool {
         self.in_flight.is_none()
-            && (self.dtm.wants_radio()
+            && (self.accept_list.wants_radio()
+                || self.dtm.wants_radio()
                 || self.peripheral.wants_radio(self.has_event_room())
                 || self.advertiser.wants_radio()
                 || self.scanner.wants_radio())
@@ -931,6 +991,10 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
             .checked_add(timing.preparation_lead)?
             .checked_add(timing.admission_guard)?
             .checked_add(PLANNING_SLACK)?;
+        if let Some(request) = self.accept_list.request() {
+            self.in_flight = Some(Owner::AcceptList);
+            return Some(request);
+        }
         if self.dtm.is_active() {
             if !self.dtm.wants_radio() {
                 return None;
@@ -1006,6 +1070,7 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
     pub fn request_done(&mut self, result: Result<(), RequestError>) {
         let accepted = result.is_ok();
         match self.in_flight.take() {
+            Some(Owner::AcceptList) => self.accept_list.request_done(result),
             Some(Owner::Dtm) => self.dtm.request_done(accepted),
             Some(Owner::AdvertiserControl) => {
                 self.advertiser.control_done(accepted);

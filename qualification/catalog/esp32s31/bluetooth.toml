@@ -2434,7 +2434,7 @@ section = "bluetooth-legacy-advertising-scanning"
 title = "Legacy passive scanning"
 status = "implemented"
 level = "composed-product"
-scope-and-limitations = "The [scanning role](../../../../protocols/bluetooth/le/controller/src/scanning.rs) listens once per scan interval for up to one scan window, rotating channels 37, 38 and 39 and yielding to advertising and connection events. Received PDUs become LE Advertising Reports, optionally through the duplicate filter; Disable waits for the window in progress. The own address is public and the filter policy accepts all."
+scope-and-limitations = "The [scanning role](../../../../protocols/bluetooth/le/controller/src/scanning.rs) listens once per scan interval for up to one scan window, rotating channels 37, 38 and 39 and yielding to advertising and connection events. Received PDUs become LE Advertising Reports, optionally through the duplicate filter; Disable waits for the window in progress. The own address is public; the filter policy accepts all advertisers or only the [filter accept list](../../../../protocols/bluetooth/le/controller/src/accept_list.rs)."
 
 [[items]]
 id = "bluetooth-active-scanning"
@@ -2442,7 +2442,7 @@ section = "bluetooth-legacy-advertising-scanning"
 title = "Active scanning"
 status = "implemented"
 level = "composed-product"
-scope-and-limitations = "With scan type 1 the [scanning role](../../../../protocols/bluetooth/le/controller/src/scanning.rs) runs the passive scanner's windows over an [active scanner graph](../../../../hardware/esp32s31/driver/bluetooth/memory/src/legacy_scanning.rs): its items carry the active kind and its link state names one `SCAN_REQ` buffer, so hardware requests the scan response of scannable advertising and SCAN_RSP PDUs become LE Advertising Reports. Scan-response backoff is the hardware's under the S31 upper limit of 32. The own address is public, the filter policy accepts all, and the scanner requests the passive coexistence lanes."
+scope-and-limitations = "With scan type 1 the [scanning role](../../../../protocols/bluetooth/le/controller/src/scanning.rs) runs the passive scanner's windows over an [active scanner graph](../../../../hardware/esp32s31/driver/bluetooth/memory/src/legacy_scanning.rs): its items carry the active kind and its link state names one `SCAN_REQ` buffer, so hardware requests the scan response of scannable advertising and SCAN_RSP PDUs become LE Advertising Reports. Scan-response backoff is the hardware's under the S31 upper limit of 32. The own address is public, the filter policy is the passive scanner's, and the scanner requests the passive coexistence lanes."
 
 [[items]]
 id = "bluetooth-extended-secondary-channel-scanning"
@@ -2458,15 +2458,15 @@ section = "bluetooth-legacy-advertising-scanning"
 title = "Extended scanner filter policies"
 status = "absent"
 level = "composed-product"
-scope-and-limitations = "Production uses the restricted accept-all policy."
+scope-and-limitations = "Scan filter policies 2 and 3, which also admit directed advertising with a resolvable target, are refused as unsupported; policies 0 and 1 are the legacy scanner's."
 
 [[items]]
 id = "bluetooth-filter-accept-list-operation"
 section = "bluetooth-legacy-advertising-scanning"
 title = "Filter Accept List operation"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "HCI capacity reporting exists, but list commands and advertiser/scanner admission policy are not composed."
+scope-and-limitations = "LE Clear, Add Device To and Remove Device From Filter Accept List reach the [device table](../../../../hardware/esp32s31/driver/bluetooth/memory/src/le_device_table.rs) in Controller SRAM, whose first entry and count the Controller publishes after every change; LE Read Filter Accept List Size reports its 12 entries and a full list answers Memory Capacity Exceeded. A legacy scanner with scan filter policy 1 has hardware report only listed advertisers, and the list stays fixed while it runs. As on the vendor Controller, adding a listed device again succeeds, removing an absent one answers Invalid HCI Command Parameters and the anonymous entry succeeds without a table entry, since no scanner here receives extended advertising. HCI Reset clears the list, and advertising filter policies other than 0 are refused as unsupported."
 
 [[items]]
 id = "bluetooth-broadcaster-observer"

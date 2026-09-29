@@ -348,6 +348,7 @@ impl<
         if let Err(error) = hardware.publish_rx_chains(&memory.scanning, &memory.non_scanning) {
             return Err((BluetoothInstallError::RxChains(error), memory, hardware));
         }
+        hardware.publish_device_table(memory.device_table.publication());
         let sample = match sample_time(&mut hardware).await {
             Ok(sample) => sample,
             Err(error) => return Err((BluetoothInstallError::Time(error), memory, hardware)),
@@ -391,6 +392,7 @@ impl<
             .map_err(BluetoothRuntimeError::Time)?;
         installed.radio.observe_time(&sample);
         let starts_scanner = matches!(request, RadioRequest::ConfigureScanner(_));
+        let changes_list = matches!(request, RadioRequest::FilterAcceptList(_));
         let mut sink = self.sink();
         installed
             .radio
@@ -398,6 +400,10 @@ impl<
             .map_err(BluetoothRuntimeError::Rejected)?;
         if starts_scanner {
             installed.hardware.publish_scan_start();
+        }
+        if changes_list {
+            let publication = installed.radio.device_table_publication();
+            installed.hardware.publish_device_table(publication);
         }
         self.work.signal(());
         Ok(())

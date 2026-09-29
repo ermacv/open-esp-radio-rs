@@ -280,11 +280,16 @@ remaining hardware-consumed link-state projection is finite:
 - the reset stores the zero tick difference in `+0x34` and leaves the
   initiator-only address, timeout and connection fields untouched.
 
+With scan filter policy 1 the same reset sets bit 25 of `+0x18` and writes
+the Host's policy to bits 25:24 of `+0x2c`, beside the CRC preset; hardware
+then reports only advertisers of the device table (see
+[filter accept list](#filter-accept-list)).
+
 The common sync helper is not an unresolved scanner MMIO operation. Its named
 role is `r_ble_lll_sync_set_scan_link_state`. When periodic sync is disabled,
 its complete branch performs two fresh-read updates that clear the sync-filter
 and sync-link selections in
-`BTMAC_BLE_PHY_INIT.INIT_BRANCH_CONTROL_0470`. It publishes the adjacent
+`BTMAC_BLE_PHY_INIT.DEVICE_TABLE_CONTROL`. It publishes the adjacent
 `+0x478/+0x47c` values only when an enabled periodic-sync entry is selected.
 The first passive-scanning slice keeps periodic sync disabled, so it needs
 only the clear transition and no sync-entry storage.
@@ -430,10 +435,25 @@ cancelled window leaves through the executor's cancellation. The Link Layer
 core that owns scanning policy and HCI routing does not exist yet; this lower
 contract does not establish its readiness.
 
+## Filter accept list
+
+The filter accept list and the resolving list share one device table in
+Controller SRAM that hardware walks while it filters. Each 8-byte entry holds
+list-membership flags in byte 0 (bit 1 filter accept list, bit 0 resolving
+list), a valid flag (bit 7) and a random-address flag (bit 6) in byte 1, and
+the address least significant octet first in bytes 2 to 7. The Controller
+publishes the table's compressed first-entry address in
+`BTMAC_BLE_PHY_INIT.DEVICE_TABLE_FIRST_ENTRY` and its entry count in the low
+octet of `BTMAC_BLE_PHY_INIT.DEVICE_TABLE_CONTROL`, preserving the rest of
+that register; the vendor writes the first-entry address even for an empty
+list. The S31 build keeps 12 entries. The
+[device table owner](../../../crates/hardware/esp32s31/driver/bluetooth/memory/src/le_device_table.rs)
+keeps members packed from the first entry, so the count is the number of
+listed devices; it holds no resolving-list entries.
+
 ## Scope boundary
 
-The restricted profile uses passive LE 1M, a public address and accept-all
-filtering. Its contract covers the link-state/scheduler projection, selector-one
+The restricted profile uses LE 1M, a public address and filter policy 0 or 1. Its contract covers the link-state/scheduler projection, selector-one
 RX routing, completion gates and packet length/address/RSSI locations. Active
 scan request/response, extended PHYs, duplicate caching and vendor timer/callout
 policy are not implied by this profile. The production controller owns role

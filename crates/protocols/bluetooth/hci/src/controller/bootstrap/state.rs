@@ -147,6 +147,12 @@ impl LeControllerBootstrap {
                 if has_random_source {
                     commands[27] |= 1 << 7; // LE Rand.
                 }
+                if self.config.filter_accept_list_size > 0 {
+                    // LE Clear, Add Device To and Remove Device From Filter
+                    // Accept List.
+                    commands[26] |= 1 << 7;
+                    commands[27] |= (1 << 0) | (1 << 1);
+                }
                 command_success(opcode, &commands)
             }
             OwnedBootstrapCommand::LeSetEventMask(mask) => {

@@ -59,6 +59,10 @@ pub use controller::bootstrap::{
 pub use controller::classification::{
     LeControllerCommandClassification, classify_le_controller_command,
 };
+pub use controller::le::accept_list::{
+    LE_ACCEPT_LIST_COMMAND_COMPLETE_EVENT_CAPACITY, LeAcceptListCommand,
+    LeAcceptListCommandCompleteEvent, LeAcceptListDevice, LeAcceptListEntry,
+};
 pub use controller::le::acl::{
     LE_ACL_DATA_PACKET_CAPACITY, LE_CONTROLLER_ACL_PACKET_CAPACITY,
     LE_HOST_COMPLETED_PACKETS_ERROR_EVENT_CAPACITY, LE_NUMBER_OF_COMPLETED_PACKETS_EVENT_CAPACITY,

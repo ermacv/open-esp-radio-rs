@@ -15,6 +15,7 @@ use oer_bluetooth_hci::{
     LeControllerHciEndpoints, LeControllerHciResources, LeRandomSource, LeRandomUnavailable,
 };
 use oer_bluetooth_runtime::{ServeExit, serve};
+use oer_esp32s31_bluetooth_memory::BLUETOOTH_FILTER_ACCEPT_LIST_CAPACITY;
 use oer_esp32s31_bluetooth_runtime::BluetoothRuntimeError;
 use oer_esp32s31_soc_esp_hal::entropy::Entropy;
 use static_cell::StaticCell;
@@ -191,7 +192,8 @@ pub fn start_bluetooth_hci(
 ) -> BluetoothHci {
     let bootstrap =
         LeControllerBootstrapConfig::new(public_address, ACL_DATA_LENGTH, HOST_TO_CONTROLLER as u8)
-            .expect("the HCI profile is valid");
+            .expect("the HCI profile is valid")
+            .with_filter_accept_list_size(BLUETOOTH_FILTER_ACCEPT_LIST_CAPACITY as u8);
     let resources = RESOURCES.init(Resources::new(bootstrap).expect("the packet profile fits"));
     let LeControllerHciEndpoints { host, controller } = resources.split();
     let config = LeControllerConfig { bootstrap, version };

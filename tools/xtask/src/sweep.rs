@@ -21,6 +21,9 @@ const REMOVED_NETWORKS: &[&str] = &["upstream-xarxa", "patched-xarxa", "upstream
 pub struct Policy {
     pub incremental: Duration,
     pub image_caches: Duration,
+    /// A checkout with no Git activity or build for this long loses its
+    /// whole `target/`.
+    pub idle_checkout: Duration,
 }
 
 impl Default for Policy {
@@ -28,6 +31,7 @@ impl Default for Policy {
         Self {
             incremental: Duration::from_secs(24 * 3600),
             image_caches: Duration::from_secs(3 * 24 * 3600),
+            idle_checkout: Duration::from_secs(7 * 24 * 3600),
         }
     }
 }
@@ -39,6 +43,7 @@ impl Policy {
     pub const PRESSURE: Self = Self {
         incremental: Duration::from_secs(2 * 3600),
         image_caches: Duration::from_secs(12 * 3600),
+        idle_checkout: Duration::from_secs(2 * 24 * 3600),
     };
 }
 
@@ -262,6 +267,17 @@ fn image_caches(target: &Path, policy: Policy, now: SystemTime, found: &mut Vec<
 pub fn candidates(root: &Path, policy: Policy, now: SystemTime) -> Vec<Candidate> {
     let target = root.join("target");
     let mut found = Vec::new();
+    if let Some(idle) = idle_for(root, now)
+        && idle > policy.idle_checkout
+        && target.is_dir()
+        && !build_running(&target)
+    {
+        found.push(Candidate {
+            path: target,
+            reason: format!("checkout idle for {} days", idle.as_secs() / 86_400),
+        });
+        return found;
+    }
     incremental(&target, policy, now, &mut found);
     image_caches(&target, policy, now, &mut found);
     found.sort_by(|a, b| a.path.cmp(&b.path));
@@ -271,7 +287,86 @@ pub fn candidates(root: &Path, policy: Policy, now: SystemTime) -> Vec<Candidate
 /// Sibling checkouts of this repository: directories next to `root` whose
 /// name starts with its name up to the first `-` suffix and that contain
 /// this repository's xtask.
+/// How long ago the checkout at `root` last changed its Git state (index,
+/// HEAD or its reflog) or built anything, when that can be read.
+fn idle_for(root: &Path, now: SystemTime) -> Option<Duration> {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "--absolute-git-dir"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let git = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+    [
+        git.join("index"),
+        git.join("HEAD"),
+        git.join("logs/HEAD"),
+        root.join("target/.rustc_info.json"),
+    ]
+    .iter()
+    .filter_map(|path| age(path, now))
+    .min()
+}
+
+/// The host build root's snapshot builds that no build used for longer than
+/// `policy` allows.
+pub fn host_candidates(policy: Policy, now: SystemTime) -> Vec<Candidate> {
+    let Ok(root) = oer_hil_runner_core::image::host_build_root() else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    // Source snapshots are kept: a queued job can wait for days on the one
+    // it was frozen with.
+    let mut groups = Vec::new();
+    for chip in fs::read_dir(&root).into_iter().flatten().flatten() {
+        groups.push((
+            chip.path().join("snapshot-builds"),
+            policy.image_caches,
+            "snapshot build unused",
+        ));
+    }
+    for (group, limit, reason) in groups {
+        for entry in fs::read_dir(&group).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() && age(&path, now).is_some_and(|age| age > limit) {
+                found.push(Candidate {
+                    path,
+                    reason: reason.into(),
+                });
+            }
+        }
+    }
+    found.sort_by(|a, b| a.path.cmp(&b.path));
+    found
+}
+
+/// Every checkout of this repository on the host: the worktrees Git knows
+/// and the sibling clones named after the repository.
 pub fn checkouts(root: &Path) -> Vec<PathBuf> {
+    let mut found = siblings(root);
+    if let Ok(output) = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["worktree", "list", "--porcelain"])
+        .output()
+    {
+        found.extend(
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .filter_map(|line| line.strip_prefix("worktree "))
+                .map(PathBuf::from)
+                .filter(|path| path.is_dir()),
+        );
+    }
+    found.sort();
+    found.dedup();
+    found
+}
+
+fn siblings(root: &Path) -> Vec<PathBuf> {
     let Some(parent) = root.parent() else {
         return vec![root.to_owned()];
     };
@@ -351,6 +446,11 @@ pub fn automatically(root: &Path) -> Result<()> {
             }
         }
     }
+    for candidate in host_candidates(policy, now) {
+        if fs::remove_dir_all(&candidate.path).is_ok() {
+            removed += 1;
+        }
+    }
     fs::write(&marker, format!("{removed}\n"))?;
     if removed > 0 {
         eprintln!(
@@ -394,7 +494,29 @@ pub fn run(roots: &[PathBuf], policy: Policy, apply: bool) -> Result<u64> {
         );
         total += bytes;
     }
-    Ok(total)
+    let found = host_candidates(policy, now);
+    let mut bytes = 0;
+    for candidate in &found {
+        bytes += size(&candidate.path);
+        if apply {
+            if let Err(error) = fs::remove_dir_all(&candidate.path) {
+                eprintln!("sweep: cannot remove {}: {error}", candidate.path.display());
+            }
+        } else if found.len() <= 20 {
+            println!("  {} ({})", candidate.path.display(), candidate.reason);
+        }
+    }
+    println!(
+        "{} the host build root: {} entries, {:.1} GiB",
+        if apply {
+            "removed from"
+        } else {
+            "would remove from"
+        },
+        found.len(),
+        bytes as f64 / (1u64 << 30) as f64
+    );
+    Ok(total + bytes)
 }
 
 #[cfg(test)]
@@ -423,6 +545,32 @@ mod tests {
         let found = candidates(root.path(), Policy::default(), SystemTime::now());
         let paths = found.iter().map(|c| c.path.clone()).collect::<Vec<_>>();
         assert_eq!(paths, [old, dead]);
+    }
+
+    #[test]
+    fn an_idle_checkout_loses_its_whole_target_and_an_active_one_only_old_caches() {
+        let root = tempfile::tempdir().unwrap();
+        let checkout = root.path();
+        assert!(
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(checkout)
+                .args(["init", "-q"])
+                .status()
+                .unwrap()
+                .success()
+        );
+        fs::create_dir_all(checkout.join("target/debug/deps")).unwrap();
+        let now = SystemTime::now();
+        assert!(
+            candidates(checkout, Policy::default(), now).is_empty(),
+            "a checkout just initialised is active"
+        );
+        let later = now + Duration::from_secs(8 * 24 * 3600);
+        let found = candidates(checkout, Policy::default(), later);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].path, checkout.join("target"));
+        assert!(found[0].reason.starts_with("checkout idle for 8 days"));
     }
 
     #[test]

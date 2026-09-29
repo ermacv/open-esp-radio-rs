@@ -241,76 +241,36 @@ pub(crate) fn refuse_unsupported(selected: &[&Scenario]) -> Result<()> {
     }
 }
 
-/// The chip that runs `selected`: `requested`, which every scenario must
-/// name, or else the one they all name, the esp32s31 first.
-pub(crate) fn select_target(selected: &[&Scenario], requested: Option<&str>) -> Result<String> {
-    let common = |chip: &str| {
-        selected
-            .iter()
-            .all(|scenario| scenario.header.targets.iter().any(|target| target == chip))
-    };
-    if let Some(chip) = requested {
-        if let Some(scenario) = selected
-            .iter()
-            .find(|scenario| !scenario.header.targets.iter().any(|target| target == chip))
-        {
-            return Err(format!(
-                "scenario `{}` runs on {}, not {chip}",
-                scenario.id(),
-                scenario.header.targets.join(", ")
-            )
-            .into());
-        }
-        return Ok(chip.to_owned());
-    }
-    let default = hil_core::lab::config::DEFAULT_TARGET;
-    if common(default) {
-        return Ok(default.to_owned());
-    }
-    let first = selected.first().ok_or("no scenario selected")?;
-    first
-        .header
-        .targets
-        .iter()
-        .find(|chip| common(chip))
-        .cloned()
-        .ok_or_else(|| "the selected scenarios share no target chip; run them separately".into())
-}
-
-/// Refuse a chip the runner cannot build and flash the selected images for:
-/// besides the staged esp32s31, a chip the ESP-IDF bootloader starts whose
-/// profile names its flash layout and whose HIL target builds every
-/// selected image class.
-pub(crate) fn require_image_pipeline(
+/// The chip that runs `selected`: `requested`, or the only chip the runner
+/// builds every selected image for. A scenario names no chip; the chips
+/// whose HIL agents build its image run it.
+pub(crate) fn select_chip(
     root: &Path,
-    chip: &str,
     selected: &[&Scenario],
-) -> Result<()> {
-    if chip == hil_core::lab::config::DEFAULT_TARGET {
-        return Ok(());
-    }
-    let profile = hil_core::image::chip_profile(chip)?;
-    if profile.boot != hil_core::evidence::run::Boot::EspIdfBootloader
-        || profile.flash.is_none()
-        || !root.join("hil/targets").join(chip).is_dir()
-    {
-        return Err(format!(
-            "the runner builds and flashes HIL images for {} and ESP-IDF bootloader chips with a              flash layout and a HIL target; {chip} has no such pipeline",
-            hil_core::lab::config::DEFAULT_TARGET
+    requested: Option<&str>,
+) -> Result<String> {
+    let chips = hil_core::image::chips_building(root, &image_classes(selected))?;
+    match (requested, chips.as_slice()) {
+        (Some(chip), _) if chips.iter().any(|known| known == chip) => Ok(chip.to_owned()),
+        (Some(chip), []) => Err(format!(
+            "no chip builds every image the selected scenarios use, {chip} neither"
         )
-        .into());
-    }
-    for scenario in selected {
-        if !hil_core::image::esp_idf::serves(root, chip, scenario.image())? {
-            return Err(format!(
-                "hil/targets/{chip} builds no `{}` image, which `{}` needs",
-                scenario.image().id(),
-                scenario.id()
-            )
-            .into());
+        .into()),
+        (Some(chip), _) => Err(format!(
+            "{chip} builds no image some selected scenario uses; they run on {}",
+            chips.join(", ")
+        )
+        .into()),
+        (None, [chip]) => Ok(chip.clone()),
+        (None, []) => {
+            Err("no chip builds every image the selected scenarios use; run them separately".into())
         }
+        (None, _) => Err(format!(
+            "the selected scenarios run on {}; name one with --chip",
+            chips.join(", ")
+        )
+        .into()),
     }
-    Ok(())
 }
 
 /// Tag of scenarios that measure the radio environment and transmit without

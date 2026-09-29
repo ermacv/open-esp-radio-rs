@@ -51,13 +51,6 @@ pub struct Header {
     pub transfer: TransferPolicy,
     #[serde(default)]
     pub tags: Vec<String>,
-    /// Chips whose device under test runs the scenario; the esp32s31 when
-    /// the document names none.
-    #[serde(
-        default = "default_targets",
-        skip_serializing_if = "is_default_targets"
-    )]
-    pub targets: Vec<String>,
     /// Why the scenario cannot run on the current firmware. The runner
     /// refuses to select it, before any image build, with this reason.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -108,22 +101,13 @@ const fn one_repetition() -> u8 {
     1
 }
 
-fn default_targets() -> Vec<String> {
-    vec![crate::lab::config::DEFAULT_TARGET.to_owned()]
-}
-
-fn is_default_targets(targets: &[String]) -> bool {
-    targets == default_targets()
-}
-
-const HEADER_FIELDS: [&str; 9] = [
+const HEADER_FIELDS: [&str; 8] = [
     "schema",
     "id",
     "description",
     "repetitions",
     "transfer",
     "tags",
-    "targets",
     "unsupported",
     "profile",
 ];
@@ -155,9 +139,6 @@ impl Header {
         }
         if !valid_id(&self.id) {
             return Err(format!("invalid scenario id `{}`", self.id).into());
-        }
-        if self.targets.is_empty() || self.targets.iter().any(|chip| !valid_id(chip)) {
-            return Err(format!("scenario `{}` names no valid target chip", self.id).into());
         }
         if self.description.trim().is_empty() {
             return Err("scenario description is empty".into());

@@ -152,6 +152,35 @@ pub fn chip_profile(chip: &str) -> Result<oer_chip_profile::Profile> {
     oer_chip_profile::Profile::load(&root, chip).map_err(|error| error.to_string().into())
 }
 
+/// Whether the runner builds and flashes `class` for `chip`: the staged
+/// boot flow for a class the chip's runtime declares, or the ESP-IDF
+/// bootloader with a flash layout for a class its HIL agent serves.
+pub fn builds_on(root: &Path, chip: &str, class: ImageClass) -> Result<bool> {
+    let profile = oer_chip_profile::Profile::load(root, chip).map_err(|error| error.to_string())?;
+    Ok(match profile.boot {
+        oer_chip_profile::Boot::Staged => class.enabled_features_on(chip).is_some(),
+        oer_chip_profile::Boot::EspIdfBootloader => {
+            profile.flash.is_some() && esp_idf::serves(root, chip, class)?
+        }
+    })
+}
+
+/// The chips, sorted, the runner builds and flashes every one of `classes`
+/// for.
+pub fn chips_building(root: &Path, classes: &[ImageClass]) -> Result<Vec<String>> {
+    let mut chips = Vec::new();
+    for chip in oer_chip_profile::supported(root).map_err(|error| error.to_string())? {
+        let mut builds = true;
+        for class in classes {
+            builds &= builds_on(root, &chip, *class)?;
+        }
+        if builds {
+            chips.push(chip);
+        }
+    }
+    Ok(chips)
+}
+
 /// The files an image's boot flow writes or needs besides the application.
 #[derive(Clone, Debug)]
 pub enum BootArtifacts {

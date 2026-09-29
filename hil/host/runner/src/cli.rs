@@ -99,11 +99,11 @@ pub(crate) enum CliCommand {
         /// join the lease. Its exit status does not change the run's outcome.
         #[arg(long, value_name = "COMMAND")]
         then: Option<String>,
-        /// Chip whose device under test runs the scenarios; default: the one
-        /// every selected scenario names, the esp32s31 first.
+        /// Chip whose device under test runs the scenarios; default: the only
+        /// chip whose HIL agent builds every image they use.
         #[arg(long, value_name = "CHIP")]
-        target: Option<String>,
-        /// Check the scenarios, target and options, then exit without a
+        chip: Option<String>,
+        /// Check the scenarios, chip and options, then exit without a
         /// snapshot, a build or a run: what `--enqueue` checks at once.
         #[arg(long, hide = true)]
         validate_only: bool,
@@ -220,9 +220,10 @@ pub(crate) enum ReportCommand {
     /// Verify one run bundle, or every bundle when RUN_ID is omitted.
     Verify {
         run_id: Option<String>,
-        /// Chip whose runs to read.
-        #[arg(long, default_value = hil_core::lab::config::DEFAULT_TARGET)]
-        target: String,
+        /// Chip whose runs to read; default: the chip of RUN_ID, or every chip
+        /// with runs.
+        #[arg(long, value_name = "CHIP")]
+        chip: Option<String>,
     },
 }
 

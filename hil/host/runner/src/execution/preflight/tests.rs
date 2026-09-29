@@ -44,7 +44,7 @@ fn a_flashed_image_must_declare_the_role_its_scenario_drives() {
 #[test]
 fn an_esp32c5_system_image_is_classified_by_its_chip() {
     let catalog = catalog();
-    let scenario = catalog.get("esp32c5-system-watchdog").unwrap();
+    let scenario = catalog.get("system-watchdog").unwrap();
     let esp32c5 = ImageClass::SystemWatchdog.image_keys_on("esp32c5").unwrap();
     check_flashed_image_keys("esp32c5", scenario, &esp32c5).unwrap();
     // The chip comes from the lab, the class from the keys: the esp32c5 builds

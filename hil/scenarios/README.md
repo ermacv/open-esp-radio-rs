@@ -58,20 +58,17 @@ traffic phases, counting `repetitions` times workload `cycles`, and no
 itself, tagged `soak` or `thermal`, are exempt. A catalog test enforces this
 budget.
 
-## Target chips
+## Chips
 
-A scenario runs on the esp32s31 unless its header names its chips:
-`targets = ["esp32c5"]` or `targets = ["esp32c5", "esp32s31"]`. A run takes
-the chip every selected scenario names, the esp32s31 first, or the one
-`cargo hil run --target CHIP` asks for, and uses that chip's device under
-test from the lab configuration. The runner builds and flashes HIL images for
-the esp32s31 and for a chip the ESP-IDF bootloader starts whose
+A scenario names no chip. It runs on every chip whose HIL agent builds its
+image class: the esp32s31, whose staged boot flow builds every class its
+runtime declares, and a chip the ESP-IDF bootloader starts whose
 `platform/<chip>/chip.toml` names its flash layout and whose
-`hil/targets/<chip>` runtime declares the image class's features (the
-esp32c5 builds `boot-smoke`, which `esp32c5-boot-smoke` runs, and
-`system-watchdog`, which `esp32c5-system-watchdog` runs); it refuses any
-other chip or class before building. A default
-`targets` is not written into scenario documents, so it changes no digest.
+`hil/targets/<chip>` runtime declares the class's features (the esp32c5
+builds `boot-smoke` and `system-watchdog`). A run takes the chip
+`cargo hil run --chip CHIP` names, or the only chip that builds every selected
+image; when several can, it refuses and names them. It uses that chip's device
+under test from the lab configuration.
 
 ## Stand claims
 

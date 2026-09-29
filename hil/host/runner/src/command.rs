@@ -159,10 +159,18 @@ pub(crate) fn run() -> Result<()> {
             }
         },
         CliCommand::Report {
-            command: ReportCommand::Verify { run_id, target },
+            command: ReportCommand::Verify { run_id, chip },
         } => {
-            let completion = hil_core::evidence::verify::verify(&root, &target, run_id.as_deref())?;
-            emit_json(&completion, false)
+            use hil_core::evidence::verify;
+            let chips = match (chip, run_id.as_deref()) {
+                (Some(chip), _) => vec![chip],
+                (None, Some(run)) => vec![verify::chip_of_run(&root, run)?],
+                (None, None) => verify::chips_with_runs(&root)?,
+            };
+            for chip in chips {
+                emit_json(&verify::verify(&root, &chip, run_id.as_deref())?, false)?;
+            }
+            Ok(())
         }
         CliCommand::Run {
             scenarios,
@@ -174,7 +182,7 @@ pub(crate) fn run() -> Result<()> {
             features,
             repetitions,
             then,
-            target,
+            chip,
             validate_only,
             build_only,
         } => {
@@ -185,9 +193,10 @@ pub(crate) fn run() -> Result<()> {
                     scenario.header.repetitions = repetitions;
                 }
             }
-            let target = orchestration::select_target(
+            let chip = orchestration::select_chip(
+                &root,
                 &selected.iter().collect::<Vec<_>>(),
-                target.as_deref(),
+                chip.as_deref(),
             )?;
             // An image with other features is not its class's image: only an
             // experiment, whose runs never qualify, may build one.
@@ -202,7 +211,7 @@ pub(crate) fn run() -> Result<()> {
             }
             if validate_only {
                 println!(
-                    "valid: {} on {target}",
+                    "valid: {} on {chip}",
                     selected
                         .iter()
                         .map(|scenario| scenario.id())
@@ -225,14 +234,13 @@ pub(crate) fn run() -> Result<()> {
                     .as_ref()
                     .ok_or("--build-only builds from the sources, not a replay")?;
                 let selected = selected.iter().collect::<Vec<_>>();
-                orchestration::require_image_pipeline(&root, &target, &selected)?;
                 let frozen = image::snapshot::FrozenSources::open_in_free_workspace(
                     snapshot.directory(),
-                    &image::snapshot::build_slots(&target)?,
+                    &image::snapshot::build_slots(&chip)?,
                 )?;
                 for class in orchestration::image_classes(&selected) {
                     let artifacts = frozen.build_for_chip(
-                        &target,
+                        &chip,
                         class,
                         image::Integration::default(),
                         layout_seed,
@@ -246,7 +254,7 @@ pub(crate) fn run() -> Result<()> {
                 Some(run_id) => {
                     let class = orchestration::single_image_class(&selected)?;
                     RunFirmware::Replay(Box::new(hil_core::evidence::verify::archived_firmware(
-                        &root, &target, &run_id, class,
+                        &root, &chip, &run_id, class,
                     )?))
                 }
                 None => RunFirmware::BuildCurrent(hil_core::image::CurrentBuild {
@@ -255,9 +263,8 @@ pub(crate) fn run() -> Result<()> {
                     features: features.clone().unwrap_or_default(),
                 }),
             };
-            let lab = lab::config::LabConfig::load(&lab_path)?.for_target(&target)?;
+            let lab = lab::config::LabConfig::load(&lab_path)?.for_target(&chip)?;
             let selected = selected.iter().collect::<Vec<_>>();
-            orchestration::require_image_pipeline(&root, &target, &selected)?;
             let required = requirements(&selected);
             hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
             let invocation = orchestration::Invocation {

@@ -114,21 +114,12 @@ fn catalog_rejects_symlink_in_supplied_path_ancestors() {
 }
 
 #[test]
-fn a_scenario_names_its_target_chips_or_runs_on_the_esp32s31() {
+fn a_scenario_names_no_chip() {
     let tree = Tree::new();
     tree.write("a-system/beta-system.toml", BETA);
-    let with_targets = ALPHA.replacen("\n", "\ntargets = [\"esp32c5\", \"esp32s31\"]\n", 1);
-    tree.write("z-system/alpha-system.toml", &with_targets);
-    let catalog = Catalog::load(&tree.0.join("catalog")).unwrap();
-    let targets = catalog
-        .all()
-        .iter()
-        .map(|scenario| scenario.header.targets.clone())
-        .collect::<Vec<_>>();
-    assert_eq!(targets, [vec!["esp32c5", "esp32s31"], vec!["esp32s31"]]);
     tree.write(
         "z-system/alpha-system.toml",
-        &ALPHA.replacen("\n", "\ntargets = []\n", 1),
+        &ALPHA.replacen("\n", "\ntargets = [\"esp32c5\"]\n", 1),
     );
     assert!(Catalog::load(&tree.0.join("catalog")).is_err());
 }

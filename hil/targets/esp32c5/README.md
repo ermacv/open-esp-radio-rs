@@ -11,12 +11,12 @@ Embassy on the esp-rtos scheduler and time driver.
 after esp-hal initialization, `OPEN_RADIO_HIL embassy=START` once the
 scheduler runs, and `OPEN_RADIO_HIL boot-smoke=PASS timer=PASS` after one
 timer wake, on the USB Serial/JTAG console. It does not speak the HIL wire
-protocol. The runner builds it for the `esp32c5-boot-smoke` scenario, flashes
+protocol. The runner builds it for the `boot-smoke` scenario, flashes
 it with the catalog bootloader and partition table at the offsets of the chip
 profile's `[flash]` table, and archives all three with the runtime ELF:
 
 ```console
-cargo hil run esp32c5-boot-smoke
+cargo hil run --chip esp32c5 boot-smoke
 ```
 
 `system-watchdog` serves the HIL wire protocol on the USB Serial/JTAG
@@ -26,10 +26,10 @@ and nothing radio. Its SoC deadline watchdog is the production service of
 on TIMG1's main watchdog; its boot evidence maps the chip's reset reasons
 (`CoreMwdt1` is `MainWatchdog1`) and reads the reset-retained post-mortem in
 RTC fast memory. The runner classifies a flashed esp32c5 image from its
-image keys, and `esp32c5-system-watchdog` drives every watchdog mode on it:
+image keys, and `system-watchdog` drives every watchdog mode on it:
 
 ```console
-cargo hil run esp32c5-system-watchdog
+cargo hil run --chip esp32c5 system-watchdog
 ```
 
 A run of either replaces the board's peer firmware; a run that needs the peer

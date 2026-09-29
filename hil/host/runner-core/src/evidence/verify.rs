@@ -53,6 +53,28 @@ pub fn verify(root: &Path, target: &str, run_id: Option<&str>) -> Result<Verific
     verify_at(&root.join("target/hil").join(target), target, run_id)
 }
 
+/// The supported chips, sorted, that have a run directory in this checkout.
+pub fn chips_with_runs(root: &Path) -> Result<Vec<String>> {
+    Ok(oer_chip_profile::supported(root)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .filter(|chip| root.join("target/hil").join(chip).join("runs").exists())
+        .collect())
+}
+
+/// The chip whose runs hold `run_id`.
+pub fn chip_of_run(root: &Path, run_id: &str) -> Result<String> {
+    for chip in chips_with_runs(root)? {
+        if runs_directory(&root.join("target/hil").join(&chip))?
+            .join(run_id)
+            .is_dir()
+        {
+            return Ok(chip);
+        }
+    }
+    Err(format!("no chip's runs hold run `{run_id}`").into())
+}
+
 /// The run directory below `target_directory`. A checkout links it to the
 /// run store shared by every checkout; the link itself is followed, while
 /// links inside bundles stay refused.

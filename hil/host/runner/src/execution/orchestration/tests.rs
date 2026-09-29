@@ -502,28 +502,28 @@ fn the_then_command_joins_the_lease_and_names_the_run() {
 }
 
 #[test]
-fn a_run_takes_the_chip_its_scenarios_share_and_refuses_others() {
+fn a_run_takes_the_named_chip_or_the_only_one_that_builds_its_images() {
     let catalog = catalog();
-    let [first, second] = two_same_image(&catalog);
-    assert_eq!(first.header.targets, ["esp32s31"], "the default target");
-    assert_eq!(select_target(&[first, second], None).unwrap(), "esp32s31");
-    let mut both = first.clone();
-    both.header.targets = vec!["esp32c5".into(), "esp32s31".into()];
-    let mut esp32c5 = second.clone();
-    esp32c5.header.targets = vec!["esp32c5".into()];
-    assert_eq!(select_target(&[&both], None).unwrap(), "esp32s31");
-    assert_eq!(select_target(&[&both, &esp32c5], None).unwrap(), "esp32c5");
-    assert_eq!(select_target(&[&both], Some("esp32c5")).unwrap(), "esp32c5");
-    assert!(
-        select_target(&[first, &esp32c5], None).is_err(),
-        "no shared chip"
-    );
-    assert!(select_target(&[first], Some("esp32c5")).is_err());
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    assert!(require_image_pipeline(&root, "esp32s31", &[first]).is_ok());
-    // The esp32c5's target builds the boot-smoke image only.
-    let error = require_image_pipeline(&root, "esp32c5", &[&esp32c5])
+    let icmp = catalog.get("icmp-latency").unwrap();
+    let watchdog = catalog.get("system-watchdog").unwrap();
+    // Only the esp32s31's agent builds the correctness image.
+    assert_eq!(select_chip(&root, &[icmp], None).unwrap(), "esp32s31");
+    assert!(select_chip(&root, &[icmp], Some("esp32c5")).is_err());
+    // Both chips build the watchdog image: the run names one.
+    let error = select_chip(&root, &[watchdog], None)
         .unwrap_err()
         .to_string();
-    assert!(error.contains("builds no"), "{error}");
+    assert!(
+        error.contains("esp32c5, esp32s31") && error.contains("--chip"),
+        "{error}"
+    );
+    assert_eq!(
+        select_chip(&root, &[watchdog], Some("esp32c5")).unwrap(),
+        "esp32c5"
+    );
+    assert_eq!(
+        select_chip(&root, &[icmp, watchdog], None).unwrap(),
+        "esp32s31"
+    );
 }

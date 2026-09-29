@@ -1467,6 +1467,49 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         registers: &mut impl PhyInitializationAccess,
         observer: &mut O,
     ) -> Result<PhyBbInitCompletion, PhyTargetPortError> {
+        // DIAGNOSTIC #38: republish a minimum-power BT/15.4 bank after every
+        // binding of the kind named at build time.
+        let kind = match &binding {
+            PhyBbExternalBinding::Mmio(_) => "Mmio",
+            PhyBbExternalBinding::TxDc(_) => "TxDc",
+            PhyBbExternalBinding::Pwdet(_) => "Pwdet",
+            PhyBbExternalBinding::TxCap(_) => "TxCap",
+            PhyBbExternalBinding::Temperature(_) => "Temperature",
+            PhyBbExternalBinding::TxPower(_) => "TxPower",
+            PhyBbExternalBinding::TxDcPwdet(_) => "TxDcPwdet",
+            PhyBbExternalBinding::Dcode(_) => "Dcode",
+            PhyBbExternalBinding::TxIq(_) => "TxIq",
+            PhyBbExternalBinding::TxCfr(_) => "TxCfr",
+            PhyBbExternalBinding::BluetoothTxGain(_) => "BluetoothTxGain",
+            PhyBbExternalBinding::PbusMemory(_) => "PbusMemory",
+            PhyBbExternalBinding::RxIq(_) => "RxIq",
+            PhyBbExternalBinding::RxSaturation(_) => "RxSaturation",
+            PhyBbExternalBinding::RxGain(_) => "RxGain",
+            PhyBbExternalBinding::Channel(_) => "Channel",
+        };
+        let result = Self::complete_baseband_inner(binding, platform, registers, observer).await;
+        if option_env!("OER_DIAG38_AFTER") == Some(kind) {
+            let image = crate::calibration::bluetooth::calculate_bluetooth_tx_gain(
+                crate::calibration::bluetooth::PhyBluetoothTxGainParameters {
+                    seed: [0; 6],
+                    config: 0,
+                    calibration_curve: [0, 0, 0],
+                    correction: 127,
+                    base: 0,
+                    attenuation: 0,
+                },
+            );
+            crate::hardware::publish_bluetooth_tx_gain_memory(registers, image);
+        }
+        result
+    }
+
+    async fn complete_baseband_inner<P, O: PhyTargetObserver>(
+        binding: PhyBbExternalBinding,
+        platform: &mut P,
+        registers: &mut impl PhyInitializationAccess,
+        observer: &mut O,
+    ) -> Result<PhyBbInitCompletion, PhyTargetPortError> {
         match binding {
             PhyBbExternalBinding::Mmio(binding) => {
                 Ok(PhyBbInitCompletion::Mmio(binding.execute_target(registers)))

@@ -756,8 +756,9 @@ impl PhyState {
             config: self.wifi.tx_iq_config,
             // DIAGNOSTIC #38 (not for merge): the vendor's normalized BT
             // power calibration from its phy_param[0xfb..0xfe] capture.
-            calibration_curve: [10, 14, 13],
-            correction: 69,
+            // Extreme: the minimum-power table, to see whether 15.4 reads it at all.
+            calibration_curve: [0, 0, 0],
+            correction: 127,
             base: self.bluetooth.tracking_gain_base,
             attenuation: self.config.bluetooth_tx_gain_attenuation,
         }

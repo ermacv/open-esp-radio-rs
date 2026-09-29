@@ -18,8 +18,7 @@ use crate::{Context, Result, process};
 
 /// Subdirectories of `target/` that are never worth cloning: incremental
 /// session data is keyed to this checkout's paths, HIL outputs live in the
-/// shared run store or are rebuilt per image (only the firmware seed
-/// classes' compile caches are cloned, separately), vendor firmware builds keep
+/// shared run store or are built in the host build root, vendor firmware builds keep
 /// CMake caches that record this checkout's absolute source directory, and
 /// fetched vendor artifacts are a link to the host-wide store.
 const SKIPPED: &[&str] = &["incremental", "hil", "vendor-firmware", "vendor"];
@@ -73,38 +72,7 @@ pub fn add(ctx: &Context, path: &Path, branch: &str, from: &str) -> Result<()> {
             source.display()
         );
     }
-    let caches = seed_firmware_caches(&ctx.root, path)?;
-    if caches > 0 {
-        println!("worktree: seeded the compile caches of {caches} firmware seed classes");
-    }
     Ok(())
-}
-
-/// Clones this checkout's compile caches of the firmware check's seed
-/// classes (see [`crate::checks::firmware::SEEDS`]) into the worktree at
-/// `worktree`, by reflink. The firmware check copies their units to every
-/// other class, so the worktree's first full firmware check starts warm; the
-/// rest of `target/hil` (runs, images, snapshots) is not cloned.
-fn seed_firmware_caches(root: &Path, worktree: &Path) -> Result<usize> {
-    let network = oer_hil_runner_core::image::Integration::OwnedXarxa;
-    let mut seeded = 0;
-    for class in crate::checks::firmware::SEEDS {
-        let source = oer_hil_runner_core::image::shared_compile_cache(root, class, network);
-        if !source.is_dir() {
-            continue;
-        }
-        let destination =
-            oer_hil_runner_core::image::shared_compile_cache(worktree, class, network);
-        fs::create_dir_all(destination.parent().ok_or("compile cache has no parent")?)?;
-        process::capture(
-            std::process::Command::new("cp")
-                .args(["-a", "--reflink=auto"])
-                .arg(&source)
-                .arg(&destination),
-        )?;
-        seeded += 1;
-    }
-    Ok(seeded)
 }
 
 /// A btrfs subvolume root always has inode number 256.

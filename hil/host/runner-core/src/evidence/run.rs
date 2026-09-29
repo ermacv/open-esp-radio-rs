@@ -45,7 +45,6 @@ pub(super) use model::{
 use model::{EventRecord, ToolVersion};
 
 pub struct RunSession {
-    repository_root: PathBuf,
     target_directory: PathBuf,
     directory: PathBuf,
     source_materials: Vec<SourceMaterial>,
@@ -155,7 +154,6 @@ impl RunSession {
         atomic_json(&directory.join("manifest.json"), &manifest)?;
         record_created_run(&manifest.run_id)?;
         let mut session = Self {
-            repository_root: root.to_owned(),
             target_directory,
             directory,
             source_materials,

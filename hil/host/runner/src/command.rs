@@ -126,7 +126,7 @@ pub(crate) fn run() -> Result<()> {
                     .map(|snapshot| {
                         image::snapshot::FrozenSources::open_in_free_workspace(
                             snapshot,
-                            &root.join("target/hil/esp32s31/source-build"),
+                            &image::snapshot::build_slots("esp32s31")?,
                         )
                     })
                     .transpose()?;
@@ -134,7 +134,6 @@ pub(crate) fn run() -> Result<()> {
                     let artifacts = match (&frozen, &source_snapshot) {
                         (Some(frozen), Some(snapshot)) => {
                             let artifacts = frozen.build(
-                                &root,
                                 class,
                                 image::Integration::default(),
                                 layout_seed,

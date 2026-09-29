@@ -155,8 +155,9 @@ impl Checkout {
     }
 }
 
-/// Persistent build workspaces per checkout: one per build that can run at
-/// the same time before later ones fall back to a temporary directory.
+/// Persistent build workspaces of the host: one per source tree that can
+/// build at the same time; later builds wait for a slot. Each slot keeps its
+/// own compile caches, so the slots bound the host's build disk use.
 const WORKSPACE_SLOTS: usize = 3;
 
 impl FrozenSources {
@@ -180,13 +181,11 @@ impl FrozenSources {
         Self::open_locked(directory, workspace, lock)
     }
 
-    /// Materialize into the first free slot of the per-checkout build
-    /// workspaces `<base>-<n>`, without waiting. The slots persist, so an
-    /// unchanged source file keeps its bytes and modification time and Cargo
-    /// rebuilds only the packages whose sources changed; a run that holds its
-    /// slot for its whole session never blocks another build of the same
-    /// checkout. When every slot is busy the sources go to a temporary
-    /// directory, as a cold build.
+    /// Materialize into the first free slot of the build workspaces
+    /// `<base>-<n>`, waiting while every slot is busy. The slots persist, so
+    /// an unchanged source file keeps its bytes and modification time and
+    /// Cargo rebuilds only the packages whose sources changed. A cold build in
+    /// a temporary directory takes longer than waiting for a slot.
     pub fn open_in_free_workspace(directory: &Path, base: &Path) -> Result<Self> {
         use fs2::FileExt as _;
         let name = base
@@ -194,14 +193,24 @@ impl FrozenSources {
             .ok_or("source build workspace has no name")?
             .to_string_lossy()
             .into_owned();
-        for slot in 0..WORKSPACE_SLOTS {
-            let workspace = base.with_file_name(format!("{name}-{slot}"));
-            let lock = Self::workspace_lock(&workspace)?;
-            if lock.try_lock_exclusive().is_ok() {
-                return Self::open_locked(directory, &workspace, lock);
+        let mut announced = false;
+        loop {
+            for slot in 0..WORKSPACE_SLOTS {
+                let workspace = base.with_file_name(format!("{name}-{slot}"));
+                let lock = Self::workspace_lock(&workspace)?;
+                if lock.try_lock_exclusive().is_ok() {
+                    return Self::open_locked(directory, &workspace, lock);
+                }
             }
+            if !announced {
+                eprintln!(
+                    "waiting for one of the {WORKSPACE_SLOTS} source build slots at {}",
+                    base.display()
+                );
+                announced = true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(500));
         }
-        Self::open(directory)
     }
 
     fn workspace_lock(workspace: &Path) -> Result<fs::File> {
@@ -387,7 +396,7 @@ pub fn capture_with_overrides(
         &roots,
         include,
         &scopes,
-        &root.join("target/hil/esp32s31/source-snapshots"),
+        &crate::image::host_build_root()?.join("source-snapshots"),
     )
 }
 
@@ -775,7 +784,7 @@ pub use tests::test_snapshot;
 
 mod builder;
 mod materialize;
-pub use builder::build;
+pub use builder::{build, build_slots};
 #[cfg(test)]
 use materialize::materialize;
 

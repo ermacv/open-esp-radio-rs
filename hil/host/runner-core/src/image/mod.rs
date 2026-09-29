@@ -620,6 +620,94 @@ pub fn check(root: &Path, class: crate::image::ImageClass, network: Integration)
     Ok(())
 }
 
+/// Names the host build root instead of the user's cache directory.
+pub const BUILD_ROOT_ENV: &str = "OER_BUILD_ROOT";
+
+/// The directory every checkout of this host builds images in from source
+/// snapshots: the snapshots themselves, the build slots, their compile caches
+/// and the snapshot builds. One per host, so each agent's build of the same
+/// sources reuses the same compiled units, and its size is bounded by the
+/// slots instead of growing with the number of checkouts.
+pub fn host_build_root() -> Result<PathBuf> {
+    if let Some(root) = env::var_os(BUILD_ROOT_ENV).filter(|root| !root.is_empty()) {
+        return Ok(PathBuf::from(root));
+    }
+    // Unit tests build into the workspace's disposable target directory,
+    // never into the host's shared build root.
+    #[cfg(test)]
+    return Ok(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/test-build-root"));
+    #[cfg(not(test))]
+    Ok(env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
+        .ok_or("HOME is required to locate the host build root")?
+        .join("open-esp-radio/build"))
+}
+
+/// The host build root of `chip` images.
+pub fn chip_build_root(chip: &str) -> Result<PathBuf> {
+    Ok(host_build_root()?.join(chip))
+}
+
+/// A slot of the host-wide limit on concurrent image compilations: each holds
+/// one runtime build's fat LTO, about 1.5 GB and one core for minutes.
+/// Parallel builds of several agents otherwise pushed the host into swap.
+struct BuildToken(fs::File);
+
+impl BuildToken {
+    fn acquire() -> Result<Self> {
+        use fs2::FileExt as _;
+        let tokens = host_build_root()?.join("tokens");
+        fs::create_dir_all(&tokens)?;
+        let count = build_tokens();
+        let mut announced = false;
+        loop {
+            for token in 0..count {
+                let file = fs::OpenOptions::new()
+                    .create(true)
+                    .truncate(false)
+                    .write(true)
+                    .open(tokens.join(format!("{token}.lock")))?;
+                if file.try_lock_exclusive().is_ok() {
+                    return Ok(Self(file));
+                }
+            }
+            if !announced {
+                eprintln!("waiting for one of the host's {count} image build slots");
+                announced = true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+    }
+}
+
+impl Drop for BuildToken {
+    fn drop(&mut self) {
+        let _ = fs2::FileExt::unlock(&self.0);
+    }
+}
+
+/// Image compilations the host runs at once: half its cores, and no more
+/// than its memory holds at 2 GB each.
+fn build_tokens() -> usize {
+    let cores = std::thread::available_parallelism().map_or(1, usize::from);
+    let memory_gb = fs::read_to_string("/proc/meminfo")
+        .ok()
+        .and_then(|info| {
+            info.lines()
+                .find_map(|line| line.strip_prefix("MemTotal:"))
+                .and_then(|kb| {
+                    kb.trim()
+                        .trim_end_matches("kB")
+                        .trim()
+                        .parse::<usize>()
+                        .ok()
+                })
+        })
+        .map_or(4, |kb| kb >> 20);
+    (cores / 2).min(memory_gb / 2).max(1)
+}
+
 /// The shared compile cache of the repository at `root`.
 /// Overrides the directory of the shared compile caches, so a baseline
 /// worktree compiles into its checkout's warm caches: registry packages are
@@ -780,7 +868,9 @@ fn build_resolved(
     if !overridden {
         ensure_fetched(root, &manifest, |command| runtime_lock.configure(command))?;
     }
+    let token = BuildToken::acquire()?;
     log.run(&mut runtime, "build stage-two runtime")?;
+    drop(token);
     require_file(&compiled_runtime_elf, "runtime ELF")?;
     fs::copy(&compiled_runtime_elf, &runtime_elf)?;
     // Local overrides deliberately resolve path packages; only a network

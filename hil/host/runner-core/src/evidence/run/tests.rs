@@ -106,7 +106,6 @@ fn session(directory: &Path) -> RunSession {
     RunSession {
         frozen_sources: None,
         snapshot_materials: Vec::new(),
-        repository_root: repository_root.clone(),
         target_directory: directory
             .parent()
             .expect("test run directory has a parent")
@@ -530,7 +529,6 @@ fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
     fs::create_dir(&source_directory).unwrap();
     let mut source = session(&source_directory);
     source.target_directory = target_directory.clone();
-    source.repository_root = repository_root.clone();
     source.source_materials[0].checkout_path = repository_root.clone();
     let (_snapshot_root, snapshot) = crate::image::snapshot::test_snapshot(&repository_root);
     source.bind_source_snapshot(snapshot.directory()).unwrap();
@@ -559,7 +557,6 @@ fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
     fs::create_dir(&replay_directory).unwrap();
     let mut replay = session(&replay_directory);
     replay.target_directory = target_directory;
-    replay.repository_root = repository_root.clone();
     replay.source_materials[0].checkout_path = repository_root;
     let replayed_application = replay.record_replayed_firmware(&archived).unwrap();
     assert_eq!(

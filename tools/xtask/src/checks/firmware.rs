@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use oer_hil_runner_core::image::{ImageClass, Integration};
+use oer_hil_runner_core::image::{ImageClass, Integration, snapshot::FrozenSources};
 
 use crate::{Context, Result};
 
@@ -48,7 +48,7 @@ pub fn default_jobs() -> usize {
 /// One class of each dependency family, built first. Between them they
 /// compile every dependency the other classes share: Wi-Fi with Bluetooth,
 /// and IEEE 802.15.4 with OpenThread.
-pub const SEEDS: [ImageClass; 2] = [
+const SEEDS: [ImageClass; 2] = [
     ImageClass::WifiBleCoex,
     ImageClass::DiagnosticIeee802154Thread,
 ];
@@ -81,6 +81,19 @@ struct Queue {
 /// instead of once per class.
 pub fn run(ctx: &Context, selected: &[ImageClass], depth: Depth, jobs: usize) -> Result<()> {
     let network = Integration::OwnedXarxa;
+    // A full build compiles a snapshot of this checkout in one of the host's
+    // build slots, whose paths and caches every checkout shares.
+    let frozen = match depth {
+        Depth::Build => {
+            let snapshot = oer_hil_runner_core::image::snapshot::capture(&ctx.root, &[], true)?;
+            Some(FrozenSources::open_in_free_workspace(
+                snapshot.directory(),
+                &oer_hil_runner_core::image::snapshot::build_slots("esp32s31")?,
+            )?)
+        }
+        Depth::TypeCheck => None,
+    };
+    let frozen = frozen.as_ref();
     let classes: Vec<(usize, ImageClass)> = classes(selected).into_iter().enumerate().collect();
     let total = classes.len();
     let seeds: Vec<ImageClass> = classes
@@ -126,7 +139,7 @@ pub fn run(ctx: &Context, selected: &[ImageClass], depth: Depth, jobs: usize) ->
                     let Some((index, class)) = next else {
                         break;
                     };
-                    let outcome = build_one(ctx, class, index, total, depth, network);
+                    let outcome = build_one(ctx, frozen, class, index, total, depth, network);
                     let family = if seeds.contains(&class) {
                         let mut state = lock();
                         let (family, others) = std::mem::take(&mut state.waiting)
@@ -141,7 +154,10 @@ pub fn run(ctx: &Context, selected: &[ImageClass], depth: Depth, jobs: usize) ->
                     // Cargo uses a copied unit only where it is exactly the
                     // unit needed. A failed copy only leaves a class colder.
                     for (_, member) in &family {
-                        if let Err(error) = share_units(ctx, class, *member, network) {
+                        if let Err(error) = frozen
+                            .ok_or_else(|| "a type check shares no units".into())
+                            .and_then(|frozen| share_units(frozen, class, *member, network))
+                        {
                             println!("check firmware: {} starts cold: {error}", member.id());
                         }
                     }
@@ -168,13 +184,13 @@ pub fn run(ctx: &Context, selected: &[ImageClass], depth: Depth, jobs: usize) ->
 /// package, features and flags, so a copied unit is used only where it is
 /// exactly the unit the class needs; the uplifted binaries are not copied.
 fn share_units(
-    ctx: &Context,
+    frozen: &FrozenSources,
     seed: ImageClass,
     class: ImageClass,
     network: Integration,
 ) -> Result<()> {
-    let from = oer_hil_runner_core::image::shared_compile_cache(&ctx.root, seed, network);
-    let to = oer_hil_runner_core::image::shared_compile_cache(&ctx.root, class, network);
+    let from = frozen.compile_cache(seed, network);
+    let to = frozen.compile_cache(class, network);
     for build in ["runtime", "bootstrap"] {
         let Ok(entries) = std::fs::read_dir(from.join(build)) else {
             continue;
@@ -216,6 +232,7 @@ fn share_units(
 /// Builds or type-checks `class`, the `index`th of `total`.
 fn build_one(
     ctx: &Context,
+    frozen: Option<&FrozenSources>,
     class: ImageClass,
     index: usize,
     total: usize,
@@ -233,10 +250,13 @@ fn build_one(
     );
     let started = Instant::now();
     let result = match depth {
-        Depth::Build => {
-            oer_hil_runner_core::image::build(&ctx.root, class, network, None, &Default::default())
-                .map(|_| ())
-        }
+        Depth::Build => match frozen {
+            Some(frozen) => frozen
+                .build(class, network, None, &Default::default())
+                .map(|_| ()),
+            None => Err("a full build needs the frozen sources".into()),
+        },
+
         Depth::TypeCheck => oer_hil_runner_core::image::check(&ctx.root, class, network),
     };
     let outcome = Outcome {

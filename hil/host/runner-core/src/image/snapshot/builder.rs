@@ -3,25 +3,48 @@
 use super::*;
 
 pub fn build(
-    root: &Path,
     directory: &Path,
     class: crate::image::ImageClass,
     network: crate::image::Integration,
     layout_seed: crate::image::LayoutSeed,
     features: &crate::image::FeatureDelta,
 ) -> Result<crate::image::Artifacts> {
-    FrozenSources::open_in_free_workspace(
-        directory,
-        &root.join("target/hil/esp32s31/source-build"),
-    )?
-    .build(root, class, network, layout_seed, features)
+    FrozenSources::open_in_free_workspace(directory, &build_slots("esp32s31")?)?.build(
+        class,
+        network,
+        layout_seed,
+        features,
+    )
+}
+
+/// The base of the host's build slots for `chip` images (`<base>-<n>`).
+pub fn build_slots(chip: &str) -> Result<PathBuf> {
+    Ok(crate::image::chip_build_root(chip)?.join("source-build"))
 }
 
 impl FrozenSources {
+    /// The compile cache of `class` for this build: beside the slot, so the
+    /// units compiled from this slot's paths stay with it.
+    pub fn compile_cache(
+        &self,
+        class: crate::image::ImageClass,
+        network: crate::image::Integration,
+    ) -> PathBuf {
+        let base = match &self.checkout {
+            Checkout::Workspace { path, .. } => path.with_extension("cache"),
+            Checkout::Temporary(directory) => directory.path().join("cache"),
+        };
+        base.join(format!(
+            "{}-{}-{}",
+            class.runtime_profile(),
+            class.id(),
+            network.id()
+        ))
+    }
+
     /// Build `class` for `chip` through the pipeline of its boot flow.
     pub fn build_for_chip(
         &self,
-        root: &Path,
         chip: &str,
         class: crate::image::ImageClass,
         network: crate::image::Integration,
@@ -30,14 +53,13 @@ impl FrozenSources {
     ) -> Result<crate::image::Artifacts> {
         let profile = crate::image::chip_profile(chip)?;
         if profile.boot == oer_chip_profile::Boot::Staged {
-            return self.build(root, class, network, layout_seed, features);
+            return self.build(class, network, layout_seed, features);
         }
         if layout_seed.is_some() {
             return Err(format!("{chip} images have no layout seeds").into());
         }
         self.verify_unchanged()?;
-        let hil = root.join("target/hil").join(chip);
-        let output = hil
+        let output = crate::image::chip_build_root(chip)?
             .join("snapshot-builds")
             .join(&self.snapshot.snapshot_id)
             .join(format!("{}{}", class.id(), features.suffix()));
@@ -48,7 +70,7 @@ impl FrozenSources {
             network,
             features,
             &output,
-            &hil.join("build-cache").join(class.id()),
+            &self.compile_cache(class, network),
         )?;
         self.verify_unchanged()?;
         atomic_json(&output.join("source-snapshot.json"), &self.snapshot)?;
@@ -57,7 +79,6 @@ impl FrozenSources {
 
     pub fn build(
         &self,
-        root: &Path,
         class: crate::image::ImageClass,
         network: crate::image::Integration,
         layout_seed: crate::image::LayoutSeed,
@@ -75,8 +96,8 @@ impl FrozenSources {
         let esp_hal = override_path("esp-hal");
         let embassy = override_path("embassy");
         let xarxa = override_path("xarxa");
-        let output = root
-            .join("target/hil/esp32s31/snapshot-builds")
+        let output = crate::image::chip_build_root("esp32s31")?
+            .join("snapshot-builds")
             .join(&self.snapshot.snapshot_id)
             .join(format!(
                 "{}-{}{}{}",
@@ -96,7 +117,7 @@ impl FrozenSources {
             },
             crate::image::BuildPlacement {
                 output: Some(&output),
-                cache: &crate::image::shared_compile_cache(root, class, network),
+                cache: &self.compile_cache(class, network),
                 layout_seed,
                 features,
             },

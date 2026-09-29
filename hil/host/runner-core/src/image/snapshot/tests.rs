@@ -263,7 +263,7 @@ fn a_build_workspace_is_stable_exclusive_and_replaced_on_reuse() {
 }
 
 #[test]
-fn concurrent_builds_take_free_workspace_slots_without_waiting() {
+fn concurrent_builds_take_free_workspace_slots_and_wait_when_all_are_busy() {
     let root = repository();
     let output = tempfile::tempdir().unwrap();
     let roots = vec![("repository".into(), root.path().to_owned())];
@@ -281,15 +281,29 @@ fn concurrent_builds_take_free_workspace_slots_without_waiting() {
             sources
         })
         .collect::<Vec<_>>();
-    // Every slot is held: the next build falls back to a temporary checkout.
-    let overflow = FrozenSources::open_in_free_workspace(&snapshot.directory, &base).unwrap();
-    assert!(!overflow.repository().starts_with(build.path()));
-    drop(held);
-    let reused = FrozenSources::open_in_free_workspace(&snapshot.directory, &base).unwrap();
-    assert_eq!(
-        reused.repository(),
-        build.path().join("source-build-0/repository")
+    // Every slot is held: the next build waits until one is released.
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let waiting = {
+        let directory = snapshot.directory.clone();
+        let base = base.clone();
+        std::thread::spawn(move || {
+            let sources = FrozenSources::open_in_free_workspace(&directory, &base).unwrap();
+            sender.send(sources.repository()).unwrap();
+        })
+    };
+    assert!(
+        receiver
+            .recv_timeout(std::time::Duration::from_millis(300))
+            .is_err()
     );
+    let mut held = held;
+    drop(held.remove(0));
+    let reused = receiver
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .unwrap();
+    assert_eq!(reused, build.path().join("source-build-0/repository"));
+    waiting.join().unwrap();
+    drop(held);
 }
 
 #[test]

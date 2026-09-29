@@ -41,7 +41,6 @@ impl RunSession {
             .as_ref()
             .ok_or("HIL build requires a bound source snapshot")?
             .build_for_chip(
-                &self.repository_root,
                 &self.manifest.target,
                 class,
                 build.network,

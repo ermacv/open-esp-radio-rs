@@ -39,9 +39,12 @@ pub(super) fn archive_snapshot(
             &archived,
         ));
     }
-    // A persistent per-checkout workspace keeps unchanged sources, so Cargo
+    // A persistent host build slot keeps unchanged sources, so Cargo
     // rebuilds only the packages whose sources changed on each run.
-    let frozen = FrozenSources::open_in_free_workspace(&destination, &target.join("source-build"))?;
+    let frozen = FrozenSources::open_in_free_workspace(
+        &destination,
+        &crate::image::snapshot::build_slots("esp32s31")?,
+    )?;
     let sources = frozen
         .sources()
         .iter()

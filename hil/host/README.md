@@ -162,7 +162,7 @@ For an explicit source snapshot, use:
 
 ```console
 cargo hil image snapshot --source-include crates/path/to/new.rs
-cargo hil image build performance --source-snapshot target/hil/esp32s31/source-snapshots/<snapshot-id>
+cargo hil image build performance --source-snapshot ~/.cache/open-esp-radio/build/source-snapshots/<snapshot-id>
 ```
 
 `image build` takes several classes; from one source snapshot they share one
@@ -189,19 +189,24 @@ The content-addressed directory contains `manifest.json`, `snapshot.json` and
 `sources.tar`. It records exact file bytes and executable modes for the main
 source and configured overrides. Subsequent capture does not overwrite an
 existing identity, and corrupt stored material is rejected. Builds with
-`--source-snapshot` validate and materialize these inputs in the fixed workspace
-`target/hil/esp32s31/source-build/`, held under an exclusive lock and replaced
-on each build; Cargo uses that directory, including its copied configuration
-and snapshot-local override paths. Artifacts (including copies of both ELFs)
-and the snapshot reference remain under
-`target/hil/esp32s31/snapshot-builds/`. The live checkout is not a build source
-for this explicit mode.
+`--source-snapshot` validate and materialize these inputs in one of the host's
+build slots, `~/.cache/open-esp-radio/build/<chip>/source-build-<n>/`
+(`OER_BUILD_ROOT` replaces `~/.cache/open-esp-radio/build`). Every checkout
+of the host shares the slots: a build takes a free one under an exclusive lock
+and waits while all are busy. A slot keeps each unchanged file's bytes and
+modification time, so Cargo rebuilds only the packages whose sources differ
+from the slot's previous build, whichever checkout ran it. Cargo uses that
+directory, including its copied configuration and snapshot-local override
+paths. Artifacts (including copies of both ELFs) and the snapshot reference
+remain under `~/.cache/open-esp-radio/build/<chip>/snapshot-builds/`. The live
+checkout is not a build source for this explicit mode.
 
-Live and snapshot builds of one image class and network share the Cargo cache
-`target/hil/esp32s31/build-cache/<profile>-<class>-<network>/`. Cargo
-fingerprints decide reuse: registry packages are compiled once, while the
-freshly materialized path packages always rebuild in place under the stable
-workspace path.
+Each slot keeps its compile caches beside it, in
+`source-build-<n>.cache/<profile>-<class>-<network>/`; `cargo xtask check
+firmware` builds its classes there too. At most half the host's cores, and no
+more than its memory holds at 2 GB each, compile image runtimes at once across
+all checkouts; further builds wait for a free build slot in
+`~/.cache/open-esp-radio/build/tokens/`.
 
 This fixes the source input set, not the entire build environment: tools, Cargo
 package caches and user-level configuration are still external. It does not

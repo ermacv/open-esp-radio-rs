@@ -216,6 +216,10 @@ the integrity seal. A review can name this destination without fabricating a
 scenario or hardware observation; the record supplies no PASS or repetitions.
 
 
+`cargo hil run S... --repetitions N` runs each selected scenario N times
+(1 to 20) instead of its own count, for a quicker look while debugging. The run
+records the reduced count, and `cargo hil` does not note it as pending evidence.
+
 `cargo hil run-all` runs the scenarios carrying each `--tag`, or the whole
 catalog only with an explicit `--all`. It reuses each image across its scenario group but
 does not fail fast. Every invocation retains an immutable evidence bundle in

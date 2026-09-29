@@ -173,12 +173,18 @@ pub(crate) fn run() -> Result<()> {
             firmware_from,
             layout_seed,
             features,
+            repetitions,
             then,
             target,
             validate_only,
         } => {
             let catalog = Catalog::load(&catalog_path)?;
-            let selected = orchestration::named_scenarios(&catalog, &scenarios)?;
+            let mut selected = orchestration::named_scenarios(&catalog, &scenarios)?;
+            if let Some(repetitions) = repetitions {
+                for scenario in &mut selected {
+                    scenario.header.repetitions = repetitions;
+                }
+            }
             let target = orchestration::select_target(
                 &selected.iter().collect::<Vec<_>>(),
                 target.as_deref(),

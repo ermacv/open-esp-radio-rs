@@ -88,6 +88,11 @@ pub(crate) enum CliCommand {
         /// such an image; it never qualifies.
         #[arg(long, value_name = "+F,-G", conflicts_with = "firmware_from")]
         features: Option<hil_core::image::FeatureDelta>,
+        /// Run each selected scenario this many times instead of its own
+        /// repetitions, for a quicker look while debugging. The run records
+        /// the reduced count and is never noted as qualification evidence.
+        #[arg(long, value_name = "N", value_parser = clap::value_parser!(u8).range(1..=20))]
+        repetitions: Option<u8>,
         /// Shell command run after the scenarios while the run still holds
         /// its stand lease, for example to read the board's reset reason.
         /// It may use the boards' ports directly; nested `cargo hil` commands

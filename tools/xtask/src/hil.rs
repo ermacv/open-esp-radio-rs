@@ -214,14 +214,19 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         if std::env::var_os(oer_hil_runner_core::experiment::EXPERIMENT_ENV).is_some() {
             eprintln!("hil: an A/B experiment run is diagnostic: no evidence recorded");
         } else {
-            match evidence_skip_reason(
+            let flag = |name: &str| {
                 args.iter().any(|arg| {
-                    arg.to_str().is_some_and(|arg| {
-                        arg.starts_with("--source-include")
-                            || arg.starts_with("--source-snapshot")
-                            || arg == "--include-untracked"
-                    })
-                }),
+                    arg.to_str()
+                        .is_some_and(|arg| arg == name || arg.starts_with(&format!("{name}=")))
+                })
+            };
+            match evidence_skip_reason(
+                RunInputs {
+                    untracked_sources: flag("--source-include")
+                        || flag("--source-snapshot")
+                        || flag("--include-untracked"),
+                    reduced_repetitions: flag("--repetitions"),
+                },
                 &created,
             ) {
                 None => remember_pending(ctx, options.owner(ctx).ok(), &run_ids)?,
@@ -249,6 +254,7 @@ Stand commands (shared by every checkout of this user):
   cargo hil ab --a VARIANT --b VARIANT --scenario S [--repetitions N] [--layout-seeds K] [--enqueue] [--after JOB]
                                       A/B comparison with noise-aware verdicts; --enqueue makes it a job
   cargo hil run ... --enqueue [--after JOB]   start the run detached as a job and print its id
+  cargo hil run S... --repetitions N  each scenario N times instead of its own count; never evidence
   cargo hil wait --service [BOARD...] block until the boards (all when none) and the stand are in service
   cargo hil wait JOB|RUN              block until the job or run ends; exit 0 passed, 1 failed, 2 interrupted, 3 blocked, 4 broken, 5 no run, 6 abandoned
   cargo hil queue [--json]            holders, balances, queue with expected starts, boards, recent leases
@@ -1587,13 +1593,23 @@ fn runs_dirty(run_ids: &[String]) -> Result<Vec<bool>> {
 /// came from a dirty tree, or untracked sources were added with
 /// `--source-include` or `--include-untracked`. Such runs are experiments;
 /// `cargo hil evidence record --run ID` records them anyway.
-fn evidence_skip_reason(source_include: bool, created_dirty: &[bool]) -> Option<&'static str> {
+/// What a run was given beyond the tracked checkout and the catalog.
+#[derive(Clone, Copy, Default)]
+struct RunInputs {
+    untracked_sources: bool,
+    /// `--repetitions` replaced the scenarios' own counts.
+    reduced_repetitions: bool,
+}
+
+fn evidence_skip_reason(inputs: RunInputs, created_dirty: &[bool]) -> Option<&'static str> {
     if created_dirty.is_empty() {
         Some("the runner created no run")
     } else if created_dirty.iter().any(|dirty| *dirty) {
         Some("the run was built from a dirty tree")
-    } else if source_include {
+    } else if inputs.untracked_sources {
         Some("the run included untracked sources")
+    } else if inputs.reduced_repetitions {
+        Some("--repetitions replaced the scenarios' repetitions")
     } else {
         None
     }
@@ -2066,10 +2082,22 @@ mod tests {
 
     #[test]
     fn evidence_is_noted_as_pending_only_for_clean_runs() {
-        assert_eq!(evidence_skip_reason(false, &[false]), None);
-        assert!(evidence_skip_reason(false, &[]).is_some());
-        assert!(evidence_skip_reason(false, &[false, true]).is_some());
-        assert!(evidence_skip_reason(true, &[false]).is_some());
+        let clean = RunInputs::default();
+        assert_eq!(evidence_skip_reason(clean, &[false]), None);
+        assert!(evidence_skip_reason(clean, &[]).is_some());
+        assert!(evidence_skip_reason(clean, &[false, true]).is_some());
+        let untracked = RunInputs {
+            untracked_sources: true,
+            ..clean
+        };
+        assert!(evidence_skip_reason(untracked, &[false]).is_some());
+        // A run with fewer repetitions than its scenarios require is a look,
+        // not qualification evidence.
+        let reduced = RunInputs {
+            reduced_repetitions: true,
+            ..clean
+        };
+        assert!(evidence_skip_reason(reduced, &[false]).is_some());
     }
 
     use super::*;

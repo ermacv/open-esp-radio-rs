@@ -228,3 +228,17 @@ fn run_all_runs_the_whole_catalog_only_when_asked() {
     assert!(Cli::try_parse_from(["cargo-hil", "run-all", "--tag", "wifi"]).is_ok());
     assert!(Cli::try_parse_from(["cargo-hil", "run-all", "--all"]).is_ok());
 }
+
+#[test]
+fn run_repetitions_replace_the_scenarios_counts_within_the_evidence_range() {
+    let cli = Cli::try_parse_from(["cargo-hil", "run", "a", "--repetitions", "2"]).unwrap();
+    let CliCommand::Run { repetitions, .. } = cli.command else {
+        panic!("expected run");
+    };
+    assert_eq!(repetitions, Some(2));
+    for out_of_range in ["0", "21"] {
+        assert!(
+            Cli::try_parse_from(["cargo-hil", "run", "a", "--repetitions", out_of_range]).is_err()
+        );
+    }
+}

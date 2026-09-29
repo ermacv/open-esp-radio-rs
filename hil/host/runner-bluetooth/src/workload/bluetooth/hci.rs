@@ -12,6 +12,10 @@ pub const LE_SET_ADVERTISING_PARAMETERS: u16 = 0x2006;
 pub const LE_SET_ADVERTISING_DATA: u16 = 0x2008;
 pub const LE_SET_SCAN_RESPONSE_DATA: u16 = 0x2009;
 pub const LE_SET_ADVERTISING_ENABLE: u16 = 0x200a;
+pub const LE_SET_SCAN_PARAMETERS: u16 = 0x200b;
+pub const LE_SET_SCAN_ENABLE: u16 = 0x200c;
+pub const LE_CLEAR_FILTER_ACCEPT_LIST: u16 = 0x2010;
+pub const LE_ADD_DEVICE_TO_FILTER_ACCEPT_LIST: u16 = 0x2011;
 pub const DISCONNECT: u16 = 0x0406;
 pub const SET_EVENT_MASK: u16 = 0x0c01;
 pub const SET_CONTROLLER_TO_HOST_FLOW_CONTROL: u16 = 0x0c31;
@@ -45,6 +49,27 @@ pub fn command(capture: &SerialCapture, opcode: u16, parameters: &[u8]) -> Resul
             if packet[0] == 0x0e && packet.len() >= 6 && packet[5] == 0 =>
         {
             Ok(packet[6..].to_vec())
+        }
+        response => Err(format!("HCI command {opcode:#06x} failed: {response:?}").into()),
+    }
+}
+
+/// Send one command and return the status and return parameters of its
+/// Command Complete, whatever the status.
+pub fn command_complete(
+    capture: &SerialCapture,
+    opcode: u16,
+    parameters: &[u8],
+) -> Result<(u8, Vec<u8>)> {
+    let request = BluetoothHciRequest::Command {
+        opcode,
+        parameters: heapless::Vec::from_slice(parameters)
+            .map_err(|_| format!("HCI command {opcode:#06x} parameters exceed the request"))?,
+    };
+    match capture.bluetooth_hci(request)? {
+        // Code, length, packets, opcode, status, return parameters.
+        BluetoothHciResponse::Completed(packet) if packet[0] == 0x0e && packet.len() >= 6 => {
+            Ok((packet[5], packet[6..].to_vec()))
         }
         response => Err(format!("HCI command {opcode:#06x} failed: {response:?}").into()),
     }

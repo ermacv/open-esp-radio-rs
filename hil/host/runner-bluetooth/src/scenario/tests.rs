@@ -19,6 +19,7 @@ fn each_workload_selects_its_image() {
         ("kind = 'scannable-advertising'", ImageClass::BluetoothHci),
         ("kind = 'directed-advertising'", ImageClass::BluetoothHci),
         ("kind = 'acl-backpressure'", ImageClass::BluetoothHci),
+        ("kind = 'active-scanning'", ImageClass::BluetoothHci),
         (
             "kind = 'dtm-peer'\nminimum_packets = 100",
             ImageClass::BluetoothHci,

@@ -33,6 +33,9 @@ pub enum BluetoothScenario {
     /// High duty cycle directed advertising times out; low duty cycle
     /// directed advertising connects its target.
     DirectedAdvertising {},
+    /// Passive, active and Filter Accept List scanning of a Linux scannable
+    /// advertiser.
+    ActiveScanning {},
     /// Automated Numeric Comparison, bonded reconnect and an explicit
     /// terminal fault.
     SecureGatt {
@@ -135,6 +138,7 @@ impl BluetoothScenario {
             | Self::DtmPeer { .. }
             | Self::ScannableAdvertising {}
             | Self::DirectedAdvertising {}
+            | Self::ActiveScanning {}
             | Self::Peripheral {
                 restart_between_connections: false,
                 retire_after: false,
@@ -185,6 +189,7 @@ impl BluetoothScenario {
             Self::Gatt {} | Self::SecureGatt { .. } => true,
             Self::ScannableAdvertising {}
             | Self::DirectedAdvertising {}
+            | Self::ActiveScanning {}
             | Self::DtmPeer { .. }
             | Self::AclBackpressure {} => capabilities.has::<bluetooth::Hci>(),
             Self::SecurityFailure { failure, .. } => {
@@ -213,6 +218,7 @@ impl BluetoothScenario {
             | Self::SecureGatt { .. }
             | Self::ScannableAdvertising {}
             | Self::DirectedAdvertising {}
+            | Self::ActiveScanning {}
             | Self::AclBackpressure {} => fixture::att::preflight,
             Self::Dtm { .. } => fixture::preflight,
             Self::Peripheral { .. } => fixture::preflight_connect_reset,
@@ -229,6 +235,7 @@ impl BluetoothScenario {
             Self::Gatt {} => workload::gatt::run(output, context),
             Self::ScannableAdvertising {} => workload::scannable::run(output, context),
             Self::DirectedAdvertising {} => workload::directed::run(output, context),
+            Self::ActiveScanning {} => workload::active_scan::run(output, context),
             Self::SecureGatt {
                 shutdown,
                 irq_sampling,

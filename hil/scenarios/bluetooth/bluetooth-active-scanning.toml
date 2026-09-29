@@ -1,0 +1,7 @@
+schema = 5
+id = "bluetooth-active-scanning"
+description = "LE 1M passive, active and Filter Accept List scanning of a Linux scannable advertiser: only the active scans report the scan response the adapter sends to their SCAN_REQ, and with the adapter alone on the list the filtered scan reports nothing from the other advertisers the unfiltered scan heard, while the list refuses a change"
+tags = ["bluetooth", "scanning", "filter-accept-list", "air-exclusive"]
+
+[bluetooth]
+kind = "active-scanning"

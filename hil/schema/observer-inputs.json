@@ -55,6 +55,7 @@
     "bluetooth/dtm": true,
     "bluetooth/scannable-advertising": false,
     "bluetooth/directed-advertising": true,
+    "bluetooth/active-scanning": false,
     "bluetooth/dtm-peer": true,
     "bluetooth/peripheral": true,
     "bluetooth/security-failure": false,

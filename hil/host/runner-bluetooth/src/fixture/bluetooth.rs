@@ -1,5 +1,6 @@
 //! Linux DTM fixture preparation, isolated from ESP firmware execution.
 
+pub mod advertiser;
 pub mod att;
 pub mod att_parameters;
 pub mod discovery;

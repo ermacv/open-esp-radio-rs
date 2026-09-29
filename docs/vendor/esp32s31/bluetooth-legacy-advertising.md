@@ -215,8 +215,8 @@ indication, and the radio drains it when the event ends. Delivery of every
 reception of a three-channel event is not yet qualified on hardware.
 
 The portable Link Layer owns the semantic advertisement, scan-response data
-and typed bounded `ADV_IND`/`SCAN_RSP` encodings. A later chip aggregate must
-retain that affine portable event while translating it into a short-lived S31
+and typed bounded `ADV_IND`/`SCAN_RSP` encodings. The S31 radio role retains
+that affine portable event while translating it into a short-lived S31
 memory input: two allocation-fit PDU borrows, the already selected own-address
 behavior and the translated primary-channel plan. The memory crate has no
 portable Link Layer dependency, does not retain that event and does not parse
@@ -225,9 +225,8 @@ chain, the exact affine non-scanning RX pool, the common advertising reset
 projection, global RX-list binding and the opaque scheduler duration.
 The joined memory owner remains non-publishable and losslessly returns only the
 graph and RX pool on cancellation or rejection. Scheduler admission, RX
-dispatch, accepted `CONNECT_IND` transfer and multi-channel buffering are
-separate later boundaries rather than implied capabilities of this memory
-profile.
+dispatch, accepted `CONNECT_IND` transfer and multi-channel buffering belong
+to the radio role and the scheduler executor, not to this memory profile.
 
 The complete common allocation and pre-publication producers also participate
 in this graph. The pinned common scheduler-item allocator
@@ -300,8 +299,8 @@ before interpreting the legacy request bit. Its
 disabled branch initializes algorithm-one hopping and continues connection
 setup rather than rejecting the request.
 
-One advertising transmission may enter production only when current-artifact
-evidence closes the following connected edges:
+Production advertising closes the following connected edges with
+current-artifact evidence:
 
 1. **Packet producer:** one owned packet/header image contains the encoded PDU,
    declared length, advertising access address `0x8e89bed6`, CRC initialization
@@ -318,10 +317,10 @@ evidence closes the following connected edges:
 5. **Result and recurrence:** every active item must have a non-sentinel
    completion before the exact scheduled event advances its portable identity
    once. Per-item values remain diagnostic rather than a claim of successful
-   on-air transmission. The first slice needs no RX or scan-response handling.
+   on-air transmission.
 
-Unknown private fields do not block the first driver merely because they lack
-vendor names. They do block admission when their value participates in packet
+Unknown private fields do not block admission merely because they lack vendor
+names. They do block it when their value participates in packet
 selection, timing, ownership, launch or completion. A reviewed whole producer
 image with controlled inputs is sufficient; guessing individual bit names is
 not required.

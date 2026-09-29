@@ -1,4 +1,4 @@
-# ESP32-S31 legacy passive scanning contracts
+# ESP32-S31 legacy scanning contracts
 
 This reference covers legacy LE 1M primary-channel scanning, passive and
 active, and the hardware observations needed for HCI LE Advertising Reports.
@@ -408,18 +408,20 @@ sees the active item still reachable through the private free chain.
 
 ## Open architecture
 
-The first implementation should contain these owners, in this order:
+The scanner is built from these owners:
 
 1. a private, pinned scanner graph with affine CPU-owned, published, running,
-   completed and reclaimed states;
+   completed and reclaimed states, reset for a passive or an active scanner
+   and for filter policy 0 or 1;
 2. a restricted-PAC scan-start transaction and stable read accessor for the
    existing scan hardware snapshot;
-3. a controller role that schedules only passive LE 1M windows on channels
-   37, 38 and 39 and uses the existing list/interrupt runtime;
-4. a portable LL parser that accepts bounded legacy advertising PDUs and owns
-   duplicate-filter policy independently of the hardware codec;
-5. the existing `bt-hci` command/event types for LE Set Scan Parameters, LE Set
-   Scan Enable and LE Advertising Report.
+3. the ESP32-S31 radio role, which schedules LE 1M windows on channels 37, 38
+   and 39 over the existing list/interrupt runtime;
+4. the portable scanning role of the Controller core, which owns the scan
+   interval, window placement, channel rotation and the duplicate filter, and
+   a portable parser that accepts bounded legacy advertising PDUs;
+5. the `bt-hci` command/event types for LE Set Scan Parameters, LE Set Scan
+   Enable and LE Advertising Report.
 
 No upper layer may construct register images.  No public LL type may contain
 the vendor link-state words.  SRAM masks remain private implementation details
@@ -431,9 +433,7 @@ admitted interval is encoded into SRAM. The scanner item then stays with the
 executor from list-zero insertion through the selector-one receive chain,
 `RUN`, fenced finished-list capture and the completion walk, which returns the
 item and lets the role copy the PDU/RSSI results out of the scanning chain. A
-cancelled window leaves through the executor's cancellation. The Link Layer
-core that owns scanning policy and HCI routing does not exist yet; this lower
-contract does not establish its readiness.
+cancelled window leaves through the executor's cancellation.
 
 ## Filter accept list
 

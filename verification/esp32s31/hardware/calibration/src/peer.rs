@@ -188,7 +188,7 @@ impl Peer {
                 if started.elapsed() > REPLY_TIMEOUT {
                     // A read that stalls the bus hangs the chip instead of
                     // resetting it: reset the board and treat it alike.
-                    oer_hil_runner_core::session::reset::reset_usb_serial_jtag(&mut *self.serial)?;
+                    oer_hil_board::reset::reset_usb_serial_jtag(&mut *self.serial)?;
                     self.wait(|console| ready_lines(console) > boots, "the ready line")?;
                     lines.push_str(&crate::vendor::unreadable_line(register.address));
                     self.prepare()?;

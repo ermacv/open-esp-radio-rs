@@ -38,7 +38,7 @@ const FILES: [&str; 4] = [
 /// and stay in. Tests and prose of runner packages are left out too.
 const STAND_OPERATION: [&str; 6] = [
     "hil/host/arbiter",
-    "hil/host/runner-core/src/device",
+    "hil/host/board",
     "hil/host/runner-core/src/post_mortem.rs",
     "hil/host/runner-core/src/recovery.rs",
     "hil/host/runner-core/src/usb_events.rs",
@@ -389,7 +389,7 @@ mod tests {
         ]);
         for neutral in [
             "hil/host/arbiter/src/queue.rs",
-            "hil/host/runner-core/src/device/mod.rs",
+            "hil/host/board/src/esp_idf.rs",
             "hil/host/runner-core/src/post_mortem.rs",
             "hil/host/runner-core/src/image/tests.rs",
             "hil/host/runner-core/tests/session.rs",

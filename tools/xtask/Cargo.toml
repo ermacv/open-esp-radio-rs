@@ -11,6 +11,7 @@ publish = false
 oer-chip-profile = { path = "../chip-profile" }
 oer-command-tree = { path = "../command-tree", features = ["clap"] }
 oer-hil-arbiter = { path = "../../hil/host/arbiter" }
+oer-hil-board = { path = "../../hil/host/board" }
 oer-hil-runner-core = { path = "../../hil/host/runner-core" }
 oer-hil-schema = { path = "../../hil/schema", features = ["producer"] }
 oer-probe-codegen = { path = "../../verification/harness/codegen" }

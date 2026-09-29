@@ -237,7 +237,7 @@ transmit. Every OpenOCD session the stand starts is stopped when it outlives
 its timeout (ten minutes to program, one otherwise). A tool that holds a long
 interactive session under a board lease, such as the calibration cross-check,
 opens the port through the same library functions,
-`oer_hil_runner_core::session::reset::{open_without_reset,
+`oer_hil_board::reset::{open_without_reset,
 reset_into_application}`, never through `serialport` itself.
 
 ```console

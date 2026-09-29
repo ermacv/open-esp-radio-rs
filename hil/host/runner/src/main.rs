@@ -1,6 +1,7 @@
 //! HIL host process entry point.
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
+mod board;
 mod cli;
 mod coexistence;
 mod command;

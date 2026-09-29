@@ -398,8 +398,7 @@ fn append(bytes: &Mutex<Vec<u8>>, chunk: &[u8]) {
         .extend_from_slice(chunk);
 }
 
-pub mod reset;
-use reset::reset_usb_serial_jtag;
+use oer_hil_board::reset::reset_usb_serial_jtag;
 mod capture;
 #[cfg(any(test, feature = "test-support"))]
 pub use capture::test_support;

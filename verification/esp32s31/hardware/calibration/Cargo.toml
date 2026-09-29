@@ -11,6 +11,8 @@ description = "Hardware cross-check of the vendor and production ESP32-S31 PHY c
 oer-esp32s31-firmware = { path = "../../../../tools/firmware", features = ["device"] }
 oer-esp32s31-hil-calibration-artifact = { path = "../../../../hil/targets/esp32s31/calibration-artifact" }
 oer-esp32s31-phy = { path = "../../../../crates/hardware/esp32s31/phy", features = ["validation-probes"] }
+oer-esp32s31-hil-board = { path = "../../../../hil/host/board/esp32s31" }
+oer-hil-board = { path = "../../../../hil/host/board" }
 oer-hil-runner-core = { path = "../../../../hil/host/runner-core" }
 oer-hil-protocol = { path = "../../../../hil/protocol" }
 clap = { version = "4.5", features = ["derive"] }

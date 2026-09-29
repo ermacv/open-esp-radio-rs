@@ -9,6 +9,8 @@ publish = false
 description = "Host build, placement-audit and HIL runner for open ESP radio"
 
 [dependencies]
+oer-esp32s31-hil-board = { path = "../board/esp32s31" }
+oer-hil-board = { path = "../board" }
 hil-core = { package = "oer-hil-runner-core", path = "../runner-core" }
 hil-wifi = { package = "oer-hil-runner-ieee80211", path = "../runner-ieee80211" }
 hil-bluetooth = { package = "oer-hil-runner-bluetooth", path = "../runner-bluetooth" }

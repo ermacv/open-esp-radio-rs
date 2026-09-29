@@ -3,6 +3,9 @@
 //! when a boot ends badly. They carry no words; the post-mortem record holds
 //! the details, and the trace holds what happened before.
 
+#[cfg(feature = "describe")]
+extern crate alloc;
+
 use core::fmt;
 
 use oer_trace::{Channel, Domain, Event, Kind};
@@ -64,6 +67,27 @@ pub fn platform_name(kind: Kind) -> Option<&'static str> {
     } else {
         None
     }
+}
+
+/// The event sets an image's trace holds, for the host's decoded trace; an
+/// event of another domain is shown as its domain, id and words.
+#[cfg(feature = "describe")]
+pub const EVENT_SETS: &[oer_trace::Describer] = &[
+    <PlatformTrace as oer_trace::EventSet>::describe,
+    <oer_ieee80211_trace::StationTrace as oer_trace::EventSet>::describe,
+    <oer_phy_trace::PhyTrace as oer_trace::EventSet>::describe,
+    <oer_ieee802154_trace::Ieee802154Trace as oer_trace::EventSet>::describe,
+];
+
+/// The state a complete snapshot at `point` holds, when a domain knows the
+/// point.
+#[cfg(feature = "describe")]
+pub fn describe_snapshot(point: u16, words: &[u32]) -> Option<alloc::string::String> {
+    use alloc::string::ToString as _;
+    (point == oer_phy_trace::PhySnapshot::POINT.raw())
+        .then(|| oer_phy_trace::PhySnapshot::decode(words))
+        .flatten()
+        .map(|snapshot| snapshot.to_string())
 }
 
 #[cfg(test)]

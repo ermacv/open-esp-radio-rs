@@ -227,7 +227,7 @@ fn journal(root: &Path, image: &str, application: &Path, port: &Path) -> Result<
 /// The console port of the board, just reset. The port is opened through
 /// the stand's opener, which never resets the chip on its own.
 fn reset_console(port: &Path) -> Result<Box<dyn serialport::SerialPort>> {
-    use oer_hil_runner_core::session::reset::{open_without_reset, reset_usb_serial_jtag};
+    use oer_hil_board::reset::{open_without_reset, reset_usb_serial_jtag};
     let mut serial = open_without_reset(port)?;
     serial.set_timeout(READ_TIMEOUT)?;
     reset_usb_serial_jtag(&mut *serial)?;
@@ -551,12 +551,16 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
     // board temperature drift.
     let journal_name = format!("{JOURNAL_PREFIX}{vendor_project}");
     for boot in 1..=arguments.boots {
-        oer_hil_runner_core::device::flash_application(
-            &root,
-            &vendor_build.application,
-            // The vendor image keeps the board's HIL bootloader.
-            None,
-            &output.join("flash-vendor"),
+        oer_hil_board::Board::flash(
+            &oer_esp32s31_hil_board::Staged { root: root.clone() },
+            &oer_hil_board::FlashImage {
+                application: vendor_build.application.clone(),
+                // The vendor image keeps the board's HIL bootloader.
+                companions: oer_hil_board::Companions::Staged {
+                    bootstrap_elf: None,
+                },
+                work: output.join("flash-vendor"),
+            },
             &port,
         )?;
         journal(&root, &journal_name, &vendor_build.application, &port)?;
@@ -630,11 +634,17 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
             continue;
         };
 
-        oer_hil_runner_core::device::flash_application(
-            &root,
-            production,
-            production_bootstrap.as_deref(),
-            &output.join("flash-production"),
+        oer_hil_board::Board::flash(
+            &oer_esp32s31_hil_board::Staged { root: root.clone() },
+            &oer_hil_board::FlashImage {
+                application: production.to_path_buf(),
+                companions: oer_hil_board::Companions::Staged {
+                    bootstrap_elf: production_bootstrap
+                        .as_deref()
+                        .map(std::path::Path::to_path_buf),
+                },
+                work: output.join("flash-production"),
+            },
             &port,
         )?;
         journal(&root, production_image, production, &port)?;

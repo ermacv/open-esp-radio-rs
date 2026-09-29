@@ -5,7 +5,7 @@ use std::path::Path;
 
 use crate::Result;
 use hil_core::{
-    device, evidence::run::Failure, evidence::run::FailureKind, evidence::run::Outcome,
+    evidence::run::Failure, evidence::run::FailureKind, evidence::run::Outcome,
     evidence::run::PlannedFirmware, evidence::run::RunSession, evidence::verify::ArchivedFirmware,
     image::Artifacts, image::CurrentBuild, image::ImageClass, lab::config::LabConfig,
 };
@@ -117,7 +117,8 @@ pub(crate) fn flash_archived_artifacts(
     session: &mut RunSession,
 ) -> Result<Option<Failure>> {
     let failure = flash_archived_build(class, artifacts, session, |artifacts| {
-        device::flash(root, artifacts, &lab.dut.serial)
+        crate::board::for_chip(root, &artifacts.chip)?
+            .flash(&crate::board::built(artifacts), &lab.dut.serial)
     })?;
     if failure.is_none() {
         let repository = session.repository();
@@ -146,7 +147,16 @@ pub(crate) fn reflash_replayed(
         Some(archived.image),
         None,
     )?;
-    if let Err(error) = device::flash_archived(root, archived, &lab.dut.serial) {
+    if let Err(error) = crate::board::archived(
+        root,
+        &archived.target,
+        &archived.application_path,
+        &archived.run_id,
+        archived.image,
+    )
+    .and_then(|image| {
+        crate::board::for_chip(root, &archived.target)?.flash(&image, &lab.dut.serial)
+    }) {
         oer_process::check_cancelled()?;
         session.record_event(
             RunEventKind::ImageFlashFailed,
@@ -240,14 +250,9 @@ fn prepare_replayed_image(
     let run_id = session.id().to_owned();
     let mut flashed = None;
     let failure = import_and_flash_replay(archived, session, |application| {
-        device::flash_replayed(
-            root,
-            &archived.target,
-            application,
-            &run_id,
-            archived.image,
-            &lab.dut.serial,
-        )?;
+        let image =
+            crate::board::archived(root, &archived.target, application, &run_id, archived.image)?;
+        crate::board::for_chip(root, &archived.target)?.flash(&image, &lab.dut.serial)?;
         flashed = Some(application.to_owned());
         Ok(())
     })?;

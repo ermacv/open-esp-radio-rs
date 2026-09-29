@@ -6,6 +6,8 @@
   "dependencies": {
     "common": [
       "oer-hil-runner-core",
+      "oer-hil-board",
+      "oer-esp32s31-hil-board",
       "rustix",
       "oer-process",
       "oer-command-tree",

@@ -2590,6 +2590,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-esp32s31-hil-board"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-firmware",
+ "oer-hil-board",
+]
+
+[[package]]
 name = "oer-esp32s31-hil-calibration-artifact"
 version = "0.1.0"
 dependencies = [
@@ -2871,8 +2879,10 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "oer-esp32s31-firmware",
+ "oer-esp32s31-hil-board",
  "oer-esp32s31-hil-calibration-artifact",
  "oer-esp32s31-phy",
+ "oer-hil-board",
  "oer-hil-protocol",
  "oer-hil-runner-core",
  "oer-register-model",
@@ -2964,6 +2974,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-hil-board"
+version = "0.1.0"
+dependencies = [
+ "oer-chip-profile",
+ "oer-hil-arbiter",
+ "oer-process",
+ "serialport",
+]
+
+[[package]]
 name = "oer-hil-fixture"
 version = "0.1.0"
 dependencies = [
@@ -3030,6 +3050,8 @@ dependencies = [
  "clap",
  "libc",
  "oer-command-tree",
+ "oer-esp32s31-hil-board",
+ "oer-hil-board",
  "oer-hil-fixture-install",
  "oer-hil-protocol",
  "oer-hil-runner-bluetooth",
@@ -3082,6 +3104,7 @@ dependencies = [
  "oer-esp32s31-firmware",
  "oer-esp32s31-platform-layout",
  "oer-hil-arbiter",
+ "oer-hil-board",
  "oer-hil-fixture",
  "oer-hil-fixture-install",
  "oer-hil-image-keys",
@@ -3191,6 +3214,9 @@ dependencies = [
 name = "oer-hil-trace"
 version = "0.1.0"
 dependencies = [
+ "oer-ieee80211-trace",
+ "oer-ieee802154-trace",
+ "oer-phy-trace",
  "oer-trace",
 ]
 
@@ -3524,6 +3550,7 @@ dependencies = [
  "oer-command-tree",
  "oer-esp32s31-firmware",
  "oer-hil-arbiter",
+ "oer-hil-board",
  "oer-hil-runner-core",
  "oer-hil-schema",
  "oer-memory-report",

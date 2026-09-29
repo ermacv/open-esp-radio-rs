@@ -1,0 +1,21 @@
+[package]
+name = "oer-esp32s31-hil-board"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "The esp32s31's HIL board support: the staged boot flow and the calibration slots"
+
+[dependencies]
+oer-esp32s31-firmware = { path = "../../../../tools/firmware" }
+oer-hil-board = { path = ".." }
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "hil"
+platform = "host"

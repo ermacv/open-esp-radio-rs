@@ -271,7 +271,7 @@ fn decode_trace(
             record.tag,
             oer_trace::Described {
                 record,
-                sets: TRACE_EVENT_SETS,
+                sets: oer_hil_trace::EVENT_SETS,
             }
         ));
     }
@@ -284,10 +284,9 @@ fn describe_snapshot(
     header: &oer_hil_protocol::telemetry::TraceSnapshotPage,
     words: &[u32],
 ) -> String {
-    let decoded = (header.point == oer_phy_trace::PhySnapshot::POINT.raw() && !header.truncated)
-        .then(|| oer_phy_trace::PhySnapshot::decode(words))
-        .flatten()
-        .map(|snapshot| snapshot.to_string());
+    let decoded = (!header.truncated)
+        .then(|| oer_hil_trace::describe_snapshot(header.point, words))
+        .flatten();
     format!(
         "{:>12} us  tag {:>5}  snapshot {}: {}\n",
         header.t_us,
@@ -300,15 +299,6 @@ fn describe_snapshot(
         ))
     )
 }
-
-/// The event sets a drained trace is described with; an event of another
-/// domain is shown as its domain, id and words.
-const TRACE_EVENT_SETS: &[oer_trace::Describer] = &[
-    <oer_hil_trace::PlatformTrace as oer_trace::EventSet>::describe,
-    <oer_ieee80211_trace::StationTrace as oer_trace::EventSet>::describe,
-    <oer_phy_trace::PhyTrace as oer_trace::EventSet>::describe,
-    <oer_ieee802154_trace::Ieee802154Trace as oer_trace::EventSet>::describe,
-];
 
 /// A trace kind's name: the platform's own, else its domain and event id.
 fn event_name(kind: u16) -> String {
@@ -720,7 +710,7 @@ mod tests {
         };
         let described = oer_trace::Described {
             record: &exit,
-            sets: TRACE_EVENT_SETS,
+            sets: oer_hil_trace::EVENT_SETS,
         }
         .to_string();
         assert!(!described.starts_with("ieee80211."), "{described}");
@@ -738,7 +728,7 @@ mod tests {
         assert_eq!(
             oer_trace::Described {
                 record: &record,
-                sets: TRACE_EVENT_SETS,
+                sets: oer_hil_trace::EVENT_SETS,
             }
             .to_string(),
             change.to_string()

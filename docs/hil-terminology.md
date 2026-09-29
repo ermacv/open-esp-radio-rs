@@ -99,7 +99,7 @@ table; the verdict depends on no stand operation.
 | --- | --- | --- |
 | Wire contract | Messages, keys, framing; the platform trace events; which keys an image built with given features serves | `oer-hil-protocol`, `oer-hil-trace`, `oer-hil-image-keys` |
 | HIL agent | How a board serves the protocol | `oer-hil-target-core` and the chip runtimes under `hil/targets/` |
-| Board support | How one chip is flashed, reset, observed and examined after a failure | `oer-hil-runner-core` (`device`, `post_mortem`) |
+| Board support | How one chip is flashed, reset, observed and examined after a failure | `oer-hil-board` (the port, the ESP-IDF bootloader flow, resets), `oer-esp32s31-hil-board` (the staged flow, calibration slots), `oer-hil-runner-core` (`post_mortem`) |
 | Stand | Who holds which board, fixture and air; recovery and quarantine | `oer-hil-arbiter`, `oer-hil-runner-core` (`lab`, `recovery`) and `cargo hil` |
 | Fixtures | Preparation and restoration of host equipment; privileged installation | `oer-hil-fixture`, `oer-hil-fixture-install` and each family's fixture module |
 | Image builder | Which bytes an image class produces and from which sources | `oer-hil-runner-core` (`image`) and `tools/firmware` |

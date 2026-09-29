@@ -1,0 +1,23 @@
+[package]
+name = "oer-hil-board"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "HIL board support: how the stand flashes, starts and resets a chip"
+
+[dependencies]
+oer-chip-profile = { path = "../../../tools/chip-profile" }
+oer-hil-arbiter = { path = "../arbiter" }
+oer-process = { path = "../../../tools/process" }
+serialport = { version = "4.8.1", default-features = false }
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "hil"
+platform = "host"

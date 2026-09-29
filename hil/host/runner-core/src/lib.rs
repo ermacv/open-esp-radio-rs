@@ -8,7 +8,6 @@
 
 pub mod campaign;
 pub mod context;
-pub mod device;
 pub mod durable;
 pub mod error;
 pub mod evidence;

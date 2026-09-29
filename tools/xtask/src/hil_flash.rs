@@ -190,7 +190,7 @@ pub fn run(
         // After the ROM download mode an esp32c5 needs a power-on reset
         // before an RTS reset starts it with a working console.
         None => {
-            oer_hil_runner_core::session::reset::power_on_reset(&board.port)?;
+            oer_hil_board::reset::power_on_reset(&board.port)?;
             reset_into_application(&board.port)?
         }
     };
@@ -218,7 +218,7 @@ fn espflash() -> OsString {
 }
 
 /// The stand's board-port openers, re-exported for the stand commands.
-pub(crate) use oer_hil_runner_core::session::reset::{open_without_reset, reset_into_application};
+pub(crate) use oer_hil_board::reset::{open_without_reset, reset_into_application};
 
 /// The lines `serial` receives, until the receiver is dropped.
 pub(crate) fn serial_lines(mut serial: Box<dyn serialport::SerialPort>) -> mpsc::Receiver<Vec<u8>> {

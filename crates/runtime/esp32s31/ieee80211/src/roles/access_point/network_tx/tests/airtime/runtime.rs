@@ -307,6 +307,7 @@ fn run(case: Case) {
                     .active_mut()
                     .push(
                         [4; 6],
+                        frame.queued_at_micros(),
                         frame,
                         ApAggregateFrame {
                             encoded: EncodedApFrame {

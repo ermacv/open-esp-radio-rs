@@ -30,4 +30,8 @@ impl<M: RawMutex> oer_ieee80211_datapath::SoftwareTxFrame for OwnedNetworkTxFram
     fn ethernet(&self) -> &[u8] {
         OwnedNetworkTxFrame::ethernet(self)
     }
+
+    fn queued_at_micros(&self) -> u64 {
+        OwnedNetworkTxFrame::queued_at_micros(self)
+    }
 }

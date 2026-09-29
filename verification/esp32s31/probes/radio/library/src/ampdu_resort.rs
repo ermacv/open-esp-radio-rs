@@ -245,7 +245,7 @@ oer_probe_macros::probe! {
                     unsafe { core::slice::from_raw_parts(frames.add(index * MPDU_BYTES), MPDU_BYTES) };
                 bytes[TX_AMPDU_METADATA_SIZE..].copy_from_slice(source);
             });
-            let request = HtAmpduFrameRequest::new(layout, 0, rate);
+            let request = HtAmpduFrameRequest::new(layout, 0, rate, COMMITTED_MICROS);
             if owner.commit_ht(cookie, pool.claim_radio(slot), request).is_err() {
                 return COMMIT_FAILED;
             }
@@ -289,7 +289,7 @@ oer_probe_macros::probe! {
             retain_single_mpdu: retain_single != 0,
         };
         let Ok(mut retry) =
-            AmpduRetryState::<SLOTS>::new(first, count as u8, policy, COMMITTED_MICROS)
+            AmpduRetryState::<SLOTS>::new(first, count as u8, policy)
         else {
             return INVALID_INPUT;
         };
@@ -423,7 +423,7 @@ oer_probe_macros::probe! {
                 };
                 bytes[TX_AMPDU_METADATA_SIZE..].copy_from_slice(source);
             });
-            let request = HtAmpduFrameRequest::new(layout, 0, rate);
+            let request = HtAmpduFrameRequest::new(layout, 0, rate, COMMITTED_MICROS);
             if owner.commit_ht(cookie, pool.claim_radio(slot), request).is_err() {
                 return COMMIT_FAILED;
             }
@@ -449,7 +449,7 @@ oer_probe_macros::probe! {
             lifetime_micros,
             retain_single_mpdu: false,
         };
-        let Ok(retry) = AmpduRetryState::<SLOTS>::new(first, count as u8, policy, COMMITTED_MICROS)
+        let Ok(retry) = AmpduRetryState::<SLOTS>::new(first, count as u8, policy)
         else {
             return INVALID_INPUT;
         };

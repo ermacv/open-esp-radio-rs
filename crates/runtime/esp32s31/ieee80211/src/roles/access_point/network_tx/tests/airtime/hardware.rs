@@ -143,9 +143,18 @@ impl WifiTxPowerProfile for Power {
     }
 }
 
-#[derive(Default)]
 pub(super) struct Timer {
     pub(super) now: u64,
+}
+
+impl Default for Timer {
+    /// Starts on the clock that stamps TX frames on their radio-queue entry,
+    /// so MSDU lifetimes are measured from the same origin as in production.
+    fn default() -> Self {
+        Self {
+            now: embassy_time::Instant::now().as_micros(),
+        }
+    }
 }
 
 impl WifiTxTimer for Timer {

@@ -24,6 +24,7 @@ use embassy_sync::blocking_mutex::{
     raw::{CriticalSectionRawMutex, RawMutex},
 };
 
+use oer_ieee80211_datapath::TxFrameTag;
 use oer_memory::TaggedStableDmaBacking;
 
 use oer_esp32s31_ieee80211_mac::{
@@ -296,15 +297,13 @@ pub const fn sta_ap_vif(interface: NetworkInterfaceId) -> Option<StaApVif> {
 /// Unknown tags retain their exact lease and must be rejected explicitly by
 /// the composition root; no role encoder may guess from Ethernet contents.
 pub enum StaApTxDispatch<B> {
-    Station(TaggedStableDmaBacking<NetworkInterfaceId, B>),
-    AccessPoint(TaggedStableDmaBacking<NetworkInterfaceId, B>),
-    Unknown(TaggedStableDmaBacking<NetworkInterfaceId, B>),
+    Station(TaggedStableDmaBacking<TxFrameTag, B>),
+    AccessPoint(TaggedStableDmaBacking<TxFrameTag, B>),
+    Unknown(TaggedStableDmaBacking<TxFrameTag, B>),
 }
 
-pub fn dispatch_sta_ap_tx<B>(
-    frame: TaggedStableDmaBacking<NetworkInterfaceId, B>,
-) -> StaApTxDispatch<B> {
-    match sta_ap_vif(*frame.tag()) {
+pub fn dispatch_sta_ap_tx<B>(frame: TaggedStableDmaBacking<TxFrameTag, B>) -> StaApTxDispatch<B> {
+    match sta_ap_vif(frame.tag().interface()) {
         Some(StaApVif::Station) => StaApTxDispatch::Station(frame),
         Some(StaApVif::AccessPoint) => StaApTxDispatch::AccessPoint(frame),
         None => StaApTxDispatch::Unknown(frame),

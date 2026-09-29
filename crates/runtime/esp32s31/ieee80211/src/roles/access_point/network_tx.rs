@@ -600,7 +600,7 @@ where
                     )
                     .map_err(AccessPointDatapathError::Aggregate)?;
                 active
-                    .push(peer, frame, first_encoded)
+                    .push(peer, frame.queued_at_micros(), frame, first_encoded)
                     .map_err(AccessPointDatapathError::Aggregate)?;
 
                 let second_offset = second.ethernet_offset();
@@ -616,7 +616,7 @@ where
                         AccessPointDatapathError::Control(AccessPointControlError::from(error))
                     })?;
                 active
-                    .push(peer, second, second_encoded)
+                    .push(peer, second.queued_at_micros(), second, second_encoded)
                     .map_err(AccessPointDatapathError::Aggregate)?;
 
                 let target = usize::from(policy.frame_limit());
@@ -657,7 +657,7 @@ where
                             AccessPointDatapathError::Control(AccessPointControlError::from(error))
                         })?;
                     active
-                        .push(peer, next, encoded)
+                        .push(peer, next.queued_at_micros(), next, encoded)
                         .map_err(AccessPointDatapathError::Aggregate)?;
                     admitted += 1;
                 }

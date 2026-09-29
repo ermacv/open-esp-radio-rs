@@ -21,7 +21,7 @@ use oer_memory::{
 
 use super::tx_performance::{TX_PERFORMANCE, TxPerformanceSample};
 use oer_ieee80211_datapath::MaterializationOwnershipSnapshot;
-use oer_ieee80211_datapath::SoftwareTxFrame;
+use oer_ieee80211_datapath::{SoftwareTxFrame, TxFrameTag};
 use oer_network_interface::NetworkInterfaceId;
 
 /// Permanently located storage for DMA-visible TX frames.
@@ -211,6 +211,7 @@ impl<
         let promotion_started = TxPerformanceSample::read();
         let credit_acquired = promotion_started;
         let length = frame.ethernet().len();
+        let tag = TxFrameTag::new(self.interface, frame.queued_at_micros());
         let lease = self.physical.pool.claim_network(index);
         let destination_claimed = TxPerformanceSample::read();
         let publication_started = TxPerformanceSample::read();
@@ -226,7 +227,7 @@ impl<
         drop(frame);
         let source_released = TxPerformanceSample::read();
         let promoted = TaggedStableDmaBacking::new(
-            self.interface,
+            tag,
             ReturningStableDmaBacking::new(
                 self.physical.pool.claim_radio(index),
                 PinnedTxReturn {
@@ -370,6 +371,6 @@ pub type PinnedTxFrame<
     const TRAILER: usize,
     const QUEUE_DEPTH: usize,
 > = TaggedStableDmaBacking<
-    NetworkInterfaceId,
+    TxFrameTag,
     PinnedTxBacking<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
 >;

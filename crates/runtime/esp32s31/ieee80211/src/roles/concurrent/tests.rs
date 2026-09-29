@@ -1,6 +1,7 @@
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use super::*;
+use oer_ieee80211_datapath::TxFrameTag;
 
 const UPLINK: [u8; 6] = [0x02, 0, 0, 0, 0, 2];
 const PEER: [u8; 6] = [0x02, 0, 0, 0, 0, 4];
@@ -54,9 +55,11 @@ fn shared_rx_block_ack_owner_allocates_distinct_station_and_ap_banks() {
 
 #[test]
 fn shared_tx_dispatch_retains_the_exact_owner_for_every_tag() {
-    let station = TaggedStableDmaBacking::new(STA_NETWORK_INTERFACE_ID, 11_u8);
-    let access_point = TaggedStableDmaBacking::new(AP_NETWORK_INTERFACE_ID, 22_u8);
-    let unknown = TaggedStableDmaBacking::new(NetworkInterfaceId::new(9), 33_u8);
+    let station = TaggedStableDmaBacking::new(TxFrameTag::new(STA_NETWORK_INTERFACE_ID, 0), 11_u8);
+    let access_point =
+        TaggedStableDmaBacking::new(TxFrameTag::new(AP_NETWORK_INTERFACE_ID, 0), 22_u8);
+    let unknown =
+        TaggedStableDmaBacking::new(TxFrameTag::new(NetworkInterfaceId::new(9), 0), 33_u8);
 
     assert!(matches!(
         dispatch_sta_ap_tx(station),
@@ -69,6 +72,6 @@ fn shared_tx_dispatch_retains_the_exact_owner_for_every_tag() {
     let StaApTxDispatch::Unknown(owner) = dispatch_sta_ap_tx(unknown) else {
         panic!("unknown interface must fail closed")
     };
-    assert_eq!(*owner.tag(), NetworkInterfaceId::new(9));
+    assert_eq!(owner.tag().interface(), NetworkInterfaceId::new(9));
     assert_eq!(*owner, 33);
 }

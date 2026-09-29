@@ -81,7 +81,7 @@ fn radio_consumes_only_requested_payload_and_keeps_physical_credit_until_complet
         enqueue(&mut engine, radio_key(), marker, &returned);
     }
     let batch = allocator
-        .try_reserve::<3>(radio_key().interface(), 3)
+        .try_reserve::<3>(radio_key().interface(), 3, 0)
         .unwrap();
     let source = SelectedTxSource::new(&mut engine, selection(3, 4800), batch);
     assert_eq!(source.pending_frames(), 3);
@@ -109,7 +109,7 @@ fn dropping_an_unpolled_selection_keeps_every_source_owner() {
     let mut engine = engine();
     enqueue(&mut engine, radio_key(), 1, &returned);
     let batch = allocator
-        .try_reserve::<1>(radio_key().interface(), 1)
+        .try_reserve::<1>(radio_key().interface(), 1, 0)
         .unwrap();
     drop(SelectedTxSource::new(
         &mut engine,
@@ -137,7 +137,7 @@ fn byte_frame_and_destination_limits_leave_the_tail_with_its_original_owner() {
             enqueue(&mut engine, radio_key(), marker, &returned);
         }
         let batch = allocator
-            .try_reserve::<1>(radio_key().interface(), 1)
+            .try_reserve::<1>(radio_key().interface(), 1, 0)
             .unwrap();
         let source = SelectedTxSource::new(&mut engine, selection(frames, bytes), batch);
         let frame = source.try_take_physical().unwrap();
@@ -163,7 +163,7 @@ fn writer_error_retains_payload_and_is_reported_without_repeated_retries() {
     let length = enqueue(&mut engine, radio_key(), 2, &returned);
     length.set(3);
     let batch = allocator
-        .try_reserve::<3>(radio_key().interface(), 3)
+        .try_reserve::<3>(radio_key().interface(), 3, 0)
         .unwrap();
     let source = SelectedTxSource::new(&mut engine, selection(3, 4800), batch);
     drop(source.try_take_physical().unwrap());
@@ -196,7 +196,7 @@ fn different_radio_epoch_is_never_consumed_by_this_selection() {
     );
     enqueue(&mut engine, other_epoch, 7, &returned);
     enqueue(&mut engine, key, 1, &returned);
-    let batch = allocator.try_reserve::<3>(key.interface(), 3).unwrap();
+    let batch = allocator.try_reserve::<3>(key.interface(), 3, 0).unwrap();
     let source = SelectedTxSource::new(&mut engine, selection(3, 4800), batch);
     assert_eq!(source.pending_frames(), 1);
     let frame = source.try_take_physical().unwrap();
@@ -221,7 +221,7 @@ fn oversized_frame_keeps_both_payload_and_reserved_credit_unconsumed() {
     let mut engine = engine();
     enqueue(&mut engine, radio_key(), 1, &returned);
     let batch = allocator
-        .try_reserve::<1>(radio_key().interface(), 1)
+        .try_reserve::<1>(radio_key().interface(), 1, 0)
         .unwrap();
     let source = SelectedTxSource::new(&mut engine, selection(1, 1600), batch);
     assert!(source.try_take_physical().is_none());
@@ -244,7 +244,7 @@ fn probing_an_empty_batch_before_selection_does_not_hide_newly_published_frames(
     let mut engine = engine();
     enqueue(&mut engine, radio_key(), 1, &returned);
     let batch = allocator
-        .try_reserve::<1>(radio_key().interface(), 1)
+        .try_reserve::<1>(radio_key().interface(), 1, 0)
         .unwrap();
     assert!(batch.try_take_physical().is_none());
     let source = SelectedTxSource::new(&mut engine, selection(1, 1600), batch);

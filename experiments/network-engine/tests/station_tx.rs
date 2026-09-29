@@ -215,7 +215,7 @@ fn native_udp_selection_retries_partial_block_ack_and_returns_terminal_credits()
     let resources = PinnedBatchResources::<TEST_QUEUE_DEPTH>::new();
     let allocator = resources.bind(pool);
     let batch = allocator
-        .try_reserve::<TEST_QUEUE_DEPTH>(NetworkInterfaceId::new(0), TEST_QUEUE_DEPTH)
+        .try_reserve::<TEST_QUEUE_DEPTH>(NetworkInterfaceId::new(0), TEST_QUEUE_DEPTH, 0)
         .unwrap();
     let source = NativeSource {
         selected: SelectedTxSource::new(&mut engine, selected, batch),
@@ -330,7 +330,7 @@ fn native_udp_selection_retries_partial_block_ack_and_returns_terminal_credits()
         .unwrap_or_else(|_| panic!("completed native TX detaches"));
     assert!(
         allocator
-            .try_reserve::<TEST_QUEUE_DEPTH>(NetworkInterfaceId::new(0), TEST_QUEUE_DEPTH)
+            .try_reserve::<TEST_QUEUE_DEPTH>(NetworkInterfaceId::new(0), TEST_QUEUE_DEPTH, 0)
             .is_some()
     );
 }
@@ -344,7 +344,7 @@ fn native_udp_ordinary_fallback_retains_unrequested_payloads_and_backlog() {
     let resources = PinnedBatchResources::<TEST_QUEUE_DEPTH>::new();
     let allocator = resources.bind(pool);
     let batch = allocator
-        .try_reserve::<TEST_QUEUE_DEPTH>(NetworkInterfaceId::new(0), TEST_QUEUE_DEPTH)
+        .try_reserve::<TEST_QUEUE_DEPTH>(NetworkInterfaceId::new(0), TEST_QUEUE_DEPTH, 0)
         .unwrap();
     let source = SelectedTxSource::new(&mut engine, selected, batch);
     let first = source.try_take_physical().unwrap();
@@ -402,7 +402,7 @@ fn native_udp_ordinary_fallback_retains_unrequested_payloads_and_backlog() {
     assert_eq!(engine.queued_work(), 2);
     assert_eq!(drop_counts(&drops), [1, 0, 0]);
     let batch = allocator
-        .try_reserve::<TEST_QUEUE_DEPTH>(NetworkInterfaceId::new(0), TEST_QUEUE_DEPTH)
+        .try_reserve::<TEST_QUEUE_DEPTH>(NetworkInterfaceId::new(0), TEST_QUEUE_DEPTH, 0)
         .unwrap();
     let source = SelectedTxSource::new(&mut engine, selected, batch);
     let next = source.try_take_physical().unwrap();
@@ -428,7 +428,7 @@ fn research_sram_batch_uses_station_encode_retry_and_terminal_credit_return() {
     let resources = PinnedBatchResources::<TEST_QUEUE_DEPTH>::new();
     let allocator = resources.bind(pool);
     let mut batch = allocator
-        .try_reserve::<TEST_QUEUE_DEPTH>(NetworkInterfaceId::new(0), TEST_QUEUE_DEPTH)
+        .try_reserve::<TEST_QUEUE_DEPTH>(NetworkInterfaceId::new(0), TEST_QUEUE_DEPTH, 0)
         .unwrap();
     for marker in 1..=TEST_QUEUE_DEPTH as u8 {
         batch
@@ -506,7 +506,7 @@ fn research_sram_batch_uses_station_encode_retry_and_terminal_credit_return() {
     assert_eq!(allocator.free_credits(), TEST_QUEUE_DEPTH);
     assert!(
         allocator
-            .try_reserve::<TEST_QUEUE_DEPTH>(NetworkInterfaceId::new(0), TEST_QUEUE_DEPTH)
+            .try_reserve::<TEST_QUEUE_DEPTH>(NetworkInterfaceId::new(0), TEST_QUEUE_DEPTH, 0)
             .is_some()
     );
 }

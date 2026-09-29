@@ -367,7 +367,7 @@ where
             aggregate
                 .standby_mut()
                 .expect("checked standby arena")
-                .push(peer, frame, encoded)
+                .push(peer, frame.queued_at_micros(), frame, encoded)
                 .map_err(AccessPointDatapathError::Aggregate)?;
         }
         let frame_limit;
@@ -476,7 +476,7 @@ where
                 aggregate
                     .standby_mut()
                     .expect("checked standby arena")
-                    .push(peer, frame, encoded)
+                    .push(peer, frame.queued_at_micros(), frame, encoded)
                     .map_err(AccessPointDatapathError::Aggregate)?;
                 let batch = self
                     .prepared_standby
@@ -595,7 +595,7 @@ where
                 preparation_micros: 0,
             });
             standby
-                .push(peer, first, first_encoded)
+                .push(peer, first.queued_at_micros(), first, first_encoded)
                 .map_err(AccessPointDatapathError::Aggregate)?;
             let offset = frame.ethernet_offset();
             let length = frame.ethernet_length();
@@ -614,7 +614,7 @@ where
             aggregate
                 .standby_mut()
                 .expect("checked standby arena")
-                .push(peer, frame, encoded)
+                .push(peer, frame.queued_at_micros(), frame, encoded)
                 .map_err(AccessPointDatapathError::Aggregate)?;
             let batch = self
                 .prepared_standby

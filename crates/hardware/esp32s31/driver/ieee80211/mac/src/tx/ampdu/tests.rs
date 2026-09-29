@@ -205,6 +205,7 @@ fn ht_frame_request(
         frame_layout(dma_offset, mpdu_length, hardware_mic_length),
         empty_delimiters,
         rate,
+        0,
     )
 }
 
@@ -436,7 +437,6 @@ fn retained_dma_owner_preserves_backing_identity_through_selective_retry() {
             lifetime_micros: crate::tx::runtime::VENDOR_AMPDU_MSDU_LIFETIME_MICROS,
             retain_single_mpdu: true,
         },
-        0,
     )
     .unwrap();
     let mut hardware = DetachingCompletionHardware::with_bitmap(0b0101);
@@ -575,7 +575,7 @@ fn referenced_commit_uses_the_retained_allocation_without_copying_payload() {
     let cookie = storage.as_mut().begin().unwrap();
     storage
         .as_mut()
-        .commit_referenced_frame(cookie, &mut external, frame_layout(0, 100, 8), 0)
+        .commit_referenced_frame(cookie, &mut external, frame_layout(0, 100, 8), 0, 0)
         .unwrap();
 
     assert_eq!(
@@ -625,6 +625,7 @@ fn referenced_he_commit_uses_external_capacity_with_descriptor_only_storage() {
                         HtAmpduDensity::SixteenMicroseconds,
                         HeEdcaTxopLimit::DEFAULT,
                     ),
+                    0,
                 ),
             )
             .unwrap();

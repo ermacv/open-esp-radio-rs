@@ -3,7 +3,7 @@
 use core::{cell::Cell, pin::Pin};
 
 use crate::{BatchWriteError, ReservedTxBatch};
-use oer_ieee80211_datapath::PhysicalTxSource;
+use oer_ieee80211_datapath::{PhysicalTxSource, TxFrameTag};
 use oer_memory::{
     AffineSpscQueue, AffineSpscReceiver, AffineSpscSender, DmaIndexReturn, PinnedDmaTxPool,
     PinnedDmaTxRadioLease, ReturningStableDmaBacking, TaggedStableDmaBacking,
@@ -73,10 +73,14 @@ impl<
     }
 
     /// Reserves a complete physical prefix before network work is consumed.
+    ///
+    /// Frames constructed into the batch enter the radio's TX queue at
+    /// `queued_at_micros`, the origin of their MSDU lifetime.
     pub fn try_reserve<const BATCH_CAPACITY: usize>(
         &self,
         interface: NetworkInterfaceId,
         count: usize,
+        queued_at_micros: u64,
     ) -> Option<
         PinnedReservedTxBatch<
             '_,
@@ -107,7 +111,7 @@ impl<
             *slot = Some(index);
         }
         Some(PinnedReservedTxBatch {
-            interface,
+            tag: TxFrameTag::new(interface, queued_at_micros),
             free_return: &self.free_return,
             pool: self.pool,
             reserved,
@@ -146,7 +150,7 @@ pub type PinnedResearchTxFrame<
     const TRAILER: usize,
     const QUEUE_DEPTH: usize,
 > = TaggedStableDmaBacking<
-    NetworkInterfaceId,
+    TxFrameTag,
     ReturningStableDmaBacking<
         PinnedDmaTxRadioLease<'static, FRAME_CAPACITY, HEADROOM, TRAILER>,
         PinnedBatchReturn<'allocator, 'resources, QUEUE_DEPTH>,
@@ -163,7 +167,7 @@ pub struct PinnedReservedTxBatch<
     const QUEUE_DEPTH: usize,
     const BATCH_CAPACITY: usize,
 > {
-    interface: NetworkInterfaceId,
+    tag: TxFrameTag,
     free_return: &'allocator AffineSpscSender<'resources, u8, QUEUE_DEPTH>,
     pool: &'static PinnedDmaTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
     reserved: [Option<u8>; BATCH_CAPACITY],
@@ -320,7 +324,7 @@ impl<
             }
         };
         self.prepared[position].set(Some(TaggedStableDmaBacking::new(
-            self.interface,
+            self.tag,
             ReturningStableDmaBacking::new(
                 self.pool.claim_radio(index),
                 PinnedBatchReturn {

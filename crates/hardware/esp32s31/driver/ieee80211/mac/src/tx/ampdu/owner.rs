@@ -292,13 +292,29 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
         self.detach_completed(hardware, cookie)?;
         let subframes = self.frame_count();
         let first_sequence = retry.current_first_sequence();
-        let decision = retry.observe(completion, subframes, now_micros, block_ack_operational)?;
+        let aged = self.aged_subframes(cookie, retry.policy(), now_micros)?;
+        let decision = retry.observe(completion, subframes, aged, block_ack_operational)?;
         Ok(Some(RetainedAmpduRetryCompletion {
             completion,
             first_sequence,
             subframes,
             decision,
         }))
+    }
+
+    /// Positions of the detached completed aggregate whose MSDU lifetime
+    /// under `policy` has expired at `now_micros`.
+    pub fn aged_subframes(
+        &self,
+        cookie: TxCookie,
+        policy: crate::tx::runtime::AmpduRetryPolicy,
+        now_micros: u64,
+    ) -> Result<u32, HtAmpduTxError> {
+        self.storage
+            .as_ref()
+            .expect("retained DMA owner keeps storage until teardown")
+            .as_ref()
+            .aged_subframes(cookie, policy, now_micros)
     }
 
     /// Borrow a detached completed MPDU from its retained stable lease.

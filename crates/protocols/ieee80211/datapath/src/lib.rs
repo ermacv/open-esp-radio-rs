@@ -21,6 +21,32 @@ mod queues;
 
 pub use queues::TxQueues;
 
+/// Tag of one physical TX frame: its logical interface and the instant it
+/// entered the radio's TX queue, which the materialization carries over from
+/// the software owner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TxFrameTag {
+    interface: NetworkInterfaceId,
+    queued_at_micros: u64,
+}
+
+impl TxFrameTag {
+    pub const fn new(interface: NetworkInterfaceId, queued_at_micros: u64) -> Self {
+        Self {
+            interface,
+            queued_at_micros,
+        }
+    }
+
+    pub const fn interface(self) -> NetworkInterfaceId {
+        self.interface
+    }
+
+    pub const fn queued_at_micros(self) -> u64 {
+        self.queued_at_micros
+    }
+}
+
 /// Two owners that must cross a materialization boundary atomically.
 pub type FramePair<Frame> = (Frame, Frame);
 
@@ -43,6 +69,10 @@ pub struct MaterializationOwnershipSnapshot {
 /// [`SelectedBurstMaterializer::PhysicalFrame`].
 pub trait SoftwareTxFrame {
     fn interface(&self) -> NetworkInterfaceId;
+
+    /// Monotonic microsecond instant at which the frame entered the radio's
+    /// TX queue: the origin of its MSDU lifetime.
+    fn queued_at_micros(&self) -> u64;
 
     fn ethernet(&self) -> &[u8];
 
@@ -81,6 +111,10 @@ pub trait MaterializedTxFrame: StableDmaBacking {
     /// backings must report their smallest capacity, not their largest one.
     const MIN_STORAGE_CAPACITY: usize;
 
+    /// Monotonic microsecond instant at which the frame entered the radio's
+    /// TX queue: the origin of its MSDU lifetime.
+    fn queued_at_micros(&self) -> u64;
+
     fn ethernet(&self) -> &[u8];
 
     fn ethernet_offset(&self) -> usize;
@@ -101,12 +135,16 @@ pub trait MaterializedTxFrame: StableDmaBacking {
 impl<R: DmaIndexReturn, const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
     MaterializedTxFrame
     for TaggedStableDmaBacking<
-        NetworkInterfaceId,
+        TxFrameTag,
         ReturningStableDmaBacking<PinnedDmaTxRadioLease<'_, FRAME_CAPACITY, HEADROOM, TRAILER>, R>,
     >
 {
     const MAX_ETHERNET_LENGTH: usize = FRAME_CAPACITY;
     const MIN_STORAGE_CAPACITY: usize = HEADROOM + FRAME_CAPACITY + TRAILER;
+
+    fn queued_at_micros(&self) -> u64 {
+        self.tag().queued_at_micros()
+    }
 
     fn ethernet(&self) -> &[u8] {
         core::ops::Deref::deref(self).ethernet()

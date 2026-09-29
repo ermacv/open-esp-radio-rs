@@ -74,15 +74,28 @@ pub struct HtAmpduFrameRequest {
     layout: AmpduFrameLayout,
     empty_delimiters: u8,
     rate: HtRate,
+    queued_at_micros: u64,
 }
 
 impl HtAmpduFrameRequest {
-    pub const fn new(layout: AmpduFrameLayout, empty_delimiters: u8, rate: HtRate) -> Self {
+    /// `queued_at_micros` is the instant the MPDU's MSDU entered the radio's
+    /// TX queue, the origin of its lifetime; for an A-MSDU, its first MSDU's.
+    pub const fn new(
+        layout: AmpduFrameLayout,
+        empty_delimiters: u8,
+        rate: HtRate,
+        queued_at_micros: u64,
+    ) -> Self {
         Self {
             layout,
             empty_delimiters,
             rate,
+            queued_at_micros,
         }
+    }
+
+    pub const fn queued_at_micros(self) -> u64 {
+        self.queued_at_micros
     }
 
     pub const fn layout(self) -> AmpduFrameLayout {
@@ -133,11 +146,25 @@ impl HeAmpduPolicy {
 pub struct HeAmpduFrameRequest {
     layout: AmpduFrameLayout,
     policy: HeAmpduPolicy,
+    queued_at_micros: u64,
 }
 
 impl HeAmpduFrameRequest {
-    pub const fn new(layout: AmpduFrameLayout, policy: HeAmpduPolicy) -> Self {
-        Self { layout, policy }
+    /// `queued_at_micros` is as for [`HtAmpduFrameRequest::new`].
+    pub const fn new(
+        layout: AmpduFrameLayout,
+        policy: HeAmpduPolicy,
+        queued_at_micros: u64,
+    ) -> Self {
+        Self {
+            layout,
+            policy,
+            queued_at_micros,
+        }
+    }
+
+    pub const fn queued_at_micros(self) -> u64 {
+        self.queued_at_micros
     }
 
     pub const fn layout(self) -> AmpduFrameLayout {

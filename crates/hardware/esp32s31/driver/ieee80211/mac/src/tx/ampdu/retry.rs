@@ -200,6 +200,31 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         }
     }
 
+    /// Positions of the detached completed aggregate whose MSDU lifetime
+    /// under `policy` has expired at `now_micros`.
+    pub fn aged_subframes(
+        self: Pin<&Self>,
+        cookie: TxCookie,
+        policy: crate::tx::runtime::AmpduRetryPolicy,
+        now_micros: u64,
+    ) -> Result<u32, HtAmpduTxError> {
+        let storage = self.get_ref();
+        if storage.state != TxSlotState::Completed || storage.active != cookie || !storage.detached
+        {
+            return Err(HtAmpduTxError::Stale);
+        }
+        let mut aged = 0_u32;
+        for (index, queued_at) in storage.queued_at_micros[..usize::from(storage.count)]
+            .iter()
+            .enumerate()
+        {
+            if policy.aged(*queued_at, now_micros) {
+                aged |= 1_u32 << index;
+            }
+        }
+        Ok(aged)
+    }
+
     pub(super) fn compact_retry_metadata(
         mut self: Pin<&mut Self>,
         locations: [Option<RetryFrameLocation>; SLOTS],
@@ -217,6 +242,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
                 storage.hardware_he_control[destination] = storage.hardware_he_control[source];
                 storage.empty_delimiters[destination] = storage.empty_delimiters[source];
                 storage.descriptor_capacities[destination] = storage.descriptor_capacities[source];
+                storage.queued_at_micros[destination] = storage.queued_at_micros[source];
             }
             destination += 1;
         }

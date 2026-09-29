@@ -256,6 +256,9 @@ pub struct HtAmpduTxStorage<const SLOTS: usize, const BUFFER_SIZE: usize> {
     hardware_he_control: [bool; SLOTS],
     empty_delimiters: [u8; SLOTS],
     descriptor_capacities: [u16; SLOTS],
+    /// Low 32 bits of the microsecond instant each MPDU's MSDU entered the
+    /// radio's TX queue: the origin of its lifetime.
+    queued_at_micros: [u32; SLOTS],
     state: TxSlotState,
     generation_cursor: u32,
     active: TxCookie,
@@ -292,6 +295,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             hardware_he_control: [false; SLOTS],
             empty_delimiters: [0; SLOTS],
             descriptor_capacities: [0; SLOTS],
+            queued_at_micros: [0; SLOTS],
             state: TxSlotState::Free,
             generation_cursor: 0,
             active: TxCookie(0),

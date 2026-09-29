@@ -60,7 +60,7 @@ fn research_engine_constructs_directly_in_the_pinned_sram_batch() {
         .unwrap();
     let mut demands = Vec::<EgressDemand>::new();
     engine.visit_demands(|demand| demands.push(demand));
-    let mut batch = allocator.try_reserve::<2>(config.interface, 2).unwrap();
+    let mut batch = allocator.try_reserve::<2>(config.interface, 2, 0).unwrap();
     let outcome = engine
         .fill_selected(
             EgressSelection {
@@ -92,7 +92,7 @@ fn physical_source_tracks_partial_build_and_returns_unconsumed_frames() {
     let resources = PinnedBatchResources::<3>::new();
     let allocator = resources.bind(pool);
     let mut batch = allocator
-        .try_reserve::<3>(NetworkInterfaceId::new(1), 3)
+        .try_reserve::<3>(NetworkInterfaceId::new(1), 3, 0)
         .unwrap();
     assert!(batch.try_take_physical().is_none());
     batch
@@ -135,11 +135,11 @@ fn failed_whole_batch_reservation_restores_every_credit() {
     let resources = PinnedBatchResources::<3>::new();
     let allocator = resources.bind(pool);
     let first = allocator
-        .try_reserve::<2>(NetworkInterfaceId::new(1), 2)
+        .try_reserve::<2>(NetworkInterfaceId::new(1), 2, 0)
         .unwrap();
     assert!(
         allocator
-            .try_reserve::<2>(NetworkInterfaceId::new(1), 2)
+            .try_reserve::<2>(NetworkInterfaceId::new(1), 2, 0)
             .is_none()
     );
     assert_eq!(allocator.free_credits(), 1);
@@ -187,7 +187,7 @@ fn oversized_payload_preserves_source_and_physical_reservation() {
             &payload,
         )
         .unwrap();
-    let mut batch = allocator.try_reserve::<2>(config.interface, 2).unwrap();
+    let mut batch = allocator.try_reserve::<2>(config.interface, 2, 0).unwrap();
     let outcome = engine
         .fill_selected(
             EgressSelection {

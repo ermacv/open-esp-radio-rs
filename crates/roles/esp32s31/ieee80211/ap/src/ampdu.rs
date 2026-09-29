@@ -359,6 +359,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
     pub fn push(
         &mut self,
         peer: [u8; 6],
+        queued_at_micros: u64,
         backing: B,
         frame: ApAggregateFrame,
     ) -> Result<(), ApAmpduError> {
@@ -395,8 +396,11 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             ),
         )
         .ok_or(ApAmpduError::Geometry)?;
-        self.inner
-            .commit_ht(*cookie, backing, HtAmpduFrameRequest::new(layout, 0, *rate))?;
+        self.inner.commit_ht(
+            *cookie,
+            backing,
+            HtAmpduFrameRequest::new(layout, 0, *rate, queued_at_micros),
+        )?;
         *next_sequence = next_sequence.next();
         Ok(())
     }
@@ -466,7 +470,6 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
                     lifetime_micros: VENDOR_AMPDU_MSDU_LIFETIME_MICROS,
                     retain_single_mpdu: true,
                 },
-                ordinary.now_micros(),
             )?,
         };
         Ok(prepared)
@@ -576,11 +579,10 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         };
         let first_sequence = retry.current_first_sequence();
         let subframes = retry.current_subframes();
-        let decision = retry.observe_block_ack_request(
-            block_ack,
-            ordinary.now_micros(),
-            block_ack_operational,
-        );
+        let aged = self
+            .inner
+            .aged_subframes(cookie, retry.policy(), ordinary.now_micros())?;
+        let decision = retry.observe_block_ack_request(block_ack, aged, block_ack_operational);
         let observation = ApAmpduCompletion {
             tx_status: 0,
             block_ack_received: block_ack.is_some(),

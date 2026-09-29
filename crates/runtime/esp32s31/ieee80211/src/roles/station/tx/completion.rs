@@ -495,11 +495,16 @@ where
         }
         let block_ack_operational =
             self.block_ack_generation(active.traffic.tid()) == Some(active.block_ack_generation);
-        let decision = active.retry.observe_block_ack_request(
-            block_ack,
+        let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
+        let aged = self.ampdu.active().aged_subframes(
+            cookie,
+            active.retry.policy(),
             self.ordinary.now_micros(),
-            block_ack_operational,
-        );
+        )?;
+        let decision =
+            active
+                .retry
+                .observe_block_ack_request(block_ack, aged, block_ack_operational);
         self.apply_retry_decision(hardware, active, decision)
     }
 

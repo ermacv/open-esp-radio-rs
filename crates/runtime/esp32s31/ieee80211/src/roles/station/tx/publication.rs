@@ -368,7 +368,6 @@ where
                 retain_single_mpdu: matches!(self.config.rate, TxPhyRate::He(_))
                     || self.block_ack_amsdu(traffic.tid()),
             },
-            self.ordinary.now_micros(),
         )?;
         let prepared = AggregatePrepared {
             traffic,
@@ -440,7 +439,6 @@ where
                 retain_single_mpdu: matches!(self.config.rate, TxPhyRate::He(_))
                     || self.block_ack_amsdu(traffic.tid()),
             },
-            self.ordinary.now_micros(),
         )?;
         Ok(prepared)
     }
@@ -883,12 +881,13 @@ where
             encoded_offset: encoded.offset,
             metadata_size,
         })?;
+        let queued_at_micros = first.queued_at_micros();
         let commit_started = Core0PerformanceSample::read();
         match self.config.rate {
             TxPhyRate::Ht(rate) => self.ampdu.active_mut().commit_ht(
                 cookie,
                 first,
-                HtAmpduFrameRequest::new(layout, 0, rate),
+                HtAmpduFrameRequest::new(layout, 0, rate, queued_at_micros),
             )?,
             TxPhyRate::He(rate) => self.ampdu.active_mut().commit_he(
                 cookie,
@@ -900,6 +899,7 @@ where
                         self.ordinary.policy().ht_ampdu().density(),
                         traffic.he_txop_limit,
                     ),
+                    queued_at_micros,
                 ),
             )?,
             TxPhyRate::Legacy(_) => return Err(AggregateTxError::UnsupportedRate),
@@ -962,12 +962,13 @@ where
                 metadata_size,
             },
         )?;
+        let queued_at_micros = frame.queued_at_micros();
         let commit_started = Core0PerformanceSample::read();
         match self.config.rate {
             TxPhyRate::Ht(rate) => self.ampdu.active_mut().commit_ht(
                 cookie,
                 frame,
-                HtAmpduFrameRequest::new(layout, 0, rate),
+                HtAmpduFrameRequest::new(layout, 0, rate, queued_at_micros),
             )?,
             TxPhyRate::He(rate) => self.ampdu.active_mut().commit_he(
                 cookie,
@@ -979,6 +980,7 @@ where
                         self.ordinary.policy().ht_ampdu().density(),
                         traffic.he_txop_limit,
                     ),
+                    queued_at_micros,
                 ),
             )?,
             TxPhyRate::Legacy(_) => return Err(AggregateTxError::UnsupportedRate),

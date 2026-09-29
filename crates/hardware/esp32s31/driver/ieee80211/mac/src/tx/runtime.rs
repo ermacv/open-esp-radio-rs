@@ -704,8 +704,8 @@ const VENDOR_MSDU_AGED_MARGIN_MICROS: u64 = 1 << 10;
 /// MSDU lifetime bounds the retries.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AmpduRetryPolicy {
-    /// Time from the aggregate's commit after which its MSDUs are aged and
-    /// discarded instead of retried.
+    /// Lifetime of an MSDU from its entry into the radio's TX queue, after
+    /// which it is aged and discarded instead of retried.
     pub lifetime_micros: u32,
     /// Keep one missing MPDU in the aggregate owner.
     ///
@@ -714,6 +714,21 @@ pub struct AmpduRetryPolicy {
     /// `ppHEAMPDU2Normal` metadata transition. The qualified HT path instead
     /// sends one remaining MPDU through its ordinary retry owner.
     pub retain_single_mpdu: bool,
+}
+
+impl AmpduRetryPolicy {
+    /// Whether an MSDU that entered the radio's TX queue at
+    /// `queued_at_micros` is aged at `now_micros`: less than one lifetime
+    /// unit of its lifetime remains.
+    ///
+    /// Only the low 32 bits of both instants are compared, as a signed
+    /// distance: an MSDU is aged seconds after its entry, far inside the
+    /// 35 minutes either way the distance covers, and an entry stamped after
+    /// `now_micros` was read has not aged at all.
+    pub const fn aged(self, queued_at_micros: u32, now_micros: u64) -> bool {
+        let elapsed = (now_micros as u32).wrapping_sub(queued_at_micros) as i32;
+        elapsed > 0 && elapsed as u64 + VENDOR_MSDU_AGED_MARGIN_MICROS > self.lifetime_micros as u64
+    }
 }
 
 /// Invalid construction or a disagreement with the pinned DMA owner.
@@ -727,6 +742,9 @@ pub enum AmpduRetryError {
 }
 
 /// Driver-owned action after one BlockAck completion.
+///
+/// Every mask selects positions in the aggregate's current descriptor
+/// chain, the retained aggregate the completion observed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AmpduRetryDecision {
     /// Retain and compact the selected MPDUs, then publish another A-MPDU.
@@ -739,14 +757,19 @@ pub enum AmpduRetryDecision {
     /// retry count and contention window, skips the Retry-bit leaf and
     /// re-enters `lmacEndFrameExchangeSequence` with the unchanged frame.
     RepublishUnchanged { retry_mask: u32 },
-    /// The protection exchange failed at every attempt: keep the aggregate
-    /// and send a BlockAckReq starting at its head. The BlockAck it solicits
-    /// drives the resort ([`AmpduRetryState::observe_block_ack_request`]).
+    /// Keep the aggregate, holding the selected MPDUs, and send a
+    /// BlockAckReq whose window starts at `starting_sequence`. The BlockAck
+    /// it solicits drives the next resort
+    /// ([`AmpduRetryState::observe_block_ack_request`]).
     ///
     /// SOURCE: `libpp.a[lmac.o]::lmacEndRetryAMPDUFail` keeps an
-    /// RTS-protected aggregate whose CTS never arrived and sends a
-    /// BlockAckReq through `ppFillAMPDUBar`/`ppReSendBar` with the starting
-    /// sequence of its head (blobray 7a0f2090f).
+    /// RTS-protected aggregate whose CTS never arrived and requests the
+    /// BlockAck of its head; `libpp.a[pp.o]::ppResortTxAMPDU` parks the
+    /// aggregate and requests the BlockAck after a discarded aged head. Both
+    /// send the request through `ppFillAMPDUBar`/`ppReSendBar` straight to
+    /// the access category's LMAC queue, and `lmacEndFrameExchangeSequence`
+    /// resorts the parked aggregate by the BlockAck that answers it, or with
+    /// no BlockAck when none does (blobray 7a0f2090f).
     RequestBlockAck {
         retry_mask: u32,
         starting_sequence: SequenceNumber,
@@ -799,15 +822,18 @@ pub struct AmpduRetryState<const CAPACITY: usize> {
     /// so one mask preserves every non-contiguous sequence after compaction
     /// without carrying a movable 32-entry sequence table.
     pending_original_indices: u32,
+    /// Original aggregate indices discarded as aged while the aggregate
+    /// waits for its BlockAckReq's answer; they leave the descriptor chain at
+    /// its next compaction.
+    discarded_original_indices: u32,
     /// Original aggregate indices absent from the last observed completion.
     missing_original_indices: u32,
     current_subframes: u8,
     policy: AmpduRetryPolicy,
-    /// From this instant on the aggregate's MSDUs are aged: less than one
-    /// lifetime unit remains of the lifetime that runs from their commit.
-    aged_from_micros: u64,
     aggregate_attempts: u8,
     acknowledged: u8,
+    /// MPDUs discarded because their MSDU lifetime expired.
+    aged: u8,
     block_ack_mpdu_attempts: u16,
     trigger_flow_completions: u8,
     protection_failures: u8,
@@ -817,13 +843,11 @@ pub struct AmpduRetryState<const CAPACITY: usize> {
 
 impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
     /// Start at the first Sequence Control value already consumed by the
-    /// encoded aggregate, whose MSDUs were committed at
-    /// `committed_at_micros`.
+    /// encoded aggregate.
     pub fn new(
         first_sequence: SequenceNumber,
         subframes: u8,
         policy: AmpduRetryPolicy,
-        committed_at_micros: u64,
     ) -> Result<Self, AmpduRetryError> {
         if policy.lifetime_micros == 0 {
             return Err(AmpduRetryError::ZeroLifetime);
@@ -840,23 +864,16 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
                 capacity: CAPACITY,
             });
         }
-        let pending_original_indices = if subframes == 32 {
-            u32::MAX
-        } else {
-            (1_u32 << subframes) - 1
-        };
         Ok(Self {
             first_sequence,
-            pending_original_indices,
+            pending_original_indices: low_mask(subframes),
+            discarded_original_indices: 0,
             missing_original_indices: 0,
             current_subframes: subframes,
             policy,
-            aged_from_micros: committed_at_micros
-                .saturating_add(u64::from(policy.lifetime_micros))
-                .saturating_sub(VENDOR_MSDU_AGED_MARGIN_MICROS)
-                .saturating_add(1),
             aggregate_attempts: 1,
             acknowledged: 0,
+            aged: 0,
             block_ack_mpdu_attempts: 0,
             trigger_flow_completions: 0,
             protection_failures: 0,
@@ -864,22 +881,28 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         })
     }
 
+    pub const fn policy(&self) -> AmpduRetryPolicy {
+        self.policy
+    }
+
     /// Apply one completion after the hardware queue has been detached.
+    ///
+    /// `aged` selects the positions of the current descriptor chain whose
+    /// MSDU lifetime has expired.
     ///
     /// SOURCE: complete `libpp.a[pp.o]::ppResortTxAMPDU` preserves
     /// Sequence Control and compacts only the MPDUs absent from BlockAck.
     /// Complete `libpp.a[lmac.o]::lmacRetryTxFrame` skips
     /// `rcGetRate` for the state written by
     /// `lmacProcessLongRetryFail`, so a retained aggregate keeps its PHY rate.
-    /// A missing MPDU stays in the aggregate until it is aged at
-    /// `now_micros`; aged MPDUs end the aggregate and are discarded. Once
-    /// the TID's BlockAck agreement is no longer `block_ack_operational`,
-    /// the live missing MPDUs leave the aggregate for individual retry.
+    /// Once the TID's BlockAck agreement is no longer
+    /// `block_ack_operational`, the live missing MPDUs leave the aggregate
+    /// for individual retry.
     pub fn observe(
         &mut self,
         completion: HtAmpduTxCompletion,
         observed_subframes: u8,
-        now_micros: u64,
+        aged: u32,
         block_ack_operational: bool,
     ) -> Result<AmpduRetryDecision, AmpduRetryError> {
         if observed_subframes != self.current_subframes {
@@ -901,15 +924,11 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
             self.missing_original_indices = 0;
             return Ok(AmpduRetryDecision::FinishTriggerFlow);
         }
+        let retry_mask = low_mask(observed_subframes);
         if completion.tx.disposition() == TxCompletionDisposition::CtsTimeout {
             self.protection_failures = self.protection_failures.saturating_add(1);
             // No MPDU reached the receiver.
             self.missing_original_indices = self.pending_original_indices;
-            let retry_mask = if observed_subframes == 32 {
-                u32::MAX
-            } else {
-                (1_u32 << observed_subframes) - 1
-            };
             if self.protection_failures < VENDOR_SHORT_RETRY_LIMIT {
                 return Ok(AmpduRetryDecision::RepublishUnchanged { retry_mask });
             }
@@ -926,13 +945,13 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
             .saturating_add(u16::from(observed_subframes));
 
         // Without any BlockAck every MPDU is retried, and a retry counter
-        // bounds the aggregate as well as the MSDU lifetime.
+        // bounds the aggregate as well as the lifetime of its head.
         //
         // SOURCE: `libpp.a[lmac.o]::lmacProcessAckTimeout` enters
         // `lmacProcessShortRetryFail`/`lmacProcessLongRetryFail`, which set
         // the Retry bit on every MPDU and republish the aggregate until the
-        // `lmacConfMib` retry limit or `lmacMSDUAged`; executed, both
-        // descriptor lengths end on the 32nd timeout through
+        // `lmacConfMib` retry limit or `lmacMSDUAged` of the queued head;
+        // executed, both descriptor lengths end on the 32nd timeout through
         // `lmacEndFrameExchangeSequence` (blobray 156c54e0e). The
         // `rcReachRetryLimit` cap of 11 attempts applies only while
         // ESP-WIFI-MESH runs (`g_mesh_is_started`), which this driver
@@ -940,12 +959,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         if !completion.block_ack_received {
             self.ack_timeouts = self.ack_timeouts.saturating_add(1);
             self.missing_original_indices = self.pending_original_indices;
-            let retry_mask = if observed_subframes == 32 {
-                u32::MAX
-            } else {
-                (1_u32 << observed_subframes) - 1
-            };
-            if self.ack_timeouts >= VENDOR_SHORT_RETRY_LIMIT || self.aged(now_micros) {
+            if self.ack_timeouts >= VENDOR_SHORT_RETRY_LIMIT || aged & 1 != 0 {
                 return Ok(AmpduRetryDecision::Finish { retry_mask });
             }
             return Ok(self.retain_or_unaggregate(
@@ -957,7 +971,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
 
         Ok(self.resort(
             |sequence| completion.acknowledges(sequence),
-            now_micros,
+            aged,
             block_ack_operational,
         ))
     }
@@ -967,55 +981,97 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
     /// `block_ack` is the BlockAck received for the request, or `None` when
     /// the request exhausted its retries unanswered: the resort then keeps
     /// every MPDU as missing, as the vendor resorts its unchanged queue
-    /// record.
+    /// record. `aged` is as for [`Self::observe`].
     pub fn observe_block_ack_request(
         &mut self,
         block_ack: Option<HtBlockAckObservation>,
-        now_micros: u64,
+        aged: u32,
         block_ack_operational: bool,
     ) -> AmpduRetryDecision {
         self.resort(
             |sequence| {
                 block_ack.is_some_and(|block_ack| block_ack.block_ack.acknowledges(sequence))
             },
-            now_micros,
+            aged,
             block_ack_operational,
         )
     }
 
-    /// Keep the MPDUs `acknowledged` does not report in the aggregate.
+    /// Keep the MPDUs `acknowledged` does not report in the aggregate and
+    /// discard the aged ones.
     ///
     /// SOURCE: complete `libpp.a[pp.o]::ppResortTxAMPDU` preserves
-    /// Sequence Control and compacts only the MPDUs absent from BlockAck.
+    /// Sequence Control and compacts only the MPDUs absent from BlockAck. It
+    /// ages every missing MPDU on its own through `lmacMSDUAged`. When the
+    /// discarded head is the only aged MPDU, MPDUs remain and the agreement
+    /// is operational (`trc_isTxAmpduOperational`,
+    /// `trc_tid_isTxAmpduOperational`), it parks the aggregate and requests
+    /// the BlockAck that starts after the head through
+    /// `ppFillAMPDUBar`/`ppReSendBar`, at most once per resort (blobray
+    /// 7a0f2090f).
     fn resort(
         &mut self,
         acknowledged: impl Fn(SequenceNumber) -> bool,
-        now_micros: u64,
+        aged: u32,
         block_ack_operational: bool,
     ) -> AmpduRetryDecision {
         let mut retry_mask = 0_u32;
+        let mut discard_mask = 0_u32;
         let mut retry_original_indices = 0_u32;
+        let mut aged_original_indices = 0_u32;
+        let mut head = None;
         let mut index = 0_u8;
         while index < self.current_subframes {
             let original_index = self.original_index(index);
+            let original_bit = 1_u32 << original_index;
+            index += 1;
+            if self.discarded_original_indices & original_bit != 0 {
+                discard_mask |= 1_u32 << (index - 1);
+                continue;
+            }
             let sequence = self.first_sequence.wrapping_add(u16::from(original_index));
+            head.get_or_insert(sequence);
             if acknowledged(sequence) {
                 self.acknowledged = self.acknowledged.saturating_add(1);
+            } else if aged & (1_u32 << (index - 1)) != 0 {
+                discard_mask |= 1_u32 << (index - 1);
+                aged_original_indices |= original_bit;
             } else {
-                retry_mask |= 1_u32 << index;
-                retry_original_indices |= 1_u32 << original_index;
+                retry_mask |= 1_u32 << (index - 1);
+                retry_original_indices |= original_bit;
             }
-            index += 1;
         }
-        self.missing_original_indices = retry_original_indices;
-        let missing = retry_mask.count_ones() as u8;
-        if missing == 0 || self.aged(now_micros) {
-            return AmpduRetryDecision::Finish { retry_mask };
+        self.aged = self
+            .aged
+            .saturating_add(aged_original_indices.count_ones() as u8);
+        self.missing_original_indices = retry_original_indices | aged_original_indices;
+        if retry_mask == 0 {
+            return AmpduRetryDecision::Finish {
+                retry_mask: discard_mask,
+            };
         }
-        let decision = self.retain_or_unaggregate(retry_mask, missing, block_ack_operational);
+        let head_aged = head.is_some_and(|head| {
+            let head_bit = 1_u32 << self.first_sequence.forward_distance(head);
+            aged_original_indices == head_bit
+        });
+        if head_aged && block_ack_operational {
+            self.discarded_original_indices |= aged_original_indices;
+            return AmpduRetryDecision::RequestBlockAck {
+                retry_mask,
+                starting_sequence: head
+                    .expect("an aged head is a sequence of the aggregate")
+                    .next(),
+            };
+        }
+        let decision = self.retain_or_unaggregate(
+            retry_mask,
+            retry_mask.count_ones() as u8,
+            block_ack_operational,
+        );
         if matches!(decision, AmpduRetryDecision::RetainAggregate { .. }) {
             self.pending_original_indices = retry_original_indices;
-            self.current_subframes = missing;
+            self.discarded_original_indices = 0;
+            self.current_subframes = retry_mask.count_ones() as u8;
         }
         decision
     }
@@ -1039,15 +1095,16 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         self.current_subframes
     }
 
-    /// Whether the aggregate's MSDUs are aged at `now_micros`: less than
-    /// one lifetime unit remains.
-    pub const fn aged(&self, now_micros: u64) -> bool {
-        now_micros >= self.aged_from_micros
+    /// MPDUs discarded because their MSDU lifetime expired.
+    pub const fn aged(&self) -> u8 {
+        self.aged
     }
 
     pub const fn current_first_sequence(&self) -> SequenceNumber {
-        self.first_sequence
-            .wrapping_add(self.pending_original_indices.trailing_zeros() as u16)
+        self.first_sequence.wrapping_add(
+            (self.pending_original_indices & !self.discarded_original_indices).trailing_zeros()
+                as u16,
+        )
     }
 
     /// Original aggregate positions (bit `i` is the `i`th MPDU of the first
@@ -1091,6 +1148,15 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
             remaining &= remaining - 1;
             position -= 1;
         }
+    }
+}
+
+/// The mask of the first `subframes` positions.
+const fn low_mask(subframes: u8) -> u32 {
+    if subframes >= 32 {
+        u32::MAX
+    } else {
+        (1_u32 << subframes) - 1
     }
 }
 

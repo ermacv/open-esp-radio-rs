@@ -46,6 +46,10 @@ impl SoftwareTxFrame for AlternateSoftwareFrame {
     fn ethernet(&self) -> &[u8] {
         &self.ethernet
     }
+
+    fn queued_at_micros(&self) -> u64 {
+        0
+    }
 }
 
 #[test]

@@ -57,6 +57,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         dma_storage: &mut [u8],
         layout: AmpduFrameLayout,
         empty_delimiters: u8,
+        queued_at_micros: u64,
     ) -> Result<(), HtAmpduTxError> {
         let frame_length = layout.mpdu_length();
         let hardware_mic_length = layout.hardware_mic_length();
@@ -109,6 +110,8 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         storage.hardware_he_control[index] = false;
         storage.empty_delimiters[index] = empty_delimiters;
         storage.descriptor_capacities[index] = descriptor_capacity;
+        // Only the low bits take part in the wrapping lifetime comparison.
+        storage.queued_at_micros[index] = queued_at_micros as u32;
         *storage.prepared_length = prepared_length;
         *storage.count += 1;
         Ok(())
@@ -140,6 +143,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             dma_storage,
             layout,
             request.empty_delimiters(),
+            request.queued_at_micros(),
         )
     }
 
@@ -309,8 +313,13 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             .rate()
             .ampdu_empty_delimiters(psdu_length, policy.density())
             .ok_or(HtAmpduTxError::FrameTooLong)?;
-        self.as_mut()
-            .commit_referenced_frame(cookie, dma_storage, layout, empty_delimiters)
+        self.as_mut().commit_referenced_frame(
+            cookie,
+            dma_storage,
+            layout,
+            empty_delimiters,
+            request.queued_at_micros(),
+        )
     }
 
     /// Commit one HE MPDU with a hardware-inserted HE-Control field.

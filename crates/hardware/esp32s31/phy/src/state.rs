@@ -754,12 +754,10 @@ impl PhyState {
         PhyBluetoothTxGainParameters {
             seed: Self::packed_seed(&self.bluetooth.tx_dco),
             config: self.wifi.tx_iq_config,
-            calibration_curve: [
-                self.bluetooth.tx_power_curve[0] as u8,
-                self.bluetooth.tx_power_curve[1] as u8,
-                self.bluetooth.tx_power_curve[2] as u8,
-            ],
-            correction: self.bluetooth.tx_power_adjustment,
+            // DIAGNOSTIC #38 (not for merge): the vendor's normalized BT
+            // power calibration from its phy_param[0xfb..0xfe] capture.
+            calibration_curve: [10, 14, 13],
+            correction: 69,
             base: self.bluetooth.tracking_gain_base,
             attenuation: self.config.bluetooth_tx_gain_attenuation,
         }

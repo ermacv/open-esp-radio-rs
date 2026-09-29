@@ -142,7 +142,10 @@ pub fn run(
         .map(|_| capture.acknowledge_session(session))
         .unwrap_or(Ok(()));
     let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
-    capture.finish()?;
+    let log = capture.finish()?;
+    context
+        .measurements
+        .record(super::bidirectional::task_polls_from_log(&log).measurements());
     if let Some(result) = beacon_loss {
         result?;
     }

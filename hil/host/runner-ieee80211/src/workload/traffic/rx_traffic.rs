@@ -278,6 +278,9 @@ pub fn run(
         .require_no_beacon_loss
         .then(|| capture.require_no_beacon_loss());
     let log = capture.finish()?;
+    context
+        .measurements
+        .record(super::bidirectional::task_polls_from_log(&log).measurements());
     if let Some(result) = beacon_loss {
         result?;
     }

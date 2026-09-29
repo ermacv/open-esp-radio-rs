@@ -126,6 +126,13 @@ pub fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
         let result = context.with_capture(&boot_output, |capture| {
             qualify(capture, &config, context, &boot_output, &mut cycles)
         });
+        // A task-poll image reports each traffic interval's poll residence
+        // on the console; the last boot's reaches the measurements.
+        if let Ok(log) = fs::read_to_string(boot_output.join("uart.log")) {
+            context.measurements.record(
+                crate::workload::traffic::bidirectional::task_polls_from_log(&log).measurements(),
+            );
+        }
         report.boots.push(BootReport {
             boot,
             cycles,

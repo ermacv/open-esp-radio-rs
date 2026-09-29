@@ -348,6 +348,9 @@ pub fn run(
     }
     let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
     let log = capture.finish()?;
+    context
+        .measurements
+        .record(task_polls_from_log(&log).measurements());
     let delivery = progress::DeliveryProgress::new(structured.transport.tx_units, &bursts, &log);
     fs::write(
         output.join("delivery-progress.json"),

@@ -121,7 +121,7 @@ async fn main(
     let hci = start_bluetooth_hci(system.runtime(), public_address, Some(VERSION), entropy);
     spawner.spawn(tracking(radio).expect("PHY tracking task"));
     #[cfg(feature = "bluetooth-secure-gatt")]
-    secure::run(radio, system, hci, public_address, usb, boot).await;
+    secure::run(spawner, radio, system, hci, public_address, usb, boot).await;
     #[cfg(not(feature = "bluetooth-secure-gatt"))]
     {
         spawner.spawn(runner(radio, SYSTEM.init(system)).expect("Bluetooth runner task"));

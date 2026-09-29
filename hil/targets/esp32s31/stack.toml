@@ -31,13 +31,6 @@ max_bytes = 21504
 reason = "one-time production constructor initializes and transfers the complete role-neutral physical, STA, AP, monitor, owned network endpoint and external diagnostic-storage owner graph into static task ownership on the PSRAM stack; the correctness image retains its value-only driver observation state, and the stopped frontier retains the immutable cold-restart policy while registered PHY state and its shared client scheduler remain affine through role transfers; every radio owner copy in this graph carries the PHY partition's registration epoch"
 
 [[reviewed_frames]]
-function_contains = "::bluetooth::__main_task::__main_task_inner_function::{closure#0}"
-source_ends_with = ["embassy-executor-0.10.0/src/raw/mod.rs"]
-max_bytes = 20480
-execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
-reason = "the Bluetooth HIL main task receives the started system by value and, in the secure-GATT image, builds the secure lifecycle future, which retains the restart path's start future and the Host epoch, before both reach its static task storage; when that poll is inlined the construction temporaries land in this frame (measured 20080 bytes, about 3.2 KiB when LLVM builds them in place). It runs once per boot on the 192-KiB CPU0 task stack, and runtime painting independently bounds the chain"
-
-[[reviewed_frames]]
 function_contains = "::product_hil::start_network_endpoint"
 source_ends_with = ["hil/targets/esp32s31/runtime/src/product_hil.rs", "runtime/src/product_hil.rs"]
 max_bytes = 12288

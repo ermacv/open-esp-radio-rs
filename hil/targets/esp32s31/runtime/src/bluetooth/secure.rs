@@ -69,7 +69,12 @@ impl console::Profile for State {
 }
 
 /// Serve the console and run Host epochs until one ends terminally.
+///
+/// The lifecycle runs as its own task: its future, which holds the restart
+/// path's start future and the Host epoch, is built in its static task
+/// storage rather than in the caller's poll frame.
 pub(super) async fn run(
+    spawner: embassy_executor::Spawner,
     radio: &'static Radio,
     system: BluetoothSystem,
     hci: BluetoothHci,
@@ -78,21 +83,20 @@ pub(super) async fn run(
     boot: u64,
 ) -> ! {
     let state: &'static State = STATE.init_with(State::new);
-    let lifecycle = pin!(lifecycle(radio, system, hci, public_address, state));
-    let console = pin!(console::run(usb, boot, state));
-    match select(lifecycle, console).await {
-        Either::First(never) => match never {},
-        Either::Second(never) => never,
-    }
+    spawner.spawn(
+        lifecycle(radio, system, hci, public_address, state).expect("Bluetooth lifecycle task"),
+    );
+    console::run(usb, boot, state).await
 }
 
+#[embassy_executor::task]
 async fn lifecycle(
     radio: &'static Radio,
     mut system: BluetoothSystem,
     hci: BluetoothHci,
     public_address: BluetoothPublicDeviceAddress,
     state: &'static State,
-) -> Infallible {
+) -> ! {
     // Neither is reconstructed when the Controller restarts.
     let mut bonds = RamBondStore::<1>::new();
     let resources = RESOURCES.init_with(HostResources::new);

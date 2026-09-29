@@ -12,7 +12,15 @@ use oer_esp32s31_firmware::flash::{
     ota0_selector_image,
 };
 
+/// How many times a flash is attempted when espflash's link to the chip
+/// fails on its way.
+const FLASH_ATTEMPTS: usize = 3;
+
 pub fn flash(root: &Path, artifacts: &Artifacts, port: &Path) -> Result<()> {
+    with_flash_retries(port, || flash_once(root, artifacts, port))
+}
+
+fn flash_once(root: &Path, artifacts: &Artifacts, port: &Path) -> Result<()> {
     match &artifacts.boot {
         BootArtifacts::Staged { bootstrap_elf, .. } => flash_application(
             root,
@@ -120,6 +128,19 @@ pub fn flash_archived(
 }
 
 pub fn flash_replayed(
+    root: &Path,
+    chip: &str,
+    application: &Path,
+    run_id: &str,
+    image: crate::image::ImageClass,
+    port: &Path,
+) -> Result<()> {
+    with_flash_retries(port, || {
+        flash_replayed_once(root, chip, application, run_id, image, port)
+    })
+}
+
+fn flash_replayed_once(
     root: &Path,
     chip: &str,
     application: &Path,
@@ -237,9 +258,108 @@ pub fn flash_application(
         .map_err(|error| format!("flash the HIL image through {}: {error}", port.display()).into())
 }
 
+/// Run `write` again when espflash's link to the chip failed on its way,
+/// with a power-on reset between the attempts where the board has one; each
+/// retry is reported on stderr, which the job log keeps.
+fn with_flash_retries(port: &Path, mut write: impl FnMut() -> Result<()>) -> Result<()> {
+    retry_transient(FLASH_ATTEMPTS, &mut write, |attempt, error| {
+        eprintln!(
+            "hil: flash attempt {attempt} of {FLASH_ATTEMPTS} through {} failed: {error}; \
+             retrying after a power-on reset",
+            port.display()
+        );
+        if let Err(error) = crate::session::reset::power_on_reset(port) {
+            eprintln!("hil: the power-on reset before the next flash attempt failed: {error}");
+        }
+    })
+}
+
+fn retry_transient<T>(
+    attempts: usize,
+    operation: &mut impl FnMut() -> Result<T>,
+    mut between: impl FnMut(usize, &str),
+) -> Result<T> {
+    let mut attempt = 1;
+    loop {
+        match operation() {
+            Ok(value) => return Ok(value),
+            Err(error) if attempt < attempts && transient_flash_failure(&error.to_string()) => {
+                between(attempt, &error.to_string());
+                attempt += 1;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+/// Whether a flash failure lies in the serial link to the chip, which a
+/// reset and a new connection can clear, rather than in the image.
+fn transient_flash_failure(message: &str) -> bool {
+    const LINK_FAILURES: [&str; 6] = [
+        "Protocol error",
+        "timed out",
+        "Timeout",
+        "Broken pipe",
+        "Input/output error",
+        "Failed to connect",
+    ];
+    LINK_FAILURES
+        .iter()
+        .any(|failure| message.contains(failure))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_link_failure_is_retried_and_an_image_failure_is_not() {
+        let mut calls = 0;
+        let mut resets = Vec::new();
+        let written = retry_transient(
+            FLASH_ATTEMPTS,
+            &mut || {
+                calls += 1;
+                if calls == 1 {
+                    Err("espflash: Protocol error (os error 71)".into())
+                } else {
+                    Ok(calls)
+                }
+            },
+            |attempt, _| resets.push(attempt),
+        );
+        assert_eq!(written.unwrap(), 2);
+        assert_eq!(resets, [1]);
+
+        let mut calls = 0;
+        let refused = retry_transient(
+            FLASH_ATTEMPTS,
+            &mut || -> Result<()> {
+                calls += 1;
+                Err("the HIL application overlaps the next flash region".into())
+            },
+            |_, _| {},
+        );
+        assert!(refused.is_err());
+        assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn a_link_that_keeps_failing_ends_after_the_last_attempt() {
+        let mut calls = 0;
+        let mut resets = 0;
+        let result = retry_transient(
+            FLASH_ATTEMPTS,
+            &mut || -> Result<()> {
+                calls += 1;
+                Err("serial port timed out".into())
+            },
+            |_, _| resets += 1,
+        );
+        assert!(result.is_err());
+        assert_eq!(calls, FLASH_ATTEMPTS);
+        assert_eq!(resets, FLASH_ATTEMPTS - 1);
+    }
 
     #[test]
     fn a_merged_image_places_each_region_at_its_offset_over_erased_flash() {

@@ -498,9 +498,18 @@ change through that transaction's traffic session. Semantic checks are recorded
 only when attempted. They do not establish RF quality, a qualified PHY execution
 bound, or relative performance non-regression. Default applicability is
 `current-source-composition`: verified current source binding and no unbound
-replay. Legacy commit-only provenance still requires a matching clean commit. A `source-snapshot` build can establish this direct binding:
+replay. Currency is judged on the run's closure, the files that can change its
+observation: the files each of its images was compiled from (the
+`source-inputs.json` the build recorded), the files of the scenarios it ran,
+the firmware workspaces' manifests and lock files, Cargo's configuration, the
+workspace manifest, lockfile and toolchain, and the HIL runner's packages. A
+run whose images recorded no inputs falls back to the checkout-wide closure of
+every firmware and runner package. A build from a clean commit binds while no
+closure file differs between that commit and the checkout, tracked or
+untracked, so commits that touch only other crates, image classes or
+scenarios leave it current. A `source-snapshot` build can establish this direct binding:
 the evaluator independently verifies snapshot identities, every archived file,
-and the complete current tracked and nonignored untracked file set, bytes and executable modes. It also
+and the current tracked and nonignored untracked file set of the closure, bytes and executable modes. It also
 checks the current lockfile and local override pins. No self-review is needed
 for a matching snapshot, regardless of dirty state or commit identity. Optional [reviewed applicability](evidence-reviews.md) admits an
 original complete observation for a specific capability/property and destination

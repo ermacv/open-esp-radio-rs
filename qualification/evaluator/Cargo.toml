@@ -20,6 +20,7 @@ tar = { version = "0.4", default-features = false }
 
 [dev-dependencies]
 oer-hil-schema = { path = "../../hil/schema", features = ["producer"] }
+tempfile = "=3.27.0"
 
 [lints]
 workspace = true

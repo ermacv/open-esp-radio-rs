@@ -40,8 +40,19 @@ const FILES: [&str; 4] = [
     "rust-toolchain",
 ];
 
+/// The firmware workspaces' manifests and lock files, which every image
+/// build reads.
+const FIRMWARE_CONFIGURATION: [&str; 4] = [
+    "hil/targets/esp32s31/Cargo.toml",
+    "hil/targets/esp32s31/Cargo.lock",
+    "platform/esp32s31/bootstrap/Cargo.toml",
+    "platform/esp32s31/bootstrap/Cargo.lock",
+];
+
 pub(super) struct Closure {
     directories: BTreeSet<PathBuf>,
+    /// Single files, besides the directories read whole.
+    files: BTreeSet<PathBuf>,
 }
 
 impl Closure {
@@ -62,15 +73,64 @@ impl Closure {
                 }
             }
         }
-        directories.extend(runner_packages(
-            &root,
-            &metadata(&root, &root.join("Cargo.toml"))?,
-        )?);
-        Ok(Self { directories })
+        directories.extend(runner_directories(&root)?);
+        Ok(Self {
+            directories,
+            files: BTreeSet::new(),
+        })
+    }
+
+    /// The closure of one run, narrower than the checkout's: the files its
+    /// firmware images were compiled from, which each build recorded as
+    /// `source-inputs.json`, the files of the scenarios it executed, the
+    /// firmware workspaces' configuration, Cargo's configuration and the
+    /// runner's packages (`runner`, from [`runner_directories`]). A change
+    /// to another image class, crate or scenario leaves it current. `None`
+    /// when an image of the run has no recorded inputs.
+    pub(super) fn of_run(
+        root: &Path,
+        run: &Path,
+        runner: &BTreeSet<PathBuf>,
+    ) -> Result<Option<Self>> {
+        let mut files = FIRMWARE_CONFIGURATION
+            .map(PathBuf::from)
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let mut images = 0;
+        for image in fs::read_dir(run.join("firmware"))? {
+            let image = image?.path();
+            if !image.is_dir() {
+                continue;
+            }
+            let Ok(inputs) = fs::read_to_string(image.join("source-inputs.json")) else {
+                return Ok(None);
+            };
+            let inputs: SourceInputs = serde_json::from_str(&inputs)?;
+            if inputs.schema != 1 {
+                return Ok(None);
+            }
+            files.extend(inputs.files);
+            images += 1;
+        }
+        if images == 0 {
+            return Ok(None);
+        }
+        let mut scenarios = BTreeSet::new();
+        for scenario in fs::read_dir(run.join("scenarios"))? {
+            let scenario = scenario?;
+            if scenario.path().is_dir() {
+                scenarios.insert(scenario.file_name().to_string_lossy().into_owned());
+            }
+        }
+        files.extend(scenario_files(root, &scenarios)?);
+        let mut directories = runner.clone();
+        directories.insert(PathBuf::from(".cargo"));
+        Ok(Some(Self { directories, files }))
     }
 
     pub(super) fn contains(&self, path: &Path) -> bool {
         FILES.iter().any(|file| path == Path::new(file))
+            || self.files.contains(path)
             || self
                 .directories
                 .iter()
@@ -81,8 +141,50 @@ impl Closure {
     pub(super) fn from_directories(directories: &[&str]) -> Self {
         Self {
             directories: directories.iter().map(PathBuf::from).collect(),
+            files: BTreeSet::new(),
         }
     }
+}
+
+/// The `source-inputs.json` an image build writes beside its artifacts.
+#[derive(Deserialize)]
+struct SourceInputs {
+    schema: u32,
+    files: Vec<PathBuf>,
+}
+
+/// The catalog files, below `hil/scenarios`, of the scenarios named
+/// `scenarios`: each scenario is one file named after it.
+fn scenario_files(root: &Path, scenarios: &BTreeSet<String>) -> Result<BTreeSet<PathBuf>> {
+    let mut files = BTreeSet::new();
+    let mut pending = vec![PathBuf::from("hil/scenarios")];
+    while let Some(directory) = pending.pop() {
+        let Ok(entries) = fs::read_dir(root.join(&directory)) else {
+            continue;
+        };
+        for entry in entries {
+            let entry = entry?;
+            let path = directory.join(entry.file_name());
+            if entry.file_type()?.is_dir() {
+                pending.push(path);
+            } else if path
+                .extension()
+                .is_some_and(|extension| extension == "toml")
+                && path
+                    .file_stem()
+                    .is_some_and(|stem| scenarios.contains(stem.to_string_lossy().as_ref()))
+            {
+                files.insert(path);
+            }
+        }
+    }
+    Ok(files)
+}
+
+/// Directories of the path packages the HIL runner of the checkout at `root`
+/// depends on.
+pub(super) fn runner_directories(root: &Path) -> Result<BTreeSet<PathBuf>> {
+    runner_packages(root, &metadata(root, &root.join("Cargo.toml"))?)
 }
 
 fn metadata(root: &Path, manifest: &Path) -> Result<Value> {

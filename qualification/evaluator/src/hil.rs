@@ -620,11 +620,20 @@ impl HilEvidenceIndex {
                 if replays_firmware {
                     exclusions.push(decision::Exclusion::ReplaySubjectNotBound);
                 }
+                // A run built from another clean commit still observed this
+                // checkout when none of the files it depends on changed since.
+                let commit_current = binding == provenance::Binding::Commit
+                    && !manifest.repository.dirty
+                    && snapshot::unchanged_since(
+                        root,
+                        &run_directory,
+                        &manifest.repository.commit,
+                    )?;
                 if binding != provenance::Binding::Snapshot {
                     if manifest.repository.dirty {
                         exclusions.push(decision::Exclusion::ProducerDirty);
                     }
-                    if manifest.repository.commit != repository.commit {
+                    if manifest.repository.commit != repository.commit && !commit_current {
                         exclusions.push(decision::Exclusion::DifferentCommit);
                     }
                 }
@@ -638,7 +647,7 @@ impl HilEvidenceIndex {
                 if exclusions.is_empty() {
                     current_producer = true;
                 }
-                if repository.dirty && binding != provenance::Binding::Snapshot {
+                if repository.dirty && binding != provenance::Binding::Snapshot && !commit_current {
                     exclusions.push(decision::Exclusion::EvaluatorDirty);
                 }
                 let mut seen = BTreeSet::new();

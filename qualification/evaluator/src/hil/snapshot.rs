@@ -108,6 +108,78 @@ fn closure_of(root: &Path) -> Option<std::sync::Arc<super::closure::Closure>> {
         .clone()
 }
 
+/// The runner directories of the checkout at `root`, computed once per
+/// evaluation; `None` when Cargo cannot list them.
+fn runner_of(root: &Path) -> Option<std::sync::Arc<BTreeSet<PathBuf>>> {
+    static RUNNERS: std::sync::Mutex<BTreeMap<PathBuf, Option<std::sync::Arc<BTreeSet<PathBuf>>>>> =
+        std::sync::Mutex::new(BTreeMap::new());
+    let root = root.canonicalize().ok()?;
+    RUNNERS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .entry(root.clone())
+        .or_insert_with(|| {
+            super::closure::runner_directories(&root)
+                .ok()
+                .map(std::sync::Arc::new)
+        })
+        .clone()
+}
+
+/// The closure of the run in `run`: its own when every image recorded its
+/// inputs, the checkout's otherwise.
+fn run_closure(root: &Path, run: &Path) -> Option<std::sync::Arc<super::closure::Closure>> {
+    runner_of(root)
+        .and_then(|runner| {
+            super::closure::Closure::of_run(root, run, &runner)
+                .ok()
+                .flatten()
+        })
+        .map(std::sync::Arc::new)
+        .or_else(|| closure_of(root))
+}
+
+/// Whether every file of the run's closure in the checkout at `root` is as
+/// it was at `commit`, the clean commit the run was built from: the run
+/// then observed the checkout's current firmware, runner and scenarios even
+/// though other files changed since. False when the commit is unknown here.
+pub(super) fn unchanged_since(root: &Path, run: &Path, commit: &str) -> Result<bool> {
+    match run_closure(root, run) {
+        Some(closure) => unchanged_within(root, &closure, commit),
+        None => Ok(false),
+    }
+}
+
+/// Whether no file of `closure` differs in the checkout at `root` from
+/// `commit`, counting untracked files as differences.
+fn unchanged_within(root: &Path, closure: &super::closure::Closure, commit: &str) -> Result<bool> {
+    let git = |arguments: &[&str]| -> Result<Option<Vec<PathBuf>>> {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(arguments)
+            .output()?;
+        Ok(output.status.success().then(|| {
+            String::from_utf8_lossy(&output.stdout)
+                .split('\0')
+                .filter(|path| !path.is_empty())
+                .map(PathBuf::from)
+                .collect()
+        }))
+    };
+    // The commit's tree against the working tree, staged or not.
+    let Some(changed) = git(&["diff", "--name-only", "--no-renames", "-z", commit, "--"])? else {
+        return Ok(false);
+    };
+    let Some(untracked) = git(&["ls-files", "--others", "--exclude-standard", "-z"])? else {
+        return Ok(false);
+    };
+    Ok(!changed
+        .iter()
+        .chain(&untracked)
+        .any(|path| closure.contains(path)))
+}
+
 /// Whether the run's snapshot is the checkout's current state in every file
 /// that can change the observation (see [`super::closure`]).
 pub(super) fn current(root: &Path, run: &Path, sources: &[Source]) -> Result<bool> {
@@ -132,7 +204,7 @@ pub(super) fn current(root: &Path, run: &Path, sources: &[Source]) -> Result<boo
     if !output.status.success() {
         return Ok(false);
     }
-    let closure = closure_of(root);
+    let closure = run_closure(root, run);
     let relevant = |path: &Path| {
         closure
             .as_ref()
@@ -178,6 +250,94 @@ pub(super) fn current(root: &Path, run: &Path, sources: &[Source]) -> Result<boo
 #[cfg(test)]
 mod tests {
     use oer_hil_schema::snapshot::SourceInput;
+
+    #[test]
+    fn a_run_stays_current_across_commits_that_leave_its_inputs_alone() {
+        let root = tempfile::tempdir().unwrap();
+        let root = root.path();
+        let git = |arguments: &[&str]| {
+            let status = std::process::Command::new("git")
+                .arg("-C")
+                .arg(root)
+                .args([
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t",
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
+                .args(arguments)
+                .status()
+                .unwrap();
+            assert!(status.success());
+        };
+        let write = |path: &str, text: &str| {
+            let path = root.join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        git(&["init", "-q"]);
+        write("crates/radio/src/lib.rs", "a");
+        write("crates/other/src/lib.rs", "b");
+        write("hil/scenarios/system/boot-smoke.toml", "c");
+        write("hil/scenarios/system/other.toml", "d");
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "run"]);
+        let commit = String::from_utf8(
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(root)
+                .args(["rev-parse", "HEAD"])
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap();
+        let commit = commit.trim();
+        let run = tempfile::tempdir().unwrap();
+        let image = run.path().join("firmware/boot-smoke");
+        std::fs::create_dir_all(&image).unwrap();
+        std::fs::create_dir_all(run.path().join("scenarios/boot-smoke")).unwrap();
+        std::fs::write(
+            image.join("source-inputs.json"),
+            r#"{"schema":1,"files":["crates/radio/src/lib.rs"]}"#,
+        )
+        .unwrap();
+        let closure = super::super::closure::Closure::of_run(root, run.path(), &Default::default())
+            .unwrap()
+            .unwrap();
+
+        // Another crate, another scenario and a new unrelated file.
+        write("crates/other/src/lib.rs", "changed");
+        write("hil/scenarios/system/other.toml", "changed");
+        write("docs/new.md", "new");
+        assert!(super::unchanged_within(root, &closure, commit).unwrap());
+
+        write("hil/scenarios/system/boot-smoke.toml", "changed");
+        assert!(!super::unchanged_within(root, &closure, commit).unwrap());
+        write("hil/scenarios/system/boot-smoke.toml", "c");
+        write("crates/radio/src/lib.rs", "changed");
+        assert!(!super::unchanged_within(root, &closure, commit).unwrap());
+        write("crates/radio/src/lib.rs", "a");
+        assert!(super::unchanged_within(root, &closure, commit).unwrap());
+        assert!(
+            !super::unchanged_within(root, &closure, "0000000000000000000000000000000000000000")
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn a_run_without_recorded_inputs_has_no_closure_of_its_own() {
+        let run = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(run.path().join("firmware/boot-smoke")).unwrap();
+        std::fs::create_dir_all(run.path().join("scenarios")).unwrap();
+        assert!(
+            super::super::closure::Closure::of_run(run.path(), run.path(), &Default::default())
+                .unwrap()
+                .is_none()
+        );
+    }
 
     /// The source identity is the digest of the reserialized manifest entry,
     /// so an entry must read back to the producer's exact bytes.

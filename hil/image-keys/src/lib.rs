@@ -1,4 +1,5 @@
-//! The capability set a HIL runtime image reports, as a function of the Cargo
+#![no_std]
+//! The keys a HIL image reports, as a function of the Cargo
 //! features it was built with.
 //!
 //! The runtime pages this set out for `base/capabilities/get`, and the host

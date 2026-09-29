@@ -2174,8 +2174,10 @@ dependencies = [
  "oer-esp32s31-soc-esp-hal",
  "oer-example-bluetooth-gatt",
  "oer-hil-esp32s31-telemetry",
+ "oer-hil-image-keys",
  "oer-hil-protocol",
  "oer-hil-target-core",
+ "oer-hil-trace",
  "oer-ieee80211-runtime",
  "oer-ieee80211-softmac",
  "oer-ieee802154",
@@ -2200,6 +2202,14 @@ dependencies = [
  "oer-hil-protocol",
  "oer-ieee80211-mac",
  "oer-ieee80211-softmac",
+]
+
+[[package]]
+name = "oer-hil-image-keys"
+version = "0.1.0"
+dependencies = [
+ "heapless 0.9.3",
+ "oer-hil-protocol",
 ]
 
 [[package]]
@@ -2233,6 +2243,13 @@ dependencies = [
  "oer-trace",
  "trouble-host",
  "xarxa",
+]
+
+[[package]]
+name = "oer-hil-trace"
+version = "0.1.0"
+dependencies = [
+ "oer-trace",
 ]
 
 [[package]]

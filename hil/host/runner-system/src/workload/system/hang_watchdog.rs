@@ -50,7 +50,7 @@ pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
             }
             // The trace froze at the hang and waits, untouched, for the host.
             let trace = capture.trace_control(oer_hil_protocol::telemetry::TraceControl::Status)?;
-            let hang_kind = <oer_hil_target_core::trace::Hang as oer_trace::Event>::KIND.raw();
+            let hang_kind = <oer_hil_trace::Hang as oer_trace::Event>::KIND.raw();
             if !trace.holding_previous || trace.trigger.map(|(kind, _)| kind) != Some(hang_kind) {
                 return Err(format!("the trace did not freeze at the hang: {trace:?}").into());
             }

@@ -5,7 +5,7 @@
 //! says which features each of those enables in turn. The closure of that
 //! graph is exactly what `cfg(feature = ...)` sees in the runtime, and the
 //! runtime reports its capability keys with the same function of it
-//! ([`oer_hil_target_core::image_capabilities::image_keys`]), so the host's
+//! ([`oer_hil_image_keys::image_keys`]), so the host's
 //! expectation of a flashed image cannot drift from the firmware. A flashed
 //! image is the one class of its chip whose keys it reports.
 
@@ -106,11 +106,9 @@ impl ImageClass {
             return None;
         }
         let enabled = self.enabled_features_on(chip)?;
-        Some(DeviceCapabilities::of_keys(
-            oer_hil_target_core::image_capabilities::image_keys(&|feature| {
-                enabled.contains(feature)
-            }),
-        ))
+        Some(DeviceCapabilities::of_keys(oer_hil_image_keys::image_keys(
+            &|feature| enabled.contains(feature),
+        )))
     }
 }
 
@@ -196,7 +194,7 @@ mod tests {
     #[test]
     fn every_feature_the_keys_read_is_the_runtime_s() {
         let graph = feature_graph(runtime_manifest("esp32s31").unwrap());
-        for feature in oer_hil_target_core::image_capabilities::READ_FEATURES {
+        for feature in oer_hil_image_keys::READ_FEATURES {
             assert!(graph.contains_key(*feature), "{feature}");
         }
     }

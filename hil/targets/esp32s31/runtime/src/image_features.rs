@@ -1,9 +1,9 @@
 //! This image's Cargo features and the keys it reports for them.
 
 use embassy_sync::once_lock::OnceLock;
+use oer_hil_image_keys::ImageKeys;
 #[cfg(feature = "open-radio-hil")]
 use oer_hil_protocol::Message;
-use oer_hil_target_core::image_capabilities::ImageKeys;
 
 include!(concat!(env!("OUT_DIR"), "/enabled_features.rs"));
 
@@ -12,9 +12,7 @@ include!(concat!(env!("OUT_DIR"), "/enabled_features.rs"));
 pub(crate) fn keys() -> &'static ImageKeys {
     static KEYS: OnceLock<ImageKeys> = OnceLock::new();
     KEYS.get_or_init(|| {
-        oer_hil_target_core::image_capabilities::image_keys(&|feature| {
-            ENABLED_FEATURES.contains(&feature)
-        })
+        oer_hil_image_keys::image_keys(&|feature| ENABLED_FEATURES.contains(&feature))
     })
 }
 

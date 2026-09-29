@@ -304,7 +304,7 @@ fn describe_snapshot(
 /// The event sets a drained trace is described with; an event of another
 /// domain is shown as its domain, id and words.
 const TRACE_EVENT_SETS: &[oer_trace::Describer] = &[
-    <oer_hil_target_core::trace::PlatformTrace as oer_trace::EventSet>::describe,
+    <oer_hil_trace::PlatformTrace as oer_trace::EventSet>::describe,
     <oer_ieee80211_trace::StationTrace as oer_trace::EventSet>::describe,
     <oer_phy_trace::PhyTrace as oer_trace::EventSet>::describe,
     <oer_ieee802154_trace::Ieee802154Trace as oer_trace::EventSet>::describe,
@@ -313,7 +313,7 @@ const TRACE_EVENT_SETS: &[oer_trace::Describer] = &[
 /// A trace kind's name: the platform's own, else its domain and event id.
 fn event_name(kind: u16) -> String {
     match oer_trace::Kind::from_raw(kind) {
-        Some(kind) => oer_hil_target_core::trace::platform_name(kind).map_or_else(
+        Some(kind) => oer_hil_trace::platform_name(kind).map_or_else(
             || format!("{:?}.{}", kind.domain, kind.event).to_lowercase(),
             str::to_owned,
         ),
@@ -679,7 +679,7 @@ mod tests {
 
     #[test]
     fn a_trace_is_decoded_oldest_first_with_platform_names() {
-        let hang = <oer_hil_target_core::trace::Hang as oer_trace::Event>::KIND.raw();
+        let hang = <oer_hil_trace::Hang as oer_trace::Event>::KIND.raw();
         let station = oer_trace::Kind::new(oer_trace::Domain::Bluetooth, 9).raw();
         let entry = |tag, kind, t_us| oer_hil_protocol::telemetry::TraceEntry {
             tag,

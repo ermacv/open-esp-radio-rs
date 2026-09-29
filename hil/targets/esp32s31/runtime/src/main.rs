@@ -243,10 +243,7 @@ use oer_esp32s31_platform_runtime as _;
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
     // The trace keeps what happened before the panic.
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-    oer_trace::freeze(
-        <oer_hil_target_core::trace::Panic as oer_trace::Event>::KIND,
-        0,
-    );
+    oer_trace::freeze(<oer_hil_trace::Panic as oer_trace::Event>::KIND, 0);
     #[cfg(any(
         feature = "system-watchdog",
         feature = "open-radio-hil",

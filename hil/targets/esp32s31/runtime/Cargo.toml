@@ -24,6 +24,7 @@ system-watchdog = [
     "dep:embassy-sync",
     "dep:log",
     "dep:oer-hil-target-core",
+    "dep:oer-hil-image-keys",
     "dep:heapless",
     "dep:critical-section",
 ]
@@ -51,6 +52,7 @@ bluetooth-radio = [
     "dep:log",
     "dep:oer-hil-protocol",
     "dep:oer-hil-target-core",
+    "dep:oer-hil-image-keys",
     "dep:heapless",
     "dep:critical-section",
 ]
@@ -64,6 +66,7 @@ bluetooth-secure-gatt = [
     "gatt-application/secure",
     "dep:trouble-host",
     "dep:oer-hil-target-core",
+    "dep:oer-hil-image-keys",
     "oer-hil-target-core/secure-gatt",
 ]
 open-radio-hil = [
@@ -86,6 +89,7 @@ open-radio-hil = [
     "dep:oer-esp32s31-ieee80211-esp-hal",
     "dep:oer-hil-protocol",
     "dep:oer-hil-target-core",
+    "dep:oer-hil-image-keys",
     "dep:critical-section",
     "dep:oer-hil-esp32s31-telemetry",
     "dep:oer-ieee80211-runtime",
@@ -293,6 +297,8 @@ oer-esp32s31-executor-embassy.workspace = true
 oer-esp32s31-ieee80211-esp-hal = { workspace = true, features = ["esp32s31"], optional = true }
 oer-hil-protocol = { workspace = true, optional = true, features = ["async-io"] }
 oer-hil-target-core = { path = "../../../target-core", optional = true, default-features = false }
+oer-hil-image-keys = { workspace = true, optional = true }
+oer-hil-trace.workspace = true
 oer-esp32s31-platform-board = { path = "../../../../platform/esp32s31/board" }
 oer-esp32s31-platform-runtime = { path = "../../../../platform/esp32s31/runtime" }
 oer-hil-esp32s31-telemetry = { workspace = true, optional = true }

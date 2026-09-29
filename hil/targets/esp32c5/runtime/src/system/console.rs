@@ -3,6 +3,7 @@
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 use esp_hal::{timer::timg::TimerGroup, usb::usb_serial_jtag::UsbSerialJtag};
 use oer_esp32c5_soc_esp_hal::watchdog::{DeadlineBudget, DeadlineWatchdog};
+use oer_hil_image_keys::{ImageKeys, image_keys};
 use oer_hil_protocol::RequestIdentity;
 use oer_hil_protocol::base::{
     BootEvidence, Capabilities, PostMortemCheckpoints, RejectReason, Rejected,
@@ -10,7 +11,6 @@ use oer_hil_protocol::base::{
 use oer_hil_protocol::system::{WatchdogArmed, WatchdogTest, WatchdogTestMode};
 use oer_hil_target_core::base::{Intake, Platform, WatchdogRequest};
 use oer_hil_target_core::console::Console;
-use oer_hil_target_core::image_capabilities::{ImageKeys, image_keys};
 use static_cell::StaticCell;
 
 unsafe extern "C" {

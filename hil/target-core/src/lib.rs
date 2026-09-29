@@ -14,7 +14,6 @@ pub mod base;
 #[cfg(feature = "secure-gatt")]
 pub mod bluetooth_gatt;
 pub mod console;
-pub mod image_capabilities;
 pub mod liveness;
 #[cfg(feature = "system")]
 pub mod memory_benchmark;
@@ -22,7 +21,6 @@ pub mod memory_benchmark;
 pub mod network;
 pub mod postmortem;
 pub mod profile;
-pub mod trace;
 #[cfg(feature = "wifi")]
 pub mod traffic;
 

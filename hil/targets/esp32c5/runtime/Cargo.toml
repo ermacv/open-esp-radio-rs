@@ -23,6 +23,7 @@ system-watchdog = [
     "dep:oer-hil-protocol",
     "oer-hil-protocol?/system",
     "dep:oer-hil-target-core",
+    "dep:oer-hil-image-keys",
     "dep:static_cell",
 ]
 
@@ -39,6 +40,7 @@ heapless = { workspace = true, optional = true }
 oer-esp32c5-soc-esp-hal = { workspace = true, optional = true }
 oer-hil-protocol = { workspace = true, optional = true }
 oer-hil-target-core = { workspace = true, optional = true }
+oer-hil-image-keys = { workspace = true, optional = true }
 static_cell = { workspace = true, optional = true }
 
 [lints]

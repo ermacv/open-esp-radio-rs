@@ -1213,9 +1213,18 @@ dependencies = [
  "esp-rtos",
  "heapless 0.9.3",
  "oer-esp32c5-soc-esp-hal",
+ "oer-hil-image-keys",
  "oer-hil-protocol",
  "oer-hil-target-core",
  "static_cell",
+]
+
+[[package]]
+name = "oer-hil-image-keys"
+version = "0.1.0"
+dependencies = [
+ "heapless 0.9.3",
+ "oer-hil-protocol",
 ]
 
 [[package]]

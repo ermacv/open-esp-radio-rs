@@ -27,6 +27,7 @@ heapless = "0.9.3"
 oer-esp32c5-soc-esp-hal = { path = "../../../crates/adapters/esp-hal/esp32c5/soc", features = ["esp32c5"] }
 oer-hil-protocol = { path = "../../protocol", default-features = false, features = ["async-io"] }
 oer-hil-target-core = { path = "../../target-core", default-features = false }
+oer-hil-image-keys = { path = "../../image-keys" }
 static_cell = "2.1.1"
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-time = "0.5.1"

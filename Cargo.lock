@@ -2992,6 +2992,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-hil-image-keys"
+version = "0.1.0"
+dependencies = [
+ "heapless 0.9.3",
+ "oer-hil-protocol",
+]
+
+[[package]]
 name = "oer-hil-protocol"
 version = "0.1.0"
 dependencies = [
@@ -3067,9 +3075,10 @@ dependencies = [
  "oer-hil-arbiter",
  "oer-hil-fixture",
  "oer-hil-fixture-install",
+ "oer-hil-image-keys",
  "oer-hil-protocol",
  "oer-hil-schema",
- "oer-hil-target-core",
+ "oer-hil-trace",
  "oer-ieee80211-trace",
  "oer-ieee802154-trace",
  "oer-memory-report",
@@ -3125,7 +3134,7 @@ version = "0.1.0"
 dependencies = [
  "oer-hil-protocol",
  "oer-hil-runner-core",
- "oer-hil-target-core",
+ "oer-hil-trace",
  "oer-process",
  "oer-trace",
  "serde",
@@ -3167,6 +3176,13 @@ dependencies = [
  "oer-trace",
  "trouble-host",
  "xarxa",
+]
+
+[[package]]
+name = "oer-hil-trace"
+version = "0.1.0"
+dependencies = [
+ "oer-trace",
 ]
 
 [[package]]

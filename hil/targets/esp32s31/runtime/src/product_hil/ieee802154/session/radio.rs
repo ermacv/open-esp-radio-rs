@@ -164,7 +164,7 @@ impl Session {
             frame,
             channel: self.channel,
             mode,
-            transmit_power_dbm: None,
+            transmit_power_dbm: Some(12),
             max_frame_retries: request.max_frame_retries,
             security: TxSecurity::Radio,
             interface: Interface::PRIMARY,

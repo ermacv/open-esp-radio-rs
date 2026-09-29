@@ -23,6 +23,16 @@ segments whose flash contents already match; the selector goes last. It
 preserves NVS and other application partitions. Passing QIO to a single
 `espflash flash` invocation would also change the ROM image header and
 prevents this board from booting.
+`partitions/calibration-slots.csv` is a second layout with two application
+slots, `ota_0` and `ota_1` of 8 MiB each, for captures that alternate two
+firmwares by the OTA selection alone:
+`oer_hil_runner_core::device::flash_slot` writes a firmware into a slot once,
+`select_slot` selects the slot and optionally erases `phy_init` and `nvs`,
+leaving the chip for the caller's own reset, `booted_slot` reads which slot a
+boot's console shows the bootloader loading, and `boot_slot` does both around
+its own reset. The bootstrap finds its
+payload through the flash MMU, so an application boots from either slot. A HIL
+run writes `applications.csv` again.
 The runtime is linked separately. Its header supplies the entry, payload and
 initialization ranges; the host packs the checksum before embedding it in the
 bootstrap. Bootstrap copies and verifies PSRAM code before transferring control.

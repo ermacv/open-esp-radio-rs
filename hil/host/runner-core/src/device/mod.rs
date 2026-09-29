@@ -258,6 +258,237 @@ pub fn flash_application(
         .map_err(|error| format!("flash the HIL image through {}: {error}", port.display()).into())
 }
 
+/// An application slot of the two-slot calibration layout
+/// (`platform/esp32s31/partitions/calibration-slots.csv`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Slot {
+    Ota0,
+    Ota1,
+}
+
+impl Slot {
+    /// The slot's flash offset in the two-slot layout.
+    pub const fn offset(self) -> u32 {
+        match self {
+            Self::Ota0 => 0x1_0000,
+            Self::Ota1 => 0x80_0000,
+        }
+    }
+
+    /// The slot's index in the OTA selection.
+    const fn index(self) -> u32 {
+        match self {
+            Self::Ota0 => 0,
+            Self::Ota1 => 1,
+        }
+    }
+}
+
+/// Whether booting a slot first erases the calibration another firmware
+/// left: the `phy_init` and `nvs` partitions.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EraseCalibration {
+    Yes,
+    No,
+}
+
+/// An application written into a slot, as [`boot_slot`] checks it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SlotImage {
+    pub slot: Slot,
+    pub application: Vec<u8>,
+}
+
+/// What [`boot_slot`] saw of the boot it started.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BootedSlot {
+    pub slot: Slot,
+    /// The console from the reset to the bootloader's line naming the
+    /// partition it loaded.
+    pub console: Vec<u8>,
+}
+
+/// The two-slot calibration partition table's source.
+const SLOT_PARTITIONS: &str = "platform/esp32s31/partitions/calibration-slots.csv";
+const NVS: (u32, usize) = (0x9000, 0x4000);
+const PHY_INIT: (u32, usize) = (0xf000, 0x1000);
+/// How long a boot may take to name the partition it loads.
+const SLOT_BOOT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Write `application` into `slot` of the two-slot calibration layout, with
+/// the ESP-IDF bootloader encoded from `bootstrap` (when given) and the
+/// two-slot partition table, and leave the OTA selection and the chip in
+/// the ROM bootloader; [`boot_slot`] starts a slot. `output` receives the
+/// encoded table.
+pub fn flash_slot(
+    root: &Path,
+    application: &Path,
+    bootstrap: Option<&Path>,
+    slot: Slot,
+    output: &Path,
+    port: &Path,
+) -> Result<SlotImage> {
+    fs::create_dir_all(output)?;
+    let mut segments = Vec::new();
+    if let Some(bootstrap) = bootstrap {
+        let container = output.join("rom-container.bin");
+        let mut encode = Command::new(program_from_env("ESPFLASH", "espflash"));
+        oer_esp32s31_firmware::save_rom_image_command(&mut encode, root, bootstrap, &container);
+        run_command(&mut encode, "encode the ESP-IDF bootloader")?;
+        segments.push(FlashSegment {
+            address: oer_esp32s31_firmware::flash::BOOTLOADER_OFFSET,
+            data: oer_esp32s31_firmware::flash::rom_bootloader(&fs::read(&container)?)?.to_vec(),
+            description: "ESP-IDF bootloader",
+        });
+    }
+    let table = output.join("calibration-slots.bin");
+    let mut partition = Command::new(program_from_env("ESPFLASH", "espflash"));
+    partition
+        .args(["partition-table", "--to-binary", "--output"])
+        .arg(&table)
+        .arg(root.join(SLOT_PARTITIONS));
+    run_command(&mut partition, "encode the two-slot partition table")?;
+    segments.push(FlashSegment {
+        address: PARTITION_TABLE_OFFSET,
+        data: fs::read(&table)?,
+        description: "two-slot partition table",
+    });
+    let image = SlotImage {
+        slot,
+        application: fs::read(application)?,
+    };
+    segments.push(slot_segment(&image)?);
+    with_flash_retries(port, || {
+        oer_esp32s31_firmware::flash::write_segments(port, &segments, AfterFlash::StayInBootloader)
+            .map_err(|error| {
+                format!("flash slot {slot:?} through {}: {error}", port.display()).into()
+            })
+    })?;
+    Ok(image)
+}
+
+/// Select `image`'s slot and erase the other firmware's calibration when
+/// asked, leaving the chip in the ROM bootloader for the caller's own reset,
+/// so it owns the console from the new boot's first byte; [`booted_slot`]
+/// then tells which slot that boot loaded.
+///
+/// The slot's application is written again in the same connection, which
+/// skips it after an MD5 comparison when the flash still holds it, so a
+/// slot another tool overwrote is restored instead of booting the wrong
+/// firmware. Only the OTA data and the erased partitions are written
+/// otherwise: seconds, where a flash of the application takes a minute.
+pub fn select_slot(port: &Path, image: &SlotImage, erase: EraseCalibration) -> Result<()> {
+    let mut segments = vec![slot_segment(image)?];
+    if erase == EraseCalibration::Yes {
+        for (address, size, description) in [
+            (PHY_INIT.0, PHY_INIT.1, "erased phy_init"),
+            (NVS.0, NVS.1, "erased nvs"),
+        ] {
+            segments.push(FlashSegment {
+                address,
+                data: vec![0xff; size],
+                description,
+            });
+        }
+    }
+    segments.push(FlashSegment {
+        address: OTA_SELECTOR_OFFSET,
+        data: oer_esp32s31_firmware::flash::ota_selector_image(image.slot.index()).to_vec(),
+        description: "OTA selection",
+    });
+    with_flash_retries(port, || {
+        oer_esp32s31_firmware::flash::write_segments(port, &segments, AfterFlash::StayInBootloader)
+            .map_err(|error| {
+                format!(
+                    "select slot {:?} through {}: {error}",
+                    image.slot,
+                    port.display()
+                )
+                .into()
+            })
+    })
+}
+
+/// [`select_slot`], then reset into the slot and read its boot until the
+/// bootloader names the partition it loaded, which must be that slot's.
+pub fn boot_slot(port: &Path, image: &SlotImage, erase: EraseCalibration) -> Result<BootedSlot> {
+    select_slot(port, image, erase)?;
+    let mut serial = crate::session::reset::reset_into_application(port)?;
+    let started = std::time::Instant::now();
+    let mut console = Vec::new();
+    let mut buffer = [0; 1024];
+    while started.elapsed() < SLOT_BOOT_TIMEOUT {
+        match std::io::Read::read(&mut serial, &mut buffer) {
+            Ok(read) => console.extend_from_slice(&buffer[..read]),
+            Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
+            Err(error) => return Err(error.into()),
+        }
+        if let Some(offset) = loaded_partition(&console) {
+            if booted_slot(&console) != Some(image.slot) {
+                return Err(format!(
+                    "the bootloader loaded the partition at {offset:#x}, not slot {:?} at {:#x}",
+                    image.slot,
+                    image.slot.offset()
+                )
+                .into());
+            }
+            return Ok(BootedSlot {
+                slot: image.slot,
+                console,
+            });
+        }
+    }
+    Err(format!(
+        "the boot of slot {:?} named no loaded partition within {}s",
+        image.slot,
+        SLOT_BOOT_TIMEOUT.as_secs()
+    )
+    .into())
+}
+
+fn slot_segment(image: &SlotImage) -> Result<FlashSegment> {
+    let capacity: usize = match image.slot {
+        Slot::Ota0 => 0x7f_0000,
+        Slot::Ota1 => 0x80_0000,
+    };
+    if image.application.len() > capacity {
+        return Err(format!(
+            "the application ({} bytes) exceeds slot {:?} ({capacity} bytes)",
+            image.application.len(),
+            image.slot
+        )
+        .into());
+    }
+    Ok(FlashSegment {
+        address: image.slot.offset(),
+        data: image.application.clone(),
+        description: match image.slot {
+            Slot::Ota0 => "ota_0 application",
+            Slot::Ota1 => "ota_1 application",
+        },
+    })
+}
+
+/// The slot a boot's console shows the ESP-IDF bootloader loading, from its
+/// `Loaded app from partition at offset 0x…` line; `None` before the line
+/// is complete or when it names no slot of the two-slot layout.
+pub fn booted_slot(console: &[u8]) -> Option<Slot> {
+    let offset = loaded_partition(console)?;
+    [Slot::Ota0, Slot::Ota1]
+        .into_iter()
+        .find(|slot| slot.offset() == offset)
+}
+
+/// The partition offset the ESP-IDF bootloader's `Loaded app from partition
+/// at offset 0x…` line names, once the line is complete.
+fn loaded_partition(console: &[u8]) -> Option<u32> {
+    const MARKER: &str = "Loaded app from partition at offset ";
+    let text = String::from_utf8_lossy(console);
+    let rest = &text[text.find(MARKER)? + MARKER.len()..];
+    let line = rest.get(..rest.find(['\r', '\n'])?)?;
+    u32::from_str_radix(line.trim().strip_prefix("0x")?, 16).ok()
+}
+
 /// Run `write` again when espflash's link to the chip failed on its way,
 /// with a power-on reset between the attempts where the board has one; each
 /// retry is reported on stderr, which the job log keeps.
@@ -311,6 +542,45 @@ fn transient_flash_failure(message: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_boot_names_the_partition_it_loaded() {
+        let console = b"I (236) boot: Loaded app from partition at offset 0x800000\r\nI (237)";
+        assert_eq!(loaded_partition(console), Some(Slot::Ota1.offset()));
+        assert_eq!(booted_slot(console), Some(Slot::Ota1));
+        // The single-slot HIL layout's ota_0 is the two-slot layout's too.
+        assert_eq!(
+            booted_slot(b"boot: Loaded app from partition at offset 0x10000\r\n"),
+            Some(Slot::Ota0)
+        );
+        assert_eq!(
+            booted_slot(b"boot: Loaded app from partition at offset 0x20000\r\n"),
+            None
+        );
+        // A line still arriving names nothing yet.
+        assert_eq!(
+            loaded_partition(b"I (236) boot: Loaded app from partition at offset 0x80"),
+            None
+        );
+        assert_eq!(
+            loaded_partition(b"I (100) boot: ESP-IDF bootloader\r\n"),
+            None
+        );
+    }
+
+    #[test]
+    fn a_slot_refuses_an_application_it_cannot_hold() {
+        let fits = SlotImage {
+            slot: Slot::Ota0,
+            application: vec![0; 0x7f_0000],
+        };
+        assert_eq!(slot_segment(&fits).unwrap().address, 0x1_0000);
+        let too_large = SlotImage {
+            slot: Slot::Ota0,
+            application: vec![0; 0x7f_0001],
+        };
+        assert!(slot_segment(&too_large).is_err());
+    }
 
     #[test]
     fn a_link_failure_is_retried_and_an_image_failure_is_not() {

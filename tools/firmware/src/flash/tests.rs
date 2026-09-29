@@ -79,3 +79,15 @@ fn ota_0_size_matches_the_partition_table_and_warns_near_full() {
     assert!(ota_0_budget_warning(capacity * 89 / 100).is_none());
     assert!(ota_0_budget_warning(capacity.div_ceil(100) * 90).is_some());
 }
+
+#[test]
+fn the_second_slot_is_selected_by_the_next_sequence_number() {
+    let image = ota_selector_image(1);
+    // The bootloader boots slot (sequence - 1) modulo the slot count.
+    assert_eq!(u32::from_le_bytes(image[0..4].try_into().unwrap()), 2);
+    assert_eq!(
+        u32::from_le_bytes(image[28..32].try_into().unwrap()),
+        crc32_idf(&2_u32.to_le_bytes())
+    );
+    assert_eq!(ota_selector_image(0), ota0_selector_image());
+}

@@ -68,7 +68,14 @@ pub fn rom_bootloader(container: &[u8]) -> Result<&[u8]> {
 }
 
 pub fn ota0_selector_image() -> [u8; OTA_DATA_SIZE] {
-    let sequence = 1_u32;
+    ota_selector_image(0)
+}
+
+/// The OTA data that makes the ESP-IDF bootloader boot application slot
+/// `slot` (0 for `ota_0`, 1 for `ota_1`): its sequence number modulo the
+/// number of slots, plus one.
+pub fn ota_selector_image(slot: u32) -> [u8; OTA_DATA_SIZE] {
+    let sequence = slot + 1;
     let mut image = [0xff; OTA_DATA_SIZE];
     image[0..4].copy_from_slice(&sequence.to_le_bytes());
     image[24..28].copy_from_slice(&2_u32.to_le_bytes());

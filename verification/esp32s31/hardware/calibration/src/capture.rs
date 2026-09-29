@@ -359,7 +359,7 @@ fn production_boot(
         // The IEEE 802.15.4 session replaces the image's own initialization:
         // it is admitted only before it, and publishes no startup artifact.
         let status = if lifecycle.ieee802154() {
-            capture.request_capabilities(SESSION_TIMEOUT)?;
+            capture.request_image_keys(SESSION_TIMEOUT)?;
             None
         } else {
             let (_, status) = capture.prepare_startup(Target {

@@ -70,7 +70,7 @@ pub enum Kind {
     Endpoint,
     /// A device message: an endpoint's response or an unsolicited event.
     Topic,
-    /// A marker the device advertises in its capabilities; never sent.
+    /// A marker the device advertises among its image keys; never sent.
     Property,
 }
 

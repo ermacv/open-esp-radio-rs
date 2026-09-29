@@ -100,7 +100,7 @@ fn a_scenario_is_marked_unsupported_exactly_when_no_current_image_serves_it() {
             built(class)
         } else {
             class
-                .capabilities_on("esp32s31")
+                .image_keys_on("esp32s31")
                 .is_some_and(|reported| scenario.family.served_by(&reported))
         };
         assert_eq!(

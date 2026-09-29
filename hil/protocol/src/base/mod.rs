@@ -2,12 +2,10 @@
 //! image serves it.
 
 mod boot;
-mod capabilities;
+mod image_keys;
 
 pub use boot::*;
-pub use capabilities::{
-    CAPABILITY_PAGE_KEYS, Capabilities, CapabilityPage, Hello, digest, sorted_keys,
-};
+pub use image_keys::{Hello, IMAGE_KEYS_PER_PAGE, ImageKeyPage, ImageKeySet, digest, sorted_keys};
 
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
@@ -17,8 +15,8 @@ use crate::{Envelope, Frame, Message};
 crate::messages! {
     topic Hello = "base/hello";
     endpoint GetHello = "base/hello/get" => Hello;
-    endpoint GetCapabilities = "base/capabilities/get" => CapabilityPage;
-    topic CapabilityPage = "base/capabilities";
+    endpoint GetImageKeys = "base/image-keys/get" => ImageKeyPage;
+    topic ImageKeyPage = "base/image-keys";
     topic Rejected = "base/rejected";
     endpoint GetBootStatus = "base/boot/get" => BootEvidence;
     topic BootEvidence = "base/boot";
@@ -36,7 +34,7 @@ pub struct GetHello;
 
 /// Page `first..` of the keys the image serves.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct GetCapabilities {
+pub struct GetImageKeys {
     pub first: u16,
 }
 

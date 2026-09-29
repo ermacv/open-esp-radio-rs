@@ -40,7 +40,7 @@ fn an_unknown_boot_allows_only_session_free_hello_discovery() {
         });
     }
     header_of(
-        &Envelope::new(0, 1, 0, 1, GetCapabilities { first: 0 }),
+        &Envelope::new(0, 1, 0, 1, GetImageKeys { first: 0 }),
         |frame| assert_eq!(validate_target(frame, 42), Err(RejectReason::BootId)),
     );
     header_of(&Envelope::new(42, 1, 0, 1, GetBootStatus), |frame| {
@@ -153,27 +153,27 @@ fn the_largest_post_mortem_fits_a_frame() {
 
 const SERVED: [Key; 4] = sorted_keys([
     GetBootStatus::KEY,
-    GetCapabilities::KEY,
+    GetImageKeys::KEY,
     GetLinkHealth::KEY,
     GetPostMortemCheckpoints::KEY,
 ]);
 
 #[test]
 fn capabilities_page_out_the_same_sorted_keys_every_time() {
-    let capabilities = Capabilities::new(&SERVED);
+    let image_keys = ImageKeySet::new(&SERVED);
     assert!(
         SERVED
             .windows(2)
             .all(|pair| pair[0].to_u64() < pair[1].to_u64())
     );
-    let page = capabilities.page(0);
+    let page = image_keys.page(0);
     assert_eq!((page.first, page.total), (0, 4));
     assert_eq!(page.keys.as_slice(), &SERVED);
-    assert_eq!(capabilities.page(0), page);
-    assert!(capabilities.page(4).keys.is_empty());
-    assert!(capabilities.contains(GetLinkHealth::KEY));
-    assert!(!capabilities.contains(crate::system::WatchdogTest::KEY));
-    let hello = capabilities.hello(0);
+    assert_eq!(image_keys.page(0), page);
+    assert!(image_keys.page(4).keys.is_empty());
+    assert!(image_keys.contains(GetLinkHealth::KEY));
+    assert!(!image_keys.contains(crate::system::WatchdogTest::KEY));
+    let hello = image_keys.hello(0);
     assert_eq!(hello.keys, 4);
     assert_eq!(hello.keys_digest, digest(&SERVED));
     assert_ne!(
@@ -185,10 +185,10 @@ fn capabilities_page_out_the_same_sorted_keys_every_time() {
 
 #[test]
 fn a_full_capability_page_fits_a_frame() {
-    let keys: [Key; CAPABILITY_PAGE_KEYS] =
+    let keys: [Key; IMAGE_KEYS_PER_PAGE] =
         core::array::from_fn(|index| Key((index as u64).to_le_bytes()));
-    let page = Capabilities::new(&keys).page(0);
-    assert_eq!(page.keys.len(), CAPABILITY_PAGE_KEYS);
+    let page = ImageKeySet::new(&keys).page(0);
+    assert_eq!(page.keys.len(), IMAGE_KEYS_PER_PAGE);
     let expected = Envelope::new(u64::MAX, u32::MAX, u64::MAX, u32::MAX, page);
     assert_eq!(transmit(&expected), expected);
 }

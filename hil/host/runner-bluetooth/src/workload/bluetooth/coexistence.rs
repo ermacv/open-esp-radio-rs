@@ -50,7 +50,7 @@ impl<'a> Echo<'a> {
     /// epoch and discover its value handle.
     pub fn connect(capture: &'a SerialCapture, adapter: Adapter, output: &Path) -> Result<Self> {
         if !capture
-            .request_capabilities(Duration::from_secs(10))?
+            .request_image_keys(Duration::from_secs(10))?
             .has::<oer_hil_protocol::bluetooth::Gatt>()
         {
             return Err("joint image without the GATT application".into());

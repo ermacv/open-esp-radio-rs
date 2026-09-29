@@ -10,7 +10,7 @@ use hil_core::{
     image,
     image::ImageClass,
     lab::config::LabConfig,
-    session::{DeviceCapabilities, SerialCapture},
+    session::{DeviceImageKeys, SerialCapture},
 };
 
 pub(crate) fn scenario_failure(lab: &LabConfig, selected: &Scenario) -> Option<Failure> {
@@ -30,9 +30,9 @@ pub(crate) fn validate_flashed_image(
         return Ok(());
     }
     let preflight = output.join("image-preflight");
-    let error = match capabilities_of(lab, &preflight) {
-        Ok(capabilities) => {
-            return check_flashed_capabilities(lab.target(), selected, &capabilities);
+    let error = match image_keys_of(lab, &preflight) {
+        Ok(image_keys) => {
+            return check_flashed_image_keys(lab.target(), selected, &image_keys);
         }
         Err(error) => error,
     };
@@ -63,17 +63,17 @@ pub(crate) fn validate_flashed_image(
         || {
             attempt += 1;
             let directory = output.join(format!("image-preflight-retry-{attempt}"));
-            answered = capabilities_of(lab, &directory).ok();
+            answered = image_keys_of(lab, &directory).ok();
             answered.is_some()
         },
     );
     match answered {
-        Some(capabilities) => {
+        Some(image_keys) => {
             eprintln!(
                 "hil: {:?} cleared the boot loop",
                 escalation.steps.last().map(|step| step.step)
             );
-            check_flashed_capabilities(lab.target(), selected, &capabilities)
+            check_flashed_image_keys(lab.target(), selected, &image_keys)
         }
         None => Err(format!(
             "{error}; the bootloader reset in a loop ({}) and {} did not clear it: the board is \
@@ -91,34 +91,34 @@ pub(crate) fn validate_flashed_image(
     }
 }
 
-/// Reset the device and ask its image for its capabilities, capturing the
+/// Reset the device and ask its image for its image keys, capturing the
 /// console into `directory`.
-fn capabilities_of(lab: &LabConfig, directory: &Path) -> Result<DeviceCapabilities> {
+fn image_keys_of(lab: &LabConfig, directory: &Path) -> Result<DeviceImageKeys> {
     let capture = SerialCapture::start_with_reset(&lab.device.serial, directory)?;
-    let capabilities = capture.request_capabilities(Duration::from_secs(10));
-    capture.finish_with(capabilities)
+    let image_keys = capture.request_image_keys(Duration::from_secs(10));
+    capture.finish_with(image_keys)
 }
 
 /// Accept a flashed image only when it is the scenario's class and reports
 /// every role the scenario drives.
-fn check_flashed_capabilities(
+fn check_flashed_image_keys(
     chip: &str,
     selected: &Scenario,
-    capabilities: &DeviceCapabilities,
+    image_keys: &DeviceImageKeys,
 ) -> Result<()> {
     let expected = selected.image();
-    let observed = image::classify_flashed(chip, capabilities).ok_or_else(|| {
-        format!("the flashed image reports capabilities no {chip} image class builds")
+    let observed = image::classify_flashed(chip, image_keys).ok_or_else(|| {
+        format!("the flashed image reports image keys no {chip} image class builds")
     })?;
     if observed != expected {
         return Err(format!(
-            "scenario requires `{}` image but flashed target advertises `{}` capabilities",
+            "scenario requires `{}` image but flashed target advertises the image keys of `{}`",
             expected.id(),
             observed.id()
         )
         .into());
     }
-    if !selected.family.served_by(capabilities) {
+    if !selected.family.served_by(image_keys) {
         return Err(format!(
             "flashed `{}` image does not declare a role scenario `{}` drives",
             observed.id(),

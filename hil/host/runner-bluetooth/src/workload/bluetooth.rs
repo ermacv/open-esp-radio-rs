@@ -78,7 +78,7 @@ fn probe(
     counts: &mut Counts,
     quiet_cycles: Option<u16>,
 ) -> Result<()> {
-    let caps = capture.request_capabilities(Duration::from_secs(10))?;
+    let caps = capture.request_image_keys(Duration::from_secs(10))?;
     if !caps.has::<oer_hil_protocol::bluetooth::Dtm>() {
         return Err("firmware lacks Bluetooth DTM control".into());
     }

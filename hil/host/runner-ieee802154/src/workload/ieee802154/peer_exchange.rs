@@ -40,7 +40,7 @@ use crate::{
     peer::{PEER_TRANSCRIPT, Peer, PeerConfig, PeerEvent, PeerLink, PeerTranscript},
 };
 
-pub(crate) const CAPABILITIES_TIMEOUT: Duration = Duration::from_secs(10);
+pub(crate) const IMAGE_KEYS_TIMEOUT: Duration = Duration::from_secs(10);
 /// Session start registers and calibrates the shared PHY.
 pub(crate) const START_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
@@ -233,7 +233,7 @@ fn exchange<L: PeerLink>(
     config: &Config,
     boot: u8,
 ) -> Result<BootReport> {
-    let capabilities = capture.request_capabilities(CAPABILITIES_TIMEOUT)?;
+    let capabilities = capture.request_image_keys(IMAGE_KEYS_TIMEOUT)?;
     if !capabilities.has::<oer_hil_protocol::ieee802154::Session>() {
         return Err("firmware does not advertise IEEE 802.15.4 sessions".into());
     }

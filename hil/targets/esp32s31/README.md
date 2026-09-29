@@ -353,7 +353,7 @@ The `diagnostic-memory-benchmark` image excludes `product_hil` and its radio
 and network tasks at compile time. It keeps the shared two-core boot,
 executors, stack placement and HIL console; CPU1 publishes its spawner but
 does not start a network task. The memory task alone claims AXI-GDMA and its
-dedicated buffers. Image capability advertisement belongs to `capabilities`,
+dedicated buffers. Image key advertisement belongs to `oer-hil-image-keys`,
 so reporting memory support does not retain the product owner graph. Its
 4,096-byte maximum payload describes the per-frame benchmark command policy,
 independently of the product TCP buffer size.

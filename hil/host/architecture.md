@@ -507,8 +507,8 @@ implementation from the runner. Tests are adjacent files within each owner.
 
 A capture that begins at a reset expects the boot's unsolicited Hello at
 target message zero. The USB Serial/JTAG can drop the first bytes of that
-frame, so when no Hello decodes in time, `request_capabilities` asks the boot
-for its capabilities instead: only when the console already shows the chip
+frame, so when no Hello decodes in time, `request_image_keys` asks the boot
+for its image keys instead: only when the console already shows the chip
 starting (the ROM banner or the bootloader's lines) and no boot was seen yet,
 and the answer begins the boot only while it is among the boot's first eight
 messages. The capture's link health records it as `solicited_hello`; any other

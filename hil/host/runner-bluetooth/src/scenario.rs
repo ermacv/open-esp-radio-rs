@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use hil_core::session::DeviceCapabilities;
+use hil_core::session::DeviceImageKeys;
 use hil_core::{
     context::Context,
     image::ImageClass,
@@ -121,7 +121,7 @@ impl BluetoothScenario {
     /// Whether an image of [`Self::image`] reporting `capabilities` runs this
     /// workload: the advertising workloads drive the image's Controller over
     /// raw HCI.
-    pub fn served_by(&self, capabilities: &DeviceCapabilities) -> bool {
+    pub fn served_by(&self, capabilities: &DeviceImageKeys) -> bool {
         match self {
             Self::Gatt {} | Self::SecureGatt { .. } => true,
             Self::ScannableAdvertising {} | Self::DirectedAdvertising {} | Self::DtmPeer { .. } => {

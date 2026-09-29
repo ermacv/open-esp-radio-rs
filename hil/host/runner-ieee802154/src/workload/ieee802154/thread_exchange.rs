@@ -30,7 +30,7 @@ use oer_hil_protocol::{
 };
 use serde::Serialize;
 
-use super::peer_exchange::{CAPABILITIES_TIMEOUT, COMMAND_TIMEOUT, START_TIMEOUT};
+use super::peer_exchange::{COMMAND_TIMEOUT, IMAGE_KEYS_TIMEOUT, START_TIMEOUT};
 use crate::{
     Result,
     peer::{PEER_TRANSCRIPT, PeerLink, PeerTranscript},
@@ -211,7 +211,7 @@ fn exchange<L: PeerLink>(
     config: &Config,
     boot: u8,
 ) -> Result<BootReport> {
-    let capabilities = capture.request_capabilities(CAPABILITIES_TIMEOUT)?;
+    let capabilities = capture.request_image_keys(IMAGE_KEYS_TIMEOUT)?;
     if !capabilities.has::<oer_hil_protocol::ieee802154::Thread>() {
         return Err("firmware does not advertise Thread sessions".into());
     }

@@ -26,7 +26,7 @@ use serde::Serialize;
 
 use crate::Result;
 
-const CAPABILITIES_TIMEOUT: Duration = Duration::from_secs(10);
+const IMAGE_KEYS_TIMEOUT: Duration = Duration::from_secs(10);
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 const REPORT_NAME: &str = "ieee802154-route-probe.json";
 
@@ -176,7 +176,7 @@ fn probe(
     capture: &SerialCapture,
     request: Ieee802154RouteProbeRequest,
 ) -> Result<Ieee802154RouteProbeEvidence> {
-    let capabilities = capture.request_capabilities(CAPABILITIES_TIMEOUT)?;
+    let capabilities = capture.request_image_keys(IMAGE_KEYS_TIMEOUT)?;
     if !capabilities.has::<oer_hil_protocol::ieee802154::RouteProbe>() {
         return Err("firmware does not advertise the IEEE 802.15.4 route probe".into());
     }

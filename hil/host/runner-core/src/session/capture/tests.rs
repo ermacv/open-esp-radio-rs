@@ -163,7 +163,7 @@ fn observation_discovers_a_running_boot_without_initializing_or_clearing_results
         assert!(request.is::<oer_hil_protocol::base::GetHello>());
         assert_eq!((request.boot_id, request.session_id), (0, 0));
         reply(&input, &request, 87, hello(7, 87).body);
-        let mut sequence = answer_capabilities(&input, &commands, 7, 88);
+        let mut sequence = answer_image_keys(&input, &commands, 7, 88);
         let (request, oer_hil_protocol::network::GetStatus) = receive(&commands);
         assert_eq!((request.boot_id, request.session_id), (7, 0));
         let status = OperationStatus {
@@ -378,7 +378,7 @@ fn write_failure_reaches_the_command_caller() {
     activate(&capture, &input);
     let start = Instant::now();
     let error = capture
-        .request_capabilities(Duration::from_secs(3))
+        .request_image_keys(Duration::from_secs(3))
         .unwrap_err();
     assert!(start.elapsed() < Duration::from_secs(1));
     assert_eq!(
@@ -1459,7 +1459,7 @@ fn answer_hello(
 ) -> std::thread::JoinHandle<Input> {
     std::thread::spawn(move || {
         answer_hello_request(&input, &writes, boot, sequence);
-        answer_capabilities(&input, &writes, boot, sequence + 1);
+        answer_image_keys(&input, &writes, boot, sequence + 1);
         input
     })
 }
@@ -1511,9 +1511,7 @@ fn a_boot_whose_hello_the_link_lost_begins_with_its_capability_answer() {
     wait_for_console(&capture, boot_line);
     input.send(Ok(truncated_hello(9))).unwrap();
     let target = answer_hello(input, writes, 9, 1);
-    let capabilities = capture
-        .request_capabilities(Duration::from_secs(1))
-        .unwrap();
+    let capabilities = capture.request_image_keys(Duration::from_secs(1)).unwrap();
     target.join().unwrap();
     assert!(capabilities.has::<oer_hil_protocol::wifi::DriverObservation>());
     let health = capture.protocol.state.lock().unwrap().health.clone();
@@ -1533,7 +1531,7 @@ fn a_lost_hello_stands_without_a_boot_on_the_console() {
     let (capture, input, writes) = capture_with_commands(&output);
     input.send(Ok(truncated_hello(9))).unwrap();
     let error = capture
-        .request_capabilities(Duration::from_millis(200))
+        .request_image_keys(Duration::from_millis(200))
         .unwrap_err();
     assert!(
         error
@@ -1555,10 +1553,6 @@ fn an_answer_late_in_a_boot_begins_no_boot() {
         answer_hello_request(&input, &writes, 9, 40);
         input
     });
-    assert!(
-        capture
-            .request_capabilities(Duration::from_secs(1))
-            .is_err()
-    );
+    assert!(capture.request_image_keys(Duration::from_secs(1)).is_err());
     target.join().unwrap();
 }

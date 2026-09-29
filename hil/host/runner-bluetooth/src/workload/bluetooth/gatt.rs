@@ -128,7 +128,7 @@ fn exercise(
     exchanges: &mut Vec<Exchange>,
 ) -> Result<()> {
     if !capture
-        .request_capabilities(Duration::from_secs(10))?
+        .request_image_keys(Duration::from_secs(10))?
         .has::<oer_hil_protocol::bluetooth::Gatt>()
     {
         return Err("exclusive Trouble GATT image required".into());

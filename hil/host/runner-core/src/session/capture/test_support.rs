@@ -1,6 +1,6 @@
 //! A fake serial link to the target for session and workload tests.
 use super::*;
-use oer_hil_protocol::base::{Capabilities, GetCapabilities, Hello};
+use oer_hil_protocol::base::{GetImageKeys, Hello, ImageKeySet};
 use oer_hil_protocol::{Key, Message, WireKind};
 use std::{
     io,
@@ -218,7 +218,7 @@ pub fn receive<M: oer_hil_protocol::Message>(writes: &mpsc::Receiver<Vec<u8>>) -
 /// The capabilities of the fake target: the esp32s31 correctness image's.
 pub fn capability_keys() -> Vec<Key> {
     let capabilities = crate::image::ImageClass::Correctness
-        .capabilities_on("esp32s31")
+        .image_keys_on("esp32s31")
         .unwrap();
     capabilities.keys().iter().copied().collect()
 }
@@ -230,25 +230,25 @@ pub fn hello(boot_id: u64, message_sequence: u32) -> Envelope<Hello> {
         message_sequence,
         0,
         0,
-        Capabilities::new(&capability_keys()).hello(1),
+        ImageKeySet::new(&capability_keys()).hello(1),
     )
 }
 
 /// Answer the host's capability requests for [`capability_keys`] as boot
 /// `boot_id`, starting at target message `message_sequence`; returns the
 /// next free target message sequence.
-pub fn answer_capabilities(
+pub fn answer_image_keys(
     input: &Input,
     writes: &mpsc::Receiver<Vec<u8>>,
     boot_id: u64,
     mut message_sequence: u32,
 ) -> u32 {
     let keys = capability_keys();
-    let capabilities = Capabilities::new(&keys);
+    let capabilities = ImageKeySet::new(&keys);
     let mut first = 0;
     while usize::from(first) < keys.len() {
         let request = receive_request(writes);
-        let asked = request.decode::<GetCapabilities>().unwrap_or_else(|| {
+        let asked = request.decode::<GetImageKeys>().unwrap_or_else(|| {
             panic!("the host sent {}, not a capability request", request.path())
         });
         assert_eq!(asked.first, first);

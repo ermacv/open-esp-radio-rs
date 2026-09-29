@@ -26,11 +26,11 @@ frame. It writes all bytes and flushes before returning success. Callers must
 bound the complete operation, including flush: accepting bytes alone does not
 complete a USB transfer whose final packet is full.
 
-## Capabilities
+## Image keys
 
 A boot's first frame is its `base::Hello`: how many keys the image serves, a
 digest of them and its payload limits. The host pages the sorted keys with
-`base::GetCapabilities` and checks them against the digest. An image serves
+`base::GetImageKeys` and checks them against the digest. An image serves
 the base module's endpoints and the endpoints of its own request set; any
 other key is refused as unsupported.
 

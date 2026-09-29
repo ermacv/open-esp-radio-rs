@@ -10,7 +10,7 @@ value. Archived captures retain their original wire schema and evidence layout.
 `ResetReason` is a platform value shared by all images; querying it does not
 issue HCI Reset or change radio state.
 
-`SystemWatchdogTest` requires the independent `system_watchdog` capability.
+`system::WatchdogTest` is served only by the dedicated watchdog image.
 The dedicated radio-free image's one-second engineering budget exercises completion, a synchronous
 poll that never returns, cancellation, missing completion and late restoration
 of the SoC deadline service. The correlated event acknowledges the selected

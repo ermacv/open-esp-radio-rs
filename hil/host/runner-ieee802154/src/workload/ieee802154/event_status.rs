@@ -19,7 +19,7 @@ use serde::Serialize;
 use crate::Result;
 use hil_core::session::SerialCapture;
 
-const CAPABILITIES_TIMEOUT: Duration = Duration::from_secs(10);
+const IMAGE_KEYS_TIMEOUT: Duration = Duration::from_secs(10);
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 const RESULT: &str = "route-detached-enabled-selective-ack-and-distinct-arrival-observed";
 
@@ -118,7 +118,7 @@ fn probe(
     request: Ieee802154EventStatusProbeRequest,
     boot: u8,
 ) -> Result<BootReport> {
-    let capabilities = capture.request_capabilities(CAPABILITIES_TIMEOUT)?;
+    let capabilities = capture.request_image_keys(IMAGE_KEYS_TIMEOUT)?;
     if !capabilities.has::<oer_hil_protocol::ieee802154::EventStatusProbe>() {
         return Err("firmware does not advertise the IEEE 802.15.4 EVENT_STATUS probe".into());
     }

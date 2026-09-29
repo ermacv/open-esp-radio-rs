@@ -4,14 +4,14 @@
 //! A class names the Cargo features its runtime is built with; the manifest
 //! says which features each of those enables in turn. The closure of that
 //! graph is exactly what `cfg(feature = ...)` sees in the runtime, and the
-//! runtime reports its capability keys with the same function of it
+//! runtime reports its image keys with the same function of it
 //! ([`oer_hil_image_keys::image_keys`]), so the host's
 //! expectation of a flashed image cannot drift from the firmware. A flashed
 //! image is the one class of its chip whose keys it reports.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::session::DeviceCapabilities;
+use crate::session::DeviceImageKeys;
 
 use super::{ImageClass, Integration};
 
@@ -98,26 +98,26 @@ impl ImageClass {
         Some(closure(&graph, &roots))
     }
 
-    /// The capability keys this class's runtime on `chip` reports, or `None`
+    /// The image keys this class's runtime on `chip` reports, or `None`
     /// for the boot smoke image, which reports none, and for a class the
     /// chip does not build.
-    pub fn capabilities_on(self, chip: &str) -> Option<DeviceCapabilities> {
+    pub fn image_keys_on(self, chip: &str) -> Option<DeviceImageKeys> {
         if self == Self::BootSmoke {
             return None;
         }
         let enabled = self.enabled_features_on(chip)?;
-        Some(DeviceCapabilities::of_keys(oer_hil_image_keys::image_keys(
+        Some(DeviceImageKeys::of_keys(oer_hil_image_keys::image_keys(
             &|feature| enabled.contains(feature),
         )))
     }
 }
 
 /// The class of `chip` whose keys a flashed image reports.
-pub fn classify_flashed(chip: &str, capabilities: &DeviceCapabilities) -> Option<ImageClass> {
+pub fn classify_flashed(chip: &str, image_keys: &DeviceImageKeys) -> Option<ImageClass> {
     ImageClass::ALL.into_iter().find(|class| {
         class
-            .capabilities_on(chip)
-            .is_some_and(|expected| expected.same_keys(capabilities))
+            .image_keys_on(chip)
+            .is_some_and(|expected| expected.same_keys(image_keys))
     })
 }
 
@@ -127,8 +127,8 @@ mod tests {
 
     use super::*;
 
-    fn keys(class: ImageClass) -> DeviceCapabilities {
-        class.capabilities_on("esp32s31").unwrap()
+    fn keys(class: ImageClass) -> DeviceImageKeys {
+        class.image_keys_on("esp32s31").unwrap()
     }
 
     #[test]
@@ -153,10 +153,10 @@ mod tests {
         for (chip, _) in RUNTIME_MANIFESTS {
             let mut seen = BTreeMap::new();
             for class in ImageClass::ALL {
-                let Some(capabilities) = class.capabilities_on(chip) else {
+                let Some(image_keys) = class.image_keys_on(chip) else {
                     continue;
                 };
-                if let Some(other) = seen.insert(capabilities.keys().clone(), class) {
+                if let Some(other) = seen.insert(image_keys.keys().clone(), class) {
                     panic!(
                         "{chip}: {} and {} report the same keys",
                         other.id(),
@@ -164,7 +164,7 @@ mod tests {
                     );
                 }
                 assert_eq!(
-                    classify_flashed(chip, &capabilities),
+                    classify_flashed(chip, &image_keys),
                     Some(class),
                     "{chip}: {}",
                     class.id()
@@ -180,13 +180,13 @@ mod tests {
         let mut foreign = performance.keys().clone();
         foreign.insert(<bluetooth::Dtm as Message>::KEY);
         assert_eq!(
-            classify_flashed("esp32s31", &DeviceCapabilities::of_keys(foreign)),
+            classify_flashed("esp32s31", &DeviceImageKeys::of_keys(foreign)),
             None
         );
         let mut missing = performance.keys().clone();
         missing.remove(&<network::Udp as Message>::KEY);
         assert_eq!(
-            classify_flashed("esp32s31", &DeviceCapabilities::of_keys(missing)),
+            classify_flashed("esp32s31", &DeviceImageKeys::of_keys(missing)),
             None
         );
     }
@@ -220,10 +220,8 @@ mod tests {
 
     #[test]
     fn the_esp32c5_builds_its_system_watchdog_image() {
-        let watchdog = ImageClass::SystemWatchdog
-            .capabilities_on("esp32c5")
-            .unwrap();
+        let watchdog = ImageClass::SystemWatchdog.image_keys_on("esp32c5").unwrap();
         assert!(watchdog.has::<system::WatchdogTest>());
-        assert!(ImageClass::Performance.capabilities_on("esp32c5").is_none());
+        assert!(ImageClass::Performance.image_keys_on("esp32c5").is_none());
     }
 }

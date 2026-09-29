@@ -109,7 +109,7 @@ pub fn run(
         let mut exchanges = Vec::new();
         let mut peer = None;
         let probe = (|| -> Result<()> {
-            let capabilities = capture.request_capabilities(Duration::from_secs(10))?;
+            let capabilities = capture.request_image_keys(Duration::from_secs(10))?;
             if !capabilities.has::<oer_hil_protocol::bluetooth::SecureGatt>() || capabilities.has::<oer_hil_protocol::bluetooth::Gatt>() { return Err("exclusive secure GATT image required".into()); }
             capture.require_bluetooth_irq_stack()?;
             let initial = wait(capture,&mut samples,|e|e.traffic.advertising && e.traffic.address.is_some())?;

@@ -6,8 +6,8 @@
 //! does not serve — or as one of the image's own requests to serve.
 
 use oer_hil_protocol::base::{
-    BootEvidence, Capabilities, GetBootStatus, GetCapabilities, GetHello, GetLinkHealth,
-    GetPostMortemCheckpoints, Hello, LinkHealth, PostMortemCheckpoints, RejectReason,
+    BootEvidence, GetBootStatus, GetHello, GetImageKeys, GetLinkHealth, GetPostMortemCheckpoints,
+    Hello, ImageKeySet, LinkHealth, PostMortemCheckpoints, RejectReason,
 };
 use oer_hil_protocol::{
     DecodeCounters, DecodeError, Frame, FrameDecoder, Message, RequestIdentity, WireKind,
@@ -45,8 +45,8 @@ impl Requests for NoRequests {
 #[derive(Clone, Debug)]
 pub enum Answer {
     Hello(Hello),
-    /// The capability page from this key on.
-    Capabilities(u16),
+    /// The image key page from this key on.
+    ImageKeys(u16),
     /// The platform's boot evidence.
     Boot,
     /// The platform's post-mortem checkpoints from this one on.
@@ -96,26 +96,26 @@ pub fn link_health(received: DecodeCounters, sent: Sent) -> LinkHealth {
 /// The console's intake of one boot.
 pub struct Intake<'a> {
     boot_id: u64,
-    capabilities: Capabilities<'a>,
+    image_keys: ImageKeySet<'a>,
     hello: Hello,
     decoder: FrameDecoder,
 }
 
 impl<'a> Intake<'a> {
-    /// The intake of boot `boot_id`, whose image serves `capabilities` and
+    /// The intake of boot `boot_id`, whose image serves `image_keys` and
     /// takes command payloads of up to `maximum_payload_bytes`.
-    pub fn new(boot_id: u64, capabilities: Capabilities<'a>, maximum_payload_bytes: u16) -> Self {
+    pub fn new(boot_id: u64, image_keys: ImageKeySet<'a>, maximum_payload_bytes: u16) -> Self {
         Self {
             boot_id,
-            capabilities,
-            hello: capabilities.hello(maximum_payload_bytes),
+            image_keys,
+            hello: image_keys.hello(maximum_payload_bytes),
             decoder: FrameDecoder::new(),
         }
     }
 
     /// What the image serves.
-    pub const fn capabilities(&self) -> Capabilities<'a> {
-        self.capabilities
+    pub const fn image_keys(&self) -> ImageKeySet<'a> {
+        self.image_keys
     }
 
     /// The first frame of the boot.
@@ -203,7 +203,7 @@ fn serve(frame: &Frame<'_>, boot_id: u64, hello: Hello) -> Option<Served> {
     }
     let base = [
         GetHello::KEY,
-        GetCapabilities::KEY,
+        GetImageKeys::KEY,
         GetBootStatus::KEY,
         GetPostMortemCheckpoints::KEY,
         GetLinkHealth::KEY,
@@ -213,8 +213,8 @@ fn serve(frame: &Frame<'_>, boot_id: u64, hello: Hello) -> Option<Served> {
     }
     let answer = if let Some(request) = frame.decode::<GetHello>() {
         request.map(|_| Answer::Hello(hello))
-    } else if let Some(request) = frame.decode::<GetCapabilities>() {
-        request.map(|request| Answer::Capabilities(request.body.first))
+    } else if let Some(request) = frame.decode::<GetImageKeys>() {
+        request.map(|request| Answer::ImageKeys(request.body.first))
     } else if let Some(request) = frame.decode::<GetBootStatus>() {
         request.map(|_| Answer::Boot)
     } else if let Some(request) = frame.decode::<GetPostMortemCheckpoints>() {

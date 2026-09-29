@@ -91,7 +91,7 @@ PMU state (a powered-down MPLL) that survives both. The runner escalates: a
 system reset through the chip's builtin USB-JTAG (OpenOCD `reset run`, whose
 executable the `cargo hil` wrapper passes to the runner), then EN and the hub
 port's power when the board has them, and after each step asks the image for
-its capabilities again; the first step after which it answers clears the loop
+its image keys again; the first step after which it answers clears the loop
 and the repetition continues. Every step and its ROM line are recorded in the
 repetition's `reset-escalation.json` and a clearing step in the board journal.
 When no step clears it, the board is quarantined with trigger `boot-loop` for

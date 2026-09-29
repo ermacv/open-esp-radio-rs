@@ -6,7 +6,7 @@ use std::vec::Vec;
 use embassy_futures::block_on;
 use embassy_futures::select::{Either, select};
 use oer_hil_protocol::base::{
-    BootEvidence, Capabilities, GetBootStatus, GetCapabilities, GetLinkHealth, Hello,
+    BootEvidence, GetBootStatus, GetImageKeys, GetLinkHealth, Hello, ImageKeySet,
     PostMortemCheckpoints, RejectReason, ResetReason, sorted_keys,
 };
 use oer_hil_protocol::system::{WatchdogArmed, WatchdogTest, WatchdogTestMode};
@@ -48,7 +48,7 @@ impl Platform for Chip {
 }
 
 const SERVED: [Key; 6] = sorted_keys([
-    GetCapabilities::KEY,
+    GetImageKeys::KEY,
     GetBootStatus::KEY,
     GetLinkHealth::KEY,
     Hello::KEY,
@@ -126,7 +126,7 @@ fn run_until(
     mut served: impl FnMut(RequestIdentity, WatchdogTest),
     done: impl Fn(&Host) -> bool,
 ) {
-    let intake = Intake::new(BOOT, Capabilities::new(&SERVED), 0);
+    let intake = Intake::new(BOOT, ImageKeySet::new(&SERVED), 0);
     let run = console.run(
         Rx(host.clone()),
         Tx(host.clone()),

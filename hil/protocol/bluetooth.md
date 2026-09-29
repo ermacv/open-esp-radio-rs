@@ -2,15 +2,15 @@
 
 ## Trouble GATT
 
-The `bluetooth_gatt` capability identifies the separate plaintext Trouble
+The `bluetooth::Gatt` property identifies the separate plaintext Trouble
 application image. `bluetooth::GetGatt` returns `BluetoothGattEvidence` with
 the Controller address, application connection/read/write observations and
 the CPU0 stack measurement. All observations belong to the envelope's boot;
 the query neither resets the Controller nor submits ATT/HCI work. Counters are
 not independent proof of ATT delivery. The Linux peer validates actual replies
-and reconnection. This capability does not imply pairing or secure GATT.
+and reconnection. This property does not imply pairing or secure GATT.
 
-The separate `bluetooth_secure_gatt` capability identifies the actual secure
+The separate `bluetooth::SecureGatt` property identifies the actual secure
 application with one caller-owned RAM bond slot. `bluetooth::GetSecureGatt`
 reports traffic counters, the current unanswered Numeric Comparison challenge,
 independent confirmation/bond/reconnect/notification counters and application
@@ -65,7 +65,7 @@ physical release: `cold_releases` and `old_hci_closed` remain separate checks.
 An unresolved Reset may retain physical execution. The diagnostic does not
 inject silicon failure, measure RF cessation or introduce a shutdown timeout.
 
-Secure and plaintext capabilities are mutually exclusive. Both snapshots carry
+Secure and plaintext GATT images are mutually exclusive. Both snapshots carry
 common traffic observations, which alone never establish security. Notification
 counters mean Host queue acceptance; the independent peer must receive the value.
 

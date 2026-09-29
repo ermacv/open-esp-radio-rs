@@ -25,7 +25,7 @@ use serde::Serialize;
 
 use crate::Result;
 
-const CAPABILITIES_TIMEOUT: Duration = Duration::from_secs(10);
+const IMAGE_KEYS_TIMEOUT: Duration = Duration::from_secs(10);
 const RESULT: &str = "arbiter-client-start-operations-stop";
 const REPORT_NAME: &str = "ieee802154-air-check.json";
 
@@ -95,7 +95,7 @@ fn check(
     request: Ieee802154AirCheckRequest,
     timeout: Duration,
 ) -> Result<Ieee802154AirCheckEvidence> {
-    let capabilities = capture.request_capabilities(CAPABILITIES_TIMEOUT)?;
+    let capabilities = capture.request_image_keys(IMAGE_KEYS_TIMEOUT)?;
     if !capabilities.has::<oer_hil_protocol::ieee802154::AirCheck>() {
         return Err("firmware does not advertise the IEEE 802.15.4 air check".into());
     }

@@ -19,8 +19,8 @@ pub use oer_esp32s31_firmware::network::Integration;
 
 mod features;
 pub use features::FeatureDelta;
-mod capabilities;
-pub use capabilities::classify_flashed;
+mod keys;
+pub use keys::classify_flashed;
 mod class;
 pub mod esp_idf;
 pub use esp_idf::XTASK_ENV;

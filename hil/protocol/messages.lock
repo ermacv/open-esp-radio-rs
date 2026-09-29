@@ -14,10 +14,10 @@ wifi base
 base/accepted 1ac686128bebf3dd topic
 base/boot 51bf31ecd81d5cdd topic
 base/boot/get 26ffe1f703e77a0f endpoint
-base/capabilities 29886e362db5ada9 topic
-base/capabilities/get f7d54f0ec9f2ae4a endpoint
 base/hello 8e2dcdd3a6a11774 topic
 base/hello/get c394eef0bb216fb5 endpoint
+base/image-keys c080126d58dbddbb topic
+base/image-keys/get 45176bd69cd3a2e0 endpoint
 base/link-health 61450aa5777ec66c topic
 base/link-health/get 0dd30f36b23d5822 endpoint
 base/post-mortem 8fb903806319fddc topic

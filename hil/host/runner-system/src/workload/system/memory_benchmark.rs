@@ -29,7 +29,7 @@ pub fn run(config: Config<'_>, output: &Path, context: &Context<'_>) -> Result<(
     let requests = requests(&config);
     for boot in 1..=config.boots {
         let result = context.with_capture(&output.join(format!("boot-{boot:03}")), |capture| {
-            let capabilities = capture.request_capabilities(Duration::from_secs(10))?;
+            let capabilities = capture.request_image_keys(Duration::from_secs(10))?;
             if !capabilities.has::<oer_hil_protocol::system::MemoryBenchmark>() {
                 return Err("firmware does not advertise memory benchmarks".into());
             }

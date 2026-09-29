@@ -23,8 +23,8 @@ use oer_hil_protocol::{
 use serde::Serialize;
 
 use super::peer_exchange::{
-    CAPABILITIES_TIMEOUT, COMMAND_TIMEOUT, DEVICE_EXTENDED, DEVICE_SHORT, PAN_ID,
-    PEER_EVENT_TIMEOUT, PEER_EXTENDED, PEER_SHORT, START_TIMEOUT, data_frame, expect_session,
+    COMMAND_TIMEOUT, DEVICE_EXTENDED, DEVICE_SHORT, IMAGE_KEYS_TIMEOUT, PAN_ID, PEER_EVENT_TIMEOUT,
+    PEER_EXTENDED, PEER_SHORT, START_TIMEOUT, data_frame, expect_session,
 };
 use crate::{
     Result,
@@ -246,7 +246,7 @@ fn measure<L: PeerLink>(
     peer: &mut Peer<L>,
     config: &Config,
 ) -> Result<Measurements> {
-    let capabilities = capture.request_capabilities(CAPABILITIES_TIMEOUT)?;
+    let capabilities = capture.request_image_keys(IMAGE_KEYS_TIMEOUT)?;
     if !capabilities.has::<oer_hil_protocol::ieee802154::Session>() {
         return Err("firmware does not advertise IEEE 802.15.4 sessions".into());
     }

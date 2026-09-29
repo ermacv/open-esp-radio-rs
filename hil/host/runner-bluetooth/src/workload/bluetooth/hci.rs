@@ -18,7 +18,7 @@ pub const EVENT_MASK_WITH_LE_META: [u8; 8] = [0xff, 0xff, 0xff, 0xff, 0xff, 0x1f
 
 /// Wait for the image's hello and require raw HCI exchanges.
 pub fn require(capture: &SerialCapture) -> Result<()> {
-    let capabilities = capture.request_capabilities(Duration::from_secs(10))?;
+    let capabilities = capture.request_image_keys(Duration::from_secs(10))?;
     if !capabilities.has::<oer_hil_protocol::bluetooth::Hci>() {
         return Err("firmware lacks raw Bluetooth HCI exchanges".into());
     }

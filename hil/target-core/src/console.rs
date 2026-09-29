@@ -28,7 +28,7 @@ use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
 use embassy_sync::channel::Channel;
 use embassy_sync::mutex::Mutex as AsyncMutex;
 use embedded_io_async::{Read, Write};
-use oer_hil_protocol::base::{Capabilities, LinkHealth, Rejected};
+use oer_hil_protocol::base::{ImageKeySet, LinkHealth, Rejected};
 use oer_hil_protocol::{DecodeCounters, FrameEncoder, Message, Outbound, RequestIdentity};
 
 use crate::base::{Answer, Intake, Platform, Request, Requests, Sent};
@@ -277,18 +277,18 @@ impl<const LINE: usize, const LINES: usize, const MESSAGES: usize> Console<LINE,
     }
 
     /// Publishes an answer of the base module for an image serving
-    /// `capabilities` on `platform`.
+    /// `image_keys` on `platform`.
     fn answer(
         &self,
         request: RequestIdentity,
         answer: Answer,
-        capabilities: Capabilities<'_>,
+        image_keys: ImageKeySet<'_>,
         platform: &impl Platform,
     ) {
         let (session, id) = (request.session_id, request.request_id);
         match answer {
             Answer::Hello(hello) => self.publish(session, id, &hello),
-            Answer::Capabilities(first) => self.publish(session, id, &capabilities.page(first)),
+            Answer::ImageKeys(first) => self.publish(session, id, &image_keys.page(first)),
             Answer::Boot => self.publish(session, id, &platform.boot_evidence()),
             Answer::PostMortem(first) => {
                 self.publish(session, id, &platform.post_mortem_checkpoints(first))
@@ -310,7 +310,7 @@ impl<const LINE: usize, const LINES: usize, const MESSAGES: usize> Console<LINE,
         mut serve: impl FnMut(RequestIdentity, C),
     ) -> ! {
         self.running.store(true, Ordering::Release);
-        let capabilities = intake.capabilities();
+        let image_keys = intake.image_keys();
         match Outbound::new(HELLO_SEQUENCE, 0, 0, &intake.hello()) {
             Ok(hello) => self.write_message(&mut tx, &hello).await,
             Err(_) => self.lose_message(),
@@ -332,7 +332,7 @@ impl<const LINE: usize, const LINES: usize, const MESSAGES: usize> Console<LINE,
                         self.sent(),
                         |request| match request {
                             Request::Answer(identity, answer) => {
-                                self.answer(identity, answer, capabilities, platform)
+                                self.answer(identity, answer, image_keys, platform)
                             }
                             Request::Serve(identity, own) => serve(identity, own),
                         },

@@ -20,13 +20,13 @@ cargo hil run esp32c5-boot-smoke
 ```
 
 `system-watchdog` serves the HIL wire protocol on the USB Serial/JTAG
-console with the `system_watchdog` and `structured_evidence` capabilities,
+console and serves `system::WatchdogTest`,
 and nothing radio. Its SoC deadline watchdog is the production service of
 [`oer-esp32c5-soc-esp-hal`](../../../crates/adapters/esp-hal/esp32c5/soc/)
 on TIMG1's main watchdog; its boot evidence maps the chip's reset reasons
 (`CoreMwdt1` is `MainWatchdog1`) and reads the reset-retained post-mortem in
-RTC fast memory. The runner classifies a flashed esp32c5 image from those
-capabilities, and `esp32c5-system-watchdog` drives every watchdog mode on it:
+RTC fast memory. The runner classifies a flashed esp32c5 image from its
+image keys, and `esp32c5-system-watchdog` drives every watchdog mode on it:
 
 ```console
 cargo hil run esp32c5-system-watchdog

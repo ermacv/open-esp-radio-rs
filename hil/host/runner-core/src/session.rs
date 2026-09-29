@@ -50,7 +50,7 @@ pub use target::{Settings, Target};
 mod reboot;
 use reboot::{ExpectedReboot, RebootObservation};
 mod received;
-pub use received::{DeviceCapabilities, Received, message_info};
+pub use received::{DeviceImageKeys, Received, message_info};
 
 const RX_PROBE_PAYLOAD: usize = 64;
 const RX_PROBE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);

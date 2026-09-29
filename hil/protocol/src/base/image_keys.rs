@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::Key;
 
-/// Keys one [`CapabilityPage`] carries.
-pub const CAPABILITY_PAGE_KEYS: usize = 48;
+/// Keys one [`ImageKeyPage`] carries.
+pub const IMAGE_KEYS_PER_PAGE: usize = 48;
 
 /// The first frame of every boot.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
@@ -23,20 +23,20 @@ pub struct Hello {
 
 /// Keys `first..` of the image's sorted capability set.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct CapabilityPage {
+pub struct ImageKeyPage {
     pub first: u16,
     pub total: u16,
-    pub keys: heapless::Vec<Key, CAPABILITY_PAGE_KEYS>,
+    pub keys: heapless::Vec<Key, IMAGE_KEYS_PER_PAGE>,
 }
 
 /// An image's capability set: its keys in ascending order, so the same image
 /// always pages out the same bytes.
 #[derive(Clone, Copy, Debug)]
-pub struct Capabilities<'a> {
+pub struct ImageKeySet<'a> {
     keys: &'a [Key],
 }
 
-impl<'a> Capabilities<'a> {
+impl<'a> ImageKeySet<'a> {
     /// `keys` must come from [`sorted_keys`].
     pub const fn new(keys: &'a [Key]) -> Self {
         let mut index = 1;
@@ -63,10 +63,10 @@ impl<'a> Capabilities<'a> {
         }
     }
 
-    pub fn page(&self, first: u16) -> CapabilityPage {
+    pub fn page(&self, first: u16) -> ImageKeyPage {
         let start = usize::from(first).min(self.keys.len());
-        let end = (start + CAPABILITY_PAGE_KEYS).min(self.keys.len());
-        CapabilityPage {
+        let end = (start + IMAGE_KEYS_PER_PAGE).min(self.keys.len());
+        ImageKeyPage {
             first,
             total: self.keys.len() as u16,
             keys: heapless::Vec::from_slice(&self.keys[start..end])
@@ -85,7 +85,7 @@ pub fn digest(keys: &[Key]) -> u64 {
     state
 }
 
-/// `keys` in the ascending order [`Capabilities`] requires, at compile time.
+/// `keys` in the ascending order [`ImageKeySet`] requires, at compile time.
 pub const fn sorted_keys<const N: usize>(mut keys: [Key; N]) -> [Key; N] {
     let mut index = 1;
     while index < N {

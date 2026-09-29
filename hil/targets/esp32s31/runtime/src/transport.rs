@@ -6,7 +6,7 @@ use core::ffi::CStr;
 
 use esp_hal::usb::usb_serial_jtag::UsbSerialJtag;
 use oer_hil_protocol::RequestIdentity;
-use oer_hil_protocol::base::{BootEvidence, Capabilities, PostMortemCheckpoints};
+use oer_hil_protocol::base::{BootEvidence, ImageKeySet, PostMortemCheckpoints};
 use oer_hil_target_core::base::{Intake, Platform, Requests};
 use oer_hil_target_core::console::{Console, Logger};
 
@@ -74,7 +74,7 @@ pub(crate) async fn serve<C: Requests>(
 ) -> ! {
     let intake = Intake::new(
         boot,
-        Capabilities::new(crate::image_features::keys()),
+        ImageKeySet::new(crate::image_features::keys()),
         maximum_payload_bytes,
     );
     let (rx, tx) = UsbSerialJtag::new(usb).into_async().split();

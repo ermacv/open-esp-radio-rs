@@ -1,7 +1,7 @@
 use oer_hil_protocol::base::RejectReason;
 use oer_hil_protocol::base::{
-    CapabilityPage, GetBootStatus, GetCapabilities, GetHello, GetLinkHealth,
-    GetPostMortemCheckpoints, Hello, PostMortemCheckpoints, Rejected,
+    GetBootStatus, GetHello, GetImageKeys, GetLinkHealth, GetPostMortemCheckpoints, Hello,
+    ImageKeyPage, PostMortemCheckpoints, Rejected,
 };
 use oer_hil_protocol::system::{WatchdogArmed, WatchdogTest};
 use oer_hil_protocol::{Endpoint, Message};
@@ -11,7 +11,7 @@ use super::*;
 #[derive(serde::Serialize)]
 pub struct Observation {
     boot_id: u64,
-    capabilities: DeviceCapabilities,
+    capabilities: DeviceImageKeys,
     operation: OperationStatus,
     /// None means the current target state cannot safely snapshot the stacks.
     stack: Option<StackUsage>,
@@ -37,7 +37,7 @@ impl SerialCapture {
     }
 
     /// The capabilities of whatever boot runs, found without knowing it.
-    pub fn discover(&self, timeout: Duration) -> Result<DeviceCapabilities> {
+    pub fn discover(&self, timeout: Duration) -> Result<DeviceImageKeys> {
         let reply = self.exchange(0, 0, GetHello, timeout)?;
         let Some(hello) = reply.decode::<Hello>().filter(|_| reply.boot_id != 0) else {
             return Err(format!(
@@ -46,7 +46,7 @@ impl SerialCapture {
             )
             .into());
         };
-        self.capabilities_of(reply.boot_id, hello, timeout)
+        self.image_keys_of(reply.boot_id, hello, timeout)
     }
 
     /// Ask a boot whose Hello the link lost for it again.
@@ -58,7 +58,7 @@ impl SerialCapture {
     /// boot with the answer, and only while the answer is among the boot's
     /// first messages; the capture then records the solicited Hello.
     /// Otherwise the missing Hello stands as the failure.
-    fn solicit_lost_hello(&self, timeout: Duration) -> Result<DeviceCapabilities> {
+    fn solicit_lost_hello(&self, timeout: Duration) -> Result<DeviceImageKeys> {
         const MISSING: &str = "device did not publish a HIL protocol hello";
         {
             let booted = console_shows_boot(
@@ -99,31 +99,31 @@ impl SerialCapture {
                      target message {} began the boot",
                     solicited.message_sequence
                 );
-                self.capabilities_of(answer.boot_id, hello, timeout)
+                self.image_keys_of(answer.boot_id, hello, timeout)
             }
             _ => Err(format!("{MISSING}, and its hello answer began no fresh boot").into()),
         }
     }
 
     /// The capability set `hello` of boot `boot_id` announces, page by page.
-    fn capabilities_of(
+    fn image_keys_of(
         &self,
         boot_id: u64,
         hello: Hello,
         timeout: Duration,
-    ) -> Result<DeviceCapabilities> {
+    ) -> Result<DeviceImageKeys> {
         let mut pages = Vec::new();
         let mut first = 0_u16;
         while first < hello.keys {
-            let page: CapabilityPage =
-                self.request_to(boot_id, 0, GetCapabilities { first }, timeout)?;
+            let page: ImageKeyPage =
+                self.request_to(boot_id, 0, GetImageKeys { first }, timeout)?;
             if page.first != first || page.keys.is_empty() {
                 return Err(format!("invalid capability page {first}").into());
             }
             first += page.keys.len() as u16;
             pages.push(page);
         }
-        Ok(DeviceCapabilities::assemble(hello, &pages)?)
+        Ok(DeviceImageKeys::assemble(hello, &pages)?)
     }
 
     pub fn inspect_stack_usage(&self, timeout: Duration) -> Result<Option<StackUsage>> {
@@ -135,14 +135,14 @@ impl SerialCapture {
     }
 
     /// The current image's capabilities, from its boot's Hello.
-    pub fn request_capabilities(&self, timeout: Duration) -> Result<DeviceCapabilities> {
+    pub fn request_image_keys(&self, timeout: Duration) -> Result<DeviceImageKeys> {
         let Some(hello) =
             self.wait_for_message_after(0, timeout, |message| message.is::<Hello>())?
         else {
             return self.solicit_lost_hello(timeout);
         };
         let announced = hello.decode::<Hello>().ok_or("undecodable hello")?;
-        self.capabilities_of(hello.boot_id, announced, timeout)
+        self.image_keys_of(hello.boot_id, announced, timeout)
     }
 
     /// Establishes the typed link and provisions this boot from host-owned
@@ -151,8 +151,8 @@ impl SerialCapture {
     fn prepare_protocol(
         &self,
         target: Target<'_>,
-    ) -> Result<(DeviceCapabilities, Option<StartupArtifactStatus>)> {
-        let capabilities = self.request_capabilities(PROTOCOL_READY_TIMEOUT)?;
+    ) -> Result<(DeviceImageKeys, Option<StartupArtifactStatus>)> {
+        let capabilities = self.request_image_keys(PROTOCOL_READY_TIMEOUT)?;
         let artifact_path = target.lab.device.startup_artifact.as_deref();
         if artifact_path.is_some() && !capabilities.has::<oer_hil_protocol::phy::StartupArtifact>()
         {
@@ -314,7 +314,7 @@ impl SerialCapture {
     pub fn prepare_startup(
         &self,
         target: Target<'_>,
-    ) -> Result<(DeviceCapabilities, Option<StartupArtifactStatus>)> {
+    ) -> Result<(DeviceImageKeys, Option<StartupArtifactStatus>)> {
         self.prepare_protocol(target)
     }
 
@@ -323,7 +323,7 @@ impl SerialCapture {
     pub fn begin_station_attempt(
         &self,
         target: Target<'_>,
-    ) -> Result<(DeviceCapabilities, WifiCommandHandle)> {
+    ) -> Result<(DeviceImageKeys, WifiCommandHandle)> {
         let (capabilities, _) = self.prepare_protocol(target)?;
         let handle = self.request_station_start(target)?;
         Ok((capabilities, handle))
@@ -333,7 +333,7 @@ impl SerialCapture {
         &self,
         target: Target<'_>,
         timeout: Duration,
-    ) -> Result<DeviceCapabilities> {
+    ) -> Result<DeviceImageKeys> {
         self.prepare_station_with_startup_artifact_status(target, timeout)
             .map(|(capabilities, _)| capabilities)
     }
@@ -342,7 +342,7 @@ impl SerialCapture {
         &self,
         target: Target<'_>,
         timeout: Duration,
-    ) -> Result<(DeviceCapabilities, Option<StartupArtifactStatus>)> {
+    ) -> Result<(DeviceImageKeys, Option<StartupArtifactStatus>)> {
         let (capabilities, startup_artifact_status) = self.prepare_protocol(target)?;
         let lifecycle_cursor = self.station_lifecycle_cursor();
         let handle = self.request_station_start(target)?;

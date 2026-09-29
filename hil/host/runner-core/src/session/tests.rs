@@ -565,7 +565,7 @@ fn pause_requires_same_connection_even_after_fast_reconnect_or_reboot() {
 }
 
 #[test]
-fn pause_accepts_capability_reply_only_in_the_established_boot() {
+fn pause_accepts_image_key_reply_only_in_the_established_boot() {
     use super::protocol::station_unchanged_since_in;
     let mut reply = hello(7, 2);
     reply.request_id = 11;

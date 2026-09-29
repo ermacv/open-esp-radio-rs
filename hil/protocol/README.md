@@ -5,7 +5,7 @@ is its own type in one module, identified on the wire by a key: a hash of the
 message's path and of its postcard schema. [`messages.lock`](messages.lock)
 names the framing version, each module's dependencies (`[modules]`) and every
 message's path, key and kind (`[messages]`); its test keeps it equal to the
-source. Image capabilities, current-state admission and
+source. Image keys, current-state admission and
 product qualification are separate contracts.
 
 - [Wire contract](wire.md): framing, version checks, discovery and boot identity.
@@ -21,14 +21,14 @@ meaning and limits. Host scenario execution belongs to the
 
 ## Modules and messages
 
-A module is a path prefix and a directory: `base` (hello, capabilities, boot
+A module is a path prefix and a directory: `base` (hello, image keys, boot
 status, post-mortem, link health, acceptance and refusal), `system`, `wifi`,
 `network`, `bluetooth`, `ieee802154`, `phy` and `telemetry`. A module declares
 its messages with `messages!`:
 
 - an endpoint is a request the device serves and names its one response;
 - a topic is a device message: a response or an unsolicited event;
-- a property is a marker an image advertises in its capabilities and never
+- a property is a marker an image advertises among its image keys and never
   sends.
 
 A response may follow other messages about the same request: a replayed
@@ -58,7 +58,7 @@ traffic sessions, roles, monitor and scan, their evidence, UDP probes and
 stream patterns), `bluetooth` (Direct Test Mode, HCI, GATT and secure GATT),
 `ieee802154` (probes, air check, peer sessions and Thread) and `system` (the
 memory copy benchmark). The shared core is always compiled: framing, the
-envelope, keys and capabilities, the `base` module, boot and post-mortem
+envelope, keys and image keys, the `base` module, boot and post-mortem
 evidence, the event trace, the program-counter profile, PHY diagnostics and
 startup artifacts. An image enables only the families it serves, so its
 build, and the evidence bound to its sources, reads only their files; a

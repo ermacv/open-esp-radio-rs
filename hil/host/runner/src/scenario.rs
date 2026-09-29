@@ -93,7 +93,7 @@ impl ScenarioFamily for Family {
         }
     }
 
-    fn served_by(&self, capabilities: &hil_core::session::DeviceCapabilities) -> bool {
+    fn served_by(&self, capabilities: &hil_core::session::DeviceImageKeys) -> bool {
         match self {
             Self::Bluetooth(scenario) => scenario.served_by(capabilities),
             Self::Wifi(_) | Self::System(_) | Self::Ieee802154(_) | Self::Coexistence(_) => true,

@@ -1,4 +1,4 @@
-use oer_hil_protocol::base::{CapabilityPage, sorted_keys};
+use oer_hil_protocol::base::{ImageKeyPage, sorted_keys};
 use oer_hil_protocol::system::GetStacks;
 use oer_hil_protocol::system::{WatchdogTest, WatchdogTestMode};
 use oer_hil_protocol::{Envelope, FrameEncoder, Key};
@@ -8,7 +8,7 @@ use super::*;
 const BOOT: u64 = 42;
 
 const SERVED: [Key; 5] = sorted_keys([
-    GetCapabilities::KEY,
+    GetImageKeys::KEY,
     GetBootStatus::KEY,
     GetPostMortemCheckpoints::KEY,
     GetLinkHealth::KEY,
@@ -16,7 +16,7 @@ const SERVED: [Key; 5] = sorted_keys([
 ]);
 
 fn intake() -> Intake<'static> {
-    Intake::new(BOOT, Capabilities::new(&SERVED), 0)
+    Intake::new(BOOT, ImageKeySet::new(&SERVED), 0)
 }
 
 fn send<M: Message, C: Requests>(
@@ -55,10 +55,10 @@ fn the_base_module_answers_its_requests() {
         &mut intake,
         BOOT,
         0,
-        GetCapabilities { first: 0 },
+        GetImageKeys { first: 0 },
     )) {
-        Answer::Capabilities(first) => {
-            let CapabilityPage { total, keys, .. } = intake.capabilities().page(first);
+        Answer::ImageKeys(first) => {
+            let ImageKeyPage { total, keys, .. } = intake.image_keys().page(first);
             assert_eq!(total, 5);
             assert_eq!(keys.as_slice(), &SERVED);
         }
@@ -71,7 +71,7 @@ fn the_base_module_answers_its_requests() {
 }
 
 #[test]
-fn capability_discovery_needs_no_boot_but_every_other_request_does() {
+fn image_key_discovery_needs_no_boot_but_every_other_request_does() {
     let mut intake = intake();
     assert!(matches!(
         answer(send::<_, NoRequests>(

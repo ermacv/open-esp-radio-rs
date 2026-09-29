@@ -45,13 +45,13 @@ pub fn run<S: Scenario>(output: &Path, context: &Context<'_>, scenario: S) -> Re
                 "passed": false,
             });
             let result = (|| {
-                if !capture.request_capabilities(Duration::from_secs(10))?.has::<oer_hil_protocol::phy::FaultInjection>() {
+                if !capture.request_image_keys(Duration::from_secs(10))?.has::<oer_hil_protocol::phy::FaultInjection>() {
                     return Err("image lacks real PHY fault checkpoints".into());
                 }
                 evidence["before"] = scenario.prove_link(capture, context, &directory.join("before"))?;
                 evidence["normal_maintenance"] = scenario.normal_maintenance(capture)?;
                 oer_process::sleep(Duration::from_secs(6))?;
-                capture.request_capabilities(Duration::from_secs(2))?;
+                capture.request_image_keys(Duration::from_secs(2))?;
                 capture.expect_reboot(Duration::from_secs(3), Duration::from_secs(15))?;
                 let armed = scenario.begin_fault(capture, mode)?;
                 if armed.phase != Phase::Armed { return Err("fault did not arm".into()); }

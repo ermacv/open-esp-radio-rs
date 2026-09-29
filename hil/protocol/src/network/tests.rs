@@ -31,7 +31,7 @@ fn two_flow_session() -> SessionConfig {
 }
 
 #[test]
-fn multi_flow_structure_requires_the_explicit_capability() {
+fn multi_flow_structure_requires_the_explicit_property() {
     let session = two_flow_session();
     assert!(!session.structurally_valid(1_472, false));
     assert!(session.structurally_valid(1_472, true));

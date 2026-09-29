@@ -1,10 +1,10 @@
-//! Device messages as the host receives them, and the device's capability
+//! Device messages as the host receives them, and the device's image
 //! set.
 
 use std::collections::{BTreeSet, HashMap};
 use std::sync::LazyLock;
 
-use oer_hil_protocol::base::{CapabilityPage, Hello};
+use oer_hil_protocol::base::{Hello, ImageKeyPage};
 use oer_hil_protocol::{Envelope, Frame, Key, Message, MessageInfo};
 
 /// Every message this host knows, by key.
@@ -100,7 +100,7 @@ impl Received {
 /// What the device's image serves: the keys of its endpoints, of the
 /// messages it sends and of its properties.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
-pub struct DeviceCapabilities {
+pub struct DeviceImageKeys {
     #[serde(serialize_with = "keys_as_paths")]
     keys: BTreeSet<Key>,
     pub maximum_payload_bytes: u16,
@@ -117,22 +117,22 @@ fn keys_as_paths<S: serde::Serializer>(
     }))
 }
 
-impl DeviceCapabilities {
+impl DeviceImageKeys {
     /// The set a Hello announces, from its pages.
-    pub fn assemble(hello: Hello, pages: &[CapabilityPage]) -> Result<Self, String> {
+    pub fn assemble(hello: Hello, pages: &[ImageKeyPage]) -> Result<Self, String> {
         let keys: Vec<Key> = pages
             .iter()
             .flat_map(|page| page.keys.iter().copied())
             .collect();
         if keys.len() != usize::from(hello.keys) {
             return Err(format!(
-                "capability pages hold {} keys, the hello announced {}",
+                "image key pages hold {} keys, the hello announced {}",
                 keys.len(),
                 hello.keys
             ));
         }
         if oer_hil_protocol::base::digest(&keys) != hello.keys_digest {
-            return Err("capability pages do not match the hello's digest".into());
+            return Err("image key pages do not match the hello's digest".into());
         }
         Ok(Self {
             keys: keys.into_iter().collect(),

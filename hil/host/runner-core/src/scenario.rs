@@ -242,7 +242,7 @@ pub trait ScenarioFamily: Clone + Debug + Eq + Serialize + DeserializeOwned {
     /// Whether an image of the planned class that reports `capabilities` can
     /// run this scenario. The class alone suffices unless the family names
     /// a role the class's image may omit.
-    fn served_by(&self, _capabilities: &crate::session::DeviceCapabilities) -> bool {
+    fn served_by(&self, _capabilities: &crate::session::DeviceImageKeys) -> bool {
         true
     }
 }

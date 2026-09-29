@@ -49,7 +49,7 @@ pub fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
 }
 
 fn probe(capture: &SerialCapture, config: &Config, boot: u8) -> Result<BootReport> {
-    let capabilities = capture.request_capabilities(Duration::from_secs(10))?;
+    let capabilities = capture.request_image_keys(Duration::from_secs(10))?;
     if !capabilities.has::<oer_hil_protocol::system::TimebaseProbe>() {
         return Err("firmware does not advertise the timebase probe".into());
     }

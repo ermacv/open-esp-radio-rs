@@ -2,7 +2,7 @@
 //! The keys a HIL image reports, as a function of the Cargo
 //! features it was built with.
 //!
-//! The runtime pages this set out for `base/capabilities/get`, and the host
+//! The runtime pages this set out for `base/image-keys/get`, and the host
 //! derives the set each image class reports from the same function applied
 //! to the class's features and the runtime manifest's feature graph. The two
 //! cannot drift apart: the host identifies a flashed image by this set.
@@ -24,8 +24,8 @@ pub type ImageKeys = heapless::Vec<Key, IMAGE_KEYS>;
 const BASE: [Key; 11] = [
     base::Hello::KEY,
     base::GetHello::KEY,
-    base::GetCapabilities::KEY,
-    base::CapabilityPage::KEY,
+    base::GetImageKeys::KEY,
+    base::ImageKeyPage::KEY,
     base::Rejected::KEY,
     base::GetBootStatus::KEY,
     base::BootEvidence::KEY,
@@ -244,6 +244,6 @@ mod tests {
     fn the_set_is_sorted_and_distinct_so_its_pages_are_stable() {
         let all = with(READ_FEATURES);
         assert!(all.windows(2).all(|pair| pair[0] < pair[1]));
-        base::Capabilities::new(&all);
+        base::ImageKeySet::new(&all);
     }
 }

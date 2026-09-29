@@ -16,7 +16,7 @@ pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
         std::fs::create_dir_all(&directory)?;
         context.with_capture(&directory, |capture| {
             if !capture
-                .request_capabilities(Duration::from_secs(10))?
+                .request_image_keys(Duration::from_secs(10))?
                 .has::<oer_hil_protocol::system::WatchdogTest>()
             {
                 return Err("requires the exclusive watchdog diagnostic image".into());
@@ -27,7 +27,7 @@ pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
             capture.system_watchdog_test(mode)?;
             let reboot = if mode == Mode::Complete {
                 oer_process::sleep(Duration::from_secs(3))?;
-                capture.request_capabilities(Duration::from_secs(5))?;
+                capture.request_image_keys(Duration::from_secs(5))?;
                 None
             } else {
                 Some(capture.wait_expected_reboot()?)

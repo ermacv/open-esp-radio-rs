@@ -339,24 +339,7 @@ pub fn validate_ir_records(
     visit_jsonl(source, c, |record: SemanticIrRecord, c| {
         match record {
             SemanticIrRecord::Function { function, .. } => {
-                let original = reader.analysis(&function.analysis, c)?;
-                visit_jsonl(&original.records, c, |record: FunctionRecord, c| {
-                    match record {
-                        FunctionRecord::CalleeEffect { analysis, .. }
-                        | FunctionRecord::Expression {
-                            origin: Some(analysis),
-                            ..
-                        }
-                        | FunctionRecord::CallResolution {
-                            analysis: Some(analysis),
-                            ..
-                        } => {
-                            member(&analysis, c)?;
-                        }
-                        _ => (),
-                    }
-                    Ok(())
-                })?;
+                reader.analysis(&function.analysis, c)?;
             }
             SemanticIrRecord::Knowledge { entry } => {
                 if entry.proposal.occurrence.revision != manifest.request.scope.revision {

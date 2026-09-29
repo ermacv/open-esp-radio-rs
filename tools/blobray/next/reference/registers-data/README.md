@@ -125,16 +125,14 @@ Schema-1 records include selected-function coverage/unavailable members, exact
 original facts and record ordinals, address alternatives, read-selection and
 load-preserve-OR write masks, declarations with review/evidence/applicability,
 conflicts and matching bindings. Address rows aggregate candidates across the
-selected analyses; they count local accesses and composed effects separately.
+selected analyses and count their local accesses.
 Instruction access widths remain a set of observations, not physical register widths.
 Masks describe saved expressions, not proven physical fields or safe hardware RMW.
 Finite alternatives are may-addresses; unresolved values are never discarded.
 
 Bindings use the declaration's exact source revision, source and object. A byte
 access can be contained within a wider explicitly reviewed register. Crossing
-accesses are distinct. Composed effects keep their child provenance and are not
-classified using the caller's declarations. Query the child analysis to inspect
-its own applicable declarations. Proposed/rejected declarations remain visible;
+accesses are distinct. Proposed/rejected declarations remain visible;
 only accepted matches contribute to the accepted-binding counter. The summary
 does not promise complete hardware coverage, absence of register accesses or PASS.
 

@@ -5,11 +5,9 @@ pub struct CallObservation {
     pub offset: u64,
     pub call: bool,
     pub target: AbstractValue,
-    pub saved_resolution: Option<FunctionAnalysisId>,
 }
 pub struct MemoryObservation<'a> {
     pub record: u64,
-    pub origin: Option<&'a FunctionAnalysisId>,
     pub offset: u64,
     pub access: MemoryKind,
     pub width: u8,
@@ -22,7 +20,6 @@ pub struct Facts<'a, 'm> {
     references: AdmittedVec<'m, &'a ReferenceTarget>,
     inputs: AdmittedVec<'m, (u64, &'a [AbstractValue], u64)>,
     transfers: AdmittedVec<'m, (u64, u64, &'a AbstractValue, bool)>,
-    resolutions: AdmittedVec<'m, (u64, &'a Option<FunctionAnalysisId>)>,
 }
 fn integrity(s: &str) -> Error {
     Error::new(ErrorCode::Integrity, s)
@@ -47,7 +44,6 @@ impl<'a, 'm> Facts<'a, 'm> {
             references: AdmittedVec::new(memory),
             inputs: AdmittedVec::new(memory),
             transfers: AdmittedVec::new(memory),
-            resolutions: AdmittedVec::new(memory),
         };
         let mut instructions = AdmittedVec::new(memory);
         for (record, r) in records.iter().enumerate() {
@@ -83,9 +79,6 @@ impl<'a, 'm> Facts<'a, 'm> {
                 } => out
                     .transfers
                     .push((*offset, record as u64, target, *call), c.position())?,
-                FunctionRecord::CallResolution {
-                    offset, analysis, ..
-                } => out.resolutions.push((*offset, analysis), c.position())?,
                 _ => (),
             }
         }
@@ -95,11 +88,9 @@ impl<'a, 'm> Facts<'a, 'm> {
         instructions.sort_unstable();
         out.inputs.sort_unstable_by_key(|x| x.0);
         out.transfers.sort_unstable_by_key(|x| x.0);
-        out.resolutions.sort_unstable_by_key(|x| x.0);
         if instructions.windows(2).any(|w| w[0] == w[1])
             || out.inputs.windows(2).any(|w| w[0].0 == w[1].0)
             || out.transfers.windows(2).any(|w| w[0].0 == w[1].0)
-            || out.resolutions.windows(2).any(|w| w[0].0 == w[1].0)
             || out
                 .references
                 .windows(2)
@@ -195,13 +186,7 @@ impl<'a, 'm> Facts<'a, 'm> {
             else {
                 continue;
             };
-            c.checkpoint(
-                (self.inputs.len() + self.transfers.len() + self.resolutions.len())
-                    .max(1)
-                    .ilog2() as u64
-                    * 3
-                    + 3,
-            )?;
+            c.checkpoint((self.inputs.len() + self.transfers.len()).max(1).ilog2() as u64 * 3 + 3)?;
             let saved = self
                 .transfers
                 .binary_search_by_key(offset, |x| x.0)
@@ -257,18 +242,12 @@ impl<'a, 'm> Facts<'a, 'm> {
                     _ => continue,
                 }
             };
-            let saved_resolution = self
-                .resolutions
-                .binary_search_by_key(offset, |x| x.0)
-                .ok()
-                .and_then(|i| self.resolutions[i].1.clone());
             emit(
                 CallObservation {
                     record,
                     offset: *offset,
                     call,
                     target,
-                    saved_resolution,
                 },
                 c,
             )?;
@@ -282,42 +261,25 @@ impl<'a, 'm> Facts<'a, 'm> {
     ) -> Result<()> {
         for (record, r) in self.records.iter().enumerate() {
             c.checkpoint(1)?;
-            let (origin, offset, access, width, address, value) = match r {
-                FunctionRecord::MemoryAccess {
-                    offset,
-                    access,
-                    width,
-                    address,
-                    value,
-                    ..
-                } => (None, *offset, *access, *width, address, value.as_ref()),
-                FunctionRecord::CalleeEffect {
-                    analysis,
-                    offset,
-                    access,
-                    width,
-                    address,
-                    value,
-                    ..
-                } => (
-                    Some(analysis),
-                    *offset,
-                    *access,
-                    *width,
-                    address,
-                    value.as_ref(),
-                ),
-                _ => continue,
+            let FunctionRecord::MemoryAccess {
+                offset,
+                access,
+                width,
+                address,
+                value,
+                ..
+            } = r
+            else {
+                continue;
             };
             emit(
                 MemoryObservation {
                     record: record as u64,
-                    origin,
-                    offset,
-                    access,
-                    width,
+                    offset: *offset,
+                    access: *access,
+                    width: *width,
                     address,
-                    value,
+                    value: value.as_ref(),
                 },
                 c,
             )?;
@@ -336,7 +298,6 @@ mod tests {
             vec![FunctionRecord::Expression {
                 id: 0,
                 offset: 0,
-                origin: None,
                 expression: Expression::Load {
                     address: AbstractValue::Expression { id: 0 },
                     width: 4,
@@ -346,7 +307,6 @@ mod tests {
             vec![FunctionRecord::Expression {
                 id: 1,
                 offset: 0,
-                origin: None,
                 expression: Expression::EntryRegister { register: 10 },
             }],
             vec![
@@ -369,7 +329,6 @@ mod tests {
         let records = [FunctionRecord::Expression {
             id: 0,
             offset: 0,
-            origin: None,
             expression: Expression::EntryRegister { register: 10 },
         }];
         assert!(

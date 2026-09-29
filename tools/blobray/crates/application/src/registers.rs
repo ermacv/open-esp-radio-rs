@@ -10,7 +10,6 @@ fn invalid(s: &str) -> Error {
 struct Sample {
     address: u32,
     width: u8,
-    composed: bool,
     mask: bool,
     access: bool,
 }
@@ -135,7 +134,6 @@ pub(crate) fn query(
             let mut observe = |record: u64,
                                width: u8,
                                address: &AbstractValue,
-                               composed: bool,
                                mask: Option<RegisterMask>,
                                c: &mut dyn RunControl| {
                 let fact = &records[record as usize];
@@ -170,54 +168,45 @@ pub(crate) fn query(
                                 Sample {
                                     address,
                                     width,
-                                    composed,
                                     mask: mask.is_some(),
-                                    access: matches!(
-                                        fact,
-                                        FunctionRecord::MemoryAccess { .. }
-                                            | FunctionRecord::CalleeEffect { .. }
-                                    ),
+                                    access: matches!(fact, FunctionRecord::MemoryAccess { .. }),
                                 },
                                 c.position(),
                             )?;
-                            // Only local facts establish applicability to this function's object.
-                            // A composed effect retains its child evidence but cannot inherit the caller's declarations.
-                            if !composed {
-                                index.bindings(
-                                    &manifest.recipe.source,
-                                    manifest.recipe.selector.object(),
-                                    u64::from(address),
-                                    u64::from(address) + u64::from(width),
-                                    c,
-                                    &mut |entry, start, end, c| {
-                                        let relation = if matches!(
-                                            entry.proposal.claim,
-                                            KnowledgeClaim::MmioRegion { .. }
-                                        ) {
-                                            RegisterMatchKind::Region
-                                        } else if u64::from(address) >= start
-                                            && u64::from(address) + u64::from(width) <= end
-                                        {
-                                            RegisterMatchKind::ContainedAccess
-                                        } else {
-                                            RegisterMatchKind::CrossingAccess
-                                        };
-                                        summary.matched_accepted +=
-                                            u64::from(entry.state == AssertionState::Accepted);
-                                        output.borrow_mut()(
-                                            &RegisterRecord::Binding {
-                                                function: function.clone(),
-                                                record,
-                                                address,
-                                                assertion: entry.id.clone(),
-                                                state: entry.state,
-                                                relation,
-                                            },
-                                            c,
-                                        )
-                                    },
-                                )?;
-                            }
+                            index.bindings(
+                                &manifest.recipe.source,
+                                manifest.recipe.selector.object(),
+                                u64::from(address),
+                                u64::from(address) + u64::from(width),
+                                c,
+                                &mut |entry, start, end, c| {
+                                    let relation = if matches!(
+                                        entry.proposal.claim,
+                                        KnowledgeClaim::MmioRegion { .. }
+                                    ) {
+                                        RegisterMatchKind::Region
+                                    } else if u64::from(address) >= start
+                                        && u64::from(address) + u64::from(width) <= end
+                                    {
+                                        RegisterMatchKind::ContainedAccess
+                                    } else {
+                                        RegisterMatchKind::CrossingAccess
+                                    };
+                                    summary.matched_accepted +=
+                                        u64::from(entry.state == AssertionState::Accepted);
+                                    output.borrow_mut()(
+                                        &RegisterRecord::Binding {
+                                            function: function.clone(),
+                                            record,
+                                            address,
+                                            assertion: entry.id.clone(),
+                                            state: entry.state,
+                                            relation,
+                                        },
+                                        c,
+                                    )
+                                },
+                            )?;
                         }
                         Ok(())
                     };
@@ -227,31 +216,15 @@ pub(crate) fn query(
                 let mask = access.value.and_then(|v| {
                     blobray_analysis::registers::write_mask(facts, access.address, access.width, v)
                 });
-                observe(
-                    access.record,
-                    access.width,
-                    access.address,
-                    access.origin.is_some(),
-                    mask,
-                    c,
-                )
+                observe(access.record, access.width, access.address, mask, c)
             })?;
             for (record, fact) in records.iter().enumerate() {
                 c.checkpoint(1)?;
-                if let FunctionRecord::Expression {
-                    expression, origin, ..
-                } = fact
+                if let FunctionRecord::Expression { expression, .. } = fact
                     && let Some((address, width, mask)) =
                         blobray_analysis::registers::read_mask(facts, expression)
                 {
-                    observe(
-                        record as u64,
-                        width,
-                        address,
-                        origin.is_some(),
-                        Some(mask),
-                        c,
-                    )?;
+                    observe(record as u64, width, address, Some(mask), c)?;
                 }
             }
             Ok(())
@@ -275,7 +248,7 @@ pub(crate) fn query(
         let address = samples[start].address;
         let mut end = start;
         let mut widths = Vec::with_capacity(256);
-        let (mut local, mut composed, mut masks) = (0, 0, 0);
+        let (mut local, mut masks) = (0, 0);
         while end < samples.len() && samples[end].address == address {
             c.checkpoint(1)?;
             let s = samples[end];
@@ -283,8 +256,7 @@ pub(crate) fn query(
                 widths.push(s.width);
             }
             masks += u64::from(s.mask);
-            local += u64::from(s.access && !s.composed);
-            composed += u64::from(s.access && s.composed);
+            local += u64::from(s.access);
             end += 1;
         }
         output.borrow_mut()(
@@ -292,7 +264,6 @@ pub(crate) fn query(
                 address,
                 access_widths: widths,
                 local_accesses: local,
-                composed_effects: composed,
                 mask_observations: masks,
             },
             c,

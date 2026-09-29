@@ -56,57 +56,19 @@ impl FunctionRecord {
         let value =
             |v: &Option<AbstractValue>| v.as_ref().map_or(0, AbstractValue::allocated_bytes);
         match self {
-            Self::MmioRange {
-                assertion, region, ..
-            } => assertion.allocated_bytes() + region.name.capacity() as u64,
             Self::Condition { left, right, .. }
             | Self::ReturnValue {
                 low: left,
                 high: right,
                 ..
             } => left.allocated_bytes() + right.allocated_bytes(),
-            Self::Expression {
-                origin, expression, ..
-            } => {
-                origin
-                    .as_ref()
-                    .map_or(0, FunctionAnalysisId::allocated_bytes)
-                    + expression.allocated_bytes()
-            }
+            Self::Expression { expression, .. } => expression.allocated_bytes(),
             Self::CallInputs { registers, .. } => {
                 (registers.capacity() * size_of::<AbstractValue>()) as u64
                     + registers
                         .iter()
                         .map(AbstractValue::allocated_bytes)
                         .sum::<u64>()
-            }
-            Self::Mmio {
-                assertion,
-                register,
-                ..
-            } => {
-                assertion.allocated_bytes()
-                    + register.name.capacity() as u64
-                    + (register.fields.capacity() * size_of::<MmioField>()) as u64
-                    + register
-                        .fields
-                        .iter()
-                        .map(|f| f.name.capacity() as u64)
-                        .sum::<u64>()
-            }
-            Self::CalleeEffect {
-                analysis,
-                address,
-                value: v,
-                ..
-            } => analysis.allocated_bytes() + address.allocated_bytes() + value(v),
-            Self::CallResolution {
-                analysis, reason, ..
-            } => {
-                analysis
-                    .as_ref()
-                    .map_or(0, FunctionAnalysisId::allocated_bytes)
-                    + reason.as_ref().map_or(0, |s| s.capacity() as u64)
             }
             Self::Transfer { target, .. } | Self::Value { value: target, .. } => {
                 target.allocated_bytes()

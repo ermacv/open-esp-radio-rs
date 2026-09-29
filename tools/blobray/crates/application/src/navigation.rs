@@ -296,14 +296,7 @@ fn query_inner(
             }
             if matches!(request.filter, NavigationFilter::Calls { .. }) {
                 facts.calls(recipe, c, &mut |call, c| {
-                    let capacity = memory.reserve(
-                        call.target.allocated_bytes()
-                            + call
-                                .saved_resolution
-                                .as_ref()
-                                .map_or(0, FunctionAnalysisId::allocated_bytes),
-                        c.position(),
-                    )?;
+                    let capacity = memory.reserve(call.target.allocated_bytes(), c.position())?;
                     pending.push(
                         Pending {
                             caller: nodes.len(),
@@ -372,15 +365,11 @@ pub(crate) fn call_bytes(record: &NavigationRecord) -> u64 {
         NavigationRecord::Call {
             caller,
             target,
-            saved_resolution,
             candidates,
             ..
         } => {
             caller.allocated_bytes()
                 + target.allocated_bytes()
-                + saved_resolution
-                    .as_ref()
-                    .map_or(0, FunctionAnalysisId::allocated_bytes)
                 + (candidates.capacity() * std::mem::size_of::<NavigationFunction>()) as u64
                 + candidates
                     .iter()

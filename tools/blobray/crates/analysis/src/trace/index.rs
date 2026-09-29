@@ -27,7 +27,6 @@ pub(super) struct Instruction<'a> {
 pub(super) struct ExpressionRef<'a> {
     pub offset: u64,
     pub expression: &'a Expression,
-    pub composed: bool,
 }
 pub(super) struct Index<'a, 'm> {
     pub function: &'a TraceFunction<'a>,
@@ -151,15 +150,11 @@ impl<'a, 'm> Index<'a, 'm> {
                     )?;
                 }
                 FunctionRecord::Expression {
-                    offset,
-                    expression,
-                    origin,
-                    ..
+                    offset, expression, ..
                 } => out.expressions.push(
                     ExpressionRef {
                         offset: *offset,
                         expression,
-                        composed: origin.is_some(),
                     },
                     c.position(),
                 )?,

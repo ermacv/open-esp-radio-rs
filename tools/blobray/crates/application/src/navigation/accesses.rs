@@ -251,7 +251,6 @@ impl<'a> Target<'a> {
                 &NavigationRecord::Access {
                     function: node.function.clone(),
                     record: r.record,
-                    origin: r.origin.cloned(),
                     offset: r.offset,
                     access: r.access,
                     width: r.width,
@@ -311,13 +310,6 @@ impl<'a> Target<'a> {
         // The stack slot holding an incoming pointer is not a field of its pointee.
         if matches!(self, Self::Context { .. }) && matches!(value, AbstractValue::EntryStack { .. })
         {
-            return Ok(());
-        }
-        // Composed unqualified addresses do not inherit the caller's object namespace.
-        // ScopedAddress above carries sufficient physical identity; other composed
-        // expressions must retain uncertainty until their provenance is resolved.
-        if r.origin.is_some() && matches!(self, Self::Object { .. }) {
-            *issue = Some(NavigationIssue::ForeignOccurrence);
             return Ok(());
         }
         let abi = match self {

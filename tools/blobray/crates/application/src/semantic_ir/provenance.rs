@@ -94,23 +94,6 @@ impl<'m> Closure<'m> {
         self.entry(id, c)?;
         Ok(())
     }
-    pub fn observe(&mut self, source: &dyn ByteSource, c: &mut dyn RunControl) -> Result<()> {
-        blobray_store::visit_jsonl(source, c, |record: FunctionRecord, c| {
-            match record {
-                FunctionRecord::CalleeEffect { analysis, .. }
-                | FunctionRecord::Expression {
-                    origin: Some(analysis),
-                    ..
-                }
-                | FunctionRecord::CallResolution {
-                    analysis: Some(analysis),
-                    ..
-                } => self.require(&analysis, c)?,
-                _ => (),
-            }
-            Ok(())
-        })
-    }
     pub fn finish(
         &mut self,
         reader: &mut blobray_store::AnalysisReader<'_>,
@@ -130,7 +113,6 @@ impl<'m> Closure<'m> {
             if lease.manifest.recipe.revision != *revision {
                 return Err(invalid("IR evidence belongs to another source revision"));
             }
-            self.observe(&lease.records, c)?;
             output.emit(
                 &SemanticIrRecord::Function {
                     function: NavigationFunction {

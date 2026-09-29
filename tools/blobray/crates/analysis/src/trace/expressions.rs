@@ -191,10 +191,6 @@ impl<'m> Eval<'m> {
                     continue;
                 }
                 let node = &index.expressions[id as usize];
-                if node.composed {
-                    self.memo[id as usize] = Some(None);
-                    continue;
-                }
                 if !ready {
                     self.pending.push((id, true), c.position())?;
                     let mut push = |v: &AbstractValue| -> Result<()> {

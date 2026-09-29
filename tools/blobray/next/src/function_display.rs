@@ -34,16 +34,6 @@ fn value(w: &mut dyn Write, v: &AbstractValue) -> io::Result<()> {
 }
 pub(super) fn record(w: &mut dyn Write, r: &FunctionRecord) -> io::Result<()> {
     match r {
-        FunctionRecord::MmioRange {
-            offset,
-            assertion,
-            region,
-        } => writeln!(
-            w,
-            "  @{offset:08x} MMIO region {} (review {})",
-            region.name,
-            assertion.as_str()
-        ),
         FunctionRecord::Condition {
             offset,
             test,
@@ -59,7 +49,6 @@ pub(super) fn record(w: &mut dyn Write, r: &FunctionRecord) -> io::Result<()> {
         FunctionRecord::Expression {
             id,
             offset,
-            origin,
             expression,
         } => {
             write!(w, "  v{id} = ")?;
@@ -84,11 +73,7 @@ pub(super) fn record(w: &mut dyn Write, r: &FunctionRecord) -> io::Result<()> {
                 }
             }
             if *offset != u64::MAX {
-                write!(
-                    w,
-                    "  // {}@{offset:08x}",
-                    origin.as_ref().map_or("", |a| a.as_str())
-                )?;
+                write!(w, "  // @{offset:08x}")?;
             }
             writeln!(w)
         }
@@ -99,52 +84,6 @@ pub(super) fn record(w: &mut dyn Write, r: &FunctionRecord) -> io::Result<()> {
             value(w, high)?;
             writeln!(w)
         }
-        FunctionRecord::Mmio {
-            offset,
-            assertion,
-            register,
-        } => writeln!(
-            w,
-            "  @{offset:08x} MMIO {} @0x{:08x} (review {})",
-            register.name,
-            register.address,
-            assertion.as_str()
-        ),
-        FunctionRecord::CallResolution {
-            offset,
-            analysis,
-            reason,
-        } => writeln!(
-            w,
-            "  @{offset:08x} callee {} {}",
-            analysis.as_ref().map_or("unresolved", |a| a.as_str()),
-            reason
-                .as_deref()
-                .unwrap_or("retained may-effects; no execution claim")
-        ),
-        FunctionRecord::CalleeEffect {
-            callsite,
-            analysis,
-            offset,
-            access,
-            width,
-            address,
-            value: v,
-        } => {
-            write!(
-                w,
-                "  call@{callsite:08x} may {access:?} {}-bit [",
-                width * 8
-            )?;
-            value(w, address)?;
-            write!(w, "]")?;
-            if let Some(v) = v {
-                write!(w, " <- ")?;
-                value(w, v)?;
-            }
-            writeln!(w, "  // {} @{offset:08x}", analysis.as_str())
-        }
-
         FunctionRecord::Transfer {
             offset,
             target,

@@ -169,8 +169,6 @@ fn build(
             },
             c,
         )?;
-        let lease = reader.analysis(&node.function.analysis, c)?;
-        proof.observe(&lease.records, c)?;
     }
     for call in &*calls {
         if let NavigationRecord::Call { caller, .. } = &call.record

@@ -33,15 +33,15 @@ links and ambiguity, profile memberships/roots, and the explicitly selected froz
 knowledge entries for the source revision, retaining their review state.
 
 Only an unambiguous selected physical target extends call closure. A profile with
-`include_reachable:false` keeps its root selection. Dependencies of composed
-expressions/effects and selected knowledge analysis evidence are retained transitively
-as `provenance_only` functions, without adding them to a profile. Cycles use bounded
+`include_reachable:false` keeps its root selection. Analyses cited as evidence by
+selected knowledge are retained transitively as `provenance_only` functions,
+without adding them to a profile. Cycles use bounded
 iterative worklists. No unresolved call is replaced by another engine or a guess.
 
 Manifest schema 1 / policy 1 separately counts roots, selected functions, partial
 functions, unresolved links and unavailable scope entries. Packaging grants no
 aggregate coverage, execution verdict, hardware claim or proof that every executable
-byte is classified. Composed may-effects retain that meaning. IR exports contain
+byte is classified. IR exports contain
 semantic facts, not captured ELF payloads or every evidence document; a project
 backup remains the preservation unit. Source-free reading and backup/restore use
 the [current native formats](../interfaces-formats/README.md#current-formats), without converters for previous formats.
@@ -102,10 +102,7 @@ entry-stack addresses; lost saved values after calls remain unknown. A successfu
 query may therefore carry an incomplete trace. Query exit status describes delivery;
 clients must inspect `left/right.exact` and `verdict`.
 
-Composed research facts remain may-effects. A target whose recipe requested
-composition returns `composed-interpretation`; select its original local publication
-in an IR build to trace the saved call graph. No implicit reinterpretation or second
-analysis engine runs. Exactness concerns the chosen path and observation scope,
+No implicit reinterpretation or second analysis engine runs. Exactness concerns the chosen path and observation scope,
 not whole-image semantic coverage.
 
 MATCH requires two exact paths and equal ordered observable expressions. A known

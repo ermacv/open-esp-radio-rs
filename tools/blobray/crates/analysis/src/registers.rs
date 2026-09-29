@@ -125,7 +125,6 @@ mod tests {
             .map(|(id, expression)| FunctionRecord::Expression {
                 id: id as u32,
                 offset: id as u64 * 4,
-                origin: None,
                 expression,
             })
             .collect()

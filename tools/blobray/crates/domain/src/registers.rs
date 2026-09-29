@@ -69,7 +69,6 @@ pub enum RegisterRecord {
         address: u32,
         access_widths: Vec<u8>,
         local_accesses: u64,
-        composed_effects: u64,
         mask_observations: u64,
     },
 }

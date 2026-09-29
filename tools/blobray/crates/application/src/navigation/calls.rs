@@ -154,14 +154,6 @@ pub(super) fn emit(
         } else {
             candidates(&index, caller, &call.target, &mut selected, c)?;
         }
-        let mut outside = false;
-        if let Some(id) = &call.saved_resolution {
-            c.checkpoint(nodes.len().max(1).ilog2() as u64 + 1)?;
-            match nodes.binary_search_by(|n| n.function.analysis.cmp(id)) {
-                Ok(i) => selected.push(i, c.position())?,
-                Err(_) => outside = true,
-            }
-        }
         sort_charge(selected.len(), c)?;
         selected.sort_unstable();
         let focus_match = focus.map(|f| match direction {
@@ -169,10 +161,7 @@ pub(super) fn emit(
             CallDirection::Callers => selected.iter().any(|i| &nodes[*i].function.location == f),
         });
         // Unclassified transfers are visible but never labeled as confirmed callers of the focus.
-        if direction == CallDirection::Callers
-            && focus_match == Some(false)
-            && !selected.is_empty()
-            && !outside
+        if direction == CallDirection::Callers && focus_match == Some(false) && !selected.is_empty()
         {
             continue;
         }
@@ -208,9 +197,7 @@ pub(super) fn emit(
             }
             previous = Some(i);
         }
-        let issue = if outside {
-            Some(NavigationIssue::OutsideSelection)
-        } else if count == 0 {
+        let issue = if count == 0 {
             Some(NavigationIssue::UnresolvedTarget)
         } else if count > 1 || matches!(call.target, AbstractValue::Alternatives { .. }) {
             Some(NavigationIssue::AmbiguousTarget)
@@ -224,7 +211,6 @@ pub(super) fn emit(
                 offset: call.offset,
                 call: call.call,
                 target: call.target.clone(),
-                saved_resolution: call.saved_resolution.clone(),
                 candidates: owned,
                 focus_match,
                 issue,

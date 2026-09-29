@@ -235,11 +235,6 @@ pub enum FunctionRecord {
         predecessor: u8,
         successor: u8,
     },
-    MmioRange {
-        offset: u64,
-        assertion: AssertionId,
-        region: MmioRegion,
-    },
     Condition {
         offset: u64,
         test: BranchTest,
@@ -249,7 +244,6 @@ pub enum FunctionRecord {
     Expression {
         id: u32,
         offset: u64,
-        origin: Option<FunctionAnalysisId>,
         expression: Expression,
     },
     /// Register state before the transfer instruction. Its architectural write
@@ -263,26 +257,6 @@ pub enum FunctionRecord {
         low: AbstractValue,
         high: AbstractValue,
     },
-    Mmio {
-        offset: u64,
-        assertion: AssertionId,
-        register: MmioRegister,
-    },
-    CalleeEffect {
-        callsite: u64,
-        analysis: FunctionAnalysisId,
-        offset: u64,
-        access: MemoryKind,
-        width: u8,
-        address: AbstractValue,
-        value: Option<AbstractValue>,
-    },
-    CallResolution {
-        offset: u64,
-        analysis: Option<FunctionAnalysisId>,
-        reason: Option<String>,
-    },
-
     /// A call or out-of-function jump. A resolved target does not prove returns
     /// or effects; unresolved transfers remain visible.
     Transfer {

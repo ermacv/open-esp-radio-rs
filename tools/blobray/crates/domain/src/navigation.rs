@@ -62,12 +62,10 @@ pub struct NavigationFunction {
 pub enum NavigationIssue {
     UnresolvedTarget,
     AmbiguousTarget,
-    OutsideSelection,
     UnknownAddress,
     AmbiguousAddress,
     IndirectPath,
     MissingReference,
-    ForeignOccurrence,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -101,7 +99,6 @@ pub enum NavigationRecord {
         offset: u64,
         call: bool,
         target: AbstractValue,
-        saved_resolution: Option<FunctionAnalysisId>,
         candidates: Vec<NavigationFunction>,
         focus_match: Option<bool>,
         issue: Option<NavigationIssue>,
@@ -109,7 +106,6 @@ pub enum NavigationRecord {
     Access {
         function: NavigationFunction,
         record: u64,
-        origin: Option<FunctionAnalysisId>,
         offset: u64,
         access: MemoryKind,
         width: u8,

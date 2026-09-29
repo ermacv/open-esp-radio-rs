@@ -741,7 +741,6 @@ pub(super) fn analyze_with(
                 &FunctionRecord::Expression {
                     id: emitted as u32,
                     offset: *offset,
-                    origin: None,
                     expression: expression.clone(),
                 },
                 control,

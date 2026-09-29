@@ -4,6 +4,7 @@ use oer_hil_target_core::bluetooth_gatt::secure::{state, store};
 mod reset_gate_tests;
 use gatt_application::security::gatt::Observation;
 use oer_hil_protocol::bluetooth::*;
+use oer_hil_protocol::{base, bluetooth};
 
 fn snapshot(state: &state::State) -> BluetoothSecureGattEvidence {
     state.snapshot().0

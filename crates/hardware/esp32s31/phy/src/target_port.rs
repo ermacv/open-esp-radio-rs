@@ -134,8 +134,9 @@ mod concurrent;
 pub use concurrent::{
     ConcurrentPhyRegisterFailure, ConcurrentPhyRegistration, ConcurrentPhyTrackingError,
     ConcurrentRfError, ConcurrentTrackingTick, ConcurrentWifiChannelError, close_concurrent_rf,
-    maintain_concurrent_phy, register_concurrent_phy, select_concurrent_wifi_channel,
-    switch_concurrent_wifi_channel, track_concurrent_phy, wake_concurrent_rf,
+    diag_republish_bluetooth_tx_gain, maintain_concurrent_phy, register_concurrent_phy,
+    select_concurrent_wifi_channel, switch_concurrent_wifi_channel, track_concurrent_phy,
+    wake_concurrent_rf,
 };
 mod domain;
 pub use domain::{PhyDomainRegisterFailure, PhyDomainRegistered, PhyRegisterConfig};

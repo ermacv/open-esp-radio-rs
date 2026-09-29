@@ -781,3 +781,18 @@ fn emit_wifi_channel(
         result,
     });
 }
+
+/// DIAGNOSTIC #38 (not for merge): recompute the BT/15.4 TX gain table from
+/// the registered state and publish it into gain memory again. Returns
+/// whether a registered domain existed.
+pub fn diag_republish_bluetooth_tx_gain(lease: &mut SharedRadioLease<'_, ConcurrentPhy>) -> bool {
+    let (mut registers, phy) = lease.phy_hal_with_attachment();
+    let Ok(state) = phy.phy_state() else {
+        return false;
+    };
+    let image = crate::calibration::bluetooth::calculate_bluetooth_tx_gain(
+        state.bluetooth_tx_gain_parameters(),
+    );
+    crate::hardware::publish_bluetooth_tx_gain_memory(&mut registers, image);
+    true
+}

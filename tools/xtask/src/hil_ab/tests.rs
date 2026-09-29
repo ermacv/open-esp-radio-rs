@@ -173,3 +173,10 @@ fn the_summary_names_the_variants_and_each_verdict() {
     let json = serde_json::to_value(&report).unwrap();
     assert_eq!(json["b"]["overrides"][0]["dependency"], "xarxa");
 }
+
+#[test]
+fn every_replay_round_leases_the_same_work_so_its_estimate_is_a_round() {
+    let scenarios = [String::from("udp-rx"), String::from("udp-tx")];
+    assert_eq!(round_work(&scenarios), round_work(&scenarios.clone()));
+    assert_eq!(round_work(&scenarios), "ab round udp-rx udp-tx");
+}

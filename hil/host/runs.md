@@ -263,9 +263,11 @@ checked out in a worktree below `target/hil/ab/<id>/` and captured with its
 overrides into a source snapshot; this checkout's runner builds and runs
 both, so both revisions must have this checkout's `PROTOCOL_VERSION`. For
 every layout seed `1..=K` the first round runs A, then B, building their
-images; the remaining rounds replay those exact images, alternating A and B
-under one whole-stand lease, so drift of the air and the calibrations falls
-on both arms. Every run records `experiment` (its id, arm and variant: the
+images; the remaining rounds replay those exact images. Each round, A then B
+of one seed, holds a whole-stand lease of its own, so drift of the air and
+the calibrations falls on both arms, and releases it: shorter work of owners
+with a higher balance goes between rounds, and the queue estimates the next
+round from the rounds before it. Every run records `experiment` (its id, arm and variant: the
 commit and each override's path, commit and dirtiness) in its manifest and
 no evidence. A comparison takes hours, so like a run it is a job: `--enqueue`
 starts it detached and prints the job id for `cargo hil wait`, and `--after

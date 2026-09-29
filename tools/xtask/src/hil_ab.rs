@@ -9,9 +9,10 @@
 //! both arms therefore need this checkout's HIL protocol version.
 //!
 //! For every layout seed, the first round runs A, then B, each building its
-//! images. The remaining rounds replay those exact images, alternating A and
-//! B under one whole-stand lease, so drift of the air and the calibrations
-//! falls on both arms alike. Every run records its arm and variant in its
+//! images. The remaining rounds replay those exact images; each round, A then
+//! B of one seed, holds a whole-stand lease of its own, so drift of the air
+//! and the calibrations falls on both arms alike, and other owners' shorter
+//! work goes between rounds. Every run records its arm and variant in its
 //! manifest ([`oer_hil_runner_core::experiment`]) and no evidence. The
 //! report compares, per scenario and measurement, the arms' run means with
 //! [`crate::hil_perf::compare`] and is written to `ab-report.json`.
@@ -270,21 +271,22 @@ pub(crate) fn run(
             write_report(&path, &report)?;
         }
     }
-    // The other rounds replay those images, alternating under one lease.
+    // The other rounds replay those images. One round, A then B of one
+    // seed, holds the stand, so drift falls on both arms alike; between
+    // rounds the lease is released and shorter work of owners with a higher
+    // balance goes first. Every round leases the same work, so the arbiter
+    // estimates the next round from the rounds before it.
     if cli.repetitions > 1 {
         let arbiter = oer_hil_arbiter::Arbiter::open()?;
-        let grant = arbiter.acquire(&oer_hil_arbiter::Request {
-            owner: owner.to_owned(),
-            work: format!(
-                "ab {} rounds 2..={}",
-                cli.scenarios.join(" "),
-                cli.repetitions
-            ),
-            scenarios: cli.scenarios.clone(),
-            claims: vec![oer_hil_arbiter::Claim::stand()],
-        })?;
+        let work = round_work(&cli.scenarios);
         for _ in 1..cli.repetitions {
             for seed in &seeds {
+                let grant = arbiter.acquire(&oer_hil_arbiter::Request {
+                    owner: owner.to_owned(),
+                    work: work.clone(),
+                    scenarios: cli.scenarios.clone(),
+                    claims: vec![oer_hil_arbiter::Claim::stand()],
+                })?;
                 for arm in &arms {
                     let built = &first[&(arm.arm, *seed)];
                     let classes = classes_of(&loaded, built);
@@ -299,6 +301,7 @@ pub(crate) fn run(
                         write_report(&path, &report)?;
                     }
                 }
+                drop(grant);
             }
         }
     }
@@ -326,6 +329,13 @@ pub(crate) fn run(
         .iter()
         .map(|(_, run)| (run.id.clone(), run.outcome))
         .collect())
+}
+
+/// The arbiter work of one replay round: the same for every round of an
+/// experiment on these scenarios, so each round's estimate is the rounds'
+/// own duration.
+fn round_work(scenarios: &[String]) -> String {
+    format!("ab round {}", scenarios.join(" "))
 }
 
 /// Add the run `id` of `arm` to the report and to the loaded runs.

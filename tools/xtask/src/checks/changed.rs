@@ -348,16 +348,18 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
             {
                 continue;
             }
+            // Citations are checked against the pinned artifacts, never
+            // skipped: fetch what this checkout lacks into the shared store
+            // (a no-op once any checkout of the host fetched them).
             let unfetched = crate::vendor_fetch::unfetched(ctx, &chip)?;
-            if unfetched.is_empty() {
-                crate::vendor_provenance::check(ctx, &chip)?;
-            } else {
+            if !unfetched.is_empty() {
                 println!(
-                    "check changed: vendor provenance of {chip} skipped: {} pinned artifacts (such as {}) not fetched; run `cargo xtask vendor-fetch {chip}` to check citations",
-                    unfetched.len(),
-                    unfetched[0]
+                    "check changed: fetching {} pinned vendor artifacts of {chip} for provenance",
+                    unfetched.len()
                 );
+                crate::vendor_fetch::fetch_vendor_sources(ctx, &chip)?;
             }
+            crate::vendor_provenance::check(ctx, &chip)?;
         }
     }
     for workspace in &plan.other_workspaces {

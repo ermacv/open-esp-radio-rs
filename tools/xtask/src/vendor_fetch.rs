@@ -309,6 +309,36 @@ pub fn pinned(ctx: &Context, chip: &str) -> Result<Vec<Pinned>> {
     }
 }
 
+/// Fetches every pinned vendor artifact of `chip` into the shared store,
+/// leaving local builds alone; fails when one cannot be fetched as pinned.
+pub fn fetch_vendor_sources(ctx: &Context, chip: &str) -> Result<()> {
+    link_store(&ctx.root, &store()?)?;
+    let manifest = manifest_path(&ctx.root, chip)?;
+    let (sources, artifacts) = parse(&std::fs::read_to_string(ctx.root.join(manifest))?)?;
+    let mut failures = vec![];
+    for artifact in &artifacts {
+        let source = sources
+            .iter()
+            .find(|s| s.id == artifact.source)
+            .expect("parsed sources");
+        if source.kind == Kind::Local {
+            continue;
+        }
+        if let Err(error) = fetch(&ctx.root, source, artifact) {
+            failures.push(format!("{}: {error}", artifact.id));
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "vendor artifacts of {chip} could not be fetched: {}",
+            failures.join("; ")
+        )
+        .into())
+    }
+}
+
 /// The fetched vendor artifacts of `chip` that are missing or differ from
 /// their pin; empty when every citation can be checked.
 pub fn unfetched(ctx: &Context, chip: &str) -> Result<Vec<String>> {

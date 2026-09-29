@@ -7,11 +7,14 @@ use static_cell::StaticCell;
 
 async fn echo(stack: Stack<'static>) -> ! {
     #[cfg(feature = "owned-network")]
-    let mut udp = UdpSocket::new(stack);
+    let mut udp = UdpSocket::new(stack).expect("a UDP socket slot is free");
     static PAYLOAD: StaticCell<[u8; 1472]> = StaticCell::new();
     let payload = PAYLOAD.init_with(|| [0; 1472]);
-    udp.bind(4321, embassy_net::wire::ListenSocketAddr::UNSPECIFIED)
-        .expect("UDP echo port is available");
+    udp.bind(
+        4321,
+        crate::embassy_net::wire::ListenSocketAddr::UNSPECIFIED,
+    )
+    .expect("UDP echo port is available");
     loop {
         match udp.recv_from(payload).await {
             Ok((length, metadata)) => {

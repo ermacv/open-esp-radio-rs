@@ -12,6 +12,7 @@ pub struct AccessPointAggregateFill {
 }
 
 impl AccessPointAggregateFill {
+    #[cfg(any(feature = "diagnostics", test))]
     fn record(&mut self, association_id: u16, subframes: u8) {
         self.association_id = association_id;
         self.aggregates = self.aggregates.saturating_add(1);

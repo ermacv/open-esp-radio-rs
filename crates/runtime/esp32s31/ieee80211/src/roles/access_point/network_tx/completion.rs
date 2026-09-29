@@ -316,6 +316,8 @@ where
         T: WifiTxTimer,
         H: TxHardware + oer_esp32s31_ieee80211_mac::tx::ampdu::HtAmpduHardware,
     {
+        #[cfg(not(any(feature = "diagnostics", test)))]
+        let _ = block_ack_sample;
         match aggregate_progress {
             ApAmpduProgress::CompletionReady(completion) => {
                 #[cfg(any(feature = "diagnostics", test))]

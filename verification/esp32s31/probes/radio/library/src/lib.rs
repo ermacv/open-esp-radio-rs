@@ -958,7 +958,11 @@ oer_probe_macros::probe! {
                 aifsn: parameters.aifsn as u8,
                 contention_window: parameters.contention_window as u16,
                 interface,
-                group_receiver: parameters.group_receiver != 0,
+                response: if parameters.group_receiver != 0 {
+                    oer_esp32s31_hal::types::MacLegacyTxResponse::None
+                } else {
+                    oer_esp32s31_hal::types::MacLegacyTxResponse::Ack
+                },
                 hardware_key_selector: parameters.hardware_key_selector as u8,
             },
         )
@@ -1509,6 +1513,13 @@ impl oer_esp32s31_ieee80211_mac::tx::TxHardware for OrdinaryTxProbeHardware {
         _queue: u8,
     ) -> Option<oer_esp32s31_hal::types::MacTxCompletionObservation> {
         Some(oer_esp32s31_hal::types::MacTxCompletionObservation::new_validation(5, 0))
+    }
+
+    fn take_block_ack_completion(
+        &mut self,
+        _queue: u8,
+    ) -> Option<oer_esp32s31_hal::types::MacHtAmpduCompletionObservation> {
+        None
     }
 
     fn begin_tx_timeout_abort(&mut self, _queue: u8) -> bool {

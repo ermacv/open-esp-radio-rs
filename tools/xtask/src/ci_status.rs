@@ -20,6 +20,8 @@ pub struct Run {
     pub conclusion: Option<Conclusion>,
     pub url: String,
     pub database_id: u64,
+    /// RFC 3339 in UTC, so the text orders as the time does.
+    pub created_at: String,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
@@ -55,6 +57,12 @@ impl Conclusion {
     fn failed(self) -> bool {
         matches!(self, Self::Failure | Self::TimedOut | Self::StartupFailure)
     }
+
+    /// Whether the run judged its commit. A run cancelled because a newer
+    /// push superseded it, or skipped, says nothing about the code.
+    fn is_verdict(self) -> bool {
+        self == Self::Success || self.failed()
+    }
 }
 
 /// `gh` reports an unfinished run's conclusion as an empty string.
@@ -70,12 +78,19 @@ fn conclusion<'de, D: serde::Deserializer<'de>>(
         .map_err(serde::de::Error::custom)
 }
 
-/// The newest finished run of each workflow in `runs` (newest first, as
-/// `gh run list` orders them) that failed.
+/// For each workflow, its newest run in `runs` that judged its commit, when
+/// that run failed. Cancelled and skipped runs are passed over.
 pub fn failures(runs: &[Run]) -> Vec<&Run> {
+    let mut judged = runs
+        .iter()
+        .filter(|run| {
+            run.status == RunStatus::Completed && run.conclusion.is_some_and(Conclusion::is_verdict)
+        })
+        .collect::<Vec<_>>();
+    judged.sort_by(|a, b| b.created_at.cmp(&a.created_at));
     let mut seen = std::collections::BTreeSet::new();
-    runs.iter()
-        .filter(|run| run.status == RunStatus::Completed && run.conclusion.is_some())
+    judged
+        .into_iter()
         .filter(|run| seen.insert(run.workflow_name.as_str()))
         .filter(|run| run.conclusion.is_some_and(Conclusion::failed))
         .collect()
@@ -104,7 +119,7 @@ pub fn report(ctx: &Context) -> Vec<String> {
         "--limit",
         "30",
         "--json",
-        "workflowName,headSha,status,conclusion,url,databaseId",
+        "workflowName,headSha,status,conclusion,url,databaseId,createdAt",
     ])) else {
         return Vec::new();
     };
@@ -159,12 +174,12 @@ mod tests {
     fn only_the_newest_finished_run_of_each_workflow_counts() {
         let runs = runs(
             r#"[
-            {"workflowName":"CI","headSha":"c3","status":"in_progress","conclusion":"","url":"u3","databaseId":3},
-            {"workflowName":"CI","headSha":"c2","status":"completed","conclusion":"failure","url":"u2","databaseId":2},
-            {"workflowName":"CI","headSha":"c1","status":"completed","conclusion":"success","url":"u1","databaseId":1},
-            {"workflowName":"Documentation","headSha":"c2","status":"completed","conclusion":"success","url":"d2","databaseId":5},
-            {"workflowName":"Documentation","headSha":"c1","status":"completed","conclusion":"failure","url":"d1","databaseId":4},
-            {"workflowName":"Firmware matrix","headSha":"c0","status":"completed","conclusion":"cancelled","url":"f","databaseId":6}
+            {"workflowName":"CI","headSha":"c3","status":"in_progress","conclusion":"","url":"u3","databaseId":3,"createdAt":"2026-09-29T03:00:00Z"},
+            {"workflowName":"CI","headSha":"c2","status":"completed","conclusion":"failure","url":"u2","databaseId":2,"createdAt":"2026-09-29T02:00:00Z"},
+            {"workflowName":"CI","headSha":"c1","status":"completed","conclusion":"success","url":"u1","databaseId":1,"createdAt":"2026-09-29T01:00:00Z"},
+            {"workflowName":"Documentation","headSha":"c2","status":"completed","conclusion":"success","url":"d2","databaseId":5,"createdAt":"2026-09-29T05:00:00Z"},
+            {"workflowName":"Documentation","headSha":"c1","status":"completed","conclusion":"failure","url":"d1","databaseId":4,"createdAt":"2026-09-29T04:00:00Z"},
+            {"workflowName":"Firmware matrix","headSha":"c0","status":"completed","conclusion":"cancelled","url":"f","databaseId":6,"createdAt":"2026-09-29T06:00:00Z"}
         ]"#,
         );
         let failed = failures(&runs);
@@ -174,9 +189,24 @@ mod tests {
     }
 
     #[test]
+    fn a_superseded_run_does_not_hide_the_last_verdict() {
+        // gh's order is not relied on: the newest verdict wins by time.
+        let runs = runs(
+            r#"[
+            {"workflowName":"CI","headSha":"old","status":"completed","conclusion":"success","url":"u1","databaseId":1,"createdAt":"2026-09-29T01:00:00Z"},
+            {"workflowName":"CI","headSha":"new","status":"completed","conclusion":"cancelled","url":"u3","databaseId":3,"createdAt":"2026-09-29T03:00:00Z"},
+            {"workflowName":"CI","headSha":"mid","status":"completed","conclusion":"failure","url":"u2","databaseId":2,"createdAt":"2026-09-29T02:00:00Z"}
+        ]"#,
+        );
+        let failed = failures(&runs);
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].head_sha, "mid");
+    }
+
+    #[test]
     fn an_unknown_status_or_conclusion_still_parses() {
         let runs = runs(
-            r#"[{"workflowName":"CI","headSha":"c","status":"brand_new","conclusion":"surprise","url":"u","databaseId":1}]"#,
+            r#"[{"workflowName":"CI","headSha":"c","status":"brand_new","conclusion":"surprise","url":"u","databaseId":1,"createdAt":"2026-09-29T01:00:00Z"}]"#,
         );
         assert_eq!(runs[0].status, RunStatus::Other);
         assert_eq!(runs[0].conclusion, Some(Conclusion::Other));

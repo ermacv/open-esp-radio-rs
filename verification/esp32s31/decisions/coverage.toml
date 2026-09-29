@@ -418,6 +418,20 @@ end = 0xf6
 
 [[decision]]
 reason = """
+the HE DCM rate clamp of `rcGetDCMMaxRate`, which acts only when transmit \
+descriptor word 0x30 bit 17 is set: the vendor's ordinary data path never \
+sets it (no writer in libpp, libnet80211 or libcoexist; its only DCM path is \
+`esp_wifi_80211_tx` with an explicit `esp_wifi_config_80211_tx` DCM \
+configuration), and production enables no DCM on ordinary frames (its \
+composition sets no HE DCM override); a production raw transmit API with DCM \
+would need this decision revisited (reviewed with the Wi-Fi owner)"""
+[[decision.place]]
+function = "rcGetDCMMaxRate"
+start = 0x8
+end = 0x54
+
+[[decision]]
+reason = """
 the body of `hal_mac_txq_enable` after its publication edge: `GetAccess` \
 access bookkeeping, HE and MU-EDCA queue state and test statistics; the \
 ordinary transmit claim compares the prefix before that call, and \

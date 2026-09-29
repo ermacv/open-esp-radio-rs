@@ -57,7 +57,8 @@ This Rust 2024 workspace separates shipping code from evidence and tooling:
   is private input and must never be committed. The single pin of every
   vendor archive, ROM ELF and SDK firmware (repository, revision, SHA-256) is
   `verification/<chip>/artifacts.toml`; `cargo xtask
-  vendor-fetch <chip>` downloads and verifies them into `target/vendor/`, and
+  vendor-fetch <chip>` downloads and verifies them into `target/vendor/` (a link
+  to one host-wide store every checkout and worktree shares), and
   the vendor scenarios default to those paths. Hashes elsewhere record where a
   reviewed fact was observed and are not pins. `cargo xtask check provenance --chip <chip>`
   fails when a cited vendor function changed since its facts were reviewed;

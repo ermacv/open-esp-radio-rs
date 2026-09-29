@@ -18,9 +18,10 @@ use crate::{Context, Result, process};
 
 /// Subdirectories of `target/` that are never worth cloning: incremental
 /// session data is keyed to this checkout's paths, HIL outputs live in the
-/// shared run store or are rebuilt per image, and vendor firmware builds keep
-/// CMake caches that record this checkout's absolute source directory.
-const SKIPPED: &[&str] = &["incremental", "hil", "vendor-firmware"];
+/// shared run store or are rebuilt per image, vendor firmware builds keep
+/// CMake caches that record this checkout's absolute source directory, and
+/// fetched vendor artifacts are a link to the host-wide store.
+const SKIPPED: &[&str] = &["incremental", "hil", "vendor-firmware", "vendor"];
 
 /// Whether a `target/` entry at `relative` is left out of the seed.
 pub fn skipped(relative: &Path) -> bool {
@@ -41,6 +42,9 @@ pub fn add(ctx: &Context, path: &Path, branch: &str, from: &str) -> Result<()> {
             .arg(path)
             .arg(from),
     )?;
+    // Fetched vendor artifacts live in the host-wide store; link it first so
+    // vendor scenarios and captures find them in the new worktree.
+    crate::vendor_fetch::link_store(path, &crate::vendor_fetch::store()?)?;
     let source = ctx.root.join("target");
     if !source.is_dir() {
         println!("worktree: this checkout has no target/ to seed from");

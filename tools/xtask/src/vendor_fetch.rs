@@ -5,13 +5,77 @@
 //! the pinned release asset; every file is verified against its SHA-256
 //! before it enters `target/vendor/<source>/<revision>/<path>`. Local build
 //! outputs are only verified. Downloads use `curl` and release members `tar`.
+//!
+//! Pinned artifacts are immutable and verified, so every checkout of the host
+//! shares one store (`$OER_VENDOR_CACHE`, default
+//! `~/.cache/open-esp-radio/vendor`): each checkout's `target/vendor` is a link
+//! to it, and a new checkout or worktree finds everything another one fetched.
+//! A checkout's former `target/vendor` directory is merged into the store.
 use crate::{Context, Result};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Cache of fetched artifacts, relative to the repository root.
+/// Cache of fetched artifacts, relative to the repository root; a link to
+/// the host-wide store.
 pub const CACHE: &str = "target/vendor";
+/// Overrides the host-wide store of fetched artifacts.
+pub const STORE_ENV: &str = "OER_VENDOR_CACHE";
+
+/// The host-wide store of fetched artifacts.
+pub fn store() -> Result<PathBuf> {
+    match std::env::var_os(STORE_ENV).filter(|value| !value.is_empty()) {
+        Some(store) => Ok(PathBuf::from(store)),
+        None => Ok(std::env::var_os("XDG_CACHE_HOME")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
+            .ok_or("HOME is required to locate the vendor artifact store")?
+            .join("open-esp-radio/vendor")),
+    }
+}
+
+/// Makes `root`'s `target/vendor` a link to `store`, merging a former
+/// directory's artifacts into the store first.
+pub fn link_store(root: &Path, store: &Path) -> Result<()> {
+    std::fs::create_dir_all(store)?;
+    let link = root.join(CACHE);
+    match std::fs::symlink_metadata(&link) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            if std::fs::read_link(&link)? == store {
+                return Ok(());
+            }
+            std::fs::remove_file(&link)?;
+        }
+        Ok(metadata) if metadata.is_dir() => {
+            merge_into(&link, store)?;
+            std::fs::remove_dir_all(&link)?;
+        }
+        Ok(_) => std::fs::remove_file(&link)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    if let Some(parent) = link.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::os::unix::fs::symlink(store, &link)?;
+    Ok(())
+}
+
+/// Moves every entry of `from` that `into` lacks; artifacts are keyed by
+/// source and revision and verified on use, so an existing entry wins.
+fn merge_into(from: &Path, into: &Path) -> Result<()> {
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = into.join(entry.file_name());
+        if entry.file_type()?.is_dir() && target.is_dir() {
+            merge_into(&entry.path(), &target)?;
+        } else if std::fs::symlink_metadata(&target).is_err() {
+            std::fs::rename(entry.path(), &target)?;
+        }
+    }
+    Ok(())
+}
 
 /// Tracked manifest of `chip`, relative to the repository root.
 pub fn manifest_path(root: &Path, chip: &str) -> Result<String> {
@@ -336,6 +400,7 @@ pub fn git_pins(ctx: &Context, chip: &str) -> Result<Vec<GitPin>> {
 /// Fetch and verify every artifact of `chip`; report local builds that are
 /// missing or differ. Fails when any artifact is not available as pinned.
 pub fn run(ctx: &Context, chip: &str) -> Result<()> {
+    link_store(&ctx.root, &store()?)?;
     let manifest = manifest_path(&ctx.root, chip)?;
     let (sources, artifacts) = parse(&std::fs::read_to_string(ctx.root.join(manifest))?)?;
     let mut failures = vec![];
@@ -423,5 +488,33 @@ mod tests {
         assert_eq!(resolved.unfetched, ["missing"]);
         let pinned: Vec<_> = resolved.pinned.iter().map(|p| p.id.as_str()).collect();
         assert_eq!(pinned, ["fetched"]);
+    }
+    #[test]
+    fn a_checkout_links_the_shared_store_and_merges_its_former_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let checkout = dir.path().join("checkout");
+        let store = dir.path().join("store");
+        std::fs::create_dir_all(checkout.join(CACHE).join("idf/abc")).unwrap();
+        std::fs::write(checkout.join(CACHE).join("idf/abc/lib.a"), b"lib").unwrap();
+        std::fs::create_dir_all(store.join("idf/abc")).unwrap();
+        std::fs::write(store.join("idf/abc/rom.elf"), b"rom").unwrap();
+        link_store(&checkout, &store).unwrap();
+        assert_eq!(std::fs::read_link(checkout.join(CACHE)).unwrap(), store);
+        assert_eq!(
+            std::fs::read(checkout.join(CACHE).join("idf/abc/lib.a")).unwrap(),
+            b"lib"
+        );
+        assert_eq!(
+            std::fs::read(checkout.join(CACHE).join("idf/abc/rom.elf")).unwrap(),
+            b"rom"
+        );
+        // A second checkout finds what the first fetched, and relinking is idempotent.
+        let other = dir.path().join("other");
+        link_store(&other, &store).unwrap();
+        link_store(&other, &store).unwrap();
+        assert_eq!(
+            std::fs::read(other.join(CACHE).join("idf/abc/lib.a")).unwrap(),
+            b"lib"
+        );
     }
 }

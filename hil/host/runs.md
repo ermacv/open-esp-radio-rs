@@ -94,6 +94,13 @@ repetition's `reset-escalation.json` and a clearing step in the board journal.
 When no step clears it, the board is quarantined with trigger `boot-loop` for
 a person, and runs and `cargo hil wait --service` wait for its release.
 
+A target that does not answer within those 20 s is first read through its
+JTAG, where the stand's OpenOCD reaches it: the runner halts the current hart,
+reads `pc`, `ra`, `sp`, `mcause`, `mepc`, `mtval` and `mstatus`, lets it run on
+without a reset, names the code addresses from the image's ELF and writes them
+to `post-mortem/jtag.json`, so the place it stopped survives the resets below.
+The read never changes the repetition's outcome.
+
 A target that does not answer within those 20 s climbs the recovery ladder:
 an EN pulse through the board's registered reset path, or an RTS pulse on its
 own USB Serial/JTAG port when it has none, then the same query again. No

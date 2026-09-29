@@ -259,6 +259,76 @@ impl Openocd {
     }
 }
 
+impl Openocd {
+    /// The arguments that halt the chip of `chip` whose USB serial number is
+    /// `mac`, print `registers`, and let it run on, with no reset and no
+    /// debugger server listening.
+    pub fn register_arguments(&self, chip: &str, mac: &str, registers: &[&str]) -> Vec<String> {
+        let mut commands = String::from("init; halt");
+        for register in registers {
+            commands.push_str(&format!("; echo \"{register} [reg {register}]\""));
+        }
+        commands.push_str("; resume; shutdown");
+        vec![
+            String::from("-s"),
+            self.scripts.display().to_string(),
+            String::from("-c"),
+            String::from("gdb_port disabled; telnet_port disabled; tcl_port disabled"),
+            String::from("-f"),
+            format!("board/{chip}-builtin.cfg"),
+            String::from("-c"),
+            format!("adapter serial {mac}"),
+            String::from("-c"),
+            commands,
+        ]
+    }
+
+    /// Halt the chip, read `registers` of its current hart and let it run
+    /// on: what a target that stopped answering was doing, without the reset
+    /// that would erase it.
+    pub fn registers(
+        &self,
+        chip: &str,
+        mac: &str,
+        registers: &[&str],
+        timeout: Duration,
+    ) -> crate::Result<Vec<(String, u32)>> {
+        let output = oer_process::output(
+            std::process::Command::new(&self.program)
+                .args(self.register_arguments(chip, mac, registers)),
+            Some(timeout),
+        )?;
+        let log = String::from_utf8_lossy(&output.stderr).into_owned()
+            + &String::from_utf8_lossy(&output.stdout);
+        let values = parse_registers(&log, registers);
+        if values.is_empty() {
+            let tail = log.lines().rev().take(12).collect::<Vec<_>>();
+            return Err(format!(
+                "OpenOCD read no register ({}):\n{}",
+                output.status,
+                tail.into_iter().rev().collect::<Vec<_>>().join("\n")
+            )
+            .into());
+        }
+        Ok(values)
+    }
+}
+
+/// The `NAME name (/32): 0x…` lines OpenOCD echoed for `registers`.
+fn parse_registers(log: &str, registers: &[&str]) -> Vec<(String, u32)> {
+    registers
+        .iter()
+        .filter_map(|register| {
+            let line = log
+                .lines()
+                .find(|line| line.trim_start().starts_with(&format!("{register} ")))?;
+            let value = line.rsplit(':').next()?.trim();
+            let value = u32::from_str_radix(value.strip_prefix("0x")?, 16).ok()?;
+            Some((String::from(*register), value))
+        })
+        .collect()
+}
+
 /// The ROM's last `rst:... boot:...` line in `banner`.
 pub fn reset_line(banner: &str) -> Option<&str> {
     banner
@@ -286,6 +356,30 @@ mod tests {
             Control::default()
         );
         assert!(serde_json::from_str::<Control>(r#"{"reset":{"via":"gpio"}}"#).is_err());
+    }
+
+    #[test]
+    fn echoed_registers_are_read_and_a_missing_one_is_left_out() {
+        let log = "Info : [esp32c5] Target halted, PC=0x42010736\n\
+                   pc pc (/32): 0x42010736\n\
+                   mcause mcause (/32): 0x30000007\n\
+                   Info : shutdown command invoked\n";
+        assert_eq!(
+            parse_registers(log, &["pc", "mcause", "mtval"]),
+            [
+                (String::from("pc"), 0x4201_0736),
+                (String::from("mcause"), 0x3000_0007)
+            ]
+        );
+        let openocd = Openocd {
+            program: "openocd".into(),
+            scripts: "/scripts".into(),
+        };
+        let arguments = openocd.register_arguments("esp32c5", "38:44:BE:AA:25:64", &["pc"]);
+        let commands = arguments.last().unwrap();
+        // It reads without resetting and leaves the chip running.
+        assert!(commands.contains("halt") && commands.ends_with("resume; shutdown"));
+        assert!(!commands.contains("reset"));
     }
 
     #[test]

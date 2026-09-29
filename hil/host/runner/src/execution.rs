@@ -67,6 +67,16 @@ pub(crate) fn execute_workload(
             )
         })
         .flatten();
+    // A target that does not answer is read through its JTAG before any
+    // reset erases where it stopped.
+    if failed && post_mortem.is_none() {
+        hil_core::post_mortem::jtag_snapshot_through_stand_openocd(
+            lab.target(),
+            mac.as_deref(),
+            output,
+            elf.as_deref(),
+        );
+    }
     let recovery = (failed && post_mortem.is_none())
         .then(|| {
             let origin = output

@@ -37,6 +37,84 @@ pub fn board_mac(port: &Path) -> Option<String> {
     oer_hil_arbiter::port_mac(port)
 }
 
+/// The registers a JTAG post-mortem reads: where the hart was, where it
+/// came from, and the trap it last took.
+const JTAG_REGISTERS: [&str; 7] = ["pc", "ra", "sp", "mcause", "mepc", "mtval", "mstatus"];
+/// The registers that hold code addresses, named from the image's ELF.
+const JTAG_CODE_REGISTERS: [&str; 3] = ["pc", "ra", "mepc"];
+/// Where a JTAG post-mortem is written in the repetition's directory.
+pub const JTAG_POST_MORTEM_FILE: &str = "post-mortem/jtag.json";
+
+/// Read through the chip's JTAG where a target that stopped answering is,
+/// without the reset recovery would do: halt it, read its current hart's
+/// registers, let it run on, name the code addresses from `elf` and write
+/// them to [`JTAG_POST_MORTEM_FILE`]. It never changes the repetition's
+/// outcome; a board without JTAG or OpenOCD leaves nothing.
+/// [`jtag_snapshot`] through the OpenOCD the stand's wrapper named.
+pub fn jtag_snapshot_through_stand_openocd(
+    chip: &str,
+    mac: Option<&str>,
+    output: &Path,
+    elf: Option<&Path>,
+) {
+    jtag_snapshot(
+        oer_hil_arbiter::control::Openocd::from_environment().as_ref(),
+        chip,
+        mac,
+        output,
+        elf,
+    );
+}
+
+pub fn jtag_snapshot(
+    openocd: Option<&oer_hil_arbiter::control::Openocd>,
+    chip: &str,
+    mac: Option<&str>,
+    output: &Path,
+    elf: Option<&Path>,
+) {
+    let (Some(openocd), Some(mac)) = (openocd, mac) else {
+        return;
+    };
+    let registers = match openocd.registers(chip, mac, &JTAG_REGISTERS, Duration::from_secs(30)) {
+        Ok(registers) => registers,
+        Err(error) => {
+            eprintln!("hil: no JTAG post-mortem of the silent target: {error}");
+            return;
+        }
+    };
+    let loader = elf.and_then(|elf| addr2line::Loader::new(elf).ok());
+    let value = |name: &str| {
+        registers
+            .iter()
+            .find(|(register, _)| register == name)
+            .map(|(_, value)| *value)
+    };
+    let symbols = JTAG_CODE_REGISTERS
+        .iter()
+        .filter_map(|name| Some((*name, symbol(loader.as_ref(), value(name)?))))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let _ = crate::durable::atomic_json(
+        &output.join(JTAG_POST_MORTEM_FILE),
+        &serde_json::json!({
+            "schema": 1,
+            "registers": registers
+                .iter()
+                .map(|(name, value)| (name.clone(), format!("{value:#010x}")))
+                .collect::<std::collections::BTreeMap<_, _>>(),
+            "symbols": symbols,
+        }),
+    );
+    eprintln!(
+        "hil: the silent target was at {} (mcause {}); {}",
+        symbols
+            .get("pc")
+            .map_or("an unknown address", String::as_str),
+        value("mcause").map_or_else(|| String::from("unknown"), |cause| format!("{cause:#x}")),
+        output.join(JTAG_POST_MORTEM_FILE).display()
+    );
+}
+
 /// The target's current port: `port` while it exists, else the port of the
 /// board with `mac` once it is attached again, since a reset can make a USB
 /// Serial/JTAG port re-enumerate under another name. `None` after `within`.
@@ -386,6 +464,53 @@ pub(crate) fn symbol(loader: Option<&addr2line::Loader>, address: u32) -> String
 mod tests {
     use super::*;
     use oer_hil_protocol::{HartState, PostMortemSummary};
+
+    #[test]
+    fn a_silent_target_is_read_through_its_jtag_without_a_reset() {
+        let directory = tempfile::tempdir().unwrap();
+        let script = directory.path().join("openocd");
+        let arguments = directory.path().join("arguments");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\necho \"$@\" > {}\n\
+                 echo 'pc pc (/32): 0x42010736' >&2\n\
+                 echo 'mcause mcause (/32): 0x30000007' >&2\n",
+                arguments.display()
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let openocd = oer_hil_arbiter::control::Openocd {
+            program: script,
+            scripts: directory.path().to_owned(),
+        };
+        let output = directory.path().join("repetition");
+        jtag_snapshot(
+            Some(&openocd),
+            "esp32c5",
+            Some("38:44:BE:AA:25:64"),
+            &output,
+            None,
+        );
+        let snapshot: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(output.join(JTAG_POST_MORTEM_FILE)).unwrap())
+                .unwrap();
+        assert_eq!(snapshot["registers"]["pc"], "0x42010736");
+        assert_eq!(snapshot["registers"]["mcause"], "0x30000007");
+        // Without the image's ELF the code address stays a number.
+        assert_eq!(snapshot["symbols"]["pc"], "0x42010736");
+        assert!(
+            !std::fs::read_to_string(arguments)
+                .unwrap()
+                .contains("reset")
+        );
+        // A board without JTAG or OpenOCD leaves nothing.
+        let quiet = directory.path().join("quiet");
+        jtag_snapshot(None, "esp32c5", Some("x"), &quiet, None);
+        assert!(!quiet.join(JTAG_POST_MORTEM_FILE).exists());
+    }
 
     fn slot(point: u16, words: &[u32], truncated: bool) -> oer_hil_protocol::TraceSnapshotPage {
         oer_hil_protocol::TraceSnapshotPage {

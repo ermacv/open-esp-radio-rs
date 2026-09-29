@@ -4,6 +4,7 @@ use super::{
     COMPRESSED_LINK_MASK, LINK_STATE_RX_CLASS_WORD, LINK_STATE_TX_HEAD_WORD,
     LINK_STATE_TX_TAIL_WORD, LINK_STATE_TX_WORD, LegacyScanError, LegacyScanPool,
     LegacyScanStorage, SCHEDULER_ITEM_ALLOCATION_NUMBER_WORD, SCHEDULER_ITEM_COEX_PRIORITIES_WORD,
+    SCHEDULER_ITEM_KIND_MASK, SCHEDULER_ITEM_LINK_STATE_WORD,
 };
 use crate::{
     LegacyScanCoexistencePriorities, LegacyScanPrimaryChannel, LegacyScanResetConfig,
@@ -80,7 +81,6 @@ fn prepare(
         },
         LegacyScanStartSelection::Requested,
         priorities([4, 11, 0, 0]),
-        0x5c,
     )
     .unwrap()
 }
@@ -208,7 +208,6 @@ fn a_non_scanning_chain_is_refused() {
             },
             LegacyScanStartSelection::Requested,
             priorities([15; 4]),
-            0x5c,
         ),
         Err(LegacyScanError::State)
     );
@@ -253,4 +252,34 @@ fn only_an_active_scanner_queues_its_scan_request() {
     );
     // SCAN_REQ with a 12-octet payload the Controller fills.
     assert_eq!(graph.scan_request_packet.pdu_header(), [0x03, 12]);
+}
+
+#[test]
+fn every_item_carries_the_kind_of_its_scan_type() {
+    for scan_type in [
+        crate::LegacyScanType::Passive,
+        crate::LegacyScanType::Active,
+    ] {
+        let mut pool = pool();
+        let instance = pool.acquire().unwrap();
+        pool.reset(
+            &instance,
+            &chain(RxMemoryListClass::Scanning),
+            LegacyScanResetConfig::le_1m_public_accept_all(
+                crate::LeTxPower::from_dbm(0).expect("provider level"),
+                scan_type,
+            ),
+        )
+        .unwrap();
+        let (graph, binding, _) = pool.shared(&instance).unwrap();
+        for item in &graph.items {
+            let word = item.words[SCHEDULER_ITEM_LINK_STATE_WORD].get();
+            assert_eq!(word & SCHEDULER_ITEM_KIND_MASK, scan_type.item_kind());
+            // The link-state pointer beside the kind is unchanged.
+            assert_eq!(
+                word & COMPRESSED_LINK_MASK,
+                binding.link_state.compressed_image()
+            );
+        }
+    }
 }

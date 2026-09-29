@@ -109,6 +109,17 @@ pub enum LegacyScanType {
     Active,
 }
 
+impl LegacyScanType {
+    /// Scheduler item `+0x08` bits 23:20 the vendor scanner allocator
+    /// (`r_ble_lll_scan_alloc_memory`) writes for this scan type.
+    pub(crate) const fn item_kind(self) -> u32 {
+        match self {
+            Self::Passive => 0x00c0_0000,
+            Self::Active => 0x0040_0000,
+        }
+    }
+}
+
 impl LegacyScanResetConfig {
     /// Construct the restricted LE 1M profile of `scan_type`.
     pub const fn le_1m_public_accept_all(

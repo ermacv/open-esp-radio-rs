@@ -2089,7 +2089,11 @@ fn drain_chain<const PACKETS: usize>(
             Ok(Some(LeRxOutcome::Received(pdu))) => {
                 counts.received = counts.received.saturating_add(1);
                 // DIAGNOSTIC: count SCAN_RSP PDUs in the discarded field.
-                if pdu.as_bytes().first().is_some_and(|header| header & 0x0f == 4) {
+                if pdu
+                    .as_bytes()
+                    .first()
+                    .is_some_and(|header| header & 0x0f == 4)
+                {
                     counts.discarded = counts.discarded.saturating_add(1);
                 }
                 sink.outcome(RadioOutcome::Received {

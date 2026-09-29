@@ -67,7 +67,8 @@ const SCHEDULER_ITEM_ALLOCATION_NUMBER_WORD: usize = 0x20 / 4;
 const SCHEDULER_ITEM_COEX_PRIORITIES_WORD: usize = 0x24 / 4;
 const SCHEDULER_ITEM_EVENT_CLASS_WORD: usize = 0x2c / 4;
 const SCHEDULER_ITEM_ALLOCATION_PREFIX: u32 = 0x0030_0000;
-const SCHEDULER_ITEM_LINK_STATE_PREFIX: u32 = 0x00c0_0000;
+/// Item `+0x08` bits 23:20: the kind of scanner item.
+const SCHEDULER_ITEM_KIND_MASK: u32 = 0x00f0_0000;
 const SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE: u32 = 0x0fdf_ffff;
 const SCHEDULER_ITEM_EVENT_CLASS_IMAGE: u32 = 1;
 
@@ -154,10 +155,16 @@ impl ItemStorage {
         header.link_hardware_next(next_free);
         self.words[SCHEDULER_ITEM_CONTEXT_WORD].set(scheduler_context.compressed_image());
         self.words[SCHEDULER_ITEM_LINK_STATE_WORD]
-            .set(SCHEDULER_ITEM_LINK_STATE_PREFIX | link_state.compressed_image());
+            .set(LegacyScanType::Passive.item_kind() | link_state.compressed_image());
         self.words[SCHEDULER_ITEM_ALLOCATION_FLAGS_WORD].set(SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE);
         self.words[SCHEDULER_ITEM_ALLOCATION_NUMBER_WORD].set(u32::from(number));
         self.words[SCHEDULER_ITEM_EVENT_CLASS_WORD].set(SCHEDULER_ITEM_EVENT_CLASS_IMAGE);
+    }
+
+    /// Mark the item as the kind of scanner item `scan_type` runs.
+    fn set_kind(&self, scan_type: LegacyScanType) {
+        let word = &self.words[SCHEDULER_ITEM_LINK_STATE_WORD];
+        word.set((word.get() & !SCHEDULER_ITEM_KIND_MASK) | scan_type.item_kind());
     }
 
     fn reviewed_words(&self) -> LegacyScanSchedulerItemWords {
@@ -393,8 +400,15 @@ impl<const N: usize> LegacyScanPool<N> {
         );
         cpu.graph.link_state.words[LINK_STATE_SCHEDULER_HEAD_WORD].set(free_head);
         // EXPERIMENT: the vendor scanner context.
-        cpu.graph.scheduler_context.set_leading_words(0x3c, 0x0004_0000);
+        cpu.graph
+            .scheduler_context
+            .set_leading_words(0x3c, 0x0004_0000);
         cpu.graph.link_state.join_receive_chain(chain.snapshot());
+        // The vendor scanner allocator marks every item with the scan type's
+        // kind; hardware sends SCAN_REQ only from an active item.
+        for item in &cpu.graph.items {
+            item.set_kind(config.scan_type());
+        }
         if config.scan_type() == LegacyScanType::Active {
             // The vendor reset copies the software TX head into the
             // hardware TX link; SCAN_REQ is then the one queued packet.
@@ -463,11 +477,6 @@ impl<const N: usize> LegacyScanPool<N> {
         // role's item: hardware ends an item without a sequence at once.
         item.header()
             .set_sequence(window.start(), window.end(), raw_sequence_lead);
-        // EXPERIMENT: the vendor's active scanner item clears +0x08 bit 23.
-        if cpu.graph.link_state.words[0].get() & 0x000f_ffff != 0 {
-            let word = &item.words[SCHEDULER_ITEM_LINK_STATE_WORD];
-            word.set(word.get() & !(1 << 23));
-        }
         let lanes = &item.words[SCHEDULER_ITEM_COEX_PRIORITIES_WORD];
         lanes.set((lanes.get() & !LANES_MASK) | lanes_image(&coexistence.lanes));
         // Detach the item from the free chain before the executor links it.

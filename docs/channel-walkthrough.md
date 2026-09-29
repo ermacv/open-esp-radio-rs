@@ -18,9 +18,9 @@ ROM frequency child includes delays and a poll of
 `FREQUENCY_PARAMETER_1_STATUS.FREQUENCY_READY`.
 
 In a Blobray investigation, first capture and select the exact artifact and
-function. Use [function or linked-image analysis](../tools/blobray/next/reference/analysis/README.md)
+function. Use [function or linked-image analysis](../tools/blobray/cli/reference/analysis/README.md)
 to inspect its calls and effects, then
-[register accesses](../tools/blobray/next/reference/registers-data/README.md#library-register-accesses)
+[register accesses](../tools/blobray/cli/reference/registers-data/README.md#library-register-accesses)
 to inspect candidate accesses. An unresolved call, address or path remains a
 limit of that result. A static observation does not establish an interrupt,
 a reset value or how long the hardware takes to become ready.

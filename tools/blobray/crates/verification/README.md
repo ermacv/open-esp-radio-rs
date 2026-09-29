@@ -76,4 +76,4 @@ closure, goal and blocking outcomes, effect accounting and coverage order. A
 a selected effect outside the reviewed contract or projection is an
 `Integrity` error. It never re-executes instructions. Application applies it to
 every in-process run; see
-[record validation](../../next/reference/execution/README.md#record-validation).
+[record validation](../../cli/reference/execution/README.md#record-validation).

@@ -13,7 +13,6 @@ description = "Typed ESP32-S31 vendor-comparison scenarios driven through the Bl
 blobray-application = { path = "../../../tools/blobray/crates/application" }
 blobray-backend-riscv = { path = "../../../tools/blobray/crates/riscv" }
 blobray-domain = { path = "../../../tools/blobray/crates/domain" }
-blobray-next = { path = "../../../tools/blobray/next" }
 oer-probe-codegen = { path = "../../harness/codegen" }
 oer-vendor-scenario-engine = { path = "../../harness/scenarios" }
 addr2line = { version = "=0.27.1", default-features = false, features = ["std"] }

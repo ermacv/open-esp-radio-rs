@@ -19,7 +19,7 @@ pub(super) const TOOLS: [(&str, TreeSource); 6] = [
     // equal to its live tree, so the check need not build it.
     (
         "blobray",
-        TreeSource::File("tools/blobray/next/command-tree.json"),
+        TreeSource::File("tools/blobray/cli/command-tree.json"),
     ),
 ];
 

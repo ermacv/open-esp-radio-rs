@@ -105,6 +105,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "blobray-cli"
+version = "0.1.0"
+dependencies = [
+ "blobray-application",
+ "blobray-backend-riscv",
+ "blobray-domain",
+ "cargo_metadata",
+ "clap",
+ "object",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "blobray-domain"
 version = "0.1.0"
 dependencies = [
@@ -114,18 +129,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "blobray-next"
+name = "blobray-linker"
 version = "0.1.0"
 dependencies = [
  "blobray-application",
- "blobray-backend-riscv",
  "blobray-domain",
- "cargo_metadata",
- "clap",
  "libc",
  "object",
- "serde",
- "serde_json",
  "sha2",
  "tempfile",
 ]
@@ -421,7 +431,6 @@ dependencies = [
  "blobray-application",
  "blobray-backend-riscv",
  "blobray-domain",
- "blobray-next",
  "clap",
  "gimli",
  "object",
@@ -463,7 +472,7 @@ dependencies = [
  "blobray-application",
  "blobray-backend-riscv",
  "blobray-domain",
- "blobray-next",
+ "blobray-linker",
  "blobray-verification",
  "clap",
  "gimli",

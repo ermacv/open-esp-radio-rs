@@ -125,8 +125,8 @@ it does not generate this radio PAC. See the
 
 | Transition | Input → result | Human decision | Check and owner |
 | --- | --- | --- | --- |
-| Capture → research | Caller-owned artifact → content-identified input and selected observations | Choose source identity, exact code/data scope and assumptions | [Blobray inventory](../tools/blobray/next/reference/capture-images/README.md#inventory) and [analysis](../tools/blobray/next/reference/analysis/README.md#function-analysis-contract); unresolved facts stay visible |
-| Research → accepted meaning | Observations and conflicts → reviewed physical declaration or data interpretation | Is the interpretation supported for this chip/profile? An access width is not a register width | [Register accesses](../tools/blobray/next/reference/registers-data/README.md#library-register-accesses) and [review tool](../tools/registers/review/README.md) |
+| Capture → research | Caller-owned artifact → content-identified input and selected observations | Choose source identity, exact code/data scope and assumptions | [Blobray inventory](../tools/blobray/cli/reference/inventory-linking/README.md#inventory) and [analysis](../tools/blobray/cli/reference/analysis/README.md#function-analysis-contract); unresolved facts stay visible |
+| Research → accepted meaning | Observations and conflicts → reviewed physical declaration or data interpretation | Is the interpretation supported for this chip/profile? An access width is not a register width | [Register accesses](../tools/blobray/cli/reference/registers-data/README.md#library-register-accesses) and [review tool](../tools/registers/review/README.md) |
 | Model → PAC | Reviewed model, provenance and API policy → SVD, Rust accessors and bindings | Which fields and ownership capabilities may production expose? | [Publication](../registers/esp32s31/publication/README.md); reproducible `cargo registers generate --check` |
 | PAC → HAL | Restricted register authority → ordered hardware operation and terminal outcome | Sequence, wait bounds, delay and recovery requirements | [HAL source](../crates/hardware/esp32s31/hal/src/lib.rs); host behavior checks and applicable hardware evidence |
 | Reviewed data + HAL → PHY | Tables, coefficients and hardware operations → channel/calibration algorithms | Source profile, representation, applicability and algorithm boundary | [PHY comparison](phy/README.md) and [source policy](source-policy.md) |
@@ -139,7 +139,7 @@ Registers are only part of hardware knowledge. RF algorithms may require
 recovered integer tables and calibration coefficients. Retain their source
 identity, purpose, representation and applicable hardware/profile; verify the
 values against the real source artifact. The
-[data export contract](../tools/blobray/next/reference/registers-data/README.md#captured-data-tables-and-coefficients)
+[data export contract](../tools/blobray/cli/reference/registers-data/README.md#captured-data-tables-and-coefficients)
 retains captured bytes and provenance. Binary origin does not justify omitting
 required data or substituting an older profile. A synthetic exercise teaches
 review mechanics; it cannot establish these facts about a real chip.

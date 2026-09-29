@@ -14,7 +14,8 @@ Reference application owners, content identities, result assessment and native f
 | [analysis](../../../crates/analysis/README.md) | Local CFG, values and memory effects | Domain |
 | [riscv](../../../crates/riscv/README.md) | RV32 decoding, lifting and relocation interpretation | Domain |
 | [application](../../../crates/application/README.md) | Operations over given executables: inventory, library analysis, linking, data, audit and in-process comparison | Domain, artifacts, analysis, verification |
-| [next](../../src/main.rs) | CLI rendering, linker adapters and host composition | Domain, application, backend-riscv |
+| [linker](../../../crates/linker/src/lib.rs) | Linux adapters of the external ELF linkers behind `LinkerHost` | Domain, application |
+| [cli](../../src/main.rs) | CLI rendering and host composition | Domain, application, backend-riscv |
 
 Every operation is a function call over `blobray_application::in_process::Executable`
 values, a `WorkingMemory` and a `RunControl`; the
@@ -43,7 +44,7 @@ is independent of target execution support.
 ## JSON and checks
 
 Typed clients decode `--format json` output with the host library's
-`blobray_next_host::wire` module. The renderer emits the same types, and their
+`blobray_cli::wire` module. The renderer emits the same types, and their
 payloads are the application and domain records, so clients never copy a
 schema.
 

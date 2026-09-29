@@ -101,7 +101,7 @@ and bounded wake-reset helper. Its finite harness only supplies arguments,
 capabilities and completion edges. A retained entry shim supplies all eight
 integer arguments and explicit callee-saved register values.
 
-The generic [packed-command model](../../tools/blobray/next/reference/execution/README.md#packed-command-bank)
+The generic [packed-command model](../../tools/blobray/cli/reference/execution/README.md#packed-command-bank)
 owns two ports over one seeded bank. Scenario declarations select register
 geometry, initial values, optional scripted replies and busy poll counts. These
 are environmental assumptions. Bank writes commit on a ready read; pending
@@ -748,7 +748,7 @@ The [qualification evaluator](../../qualification/README.md) is the readiness
 authority; the index supplies vendor evidence only while its source digests are
 current. For CLI concepts, see [Blobray](../../tools/blobray/README.md).
 
-## Shared Next scenario preparation
+## Shared scenario preparation
 
 [`harness.rs`](../harness/scenarios/src/harness.rs) and [`session.rs`](../harness/scenarios/src/session.rs)
 own authenticated input capture, in-process inventory, linking, data export and comparison,
@@ -770,7 +770,7 @@ Every operation runs in the scenario's process over the authenticated input
 bytes, identified by content: inventory, the probe catalog, linked images and
 data exports are recomputed on each run and nothing is cached. Each linked
 image's ELF, map and manifest are written below the scenario output for
-inspection. The generated requests use the Next execution format and run
+inspection. The generated requests use the Blobray execution format and run
 through Blobray's in-process verification; records stay in memory. A run keeps only its results: claim verdicts, case counts, coverage
 and input/source digests. The combined I2C route also checks
 [compiled call boundaries](scenarios/src/engine/harness_edges.rs) alongside positive and

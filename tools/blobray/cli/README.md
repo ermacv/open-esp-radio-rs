@@ -1,12 +1,13 @@
-# Blobray Next: in-process operations over captured executables
+# Blobray CLI: in-process operations over captured executables
 
-`blobray-next` is the Blobray host: the `blobray` CLI, the JSON wire types in
-`blobray_next_host::wire` and the Linux linker adapters. Every operation runs
+`blobray-cli` is the `blobray` command line and the JSON wire types in
+`blobray_cli::wire`; the Linux linker adapters live in
+[`blobray-linker`](../crates/linker/src/lib.rs). Every operation runs
 in the calling process over executables given as bytes and identified by
 content: inventory, whole-library analysis and register accesses, synthetic
 linking with explicit ROM companions, exact data export, final-image target
 audits and in-process execution and comparison. Nothing is imported, stored or
-published. `cargo blobray` selects this host.
+published. `cargo blobray` runs this CLI.
 The [architecture](../docs/design/architecture.md) owns module authority;
 [contracts](../docs/design/contracts.md) owns identities, assessment and
 resource rules; [workflows](../docs/design/workflows.md) lists the supported
@@ -26,16 +27,16 @@ and each command's `--help`.
 
 `blobray __command-tree` prints every visible command with its long flags as
 JSON, tracked in [`command-tree.json`](command-tree.json) so documentation
-checks need not build Blobray. `cargo test -p blobray-next` fails when the
+checks need not build Blobray. `cargo test -p blobray-cli` fails when the
 tracked tree differs from the command line; run it with
 `BLOBRAY_COMMAND_TREE_UPDATE=1` to rewrite the file.
 
 | Reference | Use it to |
 | --- | --- |
-| [Inventory and linked images](reference/capture-images/README.md) | Inventory captured executables and link images from their objects. |
+| [Inventory and linked images](reference/inventory-linking/README.md) | Inventory captured executables and link images from their objects. |
 | [Function and library analysis](reference/analysis/README.md) | Analyze captured code and inspect coverage, symbolic values and explicit gaps; audit final images. |
 | [Registers and captured data](reference/registers-data/README.md) | Report library register accesses and export exact captured data. |
 | [Concrete execution and comparison](reference/execution/README.md) | Run explicit RV32 scenarios with selected inputs, device models and comparison observations. |
 | [Comparison relations](reference/comparison/README.md) | Choose call, memory, branch, layout and effect relations. |
-| [Resources and limits](reference/resources-storage/README.md) | Bound an operation's work, time and working memory, and read its failures. |
+| [Resources and limits](reference/resources/README.md) | Bound an operation's work, time and working memory, and read its failures. |
 | [Interfaces, identities and formats](reference/interfaces-formats/README.md) | Reference application owners, content identities and native formats. |

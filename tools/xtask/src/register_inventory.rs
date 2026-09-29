@@ -10,10 +10,9 @@
 //! registry names, one production, the register model or a verification
 //! decision cites, rank first.
 //!
-//! The accesses are cached under `target/register-inventory/<chip>/` by the
-//! digests of the Blobray host and of every input and by the ranges, so the
-//! analysis reruns only after a pin, range or Blobray change. The report is a
-//! generated output there; nothing is tracked. Addresses computed at run time
+//! Every run analyzes the inputs again, in about half a minute. The accesses
+//! and the report are generated outputs under
+//! `target/register-inventory/<chip>/`; nothing is tracked. Addresses computed at run time
 //! (queue strides, pointer tables) are not constants and stay outside the
 //! inventory.
 use crate::{Context, Result};
@@ -379,8 +378,7 @@ fn inputs(ctx: &Context, chip: &str) -> Result<Vec<Input>> {
 }
 
 /// Blobray's register accesses of every function of `inputs` inside
-/// `regions`, cached by the digests of the Blobray host and of every input
-/// and by the regions; accesses of other inputs or another host are removed.
+/// `regions`, written to `registers.json` in `directory`.
 fn accesses(
     ctx: &Context,
     directory: &Path,
@@ -392,29 +390,7 @@ fn accesses(
         .iter()
         .map(|r| format!("{:#x}:{:#x}", r.start, r.end - r.start))
         .collect();
-    let mut key = Sha256::new();
-    key.update(fs::read(host)?);
-    for input in inputs {
-        key.update(format!("{}={}\n", input.id, input.sha256));
-    }
-    for range in &ranges {
-        key.update(format!("{range}\n"));
-    }
-    let key: String = key.finalize().iter().map(|b| format!("{b:02x}")).collect();
-    let analyses = directory.join("analysis");
-    fs::create_dir_all(&analyses)?;
-    for entry in fs::read_dir(&analyses)? {
-        let entry = entry?;
-        if entry.file_name() != key.as_str() {
-            fs::remove_dir_all(entry.path())?;
-        }
-    }
-    let cached = analyses.join(&key);
-    let accesses = cached.join("registers.json");
-    if accesses.is_file() {
-        return Ok(accesses);
-    }
-    fs::create_dir_all(&cached)?;
+    let accesses = directory.join("registers.json");
     eprintln!(
         "register-inventory: analyzing every function of {} vendor binaries",
         inputs.len()
@@ -432,7 +408,7 @@ fn accesses(
         command.args(["--range", range]);
     }
     // The document is complete only once renamed into place.
-    let partial = cached.join("registers.json.partial");
+    let partial = directory.join("registers.json.partial");
     let status = command.stdout(fs::File::create(&partial)?).status()?;
     if !status.success() {
         return Err(format!(
@@ -581,7 +557,7 @@ pub fn run(ctx: &Context, chip: &str, output: Option<PathBuf>) -> Result<()> {
         "--profile",
         "blobray",
         "-p",
-        "blobray-next",
+        "blobray-cli",
         "--bin",
         "blobray",
     ]))?;

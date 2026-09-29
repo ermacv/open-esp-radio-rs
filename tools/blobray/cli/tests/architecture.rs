@@ -24,7 +24,11 @@ fn core_obeys_crate_boundaries() {
             .as_slice(),
         ),
         (
-            "blobray-next",
+            "blobray-linker",
+            ["blobray-domain", "blobray-application"].as_slice(),
+        ),
+        (
+            "blobray-cli",
             [
                 "blobray-domain",
                 "blobray-application",

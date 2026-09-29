@@ -1,7 +1,5 @@
 /target/
 **/target/
-**/.blobray-next/
-**/.blobray-next-init-*/
 crates/composition/**/Cargo.lock
 **/*.swp
 **/*.swo

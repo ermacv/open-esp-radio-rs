@@ -437,7 +437,7 @@ mod source_tests {
     fn a_test_or_readme_edit_is_no_shard_source() {
         // Cargo compiles neither into the scenario binary or the probe.
         for shard in [sources(&["crates/hal/src/mac.rs"]), sources(&[])] {
-            assert!(!shard.contains(Path::new("tools/blobray/next/tests/execution.rs")));
+            assert!(!shard.contains(Path::new("tools/blobray/cli/tests/execution.rs")));
             assert!(!shard.contains(Path::new("tools/blobray/README.md")));
             assert!(!shard.iter().any(|p| p == Path::new("tools/blobray")));
         }

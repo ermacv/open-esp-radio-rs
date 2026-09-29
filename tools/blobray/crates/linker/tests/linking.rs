@@ -2,11 +2,12 @@
 //! linkers and adversarial test linkers.
 #![cfg(target_os = "linux")]
 #[allow(dead_code)]
+#[path = "../../../cli/tests/support/mod.rs"]
 mod support;
 use blobray_application::in_process::{Executable, Limits};
 use blobray_application::linking::{LinkedImage, link, propose_companions};
 use blobray_domain::*;
-use blobray_next_host::linux::ElfLinker;
+use blobray_linker::ElfLinker;
 use object::{
     Architecture, BinaryFormat, Endianness, RelocationFlags, SectionKind, SymbolFlags, SymbolKind,
     SymbolScope,

@@ -573,7 +573,7 @@ reuse key are unaffected.
 
 ```console
 BLOBRAY_RISCV_ARCH_TEST=SUITE BLOBRAY_RISCV_CC=CLANG \
-  cargo test -p blobray-next --test riscv_conformance -- --ignored
+  cargo test -p blobray-cli --test riscv_conformance -- --ignored
 ```
 
 The ignored `riscv_conformance` test checks the RISC-V executor against the
@@ -581,7 +581,7 @@ official architectural tests. `SUITE` is a checkout of riscv-arch-test 2.7.4,
 the last release that ships reference signatures from the Sail model; `CLANG`
 is a clang with the riscv32 target and lld. Each RV32 I, M, C and Zifencei test
 is assembled into a temporary directory against the target model in
-`next/tests/riscv_conformance/`, with the instruction set its references were
+`cli/tests/riscv_conformance/`, with the instruction set its references were
 produced for, then run through in-process verification until it returns to the
 executor's sentinel. Its signature must equal the reference.
 

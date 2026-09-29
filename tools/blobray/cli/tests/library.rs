@@ -186,12 +186,9 @@ fn the_command_streams_one_document_of_every_access() {
         .output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
-    let document: blobray_next_host::wire::RegisterAccessDocument =
+    let document: blobray_cli::wire::RegisterAccessDocument =
         serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(
-        document.schema,
-        blobray_next_host::wire::REGISTER_ACCESSES_SCHEMA
-    );
+    assert_eq!(document.schema, blobray_cli::wire::REGISTER_ACCESSES_SCHEMA);
     assert_eq!(document.inputs[0].role, "code");
     assert_eq!(&document.inputs[0].sha256, library.id());
     let (summary, records) = accesses(

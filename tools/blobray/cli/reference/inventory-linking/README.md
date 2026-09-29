@@ -32,7 +32,7 @@ the call rather than truncating the inventory.
 directory, memory, control)` links the image a `LinkRequest` describes and
 returns a `LinkedImage`: its `ImageManifest`, the ELF bytes as an `Executable`
 and the linker's map. `linker` is the path of an explicitly selected LLD or GNU
-BFD ld; `host` is the linker adapter (`blobray_next_host::linux::ElfLinker`);
+BFD ld; `host` is the linker adapter (`blobray_linker::ElfLinker`);
 `directory` is where the link's private workspace is created and removed.
 
 A `LinkRequest` has ordered `inputs` (executable content identities), the

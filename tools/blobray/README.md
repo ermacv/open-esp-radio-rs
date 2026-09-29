@@ -21,13 +21,13 @@ and board prerequisites.
 
 | Task | Interface | Reference |
 | --- | --- | --- |
-| Inspect inputs | `blobray_application::captured::inventory` | [Inventory](next/reference/capture-images/README.md#inventory) |
-| Investigate code | `blobray_application::library::analyze_library` | [Function analysis](next/reference/analysis/README.md#function-analysis-contract) |
-| Investigate registers | `blobray register-accesses` | [Library register accesses](next/reference/registers-data/README.md#library-register-accesses) |
-| Recover tables and coefficients | `blobray_application::data::export` | [Tables and coefficients](next/reference/registers-data/README.md#captured-data-tables-and-coefficients) |
-| Link an image | `blobray_application::linking::{link, propose_companions}` | [Linked images](next/reference/capture-images/README.md#synthetic-linked-images), [ROM companions](next/reference/analysis/README.md#explicit-rom-companions) |
-| Audit a final image | `blobray audit-targets` | [Target audit](next/reference/analysis/README.md#final-image-target-audit) |
-| Execute and compare | `blobray_application::in_process::verify` | [Execution and comparison](next/reference/execution/README.md#concrete-execution-and-comparison), [effect contracts](next/reference/comparison/README.md#reviewed-effect-comparison) |
+| Inspect inputs | `blobray_application::captured::inventory` | [Inventory](cli/reference/inventory-linking/README.md#inventory) |
+| Investigate code | `blobray_application::library::analyze_library` | [Function analysis](cli/reference/analysis/README.md#function-analysis-contract) |
+| Investigate registers | `blobray register-accesses` | [Library register accesses](cli/reference/registers-data/README.md#library-register-accesses) |
+| Recover tables and coefficients | `blobray_application::data::export` | [Tables and coefficients](cli/reference/registers-data/README.md#captured-data-tables-and-coefficients) |
+| Link an image | `blobray_application::linking::{link, propose_companions}` | [Linked images](cli/reference/inventory-linking/README.md#synthetic-linked-images), [ROM companions](cli/reference/analysis/README.md#explicit-rom-companions) |
+| Audit a final image | `blobray audit-targets` | [Target audit](cli/reference/analysis/README.md#final-image-target-audit) |
+| Execute and compare | `blobray_application::in_process::verify` | [Execution and comparison](cli/reference/execution/README.md#concrete-execution-and-comparison), [effect contracts](cli/reference/comparison/README.md#reviewed-effect-comparison) |
 
 | Question | Required input | Inspect in the result | Next action |
 | --- | --- | --- | --- |
@@ -48,8 +48,8 @@ hardware interfaces; `cargo xtask` checks and builds repository compositions;
 `cargo hil` obtains device observations; `cargo qualification` evaluates a
 selected set of requirements. Blobray does not decide product readiness.
 
-`cargo blobray` invokes `blobray-next`; the
-[operator index](next/README.md#reference-navigation) describes that interface.
+`cargo blobray` invokes `blobray-cli`; the
+[operator index](cli/README.md#reference-navigation) describes that interface.
 CLI and JSON use the same application operations. `--help` is available on the
 top-level command and subcommands. Blobray has no TUI or code generation.
 
@@ -61,7 +61,7 @@ Blobray dependencies never change the radio workspace. From the repository
 root, `cargo blobray` and `--manifest-path tools/blobray/Cargo.toml` select it.
 
 ```console
-cargo build --manifest-path tools/blobray/Cargo.toml --profile blobray -p blobray-next --bin blobray
+cargo build --manifest-path tools/blobray/Cargo.toml --profile blobray -p blobray-cli --bin blobray
 cargo blobray --format json register-accesses --input vendor=/path/to/lib.a --range 0x60000000:0x100000
 cargo blobray --format json audit-targets --artifact firmware.elf --forbid rom=0x40000000..0x40100000
 ```
@@ -89,11 +89,11 @@ positions while preserving unknowns and raw physical evidence.
 Unknown selected values and unmet goals/model obligations cannot MATCH. Results
 remain conditional on the selected cases and explicit modeling assumptions.
 
-[Reviewed effect contracts](next/reference/comparison/README.md#reviewed-effect-comparison) are
+[Reviewed effect contracts](cli/reference/comparison/README.md#reviewed-effect-comparison) are
 implemented and retain their conditional claim ceiling. Unsupported execution
 remains `INCOMPLETE`. The typed vendor scenarios run the same execution and
 comparison inside their own process through
-[in-process verification](next/reference/execution/README.md#in-process-verification).
+[in-process verification](cli/reference/execution/README.md#in-process-verification).
 
 The [architecture](docs/design/architecture.md), [contracts](docs/design/contracts.md)
 and [workflows](docs/design/workflows.md) describe the implemented scope. Qualifying production behavior remains an external responsibility.

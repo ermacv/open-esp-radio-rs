@@ -1,7 +1,7 @@
 # Blobray architecture
 
 This directory is the architecture authority for Blobray. Supported
-profiles are listed in [workflows](workflows.md); the [operator reference](../../next/README.md)
+profiles are listed in [workflows](workflows.md); the [operator reference](../../cli/README.md)
 owns CLI syntax and current format versions.
 
 This document owns purpose, component boundaries and dependency direction.
@@ -61,7 +61,9 @@ requires a reviewed change to the contract, not an automatic transfer.
 
 Crate boundaries enforce independent dependency and authority rules. Modules
 inside each crate divide implementation without acquiring extra capabilities.
-The shipping host package is `blobray-next` and its executable is `blobray`.
+The command line package is `blobray-cli` and its executable is `blobray`; the
+Linux linker adapters are the separate `blobray-linker`, so a consumer that
+links, such as the vendor scenarios, does not depend on the command line.
 
 | Crate | Principal modules | Owns | Allowed local dependencies |
 | --- | --- | --- | --- |
@@ -71,7 +73,8 @@ The shipping host package is `blobray-next` and its executable is `blobray`.
 | `blobray-backend-riscv` | decode, lift, ABI, execution | RV32 semantics and concrete machine state | domain |
 | `blobray-verification` | scenarios, comparison, record validation | Comparison relations and verdict construction | domain |
 | `blobray-application` | captured, library, linking, data, audit, in_process | Operations over given executables and their resource ownership | domain, artifacts, analysis, verification |
-| `blobray-next` | CLI, JSON, linker adapters | Process entry point, rendering and concrete dependency selection | application, domain, backend-riscv |
+| `blobray-linker` | GNU ld and LLD adapters, bounded subprocess transport | External linker processes behind `LinkerHost` | domain, application |
+| `blobray-cli` | CLI, JSON wire documents | Process entry point, rendering and concrete dependency selection | application, domain, backend-riscv |
 
 The common `blobray-` prefix is omitted in the dependency column. Application
 receives backend, model and external-tool capabilities through domain ports; it
@@ -97,7 +100,7 @@ in the caller the callee's full authority.
 | application / in_process | Request, executables, contracts and projections | Sessions, devices, call models and records of one comparison | Executables the caller did not give |
 | analysis | Byte/image views, ISA ports and run control | Observations, hypotheses and disposable operation-local indexes | Tool discovery or input selection |
 | verification / comparison | Execution observations, coverage and declared relation | Verdict, counterexample and unsatisfied obligations | Substituting an implementation or upgrading a claim ceiling |
-| host / linker adapters | A fixed semantic link invocation and workspace | Linker process, dialect flags and raw evidence parsing | Research selection or verdict policy |
+| linker adapters | A fixed semantic link invocation and workspace | Linker process, dialect flags and raw evidence parsing | Research selection or verdict policy |
 
 Computation modules receive only byte sources, selected records and output
 sinks. An artifact parser validates binary structure; application validates
@@ -113,7 +116,9 @@ insufficient reasons.
 
 ```mermaid
 flowchart TD
-    Host[CLI / JSON and linker adapters] --> App[Application]
+    Host[CLI / JSON] --> App[Application]
+    Linker[Linker adapters] --> App
+    Linker --> Domain
     Host --> RV[RV32 backend]
     App --> Analysis[Analysis]
     App --> Verify[Verification]

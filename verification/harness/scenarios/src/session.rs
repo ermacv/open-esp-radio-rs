@@ -9,7 +9,7 @@ use blobray_domain::{
     ExecutionEvidence, ExecutionRequest, ExecutionTarget, ImageManifest, LayoutProjection,
     LinkRequest, ObjectId, ReviewedCallBoundary, SymbolId, SymbolTableKind,
 };
-use blobray_next_host::linux::ElfLinker;
+use blobray_linker::ElfLinker;
 use evidence_index::LocationKind;
 use object::{Object, ObjectSection, ObjectSymbol};
 use std::{

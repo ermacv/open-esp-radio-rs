@@ -40,7 +40,7 @@ instructions end with an explicit gap. Decoded instructions are cached per
 thread, keyed by instruction bytes and profile, so a cached decode stays valid
 for any address and for code that later changes. The backend cannot select images, acquire
 memory regions, choose models or publish a verdict. See the
-[concrete profile](../../next/reference/execution/README.md#concrete-execution-and-comparison).
+[concrete profile](../../cli/reference/execution/README.md#concrete-execution-and-comparison).
 
 The semantic identity includes typed fence mode/predecessor/successor
 sets. Analysis consumes the typed fence record; it never parses

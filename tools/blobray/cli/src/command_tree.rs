@@ -1,5 +1,5 @@
 //! The machine-readable command tree of this command line, printed for
-//! `__command-tree` and tracked as `next/command-tree.json`, so that
+//! `__command-tree` and tracked as `cli/command-tree.json`, so that
 //! documentation checks can confirm that shown commands and flags exist
 //! without building Blobray. A node lists its path from `blobray`, its
 //! visible subcommands and long flags, and whether it forwards its trailing

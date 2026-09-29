@@ -239,8 +239,8 @@ fn audit_targets(
         Format::Json => {
             serde_json::to_writer(
                 &mut out,
-                &blobray_next_host::wire::TargetAuditDocument {
-                    schema: blobray_next_host::wire::TARGET_AUDIT_SCHEMA,
+                &blobray_cli::wire::TargetAuditDocument {
+                    schema: blobray_cli::wire::TARGET_AUDIT_SCHEMA,
                     artifact: executable.id().clone(),
                     decoder: decoder.identity().into(),
                     semantics: decoder.semantic_identity().into(),
@@ -306,7 +306,7 @@ fn register_accesses(
             .iter()
             .zip(&executables)
             .map(
-                |(input, executable)| blobray_next_host::wire::RegisterAccessInput {
+                |(input, executable)| blobray_cli::wire::RegisterAccessInput {
                     role: input.role.clone(),
                     sha256: executable.id().clone(),
                 },
@@ -315,7 +315,7 @@ fn register_accesses(
         write!(
             out,
             "{{\"schema\":{},\"inputs\":{},\"records\":[",
-            blobray_next_host::wire::REGISTER_ACCESSES_SCHEMA,
+            blobray_cli::wire::REGISTER_ACCESSES_SCHEMA,
             serde_json::to_string(&described).map_err(json_error)?
         )
         .map_err(io_error)?;

@@ -36,15 +36,16 @@ opt-level = 3
 pub fn run(context: &Context) -> Result<()> {
     let toolchain = selected_toolchain(context, std::env::var_os("RUSTUP_TOOLCHAIN"))?;
     let scratch = tempfile::Builder::new()
-        .prefix("blobray-next-standalone-")
+        .prefix("blobray-standalone-")
         .tempdir()?;
     let root = scratch.path().canonicalize()?;
     let source = context.root.join("tools/blobray");
     let members = [
-        "next",
+        "cli",
         "crates/domain",
         "crates/artifacts",
         "crates/application",
+        "crates/linker",
         "crates/analysis",
         "crates/verification",
         "crates/riscv",

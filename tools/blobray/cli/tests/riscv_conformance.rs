@@ -10,7 +10,7 @@
 //! The suite is external input: set `BLOBRAY_RISCV_ARCH_TEST` to a checkout of
 //! a riscv-arch-test release that carries reference outputs (2.x) and
 //! `BLOBRAY_RISCV_CC` to a clang with the riscv32 target and lld, then run
-//! `cargo test -p blobray-next --test riscv_conformance -- --ignored`.
+//! `cargo test -p blobray-cli --test riscv_conformance -- --ignored`.
 use blobray_application as app;
 use blobray_domain::*;
 use object::{Object, ObjectSymbol};

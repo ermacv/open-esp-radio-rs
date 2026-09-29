@@ -51,7 +51,7 @@ summary and `CheckVerdict`.
 Concrete execution values include exact targets, explicit scenarios, producer
 identities, observations and comparison evidence. `Executor` and `ExecutionMemory`
 are injected ports; domain selects neither an ISA nor an environment. Request
-validation bounds control cardinalities. See the [execution contract](../../next/reference/execution/README.md#concrete-execution-and-comparison).
+validation bounds control cardinalities. See the [execution contract](../../cli/reference/execution/README.md#concrete-execution-and-comparison).
 
 Concrete execution uses bounded optional RV32 ABI words: a0–a7 followed
 by ascending stack slots. `Invocation::entry_stack` validates placement within the

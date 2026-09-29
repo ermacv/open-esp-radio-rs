@@ -3,7 +3,7 @@
 The following profiles define current support; a use case missing here is not
 provided. Blobray has no general equivalence proof, TUI, project repository,
 cache, provider registry, or correspondence between library versions. The
-[command reference](../../next/README.md) owns syntax and format versions.
+[command reference](../../cli/README.md) owns syntax and format versions.
 
 | Scenario | Status and boundary |
 | --- | --- |
@@ -22,11 +22,11 @@ cache, provider registry, or correspondence between library versions. The
 | Contract | Implementation | Regression coverage |
 | --- | --- | --- |
 | Failed record growth releases the incoming payload without losing old records | [record memory](../../crates/domain/src/record_memory.rs) | `failed_record_growth_rolls_back_payload_and_allows_reuse` in the same module |
-| Inventory keeps repeated members distinct and broken framing visible | [captured executables](../../crates/application/src/captured.rs) | [inventory tests](../../next/tests/inventory.rs) |
-| Exact data ranges keep their provenance and reject unmapped ranges | [data export](../../crates/application/src/data.rs) | [data tests](../../next/tests/data.rs) |
-| Section relocation admission supports small extents | [prepared object](../../crates/artifacts/src/function.rs) | `ten_thousand_section_relocations_fit_small_function_capacity` in [analysis tests](../../next/tests/analysis.rs) |
-| A memory failure names the phase it happened in | [in-process limits](../../crates/application/src/in_process.rs) | `value_state_capacity_failure_names_its_phase` in [analysis tests](../../next/tests/analysis.rs) |
-| Links validate every linker claim and report blockers | [linking](../../crates/application/src/linking.rs) | [linking tests](../../next/tests/linking.rs) |
+| Inventory keeps repeated members distinct and broken framing visible | [captured executables](../../crates/application/src/captured.rs) | [inventory tests](../../cli/tests/inventory.rs) |
+| Exact data ranges keep their provenance and reject unmapped ranges | [data export](../../crates/application/src/data.rs) | [data tests](../../cli/tests/data.rs) |
+| Section relocation admission supports small extents | [prepared object](../../crates/artifacts/src/function.rs) | `ten_thousand_section_relocations_fit_small_function_capacity` in [analysis tests](../../cli/tests/analysis.rs) |
+| A memory failure names the phase it happened in | [in-process limits](../../crates/application/src/in_process.rs) | `value_state_capacity_failure_names_its_phase` in [analysis tests](../../cli/tests/analysis.rs) |
+| Links validate every linker claim and report blockers | [linking](../../crates/application/src/linking.rs) | [linking tests](../../crates/linker/tests/linking.rs) |
 
 ## Workflow contract map
 
@@ -167,7 +167,7 @@ semantics in reviewed packs. Validation composes those with the selected model,
 memory/ownership and PAC policies, then generates all four outputs. There is no
 automatic Blobray-to-hardware acceptance or binary-derived write-semantics fallback.
 See the [source-authoring commands](../../../registers/README.md) and
-[library register accesses](../../next/reference/registers-data/README.md#library-register-accesses).
+[library register accesses](../../cli/reference/registers-data/README.md#library-register-accesses).
 
 ## Concrete execution profiles
 
@@ -175,7 +175,7 @@ The implemented device workflow declares exact ports and applicability in the sh
 execution request, executes cold/warm phases and reads code and model outcomes.
 Sequence/FIFO
 obligations close at the declared lifetime; code return cannot turn missing model
-participation into MATCH. The [device regressions](../../next/tests/execution/devices.rs)
+participation into MATCH. The [device regressions](../../cli/tests/execution/devices.rs)
 cover all eight mechanisms, ownership conflicts and closure;
 [record validation](../../crates/verification/src/records/models.rs) rejects forged
 records. [Memory tests](../../crates/application/src/devices.rs) verify release of model
@@ -184,7 +184,7 @@ payload/state and cancellation before response consumption.
 
 The implemented external-call scenario composes admitted allocation, a warm-phase
 read, an explicit call response, a device sequence and modeled delays in one
-execution. [Call regressions](../../next/tests/execution/calls.rs) check the actual
+execution. [Call regressions](../../cli/tests/execution/calls.rs) check the actual
 return and participation, all three verdicts, output ownership, stack words,
 unknown values, response exhaustion, early goals and resource failure. Model
 effects retain their
@@ -255,6 +255,6 @@ and remaining obligations.
 All raw effects remain evidence. A policy may deliberately relax physical
 observations only under the reviewed refinement ceiling; it cannot discharge
 unknown classification, missing required exercise or unfinished execution.
-[Effect scenarios](../../next/tests/execution/effects.rs) exercise content
+[Effect scenarios](../../cli/tests/execution/effects.rs) exercise content
 selection, a missing contract, exact-value replacement, case
 applicability and combined relations.

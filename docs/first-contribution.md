@@ -55,11 +55,11 @@ to locate those responsibilities.
 ## Try synthetic binary discovery
 
 ```console
-cargo test --manifest-path tools/blobray/Cargo.toml -p blobray-next --test library every_library_function_reports_its_masked_and_unresolved_accesses --locked --offline
+cargo test --manifest-path tools/blobray/Cargo.toml -p blobray-cli --test library every_library_function_reports_its_masked_and_unresolved_accesses --locked --offline
 ```
 
 This selector runs one test in the
-[library register-access fixture](../tools/blobray/next/tests/library.rs).
+[library register-access fixture](../tools/blobray/cli/tests/library.rs).
 It builds a small RV32 archive of two identical members in memory, analyzes
 every function in process and reports the memory addresses they access. Read
 the assertions to distinguish what instructions reveal from what a register
@@ -102,7 +102,7 @@ cargo blobray --help
 cargo blobray register-accesses --help
 ```
 
-Its input contract is [library register accesses](../tools/blobray/next/reference/registers-data/README.md#library-register-accesses).
+Its input contract is [library register accesses](../tools/blobray/cli/reference/registers-data/README.md#library-register-accesses).
 
 ## Turn understanding into a contribution
 

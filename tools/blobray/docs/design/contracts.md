@@ -2,7 +2,7 @@
 
 This is the contract authority for Blobray. It describes implemented
 boundaries; a capability it does not describe is not provided. The
-[command reference](../../next/README.md) owns CLI syntax.
+[command reference](../../cli/README.md) owns CLI syntax.
 [Architecture](architecture.md) owns components and [workflows](workflows.md)
 owns supported use cases.
 
@@ -205,7 +205,7 @@ comparison.
 
 ### Local value analysis boundary
 
-The implemented [value and memory-effect contract](../../next/reference/analysis/README.md#values-and-memory-effects)
+The implemented [value and memory-effect contract](../../cli/reference/analysis/README.md#values-and-memory-effects)
 extends local function analysis through an injected semantic port. The ISA
 owner lifts operations and analysis owns fixed-point state. Unknown values,
 incomplete effects and failed resource admission are distinct outcomes. No
@@ -278,7 +278,7 @@ A known difference survives other incomplete cases; a resource failure returns
 no records. The implemented relation compares exact ordered
 MMIO/fence/delay events and optionally one 32-bit return, with a caller-declared compiled
 binding ceiling. It cannot claim arbitrary-domain or hardware equivalence. See
-[concrete execution](../../next/reference/execution/README.md#concrete-execution-and-comparison) for
+[concrete execution](../../cli/reference/execution/README.md#concrete-execution-and-comparison) for
 request limits, memory initialization, schemas and unsupported behavior.
 
 ## Finite value alternatives
@@ -331,7 +331,7 @@ writes to captured writable ELF memory; a RAM seed cannot overlap or replace tha
 mapping. Unknown register copies and spills propagate as unknown values, even
 into filled stack memory, and stop execution only where they decide control flow,
 form an address or reach a device. The explicit-input regression in
-[session tests](../../next/tests/execution/sessions.rs) checks both paths. The
+[session tests](../../cli/tests/execution/sessions.rs) checks both paths. The
 [PHY I2C scenario](../../../../verification/esp32s31/README.md#captured-i2c-command-memory-comparison)
 records this narrower input/observation scope and uses shipping HAL/PAC behavior.
 Chip-specific setup, addresses and expectations stay with the verification owner.
@@ -360,7 +360,7 @@ requires both code and due model obligations for MATCH. Record validation checks
 monotonic counts, declared transcript totals, exact closure and required observation
 presence; it rejects MATCH with unmet obligations without executing model semantics.
 Models and code observations are recorded together. Full current
-mechanism syntax and claim limits belong to the [operator reference](../../next/reference/execution/README.md#concrete-execution-and-comparison).
+mechanism syntax and claim limits belong to the [operator reference](../../cli/reference/execution/README.md#concrete-execution-and-comparison).
 
 Packed-command banks follow the same owner. Domain defines bounded wire geometry,
 seeded cells, script inputs and command accounting; application `command_bank`
@@ -373,7 +373,7 @@ inside the generic mechanism. A model with pending commands cannot close complet
 Record validation checks command/sample conservation and phase deltas against
 the declarations. Its accounting checks cannot claim the ISA or device responses
 were re-executed.
-The [native command tests](../../next/tests/execution/command_bank.rs) cover
+The [native command tests](../../cli/tests/execution/command_bank.rs) cover
 warm completion, incomplete closure, gaps and capacity; domain, application and
 record-validation tests cover geometry, independent shared-bank values,
 reset, sample consumption, cancelled admission and forged evidence counters.
@@ -509,7 +509,7 @@ Record validation checks requested geometry, contiguous word groups, unavailable
 observe-call boundary presence and selected knownness before admitting MATCH.
 It does not replay ISA semantics to authenticate the physical trace. Verification
 borrows grouped slices without allocating or rescanning preceding calls. The
-[capture regressions](../../next/tests/execution/capture.rs) exercise application,
+[capture regressions](../../cli/tests/execution/capture.rs) exercise application,
 word/effect differences and resource atomicity;
 [record validation](../../crates/verification/src/records/capture.rs) rejects malformed
 groups. Layout projections require their explicit reviewed relation below; this
@@ -579,7 +579,7 @@ normal-memory values without including source PC/origin as an implicit equality
 condition. Branch comparison is exact physical control comparison; differing code
 addresses require an explicitly selected reviewed projection.
 
-[Timeline regressions](../../next/tests/execution/timeline.rs) cover all widths,
+[Timeline regressions](../../cli/tests/execution/timeline.rs) cover all widths,
 AMO/orderings and LR/SC, ordinary/compressed branches, intermediate differences
 with equal final RAM, call-model effects, phase capture, unknown/unreadable
 memory and capacity.
@@ -639,7 +639,7 @@ selected observation equality under reviewed assumptions, not universal ABI, typ
 algorithm or hardware equivalence. Arbitrary width conversion, pointer-value mapping
 and path normalization are outside this profile and are never approximated.
 
-[Projection scenarios](../../next/tests/execution/projections.rs) cover content
+[Projection scenarios](../../cli/tests/execution/projections.rs) cover content
 selection, a missing projection, invalid geometry, final fields,
 unknown padding/fields and missing capture. [Verifier tests](../../crates/verification/src/projection.rs)
 check ordered mapped memory/control and unknowns.
@@ -720,6 +720,6 @@ are retained alongside an independently established difference.
 
 Verification borrows the resolved contract and raw observations. Bounded per-side
 counters have no expanding heap allocation; every rule scan consumes the shared
-work budget. [Effect scenarios](../../next/tests/execution/effects.rs) and
+work budget. [Effect scenarios](../../cli/tests/execution/effects.rs) and
 [verifier tests](../../crates/verification/src/effects.rs) cover these boundaries
 and policy composition.

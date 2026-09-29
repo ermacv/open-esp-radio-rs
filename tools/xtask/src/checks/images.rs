@@ -256,7 +256,7 @@ pub fn run(ctx: &Context) -> Result<()> {
         "--profile",
         "blobray",
         "-p",
-        "blobray-next",
+        "blobray-cli",
         "--bin",
         "blobray",
     ]))?;

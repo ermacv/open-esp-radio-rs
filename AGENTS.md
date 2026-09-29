@@ -120,7 +120,7 @@ Use `cargo test -p <package> <test_name>` for focused iteration. Blobray and
 its vendor providers form the separate `tools/blobray` workspace with its own
 lockfile and target directory; pass `--manifest-path tools/blobray/Cargo.toml`
 to Cargo for them. Build the Blobray host with `cargo build --manifest-path
-tools/blobray/Cargo.toml --profile blobray -p blobray-next --bin blobray`
+tools/blobray/Cargo.toml --profile blobray -p blobray-cli --bin blobray`
 (or `cargo blobray`). Blobray runs every analysis inside its own process under
 cooperative work, time and working-memory limits. Register
 publication uses `cargo registers generate --manifest

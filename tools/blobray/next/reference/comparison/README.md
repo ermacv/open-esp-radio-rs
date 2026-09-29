@@ -77,9 +77,10 @@ encoding: `{"kind":"content","projection":"<digest>"}`.
 
 A projection specifies `vendor` and `replacement` endpoints, `fields`, `branches`,
 `applicability` and `reason`. Each endpoint has an `entry`, plus `domains` such as
-`[{"address":12288,"length":16}]`. An entry contains `occurrence` and
-`boundary` `{"kind":"code","address":4096}`; the occurrence names the exact
-executable symbol, with no name lookup or inferred extent. A field can map
+`[{"address":12288,"length":16}]`. An entry contains the executable `object`
+by content, the exact `symbol` and `boundary` `{"kind":"code","address":4096}`,
+with no name lookup or inferred extent; the executable must be one the target
+maps. A field can map
 different offsets:
 
 ```json

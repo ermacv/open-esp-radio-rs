@@ -12,8 +12,8 @@ use crate::session::{Session, image_symbol, request};
 use blobray_domain::{
     ArtifactId, CallEndpoint, ComparisonVerdict, DataSelector, DeviceDeclaration, EntrySelection,
     ExecutionCase, ExecutionEvidence, ExecutionRegion, ExecutionRequest, ExecutionStop,
-    ExecutionTarget, ImageLayout, ImageRegion, Invocation, LinkRequest, MemorySelection, ObjectId,
-    ObjectLocation, RegionLifetime,
+    ExecutionTarget, FunctionSource, ImageLayout, ImageRegion, Invocation, LinkRequest,
+    MemorySelection, ObjectId, ObjectLocation, PreparedImageId, RegionLifetime,
 };
 use layout::{FILLS, MAX_EVENTS};
 pub use layout::{PhyLayout, layout};
@@ -51,6 +51,8 @@ pub struct PhyImage {
     pub session: Session,
     pub roots: BTreeMap<String, u32>,
     pub parameter: u32,
+    /// The prepared image the vendor target maps.
+    pub image: PreparedImageId,
     pub image_object: ObjectId,
     pub vendor: ExecutionTarget,
     pub production: ExecutionTarget,
@@ -199,6 +201,7 @@ impl PhyImage {
         }
         let (vendor, production) = session.targets(&linked.image)?;
         Ok(Self {
+            image: linked.image.clone(),
             image_object: ObjectId {
                 artifact: linked.manifest.elf.clone(),
                 location: ObjectLocation::Standalone,
@@ -228,7 +231,7 @@ impl PhyImage {
     /// Exact code endpoint of the linked image root `name`.
     pub fn vendor_endpoint(&self, name: &str) -> Result<CallEndpoint> {
         self.session
-            .image_endpoint(&self.vendor, &self.image_object, name, self.root(name))
+            .image_endpoint(&self.image_object, name, self.root(name))
     }
 
     /// Exact code endpoint of the compiled production function `name`.
@@ -513,7 +516,9 @@ impl PhyImage {
         let request = blobray_domain::DataRequest {
             occurrence: blobray_domain::Occurrence {
                 revision: self.revision.clone(),
-                source: self.vendor.source.clone(),
+                source: FunctionSource::Image {
+                    image: self.image.clone(),
+                },
                 object: self.image_object.clone(),
                 symbol: None,
             },

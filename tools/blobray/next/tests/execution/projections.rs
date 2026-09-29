@@ -7,17 +7,12 @@ fn setup() -> (Fixture, ExecutionRequest, LayoutProjection) {
 }
 fn setup_code(left: &[u32], right: &[u32]) -> (Fixture, ExecutionRequest, LayoutProjection) {
     let (a, pa) = super::goals::symbol_elf(left, 0x1000, 0x1000);
-    let (b, mut pb) = super::goals::symbol_elf(right, 0x1000, 0x1000);
-    pb.source = FunctionSource::Input { input: 1 };
+    let (b, pb) = super::goals::symbol_elf(right, 0x1000, 0x1000);
     let f = Fixture::from_inputs(vec![a, b]);
-    let endpoint = |point: ExecutionSymbol, address, length| LayoutEndpoint {
+    let endpoint = |point: SymbolId, address, length| LayoutEndpoint {
         entry: CallEndpoint {
-            occurrence: Occurrence {
-                revision: f.target.revision.clone(),
-                source: point.source,
-                object: point.symbol.object.clone(),
-                symbol: Some(point.symbol),
-            },
+            object: point.object.clone(),
+            symbol: Some(point),
             boundary: ReviewedCallBoundary::Code { address: 0x1000 },
         },
         domains: vec![LayoutDomain { address, length }],
@@ -56,7 +51,7 @@ fn setup_code(left: &[u32], right: &[u32]) -> (Fixture, ExecutionRequest, Layout
         reason: "reviewed same field and conditional decision".into(),
     };
     let mut r = f.request();
-    r.replacement.as_mut().unwrap().source = FunctionSource::Input { input: 1 };
+    r.replacement.as_mut().unwrap().executables = vec![f.id(1)];
     r.max_events = 128;
     for side in [false, true] {
         let input = if side {

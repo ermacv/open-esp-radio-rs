@@ -438,9 +438,7 @@ pub(super) mod tests {
 
     pub(in crate::records) fn fixture_target() -> ExecutionTarget {
         ExecutionTarget {
-            revision: ArtifactId::of_bytes(b"fixture").as_str().parse().unwrap(),
-            source: FunctionSource::Input { input: 0 },
-            companions: vec![],
+            executables: vec![ArtifactId::of_bytes(b"fixture")],
             abi: CallAbi::RiscvInteger,
             stack: MemorySeed {
                 address: 0x8000,
@@ -453,23 +451,18 @@ pub(super) mod tests {
 
     /// The entry of `fixture_target` at 0x1000.
     pub(in crate::records) fn fixture_endpoint() -> CallEndpoint {
-        let target = fixture_target();
         let object = ObjectId {
             artifact: ArtifactId::of_bytes(b"fixture"),
             location: ObjectLocation::Standalone,
         };
         CallEndpoint {
-            occurrence: Occurrence {
-                revision: target.revision,
-                source: target.source,
-                symbol: Some(SymbolId {
-                    object: object.clone(),
-                    table: SymbolTableKind::Static,
-                    table_section: 3,
-                    index: 1,
-                }),
-                object,
-            },
+            symbol: Some(SymbolId {
+                object: object.clone(),
+                table: SymbolTableKind::Static,
+                table_section: 3,
+                index: 1,
+            }),
+            object,
             boundary: ReviewedCallBoundary::Code { address: 0x1000 },
         }
     }
@@ -848,17 +841,14 @@ pub(super) mod tests {
             complete: false,
         };
         goal_manifest.request.cases[0].vendor.goal = ExecutionGoal::ReachSymbol {
-            target: ExecutionSymbol {
-                source: FunctionSource::Input { input: 0 },
-                symbol: SymbolId {
-                    object: ObjectId {
-                        artifact: ArtifactId::of_bytes(b"goal"),
-                        location: ObjectLocation::Standalone,
-                    },
-                    table: SymbolTableKind::Static,
-                    table_section: 3,
-                    index: 1,
+            target: SymbolId {
+                object: ObjectId {
+                    artifact: ArtifactId::of_bytes(b"fixture"),
+                    location: ObjectLocation::Standalone,
                 },
+                table: SymbolTableKind::Static,
+                table_section: 3,
+                index: 1,
             },
         };
         for stop in [

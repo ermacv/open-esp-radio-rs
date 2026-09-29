@@ -3,13 +3,16 @@ use crate::*;
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CallEndpoint {
-    pub occurrence: Occurrence,
+    /// The standalone executable, by content, whose code holds the boundary.
+    pub object: ObjectId,
+    /// The exact symbol at a code boundary; none at a call model.
+    pub symbol: Option<SymbolId>,
     pub boundary: ReviewedCallBoundary,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ReviewedCallBoundary {
-    /// The occurrence must name the exact symbol, including its table identity.
+    /// The endpoint must name the exact symbol, including its table identity.
     Code { address: u32 },
     Model {
         binding: CallBinding,
@@ -30,22 +33,17 @@ impl CallEndpoint {
         }
     }
     pub fn in_target(&self, target: &ExecutionTarget) -> bool {
-        self.occurrence.revision == target.revision
-            && self.occurrence.object.location == ObjectLocation::Standalone
-            && (self.occurrence.source == target.source
-                || matches!(self.occurrence.source, FunctionSource::Input { input } if target.companions.contains(&input)))
+        target.maps(&self.object)
     }
     pub fn validate(&self) -> Result<()> {
         if self.address() & 1 != 0
             || self.address() >= u32::MAX - 1
-            || self.occurrence.object.location != ObjectLocation::Standalone
+            || self.object.location != ObjectLocation::Standalone
             || self
-                .occurrence
                 .symbol
                 .as_ref()
-                .is_some_and(|s| s.object != self.occurrence.object)
-            || matches!(self.boundary, ReviewedCallBoundary::Code { .. })
-                != self.occurrence.symbol.is_some()
+                .is_some_and(|s| s.object != self.object)
+            || matches!(self.boundary, ReviewedCallBoundary::Code { .. }) != self.symbol.is_some()
         {
             return Err(Error::new(
                 ErrorCode::InvalidRequest,
@@ -55,11 +53,8 @@ impl CallEndpoint {
         Ok(())
     }
     pub fn allocated_bytes(&self) -> u64 {
-        self.occurrence.revision.allocated_bytes()
-            + self.occurrence.source.allocated_bytes()
-            + self.occurrence.object.artifact.allocated_bytes()
+        self.object.artifact.allocated_bytes()
             + self
-                .occurrence
                 .symbol
                 .as_ref()
                 .map_or(0, |s| s.object.artifact.allocated_bytes())

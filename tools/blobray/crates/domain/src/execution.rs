@@ -1,11 +1,8 @@
 //! Concrete execution contracts. Scenarios are explicit inputs, never inferred facts.
 use crate::*;
 
-/// Native concrete request and manifest format.
-pub const EXECUTION_SCHEMA: u32 = 23;
-/// Upper bound of one canonical execution request payload. Requests are retained
-/// by identity; control messages, journal rows and manifests carry only the hash.
-pub const MAX_EXECUTION_REQUEST_BYTES: usize = 16 * 1024 * 1024;
+/// Native concrete request format.
+pub const EXECUTION_SCHEMA: u32 = 24;
 /// Maximum phases in one request; a whole finite matrix fits in one request.
 pub const MAX_EXECUTION_CASES: usize = 4096;
 /// Maximum recorded events of one execution phase. A bounded poll loop that
@@ -16,15 +13,23 @@ pub const MAX_EXECUTION_ARGUMENT_WORDS: usize = 256;
 /// Preloads one invocation may declare.
 pub const MAX_MEMORY_PRELOADS: usize = 128;
 
-/// Captured address space; each invocation selects its own entry within the mappings.
+/// Maximum executables one target maps.
+pub const MAX_TARGET_EXECUTABLES: usize = 65;
+
+/// Address space of the static ELF executables named by content, loaded in
+/// order; each invocation selects its own entry within the mappings.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionTarget {
-    pub revision: RevisionId,
-    pub source: FunctionSource,
-    pub companions: Vec<u64>,
+    pub executables: Vec<ArtifactId>,
     pub abi: CallAbi,
     pub stack: MemorySeed,
+}
+impl ExecutionTarget {
+    /// Whether `object` is one of the standalone executables this target maps.
+    pub fn maps(&self, object: &ObjectId) -> bool {
+        object.location == ObjectLocation::Standalone && self.executables.contains(&object.artifact)
+    }
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -108,24 +113,18 @@ pub struct ExecutionRegion {
     pub seed: MemorySeed,
     pub lifetime: RegionLifetime,
 }
-/// Physical code boundary in a source explicitly mapped by the execution target.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ExecutionSymbol {
-    pub source: FunctionSource,
-    pub symbol: SymbolId,
-}
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ExecutionGoal {
     Return,
+    /// Stop at a code symbol of an executable the target maps.
     ReachSymbol {
-        target: ExecutionSymbol,
+        target: SymbolId,
     },
     /// Stop at transfer, before executing the callee. Ordinary calls use x1/x5;
     /// optionally include x0 tail transfers, excluding canonical ABI returns.
     ObserveCall {
-        target: ExecutionSymbol,
+        target: SymbolId,
         include_tail: bool,
     },
 }
@@ -480,12 +479,23 @@ impl ExecutionRequest {
             ("replacement", self.replacement.as_ref()),
         ] {
             let Some(target) = target else { continue };
-            require(target.companions.len() <= 64, || {
-                format!(
-                    "the {side} target has {} companions, more than 64",
-                    target.companions.len()
-                )
-            })?;
+            require(
+                (1..=MAX_TARGET_EXECUTABLES).contains(&target.executables.len()),
+                || {
+                    format!(
+                        "the {side} target maps {} executables, outside 1..={MAX_TARGET_EXECUTABLES}",
+                        target.executables.len()
+                    )
+                },
+            )?;
+            require(
+                target
+                    .executables
+                    .iter()
+                    .enumerate()
+                    .all(|(i, id)| !target.executables[..i].contains(id)),
+                || format!("the {side} target maps an executable twice"),
+            )?;
             target.stack.validate()?;
             require(
                 target.stack.length >= 16
@@ -552,19 +562,13 @@ impl ExecutionRequest {
                 })?;
                 match &input.goal {
                     ExecutionGoal::Return => {}
-                    ExecutionGoal::ReachSymbol { target: point }
-                    | ExecutionGoal::ObserveCall { target: point, .. } => {
-                        require(
-                            point.symbol.object.location == ObjectLocation::Standalone
-                                && (point.source == target.source
-                                    || matches!(&point.source,
-                                    FunctionSource::Input { input } if target.companions.contains(input))),
-                            || {
-                                format!(
-                                    "case `{name}` {side} goal symbol is not in the target or its companions"
-                                )
-                            },
-                        )?;
+                    ExecutionGoal::ReachSymbol { target: symbol }
+                    | ExecutionGoal::ObserveCall { target: symbol, .. } => {
+                        require(target.maps(&symbol.object), || {
+                            format!(
+                                "case `{name}` {side} goal symbol is not in an executable of the target"
+                            )
+                        })?;
                     }
                 }
                 input.entry_stack(&target.stack)?;
@@ -902,12 +906,7 @@ mod validation_tests {
 
     fn request() -> ExecutionRequest {
         let target = ExecutionTarget {
-            revision: ArtifactId::of_bytes(b"validation fixture")
-                .as_str()
-                .parse()
-                .unwrap(),
-            source: FunctionSource::Input { input: 0 },
-            companions: vec![],
+            executables: vec![ArtifactId::of_bytes(b"validation fixture")],
             abi: CallAbi::RiscvInteger,
             stack: MemorySeed {
                 address: 0x8000,
@@ -1054,17 +1053,14 @@ mod validation_tests {
 
         let mut r = request();
         r.cases[0].vendor.goal = ExecutionGoal::ReachSymbol {
-            target: ExecutionSymbol {
-                source: FunctionSource::Input { input: 0 },
-                symbol: SymbolId {
-                    object: ObjectId {
-                        artifact: ArtifactId::of_bytes(b"goal object"),
-                        location: ObjectLocation::Standalone,
-                    },
-                    table: SymbolTableKind::Static,
-                    table_section: 1,
-                    index: 1,
+            target: SymbolId {
+                object: ObjectId {
+                    artifact: ArtifactId::of_bytes(b"goal object"),
+                    location: ObjectLocation::Standalone,
                 },
+                table: SymbolTableKind::Static,
+                table_section: 1,
+                index: 1,
             },
         };
         assert!(rejected(r).contains("compared returns need a return goal on both sides"));

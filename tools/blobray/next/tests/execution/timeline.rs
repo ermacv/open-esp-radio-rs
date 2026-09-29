@@ -139,7 +139,7 @@ fn read_order_and_branch_choices_are_independent_of_equal_returns() {
         elf(&[0x00452283, 0x00052303, 0x00000513, 0x00008067]),
     ]);
     let mut r = ram_request(&f);
-    r.replacement.as_mut().unwrap().source = FunctionSource::Input { input: 1 };
+    r.replacement.as_mut().unwrap().executables = vec![f.id(1)];
     select(
         &mut r,
         TimelineCapture {
@@ -153,7 +153,7 @@ fn read_order_and_branch_choices_are_independent_of_equal_returns() {
         elf(&[0x0ff0000f, 0x00052283, 0x00008067]),
     ]);
     let mut r = ram_request(&f);
-    r.replacement.as_mut().unwrap().source = FunctionSource::Input { input: 1 };
+    r.replacement.as_mut().unwrap().executables = vec![f.id(1)];
     select(
         &mut r,
         TimelineCapture {
@@ -348,7 +348,7 @@ fn declared_model_and_service_memory_effects_enter_the_timeline_once() {
         elf(&[0x00b52023, 0x00000513, 0x00008067]),
     ]);
     let mut r = ram_request(&f);
-    r.replacement.as_mut().unwrap().source = FunctionSource::Input { input: 1 };
+    r.replacement.as_mut().unwrap().executables = vec![f.id(1)];
     r.cases[0].vendor.calls = vec![CallDeclaration {
         repetition: blobray_domain::CallRepetition::Finite,
         id: "output".into(),

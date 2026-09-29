@@ -15,9 +15,8 @@ use crate::session::{Session, image_symbol_id, request};
 use blobray_domain::{
     CallBinding, CallBoundary, CallCapture, CallDeclaration, CallRepetition, CallResponse,
     ComparisonVerdict, EffectContractRef, EffectDisposition, EffectPattern, EffectRule,
-    EffectSelector, EffectValue, ExecutionCase, ExecutionEvidence, ExecutionGoal, ExecutionSymbol,
-    ExecutionTarget, LinkRequest, MemoryPair, ModelStatus, ObjectId, ObjectLocation,
-    RegionLifetime, SessionReset,
+    EffectSelector, EffectValue, ExecutionCase, ExecutionEvidence, ExecutionGoal, ExecutionTarget,
+    LinkRequest, MemoryPair, ModelStatus, ObjectId, ObjectLocation, RegionLifetime, SessionReset,
 };
 use std::any::Any;
 use std::collections::BTreeMap;
@@ -710,12 +709,8 @@ impl LeafRun {
             self.session
                 .input_endpoint(crate::chip().rom_input, leaf.vendor)
         } else {
-            self.session.image_endpoint(
-                &self.vendor,
-                &self.image_object,
-                leaf.vendor,
-                self.roots[leaf.vendor],
-            )
+            self.session
+                .image_endpoint(&self.image_object, leaf.vendor, self.roots[leaf.vendor])
         }
     }
 
@@ -1080,14 +1075,11 @@ impl LeafRun {
                     }
                     if let Some(callee) = leaf.prefix_until {
                         vendor.goal = ExecutionGoal::ObserveCall {
-                            target: ExecutionSymbol {
-                                source: self.vendor.source.clone(),
-                                symbol: image_symbol_id(
-                                    &self.session.run.join("image/image.elf"),
-                                    &self.image_object,
-                                    callee,
-                                )?,
-                            },
+                            target: image_symbol_id(
+                                &self.session.run.join("image/image.elf"),
+                                &self.image_object,
+                                callee,
+                            )?,
                             include_tail: leaf.prefix_tail,
                         };
                     }
@@ -1106,28 +1098,22 @@ impl LeafRun {
                             overrides: vec![],
                         };
                         vendor.goal = ExecutionGoal::ObserveCall {
-                            target: ExecutionSymbol {
-                                source: self.vendor.source.clone(),
-                                symbol: image_symbol_id(
-                                    &self.session.run.join("image/image.elf"),
-                                    &self.image_object,
-                                    vendor_callee,
-                                )?,
-                            },
+                            target: image_symbol_id(
+                                &self.session.run.join("image/image.elf"),
+                                &self.image_object,
+                                vendor_callee,
+                            )?,
                             include_tail: true,
                         };
                         vendor.observe_calls = Some(capture(target.vendor_word + 1));
                         production.goal = ExecutionGoal::ObserveCall {
-                            target: ExecutionSymbol {
-                                source: self.production.source.clone(),
-                                symbol: crate::harness::symbol(
-                                    &self.session.inventory,
-                                    PROBE_INPUT,
-                                    production_callee,
-                                )?
-                                .id
-                                .clone(),
-                            },
+                            target: crate::harness::symbol(
+                                &self.session.inventory,
+                                PROBE_INPUT,
+                                production_callee,
+                            )?
+                            .id
+                            .clone(),
                             include_tail: true,
                         };
                         production.observe_calls = Some(capture(1));

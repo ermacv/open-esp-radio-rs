@@ -1,5 +1,5 @@
 use super::*;
-pub(super) fn symbol_elf(code: &[u32], base: u32, goal: u32) -> (Vec<u8>, ExecutionSymbol) {
+pub(super) fn symbol_elf(code: &[u32], base: u32, goal: u32) -> (Vec<u8>, SymbolId) {
     let mut bytes = elf(code);
     for offset in [24, 60, 64] {
         bytes[offset..offset + 4].copy_from_slice(&base.to_le_bytes());
@@ -38,21 +38,18 @@ pub(super) fn symbol_elf(code: &[u32], base: u32, goal: u32) -> (Vec<u8>, Execut
     bytes[46..48].copy_from_slice(&40u16.to_le_bytes());
     bytes[48..50].copy_from_slice(&4u16.to_le_bytes());
     bytes[50..52].copy_from_slice(&2u16.to_le_bytes());
-    let point = ExecutionSymbol {
-        source: FunctionSource::Input { input: 0 },
-        symbol: SymbolId {
-            object: ObjectId {
-                artifact: ArtifactId::of_bytes(&bytes),
-                location: ObjectLocation::Standalone,
-            },
-            table: SymbolTableKind::Static,
-            table_section: 3,
-            index: 2,
+    let point = SymbolId {
+        object: ObjectId {
+            artifact: ArtifactId::of_bytes(&bytes),
+            location: ObjectLocation::Standalone,
         },
+        table: SymbolTableKind::Static,
+        table_section: 3,
+        index: 2,
     };
     (bytes, point)
 }
-pub(super) fn fixture(code: &[u32], goal: u32) -> (Fixture, ExecutionSymbol) {
+pub(super) fn fixture(code: &[u32], goal: u32) -> (Fixture, SymbolId) {
     let (bytes, point) = symbol_elf(code, 0x1000, goal);
     (Fixture::from_inputs(vec![bytes]), point)
 }
@@ -207,11 +204,11 @@ fn invalid_physical_goals_and_relations_are_rejected() {
     for which in 0..5 {
         let mut point = point.clone();
         match which {
-            0 => point.symbol.index = 900,
-            1 => point.symbol.table_section = 2,
-            2 => point.symbol.table = SymbolTableKind::Dynamic,
-            3 => point.symbol.index = 4, // data symbol in executable section
-            _ => point.symbol.object.artifact = ArtifactId::of_bytes(b"different"),
+            0 => point.index = 900,
+            1 => point.table_section = 2,
+            2 => point.table = SymbolTableKind::Dynamic,
+            3 => point.index = 4, // data symbol in executable section
+            _ => point.object.artifact = ArtifactId::of_bytes(b"different"),
         }
         let run = f.run(
             request(&f, ExecutionGoal::ReachSymbol { target: point }),
@@ -241,7 +238,7 @@ fn invalid_physical_goals_and_relations_are_rejected() {
             }
             _ => {
                 if let ExecutionGoal::ReachSymbol { target } = &mut r.cases[0].vendor.goal {
-                    target.source = FunctionSource::Input { input: 1 };
+                    target.object.artifact = ArtifactId::of_bytes(b"an unmapped executable");
                 }
             }
         }
@@ -297,7 +294,7 @@ fn multiple_physical_goals_in_one_request_share_its_failure_budgets() {
     second.reset = SessionReset::Warm;
     second.name = "different-physical-alias".into();
     let mut alias = point;
-    alias.symbol.index = 3;
+    alias.index = 3;
     second.vendor.goal = ExecutionGoal::ObserveCall {
         target: alias,
         include_tail: false,
@@ -327,13 +324,12 @@ fn multiple_physical_goals_in_one_request_share_its_failure_budgets() {
 
 #[test]
 fn symbol_goals_require_and_use_the_explicit_companion_mapping() {
-    let (companion, mut point) = symbol_elf(&[0x00000073], 0x2000, 0x2000);
-    point.source = FunctionSource::Input { input: 1 };
+    let (companion, point) = symbol_elf(&[0x00000073], 0x2000, 0x2000);
     let f = Fixture::from_inputs(vec![elf(&[0x000022b7, 0x00028067]), companion]);
     let mut r = request(&f, ExecutionGoal::ReachSymbol { target: point });
     assert_eq!(r.validate().unwrap_err().code, ErrorCode::InvalidRequest);
-    r.vendor.companions.push(1);
-    r.replacement.as_mut().unwrap().companions.push(1);
+    r.vendor.executables.push(f.id(1));
+    r.replacement.as_mut().unwrap().executables.push(f.id(1));
     let run = f.run(r, budget()).unwrap();
     let result = run.facts();
     assert_eq!(result["verdict"], "MATCH");
@@ -345,16 +341,14 @@ fn in_process_symbol_goals_resolve_in_the_executables_and_compare_vendor_prefixe
     let code = [0x00008413, 0x008000ef, 0x00040067, 0x00008067];
     let (bytes, point) = symbol_elf(&code, 0x1000, 0x100c);
     let f = Fixture::from_inputs(vec![bytes.clone()]);
-    let sources: &[&[u8]] = &[&bytes];
+    let sources: &[app::in_process::Executable] =
+        &[app::in_process::Executable::new(bytes.clone())];
     let memory = WorkingMemory::new(32 * 1024 * 1024).unwrap();
     let verify = |request: &ExecutionRequest| {
         app::in_process::verify(
             &app::in_process::InProcessComparison {
                 request,
-                vendor: sources,
-                replacement: Some(sources),
-                vendor_identities: None,
-                replacement_identities: None,
+                executables: sources,
                 effects: &[],
                 projections: &[],
                 vendor_results: None,

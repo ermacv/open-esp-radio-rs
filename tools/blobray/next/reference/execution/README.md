@@ -15,15 +15,13 @@ store, journal or CLI command participates, and nothing is retained.
 
 A request without a replacement executes one implementation; a comparison
 supplies both and an explicit binding class. A request has the following shape
-(replace the revision and entry with the caller's own identities):
+(replace the executable identity and entry with the caller's own):
 
 ```json
 {
-  "schema": 23,
+  "schema": 24,
   "vendor": {
-    "revision": "REVISION_SHA",
-    "source": { "kind": "input", "input": 0 },
-    "companions": [],
+    "executables": ["ELF_SHA"],
     "abi": "riscv-integer",
     "stack": { "address": 805306368, "length": 65536, "fill": null, "bytes": [] }
   },
@@ -40,12 +38,13 @@ supplies both and an explicit binding class. A request has the following shape
 }
 ```
 
-A target names its source, a standalone static RV32 ELF (`input`) or a
-prepared image (`{"kind":"image","image":"IMAGE_SHA"}`), and in `companions`
-additional standalone ELF inputs whose code and data segments it maps. The
-caller supplies one executable per source, in that order. Overlap is rejected;
-linker absolute definitions alone do not supply executable bytes. Execution
-never rediscovers origins or substitutes another symbol implementation.
+A target names, by the SHA-256 of their bytes, the standalone static RV32 ELF
+executables whose code and data segments it maps, in load order: one to 65
+(`MAX_TARGET_EXECUTABLES`), each at most once. A captured input and a prepared
+image are both such executables. The caller supplies the executables; a target
+naming one it did not supply fails. Overlapping segments are rejected; linker
+absolute definitions alone do not supply executable bytes. Execution never
+rediscovers origins or substitutes another symbol implementation.
 
 For comparison, supply a second target in `replacement`, set `binding` to
 `production-entry` or `shared-core`, and supply each case's replacement invocation.
@@ -361,23 +360,19 @@ index). For example:
 {
   "kind": "observe-call",
   "target": {
-    "source": {"kind":"input","input":0},
-    "symbol": {
-      "object":{"artifact":"CAPTURED_ELF_SHA","location":{"kind":"standalone"}},
-      "table":"static","table_section":3,"index":2
-    }
+    "object":{"artifact":"ELF_SHA","location":{"kind":"standalone"}},
+    "table":"static","table_section":3,"index":2
   },
   "include_tail": false
 }
 ```
 
-`reach-symbol` uses the same target without `include_tail`. The source must be the
-target's primary image/input or an explicitly mapped companion. The physical symbol
-must be defined FUNC/NOTYPE in captured executable bytes with a matching load mapping;
+`reach-symbol` uses the same target without `include_tail`. The symbol's
+`object` must be an executable the target maps. The physical symbol
+must be defined FUNC/NOTYPE in its executable bytes with a matching load mapping;
 zero-sized symbols and aliases are valid address identities. Data, undefined,
 absolute, mismatched or unavailable symbols fail the request before execution.
-No name lookup, extent inference or code analysis resolves these goals. Each
-executable's content identity is computed at most once per request.
+No name lookup, extent inference or code analysis resolves these goals.
 
 `reached-symbol` stops at the selected PC before decoding/executing its instruction,
 after verifying fetchable bytes. `observed-call` stops after a matching direct or
@@ -451,8 +446,7 @@ closure releases them before the next phase. A sorted bounded exact-port index s
 accesses; capacity retained for index reuse is distinct from live model state.
 No host call-stack recursion follows the analyzed program.
 
-Requests have 1–4096 cases (`MAX_EXECUTION_CASES`), at most 64 companions per
-target, 128 RAM seeds, 128 device and 128 call declarations per invocation,
+Requests have 1–4096 cases (`MAX_EXECUTION_CASES`), 128 RAM seeds, 128 device and 128 call declarations per invocation,
 128 live models of each category, 4096 responses per call model, 256 outputs per response,
 4096 exact live ports, 4096 encoded values/runs per model list, 2048 regions per session,
 and 1–1,048,576 events per implementation per case (`MAX_EXECUTION_EVENTS`).
@@ -501,10 +495,9 @@ authority.
 
 ### In-process verification
 
-`blobray_application::in_process::verify` executes and compares one request. The caller supplies the ELF bytes of every target
-source in source order (the source, then its companions), optionally with
-their content identities when it already authenticated those bytes (otherwise
-each is hashed once per call), and the effect
+`blobray_application::in_process::verify` executes and compares one request. The caller supplies the executables its
+targets name, as `Executable` values that hash their bytes once when made and
+can be reused across calls, and the effect
 contracts and layout projections its relations select. Those are reviewed
 outside Blobray: `effect_contract_ref` and `projection_ref` select them by the
 SHA-256 of their canonical JSON encoding, and `verify` rejects a selection whose

@@ -3,72 +3,45 @@ use crate::execution_memory::Session;
 use crate::*;
 use std::collections::BTreeMap;
 pub const EXECUTION_ENVIRONMENT: &str = "static-elf/boot-data-1/entry-registers-1/byte-addressed-memory-1/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-4/external-calls-2/final-memory-1/physical-calls-1/internal-timeline-1/reviewed-projections-1/reviewed-effects-1";
-/// One mapped executable source of an execution target.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum SourceKey {
-    Image(PreparedImageId),
-    Input(RevisionId, u64),
-}
-fn source_keys(target: &ExecutionTarget) -> Vec<SourceKey> {
-    let source = match &target.source {
-        FunctionSource::Image { image } => SourceKey::Image(image.clone()),
-        FunctionSource::Input { input } => SourceKey::Input(target.revision.clone(), *input),
-    };
-    std::iter::once(source)
-        .chain(
-            target
-                .companions
-                .iter()
-                .map(|index| SourceKey::Input(target.revision.clone(), *index)),
-        )
-        .collect()
-}
 pub(crate) struct LoadedSegment<'a> {
     pub address: u32,
     pub memory_size: usize,
     pub flags: u32,
     pub bytes: ScratchBytes<'a>,
 }
-/// Executable segments of every source of a request, validated and loaded once.
-/// Each fresh session copies them, so cold resets never reread retained sources.
+/// Executable segments of every executable of a request, validated and loaded
+/// once. Each fresh session copies them, so cold resets never reload them.
 pub(crate) struct Sources<'a> {
-    loaded: BTreeMap<SourceKey, Vec<LoadedSegment<'a>>>,
+    loaded: BTreeMap<ArtifactId, Vec<LoadedSegment<'a>>>,
 }
 impl<'a> Sources<'a> {
-    /// Segments of explicit executables: `executables[i]` holds the ELF bytes
-    /// of each target's sources in `source_keys` order (its source, then its
-    /// companions). No project participates.
+    /// Segments of the executables `targets` map, found in `executables` by
+    /// content.
     pub(crate) fn from_executables(
-        targets: &[(&ExecutionTarget, &[&[u8]])],
+        targets: &[&ExecutionTarget],
+        executables: &[crate::in_process::Executable],
         memory: &'a WorkingMemory,
         c: &mut dyn RunControl,
     ) -> Result<Self> {
         let mut loaded = BTreeMap::new();
-        for (target, executables) in targets {
-            let keys = source_keys(target);
-            if keys.len() != executables.len() {
-                return Err(Error::new(
-                    ErrorCode::InvalidRequest,
-                    "one executable is required per target source",
-                ));
+        for id in targets.iter().flat_map(|t| &t.executables) {
+            if loaded.contains_key(id) {
+                continue;
             }
-            for (key, bytes) in keys.into_iter().zip(executables.iter()) {
-                if loaded.contains_key(&key) {
-                    continue;
-                }
-                loaded.insert(key, segments(bytes, memory, c)?);
-            }
+            let executable = crate::in_process::find(executables, id)?;
+            loaded.insert(id.clone(), segments(&executable.bytes(), memory, c)?);
         }
         Ok(Self { loaded })
     }
-    /// Every loaded segment of `target`'s sources.
+    /// Every loaded segment of `target`'s executables, in load order.
     pub(crate) fn target_segments(
         &self,
         target: &ExecutionTarget,
     ) -> impl Iterator<Item = &LoadedSegment<'a>> {
-        source_keys(target)
-            .into_iter()
-            .filter_map(|key| self.loaded.get(&key))
+        target
+            .executables
+            .iter()
+            .filter_map(|id| self.loaded.get(id))
             .flatten()
     }
 }
@@ -106,10 +79,10 @@ fn session<'a>(
     c: &mut dyn RunControl,
 ) -> Result<Session<'a>> {
     let mut session = Session::new(memory, max_events, coverage, c)?;
-    for key in source_keys(target) {
+    for id in &target.executables {
         for segment in sources
             .loaded
-            .get(&key)
+            .get(id)
             .ok_or_else(|| Error::new(ErrorCode::Integrity, "execution source was not prepared"))?
         {
             session.segment(

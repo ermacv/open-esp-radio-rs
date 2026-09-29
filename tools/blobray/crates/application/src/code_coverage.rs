@@ -171,11 +171,11 @@ fn function_coverage(
 }
 
 /// The vendor coverage of in-memory executions (caller identity, request and
-/// records), which share one vendor target whose sources are `vendor` (ELF
-/// bytes in source order). Symbol goals resolve in those executables.
+/// records), which share one vendor target whose executables `executables`
+/// supplies. Symbol goals resolve in those executables.
 pub fn report_in_process(
     executions: &[(ArtifactId, &ExecutionRequest, &[ExecutionEvidence])],
-    vendor: &[&[u8]],
+    executables: &[crate::in_process::Executable],
     semantics: &dyn FunctionSemantics,
     memory: &WorkingMemory,
     c: &mut dyn RunControl,
@@ -183,7 +183,6 @@ pub fn report_in_process(
     let mut target = None;
     let mut reached = Reached::default();
     let mut ids = Vec::new();
-    let mut executables = crate::in_process::Executables::new(vendor, None)?;
     for (identity, request, records) in executions {
         same_target(&mut target, request)?;
         let goals: Vec<[Option<ResolvedExecutionGoal>; 2]> = request
@@ -193,7 +192,8 @@ pub fn report_in_process(
                 Ok([
                     Some(crate::in_process::resolve_goal(
                         &case.vendor.goal,
-                        &mut executables,
+                        &request.vendor,
+                        executables,
                         memory,
                         c,
                     )?),
@@ -206,10 +206,12 @@ pub fn report_in_process(
     }
     let target =
         target.ok_or_else(|| Error::new(ErrorCode::InvalidRequest, "no executions selected"))?;
-    let sources = Sources::from_executables(&[(&target, vendor)], memory, c)?;
+    let sources = Sources::from_executables(&[&target], executables, memory, c)?;
     let mut names: BTreeMap<u32, String> = BTreeMap::new();
-    for executable in vendor {
-        for (address, name) in blobray_artifacts::code_symbols(executable, memory, c)? {
+    for id in &target.executables {
+        let executable = crate::in_process::find(executables, id)?;
+        for (address, name) in blobray_artifacts::code_symbols(&executable.bytes(), memory, c)? {
+            // The first name in order identifies a start with several names.
             names.entry(address).or_insert(name);
         }
     }

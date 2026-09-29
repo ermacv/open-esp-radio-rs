@@ -1,11 +1,11 @@
 //! Driver verification inside the calling process.
 //!
-//! The caller supplies the request, the ELF bytes of every target source and
-//! the effect contracts and layout projections its relations select. Contracts
-//! and projections are reviewed outside Blobray and selected by the digest of
-//! their canonical encoding. Records stay in memory: no project, content store
-//! or journal participates. A symbol goal resolves in the given executable
-//! whose content is its object.
+//! The caller supplies the request, the executables its targets name by
+//! content and the effect contracts and layout projections its relations
+//! select. Contracts and projections are reviewed outside Blobray and selected
+//! by the digest of their canonical encoding. Records stay in memory: no
+//! project, content store or journal participates. A symbol goal resolves in
+//! the executable whose content is its object.
 //!
 //! The vendor side of a request can execute once and be reused by requests
 //! that differ only in their replacement side, such as the same request over
@@ -15,6 +15,38 @@ pub use crate::code_coverage::report_in_process as coverage;
 pub use crate::dependence::ObservedInstructions;
 use crate::execution::{Resolved, Sources, VendorSide, run_resolved};
 use crate::*;
+use std::sync::Arc;
+
+/// A static ELF executable with the content identity requests name it by,
+/// computed once when the executable is made.
+#[derive(Clone, Debug)]
+pub struct Executable {
+    bytes: Arc<[u8]>,
+    id: ArtifactId,
+}
+impl Executable {
+    pub fn new(bytes: impl Into<Arc<[u8]>>) -> Self {
+        let bytes = bytes.into();
+        Self {
+            id: ArtifactId::of_bytes(&bytes),
+            bytes,
+        }
+    }
+    pub fn id(&self) -> &ArtifactId {
+        &self.id
+    }
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+/// The executable among `executables` whose content is `id`.
+pub(crate) fn find<'e>(executables: &'e [Executable], id: &ArtifactId) -> Result<&'e Executable> {
+    executables
+        .iter()
+        .find(|e| e.id == *id)
+        .ok_or_else(|| unsupported("a target executable that was not given"))
+}
 
 fn digest(value: &impl serde::Serialize) -> Result<ArtifactId> {
     let bytes = serde_json::to_vec(value)
@@ -52,11 +84,6 @@ fn vendor_key(input: &InProcessComparison<'_>, executor: &dyn Executor) -> Resul
         "schema": EXECUTION_SCHEMA,
         "environment": crate::EXECUTION_ENVIRONMENT,
         "executor": executor.identity(),
-        "executables": input
-            .vendor
-            .iter()
-            .map(|bytes| ArtifactId::of_bytes(bytes))
-            .collect::<Vec<_>>(),
         "target": &request.vendor,
         "max_events": request.max_events,
         "cases": request
@@ -78,14 +105,9 @@ pub struct ImagePatch {
 
 pub struct InProcessComparison<'a> {
     pub request: &'a ExecutionRequest,
-    /// ELF bytes of the vendor target's source, then of its companions.
-    pub vendor: &'a [&'a [u8]],
-    /// ELF bytes of the replacement target's sources, when it has one.
-    pub replacement: Option<&'a [&'a [u8]]>,
-    /// Content identities of `vendor` and `replacement`, one per executable,
-    /// when the caller already authenticated them; computed otherwise.
-    pub vendor_identities: Option<&'a [ArtifactId]>,
-    pub replacement_identities: Option<&'a [ArtifactId]>,
+    /// Every executable the request's targets name, in any order; others
+    /// are ignored.
+    pub executables: &'a [Executable],
     pub effects: &'a [EffectContract],
     pub projections: &'a [LayoutProjection],
     /// Vendor results of this request's vendor side, from `vendor`.
@@ -123,62 +145,16 @@ fn unsupported(what: &str) -> Error {
     )
 }
 
-/// The executables of one side with their content identities, each
-/// computed at most once: a goal's symbol names its executable by content,
-/// and hashing every executable for every case dominated large requests.
-pub(crate) struct Executables<'a> {
-    bytes: &'a [&'a [u8]],
-    ids: Vec<Option<ArtifactId>>,
-}
-
-impl<'a> Executables<'a> {
-    /// `bytes` with the identities the caller already authenticated, when
-    /// it gives one per executable.
-    pub(crate) fn new(bytes: &'a [&'a [u8]], known: Option<&[ArtifactId]>) -> Result<Self> {
-        let ids = match known {
-            None => vec![None; bytes.len()],
-            Some(ids) if ids.len() == bytes.len() => ids.iter().cloned().map(Some).collect(),
-            Some(_) => {
-                return Err(Error::new(
-                    ErrorCode::InvalidRequest,
-                    "executable identities must name every executable",
-                ));
-            }
-        };
-        Ok(Self { bytes, ids })
-    }
-
-    /// The executable whose content is `artifact`.
-    fn find(
-        &mut self,
-        artifact: &ArtifactId,
-        control: &mut dyn RunControl,
-    ) -> Result<Option<&'a [u8]>> {
-        for (bytes, id) in self.bytes.iter().zip(&mut self.ids) {
-            let id = match id {
-                Some(id) => id,
-                None => {
-                    control.checkpoint(bytes.len() / 4096 + 1)?;
-                    id.insert(ArtifactId::of_bytes(bytes))
-                }
-            };
-            if id == artifact {
-                return Ok(Some(bytes));
-            }
-        }
-        Ok(None)
-    }
-}
-
-/// The physical boundary of `goal`: a symbol goal names a code symbol of the
-/// standalone executable among `executables` whose content is its object.
+/// The physical boundary of `goal`: a symbol goal names a code symbol of an
+/// executable of `target`, which `executables` supplies.
 pub(crate) fn resolve_goal(
     goal: &ExecutionGoal,
-    executables: &mut Executables<'_>,
+    target: &ExecutionTarget,
+    executables: &[Executable],
     memory: &WorkingMemory,
     control: &mut dyn RunControl,
 ) -> Result<ResolvedExecutionGoal> {
-    let (point, include_tail) = match goal {
+    let (symbol, include_tail) = match goal {
         ExecutionGoal::Return => return Ok(ResolvedExecutionGoal::Return),
         ExecutionGoal::ReachSymbol { target } => (target, None),
         ExecutionGoal::ObserveCall {
@@ -186,17 +162,14 @@ pub(crate) fn resolve_goal(
             include_tail,
         } => (target, Some(*include_tail)),
     };
-    let symbol = &point.symbol;
-    if symbol.object.location != ObjectLocation::Standalone
-        || symbol.table != SymbolTableKind::Static
-    {
-        return Err(unsupported("symbol goals outside a standalone executable"));
+    if !target.maps(&symbol.object) || symbol.table != SymbolTableKind::Static {
+        return Err(unsupported(
+            "symbol goals outside the static table of a target executable",
+        ));
     }
-    let executable = executables
-        .find(&symbol.object.artifact, control)?
-        .ok_or_else(|| unsupported("symbol goals outside the side's executables"))?;
+    let executable = find(executables, &symbol.object.artifact)?;
     let address = blobray_artifacts::code_symbol_at(
-        &executable,
+        &executable.bytes(),
         symbol.table_section,
         symbol.index,
         memory,
@@ -221,12 +194,6 @@ fn run(
 ) -> Result<Run> {
     let request = input.request;
     request.validate()?;
-    if request.replacement.is_some() != input.replacement.is_some() {
-        return Err(Error::new(
-            ErrorCode::InvalidRequest,
-            "replacement executables must match the request",
-        ));
-    }
     let effects = input
         .effects
         .iter()
@@ -250,26 +217,17 @@ fn run(
         })
         .collect::<Result<Vec<_>>>()?;
     let mut goals = Vec::with_capacity(request.cases.len());
-    let mut sides = [
-        Some(Executables::new(input.vendor, input.vendor_identities)?),
-        input
-            .replacement
-            .map(|r| Executables::new(r, input.replacement_identities))
-            .transpose()?,
-    ];
     for (phase, case) in request.cases.iter().enumerate() {
         control.checkpoint(1)?;
         let mut resolved = [None; 2];
-        for (side, invocation) in std::iter::once(&case.vendor)
-            .chain(case.replacement.as_ref())
+        for (side, (invocation, target)) in std::iter::once((&case.vendor, &request.vendor))
+            .chain(case.replacement.as_ref().zip(request.replacement.as_ref()))
             .enumerate()
         {
-            let executables = sides[side]
-                .as_mut()
-                .ok_or_else(|| unsupported("a replacement case without replacement executables"))?;
             resolved[side] = Some(resolve_goal(
                 &invocation.goal,
-                executables,
+                target,
+                input.executables,
                 memory,
                 control,
             )?);
@@ -286,23 +244,24 @@ fn run(
     }
     let mut targets = Vec::new();
     if matches!(vendor, VendorSide::Execute(_)) {
-        targets.push((&request.vendor, input.vendor));
+        targets.push(&request.vendor);
     }
-    if let (Some(target), Some(executables)) = (&request.replacement, input.replacement) {
-        targets.push((target, executables));
-    }
-    let sources = Sources::from_executables(&targets, memory, control)?;
+    targets.extend(&request.replacement);
+    let sources = Sources::from_executables(&targets, input.executables, memory, control)?;
     // Dependence needs the replacement's executable segments and function starts.
-    let replacement = match (input.dependence, &request.replacement, input.replacement) {
-        (Some(semantics), Some(target), Some(executables)) => {
+    let replacement = match (input.dependence, &request.replacement) {
+        (Some(semantics), Some(target)) => {
             let mut segments: Vec<_> = sources
                 .target_segments(target)
                 .filter(|s| s.flags & 1 != 0)
                 .collect();
             segments.sort_by_key(|s| s.address);
             let mut starts = std::collections::BTreeSet::new();
-            for executable in executables {
-                for (address, _) in blobray_artifacts::code_symbols(executable, memory, control)? {
+            for id in &target.executables {
+                let executable = find(input.executables, id)?;
+                for (address, _) in
+                    blobray_artifacts::code_symbols(&executable.bytes(), memory, control)?
+                {
                     starts.insert(address);
                 }
             }
@@ -385,9 +344,6 @@ pub fn vendor(
     let records = run(
         &InProcessComparison {
             request: &request,
-            replacement: None,
-            vendor_identities: None,
-            replacement_identities: None,
             vendor_results: None,
             dependence: None,
             ..*input

@@ -1,6 +1,62 @@
 //! Both consumers start from the same captured ELF, never handcrafted call inputs.
 use super::*;
-use std::process::Command;
+use blobray_next_host::linux::LinuxHost;
+use std::{fs, path::PathBuf, process::Command, sync::Arc};
+
+/// A research project that captured the fixture's inputs, for the static
+/// trace side.
+struct Research {
+    dir: tempfile::TempDir,
+    project: PathBuf,
+    app: app::Application,
+    revision: RevisionId,
+}
+fn research(f: &Fixture) -> Research {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("project");
+    app::create_project(&project).unwrap();
+    let paths: Vec<_> = f
+        .inputs
+        .iter()
+        .enumerate()
+        .map(|(i, executable)| {
+            let path = dir.path().join(format!("input-{i}.elf"));
+            fs::write(&path, executable.bytes()).unwrap();
+            path
+        })
+        .collect();
+    let app = app::Application::with_temporary_storage(
+        Arc::new(LinuxHost::new(env!("CARGO_BIN_EXE_blobray").into(), None)),
+        app::ApplicationLimits::default(),
+        app::TemporaryStoragePolicy {
+            root: Some(dir.path().join("runtime")),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let run = app
+        .import(
+            &project,
+            paths
+                .iter()
+                .map(|path| app::ImportInput {
+                    role: "code".into(),
+                    path: path.clone(),
+                    expected: None,
+                })
+                .collect(),
+            Target::Riscv32Ilp32,
+            budget(),
+        )
+        .unwrap();
+    assert_eq!(run.state, RunState::Completed, "{run:?}");
+    Research {
+        dir,
+        project,
+        app,
+        revision: run.revision.unwrap(),
+    }
+}
 
 fn jal(from: u32, to: u32, dest: u32) -> u32 {
     let d = to.wrapping_sub(from);
@@ -67,7 +123,7 @@ fn linked(functions: &[(u32, Vec<u8>)]) -> Vec<u8> {
     bytes[50..52].copy_from_slice(&2u16.to_le_bytes());
     bytes
 }
-fn cli(f: &Fixture, command: &str, args: &[&str]) -> serde_json::Value {
+fn cli(f: &Research, command: &str, args: &[&str]) -> serde_json::Value {
     let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args(["--format", "json", command, "--project"])
         .arg(&f.project)
@@ -86,7 +142,7 @@ fn cli(f: &Fixture, command: &str, args: &[&str]) -> serde_json::Value {
         serde_json::from_slice(&output.stdout).unwrap()
     }
 }
-fn trace_request(f: &Fixture) -> TraceRequest {
+fn trace_request(f: &Research) -> TraceRequest {
     let published = cli(f, "analyze-project", &[]);
     let publication = published["run"]["publication"].as_str().unwrap();
     let functions = cli(f, "functions", &["--id", publication]);
@@ -106,7 +162,7 @@ fn trace_request(f: &Fixture) -> TraceRequest {
             &f.project,
             IrBuildRequest {
                 scope: NavigationScope {
-                    revision: f.target.revision.clone(),
+                    revision: f.revision.clone(),
                     publications: vec![publication.parse().unwrap()],
                     analyses: vec![],
                 },
@@ -149,8 +205,8 @@ fn trace_request(f: &Fixture) -> TraceRequest {
         },
     }
 }
-fn trace(f: &Fixture, request: &TraceRequest) -> serde_json::Value {
-    let path = f._dir.path().join("trace.json");
+fn trace(f: &Research, request: &TraceRequest) -> serde_json::Value {
+    let path = f.dir.path().join("trace.json");
     fs::write(&path, serde_json::to_vec(request).unwrap()).unwrap();
     cli(f, "trace", &["--request", path.to_str().unwrap()])
 }
@@ -233,8 +289,9 @@ fn elf_call_link_effects_agree_with_concrete_execution_and_restore() {
         word(&mut callee, (link << 15) | 0x67);
         functions.push((0x1300, callee));
         let f = Fixture::from_inputs(vec![linked(&functions)]);
-        let mut q = trace_request(&f);
-        let saved = trace(&f, &q);
+        let research = research(&f);
+        let mut q = trace_request(&research);
+        let saved = trace(&research, &q);
         let executed = concrete(&f, 0x1100);
         let verdict = if tail { "MATCH" } else { "DIFF" };
         assert_eq!(saved["summary"]["summary"]["policy"], STATIC_TRACE_POLICY);
@@ -261,13 +318,16 @@ fn elf_call_link_effects_agree_with_concrete_execution_and_restore() {
             .collect();
         assert_eq!(values, expected);
         q.right = Some(q.left.clone());
-        assert_eq!(trace(&f, &q)["summary"]["summary"]["verdict"], "MATCH");
+        assert_eq!(
+            trace(&research, &q)["summary"]["summary"]["verdict"],
+            "MATCH"
+        );
         assert_eq!(concrete(&f, 0x1000)["verdict"], "MATCH");
         if variant == 0 {
-            q.right.as_mut().unwrap().entry = trace_request(&f).right.unwrap().entry;
-            let backup = f._dir.path().join("links.backup");
-            cli(&f, "backup", &["--output", backup.to_str().unwrap()]);
-            let restored = f._dir.path().join("restored");
+            q.right.as_mut().unwrap().entry = trace_request(&research).right.unwrap().entry;
+            let backup = research.dir.path().join("links.backup");
+            cli(&research, "backup", &["--output", backup.to_str().unwrap()]);
+            let restored = research.dir.path().join("restored");
             let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
                 .args(["restore", "--project"])
                 .arg(&restored)
@@ -281,11 +341,11 @@ fn elf_call_link_effects_agree_with_concrete_execution_and_restore() {
                 "{}",
                 String::from_utf8_lossy(&output.stderr)
             );
-            let restored_f = Fixture {
+            let restored = Research {
                 project: restored,
-                ..f
+                ..research
             };
-            assert_eq!(trace(&restored_f, &q), saved);
+            assert_eq!(trace(&restored, &q), saved);
         }
     }
 }
@@ -323,8 +383,9 @@ fn repeated_nested_invocations_have_distinct_link_values() {
     word(&mut nested, 0x00008067);
     functions.push((0x1400, nested));
     let f = Fixture::from_inputs(vec![linked(&functions)]);
-    let q = trace_request(&f);
-    let saved = trace(&f, &q);
+    let research = research(&f);
+    let q = trace_request(&research);
+    let saved = trace(&research, &q);
     let executed = concrete(&f, 0x1100);
     assert_eq!(saved["summary"]["summary"]["verdict"], "DIFF", "{saved}");
     assert_eq!(executed["verdict"], "DIFF");

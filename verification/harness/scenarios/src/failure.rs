@@ -261,8 +261,8 @@ pub(crate) mod tests {
     use super::*;
     use blobray_domain::{
         ArtifactId, CallEndpoint, EffectClaimCeiling, EffectDisposition, EffectPattern, EffectRule,
-        EffectSelector, EffectValue, FunctionSource, ObjectId, ObjectLocation, Occurrence,
-        ReviewedCallBoundary, SymbolId, SymbolTableKind, UnclassifiedEffects,
+        EffectSelector, EffectValue, ObjectId, ObjectLocation, ReviewedCallBoundary, SymbolId,
+        SymbolTableKind, UnclassifiedEffects,
     };
 
     fn read(address: u32) -> ExecutionEvent {
@@ -290,17 +290,13 @@ pub(crate) mod tests {
             location: ObjectLocation::Standalone,
         };
         let endpoint = CallEndpoint {
-            occurrence: Occurrence {
-                revision: id.as_str().parse().unwrap(),
-                source: FunctionSource::Input { input: 0 },
-                object: object.clone(),
-                symbol: Some(SymbolId {
-                    object,
-                    table: SymbolTableKind::Static,
-                    table_section: 3,
-                    index: 1,
-                }),
-            },
+            object: object.clone(),
+            symbol: Some(SymbolId {
+                object,
+                table: SymbolTableKind::Static,
+                table_section: 3,
+                index: 1,
+            }),
             boundary: ReviewedCallBoundary::Code { address: 0x1000 },
         };
         EffectContract {

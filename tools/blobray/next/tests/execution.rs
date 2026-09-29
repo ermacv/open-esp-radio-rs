@@ -1,13 +1,7 @@
 #![cfg(target_os = "linux")]
 use blobray_application as app;
 use blobray_domain::*;
-use blobray_next_host::linux::LinuxHost;
-use std::{
-    fs,
-    path::PathBuf,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 mod support;
 use support::{executable as elf, executable_with_symbols as elf_with_symbols};
 fn budget() -> ResourceBudget {
@@ -21,62 +15,22 @@ fn budget() -> ResourceBudget {
     }
 }
 struct Fixture {
-    _dir: tempfile::TempDir,
-    project: PathBuf,
-    app: app::Application,
+    /// The fixture's executables; a target names them by content.
+    inputs: Vec<app::in_process::Executable>,
+    /// A target mapping the first input.
     target: ExecutionTarget,
-    /// Imported executables, whose bytes an in-process comparison receives.
-    inputs: Vec<Vec<u8>>,
 }
 impl Fixture {
     fn new(code: &[u32]) -> Self {
         Self::from_inputs(vec![elf(code)])
     }
     fn from_inputs(inputs: Vec<Vec<u8>>) -> Self {
-        let dir = tempfile::tempdir().unwrap();
-        let project = dir.path().join("project");
-        app::create_project(&project).unwrap();
-        let paths: Vec<_> = inputs
-            .iter()
-            .enumerate()
-            .map(|(i, bytes)| {
-                let path = dir.path().join(format!("input-{i}.elf"));
-                fs::write(&path, bytes).unwrap();
-                path
-            })
+        let inputs: Vec<_> = inputs
+            .into_iter()
+            .map(app::in_process::Executable::new)
             .collect();
-        let app = app::Application::with_temporary_storage(
-            Arc::new(LinuxHost::new(env!("CARGO_BIN_EXE_blobray").into(), None)),
-            app::ApplicationLimits::default(),
-            app::TemporaryStoragePolicy {
-                root: Some(dir.path().join("runtime")),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        let run = app
-            .import(
-                &project,
-                paths
-                    .iter()
-                    .map(|path| app::ImportInput {
-                        role: "code".into(),
-                        path: path.clone(),
-                        expected: None,
-                    })
-                    .collect(),
-                Target::Riscv32Ilp32,
-                budget(),
-            )
-            .unwrap();
-        assert_eq!(run.state, RunState::Completed, "{run:?}");
-        for path in paths {
-            fs::remove_file(path).unwrap();
-        }
         let target = ExecutionTarget {
-            revision: run.revision.unwrap(),
-            source: FunctionSource::Input { input: 0 },
-            companions: vec![],
+            executables: vec![inputs[0].id().clone()],
             abi: CallAbi::RiscvInteger,
             stack: MemorySeed {
                 address: 0x8000,
@@ -85,13 +39,11 @@ impl Fixture {
                 bytes: vec![],
             },
         };
-        Self {
-            _dir: dir,
-            project,
-            app,
-            target,
-            inputs,
-        }
+        Self { inputs, target }
+    }
+    /// The content identity of input `index`.
+    fn id(&self, index: usize) -> ArtifactId {
+        self.inputs[index].id().clone()
     }
     fn request(&self) -> ExecutionRequest {
         let invocation = Invocation {
@@ -123,16 +75,6 @@ impl Fixture {
             max_events: 16,
         }
     }
-    /// The executables of `target`'s sources, in source order.
-    fn sources(&self, target: &ExecutionTarget) -> Vec<&[u8]> {
-        let FunctionSource::Input { input } = target.source else {
-            panic!("fixture targets name imported inputs");
-        };
-        std::iter::once(input)
-            .chain(target.companions.iter().copied())
-            .map(|input| self.inputs[input as usize].as_slice())
-            .collect()
-    }
     /// Execute and compare `r` in process under the work, working-memory
     /// and time limits of `b`.
     fn run(&self, r: ExecutionRequest, b: ResourceBudget) -> Result<Executed> {
@@ -145,16 +87,11 @@ impl Fixture {
         projections: &[LayoutProjection],
         b: ResourceBudget,
     ) -> Result<Executed> {
-        let vendor = self.sources(&r.vendor);
-        let replacement = r.replacement.as_ref().map(|target| self.sources(target));
         let memory = WorkingMemory::new(b.working_memory_bytes.unwrap())?;
         let result = app::in_process::verify(
             &app::in_process::InProcessComparison {
                 request: r,
-                vendor: &vendor,
-                replacement: replacement.as_deref(),
-                vendor_identities: None,
-                replacement_identities: None,
+                executables: &self.inputs,
                 effects,
                 projections,
                 vendor_results: None,
@@ -481,12 +418,13 @@ fn selected_companion_code_and_elf_zero_fill_obey_session_ownership() {
     r.cases[0].relation = None;
     let run = f.run(r.clone(), budget()).unwrap();
     assert!(!run.complete);
-    r.vendor.companions = vec![1];
+    r.vendor.executables.push(f.id(1));
     let run = f.run(r.clone(), budget()).unwrap();
     assert_eq!(run.facts()["records"][0]["stop"]["low"], 9);
-    r.vendor.companions = vec![0];
-    let run = f.run(r, budget());
-    assert_eq!(run.unwrap_err().code, ErrorCode::Conflict);
+    // A target maps each executable at most once.
+    r.vendor.executables = vec![f.id(0), f.id(0)];
+    let run = f.run(r.clone(), budget());
+    assert_eq!(run.unwrap_err().code, ErrorCode::InvalidRequest);
     let mut image = elf(&[0x00052283, 0x00128293, 0x00552023, 0x00028513, 0x00008067]);
     image[44..46].copy_from_slice(&2u16.to_le_bytes());
     for (offset, value) in [

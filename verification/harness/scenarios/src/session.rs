@@ -2,12 +2,12 @@
 //! submission, failure without publication and source-free preservation.
 use crate::harness::{Budget, Input, ProbeCatalog, Result, Runner, args, invalid, seed};
 use blobray_application::QuerySummary;
+use blobray_application::in_process::Executable;
 use blobray_domain::{
     ArtifactId, CallAbi, CallEndpoint, CompanionProposal, EffectContract, EffectContractRef,
-    EntrySelection, ErrorCode, ExecutionEvidence, ExecutionRequest, ExecutionTarget,
-    FunctionSource, ImageManifest, ImageMapping, LayoutProjection, LinkRequest, ObjectId,
-    Occurrence, PreparedImageId, ProjectionRef, ReviewedCallBoundary, Revision, RevisionId,
-    SymbolId, SymbolTableKind,
+    EntrySelection, ErrorCode, ExecutionEvidence, ExecutionRequest, ExecutionTarget, ImageManifest,
+    ImageMapping, LayoutProjection, LinkRequest, ObjectId, PreparedImageId, ProjectionRef,
+    ReviewedCallBoundary, Revision, RevisionId, SymbolId, SymbolTableKind,
 };
 use blobray_next_host::wire::RecordDocument;
 use evidence_index::LocationKind;
@@ -94,8 +94,8 @@ pub struct Session {
     pub inventory: Revision,
     pub probes: ProbeCatalog,
     pub artifacts: Vec<Artifact>,
-    /// Authenticated bytes of each captured input, by input index.
-    inputs: Vec<Vec<u8>>,
+    /// Authenticated captured inputs, by input index.
+    inputs: Vec<Executable>,
     /// Setup results memoized by Blobray, input and request content.
     cache: crate::setup_cache::SetupCache,
     /// Session setup entry holding the project snapshot.
@@ -103,8 +103,8 @@ pub struct Session {
     /// Whether this run's Blobray project exists; it is created only when a
     /// setup operation misses the cache.
     project: std::cell::Cell<bool>,
-    /// Exported ELF bytes of each prepared image.
-    images: std::cell::RefCell<BTreeMap<PreparedImageId, Vec<u8>>>,
+    /// Exported executable of each prepared image.
+    images: std::cell::RefCell<BTreeMap<PreparedImageId, Executable>>,
     /// Images this run took from the link cache without preparing them in a
     /// project. A later operation on the project must prepare them first:
     /// the restored session snapshot predates every link.
@@ -119,9 +119,6 @@ pub struct Session {
     pub executed: std::cell::Cell<(u64, f64)>,
     /// Point mutants of the loaded production image.
     patches: Vec<blobray_application::in_process::ImagePatch>,
-    /// Content identity of each executable source, by input index or
-    /// prepared image, computed once.
-    identities: std::cell::RefCell<BTreeMap<String, ArtifactId>>,
 }
 
 /// A prepared image and its resolved roots, including the entry.
@@ -268,7 +265,7 @@ impl Session {
             inventory,
             probes,
             artifacts: vec![],
-            inputs: contents,
+            inputs: contents.into_iter().map(Executable::new).collect(),
             cache,
             setup: entry,
             project: std::cell::Cell::new(project),
@@ -279,27 +276,21 @@ impl Session {
             projections: vec![],
             executed: Default::default(),
             patches: patches.to_vec(),
-            identities: Default::default(),
         })
     }
 
-    /// Exact code endpoint of the linked image symbol `name` at `address`,
-    /// in the image `target` executes.
+    /// Exact code endpoint of the linked image symbol `name` at `address`
+    /// in the image `object`.
     pub fn image_endpoint(
         &self,
-        target: &ExecutionTarget,
         object: &ObjectId,
         name: &str,
         address: u32,
     ) -> Result<CallEndpoint> {
         let symbol = image_symbol_id(&self.run.join("image/image.elf"), object, name)?;
         Ok(CallEndpoint {
-            occurrence: Occurrence {
-                revision: self.revision.clone(),
-                source: target.source.clone(),
-                object: object.clone(),
-                symbol: Some(symbol),
-            },
+            object: object.clone(),
+            symbol: Some(symbol),
             boundary: ReviewedCallBoundary::Code { address },
         })
     }
@@ -308,12 +299,8 @@ impl Session {
     pub fn input_endpoint(&self, input: u64, name: &str) -> Result<CallEndpoint> {
         let record = crate::harness::symbol(&self.inventory, input as usize, name)?;
         Ok(CallEndpoint {
-            occurrence: Occurrence {
-                revision: self.revision.clone(),
-                source: FunctionSource::Input { input },
-                object: record.id.object.clone(),
-                symbol: Some(record.id.clone()),
-            },
+            object: record.id.object.clone(),
+            symbol: Some(record.id.clone()),
             boundary: ReviewedCallBoundary::Code {
                 address: u32::try_from(record.value)?,
             },
@@ -414,78 +401,23 @@ impl Session {
         Ok(selection)
     }
 
-    /// ELF bytes of every source of `target`, in source order, borrowed from
-    /// the captured inputs and the exported `images`.
-    fn sources<'s>(
-        &'s self,
-        images: &'s BTreeMap<PreparedImageId, Vec<u8>>,
-        target: &ExecutionTarget,
-    ) -> Result<Vec<&'s [u8]>> {
-        let input = |index: u64| {
-            self.inputs
-                .get(index as usize)
-                .map(Vec::as_slice)
-                .ok_or_else(|| invalid(format!("input {index} is not captured")))
-        };
-        let mut sources = vec![match &target.source {
-            FunctionSource::Input { input: index } => input(*index)?,
-            FunctionSource::Image { image } => images
-                .get(image)
-                .map(Vec::as_slice)
-                .ok_or_else(|| invalid("image is not exported"))?,
-        }];
-        for companion in &target.companions {
-            sources.push(input(*companion)?);
-        }
-        Ok(sources)
+    /// Every executable a request may name: the captured inputs and the
+    /// exported images.
+    fn executables(&self) -> Vec<Executable> {
+        self.inputs
+            .iter()
+            .chain(self.images.borrow().values())
+            .cloned()
+            .collect()
     }
 
-    /// ELF bytes of every source of `target`, in source order.
-    fn executables(&self, target: &ExecutionTarget) -> Result<Vec<Vec<u8>>> {
-        let input = |index: u64| {
-            self.inputs
-                .get(index as usize)
-                .cloned()
-                .ok_or_else(|| invalid(format!("input {index} is not captured")))
-        };
-        let mut executables = vec![match &target.source {
-            FunctionSource::Input { input: index } => input(*index)?,
-            FunctionSource::Image { image } => self
-                .images
-                .borrow()
-                .get(image)
-                .cloned()
-                .ok_or_else(|| invalid("image is not exported"))?,
-        }];
-        for companion in &target.companions {
-            executables.push(input(*companion)?);
-        }
-        Ok(executables)
-    }
-
-    /// The content identity of every source of `target`, in source order,
-    /// each hashed once per session.
-    fn identities(&self, target: &ExecutionTarget) -> Result<Vec<ArtifactId>> {
-        let keys = std::iter::once(match &target.source {
-            FunctionSource::Input { input } => format!("input-{input}"),
-            FunctionSource::Image { image } => format!("image-{}", image.as_str()),
-        })
-        .chain(target.companions.iter().map(|c| format!("input-{c}")));
-        let mut known = self.identities.borrow_mut();
-        let mut sources = None;
-        keys.enumerate()
-            .map(|(index, key)| {
-                if let Some(id) = known.get(&key) {
-                    return Ok(id.clone());
-                }
-                let executables = match &mut sources {
-                    Some(executables) => executables,
-                    None => sources.insert(self.executables(target)?),
-                };
-                let id = ArtifactId::of_bytes(&executables[index]);
-                known.insert(key, id.clone());
-                Ok(id)
-            })
+    /// The executables `target` maps, in load order.
+    fn target_executables(&self, target: &ExecutionTarget) -> Vec<Executable> {
+        let executables = self.executables();
+        target
+            .executables
+            .iter()
+            .filter_map(|id| executables.iter().find(|e| e.id() == id).cloned())
             .collect()
     }
 
@@ -494,33 +426,13 @@ impl Session {
         &self,
         request: &ExecutionRequest,
     ) -> blobray_domain::Result<blobray_application::in_process::InProcessResult> {
-        let failed = |e: crate::harness::Error| {
-            blobray_domain::Error::new(ErrorCode::InvalidRequest, e.to_string())
-        };
-        let images = self.images.borrow();
-        let vendor = self.sources(&images, &request.vendor).map_err(failed)?;
-        let replacement = request
-            .replacement
-            .as_ref()
-            .map(|t| self.sources(&images, t))
-            .transpose()
-            .map_err(failed)?;
-        let vendor_identities = self.identities(&request.vendor).map_err(failed)?;
-        let replacement_identities = request
-            .replacement
-            .as_ref()
-            .map(|t| self.identities(t))
-            .transpose()
-            .map_err(failed)?;
+        let executables = self.executables();
         let budget = self.runner.budget;
         let memory = blobray_domain::WorkingMemory::new(budget.working_memory_mib << 20)?;
         blobray_application::in_process::verify(
             &blobray_application::in_process::InProcessComparison {
                 request,
-                vendor: &vendor,
-                replacement: replacement.as_deref(),
-                vendor_identities: Some(&vendor_identities),
-                replacement_identities: replacement_identities.as_deref(),
+                executables: &executables,
                 effects: &self.effects,
                 projections: &self.projections,
                 vendor_results: None,
@@ -601,7 +513,7 @@ impl Session {
             fs::copy(key.file(crate::state::LINK_MAP), &map)?;
             self.images
                 .borrow_mut()
-                .insert(linked.image.clone(), fs::read(&exported)?);
+                .insert(linked.image.clone(), Executable::new(fs::read(&exported)?));
             self.unprepared.borrow_mut().push(CachedLink {
                 request: request.clone(),
                 linker: linker.to_path_buf(),
@@ -685,9 +597,10 @@ impl Session {
         let mut command = args(["export-image", "--id", image.as_str(), "--output"]);
         command.push(path_arg(&self.run.join("image")));
         runner.call("export-image", &command, 0)?;
-        self.images
-            .borrow_mut()
-            .insert(image.clone(), fs::read(self.run.join("image/image.elf"))?);
+        self.images.borrow_mut().insert(
+            image.clone(),
+            Executable::new(fs::read(self.run.join("image/image.elf"))?),
+        );
         Ok(LinkedImage {
             image,
             manifest: *manifest,
@@ -701,20 +614,26 @@ impl Session {
     /// unknown until a request selects a fill.
     pub fn targets(&self, image: &PreparedImageId) -> Result<(ExecutionTarget, ExecutionTarget)> {
         let stack = seed(crate::chip().stack.0, crate::chip().stack.1, &[], None)?;
+        let image = self
+            .images
+            .borrow()
+            .get(image)
+            .map(|e| e.id().clone())
+            .ok_or_else(|| invalid("image is not exported"))?;
+        let input = |index: usize| -> Result<ArtifactId> {
+            self.inputs
+                .get(index)
+                .map(|e| e.id().clone())
+                .ok_or_else(|| invalid(format!("input {index} is not captured")))
+        };
         Ok((
             ExecutionTarget {
-                revision: self.revision.clone(),
-                source: FunctionSource::Image {
-                    image: image.clone(),
-                },
-                companions: vec![1, 2],
+                executables: vec![image, input(1)?, input(2)?],
                 abi: CallAbi::RiscvInteger,
                 stack: stack.clone(),
             },
             ExecutionTarget {
-                revision: self.revision.clone(),
-                source: FunctionSource::Input { input: 2 },
-                companions: vec![1],
+                executables: vec![input(2)?, input(1)?],
                 abi: CallAbi::RiscvInteger,
                 stack,
             },
@@ -961,8 +880,7 @@ impl Session {
             })
             .map(|a| (a.identity.clone(), &a.request, a.records.as_slice()))
             .collect();
-        let executables = self.executables(&selected[0].request.vendor)?;
-        let executables: Vec<&[u8]> = executables.iter().map(Vec::as_slice).collect();
+        let executables = self.target_executables(&selected[0].request.vendor);
         let memory =
             blobray_domain::WorkingMemory::new(self.runner.budget.working_memory_mib << 20)?;
         let report = blobray_application::in_process::coverage(
@@ -1113,7 +1031,8 @@ impl Session {
         let sections = std::fs::read_to_string(self.run.join("image").join(crate::state::LINK_MAP))
             .map(|map| crate::state::link_map_sections(&map))
             .unwrap_or_default();
-        let symbols = crate::state::Symbols::of(&executables)?.with_sections(&sections);
+        let vendor_bytes: Vec<&[u8]> = executables.iter().map(Executable::bytes).collect();
+        let symbols = crate::state::Symbols::of(&vendor_bytes)?.with_sections(&sections);
         let (mut written, mut unprojected) = (
             std::collections::BTreeSet::new(),
             std::collections::BTreeSet::new(),
@@ -1230,9 +1149,13 @@ impl Session {
         }
         let root = crate::observation::root()?;
         let dependencies =
-            crate::dependencies::of(&self.inputs[PROBE_INPUT], &executed, &reads, &root)?;
+            crate::dependencies::of(self.inputs[PROBE_INPUT].bytes(), &executed, &reads, &root)?;
         let mut lines = ClaimLines {
-            map: crate::observation::LineMap::new(&self.inputs[PROBE_INPUT], &executed, &root)?,
+            map: crate::observation::LineMap::new(
+                self.inputs[PROBE_INPUT].bytes(),
+                &executed,
+                &root,
+            )?,
             root,
             sources: Default::default(),
             lines: Default::default(),
@@ -1330,7 +1253,7 @@ impl Session {
         let rom = self
             .inputs
             .get(crate::chip().rom_input as usize)
-            .map_or(&[][..], Vec::as_slice);
+            .map_or(&[][..], Executable::bytes);
         let listed = crate::coverage::uncovered_everywhere(&observed.closures, untriaged.clone());
         let consequential: std::collections::BTreeSet<_> = observed
             .closures
@@ -1367,17 +1290,7 @@ impl Session {
                 .inputs
                 .iter()
                 .enumerate()
-                .map(|(index, bytes)| {
-                    let key = format!("input-{index}");
-                    let id = self
-                        .identities
-                        .borrow_mut()
-                        .entry(key.clone())
-                        .or_insert_with(|| ArtifactId::of_bytes(bytes))
-                        .as_str()
-                        .to_owned();
-                    (key, id)
-                })
+                .map(|(index, input)| (format!("input-{index}"), input.id().as_str().to_owned()))
                 .collect(),
             dependencies,
         })
@@ -1392,8 +1305,8 @@ impl Session {
         let images = self.images.borrow();
         let elfs: Vec<&[u8]> = images
             .values()
-            .map(Vec::as_slice)
-            .chain(self.inputs.iter().map(Vec::as_slice))
+            .chain(&self.inputs)
+            .map(Executable::bytes)
             .collect();
         let registers = crate::registers::Registers::load(
             &crate::observation::root()?.join(crate::chip().registers),

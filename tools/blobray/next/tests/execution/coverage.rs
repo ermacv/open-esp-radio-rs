@@ -150,7 +150,7 @@ fn report(f: &Fixture, requests: &[ExecutionRequest]) -> Result<CodeCoverageRepo
         .collect();
     app::in_process::coverage(
         &executions,
-        &f.sources(&requests[0].vendor),
+        &f.inputs,
         &blobray_backend_riscv::RiscvDecoder,
         &WorkingMemory::new(32 * 1024 * 1024).unwrap(),
         &mut || Ok(()),
@@ -311,42 +311,33 @@ fn in_process_verification_needs_symbol_executables_and_one_executable_per_sourc
     request.cases[0].replacement = Some(request.cases[0].vendor.clone());
     request.cases[0].relation = Some(fixture_relation(true));
     let executable = elf(&CLOSURE);
-    let sources: &[&[u8]] = &[&executable];
+    let sources: &[app::in_process::Executable] =
+        &[app::in_process::Executable::new(executable.clone())];
     let memory = WorkingMemory::new(32 * 1024 * 1024).unwrap();
-    // A symbol goal names a code symbol of the side's executables; one
-    // executable per target source is required.
+    // A symbol goal names a code symbol of an executable of the target, and
+    // every executable a target names must be given.
     let mut symbolic = request.clone();
     symbolic.cases[0].vendor.goal = ExecutionGoal::ReachSymbol {
-        target: ExecutionSymbol {
-            source: FunctionSource::Input { input: 0 },
-            symbol: SymbolId {
-                object: ObjectId {
-                    artifact: ArtifactId::of_bytes(b"object"),
-                    location: ObjectLocation::Standalone,
-                },
-                table: SymbolTableKind::Static,
-                table_section: 1,
-                index: 1,
+        target: SymbolId {
+            object: ObjectId {
+                artifact: ArtifactId::of_bytes(b"object"),
+                location: ObjectLocation::Standalone,
             },
+            table: SymbolTableKind::Static,
+            table_section: 1,
+            index: 1,
         },
     };
     symbolic.cases[0].replacement = Some(symbolic.cases[0].vendor.clone());
     symbolic.cases[0].relation = Some(fixture_relation(false));
-    for (request, vendor, reason) in [
-        (&symbolic, sources, "symbol goals"),
-        (
-            &request,
-            &[][..],
-            "one executable is required per target source",
-        ),
+    for (request, executables, reason) in [
+        (&symbolic, sources, "goal symbol"),
+        (&request, &[][..], "a target executable that was not given"),
     ] {
         let error = app::in_process::verify(
             &app::in_process::InProcessComparison {
                 request,
-                vendor,
-                replacement: Some(sources),
-                vendor_identities: None,
-                replacement_identities: None,
+                executables,
                 effects: &[],
                 projections: &[],
                 vendor_results: None,
@@ -367,18 +358,16 @@ fn in_process_verification_needs_symbol_executables_and_one_executable_per_sourc
 #[test]
 fn reused_vendor_results_yield_the_records_of_a_full_execution() {
     let executable = elf(&CLOSURE);
-    let sources: &[&[u8]] = &[&executable];
+    let sources: &[app::in_process::Executable] =
+        &[app::in_process::Executable::new(executable.clone())];
     let memory = WorkingMemory::new(32 * 1024 * 1024).unwrap();
     fn input<'a>(
         request: &'a ExecutionRequest,
-        sources: &'a [&'a [u8]],
+        sources: &'a [app::in_process::Executable],
     ) -> app::in_process::InProcessComparison<'a> {
         app::in_process::InProcessComparison {
             request,
-            vendor: sources,
-            replacement: request.replacement.as_ref().map(|_| sources),
-            vendor_identities: None,
-            replacement_identities: None,
+            executables: sources,
             effects: &[],
             projections: &[],
             vendor_results: None,

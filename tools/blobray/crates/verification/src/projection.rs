@@ -117,17 +117,13 @@ mod tests {
             location: ObjectLocation::Standalone,
         };
         let entry = CallEndpoint {
-            occurrence: Occurrence {
-                revision: id.as_str().parse().unwrap(),
-                source: FunctionSource::Input { input: 0 },
-                object: object.clone(),
-                symbol: Some(SymbolId {
-                    object,
-                    table: SymbolTableKind::Static,
-                    table_section: 3,
-                    index: 1,
-                }),
-            },
+            object: object.clone(),
+            symbol: Some(SymbolId {
+                object,
+                table: SymbolTableKind::Static,
+                table_section: 3,
+                index: 1,
+            }),
             boundary: ReviewedCallBoundary::Code { address: 0x1000 },
         };
         let p = ResolvedProjection {

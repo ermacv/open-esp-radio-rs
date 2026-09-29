@@ -41,9 +41,7 @@ const DEVICE: [u32; 10] = [
 
 fn target(executable: &[u8]) -> ExecutionTarget {
     ExecutionTarget {
-        revision: ArtifactId::of_bytes(executable).as_str().parse().unwrap(),
-        source: FunctionSource::Input { input: 0 },
-        companions: vec![],
+        executables: vec![ArtifactId::of_bytes(executable)],
         abi: CallAbi::RiscvInteger,
         stack: MemorySeed {
             address: STACK,
@@ -97,7 +95,8 @@ fn compare(
     patches: &[app::in_process::ImagePatch],
 ) -> Result<app::in_process::InProcessResult> {
     let executable = elf(code);
-    let sources: &[&[u8]] = &[&executable];
+    let sources: &[app::in_process::Executable] =
+        &[app::in_process::Executable::new(executable.clone())];
     let request = ExecutionRequest {
         schema: EXECUTION_SCHEMA,
         vendor: target(&executable),
@@ -117,10 +116,7 @@ fn compare(
     app::in_process::verify(
         &app::in_process::InProcessComparison {
             request: &request,
-            vendor: sources,
-            replacement: Some(sources),
-            vendor_identities: None,
-            replacement_identities: None,
+            executables: sources,
             effects: &[],
             projections: &[],
             vendor_results: None,
@@ -389,12 +385,8 @@ fn projected_final_state_depends_on_its_last_writers() {
     let (executable, entry) = super::goals::symbol_elf(&FLOW, 0x1000, 0x1000);
     let endpoint = LayoutEndpoint {
         entry: CallEndpoint {
-            occurrence: Occurrence {
-                revision: target(&executable).revision,
-                source: FunctionSource::Input { input: 0 },
-                object: entry.symbol.object.clone(),
-                symbol: Some(entry.symbol),
-            },
+            object: entry.object.clone(),
+            symbol: Some(entry),
             boundary: ReviewedCallBoundary::Code { address: 0x1000 },
         },
         domains: vec![LayoutDomain {
@@ -430,7 +422,8 @@ fn projected_final_state_depends_on_its_last_writers() {
     input.observe_memory[0].length = 8;
     let mut projected = relation();
     projected.projection = Some(app::in_process::projection_ref(&projection).unwrap());
-    let sources: &[&[u8]] = &[&executable];
+    let sources: &[app::in_process::Executable] =
+        &[app::in_process::Executable::new(executable.clone())];
     let request = ExecutionRequest {
         schema: EXECUTION_SCHEMA,
         vendor: target(&executable),
@@ -450,10 +443,7 @@ fn projected_final_state_depends_on_its_last_writers() {
     let result = app::in_process::verify(
         &app::in_process::InProcessComparison {
             request: &request,
-            vendor: sources,
-            replacement: Some(sources),
-            vendor_identities: None,
-            replacement_identities: None,
+            executables: sources,
             effects: &[],
             projections: std::slice::from_ref(&projection),
             vendor_results: None,

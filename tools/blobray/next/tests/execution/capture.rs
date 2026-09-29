@@ -114,7 +114,7 @@ fn physical_target_order_and_effect_interleaving_are_compared() {
         ]),
     ]);
     let mut r = f.request();
-    r.replacement.as_mut().unwrap().source = FunctionSource::Input { input: 1 };
+    r.replacement.as_mut().unwrap().executables = vec![f.id(1)];
     select(&mut r, 0);
     let (m, rows) = run(&f, r.clone());
     assert_eq!(m.verdict, Some(ComparisonVerdict::Diff));

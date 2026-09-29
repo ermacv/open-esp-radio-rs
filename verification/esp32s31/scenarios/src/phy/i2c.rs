@@ -318,7 +318,7 @@ impl I2c {
     /// Exact code endpoint of the linked image root `name`.
     pub fn root_endpoint(&self, name: &str) -> Result<CallEndpoint> {
         self.session
-            .image_endpoint(&self.vendor, &self.image_object, name, self.root(name))
+            .image_endpoint(&self.image_object, name, self.root(name))
     }
 
     /// Propose and accept `rules` as the effect contract between `vendor` and
@@ -604,8 +604,10 @@ impl I2c {
         )?;
         let mut missing = cases[1].clone();
         missing.reset = SessionReset::Cold;
+        // The vendor image without the ROM, which `Session::targets` maps
+        // second.
         let mut vendor = self.vendor.clone();
-        vendor.companions = vec![2];
+        vendor.executables.remove(1);
         let replacement = self.replacement.clone();
         let records = self.submit_with(
             "missing-rom",

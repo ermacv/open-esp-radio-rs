@@ -452,7 +452,6 @@ fn release_proof(name: &str, address: u32) -> EffectRule {
 fn contract(ctx: &mut Mac) -> Result<blobray_domain::EffectContractRef> {
     let image = ctx.image_symbols()?;
     let vendor = ctx.session.image_endpoint(
-        &ctx.vendor,
         &ctx.image_object,
         VENDOR,
         ctx.symbol_address(&image, VENDOR)?,

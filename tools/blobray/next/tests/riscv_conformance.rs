@@ -94,10 +94,9 @@ fn run(elf: &[u8]) -> std::result::Result<Vec<u32>, String> {
         symbol(&file, "begin_signature"),
         symbol(&file, "end_signature"),
     );
+    let executable = app::in_process::Executable::new(elf.to_vec());
     let target = ExecutionTarget {
-        revision: ArtifactId::of_bytes(elf).as_str().parse().unwrap(),
-        source: FunctionSource::Input { input: 0 },
-        companions: vec![],
+        executables: vec![executable.id().clone()],
         abi: CallAbi::RiscvInteger,
         stack: MemorySeed {
             address: STACK,
@@ -140,10 +139,7 @@ fn run(elf: &[u8]) -> std::result::Result<Vec<u32>, String> {
     let result = app::in_process::verify(
         &app::in_process::InProcessComparison {
             request: &request,
-            vendor: &[elf],
-            replacement: None,
-            vendor_identities: None,
-            replacement_identities: None,
+            executables: std::slice::from_ref(&executable),
             effects: &[],
             projections: &[],
             vendor_results: None,

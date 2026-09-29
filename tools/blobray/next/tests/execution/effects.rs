@@ -7,16 +7,11 @@ fn setup(omit: bool) -> (Fixture, ExecutionRequest, EffectContract) {
         vendor
     };
     let (a, pa) = super::goals::symbol_elf(&vendor, 0x1000, 0x1000);
-    let (b, mut pb) = super::goals::symbol_elf(&replacement, 0x1000, 0x1000);
-    pb.source = FunctionSource::Input { input: 1 };
+    let (b, pb) = super::goals::symbol_elf(&replacement, 0x1000, 0x1000);
     let f = Fixture::from_inputs(vec![a, b]);
-    let endpoint = |point: ExecutionSymbol| CallEndpoint {
-        occurrence: Occurrence {
-            revision: f.target.revision.clone(),
-            source: point.source,
-            object: point.symbol.object.clone(),
-            symbol: Some(point.symbol),
-        },
+    let endpoint = |point: SymbolId| CallEndpoint {
+        object: point.object.clone(),
+        symbol: Some(point),
         boundary: ReviewedCallBoundary::Code { address: 0x1000 },
     };
     let pattern = EffectPattern {
@@ -51,7 +46,7 @@ fn setup(omit: bool) -> (Fixture, ExecutionRequest, EffectContract) {
         reason: "synthetic effect policy".into(),
     };
     let mut r = f.request();
-    r.replacement.as_mut().unwrap().source = FunctionSource::Input { input: 1 };
+    r.replacement.as_mut().unwrap().executables = vec![f.id(1)];
     let v = &mut r.cases[0].vendor;
     v.arguments[0] = Some(0x3000);
     v.arguments[1] = Some(7);
@@ -143,7 +138,11 @@ fn effect_replacement_requires_exact_values_and_case_applicability() {
         let mut wrong = r.clone();
         match variant {
             0 => wrong.cases[0].replacement.as_mut().unwrap().entry = 0x1004,
-            1 => wrong.replacement.as_mut().unwrap().source = FunctionSource::Input { input: 0 },
+            // The contract's replacement entry is not in the executable mapped.
+            1 => {
+                wrong.replacement.as_mut().unwrap().executables =
+                    vec![ArtifactId::of_bytes(b"an executable without the entry")]
+            }
             2 => {
                 let mut other = p.clone();
                 other.reason = "a contract the comparison does not receive".into();
@@ -166,26 +165,21 @@ fn effect_policy_composes_with_layout_timeline_returns_and_final_ram() {
     right.extend(code);
     right[6] = 0x00000013;
     let (a, pa) = super::goals::symbol_elf(&code, 0x1000, 0x1030);
-    let (b, mut pb) = super::goals::symbol_elf(&right, 0x1000, 0x1034);
-    pb.source = FunctionSource::Input { input: 1 };
+    let (b, pb) = super::goals::symbol_elf(&right, 0x1000, 0x1034);
     let f = Fixture::from_inputs(vec![a, b]);
-    let endpoint = |point: ExecutionSymbol, address| CallEndpoint {
-        occurrence: Occurrence {
-            revision: f.target.revision.clone(),
-            source: point.source,
-            object: point.symbol.object.clone(),
-            symbol: Some(point.symbol),
-        },
+    let endpoint = |point: SymbolId, address| CallEndpoint {
+        object: point.object.clone(),
+        symbol: Some(point),
         boundary: ReviewedCallBoundary::Code { address },
     };
     let callee_a = endpoint(pa, 0x1030);
     let callee_b = endpoint(pb, 0x1034);
     let mut root_a = callee_a.clone();
     root_a.boundary = ReviewedCallBoundary::Code { address: 0x1000 };
-    root_a.occurrence.symbol.as_mut().unwrap().index = 1;
+    root_a.symbol.as_mut().unwrap().index = 1;
     let mut root_b = callee_b.clone();
     root_b.boundary = ReviewedCallBoundary::Code { address: 0x1000 };
-    root_b.occurrence.symbol.as_mut().unwrap().index = 1;
+    root_b.symbol.as_mut().unwrap().index = 1;
     let layout = LayoutProjection {
         vendor: LayoutEndpoint {
             entry: root_a.clone(),
@@ -260,7 +254,7 @@ fn effect_policy_composes_with_layout_timeline_returns_and_final_ram() {
     };
     let mut r = f.request();
     r.max_events = 128;
-    r.replacement.as_mut().unwrap().source = FunctionSource::Input { input: 1 };
+    r.replacement.as_mut().unwrap().executables = vec![f.id(1)];
     let capture = TimelineCapture {
         reads: true,
         writes: true,

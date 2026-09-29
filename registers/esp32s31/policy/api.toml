@@ -1908,8 +1908,8 @@ sources = ["BLOB_LIBBLE_SCAN_BACKOFF"]
 name = "publish_bluetooth_scan_standard_upper_limit_max"
 peripheral = "BLE_SCAN_BACKOFF"
 register = "UPPER_LIMIT_MAX"
-value = 0x100
-sources = ["BLOB_LIBBLE_SCAN_BACKOFF"]
+value = 0x20
+sources = ["BLOB_LIBBLE_SCAN_BACKOFF", "HIL_VENDOR_SCAN_BACKOFF_UPPER_LIMIT_2026_09_28"]
 
 [[field-replace-modifies]]
 name = "configure_bluetooth_cte_six_buffer_limit"

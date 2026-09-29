@@ -183,7 +183,7 @@ impl ControllerPoweredTaskRuntime<'_> {
     }
 
     /// Publish the scanner start's scan-backoff state: both backoff words
-    /// start at one under the default maximum upper limit, as the pinned
+    /// start at one under the S31 configuration's maximum upper limit, as the pinned
     /// `r_ble_lll_scan_start` does after it resets the scanner link state.
     #[allow(
         unsafe_code,

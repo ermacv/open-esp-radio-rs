@@ -46,8 +46,8 @@ impl BluetoothScanStartTransaction for PacBluetoothScanStartTransaction<'_> {
 
 impl BluetoothTaskRegisters {
     /// Publish the complete reviewed scanner start: initialize both
-    /// scan-backoff words to one, then publish the default maximum upper
-    /// limit (256) of the source-owned standalone Controller profile.
+    /// scan-backoff words to one, then publish the maximum upper limit (32)
+    /// of the S31 Controller configuration.
     ///
     /// Descriptor and list writes are ordered before the first write.
     ///

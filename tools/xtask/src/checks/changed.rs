@@ -268,6 +268,39 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
     if plan.metadata {
         super::metadata::run(ctx).map(|_| ())?;
     }
+    // Checks that take seconds run before Clippy, the tests and the
+    // firmware, so a stale citation or document fails the push at once.
+    if plan.docs {
+        super::docs::run(ctx)?;
+    }
+    if let Some(anchored) = &plan.capabilities {
+        super::docs::capabilities(ctx, &anchored.iter().cloned().collect::<Vec<_>>())?;
+    }
+    if plan.provenance {
+        for chip in crate::chips::supported(&ctx.root)? {
+            if !ctx
+                .root
+                .join("verification")
+                .join(&chip)
+                .join("artifacts.toml")
+                .is_file()
+            {
+                continue;
+            }
+            // Citations are checked against the pinned artifacts, never
+            // skipped: fetch what this checkout lacks into the shared store
+            // (a no-op once any checkout of the host fetched them).
+            let unfetched = crate::vendor_fetch::unfetched(ctx, &chip)?;
+            if !unfetched.is_empty() {
+                println!(
+                    "check changed: fetching {} pinned vendor artifacts of {chip} for provenance",
+                    unfetched.len()
+                );
+                crate::vendor_fetch::fetch_vendor_sources(ctx, &chip)?;
+            }
+            crate::vendor_provenance::check(ctx, &chip)?;
+        }
+    }
     if plan.clippy {
         process::run(ctx.cargo().args([
             "clippy",
@@ -304,9 +337,6 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
     if !plan.firmware.is_empty() {
         check_firmware(ctx, &plan.firmware)?;
     }
-    if plan.docs {
-        super::docs::run(ctx)?;
-    }
     if plan.phy_graph {
         super::phy::run(ctx, "esp32s31")?;
     }
@@ -333,34 +363,6 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
     if plan.platform_link {
         println!("check changed: linking the station example for the platform change");
         crate::firmware::build(ctx, "station", &[], false, None)?;
-    }
-    if let Some(anchored) = &plan.capabilities {
-        super::docs::capabilities(ctx, &anchored.iter().cloned().collect::<Vec<_>>())?;
-    }
-    if plan.provenance {
-        for chip in crate::chips::supported(&ctx.root)? {
-            if !ctx
-                .root
-                .join("verification")
-                .join(&chip)
-                .join("artifacts.toml")
-                .is_file()
-            {
-                continue;
-            }
-            // Citations are checked against the pinned artifacts, never
-            // skipped: fetch what this checkout lacks into the shared store
-            // (a no-op once any checkout of the host fetched them).
-            let unfetched = crate::vendor_fetch::unfetched(ctx, &chip)?;
-            if !unfetched.is_empty() {
-                println!(
-                    "check changed: fetching {} pinned vendor artifacts of {chip} for provenance",
-                    unfetched.len()
-                );
-                crate::vendor_fetch::fetch_vendor_sources(ctx, &chip)?;
-            }
-            crate::vendor_provenance::check(ctx, &chip)?;
-        }
     }
     for workspace in &plan.other_workspaces {
         println!(

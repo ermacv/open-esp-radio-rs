@@ -193,3 +193,17 @@ pub struct InvestigationFinding {
     pub analysis: FunctionAnalysisId,
     pub record: FunctionRecord,
 }
+
+/// How an investigation run obtains its plan: a saved plan, or one planned
+/// from the request in the same run.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum InvestigationInput {
+    Plan {
+        plan: InvestigationPlan,
+    },
+    Automatic {
+        request: InvestigationRequest,
+        producer: FunctionProducer,
+    },
+}

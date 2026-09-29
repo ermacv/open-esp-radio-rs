@@ -8,8 +8,11 @@ pub enum RunOperation {
     BuildIr {
         request: IrBuildRequest,
     },
-    Scenario {
-        request: ScenarioRequest,
+    /// Plan an investigation, then run the plan; the resolved operation
+    /// records the plan run.
+    AutomaticInvestigation {
+        request: InvestigationRequest,
+        producer: FunctionProducer,
     },
     #[default]
     Import,

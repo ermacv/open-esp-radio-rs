@@ -431,9 +431,6 @@ pub use assessment::*;
 mod measurements;
 pub use measurements::*;
 
-mod scenarios;
-pub use scenarios::*;
-
 mod record_memory;
 pub use record_memory::*;
 

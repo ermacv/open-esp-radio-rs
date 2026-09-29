@@ -1237,6 +1237,50 @@ fn older_project_formats_are_rejected_without_mutation() {
 }
 
 #[test]
+fn only_a_completed_automatic_investigation_records_its_plan_run() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = Project::create(temp.path()).unwrap();
+    let mut writer = project.writer().unwrap();
+    let revision: RevisionId = ArtifactId::of_bytes(b"frozen").as_str().parse().unwrap();
+    let (run, _) = writer
+        .register_operation(
+            ResourceBudget::default(),
+            owner(),
+            RunOperation::AutomaticInvestigation {
+                request: InvestigationRequest {
+                    revision: Some(revision.clone()),
+                    image: None,
+                    inputs: None,
+                    extents: vec![],
+                    ranges: vec![],
+                },
+                producer: FunctionProducer {
+                    decoder: "decoder".into(),
+                    semantics: "semantics".into(),
+                },
+            },
+            |_| {},
+        )
+        .unwrap();
+    let decode = |run: &RunRecord| jobs::decode_run(&serde_json::to_string(run).unwrap());
+    assert_eq!(decode(&run).unwrap(), run);
+    let plan_run = RunOperation::Investigate {
+        revision,
+        plan: ArtifactId::of_bytes(b"plan").as_str().parse().unwrap(),
+    };
+    // An unfinished run has not planned yet.
+    let mut forged = run.clone();
+    forged.resolved_operation = Some(Box::new(plan_run.clone()));
+    assert_eq!(decode(&forged).unwrap_err().code, ErrorCode::Integrity);
+    // Only an automatic investigation resolves into another operation.
+    let mut import = run;
+    import.operation = RunOperation::Import;
+    assert!(decode(&import).is_ok());
+    import.resolved_operation = Some(Box::new(plan_run));
+    assert_eq!(decode(&import).unwrap_err().code, ErrorCode::Integrity);
+}
+
+#[test]
 fn durable_assessment_cannot_describe_another_result_or_fabricate_a_verdict() {
     let temp = tempfile::tempdir().unwrap();
     let project = Project::create(temp.path()).unwrap();

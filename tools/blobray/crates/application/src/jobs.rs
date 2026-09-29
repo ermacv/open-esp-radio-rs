@@ -567,17 +567,16 @@ impl Application {
             InvestigationInput::Plan { plan } => {
                 self.start_investigation_plan(project, &plan, budget)
             }
-            InvestigationInput::Automatic { request, producer } => self.start_scenario(
-                project,
-                ScenarioRequest::Investigate { request, producer },
-                budget,
-            ),
+            InvestigationInput::Automatic { request, producer } => {
+                self.start_automatic_investigation(project, request, producer, budget)
+            }
         }
     }
-    fn start_scenario(
+    fn start_automatic_investigation(
         &self,
         project: &Path,
-        mut request: ScenarioRequest,
+        mut investigation: InvestigationRequest,
+        producer: FunctionProducer,
         budget: ResourceBudget,
     ) -> Result<RunHandle> {
         let mut jobs = self.jobs.lock().unwrap();
@@ -597,10 +596,6 @@ impl Application {
         self.temporary.root(&*self.host)?;
         let mut reservation = self.temporary.reserve()?;
         let mut writer = Writer::open(&project)?;
-        let ScenarioRequest::Investigate {
-            request: investigation,
-            ..
-        } = &mut request;
         if let Some(image) = &investigation.image {
             let revision = writer.project().image_revision(image)?;
             if investigation
@@ -623,11 +618,12 @@ impl Application {
                     .ok_or_else(|| Error::new(ErrorCode::NotFound, "project has no revision"))?,
             );
         }
-        let mut work = ScenarioWork {
+        let mut work = AutomaticInvestigationWork {
             schema: 1,
             run: ArtifactId::of_bytes(b"admission").as_str().parse()?,
             project: OriginPath::from_path(&project),
-            request: request.clone(),
+            request: investigation.clone(),
+            producer: producer.clone(),
             budget: budget.clone(),
             started_ms,
             deadline_ms,
@@ -636,7 +632,10 @@ impl Application {
         let (record, stage) = writer.register_operation(
             budget,
             self.host.owner()?,
-            RunOperation::Scenario { request },
+            RunOperation::AutomaticInvestigation {
+                request: investigation,
+                producer,
+            },
             |stage| reservation.attach(stage),
         )?;
         work.run = record.id.clone();
@@ -647,7 +646,7 @@ impl Application {
                 writer,
                 record,
                 stage,
-                work: DurableWork::Scenario(Box::new(work)),
+                work: DurableWork::AutomaticInvestigation(Box::new(work)),
                 permit,
                 reservation,
             },
@@ -1002,7 +1001,7 @@ struct DurableAdmission {
 }
 enum DurableWork {
     Ir(Box<IrWork>),
-    Scenario(Box<ScenarioWork>),
+    AutomaticInvestigation(Box<AutomaticInvestigationWork>),
     Import(ImportWork),
     Image(Box<ImageWork>),
     Function(Box<FunctionWork>),
@@ -1012,7 +1011,7 @@ impl DurableWork {
     fn started_ms(&self) -> u64 {
         match self {
             Self::Ir(w) => w.started_ms,
-            Self::Scenario(w) => w.started_ms,
+            Self::AutomaticInvestigation(w) => w.started_ms,
             Self::Import(w) => w.started_ms,
             Self::Image(w) => w.started_ms,
             Self::Function(w) => w.started_ms,
@@ -1022,7 +1021,7 @@ impl DurableWork {
     fn deadline_ms(&self) -> u64 {
         match self {
             Self::Ir(w) => w.deadline_ms,
-            Self::Scenario(w) => w.deadline_ms,
+            Self::AutomaticInvestigation(w) => w.deadline_ms,
             Self::Import(w) => w.deadline_ms,
             Self::Image(w) => w.deadline_ms,
             Self::Function(w) => w.deadline_ms,
@@ -1053,8 +1052,9 @@ fn supervise(
                 std::fs::File::create(stage.join("ir.json")).map_err(storage_io)?,
                 work,
             )?,
-            DurableWork::Scenario(work) => crate::protocol::write_request(
-                std::fs::File::create(stage.join("scenario.json")).map_err(storage_io)?,
+            DurableWork::AutomaticInvestigation(work) => crate::protocol::write_request(
+                std::fs::File::create(stage.join("automatic-investigation.json"))
+                    .map_err(storage_io)?,
                 work,
             )?,
             DurableWork::Investigation(work) => crate::protocol::write_request(
@@ -1117,7 +1117,9 @@ fn supervise(
         let publication_memory = WorkingMemory::new(record.budget.working_memory_bytes.unwrap())?;
         let publication_reservation = if matches!(
             work,
-            DurableWork::Ir(_) | DurableWork::Investigation(_) | DurableWork::Scenario(_)
+            DurableWork::Ir(_)
+                | DurableWork::Investigation(_)
+                | DurableWork::AutomaticInvestigation(_)
         ) {
             Some(publication_memory.reserve(2 * 1024 * 1024, context.position())?)
         } else {
@@ -1129,10 +1131,10 @@ fn supervise(
                 ..Default::default()
             });
             context.checkpoint(0)?;
-            let resolution = if let DurableWork::Scenario(work) = &work {
+            let plan = if let DurableWork::AutomaticInvestigation(work) = &work {
                 use std::io::Read;
                 let mut bytes = Vec::new();
-                std::fs::File::open(stage.join("resolved.json"))
+                std::fs::File::open(stage.join("plan.json"))
                     .map_err(storage_io)?
                     .take(CONTROL_MESSAGE_BYTES as u64 + 1)
                     .read_to_end(&mut bytes)
@@ -1140,37 +1142,33 @@ fn supervise(
                 if bytes.len() > CONTROL_MESSAGE_BYTES {
                     return Err(Error::new(
                         ErrorCode::WorkerProtocol,
-                        "scenario resolution exceeds bound",
+                        "automatic plan exceeds bound",
                     ));
                 }
-                let resolved: crate::scenarios::Resolution = serde_json::from_slice(&bytes)
+                let plan: InvestigationPlan = serde_json::from_slice(&bytes)
                     .map_err(|e| Error::new(ErrorCode::WorkerProtocol, e.to_string()))?;
-                crate::scenarios::validate_resolution(writer.project(), &work.request, &resolved)?;
-                record.resolved_operation = Some(Box::new(resolved.operation.clone()));
-                Some(resolved)
+                crate::automatic::validate_plan(
+                    writer.project(),
+                    &work.request,
+                    &work.producer,
+                    &plan,
+                )?;
+                record.resolved_operation =
+                    Some(Box::new(crate::automatic::operation(&work.request, &plan)?));
+                Some(plan)
             } else {
                 None
             };
             let retained = match (&work, prepared) {
-                (DurableWork::Scenario(_), PreparedReceipt::Investigation(p))
-                    if matches!(
-                        record.effective_operation(),
-                        RunOperation::Investigate { .. }
-                    ) =>
-                {
-                    Retained::Investigation(Box::new(
-                        writer.retain_investigation(
-                            &record,
-                            &p,
-                            resolution
-                                .as_ref()
-                                .and_then(|r| r.plan.as_ref())
-                                .ok_or_else(|| {
-                                    Error::new(ErrorCode::WorkerProtocol, "scenario omitted plan")
-                                })?,
-                            &mut context,
-                        )?,
-                    ))
+                (DurableWork::AutomaticInvestigation(_), PreparedReceipt::Investigation(p)) => {
+                    Retained::Investigation(Box::new(writer.retain_investigation(
+                        &record,
+                        &p,
+                        plan.as_ref().ok_or_else(|| {
+                            Error::new(ErrorCode::WorkerProtocol, "automatic run omitted plan")
+                        })?,
+                        &mut context,
+                    )?))
                 }
                 (DurableWork::Ir(_), PreparedReceipt::Ir(p)) => Retained::Ir(writer.retain_ir(
                     &record,

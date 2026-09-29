@@ -792,7 +792,10 @@ fn automatic_investigation_prepares_each_object_once_and_publishes_one_run() {
         assert_eq!(metrics.sections_prepared, 2);
         assert_eq!(metrics.object_read_bytes, bytes.len() as u64 * 2);
         assert_eq!(metrics.object_hash_bytes, metrics.object_read_bytes);
-        assert!(matches!(run.operation, app::RunOperation::Scenario { .. }));
+        assert!(matches!(
+            run.operation,
+            app::RunOperation::AutomaticInvestigation { .. }
+        ));
         assert!(matches!(
             run.effective_operation(),
             app::RunOperation::Investigate { .. }

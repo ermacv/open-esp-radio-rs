@@ -1581,11 +1581,12 @@ fn internal(args: &[OsString]) -> Result<()> {
     } else {
         None
     };
-    let scenario: Option<app::ScenarioWork> = if stage.join("scenario.json").exists() {
-        Some(request(&stage.join("scenario.json"))?)
-    } else {
-        None
-    };
+    let automatic: Option<app::AutomaticInvestigationWork> =
+        if stage.join("automatic-investigation.json").exists() {
+            Some(request(&stage.join("automatic-investigation.json"))?)
+        } else {
+            None
+        };
     let query: Option<QueryWork> = if stage.join("query.json").exists() {
         Some(request(&stage.join("query.json"))?)
     } else {
@@ -1612,7 +1613,7 @@ fn internal(args: &[OsString]) -> Result<()> {
         && image.is_none()
         && function.is_none()
         && investigation.is_none()
-        && scenario.is_none()
+        && automatic.is_none()
     {
         Some(request(&stage.join("request.json"))?)
     } else {
@@ -1620,7 +1621,7 @@ fn internal(args: &[OsString]) -> Result<()> {
     };
     let (run, started, deadline, budget) = if let Some(w) = &ir {
         (&w.run, w.started_ms, w.deadline_ms, &w.budget)
-    } else if let Some(w) = &scenario {
+    } else if let Some(w) = &automatic {
         (&w.run, w.started_ms, w.deadline_ms, &w.budget)
     } else {
         match (&query, &import, &image, &function, &investigation) {
@@ -1648,8 +1649,8 @@ fn internal(args: &[OsString]) -> Result<()> {
     let result = if let Some(work) = ir {
         app::prepare_ir_worker(&stage, &work, &mut context)
             .map(|p| Some(app::PreparedReceipt::Ir(p)))
-    } else if let Some(work) = scenario {
-        app::prepare_scenario_worker(
+    } else if let Some(work) = automatic {
+        app::prepare_automatic_investigation_worker(
             &stage,
             &work,
             &blobray_backend_riscv::RiscvDecoder,

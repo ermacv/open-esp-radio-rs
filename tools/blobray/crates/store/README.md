@@ -64,9 +64,9 @@ does not inspect procfs or implement the worker transport. The application wraps
 store readers in restricted capabilities instead of exposing `Project` to read
 consumers.
 
-The current run format carries the admitted operation, optional concrete scenario
-resolution and scoped `ResultAssessment`. Readers validate one published result,
-its assessment identity and scenario shape. Earlier journal formats are rejected.
+The current run format carries the admitted operation, the plan run a completed
+automatic investigation resolved into, and scoped `ResultAssessment`. Readers
+validate one published result, its assessment identity and that resolution. Earlier journal formats are rejected.
 Recovery records the last valid stage checkpoint before cleanup, while
 holding the lease that excludes a live worker. Atomic checkpoint files are
 transient diagnostics, not an alternative publication authority.

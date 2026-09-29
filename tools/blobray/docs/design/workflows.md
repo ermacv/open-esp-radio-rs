@@ -17,8 +17,8 @@ provider registry, or cross-revision correspondence or rebase. The
 | Move / backup / restore / recovery | Implemented for supported formats; no conversion or GC |
 | Exact data ranges → provenance export | Implemented for captured RV32 ELF bytes; unresolved relocations and analysis gaps remain explicit |
 
-Concrete scenario orchestration belongs to application. Selection/planning and
-execution share one original deadline and work/memory/disk budget. Failure before
+Automatic investigation belongs to application. Planning and execution share one
+original deadline and work/memory/disk budget. Failure before
 publication leaves prior results and current selections intact.
 
 ### Contract verification links
@@ -30,7 +30,7 @@ publication leaves prior results and current selections intact.
 | Partial inventory is partial in summary and handle | [query](../../crates/application/src/query.rs) | `partial_inventory_has_the_same_assessment_in_handle_and_output` in [memory tests](../../next/tests/memory.rs) |
 | One object preparation for multiple functions; linear archive indexing | [investigations](../../crates/application/src/investigations.rs) | `automatic_investigation_prepares_each_object_once_and_publishes_one_run`, `archive_lookup_work_grows_with_members_without_restarting_the_cursor` in [investigation tests](../../next/tests/functions/investigations.rs) |
 | Section relocation admission supports small extents | [prepared object](../../crates/artifacts/src/function.rs) | `ten_thousand_section_relocations_fit_small_function_capacity` in [function tests](../../next/tests/functions.rs) |
-| Original budget and atomic publication span automatic planning | [scenarios](../../crates/application/src/scenarios.rs), [supervisor](../../crates/application/src/jobs.rs) | `automatic_planning_and_execution_share_exhaustion_and_publication_boundary` in [investigation tests](../../next/tests/functions/investigations.rs) |
+| Original budget and atomic publication span automatic planning | [automatic investigation](../../crates/application/src/automatic.rs), [supervisor](../../crates/application/src/jobs.rs) | `automatic_planning_and_execution_share_exhaustion_and_publication_boundary` in [investigation tests](../../next/tests/functions/investigations.rs) |
 | Unsupported journal and project formats remain untouched | [store](../../crates/store/src/jobs.rs) | `incompatible_journals_are_rejected_by_all_readers_without_mutation`, `older_project_formats_are_rejected_without_mutation` in [store tests](../../crates/store/src/tests.rs) |
 | Phase/counter accounting continues through retention | [resources](../../crates/application/src/resources.rs) | `fixed_measurements_and_phase_costs_survive_worker_handoff` in the same module |
 

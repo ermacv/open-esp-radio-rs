@@ -53,7 +53,7 @@ memory, checks detectable file changes and returns the digest of bytes actually
 analyzed. It does not create a project revision or claim an atomic filesystem
 snapshot. Durable operations never use this path to reopen missing source files.
 
-## Concrete application scenarios
+## Automatic investigation
 
 `start_analyze_project(InvestigationInput)` owns one admission, run, writer,
 worker, deadline, work counter, working-capacity authority and disk budget.
@@ -61,11 +61,11 @@ Automatic investigation freezes the source revision at admission and retains its
 plan.
 CLI parses parameters and renders outcomes; it performs none of these resolutions.
 
-A `Scenario` journal operation retains original intent. `resolved_operation`
-records the concrete operation only in the successful publication transaction;
-coordinator validation binds it back to immutable inputs. Failed attempts retain
-no resolution/result/assessment. Resolution is not a nested run or a generic
-workflow framework. Saved-plan investigation uses the same execution path with
+An `AutomaticInvestigation` journal operation retains the admitted request and
+producer. `resolved_operation` records the `Investigate` run of the plan only in
+the successful publication transaction; coordinator validation binds the plan
+back to the admitted request. Failed attempts retain no resolution, result or
+assessment. Resolution is not a nested run. Saved-plan investigation uses the same execution path with
 its selection independently verified. Automatic planning passes its temporary
 entry stream directly into execution under the original budget.
 

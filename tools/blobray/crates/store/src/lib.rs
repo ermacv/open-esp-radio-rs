@@ -51,7 +51,7 @@ use std::{
 const STATE: &str = ".blobray-next";
 const SCHEMA: i64 = 41;
 /// Run record format shared by every durable and read operation.
-pub const JOURNAL_SCHEMA: u32 = 40;
+pub const JOURNAL_SCHEMA: u32 = 41;
 
 /// A project handle owns no source-file handles or mutable inventory cache.
 #[derive(Clone)]

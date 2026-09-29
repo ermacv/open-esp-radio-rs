@@ -821,31 +821,24 @@ pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
     {
         return Err(integrity("invalid run assessment or diagnostics"));
     }
-    if matches!(record.operation, RunOperation::Scenario { .. }) {
-        if (record.state == RunState::Completed) != record.resolved_operation.is_some()
-            || matches!(record.effective_operation(), RunOperation::Scenario { .. })
-                && record.state == RunState::Completed
-        {
-            return Err(integrity("invalid scenario resolution"));
+    match (&record.operation, record.resolved_operation.as_deref()) {
+        (RunOperation::AutomaticInvestigation { request, .. }, resolved) => {
+            let valid = match resolved {
+                None => record.state != RunState::Completed,
+                Some(RunOperation::Investigate { revision, .. }) => {
+                    record.state == RunState::Completed
+                        && request.revision.as_ref() == Some(revision)
+                }
+                Some(_) => false,
+            };
+            if !valid {
+                return Err(integrity(
+                    "automatic investigation resolution differs from its request",
+                ));
+            }
         }
-    } else if record.resolved_operation.is_some() {
-        return Err(integrity("unexpected scenario resolution"));
-    }
-    if let RunOperation::Scenario { request } = &record.operation
-        && let Some(resolved) = &record.resolved_operation
-    {
-        let valid = match (request, &**resolved) {
-            (
-                ScenarioRequest::Investigate { request, .. },
-                RunOperation::Investigate { revision, .. },
-            ) => request.revision.as_ref() == Some(revision),
-            _ => false,
-        };
-        if !valid {
-            return Err(integrity(
-                "scenario resolution differs from admitted action",
-            ));
-        }
+        (_, Some(_)) => return Err(integrity("unexpected operation resolution")),
+        (_, None) => {}
     }
     let published = [
         record.revision.is_some(),

@@ -4521,6 +4521,7 @@ artifact = "libpp"
 member = "trc.o"
 symbol = "rcGetDCMMaxRate"
 code = "f23243943e3559e29720adadb04cc191eaa526dd6b0f6a09d3803c6948eeeedc"
+decisions = ["coverage.toml"]
 
 [[function]]
 artifact = "libpp"
@@ -6472,6 +6473,7 @@ artifact = "rom"
 member = ""
 symbol = "rcGetDCMMaxRate"
 code = "a5a6885cc2870f6ef9f2b86dbd21c4675d50b09b3a998cce2de2002e0a145279"
+decisions = ["coverage.toml"]
 
 [[function]]
 artifact = "rom"

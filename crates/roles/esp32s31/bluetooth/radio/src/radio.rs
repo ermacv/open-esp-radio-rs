@@ -1900,7 +1900,7 @@ impl<
                     core::sync::atomic::AtomicBool::new(false);
                 static COMPLETED: core::sync::atomic::AtomicU32 =
                     core::sync::atomic::AtomicU32::new(0);
-                if COMPLETED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) >= 100
+                if COMPLETED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) >= 5
                     && !DUMPED.swap(true, core::sync::atomic::Ordering::Relaxed)
                 {
                     let mut words = [0u32; 96];

@@ -22,9 +22,15 @@ pub const DTM_MAX_PAYLOAD: usize = 255;
 /// Length of one receiver listening window.
 pub const DTM_RECEIVE_WINDOW: RadioDuration = RadioDuration::from_micros(5_000);
 
-/// Slack between planning an event and the earliest instant the backend
-/// admits, covering the time until the request reaches it.
+/// Slack between planning the first event of a test and the earliest instant
+/// the backend admits, covering the time until the request reaches it.
 pub const DTM_PLANNING_SLACK: RadioDuration = RadioDuration::from_micros(500);
+
+/// Slack of a later transmitter packet, planned as soon as the previous one
+/// ended. It covers the request's way to the backend so that a grid slot the
+/// request cannot reach in time is skipped at planning rather than refused,
+/// which would cost a retry and a further interval.
+pub const DTM_RECURRING_TRANSMIT_SLACK: RadioDuration = RadioDuration::from_micros(100);
 
 /// One test.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -194,7 +200,8 @@ impl DtmSession {
         if self.outstanding.is_some() {
             return None;
         }
-        let earliest = earliest_anchor(now, timing)?;
+        let admitted = admitted_anchor(now, timing)?;
+        let earliest = admitted.checked_add(DTM_PLANNING_SLACK)?;
         let id = EventId::new(self.next_id);
         let request = match test {
             DtmTest::Transmit {
@@ -205,11 +212,15 @@ impl DtmSession {
             } => {
                 let air = transmit_air_time(phy, length)?;
                 let interval = u64::from(packet_interval(air).as_micros());
+                // Like the vendor's recurring transmitter event, a later
+                // packet adds the interval to the previous anchor and skips
+                // only the slots the backend can no longer admit.
                 let anchor = match self.last {
                     None => earliest,
                     Some(last) => {
                         let first = last.start().as_micros() + interval;
-                        let late = earliest.as_micros().saturating_sub(first);
+                        let reachable = admitted.checked_add(DTM_RECURRING_TRANSMIT_SLACK)?;
+                        let late = reachable.as_micros().saturating_sub(first);
                         RadioInstant::from_micros(first + late.div_ceil(interval) * interval)
                     }
                 };
@@ -295,10 +306,10 @@ fn received(test: DtmTest, counters: DtmCounters) -> u16 {
     }
 }
 
-fn earliest_anchor(now: RadioInstant, timing: RadioTiming) -> Option<RadioInstant> {
+/// The earliest anchor the backend admits at `now`.
+fn admitted_anchor(now: RadioInstant, timing: RadioTiming) -> Option<RadioInstant> {
     now.checked_add(timing.preparation_lead)?
-        .checked_add(timing.admission_guard)?
-        .checked_add(DTM_PLANNING_SLACK)
+        .checked_add(timing.admission_guard)
 }
 
 /// Air time of one LE Test packet: preamble, access address, header,

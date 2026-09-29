@@ -104,6 +104,56 @@ fn transmitter_packets_stay_on_the_interval_grid() {
 }
 
 #[test]
+fn a_later_le_2m_packet_takes_the_next_admitted_slot() {
+    let mut session = DtmSession::new(TxPower::from_dbm(0), 10);
+    session
+        .start(DtmTest::Transmit {
+            channel: TestChannel::new(0).unwrap(),
+            phy: TestPhy::Le2M,
+            pattern: DtmPayloadPattern::Prbs9,
+            length: 37,
+        })
+        .unwrap();
+    let mut payload = [0; DTM_MAX_PAYLOAD];
+    let Some(RadioRequest::TestTransmit(first)) =
+        session.next_request(RadioInstant::from_micros(1_000), TIMING, &mut payload)
+    else {
+        panic!("the first packet")
+    };
+    // 192 us of LE 2M air make I(L) = 625 us.
+    assert_eq!(first.window.duration(), RadioDuration::from_micros(192));
+    let (id, start, end) = (
+        first.id,
+        first.window.start().as_micros(),
+        first.window.end().as_micros(),
+    );
+    ended(&mut session, id, EventResult::Executed { anchor: None });
+    // Planned 150 us after the packet, the next slot is still reachable
+    // (150 + 107 + 40 + 100 = 397 us < 433 us): the planning slack of the
+    // first packet does not push it one interval later.
+    let Some(RadioRequest::TestTransmit(second)) =
+        session.next_request(RadioInstant::from_micros(end + 150), TIMING, &mut payload)
+    else {
+        panic!("the second packet")
+    };
+    assert_eq!(second.window.start().as_micros(), start + 625);
+    ended(
+        &mut session,
+        second.id,
+        EventResult::Executed { anchor: None },
+    );
+    // Planned too late for the next slot, the packet takes the one after.
+    let Some(RadioRequest::TestTransmit(third)) = session.next_request(
+        RadioInstant::from_micros(start + 625 + 192 + 400),
+        TIMING,
+        &mut payload,
+    ) else {
+        panic!("the third packet")
+    };
+    assert_eq!(third.window.start().as_micros(), start + 3 * 625);
+}
+
+#[test]
 fn a_receiver_counts_packets_and_drains_before_it_stops() {
     let mut session = DtmSession::new(TxPower::from_dbm(0), 1);
     session

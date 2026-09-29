@@ -37,6 +37,7 @@ pub use model::{
     RepetitionResult, RunEventKind, RunPlan, RunState, ScenarioResult, SuiteCounts, SuiteResult,
     Threshold,
 };
+pub use model::{Boot, SubjectRecord};
 pub(super) use model::{
     CellProvenance, FirmwareArtifact, FirmwareReplayOrigin, IntegrityFile, IntegrityIndex,
     RepositoryProvenance, aggregate_outcome,

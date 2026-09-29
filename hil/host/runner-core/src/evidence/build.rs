@@ -93,6 +93,8 @@ pub(super) enum BuildSubjectRole {
     BootstrapElf,
     RuntimeBin,
     RuntimeElf,
+    Bootloader,
+    PartitionTable,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

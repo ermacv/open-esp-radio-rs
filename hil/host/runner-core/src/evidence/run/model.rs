@@ -309,6 +309,16 @@ pub struct CellProvenance {
     pub serial_device: PathBuf,
 }
 
+pub use oer_chip_profile::Boot;
+
+fn staged() -> Boot {
+    Boot::Staged
+}
+
+fn is_staged(boot: &Boot) -> bool {
+    *boot == Boot::Staged
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct FirmwareArtifact {
     pub image: ImageClass,
@@ -326,20 +336,105 @@ pub struct FirmwareArtifact {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime_elf_size_bytes: Option<u64>,
     pub runtime_elf_sha256: String,
+    /// How the chip starts the application, which decides the other
+    /// subjects: a staged image carries its packed runtime and bootstrap, an
+    /// ESP-IDF application the bootloader and partition table written with
+    /// it. Absent in every bundle of a staged image.
+    #[serde(default = "staged", skip_serializing_if = "is_staged")]
+    pub boot: Boot,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime_bin_path: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime_bin_size_bytes: Option<u64>,
-    pub runtime_bin_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_bin_sha256: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bootstrap_elf_path: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bootstrap_elf_size_bytes: Option<u64>,
-    pub bootstrap_elf_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bootstrap_elf_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bootloader_path: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bootloader_size_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bootloader_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partition_table_path: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partition_table_size_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partition_table_sha256: Option<String>,
     /// The seed the image's runtime was linked with, as its build record
     /// names it; absent for the natural order.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layout_seed: Option<std::num::NonZeroU32>,
+}
+
+/// One archived firmware subject besides the application, as the manifest
+/// records it: path, size and digest are present together or not at all.
+#[derive(Clone, Copy, Debug)]
+pub struct SubjectRecord<'a> {
+    /// The subject's file name inside `firmware/<image>/`.
+    pub file: &'static str,
+    /// What the subject is, for messages.
+    pub kind: &'static str,
+    pub path: Option<&'a PathBuf>,
+    pub size_bytes: Option<u64>,
+    pub sha256: Option<&'a str>,
+}
+
+impl FirmwareArtifact {
+    /// Every subject besides the application, in archive order.
+    pub fn subjects(&self) -> [SubjectRecord<'_>; 5] {
+        [
+            SubjectRecord {
+                file: "runtime.elf",
+                kind: "runtime ELF",
+                path: self.runtime_elf_path.as_ref(),
+                size_bytes: self.runtime_elf_size_bytes,
+                sha256: Some(&self.runtime_elf_sha256),
+            },
+            SubjectRecord {
+                file: "runtime.bin",
+                kind: "runtime binary",
+                path: self.runtime_bin_path.as_ref(),
+                size_bytes: self.runtime_bin_size_bytes,
+                sha256: self.runtime_bin_sha256.as_deref(),
+            },
+            SubjectRecord {
+                file: "bootstrap.elf",
+                kind: "bootstrap ELF",
+                path: self.bootstrap_elf_path.as_ref(),
+                size_bytes: self.bootstrap_elf_size_bytes,
+                sha256: self.bootstrap_elf_sha256.as_deref(),
+            },
+            SubjectRecord {
+                file: "bootloader.bin",
+                kind: "bootloader",
+                path: self.bootloader_path.as_ref(),
+                size_bytes: self.bootloader_size_bytes,
+                sha256: self.bootloader_sha256.as_deref(),
+            },
+            SubjectRecord {
+                file: "partition-table.bin",
+                kind: "partition table",
+                path: self.partition_table_path.as_ref(),
+                size_bytes: self.partition_table_size_bytes,
+                sha256: self.partition_table_sha256.as_deref(),
+            },
+        ]
+    }
+
+    /// The subjects `boot` requires besides the application and runtime ELF;
+    /// the others must be absent.
+    pub fn required_subjects(&self) -> &'static [&'static str] {
+        match self.boot {
+            Boot::Staged => &["runtime.bin", "bootstrap.elf"],
+            Boot::EspIdfBootloader => &["bootloader.bin", "partition-table.bin"],
+        }
+    }
 }
 
 #[derive(Serialize)]

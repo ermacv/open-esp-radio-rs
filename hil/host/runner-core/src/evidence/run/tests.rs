@@ -738,3 +738,47 @@ fn test_artifacts(
         environment: crate::evidence::build::BuildEnvironment::synthetic(),
     }
 }
+
+#[test]
+fn the_boot_flow_decides_an_images_subjects_and_staged_bundles_keep_their_shape() {
+    let staged = serde_json::json!({
+        "image": "boot-smoke",
+        "application_path": "firmware/boot-smoke/application.bin",
+        "application_size_bytes": 1,
+        "application_sha256": "00",
+        "runtime_elf_sha256": "01",
+        "runtime_bin_sha256": "02",
+        "bootstrap_elf_sha256": "03",
+    });
+    let artifact: FirmwareArtifact = serde_json::from_value(staged.clone()).unwrap();
+    // A bundle without the field is a staged image, and a staged image is
+    // written without it.
+    assert_eq!(artifact.boot, Boot::Staged);
+    assert_eq!(serde_json::to_value(&artifact).unwrap(), staged);
+    assert_eq!(
+        artifact.required_subjects(),
+        ["runtime.bin", "bootstrap.elf"]
+    );
+
+    let mut application = artifact;
+    application.boot = Boot::EspIdfBootloader;
+    assert_eq!(
+        application.required_subjects(),
+        ["bootloader.bin", "partition-table.bin"]
+    );
+    assert_eq!(
+        serde_json::to_value(&application).unwrap()["boot"],
+        "esp-idf-bootloader"
+    );
+    let files = application.subjects().map(|subject| subject.file);
+    assert_eq!(
+        files,
+        [
+            "runtime.elf",
+            "runtime.bin",
+            "bootstrap.elf",
+            "bootloader.bin",
+            "partition-table.bin"
+        ]
+    );
+}

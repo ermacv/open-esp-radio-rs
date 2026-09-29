@@ -340,54 +340,38 @@ fn validate_firmware(run_directory: &Path, manifest: &RunManifest) -> Result<()>
             )
             .into());
         }
-        validate_sha256(
-            &artifact.runtime_elf_sha256,
-            "runtime ELF",
-            &manifest.run_id,
-        )?;
-        validate_optional_firmware_file(
-            run_directory,
-            &mut paths,
-            artifact.runtime_elf_path.as_deref(),
-            artifact.runtime_elf_size_bytes,
-            &artifact.runtime_elf_sha256,
-            &PathBuf::from("firmware")
-                .join(artifact.image.id())
-                .join("runtime.elf"),
-            "runtime ELF",
-        )?;
-        validate_sha256(
-            &artifact.runtime_bin_sha256,
-            "runtime binary",
-            &manifest.run_id,
-        )?;
-        validate_optional_firmware_file(
-            run_directory,
-            &mut paths,
-            artifact.runtime_bin_path.as_deref(),
-            artifact.runtime_bin_size_bytes,
-            &artifact.runtime_bin_sha256,
-            &PathBuf::from("firmware")
-                .join(artifact.image.id())
-                .join("runtime.bin"),
-            "runtime binary",
-        )?;
-        validate_sha256(
-            &artifact.bootstrap_elf_sha256,
-            "bootstrap ELF",
-            &manifest.run_id,
-        )?;
-        validate_optional_firmware_file(
-            run_directory,
-            &mut paths,
-            artifact.bootstrap_elf_path.as_deref(),
-            artifact.bootstrap_elf_size_bytes,
-            &artifact.bootstrap_elf_sha256,
-            &PathBuf::from("firmware")
-                .join(artifact.image.id())
-                .join("bootstrap.elf"),
-            "bootstrap ELF",
-        )?;
+        let required = artifact.required_subjects();
+        for subject in artifact.subjects() {
+            // The boot flow decides which subjects the image has: a staged
+            // image's digests are recorded even for an older bundle that did
+            // not archive the files, an ESP-IDF application never has them.
+            let wanted = subject.file == "runtime.elf" || required.contains(&subject.file);
+            match (wanted, subject.sha256) {
+                (true, Some(sha256)) => validate_sha256(sha256, subject.kind, &manifest.run_id)?,
+                (false, None) => {}
+                (true, None) | (false, Some(_)) => {
+                    return Err(format!(
+                        "HIL run `{}` records the wrong subjects for its {:?} image `{}`: {}",
+                        manifest.run_id,
+                        artifact.boot,
+                        artifact.image.id(),
+                        subject.kind
+                    )
+                    .into());
+                }
+            }
+            validate_optional_firmware_file(
+                run_directory,
+                &mut paths,
+                subject.path.map(PathBuf::as_path),
+                subject.size_bytes,
+                subject.sha256.unwrap_or_default(),
+                &PathBuf::from("firmware")
+                    .join(artifact.image.id())
+                    .join(subject.file),
+                subject.kind,
+            )?;
+        }
         verify_indexed_file(
             run_directory,
             &artifact.application_path,
@@ -483,47 +467,49 @@ fn validate_build_provenance(
         )
         .into());
     }
-    let expected_subjects = vec![
-        BuildSubject {
-            role: BuildSubjectRole::Application,
-            path: artifact.application_path.clone(),
-            size_bytes: artifact.application_size_bytes,
-            sha256: artifact.application_sha256.clone(),
-        },
-        BuildSubject {
-            role: BuildSubjectRole::BootstrapElf,
-            path: artifact
-                .bootstrap_elf_path
-                .clone()
-                .ok_or("build provenance requires an archived bootstrap ELF")?,
-            size_bytes: artifact
-                .bootstrap_elf_size_bytes
-                .ok_or("build provenance requires a bootstrap ELF size")?,
-            sha256: artifact.bootstrap_elf_sha256.clone(),
-        },
-        BuildSubject {
-            role: BuildSubjectRole::RuntimeBin,
-            path: artifact
-                .runtime_bin_path
-                .clone()
-                .ok_or("build provenance requires an archived runtime binary")?,
-            size_bytes: artifact
-                .runtime_bin_size_bytes
-                .ok_or("build provenance requires a runtime binary size")?,
-            sha256: artifact.runtime_bin_sha256.clone(),
-        },
-        BuildSubject {
-            role: BuildSubjectRole::RuntimeElf,
-            path: artifact
-                .runtime_elf_path
-                .clone()
-                .ok_or("build provenance requires an archived runtime ELF")?,
-            size_bytes: artifact
-                .runtime_elf_size_bytes
-                .ok_or("build provenance requires a runtime ELF size")?,
-            sha256: artifact.runtime_elf_sha256.clone(),
-        },
-    ];
+    // The build record lists the application, the subjects of the image's
+    // boot flow and the runtime ELF, in that order.
+    let subject = |role, file: &str| -> Result<BuildSubject> {
+        let record = artifact
+            .subjects()
+            .into_iter()
+            .find(|subject| subject.file == file)
+            .ok_or("unknown firmware subject")?;
+        Ok(BuildSubject {
+            role,
+            path: record
+                .path
+                .cloned()
+                .ok_or_else(|| format!("build provenance requires an archived {}", record.kind))?,
+            size_bytes: record
+                .size_bytes
+                .ok_or_else(|| format!("build provenance requires a {} size", record.kind))?,
+            sha256: record
+                .sha256
+                .ok_or_else(|| format!("build provenance requires a {} digest", record.kind))?
+                .to_owned(),
+        })
+    };
+    let mut expected_subjects = vec![BuildSubject {
+        role: BuildSubjectRole::Application,
+        path: artifact.application_path.clone(),
+        size_bytes: artifact.application_size_bytes,
+        sha256: artifact.application_sha256.clone(),
+    }];
+    match artifact.boot {
+        super::run::Boot::Staged => {
+            expected_subjects.push(subject(BuildSubjectRole::BootstrapElf, "bootstrap.elf")?);
+            expected_subjects.push(subject(BuildSubjectRole::RuntimeBin, "runtime.bin")?);
+        }
+        super::run::Boot::EspIdfBootloader => {
+            expected_subjects.push(subject(BuildSubjectRole::Bootloader, "bootloader.bin")?);
+            expected_subjects.push(subject(
+                BuildSubjectRole::PartitionTable,
+                "partition-table.bin",
+            )?);
+        }
+    }
+    expected_subjects.push(subject(BuildSubjectRole::RuntimeElf, "runtime.elf")?);
     if provenance.subjects != expected_subjects || provenance.sources.is_empty() {
         return Err(format!(
             "HIL run `{}` has inconsistent build subjects or no source materials",

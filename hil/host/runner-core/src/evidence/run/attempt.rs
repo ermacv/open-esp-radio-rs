@@ -178,32 +178,22 @@ pub fn completed_attempts(run: &Path, parent: &RunManifest) -> Result<Option<Vec
         let files = material_files(run, &seal.manifest, &result.scenario, result.image)?;
         seal.files.sort_by(|a, b| a.path.cmp(&b.path));
         for artifact in &seal.manifest.firmware {
-            for (path, size, hash) in [
-                (
-                    Some(&artifact.application_path),
-                    Some(artifact.application_size_bytes),
-                    &artifact.application_sha256,
-                ),
-                (
-                    artifact.runtime_elf_path.as_ref(),
-                    artifact.runtime_elf_size_bytes,
-                    &artifact.runtime_elf_sha256,
-                ),
-                (
-                    artifact.runtime_bin_path.as_ref(),
-                    artifact.runtime_bin_size_bytes,
-                    &artifact.runtime_bin_sha256,
-                ),
-                (
-                    artifact.bootstrap_elf_path.as_ref(),
-                    artifact.bootstrap_elf_size_bytes,
-                    &artifact.bootstrap_elf_sha256,
-                ),
-            ] {
+            let application = (
+                Some(&artifact.application_path),
+                Some(artifact.application_size_bytes),
+                Some(artifact.application_sha256.as_str()),
+            );
+            for (path, size, hash) in std::iter::once(application).chain(
+                artifact
+                    .subjects()
+                    .map(|subject| (subject.path, subject.size_bytes, subject.sha256)),
+            ) {
                 if let Some(path) = path
-                    && !files
-                        .iter()
-                        .any(|f| &f.path == path && Some(f.size_bytes) == size && &f.sha256 == hash)
+                    && !files.iter().any(|f| {
+                        &f.path == path
+                            && Some(f.size_bytes) == size
+                            && Some(f.sha256.as_str()) == hash
+                    })
                 {
                     return Err("attempt firmware identity is outside sealed material".into());
                 }

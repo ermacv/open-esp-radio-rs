@@ -160,6 +160,19 @@ pub(super) fn load(
                     "bootstrap_elf_sha256",
                     false,
                 ),
+                // An ESP-IDF application's bootloader and partition table.
+                (
+                    "bootloader_path",
+                    "bootloader_size_bytes",
+                    "bootloader_sha256",
+                    false,
+                ),
+                (
+                    "partition_table_path",
+                    "partition_table_size_bytes",
+                    "partition_table_sha256",
+                    false,
+                ),
             ] {
                 if !required && artifact[path_key].is_null() {
                     continue;

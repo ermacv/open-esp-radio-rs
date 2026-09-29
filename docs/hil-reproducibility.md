@@ -7,14 +7,23 @@ application is not automatically current qualification evidence.
 
 ## Artifact replay
 
-A run archives four firmware subjects with sizes and SHA-256 digests:
+A run archives each image's firmware subjects with sizes and SHA-256
+digests. Which ones depends on how the chip starts the application, the
+`boot` of its [chip profile](../platform/esp32s31/chip.toml), which the
+manifest's firmware entry records for an ESP-IDF application (it is absent
+for a staged image):
 
-| Subject | Purpose |
-| --- | --- |
-| `application.bin` | Exact application image written to the DUT |
-| `runtime.elf` | Runtime symbols, sections and layout for analysis |
-| `runtime.bin` | Packed stage-two payload |
-| `bootstrap.elf` | First-stage image composition |
+| Subject | Boot | Purpose |
+| --- | --- | --- |
+| `application.bin` | both | Exact application image written to the DUT |
+| `runtime.elf` | both | Runtime symbols, sections and layout for analysis |
+| `runtime.bin` | staged | Packed stage-two payload |
+| `bootstrap.elf` | staged | First-stage image composition |
+| `bootloader.bin` | ESP-IDF | Second-stage bootloader written with the application |
+| `partition-table.bin` | ESP-IDF | Partition table written with the application |
+
+`report verify` requires exactly the subjects of the recorded boot flow, and
+qualification checks every recorded subject against the sealed bytes.
 
 The bundle also archives `effective-Cargo.lock` for the runtime workspace and
 `bootstrap-Cargo.lock` for the shared platform workspace. Both resolved graphs

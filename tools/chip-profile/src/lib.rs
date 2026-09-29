@@ -11,7 +11,7 @@
 
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Format of `chip.toml`.
 pub const SCHEMA: u32 = 1;
@@ -22,7 +22,7 @@ const PROFILE: &str = "chip.toml";
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// How the chip starts an application.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Boot {
     /// The ROM loads the platform's bootstrap, which stages the runtime.

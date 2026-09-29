@@ -247,6 +247,8 @@ firmware/<image>/
 ├── runtime.elf     exact symbolized runtime used to produce the image
 ├── runtime.bin     exact packed stage-two runtime
 ├── bootstrap.elf   exact bootstrap used to encode the application
+│                   (bootloader.bin and partition-table.bin instead of
+│                   runtime.bin and bootstrap.elf for an ESP-IDF application)
 └── effective-Cargo.lock
                     embedded dependency resolution observed before restore
 scenarios/<id>/

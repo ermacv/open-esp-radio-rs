@@ -135,10 +135,10 @@ fn add_build_provenance(run: &Path) {
     artifact.runtime_elf_sha256 = sha256_file(&run.join(&runtime_elf_path)).unwrap();
     artifact.runtime_bin_path = Some(runtime_bin_path.clone());
     artifact.runtime_bin_size_bytes = Some(11);
-    artifact.runtime_bin_sha256 = sha256_file(&run.join(&runtime_bin_path)).unwrap();
+    artifact.runtime_bin_sha256 = Some(sha256_file(&run.join(&runtime_bin_path)).unwrap());
     artifact.bootstrap_elf_path = Some(bootstrap_elf_path.clone());
     artifact.bootstrap_elf_size_bytes = Some(13);
-    artifact.bootstrap_elf_sha256 = sha256_file(&run.join(&bootstrap_elf_path)).unwrap();
+    artifact.bootstrap_elf_sha256 = Some(sha256_file(&run.join(&bootstrap_elf_path)).unwrap());
     let subjects = vec![
         BuildSubject {
             role: BuildSubjectRole::Application,
@@ -150,13 +150,13 @@ fn add_build_provenance(run: &Path) {
             role: BuildSubjectRole::BootstrapElf,
             path: bootstrap_elf_path,
             size_bytes: 13,
-            sha256: artifact.bootstrap_elf_sha256.clone(),
+            sha256: artifact.bootstrap_elf_sha256.clone().unwrap(),
         },
         BuildSubject {
             role: BuildSubjectRole::RuntimeBin,
             path: runtime_bin_path,
             size_bytes: 11,
-            sha256: artifact.runtime_bin_sha256.clone(),
+            sha256: artifact.runtime_bin_sha256.clone().unwrap(),
         },
         BuildSubject {
             role: BuildSubjectRole::RuntimeElf,

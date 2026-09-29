@@ -67,30 +67,14 @@ impl RunSession {
             &source.application_sha256,
         )?;
 
-        import_optional_firmware_subject(
-            &archived.source_directory,
-            &self.directory,
-            &self.target_directory,
-            source.runtime_elf_path.as_deref(),
-            source.runtime_elf_size_bytes,
-            &source.runtime_elf_sha256,
-        )?;
-        import_optional_firmware_subject(
-            &archived.source_directory,
-            &self.directory,
-            &self.target_directory,
-            source.runtime_bin_path.as_deref(),
-            source.runtime_bin_size_bytes,
-            &source.runtime_bin_sha256,
-        )?;
-        import_optional_firmware_subject(
-            &archived.source_directory,
-            &self.directory,
-            &self.target_directory,
-            source.bootstrap_elf_path.as_deref(),
-            source.bootstrap_elf_size_bytes,
-            &source.bootstrap_elf_sha256,
-        )?;
+        for subject in source.subjects() {
+            import_optional_firmware_subject(
+                &archived.source_directory,
+                &self.directory,
+                &self.target_directory,
+                subject,
+            )?;
+        }
 
         let mut artifact = source.clone();
         artifact.replayed_from = Some(FirmwareReplayOrigin {
@@ -184,13 +168,11 @@ fn import_optional_firmware_subject(
     source_directory: &Path,
     destination_directory: &Path,
     target_directory: &Path,
-    path: Option<&Path>,
-    size_bytes: Option<u64>,
-    sha256: &str,
+    subject: super::model::SubjectRecord<'_>,
 ) -> Result<()> {
-    match (path, size_bytes) {
-        (None, None) => Ok(()),
-        (Some(path), Some(size_bytes)) => {
+    match (subject.path, subject.size_bytes, subject.sha256) {
+        (None, None, None) => Ok(()),
+        (Some(path), Some(size_bytes), Some(sha256)) => {
             validate_replayed_source_path(path)?;
             archive_expected_file(
                 &source_directory.join(path),

@@ -2,7 +2,10 @@
 //! with the link-time stack, placement and application audits, and report
 //! every class's outcome instead of stopping at the first failure.
 
-use std::time::{Duration, Instant};
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 use oer_hil_runner_core::image::{ImageClass, Integration};
 
@@ -34,85 +37,224 @@ pub fn classes(selected: &[ImageClass]) -> Vec<ImageClass> {
         .collect()
 }
 
-/// Build (or type-check) each class one after the other in its shared
-/// compile cache, then print one line per class.
-/// Classes built at once when `--jobs` is not given: each fat-LTO release
-/// build uses every core only part of the time, and three fit in memory.
+/// Classes built at once when `--jobs` is not given. Once the seed classes
+/// built the shared dependencies, most of a class's build is its final
+/// crate's fat LTO, which runs on one core and needs about 1.5 GB; half the
+/// cores, at most eight, keeps both the cores and the memory busy.
 pub fn default_jobs() -> usize {
-    std::thread::available_parallelism().map_or(1, |cores| (cores.get() / 5).clamp(1, 4))
+    std::thread::available_parallelism().map_or(1, |cores| (cores.get() / 2).clamp(1, 8))
 }
 
-/// Builds or type-checks every selected class, up to `jobs` at once. Each
-/// class has its own target directory and lock, so they build independently;
-/// outcomes are reported in catalog order.
+/// One class of each dependency family, built first. Between them they
+/// compile every dependency the other classes share: Wi-Fi with Bluetooth,
+/// and IEEE 802.15.4 with OpenThread.
+pub const SEEDS: [ImageClass; 2] = [
+    ImageClass::WifiBleCoex,
+    ImageClass::DiagnosticIeee802154Thread,
+];
+
+/// The seed whose compiled units `class` starts from: an IEEE 802.15.4
+/// class the IEEE 802.15.4 seed, every other class the Wi-Fi with Bluetooth
+/// seed.
+fn seed_of(class: ImageClass) -> ImageClass {
+    if class.id().contains("ieee802154") {
+        ImageClass::DiagnosticIeee802154Thread
+    } else {
+        ImageClass::WifiBleCoex
+    }
+}
+
+/// Classes waiting to build, and the outcomes of those that did.
+#[derive(Default)]
+struct Queue {
+    ready: std::collections::VecDeque<(usize, ImageClass)>,
+    /// Classes whose seed is still building.
+    waiting: Vec<(usize, ImageClass)>,
+    outcomes: Vec<(usize, Outcome)>,
+}
+
+/// Builds or type-checks every selected class, up to `jobs` at once, and
+/// reports the outcomes in catalog order. Each class compiles in its own
+/// target directory. A full build takes the selected [`SEEDS`] first; as
+/// each finishes, the classes of its family start from a copy-on-write copy
+/// of its compiled units, so a dependency is compiled once per family
+/// instead of once per class.
 pub fn run(ctx: &Context, selected: &[ImageClass], depth: Depth, jobs: usize) -> Result<()> {
     let network = Integration::OwnedXarxa;
-    let classes = classes(selected);
-    let jobs = jobs.clamp(1, classes.len().max(1));
-    let next = std::sync::atomic::AtomicUsize::new(0);
-    let outcomes = std::sync::Mutex::new(Vec::with_capacity(classes.len()));
+    let classes: Vec<(usize, ImageClass)> = classes(selected).into_iter().enumerate().collect();
+    let total = classes.len();
+    let seeds: Vec<ImageClass> = classes
+        .iter()
+        .map(|(_, class)| *class)
+        .filter(|class| depth == Depth::Build && SEEDS.contains(class))
+        .collect();
+    let mut queue = Queue::default();
+    for &(index, class) in &classes {
+        if seeds.contains(&class) {
+            queue.ready.push_front((index, class));
+        } else if seeds.contains(&seed_of(class)) {
+            queue.waiting.push((index, class));
+        } else {
+            queue.ready.push_back((index, class));
+        }
+    }
+    let queue = std::sync::Mutex::new(queue);
+    let changed = std::sync::Condvar::new();
+    let lock = || {
+        queue
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    };
     std::thread::scope(|scope| {
-        for _ in 0..jobs {
+        for _ in 0..jobs.clamp(1, total.max(1)) {
             scope.spawn(|| {
                 loop {
-                    let index = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    let Some(&class) = classes.get(index) else {
-                        break;
-                    };
-                    println!(
-                        "check firmware: [{}/{}] {} {}",
-                        index + 1,
-                        classes.len(),
-                        match depth {
-                            Depth::Build => "building",
-                            Depth::TypeCheck => "type-checking",
-                        },
-                        class.id()
-                    );
-                    let started = Instant::now();
-                    let result = match depth {
-                        Depth::Build => oer_hil_runner_core::image::build(
-                            &ctx.root,
-                            class,
-                            network,
-                            None,
-                            &Default::default(),
-                        )
-                        .map(|_| ()),
-                        Depth::TypeCheck => {
-                            oer_hil_runner_core::image::check(&ctx.root, class, network)
+                    let next = {
+                        let mut state = lock();
+                        loop {
+                            if let Some(next) = state.ready.pop_front() {
+                                break Some(next);
+                            }
+                            if state.waiting.is_empty() {
+                                break None;
+                            }
+                            state = changed
+                                .wait(state)
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
                         }
                     };
-                    let outcome = Outcome {
-                        class,
-                        elapsed: started.elapsed(),
-                        failure: result.err().map(|error| error.to_string()),
+                    let Some((index, class)) = next else {
+                        break;
                     };
-                    println!(
-                        "check firmware: {} {} ({}s)",
-                        class.id(),
-                        if outcome.failure.is_some() {
-                            "failed"
-                        } else {
-                            "passed"
-                        },
-                        outcome.elapsed.as_secs()
-                    );
-                    outcomes
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .push((index, outcome));
+                    let outcome = build_one(ctx, class, index, total, depth, network);
+                    let family = if seeds.contains(&class) {
+                        let mut state = lock();
+                        let (family, others) = std::mem::take(&mut state.waiting)
+                            .into_iter()
+                            .partition::<Vec<_>, _>(|(_, waiting)| seed_of(*waiting) == class);
+                        state.waiting = others;
+                        family
+                    } else {
+                        Vec::new()
+                    };
+                    // A seed whose audit failed still compiled its units, and
+                    // Cargo uses a copied unit only where it is exactly the
+                    // unit needed. A failed copy only leaves a class colder.
+                    for (_, member) in &family {
+                        if let Err(error) = share_units(ctx, class, *member, network) {
+                            println!("check firmware: {} starts cold: {error}", member.id());
+                        }
+                    }
+                    let mut state = lock();
+                    state.ready.extend(family);
+                    state.outcomes.push((index, outcome));
+                    changed.notify_all();
                 }
             });
         }
     });
-    let mut outcomes = outcomes
+    let mut outcomes = queue
         .into_inner()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .outcomes;
     outcomes.sort_by_key(|(index, _)| *index);
     let outcomes: Vec<Outcome> = outcomes.into_iter().map(|(_, outcome)| outcome).collect();
     print!("{}", summary(&outcomes));
     verdict(&outcomes)
+}
+
+/// Copies the compiled units of `seed`'s build caches into `class`'s, by
+/// reflink where the filesystem supports it. Cargo names each unit by its
+/// package, features and flags, so a copied unit is used only where it is
+/// exactly the unit the class needs; the uplifted binaries are not copied.
+fn share_units(
+    ctx: &Context,
+    seed: ImageClass,
+    class: ImageClass,
+    network: Integration,
+) -> Result<()> {
+    let from = oer_hil_runner_core::image::shared_compile_cache(&ctx.root, seed, network);
+    let to = oer_hil_runner_core::image::shared_compile_cache(&ctx.root, class, network);
+    for build in ["runtime", "bootstrap"] {
+        let Ok(entries) = std::fs::read_dir(from.join(build)) else {
+            continue;
+        };
+        // `release` for build scripts, `<target>/release` for the image.
+        let mut profiles = vec![PathBuf::from("release")];
+        for entry in entries.flatten() {
+            if entry.path().join("release").is_dir() {
+                profiles.push(PathBuf::from(entry.file_name()).join("release"));
+            }
+        }
+        for profile in profiles {
+            for units in ["deps", "build", ".fingerprint"] {
+                let source = from.join(build).join(&profile).join(units);
+                if !source.is_dir() {
+                    continue;
+                }
+                let destination = to.join(build).join(&profile).join(units);
+                std::fs::create_dir_all(&destination)?;
+                let status = std::process::Command::new("cp")
+                    .args(["-a", "--reflink=auto"])
+                    .arg(source.join("."))
+                    .arg(&destination)
+                    .status()?;
+                if !status.success() {
+                    return Err(format!(
+                        "copying {} into {} failed",
+                        source.display(),
+                        destination.display()
+                    )
+                    .into());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Builds or type-checks `class`, the `index`th of `total`.
+fn build_one(
+    ctx: &Context,
+    class: ImageClass,
+    index: usize,
+    total: usize,
+    depth: Depth,
+    network: Integration,
+) -> Outcome {
+    println!(
+        "check firmware: [{}/{total}] {} {}",
+        index + 1,
+        match depth {
+            Depth::Build => "building",
+            Depth::TypeCheck => "type-checking",
+        },
+        class.id()
+    );
+    let started = Instant::now();
+    let result = match depth {
+        Depth::Build => {
+            oer_hil_runner_core::image::build(&ctx.root, class, network, None, &Default::default())
+                .map(|_| ())
+        }
+        Depth::TypeCheck => oer_hil_runner_core::image::check(&ctx.root, class, network),
+    };
+    let outcome = Outcome {
+        class,
+        elapsed: started.elapsed(),
+        failure: result.err().map(|error| error.to_string()),
+    };
+    println!(
+        "check firmware: {} {} ({}s)",
+        class.id(),
+        if outcome.failure.is_some() {
+            "failed"
+        } else {
+            "passed"
+        },
+        outcome.elapsed.as_secs()
+    );
+    outcome
 }
 
 pub fn summary(outcomes: &[Outcome]) -> String {

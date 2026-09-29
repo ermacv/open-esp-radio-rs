@@ -4,29 +4,46 @@
 //! against the target model in `riscv_conformance/`, executed through
 //! in-process verification until it jumps to the executor's return sentinel,
 //! and its signature (the memory between `begin_signature` and
-//! `end_signature`) must equal the suite's reference output, which the RISC-V
-//! Sail formal model produced.
+//! `end_signature`) must equal the signature the RISC-V Sail formal model
+//! writes for the same ELF, stopped at the same sentinel. A signature left entirely at the suite's fill
+//! value fails, so a test whose body was not assembled cannot pass.
 //!
-//! The suite is external input: set `BLOBRAY_RISCV_ARCH_TEST` to a checkout of
-//! a riscv-arch-test release that carries reference outputs (2.x) and
-//! `BLOBRAY_RISCV_CC` to a clang with the riscv32 target and lld, then run
+//! The inputs are external and pinned in `riscv_conformance/inputs.toml`,
+//! which also lists the suites: set `BLOBRAY_RISCV_ARCH_TEST` to the pinned
+//! riscv-arch-test checkout, `BLOBRAY_RISCV_CC` to a clang with the riscv32
+//! target and lld and `BLOBRAY_SAIL` to the pinned `sail_riscv_sim`, then run
 //! `cargo test -p blobray-cli --test riscv_conformance -- --ignored`.
+//! `cargo xtask check isa-conformance` fetches the pinned inputs and runs it.
 use blobray_application as app;
 use blobray_domain::*;
 use object::{Object, ObjectSymbol};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Suites whose instructions the executor implements, each with the
-/// instruction set its references were produced for. Link addresses in the
-/// signatures depend on instruction sizes, so compressed encodings are
-/// enabled only for the C suite.
-const SUITES: [(&str, &str); 4] = [
-    ("I", "rv32i"),
-    ("M", "rv32im"),
-    ("C", "rv32ic"),
-    ("Zifencei", "rv32i_zifencei"),
-];
+/// The pinned inputs; the test runs the suites they list.
+#[derive(serde::Deserialize)]
+struct Inputs {
+    #[serde(rename = "arch-test")]
+    arch_test: ArchTest,
+}
+#[derive(serde::Deserialize)]
+struct ArchTest {
+    suite: Vec<Suite>,
+}
+/// One suite of `riscv-test-suite/rv32i_m/` and the instruction set it is
+/// assembled for.
+#[derive(serde::Deserialize)]
+struct Suite {
+    name: String,
+    march: String,
+}
+fn suites() -> Vec<Suite> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/riscv_conformance/inputs.toml");
+    let inputs: Inputs = toml::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    inputs.arch_test.suite
+}
+/// Value the suites fill the signature area with before a test runs.
+const SIGNATURE_FILL: u32 = 0xdead_beef;
 /// Stack mapped for every test; the tests do not use it before writing it.
 const STACK: u32 = 0x9000_0000;
 const STACK_BYTES: u32 = 4096;
@@ -41,6 +58,9 @@ const EXCLUDED: &[(&str, &str)] = &[
         "Fencei",
         "the test stores into its own code, and image loading rejects writable code segments",
     ),
+    ("clmul-01", "Zbc is not part of the ESP32-S31 ISA"),
+    ("clmulh-01", "Zbc is not part of the ESP32-S31 ISA"),
+    ("clmulr-01", "Zbc is not part of the ESP32-S31 ISA"),
 ];
 
 fn environment(name: &str) -> PathBuf {
@@ -60,7 +80,7 @@ fn assemble(
     let status = Command::new(cc)
         .args(["--target=riscv32", "-mabi=ilp32", "-nostdlib", "-static"])
         .arg(format!("-march={march}"))
-        .args(["-fuse-ld=lld", "-DXLEN=32"])
+        .args(["-fuse-ld=lld", "-DXLEN=32", "-DTEST_CASE_1=True"])
         .arg("-I")
         .arg(suite.join("riscv-test-suite/env"))
         .arg("-I")
@@ -75,7 +95,12 @@ fn assemble(
     if status.status.success() {
         Ok(())
     } else {
-        Err(String::from_utf8_lossy(&status.stderr).into_owned())
+        let stderr = String::from_utf8_lossy(&status.stderr);
+        Err(stderr
+            .lines()
+            .find(|l| l.contains("error"))
+            .unwrap_or("assembly failed")
+            .to_owned())
     }
 }
 
@@ -175,26 +200,56 @@ fn run(elf: &[u8]) -> std::result::Result<Vec<u32>, String> {
         .collect())
 }
 
-fn reference(path: &Path) -> Vec<u32> {
-    std::fs::read_to_string(path)
-        .unwrap()
+/// The signature Sail writes for `elf`.
+fn reference(sail: &Path, elf: &Path, directory: &Path) -> std::result::Result<Vec<u32>, String> {
+    let signature = directory.join(format!(
+        "{}.sail",
+        elf.file_name().unwrap().to_string_lossy()
+    ));
+    let output = Command::new(sail)
+        // Sail stops where the executor's return sentinel ends the test.
+        .args([
+            "--rv32",
+            "--inst-limit",
+            "10000000",
+            "--stop-at-pc",
+            "0xfffffffe",
+        ])
+        .arg("--test-signature")
+        .arg(&signature)
+        .arg(elf)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(format!(
+            "Sail failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    std::fs::read_to_string(&signature)
+        .map_err(|e| e.to_string())?
         .lines()
         .filter(|l| !l.trim().is_empty())
-        .map(|l| u32::from_str_radix(l.trim(), 16).unwrap())
+        .map(|l| u32::from_str_radix(l.trim(), 16).map_err(|e| e.to_string()))
         .collect()
 }
 
 #[test]
-#[ignore = "needs the RISC-V architectural tests and a riscv32 clang"]
+#[ignore = "needs the RISC-V architectural tests, a riscv32 clang and Sail"]
 fn architectural_tests_match_their_reference_signatures() {
     let suite = environment("BLOBRAY_RISCV_ARCH_TEST");
     let cc = environment("BLOBRAY_RISCV_CC");
+    let sail = environment("BLOBRAY_SAIL");
     let output = tempfile::tempdir().unwrap();
     let mut passed = 0;
     let mut failures = vec![];
     let mut excluded_passing = vec![];
-    for (extension, march) in SUITES {
-        let root = suite.join("riscv-test-suite/rv32i_m").join(extension);
+    for Suite {
+        name: extension,
+        march,
+    } in suites()
+    {
+        let root = suite.join("riscv-test-suite/rv32i_m").join(&extension);
         let mut sources: Vec<_> = std::fs::read_dir(root.join("src"))
             .unwrap()
             .map(|e| e.unwrap().path())
@@ -204,14 +259,12 @@ fn architectural_tests_match_their_reference_signatures() {
         for source in sources {
             let name = source.file_stem().unwrap().to_string_lossy().into_owned();
             let elf = output.path().join(format!("{extension}-{name}.elf"));
-            let outcome = assemble(&cc, &suite, march, &source, &elf).and_then(|()| {
+            let outcome = assemble(&cc, &suite, &march, &source, &elf).and_then(|()| {
                 let signature = run(&std::fs::read(&elf).unwrap())?;
-                let expected = reference(
-                    &root
-                        .join("references")
-                        .join(format!("{name}.reference_output")),
-                );
-                if signature == expected {
+                let expected = reference(&sail, &elf, output.path())?;
+                if expected.iter().all(|&word| word == SIGNATURE_FILL) {
+                    Err("the reference signature is only fill: the test body did not run".into())
+                } else if signature == expected {
                     Ok(())
                 } else {
                     let first = signature

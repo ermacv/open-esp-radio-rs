@@ -572,23 +572,32 @@ reuse key are unaffected.
 ### ISA conformance
 
 ```console
-BLOBRAY_RISCV_ARCH_TEST=SUITE BLOBRAY_RISCV_CC=CLANG \
-  cargo test -p blobray-cli --test riscv_conformance -- --ignored
+cargo xtask check isa-conformance [--cc CLANG]
 ```
 
-The ignored `riscv_conformance` test checks the RISC-V executor against the
-official architectural tests. `SUITE` is a checkout of riscv-arch-test 2.7.4,
-the last release that ships reference signatures from the Sail model; `CLANG`
-is a clang with the riscv32 target and lld. Each RV32 I, M, C and Zifencei test
-is assembled into a temporary directory against the target model in
-`cli/tests/riscv_conformance/`, with the instruction set its references were
-produced for, then run through in-process verification until it returns to the
-executor's sentinel. Its signature must equal the reference.
+The `riscv_conformance` test checks the RISC-V executor against the official
+architectural tests, with the Sail RISC-V formal model as the reference. Its
+inputs are pinned in `cli/tests/riscv_conformance/inputs.toml`: the
+riscv-arch-test commit with the suites it runs and the SHA-256 of the Sail
+release archive. The xtask check fetches both into `target/isa-conformance/`,
+verifies them and runs the ignored test with a clang that has the riscv32
+target and lld (`clang` by default). The test can also run directly with
+`BLOBRAY_RISCV_ARCH_TEST`, `BLOBRAY_RISCV_CC` and `BLOBRAY_SAIL` set:
+`cargo test -p blobray-cli --test riscv_conformance -- --ignored`.
 
-Two tests are excluded with their reason and must keep failing:
-`cebreak-01` needs a machine-mode breakpoint trap, and `Fencei` stores into its
-own code, which image loading rejects. No release with reference signatures
-contains the A suite, so atomic instructions are not covered here.
+Each test of the RV32 I, M, A, B (Zba, Zbb, Zbs), C (with Zcb) and Zifencei
+suites is assembled once against the target model in
+`cli/tests/riscv_conformance/`. The executor runs it through in-process
+verification until it returns to its sentinel, and Sail runs the same ELF
+until the same address; the two signatures must be equal. A reference
+signature that is only the suites' fill value fails, so a test whose body was
+not assembled cannot pass.
+
+Excluded tests carry their reason and must keep failing: `cebreak-01` needs a
+machine-mode breakpoint trap, `Fencei` stores into its own code, which image
+loading rejects, and the `clmul` tests need Zbc, which the ESP32-S31 does not
+have. Zcmp, which the executor implements, has neither architectural
+tests nor a Sail model, so this check does not cover it.
 
 ### Code coverage of root closures
 

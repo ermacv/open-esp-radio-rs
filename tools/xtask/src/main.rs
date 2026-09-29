@@ -263,6 +263,13 @@ enum Check {
         jobs: Option<usize>,
     },
     BlobrayStandalone,
+    /// Run Blobray's RISC-V executor on the pinned architectural tests and
+    /// compare every signature with the Sail formal model's.
+    IsaConformance {
+        /// A clang with the riscv32 target and lld.
+        #[arg(long, default_value = "clang")]
+        cc: PathBuf,
+    },
     /// Check that every vendor function production and the register model
     /// cite is registered with its reviewed, still pinned code.
     Provenance {
@@ -468,6 +475,7 @@ fn run() -> Result<std::process::ExitCode> {
                 jobs.unwrap_or_else(checks::firmware::default_jobs),
             ),
             Check::BlobrayStandalone => checks::standalone::run(&ctx),
+            Check::IsaConformance { cc } => checks::isa_conformance::run(&ctx, &cc),
             Check::Provenance { chip } => oer_xtask::vendor_provenance::check(&ctx, &chip),
         },
         Task::Build {

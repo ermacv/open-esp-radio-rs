@@ -6,6 +6,7 @@ pub mod docs;
 pub mod feature_sets;
 pub mod firmware;
 pub mod images;
+pub mod isa_conformance;
 pub mod metadata;
 pub mod network;
 pub mod phy;

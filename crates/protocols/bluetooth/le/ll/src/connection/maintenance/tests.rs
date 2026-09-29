@@ -13,7 +13,7 @@ fn connection(algorithm_two: bool, counter: u16) -> LePeripheralConnection {
             LeChannelSelectionAlgorithm::AlgorithmOne
         },
     );
-    connection.event_counter = counter;
+    connection.timeline.event_counter = counter;
     connection
 }
 

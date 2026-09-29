@@ -297,7 +297,7 @@ fn event_counter_wraps_without_reusing_an_in_flight_owner() {
         request,
         crate::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
     );
-    connection.event_counter = u16::MAX;
+    connection.timeline.event_counter = u16::MAX;
 
     let in_flight = connection.prepare_event().into_submitted();
     assert_eq!(in_flight.event_counter(), u16::MAX);
@@ -422,7 +422,7 @@ fn csa2_recurring_preview_selects_the_final_wrapped_counter() {
         request,
         crate::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
     );
-    connection.event_counter = u16::MAX;
+    connection.timeline.event_counter = u16::MAX;
     let completed = complete_missed(connection);
     let delta = LePeripheralConnectionEventDelta::from_skipped(1).unwrap();
 
@@ -515,7 +515,7 @@ fn channel_map_instant_wraps_and_rejects_past_or_colliding_updates() {
     let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
     let mut connection =
         LePeripheralConnection::from_request(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
-    connection.event_counter = 0xfffa;
+    connection.timeline.event_counter = 0xfffa;
     let mut completed = complete_missed(connection);
     let new_map = LeDataChannelMap::new([0x03, 0, 0, 0, 0]).unwrap();
 
@@ -528,7 +528,7 @@ fn channel_map_instant_wraps_and_rejects_past_or_colliding_updates() {
     );
     let mut connection =
         LePeripheralConnection::from_request(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
-    connection.event_counter = 0xfffa;
+    connection.timeline.event_counter = 0xfffa;
     let mut completed = complete_missed(connection);
     assert_eq!(
         completed.schedule_channel_map_update(new_map, 0x7ff9),
@@ -629,7 +629,7 @@ fn connection_update_handles_same_event_past_instant_and_procedure_collisions() 
     let map = LeDataChannelMap::new([0x03, 0, 0, 0, 0]).unwrap();
     let mut connection =
         LePeripheralConnection::from_request(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
-    connection.event_counter = 0xfffa;
+    connection.timeline.event_counter = 0xfffa;
     let mut completed = complete_missed(connection);
 
     completed
@@ -651,7 +651,7 @@ fn connection_update_handles_same_event_past_instant_and_procedure_collisions() 
 
     let mut connection =
         LePeripheralConnection::from_request(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
-    connection.event_counter = 0xfffa;
+    connection.timeline.event_counter = 0xfffa;
     let mut completed = complete_missed(connection);
     assert_eq!(
         completed.schedule_connection_update(updated, 0x7ff9),
@@ -665,7 +665,7 @@ fn connection_update_handles_same_event_past_instant_and_procedure_collisions() 
 
     let mut connection =
         LePeripheralConnection::from_request(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
-    connection.event_counter = 0xfffa;
+    connection.timeline.event_counter = 0xfffa;
     let mut completed = complete_missed(connection);
     completed.schedule_connection_update(updated, 0).unwrap();
     assert_eq!(
@@ -723,7 +723,7 @@ fn phy_update_applies_from_the_exact_instant_in_both_event_paths() {
     let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
     let mut connection =
         LePeripheralConnection::from_request(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
-    connection.event_counter = 1;
+    connection.timeline.event_counter = 1;
     let mut completed = complete_missed(connection);
     completed.schedule_phy_update(TWO, 3).unwrap();
     let provisional =
@@ -754,7 +754,7 @@ fn phy_update_handles_same_event_past_instant_and_procedure_collisions() {
             request,
             LeChannelSelectionAlgorithm::AlgorithmTwo,
         );
-        connection.event_counter = 0xfffa;
+        connection.timeline.event_counter = 0xfffa;
         complete_missed(connection)
     };
 

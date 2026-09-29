@@ -107,7 +107,7 @@ impl LePeripheralConnectionEventCompleted {
         ) {
             self.connection
                 .maintenance
-                .observe_header(header, self.connection.instant_pending());
+                .observe_header(header, self.connection.timeline.instant_pending());
         }
     }
 
@@ -146,28 +146,28 @@ impl LePeripheralConnectionEventCompleted {
         }
         // Check every omitted event against both pending procedures, including
         // wrapping counters. The existing predecessor guard remains in force.
-        let next = self.connection.event_counter;
+        let next = self.connection.timeline.event_counter;
         let skipped = delta.skipped();
         let protected = |instant: u16| {
             instant.wrapping_sub(next) < skipped
                 || instant.wrapping_sub(1).wrapping_sub(next) < skipped
         };
-        if let Some(update) = self.connection.pending_connection_update
+        if let Some(update) = self.connection.timeline.pending_connection_update
             && protected(update.instant)
         {
             return Err(SkipBlocked::InstantProcedure);
         }
-        if let Some(update) = self.connection.pending_channel_map
+        if let Some(update) = self.connection.timeline.pending_channel_map
             && protected(update.instant)
         {
             return Err(SkipBlocked::InstantProcedure);
         }
-        if let Some(update) = self.connection.pending_phy_update
+        if let Some(update) = self.connection.timeline.pending_phy_update
             && protected(update.instant)
         {
             return Err(SkipBlocked::InstantProcedure);
         }
-        if self.connection.instant_pending()
+        if self.connection.timeline.instant_pending()
             && !matches!(
                 self.connection.maintenance.instant_acknowledgement,
                 InstantAcknowledgement::Confirmed

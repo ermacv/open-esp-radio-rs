@@ -175,7 +175,7 @@
     },
     {
       "path": "tools/blobray/Cargo.lock",
-      "sha256": "56cfca749963a058a0ece60a76f1b654aad32101e4366b40bc07d7b6565871fe"
+      "sha256": "5420163fdaed4a9ad795deb07ef8bfbf43b8cb3b2c170f97a2b212fa2111458d"
     },
     {
       "path": "tools/blobray/crates/analysis/Cargo.toml",
@@ -458,6 +458,34 @@
       "sha256": "9f97ae3a20c0a24b4d625882f7cd930733c32e705c5dd04a261726066688da6d"
     },
     {
+      "path": "tools/blobray/crates/linker/Cargo.toml",
+      "sha256": "addeba9951b0b15cb81900b8f47778e55e424319453626b4f143afaa0b1a06f7"
+    },
+    {
+      "path": "tools/blobray/crates/linker/src/lib.rs",
+      "sha256": "f84ee64926ae00a715f5f9a3b67225f199cf7d8fa9ffa3d8d04202d0803ecba0"
+    },
+    {
+      "path": "tools/blobray/crates/linker/src/linker/gnu_ld.rs",
+      "sha256": "44bce271115838c88bcf6578ef18ee81dc6f3e03dcf6ad3967b01b7d4c86bda0"
+    },
+    {
+      "path": "tools/blobray/crates/linker/src/linker/lld.rs",
+      "sha256": "c2ab542bb3748c109b2e617d5630c0e1ba2bdb9278844b49b0d251f79aea699f"
+    },
+    {
+      "path": "tools/blobray/crates/linker/src/linker/mod.rs",
+      "sha256": "84dd90b3cb39896e410f3bc54bfef2ba88e23fbfce58f0e95a359841077bc200"
+    },
+    {
+      "path": "tools/blobray/crates/linker/src/linker/process.rs",
+      "sha256": "0a27195550e786e54b0d5adfdd306eb39627219a3cd5ba9f843287953af45377"
+    },
+    {
+      "path": "tools/blobray/crates/linker/src/linker/records.rs",
+      "sha256": "f162d9590d65eae0b3cd4925ccfe97503eddae80412494e2441d24a6433ce35d"
+    },
+    {
       "path": "tools/blobray/crates/riscv/Cargo.toml",
       "sha256": "989f09075ed7550b579118562ccff9107e8c31e8c9a6a7543dda3588c6ca007e"
     },
@@ -522,42 +550,6 @@
       "sha256": "bd152d0766c5527867499e722c36a8870f635531954776e8db2b3cb9511f7719"
     },
     {
-      "path": "tools/blobray/next/Cargo.toml",
-      "sha256": "077317110f439423428df7e79b0f7d7b4e692bfd6dfaac18a92d840be24a0e58"
-    },
-    {
-      "path": "tools/blobray/next/src/lib.rs",
-      "sha256": "874a9241606f2b27d388986305663ee9b0ba3af8d70eec33b18083fbaa9d9f9f"
-    },
-    {
-      "path": "tools/blobray/next/src/linux/linker/gnu_ld.rs",
-      "sha256": "44bce271115838c88bcf6578ef18ee81dc6f3e03dcf6ad3967b01b7d4c86bda0"
-    },
-    {
-      "path": "tools/blobray/next/src/linux/linker/lld.rs",
-      "sha256": "c2ab542bb3748c109b2e617d5630c0e1ba2bdb9278844b49b0d251f79aea699f"
-    },
-    {
-      "path": "tools/blobray/next/src/linux/linker/mod.rs",
-      "sha256": "84dd90b3cb39896e410f3bc54bfef2ba88e23fbfce58f0e95a359841077bc200"
-    },
-    {
-      "path": "tools/blobray/next/src/linux/linker/process.rs",
-      "sha256": "0a27195550e786e54b0d5adfdd306eb39627219a3cd5ba9f843287953af45377"
-    },
-    {
-      "path": "tools/blobray/next/src/linux/linker/records.rs",
-      "sha256": "f162d9590d65eae0b3cd4925ccfe97503eddae80412494e2441d24a6433ce35d"
-    },
-    {
-      "path": "tools/blobray/next/src/linux/mod.rs",
-      "sha256": "60dbd8601eea52284efb024385721f4f065926d867b9b4d24870cfab0605cc9b"
-    },
-    {
-      "path": "tools/blobray/next/src/wire.rs",
-      "sha256": "579bc54ec871cbcaf52424501922bcf5655856bc88ef4cbc3dd9e00aa1c55466"
-    },
-    {
       "path": "verification/esp32s31/artifacts.toml",
       "sha256": "f1c0f78095d9943f859b5c264cdaa3ea4bacd6ffe7b8eb0c4d735f31ba46fce6"
     },
@@ -595,7 +587,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/Cargo.toml",
-      "sha256": "a4a166dcd33e5f4d9c404fe50f30a026e45091d182a8078ffeb09674960cd21b"
+      "sha256": "57560d9d4a0f84beb641ba4e67432d63cbaab6a12f71f578dc1bc155dcfbc4cb"
     },
     {
       "path": "verification/esp32s31/scenarios/src/bluetooth/ble.rs",
@@ -759,7 +751,7 @@
     },
     {
       "path": "verification/harness/scenarios/Cargo.toml",
-      "sha256": "65db2785874cae72b0f68087464091b13f7e9e77a15bd82222bab911104e3f97"
+      "sha256": "314143dc8488411afe083c0d4b1940acf1b91733b4dd6be97f11155103229d67"
     },
     {
       "path": "verification/harness/scenarios/src/artifacts.rs",
@@ -835,11 +827,11 @@
     },
     {
       "path": "verification/harness/scenarios/src/session.rs",
-      "sha256": "182ab90c81cfda6c0e15dd832e8d0496a49dd6221f0669e19f065c4900a24b27"
+      "sha256": "80a77246e64bba3bc24831f645e9d7dbb48dbe6b6258e5926aa235baf8fe8d3f"
     },
     {
       "path": "verification/harness/scenarios/src/shard.rs",
-      "sha256": "6e54a16e14024db41b115e15ef5ee32254846eea1fb495a0e8ce322f02b1f6b4"
+      "sha256": "182b8eb91972924e082031d253854deb2627d3e5c2c38e4b3319cd88233de8c4"
     },
     {
       "path": "verification/harness/scenarios/src/state.rs",

@@ -262,3 +262,21 @@ fn a_build_only_run_builds_its_own_sources_and_is_no_replay() {
         .is_err()
     );
 }
+
+#[test]
+fn run_all_takes_repeated_exclusions() {
+    let cli = Cli::try_parse_from([
+        "cargo-hil",
+        "run-all",
+        "--all",
+        "--exclude",
+        "a",
+        "--exclude",
+        "b",
+    ])
+    .unwrap();
+    let CliCommand::RunAll { exclude, .. } = cli.command else {
+        panic!("expected run-all");
+    };
+    assert_eq!(exclude, ["a", "b"]);
+}

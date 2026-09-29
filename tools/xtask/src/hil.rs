@@ -145,13 +145,14 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         Some(frozen) => (frozen.runner.clone(), frozen.receipt.clone()),
         None => prepare(ctx)?,
     };
-    let runner_args = match frozen
+    let mut runner_args = match frozen
         .as_ref()
         .and_then(|frozen| frozen.snapshot.as_deref())
     {
         Some(snapshot) => with_source_snapshot(args, snapshot),
         None => args.to_vec(),
     };
+    apply_quarantine(&mut runner_args)?;
     if hands_off_terminal(args) {
         // Fixture installation ends in a foreground sudo handoff. A supervised
         // child runs in its own process group, which is a background group for
@@ -1231,6 +1232,29 @@ fn runs(
             )?;
         }
         RunsCli::Unpin { run } => hil_runs::set_pin(&store, &run, None)?,
+        RunsCli::Flaky { since, minimum } => {
+            let recent = now.saturating_sub(since.as_millis() as u64);
+            let runs = all()?
+                .into_iter()
+                .filter(|run| run.started_millis >= recent)
+                .collect::<Vec<_>>();
+            print!(
+                "{}",
+                hil_runs::flaky_report(
+                    &hil_runs::stabilities(&runs),
+                    minimum,
+                    &hil_runs::quarantined(&store)
+                )
+            );
+        }
+        RunsCli::Quarantine { scenario, reason } => hil_runs::set_quarantine(
+            &store,
+            &scenario,
+            Some(
+                serde_json::json!({"by": options.owner(ctx)?, "reason": reason, "unix_millis": now}),
+            ),
+        )?,
+        RunsCli::Release { scenario } => hil_runs::set_quarantine(&store, &scenario, None)?,
         RunsCli::Prune {
             days,
             keep_failed,
@@ -1757,6 +1781,36 @@ fn checkout_of_common_dir(common: &Path) -> Option<PathBuf> {
     (common.file_name()? == ".git").then(|| common.parent().map(Path::to_owned))?
 }
 
+/// Leave quarantined scenarios out of a `run-all`, and warn of a `run` that
+/// names one.
+fn apply_quarantine(args: &mut Vec<OsString>) -> Result<()> {
+    let store = crate::hil_store::shared_runs(HIL_TARGET)?
+        .parent()
+        .ok_or("the run store has no parent")?
+        .to_owned();
+    let quarantined = crate::hil_runs::quarantined(&store);
+    match args.first().and_then(|arg| arg.to_str()) {
+        Some("run-all") => {
+            for scenario in quarantined.keys() {
+                args.push("--exclude".into());
+                args.push(scenario.into());
+            }
+        }
+        Some("run") => {
+            for (scenario, entry) in &quarantined {
+                if args.iter().any(|arg| arg.to_str() == Some(scenario)) {
+                    eprintln!(
+                        "hil: `{scenario}` is quarantined ({}); running it as asked",
+                        entry["reason"].as_str().unwrap_or("no reason")
+                    );
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 /// Whether `args` hold the option `name`, alone or as `name=value`.
 fn has_flag(args: &[OsString], name: &str) -> bool {
     args.iter().any(|arg| {
@@ -2211,6 +2265,26 @@ enum RunsCli {
         measurement: Option<String>,
         #[arg(long, default_value_t = 30)]
         limit: usize,
+    },
+    /// Scenarios whose repetitions did not always pass, least passing
+    /// first, with the stand's failures counted apart from the code's.
+    Flaky {
+        /// Only runs this recent, e.g. 3d or 12h.
+        #[arg(long, value_parser = parse_budget, default_value = "7d")]
+        since: std::time::Duration,
+        /// Fewest repetitions a scenario needs to be judged.
+        #[arg(long, default_value_t = 3)]
+        minimum: usize,
+    },
+    /// Leave a scenario out of every `run-all` until it is released; an
+    /// explicit `run` of it still runs, with a warning.
+    Quarantine {
+        scenario: String,
+        #[arg(long)]
+        reason: String,
+    },
+    Release {
+        scenario: String,
     },
     /// Keep a run from pruning, e.g. an A/B baseline.
     Pin {

@@ -135,6 +135,10 @@ pub(crate) enum CliCommand {
         /// Run every catalog scenario: the whole default suite.
         #[arg(long)]
         all: bool,
+        /// Leave this scenario out, such as a quarantined one. May be
+        /// repeated.
+        #[arg(long, value_name = "SCENARIO")]
+        exclude: Vec<String>,
     },
 }
 

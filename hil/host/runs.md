@@ -20,6 +20,9 @@ cargo hil runs show <run-id>          # where its artifacts are
 cargo hil runs why <run-id>
 cargo hil runs compare <run-a> <run-b> --measurement mbps
 cargo hil runs history <scenario> --measurement mbps
+cargo hil runs flaky --since 7d      # scenarios that did not always pass
+cargo hil runs quarantine <scenario> --reason "loses its hello" # out of run-all
+cargo hil runs release <scenario>
 cargo hil runs pin <run-id> --reason "A/B baseline"
 cargo hil runs prune                  # list what the rule would delete
 cargo hil runs prune --apply
@@ -326,6 +329,16 @@ bundle once. These views never decide qualification.
 
 After every command that executes scenarios, `cargo hil` applies this rule
 to the shared store, at most once a day, and reports what it deleted.
+`flaky` counts every scenario's repetitions over the period (7 days by
+default) and lists those with at least `--minimum` (3) that did not always
+pass, least passing first: how many passed, how many failed as the code under
+test (`failed`) and how many as the stand (`broken` or `blocked`), whether the
+scenario both passed and did not (flaky), its newest failure and whether it is
+quarantined. `quarantine` records a scenario with its reason in the
+esp32s31 store's `quarantine.json`: `run-all` then leaves it out, and a `run`
+that names it runs it with a warning; `release` takes it back. Quarantine
+changes no run's outcome or evidence.
+
 `prune` keeps pinned runs, runs cited by committed evidence shards, runs whose
 firmware another run replayed, runs younger than `--days` (30), incomplete
 runs, the latest pass and the `--keep-failed` (5) newest failures of every

@@ -934,6 +934,134 @@ pub fn set_pin(store: &Path, run: &str, pin: Option<Value>) -> Result<()> {
     Ok(())
 }
 
+/// How one scenario's repetitions ended across runs.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Stability {
+    pub scenario: String,
+    pub passed: usize,
+    /// Failures of the code under test.
+    pub failed: usize,
+    /// Failures of the stand: broken or blocked repetitions.
+    pub stand: usize,
+    /// The newest failure's message.
+    pub last_failure: Option<String>,
+}
+
+impl Stability {
+    pub fn repetitions(&self) -> usize {
+        self.passed + self.failed + self.stand
+    }
+
+    /// Whether the scenario both passed and did not: its result depends on
+    /// more than the code under test.
+    pub fn is_flaky(&self) -> bool {
+        self.passed > 0 && self.failed + self.stand > 0
+    }
+}
+
+/// Each scenario's repetitions across `runs`, oldest first, that ended as
+/// passed, failed, broken or blocked.
+pub fn stabilities(runs: &[Run]) -> Vec<Stability> {
+    let mut by_scenario: BTreeMap<String, Stability> = BTreeMap::new();
+    for run in runs {
+        for scenario in &run.scenarios {
+            let entry = by_scenario
+                .entry(scenario.id.clone())
+                .or_insert_with(|| Stability {
+                    scenario: scenario.id.clone(),
+                    ..Stability::default()
+                });
+            for repetition in &scenario.repetitions {
+                match repetition.outcome {
+                    Outcome::Passed => entry.passed += 1,
+                    Outcome::Failed => entry.failed += 1,
+                    Outcome::Broken | Outcome::Blocked => entry.stand += 1,
+                    Outcome::Skipped | Outcome::Interrupted | Outcome::BoardQuarantined => {
+                        continue;
+                    }
+                }
+                if let Some((_, message)) = &repetition.failure {
+                    entry.last_failure = Some(message.clone());
+                }
+            }
+        }
+    }
+    by_scenario.into_values().collect()
+}
+
+/// The scenarios of `stabilities` with at least `minimum` repetitions that
+/// did not always pass, least passing first, with `quarantined` marked.
+pub fn flaky_report(
+    stabilities: &[Stability],
+    minimum: usize,
+    quarantined: &BTreeMap<String, Value>,
+) -> String {
+    let mut listed = stabilities
+        .iter()
+        .filter(|entry| entry.repetitions() >= minimum && entry.failed + entry.stand > 0)
+        .collect::<Vec<_>>();
+    listed.sort_by(|a, b| {
+        (a.passed * b.repetitions())
+            .cmp(&(b.passed * a.repetitions()))
+            .then_with(|| a.scenario.cmp(&b.scenario))
+    });
+    let mut report = String::new();
+    for entry in listed {
+        let rate = 100 * entry.passed / entry.repetitions().max(1);
+        report.push_str(&format!(
+            "{:>3}% {} ({} of {} passed; {} failed, {} stand){}{}\n",
+            rate,
+            entry.scenario,
+            entry.passed,
+            entry.repetitions(),
+            entry.failed,
+            entry.stand,
+            if entry.is_flaky() { ", flaky" } else { "" },
+            if quarantined.contains_key(&entry.scenario) {
+                ", quarantined"
+            } else {
+                ""
+            },
+        ));
+        if let Some(message) = &entry.last_failure {
+            let message = message.lines().next().unwrap_or_default();
+            report.push_str(&format!(
+                "      last: {}\n",
+                message.chars().take(120).collect::<String>()
+            ));
+        }
+    }
+    if report.is_empty() {
+        report.push_str("every scenario with enough repetitions passed each time\n");
+    }
+    report
+}
+
+/// Scenarios quarantined by owners, with their reasons: a run of every
+/// scenario leaves them out.
+pub fn quarantined(store: &Path) -> BTreeMap<String, Value> {
+    read(&store.join("quarantine.json"))
+        .and_then(|value| serde_json::from_value(value).ok())
+        .unwrap_or_default()
+}
+
+pub fn set_quarantine(store: &Path, scenario: &str, entry: Option<Value>) -> Result<()> {
+    let mut quarantined = quarantined(store);
+    match entry {
+        Some(entry) => {
+            quarantined.insert(scenario.to_owned(), entry);
+        }
+        None => {
+            quarantined.remove(scenario);
+        }
+    }
+    fs::create_dir_all(store)?;
+    let temporary = store.join(format!("quarantine.json.{}", std::process::id()));
+    fs::write(&temporary, serde_json::to_vec_pretty(&quarantined)?)?;
+    fs::rename(temporary, store.join("quarantine.json"))?;
+    Ok(())
+}
+
 /// The prune rule.
 #[derive(Debug)]
 pub struct Retention {
@@ -1070,6 +1198,70 @@ pub fn cited_by_shards(root: &Path) -> BTreeSet<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_scenario_that_passed_and_failed_is_flaky_and_its_stand_failures_count_apart() {
+        let repetition = |outcome, failure: Option<&str>| Repetition {
+            number: 1,
+            outcome,
+            failure: failure.map(|message| (FailureKind::Infrastructure, message.to_owned())),
+            measurements: Vec::new(),
+            directory: None,
+        };
+        let run = |repetitions: Vec<Repetition>| Run {
+            id: String::from("1-a"),
+            directory: PathBuf::new(),
+            started_millis: 1,
+            state: State::Completed,
+            outcome: Some(Outcome::Failed),
+            commit: None,
+            dirty: false,
+            checkout: None,
+            images: Vec::new(),
+            replayed: Vec::new(),
+            scenarios: vec![ScenarioRun {
+                id: String::from("system-watchdog"),
+                image: String::from("system-watchdog"),
+                outcome: Outcome::Failed,
+                failure: None,
+                repetitions,
+            }],
+            observer: None,
+        };
+        let runs = [
+            run(vec![
+                repetition(Outcome::Passed, None),
+                repetition(
+                    Outcome::Blocked,
+                    Some("device did not publish a HIL protocol hello"),
+                ),
+            ]),
+            run(vec![
+                repetition(Outcome::Passed, None),
+                repetition(Outcome::Failed, Some("unexpected reset")),
+                repetition(Outcome::Interrupted, None),
+            ]),
+        ];
+        let stabilities = stabilities(&runs);
+        assert_eq!(stabilities.len(), 1);
+        let watchdog = &stabilities[0];
+        assert_eq!(
+            (watchdog.passed, watchdog.failed, watchdog.stand),
+            (2, 1, 1)
+        );
+        assert!(watchdog.is_flaky());
+        assert_eq!(watchdog.last_failure.as_deref(), Some("unexpected reset"));
+        let quarantined = BTreeMap::from([(
+            String::from("system-watchdog"),
+            serde_json::json!({"reason": "lost hello"}),
+        )]);
+        let report = flaky_report(&stabilities, 3, &quarantined);
+        assert!(report.starts_with(
+            " 50% system-watchdog (2 of 4 passed; 1 failed, 1 stand), flaky, quarantined"
+        ));
+        // Too few repetitions to judge.
+        assert!(flaky_report(&stabilities, 5, &quarantined).contains("passed each time"));
+    }
 
     #[test]
     fn over_its_budget_a_store_loses_its_oldest_runs_only_age_kept() {

@@ -282,6 +282,7 @@ pub(crate) fn run() -> Result<()> {
             source_include,
             include_untracked,
             all: _,
+            exclude,
         } => {
             let catalog = Catalog::load(&catalog_path)?;
             let lab = lab::config::LabConfig::load(&lab_path)?;
@@ -290,6 +291,7 @@ pub(crate) fn run() -> Result<()> {
                 tag: tag.clone(),
             }
             .resolve(&catalog)?;
+            let selected = excluding(selected, &exclude)?;
             let snapshot = image::snapshot::capture(&root, &source_include, include_untracked)?;
             let required = requirements(&selected);
             hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
@@ -314,4 +316,21 @@ pub(crate) fn run() -> Result<()> {
             )
         }
     }
+}
+
+/// `selected` without the scenarios named in `exclude`, each reported.
+fn excluding<'a>(
+    selected: Vec<&'a crate::scenario::Scenario>,
+    exclude: &[String],
+) -> crate::Result<Vec<&'a crate::scenario::Scenario>> {
+    let (left_out, kept): (Vec<_>, Vec<_>) = selected
+        .into_iter()
+        .partition(|scenario| exclude.iter().any(|id| id == scenario.id()));
+    for scenario in left_out {
+        eprintln!("skipping excluded scenario `{}`", scenario.id());
+    }
+    if kept.is_empty() {
+        return Err("every selected HIL scenario is excluded".into());
+    }
+    Ok(kept)
 }

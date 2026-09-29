@@ -40,7 +40,9 @@ usage: cargo hil evidence record [--run ID ...]
 record   write the qualifying observations of runs as tracked shards in
          hil/evidence/<chip>/: the --run runs, or else this checkout's pending
          runs
-pending  list this checkout's clean runs whose evidence is not recorded";
+pending  list this checkout's clean runs whose evidence is not recorded
+dismiss  --run ID ...: drop runs whose evidence will not be recorded, such as
+         runs whose inputs changed since, from the pending list";
 
 /// `cargo hil evidence ...`.
 pub fn command(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
@@ -50,6 +52,10 @@ pub fn command(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCod
         .collect::<std::result::Result<Vec<_>, _>>()?;
     match args.split_first() {
         Some((&"record", rest)) => record(ctx, rest)?,
+        Some((&"dismiss", rest)) => {
+            let runs = dismiss(&ctx.root, rest)?;
+            println!("hil: dismissed {runs} pending run(s)");
+        }
         Some((&"pending", [])) => {
             let pending = live(&load(&ctx.root)?)?;
             if pending.is_empty() {
@@ -71,7 +77,8 @@ pub fn command(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCod
     Ok(std::process::ExitCode::SUCCESS)
 }
 
-fn record(ctx: &Context, args: &[&str]) -> Result<()> {
+/// The `--run ID` arguments of an evidence command.
+fn run_arguments(args: &[&str]) -> Result<Vec<String>> {
     let mut runs = Vec::new();
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
@@ -80,6 +87,11 @@ fn record(ctx: &Context, args: &[&str]) -> Result<()> {
             other => return Err(format!("unknown argument {other}\n{HELP}").into()),
         }
     }
+    Ok(runs)
+}
+
+fn record(ctx: &Context, args: &[&str]) -> Result<()> {
+    let mut runs = run_arguments(args)?;
     if runs.is_empty() {
         runs = live(&load(&ctx.root)?)?
             .into_iter()
@@ -148,7 +160,18 @@ pub fn remember(root: &Path, runs: &[Pending]) -> Result<()> {
     })
 }
 
-/// Drop recorded runs from the pending list.
+/// Drop the `--run` runs whose evidence will not be recorded from the pending
+/// list; returns how many were named.
+fn dismiss(root: &Path, args: &[&str]) -> Result<usize> {
+    let runs = run_arguments(args)?;
+    if runs.is_empty() {
+        return Err(format!("dismiss needs --run ID\n{HELP}").into());
+    }
+    forget(root, &runs)?;
+    Ok(runs.len())
+}
+
+/// Drop recorded or dismissed runs from the pending list.
 fn forget(root: &Path, runs: &[String]) -> Result<()> {
     update(root, |pending| {
         pending.retain(|entry| !runs.contains(&entry.run));
@@ -356,6 +379,27 @@ mod tests {
         );
         forget(root.path(), &[String::from("r1")]).unwrap();
         assert_eq!(load(root.path()).unwrap(), [pending("r3", &["b"])]);
+    }
+
+    #[test]
+    fn dismissing_drops_only_the_named_runs_and_needs_one() {
+        let root = tempfile::tempdir().unwrap();
+        remember(
+            root.path(),
+            &[
+                pending("r1", &["a"]),
+                pending("r2", &["a"]),
+                pending("r3", &["b"]),
+            ],
+        )
+        .unwrap();
+        assert!(dismiss(root.path(), &[]).is_err());
+        assert!(dismiss(root.path(), &["r1"]).is_err());
+        assert_eq!(
+            dismiss(root.path(), &["--run", "r1", "--run", "r3"]).unwrap(),
+            2
+        );
+        assert_eq!(load(root.path()).unwrap(), [pending("r2", &["a"])]);
     }
 
     #[test]

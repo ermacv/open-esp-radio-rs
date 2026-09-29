@@ -302,6 +302,7 @@ Stand commands (shared by every checkout of this user):
   cargo hil evidence record [--run ID ...]   write runs' qualifying observations as tracked shards;
                                       default: this checkout's pending clean runs
   cargo hil evidence pending          clean runs whose evidence is not recorded yet
+  cargo hil evidence dismiss --run ID ...   drop runs whose evidence will not be recorded
   cargo hil firmware list             tracked ESP-IDF images (peers, vendor references)
   cargo hil firmware build IMAGE      build against the one pinned ESP-IDF
   cargo hil firmware flash IMAGE --board NAME|MAC [--jtag] [--if-changed]   flash under a lease of that board, journaled
@@ -519,7 +520,8 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
         root,
         node(&["hil", "queue"], &[], &["--json"]),
         node(&["hil", "dashboard"], &[], &["--port"]),
-        node(&["hil", "evidence"], &["record", "pending"], &[]),
+        node(&["hil", "evidence"], &["record", "pending", "dismiss"], &[]),
+        node(&["hil", "evidence", "dismiss"], &[], &["--run"]),
         node(&["hil", "evidence", "record"], &[], &["--run"]),
         node(&["hil", "evidence", "pending"], &[], &[]),
         node(&["hil", "owner"], &["set", "merge", "forget"], &[]),

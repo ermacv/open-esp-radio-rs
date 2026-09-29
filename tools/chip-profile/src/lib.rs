@@ -105,6 +105,16 @@ impl Profile {
     pub fn directory(&self, root: &Path, directory: &str) -> PathBuf {
         root.join(directory).join(&self.id)
     }
+
+    /// The Cargo workspace of the chip's HIL agent firmware.
+    pub fn hil_agent_workspace(&self, root: &Path) -> PathBuf {
+        self.directory(root, "hil/targets")
+    }
+
+    /// The package of the chip's HIL agent firmware in that workspace.
+    pub fn hil_agent_package(&self) -> String {
+        format!("oer-hil-{}-runtime", self.id)
+    }
 }
 
 /// Ids of the chips with a profile, sorted.
@@ -130,6 +140,29 @@ mod tests {
 
     fn repository() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    #[test]
+    fn every_chip_s_hil_agent_workspace_declares_its_package() {
+        let root = repository();
+        for chip in Profile::all(&root).unwrap() {
+            let workspace = chip.hil_agent_workspace(&root);
+            let package = chip.hil_agent_package();
+            let declared = std::fs::read_dir(&workspace)
+                .unwrap()
+                .filter_map(|entry| {
+                    let manifest = entry.unwrap().path().join("Cargo.toml");
+                    let text = std::fs::read_to_string(manifest).ok()?;
+                    let manifest: toml::Table = toml::from_str(&text).ok()?;
+                    Some(manifest.get("package")?.get("name")?.as_str()?.to_owned())
+                })
+                .any(|name| name == package);
+            assert!(
+                declared,
+                "{} declares no package {package}",
+                workspace.display()
+            );
+        }
     }
 
     #[test]

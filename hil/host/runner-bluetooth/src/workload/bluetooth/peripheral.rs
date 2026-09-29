@@ -516,6 +516,11 @@ impl<'a> Host<'a> {
             if link.ended && helper_finished() {
                 return link.finish(profile, cycle);
             }
+            // The central gave up before any connection completed; its own
+            // report carries the reason.
+            if link.handle.is_none() && helper_finished() {
+                return Err("the central finished without a connection".into());
+            }
             // A local termination waits until the Controller has sent the
             // second echo, so that the peer receives it first.
             if let Some(local) = profile.local

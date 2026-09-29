@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = ["runtime"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+# A mutable call inside `debug_assert!` disappears from optimized firmware.
+debug_assert_with_mut_call = "deny"
+# The repository `clippy.toml` lists methods radio code must not call.
+disallowed_methods = "deny"
+
+[workspace.dependencies]
+embassy-executor = { version = "0.10.0", default-features = false }
+embassy-time = "0.5.1"
+esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "7b8e375a75dc2d91027b5ca68a4ba40c5ae45437", default-features = false, features = ["esp32c5"] }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "7b8e375a75dc2d91027b5ca68a4ba40c5ae45437", default-features = false, features = ["esp32c5", "unstable"] }
+esp-rtos = { git = "https://github.com/ermacv/esp-hal", rev = "7b8e375a75dc2d91027b5ca68a4ba40c5ae45437", default-features = false, features = ["esp32c5", "embassy"] }
+
+[profile.release]
+debug = 2
+opt-level = "s"
+codegen-units = 1
+lto = "fat"
+
+[patch."https://github.com/esp-rs/esp-pacs"]
+esp32s31 = { git = "https://github.com/ermacv/esp-pacs", rev = "507d14dbccfc26128b929b044d76f09cf2d1d2f6" }

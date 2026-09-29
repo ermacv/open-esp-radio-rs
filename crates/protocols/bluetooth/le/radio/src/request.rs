@@ -274,6 +274,8 @@ pub struct ConnectionEvent {
     pub interval: RadioDuration,
     /// Receive wait of the event.
     pub timing: ConnectionEventTiming,
+    /// PHYs of the event.
+    pub phys: ConnectionPhys,
     /// Scheduling priority, 0 to 15.
     pub priority: u8,
     /// Coexistence urgency of the event.
@@ -314,6 +316,32 @@ pub struct TestReceive {
     pub recurring: bool,
     /// Transmit power retained by the test profile.
     pub tx_power: TxPower,
+}
+
+/// PHY of one direction of a connection.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ConnectionPhy {
+    /// LE 1M.
+    Le1M,
+    /// LE 2M.
+    Le2M,
+}
+
+/// The PHYs of both directions of a connection, from the local side.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ConnectionPhys {
+    /// Local to peer.
+    pub transmit: ConnectionPhy,
+    /// Peer to local.
+    pub receive: ConnectionPhy,
+}
+
+impl ConnectionPhys {
+    /// LE 1M both ways, as every connection starts.
+    pub const LE_1M: Self = Self {
+        transmit: ConnectionPhy::Le1M,
+        receive: ConnectionPhy::Le1M,
+    };
 }
 
 /// PHY of a Direct Test Mode event.

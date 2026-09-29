@@ -152,11 +152,12 @@ pub use peripheral_connection::{
     PeripheralConnectionCapturedAnchorAvailability, PeripheralConnectionCapturedAnchorTime,
     PeripheralConnectionDataChannel, PeripheralConnectionError, PeripheralConnectionEvent,
     PeripheralConnectionEventResult, PeripheralConnectionEventSpan, PeripheralConnectionFirstEvent,
-    PeripheralConnectionIdentity, PeripheralConnectionPool, PeripheralConnectionReceiveTime,
-    PeripheralConnectionReceiveWait, PeripheralConnectionRecurringEvent,
-    PeripheralConnectionRecurringReceiveWait, PeripheralConnectionSchedulerItemCompletionStatus,
-    PeripheralConnectionSchedulerPriority, PeripheralConnectionSchedulerWindow,
-    PeripheralConnectionStorage, PeripheralConnectionTransmitPduKind,
+    PeripheralConnectionIdentity, PeripheralConnectionPhy, PeripheralConnectionPhys,
+    PeripheralConnectionPool, PeripheralConnectionReceiveTime, PeripheralConnectionReceiveWait,
+    PeripheralConnectionRecurringEvent, PeripheralConnectionRecurringReceiveWait,
+    PeripheralConnectionSchedulerItemCompletionStatus, PeripheralConnectionSchedulerPriority,
+    PeripheralConnectionSchedulerWindow, PeripheralConnectionStorage,
+    PeripheralConnectionTransmitPduKind,
 };
 
 pub use rx_memory_list::RxMemoryListClass;

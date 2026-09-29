@@ -36,8 +36,9 @@ pub use pdu::{AdvertisingPdu, DataPdu, DataPduKind, PduError, TestPayloadType};
 pub use request::{
     AcceptListChange, AcceptListDevice, AccessAddress, AdvertisingConfiguration, AdvertisingEvent,
     AdvertisingReception, AdvertisingSetId, CoexistenceLevel, ConnectionAllowances,
-    ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming, ConnectionId, CrcInit,
-    EventId, RadioRequest, RadioTiming, RequestError, ScanFilterPolicy, ScanType, ScanWindow,
-    ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestTransmit, TxPower,
+    ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming, ConnectionId, ConnectionPhy,
+    ConnectionPhys, CrcInit, EventId, RadioRequest, RadioTiming, RequestError, ScanFilterPolicy,
+    ScanType, ScanWindow, ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestTransmit,
+    TxPower,
 };
 pub use time::{RadioDuration, RadioInstant, RadioWindow, WindowError};

@@ -1,4 +1,5 @@
 use super::*;
+use crate::phy::ConnectionPhy;
 
 const INITIATOR: [u8; 6] = [1, 2, 3, 4, 5, 6];
 const ADVERTISER: [u8; 6] = [7, 8, 9, 10, 11, 12];
@@ -674,5 +675,121 @@ fn connection_update_handles_same_event_past_instant_and_procedure_collisions() 
     assert_eq!(
         completed.schedule_connection_update(updated, 2),
         Err(LePeripheralConnectionUpdateError::ProcedureAlreadyPending)
+    );
+}
+
+const TWO: ConnectionPhys = ConnectionPhys {
+    transmit: ConnectionPhy::Le2M,
+    receive: ConnectionPhy::Le2M,
+};
+
+/// A connection whose PHY Update at event 3 is pending, with events 1 and
+/// 2 run on LE 1M.
+fn before_phy_instant() -> LePeripheralConnection {
+    let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
+    let mut completed = complete_missed(LePeripheralConnection::from_request(
+        request,
+        LeChannelSelectionAlgorithm::AlgorithmTwo,
+    ));
+    assert_eq!(completed.phys(), ConnectionPhys::LE_1M);
+    completed.schedule_phy_update(TWO, 3).unwrap();
+    let mut connection = completed.into_connection();
+    for event_counter in 1..3 {
+        let prepared = connection.prepare_event();
+        assert_eq!(prepared.event_counter(), event_counter);
+        assert_eq!(prepared.phys(), ConnectionPhys::LE_1M);
+        connection = prepared
+            .into_submitted()
+            .complete(LePeripheralConnectionEventPeerActivity::Missed)
+            .into_connection();
+    }
+    connection
+}
+
+#[test]
+fn phy_update_applies_from_the_exact_instant_in_both_event_paths() {
+    // The direct path runs the instant event on LE 2M.
+    let prepared = before_phy_instant().prepare_event();
+    assert_eq!(prepared.event_counter(), 3);
+    assert_eq!(prepared.phys(), TWO);
+
+    // A recurring preview of the instant event runs on LE 2M, and cancelling
+    // it keeps the update pending.
+    let completed = before_phy_instant()
+        .prepare_event()
+        .into_submitted()
+        .complete(LePeripheralConnectionEventPeerActivity::Missed);
+    assert_eq!(completed.phys(), TWO);
+    let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
+    let mut connection =
+        LePeripheralConnection::from_request(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
+    connection.event_counter = 1;
+    let mut completed = complete_missed(connection);
+    completed.schedule_phy_update(TWO, 3).unwrap();
+    let provisional =
+        completed.prepare_recurring_event(LePeripheralConnectionEventDelta::new(2).unwrap());
+    assert_eq!(provisional.event_counter(), 3);
+    assert_eq!(provisional.phys(), TWO);
+    let restored = provisional.cancel();
+    assert_eq!(restored.phys(), ConnectionPhys::LE_1M);
+    let applied = restored
+        .prepare_recurring_event(LePeripheralConnectionEventDelta::new(2).unwrap())
+        .commit()
+        .into_submitted()
+        .complete(LePeripheralConnectionEventPeerActivity::Missed);
+    let transition = applied.phy_transition().expect("applied at the instant");
+    assert_eq!(transition.previous(), ConnectionPhys::LE_1M);
+    assert_eq!(transition.updated(), TWO);
+    assert!(transition.changed());
+    assert_eq!(applied.phys(), TWO);
+}
+
+#[test]
+fn phy_update_handles_same_event_past_instant_and_procedure_collisions() {
+    let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
+    let updated = LeConnectionTiming::new(2, 1, 40, 3, 200).unwrap();
+    let map = LeDataChannelMap::new([0x03, 0, 0, 0, 0]).unwrap();
+    let fresh = || {
+        let mut connection = LePeripheralConnection::from_request(
+            request,
+            LeChannelSelectionAlgorithm::AlgorithmTwo,
+        );
+        connection.event_counter = 0xfffa;
+        complete_missed(connection)
+    };
+
+    // An instant at the next event applies at once.
+    let mut completed = fresh();
+    completed.schedule_phy_update(TWO, 0xfffa).unwrap();
+    assert_eq!(completed.phys(), TWO);
+    assert_eq!(
+        completed.schedule_phy_update(TWO, 0xfffb),
+        Err(LePeripheralPhyUpdateError::ProcedureAlreadyPending)
+    );
+    assert_eq!(
+        completed.schedule_connection_update(updated, 0xfffb),
+        Err(LePeripheralConnectionUpdateError::IncompatibleProcedurePending)
+    );
+
+    let mut completed = fresh();
+    assert_eq!(
+        completed.schedule_phy_update(TWO, 0x7ff9),
+        Err(LePeripheralPhyUpdateError::InstantPassed)
+    );
+    completed.schedule_phy_update(TWO, 2).unwrap();
+    assert_eq!(
+        completed.schedule_channel_map_update(map, 3),
+        Err(LePeripheralChannelMapUpdateError::IncompatibleProcedurePending)
+    );
+    assert_eq!(
+        completed.schedule_connection_update(updated, 3),
+        Err(LePeripheralConnectionUpdateError::IncompatibleProcedurePending)
+    );
+
+    let mut completed = fresh();
+    completed.schedule_channel_map_update(map, 1).unwrap();
+    assert_eq!(
+        completed.schedule_phy_update(TWO, 2),
+        Err(LePeripheralPhyUpdateError::IncompatibleProcedurePending)
     );
 }

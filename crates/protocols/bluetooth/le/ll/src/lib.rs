@@ -26,6 +26,7 @@ pub mod connection;
 pub mod control;
 pub mod data_length;
 pub mod dtm;
+pub mod phy;
 pub mod scanning;
 pub mod security;
 

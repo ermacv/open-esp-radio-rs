@@ -7,9 +7,10 @@
 
 use crate::connection::{
     LeConnectionTiming, LeDataChannelMap, LePeripheralChannelMapUpdateError,
-    LePeripheralConnectionUpdateError,
+    LePeripheralConnectionUpdateError, LePeripheralPhyUpdateError,
 };
 use crate::data_length::{LeDataLength, LeDataLengthProcedure, LeDataLengths};
+use crate::phy::{ConnectionPhy, ConnectionPhys, LePhyPreference, phy_from_single_mask};
 
 /// Controller identity supplied by the product; independent of the radio vendor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -97,6 +98,7 @@ pub enum LePeripheralControlError {
     MandatoryProcedureUnavailable { opcode: u8 },
     ChannelMapUpdate(LePeripheralChannelMapUpdateError),
     ConnectionUpdate(LePeripheralConnectionUpdateError),
+    PhyUpdate(LePeripheralPhyUpdateError),
 }
 
 impl LePeripheralControlError {
@@ -118,6 +120,9 @@ impl LePeripheralControlError {
             Self::ConnectionUpdate(
                 LePeripheralConnectionUpdateError::IncompatibleProcedurePending,
             ) => Some(0x2a),
+            Self::PhyUpdate(LePeripheralPhyUpdateError::InstantPassed) => Some(0x28),
+            Self::PhyUpdate(LePeripheralPhyUpdateError::ProcedureAlreadyPending) => Some(0x23),
+            Self::PhyUpdate(LePeripheralPhyUpdateError::IncompatibleProcedurePending) => Some(0x2a),
             Self::MalformedPdu => Some(0x1e),
             Self::UnsupportedHeader | Self::MandatoryProcedureUnavailable { .. } => Some(0x20),
             Self::ResponseQueueFull => Some(0x1f),
@@ -176,6 +181,46 @@ impl<'a> LePeripheralDataFragment<'a> {
     }
 }
 
+/// Validated PHY Update carried by `LL_PHY_UPDATE_IND`, from the
+/// Peripheral's side.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LePhyUpdate {
+    transmit: Option<ConnectionPhy>,
+    receive: Option<ConnectionPhy>,
+    instant: u16,
+}
+
+impl LePhyUpdate {
+    /// Whether the Central changes neither direction; the procedure then ends
+    /// without an instant.
+    pub const fn is_unchanged(self) -> bool {
+        self.transmit.is_none() && self.receive.is_none()
+    }
+
+    /// The PHYs from the instant on, keeping `current` for a direction the
+    /// Central does not change.
+    pub const fn phys(self, current: ConnectionPhys) -> ConnectionPhys {
+        ConnectionPhys {
+            transmit: match self.transmit {
+                Some(phy) => phy,
+                None => current.transmit,
+            },
+            receive: match self.receive {
+                Some(phy) => phy,
+                None => current.receive,
+            },
+        }
+    }
+
+    pub const fn instant(self) -> u16 {
+        self.instant
+    }
+}
+
+/// A PHY Update requested by the Host is still open.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LePhyRequestPending;
+
 /// Semantic disposition of one accepted data-channel PDU.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LePeripheralReceive<'a> {
@@ -183,6 +228,7 @@ pub enum LePeripheralReceive<'a> {
     Control,
     ChannelMapUpdate(LeChannelMapUpdate),
     ConnectionUpdate(LeConnectionUpdate),
+    PhyUpdate(LePhyUpdate),
 }
 
 enum LePeripheralPdu<'a> {
@@ -225,6 +271,14 @@ enum LocalFeatureRequest {
     Transmitted,
 }
 
+/// The Peripheral's own `LL_PHY_REQ`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LocalPhyRequest {
+    None,
+    Queued(LeControlResponse),
+    Transmitted,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LocalVersionRequest {
     None,
@@ -237,15 +291,24 @@ enum LocalVersionRequest {
 ///
 /// Bit 0 advertises LE Encryption; bits 3 and 4 advertise
 /// Peripheral-initiated Feature Exchange and LE Ping; bit 5 advertises the
-/// LE Data Packet Length Extension; bit 14 advertises Channel Selection
-/// Algorithm #2.
+/// LE Data Packet Length Extension; bit 8 advertises LE 2M PHY; bit 14
+/// advertises Channel Selection Algorithm #2.
 pub const fn le_peripheral_supported_features() -> [u8; 8] {
-    [1 | (1 << 3) | (1 << 4) | (1 << 5), 1 << 6, 0, 0, 0, 0, 0, 0]
+    [
+        1 | (1 << 3) | (1 << 4) | (1 << 5),
+        1 | (1 << 6),
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
 }
 
 /// Two waiting responses plus the independently retained controller TX packet.
 /// Removing a response means the memory owner accepted it, not that it was ACKed.
-// CAPABILITY: bluetooth-llcp-framework, bluetooth-feature-exchange, bluetooth-version-exchange, bluetooth-le-ping
+// CAPABILITY: bluetooth-llcp-framework, bluetooth-feature-exchange, bluetooth-version-exchange, bluetooth-le-ping, bluetooth-phy-update
 pub struct LePeripheralControl {
     responses: [Option<LeControlResponse>; 2],
     termination: Option<LeControlResponse>,
@@ -260,6 +323,11 @@ pub struct LePeripheralControl {
     remote_version_result: Option<LeRemoteVersionResult>,
     data_length: LeDataLengthProcedure,
     data_length_request: Option<LeControlResponse>,
+    phy_preference: LePhyPreference,
+    local_phy_request: LocalPhyRequest,
+    /// The Host awaits LE PHY Update Complete.
+    phy_host_request: bool,
+    phy_failure: Option<u8>,
 }
 
 impl LePeripheralControl {
@@ -278,6 +346,66 @@ impl LePeripheralControl {
             remote_version_result: None,
             data_length: LeDataLengthProcedure::new(LeDataLength::MINIMUM),
             data_length_request: None,
+            phy_preference: LePhyPreference::ANY,
+            local_phy_request: LocalPhyRequest::None,
+            phy_host_request: false,
+            phy_failure: None,
+        }
+    }
+
+    /// Answer the Central's `LL_PHY_REQ` with `preference`, as HCI LE Set
+    /// Default PHY sets it.
+    pub const fn with_phy_preference(mut self, preference: LePhyPreference) -> Self {
+        self.phy_preference = preference;
+        self
+    }
+
+    /// Start the PHY Update procedure for `preference`, as HCI LE Set PHY
+    /// does; the Host then awaits LE PHY Update Complete.
+    pub fn request_phy_update(
+        &mut self,
+        preference: LePhyPreference,
+    ) -> Result<(), LePhyRequestPending> {
+        if self.phy_host_request {
+            return Err(LePhyRequestPending);
+        }
+        self.phy_preference = preference;
+        self.phy_host_request = true;
+        let mut request = LeControlResponse {
+            bytes: [0; 9],
+            len: 3,
+        };
+        request.bytes[0] = 0x16;
+        request.bytes[1] = preference.transmit();
+        request.bytes[2] = preference.receive();
+        self.local_phy_request = LocalPhyRequest::Queued(request);
+        Ok(())
+    }
+
+    /// Whether the local `LL_PHY_REQ` awaits the Central's answer.
+    pub const fn local_phy_request_transmitted(&self) -> bool {
+        matches!(self.local_phy_request, LocalPhyRequest::Transmitted)
+    }
+
+    /// Whether the PHY Update the Host requested ends at `changed` and
+    /// reports LE PHY Update Complete; a Central-initiated update reports
+    /// only a change (Core Vol 4, Part E, 7.7.65.12).
+    pub fn complete_phy_update(&mut self, changed: bool) -> bool {
+        let report = changed || self.phy_host_request;
+        self.phy_host_request = false;
+        report
+    }
+
+    /// The status of a PHY Update the Host requested which ended without an
+    /// update, once.
+    pub fn take_phy_update_failure(&mut self) -> Option<u8> {
+        self.phy_failure.take()
+    }
+
+    fn fail_local_phy_request(&mut self, status: u8) {
+        self.local_phy_request = LocalPhyRequest::None;
+        if core::mem::take(&mut self.phy_host_request) {
+            self.phy_failure = Some(status);
         }
     }
 
@@ -421,6 +549,11 @@ impl LePeripheralControl {
                     self.remote_version_result = Some(LeRemoteVersionResult::Unsupported);
                 } else if payload[1] == 0x14 {
                     self.data_length.abandon();
+                } else if payload[1] == 0x16
+                    && matches!(self.local_phy_request, LocalPhyRequest::Transmitted)
+                {
+                    // Unsupported Remote Feature.
+                    self.fail_local_phy_request(0x1a);
                 }
                 return Ok(LePeripheralReceive::Control);
             }
@@ -471,6 +604,16 @@ impl LePeripheralControl {
                         Some(LeRemoteVersionResult::Rejected { reason: payload[2] });
                 } else if payload[1] == 0x14 {
                     self.data_length.abandon();
+                } else if payload[1] == 0x16
+                    && matches!(self.local_phy_request, LocalPhyRequest::Transmitted)
+                {
+                    if payload[2] == 0x23 {
+                        // LL Procedure Collision: the Central's own PHY Update
+                        // runs instead and completes the Host's request.
+                        self.local_phy_request = LocalPhyRequest::None;
+                    } else {
+                        self.fail_local_phy_request(payload[2]);
+                    }
                 }
                 return Ok(LePeripheralReceive::Control);
             }
@@ -519,6 +662,46 @@ impl LePeripheralControl {
                     instant: u16::from_le_bytes([payload[10], payload[11]]),
                 }));
             }
+            0x16 => {
+                if payload.len() != 3 {
+                    return Err(Error::MalformedPdu);
+                }
+                // A Central request supersedes a local one not yet sent;
+                // one already sent is answered by the Central's procedure.
+                if matches!(self.local_phy_request, LocalPhyRequest::Queued(_)) {
+                    self.local_phy_request = LocalPhyRequest::None;
+                }
+                response.bytes[0] = 0x17;
+                response.bytes[1] = self.phy_preference.transmit();
+                response.bytes[2] = self.phy_preference.receive();
+                response.len = 3;
+            }
+            // Only a Central answers with LL_PHY_RSP; the Peripheral's own
+            // request is answered by LL_PHY_UPDATE_IND.
+            0x17 => {
+                if payload.len() != 3 {
+                    return Err(Error::MalformedPdu);
+                }
+                return Ok(LePeripheralReceive::Control);
+            }
+            0x18 => {
+                if payload.len() != 5 {
+                    return Err(Error::MalformedPdu);
+                }
+                let direction = |mask: u8| match mask {
+                    0 => Ok(None),
+                    mask => phy_from_single_mask(mask)
+                        .map(Some)
+                        .ok_or(Error::MalformedPdu),
+                };
+                let update = LePhyUpdate {
+                    receive: direction(payload[1])?,
+                    transmit: direction(payload[2])?,
+                    instant: u16::from_le_bytes([payload[3], payload[4]]),
+                };
+                self.local_phy_request = LocalPhyRequest::None;
+                return Ok(LePeripheralReceive::PhyUpdate(update));
+            }
             _ => {
                 response.bytes[0] = 0x07; // LL_UNKNOWN_RSP for unsupported LLCP.
                 response.bytes[1] = opcode;
@@ -545,6 +728,7 @@ impl LePeripheralControl {
         self.remote_feature_request_pending()
             || !matches!(self.local_version_request, LocalVersionRequest::None)
             || self.data_length.local_request_pending()
+            || !matches!(self.local_phy_request, LocalPhyRequest::None)
     }
 
     pub const fn remote_version_request_available(&self) -> bool {
@@ -667,6 +851,9 @@ impl LePeripheralControl {
         } else if matches!(self.local_version_request, LocalVersionRequest::Transmitted) {
             self.local_version_request = LocalVersionRequest::None;
             self.remote_version_result = Some(LeRemoteVersionResult::ResponseTimeout);
+        } else if matches!(self.local_phy_request, LocalPhyRequest::Transmitted) {
+            // LL Response Timeout.
+            self.fail_local_phy_request(0x22);
         } else {
             self.data_length.abandon();
         }
@@ -706,8 +893,9 @@ impl LePeripheralControl {
                     };
                     Some(&REQUEST)
                 }
-                None => match &self.local_version_request {
-                    LocalVersionRequest::Queued(request) => Some(request),
+                None => match (&self.local_version_request, &self.local_phy_request) {
+                    (LocalVersionRequest::Queued(request), _)
+                    | (_, LocalPhyRequest::Queued(request)) => Some(request),
                     _ => self.data_length_request.as_ref(),
                 },
             },
@@ -810,6 +998,8 @@ impl LePeripheralControl {
         } else if matches!(self.local_version_request, LocalVersionRequest::Queued(_)) {
             self.local_version_request = LocalVersionRequest::Transmitted;
             self.version_queued = true;
+        } else if matches!(self.local_phy_request, LocalPhyRequest::Queued(_)) {
+            self.local_phy_request = LocalPhyRequest::Transmitted;
         } else if self.data_length_request.take().is_some() {
             self.data_length.request_enqueued();
         }
@@ -837,7 +1027,7 @@ mod tests {
             [
                 9,
                 1 | (1 << 3) | (1 << 4) | (1 << 5),
-                1 << 6,
+                1 | (1 << 6),
                 0,
                 0,
                 0,
@@ -914,7 +1104,7 @@ mod tests {
             [
                 0x0e,
                 1 | (1 << 3) | (1 << 4) | (1 << 5),
-                1 << 6,
+                1 | (1 << 6),
                 0,
                 0,
                 0,
@@ -1369,5 +1559,121 @@ mod tests {
             assert_eq!(ll.data_lengths(), LeDataLengths::MINIMUM);
             assert_eq!(ll.take_data_length_change(), None);
         }
+    }
+
+    const PHY_REQ_BOTH_2M: [u8; 5] = [3, 3, 0x16, 2, 2];
+
+    fn phy_update_ind(c_to_p: u8, p_to_c: u8, instant: u16) -> [u8; 7] {
+        let [low, high] = instant.to_le_bytes();
+        [3, 5, 0x18, c_to_p, p_to_c, low, high]
+    }
+
+    #[test]
+    fn a_central_phy_request_is_answered_with_the_preference() {
+        let mut ll = LePeripheralControl::new();
+        ll.receive(&PHY_REQ_BOTH_2M, None).unwrap();
+        assert_eq!(ll.pending_response().unwrap().as_bytes(), [0x17, 3, 3]);
+
+        let mut ll =
+            LePeripheralControl::new().with_phy_preference(LePhyPreference::new(0b10, 0b01));
+        ll.receive(&PHY_REQ_BOTH_2M, None).unwrap();
+        assert_eq!(ll.pending_response().unwrap().as_bytes(), [0x17, 2, 1]);
+        assert_eq!(
+            ll.receive(&[3, 2, 0x16, 2], None),
+            Err(LePeripheralControlError::MalformedPdu)
+        );
+    }
+
+    #[test]
+    fn a_phy_update_names_each_direction_from_the_peripheral_side() {
+        let mut ll = LePeripheralControl::new();
+        let Ok(LePeripheralReceive::PhyUpdate(update)) =
+            ll.receive(&phy_update_ind(2, 0, 0x1234), None)
+        else {
+            panic!("a PHY update");
+        };
+        assert_eq!(update.instant(), 0x1234);
+        assert!(!update.is_unchanged());
+        // Central-to-Peripheral is the Peripheral's receive direction.
+        assert_eq!(
+            update.phys(ConnectionPhys::LE_1M),
+            ConnectionPhys {
+                transmit: ConnectionPhy::Le1M,
+                receive: ConnectionPhy::Le2M,
+            }
+        );
+        let Ok(LePeripheralReceive::PhyUpdate(update)) = ll.receive(&phy_update_ind(0, 0, 0), None)
+        else {
+            panic!("a PHY update");
+        };
+        assert!(update.is_unchanged());
+        // Coded or several PHYs in one direction are no valid update here.
+        for (c_to_p, p_to_c) in [(4, 0), (3, 0), (0, 6)] {
+            assert_eq!(
+                ll.receive(&phy_update_ind(c_to_p, p_to_c, 9), None),
+                Err(LePeripheralControlError::MalformedPdu)
+            );
+        }
+    }
+
+    #[test]
+    fn a_host_phy_request_is_sent_once_and_reports_its_end() {
+        let mut ll = LePeripheralControl::new();
+        ll.request_phy_update(LePhyPreference::new(2, 2)).unwrap();
+        assert_eq!(
+            ll.request_phy_update(LePhyPreference::ANY),
+            Err(LePhyRequestPending)
+        );
+        assert_eq!(ll.pending_response().unwrap().as_bytes(), [0x16, 2, 2]);
+        ll.response_enqueued();
+        assert!(ll.local_phy_request_transmitted());
+        assert!(ll.local_procedure_pending());
+        ll.receive(&phy_update_ind(2, 2, 7), None).unwrap();
+        assert!(!ll.local_procedure_pending());
+        // The Host hears of the update even without a change.
+        assert!(ll.complete_phy_update(false));
+        assert!(!ll.complete_phy_update(false));
+        assert!(ll.complete_phy_update(true));
+    }
+
+    #[test]
+    fn a_rejected_or_unanswered_host_phy_request_fails_but_a_collision_does_not() {
+        let rejected = |pdu: &[u8]| {
+            let mut ll = LePeripheralControl::new();
+            ll.request_phy_update(LePhyPreference::ANY).unwrap();
+            ll.response_enqueued();
+            ll.receive(pdu, None).unwrap();
+            ll
+        };
+        assert_eq!(
+            rejected(&[3, 2, 0x07, 0x16]).take_phy_update_failure(),
+            Some(0x1a)
+        );
+        assert_eq!(
+            rejected(&[3, 3, 0x11, 0x16, 0x1e]).take_phy_update_failure(),
+            Some(0x1e)
+        );
+        // After a collision the Central's own update completes the request.
+        let mut collided = rejected(&[3, 3, 0x11, 0x16, 0x23]);
+        assert_eq!(collided.take_phy_update_failure(), None);
+        assert!(!collided.local_phy_request_transmitted());
+        assert!(collided.complete_phy_update(false));
+
+        let mut ll = LePeripheralControl::new();
+        ll.request_phy_update(LePhyPreference::ANY).unwrap();
+        ll.response_enqueued();
+        ll.expire_local_procedure();
+        assert_eq!(ll.take_phy_update_failure(), Some(0x22));
+    }
+
+    #[test]
+    fn a_central_request_supersedes_an_unsent_local_one() {
+        let mut ll = LePeripheralControl::new();
+        ll.request_phy_update(LePhyPreference::new(2, 2)).unwrap();
+        ll.receive(&PHY_REQ_BOTH_2M, None).unwrap();
+        assert_eq!(ll.pending_response().unwrap().as_bytes(), [0x17, 2, 2]);
+        ll.response_enqueued();
+        assert!(ll.pending_response().is_none());
+        assert!(!ll.local_phy_request_transmitted());
     }
 }

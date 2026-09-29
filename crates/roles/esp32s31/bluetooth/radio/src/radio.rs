@@ -6,9 +6,9 @@ use crate::coexistence::{self, CoexistenceProfile};
 use oer_bluetooth_radio::{
     AcceptListChange, AcceptListDevice, AdvertisingChannel, AdvertisingConfiguration,
     AdvertisingEvent, AdvertisingReception, AdvertisingSetId, ConnectionAllowances,
-    ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming, ConnectionId, DataPduKind,
-    EventId, EventResult, RadioDuration, RadioFault, RadioInstant, RadioOutcome, RadioRequest,
-    RadioTiming, ReceivedPdu, RequestError, ScanFilterPolicy, ScanType, ScanWindow,
+    ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming, ConnectionId, ConnectionPhy,
+    DataPduKind, EventId, EventResult, RadioDuration, RadioFault, RadioInstant, RadioOutcome,
+    RadioRequest, RadioTiming, ReceivedPdu, RequestError, ScanFilterPolicy, ScanType, ScanWindow,
     ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestReport, TestTransmit, TxPower,
 };
 use oer_esp32s31_bluetooth::{
@@ -32,7 +32,8 @@ use oer_esp32s31_bluetooth_memory::{
     LegacyScanStartSelection, LegacyScanType, LegacyScanWindowTicks,
     PeripheralConnectionCapturedAnchorAvailability, PeripheralConnectionDataChannel,
     PeripheralConnectionEventSpan, PeripheralConnectionFirstEvent, PeripheralConnectionIdentity,
-    PeripheralConnectionPool, PeripheralConnectionReceiveTime, PeripheralConnectionReceiveWait,
+    PeripheralConnectionPhy, PeripheralConnectionPhys, PeripheralConnectionPool,
+    PeripheralConnectionReceiveTime, PeripheralConnectionReceiveWait,
     PeripheralConnectionRecurringEvent, PeripheralConnectionRecurringReceiveWait,
     PeripheralConnectionSchedulerItemCompletionStatus, PeripheralConnectionSchedulerPriority,
     PeripheralConnectionSchedulerWindow, PeripheralConnectionTransmitPduKind,
@@ -1439,6 +1440,14 @@ impl<
             self.clock.raw(facts.created_at.as_micros()),
         );
         let workspace = self.memory.direction_finding;
+        let phy = |phy: ConnectionPhy| match phy {
+            ConnectionPhy::Le1M => PeripheralConnectionPhy::Le1M,
+            ConnectionPhy::Le2M => PeripheralConnectionPhy::Le2M,
+        };
+        let phys = PeripheralConnectionPhys {
+            transmit: phy(event.phys.transmit),
+            receive: phy(event.phys.receive),
+        };
         let (slot, _) = self.connections[index]
             .as_mut()
             .expect("the connection is open");
@@ -1456,6 +1465,7 @@ impl<
                     &slot.instance,
                     PeripheralConnectionFirstEvent {
                         channel,
+                        phys,
                         receive_time,
                         event_span: span,
                         window: raw_window,
@@ -1477,6 +1487,7 @@ impl<
                     &slot.instance,
                     PeripheralConnectionRecurringEvent {
                         channel,
+                        phys,
                         event_span: span,
                         window: raw_window,
                         receive_wait,

@@ -105,11 +105,9 @@ impl LePeripheralConnectionEventCompleted {
             self.peer_activity,
             LePeripheralConnectionEventPeerActivity::Observed
         ) {
-            self.connection.maintenance.observe_header(
-                header,
-                self.connection.pending_connection_update.is_some()
-                    || self.connection.pending_channel_map.is_some(),
-            );
+            self.connection
+                .maintenance
+                .observe_header(header, self.connection.instant_pending());
         }
     }
 
@@ -164,8 +162,12 @@ impl LePeripheralConnectionEventCompleted {
         {
             return Err(SkipBlocked::InstantProcedure);
         }
-        if (self.connection.pending_connection_update.is_some()
-            || self.connection.pending_channel_map.is_some())
+        if let Some(update) = self.connection.pending_phy_update
+            && protected(update.instant)
+        {
+            return Err(SkipBlocked::InstantProcedure);
+        }
+        if self.connection.instant_pending()
             && !matches!(
                 self.connection.maintenance.instant_acknowledgement,
                 InstantAcknowledgement::Confirmed

@@ -8,6 +8,7 @@
 
 use core::num::NonZeroU16;
 
+use crate::phy::{ConnectionPhys, LePhyTransition};
 use crate::{LeDeviceAddress, LeDeviceAddressKind};
 
 pub const LEGACY_CONNECT_IND_PDU_BYTES: usize = 36;
@@ -676,6 +677,12 @@ struct PendingConnectionUpdate {
     instant: u16,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PendingPhyUpdate {
+    phys: ConnectionPhys,
+    instant: u16,
+}
+
 /// Why a peer Channel Map Update cannot enter the pending instant owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LePeripheralChannelMapUpdateError {
@@ -687,6 +694,14 @@ pub enum LePeripheralChannelMapUpdateError {
 /// Why a peer Connection Update cannot enter the pending instant owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LePeripheralConnectionUpdateError {
+    InstantPassed,
+    ProcedureAlreadyPending,
+    IncompatibleProcedurePending,
+}
+
+/// Why a peer PHY Update cannot enter the pending instant owner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LePeripheralPhyUpdateError {
     InstantPassed,
     ProcedureAlreadyPending,
     IncompatibleProcedurePending,
@@ -783,6 +798,8 @@ pub struct LePeripheralConnection {
     state: LePeripheralConnectionState,
     pending_channel_map: Option<PendingChannelMapUpdate>,
     pending_connection_update: Option<PendingConnectionUpdate>,
+    phys: ConnectionPhys,
+    pending_phy_update: Option<PendingPhyUpdate>,
     maintenance: maintenance::State,
 }
 
@@ -819,6 +836,8 @@ impl LePeripheralConnection {
             state: LePeripheralConnectionState::Created,
             pending_channel_map: None,
             pending_connection_update: None,
+            phys: ConnectionPhys::LE_1M,
+            pending_phy_update: None,
             maintenance: maintenance::State::new(),
         }
     }
@@ -841,6 +860,11 @@ impl LePeripheralConnection {
 
     pub const fn state(&self) -> LePeripheralConnectionState {
         self.state
+    }
+
+    /// The PHYs of the next event.
+    pub const fn phys(&self) -> ConnectionPhys {
+        self.phys
     }
 
     /// Wrapping event distance from establishment to the next event.
@@ -870,6 +894,7 @@ impl LePeripheralConnection {
             connection.apply_channel_map_for_target(connection.event_counter, 0);
         let connection_timing_transition =
             connection.apply_connection_update_for_target(connection.event_counter, 0);
+        let phy_transition = connection.apply_phy_update_for_target(connection.event_counter, 0);
         let (channel, unmapped) = connection.selector.preview(connection.event_counter);
         LePeripheralConnectionEventPrepared {
             connection,
@@ -877,6 +902,7 @@ impl LePeripheralConnection {
             unmapped,
             channel_map_updated,
             connection_timing_transition,
+            phy_transition,
         }
     }
 
@@ -943,6 +969,41 @@ impl LePeripheralConnection {
         self.pending_connection_update = None;
         Some(transition)
     }
+
+    const fn phy_update_for_target(&self, target: u16, skipped: u16) -> Option<PendingPhyUpdate> {
+        let update = match self.pending_phy_update {
+            Some(update) => update,
+            None => return None,
+        };
+        let source = target.wrapping_sub(skipped);
+        if update.instant.wrapping_sub(source) <= skipped {
+            Some(update)
+        } else {
+            None
+        }
+    }
+
+    const fn apply_phy_update_for_target(
+        &mut self,
+        target: u16,
+        skipped: u16,
+    ) -> Option<LePhyTransition> {
+        let update = match self.phy_update_for_target(target, skipped) {
+            Some(update) => update,
+            None => return None,
+        };
+        let transition = LePhyTransition::new(self.phys, update.phys);
+        self.phys = update.phys;
+        self.pending_phy_update = None;
+        Some(transition)
+    }
+
+    /// Whether any procedure with an instant waits for it.
+    const fn instant_pending(&self) -> bool {
+        self.pending_channel_map.is_some()
+            || self.pending_connection_update.is_some()
+            || self.pending_phy_update.is_some()
+    }
 }
 
 /// Protocol event not yet accepted by a hardware backend.
@@ -954,9 +1015,15 @@ pub struct LePeripheralConnectionEventPrepared {
     unmapped: u8,
     channel_map_updated: bool,
     connection_timing_transition: Option<LeConnectionTimingTransition>,
+    phy_transition: Option<LePhyTransition>,
 }
 
 impl LePeripheralConnectionEventPrepared {
+    /// The PHYs of this event, after a PHY Update at its instant.
+    pub const fn phys(&self) -> ConnectionPhys {
+        self.connection.phys
+    }
+
     /// Immutable connection parameters retained by this exact event.
     pub const fn request(&self) -> LeLegacyConnectionRequest {
         self.connection.request
@@ -1032,6 +1099,7 @@ impl LePeripheralConnectionEventInFlight {
             unmapped,
             channel_map_updated,
             connection_timing_transition,
+            phy_transition,
         } = self.prepared;
         let event_counter = connection.event_counter;
         connection.selector = connection.selector.complete(unmapped);
@@ -1064,6 +1132,7 @@ impl LePeripheralConnectionEventInFlight {
             peer_activity,
             channel_map_updated,
             connection_timing_transition,
+            phy_transition,
         }
     }
 }
@@ -1078,9 +1147,21 @@ pub struct LePeripheralConnectionEventCompleted {
     peer_activity: LePeripheralConnectionEventPeerActivity,
     channel_map_updated: bool,
     connection_timing_transition: Option<LeConnectionTimingTransition>,
+    phy_transition: Option<LePhyTransition>,
 }
 
 impl LePeripheralConnectionEventCompleted {
+    /// PHYs applied by the event which just closed, or by a PHY Update whose
+    /// instant is the next event.
+    pub const fn phy_transition(&self) -> Option<LePhyTransition> {
+        self.phy_transition
+    }
+
+    /// The PHYs of the next event.
+    pub const fn phys(&self) -> ConnectionPhys {
+        self.connection.phys
+    }
+
     /// Exact accepted CONNECT_IND request retained by the advanced connection.
     pub const fn request(&self) -> LeLegacyConnectionRequest {
         self.connection.request
@@ -1140,6 +1221,8 @@ impl LePeripheralConnectionEventCompleted {
         }
         if self.connection.pending_connection_update.is_some()
             || self.connection_timing_transition.is_some()
+            || self.connection.pending_phy_update.is_some()
+            || self.phy_transition.is_some()
         {
             return Err(LePeripheralChannelMapUpdateError::IncompatibleProcedurePending);
         }
@@ -1173,7 +1256,11 @@ impl LePeripheralConnectionEventCompleted {
         if self.connection_timing_transition.is_some() {
             return Err(LePeripheralConnectionUpdateError::ProcedureAlreadyPending);
         }
-        if self.connection.pending_channel_map.is_some() || self.channel_map_updated {
+        if self.connection.pending_channel_map.is_some()
+            || self.channel_map_updated
+            || self.connection.pending_phy_update.is_some()
+            || self.phy_transition.is_some()
+        {
             return Err(LePeripheralConnectionUpdateError::IncompatibleProcedurePending);
         }
         let distance = instant.wrapping_sub(self.event_counter);
@@ -1191,6 +1278,38 @@ impl LePeripheralConnectionEventCompleted {
         }
         self.connection.pending_connection_update =
             Some(PendingConnectionUpdate { timing, instant });
+        self.connection.maintenance.instant_received();
+        Ok(())
+    }
+
+    /// Stage a valid Central PHY Update until its connection instant.
+    ///
+    /// `phys` are the Peripheral's PHYs from the instant on.
+    pub fn schedule_phy_update(
+        &mut self,
+        phys: ConnectionPhys,
+        instant: u16,
+    ) -> Result<(), LePeripheralPhyUpdateError> {
+        if self.connection.pending_phy_update.is_some() || self.phy_transition.is_some() {
+            return Err(LePeripheralPhyUpdateError::ProcedureAlreadyPending);
+        }
+        if self.connection.pending_channel_map.is_some()
+            || self.channel_map_updated
+            || self.connection.pending_connection_update.is_some()
+            || self.connection_timing_transition.is_some()
+        {
+            return Err(LePeripheralPhyUpdateError::IncompatibleProcedurePending);
+        }
+        let distance = instant.wrapping_sub(self.event_counter);
+        if distance >= 0x7fff {
+            return Err(LePeripheralPhyUpdateError::InstantPassed);
+        }
+        if distance == 0 {
+            self.phy_transition = Some(LePhyTransition::new(self.connection.phys, phys));
+            self.connection.phys = phys;
+            return Ok(());
+        }
+        self.connection.pending_phy_update = Some(PendingPhyUpdate { phys, instant });
         self.connection.maintenance.instant_received();
         Ok(())
     }
@@ -1226,10 +1345,18 @@ impl LePeripheralConnectionEventCompleted {
             }),
             None => None,
         };
+        let phys = match self
+            .connection
+            .phy_update_for_target(event_counter, skipped)
+        {
+            Some(update) => update.phys,
+            None => self.connection.phys,
+        };
         LePeripheralConnectionRecurringEventProvisional {
             completed: self,
             delta,
             event_counter,
+            phys,
             channel,
             channel_map_update_instant: match channel_map_update {
                 Some(update) => Some(update.instant),
@@ -1253,6 +1380,7 @@ pub struct LePeripheralConnectionRecurringEventProvisional {
     completed: LePeripheralConnectionEventCompleted,
     delta: LePeripheralConnectionEventDelta,
     event_counter: u16,
+    phys: ConnectionPhys,
     channel: LeDataChannelIndex,
     channel_map_update_instant: Option<u16>,
     connection_timing_transition: Option<LeConnectionTimingTransition>,
@@ -1274,6 +1402,11 @@ impl LePeripheralConnectionRecurringEventProvisional {
 
     pub const fn channel(&self) -> LeDataChannelIndex {
         self.channel
+    }
+
+    /// The PHYs of this event, after a PHY Update at its instant.
+    pub const fn phys(&self) -> ConnectionPhys {
+        self.phys
     }
 
     /// Channel Map Update instant crossed by this provisional event.
@@ -1308,6 +1441,7 @@ impl LePeripheralConnectionRecurringEventProvisional {
             completed,
             delta,
             event_counter,
+            phys: _,
             channel,
             channel_map_update_instant: _,
             connection_timing_transition: _,
@@ -1323,6 +1457,7 @@ impl LePeripheralConnectionRecurringEventProvisional {
         let channel_map_updated = connection.apply_channel_map_for_target(event_counter, skipped);
         let connection_timing_transition =
             connection.apply_connection_update_for_target(event_counter, skipped);
+        let phy_transition = connection.apply_phy_update_for_target(event_counter, skipped);
         let (_, unmapped) = connection.selector.preview(event_counter);
         LePeripheralConnectionEventPrepared {
             connection,
@@ -1330,6 +1465,7 @@ impl LePeripheralConnectionRecurringEventProvisional {
             unmapped,
             channel_map_updated,
             connection_timing_transition,
+            phy_transition,
         }
     }
 }

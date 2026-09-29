@@ -4,15 +4,15 @@ use super::{
     EVENT_ITEM, LINK_STATE_PACKET_CONTROL, LINK_STATE_RX_HEAD, LINK_STATE_RX_PATH,
     LINK_STATE_SCHEDULER_HEAD, LINK_STATE_TX_PATH, PeripheralConnectionCapturedAnchorAvailability,
     PeripheralConnectionDataChannel, PeripheralConnectionError, PeripheralConnectionEventSpan,
-    PeripheralConnectionFirstEvent, PeripheralConnectionIdentity, PeripheralConnectionPool,
-    PeripheralConnectionReceiveTime, PeripheralConnectionReceiveWait,
-    PeripheralConnectionRecurringEvent, PeripheralConnectionRecurringReceiveWait,
-    PeripheralConnectionSchedulerItemCompletionStatus, PeripheralConnectionSchedulerPriority,
-    PeripheralConnectionSchedulerWindow, PeripheralConnectionStorage,
-    PeripheralConnectionTransmitPduKind, SCHEDULER_ITEM_ALLOCATION_NUMBER,
-    SCHEDULER_ITEM_CAPTURE_AVAILABLE, SCHEDULER_ITEM_CAPTURED_ANCHOR,
-    SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY, SCHEDULER_ITEM_RADIO_REQUEST_PRIORITIES,
-    SCHEDULER_ITEM_RECEIVE_WAIT_CONFIGURATION,
+    PeripheralConnectionFirstEvent, PeripheralConnectionIdentity, PeripheralConnectionPhy,
+    PeripheralConnectionPhys, PeripheralConnectionPool, PeripheralConnectionReceiveTime,
+    PeripheralConnectionReceiveWait, PeripheralConnectionRecurringEvent,
+    PeripheralConnectionRecurringReceiveWait, PeripheralConnectionSchedulerItemCompletionStatus,
+    PeripheralConnectionSchedulerPriority, PeripheralConnectionSchedulerWindow,
+    PeripheralConnectionStorage, PeripheralConnectionTransmitPduKind,
+    SCHEDULER_ITEM_ALLOCATION_NUMBER, SCHEDULER_ITEM_CAPTURE_AVAILABLE,
+    SCHEDULER_ITEM_CAPTURED_ANCHOR, SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY,
+    SCHEDULER_ITEM_RADIO_REQUEST_PRIORITIES, SCHEDULER_ITEM_RECEIVE_WAIT_CONFIGURATION,
 };
 use crate::{
     ConnectionCoexistencePriorities, DirectionFindingWorkspaceLink,
@@ -65,9 +65,15 @@ fn lanes(event: u8, base: u8) -> ConnectionCoexistencePriorities {
     }
 }
 
+const LE_1M: PeripheralConnectionPhys = PeripheralConnectionPhys {
+    transmit: PeripheralConnectionPhy::Le1M,
+    receive: PeripheralConnectionPhy::Le1M,
+};
+
 fn first_event() -> PeripheralConnectionFirstEvent {
     PeripheralConnectionFirstEvent {
         channel: PeripheralConnectionDataChannel::new(0).unwrap(),
+        phys: LE_1M,
         receive_time: PeripheralConnectionReceiveTime::from_controller_ticks(24_000),
         event_span: PeripheralConnectionEventSpan::new(23_000).unwrap(),
         window: PeripheralConnectionSchedulerWindow::new(25_000, 26_000).unwrap(),
@@ -83,6 +89,7 @@ fn first_event() -> PeripheralConnectionFirstEvent {
 fn recurring_event(receive_wait_micros: u32) -> PeripheralConnectionRecurringEvent {
     PeripheralConnectionRecurringEvent {
         channel: PeripheralConnectionDataChannel::new(20).unwrap(),
+        phys: LE_1M,
         event_span: PeripheralConnectionEventSpan::new(23_000).unwrap(),
         window: PeripheralConnectionSchedulerWindow::new(50_000, 51_000).unwrap(),
         receive_wait: PeripheralConnectionRecurringReceiveWait::new(receive_wait_micros).unwrap(),
@@ -482,4 +489,55 @@ fn an_item_carries_the_event_priority_beside_a_fixed_high_nibble() {
     // The high nibble does not follow the priority.
     assert_ne!(first & 0x0f, recurring & 0x0f);
     assert_eq!(first & 0xf0, recurring & 0xf0);
+}
+
+#[test]
+fn every_event_carries_its_phys_in_the_rate_word_and_keeps_the_power() {
+    let mut pool = pool();
+    let instance = active(&mut pool);
+    let run = |pool: &mut Pool, phys: PeripheralConnectionPhys| {
+        let event = PeripheralConnectionRecurringEvent {
+            phys,
+            ..recurring_event(1_000)
+        };
+        pool.prepare_recurring_event(&instance, event).unwrap();
+        let words: Vec<u32> = (0..super::SCHEDULER_ITEM_WORDS)
+            .map(|word| item_word(pool, &instance, word))
+            .collect();
+        let id = pool.submit(&instance, EVENT_ITEM).unwrap();
+        pool.retire(id).unwrap();
+        pool.finish_event(&instance).unwrap();
+        words
+    };
+    let one = run(&mut pool, LE_1M);
+    let two = run(
+        &mut pool,
+        PeripheralConnectionPhys {
+            transmit: PeripheralConnectionPhy::Le2M,
+            receive: PeripheralConnectionPhy::Le2M,
+        },
+    );
+    let receive_only = run(
+        &mut pool,
+        PeripheralConnectionPhys {
+            transmit: PeripheralConnectionPhy::Le1M,
+            receive: PeripheralConnectionPhy::Le2M,
+        },
+    );
+    let rate_word = super::SCHEDULER_ITEM_RATE_AND_POWER;
+    for other in [&two, &receive_only] {
+        for (word, (a, b)) in one.iter().zip(other.iter()).enumerate() {
+            if word != rate_word {
+                assert_eq!(a, b, "word {word} changed with the PHYs");
+            }
+        }
+        assert_ne!(one[rate_word], other[rate_word]);
+        assert_eq!(
+            crate::link_state_event::item_power_index(one[rate_word]),
+            crate::link_state_event::item_power_index(other[rate_word])
+        );
+    }
+    // The directions are independent, and LE 1M again restores the word.
+    assert_ne!(two[rate_word], receive_only[rate_word]);
+    assert_eq!(run(&mut pool, LE_1M), one);
 }

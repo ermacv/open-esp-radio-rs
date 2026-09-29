@@ -6,10 +6,10 @@ use oer_bluetooth_radio::{
     AcceptListChange, AcceptListDevice, AccessAddress, AdvertisingChannel, AdvertisingChannels,
     AdvertisingConfiguration, AdvertisingEvent, AdvertisingPdu, AdvertisingReception,
     AdvertisingSetId, CoexistenceLevel, ConnectionConfiguration, ConnectionEvent,
-    ConnectionEventTiming, ConnectionId, CrcInit, DataChannel, DataPdu, DataPduKind, EventId,
-    EventResult, RadioDuration, RadioInstant, RadioOutcome, RadioRequest, RadioWindow,
-    RequestError, ScanFilterPolicy, ScanType, ScanWindow, ScannerConfiguration, ScannerId,
-    TestChannel, TestPhy, TestReceive, TestReport, TxPower,
+    ConnectionEventTiming, ConnectionId, ConnectionPhys, CrcInit, DataChannel, DataPdu,
+    DataPduKind, EventId, EventResult, RadioDuration, RadioInstant, RadioOutcome, RadioRequest,
+    RadioWindow, RequestError, ScanFilterPolicy, ScanType, ScanWindow, ScannerConfiguration,
+    ScannerId, TestChannel, TestPhy, TestReceive, TestReport, TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerTimeSample,
@@ -479,6 +479,7 @@ fn a_connection_reports_its_anchor_receptions_and_acknowledgement() {
             window: window(start, 2_000),
             interval: RadioDuration::from_micros(30_000),
             timing,
+            phys: ConnectionPhys::LE_1M,
             priority: 13,
             coexistence: CoexistenceLevel::Baseline,
         })

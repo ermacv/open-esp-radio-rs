@@ -36,7 +36,7 @@ use crate::{
         LeTxBufferHeaderStorage, LeTxPacketAddress, LeTxPacketPrepareError, LeTxPacketStorage,
     },
     le_tx_power::LeTxPower,
-    link_state_event::{LinkStateEventWord, item_with_le_1m_power},
+    link_state_event::{LinkStateEventWord, item_with_power, item_with_rates},
     scheduler_context::SchedulerContextStorage,
     scheduler_item::{SchedulerItemCompletionStatus, SchedulerItemHeader},
     scheduler_pool::{
@@ -347,12 +347,32 @@ impl ItemStorage {
         header.set_sequence(window.start(), window.end(), raw_sequence_lead);
     }
 
+    /// The rates of `phys` in item `+0x14`.
+    ///
+    /// SOURCE: pinned `libble_app.a[ble_3.o]` connection event bodies
+    /// `r_sym_ble_tPr7egUaNHmqfcieCA5O` (`r_ble_lll_conn_slave_new`, the first
+    /// event) and `r_sym_ble_rsCCyH2B22gdYkN4LOOJ` (every later event) write
+    /// `r_ble_phy_mode_to_rate` of the receive PHY mode (connection `+0x34`
+    /// bits 19:18) to item bits 31:30 and of the transmit PHY mode
+    /// (connection `+0x36` bits 1:0) to bits 29:28;
+    /// `r_sym_ble_MIOd8Bw6UkeaGyWUZZ9B` (`r_ble_ll_conn_set_phy`) stores the
+    /// transmit mode in bits 1:0 and the receive mode in bits 3:2 of `+0x36`.
+    fn prepare_rates(&self, phys: PeripheralConnectionPhys) {
+        let word = &self.words[SCHEDULER_ITEM_RATE_AND_POWER];
+        word.set(item_with_rates(
+            word.get(),
+            phys.transmit.rate(),
+            phys.receive.rate(),
+        ));
+    }
+
     fn prepare_first_event(&self, power_index: u8, event: &PeripheralConnectionFirstEvent) {
         self.prepare_priority_and_channel(event.channel, event.priority, event.coexistence);
-        self.words[SCHEDULER_ITEM_RATE_AND_POWER].set(item_with_le_1m_power(
+        self.words[SCHEDULER_ITEM_RATE_AND_POWER].set(item_with_power(
             self.words[SCHEDULER_ITEM_RATE_AND_POWER].get(),
             power_index,
         ));
+        self.prepare_rates(event.phys);
         self.words[SCHEDULER_ITEM_RECEIVE_WAIT_CONFIGURATION]
             .set(SCHEDULER_ITEM_RECEIVE_WAIT_SHORT_MODE | event.receive_wait.total_micros());
         self.prepare_window(event.window, event.raw_sequence_lead);
@@ -360,6 +380,7 @@ impl ItemStorage {
 
     fn prepare_recurring_event(&self, event: &PeripheralConnectionRecurringEvent) {
         self.prepare_priority_and_channel(event.channel, event.priority, event.coexistence);
+        self.prepare_rates(event.phys);
         let total_micros = event.receive_wait.total_micros();
         let receive_wait_image = if total_micros == 0 {
             SCHEDULER_ITEM_RECEIVE_WAIT_ZERO_IMAGE
@@ -545,10 +566,35 @@ pub enum PeripheralConnectionError {
     Transmit(LeTxPacketPrepareError),
 }
 
+/// PHY of one direction of a connection event.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PeripheralConnectionPhy {
+    Le1M,
+    Le2M,
+}
+
+impl PeripheralConnectionPhy {
+    /// The scheduler rate code (`r_ble_phy_mode_to_rate`).
+    const fn rate(self) -> u32 {
+        match self {
+            Self::Le1M => 0,
+            Self::Le2M => 1,
+        }
+    }
+}
+
+/// PHYs of both directions of a connection event, from the Peripheral's side.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PeripheralConnectionPhys {
+    pub transmit: PeripheralConnectionPhy,
+    pub receive: PeripheralConnectionPhy,
+}
+
 /// Fields of the first connection event.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PeripheralConnectionFirstEvent {
     pub channel: PeripheralConnectionDataChannel,
+    pub phys: PeripheralConnectionPhys,
     pub receive_time: PeripheralConnectionReceiveTime,
     pub event_span: PeripheralConnectionEventSpan,
     pub window: PeripheralConnectionSchedulerWindow,
@@ -566,6 +612,7 @@ pub struct PeripheralConnectionFirstEvent {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PeripheralConnectionRecurringEvent {
     pub channel: PeripheralConnectionDataChannel,
+    pub phys: PeripheralConnectionPhys,
     pub event_span: PeripheralConnectionEventSpan,
     pub window: PeripheralConnectionSchedulerWindow,
     pub receive_wait: PeripheralConnectionRecurringReceiveWait,

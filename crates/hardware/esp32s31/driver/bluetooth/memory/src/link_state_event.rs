@@ -66,5 +66,12 @@ pub(crate) const fn item_with_le_1m_power(word_14: u32, power_index: u8) -> u32 
     item_with_power(word_14 & !ITEM_RATE_LANES, power_index)
 }
 
+/// Item `+0x14` carrying the receive rate in bits 31:30 and the transmit
+/// rate in bits 29:28; every other bit is kept. A rate is 0 for LE 1M and 1
+/// for LE 2M.
+pub(crate) const fn item_with_rates(word_14: u32, transmit_rate: u32, receive_rate: u32) -> u32 {
+    (word_14 & !ITEM_RATE_LANES) | (receive_rate << 30) | (transmit_rate << 28)
+}
+
 #[cfg(test)]
 mod tests;

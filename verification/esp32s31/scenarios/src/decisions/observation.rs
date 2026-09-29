@@ -199,7 +199,6 @@ pub const DECISIONS: &[Decision] = &[
             each future to completion without suspension, so no resume reads them",
         places: &[
             ("phy/src/target_port.rs", "}"),
-            ("phy/src/target_port.rs", ".await;"),
             ("phy/src/target_port/rfpll.rs", "}"),
             (
                 "phy/src/target_port/temperature.rs",
@@ -291,7 +290,6 @@ pub const DECISIONS: &[Decision] = &[
                 "phy/src/analog/frequency.rs",
                 "correction: self.request.correction,",
             ),
-            ("phy/src/tracking/rfpll.rs", "search: *search,"),
             ("phy/src/tracking/rfpll/thermal.rs", "self.request"),
             ("phy/src/tracking/parameters.rs", "self.child.request()"),
             ("phy/src/target_port.rs", "let request = child.request();"),
@@ -400,15 +398,6 @@ pub const DECISIONS: &[Decision] = &[
             drops: its release is software ownership whose release fence the leaf counts; \
             the deselect register writes are compared by the leaf",
         places: &[("hal/src/bluetooth/validation.rs", "}")],
-    },
-    Decision {
-        reason: "production-only software flag of the selected Bluetooth low-power clock, \
-            which refuses a second select; the select register writes are compared, and the \
-            vendor's own source record is reviewed as unprojected state",
-        places: &[(
-            "hal/src/shared_radio.rs",
-            "state.bluetooth_low_power_clock = true;",
-        )],
     },
     Decision {
         reason: "construction of the BLE PHY fixture's shared-radio register owner: no \

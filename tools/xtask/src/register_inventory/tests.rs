@@ -140,24 +140,21 @@ fn blobray_records_resolve_to_named_local_accesses() {
         path: PathBuf::new(),
         sha256: String::new(),
     }];
-    let listing = r#"{"schema":2,"records":[
-        {"kind":"member","value":{"entry":{"kind":"function","request":{"source":{"kind":"input","input":0}},"name":[102,110]},"outcome":{"kind":"analyzed","analysis":"a1"}}},
-        {"kind":"member","value":{"entry":{"kind":"data"},"outcome":{"kind":"inventory"}}}
-    ]}"#;
-    let names = function_names(listing, &inputs).unwrap();
-    assert_eq!(names["a1"], function("fn"));
-    let registers = r#"{"records":[
-        {"kind":"register","value":{"kind":"scope","record":{}}},
-        {"kind":"register","value":{"kind":"observation","function":{"analysis":"a1"},"record":1,
-            "fact":{"kind":"memory-access","access":"store","width":4},"address":4096,"alternative":null,
-            "mask":{"kind":"write-replacement","bits":3}}},
-        {"kind":"register","value":{"kind":"observation","function":{"analysis":"a1"},"record":2,
-            "fact":{"kind":"callee-effect","access":"load"},"address":4100,"alternative":null,"mask":null}},
-        {"kind":"register","value":{"kind":"observation","function":{"analysis":"a1"},"record":3,
-            "fact":{"kind":"memory-access","access":"load"},"address":null,"alternative":null,"mask":null}},
-        {"kind":"register","value":{"kind":"address","address":4096,"access_widths":[4]}}
-    ],"summary":{}}"#;
-    let observations = observations(registers, &names).unwrap();
+    let named = r#"{"input":0,"symbol":{},"name":[102,110]}"#;
+    let accesses = format!(
+        r#"{{"schema":1,"inputs":[],"records":[
+        {{"kind":"gap","input":0,"object":null,"reason":"unsupported input format"}},
+        {{"kind":"observation","function":{named},"record":1,
+            "fact":{{"kind":"memory-access","access":"store","width":4}},"address":4096,"alternative":null,
+            "mask":{{"kind":"write-replacement","bits":3}}}},
+        {{"kind":"observation","function":{named},"record":2,
+            "fact":{{"kind":"callee-effect","access":"load"}},"address":4100,"alternative":null,"mask":null}},
+        {{"kind":"observation","function":{named},"record":3,
+            "fact":{{"kind":"memory-access","access":"load"}},"address":null,"alternative":null,"mask":null}},
+        {{"kind":"blocked","function":{named},"error":{{}}}}
+    ],"summary":{{}}}}"#
+    );
+    let observations = observations(&accesses, &inputs).unwrap();
     assert_eq!(observations.len(), 1);
     assert_eq!(observations[0].access, Access::Store);
     assert_eq!(observations[0].bits, Some(3));
@@ -165,9 +162,18 @@ fn blobray_records_resolve_to_named_local_accesses() {
 }
 
 #[test]
-fn observations_of_unlisted_functions_fail() {
-    let registers = r#"{"records":[{"kind":"register","value":{"kind":"observation",
-        "function":{"analysis":"missing"},"fact":{"kind":"memory-access","access":"load"},
-        "address":4096,"mask":null}}]}"#;
-    assert!(observations(registers, &BTreeMap::new()).is_err());
+fn observations_of_unknown_inputs_or_unnamed_functions_fail() {
+    let accesses = |function: &str| {
+        format!(
+            r#"{{"records":[{{"kind":"observation","function":{function},
+            "fact":{{"kind":"memory-access","access":"load"}},"address":4096,"mask":null}}]}}"#
+        )
+    };
+    assert!(observations(&accesses(r#"{"input":0,"name":[102]}"#), &[]).is_err());
+    let inputs = [Input {
+        id: "libx".into(),
+        path: PathBuf::new(),
+        sha256: String::new(),
+    }];
+    assert!(observations(&accesses(r#"{"input":0,"name":null}"#), &inputs).is_err());
 }

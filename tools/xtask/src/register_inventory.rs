@@ -1,20 +1,21 @@
 //! Inventory of the vendor's radio MMIO accesses against the register model.
 //!
-//! Blobray analyzes every function of every pinned vendor binary once, and
-//! its register query reports each statically resolved access inside the
-//! publication's owned MMIO ranges, with the bits a masked read selects or a
-//! read-modify-write replaces. Each touched 32-bit word is compared with the
-//! register model: words no register declares, bits the vendor selects or
-//! replaces outside every declared field, and declared opaque bits the vendor
-//! touches. Words touched by a function the provenance registry names, one
-//! production, the register model or a verification decision cites, rank
-//! first.
+//! Blobray's `register-accesses` analyzes every function of every pinned
+//! vendor binary in one process and reports each statically resolved access
+//! inside the publication's owned MMIO ranges, with the bits a masked read
+//! selects or a read-modify-write replaces. Each touched 32-bit word is
+//! compared with the register model: words no register declares, bits the
+//! vendor selects or replaces outside every declared field, and declared
+//! opaque bits the vendor touches. Words touched by a function the provenance
+//! registry names, one production, the register model or a verification
+//! decision cites, rank first.
 //!
-//! The analysis is cached under `target/register-inventory/<chip>/` by the
-//! digests of the Blobray host and of every input, so it reruns only after a
-//! pin or Blobray change. The report is a generated output there; nothing is
-//! tracked. Addresses computed at run time (queue strides, pointer tables)
-//! are not constants and stay outside the inventory.
+//! The accesses are cached under `target/register-inventory/<chip>/` by the
+//! digests of the Blobray host and of every input and by the ranges, so the
+//! analysis reruns only after a pin, range or Blobray change. The report is a
+//! generated output there; nothing is tracked. Addresses computed at run time
+//! (queue strides, pointer tables) are not constants and stay outside the
+//! inventory.
 use crate::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -33,9 +34,6 @@ const WORD_BYTES: u32 = WORD_BITS / 8;
 /// Wall-clock budget of one Blobray operation. Analyzing every pinned
 /// binary takes most of it; the host's default budget is shorter.
 const OPERATION_TIMEOUT_SECS: u64 = 3600;
-/// Blobray's host resource enforcement: sampled process-tree RSS, which
-/// needs no delegated cgroup.
-const LIMIT_MODE: &str = "watchdog";
 /// Kind of a Blobray fact composed from a callee: the callee's own analysis
 /// records the same access, so it is attributed there.
 const CALLEE_EFFECT: &str = "callee-effect";
@@ -380,51 +378,27 @@ fn inputs(ctx: &Context, chip: &str) -> Result<Vec<Input>> {
     Ok(inputs)
 }
 
-/// Blobray's analysis of the inputs: the project, its revision and its
-/// publication.
-#[derive(Serialize, Deserialize)]
-struct Analysis {
-    revision: String,
-    publication: String,
-}
-
-fn blobray(ctx: &Context, host: &Path, args: &[&str], project: &Path, output: &Path) -> Result<()> {
-    let mut command = ctx.command(host);
-    command
-        .args(["--format", "json"])
-        .args(args)
-        .arg("--project")
-        .arg(project);
-    // `init` creates storage without a supervised operation.
-    if args.first() != Some(&"init") {
-        command
-            .args(["--limit-mode", LIMIT_MODE])
-            .args(["--timeout-secs", &OPERATION_TIMEOUT_SECS.to_string()]);
-    }
-    let status = command.stdout(fs::File::create(output)?).status()?;
-    if !status.success() {
-        return Err(format!(
-            "blobray {} failed; its report is {}",
-            args.first().copied().unwrap_or_default(),
-            output.display()
-        )
-        .into());
-    }
-    Ok(())
-}
-
-/// The cached analysis of `inputs`, created when absent. Analyses of other
-/// inputs or another Blobray host are removed.
-fn analysis(
+/// Blobray's register accesses of every function of `inputs` inside
+/// `regions`, cached by the digests of the Blobray host and of every input
+/// and by the regions; accesses of other inputs or another host are removed.
+fn accesses(
     ctx: &Context,
     directory: &Path,
     host: &Path,
     inputs: &[Input],
-) -> Result<(PathBuf, Analysis)> {
+    regions: &[Region],
+) -> Result<PathBuf> {
+    let ranges: Vec<String> = regions
+        .iter()
+        .map(|r| format!("{:#x}:{:#x}", r.start, r.end - r.start))
+        .collect();
     let mut key = Sha256::new();
     key.update(fs::read(host)?);
     for input in inputs {
         key.update(format!("{}={}\n", input.id, input.sha256));
+    }
+    for range in &ranges {
+        key.update(format!("{range}\n"));
     }
     let key: String = key.finalize().iter().map(|b| format!("{b:02x}")).collect();
     let analyses = directory.join("analysis");
@@ -436,97 +410,59 @@ fn analysis(
         }
     }
     let cached = analyses.join(&key);
-    let record = cached.join("analysis.json");
-    let project = cached.join("project");
-    if let Ok(text) = fs::read_to_string(&record) {
-        return Ok((project, serde_json::from_str(&text)?));
-    }
-    if cached.exists() {
-        fs::remove_dir_all(&cached)?;
+    let accesses = cached.join("registers.json");
+    if accesses.is_file() {
+        return Ok(accesses);
     }
     fs::create_dir_all(&cached)?;
-    blobray(ctx, host, &["init"], &project, &cached.join("init.json"))?;
-    let mut import = vec!["import".to_owned()];
-    for input in inputs {
-        import.push("--input".into());
-        import.push(format!("{}={}", input.id, input.path.display()));
-    }
-    let import: Vec<&str> = import.iter().map(String::as_str).collect();
-    blobray(ctx, host, &import, &project, &cached.join("import.json"))?;
     eprintln!(
         "register-inventory: analyzing every function of {} vendor binaries",
         inputs.len()
     );
-    let report = cached.join("analyze.json");
-    blobray(ctx, host, &["analyze-project"], &project, &report)?;
-    let run: serde_json::Value = serde_json::from_str(&fs::read_to_string(&report)?)?;
-    let run = &run["run"];
-    if run["state"] != "completed" {
-        return Err(format!("the analysis did not complete; see {}", report.display()).into());
+    let mut command = ctx.command(host);
+    command
+        .args(["--format", "json", "register-accesses"])
+        .args(["--timeout-secs", &OPERATION_TIMEOUT_SECS.to_string()]);
+    for input in inputs {
+        command
+            .arg("--input")
+            .arg(format!("{}={}", input.id, input.path.display()));
     }
-    let analysis = Analysis {
-        revision: run["resolved_operation"]["revision"]
-            .as_str()
-            .ok_or("analysis without a revision")?
-            .to_owned(),
-        publication: run["publication"]
-            .as_str()
-            .ok_or("analysis without a publication")?
-            .to_owned(),
-    };
-    fs::write(&record, serde_json::to_string(&analysis)?)?;
-    Ok((project, analysis))
+    for range in &ranges {
+        command.args(["--range", range]);
+    }
+    // The document is complete only once renamed into place.
+    let partial = cached.join("registers.json.partial");
+    let status = command.stdout(fs::File::create(&partial)?).status()?;
+    if !status.success() {
+        return Err(format!(
+            "blobray register-accesses failed; its partial output is {}",
+            partial.display()
+        )
+        .into());
+    }
+    fs::rename(&partial, &accesses)?;
+    Ok(accesses)
 }
 
 #[derive(Deserialize)]
-struct Records<T> {
-    records: Vec<Record<T>>,
+struct Document {
+    records: Vec<AccessRecord>,
 }
 
 #[derive(Deserialize)]
-struct Record<T> {
-    value: T,
-}
-
-#[derive(Deserialize)]
-struct Member {
-    entry: MemberEntry,
-    outcome: Outcome,
-}
-
-#[derive(Deserialize)]
-struct MemberEntry {
-    request: Option<FunctionRequest>,
-    name: Option<Vec<u8>>,
-}
-
-#[derive(Deserialize)]
-struct FunctionRequest {
-    source: Source,
-}
-
-#[derive(Deserialize)]
-struct Source {
-    input: Option<usize>,
-}
-
-#[derive(Deserialize)]
-struct Outcome {
-    analysis: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct RegisterValue {
+struct AccessRecord {
     kind: String,
-    function: Option<AnalysisRef>,
+    function: Option<LibraryFunction>,
     fact: Option<Fact>,
     address: Option<u32>,
     mask: Option<Mask>,
 }
 
 #[derive(Deserialize)]
-struct AnalysisRef {
-    analysis: String,
+struct LibraryFunction {
+    input: usize,
+    name: Option<Vec<u8>>,
 }
 
 #[derive(Deserialize)]
@@ -540,61 +476,39 @@ struct Mask {
     bits: u32,
 }
 
-/// The analysis identities of every analyzed function, by input ordinal.
-fn function_names(listing: &str, inputs: &[Input]) -> Result<BTreeMap<String, Function>> {
-    let listing: Records<Member> = serde_json::from_str(listing)?;
-    let mut names = BTreeMap::new();
-    for record in listing.records {
-        let (Some(analysis), Some(request), Some(name)) = (
-            record.value.outcome.analysis,
-            record.value.entry.request,
-            record.value.entry.name,
-        ) else {
-            continue;
-        };
-        let input = request.source.input.and_then(|i| inputs.get(i));
-        let Some(input) = input else {
-            return Err("function of an unknown input".into());
-        };
-        names.insert(
-            analysis,
-            (
-                input.id.clone(),
-                String::from_utf8_lossy(&name).into_owned(),
-            ),
-        );
-    }
-    Ok(names)
-}
-
-fn observations(registers: &str, names: &BTreeMap<String, Function>) -> Result<Vec<Observation>> {
-    let registers: Records<RegisterValue> = serde_json::from_str(registers)?;
+/// The resolved accesses of named functions in the `register-accesses`
+/// document `accesses`; a function names its input by position in `inputs`.
+fn observations(accesses: &str, inputs: &[Input]) -> Result<Vec<Observation>> {
+    let document: Document = serde_json::from_str(accesses)?;
     let mut observations = vec![];
-    for record in registers.records {
-        let value = record.value;
-        if value.kind != "observation" {
+    for access in document.records {
+        if access.kind != "observation" {
             continue;
         }
         let (Some(function), Some(fact), Some(address)) =
-            (value.function, value.fact, value.address)
+            (access.function, access.fact, access.address)
         else {
             continue;
         };
         if fact.kind == CALLEE_EFFECT {
             continue;
         }
-        let function = names
-            .get(&function.analysis)
-            .ok_or_else(|| format!("observation of unlisted analysis {}", function.analysis))?;
+        let name = function.name.ok_or("observation of an unnamed function")?;
+        let input = inputs
+            .get(function.input)
+            .ok_or("function of an unknown input")?;
         observations.push(Observation {
-            function: function.clone(),
+            function: (
+                input.id.clone(),
+                String::from_utf8_lossy(&name).into_owned(),
+            ),
             address,
             access: match fact.access.as_deref() {
                 Some("load") => Access::Load,
                 Some("store") => Access::Store,
                 _ => Access::Expression,
             },
-            bits: value.mask.map(|m| m.bits),
+            bits: access.mask.map(|m| m.bits),
         });
     }
     Ok(observations)
@@ -672,45 +586,8 @@ pub fn run(ctx: &Context, chip: &str, output: Option<PathBuf>) -> Result<()> {
         "blobray",
     ]))?;
     let host = crate::blobray::binary(ctx, "blobray");
-    let (project, analysis) = analysis(ctx, &directory, &host, &inputs)?;
-
-    let listing = directory.join("functions.json");
-    blobray(
-        ctx,
-        &host,
-        &["functions", "--id", &analysis.publication],
-        &project,
-        &listing,
-    )?;
-    let request = directory.join("registers.request.json");
-    let ranges: Vec<serde_json::Value> = regions
-        .iter()
-        .map(|r| serde_json::json!({"start": r.start, "length": r.end - r.start}))
-        .collect();
-    fs::write(
-        &request,
-        serde_json::to_string(&serde_json::json!({
-            "scope": {
-                "revision": analysis.revision,
-                "publications": [analysis.publication],
-                "analyses": [],
-                "knowledge": null,
-            },
-            "ranges": ranges,
-        }))?,
-    )?;
-    let accesses = directory.join("registers.json");
-    let request_arg = request.to_string_lossy().into_owned();
-    blobray(
-        ctx,
-        &host,
-        &["registers", "--request", &request_arg],
-        &project,
-        &accesses,
-    )?;
-
-    let names = function_names(&fs::read_to_string(&listing)?, &inputs)?;
-    let observations = observations(&fs::read_to_string(&accesses)?, &names)?;
+    let accesses = accesses(ctx, &directory, &host, &inputs, &regions)?;
+    let observations = observations(&fs::read_to_string(&accesses)?, &inputs)?;
     let cited: BTreeSet<Function> = crate::vendor_provenance::registered(ctx, chip)?
         .into_iter()
         .map(|e| (e.artifact, e.symbol))

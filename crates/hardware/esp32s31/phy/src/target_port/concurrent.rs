@@ -11,6 +11,7 @@ use crate::{
     state::client::PhyModemClient,
     state::client::PhyPllTrackClock,
 };
+use core::fmt::Write as _;
 use oer_esp32s31_hal::shared_radio::{
     ClientQuiescence, ModemClockError, PhyClockModule, PlatformClockProvider, SharedRadioLease,
 };
@@ -214,7 +215,16 @@ where
                 outcome,
                 counters,
             };
-            match lease.disable_phy_modem_clocks(PhyClockModule::Calibration) {
+            // DIAGNOSTIC #38 arm A: republish before the calibration clock release.
+            if option_env!("OER_DIAG38_ARM") == Some("A") {
+                diag_republish_bluetooth_tx_gain(lease);
+            }
+            let released = lease.disable_phy_modem_clocks(PhyClockModule::Calibration);
+            // DIAGNOSTIC #38 arm B: republish after the calibration clock release.
+            if option_env!("OER_DIAG38_ARM") == Some("B") {
+                diag_republish_bluetooth_tx_gain(lease);
+            }
+            match released {
                 Ok(()) => Ok(registration),
                 Err(error) => Err(ConcurrentPhyRegisterFailure::CalibrationClock {
                     registration,
@@ -783,4 +793,123 @@ fn emit_wifi_channel(
         bandwidth,
         result,
     });
+}
+
+/// DIAGNOSTIC #38 (not for merge): recompute the BT/15.4 TX gain table from
+/// the registered state and publish it into gain memory again. Returns
+/// whether a registered domain existed.
+pub fn diag_republish_bluetooth_tx_gain(lease: &mut SharedRadioLease<'_, ConcurrentPhy>) -> bool {
+    let (mut registers, phy) = lease.phy_hal_with_attachment();
+    let Ok(state) = phy.phy_state() else {
+        return false;
+    };
+    let image = crate::calibration::bluetooth::calculate_bluetooth_tx_gain(
+        state.bluetooth_tx_gain_parameters(),
+    );
+    crate::hardware::publish_bluetooth_tx_gain_memory(&mut registers, image);
+    true
+}
+
+/// DIAGNOSTIC #38 (not for merge): write RF frequency-memory records 25, 27
+/// and 62 (2425/2427/2462 MHz) and the frequency-channel partition registers
+/// (image indices 0..=4: FREQUENCY_CONTROL, FREQUENCY_MEMORY_READ_CONTROL,
+/// FREQUENCY_PARAMETER_1_STATUS, I2C_NUMBER_CONTROL,
+/// FREQUENCY_MEMORY_READ_RESULT). Word 0 of a record is
+/// cap[7:0] | cap_high_i2c << 8 | sdm_low_i2c << 16, word 1 the three upper
+/// SDM bytes (lower-middle, upper-middle, most significant).
+pub fn diag_frequency_report(
+    lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+    out: &mut impl core::fmt::Write,
+) {
+    let _ = out.write_str("diag38 freq regs");
+    for index in 0..=4 {
+        let _ = write!(out, " {:08x}", lease.phy_register_image(index).unwrap_or(0));
+    }
+    let _ = out.write_str("\n");
+    let (mut registers, phy) = lease.phy_hal_with_attachment();
+    if let Ok(state) = phy.phy_state() {
+        let [initial, middle, outer] = state.diag_xtal_duty();
+        let _ = write!(
+            out,
+            "diag38 xtal duty initial {initial:02x} middle(2440) {middle:02x} outer(2480) {outer:02x}\n"
+        );
+    }
+    for entry in [25_u8, 27, 62] {
+        let mut words = [0_u32; 3];
+        for (word_index, word) in words.iter_mut().enumerate() {
+            let (address, mode) =
+                crate::analog::frequency::diag_rf_record_word_address(entry, word_index as u8);
+            *word = oer_esp32s31_hal::phy::frequency::read_memory(&mut registers, address, mode);
+        }
+        let cap = (words[0] & 0xff) | (((words[0] >> 14) & 1) << 8);
+        let _ = write!(
+            out,
+            "diag38 freq mem {} ({} MHz) {:06x} {:06x} {:06x} cap {:03x}\n",
+            entry,
+            2400 + u32::from(entry),
+            words[0],
+            words[1],
+            words[2],
+            cap,
+        );
+    }
+}
+
+/// DIAGNOSTIC #38 (not for merge): write `value` into the crystal-duty seed
+/// and candidate bytes (PHY-I2C block 0x61, registers 0x09 and 0x0a).
+/// Returns whether both writes completed.
+pub fn diag_set_xtal_duty(lease: &mut SharedRadioLease<'_, ConcurrentPhy>, value: u8) -> bool {
+    use oer_esp32s31_hal::phy::i2c::analog_registers;
+    let (mut registers, _) = lease.phy_hal_with_attachment();
+    [
+        analog_registers::XTAL_DUTY_SEED,
+        analog_registers::XTAL_DUTY_CANDIDATE,
+    ]
+    .into_iter()
+    .all(|address| crate::target_executor::write_i2c_direct(&mut registers, address, value).is_ok())
+}
+
+/// DIAGNOSTIC #38 (not for merge): rewrite word 2 (crystal duty) of every
+/// RF frequency-memory record: `middle` for 2421..=2459 MHz (records
+/// 21..=59), `outer` for the rest, as `phy_wr_rf_freq_mem` publishes them.
+pub fn diag_set_xtal_duty_table(
+    lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+    middle: u8,
+    outer: u8,
+) {
+    let (mut registers, _) = lease.phy_hal_with_attachment();
+    for entry in 0..crate::analog::frequency::PHY_FREQUENCY_TABLE_ENTRY_COUNT {
+        let duty = crate::analog::frequency::phy_frequency_xtal_duty(
+            crate::analog::frequency::PHY_FREQUENCY_TABLE_FIRST_CODE + u16::from(entry),
+            middle,
+            outer,
+        );
+        let (address, _) = crate::analog::frequency::diag_rf_record_word_address(entry, 2);
+        oer_esp32s31_hal::phy::frequency::write_memory(
+            &mut registers,
+            address,
+            u32::from(duty),
+            crate::analog::frequency::DIAG_RF_RECORD_WRITE_MODE,
+        );
+    }
+}
+
+/// DIAGNOSTIC #38 (not for merge): write the tracking and BT/15.4 gain
+/// inputs of the registered state.
+pub fn diag_tracking_report(
+    lease: &SharedRadioLease<'_, ConcurrentPhy>,
+    out: &mut impl core::fmt::Write,
+) {
+    let Ok(state) = lease.attachment().phy_state() else {
+        let _ = out.write_str("diag38 no registered PHY state\n");
+        return;
+    };
+    let _ = write!(
+        out,
+        "diag38 temp {:?}\ndiag38 txpwr {:?}\ndiag38 cal {:?}\ndiag38 btgain {:?}\n",
+        state.temperature_observation(),
+        state.tx_power_tracking_parameters(false),
+        state.calibration_tracking_parameters(None),
+        state.bluetooth_tx_gain_parameters(),
+    );
 }

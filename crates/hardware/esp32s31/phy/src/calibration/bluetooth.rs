@@ -962,6 +962,11 @@ impl PhyBluetoothTxGainInitTransition {
                         ];
                         self.gain.correction = outcome.calibration.power_adjustment;
                     }
+                    // DIAGNOSTIC #38: the vendor's normalized BT power calibration.
+                    if option_env!("OER_DIAG38_VENDOR").is_some() {
+                        self.gain.calibration_curve = [10, 14, 13];
+                        self.gain.correction = 69;
+                    }
                     self.power = Some(outcome);
                     self.step =
                         PhyBluetoothTxGainInitStep::TxDcPwdet(self.tx_dc_pwdet_transition());

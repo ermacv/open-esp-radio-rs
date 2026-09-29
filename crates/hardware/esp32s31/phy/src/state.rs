@@ -841,6 +841,8 @@ impl PhyState {
         PhyBluetoothTxGainParameters {
             seed: Self::packed_seed(&self.bluetooth.tx_dco),
             config: self.wifi.tx_iq_config,
+            // DIAGNOSTIC #38 (not for merge): the vendor's normalized BT
+            // power calibration from its phy_param[0xfb..0xfe] capture.
             calibration_curve: [
                 self.bluetooth.tx_power_curve[0] as u8,
                 self.bluetooth.tx_power_curve[1] as u8,
@@ -1834,6 +1836,11 @@ impl PhyState {
             self.filter_dcap_parameters(),
             self.common.i2c_frequency_parameter,
         )
+    }
+
+    /// DIAGNOSTIC #38 (not for merge): initial, 2440 MHz and 2480 MHz duty.
+    pub(crate) const fn diag_xtal_duty(&self) -> [u8; 3] {
+        self.common.xtal_duty
     }
 
     pub const fn xtal_duty_parameters(&self) -> XtalDutyCalibrationParameters {

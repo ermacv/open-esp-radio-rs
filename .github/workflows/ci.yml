@@ -18,6 +18,9 @@ concurrency:
 
 env:
   CARGO_INCREMENTAL: '0'
+  # A fresh runner has no Cargo cache; the repository configuration keeps
+  # Cargo offline for local builds.
+  CARGO_NET_OFFLINE: 'false'
   CARGO_TERM_COLOR: always
 
 jobs:

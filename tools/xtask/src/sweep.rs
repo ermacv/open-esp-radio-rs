@@ -88,6 +88,15 @@ fn automatic_policy(space: Space, recent: bool) -> Option<Policy> {
 /// Fail before a build when the build disk is nearly full: builds then die
 /// with ENOSPC midway, often in another agent's checkout.
 pub fn ensure_space(root: &Path) -> Result<()> {
+    if let Some(unallocated) = btrfs_unallocated(root)
+        && unallocated < 2 << 30
+    {
+        return Err(format!(
+            "the btrfs file system holding the build disk has only {} MiB unallocated: its metadata cannot grow, so every file creation and removal stalls in the kernel; run `sudo btrfs balance start -dusage=30 /home` (the daily btrfs-balance-home timer does this)",
+            unallocated >> 20
+        )
+        .into());
+    }
     let (space, available) = Space::measure(root)?;
     if space == Space::Critical {
         return Err(format!(
@@ -96,6 +105,43 @@ pub fn ensure_space(root: &Path) -> Result<()> {
         )
         .into());
     }
+    Ok(())
+}
+
+/// Unallocated bytes of the btrfs file system holding `root`, or `None` on
+/// another file system. Free space inside allocated data chunks is invisible
+/// to metadata, which grows only into unallocated space; `statvfs` reports the
+/// data space and misses this shortage.
+fn btrfs_unallocated(root: &Path) -> Option<u64> {
+    let output = std::process::Command::new("btrfs")
+        .args(["filesystem", "usage", "-b"])
+        .arg(root)
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    parse_unallocated(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn parse_unallocated(usage: &str) -> Option<u64> {
+    usage
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("Device unallocated:"))
+        .and_then(|value| value.trim().parse().ok())
+}
+
+/// Starts [`automatically`] as a detached process of this executable, so a
+/// check never waits for a sweep of other checkouts.
+pub fn in_background(root: &Path) -> Result<()> {
+    use std::os::unix::process::CommandExt;
+    std::process::Command::new(std::env::current_exe()?)
+        .arg("--root")
+        .arg(root)
+        .args(["sweep", "--automatic"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .process_group(0)
+        .spawn()?;
     Ok(())
 }
 
@@ -377,6 +423,13 @@ mod tests {
         let found = candidates(root.path(), Policy::default(), SystemTime::now());
         let paths = found.iter().map(|c| c.path.clone()).collect::<Vec<_>>();
         assert_eq!(paths, [old, dead]);
+    }
+
+    #[test]
+    fn btrfs_unallocated_space_is_read_from_its_usage_report() {
+        let report = "Overall:\n    Device size:\t\t1999\n    Device unallocated:\t\t1101004\n    Used:\t\t12\n";
+        assert_eq!(parse_unallocated(report), Some(1_101_004));
+        assert_eq!(parse_unallocated("not btrfs"), None);
     }
 
     #[test]

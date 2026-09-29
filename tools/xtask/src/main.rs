@@ -136,6 +136,9 @@ enum Task {
     /// Update every workspace's Cargo.lock to its manifests after a
     /// dependency or pin change.
     Lock,
+    /// Download the dependencies every workspace's lock file names and the
+    /// local cache lacks; Cargo otherwise runs offline in this repository.
+    Fetch,
     /// Add or remove a Git worktree whose target/ starts as a copy-on-write
     /// clone of this checkout's build outputs.
     Worktree {
@@ -153,6 +156,10 @@ enum Task {
         all_checkouts: bool,
         #[arg(long)]
         apply: bool,
+        /// The daily sweep of every checkout that `check changed` starts in
+        /// the background: skipped when a recent one ran and space is ample.
+        #[arg(long, conflicts_with_all = ["all_checkouts", "apply"])]
+        automatic: bool,
     },
     Check {
         #[command(subcommand)]
@@ -413,6 +420,7 @@ fn run() -> Result<std::process::ExitCode> {
         }
         Task::Push => oer_xtask::push::run(&ctx),
         Task::Lock => checks::metadata::update_locks(&ctx),
+        Task::Fetch => checks::metadata::fetch(&ctx),
         Task::Worktree { worktree } => match worktree {
             Worktree::Add { path, branch, from } => {
                 oer_xtask::worktree::add(&ctx, &path, &branch, &from)
@@ -422,8 +430,12 @@ fn run() -> Result<std::process::ExitCode> {
         },
         Task::StandInstall => oer_xtask::stand_install::run(&ctx),
         Task::Sweep {
+            automatic: true, ..
+        } => oer_xtask::sweep::automatically(&ctx.root),
+        Task::Sweep {
             all_checkouts,
             apply,
+            ..
         } => {
             let roots = if all_checkouts {
                 oer_xtask::sweep::checkouts(&ctx.root)

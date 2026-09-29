@@ -85,6 +85,7 @@ pub fn build(
         .args(["--no-default-features", "--features", &runtime_features])
         .env("CARGO_TARGET_DIR", cache)
         .env("CARGO_INCREMENTAL", "0");
+    super::ensure_fetched(&workspace, &workspace.join("Cargo.toml"), |_| {})?;
     log.run(&mut runtime, "build the HIL runtime")?;
     let compiled = cache
         .join(&profile.rust_target)

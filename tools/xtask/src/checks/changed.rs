@@ -220,10 +220,12 @@ fn workspace_of(
 }
 
 pub fn run(ctx: &Context, base: &str) -> Result<()> {
-    if let Err(error) = crate::sweep::automatically(&ctx.root) {
-        eprintln!("check changed: the automatic cache sweep failed: {error}");
+    if let Err(error) = crate::sweep::in_background(&ctx.root) {
+        eprintln!("check changed: the automatic cache sweep did not start: {error}");
     }
     crate::sweep::ensure_space(&ctx.root)?;
+    // Cargo runs offline here: download what a changed lock file added.
+    super::metadata::fetch(ctx)?;
     let changed = changed_files(ctx, base)?;
     let root_manifest = ctx.root.join("Cargo.toml");
     let metadata = cargo::metadata_no_deps(ctx, &root_manifest)?;

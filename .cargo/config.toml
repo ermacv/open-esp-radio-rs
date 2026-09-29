@@ -13,3 +13,9 @@ blobray = "run --manifest-path tools/blobray/Cargo.toml --profile blobray -p blo
 # GitHub access in the lab uses HTTPS credentials managed by Git. Delegate git
 # dependencies to the CLI so Cargo shares the configured credential helper.
 git-fetch-with-cli = true
+# Builds resolve from the lock files and the local cache only. Online, every
+# Cargo command re-checks each git dependency under the host-wide package
+# cache lock (about 12 s), and parallel builds of all checkouts queue behind
+# it. `cargo xtask fetch` downloads what changed lock files need; `cargo xtask
+# lock`, `check changed` and the image builds fetch when something is missing.
+offline = true

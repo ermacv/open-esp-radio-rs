@@ -608,6 +608,11 @@ pub fn check(root: &Path, class: crate::image::ImageClass, network: Integration)
     lock.configure(&mut command);
     network.configure(&mut command, root);
     crate::image::stack::configure_image_compiler(&mut command, &stack_budget);
+    ensure_fetched(
+        root,
+        &root.join("hil/targets/esp32s31/Cargo.toml"),
+        |command| lock.configure(command),
+    )?;
     let status = command.status()?;
     if !status.success() {
         return Err(format!("the {} runtime does not type-check", class.id()).into());
@@ -632,7 +637,7 @@ fn compile_cache_base(root: &Path, overridden: Option<std::ffi::OsString>) -> Pa
         )
 }
 
-pub(crate) fn shared_compile_cache(
+pub fn shared_compile_cache(
     root: &Path,
     class: crate::image::ImageClass,
     network: Integration,
@@ -643,6 +648,32 @@ pub(crate) fn shared_compile_cache(
         class.id(),
         network.id()
     ))
+}
+
+/// Downloads what the workspace of `manifest` at `root` needs and the local
+/// Cargo cache lacks, with the lock file `configure` selects. Cargo runs
+/// offline in this repository; an offline `cargo fetch` of a complete cache
+/// takes a fraction of a second, and only a missing dependency goes online.
+fn ensure_fetched(root: &Path, manifest: &Path, configure: impl Fn(&mut Command)) -> Result<()> {
+    let fetch = |online: bool| -> Result<bool> {
+        let mut command = cargo_command();
+        command
+            .current_dir(root)
+            .args(["fetch", "--locked", "--manifest-path"])
+            .arg(manifest);
+        if online {
+            command.args(["--config", "net.offline=false"]);
+        } else {
+            command.stdout(Stdio::null()).stderr(Stdio::null());
+        }
+        configure(&mut command);
+        Ok(command.status()?.success())
+    };
+    if fetch(false)? || fetch(true)? {
+        Ok(())
+    } else {
+        Err(format!("cannot fetch the dependencies of {}", manifest.display()).into())
+    }
 }
 
 #[derive(Default)]
@@ -746,6 +777,9 @@ fn build_resolved(
     add_local_embassy_patches(&mut runtime, local_embassy);
     add_local_xarxa_patches(&mut runtime, local_xarxa);
     crate::image::stack::configure_image_compiler(&mut runtime, &stack_budget);
+    if !overridden {
+        ensure_fetched(root, &manifest, |command| runtime_lock.configure(command))?;
+    }
     log.run(&mut runtime, "build stage-two runtime")?;
     require_file(&compiled_runtime_elf, "runtime ELF")?;
     fs::copy(&compiled_runtime_elf, &runtime_elf)?;
@@ -791,6 +825,13 @@ fn build_resolved(
     bootstrap_lock.configure(&mut bootstrap);
     add_bootstrap_patches(&mut bootstrap, local_esp_hal);
     crate::image::stack::configure_image_compiler(&mut bootstrap, &stack_budget);
+    if local_esp_hal.is_none() {
+        ensure_fetched(
+            root,
+            &root.join("platform/esp32s31/Cargo.toml"),
+            |command| bootstrap_lock.configure(command),
+        )?;
+    }
     log.run(&mut bootstrap, "build Flash/SRAM bootstrap")?;
     require_file(&compiled_bootstrap_elf, "bootstrap ELF")?;
     fs::copy(&compiled_bootstrap_elf, &bootstrap_elf)?;

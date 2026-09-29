@@ -34,7 +34,9 @@ pub fn update_locks(context: &Context) -> Result<()> {
         crate::process::capture(
             context
                 .cargo()
-                .args(["metadata", "--format-version", "1", "--manifest-path"])
+                .args(["metadata", "--format-version", "1"])
+                .args(ONLINE)
+                .arg("--manifest-path")
                 .arg(&manifest),
         )?;
         let changed = before != fs::read_to_string(&lock).ok();
@@ -43,6 +45,41 @@ pub fn update_locks(context: &Context) -> Result<()> {
             if changed { "updated  " } else { "unchanged" },
             lock.strip_prefix(&context.root)?.display()
         );
+    }
+    Ok(())
+}
+
+/// Lets one Cargo command use the network although the repository's
+/// configuration keeps Cargo offline.
+pub const ONLINE: [&str; 2] = ["--config", "net.offline=false"];
+
+/// Downloads whatever each workspace's lock file names and the local cache
+/// lacks. A workspace whose dependencies are all present costs one offline
+/// `cargo fetch` of a fraction of a second; only a missing one goes online.
+pub fn fetch(context: &Context) -> Result<()> {
+    for manifest in workspaces(context)? {
+        let offline = context
+            .cargo()
+            .args(["fetch", "--locked", "--quiet", "--manifest-path"])
+            .arg(&manifest)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()?;
+        if offline.success() {
+            continue;
+        }
+        println!(
+            "fetching the dependencies of {}",
+            manifest.strip_prefix(&context.root)?.display()
+        );
+        crate::process::run(
+            context
+                .cargo()
+                .args(["fetch", "--locked"])
+                .args(ONLINE)
+                .arg("--manifest-path")
+                .arg(&manifest),
+        )?;
     }
     Ok(())
 }

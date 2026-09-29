@@ -176,6 +176,32 @@ fn build_production(root: &Path, class: &str) -> Result<(PathBuf, String)> {
     ))
 }
 
+/// The vendor firmware of `project`, built first when this checkout has
+/// none yet (a new worktree shares the IDF tree but not its builds).
+fn vendor_build(root: &Path, project: &str) -> Result<VendorBuild> {
+    let report = root.join(VENDOR_FIRMWARE).join(project).join("build.json");
+    if let Some(build) = existing_vendor_build(&report) {
+        return Ok(build);
+    }
+    let command = format!("cargo xtask vendor-firmware --chip esp32s31 {project}");
+    eprintln!("vendor firmware {project} is not built in this checkout; running `{command}`");
+    let status = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+        .current_dir(root)
+        .args(["xtask", "vendor-firmware", "--chip", "esp32s31", project])
+        .status()?;
+    if !status.success() {
+        return Err(format!("`{command}` failed; run it and retry the capture").into());
+    }
+    existing_vendor_build(&report)
+        .ok_or_else(|| format!("`{command}` left no application for {project}").into())
+}
+
+/// The build `report` describes, when it and its application image exist.
+fn existing_vendor_build(report: &Path) -> Option<VendorBuild> {
+    let build: VendorBuild = serde_json::from_slice(&std::fs::read(report).ok()?).ok()?;
+    build.application.is_file().then_some(build)
+}
+
 /// Record a flash outside the HIL runner in the board journal.
 fn journal(root: &Path, image: &str, application: &Path, port: &Path) -> Result<()> {
     let status = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
@@ -496,11 +522,7 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         .production_image
         .as_deref()
         .unwrap_or(production_image);
-    let vendor_build: VendorBuild = serde_json::from_slice(&std::fs::read(
-        root.join(VENDOR_FIRMWARE)
-            .join(vendor_project)
-            .join("build.json"),
-    )?)?;
+    let vendor_build = vendor_build(&root, vendor_project)?;
     let built = if arguments.vendor_only {
         None
     } else {
@@ -661,6 +683,32 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_vendor_build_counts_only_with_its_report_and_application() {
+        let directory =
+            std::env::temp_dir().join(format!("oer-vendor-build-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let report = directory.join("build.json");
+        let application = directory.join("app.bin");
+
+        assert!(existing_vendor_build(&report).is_none());
+        std::fs::write(
+            &report,
+            serde_json::json!({
+                "idf_revision": "rev",
+                "application": application,
+                "application_sha256": "00",
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert!(existing_vendor_build(&report).is_none());
+        std::fs::write(&application, b"image").unwrap();
+        assert!(existing_vendor_build(&report).is_some());
+
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
 
     #[test]
     fn vendor_windows_parse_into_word_registers() {

@@ -9,12 +9,16 @@ side goes through the same projection functions as the comparison probes
 It does not depend on Blobray peripheral models.
 
 ```console
-cargo xtask vendor-firmware --chip esp32s31 calibration
 cargo build -p oer-esp32s31-phy-vendor-calibration
 cargo hil --owner <name> lease --board esp32s31 --air exclusive -- \
     target/debug/oer-esp32s31-phy-vendor-calibration capture --output <new directory>
 cargo run -p oer-esp32s31-phy-vendor-calibration -- compare --captures <directory>
 ```
+
+The capture builds the vendor project it flashes with `cargo xtask
+vendor-firmware --chip esp32s31 <project>` when this checkout has no build of
+it yet, as in a new worktree; a failed build stops the capture and names that
+command.
 
 ## Capture
 

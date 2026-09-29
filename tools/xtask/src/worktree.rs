@@ -18,7 +18,8 @@ use crate::{Context, Result, process};
 
 /// Subdirectories of `target/` that are never worth cloning: incremental
 /// session data is keyed to this checkout's paths, HIL outputs live in the
-/// shared run store or are rebuilt per image, vendor firmware builds keep
+/// shared run store or are rebuilt per image (only the firmware seed
+/// classes' compile caches are cloned, separately), vendor firmware builds keep
 /// CMake caches that record this checkout's absolute source directory, and
 /// fetched vendor artifacts are a link to the host-wide store.
 const SKIPPED: &[&str] = &["incremental", "hil", "vendor-firmware", "vendor"];
@@ -72,7 +73,38 @@ pub fn add(ctx: &Context, path: &Path, branch: &str, from: &str) -> Result<()> {
             source.display()
         );
     }
+    let caches = seed_firmware_caches(&ctx.root, path)?;
+    if caches > 0 {
+        println!("worktree: seeded the compile caches of {caches} firmware seed classes");
+    }
     Ok(())
+}
+
+/// Clones this checkout's compile caches of the firmware check's seed
+/// classes (see [`crate::checks::firmware::SEEDS`]) into the worktree at
+/// `worktree`, by reflink. The firmware check copies their units to every
+/// other class, so the worktree's first full firmware check starts warm; the
+/// rest of `target/hil` (runs, images, snapshots) is not cloned.
+fn seed_firmware_caches(root: &Path, worktree: &Path) -> Result<usize> {
+    let network = oer_hil_runner_core::image::Integration::OwnedXarxa;
+    let mut seeded = 0;
+    for class in crate::checks::firmware::SEEDS {
+        let source = oer_hil_runner_core::image::shared_compile_cache(root, class, network);
+        if !source.is_dir() {
+            continue;
+        }
+        let destination =
+            oer_hil_runner_core::image::shared_compile_cache(worktree, class, network);
+        fs::create_dir_all(destination.parent().ok_or("compile cache has no parent")?)?;
+        process::capture(
+            std::process::Command::new("cp")
+                .args(["-a", "--reflink=auto"])
+                .arg(&source)
+                .arg(&destination),
+        )?;
+        seeded += 1;
+    }
+    Ok(seeded)
 }
 
 /// A btrfs subvolume root always has inode number 256.
@@ -162,8 +194,15 @@ pub fn prepare(ctx: &Context) -> Result<()> {
     Ok(())
 }
 
-/// Clones every top-level build profile directory with reflinks, skipping
-/// [`SKIPPED`] entries. Fails without copying when reflinks are unsupported.
+/// The subdirectories of a build profile that hold compiled units: the
+/// crates, the build scripts' outputs and Cargo's fingerprints. Incremental
+/// data, docs and uplifted binaries are left behind; they are most of the
+/// files and Cargo recreates what it needs.
+const UNITS: [&str; 3] = ["deps", "build", ".fingerprint"];
+
+/// Clones the compiled units of every build profile (`debug`,
+/// `<triple>/release`, ...) with reflinks, skipping [`SKIPPED`] entries.
+/// Fails without copying when reflinks are unsupported.
 fn seed(source: &Path, destination: &Path) -> Result<usize> {
     fs::create_dir_all(destination)?;
     let mut seeded = 0;
@@ -173,11 +212,22 @@ fn seed(source: &Path, destination: &Path) -> Result<usize> {
         if skipped(&name) || !entry.file_type()?.is_dir() {
             continue;
         }
-        let mut copy = std::process::Command::new("cp");
-        copy.args(["-a", "--reflink=always"])
-            .arg(entry.path())
-            .arg(destination.join(&name));
-        if let Err(error) = process::capture(&mut copy) {
+        let result = if is_profile(&entry.path()) {
+            clone_units(&entry.path(), &destination.join(&name))
+        } else {
+            // A target triple: its profiles one level down.
+            fs::read_dir(entry.path())?.try_for_each(|profile| -> Result<()> {
+                let profile = profile?;
+                if profile.file_type()?.is_dir() && is_profile(&profile.path()) {
+                    clone_units(
+                        &profile.path(),
+                        &destination.join(&name).join(profile.file_name()),
+                    )?;
+                }
+                Ok(())
+            })
+        };
+        if let Err(error) = result {
             let _ = fs::remove_dir_all(destination.join(&name));
             return Err(format!(
                 "worktree: reflink copy of {} failed (copy-on-write unsupported?); target/ left unseeded: {error}",
@@ -185,10 +235,30 @@ fn seed(source: &Path, destination: &Path) -> Result<usize> {
             )
             .into());
         }
-        remove_incremental(&destination.join(&name))?;
         seeded += 1;
     }
     Ok(seeded)
+}
+
+/// Whether `directory` is a Cargo build profile.
+fn is_profile(directory: &Path) -> bool {
+    UNITS.iter().any(|units| directory.join(units).is_dir())
+}
+
+/// Clones the [`UNITS`] of the profile `source` into `destination`.
+fn clone_units(source: &Path, destination: &Path) -> Result<()> {
+    fs::create_dir_all(destination)?;
+    for units in UNITS {
+        if source.join(units).is_dir() {
+            process::capture(
+                std::process::Command::new("cp")
+                    .args(["-a", "--reflink=always"])
+                    .arg(source.join(units))
+                    .arg(destination.join(units)),
+            )?;
+        }
+    }
+    Ok(())
 }
 
 /// Incremental session data below a profile directory, as `cp` copied it.

@@ -11,3 +11,5 @@ crates/composition/**/Cargo.lock
 /hil/*.local.toml
 
 
+# Working files rescued from target/ on 2026-09-29; move them to a job directory.
+/target-notes-rescued/

@@ -49,6 +49,42 @@ const FIRMWARE_CONFIGURATION: [&str; 4] = [
     "platform/esp32s31/bootstrap/Cargo.lock",
 ];
 
+/// Runner files that only operate the stand and never shape a passed
+/// observation, left out of every closure so that stand work does not stale
+/// the evidence: the arbiter's leases, queue and board registry, the flash
+/// transactions (a wrong image fails the run's own image check), and the
+/// post-mortem, recovery, USB-event and profile reports of failed
+/// repetitions. The arbiter's spectrum claims decide the air a run shares
+/// and stay in. Tests and prose of runner packages are left out too.
+const STAND_OPERATION: [&str; 6] = [
+    "hil/host/arbiter",
+    "hil/host/runner-core/src/device",
+    "hil/host/runner-core/src/post_mortem.rs",
+    "hil/host/runner-core/src/recovery.rs",
+    "hil/host/runner-core/src/usb_events.rs",
+    "hil/host/runner-core/src/profile.rs",
+];
+
+/// Files below [`STAND_OPERATION`] that do shape an observation.
+const OBSERVING: [&str; 1] = ["hil/host/arbiter/src/spectrum.rs"];
+
+/// Whether `path` operates the stand or tests or documents a package,
+/// rather than shaping an observation.
+fn is_stand_operation(path: &Path) -> bool {
+    if OBSERVING.iter().any(|file| path == Path::new(file)) {
+        return false;
+    }
+    STAND_OPERATION
+        .iter()
+        .any(|prefix| path.starts_with(prefix))
+        || (path.starts_with("hil/host")
+            && (path.extension().is_some_and(|extension| extension == "md")
+                || path.file_name().is_some_and(|name| name == "tests.rs")
+                || path.components().any(|component| {
+                    matches!(component.as_os_str().to_str(), Some("tests" | "testdata"))
+                })))
+}
+
 pub(super) struct Closure {
     directories: BTreeSet<PathBuf>,
     /// Single files, besides the directories read whole.
@@ -129,6 +165,9 @@ impl Closure {
     }
 
     pub(super) fn contains(&self, path: &Path) -> bool {
+        if is_stand_operation(path) {
+            return false;
+        }
         FILES.iter().any(|file| path == Path::new(file))
             || self.files.contains(path)
             || self
@@ -276,6 +315,41 @@ mod tests {
         assert!(!closure.contains(Path::new("docs/architecture.md")));
         assert!(!closure.contains(Path::new("crates/hardware/esp32s31/hal-extra/src/lib.rs")));
         assert!(!closure.contains(Path::new("tools/blobray/src/main.rs")));
+    }
+
+    #[test]
+    fn stand_operation_leaves_the_evidence_current_and_observing_code_does_not() {
+        let closure = Closure::from_directories(&[
+            "hil/host/arbiter",
+            "hil/host/runner-core",
+            "hil/host/runner-ieee80211",
+        ]);
+        for neutral in [
+            "hil/host/arbiter/src/queue.rs",
+            "hil/host/runner-core/src/device/mod.rs",
+            "hil/host/runner-core/src/post_mortem.rs",
+            "hil/host/runner-core/src/image/tests.rs",
+            "hil/host/runner-core/tests/session.rs",
+            "hil/host/runner-core/README.md",
+        ] {
+            assert!(!closure.contains(Path::new(neutral)), "{neutral}");
+        }
+        for observing in [
+            "hil/host/arbiter/src/spectrum.rs",
+            "hil/host/runner-core/src/session.rs",
+            "hil/host/runner-core/src/evidence/verify.rs",
+            "hil/host/runner-ieee80211/src/workload/traffic.rs",
+        ] {
+            assert!(closure.contains(Path::new(observing)), "{observing}");
+        }
+    }
+
+    #[test]
+    fn every_stand_operation_path_exists() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for path in STAND_OPERATION.iter().chain(&OBSERVING) {
+            assert!(root.join(path).exists(), "{path} no longer exists");
+        }
     }
 
     #[test]

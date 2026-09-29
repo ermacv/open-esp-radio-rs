@@ -502,7 +502,10 @@ replay. Currency is judged on the run's closure, the files that can change its
 observation: the files each of its images was compiled from (the
 `source-inputs.json` the build recorded), the files of the scenarios it ran,
 the firmware workspaces' manifests and lock files, Cargo's configuration, the
-workspace manifest, lockfile and toolchain, and the HIL runner's packages. A
+workspace manifest, lockfile and toolchain, and the HIL runner's packages
+except the code that only operates the stand (the arbiter's leases and queue,
+flash transactions, and the post-mortem, recovery and profile reports of
+failed repetitions) and their tests and prose. A
 run whose images recorded no inputs falls back to the checkout-wide closure of
 every firmware and runner package. A build from a clean commit binds while no
 closure file differs between that commit and the checkout, tracked or

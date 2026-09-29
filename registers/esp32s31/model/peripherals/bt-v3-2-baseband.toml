@@ -100,14 +100,14 @@ maximum = 0xFF
 
 [peripherals.registers.register]
 name = "TX_CONFIG_CHECK_VALUE"
-description = "ble_tx_config_check consumes only this high five-bit image in diagnostic arithmetic; its underlying hardware meaning remains unknown."
+description = "Read-only baseband timing word. ble_tx_config_check reads only its TX ramp-up delay."
 addressOffset = 0x1C
 size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_5_OPAQUE"
-description = "Exact value produced by shifting the complete register image right by 27."
+name = "TX_RAMPUP_DELAY"
+description = "TX ramp-up delay. ble_tx_config_check prints this field as tx_rampup_delay and subtracts it, with bb_tx_on_delay and tx_ramp_delay, from lc_tx_on_delay to report constant_DC_time; the time unit is not established."
 bitOffset = 27
 bitWidth = 5
 
@@ -1559,8 +1559,8 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.TX_CONFIG_CHECK_VALUE.HIGH_5_OPAQUE"
-naming = "opaque"
+entity = "BT_V3_2_BASEBAND.TX_CONFIG_CHECK_VALUE.TX_RAMPUP_DELAY"
+naming = "vendor"
 sources = ["BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK"]
 provenance = "observed"
 accuracy = "exact"

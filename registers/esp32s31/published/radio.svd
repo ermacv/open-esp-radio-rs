@@ -22188,14 +22188,14 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
         </register>
         <register>
           <name>TX_CONFIG_CHECK_VALUE</name>
-          <description>Project-assigned name. ble_tx_config_check consumes only this high five-bit image in diagnostic arithmetic; its underlying hardware meaning remains unknown.</description>
+          <description>Project-assigned name. Read-only baseband timing word. ble_tx_config_check reads only its TX ramp-up delay.</description>
           <addressOffset>0x1C</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
-              <name>HIGH_5_OPAQUE</name>
-              <description>Opaque: meaning not established. Exact value produced by shifting the complete register image right by 27.</description>
+              <name>TX_RAMPUP_DELAY</name>
+              <description>TX ramp-up delay. ble_tx_config_check prints this field as tx_rampup_delay and subtracts it, with bb_tx_on_delay and tx_ramp_delay, from lc_tx_on_delay to report constant_DC_time; the time unit is not established.</description>
               <bitOffset>27</bitOffset>
               <bitWidth>5</bitWidth>
             </field>

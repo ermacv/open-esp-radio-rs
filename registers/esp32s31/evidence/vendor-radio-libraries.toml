@@ -27,7 +27,7 @@ description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db
 
 [[sources]]
 id = "BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK"
-description = "libbtbb.a sha256 9bd762f68df0c894d27c542f01591aad21ee800b69fd6403c8ec6226ceaa8895; complete bt_bb_v2.o ble_tx_config_check body, size 0x1c0. Its loads, masks and pinned field-name strings prove the BLE TX timing fields, including RF_ON_BT_DELAY and PA_ON_BT_DELAY in the canonical FECTRL word at 0x20100870. The same complete body reads 0x2010201c and consumes exactly bits 31:27 as an otherwise unnamed input to its diagnostic arithmetic; no stronger hardware meaning is assigned."
+description = "libbtbb.a sha256 9bd762f68df0c894d27c542f01591aad21ee800b69fd6403c8ec6226ceaa8895; complete bt_bb_v2.o ble_tx_config_check body, size 0x1c0. Its loads, masks and pinned field-name strings prove the BLE TX timing fields, including RF_ON_BT_DELAY and PA_ON_BT_DELAY in the canonical FECTRL word at 0x20100870. The same complete body reads 0x2010201c, prints bits 31:27 under the pinned string tx_rampup_delay and subtracts them, with bb_tx_on_delay and tx_ramp_delay, from lc_tx_on_delay to print constant_DC_time."
 
 [[sources]]
 id = "BLOB_LIBBTBB_BBMAC_IDLE_FOR_SWRST"

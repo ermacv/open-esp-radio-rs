@@ -49113,7 +49113,7 @@ pub mod bt_v3_2_baseband {
         pub const fn le_tx_on_delay(&self) -> &LeTxOnDelay {
             &self.le_tx_on_delay
         }
-        #[doc = "0x1c - Project-assigned name. ble_tx_config_check consumes only this high five-bit image in diagnostic arithmetic; its underlying hardware meaning remains unknown."]
+        #[doc = "0x1c - Project-assigned name. Read-only baseband timing word. ble_tx_config_check reads only its TX ramp-up delay."]
         #[inline(always)]
         pub const fn tx_config_check_value(&self) -> &TxConfigCheckValue {
             &self.tx_config_check_value
@@ -49432,23 +49432,23 @@ pub mod bt_v3_2_baseband {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "TX_CONFIG_CHECK_VALUE (r) register accessor: Project-assigned name. ble_tx_config_check consumes only this high five-bit image in diagnostic arithmetic; its underlying hardware meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_config_check_value::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_config_check_value`] module"]
+    #[doc = "TX_CONFIG_CHECK_VALUE (r) register accessor: Project-assigned name. Read-only baseband timing word. ble_tx_config_check reads only its TX ramp-up delay.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_config_check_value::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_config_check_value`] module"]
     #[doc(alias = "TX_CONFIG_CHECK_VALUE")]
     pub type TxConfigCheckValue = crate::Reg<tx_config_check_value::TxConfigCheckValueSpec>;
-    #[doc = "Project-assigned name. ble_tx_config_check consumes only this high five-bit image in diagnostic arithmetic; its underlying hardware meaning remains unknown."]
+    #[doc = "Project-assigned name. Read-only baseband timing word. ble_tx_config_check reads only its TX ramp-up delay."]
     pub mod tx_config_check_value {
         #[doc = "Register `TX_CONFIG_CHECK_VALUE` reader"]
         pub type R = crate::R<TxConfigCheckValueSpec>;
-        #[doc = "Field `HIGH_5_OPAQUE` reader - Opaque: meaning not established. Exact value produced by shifting the complete register image right by 27."]
-        pub type High5OpaqueR = crate::FieldReader;
+        #[doc = "Field `TX_RAMPUP_DELAY` reader - TX ramp-up delay. ble_tx_config_check prints this field as tx_rampup_delay and subtracts it, with bb_tx_on_delay and tx_ramp_delay, from lc_tx_on_delay to report constant_DC_time; the time unit is not established."]
+        pub type TxRampupDelayR = crate::FieldReader;
         impl R {
-            #[doc = "Bits 27:31 - Opaque: meaning not established. Exact value produced by shifting the complete register image right by 27."]
+            #[doc = "Bits 27:31 - TX ramp-up delay. ble_tx_config_check prints this field as tx_rampup_delay and subtracts it, with bb_tx_on_delay and tx_ramp_delay, from lc_tx_on_delay to report constant_DC_time; the time unit is not established."]
             #[inline(always)]
-            pub fn high_5_opaque(&self) -> High5OpaqueR {
-                High5OpaqueR::new(((self.bits >> 27) & 0x1f) as u8)
+            pub fn tx_rampup_delay(&self) -> TxRampupDelayR {
+                TxRampupDelayR::new(((self.bits >> 27) & 0x1f) as u8)
             }
         }
-        #[doc = "Project-assigned name. ble_tx_config_check consumes only this high five-bit image in diagnostic arithmetic; its underlying hardware meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_config_check_value::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Read-only baseband timing word. ble_tx_config_check reads only its TX ramp-up delay.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_config_check_value::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TxConfigCheckValueSpec;
         impl crate::RegisterSpec for TxConfigCheckValueSpec {
             type Ux = u32;

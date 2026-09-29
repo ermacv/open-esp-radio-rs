@@ -6436,8 +6436,8 @@ scope = []
 register-method = "tx_config_check_value"
 
 [[registers.fields]]
-svd-name = "HIGH_5_OPAQUE"
-method = "high_5_opaque"
+svd-name = "TX_RAMPUP_DELAY"
+method = "tx_rampup_delay"
 bit-offset = 27
 bit-width = 5
 access = "read-only"

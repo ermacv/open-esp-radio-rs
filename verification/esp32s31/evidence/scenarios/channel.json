@@ -419,7 +419,7 @@
     },
     {
       "path": "tools/blobray/crates/application/src/library.rs",
-      "sha256": "1fc69d1646d2a01c6897ff80b6546bf2678bb6f0c32732ccede3f30dde8496fb"
+      "sha256": "0334300267b7445ef33758e3305e70fc81a2520923e20f4222cdd081e7a01a82"
     },
     {
       "path": "tools/blobray/crates/application/src/linking/companions.rs",
@@ -467,7 +467,7 @@
     },
     {
       "path": "tools/blobray/crates/artifacts/src/function.rs",
-      "sha256": "085e21919ee1eb7a286d7b4d26ce195790a273cd83793fe2ef51b28ff71bdd88"
+      "sha256": "8594343b42611ee114ca97daab427a0ade0acd3c3b5eb4cc42433a6f511142a8"
     },
     {
       "path": "tools/blobray/crates/artifacts/src/image.rs",
@@ -543,7 +543,7 @@
     },
     {
       "path": "tools/blobray/crates/domain/src/function.rs",
-      "sha256": "bfa8c75a1e58058e6dabecb45130e2d14be68b31ef8e70cbb1a20a7d82a12ec9"
+      "sha256": "886ece49df186eb5938ecc6649e501119650f8020b28b173810bfcf520b69dea"
     },
     {
       "path": "tools/blobray/crates/domain/src/image.rs",

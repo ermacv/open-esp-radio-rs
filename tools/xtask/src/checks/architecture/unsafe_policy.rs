@@ -30,9 +30,10 @@ const AUDITED_UNSAFE: &[&str] = &[
     "oer-esp32s31-ieee802154-system",
     "oer-esp32c5-pac",
 ];
-/// The closed radio PAC of each chip and the closed PAC crates of the register
-/// layouts chips share.
+/// The closed radio PAC of each chip, the selected chip's (`oer-pac`) and the
+/// closed PAC crates of the register layouts chips share.
 pub(super) const CLOSED_PACS: &[&str] = &[
+    "oer-pac",
     "oer-esp32s31-pac",
     "oer-esp32c5-pac",
     "oer-ieee80211-pac-raw",
@@ -42,6 +43,7 @@ pub(super) const CLOSED_PACS: &[&str] = &[
 /// The HAL is the only production consumer of the closed PAC; drivers and
 /// adapters reach hardware through HAL owners.
 const PAC_CONSUMERS: &[&str] = &[
+    "oer-pac",
     "oer-esp32s31-pac-raw",
     "oer-esp32s31-pac",
     "oer-esp32s31-hal",

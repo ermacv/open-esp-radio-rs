@@ -10,6 +10,17 @@ boot = "esp-idf-bootloader"
 espflash-chip = "esp32c5"
 revisions = ["rev100"]
 
+# What the chip has, as compile-time properties (`oer-chip-cfg` turns them
+# into cfgs and constants for the code above the PAC). Differences of
+# address or layout belong in the register model, not here.
+[properties]
+# Dual-band: 2.4 GHz and 5 GHz.
+wifi-bands = ["2g4", "5g"]
+# LE-only controller in the vendor Bluetooth library.
+bluetooth = ["le"]
+ieee802154 = true
+cores = 1
+
 # Where the HIL images lie: the ESP-IDF bootloader at the chip's boot offset,
 # the partition table and the factory application, as the catalog bootloader
 # build's flasher_args.json places them.

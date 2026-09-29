@@ -1,0 +1,34 @@
+[package]
+name = "oer-pac"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "The selected chip's radio peripheral access crate, for code written once for every chip"
+
+[features]
+esp32s31 = ["dep:oer-esp32s31-pac"]
+esp32c5 = ["dep:oer-esp32c5-pac"]
+
+[dependencies]
+oer-esp32s31-pac = { path = "../esp32s31/pac", optional = true }
+oer-esp32c5-pac = { path = "../esp32c5/pac", optional = true }
+
+[build-dependencies]
+oer-chip-cfg = { path = "../../chip/cfg" }
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+# The re-exported PAC exists only for a selected chip's target.
+default-target = "riscv32imafc-unknown-none-elf"
+targets = []
+features = ["esp32s31"]
+
+[package.metadata.open-radio]
+scope = "production"
+layer = "hardware"
+platform = "selected"
+test-feature-sets = ["esp32s31", "esp32c5"]

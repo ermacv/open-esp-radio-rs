@@ -29,9 +29,21 @@ catch-all owner for unrelated tools.
 
 Every Cargo package declares `package.metadata.open-radio.scope`, `layer`
 and `platform`. Scope separates production, experimental and development
-packages. Layer describes responsibility; platform is `portable`, `host` or
-`chip`. Chip applicability requires a separate `chip` identifier, such as
-`esp32s31`; portable and host classifications must not carry one. The identifier
+packages. Layer describes responsibility; platform is `portable`, `host`,
+`chip` or `selected`. Chip applicability requires a separate `chip` identifier, such as
+`esp32s31`; portable, host and selected classifications must not carry one.
+A `selected` package is written once for every chip and built for the one
+chip its feature named after a chip id selects: the architecture check
+builds it once per chip, with that chip's target. It reaches a chip's PAC
+only through `oer-pac`, which re-exports the selected chip's PAC; a chip
+package may use it, a portable one may not. What chips have — Wi-Fi bands,
+Bluetooth modes, IEEE 802.15.4, core count — is the `[properties]` table of
+`platform/<chip>/chip.toml`; a selected package's build script calls
+`oer_chip_cfg::emit()` and sees them as `cfg`s (`oer_wifi_band_5g`,
+`oer_bluetooth_br_edr`, …, all declared to `rustc-check-cfg`) and constants.
+Differences of address or register layout belong in the register model,
+not in properties. A build dependency, which runs on the build machine,
+must be a host or portable package. The identifier
 starts with a lowercase ASCII letter and contains lowercase letters, digits or
 hyphens. It identifies applicability, not the compiler target or an implemented
 backend. These labels do not establish hardware qualification.

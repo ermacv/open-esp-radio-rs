@@ -2390,9 +2390,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-chip-cfg"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "oer-chip-profile"
 version = "0.1.0"
 dependencies = [
+ "oer-chip-cfg",
  "serde",
  "tempfile",
  "toml",
@@ -3330,6 +3339,15 @@ dependencies = [
 [[package]]
 name = "oer-network-interface"
 version = "0.1.0"
+
+[[package]]
+name = "oer-pac"
+version = "0.1.0"
+dependencies = [
+ "oer-chip-cfg",
+ "oer-esp32c5-pac",
+ "oer-esp32s31-pac",
+]
 
 [[package]]
 name = "oer-phy-trace"

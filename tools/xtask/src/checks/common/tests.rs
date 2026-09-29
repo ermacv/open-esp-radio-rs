@@ -233,6 +233,38 @@ fn portable_to_chip_rejection_does_not_depend_on_the_chip_name() {
 }
 
 #[test]
+fn shared_code_reaches_a_chip_only_through_the_selected_pac() {
+    let repository = architecture_repository("dependencies", "hardware");
+    let edge = |source: (&str, Option<&str>), target: (&str, Option<&str>)| {
+        set_classification(
+            repository.path(),
+            "libraries/policy",
+            "hardware",
+            source.0,
+            source.1,
+        );
+        set_classification(
+            repository.path(),
+            "crates/target",
+            "hardware",
+            target.0,
+            target.1,
+        );
+        edge_result(repository.path())
+    };
+    // Only `oer-pac` may reach a chip package from shared code.
+    assert!(
+        edge(("selected", None), ("chip", Some("esp32c5")))
+            .unwrap_err()
+            .to_string()
+            .contains("incompatible platform edge")
+    );
+    edge(("selected", None), ("selected", None)).unwrap();
+    edge(("chip", Some("esp32s31")), ("selected", None)).unwrap();
+    assert!(edge(("portable", None), ("selected", None)).is_err());
+}
+
+#[test]
 fn hardware_dependencies_cannot_cross_chip_identity() {
     let repository = architecture_repository("dependencies", "hardware");
     set_classification(
@@ -546,7 +578,8 @@ fn a_chip_package_compiles_for_its_own_chip_target() {
     fs::write(
         platform.join("chip.toml"),
         "schema = 1\nid = \"esp32x9\"\nrust-target = \"riscv32imac-unknown-none-elf\"\n\
-         boot = \"esp-idf-bootloader\"\nespflash-chip = \"esp32x9\"\nrevisions = [\"rev0\"]\n",
+         boot = \"esp-idf-bootloader\"\nespflash-chip = \"esp32x9\"\nrevisions = [\"rev0\"]\n\
+         [properties]\nwifi-bands = [\"2g4\"]\nbluetooth = [\"le\"]\nieee802154 = false\ncores = 1\n",
     )
     .unwrap();
     let context = Context::new(repository.path()).unwrap();

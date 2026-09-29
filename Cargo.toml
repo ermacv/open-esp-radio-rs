@@ -6,6 +6,8 @@ members = [
     "verification/harness/macros",
     "tools/process",
     "tools/chip-profile",
+    "crates/chip/cfg",
+    "crates/hardware/pac",
     "tools/command-tree",
     "tools/firmware",
     "tools/symbol-lineage",

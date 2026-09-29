@@ -195,7 +195,13 @@ pub enum Platform<'a> {
     Portable,
     Host,
     Chip(&'a str),
+    /// Built for the one chip a feature named after a chip id selects;
+    /// written once for every chip (see `oer-chip-cfg`).
+    Selected,
 }
+
+/// The one package through which selected packages reach a chip's PAC.
+const SELECTED_PAC: &str = "oer-pac";
 
 pub struct Classification<'a> {
     pub scope: &'a str,
@@ -281,6 +287,7 @@ pub fn classification(package: &Package) -> Result<Classification<'_>> {
     let platform = match (field("platform")?, chip) {
         ("portable", None) => Platform::Portable,
         ("host", None) => Platform::Host,
+        ("selected", None) => Platform::Selected,
         ("chip", Some(chip)) => {
             let chip = chip
                 .as_str()
@@ -387,11 +394,25 @@ pub fn validate_production_edges(packages: &[ProductionPackage]) -> Result<()> {
                 )
                 .into());
             }
-            let platform_allowed = match (source_class.platform, target_class.platform) {
-                (_, Platform::Portable) => true,
-                (Platform::Chip(source), Platform::Chip(target)) => source == target,
-                (Platform::Host, Platform::Host) => true,
-                _ => source_class.layer == "facade",
+            let platform_allowed = if dependency.kind == DependencyKind::Build {
+                // A build script runs on the host.
+                matches!(target_class.platform, Platform::Host | Platform::Portable)
+            } else {
+                match (source_class.platform, target_class.platform) {
+                    (_, Platform::Portable) => true,
+                    (Platform::Chip(source), Platform::Chip(target)) => source == target,
+                    (Platform::Host, Platform::Host) => true,
+                    // Code written once for every chip reaches a chip's
+                    // PAC only through `oer-pac`.
+                    (Platform::Selected, Platform::Selected) => true,
+                    (Platform::Selected, Platform::Chip(_)) => {
+                        source.package.name.as_str() == SELECTED_PAC
+                    }
+                    // A chip package may use shared code, selecting its own
+                    // chip.
+                    (Platform::Chip(_), Platform::Selected) => true,
+                    _ => source_class.layer == "facade",
+                }
             };
             if !platform_allowed {
                 return Err(format!(
@@ -519,7 +540,27 @@ pub fn architecture_configurations(
     for item in packages {
         let target = match classification(&item.package)?.platform {
             Platform::Chip(chip) => oer_chip_profile::Profile::load(root, chip)?.rust_target,
-            Platform::Portable | Platform::Host => target.to_owned(),
+            Platform::Portable => target.to_owned(),
+            // Host packages run on the build machine: the workspace's own
+            // host build covers them.
+            Platform::Host => continue,
+            // Written once for every chip: built once for each, with that
+            // chip's feature and target.
+            Platform::Selected => {
+                for chip in oer_chip_profile::Profile::all(root)? {
+                    configurations.push(CargoConfiguration {
+                        manifest: item.manifest.clone(),
+                        package: item.package.name.to_string(),
+                        target: chip.rust_target,
+                        features: vec![
+                            String::from("--no-default-features"),
+                            String::from("--features"),
+                            chip.id,
+                        ],
+                    });
+                }
+                continue;
+            }
         };
         for features in compilation_profiles(&item.package)? {
             configurations.push(CargoConfiguration {

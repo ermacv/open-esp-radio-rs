@@ -143,7 +143,10 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
             None | Some("" | "wifi" | "bluetooth" | "ieee802154")
         ) {
             for package in packages.iter().filter(|package| package.source.is_none()) {
-                if matches!(classification(package)?.platform, Platform::Chip(_)) {
+                if matches!(
+                    classification(package)?.platform,
+                    Platform::Chip(_) | Platform::Selected
+                ) {
                     return Err(format!(
                         "portable facade profile {:?} includes {}",
                         profile.features, package.name

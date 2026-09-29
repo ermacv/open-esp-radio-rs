@@ -2,7 +2,9 @@
 //!
 //! Every supported chip has `platform/<id>/chip.toml`, holding only what
 //! differs between chips and cannot be derived from the id: the Rust target,
-//! the boot flow, the chip name `espflash` uses and the silicon revisions.
+//! the boot flow, the chip name `espflash` uses, the silicon revisions and
+//! the chip's properties (radio bands, Bluetooth modes, cores), which
+//! firmware sees as compile-time configuration through `oer-chip-cfg`.
 //! Everything else follows the id by convention (`verification/<id>`,
 //! `registers/<id>`, `hil/targets/<id>`, `qualification/targets/<id>`,
 //! `target/hil/<id>`), and a capability exists where its directory does.
@@ -49,6 +51,9 @@ pub struct Profile {
     /// runner writes and replays them there.
     #[serde(default)]
     pub flash: Option<FlashLayout>,
+    /// What the chip has, which firmware sees as compile-time `cfg`s and
+    /// constants (`oer-chip-cfg`).
+    pub properties: oer_chip_cfg::Properties,
 }
 
 /// Flash offsets of an ESP-IDF application image: the chip's second-stage

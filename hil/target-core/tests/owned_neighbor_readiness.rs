@@ -6,7 +6,7 @@ use xarxa_owned::{
     driver::{
         Capabilities, Driver, HardwareAddress, LinkState, PacketBuf, PacketPool, PacketPoolStorage,
     },
-    time::Instant,
+    time::{Duration, Instant},
     wire::{
         EthernetAddress, EthernetFrame, IpCidr, Ipv4Addr, Ipv4Packet, ListenSocketAddr, SocketAddr,
         UdpPacket,
@@ -55,7 +55,9 @@ fn burst(resolve_before: bool) -> Vec<u32> {
             iface,
             peer.into(),
             xarxa_owned::wire::HardwareAddress::Ethernet(EthernetAddress([2, 0, 0, 0, 0, 2])),
-            Instant::MAX,
+            // Xarxa's clock is wrapping milliseconds: the farthest
+            // expiry a comparison still orders after now.
+            Instant::ZERO + Duration::MAX,
         );
     };
     if resolve_before {

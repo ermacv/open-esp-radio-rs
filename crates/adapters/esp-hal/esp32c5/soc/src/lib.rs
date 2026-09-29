@@ -1,5 +1,5 @@
 #![no_std]
-#![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
+#![forbid(unsafe_code)]
 
 //! ESP32-C5 SoC services backed by esp-hal peripheral witnesses.
 //!

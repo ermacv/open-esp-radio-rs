@@ -1319,7 +1319,6 @@ impl<
                 },
                 LegacyScanStartSelection::Requested,
                 coexistence::passive_scan_priorities(self.coexistence),
-                self.policy.sequence_lead_raw_delta(),
             )
             .map_err(|_| (ScanWindowVerdict::Unprepared, RequestError::Unsupported))?;
         let id = self

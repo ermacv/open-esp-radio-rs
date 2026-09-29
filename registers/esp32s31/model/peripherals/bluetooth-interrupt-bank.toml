@@ -91,16 +91,16 @@ size = 32
 access = "write-only"
 modifiedWriteValues = "oneToClear"
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_0_6"
+name = "BITS_0_6_OPAQUE"
 bitOffset = 0
 bitWidth = 7
 [[peripherals.registers.register.fields]]
 name = "SOURCE_7"
-description = "Acknowledged with complete image 0x80 by the scheduler cancellation path before it sets BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_CONTROL_0204 bit zero."
+description = "Acknowledged with complete image 0x80 by the scheduler cancellation path before it sets BLUETOOTH_CONTROLLER_CORE.WORD_0204_OPAQUE bit zero."
 bitOffset = 7
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_8_14"
+name = "BITS_8_14_OPAQUE"
 bitOffset = 8
 bitWidth = 7
 [[peripherals.registers.register.fields]]
@@ -108,7 +108,7 @@ name = "SOURCE_15"
 bitOffset = 15
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_16_20"
+name = "BITS_16_20_OPAQUE"
 bitOffset = 16
 bitWidth = 5
 [[peripherals.registers.register.fields]]
@@ -116,7 +116,7 @@ name = "SOURCE_21"
 bitOffset = 21
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_22_26"
+name = "BITS_22_26_OPAQUE"
 bitOffset = 22
 bitWidth = 5
 [[peripherals.registers.register.fields]]
@@ -124,7 +124,7 @@ name = "SOURCES_27_28"
 bitOffset = 27
 bitWidth = 2
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_29_31"
+name = "BITS_29_31_OPAQUE"
 bitOffset = 29
 bitWidth = 3
 [[peripherals.registers]]
@@ -135,7 +135,7 @@ addressOffset = 0x5C
 size = 32
 access = "read-only"
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_0_14"
+name = "BITS_0_14_OPAQUE"
 bitOffset = 0
 bitWidth = 15
 [[peripherals.registers.register.fields]]
@@ -143,7 +143,7 @@ name = "SOURCE_15"
 bitOffset = 15
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_16_20"
+name = "BITS_16_20_OPAQUE"
 bitOffset = 16
 bitWidth = 5
 [[peripherals.registers.register.fields]]
@@ -151,7 +151,7 @@ name = "SOURCE_21"
 bitOffset = 21
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_22_26"
+name = "BITS_22_26_OPAQUE"
 bitOffset = 22
 bitWidth = 5
 [[peripherals.registers.register.fields]]
@@ -159,7 +159,7 @@ name = "SOURCES_27_28"
 bitOffset = 27
 bitWidth = 2
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_29_31"
+name = "BITS_29_31_OPAQUE"
 bitOffset = 29
 bitWidth = 3
 [[peripherals.registers]]
@@ -210,7 +210,7 @@ size = 32
 access = "write-only"
 modifiedWriteValues = "oneToClear"
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_0_2"
+name = "BITS_0_2_OPAQUE"
 bitOffset = 0
 bitWidth = 3
 [[peripherals.registers.register.fields]]
@@ -218,7 +218,7 @@ name = "SOURCE_3"
 bitOffset = 3
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_4_7"
+name = "BITS_4_7_OPAQUE"
 bitOffset = 4
 bitWidth = 4
 [[peripherals.registers.register.fields]]
@@ -230,7 +230,7 @@ name = "SOURCE_9"
 bitOffset = 9
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_10_11"
+name = "BITS_10_11_OPAQUE"
 bitOffset = 10
 bitWidth = 2
 [[peripherals.registers.register.fields]]
@@ -238,7 +238,7 @@ name = "SOURCE_12"
 bitOffset = 12
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_13_31"
+name = "BITS_13_31_OPAQUE"
 bitOffset = 13
 bitWidth = 19
 [[peripherals.registers]]
@@ -249,7 +249,7 @@ addressOffset = 0x68
 size = 32
 access = "read-only"
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_0_2"
+name = "BITS_0_2_OPAQUE"
 bitOffset = 0
 bitWidth = 3
 [[peripherals.registers.register.fields]]
@@ -257,7 +257,7 @@ name = "SOURCE_3"
 bitOffset = 3
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_4_7"
+name = "BITS_4_7_OPAQUE"
 bitOffset = 4
 bitWidth = 4
 [[peripherals.registers.register.fields]]
@@ -269,7 +269,7 @@ name = "SOURCE_9"
 bitOffset = 9
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_10_11"
+name = "BITS_10_11_OPAQUE"
 bitOffset = 10
 bitWidth = 2
 [[peripherals.registers.register.fields]]
@@ -277,7 +277,7 @@ name = "SOURCE_12"
 bitOffset = 12
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_13_31"
+name = "BITS_13_31_OPAQUE"
 bitOffset = 13
 bitWidth = 19
 [[peripherals.registers]]
@@ -288,7 +288,7 @@ addressOffset = 0x70
 size = 32
 access = "read-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 [[peripherals.registers]]
@@ -299,7 +299,7 @@ addressOffset = 0x1C8
 size = 32
 access = "read-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 [[peripherals.registers]]
@@ -310,7 +310,7 @@ addressOffset = 0x1CC
 size = 32
 access = "read-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 [[peripherals.registers]]
@@ -475,8 +475,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CLEAR_0.UNCLASSIFIED_0_6"
-naming = "descriptive"
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CLEAR_0.BITS_0_6_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 provenance = "derived"
 accuracy = "exact"
@@ -491,8 +491,8 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CLEAR_0.UNCLASSIFIED_8_14"
-naming = "descriptive"
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CLEAR_0.BITS_8_14_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 provenance = "derived"
 accuracy = "exact"
@@ -507,8 +507,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CLEAR_0.UNCLASSIFIED_16_20"
-naming = "descriptive"
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CLEAR_0.BITS_16_20_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 provenance = "derived"
 accuracy = "exact"
@@ -523,8 +523,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CLEAR_0.UNCLASSIFIED_22_26"
-naming = "descriptive"
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CLEAR_0.BITS_22_26_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 provenance = "derived"
 accuracy = "exact"
@@ -539,8 +539,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CLEAR_0.UNCLASSIFIED_29_31"
-naming = "descriptive"
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CLEAR_0.BITS_29_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 provenance = "derived"
 accuracy = "exact"
@@ -555,8 +555,8 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_STATUS_0.UNCLASSIFIED_0_14"
-naming = "descriptive"
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_STATUS_0.BITS_0_14_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 provenance = "derived"
 accuracy = "exact"
@@ -571,8 +571,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_STATUS_0.UNCLASSIFIED_16_20"
-naming = "descriptive"
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_STATUS_0.BITS_16_20_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 provenance = "derived"
 accuracy = "exact"
@@ -587,8 +587,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_STATUS_0.UNCLASSIFIED_22_26"
-naming = "descriptive"
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_STATUS_0.BITS_22_26_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 provenance = "derived"
 accuracy = "exact"
@@ -603,8 +603,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_STATUS_0.UNCLASSIFIED_29_31"
-naming = "descriptive"
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_STATUS_0.BITS_29_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 provenance = "derived"
 accuracy = "exact"
@@ -691,8 +691,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CLEAR_1.UNCLASSIFIED_0_2"
-naming = "descriptive"
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CLEAR_1.BITS_0_2_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 provenance = "derived"
 accuracy = "exact"
@@ -707,8 +707,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CLEAR_1.UNCLASSIFIED_4_7"
-naming = "descriptive"
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CLEAR_1.BITS_4_7_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 provenance = "derived"
 accuracy = "exact"
@@ -731,8 +731,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CLEAR_1.UNCLASSIFIED_10_11"
-naming = "descriptive"
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CLEAR_1.BITS_10_11_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 provenance = "derived"
 accuracy = "exact"
@@ -747,8 +747,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CLEAR_1.UNCLASSIFIED_13_31"
-naming = "descriptive"
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CLEAR_1.BITS_13_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 provenance = "derived"
 accuracy = "exact"
@@ -763,8 +763,8 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_STATUS_1.UNCLASSIFIED_0_2"
-naming = "descriptive"
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_STATUS_1.BITS_0_2_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 provenance = "derived"
 accuracy = "exact"
@@ -779,8 +779,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_STATUS_1.UNCLASSIFIED_4_7"
-naming = "descriptive"
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_STATUS_1.BITS_4_7_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 provenance = "derived"
 accuracy = "exact"
@@ -803,8 +803,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_STATUS_1.UNCLASSIFIED_10_11"
-naming = "descriptive"
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_STATUS_1.BITS_10_11_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 provenance = "derived"
 accuracy = "exact"
@@ -819,8 +819,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_STATUS_1.UNCLASSIFIED_13_31"
-naming = "descriptive"
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_STATUS_1.BITS_13_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 provenance = "derived"
 accuracy = "exact"
@@ -835,7 +835,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_DIAGNOSTIC_STATE.IMAGE"
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_DIAGNOSTIC_STATE.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 provenance = "observed"
@@ -851,7 +851,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_DIAGNOSTIC_DETAIL_0.IMAGE"
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_DIAGNOSTIC_DETAIL_0.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 provenance = "observed"
@@ -867,7 +867,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_DIAGNOSTIC_DETAIL_1.IMAGE"
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_DIAGNOSTIC_DETAIL_1.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 provenance = "observed"

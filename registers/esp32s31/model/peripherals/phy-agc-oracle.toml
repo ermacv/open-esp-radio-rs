@@ -246,7 +246,7 @@ size = 32
 access = "write-only"
 
 [[peripherals.registers.register.fields]]
-name = "OPAQUE_VALUE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -330,7 +330,7 @@ size = 32
 access = "write-only"
 
 [[peripherals.registers.register.fields]]
-name = "OPAQUE_VALUE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -1240,9 +1240,9 @@ entity = "PHY_AGC_ORACLE.CSI_DUMP_FORCE_CONTROL.FORCE_LLTF"
 naming = "descriptive"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.SATURATION_GAIN_LOW.OPAQUE_VALUE"
-naming = "descriptive"
+entity = "PHY_AGC_ORACLE.SATURATION_GAIN_LOW.BITS_0_31_OPAQUE"
+naming = "opaque"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.SATURATION_GAIN_HIGH.OPAQUE_VALUE"
-naming = "descriptive"
+entity = "PHY_AGC_ORACLE.SATURATION_GAIN_HIGH.BITS_0_31_OPAQUE"
+naming = "opaque"

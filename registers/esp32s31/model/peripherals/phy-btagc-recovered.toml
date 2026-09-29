@@ -146,7 +146,7 @@ maximum = 0xFF
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "RX_CONFIG_004C"
+name = "WORD_004C_OPAQUE"
 description = "Bluetooth receive setup clears bit 26. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, later replaces bits 18:0 and sets bits 19, 24, 26, 28, 30 and 31 in two fresh-read RMW operations."
 addressOffset = 0x4C
 size = 32
@@ -288,7 +288,7 @@ minimum = 0x0
 maximum = 0x1F
 
 [[peripherals.registers.register.fields]]
-name = "CONFIG_FORCE_ONE_23"
+name = "BIT_23_OPAQUE"
 bitOffset = 23
 bitWidth = 1
 
@@ -329,19 +329,19 @@ maximum = 0x1FF
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "RX_CONFIG_0088"
+name = "WORD_0088_OPAQUE"
 description = "Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations. bt_agc_restart_set clears bit 30 and bt_agc_sat_gain sets it again."
 addressOffset = 0x88
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "CONFIG_FORCE_ONE_18"
+name = "BIT_18_OPAQUE"
 bitOffset = 18
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "CONFIG_FORCE_ZERO_29"
+name = "BIT_29_OPAQUE"
 bitOffset = 29
 bitWidth = 1
 
@@ -353,14 +353,14 @@ bitWidth = 1
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "RX_CONFIG_008C"
+name = "WORD_008C_OPAQUE"
 description = "Bluetooth receive setup and target configuration update three disjoint positional fields and clear one independently observed control bit."
 addressOffset = 0x8C
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "CONFIG_FORCE_ZERO_29"
+name = "BIT_29_OPAQUE"
 bitOffset = 29
 bitWidth = 1
 
@@ -387,7 +387,7 @@ maximum = 0x1FF
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "AGC_CONFIG_00D0"
+name = "WORD_00D0_OPAQUE"
 description = "bt_agc_v2_set replaces two seven-bit fields with the finite value 20."
 addressOffset = 0xD0
 size = 32
@@ -414,7 +414,7 @@ maximum = 0x7F
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "AGC_CONFIG_00D4"
+name = "WORD_00D4_OPAQUE"
 description = "bt_agc_v2_set replaces bits 24:6 with the finite image 0x003C0."
 addressOffset = 0xD4
 size = 32
@@ -552,7 +552,7 @@ access = "write-only"
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "AGC_RECORRECT_CONTROL_006C"
+name = "WORD_006C_OPAQUE"
 description = "Complete bt_agc_recorrect_set replaces the high byte with one finite image."
 addressOffset = 0x6C
 size = 32
@@ -571,7 +571,7 @@ maximum = 0xFF
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "AGC_RESTART_CONFIG_0084"
+name = "WORD_0084_OPAQUE"
 description = "Complete bt_agc_restart_set replaces the high byte with one finite image."
 addressOffset = 0x84
 size = 32
@@ -590,7 +590,7 @@ maximum = 0xFF
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "SHARED_RX_SENSE_AND_DETECT_00A0"
+name = "WORD_00A0_OPAQUE"
 description = "Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer."
 addressOffset = 0xA0
 size = 32
@@ -617,7 +617,7 @@ maximum = 0xF
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "SHARED_RX_SENSE_AND_DETECT_00A8"
+name = "WORD_00A8_OPAQUE"
 description = "Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace four positional fields used by the bounded baseband initializer."
 addressOffset = 0xA8
 size = 32
@@ -662,7 +662,7 @@ maximum = 0xFF
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "AGC_RECORRECT_AND_TARGET_00B0"
+name = "WORD_00B0_OPAQUE"
 description = "Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves."
 addressOffset = 0xB0
 size = 32
@@ -701,7 +701,7 @@ maximum = 0x1FF
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "AGC_RECORRECT_AND_TARGET_00B4"
+name = "WORD_00B4_OPAQUE"
 description = "Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves."
 addressOffset = 0xB4
 size = 32
@@ -736,7 +736,7 @@ maximum = 0x1FF
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "SHARED_RX_SENSE_AND_DETECT_00B8"
+name = "WORD_00B8_OPAQUE"
 description = "Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer."
 addressOffset = 0xB8
 size = 32
@@ -763,7 +763,7 @@ maximum = 0xFF
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "AGC_RECORRECT_AND_RESTART_00BC"
+name = "WORD_00BC_OPAQUE"
 description = "Complete recorrect and restart leaves independently update five observed control bits."
 addressOffset = 0xBC
 size = 32
@@ -802,14 +802,14 @@ bitWidth = 1
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "AGC_DETECT_CONFIG_00C0"
+name = "WORD_00C0_OPAQUE"
 description = "Complete bt_agc_detect_set replaces five positional fields with finite images."
 addressOffset = 0xC0
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "BITS_5_9"
+name = "BITS_5_9_OPAQUE"
 description = "The leaf replaces this field with 0x0a."
 bitOffset = 5
 bitWidth = 5
@@ -819,7 +819,7 @@ minimum = 0x0
 maximum = 0x1F
 
 [[peripherals.registers.register.fields]]
-name = "BITS_10_14"
+name = "BITS_10_14_OPAQUE"
 description = "The leaf replaces this field with 0x0a."
 bitOffset = 10
 bitWidth = 5
@@ -829,7 +829,7 @@ minimum = 0x0
 maximum = 0x1F
 
 [[peripherals.registers.register.fields]]
-name = "BITS_15_19"
+name = "BITS_15_19_OPAQUE"
 description = "The leaf replaces this field with 0x0a."
 bitOffset = 15
 bitWidth = 5
@@ -839,7 +839,7 @@ minimum = 0x0
 maximum = 0x1F
 
 [[peripherals.registers.register.fields]]
-name = "BITS_20_23"
+name = "BITS_20_23_OPAQUE"
 description = "The leaf replaces this field with 7."
 bitOffset = 20
 bitWidth = 4
@@ -849,7 +849,7 @@ minimum = 0x0
 maximum = 0xF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_24_31"
+name = "BITS_24_31_OPAQUE"
 description = "The leaf replaces this field with 0x9c."
 bitOffset = 24
 bitWidth = 8
@@ -861,14 +861,14 @@ maximum = 0xFF
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "AGC_DETECT_CONFIG_00C4"
+name = "WORD_00C4_OPAQUE"
 description = "Complete bt_agc_detect_set replaces four positional fields with finite images."
 addressOffset = 0xC4
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "BITS_10_14"
+name = "BITS_10_14_OPAQUE"
 description = "The leaf replaces this field with 0x0f."
 bitOffset = 10
 bitWidth = 5
@@ -878,7 +878,7 @@ minimum = 0x0
 maximum = 0x1F
 
 [[peripherals.registers.register.fields]]
-name = "BITS_15_19"
+name = "BITS_15_19_OPAQUE"
 description = "The leaf replaces this field with 0x0f."
 bitOffset = 15
 bitWidth = 5
@@ -888,7 +888,7 @@ minimum = 0x0
 maximum = 0x1F
 
 [[peripherals.registers.register.fields]]
-name = "BITS_20_23"
+name = "BITS_20_23_OPAQUE"
 description = "The leaf replaces this field with 0x0a."
 bitOffset = 20
 bitWidth = 4
@@ -898,7 +898,7 @@ minimum = 0x0
 maximum = 0xF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_24_31"
+name = "BITS_24_31_OPAQUE"
 description = "The leaf replaces this field with 0x9c."
 bitOffset = 24
 bitWidth = 8
@@ -910,7 +910,7 @@ maximum = 0xFF
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "AGC_RESTART_BITS_00DC"
+name = "WORD_00DC_OPAQUE"
 description = "Complete bt_agc_restart_set sets five independently observed high control bits through separate fresh-read RMW operations."
 addressOffset = 0xDC
 size = 32
@@ -956,7 +956,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "BITS_0_7"
+name = "BITS_0_7_OPAQUE"
 description = "The leaf replaces this field with 0x0f."
 bitOffset = 0
 bitWidth = 8
@@ -966,7 +966,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_8_15"
+name = "BITS_8_15_OPAQUE"
 description = "The leaf replaces this field with 0x0e."
 bitOffset = 8
 bitWidth = 8
@@ -976,7 +976,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_16_23"
+name = "BITS_16_23_OPAQUE"
 description = "The leaf replaces this field with 0x0e."
 bitOffset = 16
 bitWidth = 8
@@ -986,7 +986,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_24_31"
+name = "BITS_24_31_OPAQUE"
 description = "The leaf replaces this field with 0x14."
 bitOffset = 24
 bitWidth = 8
@@ -1005,7 +1005,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "BITS_0_7"
+name = "BITS_0_7_OPAQUE"
 description = "The leaf replaces this field with 0xf2."
 bitOffset = 0
 bitWidth = 8
@@ -1015,7 +1015,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_8_15"
+name = "BITS_8_15_OPAQUE"
 description = "The leaf replaces this field with 0xf2."
 bitOffset = 8
 bitWidth = 8
@@ -1025,7 +1025,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_16_23"
+name = "BITS_16_23_OPAQUE"
 description = "The leaf replaces this field with 0xec."
 bitOffset = 16
 bitWidth = 8
@@ -1035,7 +1035,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_24_31"
+name = "BITS_24_31_OPAQUE"
 description = "The leaf replaces this field with 0x1e."
 bitOffset = 24
 bitWidth = 8
@@ -1054,7 +1054,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "BITS_10_15"
+name = "BITS_10_15_OPAQUE"
 description = "The leaf replaces this field with 3."
 bitOffset = 10
 bitWidth = 6
@@ -1064,7 +1064,7 @@ minimum = 0x0
 maximum = 0x3F
 
 [[peripherals.registers.register.fields]]
-name = "BITS_16_23"
+name = "BITS_16_23_OPAQUE"
 description = "The leaf replaces this field with 0xe2."
 bitOffset = 16
 bitWidth = 8
@@ -1074,7 +1074,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_24_31"
+name = "BITS_24_31_OPAQUE"
 description = "The leaf replaces this field with 0xf1."
 bitOffset = 24
 bitWidth = 8
@@ -1093,7 +1093,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "BITS_0_7"
+name = "BITS_0_7_OPAQUE"
 description = "The leaf replaces this field with 0xd8."
 bitOffset = 0
 bitWidth = 8
@@ -1103,7 +1103,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_8_15"
+name = "BITS_8_15_OPAQUE"
 description = "The leaf replaces this field with 0xd3."
 bitOffset = 8
 bitWidth = 8
@@ -1113,7 +1113,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_16_23"
+name = "BITS_16_23_OPAQUE"
 description = "The leaf replaces this field with 0x28."
 bitOffset = 16
 bitWidth = 8
@@ -1123,7 +1123,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_24_31"
+name = "BITS_24_31_OPAQUE"
 description = "The leaf replaces this field with 0x2d."
 bitOffset = 24
 bitWidth = 8
@@ -1142,7 +1142,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "BITS_16_23"
+name = "BITS_16_23_OPAQUE"
 description = "The leaf replaces this field with 0xa6."
 bitOffset = 16
 bitWidth = 8
@@ -1152,7 +1152,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_24_31"
+name = "BITS_24_31_OPAQUE"
 description = "The leaf replaces this field with 0xa6."
 bitOffset = 24
 bitWidth = 8
@@ -1171,7 +1171,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "BITS_2_7"
+name = "BITS_2_7_OPAQUE"
 description = "The leaf replaces this field with 0x0c."
 bitOffset = 2
 bitWidth = 6
@@ -1181,7 +1181,7 @@ minimum = 0x0
 maximum = 0x3F
 
 [[peripherals.registers.register.fields]]
-name = "BITS_8_13"
+name = "BITS_8_13_OPAQUE"
 description = "The leaf replaces this field with 0x0c."
 bitOffset = 8
 bitWidth = 6
@@ -1191,7 +1191,7 @@ minimum = 0x0
 maximum = 0x3F
 
 [[peripherals.registers.register.fields]]
-name = "BITS_14_19"
+name = "BITS_14_19_OPAQUE"
 description = "The leaf replaces this field with 0x20."
 bitOffset = 14
 bitWidth = 6
@@ -1201,7 +1201,7 @@ minimum = 0x0
 maximum = 0x3F
 
 [[peripherals.registers.register.fields]]
-name = "BITS_20_25"
+name = "BITS_20_25_OPAQUE"
 description = "The leaf replaces this field with 5."
 bitOffset = 20
 bitWidth = 6
@@ -1211,7 +1211,7 @@ minimum = 0x0
 maximum = 0x3F
 
 [[peripherals.registers.register.fields]]
-name = "BITS_26_31"
+name = "BITS_26_31_OPAQUE"
 description = "The leaf replaces this field with 0x0c."
 bitOffset = 26
 bitWidth = 6
@@ -1230,7 +1230,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "BITS_12_15"
+name = "BITS_12_15_OPAQUE"
 description = "The leaf replaces this field with 0x0a."
 bitOffset = 12
 bitWidth = 4
@@ -1240,7 +1240,7 @@ minimum = 0x0
 maximum = 0xF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_16_19"
+name = "BITS_16_19_OPAQUE"
 description = "The leaf replaces this field with 8."
 bitOffset = 16
 bitWidth = 4
@@ -1250,7 +1250,7 @@ minimum = 0x0
 maximum = 0xF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_20_23"
+name = "BITS_20_23_OPAQUE"
 description = "The leaf replaces this field with 6."
 bitOffset = 20
 bitWidth = 4
@@ -1260,7 +1260,7 @@ minimum = 0x0
 maximum = 0xF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_24_27"
+name = "BITS_24_27_OPAQUE"
 description = "The leaf replaces this field with 6."
 bitOffset = 24
 bitWidth = 4
@@ -1270,7 +1270,7 @@ minimum = 0x0
 maximum = 0xF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_28_31"
+name = "BITS_28_31_OPAQUE"
 description = "The leaf replaces this field with 6."
 bitOffset = 28
 bitWidth = 4
@@ -1356,8 +1356,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.CCA_CONFIG.CONFIG_FORCE_ONE_23"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.CCA_CONFIG.BIT_23_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1413,15 +1413,15 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_004C"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_004C_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP", "BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_004C.CONFIG_BIT_26_OPAQUE"
+entity = "PHY_BTAGC_RECOVERED.WORD_004C_OPAQUE.CONFIG_BIT_26_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP", "BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"]
 provenance = "observed"
@@ -1429,55 +1429,55 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_0088"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_0088_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_0088.CONFIG_FORCE_ONE_18"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_0088_OPAQUE.BIT_18_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_0088.CONFIG_FORCE_ZERO_29"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_0088_OPAQUE.BIT_29_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_008C"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_008C_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_008C.CONFIG_FORCE_ZERO_29"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_008C_OPAQUE.BIT_29_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_CONFIG_00D0"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_00D0_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_CONFIG_00D0.CONFIG_VALUE_LOW"
+entity = "PHY_BTAGC_RECOVERED.WORD_00D0_OPAQUE.CONFIG_VALUE_LOW"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
@@ -1485,7 +1485,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_CONFIG_00D0.CONFIG_VALUE_HIGH"
+entity = "PHY_BTAGC_RECOVERED.WORD_00D0_OPAQUE.CONFIG_VALUE_HIGH"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
@@ -1493,15 +1493,15 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_CONFIG_00D4"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_00D4_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_CONFIG_00D4.CONFIG_VALUE"
+entity = "PHY_BTAGC_RECOVERED.WORD_00D4_OPAQUE.CONFIG_VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
@@ -1605,15 +1605,15 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_CONTROL_006C"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_006C_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_CONTROL_006C.FINITE_BITS_24_31"
+entity = "PHY_BTAGC_RECOVERED.WORD_006C_OPAQUE.FINITE_BITS_24_31"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -1621,15 +1621,15 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_CONFIG_0084"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_0084_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_CONFIG_0084.FINITE_BITS_24_31"
+entity = "PHY_BTAGC_RECOVERED.WORD_0084_OPAQUE.FINITE_BITS_24_31"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -1637,31 +1637,31 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A0"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_00A0_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_00A8_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B0"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_00B0_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B0.RECORRECT_BITS_13_17"
+entity = "PHY_BTAGC_RECOVERED.WORD_00B0_OPAQUE.RECORRECT_BITS_13_17"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -1669,7 +1669,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B0.RECORRECT_BITS_18_22"
+entity = "PHY_BTAGC_RECOVERED.WORD_00B0_OPAQUE.RECORRECT_BITS_18_22"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -1677,7 +1677,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B0.TARGET_BITS_23_31"
+entity = "PHY_BTAGC_RECOVERED.WORD_00B0_OPAQUE.TARGET_BITS_23_31"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -1685,15 +1685,15 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B4"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_00B4_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B4.RECORRECT_BIT_8"
+entity = "PHY_BTAGC_RECOVERED.WORD_00B4_OPAQUE.RECORRECT_BIT_8"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -1701,7 +1701,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B4.RECORRECT_BITS_9_13"
+entity = "PHY_BTAGC_RECOVERED.WORD_00B4_OPAQUE.RECORRECT_BITS_9_13"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -1709,7 +1709,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B4.TARGET_BITS_23_31"
+entity = "PHY_BTAGC_RECOVERED.WORD_00B4_OPAQUE.TARGET_BITS_23_31"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -1717,23 +1717,23 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00B8"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_00B8_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_RESTART_00BC"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_00BC_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_RESTART_00BC.RECORRECT_BIT_5"
+entity = "PHY_BTAGC_RECOVERED.WORD_00BC_OPAQUE.RECORRECT_BIT_5"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -1741,7 +1741,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_RESTART_00BC.RECORRECT_BIT_6"
+entity = "PHY_BTAGC_RECOVERED.WORD_00BC_OPAQUE.RECORRECT_BIT_6"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -1749,7 +1749,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_RESTART_00BC.RECORRECT_BIT_7"
+entity = "PHY_BTAGC_RECOVERED.WORD_00BC_OPAQUE.RECORRECT_BIT_7"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -1757,7 +1757,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_RESTART_00BC.RECORRECT_BIT_8"
+entity = "PHY_BTAGC_RECOVERED.WORD_00BC_OPAQUE.RECORRECT_BIT_8"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -1765,7 +1765,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_RESTART_00BC.RESTART_BIT_31"
+entity = "PHY_BTAGC_RECOVERED.WORD_00BC_OPAQUE.RESTART_BIT_31"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -1773,103 +1773,103 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_00C0_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0.BITS_5_9"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_00C0_OPAQUE.BITS_5_9_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0.BITS_10_14"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_00C0_OPAQUE.BITS_10_14_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0.BITS_15_19"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_00C0_OPAQUE.BITS_15_19_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0.BITS_20_23"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_00C0_OPAQUE.BITS_20_23_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0.BITS_24_31"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_00C0_OPAQUE.BITS_24_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C4"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_00C4_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C4.BITS_10_14"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_00C4_OPAQUE.BITS_10_14_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C4.BITS_15_19"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_00C4_OPAQUE.BITS_15_19_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C4.BITS_20_23"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_00C4_OPAQUE.BITS_20_23_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C4.BITS_24_31"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_00C4_OPAQUE.BITS_24_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.WORD_00DC_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC.RESTART_BIT_27"
+entity = "PHY_BTAGC_RECOVERED.WORD_00DC_OPAQUE.RESTART_BIT_27"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -1877,7 +1877,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC.RESTART_BIT_28"
+entity = "PHY_BTAGC_RECOVERED.WORD_00DC_OPAQUE.RESTART_BIT_28"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -1885,7 +1885,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC.RESTART_BIT_29"
+entity = "PHY_BTAGC_RECOVERED.WORD_00DC_OPAQUE.RESTART_BIT_29"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -1893,7 +1893,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC.RESTART_BIT_30"
+entity = "PHY_BTAGC_RECOVERED.WORD_00DC_OPAQUE.RESTART_BIT_30"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -1901,7 +1901,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC.RESTART_BIT_31"
+entity = "PHY_BTAGC_RECOVERED.WORD_00DC_OPAQUE.RESTART_BIT_31"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -1917,32 +1917,32 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0_OPAQUE.BITS_0_7"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0_OPAQUE.BITS_0_7_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0_OPAQUE.BITS_8_15"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0_OPAQUE.BITS_8_15_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0_OPAQUE.BITS_16_23"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0_OPAQUE.BITS_16_23_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0_OPAQUE.BITS_24_31"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0_OPAQUE.BITS_24_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
@@ -1957,32 +1957,32 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4_OPAQUE.BITS_0_7"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4_OPAQUE.BITS_0_7_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4_OPAQUE.BITS_8_15"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4_OPAQUE.BITS_8_15_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4_OPAQUE.BITS_16_23"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4_OPAQUE.BITS_16_23_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4_OPAQUE.BITS_24_31"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4_OPAQUE.BITS_24_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
@@ -1997,24 +1997,24 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E8_OPAQUE.BITS_10_15"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E8_OPAQUE.BITS_10_15_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E8_OPAQUE.BITS_16_23"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E8_OPAQUE.BITS_16_23_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E8_OPAQUE.BITS_24_31"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E8_OPAQUE.BITS_24_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
@@ -2029,32 +2029,32 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC_OPAQUE.BITS_0_7"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC_OPAQUE.BITS_0_7_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC_OPAQUE.BITS_8_15"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC_OPAQUE.BITS_8_15_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC_OPAQUE.BITS_16_23"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC_OPAQUE.BITS_16_23_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC_OPAQUE.BITS_24_31"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC_OPAQUE.BITS_24_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
@@ -2069,16 +2069,16 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F0_OPAQUE.BITS_16_23"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F0_OPAQUE.BITS_16_23_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F0_OPAQUE.BITS_24_31"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F0_OPAQUE.BITS_24_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
@@ -2093,40 +2093,40 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8_OPAQUE.BITS_2_7"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8_OPAQUE.BITS_2_7_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8_OPAQUE.BITS_8_13"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8_OPAQUE.BITS_8_13_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8_OPAQUE.BITS_14_19"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8_OPAQUE.BITS_14_19_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8_OPAQUE.BITS_20_25"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8_OPAQUE.BITS_20_25_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8_OPAQUE.BITS_26_31"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8_OPAQUE.BITS_26_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
@@ -2141,40 +2141,40 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100_OPAQUE.BITS_12_15"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100_OPAQUE.BITS_12_15_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100_OPAQUE.BITS_16_19"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100_OPAQUE.BITS_16_19_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100_OPAQUE.BITS_20_23"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100_OPAQUE.BITS_20_23_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100_OPAQUE.BITS_24_27"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100_OPAQUE.BITS_24_27_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100_OPAQUE.BITS_28_31"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100_OPAQUE.BITS_28_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
@@ -2320,7 +2320,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_0088.CONFIG_BIT_30_OPAQUE"
+entity = "PHY_BTAGC_RECOVERED.WORD_0088_OPAQUE.CONFIG_BIT_30_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE", "BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"]
 provenance = "observed"
@@ -2328,7 +2328,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_008C.TARGET_BITS_0_8"
+entity = "PHY_BTAGC_RECOVERED.WORD_008C_OPAQUE.TARGET_BITS_0_8"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -2336,7 +2336,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_008C.TARGET_BITS_9_17"
+entity = "PHY_BTAGC_RECOVERED.WORD_008C_OPAQUE.TARGET_BITS_9_17"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -2352,7 +2352,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A0.BITS_16_23_OPAQUE"
+entity = "PHY_BTAGC_RECOVERED.WORD_00A0_OPAQUE.BITS_16_23_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -2360,7 +2360,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A0.BITS_24_27_OPAQUE"
+entity = "PHY_BTAGC_RECOVERED.WORD_00A0_OPAQUE.BITS_24_27_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -2368,7 +2368,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8.BITS_0_3_OPAQUE"
+entity = "PHY_BTAGC_RECOVERED.WORD_00A8_OPAQUE.BITS_0_3_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -2376,7 +2376,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8.BITS_4_11_OPAQUE"
+entity = "PHY_BTAGC_RECOVERED.WORD_00A8_OPAQUE.BITS_4_11_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -2384,7 +2384,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8.BITS_12_16_OPAQUE"
+entity = "PHY_BTAGC_RECOVERED.WORD_00A8_OPAQUE.BITS_12_16_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -2392,7 +2392,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8.BITS_17_24_OPAQUE"
+entity = "PHY_BTAGC_RECOVERED.WORD_00A8_OPAQUE.BITS_17_24_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -2400,7 +2400,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00B8.BITS_8_11_OPAQUE"
+entity = "PHY_BTAGC_RECOVERED.WORD_00B8_OPAQUE.BITS_8_11_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -2408,7 +2408,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00B8.BITS_12_19_OPAQUE"
+entity = "PHY_BTAGC_RECOVERED.WORD_00B8_OPAQUE.BITS_12_19_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -2416,7 +2416,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_004C.SAT_GAIN_BITS_0_18"
+entity = "PHY_BTAGC_RECOVERED.WORD_004C_OPAQUE.SAT_GAIN_BITS_0_18"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"]
 provenance = "observed"
@@ -2424,7 +2424,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_004C.CONFIG_BIT_19_OPAQUE"
+entity = "PHY_BTAGC_RECOVERED.WORD_004C_OPAQUE.CONFIG_BIT_19_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"]
 provenance = "observed"
@@ -2432,7 +2432,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_004C.CONFIG_BIT_24_OPAQUE"
+entity = "PHY_BTAGC_RECOVERED.WORD_004C_OPAQUE.CONFIG_BIT_24_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"]
 provenance = "observed"
@@ -2440,7 +2440,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_004C.CONFIG_BIT_28_OPAQUE"
+entity = "PHY_BTAGC_RECOVERED.WORD_004C_OPAQUE.CONFIG_BIT_28_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"]
 provenance = "observed"
@@ -2448,7 +2448,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_004C.CONFIG_BIT_30_OPAQUE"
+entity = "PHY_BTAGC_RECOVERED.WORD_004C_OPAQUE.CONFIG_BIT_30_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"]
 provenance = "observed"
@@ -2456,7 +2456,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_004C.CONFIG_BIT_31_OPAQUE"
+entity = "PHY_BTAGC_RECOVERED.WORD_004C_OPAQUE.CONFIG_BIT_31_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"]
 provenance = "observed"

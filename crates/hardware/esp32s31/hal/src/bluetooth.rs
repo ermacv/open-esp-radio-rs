@@ -753,7 +753,7 @@ pub struct ModemLpTimerInterruptReadyOwner {
 /// Result of one bounded source-127 hard-handler register step.
 #[must_use = "retain the ready owner or complete the required software handler"]
 pub enum ModemLpTimerInterruptStep {
-    /// `STATUS_0038` was zero and the owner is ready for a later IRQ entry.
+    /// `WORD_0038_OPAQUE` was zero and the owner is ready for a later IRQ entry.
     Spurious(ModemLpTimerInterruptReadyOwner),
     /// The reviewed path requires the common software timer handler.
     HandlerPending(ModemLpTimerHandlerPendingOwner),

@@ -68,7 +68,7 @@ size = 32
 access = "write-only"
 
 [[peripherals.registers.register.fields]]
-name = "OPAQUE_DATA"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -86,7 +86,7 @@ size = 32
 access = "write-only"
 
 [[peripherals.registers.register.fields]]
-name = "OPAQUE_DATA"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -104,7 +104,7 @@ size = 32
 access = "write-only"
 
 [[peripherals.registers.register.fields]]
-name = "OPAQUE_DATA"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -275,16 +275,16 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_MEMORY.DATA_0.OPAQUE_DATA"
-naming = "descriptive"
+entity = "PHY_MEMORY.DATA_0.BITS_0_31_OPAQUE"
+naming = "opaque"
 
 [[review]]
-entity = "PHY_MEMORY.DATA_1.OPAQUE_DATA"
-naming = "descriptive"
+entity = "PHY_MEMORY.DATA_1.BITS_0_31_OPAQUE"
+naming = "opaque"
 
 [[review]]
-entity = "PHY_MEMORY.DATA_2.OPAQUE_DATA"
-naming = "descriptive"
+entity = "PHY_MEMORY.DATA_2.BITS_0_31_OPAQUE"
+naming = "opaque"
 
 [[review]]
 entity = "PHY_MEMORY.GROUP_BOUNDARY%s.EVEN_GROUP_FIRST_ENTRY"

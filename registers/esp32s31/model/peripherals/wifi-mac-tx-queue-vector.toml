@@ -200,7 +200,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 description = "Complete four-byte HE-Control image. Its A-Control subfields depend on the control ID; keep the finite protocol interpretation in the handwritten IEEE 802.11 layer rather than exposing overlapping mode-dependent SVD fields."
 bitOffset = 0
 bitWidth = 32
@@ -1227,7 +1227,7 @@ entity = "WIFI_MAC_TX_QUEUE_VECTOR.PTI%s.PTI_3"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_CONTROL%s.IMAGE"
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_CONTROL%s.VALUE"
 naming = "descriptive"
 
 [[review]]

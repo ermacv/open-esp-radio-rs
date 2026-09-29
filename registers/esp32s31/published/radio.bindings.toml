@@ -123,8 +123,8 @@ scope = []
 register-method = "frequency_parameter_0_opaque"
 
 [[registers.fields]]
-svd-name = "OPAQUE_VALUE"
-method = "opaque_value"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -1525,8 +1525,8 @@ scope = []
 register-method = "data_0"
 
 [[registers.fields]]
-svd-name = "OPAQUE_DATA"
-method = "opaque_data"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -1543,8 +1543,8 @@ scope = []
 register-method = "data_1"
 
 [[registers.fields]]
-svd-name = "OPAQUE_DATA"
-method = "opaque_data"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -1561,8 +1561,8 @@ scope = []
 register-method = "data_2"
 
 [[registers.fields]]
-svd-name = "OPAQUE_DATA"
-method = "opaque_data"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -2252,12 +2252,12 @@ access = "read-write"
 address = 537922568
 width = 32
 access = "read-write"
-identity = "PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_INIT_0C08"
+identity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_0C08_OPAQUE"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 peripheral-type = "PhyBasebandConfigOracle"
 peripheral-module = "phy_baseband_config_oracle"
 scope = []
-register-method = "front_end_init_0c08"
+register-method = "word_0c08_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_FIRST_OPAQUE"
@@ -2359,12 +2359,12 @@ fields = []
 address = 537922592
 width = 32
 access = "read-write"
-identity = "PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_INIT_0C20"
+identity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_0C20_OPAQUE"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 peripheral-type = "PhyBasebandConfigOracle"
 peripheral-module = "phy_baseband_config_oracle"
 scope = []
-register-method = "front_end_init_0c20"
+register-method = "word_0c20_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_LOW_OPAQUE"
@@ -2403,8 +2403,8 @@ scope = []
 register-method = "scheduler_lifecycle_request"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -2542,8 +2542,8 @@ scope = []
 register-method = "irq_clear_0"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_0_6"
-method = "unclassified_0_6"
+svd-name = "BITS_0_6_OPAQUE"
+method = "bits_0_6_opaque"
 bit-offset = 0
 bit-width = 7
 access = "write-only"
@@ -2556,8 +2556,8 @@ bit-width = 1
 access = "write-only"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_8_14"
-method = "unclassified_8_14"
+svd-name = "BITS_8_14_OPAQUE"
+method = "bits_8_14_opaque"
 bit-offset = 8
 bit-width = 7
 access = "write-only"
@@ -2570,8 +2570,8 @@ bit-width = 1
 access = "write-only"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_16_20"
-method = "unclassified_16_20"
+svd-name = "BITS_16_20_OPAQUE"
+method = "bits_16_20_opaque"
 bit-offset = 16
 bit-width = 5
 access = "write-only"
@@ -2584,8 +2584,8 @@ bit-width = 1
 access = "write-only"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_22_26"
-method = "unclassified_22_26"
+svd-name = "BITS_22_26_OPAQUE"
+method = "bits_22_26_opaque"
 bit-offset = 22
 bit-width = 5
 access = "write-only"
@@ -2598,8 +2598,8 @@ bit-width = 2
 access = "write-only"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_29_31"
-method = "unclassified_29_31"
+svd-name = "BITS_29_31_OPAQUE"
+method = "bits_29_31_opaque"
 bit-offset = 29
 bit-width = 3
 access = "write-only"
@@ -2616,8 +2616,8 @@ scope = []
 register-method = "irq_status_0"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_0_14"
-method = "unclassified_0_14"
+svd-name = "BITS_0_14_OPAQUE"
+method = "bits_0_14_opaque"
 bit-offset = 0
 bit-width = 15
 access = "read-only"
@@ -2630,8 +2630,8 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_16_20"
-method = "unclassified_16_20"
+svd-name = "BITS_16_20_OPAQUE"
+method = "bits_16_20_opaque"
 bit-offset = 16
 bit-width = 5
 access = "read-only"
@@ -2644,8 +2644,8 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_22_26"
-method = "unclassified_22_26"
+svd-name = "BITS_22_26_OPAQUE"
+method = "bits_22_26_opaque"
 bit-offset = 22
 bit-width = 5
 access = "read-only"
@@ -2658,8 +2658,8 @@ bit-width = 2
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_29_31"
-method = "unclassified_29_31"
+svd-name = "BITS_29_31_OPAQUE"
+method = "bits_29_31_opaque"
 bit-offset = 29
 bit-width = 3
 access = "read-only"
@@ -2743,8 +2743,8 @@ scope = []
 register-method = "irq_clear_1"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_0_2"
-method = "unclassified_0_2"
+svd-name = "BITS_0_2_OPAQUE"
+method = "bits_0_2_opaque"
 bit-offset = 0
 bit-width = 3
 access = "write-only"
@@ -2757,8 +2757,8 @@ bit-width = 1
 access = "write-only"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_4_7"
-method = "unclassified_4_7"
+svd-name = "BITS_4_7_OPAQUE"
+method = "bits_4_7_opaque"
 bit-offset = 4
 bit-width = 4
 access = "write-only"
@@ -2778,8 +2778,8 @@ bit-width = 1
 access = "write-only"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_10_11"
-method = "unclassified_10_11"
+svd-name = "BITS_10_11_OPAQUE"
+method = "bits_10_11_opaque"
 bit-offset = 10
 bit-width = 2
 access = "write-only"
@@ -2792,8 +2792,8 @@ bit-width = 1
 access = "write-only"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_13_31"
-method = "unclassified_13_31"
+svd-name = "BITS_13_31_OPAQUE"
+method = "bits_13_31_opaque"
 bit-offset = 13
 bit-width = 19
 access = "write-only"
@@ -2810,8 +2810,8 @@ scope = []
 register-method = "irq_status_1"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_0_2"
-method = "unclassified_0_2"
+svd-name = "BITS_0_2_OPAQUE"
+method = "bits_0_2_opaque"
 bit-offset = 0
 bit-width = 3
 access = "read-only"
@@ -2824,8 +2824,8 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_4_7"
-method = "unclassified_4_7"
+svd-name = "BITS_4_7_OPAQUE"
+method = "bits_4_7_opaque"
 bit-offset = 4
 bit-width = 4
 access = "read-only"
@@ -2845,8 +2845,8 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_10_11"
-method = "unclassified_10_11"
+svd-name = "BITS_10_11_OPAQUE"
+method = "bits_10_11_opaque"
 bit-offset = 10
 bit-width = 2
 access = "read-only"
@@ -2859,8 +2859,8 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_13_31"
-method = "unclassified_13_31"
+svd-name = "BITS_13_31_OPAQUE"
+method = "bits_13_31_opaque"
 bit-offset = 13
 bit-width = 19
 access = "read-only"
@@ -2877,8 +2877,8 @@ scope = []
 register-method = "irq_diagnostic_state"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-only"
@@ -2927,8 +2927,8 @@ bit-width = 20
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "OPAQUE_HIGH_12"
-method = "opaque_high_12"
+svd-name = "BITS_20_31_OPAQUE"
+method = "bits_20_31_opaque"
 bit-offset = 20
 bit-width = 12
 access = "read-write"
@@ -2959,8 +2959,8 @@ bit-width = 4
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "OPAQUE_STATE_24_28"
-method = "opaque_state_24_28"
+svd-name = "BITS_24_28_OPAQUE"
+method = "bits_24_28_opaque"
 bit-offset = 24
 bit-width = 5
 access = "read-write"
@@ -2973,8 +2973,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "OPAQUE_STATE_30"
-method = "opaque_state_30"
+svd-name = "BIT_30_OPAQUE"
+method = "bit_30_opaque"
 bit-offset = 30
 bit-width = 1
 access = "read-write"
@@ -3041,8 +3041,8 @@ scope = []
 register-method = "btlc_timer_cc_0"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -3112,8 +3112,8 @@ scope = []
 register-method = "btlc_timer_value_0"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -3130,8 +3130,8 @@ scope = []
 register-method = "btlc_timer_value_1"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -3148,8 +3148,8 @@ scope = []
 register-method = "btlc_timer_value_2"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -3166,8 +3166,8 @@ scope = []
 register-method = "btlc_timer_capture_0"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-only"
@@ -3184,8 +3184,8 @@ scope = []
 register-method = "btlc_timer_capture_1"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-only"
@@ -3202,8 +3202,8 @@ scope = []
 register-method = "btlc_timer_capture_2"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-only"
@@ -3220,8 +3220,8 @@ scope = []
 register-method = "btlc_timer_cc_1"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -3512,8 +3512,8 @@ scope = []
 register-method = "irq_diagnostic_detail_0"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-only"
@@ -3530,8 +3530,8 @@ scope = []
 register-method = "irq_diagnostic_detail_1"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-only"
@@ -3612,8 +3612,8 @@ scope = []
 register-method = "gpio_diag_argument_1"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -3701,12 +3701,12 @@ access = "read-write"
 address = 537924100
 width = 32
 access = "read-write"
-identity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_CONTROL_0204"
+identity = "BLUETOOTH_CONTROLLER_CORE.WORD_0204_OPAQUE"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 peripheral-type = "BluetoothControllerCore"
 peripheral-module = "bluetooth_controller_core"
 scope = []
-register-method = "operational_control_0204"
+register-method = "word_0204_opaque"
 
 [[registers.fields]]
 svd-name = "CONTROL_0"
@@ -3719,12 +3719,12 @@ access = "read-write"
 address = 537924104
 width = 32
 access = "read-only"
-identity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_STATUS_0208"
+identity = "BLUETOOTH_CONTROLLER_CORE.WORD_0208_OPAQUE"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 peripheral-type = "BluetoothControllerCore"
 peripheral-module = "bluetooth_controller_core"
 scope = []
-register-method = "operational_status_0208"
+register-method = "word_0208_opaque"
 
 [[registers.fields]]
 svd-name = "STATUS_0"
@@ -3745,8 +3745,8 @@ scope = []
 register-method = "iso_coex_state_0"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -3763,8 +3763,8 @@ scope = []
 register-method = "iso_coex_state_1"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -3862,16 +3862,16 @@ access = "read-write"
 address = 537924164
 width = 32
 access = "write-only"
-identity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_ZERO_0244"
+identity = "BLUETOOTH_CONTROLLER_CORE.WORD_0244_OPAQUE"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 peripheral-type = "BluetoothControllerCore"
 peripheral-module = "bluetooth_controller_core"
 scope = []
-register-method = "phy_init_zero_0244"
+register-method = "word_0244_opaque"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -3888,8 +3888,8 @@ scope = []
 register-method = "gpio_diag_control"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -3898,16 +3898,16 @@ access = "write-only"
 address = 537924172
 width = 32
 access = "write-only"
-identity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_DYNAMIC_IMAGE_024C"
+identity = "BLUETOOTH_CONTROLLER_CORE.WORD_024C_OPAQUE"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 peripheral-type = "BluetoothControllerCore"
 peripheral-module = "bluetooth_controller_core"
 scope = []
-register-method = "phy_init_dynamic_image_024c"
+register-method = "word_024c_opaque"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -3977,8 +3977,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "OPAQUE_25"
-method = "opaque_25"
+svd-name = "BIT_25_OPAQUE"
+method = "bit_25_opaque"
 bit-offset = 25
 bit-width = 1
 access = "read-write"
@@ -3998,8 +3998,8 @@ bit-width = 3
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "OPAQUE_30"
-method = "opaque_30"
+svd-name = "BIT_30_OPAQUE"
+method = "bit_30_opaque"
 bit-offset = 30
 bit-width = 1
 access = "read-write"
@@ -4030,8 +4030,8 @@ bit-width = 16
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "OPAQUE_16"
-method = "opaque_16"
+svd-name = "BIT_16_OPAQUE"
+method = "bit_16_opaque"
 bit-offset = 16
 bit-width = 1
 access = "read-write"
@@ -4266,8 +4266,8 @@ scope = []
 register-method = "scan_hw_snapshot"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-only"
@@ -4276,12 +4276,12 @@ access = "read-only"
 address = 537924388
 width = 32
 access = "read-only"
-identity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_STATUS_0324"
+identity = "BLUETOOTH_CONTROLLER_CORE.WORD_0324_OPAQUE"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 peripheral-type = "BluetoothControllerCore"
 peripheral-module = "bluetooth_controller_core"
 scope = []
-register-method = "operational_status_0324"
+register-method = "word_0324_opaque"
 
 [[registers.fields]]
 svd-name = "STATUS_0"
@@ -4802,12 +4802,12 @@ access = "read-write"
 address = 537924460
 width = 32
 access = "read-write"
-identity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C"
+identity = "BLUETOOTH_CONTROLLER_CORE.WORD_036C_OPAQUE"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 peripheral-type = "BluetoothControllerCore"
 peripheral-module = "bluetooth_controller_core"
 scope = []
-register-method = "operational_word_036c"
+register-method = "word_036c_opaque"
 
 [[registers.fields]]
 svd-name = "LOCK_MODIFY_HARDWARE_LIST_INDEX"
@@ -4845,16 +4845,16 @@ access = "write-only"
 address = 537924724
 width = 32
 access = "read-write"
-identity = "BTMAC_BLE_PHY_INIT.INIT_ZERO_0074"
+identity = "BTMAC_BLE_PHY_INIT.WORD_0074_OPAQUE"
 peripheral = "BTMAC_BLE_PHY_INIT"
 peripheral-type = "BtmacBlePhyInit"
 peripheral-module = "btmac_ble_phy_init"
 scope = []
-register-method = "init_zero_0074"
+register-method = "word_0074_opaque"
 
 [[registers.fields]]
-svd-name = "INIT_IMAGE"
-method = "init_image"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -4906,16 +4906,16 @@ access = "write-only"
 address = 537924920
 width = 32
 access = "read-write"
-identity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_0138"
+identity = "BTMAC_BLE_PHY_INIT.WORD_0138_OPAQUE"
 peripheral = "BTMAC_BLE_PHY_INIT"
 peripheral-type = "BtmacBlePhyInit"
 peripheral-module = "btmac_ble_phy_init"
 scope = []
-register-method = "init_value_0138"
+register-method = "word_0138_opaque"
 
 [[registers.fields]]
-svd-name = "INIT_IMAGE"
-method = "init_image"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -4967,12 +4967,12 @@ access = "read-write"
 address = 537925204
 width = 32
 access = "read-write"
-identity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0254"
+identity = "BTMAC_BLE_PHY_INIT.WORD_0254_OPAQUE"
 peripheral = "BTMAC_BLE_PHY_INIT"
 peripheral-type = "BtmacBlePhyInit"
 peripheral-module = "btmac_ble_phy_init"
 scope = []
-register-method = "init_bytes_0254"
+register-method = "word_0254_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_BYTE_0"
@@ -5006,12 +5006,12 @@ access = "read-write"
 address = 537925632
 width = 32
 access = "read-write"
-identity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_0400"
+identity = "BTMAC_BLE_PHY_INIT.WORD_0400_OPAQUE"
 peripheral = "BTMAC_BLE_PHY_INIT"
 peripheral-type = "BtmacBlePhyInit"
 peripheral-module = "btmac_ble_phy_init"
 scope = []
-register-method = "init_control_0400"
+register-method = "word_0400_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_ENABLE_22"
@@ -5145,12 +5145,12 @@ access = "write-only"
 address = 537925720
 width = 32
 access = "read-write"
-identity = "BTMAC_BLE_PHY_INIT.INIT_HIGH_HALF_0458"
+identity = "BTMAC_BLE_PHY_INIT.WORD_0458_OPAQUE"
 peripheral = "BTMAC_BLE_PHY_INIT"
 peripheral-type = "BtmacBlePhyInit"
 peripheral-module = "btmac_ble_phy_init"
 scope = []
-register-method = "init_high_half_0458"
+register-method = "word_0458_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_HIGH_HALF"
@@ -5163,16 +5163,16 @@ access = "read-write"
 address = 537925724
 width = 32
 access = "read-write"
-identity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_045C"
+identity = "BTMAC_BLE_PHY_INIT.WORD_045C_OPAQUE"
 peripheral = "BTMAC_BLE_PHY_INIT"
 peripheral-type = "BtmacBlePhyInit"
 peripheral-module = "btmac_ble_phy_init"
 scope = []
-register-method = "init_value_045c"
+register-method = "word_045c_opaque"
 
 [[registers.fields]]
-svd-name = "INIT_IMAGE"
-method = "init_image"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -5196,8 +5196,8 @@ bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SET_BY_PHY_INIT_BRANCH_BIT_18"
-method = "set_by_phy_init_branch_bit_18"
+svd-name = "BIT_18_OPAQUE"
+method = "bit_18_opaque"
 bit-offset = 18
 bit-width = 1
 access = "read-write"
@@ -5232,8 +5232,8 @@ scope = []
 register-method = "value_0"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -5278,16 +5278,16 @@ access = "write-only"
 address = 537925792
 width = 32
 access = "read-write"
-identity = "BTMAC_BLE_PHY_INIT.INIT_DYNAMIC_IMAGE_04A0"
+identity = "BTMAC_BLE_PHY_INIT.WORD_04A0_OPAQUE"
 peripheral = "BTMAC_BLE_PHY_INIT"
 peripheral-type = "BtmacBlePhyInit"
 peripheral-module = "btmac_ble_phy_init"
 scope = []
-register-method = "init_dynamic_image_04a0"
+register-method = "word_04a0_opaque"
 
 [[registers.fields]]
-svd-name = "INIT_IMAGE"
-method = "init_image"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -5296,12 +5296,12 @@ access = "read-write"
 address = 537925796
 width = 32
 access = "read-write"
-identity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A4"
+identity = "BTMAC_BLE_PHY_INIT.WORD_04A4_OPAQUE"
 peripheral = "BTMAC_BLE_PHY_INIT"
 peripheral-type = "BtmacBlePhyInit"
 peripheral-module = "btmac_ble_phy_init"
 scope = []
-register-method = "init_bytes_04a4"
+register-method = "word_04a4_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_BYTE_0"
@@ -5335,12 +5335,12 @@ access = "read-write"
 address = 537925800
 width = 32
 access = "read-write"
-identity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A8"
+identity = "BTMAC_BLE_PHY_INIT.WORD_04A8_OPAQUE"
 peripheral = "BTMAC_BLE_PHY_INIT"
 peripheral-type = "BtmacBlePhyInit"
 peripheral-module = "btmac_ble_phy_init"
 scope = []
-register-method = "init_bytes_04a8"
+register-method = "word_04a8_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_BYTE_0"
@@ -5399,16 +5399,16 @@ access = "read-write"
 address = 537925952
 width = 32
 access = "read-write"
-identity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_0540"
+identity = "BTMAC_BLE_PHY_INIT.WORD_0540_OPAQUE"
 peripheral = "BTMAC_BLE_PHY_INIT"
 peripheral-type = "BtmacBlePhyInit"
 peripheral-module = "btmac_ble_phy_init"
 scope = []
-register-method = "init_value_0540"
+register-method = "word_0540_opaque"
 
 [[registers.fields]]
-svd-name = "INIT_IMAGE"
-method = "init_image"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -5417,12 +5417,12 @@ access = "read-write"
 address = 537925964
 width = 32
 access = "read-write"
-identity = "BTMAC_BLE_PHY_INIT.INIT_LOW_5_054C"
+identity = "BTMAC_BLE_PHY_INIT.WORD_054C_OPAQUE"
 peripheral = "BTMAC_BLE_PHY_INIT"
 peripheral-type = "BtmacBlePhyInit"
 peripheral-module = "btmac_ble_phy_init"
 scope = []
-register-method = "init_low_5_054c"
+register-method = "word_054c_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_LOW_5"
@@ -5435,12 +5435,12 @@ access = "read-write"
 address = 537925968
 width = 32
 access = "read-write"
-identity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0550"
+identity = "BTMAC_BLE_PHY_INIT.WORD_0550_OPAQUE"
 peripheral = "BTMAC_BLE_PHY_INIT"
 peripheral-type = "BtmacBlePhyInit"
 peripheral-module = "btmac_ble_phy_init"
 scope = []
-register-method = "init_bytes_0550"
+register-method = "word_0550_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_BYTE_0"
@@ -5467,12 +5467,12 @@ access = "read-write"
 address = 537925972
 width = 32
 access = "read-write"
-identity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0554"
+identity = "BTMAC_BLE_PHY_INIT.WORD_0554_OPAQUE"
 peripheral = "BTMAC_BLE_PHY_INIT"
 peripheral-type = "BtmacBlePhyInit"
 peripheral-module = "btmac_ble_phy_init"
 scope = []
-register-method = "init_bytes_0554"
+register-method = "word_0554_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_BYTE_0"
@@ -5506,12 +5506,12 @@ access = "read-write"
 address = 537925976
 width = 32
 access = "read-write"
-identity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0558"
+identity = "BTMAC_BLE_PHY_INIT.WORD_0558_OPAQUE"
 peripheral = "BTMAC_BLE_PHY_INIT"
 peripheral-type = "BtmacBlePhyInit"
 peripheral-module = "btmac_ble_phy_init"
 scope = []
-register-method = "init_bytes_0558"
+register-method = "word_0558_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_BYTE_0"
@@ -5545,12 +5545,12 @@ access = "read-write"
 address = 537925980
 width = 32
 access = "read-write"
-identity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_055C"
+identity = "BTMAC_BLE_PHY_INIT.WORD_055C_OPAQUE"
 peripheral = "BTMAC_BLE_PHY_INIT"
 peripheral-type = "BtmacBlePhyInit"
 peripheral-module = "btmac_ble_phy_init"
 scope = []
-register-method = "init_bytes_055c"
+register-method = "word_055c_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_BYTE_0"
@@ -6228,8 +6228,8 @@ scope = []
 register-method = "phy_init_configuration_followup"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -6238,12 +6238,12 @@ access = "write-only"
 address = 537926536
 width = 32
 access = "write-only"
-identity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0088"
+identity = "BLE_HW_RUNTIME_CONTROL.WORD_0088_OPAQUE"
 peripheral = "BLE_HW_RUNTIME_CONTROL"
 peripheral-type = "BleHwRuntimeControl"
 peripheral-module = "ble_hw_runtime_control"
 scope = []
-register-method = "config_0088"
+register-method = "word_0088_opaque"
 
 [[registers.fields]]
 svd-name = "VALUE_LOW_5"
@@ -6256,12 +6256,12 @@ access = "write-only"
 address = 537926544
 width = 32
 access = "write-only"
-identity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0090"
+identity = "BLE_HW_RUNTIME_CONTROL.WORD_0090_OPAQUE"
 peripheral = "BLE_HW_RUNTIME_CONTROL"
 peripheral-type = "BleHwRuntimeControl"
 peripheral-module = "ble_hw_runtime_control"
 scope = []
-register-method = "config_0090"
+register-method = "word_0090_opaque"
 
 [[registers.fields]]
 svd-name = "VALUE_0"
@@ -6295,12 +6295,12 @@ access = "write-only"
 address = 537926548
 width = 32
 access = "write-only"
-identity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0094"
+identity = "BLE_HW_RUNTIME_CONTROL.WORD_0094_OPAQUE"
 peripheral = "BLE_HW_RUNTIME_CONTROL"
 peripheral-type = "BleHwRuntimeControl"
 peripheral-module = "ble_hw_runtime_control"
 scope = []
-register-method = "config_0094"
+register-method = "word_0094_opaque"
 
 [[registers.fields]]
 svd-name = "VALUE_LOW_8"
@@ -6339,8 +6339,8 @@ scope = []
 register-method = "rx_setup_control_0"
 
 [[registers.fields]]
-svd-name = "SET_BY_RX_SETUP_BIT_0"
-method = "set_by_rx_setup_bit_0"
+svd-name = "BIT_0_OPAQUE"
+method = "bit_0_opaque"
 bit-offset = 0
 bit-width = 1
 access = "read-write"
@@ -6418,8 +6418,8 @@ scope = []
 register-method = "le_tx_on_delay"
 
 [[registers.fields]]
-svd-name = "FORCE_ZERO_BITS_16_18"
-method = "force_zero_bits_16_18"
+svd-name = "BITS_16_18_OPAQUE"
+method = "bits_16_18_opaque"
 bit-offset = 16
 bit-width = 3
 access = "read-write"
@@ -6461,8 +6461,8 @@ scope = []
 register-method = "rx_setup_control_1"
 
 [[registers.fields]]
-svd-name = "SET_BY_RX_SETUP_BIT_2"
-method = "set_by_rx_setup_bit_2"
+svd-name = "BIT_2_OPAQUE"
+method = "bit_2_opaque"
 bit-offset = 2
 bit-width = 1
 access = "read-write"
@@ -6536,8 +6536,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "FINAL_FORCE_ZERO_13"
-method = "final_force_zero_13"
+svd-name = "BIT_13_OPAQUE"
+method = "bit_13_opaque"
 bit-offset = 13
 bit-width = 1
 access = "read-write"
@@ -6643,8 +6643,8 @@ bit-width = 11
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "PERIOD_FORCE_ZERO_20_22"
-method = "period_force_zero_20_22"
+svd-name = "BITS_20_22_OPAQUE"
+method = "bits_20_22_opaque"
 bit-offset = 20
 bit-width = 3
 access = "read-write"
@@ -6820,8 +6820,8 @@ scope = []
 register-method = "tx_cca_fifo_data"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-only"
@@ -6852,8 +6852,8 @@ bit-width = 16
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "INIT_FORCE_ONE"
-method = "init_force_one"
+svd-name = "BIT_31_OPAQUE"
+method = "bit_31_opaque"
 bit-offset = 31
 bit-width = 1
 access = "read-write"
@@ -6870,36 +6870,36 @@ scope = []
 register-method = "gaussian_1m_coefficient_0"
 
 [[registers.fields]]
-svd-name = "BITS_2_9"
-method = "bits_2_9"
+svd-name = "BITS_2_9_OPAQUE"
+method = "bits_2_9_opaque"
 bit-offset = 2
 bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_10_16"
-method = "bits_10_16"
+svd-name = "BITS_10_16_OPAQUE"
+method = "bits_10_16_opaque"
 bit-offset = 10
 bit-width = 7
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_17_22"
-method = "bits_17_22"
+svd-name = "BITS_17_22_OPAQUE"
+method = "bits_17_22_opaque"
 bit-offset = 17
 bit-width = 6
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_23_27"
-method = "bits_23_27"
+svd-name = "BITS_23_27_OPAQUE"
+method = "bits_23_27_opaque"
 bit-offset = 23
 bit-width = 5
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_28_31"
-method = "bits_28_31"
+svd-name = "BITS_28_31_OPAQUE"
+method = "bits_28_31_opaque"
 bit-offset = 28
 bit-width = 4
 access = "read-write"
@@ -6916,22 +6916,22 @@ scope = []
 register-method = "gaussian_1m_coefficient_1"
 
 [[registers.fields]]
-svd-name = "BITS_2_12"
-method = "bits_2_12"
+svd-name = "BITS_2_12_OPAQUE"
+method = "bits_2_12_opaque"
 bit-offset = 2
 bit-width = 11
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_13_22"
-method = "bits_13_22"
+svd-name = "BITS_13_22_OPAQUE"
+method = "bits_13_22_opaque"
 bit-offset = 13
 bit-width = 10
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_23_31"
-method = "bits_23_31"
+svd-name = "BITS_23_31_OPAQUE"
+method = "bits_23_31_opaque"
 bit-offset = 23
 bit-width = 9
 access = "read-write"
@@ -6948,15 +6948,15 @@ scope = []
 register-method = "gaussian_1m_coefficient_2"
 
 [[registers.fields]]
-svd-name = "BITS_10_20"
-method = "bits_10_20"
+svd-name = "BITS_10_20_OPAQUE"
+method = "bits_10_20_opaque"
 bit-offset = 10
 bit-width = 11
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_21_31"
-method = "bits_21_31"
+svd-name = "BITS_21_31_OPAQUE"
+method = "bits_21_31_opaque"
 bit-offset = 21
 bit-width = 11
 access = "read-write"
@@ -6973,15 +6973,15 @@ scope = []
 register-method = "gaussian_1m_coefficient_3"
 
 [[registers.fields]]
-svd-name = "BITS_10_20"
-method = "bits_10_20"
+svd-name = "BITS_10_20_OPAQUE"
+method = "bits_10_20_opaque"
 bit-offset = 10
 bit-width = 11
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_21_31"
-method = "bits_21_31"
+svd-name = "BITS_21_31_OPAQUE"
+method = "bits_21_31_opaque"
 bit-offset = 21
 bit-width = 11
 access = "read-write"
@@ -7037,22 +7037,22 @@ scope = []
 register-method = "gaussian_2m_coefficient_1"
 
 [[registers.fields]]
-svd-name = "BITS_0_10"
-method = "bits_0_10"
+svd-name = "BITS_0_10_OPAQUE"
+method = "bits_0_10_opaque"
 bit-offset = 0
 bit-width = 11
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_11_21"
-method = "bits_11_21"
+svd-name = "BITS_11_21_OPAQUE"
+method = "bits_11_21_opaque"
 bit-offset = 11
 bit-width = 11
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_22_31"
-method = "bits_22_31"
+svd-name = "BITS_22_31_OPAQUE"
+method = "bits_22_31_opaque"
 bit-offset = 22
 bit-width = 10
 access = "read-write"
@@ -7392,8 +7392,8 @@ register-method = "antenna_map_entry"
 register-index = 0
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 16
 access = "write-only"
@@ -7411,8 +7411,8 @@ register-method = "antenna_map_entry"
 register-index = 1
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 16
 access = "write-only"
@@ -7430,8 +7430,8 @@ register-method = "antenna_map_entry"
 register-index = 2
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 16
 access = "write-only"
@@ -7449,8 +7449,8 @@ register-method = "antenna_map_entry"
 register-index = 3
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 16
 access = "write-only"
@@ -7468,8 +7468,8 @@ register-method = "antenna_map_entry"
 register-index = 4
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 16
 access = "write-only"
@@ -7487,8 +7487,8 @@ register-method = "antenna_map_entry"
 register-index = 5
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 16
 access = "write-only"
@@ -7506,8 +7506,8 @@ register-method = "antenna_map_entry"
 register-index = 6
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 16
 access = "write-only"
@@ -7525,8 +7525,8 @@ register-method = "antenna_map_entry"
 register-index = 7
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 16
 access = "write-only"
@@ -7544,8 +7544,8 @@ register-method = "antenna_map_entry"
 register-index = 8
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 16
 access = "write-only"
@@ -7563,8 +7563,8 @@ register-method = "antenna_map_entry"
 register-index = 9
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 16
 access = "write-only"
@@ -7582,8 +7582,8 @@ register-method = "antenna_map_entry"
 register-index = 10
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 16
 access = "write-only"
@@ -7601,8 +7601,8 @@ register-method = "antenna_map_entry"
 register-index = 11
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 16
 access = "write-only"
@@ -7620,8 +7620,8 @@ register-method = "antenna_map_entry"
 register-index = 12
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 16
 access = "write-only"
@@ -7639,8 +7639,8 @@ register-method = "antenna_map_entry"
 register-index = 13
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 16
 access = "write-only"
@@ -7658,8 +7658,8 @@ register-method = "antenna_map_entry"
 register-index = 14
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 16
 access = "write-only"
@@ -7677,8 +7677,8 @@ register-method = "antenna_map_entry"
 register-index = 15
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 16
 access = "write-only"
@@ -8011,15 +8011,15 @@ scope = []
 register-method = "coex_config"
 
 [[registers.fields]]
-svd-name = "CONFIG_FORCE_ONE_18"
-method = "config_force_one_18"
+svd-name = "BIT_18_OPAQUE"
+method = "bit_18_opaque"
 bit-offset = 18
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "CONFIG_FORCE_ONE_20"
-method = "config_force_one_20"
+svd-name = "BIT_20_OPAQUE"
+method = "bit_20_opaque"
 bit-offset = 20
 bit-width = 1
 access = "read-write"
@@ -8036,8 +8036,8 @@ scope = []
 register-method = "rx_dpo_control"
 
 [[registers.fields]]
-svd-name = "CONFIG_FORCE_ZERO_19"
-method = "config_force_zero_19"
+svd-name = "BIT_19_OPAQUE"
+method = "bit_19_opaque"
 bit-offset = 19
 bit-width = 1
 access = "read-write"
@@ -8259,12 +8259,12 @@ access = "read-write"
 address = 537929804
 width = 32
 access = "read-write"
-identity = "PHY_BTAGC_RECOVERED.RX_CONFIG_004C"
+identity = "PHY_BTAGC_RECOVERED.WORD_004C_OPAQUE"
 peripheral = "PHY_BTAGC_RECOVERED"
 peripheral-type = "PhyBtagcRecovered"
 peripheral-module = "phy_btagc_recovered"
 scope = []
-register-method = "rx_config_004c"
+register-method = "word_004c_opaque"
 
 [[registers.fields]]
 svd-name = "SAT_GAIN_BITS_0_18"
@@ -8451,12 +8451,12 @@ access = "read-write"
 address = 537929836
 width = 32
 access = "read-write"
-identity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_CONTROL_006C"
+identity = "PHY_BTAGC_RECOVERED.WORD_006C_OPAQUE"
 peripheral = "PHY_BTAGC_RECOVERED"
 peripheral-type = "PhyBtagcRecovered"
 peripheral-module = "phy_btagc_recovered"
 scope = []
-register-method = "agc_recorrect_control_006c"
+register-method = "word_006c_opaque"
 
 [[registers.fields]]
 svd-name = "FINITE_BITS_24_31"
@@ -8469,12 +8469,12 @@ access = "read-write"
 address = 537929860
 width = 32
 access = "read-write"
-identity = "PHY_BTAGC_RECOVERED.AGC_RESTART_CONFIG_0084"
+identity = "PHY_BTAGC_RECOVERED.WORD_0084_OPAQUE"
 peripheral = "PHY_BTAGC_RECOVERED"
 peripheral-type = "PhyBtagcRecovered"
 peripheral-module = "phy_btagc_recovered"
 scope = []
-register-method = "agc_restart_config_0084"
+register-method = "word_0084_opaque"
 
 [[registers.fields]]
 svd-name = "FINITE_BITS_24_31"
@@ -8487,23 +8487,23 @@ access = "read-write"
 address = 537929864
 width = 32
 access = "read-write"
-identity = "PHY_BTAGC_RECOVERED.RX_CONFIG_0088"
+identity = "PHY_BTAGC_RECOVERED.WORD_0088_OPAQUE"
 peripheral = "PHY_BTAGC_RECOVERED"
 peripheral-type = "PhyBtagcRecovered"
 peripheral-module = "phy_btagc_recovered"
 scope = []
-register-method = "rx_config_0088"
+register-method = "word_0088_opaque"
 
 [[registers.fields]]
-svd-name = "CONFIG_FORCE_ONE_18"
-method = "config_force_one_18"
+svd-name = "BIT_18_OPAQUE"
+method = "bit_18_opaque"
 bit-offset = 18
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "CONFIG_FORCE_ZERO_29"
-method = "config_force_zero_29"
+svd-name = "BIT_29_OPAQUE"
+method = "bit_29_opaque"
 bit-offset = 29
 bit-width = 1
 access = "read-write"
@@ -8519,12 +8519,12 @@ access = "read-write"
 address = 537929868
 width = 32
 access = "read-write"
-identity = "PHY_BTAGC_RECOVERED.RX_CONFIG_008C"
+identity = "PHY_BTAGC_RECOVERED.WORD_008C_OPAQUE"
 peripheral = "PHY_BTAGC_RECOVERED"
 peripheral-type = "PhyBtagcRecovered"
 peripheral-module = "phy_btagc_recovered"
 scope = []
-register-method = "rx_config_008c"
+register-method = "word_008c_opaque"
 
 [[registers.fields]]
 svd-name = "TARGET_BITS_0_8"
@@ -8541,8 +8541,8 @@ bit-width = 9
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "CONFIG_FORCE_ZERO_29"
-method = "config_force_zero_29"
+svd-name = "BIT_29_OPAQUE"
+method = "bit_29_opaque"
 bit-offset = 29
 bit-width = 1
 access = "read-write"
@@ -8580,8 +8580,8 @@ bit-width = 9
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "CONFIG_FORCE_ONE_23"
-method = "config_force_one_23"
+svd-name = "BIT_23_OPAQUE"
+method = "bit_23_opaque"
 bit-offset = 23
 bit-width = 1
 access = "read-write"
@@ -8615,12 +8615,12 @@ access = "read-write"
 address = 537929888
 width = 32
 access = "read-write"
-identity = "PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A0"
+identity = "PHY_BTAGC_RECOVERED.WORD_00A0_OPAQUE"
 peripheral = "PHY_BTAGC_RECOVERED"
 peripheral-type = "PhyBtagcRecovered"
 peripheral-module = "phy_btagc_recovered"
 scope = []
-register-method = "shared_rx_sense_and_detect_00a0"
+register-method = "word_00a0_opaque"
 
 [[registers.fields]]
 svd-name = "BITS_16_23_OPAQUE"
@@ -8640,12 +8640,12 @@ access = "read-write"
 address = 537929896
 width = 32
 access = "read-write"
-identity = "PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8"
+identity = "PHY_BTAGC_RECOVERED.WORD_00A8_OPAQUE"
 peripheral = "PHY_BTAGC_RECOVERED"
 peripheral-type = "PhyBtagcRecovered"
 peripheral-module = "phy_btagc_recovered"
 scope = []
-register-method = "shared_rx_sense_and_detect_00a8"
+register-method = "word_00a8_opaque"
 
 [[registers.fields]]
 svd-name = "BITS_0_3_OPAQUE"
@@ -8679,12 +8679,12 @@ access = "read-write"
 address = 537929904
 width = 32
 access = "read-write"
-identity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B0"
+identity = "PHY_BTAGC_RECOVERED.WORD_00B0_OPAQUE"
 peripheral = "PHY_BTAGC_RECOVERED"
 peripheral-type = "PhyBtagcRecovered"
 peripheral-module = "phy_btagc_recovered"
 scope = []
-register-method = "agc_recorrect_and_target_00b0"
+register-method = "word_00b0_opaque"
 
 [[registers.fields]]
 svd-name = "RECORRECT_BITS_13_17"
@@ -8711,12 +8711,12 @@ access = "read-write"
 address = 537929908
 width = 32
 access = "read-write"
-identity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B4"
+identity = "PHY_BTAGC_RECOVERED.WORD_00B4_OPAQUE"
 peripheral = "PHY_BTAGC_RECOVERED"
 peripheral-type = "PhyBtagcRecovered"
 peripheral-module = "phy_btagc_recovered"
 scope = []
-register-method = "agc_recorrect_and_target_00b4"
+register-method = "word_00b4_opaque"
 
 [[registers.fields]]
 svd-name = "RECORRECT_BIT_8"
@@ -8743,12 +8743,12 @@ access = "read-write"
 address = 537929912
 width = 32
 access = "read-write"
-identity = "PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00B8"
+identity = "PHY_BTAGC_RECOVERED.WORD_00B8_OPAQUE"
 peripheral = "PHY_BTAGC_RECOVERED"
 peripheral-type = "PhyBtagcRecovered"
 peripheral-module = "phy_btagc_recovered"
 scope = []
-register-method = "shared_rx_sense_and_detect_00b8"
+register-method = "word_00b8_opaque"
 
 [[registers.fields]]
 svd-name = "BITS_8_11_OPAQUE"
@@ -8768,12 +8768,12 @@ access = "read-write"
 address = 537929916
 width = 32
 access = "read-write"
-identity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_RESTART_00BC"
+identity = "PHY_BTAGC_RECOVERED.WORD_00BC_OPAQUE"
 peripheral = "PHY_BTAGC_RECOVERED"
 peripheral-type = "PhyBtagcRecovered"
 peripheral-module = "phy_btagc_recovered"
 scope = []
-register-method = "agc_recorrect_and_restart_00bc"
+register-method = "word_00bc_opaque"
 
 [[registers.fields]]
 svd-name = "RECORRECT_BIT_5"
@@ -8814,44 +8814,44 @@ access = "read-write"
 address = 537929920
 width = 32
 access = "read-write"
-identity = "PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0"
+identity = "PHY_BTAGC_RECOVERED.WORD_00C0_OPAQUE"
 peripheral = "PHY_BTAGC_RECOVERED"
 peripheral-type = "PhyBtagcRecovered"
 peripheral-module = "phy_btagc_recovered"
 scope = []
-register-method = "agc_detect_config_00c0"
+register-method = "word_00c0_opaque"
 
 [[registers.fields]]
-svd-name = "BITS_5_9"
-method = "bits_5_9"
+svd-name = "BITS_5_9_OPAQUE"
+method = "bits_5_9_opaque"
 bit-offset = 5
 bit-width = 5
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_10_14"
-method = "bits_10_14"
+svd-name = "BITS_10_14_OPAQUE"
+method = "bits_10_14_opaque"
 bit-offset = 10
 bit-width = 5
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_15_19"
-method = "bits_15_19"
+svd-name = "BITS_15_19_OPAQUE"
+method = "bits_15_19_opaque"
 bit-offset = 15
 bit-width = 5
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_20_23"
-method = "bits_20_23"
+svd-name = "BITS_20_23_OPAQUE"
+method = "bits_20_23_opaque"
 bit-offset = 20
 bit-width = 4
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_24_31"
-method = "bits_24_31"
+svd-name = "BITS_24_31_OPAQUE"
+method = "bits_24_31_opaque"
 bit-offset = 24
 bit-width = 8
 access = "read-write"
@@ -8860,37 +8860,37 @@ access = "read-write"
 address = 537929924
 width = 32
 access = "read-write"
-identity = "PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C4"
+identity = "PHY_BTAGC_RECOVERED.WORD_00C4_OPAQUE"
 peripheral = "PHY_BTAGC_RECOVERED"
 peripheral-type = "PhyBtagcRecovered"
 peripheral-module = "phy_btagc_recovered"
 scope = []
-register-method = "agc_detect_config_00c4"
+register-method = "word_00c4_opaque"
 
 [[registers.fields]]
-svd-name = "BITS_10_14"
-method = "bits_10_14"
+svd-name = "BITS_10_14_OPAQUE"
+method = "bits_10_14_opaque"
 bit-offset = 10
 bit-width = 5
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_15_19"
-method = "bits_15_19"
+svd-name = "BITS_15_19_OPAQUE"
+method = "bits_15_19_opaque"
 bit-offset = 15
 bit-width = 5
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_20_23"
-method = "bits_20_23"
+svd-name = "BITS_20_23_OPAQUE"
+method = "bits_20_23_opaque"
 bit-offset = 20
 bit-width = 4
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_24_31"
-method = "bits_24_31"
+svd-name = "BITS_24_31_OPAQUE"
+method = "bits_24_31_opaque"
 bit-offset = 24
 bit-width = 8
 access = "read-write"
@@ -8899,12 +8899,12 @@ access = "read-write"
 address = 537929936
 width = 32
 access = "read-write"
-identity = "PHY_BTAGC_RECOVERED.AGC_CONFIG_00D0"
+identity = "PHY_BTAGC_RECOVERED.WORD_00D0_OPAQUE"
 peripheral = "PHY_BTAGC_RECOVERED"
 peripheral-type = "PhyBtagcRecovered"
 peripheral-module = "phy_btagc_recovered"
 scope = []
-register-method = "agc_config_00d0"
+register-method = "word_00d0_opaque"
 
 [[registers.fields]]
 svd-name = "CONFIG_VALUE_LOW"
@@ -8924,12 +8924,12 @@ access = "read-write"
 address = 537929940
 width = 32
 access = "read-write"
-identity = "PHY_BTAGC_RECOVERED.AGC_CONFIG_00D4"
+identity = "PHY_BTAGC_RECOVERED.WORD_00D4_OPAQUE"
 peripheral = "PHY_BTAGC_RECOVERED"
 peripheral-type = "PhyBtagcRecovered"
 peripheral-module = "phy_btagc_recovered"
 scope = []
-register-method = "agc_config_00d4"
+register-method = "word_00d4_opaque"
 
 [[registers.fields]]
 svd-name = "CONFIG_VALUE"
@@ -8942,12 +8942,12 @@ access = "read-write"
 address = 537929948
 width = 32
 access = "read-write"
-identity = "PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC"
+identity = "PHY_BTAGC_RECOVERED.WORD_00DC_OPAQUE"
 peripheral = "PHY_BTAGC_RECOVERED"
 peripheral-type = "PhyBtagcRecovered"
 peripheral-module = "phy_btagc_recovered"
 scope = []
-register-method = "agc_restart_bits_00dc"
+register-method = "word_00dc_opaque"
 
 [[registers.fields]]
 svd-name = "RESTART_BIT_27"
@@ -8996,29 +8996,29 @@ scope = []
 register-method = "agc_restart_image_00e0_opaque"
 
 [[registers.fields]]
-svd-name = "BITS_0_7"
-method = "bits_0_7"
+svd-name = "BITS_0_7_OPAQUE"
+method = "bits_0_7_opaque"
 bit-offset = 0
 bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_8_15"
-method = "bits_8_15"
+svd-name = "BITS_8_15_OPAQUE"
+method = "bits_8_15_opaque"
 bit-offset = 8
 bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_16_23"
-method = "bits_16_23"
+svd-name = "BITS_16_23_OPAQUE"
+method = "bits_16_23_opaque"
 bit-offset = 16
 bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_24_31"
-method = "bits_24_31"
+svd-name = "BITS_24_31_OPAQUE"
+method = "bits_24_31_opaque"
 bit-offset = 24
 bit-width = 8
 access = "read-write"
@@ -9035,29 +9035,29 @@ scope = []
 register-method = "agc_restart_image_00e4_opaque"
 
 [[registers.fields]]
-svd-name = "BITS_0_7"
-method = "bits_0_7"
+svd-name = "BITS_0_7_OPAQUE"
+method = "bits_0_7_opaque"
 bit-offset = 0
 bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_8_15"
-method = "bits_8_15"
+svd-name = "BITS_8_15_OPAQUE"
+method = "bits_8_15_opaque"
 bit-offset = 8
 bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_16_23"
-method = "bits_16_23"
+svd-name = "BITS_16_23_OPAQUE"
+method = "bits_16_23_opaque"
 bit-offset = 16
 bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_24_31"
-method = "bits_24_31"
+svd-name = "BITS_24_31_OPAQUE"
+method = "bits_24_31_opaque"
 bit-offset = 24
 bit-width = 8
 access = "read-write"
@@ -9074,22 +9074,22 @@ scope = []
 register-method = "agc_restart_image_00e8_opaque"
 
 [[registers.fields]]
-svd-name = "BITS_10_15"
-method = "bits_10_15"
+svd-name = "BITS_10_15_OPAQUE"
+method = "bits_10_15_opaque"
 bit-offset = 10
 bit-width = 6
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_16_23"
-method = "bits_16_23"
+svd-name = "BITS_16_23_OPAQUE"
+method = "bits_16_23_opaque"
 bit-offset = 16
 bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_24_31"
-method = "bits_24_31"
+svd-name = "BITS_24_31_OPAQUE"
+method = "bits_24_31_opaque"
 bit-offset = 24
 bit-width = 8
 access = "read-write"
@@ -9106,29 +9106,29 @@ scope = []
 register-method = "agc_restart_image_00ec_opaque"
 
 [[registers.fields]]
-svd-name = "BITS_0_7"
-method = "bits_0_7"
+svd-name = "BITS_0_7_OPAQUE"
+method = "bits_0_7_opaque"
 bit-offset = 0
 bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_8_15"
-method = "bits_8_15"
+svd-name = "BITS_8_15_OPAQUE"
+method = "bits_8_15_opaque"
 bit-offset = 8
 bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_16_23"
-method = "bits_16_23"
+svd-name = "BITS_16_23_OPAQUE"
+method = "bits_16_23_opaque"
 bit-offset = 16
 bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_24_31"
-method = "bits_24_31"
+svd-name = "BITS_24_31_OPAQUE"
+method = "bits_24_31_opaque"
 bit-offset = 24
 bit-width = 8
 access = "read-write"
@@ -9145,15 +9145,15 @@ scope = []
 register-method = "agc_restart_image_00f0_opaque"
 
 [[registers.fields]]
-svd-name = "BITS_16_23"
-method = "bits_16_23"
+svd-name = "BITS_16_23_OPAQUE"
+method = "bits_16_23_opaque"
 bit-offset = 16
 bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_24_31"
-method = "bits_24_31"
+svd-name = "BITS_24_31_OPAQUE"
+method = "bits_24_31_opaque"
 bit-offset = 24
 bit-width = 8
 access = "read-write"
@@ -9170,36 +9170,36 @@ scope = []
 register-method = "agc_restart_image_00f8_opaque"
 
 [[registers.fields]]
-svd-name = "BITS_2_7"
-method = "bits_2_7"
+svd-name = "BITS_2_7_OPAQUE"
+method = "bits_2_7_opaque"
 bit-offset = 2
 bit-width = 6
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_8_13"
-method = "bits_8_13"
+svd-name = "BITS_8_13_OPAQUE"
+method = "bits_8_13_opaque"
 bit-offset = 8
 bit-width = 6
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_14_19"
-method = "bits_14_19"
+svd-name = "BITS_14_19_OPAQUE"
+method = "bits_14_19_opaque"
 bit-offset = 14
 bit-width = 6
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_20_25"
-method = "bits_20_25"
+svd-name = "BITS_20_25_OPAQUE"
+method = "bits_20_25_opaque"
 bit-offset = 20
 bit-width = 6
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_26_31"
-method = "bits_26_31"
+svd-name = "BITS_26_31_OPAQUE"
+method = "bits_26_31_opaque"
 bit-offset = 26
 bit-width = 6
 access = "read-write"
@@ -9216,36 +9216,36 @@ scope = []
 register-method = "agc_restart_image_0100_opaque"
 
 [[registers.fields]]
-svd-name = "BITS_12_15"
-method = "bits_12_15"
+svd-name = "BITS_12_15_OPAQUE"
+method = "bits_12_15_opaque"
 bit-offset = 12
 bit-width = 4
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_16_19"
-method = "bits_16_19"
+svd-name = "BITS_16_19_OPAQUE"
+method = "bits_16_19_opaque"
 bit-offset = 16
 bit-width = 4
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_20_23"
-method = "bits_20_23"
+svd-name = "BITS_20_23_OPAQUE"
+method = "bits_20_23_opaque"
 bit-offset = 20
 bit-width = 4
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_24_27"
-method = "bits_24_27"
+svd-name = "BITS_24_27_OPAQUE"
+method = "bits_24_27_opaque"
 bit-offset = 24
 bit-width = 4
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_28_31"
-method = "bits_28_31"
+svd-name = "BITS_28_31_OPAQUE"
+method = "bits_28_31_opaque"
 bit-offset = 28
 bit-width = 4
 access = "read-write"
@@ -24471,8 +24471,8 @@ register-method = "he_control"
 register-index = 0
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -25523,8 +25523,8 @@ register-method = "he_control"
 register-index = 1
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -26575,8 +26575,8 @@ register-method = "he_control"
 register-index = 2
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -27627,8 +27627,8 @@ register-method = "he_control"
 register-index = 3
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -37503,8 +37503,8 @@ scope = []
 register-method = "saturation_gain_low"
 
 [[registers.fields]]
-svd-name = "OPAQUE_VALUE"
-method = "opaque_value"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -37683,8 +37683,8 @@ scope = []
 register-method = "saturation_gain_high"
 
 [[registers.fields]]
-svd-name = "OPAQUE_VALUE"
-method = "opaque_value"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -37811,12 +37811,12 @@ access = "read-write"
 address = 537949184
 width = 32
 access = "read-write"
-identity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7400"
+identity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7400_OPAQUE"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 peripheral-type = "PhyBasebandConfigOracle"
 peripheral-module = "phy_baseband_config_oracle"
 scope = []
-register-method = "baseband_init_7400"
+register-method = "word_7400_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_OPAQUE"
@@ -37829,12 +37829,12 @@ access = "read-write"
 address = 537949224
 width = 32
 access = "read-write"
-identity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7428"
+identity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7428_OPAQUE"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 peripheral-type = "PhyBasebandConfigOracle"
 peripheral-module = "phy_baseband_config_oracle"
 scope = []
-register-method = "baseband_init_7428"
+register-method = "word_7428_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_VALUE_OPAQUE"
@@ -37896,12 +37896,12 @@ fields = []
 address = 537949244
 width = 32
 access = "read-write"
-identity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_743C"
+identity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_743C_OPAQUE"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 peripheral-type = "PhyBasebandConfigOracle"
 peripheral-module = "phy_baseband_config_oracle"
 scope = []
-register-method = "baseband_init_743c"
+register-method = "word_743c_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_CLEAR_LOW_OPAQUE"
@@ -38207,12 +38207,12 @@ fields = []
 address = 537950216
 width = 32
 access = "read-write"
-identity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7808"
+identity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7808_OPAQUE"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 peripheral-type = "PhyBasebandConfigOracle"
 peripheral-module = "phy_baseband_config_oracle"
 scope = []
-register-method = "baseband_init_7808"
+register-method = "word_7808_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_VALUE_OPAQUE"
@@ -38281,12 +38281,12 @@ access = "read-write"
 address = 537950352
 width = 32
 access = "read-write"
-identity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7890"
+identity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7890_OPAQUE"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 peripheral-type = "PhyBasebandConfigOracle"
 peripheral-module = "phy_baseband_config_oracle"
 scope = []
-register-method = "baseband_init_7890"
+register-method = "word_7890_opaque"
 
 [[registers.fields]]
 svd-name = "HE_RU26_GOOD_RESPONSE_ENABLE"
@@ -38373,12 +38373,12 @@ access = "read-write"
 address = 537950428
 width = 32
 access = "read-write"
-identity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_78DC"
+identity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_78DC_OPAQUE"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 peripheral-type = "PhyBasebandConfigOracle"
 peripheral-module = "phy_baseband_config_oracle"
 scope = []
-register-method = "baseband_init_78dc"
+register-method = "word_78dc_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_VALUE_OPAQUE"
@@ -38391,12 +38391,12 @@ access = "read-write"
 address = 537950436
 width = 32
 access = "read-write"
-identity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_78E4"
+identity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_78E4_OPAQUE"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 peripheral-type = "PhyBasebandConfigOracle"
 peripheral-module = "phy_baseband_config_oracle"
 scope = []
-register-method = "baseband_init_78e4"
+register-method = "word_78e4_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_CLEAR_OPAQUE"
@@ -38421,12 +38421,12 @@ fields = []
 address = 537950476
 width = 32
 access = "read-write"
-identity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C"
+identity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_790C_OPAQUE"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 peripheral-type = "PhyBasebandConfigOracle"
 peripheral-module = "phy_baseband_config_oracle"
 scope = []
-register-method = "baseband_init_790c"
+register-method = "word_790c_opaque"
 
 [[registers.fields]]
 svd-name = "CHANNEL_DUMP_VALUE_OPAQUE"
@@ -38460,12 +38460,12 @@ access = "read-write"
 address = 537950592
 width = 32
 access = "read-write"
-identity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7980"
+identity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7980_OPAQUE"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 peripheral-type = "PhyBasebandConfigOracle"
 peripheral-module = "phy_baseband_config_oracle"
 scope = []
-register-method = "baseband_init_7980"
+register-method = "word_7980_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_CLEAR_OPAQUE"
@@ -38478,12 +38478,12 @@ access = "read-write"
 address = 537950760
 width = 32
 access = "read-write"
-identity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7A28"
+identity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7A28_OPAQUE"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 peripheral-type = "PhyBasebandConfigOracle"
 peripheral-module = "phy_baseband_config_oracle"
 scope = []
-register-method = "baseband_init_7a28"
+register-method = "word_7a28_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_CLEAR_OPAQUE"
@@ -38748,12 +38748,12 @@ access = "write-only"
 address = 537951400
 width = 32
 access = "read-write"
-identity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CA8"
+identity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7CA8_OPAQUE"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 peripheral-type = "PhyBasebandConfigOracle"
 peripheral-module = "phy_baseband_config_oracle"
 scope = []
-register-method = "baseband_init_7ca8"
+register-method = "word_7ca8_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_ENABLE_OPAQUE"
@@ -38766,12 +38766,12 @@ access = "read-write"
 address = 537951440
 width = 32
 access = "read-write"
-identity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CD0"
+identity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7CD0_OPAQUE"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 peripheral-type = "PhyBasebandConfigOracle"
 peripheral-module = "phy_baseband_config_oracle"
 scope = []
-register-method = "baseband_init_7cd0"
+register-method = "word_7cd0_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_LOW_OPAQUE"
@@ -39595,8 +39595,8 @@ scope = []
 register-method = "init_config"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -39631,8 +39631,8 @@ scope = []
 register-method = "encrypt_config"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -39667,8 +39667,8 @@ scope = []
 register-method = "encrypt_key_word_0"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -39685,8 +39685,8 @@ scope = []
 register-method = "encrypt_key_word_1"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -39703,8 +39703,8 @@ scope = []
 register-method = "encrypt_key_word_2"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -39721,8 +39721,8 @@ scope = []
 register-method = "encrypt_key_word_3"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -39793,8 +39793,8 @@ scope = []
 register-method = "resolv_list_argument"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -39854,8 +39854,8 @@ scope = []
 register-method = "resolv_result_pointer_offset"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-only"
@@ -39872,8 +39872,8 @@ scope = []
 register-method = "resolv_result_present"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-only"
@@ -39933,8 +39933,8 @@ scope = []
 register-method = "encrypt_completion_status"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-only"
@@ -39951,8 +39951,8 @@ scope = []
 register-method = "init_sram_region_0"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -39969,8 +39969,8 @@ scope = []
 register-method = "init_sram_region_1"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -40741,16 +40741,16 @@ access = "write-only"
 address = 537972740
 width = 32
 access = "write-only"
-identity = "BTDM_RUNTIME_CONTROL.COMMAND_0004"
+identity = "BTDM_RUNTIME_CONTROL.WORD_0004_OPAQUE"
 peripheral = "BTDM_RUNTIME_CONTROL"
 peripheral-type = "BtdmRuntimeControl"
 peripheral-module = "btdm_runtime_control"
 scope = []
-register-method = "command_0004"
+register-method = "word_0004_opaque"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -40759,16 +40759,16 @@ access = "write-only"
 address = 537972744
 width = 32
 access = "write-only"
-identity = "BTDM_RUNTIME_CONTROL.COMMAND_0008"
+identity = "BTDM_RUNTIME_CONTROL.WORD_0008_OPAQUE"
 peripheral = "BTDM_RUNTIME_CONTROL"
 peripheral-type = "BtdmRuntimeControl"
 peripheral-module = "btdm_runtime_control"
 scope = []
-register-method = "command_0008"
+register-method = "word_0008_opaque"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -40777,16 +40777,16 @@ access = "write-only"
 address = 537972752
 width = 32
 access = "write-only"
-identity = "BTDM_RUNTIME_CONTROL.COMMAND_0010"
+identity = "BTDM_RUNTIME_CONTROL.WORD_0010_OPAQUE"
 peripheral = "BTDM_RUNTIME_CONTROL"
 peripheral-type = "BtdmRuntimeControl"
 peripheral-module = "btdm_runtime_control"
 scope = []
-register-method = "command_0010"
+register-method = "word_0010_opaque"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -40795,16 +40795,16 @@ access = "write-only"
 address = 537972756
 width = 32
 access = "write-only"
-identity = "BTDM_RUNTIME_CONTROL.COMMAND_0014"
+identity = "BTDM_RUNTIME_CONTROL.WORD_0014_OPAQUE"
 peripheral = "BTDM_RUNTIME_CONTROL"
 peripheral-type = "BtdmRuntimeControl"
 peripheral-module = "btdm_runtime_control"
 scope = []
-register-method = "command_0014"
+register-method = "word_0014_opaque"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -40813,16 +40813,16 @@ access = "write-only"
 address = 537972764
 width = 32
 access = "read-write"
-identity = "BTDM_RUNTIME_CONTROL.STATE_001C"
+identity = "BTDM_RUNTIME_CONTROL.WORD_001C_OPAQUE"
 peripheral = "BTDM_RUNTIME_CONTROL"
 peripheral-type = "BtdmRuntimeControl"
 peripheral-module = "btdm_runtime_control"
 scope = []
-register-method = "state_001c"
+register-method = "word_001c_opaque"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -40831,16 +40831,16 @@ access = "read-write"
 address = 537972768
 width = 32
 access = "read-write"
-identity = "BTDM_RUNTIME_CONTROL.STATE_0020"
+identity = "BTDM_RUNTIME_CONTROL.WORD_0020_OPAQUE"
 peripheral = "BTDM_RUNTIME_CONTROL"
 peripheral-type = "BtdmRuntimeControl"
 peripheral-module = "btdm_runtime_control"
 scope = []
-register-method = "state_0020"
+register-method = "word_0020_opaque"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -40849,12 +40849,12 @@ access = "read-write"
 address = 537972772
 width = 32
 access = "read-write"
-identity = "BTDM_RUNTIME_CONTROL.STATE_0024"
+identity = "BTDM_RUNTIME_CONTROL.WORD_0024_OPAQUE"
 peripheral = "BTDM_RUNTIME_CONTROL"
 peripheral-type = "BtdmRuntimeControl"
 peripheral-module = "btdm_runtime_control"
 scope = []
-register-method = "state_0024"
+register-method = "word_0024_opaque"
 
 [[registers.fields]]
 svd-name = "LOW_BYTE"
@@ -40864,8 +40864,8 @@ bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_31_8"
-method = "unclassified_31_8"
+svd-name = "BITS_8_31_OPAQUE"
+method = "bits_8_31_opaque"
 bit-offset = 8
 bit-width = 24
 access = "read-write"
@@ -40874,12 +40874,12 @@ access = "read-write"
 address = 537972780
 width = 32
 access = "read-write"
-identity = "BTDM_RUNTIME_CONTROL.STATE_002C"
+identity = "BTDM_RUNTIME_CONTROL.WORD_002C_OPAQUE"
 peripheral = "BTDM_RUNTIME_CONTROL"
 peripheral-type = "BtdmRuntimeControl"
 peripheral-module = "btdm_runtime_control"
 scope = []
-register-method = "state_002c"
+register-method = "word_002c_opaque"
 
 [[registers.fields]]
 svd-name = "LOW_BYTE"
@@ -40889,8 +40889,8 @@ bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_31_8"
-method = "unclassified_31_8"
+svd-name = "BITS_8_31_OPAQUE"
+method = "bits_8_31_opaque"
 bit-offset = 8
 bit-width = 24
 access = "read-write"
@@ -40899,16 +40899,16 @@ access = "read-write"
 address = 537972788
 width = 32
 access = "write-only"
-identity = "BTDM_RUNTIME_CONTROL.COMMAND_0034"
+identity = "BTDM_RUNTIME_CONTROL.WORD_0034_OPAQUE"
 peripheral = "BTDM_RUNTIME_CONTROL"
 peripheral-type = "BtdmRuntimeControl"
 peripheral-module = "btdm_runtime_control"
 scope = []
-register-method = "command_0034"
+register-method = "word_0034_opaque"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -40917,16 +40917,16 @@ access = "write-only"
 address = 537972792
 width = 32
 access = "read-only"
-identity = "BTDM_RUNTIME_CONTROL.STATUS_0038"
+identity = "BTDM_RUNTIME_CONTROL.WORD_0038_OPAQUE"
 peripheral = "BTDM_RUNTIME_CONTROL"
 peripheral-type = "BtdmRuntimeControl"
 peripheral-module = "btdm_runtime_control"
 scope = []
-register-method = "status_0038"
+register-method = "word_0038_opaque"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "read-only"
@@ -40935,16 +40935,16 @@ access = "read-only"
 address = 537972800
 width = 32
 access = "write-only"
-identity = "BTDM_RUNTIME_CONTROL.COMMAND_0040"
+identity = "BTDM_RUNTIME_CONTROL.WORD_0040_OPAQUE"
 peripheral = "BTDM_RUNTIME_CONTROL"
 peripheral-type = "BtdmRuntimeControl"
 peripheral-module = "btdm_runtime_control"
 scope = []
-register-method = "command_0040"
+register-method = "word_0040_opaque"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -40953,16 +40953,16 @@ access = "write-only"
 address = 537972804
 width = 32
 access = "write-only"
-identity = "BTDM_RUNTIME_CONTROL.COMMAND_0044"
+identity = "BTDM_RUNTIME_CONTROL.WORD_0044_OPAQUE"
 peripheral = "BTDM_RUNTIME_CONTROL"
 peripheral-type = "BtdmRuntimeControl"
 peripheral-module = "btdm_runtime_control"
 scope = []
-register-method = "command_0044"
+register-method = "word_0044_opaque"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -40971,16 +40971,16 @@ access = "write-only"
 address = 537972808
 width = 32
 access = "read-only"
-identity = "BTDM_RUNTIME_CONTROL.STATUS_0048"
+identity = "BTDM_RUNTIME_CONTROL.WORD_0048_OPAQUE"
 peripheral = "BTDM_RUNTIME_CONTROL"
 peripheral-type = "BtdmRuntimeControl"
 peripheral-module = "btdm_runtime_control"
 scope = []
-register-method = "status_0048"
+register-method = "word_0048_opaque"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "read-only"
@@ -40989,16 +40989,16 @@ access = "read-only"
 address = 537972812
 width = 32
 access = "write-only"
-identity = "BTDM_RUNTIME_CONTROL.COMMAND_004C"
+identity = "BTDM_RUNTIME_CONTROL.WORD_004C_OPAQUE"
 peripheral = "BTDM_RUNTIME_CONTROL"
 peripheral-type = "BtdmRuntimeControl"
 peripheral-module = "btdm_runtime_control"
 scope = []
-register-method = "command_004c"
+register-method = "word_004c_opaque"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -41007,12 +41007,12 @@ access = "write-only"
 address = 537972824
 width = 32
 access = "read-write"
-identity = "BTDM_RUNTIME_CONTROL.CONTROL_0058"
+identity = "BTDM_RUNTIME_CONTROL.WORD_0058_OPAQUE"
 peripheral = "BTDM_RUNTIME_CONTROL"
 peripheral-type = "BtdmRuntimeControl"
 peripheral-module = "btdm_runtime_control"
 scope = []
-register-method = "control_0058"
+register-method = "word_0058_opaque"
 
 [[registers.fields]]
 svd-name = "CONTROL_0"
@@ -41046,24 +41046,24 @@ access = "read-write"
 address = 537972836
 width = 32
 access = "read-write"
-identity = "BTDM_RUNTIME_CONTROL.VALUE_0064"
+identity = "BTDM_RUNTIME_CONTROL.WORD_0064_OPAQUE"
 peripheral = "BTDM_RUNTIME_CONTROL"
 peripheral-type = "BtdmRuntimeControl"
 peripheral-module = "btdm_runtime_control"
 scope = []
-register-method = "value_0064"
+register-method = "word_0064_opaque"
 fields = []
 
 [[registers]]
 address = 537972840
 width = 32
 access = "write-only"
-identity = "BTDM_RUNTIME_CONTROL.VALUE_0068"
+identity = "BTDM_RUNTIME_CONTROL.WORD_0068_OPAQUE"
 peripheral = "BTDM_RUNTIME_CONTROL"
 peripheral-type = "BtdmRuntimeControl"
 peripheral-module = "btdm_runtime_control"
 scope = []
-register-method = "value_0068"
+register-method = "word_0068_opaque"
 
 [[registers.fields]]
 svd-name = "VALUE_LOW_24"
@@ -41076,16 +41076,16 @@ access = "write-only"
 address = 537972844
 width = 32
 access = "read-write"
-identity = "BTDM_RUNTIME_CONTROL.VALUE_006C"
+identity = "BTDM_RUNTIME_CONTROL.WORD_006C_OPAQUE"
 peripheral = "BTDM_RUNTIME_CONTROL"
 peripheral-type = "BtdmRuntimeControl"
 peripheral-module = "btdm_runtime_control"
 scope = []
-register-method = "value_006c"
+register-method = "word_006c_opaque"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "BITS_0_31_OPAQUE"
+method = "bits_0_31_opaque"
 bit-offset = 0
 bit-width = 32
 access = "read-write"
@@ -41094,12 +41094,12 @@ access = "read-write"
 address = 537972856
 width = 32
 access = "read-write"
-identity = "BTDM_RUNTIME_CONTROL.CONTROL_0078"
+identity = "BTDM_RUNTIME_CONTROL.WORD_0078_OPAQUE"
 peripheral = "BTDM_RUNTIME_CONTROL"
 peripheral-type = "BtdmRuntimeControl"
 peripheral-module = "btdm_runtime_control"
 scope = []
-register-method = "control_0078"
+register-method = "word_0078_opaque"
 
 [[registers.fields]]
 svd-name = "CONTROL_25"

@@ -19,7 +19,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "SET_BY_RX_SETUP_BIT_0"
+name = "BIT_0_OPAQUE"
 description = "Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."
 bitOffset = 0
 bitWidth = 1
@@ -77,7 +77,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "FORCE_ZERO_BITS_16_18"
+name = "BITS_16_18_OPAQUE"
 description = "bt_bb_set_le_tx_on_delay clears these three low positional bits in the same RMW that writes the encoded delay. Their hardware meaning remains unknown."
 bitOffset = 16
 bitWidth = 3
@@ -121,7 +121,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "SET_BY_RX_SETUP_BIT_2"
+name = "BIT_2_OPAQUE"
 description = "Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."
 bitOffset = 2
 bitWidth = 1
@@ -194,7 +194,7 @@ bitOffset = 0
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "FINAL_FORCE_ZERO_13"
+name = "BIT_13_OPAQUE"
 description = "bt_bb_v2_rx_set clears this independently observed control bit after the receive leaf sequence."
 bitOffset = 13
 bitWidth = 1
@@ -267,7 +267,7 @@ minimum = 0x0
 maximum = 0x7FF
 
 [[peripherals.registers.register.fields]]
-name = "PERIOD_FORCE_ZERO_20_22"
+name = "BITS_20_22_OPAQUE"
 description = "bt_bb_tx_cca_period explicitly clears bits 20:22 in the same fresh-read update that replaces bits 23:30."
 bitOffset = 20
 bitWidth = 3
@@ -453,7 +453,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -479,7 +479,7 @@ bitOffset = 15
 bitWidth = 16
 
 [[peripherals.registers.register.fields]]
-name = "INIT_FORCE_ONE"
+name = "BIT_31_OPAQUE"
 description = "bt_bb_wdt_init sets this bit before writing both argument fields."
 bitOffset = 31
 bitWidth = 1
@@ -494,7 +494,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "BITS_2_9"
+name = "BITS_2_9_OPAQUE"
 description = "The leaf replaces this field with 0x13."
 bitOffset = 2
 bitWidth = 8
@@ -504,7 +504,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_10_16"
+name = "BITS_10_16_OPAQUE"
 description = "The leaf replaces this field with 3."
 bitOffset = 10
 bitWidth = 7
@@ -514,7 +514,7 @@ minimum = 0x0
 maximum = 0x7F
 
 [[peripherals.registers.register.fields]]
-name = "BITS_17_22"
+name = "BITS_17_22_OPAQUE"
 description = "The leaf replaces this field with 0."
 bitOffset = 17
 bitWidth = 6
@@ -524,7 +524,7 @@ minimum = 0x0
 maximum = 0x3F
 
 [[peripherals.registers.register.fields]]
-name = "BITS_23_27"
+name = "BITS_23_27_OPAQUE"
 description = "The leaf replaces this field with 0."
 bitOffset = 23
 bitWidth = 5
@@ -534,7 +534,7 @@ minimum = 0x0
 maximum = 0x1F
 
 [[peripherals.registers.register.fields]]
-name = "BITS_28_31"
+name = "BITS_28_31_OPAQUE"
 description = "The leaf replaces this field with 0."
 bitOffset = 28
 bitWidth = 4
@@ -553,7 +553,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "BITS_2_12"
+name = "BITS_2_12_OPAQUE"
 description = "The leaf replaces this field with 0x2f2."
 bitOffset = 2
 bitWidth = 11
@@ -563,7 +563,7 @@ minimum = 0x0
 maximum = 0x7FF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_13_22"
+name = "BITS_13_22_OPAQUE"
 description = "The leaf replaces this field with 0x140."
 bitOffset = 13
 bitWidth = 10
@@ -573,7 +573,7 @@ minimum = 0x0
 maximum = 0x3FF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_23_31"
+name = "BITS_23_31_OPAQUE"
 description = "The leaf replaces this field with 0x5f."
 bitOffset = 23
 bitWidth = 9
@@ -592,7 +592,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "BITS_10_20"
+name = "BITS_10_20_OPAQUE"
 description = "The leaf replaces this field with 0x6bf."
 bitOffset = 10
 bitWidth = 11
@@ -602,7 +602,7 @@ minimum = 0x0
 maximum = 0x7FF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_21_31"
+name = "BITS_21_31_OPAQUE"
 description = "The leaf replaces this field with 0x50d."
 bitOffset = 21
 bitWidth = 11
@@ -621,7 +621,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "BITS_10_20"
+name = "BITS_10_20_OPAQUE"
 description = "The leaf replaces this field with 0x7e9."
 bitOffset = 10
 bitWidth = 11
@@ -631,7 +631,7 @@ minimum = 0x0
 maximum = 0x7FF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_21_31"
+name = "BITS_21_31_OPAQUE"
 description = "The leaf replaces this field with 0x7a0."
 bitOffset = 21
 bitWidth = 11
@@ -699,7 +699,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "BITS_0_10"
+name = "BITS_0_10_OPAQUE"
 description = "The leaf replaces this field with 0x76d."
 bitOffset = 0
 bitWidth = 11
@@ -709,7 +709,7 @@ minimum = 0x0
 maximum = 0x7FF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_11_21"
+name = "BITS_11_21_OPAQUE"
 description = "The leaf replaces this field with 0x58e."
 bitOffset = 11
 bitWidth = 11
@@ -719,7 +719,7 @@ minimum = 0x0
 maximum = 0x7FF
 
 [[peripherals.registers.register.fields]]
-name = "BITS_22_31"
+name = "BITS_22_31_OPAQUE"
 description = "The leaf replaces this field with 0x24d."
 bitOffset = 22
 bitWidth = 10
@@ -899,12 +899,12 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "CONFIG_FORCE_ONE_18"
+name = "BIT_18_OPAQUE"
 bitOffset = 18
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "CONFIG_FORCE_ONE_20"
+name = "BIT_20_OPAQUE"
 bitOffset = 20
 bitWidth = 1
 
@@ -918,7 +918,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "CONFIG_FORCE_ZERO_19"
+name = "BIT_19_OPAQUE"
 bitOffset = 19
 bitWidth = 1
 
@@ -956,8 +956,8 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.LE_TX_ON_DELAY.FORCE_ZERO_BITS_16_18"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.LE_TX_ON_DELAY.BITS_16_18_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1092,7 +1092,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.TX_CCA_FIFO_DATA.IMAGE"
+entity = "BT_V3_2_BASEBAND.TX_CCA_FIFO_DATA.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
@@ -1143,8 +1143,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_0.PERIOD_FORCE_ZERO_20_22"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_0.BITS_20_22_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1287,8 +1287,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.WATCHDOG_CONTROL.INIT_FORCE_ONE"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.WATCHDOG_CONTROL.BIT_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1415,24 +1415,24 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.COEX_CONFIG.CONFIG_FORCE_ONE_18"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.COEX_CONFIG.BIT_18_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.COEX_CONFIG.CONFIG_FORCE_ONE_20"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.COEX_CONFIG.BIT_20_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.RX_DPO_CONTROL.CONFIG_FORCE_ZERO_19"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.RX_DPO_CONTROL.BIT_19_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1455,8 +1455,8 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.RX_SETUP_CONTROL_0.SET_BY_RX_SETUP_BIT_0"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.RX_SETUP_CONTROL_0.BIT_0_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"
@@ -1487,8 +1487,8 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.RX_SETUP_CONTROL_1.SET_BY_RX_SETUP_BIT_2"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.RX_SETUP_CONTROL_1.BIT_2_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"
@@ -1599,40 +1599,40 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0.BITS_2_9"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0.BITS_2_9_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0.BITS_10_16"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0.BITS_10_16_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0.BITS_17_22"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0.BITS_17_22_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0.BITS_23_27"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0.BITS_23_27_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0.BITS_28_31"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0.BITS_28_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1647,24 +1647,24 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1.BITS_2_12"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1.BITS_2_12_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1.BITS_13_22"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1.BITS_13_22_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1.BITS_23_31"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1.BITS_23_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1679,16 +1679,16 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_2.BITS_10_20"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_2.BITS_10_20_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_2.BITS_21_31"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_2.BITS_21_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1703,16 +1703,16 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_3.BITS_10_20"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_3.BITS_10_20_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_3.BITS_21_31"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_3.BITS_21_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1767,24 +1767,24 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1.BITS_0_10"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1.BITS_0_10_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1.BITS_11_21"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1.BITS_11_21_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1.BITS_22_31"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1.BITS_22_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1871,8 +1871,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.RX_CORRELATOR_CONTROL.FINAL_FORCE_ZERO_13"
-naming = "descriptive"
+entity = "BT_V3_2_BASEBAND.RX_CORRELATOR_CONTROL.BIT_13_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"

@@ -56,21 +56,21 @@ pub enum BluetoothLowPowerRuntimeControlObservation {
 /// undocumented RTC or timer semantics to the observed hardware values.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothModemLpTimerInterruptObservation {
-    /// `STATUS_0038` was nonzero and `VALUE_006C` was zero.
+    /// `WORD_0038_OPAQUE` was nonzero and `WORD_006C_OPAQUE` was zero.
     Value006cZero,
-    /// `STATUS_0038` and `VALUE_006C` were nonzero; `CONTROL_0058.bit2` was
+    /// `WORD_0038_OPAQUE` and `WORD_006C_OPAQUE` were nonzero; `WORD_0058_OPAQUE.bit2` was
     /// clear.
     Control2Clear,
-    /// `CONTROL_0058.bit2` was set and a second fresh read supplied the image
-    /// in which `CONTROL_0058.bit1` was published.
+    /// `WORD_0058_OPAQUE.bit2` was set and a second fresh read supplied the image
+    /// in which `WORD_0058_OPAQUE.bit1` was published.
     Control2SetControl1Published,
 }
 
 /// Positional state acknowledged by the common source-127 timer handler.
 ///
 /// The two booleans intentionally retain register positions instead of
-/// assigning undocumented timer or RTC meanings. A nonzero `STATE_0024` low
-/// byte requires software timer-queue dispatch. A nonzero `STATE_002C` low
+/// assigning undocumented timer or RTC meanings. A nonzero `WORD_0024_OPAQUE` low
+/// byte requires software timer-queue dispatch. A nonzero `WORD_002C_OPAQUE` low
 /// byte requires a separate software environment update before the final
 /// hardware read.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -80,12 +80,12 @@ pub struct BluetoothModemLpTimerHandlerRegisterObservation {
 }
 
 impl BluetoothModemLpTimerHandlerRegisterObservation {
-    /// Whether the sampled low byte of `STATE_0024` was nonzero.
+    /// Whether the sampled low byte of `WORD_0024_OPAQUE` was nonzero.
     pub const fn state_0024_low_byte_was_nonzero(self) -> bool {
         self.state_0024_low_byte_nonzero
     }
 
-    /// Whether the sampled low byte of `STATE_002C` was nonzero.
+    /// Whether the sampled low byte of `WORD_002C_OPAQUE` was nonzero.
     pub const fn state_002c_low_byte_was_nonzero(self) -> bool {
         self.state_002c_low_byte_nonzero
     }
@@ -584,7 +584,7 @@ impl BluetoothModemLpTimerRegisters {
     /// Execute exactly one source-127 register-classification prefix.
     ///
     /// The method never waits, loops, allocates or calls software. A zero
-    /// `STATUS_0038` returns `None` after one read. Every other branch is
+    /// `WORD_0038_OPAQUE` returns `None` after one read. Every other branch is
     /// fenced and returns the path that requires the common timer handler.
     pub fn classify_interrupt(&mut self) -> Option<BluetoothModemLpTimerInterruptObservation> {
         let mut transaction = HardwareModemLpTimerTransaction {

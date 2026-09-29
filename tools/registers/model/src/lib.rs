@@ -1699,12 +1699,53 @@ fn validate_review_annotations(
 pub const OPAQUE_SUFFIX: &str = "_OPAQUE";
 
 /// Other spellings of unknown meaning; an opaque name uses [`OPAQUE_SUFFIX`].
-const UNESTABLISHED_WORDS: [&str; 2] = ["UNKNOWN", "UNNAMED"];
+const UNESTABLISHED_WORDS: [&str; 3] = ["UNKNOWN", "UNNAMED", "UNCLASSIFIED"];
+
+/// Name words that record how the vendor writes bits rather than what they
+/// mean: a name made of them describes no established meaning.
+const WRITER_WORDS: [&[&str]; 3] = [&["SET", "BY"], &["FORCE", "ZERO"], &["FORCE", "ONE"]];
+
+/// A name that states position or a writer's action instead of meaning:
+/// a trailing register offset, bit positions alone, a writer's action, or a
+/// complete written image. Such a name is opaque and ends in
+/// [`OPAQUE_SUFFIX`], with the position inside it.
+fn positional_reason(leaf: &str) -> Option<&'static str> {
+    let words: Vec<&str> = leaf.split('_').collect();
+    let offset = words.last().is_some_and(|word| {
+        (3..=4).contains(&word.len())
+            && word
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase())
+            && word.chars().any(|c| c.is_ascii_digit())
+    });
+    if offset && words.len() > 1 {
+        return Some("a register offset");
+    }
+    if words
+        .iter()
+        .all(|word| matches!(*word, "BIT" | "BITS") || word.chars().all(|c| c.is_ascii_digit()))
+    {
+        return Some("bit positions alone");
+    }
+    if WRITER_WORDS.iter().any(|pattern| {
+        words
+            .windows(pattern.len())
+            .any(|window| window == *pattern)
+    }) {
+        return Some("the vendor's write action");
+    }
+    if matches!(words.as_slice(), ["IMAGE"] | ["INIT", "IMAGE"]) {
+        return Some("a complete written image");
+    }
+    None
+}
 
 /// A register or field name claims no more meaning than its origin supports:
 /// every one is reviewed as vendor, descriptive or opaque; an opaque entity,
 /// and only an opaque one, ends in [`OPAQUE_SUFFIX`], no name spells unknown
 /// meaning another way, and a vendor name cites the source it was taken from.
+/// A name of ours that states position or a writer's action instead of
+/// meaning is opaque.
 fn validate_naming(entity: &str, annotation: Option<&ReviewAnnotation>) -> Result<()> {
     use oer_register_contracts::NameOrigin;
 
@@ -1718,11 +1759,23 @@ fn validate_naming(entity: &str, annotation: Option<&ReviewAnnotation>) -> Resul
         )));
     }
     let opaque_name = leaf.ends_with(OPAQUE_SUFFIX);
+    if !opaque_name && leaf.contains(&OPAQUE_SUFFIX[1..]) {
+        return Err(Error::message(format!(
+            "register entity {entity:?} spells opaque inside its name; end it in {OPAQUE_SUFFIX:?}"
+        )));
+    }
     let Some(naming) = annotation.and_then(|annotation| annotation.naming) else {
         return Err(Error::message(format!(
             "register entity {entity:?} has no reviewed naming (vendor, descriptive or opaque)"
         )));
     };
+    if naming == NameOrigin::Descriptive
+        && let Some(reason) = positional_reason(leaf)
+    {
+        return Err(Error::message(format!(
+            "register entity {entity:?} names {reason} instead of a meaning; name it by position with {OPAQUE_SUFFIX:?} and review it as opaque"
+        )));
+    }
     match Some(naming) {
         Some(NameOrigin::Opaque) if !opaque_name => Err(Error::message(format!(
             "register entity {entity:?} is reviewed as opaque but its name does not end in {OPAQUE_SUFFIX:?}"
@@ -3249,7 +3302,7 @@ locator = "identity"
                 .to_string()
                 .contains("has no reviewed naming")
         );
-        for name in ["BIT_3_UNKNOWN", "UNNAMED_WORD"] {
+        for name in ["BIT_3_UNKNOWN", "UNNAMED_WORD", "UNCLASSIFIED_31_8"] {
             assert!(
                 naming_error(name, "")
                     .unwrap()
@@ -3260,6 +3313,47 @@ locator = "identity"
         assert_eq!(naming_error("CONTROL", ""), None);
         // A draft may lack naming; publication may not.
         assert!(validate_review_annotations(&[unreviewed], NamingRequirement::Consistent).is_ok());
+    }
+
+    #[test]
+    fn positional_and_writer_names_are_opaque() {
+        for name in [
+            "INIT_BYTES_0254",
+            "CONFIG_00D0",
+            "BITS_5_9",
+            "BIT_18",
+            "SET_BY_PHY_INIT_BRANCH_BIT_18",
+            "CONFIG_FORCE_ZERO_29",
+            "IMAGE",
+            "INIT_IMAGE",
+        ] {
+            assert!(
+                naming_error(name, "")
+                    .unwrap()
+                    .contains("instead of a meaning"),
+                "{name}"
+            );
+            let opaque = format!("{name}_OPAQUE");
+            let review = format!("[[review]]\nentity = \"RADIO.{opaque}\"\nnaming = \"opaque\"\n");
+            assert_eq!(naming_error(&opaque, &review), None, "{opaque}");
+        }
+        // Words and indices that carry meaning stay descriptive.
+        for name in [
+            "TSF_BITS_35_10",
+            "SOURCE_17",
+            "RST_MODEM_ECB",
+            "RX_SETUP_IMAGE_0",
+        ] {
+            assert_eq!(naming_error(name, ""), None, "{name}");
+        }
+        // A vendor name keeps the source's spelling.
+        let vendor = "[[review]]\nentity = \"RADIO.CONFIG_00D0\"\nsources = [\"VENDOR_HEADER\"]\nnaming = \"vendor\"\n";
+        assert_eq!(naming_error("CONFIG_00D0", vendor), None);
+        assert!(
+            naming_error("OPAQUE_25", "")
+                .unwrap()
+                .contains("spells opaque inside")
+        );
     }
 
     #[test]

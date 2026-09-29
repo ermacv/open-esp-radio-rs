@@ -157,10 +157,10 @@ impl BluetoothPrimaryInterruptControl for HardwareInterruptControl<'_> {
             source_15_pending: snapshot.source_15(),
             source_21_pending: snapshot.source_21(),
             sources_27_or_28_pending: snapshot.sources_27_28() != 0,
-            unclassified_pending: snapshot.unclassified_0_14() != 0
-                || snapshot.unclassified_16_20() != 0
-                || snapshot.unclassified_22_26() != 0
-                || snapshot.unclassified_29_31() != 0,
+            unclassified_pending: snapshot.bits_0_14_opaque() != 0
+                || snapshot.bits_16_20_opaque() != 0
+                || snapshot.bits_22_26_opaque() != 0
+                || snapshot.bits_29_31_opaque() != 0,
         }
     }
 
@@ -170,10 +170,10 @@ impl BluetoothPrimaryInterruptControl for HardwareInterruptControl<'_> {
             source_8_pending: snapshot.source_8(),
             source_9_pending: snapshot.source_9(),
             source_12_pending: snapshot.source_12(),
-            unclassified_pending: snapshot.unclassified_0_2() != 0
-                || snapshot.unclassified_4_7() != 0
-                || snapshot.unclassified_10_11() != 0
-                || snapshot.unclassified_13_31() != 0,
+            unclassified_pending: snapshot.bits_0_2_opaque() != 0
+                || snapshot.bits_4_7_opaque() != 0
+                || snapshot.bits_10_11_opaque() != 0
+                || snapshot.bits_13_31_opaque() != 0,
         }
     }
 

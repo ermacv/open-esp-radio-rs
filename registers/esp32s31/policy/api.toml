@@ -1515,28 +1515,28 @@ sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
 name = "BluetoothModemLpTimerCompareImage"
 description = "Register-specific compare image produced only by the reviewed finite modem low-power timer deadline projection."
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "VALUE_006C"
+register = "WORD_006C_OPAQUE"
 sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
 
 [[opaque-domains]]
 name = "BluetoothPhyInitEnvironmentMemberImage"
 description = "Register-specific complete image produced from the validated BLE PHY environment member address."
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_DYNAMIC_IMAGE_04A0"
+register = "WORD_04A0_OPAQUE"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[opaque-domains]]
 name = "BluetoothPhyInitConfigurationWordImage"
 description = "Complete controller-configuration word the BLE PHY initialization publishes at 0x20101940."
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_VALUE_0540"
+register = "WORD_0540_OPAQUE"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[opaque-domains]]
 name = "BluetoothPhyControllerEnvironmentTailImage"
 description = "Register-specific complete image produced from the validated BLE PHY environment tail address."
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "PHY_INIT_DYNAMIC_IMAGE_024C"
+register = "WORD_024C_OPAQUE"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[zero-based-field-writes]]
@@ -1647,7 +1647,7 @@ sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
 [[zero-register-writes]]
 name = "prepare_bluetooth_modem_lp_timer_command_004c"
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "COMMAND_004C"
+register = "WORD_004C_OPAQUE"
 sources = [
     "BLOB_LIBBTDM_RUNTIME_CONTROL",
     "PUBLIC_ESP32S31_BT_RUNTIME_TIMER_ROLE",
@@ -1656,13 +1656,13 @@ sources = [
 [[zero-register-writes]]
 name = "clear_bluetooth_modem_lp_timer_state_0024"
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "STATE_0024"
+register = "WORD_0024_OPAQUE"
 sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
 
 [[zero-register-writes]]
 name = "clear_bluetooth_modem_lp_timer_state_002c"
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "STATE_002C"
+register = "WORD_002C_OPAQUE"
 sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
 
 [[zero-register-writes]]
@@ -1674,13 +1674,13 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[zero-register-writes]]
 name = "clear_ble_phy_init_zero_0074"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_ZERO_0074"
+register = "WORD_0074_OPAQUE"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[zero-register-writes]]
 name = "clear_ble_phy_controller_value_0244"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "PHY_INIT_ZERO_0244"
+register = "WORD_0244_OPAQUE"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[zero-register-writes]]
@@ -1755,7 +1755,7 @@ sources = ["ROM_REV0_WDEV_APPEND_RX_BLOCKS", "BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX"]
 name = "phy_memory_data_0"
 peripheral = "PHY_MEMORY"
 register = "DATA_0"
-field = "OPAQUE_DATA"
+field = "BITS_0_31_OPAQUE"
 domain = "PhyMemoryData0"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_WRITE_PBUS_MEM", "BLOB_LIBPHY_PHY_SET_TX_CFR_MEM", "ROM_REV0_PHY_WRITE_GAIN_MEM"]
@@ -1764,7 +1764,7 @@ sources = ["ROM_REV0_PHY_WRITE_PBUS_MEM", "BLOB_LIBPHY_PHY_SET_TX_CFR_MEM", "ROM
 name = "phy_memory_data_1"
 peripheral = "PHY_MEMORY"
 register = "DATA_1"
-field = "OPAQUE_DATA"
+field = "BITS_0_31_OPAQUE"
 domain = "PhyMemoryData1"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
@@ -1773,7 +1773,7 @@ sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
 name = "phy_memory_data_2"
 peripheral = "PHY_MEMORY"
 register = "DATA_2"
-field = "OPAQUE_DATA"
+field = "BITS_0_31_OPAQUE"
 domain = "PhyMemoryData2"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
@@ -1782,7 +1782,7 @@ sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
 name = "frequency_parameter_0"
 peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
 register = "FREQUENCY_PARAMETER_0_OPAQUE"
-field = "OPAQUE_VALUE"
+field = "BITS_0_31_OPAQUE"
 domain = "FrequencyParameter0Image"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
@@ -1791,7 +1791,7 @@ sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 name = "agc_saturation_gain_low"
 peripheral = "PHY_AGC_ORACLE"
 register = "SATURATION_GAIN_LOW"
-field = "OPAQUE_VALUE"
+field = "BITS_0_31_OPAQUE"
 domain = "AgcSaturationGainLow"
 exposure = "facade"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
@@ -1800,7 +1800,7 @@ sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
 name = "agc_saturation_gain_high"
 peripheral = "PHY_AGC_ORACLE"
 register = "SATURATION_GAIN_HIGH"
-field = "OPAQUE_VALUE"
+field = "BITS_0_31_OPAQUE"
 domain = "AgcSaturationGainHigh"
 exposure = "facade"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
@@ -2008,7 +2008,7 @@ sources = [
 [[fixed-register-images]]
 name = "prepare_bluetooth_modem_lp_timer_command_0004"
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "COMMAND_0004"
+register = "WORD_0004_OPAQUE"
 value = 0x00000001
 sources = [
     "BLOB_LIBBTDM_RUNTIME_CONTROL",
@@ -2018,7 +2018,7 @@ sources = [
 [[fixed-register-images]]
 name = "prepare_bluetooth_modem_lp_timer_command_0008"
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "COMMAND_0008"
+register = "WORD_0008_OPAQUE"
 value = 0x00000001
 sources = [
     "BLOB_LIBBTDM_RUNTIME_CONTROL",
@@ -2028,7 +2028,7 @@ sources = [
 [[fixed-register-images]]
 name = "prepare_bluetooth_modem_lp_timer_command_0014"
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "COMMAND_0014"
+register = "WORD_0014_OPAQUE"
 value = 0xffffffff
 sources = [
     "BLOB_LIBBTDM_RUNTIME_CONTROL",
@@ -2038,7 +2038,7 @@ sources = [
 [[fixed-register-images]]
 name = "prepare_bluetooth_modem_lp_timer_command_0034"
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "COMMAND_0034"
+register = "WORD_0034_OPAQUE"
 value = 0xffffffff
 sources = [
     "BLOB_LIBBTDM_RUNTIME_CONTROL",
@@ -2048,7 +2048,7 @@ sources = [
 [[fixed-register-images]]
 name = "prepare_bluetooth_modem_lp_timer_command_0010"
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "COMMAND_0010"
+register = "WORD_0010_OPAQUE"
 value = 0x00000002
 sources = [
     "BLOB_LIBBTDM_RUNTIME_CONTROL",
@@ -2058,21 +2058,21 @@ sources = [
 [[fixed-register-images]]
 name = "publish_bluetooth_modem_lp_timer_software_pending"
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "STATE_0024"
+register = "WORD_0024_OPAQUE"
 value = 0x00000001
 sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
 
 [[fixed-register-images]]
 name = "disable_bluetooth_modem_lp_timer_compare"
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "COMMAND_0014"
+register = "WORD_0014_OPAQUE"
 value = 0x00040000
 sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
 
 [[fixed-register-images]]
 name = "trigger_bluetooth_modem_lp_timer_command"
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "COMMAND_0010"
+register = "WORD_0010_OPAQUE"
 value = 0x00040000
 sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
 
@@ -2224,21 +2224,21 @@ sources = ["BLOB_LIBBTDM_SCHEDULER_RUN_EVENT"]
 [[fixed-register-images]]
 name = "publish_ble_phy_init_value_0138"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_VALUE_0138"
+register = "WORD_0138_OPAQUE"
 value = 0x0000065b
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[fixed-register-images]]
 name = "publish_ble_phy_init_bytes_04a4"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BYTES_04A4"
+register = "WORD_04A4_OPAQUE"
 value = 0x02020202
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[fixed-register-images]]
 name = "publish_ble_phy_init_bytes_04a8"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BYTES_04A8"
+register = "WORD_04A8_OPAQUE"
 value = 0x02020202
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
@@ -2270,7 +2270,7 @@ sources = ["BLOB_LIBBLE_CONNECTION_ABORT_CONTROL"]
 [[fixed-register-images]]
 name = "publish_ble_phy_init_value_045c"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_VALUE_045C"
+register = "WORD_045C_OPAQUE"
 value = 0x00000008
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
@@ -2305,7 +2305,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[fixed-register-images]]
 name = "publish_ble_phy_init_control_0400"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_CONTROL_0400"
+register = "WORD_0400_OPAQUE"
 value = 0x80000000
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
@@ -2340,8 +2340,8 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[full-register-writes]]
 name = "publish_bluetooth_modem_lp_timer_compare"
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "VALUE_006C"
-field = "IMAGE"
+register = "WORD_006C_OPAQUE"
+field = "BITS_0_31_OPAQUE"
 domain = "BluetoothModemLpTimerCompareImage"
 exposure = "facade"
 sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
@@ -2795,7 +2795,7 @@ sources = ["BLOB_LIBPP_HAL_HE_TX"]
 name = "publish_mac_tx_he_control_field"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "HE_CONTROL%s"
-fields = ["IMAGE"]
+fields = ["VALUE"]
 sources = ["BLOB_LIBPP_HAL_HE_TX", "BLOB_LIBNET80211_HE_CONTROL_TX"]
 
 [[zero-based-field-writes]]
@@ -3591,7 +3591,7 @@ sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 [[field-or-modifies]]
 name = "prepare_bluetooth_modem_lp_timer_control_25"
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "CONTROL_0078"
+register = "WORD_0078_OPAQUE"
 fields = [{ field = "CONTROL_25", source-bit-offset = 0 }]
 value = 0x00000001
 exposure = "facade"
@@ -3603,7 +3603,7 @@ sources = [
 [[field-or-modifies]]
 name = "publish_bluetooth_modem_lp_timer_control_1"
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "CONTROL_0058"
+register = "WORD_0058_OPAQUE"
 fields = [{ field = "CONTROL_1", source-bit-offset = 0 }]
 value = 0x00000001
 exposure = "facade"
@@ -3615,7 +3615,7 @@ sources = [
 [[field-replace-modifies]]
 name = "clear_bluetooth_low_power_controls_0_4"
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "CONTROL_0058"
+register = "WORD_0058_OPAQUE"
 fields = [
     { field = "CONTROL_0", source-bit-offset = 0 },
     { field = "CONTROL_4", source-bit-offset = 4 },
@@ -3729,7 +3729,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-or-modifies]]
 name = "or_ble_phy_init_low_byte_pair"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BYTES_0254"
+register = "WORD_0254_OPAQUE"
 fields = [
     { field = "INIT_BYTE_0", source-bit-offset = 0 },
     { field = "INIT_BYTE_1", source-bit-offset = 8 },
@@ -3741,7 +3741,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-or-modifies]]
 name = "or_ble_phy_init_byte_2"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BYTES_0254"
+register = "WORD_0254_OPAQUE"
 fields = [
     { field = "INIT_BYTE_2_LOW_7", source-bit-offset = 0 },
     { field = "INIT_BYTE_2_HIGH", source-bit-offset = 7 },
@@ -3753,7 +3753,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-or-modifies]]
 name = "enable_ble_phy_init_control_0400"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_CONTROL_0400"
+register = "WORD_0400_OPAQUE"
 fields = [{ field = "INIT_ENABLE_22", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
@@ -3763,7 +3763,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 name = "set_ble_phy_device_table_control_bit_18"
 peripheral = "BTMAC_BLE_PHY_INIT"
 register = "DEVICE_TABLE_CONTROL"
-fields = [{ field = "SET_BY_PHY_INIT_BRANCH_BIT_18", source-bit-offset = 0 }]
+fields = [{ field = "BIT_18_OPAQUE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
@@ -3795,7 +3795,7 @@ peripheral = "BT_V3_2_BASEBAND"
 register = "LE_TX_ON_DELAY"
 fields = [
     { field = "ENCODED_VALUE_MINUS_10", source-bit-offset = 0 },
-    { field = "FORCE_ZERO_BITS_16_18", source-bit-offset = 8 },
+    { field = "BITS_16_18_OPAQUE", source-bit-offset = 8 },
 ]
 domain = "BluetoothPhyInitTimingByte"
 exposure = "facade"
@@ -3813,7 +3813,7 @@ sources = ["BLOB_LIBBLE_BASE_STACK_TASK_ENABLE"]
 [[field-replace-modifies]]
 name = "clear_ble_phy_init_low_byte_pair"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BYTES_0254"
+register = "WORD_0254_OPAQUE"
 fields = [
     { field = "INIT_BYTE_0", source-bit-offset = 0 },
     { field = "INIT_BYTE_1", source-bit-offset = 0 },
@@ -3825,7 +3825,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-replace-modifies]]
 name = "clear_ble_phy_init_byte_2_low_7"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BYTES_0254"
+register = "WORD_0254_OPAQUE"
 fields = [{ field = "INIT_BYTE_2_LOW_7", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
@@ -3834,7 +3834,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-replace-modifies]]
 name = "publish_ble_phy_init_0550_byte_0"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BYTES_0550"
+register = "WORD_0550_OPAQUE"
 fields = [{ field = "INIT_BYTE_0", source-bit-offset = 0 }]
 value = 0x03
 exposure = "facade"
@@ -3843,7 +3843,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-replace-modifies]]
 name = "publish_ble_phy_init_0550_byte_1"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BYTES_0550"
+register = "WORD_0550_OPAQUE"
 fields = [{ field = "INIT_BYTE_1", source-bit-offset = 0 }]
 value = 0x03
 exposure = "facade"
@@ -3852,7 +3852,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-replace-modifies]]
 name = "publish_ble_phy_init_0550_byte_2"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BYTES_0550"
+register = "WORD_0550_OPAQUE"
 fields = [{ field = "INIT_BYTE_2", source-bit-offset = 0 }]
 value = 0x44
 exposure = "facade"
@@ -3861,7 +3861,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-replace-modifies]]
 name = "publish_ble_phy_init_0554_byte_0"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BYTES_0554"
+register = "WORD_0554_OPAQUE"
 fields = [{ field = "INIT_BYTE_0", source-bit-offset = 0 }]
 value = 0x10
 exposure = "facade"
@@ -3870,7 +3870,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-replace-modifies]]
 name = "publish_ble_phy_init_0554_byte_1"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BYTES_0554"
+register = "WORD_0554_OPAQUE"
 fields = [{ field = "INIT_BYTE_1", source-bit-offset = 0 }]
 value = 0x10
 exposure = "facade"
@@ -3879,7 +3879,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-replace-modifies]]
 name = "publish_ble_phy_init_0554_byte_2"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BYTES_0554"
+register = "WORD_0554_OPAQUE"
 fields = [{ field = "INIT_BYTE_2", source-bit-offset = 0 }]
 value = 0x3c
 exposure = "facade"
@@ -3888,7 +3888,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-replace-modifies]]
 name = "publish_ble_phy_init_0554_byte_3"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BYTES_0554"
+register = "WORD_0554_OPAQUE"
 fields = [{ field = "INIT_BYTE_3", source-bit-offset = 0 }]
 value = 0x28
 exposure = "facade"
@@ -3897,7 +3897,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-replace-modifies]]
 name = "publish_ble_phy_init_055c_byte_0"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BYTES_055C"
+register = "WORD_055C_OPAQUE"
 fields = [{ field = "INIT_BYTE_0", source-bit-offset = 0 }]
 value = 0x08
 exposure = "facade"
@@ -3906,7 +3906,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-replace-modifies]]
 name = "publish_ble_phy_init_055c_byte_1"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BYTES_055C"
+register = "WORD_055C_OPAQUE"
 fields = [{ field = "INIT_BYTE_1", source-bit-offset = 0 }]
 value = 0x08
 exposure = "facade"
@@ -3915,7 +3915,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-replace-modifies]]
 name = "publish_ble_phy_init_055c_byte_2"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BYTES_055C"
+register = "WORD_055C_OPAQUE"
 fields = [{ field = "INIT_BYTE_2", source-bit-offset = 0 }]
 value = 0x08
 exposure = "facade"
@@ -3924,7 +3924,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-replace-modifies]]
 name = "publish_ble_phy_init_055c_byte_3"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BYTES_055C"
+register = "WORD_055C_OPAQUE"
 fields = [{ field = "INIT_BYTE_3", source-bit-offset = 0 }]
 value = 0x08
 exposure = "facade"
@@ -3933,7 +3933,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-replace-modifies]]
 name = "publish_ble_phy_init_0558_byte_0"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BYTES_0558"
+register = "WORD_0558_OPAQUE"
 fields = [{ field = "INIT_BYTE_0", source-bit-offset = 0 }]
 value = 0x0c
 exposure = "facade"
@@ -3942,7 +3942,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-replace-modifies]]
 name = "publish_ble_phy_init_0558_byte_1"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BYTES_0558"
+register = "WORD_0558_OPAQUE"
 fields = [{ field = "INIT_BYTE_1", source-bit-offset = 0 }]
 value = 0x08
 exposure = "facade"
@@ -3951,7 +3951,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-replace-modifies]]
 name = "publish_ble_phy_init_0558_byte_2"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BYTES_0558"
+register = "WORD_0558_OPAQUE"
 fields = [{ field = "INIT_BYTE_2", source-bit-offset = 0 }]
 value = 0x0c
 exposure = "facade"
@@ -3960,7 +3960,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-replace-modifies]]
 name = "publish_ble_phy_init_0558_byte_3"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BYTES_0558"
+register = "WORD_0558_OPAQUE"
 fields = [{ field = "INIT_BYTE_3", source-bit-offset = 0 }]
 value = 0x0c
 exposure = "facade"
@@ -3969,7 +3969,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-replace-modifies]]
 name = "publish_ble_phy_init_high_half_0458"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_HIGH_HALF_0458"
+register = "WORD_0458_OPAQUE"
 fields = [{ field = "INIT_HIGH_HALF", source-bit-offset = 0 }]
 value = 0x000f
 exposure = "facade"
@@ -3978,7 +3978,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[field-replace-modifies]]
 name = "publish_ble_phy_init_low_5_054c"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_LOW_5_054C"
+register = "WORD_054C_OPAQUE"
 fields = [{ field = "INIT_LOW_5", source-bit-offset = 0 }]
 value = 0x12
 exposure = "facade"
@@ -3994,7 +3994,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[register-image-writes]]
 name = "publish_ble_phy_init_environment_member"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_DYNAMIC_IMAGE_04A0"
+register = "WORD_04A0_OPAQUE"
 domain = "BluetoothPhyInitEnvironmentMemberImage"
 exposure = "raw-only"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
@@ -4030,7 +4030,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[register-image-writes]]
 name = "publish_ble_phy_init_configuration_word"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_VALUE_0540"
+register = "WORD_0540_OPAQUE"
 domain = "BluetoothPhyInitConfigurationWordImage"
 exposure = "raw-only"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
@@ -4038,7 +4038,7 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 [[register-image-writes]]
 name = "publish_ble_phy_controller_environment_tail"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "PHY_INIT_DYNAMIC_IMAGE_024C"
+register = "WORD_024C_OPAQUE"
 domain = "BluetoothPhyControllerEnvironmentTailImage"
 exposure = "raw-only"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
@@ -4063,7 +4063,7 @@ sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "PUBLIC_ESP32S31_BT_TIME_ROLES"
 name = "observe_bluetooth_controller_latched_time"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "BTLC_TIMER_CAPTURE_0"
-field = "IMAGE"
+field = "VALUE"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "BLOB_LIBBTDM_SLEEP_TIMER_SNAPSHOT", "PUBLIC_ESP32S31_BT_TIME_ROLES"]
 
 [[fixed-register-writes]]
@@ -4171,41 +4171,41 @@ sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS", "PUBLIC_ESP32S31_BLE_COMPLETION_R
 name = "capture_bluetooth_irq_diagnostic_detail_0"
 peripheral = "BLUETOOTH_INTERRUPT_BANK"
 register = "IRQ_DIAGNOSTIC_DETAIL_0"
-field = "IMAGE"
+field = "VALUE"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 
 [[field-reads]]
 name = "capture_bluetooth_irq_diagnostic_detail_1"
 peripheral = "BLUETOOTH_INTERRUPT_BANK"
 register = "IRQ_DIAGNOSTIC_DETAIL_1"
-field = "IMAGE"
+field = "VALUE"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 
 [[field-reads]]
 name = "capture_bluetooth_irq_diagnostic_state"
 peripheral = "BLUETOOTH_INTERRUPT_BANK"
 register = "IRQ_DIAGNOSTIC_STATE"
-field = "IMAGE"
+field = "VALUE"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 
 [[field-reads]]
 name = "observe_bluetooth_modem_lp_timer_status_0038"
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "STATUS_0038"
-field = "IMAGE"
+register = "WORD_0038_OPAQUE"
+field = "BITS_0_31_OPAQUE"
 sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_IRQ"]
 
 [[field-reads]]
 name = "observe_bluetooth_modem_lp_timer_value_006c"
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "VALUE_006C"
-field = "IMAGE"
+register = "WORD_006C_OPAQUE"
+field = "BITS_0_31_OPAQUE"
 sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_IRQ", "BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
 
 [[field-reads]]
 name = "observe_bluetooth_modem_lp_timer_control_2"
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "CONTROL_0058"
+register = "WORD_0058_OPAQUE"
 field = "CONTROL_2"
 sources = [
     "BLOB_LIBBTDM_MODEM_LP_TIMER_IRQ",
@@ -4215,22 +4215,22 @@ sources = [
 [[field-reads]]
 name = "observe_bluetooth_modem_lp_timer_state_0024"
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "STATE_0024"
+register = "WORD_0024_OPAQUE"
 field = "LOW_BYTE"
 sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_IRQ", "BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
 
 [[field-reads]]
 name = "observe_bluetooth_modem_lp_timer_state_002c"
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "STATE_002C"
+register = "WORD_002C_OPAQUE"
 field = "LOW_BYTE"
 sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_IRQ", "BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
 
 [[field-reads]]
 name = "observe_bluetooth_modem_lp_timer_counter"
 peripheral = "BTDM_RUNTIME_CONTROL"
-register = "STATUS_0048"
-field = "IMAGE"
+register = "WORD_0048_OPAQUE"
+field = "BITS_0_31_OPAQUE"
 sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
 
 [[fixed-register-images]]
@@ -4599,7 +4599,7 @@ sources = ["BLOB_LIBBTBB_BT_TX_SET"]
 name = "initialize_bluetooth_baseband_coexistence_18"
 peripheral = "BT_V3_2_BASEBAND"
 register = "COEX_CONFIG"
-fields = [{ field = "CONFIG_FORCE_ONE_18", source-bit-offset = 0 }]
+fields = [{ field = "BIT_18_OPAQUE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
@@ -4608,7 +4608,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 name = "initialize_bluetooth_baseband_coexistence_20"
 peripheral = "BT_V3_2_BASEBAND"
 register = "COEX_CONFIG"
-fields = [{ field = "CONFIG_FORCE_ONE_20", source-bit-offset = 0 }]
+fields = [{ field = "BIT_20_OPAQUE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
@@ -4635,7 +4635,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 name = "initialize_bluetooth_baseband_cca_bit_23"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "CCA_CONFIG"
-fields = [{ field = "CONFIG_FORCE_ONE_23", source-bit-offset = 0 }]
+fields = [{ field = "BIT_23_OPAQUE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
@@ -4859,7 +4859,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_gain_baseband"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "BASEBAND_INIT_7CD0"
+register = "WORD_7CD0_OPAQUE"
 fields = [
     { field = "INIT_LOW_OPAQUE", source-bit-offset = 0 },
     { field = "INIT_LOW_1_OPAQUE", source-bit-offset = 1 },
@@ -4894,7 +4894,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_INIT"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_rssi_threshold_00a0"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "SHARED_RX_SENSE_AND_DETECT_00A0"
+register = "WORD_00A0_OPAQUE"
 fields = [{ field = "BITS_16_23_OPAQUE", source-bit-offset = 0 }]
 value = 0x9c
 exposure = "facade"
@@ -4903,7 +4903,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_rssi_threshold_00a8_high"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "SHARED_RX_SENSE_AND_DETECT_00A8"
+register = "WORD_00A8_OPAQUE"
 fields = [{ field = "BITS_17_24_OPAQUE", source-bit-offset = 0 }]
 value = 0x9c
 exposure = "facade"
@@ -4912,7 +4912,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_rssi_threshold_00a8_low"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "SHARED_RX_SENSE_AND_DETECT_00A8"
+register = "WORD_00A8_OPAQUE"
 fields = [{ field = "BITS_4_11_OPAQUE", source-bit-offset = 0 }]
 value = 0x88
 exposure = "facade"
@@ -4921,7 +4921,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_rssi_threshold_00b8"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "SHARED_RX_SENSE_AND_DETECT_00B8"
+register = "WORD_00B8_OPAQUE"
 fields = [{ field = "BITS_12_19_OPAQUE", source-bit-offset = 0 }]
 value = 0x88
 exposure = "facade"
@@ -4939,7 +4939,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_target_00b0"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_RECORRECT_AND_TARGET_00B0"
+register = "WORD_00B0_OPAQUE"
 fields = [{ field = "TARGET_BITS_23_31", source-bit-offset = 0 }]
 value = 0x1d4
 exposure = "facade"
@@ -4957,7 +4957,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_target_008c_low"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "RX_CONFIG_008C"
+register = "WORD_008C_OPAQUE"
 fields = [{ field = "TARGET_BITS_0_8", source-bit-offset = 0 }]
 value = 0x1d4
 exposure = "facade"
@@ -4966,7 +4966,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_target_008c_high"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "RX_CONFIG_008C"
+register = "WORD_008C_OPAQUE"
 fields = [{ field = "TARGET_BITS_9_17", source-bit-offset = 0 }]
 value = 0x1dc
 exposure = "facade"
@@ -4984,7 +4984,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_target_00b4"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_RECORRECT_AND_TARGET_00B4"
+register = "WORD_00B4_OPAQUE"
 fields = [{ field = "TARGET_BITS_23_31", source-bit-offset = 0 }]
 value = 0x1ce
 exposure = "facade"
@@ -4993,7 +4993,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_restart_config_0088"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "RX_CONFIG_0088"
+register = "WORD_0088_OPAQUE"
 fields = [{ field = "CONFIG_BIT_30_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
@@ -5002,7 +5002,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_restart_control_00bc"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_RECORRECT_AND_RESTART_00BC"
+register = "WORD_00BC_OPAQUE"
 fields = [{ field = "RESTART_BIT_31", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
@@ -5011,7 +5011,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_restart_config_0084"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_RESTART_CONFIG_0084"
+register = "WORD_0084_OPAQUE"
 fields = [{ field = "FINITE_BITS_24_31", source-bit-offset = 0 }]
 value = 0xf4
 exposure = "facade"
@@ -5021,7 +5021,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_e0_24_31"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00E0_OPAQUE"
-fields = [{ field = "BITS_24_31", source-bit-offset = 0 }]
+fields = [{ field = "BITS_24_31_OPAQUE", source-bit-offset = 0 }]
 value = 0x14
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5030,7 +5030,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_e0_16_23"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00E0_OPAQUE"
-fields = [{ field = "BITS_16_23", source-bit-offset = 0 }]
+fields = [{ field = "BITS_16_23_OPAQUE", source-bit-offset = 0 }]
 value = 0x0e
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5039,7 +5039,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_e0_8_15"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00E0_OPAQUE"
-fields = [{ field = "BITS_8_15", source-bit-offset = 0 }]
+fields = [{ field = "BITS_8_15_OPAQUE", source-bit-offset = 0 }]
 value = 0x0e
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5048,7 +5048,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_e4_16_23"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00E4_OPAQUE"
-fields = [{ field = "BITS_16_23", source-bit-offset = 0 }]
+fields = [{ field = "BITS_16_23_OPAQUE", source-bit-offset = 0 }]
 value = 0xec
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5057,7 +5057,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_e4_8_15"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00E4_OPAQUE"
-fields = [{ field = "BITS_8_15", source-bit-offset = 0 }]
+fields = [{ field = "BITS_8_15_OPAQUE", source-bit-offset = 0 }]
 value = 0xf2
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5066,7 +5066,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_e4_0_7"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00E4_OPAQUE"
-fields = [{ field = "BITS_0_7", source-bit-offset = 0 }]
+fields = [{ field = "BITS_0_7_OPAQUE", source-bit-offset = 0 }]
 value = 0xf2
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5075,7 +5075,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_e0_0_7"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00E0_OPAQUE"
-fields = [{ field = "BITS_0_7", source-bit-offset = 0 }]
+fields = [{ field = "BITS_0_7_OPAQUE", source-bit-offset = 0 }]
 value = 0x0f
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5084,7 +5084,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_e8_24_31"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00E8_OPAQUE"
-fields = [{ field = "BITS_24_31", source-bit-offset = 0 }]
+fields = [{ field = "BITS_24_31_OPAQUE", source-bit-offset = 0 }]
 value = 0xf1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5093,7 +5093,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_ec_24_31"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00EC_OPAQUE"
-fields = [{ field = "BITS_24_31", source-bit-offset = 0 }]
+fields = [{ field = "BITS_24_31_OPAQUE", source-bit-offset = 0 }]
 value = 0x2d
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5102,7 +5102,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_ec_8_15"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00EC_OPAQUE"
-fields = [{ field = "BITS_8_15", source-bit-offset = 0 }]
+fields = [{ field = "BITS_8_15_OPAQUE", source-bit-offset = 0 }]
 value = 0xd3
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5111,7 +5111,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_f0_24_31"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00F0_OPAQUE"
-fields = [{ field = "BITS_24_31", source-bit-offset = 0 }]
+fields = [{ field = "BITS_24_31_OPAQUE", source-bit-offset = 0 }]
 value = 0xa6
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5120,7 +5120,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_e4_24_31"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00E4_OPAQUE"
-fields = [{ field = "BITS_24_31", source-bit-offset = 0 }]
+fields = [{ field = "BITS_24_31_OPAQUE", source-bit-offset = 0 }]
 value = 0x1e
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5129,7 +5129,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_e8_16_23"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00E8_OPAQUE"
-fields = [{ field = "BITS_16_23", source-bit-offset = 0 }]
+fields = [{ field = "BITS_16_23_OPAQUE", source-bit-offset = 0 }]
 value = 0xe2
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5138,7 +5138,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_ec_16_23"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00EC_OPAQUE"
-fields = [{ field = "BITS_16_23", source-bit-offset = 0 }]
+fields = [{ field = "BITS_16_23_OPAQUE", source-bit-offset = 0 }]
 value = 0x28
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5147,7 +5147,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_ec_0_7"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00EC_OPAQUE"
-fields = [{ field = "BITS_0_7", source-bit-offset = 0 }]
+fields = [{ field = "BITS_0_7_OPAQUE", source-bit-offset = 0 }]
 value = 0xd8
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5156,7 +5156,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_f0_16_23"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00F0_OPAQUE"
-fields = [{ field = "BITS_16_23", source-bit-offset = 0 }]
+fields = [{ field = "BITS_16_23_OPAQUE", source-bit-offset = 0 }]
 value = 0xa6
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5165,7 +5165,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_100_20_23"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_0100_OPAQUE"
-fields = [{ field = "BITS_20_23", source-bit-offset = 0 }]
+fields = [{ field = "BITS_20_23_OPAQUE", source-bit-offset = 0 }]
 value = 6
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5174,7 +5174,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_100_24_27"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_0100_OPAQUE"
-fields = [{ field = "BITS_24_27", source-bit-offset = 0 }]
+fields = [{ field = "BITS_24_27_OPAQUE", source-bit-offset = 0 }]
 value = 6
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5183,7 +5183,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_100_16_19"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_0100_OPAQUE"
-fields = [{ field = "BITS_16_19", source-bit-offset = 0 }]
+fields = [{ field = "BITS_16_19_OPAQUE", source-bit-offset = 0 }]
 value = 8
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5192,7 +5192,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_100_12_15"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_0100_OPAQUE"
-fields = [{ field = "BITS_12_15", source-bit-offset = 0 }]
+fields = [{ field = "BITS_12_15_OPAQUE", source-bit-offset = 0 }]
 value = 0x0a
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5201,7 +5201,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_100_28_31"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_0100_OPAQUE"
-fields = [{ field = "BITS_28_31", source-bit-offset = 0 }]
+fields = [{ field = "BITS_28_31_OPAQUE", source-bit-offset = 0 }]
 value = 6
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5210,7 +5210,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_e8_10_15"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00E8_OPAQUE"
-fields = [{ field = "BITS_10_15", source-bit-offset = 0 }]
+fields = [{ field = "BITS_10_15_OPAQUE", source-bit-offset = 0 }]
 value = 3
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5299,7 +5299,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_restart_btagc_31"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_RESTART_BITS_00DC"
+register = "WORD_00DC_OPAQUE"
 fields = [{ field = "RESTART_BIT_31", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
@@ -5308,7 +5308,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_restart_btagc_30"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_RESTART_BITS_00DC"
+register = "WORD_00DC_OPAQUE"
 fields = [{ field = "RESTART_BIT_30", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
@@ -5317,7 +5317,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_restart_btagc_29"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_RESTART_BITS_00DC"
+register = "WORD_00DC_OPAQUE"
 fields = [{ field = "RESTART_BIT_29", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
@@ -5326,7 +5326,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_restart_btagc_27"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_RESTART_BITS_00DC"
+register = "WORD_00DC_OPAQUE"
 fields = [{ field = "RESTART_BIT_27", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
@@ -5335,7 +5335,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_restart_btagc_28"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_RESTART_BITS_00DC"
+register = "WORD_00DC_OPAQUE"
 fields = [{ field = "RESTART_BIT_28", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
@@ -5345,7 +5345,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_f8_2_7"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00F8_OPAQUE"
-fields = [{ field = "BITS_2_7", source-bit-offset = 0 }]
+fields = [{ field = "BITS_2_7_OPAQUE", source-bit-offset = 0 }]
 value = 0x0c
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5354,7 +5354,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_f8_8_13"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00F8_OPAQUE"
-fields = [{ field = "BITS_8_13", source-bit-offset = 0 }]
+fields = [{ field = "BITS_8_13_OPAQUE", source-bit-offset = 0 }]
 value = 0x0c
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5363,7 +5363,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_f8_14_19"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00F8_OPAQUE"
-fields = [{ field = "BITS_14_19", source-bit-offset = 0 }]
+fields = [{ field = "BITS_14_19_OPAQUE", source-bit-offset = 0 }]
 value = 0x20
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5372,7 +5372,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_f8_26_31"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00F8_OPAQUE"
-fields = [{ field = "BITS_26_31", source-bit-offset = 0 }]
+fields = [{ field = "BITS_26_31_OPAQUE", source-bit-offset = 0 }]
 value = 0x0c
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5381,7 +5381,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_f8_20_25"
 peripheral = "PHY_BTAGC_RECOVERED"
 register = "AGC_RESTART_IMAGE_00F8_OPAQUE"
-fields = [{ field = "BITS_20_25", source-bit-offset = 0 }]
+fields = [{ field = "BITS_20_25_OPAQUE", source-bit-offset = 0 }]
 value = 5
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5389,7 +5389,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_recorrection_00b4_bit_8"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_RECORRECT_AND_TARGET_00B4"
+register = "WORD_00B4_OPAQUE"
 fields = [{ field = "RECORRECT_BIT_8", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
@@ -5398,7 +5398,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_recorrection_00b4_bits_9_13"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_RECORRECT_AND_TARGET_00B4"
+register = "WORD_00B4_OPAQUE"
 fields = [{ field = "RECORRECT_BITS_9_13", source-bit-offset = 0 }]
 value = 0x0a
 exposure = "facade"
@@ -5407,7 +5407,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_recorrection_00bc_set_pair"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_RECORRECT_AND_RESTART_00BC"
+register = "WORD_00BC_OPAQUE"
 fields = [
     { field = "RECORRECT_BIT_5", source-bit-offset = 0 },
     { field = "RECORRECT_BIT_7", source-bit-offset = 1 },
@@ -5428,7 +5428,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_recorrection_00bc_clear_pair"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_RECORRECT_AND_RESTART_00BC"
+register = "WORD_00BC_OPAQUE"
 fields = [
     { field = "RECORRECT_BIT_6", source-bit-offset = 0 },
     { field = "RECORRECT_BIT_8", source-bit-offset = 1 },
@@ -5467,7 +5467,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_recorrection_00b0_bits_18_22"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_RECORRECT_AND_TARGET_00B0"
+register = "WORD_00B0_OPAQUE"
 fields = [{ field = "RECORRECT_BITS_18_22", source-bit-offset = 0 }]
 value = 0x18
 exposure = "facade"
@@ -5476,7 +5476,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_recorrection_00b0_bits_13_17"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_RECORRECT_AND_TARGET_00B0"
+register = "WORD_00B0_OPAQUE"
 fields = [{ field = "RECORRECT_BITS_13_17", source-bit-offset = 0 }]
 value = 0x18
 exposure = "facade"
@@ -5494,7 +5494,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_recorrection_control_006c"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_RECORRECT_CONTROL_006C"
+register = "WORD_006C_OPAQUE"
 fields = [{ field = "FINITE_BITS_24_31", source-bit-offset = 0 }]
 value = 0x0f
 exposure = "facade"
@@ -5503,7 +5503,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_detection_00a0"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "SHARED_RX_SENSE_AND_DETECT_00A0"
+register = "WORD_00A0_OPAQUE"
 fields = [{ field = "BITS_24_27_OPAQUE", source-bit-offset = 0 }]
 value = 4
 exposure = "facade"
@@ -5512,8 +5512,8 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_detection_00c0_bits_5_9"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_DETECT_CONFIG_00C0"
-fields = [{ field = "BITS_5_9", source-bit-offset = 0 }]
+register = "WORD_00C0_OPAQUE"
+fields = [{ field = "BITS_5_9_OPAQUE", source-bit-offset = 0 }]
 value = 0x0a
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
@@ -5521,7 +5521,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_detection_00a8_middle"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "SHARED_RX_SENSE_AND_DETECT_00A8"
+register = "WORD_00A8_OPAQUE"
 fields = [{ field = "BITS_12_16_OPAQUE", source-bit-offset = 0 }]
 value = 4
 exposure = "facade"
@@ -5530,7 +5530,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_detection_00a8_low"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "SHARED_RX_SENSE_AND_DETECT_00A8"
+register = "WORD_00A8_OPAQUE"
 fields = [{ field = "BITS_0_3_OPAQUE", source-bit-offset = 0 }]
 value = 7
 exposure = "facade"
@@ -5539,8 +5539,8 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_detection_00c0_bits_10_14"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_DETECT_CONFIG_00C0"
-fields = [{ field = "BITS_10_14", source-bit-offset = 0 }]
+register = "WORD_00C0_OPAQUE"
+fields = [{ field = "BITS_10_14_OPAQUE", source-bit-offset = 0 }]
 value = 0x0a
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
@@ -5548,7 +5548,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_detection_00b8"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "SHARED_RX_SENSE_AND_DETECT_00B8"
+register = "WORD_00B8_OPAQUE"
 fields = [{ field = "BITS_8_11_OPAQUE", source-bit-offset = 0 }]
 value = 7
 exposure = "facade"
@@ -5557,8 +5557,8 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_detection_00c4_bits_10_14"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_DETECT_CONFIG_00C4"
-fields = [{ field = "BITS_10_14", source-bit-offset = 0 }]
+register = "WORD_00C4_OPAQUE"
+fields = [{ field = "BITS_10_14_OPAQUE", source-bit-offset = 0 }]
 value = 0x0f
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
@@ -5566,8 +5566,8 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_detection_00c0_bits_24_31"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_DETECT_CONFIG_00C0"
-fields = [{ field = "BITS_24_31", source-bit-offset = 0 }]
+register = "WORD_00C0_OPAQUE"
+fields = [{ field = "BITS_24_31_OPAQUE", source-bit-offset = 0 }]
 value = 0x9c
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
@@ -5575,8 +5575,8 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_detection_00c0_bits_20_23"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_DETECT_CONFIG_00C0"
-fields = [{ field = "BITS_20_23", source-bit-offset = 0 }]
+register = "WORD_00C0_OPAQUE"
+fields = [{ field = "BITS_20_23_OPAQUE", source-bit-offset = 0 }]
 value = 7
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
@@ -5584,8 +5584,8 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_detection_00c0_bits_15_19"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_DETECT_CONFIG_00C0"
-fields = [{ field = "BITS_15_19", source-bit-offset = 0 }]
+register = "WORD_00C0_OPAQUE"
+fields = [{ field = "BITS_15_19_OPAQUE", source-bit-offset = 0 }]
 value = 0x0a
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
@@ -5593,8 +5593,8 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_detection_00c4_bits_24_31"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_DETECT_CONFIG_00C4"
-fields = [{ field = "BITS_24_31", source-bit-offset = 0 }]
+register = "WORD_00C4_OPAQUE"
+fields = [{ field = "BITS_24_31_OPAQUE", source-bit-offset = 0 }]
 value = 0x9c
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
@@ -5602,8 +5602,8 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_detection_00c4_bits_20_23"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_DETECT_CONFIG_00C4"
-fields = [{ field = "BITS_20_23", source-bit-offset = 0 }]
+register = "WORD_00C4_OPAQUE"
+fields = [{ field = "BITS_20_23_OPAQUE", source-bit-offset = 0 }]
 value = 0x0a
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
@@ -5611,8 +5611,8 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_detection_00c4_bits_15_19"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_DETECT_CONFIG_00C4"
-fields = [{ field = "BITS_15_19", source-bit-offset = 0 }]
+register = "WORD_00C4_OPAQUE"
+fields = [{ field = "BITS_15_19_OPAQUE", source-bit-offset = 0 }]
 value = 0x0f
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
@@ -5621,7 +5621,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 name = "initialize_bluetooth_gaussian_1m_0_bits_28_31"
 peripheral = "BT_V3_2_BASEBAND"
 register = "GAUSSIAN_1M_COEFFICIENT_0"
-fields = [{ field = "BITS_28_31", source-bit-offset = 0 }]
+fields = [{ field = "BITS_28_31_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
@@ -5630,7 +5630,7 @@ sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 name = "initialize_bluetooth_gaussian_1m_0_bits_23_27"
 peripheral = "BT_V3_2_BASEBAND"
 register = "GAUSSIAN_1M_COEFFICIENT_0"
-fields = [{ field = "BITS_23_27", source-bit-offset = 0 }]
+fields = [{ field = "BITS_23_27_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
@@ -5639,7 +5639,7 @@ sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 name = "initialize_bluetooth_gaussian_1m_0_bits_17_22"
 peripheral = "BT_V3_2_BASEBAND"
 register = "GAUSSIAN_1M_COEFFICIENT_0"
-fields = [{ field = "BITS_17_22", source-bit-offset = 0 }]
+fields = [{ field = "BITS_17_22_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
@@ -5648,7 +5648,7 @@ sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 name = "initialize_bluetooth_gaussian_1m_0_bits_10_16"
 peripheral = "BT_V3_2_BASEBAND"
 register = "GAUSSIAN_1M_COEFFICIENT_0"
-fields = [{ field = "BITS_10_16", source-bit-offset = 0 }]
+fields = [{ field = "BITS_10_16_OPAQUE", source-bit-offset = 0 }]
 value = 3
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
@@ -5657,7 +5657,7 @@ sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 name = "initialize_bluetooth_gaussian_1m_0_bits_2_9"
 peripheral = "BT_V3_2_BASEBAND"
 register = "GAUSSIAN_1M_COEFFICIENT_0"
-fields = [{ field = "BITS_2_9", source-bit-offset = 0 }]
+fields = [{ field = "BITS_2_9_OPAQUE", source-bit-offset = 0 }]
 value = 0x13
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
@@ -5666,7 +5666,7 @@ sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 name = "initialize_bluetooth_gaussian_1m_1_bits_23_31"
 peripheral = "BT_V3_2_BASEBAND"
 register = "GAUSSIAN_1M_COEFFICIENT_1"
-fields = [{ field = "BITS_23_31", source-bit-offset = 0 }]
+fields = [{ field = "BITS_23_31_OPAQUE", source-bit-offset = 0 }]
 value = 0x5f
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
@@ -5675,7 +5675,7 @@ sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 name = "initialize_bluetooth_gaussian_1m_1_bits_13_22"
 peripheral = "BT_V3_2_BASEBAND"
 register = "GAUSSIAN_1M_COEFFICIENT_1"
-fields = [{ field = "BITS_13_22", source-bit-offset = 0 }]
+fields = [{ field = "BITS_13_22_OPAQUE", source-bit-offset = 0 }]
 value = 0x140
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
@@ -5684,7 +5684,7 @@ sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 name = "initialize_bluetooth_gaussian_1m_1_bits_2_12"
 peripheral = "BT_V3_2_BASEBAND"
 register = "GAUSSIAN_1M_COEFFICIENT_1"
-fields = [{ field = "BITS_2_12", source-bit-offset = 0 }]
+fields = [{ field = "BITS_2_12_OPAQUE", source-bit-offset = 0 }]
 value = 0x2f2
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
@@ -5693,7 +5693,7 @@ sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 name = "initialize_bluetooth_gaussian_1m_2_bits_21_31"
 peripheral = "BT_V3_2_BASEBAND"
 register = "GAUSSIAN_1M_COEFFICIENT_2"
-fields = [{ field = "BITS_21_31", source-bit-offset = 0 }]
+fields = [{ field = "BITS_21_31_OPAQUE", source-bit-offset = 0 }]
 value = 0x50d
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
@@ -5702,7 +5702,7 @@ sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 name = "initialize_bluetooth_gaussian_1m_2_bits_10_20"
 peripheral = "BT_V3_2_BASEBAND"
 register = "GAUSSIAN_1M_COEFFICIENT_2"
-fields = [{ field = "BITS_10_20", source-bit-offset = 0 }]
+fields = [{ field = "BITS_10_20_OPAQUE", source-bit-offset = 0 }]
 value = 0x6bf
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
@@ -5711,7 +5711,7 @@ sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 name = "initialize_bluetooth_gaussian_1m_3_bits_21_31"
 peripheral = "BT_V3_2_BASEBAND"
 register = "GAUSSIAN_1M_COEFFICIENT_3"
-fields = [{ field = "BITS_21_31", source-bit-offset = 0 }]
+fields = [{ field = "BITS_21_31_OPAQUE", source-bit-offset = 0 }]
 value = 0x7a0
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
@@ -5720,7 +5720,7 @@ sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 name = "initialize_bluetooth_gaussian_1m_3_bits_10_20"
 peripheral = "BT_V3_2_BASEBAND"
 register = "GAUSSIAN_1M_COEFFICIENT_3"
-fields = [{ field = "BITS_10_20", source-bit-offset = 0 }]
+fields = [{ field = "BITS_10_20_OPAQUE", source-bit-offset = 0 }]
 value = 0x7e9
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
@@ -5756,7 +5756,7 @@ sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 name = "initialize_bluetooth_gaussian_2m_1_bits_22_31"
 peripheral = "BT_V3_2_BASEBAND"
 register = "GAUSSIAN_2M_COEFFICIENT_1"
-fields = [{ field = "BITS_22_31", source-bit-offset = 0 }]
+fields = [{ field = "BITS_22_31_OPAQUE", source-bit-offset = 0 }]
 value = 0x24d
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
@@ -5765,7 +5765,7 @@ sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 name = "initialize_bluetooth_gaussian_2m_1_bits_11_21"
 peripheral = "BT_V3_2_BASEBAND"
 register = "GAUSSIAN_2M_COEFFICIENT_1"
-fields = [{ field = "BITS_11_21", source-bit-offset = 0 }]
+fields = [{ field = "BITS_11_21_OPAQUE", source-bit-offset = 0 }]
 value = 0x58e
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
@@ -5774,7 +5774,7 @@ sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 name = "initialize_bluetooth_gaussian_2m_1_bits_0_10"
 peripheral = "BT_V3_2_BASEBAND"
 register = "GAUSSIAN_2M_COEFFICIENT_1"
-fields = [{ field = "BITS_0_10", source-bit-offset = 0 }]
+fields = [{ field = "BITS_0_10_OPAQUE", source-bit-offset = 0 }]
 value = 0x76d
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
@@ -5792,7 +5792,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 name = "initialize_bluetooth_receive_dpo_bit_19"
 peripheral = "BT_V3_2_BASEBAND"
 register = "RX_DPO_CONTROL"
-fields = [{ field = "CONFIG_FORCE_ZERO_19", source-bit-offset = 0 }]
+fields = [{ field = "BIT_19_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
@@ -5864,7 +5864,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 name = "initialize_bluetooth_receive_correlator_final"
 peripheral = "BT_V3_2_BASEBAND"
 register = "RX_CORRELATOR_CONTROL"
-fields = [{ field = "FINAL_FORCE_ZERO_13", source-bit-offset = 0 }]
+fields = [{ field = "BIT_13_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
@@ -5900,7 +5900,7 @@ sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 name = "set_bluetooth_receive_setup_control_1_bit_2"
 peripheral = "BT_V3_2_BASEBAND"
 register = "RX_SETUP_CONTROL_1"
-fields = [{ field = "SET_BY_RX_SETUP_BIT_2", source-bit-offset = 0 }]
+fields = [{ field = "BIT_2_OPAQUE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
@@ -5908,7 +5908,7 @@ sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_setup_agc_00d0_high"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_CONFIG_00D0"
+register = "WORD_00D0_OPAQUE"
 fields = [{ field = "CONFIG_VALUE_HIGH", source-bit-offset = 0 }]
 value = 20
 exposure = "facade"
@@ -5917,7 +5917,7 @@ sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_setup_agc_00d0_low"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_CONFIG_00D0"
+register = "WORD_00D0_OPAQUE"
 fields = [{ field = "CONFIG_VALUE_LOW", source-bit-offset = 0 }]
 value = 20
 exposure = "facade"
@@ -5926,7 +5926,7 @@ sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_setup_agc_00d4"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "AGC_CONFIG_00D4"
+register = "WORD_00D4_OPAQUE"
 fields = [{ field = "CONFIG_VALUE", source-bit-offset = 0 }]
 value = 0x3c0
 exposure = "facade"
@@ -5935,8 +5935,8 @@ sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_setup_008c_bit_29_initial"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "RX_CONFIG_008C"
-fields = [{ field = "CONFIG_FORCE_ZERO_29", source-bit-offset = 0 }]
+register = "WORD_008C_OPAQUE"
+fields = [{ field = "BIT_29_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
@@ -5944,8 +5944,8 @@ sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_setup_0088_bit_29"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "RX_CONFIG_0088"
-fields = [{ field = "CONFIG_FORCE_ZERO_29", source-bit-offset = 0 }]
+register = "WORD_0088_OPAQUE"
+fields = [{ field = "BIT_29_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
@@ -5953,8 +5953,8 @@ sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_setup_0088_bit_18"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "RX_CONFIG_0088"
-fields = [{ field = "CONFIG_FORCE_ONE_18", source-bit-offset = 0 }]
+register = "WORD_0088_OPAQUE"
+fields = [{ field = "BIT_18_OPAQUE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
@@ -6007,7 +6007,7 @@ sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_setup_004c_bit_26"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "RX_CONFIG_004C"
+register = "WORD_004C_OPAQUE"
 fields = [{ field = "CONFIG_BIT_26_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
@@ -6023,7 +6023,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE", "BLOB_LIBBTBB_BT_AGC_BASIC_RUNT
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_saturation_gain_004c_low"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "RX_CONFIG_004C"
+register = "WORD_004C_OPAQUE"
 fields = [{ field = "SAT_GAIN_BITS_0_18", source-bit-offset = 0 }]
 value = 0x1770
 exposure = "facade"
@@ -6046,7 +6046,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE", "BLOB_LIBBTBB_BT_AGC_BASIC_RUNT
 [[field-or-modifies]]
 name = "set_bluetooth_receive_saturation_gain_004c_bits"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "RX_CONFIG_004C"
+register = "WORD_004C_OPAQUE"
 fields = [
     { field = "CONFIG_BIT_19_OPAQUE", source-bit-offset = 19 },
     { field = "CONFIG_BIT_24_OPAQUE", source-bit-offset = 24 },
@@ -6071,7 +6071,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE", "BLOB_LIBBTBB_BT_AGC_BASIC_RUNT
 [[field-or-modifies]]
 name = "set_bluetooth_receive_saturation_gain_0088_bit_30"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "RX_CONFIG_0088"
+register = "WORD_0088_OPAQUE"
 fields = [{ field = "CONFIG_BIT_30_OPAQUE", source-bit-offset = 30 }]
 value = 0x40000000
 exposure = "facade"
@@ -6080,8 +6080,8 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE", "BLOB_LIBBTBB_BT_AGC_BASIC_RUNT
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_setup_008c_bit_29_final"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "RX_CONFIG_008C"
-fields = [{ field = "CONFIG_FORCE_ZERO_29", source-bit-offset = 0 }]
+register = "WORD_008C_OPAQUE"
+fields = [{ field = "BIT_29_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
@@ -6090,7 +6090,7 @@ sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 name = "set_bluetooth_receive_setup_control_0_bit_0"
 peripheral = "BT_V3_2_BASEBAND"
 register = "RX_SETUP_CONTROL_0"
-fields = [{ field = "SET_BY_RX_SETUP_BIT_0", source-bit-offset = 0 }]
+fields = [{ field = "BIT_0_OPAQUE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
@@ -6136,7 +6136,7 @@ name = "initialize_bluetooth_le_tx_delay"
 peripheral = "BT_V3_2_BASEBAND"
 register = "LE_TX_ON_DELAY"
 fields = [
-    { field = "FORCE_ZERO_BITS_16_18", source-bit-offset = 0 },
+    { field = "BITS_16_18_OPAQUE", source-bit-offset = 0 },
     { field = "ENCODED_VALUE_MINUS_10", source-bit-offset = 3 },
 ]
 value = 0xe8
@@ -6148,7 +6148,7 @@ name = "initialize_bluetooth_tx_cca_period_difference"
 peripheral = "BT_V3_2_BASEBAND"
 register = "TX_CCA_CONTROL_0"
 fields = [
-    { field = "PERIOD_FORCE_ZERO_20_22", source-bit-offset = 0 },
+    { field = "BITS_20_22_OPAQUE", source-bit-offset = 0 },
     { field = "PERIOD_ARGUMENT_0_MINUS_ARGUMENT_1_IMAGE", source-bit-offset = 3 },
 ]
 value = 0xb8
@@ -6509,7 +6509,7 @@ sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDU
 [[field-replace-modifies]]
 name = "clear_bluetooth_scheduler_lock_modify_hardware_list_index"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "OPERATIONAL_WORD_036C"
+register = "WORD_036C_OPAQUE"
 fields = [{ field = "LOCK_MODIFY_HARDWARE_LIST_INDEX", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
@@ -6518,7 +6518,7 @@ sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDU
 [[field-replace-modifies]]
 name = "publish_bluetooth_scheduler_lock_modify_hardware_list_index"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "OPERATIONAL_WORD_036C"
+register = "WORD_036C_OPAQUE"
 fields = [{ field = "LOCK_MODIFY_HARDWARE_LIST_INDEX", source-bit-offset = 0 }]
 domain = "BluetoothSchedulerLockModifyHardwareListIndex"
 exposure = "facade"
@@ -8390,7 +8390,7 @@ sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
 name = "publish_generated_receive_gain_data_0"
 peripheral = "PHY_MEMORY"
 register = "DATA_0"
-field = "OPAQUE_DATA"
+field = "BITS_0_31_OPAQUE"
 domain = "PhyGeneratedReceiveGainData0"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
@@ -8399,7 +8399,7 @@ sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
 name = "publish_generated_receive_gain_data_1"
 peripheral = "PHY_MEMORY"
 register = "DATA_1"
-field = "OPAQUE_DATA"
+field = "BITS_0_31_OPAQUE"
 domain = "PhyGeneratedReceiveGainData1"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
@@ -8408,7 +8408,7 @@ sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
 name = "publish_generated_receive_gain_data_2"
 peripheral = "PHY_MEMORY"
 register = "DATA_2"
-field = "OPAQUE_DATA"
+field = "BITS_0_31_OPAQUE"
 domain = "PhyGeneratedReceiveGainData2"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
@@ -8417,7 +8417,7 @@ sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
 name = "publish_receive_table_gain_data_1"
 peripheral = "PHY_MEMORY"
 register = "DATA_1"
-field = "OPAQUE_DATA"
+field = "BITS_0_31_OPAQUE"
 domain = "PhyReceiveTableGainData1"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
@@ -8426,7 +8426,7 @@ sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
 name = "publish_receive_table_gain_data_2"
 peripheral = "PHY_MEMORY"
 register = "DATA_2"
-field = "OPAQUE_DATA"
+field = "BITS_0_31_OPAQUE"
 domain = "PhyReceiveTableGainData2"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
@@ -8435,7 +8435,7 @@ sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
 name = "publish_transmit_gain_data_0"
 peripheral = "PHY_MEMORY"
 register = "DATA_0"
-field = "OPAQUE_DATA"
+field = "BITS_0_31_OPAQUE"
 domain = "PhyTransmitGainData0"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
@@ -8444,7 +8444,7 @@ sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
 name = "publish_transmit_gain_data_1"
 peripheral = "PHY_MEMORY"
 register = "DATA_1"
-field = "OPAQUE_DATA"
+field = "BITS_0_31_OPAQUE"
 domain = "PhyTransmitGainData1"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
@@ -8453,7 +8453,7 @@ sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
 name = "publish_transmit_gain_data_2"
 peripheral = "PHY_MEMORY"
 register = "DATA_2"
-field = "OPAQUE_DATA"
+field = "BITS_0_31_OPAQUE"
 domain = "PhyTransmitGainData2"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
@@ -9488,7 +9488,7 @@ sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
 [[field-replace-modifies]]
 name = "configure_bt_wifi_baseband_fields"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "BASEBAND_INIT_7CD0"
+register = "WORD_7CD0_OPAQUE"
 fields = [
     { field = "INIT_LOW_OPAQUE", source-bit-offset = 0 },
     { field = "INIT_LOW_1_OPAQUE", source-bit-offset = 1 },
@@ -9523,7 +9523,7 @@ sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
 [[field-replace-modifies]]
 name = "enable_phy_he_ru26_good_response"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "BASEBAND_INIT_7890"
+register = "WORD_7890_OPAQUE"
 fields = [{ field = "HE_RU26_GOOD_RESPONSE_ENABLE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
@@ -9532,7 +9532,7 @@ sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "ROM_REV0_PHY_REGISTER_INITIALIZ
 [[field-replace-modifies]]
 name = "clear_phy_he_ru26_good_response_disable"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "BASEBAND_INIT_7890"
+register = "WORD_7890_OPAQUE"
 fields = [{ field = "HE_RU26_GOOD_RESPONSE_DISABLE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
@@ -9640,7 +9640,7 @@ sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
 [[field-replace-modifies]]
 name = "initialize_phy_baseband_prefix"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "BASEBAND_INIT_7400"
+register = "WORD_7400_OPAQUE"
 fields = [{ field = "INIT_OPAQUE", source-bit-offset = 0 }]
 value = 3
 exposure = "facade"
@@ -9649,7 +9649,7 @@ sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
 [[field-replace-modifies]]
 name = "initialize_phy_baseband_7808"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "BASEBAND_INIT_7808"
+register = "WORD_7808_OPAQUE"
 fields = [{ field = "INIT_VALUE_OPAQUE", source-bit-offset = 0 }]
 value = 0x60
 exposure = "facade"
@@ -9658,7 +9658,7 @@ sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
 [[field-replace-modifies]]
 name = "initialize_phy_baseband_78dc"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "BASEBAND_INIT_78DC"
+register = "WORD_78DC_OPAQUE"
 fields = [{ field = "INIT_VALUE_OPAQUE", source-bit-offset = 0 }]
 value = 2
 exposure = "facade"
@@ -9667,7 +9667,7 @@ sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
 [[field-replace-modifies]]
 name = "clear_phy_baseband_78e4"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "BASEBAND_INIT_78E4"
+register = "WORD_78E4_OPAQUE"
 fields = [{ field = "INIT_CLEAR_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
@@ -9685,7 +9685,7 @@ sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
 [[field-replace-modifies]]
 name = "clear_phy_baseband_790c_init"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "BASEBAND_INIT_790C"
+register = "WORD_790C_OPAQUE"
 fields = [{ field = "INIT_CLEAR_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
@@ -9694,7 +9694,7 @@ sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
 [[field-replace-modifies]]
 name = "enable_phy_baseband_7ca8_init"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "BASEBAND_INIT_7CA8"
+register = "WORD_7CA8_OPAQUE"
 fields = [{ field = "INIT_ENABLE_OPAQUE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
@@ -9703,7 +9703,7 @@ sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
 [[field-replace-modifies]]
 name = "clear_phy_baseband_7980_init"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "BASEBAND_INIT_7980"
+register = "WORD_7980_OPAQUE"
 fields = [{ field = "INIT_CLEAR_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
@@ -9712,7 +9712,7 @@ sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
 [[field-replace-modifies]]
 name = "clear_phy_baseband_7a28_init"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "BASEBAND_INIT_7A28"
+register = "WORD_7A28_OPAQUE"
 fields = [{ field = "INIT_CLEAR_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
@@ -9721,7 +9721,7 @@ sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
 [[field-replace-modifies]]
 name = "initialize_phy_baseband_mode_fields"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "BASEBAND_INIT_7CD0"
+register = "WORD_7CD0_OPAQUE"
 fields = [
     { field = "INIT_LOW_OPAQUE", source-bit-offset = 0 },
     { field = "INIT_LOW_1_OPAQUE", source-bit-offset = 1 },
@@ -9745,7 +9745,7 @@ sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
 [[field-replace-modifies]]
 name = "clear_phy_baseband_743c_low"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "BASEBAND_INIT_743C"
+register = "WORD_743C_OPAQUE"
 fields = [{ field = "INIT_CLEAR_LOW_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
@@ -9754,7 +9754,7 @@ sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
 [[field-replace-modifies]]
 name = "clear_phy_baseband_743c_high"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "BASEBAND_INIT_743C"
+register = "WORD_743C_OPAQUE"
 fields = [{ field = "INIT_CLEAR_HIGH_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
@@ -9763,7 +9763,7 @@ sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
 [[field-replace-modifies]]
 name = "enable_phy_baseband_7428_init"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "BASEBAND_INIT_7428"
+register = "WORD_7428_OPAQUE"
 fields = [{ field = "INIT_ENABLE_OPAQUE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
@@ -9772,7 +9772,7 @@ sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
 [[field-replace-modifies]]
 name = "initialize_phy_baseband_7428_value"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "BASEBAND_INIT_7428"
+register = "WORD_7428_OPAQUE"
 fields = [{ field = "INIT_VALUE_OPAQUE", source-bit-offset = 0 }]
 value = 0x15
 exposure = "facade"
@@ -10170,7 +10170,7 @@ sources = ["ROM_REV0_PHY_FE_REG_INIT", "S31_ESP_PACS_SVD"]
 [[field-replace-modifies]]
 name = "initialize_phy_front_end_first"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "FRONT_END_INIT_0C08"
+register = "WORD_0C08_OPAQUE"
 fields = [{ field = "INIT_FIRST_OPAQUE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
@@ -10179,7 +10179,7 @@ sources = ["BLOB_LIBPHY_PHY_FE_REG_UPDATE", "ROM_REV0_PHY_FE_REG_INIT", "S31_ESP
 [[field-replace-modifies]]
 name = "initialize_phy_front_end_second"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "FRONT_END_INIT_0C08"
+register = "WORD_0C08_OPAQUE"
 fields = [{ field = "INIT_SECOND_OPAQUE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
@@ -10260,7 +10260,7 @@ sources = ["ROM_REV0_PHY_FE_REG_INIT", "S31_ESP_PACS_SVD"]
 [[field-replace-modifies]]
 name = "initialize_phy_front_end_low"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "FRONT_END_INIT_0C20"
+register = "WORD_0C20_OPAQUE"
 fields = [{ field = "INIT_LOW_OPAQUE", source-bit-offset = 0 }]
 value = 0x57
 exposure = "facade"
@@ -10281,7 +10281,7 @@ sources = ["BLOB_LIBPHY_PHY_FE_REG_UPDATE", "S31_ESP_PACS_SVD"]
 [[field-replace-modifies]]
 name = "configure_phy_channel_dump_value"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "BASEBAND_INIT_790C"
+register = "WORD_790C_OPAQUE"
 fields = [{ field = "CHANNEL_DUMP_VALUE_OPAQUE", source-bit-offset = 0 }]
 domain = "PhyVendorRegisterArgument"
 input-transform = { wrapping-subtract = 0, retain-mask = 0x0f }
@@ -10291,7 +10291,7 @@ sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
 [[field-replace-modifies]]
 name = "configure_phy_channel_dump_mode"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "BASEBAND_INIT_790C"
+register = "WORD_790C_OPAQUE"
 fields = [{ field = "INIT_CLEAR_OPAQUE", source-bit-offset = 0 }]
 domain = "PhyVendorRegisterArgument"
 input-transform = { wrapping-subtract = 0, retain-mask = 1 }
@@ -10391,7 +10391,7 @@ sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
 [[field-replace-modifies]]
 name = "configure_phy_lltf_mask_0"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "BASEBAND_INIT_790C"
+register = "WORD_790C_OPAQUE"
 fields = [{ field = "LLTF_MASK_INPUT_0", source-bit-offset = 0 }]
 domain = "PhyVendorRegisterArgument"
 input-transform = { wrapping-subtract = 0, retain-mask = 1 }
@@ -10401,7 +10401,7 @@ sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
 [[field-replace-modifies]]
 name = "configure_phy_lltf_mask_1"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "BASEBAND_INIT_790C"
+register = "WORD_790C_OPAQUE"
 fields = [{ field = "LLTF_MASK_INPUT_1", source-bit-offset = 0 }]
 domain = "PhyVendorRegisterArgument"
 input-transform = { wrapping-subtract = 0, retain-mask = 1 }
@@ -11034,7 +11034,7 @@ sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_
 [[field-replace-modifies]]
 name = "clear_bluetooth_scheduler_cancellation_hardware_list_index"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "OPERATIONAL_WORD_036C"
+register = "WORD_036C_OPAQUE"
 fields = [{ field = "CANCELLATION_HARDWARE_LIST_INDEX", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
@@ -11043,7 +11043,7 @@ sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_
 [[field-replace-modifies]]
 name = "publish_bluetooth_scheduler_cancellation_hardware_list_index"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "OPERATIONAL_WORD_036C"
+register = "WORD_036C_OPAQUE"
 fields = [{ field = "CANCELLATION_HARDWARE_LIST_INDEX", source-bit-offset = 0 }]
 domain = "BluetoothSchedulerCancellationHardwareListIndex"
 exposure = "facade"
@@ -11052,7 +11052,7 @@ sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_
 [[field-replace-modifies]]
 name = "set_bluetooth_scheduler_cancellation_control"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "OPERATIONAL_CONTROL_0204"
+register = "WORD_0204_OPAQUE"
 fields = [{ field = "CONTROL_0", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
@@ -11061,7 +11061,7 @@ sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_
 [[field-replace-modifies]]
 name = "clear_bluetooth_scheduler_cancellation_control"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "OPERATIONAL_CONTROL_0204"
+register = "WORD_0204_OPAQUE"
 fields = [{ field = "CONTROL_0", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
@@ -11070,14 +11070,14 @@ sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_
 [[field-reads]]
 name = "observe_bluetooth_scheduler_cancellation_status_0324"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "OPERATIONAL_STATUS_0324"
+register = "WORD_0324_OPAQUE"
 field = "STATUS_0"
 sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
 
 [[field-reads]]
 name = "observe_bluetooth_scheduler_cancellation_status_0208"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "OPERATIONAL_STATUS_0208"
+register = "WORD_0208_OPAQUE"
 field = "STATUS_0"
 sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
 
@@ -11092,7 +11092,7 @@ sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ", "BLOB_LIBBTDM_SCHEDULER_CANCELLATION",
 name = "publish_bluetooth_scheduler_execution_modify_list_deletion_request"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "SCHEDULER_COMMAND_1"
-fields = ["HARDWARE_LIST_MASK", "OPAQUE_16", "START"]
+fields = ["HARDWARE_LIST_MASK", "BIT_16_OPAQUE", "START"]
 sources = ["BLOB_LIBBTDM_SCHEDULER_LIST_DELETION", "PUBLIC_ESP32S31_BT_SCHEDULER_LIST_DELETION_ROLE"]
 
 [[partition-image-reads]]

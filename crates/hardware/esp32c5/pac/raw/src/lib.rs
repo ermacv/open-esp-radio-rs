@@ -6266,23 +6266,23 @@ pub mod phy_baseband_config {
         _reserved9: [u8; 0x04],
         power_detector_control: PowerDetectorControl,
         power_detector_sar_control_status: PowerDetectorSarControlStatus,
-        power_detector_word_810: PowerDetectorWord810,
-        power_detector_word_814: PowerDetectorWord814,
+        word_0810_opaque: Word0810Opaque,
+        word_0814_opaque: Word0814Opaque,
         power_detector_reference: PowerDetectorReference,
         _reserved14: [u8; 0x54],
         tx_pa_control_1: TxPaControl1,
         _reserved15: [u8; 0x14],
-        front_end_init_0888: FrontEndInit0888,
+        word_0888_opaque: Word0888Opaque,
         _reserved16: [u8; 0x08],
-        front_end_init_0894: FrontEndInit0894,
+        word_0894_opaque: Word0894Opaque,
         _reserved17: [u8; 0x036c],
         dac_scale: DacScale,
-        front_end_init_0c08: FrontEndInit0c08,
+        word_0c08_opaque: Word0c08Opaque,
         iq_correction_aux: IqCorrectionAux,
         _reserved20: [u8; 0x10],
-        front_end_init_0c20: FrontEndInit0c20,
+        word_0c20_opaque: Word0c20Opaque,
         _reserved21: [u8; 0x6cfc],
-        rx_evm_word_7920: RxEvmWord7920,
+        word_7920_opaque: Word7920Opaque,
         _reserved22: [u8; 0x0110],
         rx_evm_control: RxEvmControl,
         rx_evm_config: RxEvmConfig,
@@ -6347,15 +6347,15 @@ pub mod phy_baseband_config {
         pub const fn power_detector_sar_control_status(&self) -> &PowerDetectorSarControlStatus {
             &self.power_detector_sar_control_status
         }
-        #[doc = "0x810 - Project-assigned name. Word phy_pwdet_reg_init writes 0x0F0F0FFF."]
+        #[doc = "0x810 - Opaque: meaning not established. Word phy_pwdet_reg_init writes 0x0F0F0FFF."]
         #[inline(always)]
-        pub const fn power_detector_word_810(&self) -> &PowerDetectorWord810 {
-            &self.power_detector_word_810
+        pub const fn word_0810_opaque(&self) -> &Word0810Opaque {
+            &self.word_0810_opaque
         }
-        #[doc = "0x814 - Project-assigned name. Word phy_pwdet_reg_init writes 0x00FF0F64."]
+        #[doc = "0x814 - Opaque: meaning not established. Word phy_pwdet_reg_init writes 0x00FF0F64."]
         #[inline(always)]
-        pub const fn power_detector_word_814(&self) -> &PowerDetectorWord814 {
-            &self.power_detector_word_814
+        pub const fn word_0814_opaque(&self) -> &Word0814Opaque {
+            &self.word_0814_opaque
         }
         #[doc = "0x818 - Project-assigned name. Word phy_pwdet_reg_init and phy_pwdet_sar2_init write 0xAAAA."]
         #[inline(always)]
@@ -6367,40 +6367,40 @@ pub mod phy_baseband_config {
         pub const fn tx_pa_control_1(&self) -> &TxPaControl1 {
             &self.tx_pa_control_1
         }
-        #[doc = "0x888 - Project-assigned name. Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise."]
+        #[doc = "0x888 - Opaque: meaning not established. Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise."]
         #[inline(always)]
-        pub const fn front_end_init_0888(&self) -> &FrontEndInit0888 {
-            &self.front_end_init_0888
+        pub const fn word_0888_opaque(&self) -> &Word0888Opaque {
+            &self.word_0888_opaque
         }
-        #[doc = "0x894 - Project-assigned name. Word whose bit 22 phy_fe_reg_init sets."]
+        #[doc = "0x894 - Opaque: meaning not established. Word whose bit 22 phy_fe_reg_init sets."]
         #[inline(always)]
-        pub const fn front_end_init_0894(&self) -> &FrontEndInit0894 {
-            &self.front_end_init_0894
+        pub const fn word_0894_opaque(&self) -> &Word0894Opaque {
+            &self.word_0894_opaque
         }
         #[doc = "0xc04 - Project-assigned name. Word whose bits 23:16 and then 15:8 phy_dac_scale_set replaces with 0xFF or 0."]
         #[inline(always)]
         pub const fn dac_scale(&self) -> &DacScale {
             &self.dac_scale
         }
-        #[doc = "0xc08 - Project-assigned name. Word whose bit 25 phy_iq_swap_set clears when phy_param byte 0x2A is set, and whose bits 26:25 it sets otherwise."]
+        #[doc = "0xc08 - Opaque: meaning not established. Word whose bit 25 phy_iq_swap_set clears when phy_param byte 0x2A is set, and whose bits 26:25 it sets otherwise."]
         #[inline(always)]
-        pub const fn front_end_init_0c08(&self) -> &FrontEndInit0c08 {
-            &self.front_end_init_0c08
+        pub const fn word_0c08_opaque(&self) -> &Word0c08Opaque {
+            &self.word_0c08_opaque
         }
         #[doc = "0xc0c - Project-assigned name. Word whose bits 14:13 phy_fe_reg_init sets."]
         #[inline(always)]
         pub const fn iq_correction_aux(&self) -> &IqCorrectionAux {
             &self.iq_correction_aux
         }
-        #[doc = "0xc20 - Project-assigned name. Word whose bits 7:0 phy_fe_reg_init replaces with 0x57."]
+        #[doc = "0xc20 - Opaque: meaning not established. Word whose bits 7:0 phy_fe_reg_init replaces with 0x57."]
         #[inline(always)]
-        pub const fn front_end_init_0c20(&self) -> &FrontEndInit0c20 {
-            &self.front_end_init_0c20
+        pub const fn word_0c20_opaque(&self) -> &Word0c20Opaque {
+            &self.word_0c20_opaque
         }
-        #[doc = "0x7920 - Project-assigned name. Word whose bits 15:12 phy_rxevm_init_cfg clears."]
+        #[doc = "0x7920 - Opaque: meaning not established. Word whose bits 15:12 phy_rxevm_init_cfg clears."]
         #[inline(always)]
-        pub const fn rx_evm_word_7920(&self) -> &RxEvmWord7920 {
-            &self.rx_evm_word_7920
+        pub const fn word_7920_opaque(&self) -> &Word7920Opaque {
+            &self.word_7920_opaque
         }
         #[doc = "0x7a34 - Project-assigned name. RX EVM measurement control."]
         #[inline(always)]
@@ -6996,15 +6996,15 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "POWER_DETECTOR_WORD_810 (rw) register accessor: Project-assigned name. Word phy_pwdet_reg_init writes 0x0F0F0FFF.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_word_810::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_word_810::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@power_detector_word_810`] module"]
-    #[doc(alias = "POWER_DETECTOR_WORD_810")]
-    pub type PowerDetectorWord810 = crate::Reg<power_detector_word_810::PowerDetectorWord810Spec>;
-    #[doc = "Project-assigned name. Word phy_pwdet_reg_init writes 0x0F0F0FFF."]
-    pub mod power_detector_word_810 {
-        #[doc = "Register `POWER_DETECTOR_WORD_810` reader"]
-        pub type R = crate::R<PowerDetectorWord810Spec>;
-        #[doc = "Register `POWER_DETECTOR_WORD_810` writer"]
-        pub type W = crate::W<PowerDetectorWord810Spec>;
+    #[doc = "WORD_0810_OPAQUE (rw) register accessor: Opaque: meaning not established. Word phy_pwdet_reg_init writes 0x0F0F0FFF.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0810_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0810_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0810_opaque`] module"]
+    #[doc(alias = "WORD_0810_OPAQUE")]
+    pub type Word0810Opaque = crate::Reg<word_0810_opaque::Word0810OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Word phy_pwdet_reg_init writes 0x0F0F0FFF."]
+    pub mod word_0810_opaque {
+        #[doc = "Register `WORD_0810_OPAQUE` reader"]
+        pub type R = crate::R<Word0810OpaqueSpec>;
+        #[doc = "Register `WORD_0810_OPAQUE` writer"]
+        pub type W = crate::W<Word0810OpaqueSpec>;
         #[doc = "Field `STATE` reader - Project-assigned name. Complete image; meaning unknown."]
         pub type StateR = crate::FieldReader<u32>;
         #[doc = "Field `STATE` writer - Project-assigned name. Complete image; meaning unknown."]
@@ -7019,31 +7019,31 @@ pub mod phy_baseband_config {
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name. Complete image; meaning unknown."]
             #[inline(always)]
-            pub fn state(&mut self) -> StateW<'_, PowerDetectorWord810Spec> {
+            pub fn state(&mut self) -> StateW<'_, Word0810OpaqueSpec> {
                 StateW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Word phy_pwdet_reg_init writes 0x0F0F0FFF.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_word_810::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_word_810::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct PowerDetectorWord810Spec;
-        impl crate::RegisterSpec for PowerDetectorWord810Spec {
+        #[doc = "Opaque: meaning not established. Word phy_pwdet_reg_init writes 0x0F0F0FFF.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0810_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0810_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0810OpaqueSpec;
+        impl crate::RegisterSpec for Word0810OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`power_detector_word_810::R`](R) reader structure"]
-        impl crate::Readable for PowerDetectorWord810Spec {}
-        #[doc = "`write(|w| ..)` method takes [`power_detector_word_810::W`](W) writer structure"]
-        impl crate::Writable for PowerDetectorWord810Spec {
+        #[doc = "`read()` method returns [`word_0810_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0810OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0810_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0810OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "POWER_DETECTOR_WORD_814 (rw) register accessor: Project-assigned name. Word phy_pwdet_reg_init writes 0x00FF0F64.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_word_814::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_word_814::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@power_detector_word_814`] module"]
-    #[doc(alias = "POWER_DETECTOR_WORD_814")]
-    pub type PowerDetectorWord814 = crate::Reg<power_detector_word_814::PowerDetectorWord814Spec>;
-    #[doc = "Project-assigned name. Word phy_pwdet_reg_init writes 0x00FF0F64."]
-    pub mod power_detector_word_814 {
-        #[doc = "Register `POWER_DETECTOR_WORD_814` reader"]
-        pub type R = crate::R<PowerDetectorWord814Spec>;
-        #[doc = "Register `POWER_DETECTOR_WORD_814` writer"]
-        pub type W = crate::W<PowerDetectorWord814Spec>;
+    #[doc = "WORD_0814_OPAQUE (rw) register accessor: Opaque: meaning not established. Word phy_pwdet_reg_init writes 0x00FF0F64.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0814_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0814_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0814_opaque`] module"]
+    #[doc(alias = "WORD_0814_OPAQUE")]
+    pub type Word0814Opaque = crate::Reg<word_0814_opaque::Word0814OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Word phy_pwdet_reg_init writes 0x00FF0F64."]
+    pub mod word_0814_opaque {
+        #[doc = "Register `WORD_0814_OPAQUE` reader"]
+        pub type R = crate::R<Word0814OpaqueSpec>;
+        #[doc = "Register `WORD_0814_OPAQUE` writer"]
+        pub type W = crate::W<Word0814OpaqueSpec>;
         #[doc = "Field `STATE` reader - Project-assigned name. Complete image; meaning unknown."]
         pub type StateR = crate::FieldReader<u32>;
         #[doc = "Field `STATE` writer - Project-assigned name. Complete image; meaning unknown."]
@@ -7058,19 +7058,19 @@ pub mod phy_baseband_config {
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name. Complete image; meaning unknown."]
             #[inline(always)]
-            pub fn state(&mut self) -> StateW<'_, PowerDetectorWord814Spec> {
+            pub fn state(&mut self) -> StateW<'_, Word0814OpaqueSpec> {
                 StateW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Word phy_pwdet_reg_init writes 0x00FF0F64.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_word_814::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_word_814::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct PowerDetectorWord814Spec;
-        impl crate::RegisterSpec for PowerDetectorWord814Spec {
+        #[doc = "Opaque: meaning not established. Word phy_pwdet_reg_init writes 0x00FF0F64.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0814_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0814_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0814OpaqueSpec;
+        impl crate::RegisterSpec for Word0814OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`power_detector_word_814::R`](R) reader structure"]
-        impl crate::Readable for PowerDetectorWord814Spec {}
-        #[doc = "`write(|w| ..)` method takes [`power_detector_word_814::W`](W) writer structure"]
-        impl crate::Writable for PowerDetectorWord814Spec {
+        #[doc = "`read()` method returns [`word_0814_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0814OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0814_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0814OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -7153,15 +7153,15 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "FRONT_END_INIT_0888 (rw) register accessor: Project-assigned name. Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0888::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0888::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_init_0888`] module"]
-    #[doc(alias = "FRONT_END_INIT_0888")]
-    pub type FrontEndInit0888 = crate::Reg<front_end_init_0888::FrontEndInit0888Spec>;
-    #[doc = "Project-assigned name. Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise."]
-    pub mod front_end_init_0888 {
-        #[doc = "Register `FRONT_END_INIT_0888` reader"]
-        pub type R = crate::R<FrontEndInit0888Spec>;
-        #[doc = "Register `FRONT_END_INIT_0888` writer"]
-        pub type W = crate::W<FrontEndInit0888Spec>;
+    #[doc = "WORD_0888_OPAQUE (rw) register accessor: Opaque: meaning not established. Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0888_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0888_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0888_opaque`] module"]
+    #[doc(alias = "WORD_0888_OPAQUE")]
+    pub type Word0888Opaque = crate::Reg<word_0888_opaque::Word0888OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise."]
+    pub mod word_0888_opaque {
+        #[doc = "Register `WORD_0888_OPAQUE` reader"]
+        pub type R = crate::R<Word0888OpaqueSpec>;
+        #[doc = "Register `WORD_0888_OPAQUE` writer"]
+        pub type W = crate::W<Word0888OpaqueSpec>;
         #[doc = "Field `IQ_SWAP_OPAQUE` reader - Opaque: meaning not established. Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown."]
         pub type IqSwapOpaqueR = crate::BitReader;
         #[doc = "Field `IQ_SWAP_OPAQUE` writer - Opaque: meaning not established. Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown."]
@@ -7176,31 +7176,31 @@ pub mod phy_baseband_config {
         impl W {
             #[doc = "Bit 29 - Opaque: meaning not established. Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown."]
             #[inline(always)]
-            pub fn iq_swap_opaque(&mut self) -> IqSwapOpaqueW<'_, FrontEndInit0888Spec> {
+            pub fn iq_swap_opaque(&mut self) -> IqSwapOpaqueW<'_, Word0888OpaqueSpec> {
                 IqSwapOpaqueW::new(self, 29)
             }
         }
-        #[doc = "Project-assigned name. Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0888::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0888::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct FrontEndInit0888Spec;
-        impl crate::RegisterSpec for FrontEndInit0888Spec {
+        #[doc = "Opaque: meaning not established. Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0888_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0888_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0888OpaqueSpec;
+        impl crate::RegisterSpec for Word0888OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`front_end_init_0888::R`](R) reader structure"]
-        impl crate::Readable for FrontEndInit0888Spec {}
-        #[doc = "`write(|w| ..)` method takes [`front_end_init_0888::W`](W) writer structure"]
-        impl crate::Writable for FrontEndInit0888Spec {
+        #[doc = "`read()` method returns [`word_0888_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0888OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0888_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0888OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "FRONT_END_INIT_0894 (rw) register accessor: Project-assigned name. Word whose bit 22 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0894::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0894::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_init_0894`] module"]
-    #[doc(alias = "FRONT_END_INIT_0894")]
-    pub type FrontEndInit0894 = crate::Reg<front_end_init_0894::FrontEndInit0894Spec>;
-    #[doc = "Project-assigned name. Word whose bit 22 phy_fe_reg_init sets."]
-    pub mod front_end_init_0894 {
-        #[doc = "Register `FRONT_END_INIT_0894` reader"]
-        pub type R = crate::R<FrontEndInit0894Spec>;
-        #[doc = "Register `FRONT_END_INIT_0894` writer"]
-        pub type W = crate::W<FrontEndInit0894Spec>;
+    #[doc = "WORD_0894_OPAQUE (rw) register accessor: Opaque: meaning not established. Word whose bit 22 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0894_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0894_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0894_opaque`] module"]
+    #[doc(alias = "WORD_0894_OPAQUE")]
+    pub type Word0894Opaque = crate::Reg<word_0894_opaque::Word0894OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Word whose bit 22 phy_fe_reg_init sets."]
+    pub mod word_0894_opaque {
+        #[doc = "Register `WORD_0894_OPAQUE` reader"]
+        pub type R = crate::R<Word0894OpaqueSpec>;
+        #[doc = "Register `WORD_0894_OPAQUE` writer"]
+        pub type W = crate::W<Word0894OpaqueSpec>;
         #[doc = "Field `FE_INIT_ENABLE_OPAQUE` reader - Opaque: meaning not established. Front-end initialization enable; meaning unknown."]
         pub type FeInitEnableOpaqueR = crate::BitReader;
         #[doc = "Field `FE_INIT_ENABLE_OPAQUE` writer - Opaque: meaning not established. Front-end initialization enable; meaning unknown."]
@@ -7215,21 +7215,19 @@ pub mod phy_baseband_config {
         impl W {
             #[doc = "Bit 22 - Opaque: meaning not established. Front-end initialization enable; meaning unknown."]
             #[inline(always)]
-            pub fn fe_init_enable_opaque(
-                &mut self,
-            ) -> FeInitEnableOpaqueW<'_, FrontEndInit0894Spec> {
+            pub fn fe_init_enable_opaque(&mut self) -> FeInitEnableOpaqueW<'_, Word0894OpaqueSpec> {
                 FeInitEnableOpaqueW::new(self, 22)
             }
         }
-        #[doc = "Project-assigned name. Word whose bit 22 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0894::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0894::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct FrontEndInit0894Spec;
-        impl crate::RegisterSpec for FrontEndInit0894Spec {
+        #[doc = "Opaque: meaning not established. Word whose bit 22 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0894_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0894_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0894OpaqueSpec;
+        impl crate::RegisterSpec for Word0894OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`front_end_init_0894::R`](R) reader structure"]
-        impl crate::Readable for FrontEndInit0894Spec {}
-        #[doc = "`write(|w| ..)` method takes [`front_end_init_0894::W`](W) writer structure"]
-        impl crate::Writable for FrontEndInit0894Spec {
+        #[doc = "`read()` method returns [`word_0894_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0894OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0894_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0894OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -7286,15 +7284,15 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "FRONT_END_INIT_0C08 (rw) register accessor: Project-assigned name. Word whose bit 25 phy_iq_swap_set clears when phy_param byte 0x2A is set, and whose bits 26:25 it sets otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0c08::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0c08::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_init_0c08`] module"]
-    #[doc(alias = "FRONT_END_INIT_0C08")]
-    pub type FrontEndInit0c08 = crate::Reg<front_end_init_0c08::FrontEndInit0c08Spec>;
-    #[doc = "Project-assigned name. Word whose bit 25 phy_iq_swap_set clears when phy_param byte 0x2A is set, and whose bits 26:25 it sets otherwise."]
-    pub mod front_end_init_0c08 {
-        #[doc = "Register `FRONT_END_INIT_0C08` reader"]
-        pub type R = crate::R<FrontEndInit0c08Spec>;
-        #[doc = "Register `FRONT_END_INIT_0C08` writer"]
-        pub type W = crate::W<FrontEndInit0c08Spec>;
+    #[doc = "WORD_0C08_OPAQUE (rw) register accessor: Opaque: meaning not established. Word whose bit 25 phy_iq_swap_set clears when phy_param byte 0x2A is set, and whose bits 26:25 it sets otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0c08_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0c08_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0c08_opaque`] module"]
+    #[doc(alias = "WORD_0C08_OPAQUE")]
+    pub type Word0c08Opaque = crate::Reg<word_0c08_opaque::Word0c08OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Word whose bit 25 phy_iq_swap_set clears when phy_param byte 0x2A is set, and whose bits 26:25 it sets otherwise."]
+    pub mod word_0c08_opaque {
+        #[doc = "Register `WORD_0C08_OPAQUE` reader"]
+        pub type R = crate::R<Word0c08OpaqueSpec>;
+        #[doc = "Register `WORD_0C08_OPAQUE` writer"]
+        pub type W = crate::W<Word0c08OpaqueSpec>;
         #[doc = "Field `INIT_FIRST_OPAQUE` reader - Opaque: meaning not established. First bit; meaning unknown."]
         pub type InitFirstOpaqueR = crate::BitReader;
         #[doc = "Field `INIT_FIRST_OPAQUE` writer - Opaque: meaning not established. First bit; meaning unknown."]
@@ -7318,24 +7316,24 @@ pub mod phy_baseband_config {
         impl W {
             #[doc = "Bit 25 - Opaque: meaning not established. First bit; meaning unknown."]
             #[inline(always)]
-            pub fn init_first_opaque(&mut self) -> InitFirstOpaqueW<'_, FrontEndInit0c08Spec> {
+            pub fn init_first_opaque(&mut self) -> InitFirstOpaqueW<'_, Word0c08OpaqueSpec> {
                 InitFirstOpaqueW::new(self, 25)
             }
             #[doc = "Bit 26 - Opaque: meaning not established. Second bit; meaning unknown."]
             #[inline(always)]
-            pub fn init_second_opaque(&mut self) -> InitSecondOpaqueW<'_, FrontEndInit0c08Spec> {
+            pub fn init_second_opaque(&mut self) -> InitSecondOpaqueW<'_, Word0c08OpaqueSpec> {
                 InitSecondOpaqueW::new(self, 26)
             }
         }
-        #[doc = "Project-assigned name. Word whose bit 25 phy_iq_swap_set clears when phy_param byte 0x2A is set, and whose bits 26:25 it sets otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0c08::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0c08::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct FrontEndInit0c08Spec;
-        impl crate::RegisterSpec for FrontEndInit0c08Spec {
+        #[doc = "Opaque: meaning not established. Word whose bit 25 phy_iq_swap_set clears when phy_param byte 0x2A is set, and whose bits 26:25 it sets otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0c08_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0c08_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0c08OpaqueSpec;
+        impl crate::RegisterSpec for Word0c08OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`front_end_init_0c08::R`](R) reader structure"]
-        impl crate::Readable for FrontEndInit0c08Spec {}
-        #[doc = "`write(|w| ..)` method takes [`front_end_init_0c08::W`](W) writer structure"]
-        impl crate::Writable for FrontEndInit0c08Spec {
+        #[doc = "`read()` method returns [`word_0c08_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0c08OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0c08_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0c08OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -7396,15 +7394,15 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "FRONT_END_INIT_0C20 (rw) register accessor: Project-assigned name. Word whose bits 7:0 phy_fe_reg_init replaces with 0x57.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0c20::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0c20::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_init_0c20`] module"]
-    #[doc(alias = "FRONT_END_INIT_0C20")]
-    pub type FrontEndInit0c20 = crate::Reg<front_end_init_0c20::FrontEndInit0c20Spec>;
-    #[doc = "Project-assigned name. Word whose bits 7:0 phy_fe_reg_init replaces with 0x57."]
-    pub mod front_end_init_0c20 {
-        #[doc = "Register `FRONT_END_INIT_0C20` reader"]
-        pub type R = crate::R<FrontEndInit0c20Spec>;
-        #[doc = "Register `FRONT_END_INIT_0C20` writer"]
-        pub type W = crate::W<FrontEndInit0c20Spec>;
+    #[doc = "WORD_0C20_OPAQUE (rw) register accessor: Opaque: meaning not established. Word whose bits 7:0 phy_fe_reg_init replaces with 0x57.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0c20_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0c20_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0c20_opaque`] module"]
+    #[doc(alias = "WORD_0C20_OPAQUE")]
+    pub type Word0c20Opaque = crate::Reg<word_0c20_opaque::Word0c20OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Word whose bits 7:0 phy_fe_reg_init replaces with 0x57."]
+    pub mod word_0c20_opaque {
+        #[doc = "Register `WORD_0C20_OPAQUE` reader"]
+        pub type R = crate::R<Word0c20OpaqueSpec>;
+        #[doc = "Register `WORD_0C20_OPAQUE` writer"]
+        pub type W = crate::W<Word0c20OpaqueSpec>;
         #[doc = "Field `INIT_LOW_OPAQUE` reader - Opaque: meaning not established. Low byte; meaning unknown."]
         pub type InitLowOpaqueR = crate::FieldReader;
         #[doc = "Field `INIT_LOW_OPAQUE` writer - Opaque: meaning not established. Low byte; meaning unknown."]
@@ -7419,19 +7417,19 @@ pub mod phy_baseband_config {
         impl W {
             #[doc = "Bits 0:7 - Opaque: meaning not established. Low byte; meaning unknown."]
             #[inline(always)]
-            pub fn init_low_opaque(&mut self) -> InitLowOpaqueW<'_, FrontEndInit0c20Spec> {
+            pub fn init_low_opaque(&mut self) -> InitLowOpaqueW<'_, Word0c20OpaqueSpec> {
                 InitLowOpaqueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Word whose bits 7:0 phy_fe_reg_init replaces with 0x57.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0c20::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0c20::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct FrontEndInit0c20Spec;
-        impl crate::RegisterSpec for FrontEndInit0c20Spec {
+        #[doc = "Opaque: meaning not established. Word whose bits 7:0 phy_fe_reg_init replaces with 0x57.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0c20_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0c20_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0c20OpaqueSpec;
+        impl crate::RegisterSpec for Word0c20OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`front_end_init_0c20::R`](R) reader structure"]
-        impl crate::Readable for FrontEndInit0c20Spec {}
-        #[doc = "`write(|w| ..)` method takes [`front_end_init_0c20::W`](W) writer structure"]
-        impl crate::Writable for FrontEndInit0c20Spec {
+        #[doc = "`read()` method returns [`word_0c20_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0c20OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0c20_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0c20OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -7474,15 +7472,15 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_EVM_WORD_7920 (rw) register accessor: Project-assigned name. Word whose bits 15:12 phy_rxevm_init_cfg clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_evm_word_7920::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_evm_word_7920::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_evm_word_7920`] module"]
-    #[doc(alias = "RX_EVM_WORD_7920")]
-    pub type RxEvmWord7920 = crate::Reg<rx_evm_word_7920::RxEvmWord7920Spec>;
-    #[doc = "Project-assigned name. Word whose bits 15:12 phy_rxevm_init_cfg clears."]
-    pub mod rx_evm_word_7920 {
-        #[doc = "Register `RX_EVM_WORD_7920` reader"]
-        pub type R = crate::R<RxEvmWord7920Spec>;
-        #[doc = "Register `RX_EVM_WORD_7920` writer"]
-        pub type W = crate::W<RxEvmWord7920Spec>;
+    #[doc = "WORD_7920_OPAQUE (rw) register accessor: Opaque: meaning not established. Word whose bits 15:12 phy_rxevm_init_cfg clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_7920_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_7920_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_7920_opaque`] module"]
+    #[doc(alias = "WORD_7920_OPAQUE")]
+    pub type Word7920Opaque = crate::Reg<word_7920_opaque::Word7920OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Word whose bits 15:12 phy_rxevm_init_cfg clears."]
+    pub mod word_7920_opaque {
+        #[doc = "Register `WORD_7920_OPAQUE` reader"]
+        pub type R = crate::R<Word7920OpaqueSpec>;
+        #[doc = "Register `WORD_7920_OPAQUE` writer"]
+        pub type W = crate::W<Word7920OpaqueSpec>;
         #[doc = "Field `CLEAR_OPAQUE` reader - Opaque: meaning not established. Four bits phy_rxevm_init_cfg clears; meaning unknown."]
         pub type ClearOpaqueR = crate::FieldReader;
         #[doc = "Field `CLEAR_OPAQUE` writer - Opaque: meaning not established. Four bits phy_rxevm_init_cfg clears; meaning unknown."]
@@ -7497,19 +7495,19 @@ pub mod phy_baseband_config {
         impl W {
             #[doc = "Bits 12:15 - Opaque: meaning not established. Four bits phy_rxevm_init_cfg clears; meaning unknown."]
             #[inline(always)]
-            pub fn clear_opaque(&mut self) -> ClearOpaqueW<'_, RxEvmWord7920Spec> {
+            pub fn clear_opaque(&mut self) -> ClearOpaqueW<'_, Word7920OpaqueSpec> {
                 ClearOpaqueW::new(self, 12)
             }
         }
-        #[doc = "Project-assigned name. Word whose bits 15:12 phy_rxevm_init_cfg clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_evm_word_7920::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_evm_word_7920::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct RxEvmWord7920Spec;
-        impl crate::RegisterSpec for RxEvmWord7920Spec {
+        #[doc = "Opaque: meaning not established. Word whose bits 15:12 phy_rxevm_init_cfg clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_7920_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_7920_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word7920OpaqueSpec;
+        impl crate::RegisterSpec for Word7920OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`rx_evm_word_7920::R`](R) reader structure"]
-        impl crate::Readable for RxEvmWord7920Spec {}
-        #[doc = "`write(|w| ..)` method takes [`rx_evm_word_7920::W`](W) writer structure"]
-        impl crate::Writable for RxEvmWord7920Spec {
+        #[doc = "`read()` method returns [`word_7920_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word7920OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_7920_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word7920OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -11807,7 +11805,7 @@ pub mod fixed_register_image {
         }
     }
 
-    /// Publish the SVD-qualified image `0x0f0f0fff` to `PHY_BASEBAND_CONFIG`.`POWER_DETECTOR_WORD_810`.
+    /// Publish the SVD-qualified image `0x0f0f0fff` to `PHY_BASEBAND_CONFIG`.`WORD_0810_OPAQUE`.
     #[inline]
     pub fn set_phy_power_detector_word_810(registers: &crate::PhyBasebandConfig) {
         // SAFETY: generator validation proves that the target is a
@@ -11815,12 +11813,12 @@ pub mod fixed_register_image {
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .power_detector_word_810()
+                .word_0810_opaque()
                 .write_with_zero(|writer| writer.bits(0x0f0f0fff));
         }
     }
 
-    /// Publish the SVD-qualified image `0x00ff0f64` to `PHY_BASEBAND_CONFIG`.`POWER_DETECTOR_WORD_814`.
+    /// Publish the SVD-qualified image `0x00ff0f64` to `PHY_BASEBAND_CONFIG`.`WORD_0814_OPAQUE`.
     #[inline]
     pub fn set_phy_power_detector_word_814(registers: &crate::PhyBasebandConfig) {
         // SAFETY: generator validation proves that the target is a
@@ -11828,7 +11826,7 @@ pub mod fixed_register_image {
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .power_detector_word_814()
+                .word_0814_opaque()
                 .write_with_zero(|writer| writer.bits(0x00ff0f64));
         }
     }
@@ -12360,10 +12358,10 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.FRONT_END_INIT_0C08 fields `[INIT_FIRST_OPAQUE, INIT_SECOND_OPAQUE]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.WORD_0C08_OPAQUE fields `[INIT_FIRST_OPAQUE, INIT_SECOND_OPAQUE]` while preserving the fresh register observation.
     #[inline]
     pub fn set_phy_front_end_init_0c08(registers: &crate::PhyBasebandConfig) {
-        registers.front_end_init_0c08().modify(|reader, writer| {
+        registers.word_0c08_opaque().modify(|reader, writer| {
             let input = 0x06000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -12375,10 +12373,10 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.FRONT_END_INIT_0894 fields `[FE_INIT_ENABLE_OPAQUE]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.WORD_0894_OPAQUE fields `[FE_INIT_ENABLE_OPAQUE]` while preserving the fresh register observation.
     #[inline]
     pub fn enable_phy_front_end_0894(registers: &crate::PhyBasebandConfig) {
-        registers.front_end_init_0894().modify(|reader, writer| {
+        registers.word_0894_opaque().modify(|reader, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -12435,10 +12433,10 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.FRONT_END_INIT_0888 fields `[IQ_SWAP_OPAQUE]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.WORD_0888_OPAQUE fields `[IQ_SWAP_OPAQUE]` while preserving the fresh register observation.
     #[inline]
     pub fn set_phy_front_end_iq_swap(registers: &crate::PhyBasebandConfig) {
-        registers.front_end_init_0888().modify(|reader, writer| {
+        registers.word_0888_opaque().modify(|reader, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -12811,10 +12809,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.FRONT_END_INIT_0C08 fields `[INIT_FIRST_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.WORD_0C08_OPAQUE fields `[INIT_FIRST_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_front_end_init_0c08_first(registers: &crate::PhyBasebandConfig) {
-        registers.front_end_init_0c08().modify(|_, writer| {
+        registers.word_0c08_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -12881,10 +12879,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.FRONT_END_INIT_0888 fields `[IQ_SWAP_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.WORD_0888_OPAQUE fields `[IQ_SWAP_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_front_end_iq_swap(registers: &crate::PhyBasebandConfig) {
-        registers.front_end_init_0888().modify(|_, writer| {
+        registers.word_0888_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -12892,10 +12890,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.FRONT_END_INIT_0C20 fields `[INIT_LOW_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.WORD_0C20_OPAQUE fields `[INIT_LOW_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_phy_front_end_init_0c20(registers: &crate::PhyBasebandConfig) {
-        registers.front_end_init_0c20().modify(|_, writer| {
+        registers.word_0c20_opaque().modify(|_, writer| {
             let input = 0x00000057_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -13077,10 +13075,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.RX_EVM_WORD_7920 fields `[CLEAR_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.WORD_7920_OPAQUE fields `[CLEAR_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_rx_evm_word_7920(registers: &crate::PhyBasebandConfig) {
-        registers.rx_evm_word_7920().modify(|_, writer| {
+        registers.word_7920_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.

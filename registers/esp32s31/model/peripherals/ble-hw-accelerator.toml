@@ -19,7 +19,7 @@ addressOffset = 0x0
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -43,7 +43,7 @@ addressOffset = 0x8
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -67,7 +67,7 @@ addressOffset = 0x10
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -79,7 +79,7 @@ addressOffset = 0x14
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -91,7 +91,7 @@ addressOffset = 0x18
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -103,7 +103,7 @@ addressOffset = 0x1C
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -151,7 +151,7 @@ addressOffset = 0x88
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -191,7 +191,7 @@ addressOffset = 0xA4
 size = 32
 access = "read-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -203,7 +203,7 @@ addressOffset = 0xA8
 size = 32
 access = "read-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -243,7 +243,7 @@ addressOffset = 0xC4
 size = 32
 access = "read-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -255,7 +255,7 @@ addressOffset = 0xCC
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -267,7 +267,7 @@ addressOffset = 0xD0
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -287,7 +287,7 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BLE_HW_ACCELERATOR.INIT_CONFIG.IMAGE"
+entity = "BLE_HW_ACCELERATOR.INIT_CONFIG.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -317,7 +317,7 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BLE_HW_ACCELERATOR.ENCRYPT_CONFIG.IMAGE"
+entity = "BLE_HW_ACCELERATOR.ENCRYPT_CONFIG.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
@@ -347,7 +347,7 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BLE_HW_ACCELERATOR.ENCRYPT_KEY_WORD_0.IMAGE"
+entity = "BLE_HW_ACCELERATOR.ENCRYPT_KEY_WORD_0.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
@@ -362,7 +362,7 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BLE_HW_ACCELERATOR.ENCRYPT_KEY_WORD_1.IMAGE"
+entity = "BLE_HW_ACCELERATOR.ENCRYPT_KEY_WORD_1.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
@@ -377,7 +377,7 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BLE_HW_ACCELERATOR.ENCRYPT_KEY_WORD_2.IMAGE"
+entity = "BLE_HW_ACCELERATOR.ENCRYPT_KEY_WORD_2.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
@@ -392,7 +392,7 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BLE_HW_ACCELERATOR.ENCRYPT_KEY_WORD_3.IMAGE"
+entity = "BLE_HW_ACCELERATOR.ENCRYPT_KEY_WORD_3.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
@@ -452,7 +452,7 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BLE_HW_ACCELERATOR.RESOLV_LIST_ARGUMENT.IMAGE"
+entity = "BLE_HW_ACCELERATOR.RESOLV_LIST_ARGUMENT.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RESOLV_LIST_SEARCH"]
 provenance = "observed"
@@ -504,7 +504,7 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BLE_HW_ACCELERATOR.RESOLV_RESULT_POINTER_OFFSET.IMAGE"
+entity = "BLE_HW_ACCELERATOR.RESOLV_RESULT_POINTER_OFFSET.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RESOLV_LIST_SEARCH"]
 provenance = "observed"
@@ -519,7 +519,7 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BLE_HW_ACCELERATOR.RESOLV_RESULT_PRESENT.IMAGE"
+entity = "BLE_HW_ACCELERATOR.RESOLV_RESULT_PRESENT.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RESOLV_LIST_SEARCH"]
 provenance = "observed"
@@ -571,7 +571,7 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BLE_HW_ACCELERATOR.ENCRYPT_COMPLETION_STATUS.IMAGE"
+entity = "BLE_HW_ACCELERATOR.ENCRYPT_COMPLETION_STATUS.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
@@ -586,7 +586,7 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BLE_HW_ACCELERATOR.INIT_SRAM_REGION_0.IMAGE"
+entity = "BLE_HW_ACCELERATOR.INIT_SRAM_REGION_0.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -601,7 +601,7 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BLE_HW_ACCELERATOR.INIT_SRAM_REGION_1.IMAGE"
+entity = "BLE_HW_ACCELERATOR.INIT_SRAM_REGION_1.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"

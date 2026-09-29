@@ -2543,8 +2543,8 @@ documentation establishes their electrical meaning.</description>
           </fields>
         </register>
         <register>
-          <name>POWER_DETECTOR_WORD_810</name>
-          <description>Project-assigned name. Word phy_pwdet_reg_init writes 0x0F0F0FFF.</description>
+          <name>WORD_0810_OPAQUE</name>
+          <description>Opaque: meaning not established. Word phy_pwdet_reg_init writes 0x0F0F0FFF.</description>
           <addressOffset>0x810</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -2558,8 +2558,8 @@ documentation establishes their electrical meaning.</description>
           </fields>
         </register>
         <register>
-          <name>POWER_DETECTOR_WORD_814</name>
-          <description>Project-assigned name. Word phy_pwdet_reg_init writes 0x00FF0F64.</description>
+          <name>WORD_0814_OPAQUE</name>
+          <description>Opaque: meaning not established. Word phy_pwdet_reg_init writes 0x00FF0F64.</description>
           <addressOffset>0x814</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -2603,8 +2603,8 @@ documentation establishes their electrical meaning.</description>
           </fields>
         </register>
         <register>
-          <name>FRONT_END_INIT_0888</name>
-          <description>Project-assigned name. Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise.</description>
+          <name>WORD_0888_OPAQUE</name>
+          <description>Opaque: meaning not established. Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise.</description>
           <addressOffset>0x888</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -2618,8 +2618,8 @@ documentation establishes their electrical meaning.</description>
           </fields>
         </register>
         <register>
-          <name>FRONT_END_INIT_0894</name>
-          <description>Project-assigned name. Word whose bit 22 phy_fe_reg_init sets.</description>
+          <name>WORD_0894_OPAQUE</name>
+          <description>Opaque: meaning not established. Word whose bit 22 phy_fe_reg_init sets.</description>
           <addressOffset>0x894</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -2654,8 +2654,8 @@ documentation establishes their electrical meaning.</description>
           </fields>
         </register>
         <register>
-          <name>FRONT_END_INIT_0C08</name>
-          <description>Project-assigned name. Word whose bit 25 phy_iq_swap_set clears when phy_param byte 0x2A is set, and whose bits 26:25 it sets otherwise.</description>
+          <name>WORD_0C08_OPAQUE</name>
+          <description>Opaque: meaning not established. Word whose bit 25 phy_iq_swap_set clears when phy_param byte 0x2A is set, and whose bits 26:25 it sets otherwise.</description>
           <addressOffset>0xC08</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -2696,8 +2696,8 @@ documentation establishes their electrical meaning.</description>
           </fields>
         </register>
         <register>
-          <name>FRONT_END_INIT_0C20</name>
-          <description>Project-assigned name. Word whose bits 7:0 phy_fe_reg_init replaces with 0x57.</description>
+          <name>WORD_0C20_OPAQUE</name>
+          <description>Opaque: meaning not established. Word whose bits 7:0 phy_fe_reg_init replaces with 0x57.</description>
           <addressOffset>0xC20</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -2726,8 +2726,8 @@ documentation establishes their electrical meaning.</description>
           </fields>
         </register>
         <register>
-          <name>RX_EVM_WORD_7920</name>
-          <description>Project-assigned name. Word whose bits 15:12 phy_rxevm_init_cfg clears.</description>
+          <name>WORD_7920_OPAQUE</name>
+          <description>Opaque: meaning not established. Word whose bits 15:12 phy_rxevm_init_cfg clears.</description>
           <addressOffset>0x7920</addressOffset>
           <size>0x20</size>
           <access>read-write</access>

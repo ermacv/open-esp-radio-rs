@@ -3518,13 +3518,13 @@ pub mod phy_memory {
     pub mod data_0 {
         #[doc = "Register `DATA_0` writer"]
         pub type W = crate::W<Data0Spec>;
-        #[doc = "Field `OPAQUE_DATA` writer - Project-assigned name."]
-        pub type OpaqueDataW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn opaque_data(&mut self) -> OpaqueDataW<'_, Data0Spec> {
-                OpaqueDataW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, Data0Spec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. First shared table-memory data word; PBUS-memory and TX-CFR use only this word.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`data_0::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -3544,13 +3544,13 @@ pub mod phy_memory {
     pub mod data_1 {
         #[doc = "Register `DATA_1` writer"]
         pub type W = crate::W<Data1Spec>;
-        #[doc = "Field `OPAQUE_DATA` writer - Project-assigned name."]
-        pub type OpaqueDataW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn opaque_data(&mut self) -> OpaqueDataW<'_, Data1Spec> {
-                OpaqueDataW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, Data1Spec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. Second gain-memory data word.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`data_1::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -3570,13 +3570,13 @@ pub mod phy_memory {
     pub mod data_2 {
         #[doc = "Register `DATA_2` writer"]
         pub type W = crate::W<Data2Spec>;
-        #[doc = "Field `OPAQUE_DATA` writer - Project-assigned name."]
-        pub type OpaqueDataW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn opaque_data(&mut self) -> OpaqueDataW<'_, Data2Spec> {
-                OpaqueDataW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, Data2Spec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. Third gain-memory data word.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`data_2::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -3978,13 +3978,15 @@ pub mod phy_frequency_channel_oracle {
     pub mod frequency_parameter_0_opaque {
         #[doc = "Register `FREQUENCY_PARAMETER_0_OPAQUE` writer"]
         pub type W = crate::W<FrequencyParameter0OpaqueSpec>;
-        #[doc = "Field `OPAQUE_VALUE` writer - Project-assigned name."]
-        pub type OpaqueValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn opaque_value(&mut self) -> OpaqueValueW<'_, FrequencyParameter0OpaqueSpec> {
-                OpaqueValueW::new(self, 0)
+            pub fn bits_0_31_opaque(
+                &mut self,
+            ) -> Bits0_31OpaqueW<'_, FrequencyParameter0OpaqueSpec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
         #[doc = "Opaque: meaning not established. Complete phy_freq_reg_init writes the full constant 0x19800249; no constituent electrical fields are public.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_parameter_0_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -7004,13 +7006,13 @@ pub mod phy_agc_oracle {
     pub mod saturation_gain_low {
         #[doc = "Register `SATURATION_GAIN_LOW` writer"]
         pub type W = crate::W<SaturationGainLowSpec>;
-        #[doc = "Field `OPAQUE_VALUE` writer - Project-assigned name."]
-        pub type OpaqueValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn opaque_value(&mut self) -> OpaqueValueW<'_, SaturationGainLowSpec> {
-                OpaqueValueW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, SaturationGainLowSpec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. Complete rev0 ROM phy_wifi_agc_sat_gain writes its argument here first.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`saturation_gain_low::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -7177,13 +7179,13 @@ pub mod phy_agc_oracle {
     pub mod saturation_gain_high {
         #[doc = "Register `SATURATION_GAIN_HIGH` writer"]
         pub type W = crate::W<SaturationGainHighSpec>;
-        #[doc = "Field `OPAQUE_VALUE` writer - Project-assigned name."]
-        pub type OpaqueValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn opaque_value(&mut self) -> OpaqueValueW<'_, SaturationGainHighSpec> {
-                OpaqueValueW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, SaturationGainHighSpec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. Complete rev0 ROM phy_wifi_agc_sat_gain writes its argument here second.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`saturation_gain_high::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -8075,20 +8077,20 @@ pub mod phy_baseband_config_oracle {
         tx_pa_control_1: TxPaControl1,
         _reserved22: [u8; 0x0390],
         dac_scale_control: DacScaleControl,
-        front_end_init_0c08: FrontEndInit0c08,
+        word_0c08_opaque: Word0c08Opaque,
         iq_correction_aux: IqCorrectionAux,
         _reserved25: [u8; 0x10],
-        front_end_init_0c20: FrontEndInit0c20,
+        word_0c20_opaque: Word0c20Opaque,
         _reserved26: [u8; 0x3868],
         i2c_tx_rate_control: I2cTxRateControl,
         _reserved27: [u8; 0x2b88],
         noise_floor_control: NoiseFloorControl,
         _reserved28: [u8; 0x03e4],
-        baseband_init_7400: BasebandInit7400,
+        word_7400_opaque: Word7400Opaque,
         _reserved29: [u8; 0x24],
-        baseband_init_7428: BasebandInit7428,
+        word_7428_opaque: Word7428Opaque,
         _reserved30: [u8; 0x10],
-        baseband_init_743c: BasebandInit743c,
+        word_743c_opaque: Word743cOpaque,
         tx_output_filter_control: TxOutputFilterControl,
         _reserved32: [u8; 0x10],
         tx_power_track_control_0: TxPowerTrackControl0,
@@ -8102,19 +8104,19 @@ pub mod phy_baseband_config_oracle {
         iccfr_force_control: IccfrForceControl,
         iccfr_enable_control: IccfrEnableControl,
         _reserved40: [u8; 0x0388],
-        baseband_init_7808: BasebandInit7808,
+        word_7808_opaque: Word7808Opaque,
         _reserved41: [u8; 0x84],
-        baseband_init_7890: BasebandInit7890,
+        word_7890_opaque: Word7890Opaque,
         _reserved42: [u8; 0x48],
-        baseband_init_78dc: BasebandInit78dc,
+        word_78dc_opaque: Word78dcOpaque,
         _reserved43: [u8; 0x04],
-        baseband_init_78e4: BasebandInit78e4,
+        word_78e4_opaque: Word78e4Opaque,
         _reserved44: [u8; 0x24],
-        baseband_init_790c: BasebandInit790c,
+        word_790c_opaque: Word790cOpaque,
         _reserved45: [u8; 0x70],
-        baseband_init_7980: BasebandInit7980,
+        word_7980_opaque: Word7980Opaque,
         _reserved46: [u8; 0xa4],
-        baseband_init_7a28: BasebandInit7a28,
+        word_7a28_opaque: Word7a28Opaque,
         _reserved47: [u8; 0x01d4],
         baseband_tx_pa_control: BasebandTxPaControl,
         _reserved48: [u8; 0x04],
@@ -8130,9 +8132,9 @@ pub mod phy_baseband_config_oracle {
         _reserved54: [u8; 0x18],
         tx_pa_table_opaque: TxPaTableOpaque,
         _reserved55: [u8; 0x38],
-        baseband_init_7ca8: BasebandInit7ca8,
+        word_7ca8_opaque: Word7ca8Opaque,
         _reserved56: [u8; 0x24],
-        baseband_init_7cd0: BasebandInit7cd0,
+        word_7cd0_opaque: Word7cd0Opaque,
     }
     impl RegisterBlock {
         #[doc = "0x40c - Project-assigned name. Shared word whose bit 2 is set by complete phy_fe_reg_init. Complete phy_start_tx_tone_step clears bits 1:0 and complete phy_stop_tx_tone sets them."]
@@ -8250,20 +8252,20 @@ pub mod phy_baseband_config_oracle {
         pub const fn dac_scale_control(&self) -> &DacScaleControl {
             &self.dac_scale_control
         }
-        #[doc = "0xc08 - Project-assigned name. Both complete source bodies set bit 25 and then bit 26 through separate fresh-read RMW edges."]
+        #[doc = "0xc08 - Opaque: meaning not established. Both complete source bodies set bit 25 and then bit 26 through separate fresh-read RMW edges."]
         #[inline(always)]
-        pub const fn front_end_init_0c08(&self) -> &FrontEndInit0c08 {
-            &self.front_end_init_0c08
+        pub const fn word_0c08_opaque(&self) -> &Word0c08Opaque {
+            &self.word_0c08_opaque
         }
         #[doc = "0xc0c - Project-assigned name. Shared TX-IQ coefficient and correction-mode word."]
         #[inline(always)]
         pub const fn iq_correction_aux(&self) -> &IqCorrectionAux {
             &self.iq_correction_aux
         }
-        #[doc = "0xc20 - Project-assigned name. Final complete phy_fe_reg_init RMW replaces the low byte with 0x57."]
+        #[doc = "0xc20 - Opaque: meaning not established. Final complete phy_fe_reg_init RMW replaces the low byte with 0x57."]
         #[inline(always)]
-        pub const fn front_end_init_0c20(&self) -> &FrontEndInit0c20 {
-            &self.front_end_init_0c20
+        pub const fn word_0c20_opaque(&self) -> &Word0c20Opaque {
+            &self.word_0c20_opaque
         }
         #[doc = "0x448c - Project-assigned name. Complete phy_i2c_txrate_init replaces both evidenced rate fields before dispatching TX-gain compensation."]
         #[inline(always)]
@@ -8275,20 +8277,20 @@ pub mod phy_baseband_config_oracle {
         pub const fn noise_floor_control(&self) -> &NoiseFloorControl {
             &self.noise_floor_control
         }
-        #[doc = "0x7400 - Project-assigned name. Complete phy_bb_reg_init sets bits 14:13."]
+        #[doc = "0x7400 - Opaque: meaning not established. Complete phy_bb_reg_init sets bits 14:13."]
         #[inline(always)]
-        pub const fn baseband_init_7400(&self) -> &BasebandInit7400 {
-            &self.baseband_init_7400
+        pub const fn word_7400_opaque(&self) -> &Word7400Opaque {
+            &self.word_7400_opaque
         }
-        #[doc = "0x7428 - Project-assigned name. Complete phy_bb_reg_init sets bit 14 and replaces bits 13:8 with 0x15."]
+        #[doc = "0x7428 - Opaque: meaning not established. Complete phy_bb_reg_init sets bit 14 and replaces bits 13:8 with 0x15."]
         #[inline(always)]
-        pub const fn baseband_init_7428(&self) -> &BasebandInit7428 {
-            &self.baseband_init_7428
+        pub const fn word_7428_opaque(&self) -> &Word7428Opaque {
+            &self.word_7428_opaque
         }
-        #[doc = "0x743c - Project-assigned name. Complete phy_bb_reg_init clears bits 8:6 through two fresh-read updates."]
+        #[doc = "0x743c - Opaque: meaning not established. Complete phy_bb_reg_init clears bits 8:6 through two fresh-read updates."]
         #[inline(always)]
-        pub const fn baseband_init_743c(&self) -> &BasebandInit743c {
-            &self.baseband_init_743c
+        pub const fn word_743c_opaque(&self) -> &Word743cOpaque {
+            &self.word_743c_opaque
         }
         #[doc = "0x7440 - Project-assigned name. Complete phy_bbtx_outfilter replaces bits five, six and four through three independent fresh-read RMWs."]
         #[inline(always)]
@@ -8335,40 +8337,40 @@ pub mod phy_baseband_config_oracle {
         pub const fn iccfr_enable_control(&self) -> &IccfrEnableControl {
             &self.iccfr_enable_control
         }
-        #[doc = "0x7808 - Project-assigned name. Complete phy_bb_reg_init replaces bits 13:7 with 0x60."]
+        #[doc = "0x7808 - Opaque: meaning not established. Complete phy_bb_reg_init replaces bits 13:7 with 0x60."]
         #[inline(always)]
-        pub const fn baseband_init_7808(&self) -> &BasebandInit7808 {
-            &self.baseband_init_7808
+        pub const fn word_7808_opaque(&self) -> &Word7808Opaque {
+            &self.word_7808_opaque
         }
-        #[doc = "0x7890 - Project-assigned name. Complete phy_bb_reg_init and phy_hemu_ru26_good_res both clear bit 25 then set bit 24 through separate fresh-read RMWs."]
+        #[doc = "0x7890 - Opaque: meaning not established. Complete phy_bb_reg_init and phy_hemu_ru26_good_res both clear bit 25 then set bit 24 through separate fresh-read RMWs."]
         #[inline(always)]
-        pub const fn baseband_init_7890(&self) -> &BasebandInit7890 {
-            &self.baseband_init_7890
+        pub const fn word_7890_opaque(&self) -> &Word7890Opaque {
+            &self.word_7890_opaque
         }
-        #[doc = "0x78dc - Project-assigned name. Complete phy_bb_reg_init replaces bits 13:7 with two."]
+        #[doc = "0x78dc - Opaque: meaning not established. Complete phy_bb_reg_init replaces bits 13:7 with two."]
         #[inline(always)]
-        pub const fn baseband_init_78dc(&self) -> &BasebandInit78dc {
-            &self.baseband_init_78dc
+        pub const fn word_78dc_opaque(&self) -> &Word78dcOpaque {
+            &self.word_78dc_opaque
         }
-        #[doc = "0x78e4 - Project-assigned name. Complete phy_bb_reg_init clears bit 22."]
+        #[doc = "0x78e4 - Opaque: meaning not established. Complete phy_bb_reg_init clears bit 22."]
         #[inline(always)]
-        pub const fn baseband_init_78e4(&self) -> &BasebandInit78e4 {
-            &self.baseband_init_78e4
+        pub const fn word_78e4_opaque(&self) -> &Word78e4Opaque {
+            &self.word_78e4_opaque
         }
-        #[doc = "0x790c - Project-assigned name. Complete phy_bb_reg_init clears bit 11; complete phy_lltf_mask_en independently replaces bits thirteen and twelve; complete phy_chan_dump_cfg replaces bits 7:4 and bit 11 through separate fresh-read RMWs."]
+        #[doc = "0x790c - Opaque: meaning not established. Complete phy_bb_reg_init clears bit 11; complete phy_lltf_mask_en independently replaces bits thirteen and twelve; complete phy_chan_dump_cfg replaces bits 7:4 and bit 11 through separate fresh-read RMWs."]
         #[inline(always)]
-        pub const fn baseband_init_790c(&self) -> &BasebandInit790c {
-            &self.baseband_init_790c
+        pub const fn word_790c_opaque(&self) -> &Word790cOpaque {
+            &self.word_790c_opaque
         }
-        #[doc = "0x7980 - Project-assigned name. Complete phy_bb_reg_init clears bit 25."]
+        #[doc = "0x7980 - Opaque: meaning not established. Complete phy_bb_reg_init clears bit 25."]
         #[inline(always)]
-        pub const fn baseband_init_7980(&self) -> &BasebandInit7980 {
-            &self.baseband_init_7980
+        pub const fn word_7980_opaque(&self) -> &Word7980Opaque {
+            &self.word_7980_opaque
         }
-        #[doc = "0x7a28 - Project-assigned name. Complete phy_bb_reg_init clears bit 22."]
+        #[doc = "0x7a28 - Opaque: meaning not established. Complete phy_bb_reg_init clears bit 22."]
         #[inline(always)]
-        pub const fn baseband_init_7a28(&self) -> &BasebandInit7a28 {
-            &self.baseband_init_7a28
+        pub const fn word_7a28_opaque(&self) -> &Word7a28Opaque {
+            &self.word_7a28_opaque
         }
         #[doc = "0x7c00 - Project-assigned name. Complete phy_bb_reg_init sets bit 9; complete phy_tx_paon_set replaces bits 20:11; complete phy_chan_dump_cfg replaces bit 30 with the low bit of its second argument."]
         #[inline(always)]
@@ -8410,15 +8412,15 @@ pub mod phy_baseband_config_oracle {
         pub const fn tx_pa_table_opaque(&self) -> &TxPaTableOpaque {
             &self.tx_pa_table_opaque
         }
-        #[doc = "0x7ca8 - Project-assigned name. Complete phy_bb_reg_init sets bit 20."]
+        #[doc = "0x7ca8 - Opaque: meaning not established. Complete phy_bb_reg_init sets bit 20."]
         #[inline(always)]
-        pub const fn baseband_init_7ca8(&self) -> &BasebandInit7ca8 {
-            &self.baseband_init_7ca8
+        pub const fn word_7ca8_opaque(&self) -> &Word7ca8Opaque {
+            &self.word_7ca8_opaque
         }
-        #[doc = "0x7cd0 - Project-assigned name. Complete phy_bb_reg_init sets both nibbles to 0xf; complete phy_btbb_wifi_bb_cfg2 preserves low bit two, sets the other low bits and sets the high nibble."]
+        #[doc = "0x7cd0 - Opaque: meaning not established. Complete phy_bb_reg_init sets both nibbles to 0xf; complete phy_btbb_wifi_bb_cfg2 preserves low bit two, sets the other low bits and sets the high nibble."]
         #[inline(always)]
-        pub const fn baseband_init_7cd0(&self) -> &BasebandInit7cd0 {
-            &self.baseband_init_7cd0
+        pub const fn word_7cd0_opaque(&self) -> &Word7cd0Opaque {
+            &self.word_7cd0_opaque
         }
     }
     #[doc = "FRONT_END_AND_TONE_STOP_CONTROL (rw) register accessor: Project-assigned name. Shared word whose bit 2 is set by complete phy_fe_reg_init. Complete phy_start_tx_tone_step clears bits 1:0 and complete phy_stop_tx_tone sets them.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_and_tone_stop_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_and_tone_stop_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_and_tone_stop_control`] module"]
@@ -10109,15 +10111,15 @@ pub mod phy_baseband_config_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "FRONT_END_INIT_0C08 (rw) register accessor: Project-assigned name. Both complete source bodies set bit 25 and then bit 26 through separate fresh-read RMW edges.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0c08::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0c08::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_init_0c08`] module"]
-    #[doc(alias = "FRONT_END_INIT_0C08")]
-    pub type FrontEndInit0c08 = crate::Reg<front_end_init_0c08::FrontEndInit0c08Spec>;
-    #[doc = "Project-assigned name. Both complete source bodies set bit 25 and then bit 26 through separate fresh-read RMW edges."]
-    pub mod front_end_init_0c08 {
-        #[doc = "Register `FRONT_END_INIT_0C08` reader"]
-        pub type R = crate::R<FrontEndInit0c08Spec>;
-        #[doc = "Register `FRONT_END_INIT_0C08` writer"]
-        pub type W = crate::W<FrontEndInit0c08Spec>;
+    #[doc = "WORD_0C08_OPAQUE (rw) register accessor: Opaque: meaning not established. Both complete source bodies set bit 25 and then bit 26 through separate fresh-read RMW edges.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0c08_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0c08_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0c08_opaque`] module"]
+    #[doc(alias = "WORD_0C08_OPAQUE")]
+    pub type Word0c08Opaque = crate::Reg<word_0c08_opaque::Word0c08OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Both complete source bodies set bit 25 and then bit 26 through separate fresh-read RMW edges."]
+    pub mod word_0c08_opaque {
+        #[doc = "Register `WORD_0C08_OPAQUE` reader"]
+        pub type R = crate::R<Word0c08OpaqueSpec>;
+        #[doc = "Register `WORD_0C08_OPAQUE` writer"]
+        pub type W = crate::W<Word0c08OpaqueSpec>;
         #[doc = "Field `INIT_FIRST_OPAQUE` reader - Opaque: meaning not established."]
         pub type InitFirstOpaqueR = crate::BitReader;
         #[doc = "Field `INIT_FIRST_OPAQUE` writer - Opaque: meaning not established."]
@@ -10141,24 +10143,24 @@ pub mod phy_baseband_config_oracle {
         impl W {
             #[doc = "Bit 25 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_first_opaque(&mut self) -> InitFirstOpaqueW<'_, FrontEndInit0c08Spec> {
+            pub fn init_first_opaque(&mut self) -> InitFirstOpaqueW<'_, Word0c08OpaqueSpec> {
                 InitFirstOpaqueW::new(self, 25)
             }
             #[doc = "Bit 26 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_second_opaque(&mut self) -> InitSecondOpaqueW<'_, FrontEndInit0c08Spec> {
+            pub fn init_second_opaque(&mut self) -> InitSecondOpaqueW<'_, Word0c08OpaqueSpec> {
                 InitSecondOpaqueW::new(self, 26)
             }
         }
-        #[doc = "Project-assigned name. Both complete source bodies set bit 25 and then bit 26 through separate fresh-read RMW edges.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0c08::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0c08::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct FrontEndInit0c08Spec;
-        impl crate::RegisterSpec for FrontEndInit0c08Spec {
+        #[doc = "Opaque: meaning not established. Both complete source bodies set bit 25 and then bit 26 through separate fresh-read RMW edges.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0c08_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0c08_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0c08OpaqueSpec;
+        impl crate::RegisterSpec for Word0c08OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`front_end_init_0c08::R`](R) reader structure"]
-        impl crate::Readable for FrontEndInit0c08Spec {}
-        #[doc = "`write(|w| ..)` method takes [`front_end_init_0c08::W`](W) writer structure"]
-        impl crate::Writable for FrontEndInit0c08Spec {
+        #[doc = "`read()` method returns [`word_0c08_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0c08OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0c08_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0c08OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -10267,15 +10269,15 @@ pub mod phy_baseband_config_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "FRONT_END_INIT_0C20 (rw) register accessor: Project-assigned name. Final complete phy_fe_reg_init RMW replaces the low byte with 0x57.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0c20::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0c20::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_init_0c20`] module"]
-    #[doc(alias = "FRONT_END_INIT_0C20")]
-    pub type FrontEndInit0c20 = crate::Reg<front_end_init_0c20::FrontEndInit0c20Spec>;
-    #[doc = "Project-assigned name. Final complete phy_fe_reg_init RMW replaces the low byte with 0x57."]
-    pub mod front_end_init_0c20 {
-        #[doc = "Register `FRONT_END_INIT_0C20` reader"]
-        pub type R = crate::R<FrontEndInit0c20Spec>;
-        #[doc = "Register `FRONT_END_INIT_0C20` writer"]
-        pub type W = crate::W<FrontEndInit0c20Spec>;
+    #[doc = "WORD_0C20_OPAQUE (rw) register accessor: Opaque: meaning not established. Final complete phy_fe_reg_init RMW replaces the low byte with 0x57.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0c20_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0c20_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0c20_opaque`] module"]
+    #[doc(alias = "WORD_0C20_OPAQUE")]
+    pub type Word0c20Opaque = crate::Reg<word_0c20_opaque::Word0c20OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Final complete phy_fe_reg_init RMW replaces the low byte with 0x57."]
+    pub mod word_0c20_opaque {
+        #[doc = "Register `WORD_0C20_OPAQUE` reader"]
+        pub type R = crate::R<Word0c20OpaqueSpec>;
+        #[doc = "Register `WORD_0C20_OPAQUE` writer"]
+        pub type W = crate::W<Word0c20OpaqueSpec>;
         #[doc = "Field `INIT_LOW_OPAQUE` reader - Opaque: meaning not established."]
         pub type InitLowOpaqueR = crate::FieldReader;
         #[doc = "Field `INIT_LOW_OPAQUE` writer - Opaque: meaning not established."]
@@ -10290,19 +10292,19 @@ pub mod phy_baseband_config_oracle {
         impl W {
             #[doc = "Bits 0:7 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_low_opaque(&mut self) -> InitLowOpaqueW<'_, FrontEndInit0c20Spec> {
+            pub fn init_low_opaque(&mut self) -> InitLowOpaqueW<'_, Word0c20OpaqueSpec> {
                 InitLowOpaqueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Final complete phy_fe_reg_init RMW replaces the low byte with 0x57.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0c20::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0c20::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct FrontEndInit0c20Spec;
-        impl crate::RegisterSpec for FrontEndInit0c20Spec {
+        #[doc = "Opaque: meaning not established. Final complete phy_fe_reg_init RMW replaces the low byte with 0x57.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0c20_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0c20_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0c20OpaqueSpec;
+        impl crate::RegisterSpec for Word0c20OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`front_end_init_0c20::R`](R) reader structure"]
-        impl crate::Readable for FrontEndInit0c20Spec {}
-        #[doc = "`write(|w| ..)` method takes [`front_end_init_0c20::W`](W) writer structure"]
-        impl crate::Writable for FrontEndInit0c20Spec {
+        #[doc = "`read()` method returns [`word_0c20_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0c20OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0c20_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0c20OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -10416,15 +10418,15 @@ pub mod phy_baseband_config_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BASEBAND_INIT_7400 (rw) register accessor: Project-assigned name. Complete phy_bb_reg_init sets bits 14:13.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7400::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7400::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_init_7400`] module"]
-    #[doc(alias = "BASEBAND_INIT_7400")]
-    pub type BasebandInit7400 = crate::Reg<baseband_init_7400::BasebandInit7400Spec>;
-    #[doc = "Project-assigned name. Complete phy_bb_reg_init sets bits 14:13."]
-    pub mod baseband_init_7400 {
-        #[doc = "Register `BASEBAND_INIT_7400` reader"]
-        pub type R = crate::R<BasebandInit7400Spec>;
-        #[doc = "Register `BASEBAND_INIT_7400` writer"]
-        pub type W = crate::W<BasebandInit7400Spec>;
+    #[doc = "WORD_7400_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_bb_reg_init sets bits 14:13.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_7400_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_7400_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_7400_opaque`] module"]
+    #[doc(alias = "WORD_7400_OPAQUE")]
+    pub type Word7400Opaque = crate::Reg<word_7400_opaque::Word7400OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init sets bits 14:13."]
+    pub mod word_7400_opaque {
+        #[doc = "Register `WORD_7400_OPAQUE` reader"]
+        pub type R = crate::R<Word7400OpaqueSpec>;
+        #[doc = "Register `WORD_7400_OPAQUE` writer"]
+        pub type W = crate::W<Word7400OpaqueSpec>;
         #[doc = "Field `INIT_OPAQUE` reader - Opaque: meaning not established."]
         pub type InitOpaqueR = crate::FieldReader;
         #[doc = "Field `INIT_OPAQUE` writer - Opaque: meaning not established."]
@@ -10439,31 +10441,31 @@ pub mod phy_baseband_config_oracle {
         impl W {
             #[doc = "Bits 13:14 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_opaque(&mut self) -> InitOpaqueW<'_, BasebandInit7400Spec> {
+            pub fn init_opaque(&mut self) -> InitOpaqueW<'_, Word7400OpaqueSpec> {
                 InitOpaqueW::new(self, 13)
             }
         }
-        #[doc = "Project-assigned name. Complete phy_bb_reg_init sets bits 14:13.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7400::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7400::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct BasebandInit7400Spec;
-        impl crate::RegisterSpec for BasebandInit7400Spec {
+        #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init sets bits 14:13.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_7400_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_7400_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word7400OpaqueSpec;
+        impl crate::RegisterSpec for Word7400OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`baseband_init_7400::R`](R) reader structure"]
-        impl crate::Readable for BasebandInit7400Spec {}
-        #[doc = "`write(|w| ..)` method takes [`baseband_init_7400::W`](W) writer structure"]
-        impl crate::Writable for BasebandInit7400Spec {
+        #[doc = "`read()` method returns [`word_7400_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word7400OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_7400_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word7400OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BASEBAND_INIT_7428 (rw) register accessor: Project-assigned name. Complete phy_bb_reg_init sets bit 14 and replaces bits 13:8 with 0x15.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7428::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7428::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_init_7428`] module"]
-    #[doc(alias = "BASEBAND_INIT_7428")]
-    pub type BasebandInit7428 = crate::Reg<baseband_init_7428::BasebandInit7428Spec>;
-    #[doc = "Project-assigned name. Complete phy_bb_reg_init sets bit 14 and replaces bits 13:8 with 0x15."]
-    pub mod baseband_init_7428 {
-        #[doc = "Register `BASEBAND_INIT_7428` reader"]
-        pub type R = crate::R<BasebandInit7428Spec>;
-        #[doc = "Register `BASEBAND_INIT_7428` writer"]
-        pub type W = crate::W<BasebandInit7428Spec>;
+    #[doc = "WORD_7428_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_bb_reg_init sets bit 14 and replaces bits 13:8 with 0x15.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_7428_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_7428_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_7428_opaque`] module"]
+    #[doc(alias = "WORD_7428_OPAQUE")]
+    pub type Word7428Opaque = crate::Reg<word_7428_opaque::Word7428OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init sets bit 14 and replaces bits 13:8 with 0x15."]
+    pub mod word_7428_opaque {
+        #[doc = "Register `WORD_7428_OPAQUE` reader"]
+        pub type R = crate::R<Word7428OpaqueSpec>;
+        #[doc = "Register `WORD_7428_OPAQUE` writer"]
+        pub type W = crate::W<Word7428OpaqueSpec>;
         #[doc = "Field `INIT_VALUE_OPAQUE` reader - Opaque: meaning not established."]
         pub type InitValueOpaqueR = crate::FieldReader;
         #[doc = "Field `INIT_VALUE_OPAQUE` writer - Opaque: meaning not established."]
@@ -10487,36 +10489,36 @@ pub mod phy_baseband_config_oracle {
         impl W {
             #[doc = "Bits 8:13 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_value_opaque(&mut self) -> InitValueOpaqueW<'_, BasebandInit7428Spec> {
+            pub fn init_value_opaque(&mut self) -> InitValueOpaqueW<'_, Word7428OpaqueSpec> {
                 InitValueOpaqueW::new(self, 8)
             }
             #[doc = "Bit 14 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_enable_opaque(&mut self) -> InitEnableOpaqueW<'_, BasebandInit7428Spec> {
+            pub fn init_enable_opaque(&mut self) -> InitEnableOpaqueW<'_, Word7428OpaqueSpec> {
                 InitEnableOpaqueW::new(self, 14)
             }
         }
-        #[doc = "Project-assigned name. Complete phy_bb_reg_init sets bit 14 and replaces bits 13:8 with 0x15.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7428::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7428::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct BasebandInit7428Spec;
-        impl crate::RegisterSpec for BasebandInit7428Spec {
+        #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init sets bit 14 and replaces bits 13:8 with 0x15.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_7428_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_7428_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word7428OpaqueSpec;
+        impl crate::RegisterSpec for Word7428OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`baseband_init_7428::R`](R) reader structure"]
-        impl crate::Readable for BasebandInit7428Spec {}
-        #[doc = "`write(|w| ..)` method takes [`baseband_init_7428::W`](W) writer structure"]
-        impl crate::Writable for BasebandInit7428Spec {
+        #[doc = "`read()` method returns [`word_7428_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word7428OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_7428_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word7428OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BASEBAND_INIT_743C (rw) register accessor: Project-assigned name. Complete phy_bb_reg_init clears bits 8:6 through two fresh-read updates.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_743c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_743c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_init_743c`] module"]
-    #[doc(alias = "BASEBAND_INIT_743C")]
-    pub type BasebandInit743c = crate::Reg<baseband_init_743c::BasebandInit743cSpec>;
-    #[doc = "Project-assigned name. Complete phy_bb_reg_init clears bits 8:6 through two fresh-read updates."]
-    pub mod baseband_init_743c {
-        #[doc = "Register `BASEBAND_INIT_743C` reader"]
-        pub type R = crate::R<BasebandInit743cSpec>;
-        #[doc = "Register `BASEBAND_INIT_743C` writer"]
-        pub type W = crate::W<BasebandInit743cSpec>;
+    #[doc = "WORD_743C_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_bb_reg_init clears bits 8:6 through two fresh-read updates.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_743c_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_743c_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_743c_opaque`] module"]
+    #[doc(alias = "WORD_743C_OPAQUE")]
+    pub type Word743cOpaque = crate::Reg<word_743c_opaque::Word743cOpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init clears bits 8:6 through two fresh-read updates."]
+    pub mod word_743c_opaque {
+        #[doc = "Register `WORD_743C_OPAQUE` reader"]
+        pub type R = crate::R<Word743cOpaqueSpec>;
+        #[doc = "Register `WORD_743C_OPAQUE` writer"]
+        pub type W = crate::W<Word743cOpaqueSpec>;
         #[doc = "Field `INIT_CLEAR_LOW_OPAQUE` reader - Opaque: meaning not established."]
         pub type InitClearLowOpaqueR = crate::FieldReader;
         #[doc = "Field `INIT_CLEAR_LOW_OPAQUE` writer - Opaque: meaning not established."]
@@ -10540,28 +10542,26 @@ pub mod phy_baseband_config_oracle {
         impl W {
             #[doc = "Bits 6:7 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_clear_low_opaque(
-                &mut self,
-            ) -> InitClearLowOpaqueW<'_, BasebandInit743cSpec> {
+            pub fn init_clear_low_opaque(&mut self) -> InitClearLowOpaqueW<'_, Word743cOpaqueSpec> {
                 InitClearLowOpaqueW::new(self, 6)
             }
             #[doc = "Bit 8 - Opaque: meaning not established."]
             #[inline(always)]
             pub fn init_clear_high_opaque(
                 &mut self,
-            ) -> InitClearHighOpaqueW<'_, BasebandInit743cSpec> {
+            ) -> InitClearHighOpaqueW<'_, Word743cOpaqueSpec> {
                 InitClearHighOpaqueW::new(self, 8)
             }
         }
-        #[doc = "Project-assigned name. Complete phy_bb_reg_init clears bits 8:6 through two fresh-read updates.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_743c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_743c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct BasebandInit743cSpec;
-        impl crate::RegisterSpec for BasebandInit743cSpec {
+        #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init clears bits 8:6 through two fresh-read updates.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_743c_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_743c_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word743cOpaqueSpec;
+        impl crate::RegisterSpec for Word743cOpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`baseband_init_743c::R`](R) reader structure"]
-        impl crate::Readable for BasebandInit743cSpec {}
-        #[doc = "`write(|w| ..)` method takes [`baseband_init_743c::W`](W) writer structure"]
-        impl crate::Writable for BasebandInit743cSpec {
+        #[doc = "`read()` method returns [`word_743c_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word743cOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_743c_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word743cOpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -11317,15 +11317,15 @@ pub mod phy_baseband_config_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BASEBAND_INIT_7808 (rw) register accessor: Project-assigned name. Complete phy_bb_reg_init replaces bits 13:7 with 0x60.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7808::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7808::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_init_7808`] module"]
-    #[doc(alias = "BASEBAND_INIT_7808")]
-    pub type BasebandInit7808 = crate::Reg<baseband_init_7808::BasebandInit7808Spec>;
-    #[doc = "Project-assigned name. Complete phy_bb_reg_init replaces bits 13:7 with 0x60."]
-    pub mod baseband_init_7808 {
-        #[doc = "Register `BASEBAND_INIT_7808` reader"]
-        pub type R = crate::R<BasebandInit7808Spec>;
-        #[doc = "Register `BASEBAND_INIT_7808` writer"]
-        pub type W = crate::W<BasebandInit7808Spec>;
+    #[doc = "WORD_7808_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_bb_reg_init replaces bits 13:7 with 0x60.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_7808_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_7808_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_7808_opaque`] module"]
+    #[doc(alias = "WORD_7808_OPAQUE")]
+    pub type Word7808Opaque = crate::Reg<word_7808_opaque::Word7808OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init replaces bits 13:7 with 0x60."]
+    pub mod word_7808_opaque {
+        #[doc = "Register `WORD_7808_OPAQUE` reader"]
+        pub type R = crate::R<Word7808OpaqueSpec>;
+        #[doc = "Register `WORD_7808_OPAQUE` writer"]
+        pub type W = crate::W<Word7808OpaqueSpec>;
         #[doc = "Field `INIT_VALUE_OPAQUE` reader - Opaque: meaning not established."]
         pub type InitValueOpaqueR = crate::FieldReader;
         #[doc = "Field `INIT_VALUE_OPAQUE` writer - Opaque: meaning not established."]
@@ -11340,31 +11340,31 @@ pub mod phy_baseband_config_oracle {
         impl W {
             #[doc = "Bits 7:13 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_value_opaque(&mut self) -> InitValueOpaqueW<'_, BasebandInit7808Spec> {
+            pub fn init_value_opaque(&mut self) -> InitValueOpaqueW<'_, Word7808OpaqueSpec> {
                 InitValueOpaqueW::new(self, 7)
             }
         }
-        #[doc = "Project-assigned name. Complete phy_bb_reg_init replaces bits 13:7 with 0x60.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7808::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7808::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct BasebandInit7808Spec;
-        impl crate::RegisterSpec for BasebandInit7808Spec {
+        #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init replaces bits 13:7 with 0x60.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_7808_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_7808_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word7808OpaqueSpec;
+        impl crate::RegisterSpec for Word7808OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`baseband_init_7808::R`](R) reader structure"]
-        impl crate::Readable for BasebandInit7808Spec {}
-        #[doc = "`write(|w| ..)` method takes [`baseband_init_7808::W`](W) writer structure"]
-        impl crate::Writable for BasebandInit7808Spec {
+        #[doc = "`read()` method returns [`word_7808_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word7808OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_7808_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word7808OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BASEBAND_INIT_7890 (rw) register accessor: Project-assigned name. Complete phy_bb_reg_init and phy_hemu_ru26_good_res both clear bit 25 then set bit 24 through separate fresh-read RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7890::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7890::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_init_7890`] module"]
-    #[doc(alias = "BASEBAND_INIT_7890")]
-    pub type BasebandInit7890 = crate::Reg<baseband_init_7890::BasebandInit7890Spec>;
-    #[doc = "Project-assigned name. Complete phy_bb_reg_init and phy_hemu_ru26_good_res both clear bit 25 then set bit 24 through separate fresh-read RMWs."]
-    pub mod baseband_init_7890 {
-        #[doc = "Register `BASEBAND_INIT_7890` reader"]
-        pub type R = crate::R<BasebandInit7890Spec>;
-        #[doc = "Register `BASEBAND_INIT_7890` writer"]
-        pub type W = crate::W<BasebandInit7890Spec>;
+    #[doc = "WORD_7890_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_bb_reg_init and phy_hemu_ru26_good_res both clear bit 25 then set bit 24 through separate fresh-read RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_7890_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_7890_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_7890_opaque`] module"]
+    #[doc(alias = "WORD_7890_OPAQUE")]
+    pub type Word7890Opaque = crate::Reg<word_7890_opaque::Word7890OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init and phy_hemu_ru26_good_res both clear bit 25 then set bit 24 through separate fresh-read RMWs."]
+    pub mod word_7890_opaque {
+        #[doc = "Register `WORD_7890_OPAQUE` reader"]
+        pub type R = crate::R<Word7890OpaqueSpec>;
+        #[doc = "Register `WORD_7890_OPAQUE` writer"]
+        pub type W = crate::W<Word7890OpaqueSpec>;
         #[doc = "Field `HE_RU26_GOOD_RESPONSE_ENABLE` reader - Project-assigned name."]
         pub type HeRu26GoodResponseEnableR = crate::BitReader;
         #[doc = "Field `HE_RU26_GOOD_RESPONSE_ENABLE` writer - Project-assigned name."]
@@ -11390,38 +11390,38 @@ pub mod phy_baseband_config_oracle {
             #[inline(always)]
             pub fn he_ru26_good_response_enable(
                 &mut self,
-            ) -> HeRu26GoodResponseEnableW<'_, BasebandInit7890Spec> {
+            ) -> HeRu26GoodResponseEnableW<'_, Word7890OpaqueSpec> {
                 HeRu26GoodResponseEnableW::new(self, 24)
             }
             #[doc = "Bit 25 - Project-assigned name."]
             #[inline(always)]
             pub fn he_ru26_good_response_disable(
                 &mut self,
-            ) -> HeRu26GoodResponseDisableW<'_, BasebandInit7890Spec> {
+            ) -> HeRu26GoodResponseDisableW<'_, Word7890OpaqueSpec> {
                 HeRu26GoodResponseDisableW::new(self, 25)
             }
         }
-        #[doc = "Project-assigned name. Complete phy_bb_reg_init and phy_hemu_ru26_good_res both clear bit 25 then set bit 24 through separate fresh-read RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7890::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7890::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct BasebandInit7890Spec;
-        impl crate::RegisterSpec for BasebandInit7890Spec {
+        #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init and phy_hemu_ru26_good_res both clear bit 25 then set bit 24 through separate fresh-read RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_7890_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_7890_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word7890OpaqueSpec;
+        impl crate::RegisterSpec for Word7890OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`baseband_init_7890::R`](R) reader structure"]
-        impl crate::Readable for BasebandInit7890Spec {}
-        #[doc = "`write(|w| ..)` method takes [`baseband_init_7890::W`](W) writer structure"]
-        impl crate::Writable for BasebandInit7890Spec {
+        #[doc = "`read()` method returns [`word_7890_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word7890OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_7890_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word7890OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BASEBAND_INIT_78DC (rw) register accessor: Project-assigned name. Complete phy_bb_reg_init replaces bits 13:7 with two.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_78dc::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_78dc::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_init_78dc`] module"]
-    #[doc(alias = "BASEBAND_INIT_78DC")]
-    pub type BasebandInit78dc = crate::Reg<baseband_init_78dc::BasebandInit78dcSpec>;
-    #[doc = "Project-assigned name. Complete phy_bb_reg_init replaces bits 13:7 with two."]
-    pub mod baseband_init_78dc {
-        #[doc = "Register `BASEBAND_INIT_78DC` reader"]
-        pub type R = crate::R<BasebandInit78dcSpec>;
-        #[doc = "Register `BASEBAND_INIT_78DC` writer"]
-        pub type W = crate::W<BasebandInit78dcSpec>;
+    #[doc = "WORD_78DC_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_bb_reg_init replaces bits 13:7 with two.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_78dc_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_78dc_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_78dc_opaque`] module"]
+    #[doc(alias = "WORD_78DC_OPAQUE")]
+    pub type Word78dcOpaque = crate::Reg<word_78dc_opaque::Word78dcOpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init replaces bits 13:7 with two."]
+    pub mod word_78dc_opaque {
+        #[doc = "Register `WORD_78DC_OPAQUE` reader"]
+        pub type R = crate::R<Word78dcOpaqueSpec>;
+        #[doc = "Register `WORD_78DC_OPAQUE` writer"]
+        pub type W = crate::W<Word78dcOpaqueSpec>;
         #[doc = "Field `INIT_VALUE_OPAQUE` reader - Opaque: meaning not established."]
         pub type InitValueOpaqueR = crate::FieldReader;
         #[doc = "Field `INIT_VALUE_OPAQUE` writer - Opaque: meaning not established."]
@@ -11436,31 +11436,31 @@ pub mod phy_baseband_config_oracle {
         impl W {
             #[doc = "Bits 7:13 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_value_opaque(&mut self) -> InitValueOpaqueW<'_, BasebandInit78dcSpec> {
+            pub fn init_value_opaque(&mut self) -> InitValueOpaqueW<'_, Word78dcOpaqueSpec> {
                 InitValueOpaqueW::new(self, 7)
             }
         }
-        #[doc = "Project-assigned name. Complete phy_bb_reg_init replaces bits 13:7 with two.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_78dc::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_78dc::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct BasebandInit78dcSpec;
-        impl crate::RegisterSpec for BasebandInit78dcSpec {
+        #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init replaces bits 13:7 with two.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_78dc_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_78dc_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word78dcOpaqueSpec;
+        impl crate::RegisterSpec for Word78dcOpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`baseband_init_78dc::R`](R) reader structure"]
-        impl crate::Readable for BasebandInit78dcSpec {}
-        #[doc = "`write(|w| ..)` method takes [`baseband_init_78dc::W`](W) writer structure"]
-        impl crate::Writable for BasebandInit78dcSpec {
+        #[doc = "`read()` method returns [`word_78dc_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word78dcOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_78dc_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word78dcOpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BASEBAND_INIT_78E4 (rw) register accessor: Project-assigned name. Complete phy_bb_reg_init clears bit 22.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_78e4::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_78e4::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_init_78e4`] module"]
-    #[doc(alias = "BASEBAND_INIT_78E4")]
-    pub type BasebandInit78e4 = crate::Reg<baseband_init_78e4::BasebandInit78e4Spec>;
-    #[doc = "Project-assigned name. Complete phy_bb_reg_init clears bit 22."]
-    pub mod baseband_init_78e4 {
-        #[doc = "Register `BASEBAND_INIT_78E4` reader"]
-        pub type R = crate::R<BasebandInit78e4Spec>;
-        #[doc = "Register `BASEBAND_INIT_78E4` writer"]
-        pub type W = crate::W<BasebandInit78e4Spec>;
+    #[doc = "WORD_78E4_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_bb_reg_init clears bit 22.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_78e4_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_78e4_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_78e4_opaque`] module"]
+    #[doc(alias = "WORD_78E4_OPAQUE")]
+    pub type Word78e4Opaque = crate::Reg<word_78e4_opaque::Word78e4OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init clears bit 22."]
+    pub mod word_78e4_opaque {
+        #[doc = "Register `WORD_78E4_OPAQUE` reader"]
+        pub type R = crate::R<Word78e4OpaqueSpec>;
+        #[doc = "Register `WORD_78E4_OPAQUE` writer"]
+        pub type W = crate::W<Word78e4OpaqueSpec>;
         #[doc = "Field `INIT_CLEAR_OPAQUE` reader - Opaque: meaning not established."]
         pub type InitClearOpaqueR = crate::BitReader;
         #[doc = "Field `INIT_CLEAR_OPAQUE` writer - Opaque: meaning not established."]
@@ -11475,31 +11475,31 @@ pub mod phy_baseband_config_oracle {
         impl W {
             #[doc = "Bit 22 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_clear_opaque(&mut self) -> InitClearOpaqueW<'_, BasebandInit78e4Spec> {
+            pub fn init_clear_opaque(&mut self) -> InitClearOpaqueW<'_, Word78e4OpaqueSpec> {
                 InitClearOpaqueW::new(self, 22)
             }
         }
-        #[doc = "Project-assigned name. Complete phy_bb_reg_init clears bit 22.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_78e4::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_78e4::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct BasebandInit78e4Spec;
-        impl crate::RegisterSpec for BasebandInit78e4Spec {
+        #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init clears bit 22.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_78e4_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_78e4_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word78e4OpaqueSpec;
+        impl crate::RegisterSpec for Word78e4OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`baseband_init_78e4::R`](R) reader structure"]
-        impl crate::Readable for BasebandInit78e4Spec {}
-        #[doc = "`write(|w| ..)` method takes [`baseband_init_78e4::W`](W) writer structure"]
-        impl crate::Writable for BasebandInit78e4Spec {
+        #[doc = "`read()` method returns [`word_78e4_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word78e4OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_78e4_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word78e4OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BASEBAND_INIT_790C (rw) register accessor: Project-assigned name. Complete phy_bb_reg_init clears bit 11; complete phy_lltf_mask_en independently replaces bits thirteen and twelve; complete phy_chan_dump_cfg replaces bits 7:4 and bit 11 through separate fresh-read RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_790c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_790c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_init_790c`] module"]
-    #[doc(alias = "BASEBAND_INIT_790C")]
-    pub type BasebandInit790c = crate::Reg<baseband_init_790c::BasebandInit790cSpec>;
-    #[doc = "Project-assigned name. Complete phy_bb_reg_init clears bit 11; complete phy_lltf_mask_en independently replaces bits thirteen and twelve; complete phy_chan_dump_cfg replaces bits 7:4 and bit 11 through separate fresh-read RMWs."]
-    pub mod baseband_init_790c {
-        #[doc = "Register `BASEBAND_INIT_790C` reader"]
-        pub type R = crate::R<BasebandInit790cSpec>;
-        #[doc = "Register `BASEBAND_INIT_790C` writer"]
-        pub type W = crate::W<BasebandInit790cSpec>;
+    #[doc = "WORD_790C_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_bb_reg_init clears bit 11; complete phy_lltf_mask_en independently replaces bits thirteen and twelve; complete phy_chan_dump_cfg replaces bits 7:4 and bit 11 through separate fresh-read RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_790c_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_790c_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_790c_opaque`] module"]
+    #[doc(alias = "WORD_790C_OPAQUE")]
+    pub type Word790cOpaque = crate::Reg<word_790c_opaque::Word790cOpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init clears bit 11; complete phy_lltf_mask_en independently replaces bits thirteen and twelve; complete phy_chan_dump_cfg replaces bits 7:4 and bit 11 through separate fresh-read RMWs."]
+    pub mod word_790c_opaque {
+        #[doc = "Register `WORD_790C_OPAQUE` reader"]
+        pub type R = crate::R<Word790cOpaqueSpec>;
+        #[doc = "Register `WORD_790C_OPAQUE` writer"]
+        pub type W = crate::W<Word790cOpaqueSpec>;
         #[doc = "Field `CHANNEL_DUMP_VALUE_OPAQUE` reader - Opaque: meaning not established. Complete phy_chan_dump_cfg replaces bits 7:4 with the low nibble of its first argument."]
         pub type ChannelDumpValueOpaqueR = crate::FieldReader;
         #[doc = "Field `CHANNEL_DUMP_VALUE_OPAQUE` writer - Opaque: meaning not established. Complete phy_chan_dump_cfg replaces bits 7:4 with the low nibble of its first argument."]
@@ -11543,46 +11543,46 @@ pub mod phy_baseband_config_oracle {
             #[inline(always)]
             pub fn channel_dump_value_opaque(
                 &mut self,
-            ) -> ChannelDumpValueOpaqueW<'_, BasebandInit790cSpec> {
+            ) -> ChannelDumpValueOpaqueW<'_, Word790cOpaqueSpec> {
                 ChannelDumpValueOpaqueW::new(self, 4)
             }
             #[doc = "Bit 11 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_clear_opaque(&mut self) -> InitClearOpaqueW<'_, BasebandInit790cSpec> {
+            pub fn init_clear_opaque(&mut self) -> InitClearOpaqueW<'_, Word790cOpaqueSpec> {
                 InitClearOpaqueW::new(self, 11)
             }
             #[doc = "Bit 12 - Project-assigned name."]
             #[inline(always)]
-            pub fn lltf_mask_input_1(&mut self) -> LltfMaskInput1W<'_, BasebandInit790cSpec> {
+            pub fn lltf_mask_input_1(&mut self) -> LltfMaskInput1W<'_, Word790cOpaqueSpec> {
                 LltfMaskInput1W::new(self, 12)
             }
             #[doc = "Bit 13 - Project-assigned name."]
             #[inline(always)]
-            pub fn lltf_mask_input_0(&mut self) -> LltfMaskInput0W<'_, BasebandInit790cSpec> {
+            pub fn lltf_mask_input_0(&mut self) -> LltfMaskInput0W<'_, Word790cOpaqueSpec> {
                 LltfMaskInput0W::new(self, 13)
             }
         }
-        #[doc = "Project-assigned name. Complete phy_bb_reg_init clears bit 11; complete phy_lltf_mask_en independently replaces bits thirteen and twelve; complete phy_chan_dump_cfg replaces bits 7:4 and bit 11 through separate fresh-read RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_790c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_790c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct BasebandInit790cSpec;
-        impl crate::RegisterSpec for BasebandInit790cSpec {
+        #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init clears bit 11; complete phy_lltf_mask_en independently replaces bits thirteen and twelve; complete phy_chan_dump_cfg replaces bits 7:4 and bit 11 through separate fresh-read RMWs.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_790c_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_790c_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word790cOpaqueSpec;
+        impl crate::RegisterSpec for Word790cOpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`baseband_init_790c::R`](R) reader structure"]
-        impl crate::Readable for BasebandInit790cSpec {}
-        #[doc = "`write(|w| ..)` method takes [`baseband_init_790c::W`](W) writer structure"]
-        impl crate::Writable for BasebandInit790cSpec {
+        #[doc = "`read()` method returns [`word_790c_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word790cOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_790c_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word790cOpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BASEBAND_INIT_7980 (rw) register accessor: Project-assigned name. Complete phy_bb_reg_init clears bit 25.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7980::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7980::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_init_7980`] module"]
-    #[doc(alias = "BASEBAND_INIT_7980")]
-    pub type BasebandInit7980 = crate::Reg<baseband_init_7980::BasebandInit7980Spec>;
-    #[doc = "Project-assigned name. Complete phy_bb_reg_init clears bit 25."]
-    pub mod baseband_init_7980 {
-        #[doc = "Register `BASEBAND_INIT_7980` reader"]
-        pub type R = crate::R<BasebandInit7980Spec>;
-        #[doc = "Register `BASEBAND_INIT_7980` writer"]
-        pub type W = crate::W<BasebandInit7980Spec>;
+    #[doc = "WORD_7980_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_bb_reg_init clears bit 25.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_7980_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_7980_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_7980_opaque`] module"]
+    #[doc(alias = "WORD_7980_OPAQUE")]
+    pub type Word7980Opaque = crate::Reg<word_7980_opaque::Word7980OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init clears bit 25."]
+    pub mod word_7980_opaque {
+        #[doc = "Register `WORD_7980_OPAQUE` reader"]
+        pub type R = crate::R<Word7980OpaqueSpec>;
+        #[doc = "Register `WORD_7980_OPAQUE` writer"]
+        pub type W = crate::W<Word7980OpaqueSpec>;
         #[doc = "Field `INIT_CLEAR_OPAQUE` reader - Opaque: meaning not established."]
         pub type InitClearOpaqueR = crate::BitReader;
         #[doc = "Field `INIT_CLEAR_OPAQUE` writer - Opaque: meaning not established."]
@@ -11597,31 +11597,31 @@ pub mod phy_baseband_config_oracle {
         impl W {
             #[doc = "Bit 25 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_clear_opaque(&mut self) -> InitClearOpaqueW<'_, BasebandInit7980Spec> {
+            pub fn init_clear_opaque(&mut self) -> InitClearOpaqueW<'_, Word7980OpaqueSpec> {
                 InitClearOpaqueW::new(self, 25)
             }
         }
-        #[doc = "Project-assigned name. Complete phy_bb_reg_init clears bit 25.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7980::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7980::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct BasebandInit7980Spec;
-        impl crate::RegisterSpec for BasebandInit7980Spec {
+        #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init clears bit 25.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_7980_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_7980_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word7980OpaqueSpec;
+        impl crate::RegisterSpec for Word7980OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`baseband_init_7980::R`](R) reader structure"]
-        impl crate::Readable for BasebandInit7980Spec {}
-        #[doc = "`write(|w| ..)` method takes [`baseband_init_7980::W`](W) writer structure"]
-        impl crate::Writable for BasebandInit7980Spec {
+        #[doc = "`read()` method returns [`word_7980_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word7980OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_7980_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word7980OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BASEBAND_INIT_7A28 (rw) register accessor: Project-assigned name. Complete phy_bb_reg_init clears bit 22.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7a28::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7a28::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_init_7a28`] module"]
-    #[doc(alias = "BASEBAND_INIT_7A28")]
-    pub type BasebandInit7a28 = crate::Reg<baseband_init_7a28::BasebandInit7a28Spec>;
-    #[doc = "Project-assigned name. Complete phy_bb_reg_init clears bit 22."]
-    pub mod baseband_init_7a28 {
-        #[doc = "Register `BASEBAND_INIT_7A28` reader"]
-        pub type R = crate::R<BasebandInit7a28Spec>;
-        #[doc = "Register `BASEBAND_INIT_7A28` writer"]
-        pub type W = crate::W<BasebandInit7a28Spec>;
+    #[doc = "WORD_7A28_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_bb_reg_init clears bit 22.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_7a28_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_7a28_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_7a28_opaque`] module"]
+    #[doc(alias = "WORD_7A28_OPAQUE")]
+    pub type Word7a28Opaque = crate::Reg<word_7a28_opaque::Word7a28OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init clears bit 22."]
+    pub mod word_7a28_opaque {
+        #[doc = "Register `WORD_7A28_OPAQUE` reader"]
+        pub type R = crate::R<Word7a28OpaqueSpec>;
+        #[doc = "Register `WORD_7A28_OPAQUE` writer"]
+        pub type W = crate::W<Word7a28OpaqueSpec>;
         #[doc = "Field `INIT_CLEAR_OPAQUE` reader - Opaque: meaning not established."]
         pub type InitClearOpaqueR = crate::BitReader;
         #[doc = "Field `INIT_CLEAR_OPAQUE` writer - Opaque: meaning not established."]
@@ -11636,19 +11636,19 @@ pub mod phy_baseband_config_oracle {
         impl W {
             #[doc = "Bit 22 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_clear_opaque(&mut self) -> InitClearOpaqueW<'_, BasebandInit7a28Spec> {
+            pub fn init_clear_opaque(&mut self) -> InitClearOpaqueW<'_, Word7a28OpaqueSpec> {
                 InitClearOpaqueW::new(self, 22)
             }
         }
-        #[doc = "Project-assigned name. Complete phy_bb_reg_init clears bit 22.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7a28::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7a28::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct BasebandInit7a28Spec;
-        impl crate::RegisterSpec for BasebandInit7a28Spec {
+        #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init clears bit 22.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_7a28_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_7a28_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word7a28OpaqueSpec;
+        impl crate::RegisterSpec for Word7a28OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`baseband_init_7a28::R`](R) reader structure"]
-        impl crate::Readable for BasebandInit7a28Spec {}
-        #[doc = "`write(|w| ..)` method takes [`baseband_init_7a28::W`](W) writer structure"]
-        impl crate::Writable for BasebandInit7a28Spec {
+        #[doc = "`read()` method returns [`word_7a28_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word7a28OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_7a28_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word7a28OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -12035,15 +12035,15 @@ pub mod phy_baseband_config_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BASEBAND_INIT_7CA8 (rw) register accessor: Project-assigned name. Complete phy_bb_reg_init sets bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7ca8::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7ca8::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_init_7ca8`] module"]
-    #[doc(alias = "BASEBAND_INIT_7CA8")]
-    pub type BasebandInit7ca8 = crate::Reg<baseband_init_7ca8::BasebandInit7ca8Spec>;
-    #[doc = "Project-assigned name. Complete phy_bb_reg_init sets bit 20."]
-    pub mod baseband_init_7ca8 {
-        #[doc = "Register `BASEBAND_INIT_7CA8` reader"]
-        pub type R = crate::R<BasebandInit7ca8Spec>;
-        #[doc = "Register `BASEBAND_INIT_7CA8` writer"]
-        pub type W = crate::W<BasebandInit7ca8Spec>;
+    #[doc = "WORD_7CA8_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_bb_reg_init sets bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_7ca8_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_7ca8_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_7ca8_opaque`] module"]
+    #[doc(alias = "WORD_7CA8_OPAQUE")]
+    pub type Word7ca8Opaque = crate::Reg<word_7ca8_opaque::Word7ca8OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init sets bit 20."]
+    pub mod word_7ca8_opaque {
+        #[doc = "Register `WORD_7CA8_OPAQUE` reader"]
+        pub type R = crate::R<Word7ca8OpaqueSpec>;
+        #[doc = "Register `WORD_7CA8_OPAQUE` writer"]
+        pub type W = crate::W<Word7ca8OpaqueSpec>;
         #[doc = "Field `INIT_ENABLE_OPAQUE` reader - Opaque: meaning not established."]
         pub type InitEnableOpaqueR = crate::BitReader;
         #[doc = "Field `INIT_ENABLE_OPAQUE` writer - Opaque: meaning not established."]
@@ -12058,31 +12058,31 @@ pub mod phy_baseband_config_oracle {
         impl W {
             #[doc = "Bit 20 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_enable_opaque(&mut self) -> InitEnableOpaqueW<'_, BasebandInit7ca8Spec> {
+            pub fn init_enable_opaque(&mut self) -> InitEnableOpaqueW<'_, Word7ca8OpaqueSpec> {
                 InitEnableOpaqueW::new(self, 20)
             }
         }
-        #[doc = "Project-assigned name. Complete phy_bb_reg_init sets bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7ca8::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7ca8::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct BasebandInit7ca8Spec;
-        impl crate::RegisterSpec for BasebandInit7ca8Spec {
+        #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init sets bit 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_7ca8_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_7ca8_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word7ca8OpaqueSpec;
+        impl crate::RegisterSpec for Word7ca8OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`baseband_init_7ca8::R`](R) reader structure"]
-        impl crate::Readable for BasebandInit7ca8Spec {}
-        #[doc = "`write(|w| ..)` method takes [`baseband_init_7ca8::W`](W) writer structure"]
-        impl crate::Writable for BasebandInit7ca8Spec {
+        #[doc = "`read()` method returns [`word_7ca8_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word7ca8OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_7ca8_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word7ca8OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BASEBAND_INIT_7CD0 (rw) register accessor: Project-assigned name. Complete phy_bb_reg_init sets both nibbles to 0xf; complete phy_btbb_wifi_bb_cfg2 preserves low bit two, sets the other low bits and sets the high nibble.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7cd0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7cd0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@baseband_init_7cd0`] module"]
-    #[doc(alias = "BASEBAND_INIT_7CD0")]
-    pub type BasebandInit7cd0 = crate::Reg<baseband_init_7cd0::BasebandInit7cd0Spec>;
-    #[doc = "Project-assigned name. Complete phy_bb_reg_init sets both nibbles to 0xf; complete phy_btbb_wifi_bb_cfg2 preserves low bit two, sets the other low bits and sets the high nibble."]
-    pub mod baseband_init_7cd0 {
-        #[doc = "Register `BASEBAND_INIT_7CD0` reader"]
-        pub type R = crate::R<BasebandInit7cd0Spec>;
-        #[doc = "Register `BASEBAND_INIT_7CD0` writer"]
-        pub type W = crate::W<BasebandInit7cd0Spec>;
+    #[doc = "WORD_7CD0_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_bb_reg_init sets both nibbles to 0xf; complete phy_btbb_wifi_bb_cfg2 preserves low bit two, sets the other low bits and sets the high nibble.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_7cd0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_7cd0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_7cd0_opaque`] module"]
+    #[doc(alias = "WORD_7CD0_OPAQUE")]
+    pub type Word7cd0Opaque = crate::Reg<word_7cd0_opaque::Word7cd0OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init sets both nibbles to 0xf; complete phy_btbb_wifi_bb_cfg2 preserves low bit two, sets the other low bits and sets the high nibble."]
+    pub mod word_7cd0_opaque {
+        #[doc = "Register `WORD_7CD0_OPAQUE` reader"]
+        pub type R = crate::R<Word7cd0OpaqueSpec>;
+        #[doc = "Register `WORD_7CD0_OPAQUE` writer"]
+        pub type W = crate::W<Word7cd0OpaqueSpec>;
         #[doc = "Field `INIT_LOW_OPAQUE` reader - Opaque: meaning not established."]
         pub type InitLowOpaqueR = crate::BitReader;
         #[doc = "Field `INIT_LOW_OPAQUE` writer - Opaque: meaning not established."]
@@ -12133,41 +12133,39 @@ pub mod phy_baseband_config_oracle {
         impl W {
             #[doc = "Bit 0 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_low_opaque(&mut self) -> InitLowOpaqueW<'_, BasebandInit7cd0Spec> {
+            pub fn init_low_opaque(&mut self) -> InitLowOpaqueW<'_, Word7cd0OpaqueSpec> {
                 InitLowOpaqueW::new(self, 0)
             }
             #[doc = "Bit 1 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_low_1_opaque(&mut self) -> InitLow1OpaqueW<'_, BasebandInit7cd0Spec> {
+            pub fn init_low_1_opaque(&mut self) -> InitLow1OpaqueW<'_, Word7cd0OpaqueSpec> {
                 InitLow1OpaqueW::new(self, 1)
             }
             #[doc = "Bit 2 - Opaque: meaning not established. Complete phy_btbb_wifi_bb_cfg2 preserves this bit while setting the other low-nibble bits."]
             #[inline(always)]
-            pub fn init_low_bit_2_opaque(
-                &mut self,
-            ) -> InitLowBit2OpaqueW<'_, BasebandInit7cd0Spec> {
+            pub fn init_low_bit_2_opaque(&mut self) -> InitLowBit2OpaqueW<'_, Word7cd0OpaqueSpec> {
                 InitLowBit2OpaqueW::new(self, 2)
             }
             #[doc = "Bit 3 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_low_3_opaque(&mut self) -> InitLow3OpaqueW<'_, BasebandInit7cd0Spec> {
+            pub fn init_low_3_opaque(&mut self) -> InitLow3OpaqueW<'_, Word7cd0OpaqueSpec> {
                 InitLow3OpaqueW::new(self, 3)
             }
             #[doc = "Bits 16:19 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_high_opaque(&mut self) -> InitHighOpaqueW<'_, BasebandInit7cd0Spec> {
+            pub fn init_high_opaque(&mut self) -> InitHighOpaqueW<'_, Word7cd0OpaqueSpec> {
                 InitHighOpaqueW::new(self, 16)
             }
         }
-        #[doc = "Project-assigned name. Complete phy_bb_reg_init sets both nibbles to 0xf; complete phy_btbb_wifi_bb_cfg2 preserves low bit two, sets the other low bits and sets the high nibble.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_7cd0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_7cd0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct BasebandInit7cd0Spec;
-        impl crate::RegisterSpec for BasebandInit7cd0Spec {
+        #[doc = "Opaque: meaning not established. Complete phy_bb_reg_init sets both nibbles to 0xf; complete phy_btbb_wifi_bb_cfg2 preserves low bit two, sets the other low bits and sets the high nibble.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_7cd0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_7cd0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word7cd0OpaqueSpec;
+        impl crate::RegisterSpec for Word7cd0OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`baseband_init_7cd0::R`](R) reader structure"]
-        impl crate::Readable for BasebandInit7cd0Spec {}
-        #[doc = "`write(|w| ..)` method takes [`baseband_init_7cd0::W`](W) writer structure"]
-        impl crate::Writable for BasebandInit7cd0Spec {
+        #[doc = "`read()` method returns [`word_7cd0_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word7cd0OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_7cd0_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word7cd0OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -19552,22 +19550,22 @@ pub mod wifi_mac_tx_queue_vector {
         pub type R = crate::R<HeControlSpec>;
         #[doc = "Register `HE_CONTROL%s` writer"]
         pub type W = crate::W<HeControlSpec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name. Complete four-byte HE-Control image. Its A-Control subfields depend on the control ID; keep the finite protocol interpretation in the handwritten IEEE 802.11 layer rather than exposing overlapping mode-dependent SVD fields."]
-        pub type ImageR = crate::FieldReader<u32>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name. Complete four-byte HE-Control image. Its A-Control subfields depend on the control ID; keep the finite protocol interpretation in the handwritten IEEE 802.11 layer rather than exposing overlapping mode-dependent SVD fields."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+        #[doc = "Field `VALUE` reader - Project-assigned name. Complete four-byte HE-Control image. Its A-Control subfields depend on the control ID; keep the finite protocol interpretation in the handwritten IEEE 802.11 layer rather than exposing overlapping mode-dependent SVD fields."]
+        pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name. Complete four-byte HE-Control image. Its A-Control subfields depend on the control ID; keep the finite protocol interpretation in the handwritten IEEE 802.11 layer rather than exposing overlapping mode-dependent SVD fields."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl R {
             #[doc = "Bits 0:31 - Project-assigned name. Complete four-byte HE-Control image. Its A-Control subfields depend on the control ID; keep the finite protocol interpretation in the handwritten IEEE 802.11 layer rather than exposing overlapping mode-dependent SVD fields."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name. Complete four-byte HE-Control image. Its A-Control subfields depend on the control ID; keep the finite protocol interpretation in the handwritten IEEE 802.11 layer rather than exposing overlapping mode-dependent SVD fields."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, HeControlSpec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, HeControlSpec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. Per-queue four-byte HT-Control/HE-Control image at 0x201054e4-logical_queue*0x7c. Complete hal_he_get_htc reads the whole word. Complete hal_he_set_htc writes the supplied word before independently selecting whether this software image overrides the hardware-generated HE-Control value.\n\nYou can [`read`](crate::Reg::read) this register and get [`he_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`he_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -37456,7 +37454,7 @@ pub mod phy_btagc_recovered {
         rx_gain_force: RxGainForce,
         rx_comp_control: RxCompControl,
         gain_offset_word_0_opaque: GainOffsetWord0Opaque,
-        rx_config_004c: RxConfig004c,
+        word_004c_opaque: Word004cOpaque,
         agc_gain_max_control: AgcGainMaxControl,
         agc_gain_image: AgcGainImage,
         agc_sat_gain_image_0: AgcSatGainImage0,
@@ -37464,30 +37462,30 @@ pub mod phy_btagc_recovered {
         _reserved10: [u8; 0x04],
         agc_sat_gain_config: AgcSatGainConfig,
         gain_offset_word_1_opaque: GainOffsetWord1Opaque,
-        agc_recorrect_control_006c: AgcRecorrectControl006c,
+        word_006c_opaque: Word006cOpaque,
         _reserved13: [u8; 0x14],
-        agc_restart_config_0084: AgcRestartConfig0084,
-        rx_config_0088: RxConfig0088,
-        rx_config_008c: RxConfig008c,
+        word_0084_opaque: Word0084Opaque,
+        word_0088_opaque: Word0088Opaque,
+        word_008c_opaque: Word008cOpaque,
         _reserved16: [u8; 0x04],
         cca_config: CcaConfig,
         cte_agc_target: CteAgcTarget,
         _reserved18: [u8; 0x04],
-        shared_rx_sense_and_detect_00a0: SharedRxSenseAndDetect00a0,
+        word_00a0_opaque: Word00a0Opaque,
         _reserved19: [u8; 0x04],
-        shared_rx_sense_and_detect_00a8: SharedRxSenseAndDetect00a8,
+        word_00a8_opaque: Word00a8Opaque,
         _reserved20: [u8; 0x04],
-        agc_recorrect_and_target_00b0: AgcRecorrectAndTarget00b0,
-        agc_recorrect_and_target_00b4: AgcRecorrectAndTarget00b4,
-        shared_rx_sense_and_detect_00b8: SharedRxSenseAndDetect00b8,
-        agc_recorrect_and_restart_00bc: AgcRecorrectAndRestart00bc,
-        agc_detect_config_00c0: AgcDetectConfig00c0,
-        agc_detect_config_00c4: AgcDetectConfig00c4,
+        word_00b0_opaque: Word00b0Opaque,
+        word_00b4_opaque: Word00b4Opaque,
+        word_00b8_opaque: Word00b8Opaque,
+        word_00bc_opaque: Word00bcOpaque,
+        word_00c0_opaque: Word00c0Opaque,
+        word_00c4_opaque: Word00c4Opaque,
         _reserved26: [u8; 0x08],
-        agc_config_00d0: AgcConfig00d0,
-        agc_config_00d4: AgcConfig00d4,
+        word_00d0_opaque: Word00d0Opaque,
+        word_00d4_opaque: Word00d4Opaque,
         _reserved28: [u8; 0x04],
-        agc_restart_bits_00dc: AgcRestartBits00dc,
+        word_00dc_opaque: Word00dcOpaque,
         agc_restart_image_00e0_opaque: AgcRestartImage00e0Opaque,
         agc_restart_image_00e4_opaque: AgcRestartImage00e4Opaque,
         agc_restart_image_00e8_opaque: AgcRestartImage00e8Opaque,
@@ -37524,10 +37522,10 @@ pub mod phy_btagc_recovered {
         pub const fn gain_offset_word_0_opaque(&self) -> &GainOffsetWord0Opaque {
             &self.gain_offset_word_0_opaque
         }
-        #[doc = "0x4c - Project-assigned name. Bluetooth receive setup clears bit 26. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, later replaces bits 18:0 and sets bits 19, 24, 26, 28, 30 and 31 in two fresh-read RMW operations."]
+        #[doc = "0x4c - Opaque: meaning not established. Bluetooth receive setup clears bit 26. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, later replaces bits 18:0 and sets bits 19, 24, 26, 28, 30 and 31 in two fresh-read RMW operations."]
         #[inline(always)]
-        pub const fn rx_config_004c(&self) -> &RxConfig004c {
-            &self.rx_config_004c
+        pub const fn word_004c_opaque(&self) -> &Word004cOpaque {
+            &self.word_004c_opaque
         }
         #[doc = "0x50 - Project-assigned name. Complete bt_agc_gain_max replaces bits 20:14 with one dynamic image while preserving all other bits."]
         #[inline(always)]
@@ -37559,25 +37557,25 @@ pub mod phy_btagc_recovered {
         pub const fn gain_offset_word_1_opaque(&self) -> &GainOffsetWord1Opaque {
             &self.gain_offset_word_1_opaque
         }
-        #[doc = "0x6c - Project-assigned name. Complete bt_agc_recorrect_set replaces the high byte with one finite image."]
+        #[doc = "0x6c - Opaque: meaning not established. Complete bt_agc_recorrect_set replaces the high byte with one finite image."]
         #[inline(always)]
-        pub const fn agc_recorrect_control_006c(&self) -> &AgcRecorrectControl006c {
-            &self.agc_recorrect_control_006c
+        pub const fn word_006c_opaque(&self) -> &Word006cOpaque {
+            &self.word_006c_opaque
         }
-        #[doc = "0x84 - Project-assigned name. Complete bt_agc_restart_set replaces the high byte with one finite image."]
+        #[doc = "0x84 - Opaque: meaning not established. Complete bt_agc_restart_set replaces the high byte with one finite image."]
         #[inline(always)]
-        pub const fn agc_restart_config_0084(&self) -> &AgcRestartConfig0084 {
-            &self.agc_restart_config_0084
+        pub const fn word_0084_opaque(&self) -> &Word0084Opaque {
+            &self.word_0084_opaque
         }
-        #[doc = "0x88 - Project-assigned name. Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations. bt_agc_restart_set clears bit 30 and bt_agc_sat_gain sets it again."]
+        #[doc = "0x88 - Opaque: meaning not established. Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations. bt_agc_restart_set clears bit 30 and bt_agc_sat_gain sets it again."]
         #[inline(always)]
-        pub const fn rx_config_0088(&self) -> &RxConfig0088 {
-            &self.rx_config_0088
+        pub const fn word_0088_opaque(&self) -> &Word0088Opaque {
+            &self.word_0088_opaque
         }
-        #[doc = "0x8c - Project-assigned name. Bluetooth receive setup and target configuration update three disjoint positional fields and clear one independently observed control bit."]
+        #[doc = "0x8c - Opaque: meaning not established. Bluetooth receive setup and target configuration update three disjoint positional fields and clear one independently observed control bit."]
         #[inline(always)]
-        pub const fn rx_config_008c(&self) -> &RxConfig008c {
-            &self.rx_config_008c
+        pub const fn word_008c_opaque(&self) -> &Word008cOpaque {
+            &self.word_008c_opaque
         }
         #[doc = "0x94 - Project-assigned name. Finite Bluetooth clear-channel-assessment defaults written by bt_bb_cca_config. Untouched fields remain unassigned."]
         #[inline(always)]
@@ -37589,60 +37587,60 @@ pub mod phy_btagc_recovered {
         pub const fn cte_agc_target(&self) -> &CteAgcTarget {
             &self.cte_agc_target
         }
-        #[doc = "0xa0 - Project-assigned name. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer."]
+        #[doc = "0xa0 - Opaque: meaning not established. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer."]
         #[inline(always)]
-        pub const fn shared_rx_sense_and_detect_00a0(&self) -> &SharedRxSenseAndDetect00a0 {
-            &self.shared_rx_sense_and_detect_00a0
+        pub const fn word_00a0_opaque(&self) -> &Word00a0Opaque {
+            &self.word_00a0_opaque
         }
-        #[doc = "0xa8 - Project-assigned name. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace four positional fields used by the bounded baseband initializer."]
+        #[doc = "0xa8 - Opaque: meaning not established. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace four positional fields used by the bounded baseband initializer."]
         #[inline(always)]
-        pub const fn shared_rx_sense_and_detect_00a8(&self) -> &SharedRxSenseAndDetect00a8 {
-            &self.shared_rx_sense_and_detect_00a8
+        pub const fn word_00a8_opaque(&self) -> &Word00a8Opaque {
+            &self.word_00a8_opaque
         }
-        #[doc = "0xb0 - Project-assigned name. Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves."]
+        #[doc = "0xb0 - Opaque: meaning not established. Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves."]
         #[inline(always)]
-        pub const fn agc_recorrect_and_target_00b0(&self) -> &AgcRecorrectAndTarget00b0 {
-            &self.agc_recorrect_and_target_00b0
+        pub const fn word_00b0_opaque(&self) -> &Word00b0Opaque {
+            &self.word_00b0_opaque
         }
-        #[doc = "0xb4 - Project-assigned name. Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves."]
+        #[doc = "0xb4 - Opaque: meaning not established. Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves."]
         #[inline(always)]
-        pub const fn agc_recorrect_and_target_00b4(&self) -> &AgcRecorrectAndTarget00b4 {
-            &self.agc_recorrect_and_target_00b4
+        pub const fn word_00b4_opaque(&self) -> &Word00b4Opaque {
+            &self.word_00b4_opaque
         }
-        #[doc = "0xb8 - Project-assigned name. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer."]
+        #[doc = "0xb8 - Opaque: meaning not established. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer."]
         #[inline(always)]
-        pub const fn shared_rx_sense_and_detect_00b8(&self) -> &SharedRxSenseAndDetect00b8 {
-            &self.shared_rx_sense_and_detect_00b8
+        pub const fn word_00b8_opaque(&self) -> &Word00b8Opaque {
+            &self.word_00b8_opaque
         }
-        #[doc = "0xbc - Project-assigned name. Complete recorrect and restart leaves independently update five observed control bits."]
+        #[doc = "0xbc - Opaque: meaning not established. Complete recorrect and restart leaves independently update five observed control bits."]
         #[inline(always)]
-        pub const fn agc_recorrect_and_restart_00bc(&self) -> &AgcRecorrectAndRestart00bc {
-            &self.agc_recorrect_and_restart_00bc
+        pub const fn word_00bc_opaque(&self) -> &Word00bcOpaque {
+            &self.word_00bc_opaque
         }
-        #[doc = "0xc0 - Project-assigned name. Complete bt_agc_detect_set replaces five positional fields with finite images."]
+        #[doc = "0xc0 - Opaque: meaning not established. Complete bt_agc_detect_set replaces five positional fields with finite images."]
         #[inline(always)]
-        pub const fn agc_detect_config_00c0(&self) -> &AgcDetectConfig00c0 {
-            &self.agc_detect_config_00c0
+        pub const fn word_00c0_opaque(&self) -> &Word00c0Opaque {
+            &self.word_00c0_opaque
         }
-        #[doc = "0xc4 - Project-assigned name. Complete bt_agc_detect_set replaces four positional fields with finite images."]
+        #[doc = "0xc4 - Opaque: meaning not established. Complete bt_agc_detect_set replaces four positional fields with finite images."]
         #[inline(always)]
-        pub const fn agc_detect_config_00c4(&self) -> &AgcDetectConfig00c4 {
-            &self.agc_detect_config_00c4
+        pub const fn word_00c4_opaque(&self) -> &Word00c4Opaque {
+            &self.word_00c4_opaque
         }
-        #[doc = "0xd0 - Project-assigned name. bt_agc_v2_set replaces two seven-bit fields with the finite value 20."]
+        #[doc = "0xd0 - Opaque: meaning not established. bt_agc_v2_set replaces two seven-bit fields with the finite value 20."]
         #[inline(always)]
-        pub const fn agc_config_00d0(&self) -> &AgcConfig00d0 {
-            &self.agc_config_00d0
+        pub const fn word_00d0_opaque(&self) -> &Word00d0Opaque {
+            &self.word_00d0_opaque
         }
-        #[doc = "0xd4 - Project-assigned name. bt_agc_v2_set replaces bits 24:6 with the finite image 0x003C0."]
+        #[doc = "0xd4 - Opaque: meaning not established. bt_agc_v2_set replaces bits 24:6 with the finite image 0x003C0."]
         #[inline(always)]
-        pub const fn agc_config_00d4(&self) -> &AgcConfig00d4 {
-            &self.agc_config_00d4
+        pub const fn word_00d4_opaque(&self) -> &Word00d4Opaque {
+            &self.word_00d4_opaque
         }
-        #[doc = "0xdc - Project-assigned name. Complete bt_agc_restart_set sets five independently observed high control bits through separate fresh-read RMW operations."]
+        #[doc = "0xdc - Opaque: meaning not established. Complete bt_agc_restart_set sets five independently observed high control bits through separate fresh-read RMW operations."]
         #[inline(always)]
-        pub const fn agc_restart_bits_00dc(&self) -> &AgcRestartBits00dc {
-            &self.agc_restart_bits_00dc
+        pub const fn word_00dc_opaque(&self) -> &Word00dcOpaque {
+            &self.word_00dc_opaque
         }
         #[doc = "0xe0 - Opaque: meaning not established. Four positional byte images written by complete bt_agc_restart_set."]
         #[inline(always)]
@@ -37949,15 +37947,15 @@ pub mod phy_btagc_recovered {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_CONFIG_004C (rw) register accessor: Project-assigned name. Bluetooth receive setup clears bit 26. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, later replaces bits 18:0 and sets bits 19, 24, 26, 28, 30 and 31 in two fresh-read RMW operations.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_config_004c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_config_004c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_config_004c`] module"]
-    #[doc(alias = "RX_CONFIG_004C")]
-    pub type RxConfig004c = crate::Reg<rx_config_004c::RxConfig004cSpec>;
-    #[doc = "Project-assigned name. Bluetooth receive setup clears bit 26. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, later replaces bits 18:0 and sets bits 19, 24, 26, 28, 30 and 31 in two fresh-read RMW operations."]
-    pub mod rx_config_004c {
-        #[doc = "Register `RX_CONFIG_004C` reader"]
-        pub type R = crate::R<RxConfig004cSpec>;
-        #[doc = "Register `RX_CONFIG_004C` writer"]
-        pub type W = crate::W<RxConfig004cSpec>;
+    #[doc = "WORD_004C_OPAQUE (rw) register accessor: Opaque: meaning not established. Bluetooth receive setup clears bit 26. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, later replaces bits 18:0 and sets bits 19, 24, 26, 28, 30 and 31 in two fresh-read RMW operations.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_004c_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_004c_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_004c_opaque`] module"]
+    #[doc(alias = "WORD_004C_OPAQUE")]
+    pub type Word004cOpaque = crate::Reg<word_004c_opaque::Word004cOpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Bluetooth receive setup clears bit 26. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, later replaces bits 18:0 and sets bits 19, 24, 26, 28, 30 and 31 in two fresh-read RMW operations."]
+    pub mod word_004c_opaque {
+        #[doc = "Register `WORD_004C_OPAQUE` reader"]
+        pub type R = crate::R<Word004cOpaqueSpec>;
+        #[doc = "Register `WORD_004C_OPAQUE` writer"]
+        pub type W = crate::W<Word004cOpaqueSpec>;
         #[doc = "Field `SAT_GAIN_BITS_0_18` reader - Project-assigned name. bt_agc_sat_gain replaces these positional bits with the finite image 0x1770 in one fresh-read RMW; their hardware meaning remains unknown."]
         pub type SatGainBits0_18R = crate::FieldReader<u32>;
         #[doc = "Field `SAT_GAIN_BITS_0_18` writer - Project-assigned name. bt_agc_sat_gain replaces these positional bits with the finite image 0x1770 in one fresh-read RMW; their hardware meaning remains unknown."]
@@ -38026,49 +38024,49 @@ pub mod phy_btagc_recovered {
         impl W {
             #[doc = "Bits 0:18 - Project-assigned name. bt_agc_sat_gain replaces these positional bits with the finite image 0x1770 in one fresh-read RMW; their hardware meaning remains unknown."]
             #[inline(always)]
-            pub fn sat_gain_bits_0_18(&mut self) -> SatGainBits0_18W<'_, RxConfig004cSpec> {
+            pub fn sat_gain_bits_0_18(&mut self) -> SatGainBits0_18W<'_, Word004cOpaqueSpec> {
                 SatGainBits0_18W::new(self, 0)
             }
             #[doc = "Bit 19 - Opaque: meaning not established. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
             #[inline(always)]
-            pub fn config_bit_19_opaque(&mut self) -> ConfigBit19OpaqueW<'_, RxConfig004cSpec> {
+            pub fn config_bit_19_opaque(&mut self) -> ConfigBit19OpaqueW<'_, Word004cOpaqueSpec> {
                 ConfigBit19OpaqueW::new(self, 19)
             }
             #[doc = "Bit 24 - Opaque: meaning not established. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
             #[inline(always)]
-            pub fn config_bit_24_opaque(&mut self) -> ConfigBit24OpaqueW<'_, RxConfig004cSpec> {
+            pub fn config_bit_24_opaque(&mut self) -> ConfigBit24OpaqueW<'_, Word004cOpaqueSpec> {
                 ConfigBit24OpaqueW::new(self, 24)
             }
             #[doc = "Bit 26 - Opaque: meaning not established. Bluetooth receive setup clears this positional bit; bt_agc_sat_gain sets it again. Its hardware meaning remains unknown."]
             #[inline(always)]
-            pub fn config_bit_26_opaque(&mut self) -> ConfigBit26OpaqueW<'_, RxConfig004cSpec> {
+            pub fn config_bit_26_opaque(&mut self) -> ConfigBit26OpaqueW<'_, Word004cOpaqueSpec> {
                 ConfigBit26OpaqueW::new(self, 26)
             }
             #[doc = "Bit 28 - Opaque: meaning not established. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
             #[inline(always)]
-            pub fn config_bit_28_opaque(&mut self) -> ConfigBit28OpaqueW<'_, RxConfig004cSpec> {
+            pub fn config_bit_28_opaque(&mut self) -> ConfigBit28OpaqueW<'_, Word004cOpaqueSpec> {
                 ConfigBit28OpaqueW::new(self, 28)
             }
             #[doc = "Bit 30 - Opaque: meaning not established. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
             #[inline(always)]
-            pub fn config_bit_30_opaque(&mut self) -> ConfigBit30OpaqueW<'_, RxConfig004cSpec> {
+            pub fn config_bit_30_opaque(&mut self) -> ConfigBit30OpaqueW<'_, Word004cOpaqueSpec> {
                 ConfigBit30OpaqueW::new(self, 30)
             }
             #[doc = "Bit 31 - Opaque: meaning not established. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, sets this positional bit in one fresh-read RMW; its hardware meaning remains unknown."]
             #[inline(always)]
-            pub fn config_bit_31_opaque(&mut self) -> ConfigBit31OpaqueW<'_, RxConfig004cSpec> {
+            pub fn config_bit_31_opaque(&mut self) -> ConfigBit31OpaqueW<'_, Word004cOpaqueSpec> {
                 ConfigBit31OpaqueW::new(self, 31)
             }
         }
-        #[doc = "Project-assigned name. Bluetooth receive setup clears bit 26. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, later replaces bits 18:0 and sets bits 19, 24, 26, 28, 30 and 31 in two fresh-read RMW operations.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_config_004c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_config_004c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct RxConfig004cSpec;
-        impl crate::RegisterSpec for RxConfig004cSpec {
+        #[doc = "Opaque: meaning not established. Bluetooth receive setup clears bit 26. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, later replaces bits 18:0 and sets bits 19, 24, 26, 28, 30 and 31 in two fresh-read RMW operations.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_004c_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_004c_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word004cOpaqueSpec;
+        impl crate::RegisterSpec for Word004cOpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`rx_config_004c::R`](R) reader structure"]
-        impl crate::Readable for RxConfig004cSpec {}
-        #[doc = "`write(|w| ..)` method takes [`rx_config_004c::W`](W) writer structure"]
-        impl crate::Writable for RxConfig004cSpec {
+        #[doc = "`read()` method returns [`word_004c_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word004cOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_004c_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word004cOpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -38217,10 +38215,10 @@ pub mod phy_btagc_recovered {
         pub type TargetBits14_22R = crate::FieldReader<u16>;
         #[doc = "Field `TARGET_BITS_14_22` writer - Project-assigned name. bt_agc_target_set replaces this positional field with the finite image 0x1ce."]
         pub type TargetBits14_22W<'a, REG> = crate::FieldWriter<'a, REG, 9, u16, crate::Safe>;
-        #[doc = "Field `CONFIG_FORCE_ONE_23` reader - Project-assigned name."]
-        pub type ConfigForceOne23R = crate::BitReader;
-        #[doc = "Field `CONFIG_FORCE_ONE_23` writer - Project-assigned name."]
-        pub type ConfigForceOne23W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_23_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bit23OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_23_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bit23OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bits 0:8 - Project-assigned name. Nine-bit finite value 0x1CE."]
             #[inline(always)]
@@ -38237,10 +38235,10 @@ pub mod phy_btagc_recovered {
             pub fn target_bits_14_22(&self) -> TargetBits14_22R {
                 TargetBits14_22R::new(((self.bits >> 14) & 0x01ff) as u16)
             }
-            #[doc = "Bit 23 - Project-assigned name."]
+            #[doc = "Bit 23 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn config_force_one_23(&self) -> ConfigForceOne23R {
-                ConfigForceOne23R::new(((self.bits >> 23) & 1) != 0)
+            pub fn bit_23_opaque(&self) -> Bit23OpaqueR {
+                Bit23OpaqueR::new(((self.bits >> 23) & 1) != 0)
             }
         }
         impl W {
@@ -38259,10 +38257,10 @@ pub mod phy_btagc_recovered {
             pub fn target_bits_14_22(&mut self) -> TargetBits14_22W<'_, CcaConfigSpec> {
                 TargetBits14_22W::new(self, 14)
             }
-            #[doc = "Bit 23 - Project-assigned name."]
+            #[doc = "Bit 23 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn config_force_one_23(&mut self) -> ConfigForceOne23W<'_, CcaConfigSpec> {
-                ConfigForceOne23W::new(self, 23)
+            pub fn bit_23_opaque(&mut self) -> Bit23OpaqueW<'_, CcaConfigSpec> {
+                Bit23OpaqueW::new(self, 23)
             }
         }
         #[doc = "Project-assigned name. Finite Bluetooth clear-channel-assessment defaults written by bt_bb_cca_config. Untouched fields remain unassigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_config::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_config::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -38330,37 +38328,37 @@ pub mod phy_btagc_recovered {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_CONFIG_0088 (rw) register accessor: Project-assigned name. Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations. bt_agc_restart_set clears bit 30 and bt_agc_sat_gain sets it again.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_config_0088::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_config_0088::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_config_0088`] module"]
-    #[doc(alias = "RX_CONFIG_0088")]
-    pub type RxConfig0088 = crate::Reg<rx_config_0088::RxConfig0088Spec>;
-    #[doc = "Project-assigned name. Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations. bt_agc_restart_set clears bit 30 and bt_agc_sat_gain sets it again."]
-    pub mod rx_config_0088 {
-        #[doc = "Register `RX_CONFIG_0088` reader"]
-        pub type R = crate::R<RxConfig0088Spec>;
-        #[doc = "Register `RX_CONFIG_0088` writer"]
-        pub type W = crate::W<RxConfig0088Spec>;
-        #[doc = "Field `CONFIG_FORCE_ONE_18` reader - Project-assigned name."]
-        pub type ConfigForceOne18R = crate::BitReader;
-        #[doc = "Field `CONFIG_FORCE_ONE_18` writer - Project-assigned name."]
-        pub type ConfigForceOne18W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CONFIG_FORCE_ZERO_29` reader - Project-assigned name."]
-        pub type ConfigForceZero29R = crate::BitReader;
-        #[doc = "Field `CONFIG_FORCE_ZERO_29` writer - Project-assigned name."]
-        pub type ConfigForceZero29W<'a, REG> = crate::BitWriter<'a, REG>;
+    #[doc = "WORD_0088_OPAQUE (rw) register accessor: Opaque: meaning not established. Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations. bt_agc_restart_set clears bit 30 and bt_agc_sat_gain sets it again.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0088_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0088_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0088_opaque`] module"]
+    #[doc(alias = "WORD_0088_OPAQUE")]
+    pub type Word0088Opaque = crate::Reg<word_0088_opaque::Word0088OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations. bt_agc_restart_set clears bit 30 and bt_agc_sat_gain sets it again."]
+    pub mod word_0088_opaque {
+        #[doc = "Register `WORD_0088_OPAQUE` reader"]
+        pub type R = crate::R<Word0088OpaqueSpec>;
+        #[doc = "Register `WORD_0088_OPAQUE` writer"]
+        pub type W = crate::W<Word0088OpaqueSpec>;
+        #[doc = "Field `BIT_18_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bit18OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_18_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bit18OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_29_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bit29OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_29_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bit29OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `CONFIG_BIT_30_OPAQUE` reader - Opaque: meaning not established."]
         pub type ConfigBit30OpaqueR = crate::BitReader;
         #[doc = "Field `CONFIG_BIT_30_OPAQUE` writer - Opaque: meaning not established."]
         pub type ConfigBit30OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bit 18 - Project-assigned name."]
+            #[doc = "Bit 18 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn config_force_one_18(&self) -> ConfigForceOne18R {
-                ConfigForceOne18R::new(((self.bits >> 18) & 1) != 0)
+            pub fn bit_18_opaque(&self) -> Bit18OpaqueR {
+                Bit18OpaqueR::new(((self.bits >> 18) & 1) != 0)
             }
-            #[doc = "Bit 29 - Project-assigned name."]
+            #[doc = "Bit 29 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn config_force_zero_29(&self) -> ConfigForceZero29R {
-                ConfigForceZero29R::new(((self.bits >> 29) & 1) != 0)
+            pub fn bit_29_opaque(&self) -> Bit29OpaqueR {
+                Bit29OpaqueR::new(((self.bits >> 29) & 1) != 0)
             }
             #[doc = "Bit 30 - Opaque: meaning not established."]
             #[inline(always)]
@@ -38369,43 +38367,43 @@ pub mod phy_btagc_recovered {
             }
         }
         impl W {
-            #[doc = "Bit 18 - Project-assigned name."]
+            #[doc = "Bit 18 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn config_force_one_18(&mut self) -> ConfigForceOne18W<'_, RxConfig0088Spec> {
-                ConfigForceOne18W::new(self, 18)
+            pub fn bit_18_opaque(&mut self) -> Bit18OpaqueW<'_, Word0088OpaqueSpec> {
+                Bit18OpaqueW::new(self, 18)
             }
-            #[doc = "Bit 29 - Project-assigned name."]
+            #[doc = "Bit 29 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn config_force_zero_29(&mut self) -> ConfigForceZero29W<'_, RxConfig0088Spec> {
-                ConfigForceZero29W::new(self, 29)
+            pub fn bit_29_opaque(&mut self) -> Bit29OpaqueW<'_, Word0088OpaqueSpec> {
+                Bit29OpaqueW::new(self, 29)
             }
             #[doc = "Bit 30 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn config_bit_30_opaque(&mut self) -> ConfigBit30OpaqueW<'_, RxConfig0088Spec> {
+            pub fn config_bit_30_opaque(&mut self) -> ConfigBit30OpaqueW<'_, Word0088OpaqueSpec> {
                 ConfigBit30OpaqueW::new(self, 30)
             }
         }
-        #[doc = "Project-assigned name. Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations. bt_agc_restart_set clears bit 30 and bt_agc_sat_gain sets it again.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_config_0088::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_config_0088::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct RxConfig0088Spec;
-        impl crate::RegisterSpec for RxConfig0088Spec {
+        #[doc = "Opaque: meaning not established. Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations. bt_agc_restart_set clears bit 30 and bt_agc_sat_gain sets it again.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0088_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0088_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0088OpaqueSpec;
+        impl crate::RegisterSpec for Word0088OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`rx_config_0088::R`](R) reader structure"]
-        impl crate::Readable for RxConfig0088Spec {}
-        #[doc = "`write(|w| ..)` method takes [`rx_config_0088::W`](W) writer structure"]
-        impl crate::Writable for RxConfig0088Spec {
+        #[doc = "`read()` method returns [`word_0088_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0088OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0088_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0088OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_CONFIG_008C (rw) register accessor: Project-assigned name. Bluetooth receive setup and target configuration update three disjoint positional fields and clear one independently observed control bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_config_008c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_config_008c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_config_008c`] module"]
-    #[doc(alias = "RX_CONFIG_008C")]
-    pub type RxConfig008c = crate::Reg<rx_config_008c::RxConfig008cSpec>;
-    #[doc = "Project-assigned name. Bluetooth receive setup and target configuration update three disjoint positional fields and clear one independently observed control bit."]
-    pub mod rx_config_008c {
-        #[doc = "Register `RX_CONFIG_008C` reader"]
-        pub type R = crate::R<RxConfig008cSpec>;
-        #[doc = "Register `RX_CONFIG_008C` writer"]
-        pub type W = crate::W<RxConfig008cSpec>;
+    #[doc = "WORD_008C_OPAQUE (rw) register accessor: Opaque: meaning not established. Bluetooth receive setup and target configuration update three disjoint positional fields and clear one independently observed control bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_008c_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_008c_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_008c_opaque`] module"]
+    #[doc(alias = "WORD_008C_OPAQUE")]
+    pub type Word008cOpaque = crate::Reg<word_008c_opaque::Word008cOpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Bluetooth receive setup and target configuration update three disjoint positional fields and clear one independently observed control bit."]
+    pub mod word_008c_opaque {
+        #[doc = "Register `WORD_008C_OPAQUE` reader"]
+        pub type R = crate::R<Word008cOpaqueSpec>;
+        #[doc = "Register `WORD_008C_OPAQUE` writer"]
+        pub type W = crate::W<Word008cOpaqueSpec>;
         #[doc = "Field `TARGET_BITS_0_8` reader - Project-assigned name. bt_agc_target_set replaces this positional field with the finite image 0x1d4."]
         pub type TargetBits0_8R = crate::FieldReader<u16>;
         #[doc = "Field `TARGET_BITS_0_8` writer - Project-assigned name. bt_agc_target_set replaces this positional field with the finite image 0x1d4."]
@@ -38414,10 +38412,10 @@ pub mod phy_btagc_recovered {
         pub type TargetBits9_17R = crate::FieldReader<u16>;
         #[doc = "Field `TARGET_BITS_9_17` writer - Project-assigned name. bt_agc_target_set replaces this positional field with the finite image 0x1dc."]
         pub type TargetBits9_17W<'a, REG> = crate::FieldWriter<'a, REG, 9, u16, crate::Safe>;
-        #[doc = "Field `CONFIG_FORCE_ZERO_29` reader - Project-assigned name."]
-        pub type ConfigForceZero29R = crate::BitReader;
-        #[doc = "Field `CONFIG_FORCE_ZERO_29` writer - Project-assigned name."]
-        pub type ConfigForceZero29W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_29_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bit29OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_29_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bit29OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bits 0:8 - Project-assigned name. bt_agc_target_set replaces this positional field with the finite image 0x1d4."]
             #[inline(always)]
@@ -38429,50 +38427,50 @@ pub mod phy_btagc_recovered {
             pub fn target_bits_9_17(&self) -> TargetBits9_17R {
                 TargetBits9_17R::new(((self.bits >> 9) & 0x01ff) as u16)
             }
-            #[doc = "Bit 29 - Project-assigned name."]
+            #[doc = "Bit 29 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn config_force_zero_29(&self) -> ConfigForceZero29R {
-                ConfigForceZero29R::new(((self.bits >> 29) & 1) != 0)
+            pub fn bit_29_opaque(&self) -> Bit29OpaqueR {
+                Bit29OpaqueR::new(((self.bits >> 29) & 1) != 0)
             }
         }
         impl W {
             #[doc = "Bits 0:8 - Project-assigned name. bt_agc_target_set replaces this positional field with the finite image 0x1d4."]
             #[inline(always)]
-            pub fn target_bits_0_8(&mut self) -> TargetBits0_8W<'_, RxConfig008cSpec> {
+            pub fn target_bits_0_8(&mut self) -> TargetBits0_8W<'_, Word008cOpaqueSpec> {
                 TargetBits0_8W::new(self, 0)
             }
             #[doc = "Bits 9:17 - Project-assigned name. bt_agc_target_set replaces this positional field with the finite image 0x1dc."]
             #[inline(always)]
-            pub fn target_bits_9_17(&mut self) -> TargetBits9_17W<'_, RxConfig008cSpec> {
+            pub fn target_bits_9_17(&mut self) -> TargetBits9_17W<'_, Word008cOpaqueSpec> {
                 TargetBits9_17W::new(self, 9)
             }
-            #[doc = "Bit 29 - Project-assigned name."]
+            #[doc = "Bit 29 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn config_force_zero_29(&mut self) -> ConfigForceZero29W<'_, RxConfig008cSpec> {
-                ConfigForceZero29W::new(self, 29)
+            pub fn bit_29_opaque(&mut self) -> Bit29OpaqueW<'_, Word008cOpaqueSpec> {
+                Bit29OpaqueW::new(self, 29)
             }
         }
-        #[doc = "Project-assigned name. Bluetooth receive setup and target configuration update three disjoint positional fields and clear one independently observed control bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_config_008c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_config_008c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct RxConfig008cSpec;
-        impl crate::RegisterSpec for RxConfig008cSpec {
+        #[doc = "Opaque: meaning not established. Bluetooth receive setup and target configuration update three disjoint positional fields and clear one independently observed control bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_008c_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_008c_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word008cOpaqueSpec;
+        impl crate::RegisterSpec for Word008cOpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`rx_config_008c::R`](R) reader structure"]
-        impl crate::Readable for RxConfig008cSpec {}
-        #[doc = "`write(|w| ..)` method takes [`rx_config_008c::W`](W) writer structure"]
-        impl crate::Writable for RxConfig008cSpec {
+        #[doc = "`read()` method returns [`word_008c_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word008cOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_008c_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word008cOpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_CONFIG_00D0 (rw) register accessor: Project-assigned name. bt_agc_v2_set replaces two seven-bit fields with the finite value 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_config_00d0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_config_00d0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_config_00d0`] module"]
-    #[doc(alias = "AGC_CONFIG_00D0")]
-    pub type AgcConfig00d0 = crate::Reg<agc_config_00d0::AgcConfig00d0Spec>;
-    #[doc = "Project-assigned name. bt_agc_v2_set replaces two seven-bit fields with the finite value 20."]
-    pub mod agc_config_00d0 {
-        #[doc = "Register `AGC_CONFIG_00D0` reader"]
-        pub type R = crate::R<AgcConfig00d0Spec>;
-        #[doc = "Register `AGC_CONFIG_00D0` writer"]
-        pub type W = crate::W<AgcConfig00d0Spec>;
+    #[doc = "WORD_00D0_OPAQUE (rw) register accessor: Opaque: meaning not established. bt_agc_v2_set replaces two seven-bit fields with the finite value 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00d0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00d0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_00d0_opaque`] module"]
+    #[doc(alias = "WORD_00D0_OPAQUE")]
+    pub type Word00d0Opaque = crate::Reg<word_00d0_opaque::Word00d0OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. bt_agc_v2_set replaces two seven-bit fields with the finite value 20."]
+    pub mod word_00d0_opaque {
+        #[doc = "Register `WORD_00D0_OPAQUE` reader"]
+        pub type R = crate::R<Word00d0OpaqueSpec>;
+        #[doc = "Register `WORD_00D0_OPAQUE` writer"]
+        pub type W = crate::W<Word00d0OpaqueSpec>;
         #[doc = "Field `CONFIG_VALUE_LOW` reader - Project-assigned name."]
         pub type ConfigValueLowR = crate::FieldReader;
         #[doc = "Field `CONFIG_VALUE_LOW` writer - Project-assigned name."]
@@ -38496,36 +38494,36 @@ pub mod phy_btagc_recovered {
         impl W {
             #[doc = "Bits 11:17 - Project-assigned name."]
             #[inline(always)]
-            pub fn config_value_low(&mut self) -> ConfigValueLowW<'_, AgcConfig00d0Spec> {
+            pub fn config_value_low(&mut self) -> ConfigValueLowW<'_, Word00d0OpaqueSpec> {
                 ConfigValueLowW::new(self, 11)
             }
             #[doc = "Bits 18:24 - Project-assigned name."]
             #[inline(always)]
-            pub fn config_value_high(&mut self) -> ConfigValueHighW<'_, AgcConfig00d0Spec> {
+            pub fn config_value_high(&mut self) -> ConfigValueHighW<'_, Word00d0OpaqueSpec> {
                 ConfigValueHighW::new(self, 18)
             }
         }
-        #[doc = "Project-assigned name. bt_agc_v2_set replaces two seven-bit fields with the finite value 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_config_00d0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_config_00d0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct AgcConfig00d0Spec;
-        impl crate::RegisterSpec for AgcConfig00d0Spec {
+        #[doc = "Opaque: meaning not established. bt_agc_v2_set replaces two seven-bit fields with the finite value 20.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00d0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00d0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word00d0OpaqueSpec;
+        impl crate::RegisterSpec for Word00d0OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`agc_config_00d0::R`](R) reader structure"]
-        impl crate::Readable for AgcConfig00d0Spec {}
-        #[doc = "`write(|w| ..)` method takes [`agc_config_00d0::W`](W) writer structure"]
-        impl crate::Writable for AgcConfig00d0Spec {
+        #[doc = "`read()` method returns [`word_00d0_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word00d0OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_00d0_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word00d0OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_CONFIG_00D4 (rw) register accessor: Project-assigned name. bt_agc_v2_set replaces bits 24:6 with the finite image 0x003C0.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_config_00d4::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_config_00d4::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_config_00d4`] module"]
-    #[doc(alias = "AGC_CONFIG_00D4")]
-    pub type AgcConfig00d4 = crate::Reg<agc_config_00d4::AgcConfig00d4Spec>;
-    #[doc = "Project-assigned name. bt_agc_v2_set replaces bits 24:6 with the finite image 0x003C0."]
-    pub mod agc_config_00d4 {
-        #[doc = "Register `AGC_CONFIG_00D4` reader"]
-        pub type R = crate::R<AgcConfig00d4Spec>;
-        #[doc = "Register `AGC_CONFIG_00D4` writer"]
-        pub type W = crate::W<AgcConfig00d4Spec>;
+    #[doc = "WORD_00D4_OPAQUE (rw) register accessor: Opaque: meaning not established. bt_agc_v2_set replaces bits 24:6 with the finite image 0x003C0.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00d4_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00d4_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_00d4_opaque`] module"]
+    #[doc(alias = "WORD_00D4_OPAQUE")]
+    pub type Word00d4Opaque = crate::Reg<word_00d4_opaque::Word00d4OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. bt_agc_v2_set replaces bits 24:6 with the finite image 0x003C0."]
+    pub mod word_00d4_opaque {
+        #[doc = "Register `WORD_00D4_OPAQUE` reader"]
+        pub type R = crate::R<Word00d4OpaqueSpec>;
+        #[doc = "Register `WORD_00D4_OPAQUE` writer"]
+        pub type W = crate::W<Word00d4OpaqueSpec>;
         #[doc = "Field `CONFIG_VALUE` reader - Project-assigned name."]
         pub type ConfigValueR = crate::FieldReader<u32>;
         #[doc = "Field `CONFIG_VALUE` writer - Project-assigned name."]
@@ -38540,19 +38538,19 @@ pub mod phy_btagc_recovered {
         impl W {
             #[doc = "Bits 6:24 - Project-assigned name."]
             #[inline(always)]
-            pub fn config_value(&mut self) -> ConfigValueW<'_, AgcConfig00d4Spec> {
+            pub fn config_value(&mut self) -> ConfigValueW<'_, Word00d4OpaqueSpec> {
                 ConfigValueW::new(self, 6)
             }
         }
-        #[doc = "Project-assigned name. bt_agc_v2_set replaces bits 24:6 with the finite image 0x003C0.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_config_00d4::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_config_00d4::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct AgcConfig00d4Spec;
-        impl crate::RegisterSpec for AgcConfig00d4Spec {
+        #[doc = "Opaque: meaning not established. bt_agc_v2_set replaces bits 24:6 with the finite image 0x003C0.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00d4_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00d4_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word00d4OpaqueSpec;
+        impl crate::RegisterSpec for Word00d4OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`agc_config_00d4::R`](R) reader structure"]
-        impl crate::Readable for AgcConfig00d4Spec {}
-        #[doc = "`write(|w| ..)` method takes [`agc_config_00d4::W`](W) writer structure"]
-        impl crate::Writable for AgcConfig00d4Spec {
+        #[doc = "`read()` method returns [`word_00d4_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word00d4OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_00d4_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word00d4OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -38798,16 +38796,15 @@ pub mod phy_btagc_recovered {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_RECORRECT_CONTROL_006C (rw) register accessor: Project-assigned name. Complete bt_agc_recorrect_set replaces the high byte with one finite image.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_recorrect_control_006c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_recorrect_control_006c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_recorrect_control_006c`] module"]
-    #[doc(alias = "AGC_RECORRECT_CONTROL_006C")]
-    pub type AgcRecorrectControl006c =
-        crate::Reg<agc_recorrect_control_006c::AgcRecorrectControl006cSpec>;
-    #[doc = "Project-assigned name. Complete bt_agc_recorrect_set replaces the high byte with one finite image."]
-    pub mod agc_recorrect_control_006c {
-        #[doc = "Register `AGC_RECORRECT_CONTROL_006C` reader"]
-        pub type R = crate::R<AgcRecorrectControl006cSpec>;
-        #[doc = "Register `AGC_RECORRECT_CONTROL_006C` writer"]
-        pub type W = crate::W<AgcRecorrectControl006cSpec>;
+    #[doc = "WORD_006C_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete bt_agc_recorrect_set replaces the high byte with one finite image.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_006c_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_006c_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_006c_opaque`] module"]
+    #[doc(alias = "WORD_006C_OPAQUE")]
+    pub type Word006cOpaque = crate::Reg<word_006c_opaque::Word006cOpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete bt_agc_recorrect_set replaces the high byte with one finite image."]
+    pub mod word_006c_opaque {
+        #[doc = "Register `WORD_006C_OPAQUE` reader"]
+        pub type R = crate::R<Word006cOpaqueSpec>;
+        #[doc = "Register `WORD_006C_OPAQUE` writer"]
+        pub type W = crate::W<Word006cOpaqueSpec>;
         #[doc = "Field `FINITE_BITS_24_31` reader - Project-assigned name. The leaf replaces this field with 0x0f."]
         pub type FiniteBits24_31R = crate::FieldReader;
         #[doc = "Field `FINITE_BITS_24_31` writer - Project-assigned name. The leaf replaces this field with 0x0f."]
@@ -38822,33 +38819,31 @@ pub mod phy_btagc_recovered {
         impl W {
             #[doc = "Bits 24:31 - Project-assigned name. The leaf replaces this field with 0x0f."]
             #[inline(always)]
-            pub fn finite_bits_24_31(
-                &mut self,
-            ) -> FiniteBits24_31W<'_, AgcRecorrectControl006cSpec> {
+            pub fn finite_bits_24_31(&mut self) -> FiniteBits24_31W<'_, Word006cOpaqueSpec> {
                 FiniteBits24_31W::new(self, 24)
             }
         }
-        #[doc = "Project-assigned name. Complete bt_agc_recorrect_set replaces the high byte with one finite image.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_recorrect_control_006c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_recorrect_control_006c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct AgcRecorrectControl006cSpec;
-        impl crate::RegisterSpec for AgcRecorrectControl006cSpec {
+        #[doc = "Opaque: meaning not established. Complete bt_agc_recorrect_set replaces the high byte with one finite image.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_006c_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_006c_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word006cOpaqueSpec;
+        impl crate::RegisterSpec for Word006cOpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`agc_recorrect_control_006c::R`](R) reader structure"]
-        impl crate::Readable for AgcRecorrectControl006cSpec {}
-        #[doc = "`write(|w| ..)` method takes [`agc_recorrect_control_006c::W`](W) writer structure"]
-        impl crate::Writable for AgcRecorrectControl006cSpec {
+        #[doc = "`read()` method returns [`word_006c_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word006cOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_006c_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word006cOpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_RESTART_CONFIG_0084 (rw) register accessor: Project-assigned name. Complete bt_agc_restart_set replaces the high byte with one finite image.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_restart_config_0084::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_restart_config_0084::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_restart_config_0084`] module"]
-    #[doc(alias = "AGC_RESTART_CONFIG_0084")]
-    pub type AgcRestartConfig0084 = crate::Reg<agc_restart_config_0084::AgcRestartConfig0084Spec>;
-    #[doc = "Project-assigned name. Complete bt_agc_restart_set replaces the high byte with one finite image."]
-    pub mod agc_restart_config_0084 {
-        #[doc = "Register `AGC_RESTART_CONFIG_0084` reader"]
-        pub type R = crate::R<AgcRestartConfig0084Spec>;
-        #[doc = "Register `AGC_RESTART_CONFIG_0084` writer"]
-        pub type W = crate::W<AgcRestartConfig0084Spec>;
+    #[doc = "WORD_0084_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete bt_agc_restart_set replaces the high byte with one finite image.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0084_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0084_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0084_opaque`] module"]
+    #[doc(alias = "WORD_0084_OPAQUE")]
+    pub type Word0084Opaque = crate::Reg<word_0084_opaque::Word0084OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete bt_agc_restart_set replaces the high byte with one finite image."]
+    pub mod word_0084_opaque {
+        #[doc = "Register `WORD_0084_OPAQUE` reader"]
+        pub type R = crate::R<Word0084OpaqueSpec>;
+        #[doc = "Register `WORD_0084_OPAQUE` writer"]
+        pub type W = crate::W<Word0084OpaqueSpec>;
         #[doc = "Field `FINITE_BITS_24_31` reader - Project-assigned name. The leaf replaces this field with 0xf4."]
         pub type FiniteBits24_31R = crate::FieldReader;
         #[doc = "Field `FINITE_BITS_24_31` writer - Project-assigned name. The leaf replaces this field with 0xf4."]
@@ -38863,32 +38858,31 @@ pub mod phy_btagc_recovered {
         impl W {
             #[doc = "Bits 24:31 - Project-assigned name. The leaf replaces this field with 0xf4."]
             #[inline(always)]
-            pub fn finite_bits_24_31(&mut self) -> FiniteBits24_31W<'_, AgcRestartConfig0084Spec> {
+            pub fn finite_bits_24_31(&mut self) -> FiniteBits24_31W<'_, Word0084OpaqueSpec> {
                 FiniteBits24_31W::new(self, 24)
             }
         }
-        #[doc = "Project-assigned name. Complete bt_agc_restart_set replaces the high byte with one finite image.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_restart_config_0084::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_restart_config_0084::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct AgcRestartConfig0084Spec;
-        impl crate::RegisterSpec for AgcRestartConfig0084Spec {
+        #[doc = "Opaque: meaning not established. Complete bt_agc_restart_set replaces the high byte with one finite image.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0084_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0084_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0084OpaqueSpec;
+        impl crate::RegisterSpec for Word0084OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`agc_restart_config_0084::R`](R) reader structure"]
-        impl crate::Readable for AgcRestartConfig0084Spec {}
-        #[doc = "`write(|w| ..)` method takes [`agc_restart_config_0084::W`](W) writer structure"]
-        impl crate::Writable for AgcRestartConfig0084Spec {
+        #[doc = "`read()` method returns [`word_0084_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0084OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0084_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0084OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SHARED_RX_SENSE_AND_DETECT_00A0 (rw) register accessor: Project-assigned name. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer.\n\nYou can [`read`](crate::Reg::read) this register and get [`shared_rx_sense_and_detect_00a0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`shared_rx_sense_and_detect_00a0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@shared_rx_sense_and_detect_00a0`] module"]
-    #[doc(alias = "SHARED_RX_SENSE_AND_DETECT_00A0")]
-    pub type SharedRxSenseAndDetect00a0 =
-        crate::Reg<shared_rx_sense_and_detect_00a0::SharedRxSenseAndDetect00a0Spec>;
-    #[doc = "Project-assigned name. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer."]
-    pub mod shared_rx_sense_and_detect_00a0 {
-        #[doc = "Register `SHARED_RX_SENSE_AND_DETECT_00A0` reader"]
-        pub type R = crate::R<SharedRxSenseAndDetect00a0Spec>;
-        #[doc = "Register `SHARED_RX_SENSE_AND_DETECT_00A0` writer"]
-        pub type W = crate::W<SharedRxSenseAndDetect00a0Spec>;
+    #[doc = "WORD_00A0_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00a0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00a0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_00a0_opaque`] module"]
+    #[doc(alias = "WORD_00A0_OPAQUE")]
+    pub type Word00a0Opaque = crate::Reg<word_00a0_opaque::Word00a0OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer."]
+    pub mod word_00a0_opaque {
+        #[doc = "Register `WORD_00A0_OPAQUE` reader"]
+        pub type R = crate::R<Word00a0OpaqueSpec>;
+        #[doc = "Register `WORD_00A0_OPAQUE` writer"]
+        pub type W = crate::W<Word00a0OpaqueSpec>;
         #[doc = "Field `BITS_16_23_OPAQUE` reader - Opaque: meaning not established."]
         pub type Bits16_23OpaqueR = crate::FieldReader;
         #[doc = "Field `BITS_16_23_OPAQUE` writer - Opaque: meaning not established."]
@@ -38912,41 +38906,36 @@ pub mod phy_btagc_recovered {
         impl W {
             #[doc = "Bits 16:23 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn bits_16_23_opaque(
-                &mut self,
-            ) -> Bits16_23OpaqueW<'_, SharedRxSenseAndDetect00a0Spec> {
+            pub fn bits_16_23_opaque(&mut self) -> Bits16_23OpaqueW<'_, Word00a0OpaqueSpec> {
                 Bits16_23OpaqueW::new(self, 16)
             }
             #[doc = "Bits 24:27 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn bits_24_27_opaque(
-                &mut self,
-            ) -> Bits24_27OpaqueW<'_, SharedRxSenseAndDetect00a0Spec> {
+            pub fn bits_24_27_opaque(&mut self) -> Bits24_27OpaqueW<'_, Word00a0OpaqueSpec> {
                 Bits24_27OpaqueW::new(self, 24)
             }
         }
-        #[doc = "Project-assigned name. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer.\n\nYou can [`read`](crate::Reg::read) this register and get [`shared_rx_sense_and_detect_00a0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`shared_rx_sense_and_detect_00a0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SharedRxSenseAndDetect00a0Spec;
-        impl crate::RegisterSpec for SharedRxSenseAndDetect00a0Spec {
+        #[doc = "Opaque: meaning not established. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00a0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00a0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word00a0OpaqueSpec;
+        impl crate::RegisterSpec for Word00a0OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`shared_rx_sense_and_detect_00a0::R`](R) reader structure"]
-        impl crate::Readable for SharedRxSenseAndDetect00a0Spec {}
-        #[doc = "`write(|w| ..)` method takes [`shared_rx_sense_and_detect_00a0::W`](W) writer structure"]
-        impl crate::Writable for SharedRxSenseAndDetect00a0Spec {
+        #[doc = "`read()` method returns [`word_00a0_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word00a0OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_00a0_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word00a0OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SHARED_RX_SENSE_AND_DETECT_00A8 (rw) register accessor: Project-assigned name. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace four positional fields used by the bounded baseband initializer.\n\nYou can [`read`](crate::Reg::read) this register and get [`shared_rx_sense_and_detect_00a8::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`shared_rx_sense_and_detect_00a8::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@shared_rx_sense_and_detect_00a8`] module"]
-    #[doc(alias = "SHARED_RX_SENSE_AND_DETECT_00A8")]
-    pub type SharedRxSenseAndDetect00a8 =
-        crate::Reg<shared_rx_sense_and_detect_00a8::SharedRxSenseAndDetect00a8Spec>;
-    #[doc = "Project-assigned name. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace four positional fields used by the bounded baseband initializer."]
-    pub mod shared_rx_sense_and_detect_00a8 {
-        #[doc = "Register `SHARED_RX_SENSE_AND_DETECT_00A8` reader"]
-        pub type R = crate::R<SharedRxSenseAndDetect00a8Spec>;
-        #[doc = "Register `SHARED_RX_SENSE_AND_DETECT_00A8` writer"]
-        pub type W = crate::W<SharedRxSenseAndDetect00a8Spec>;
+    #[doc = "WORD_00A8_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace four positional fields used by the bounded baseband initializer.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00a8_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00a8_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_00a8_opaque`] module"]
+    #[doc(alias = "WORD_00A8_OPAQUE")]
+    pub type Word00a8Opaque = crate::Reg<word_00a8_opaque::Word00a8OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace four positional fields used by the bounded baseband initializer."]
+    pub mod word_00a8_opaque {
+        #[doc = "Register `WORD_00A8_OPAQUE` reader"]
+        pub type R = crate::R<Word00a8OpaqueSpec>;
+        #[doc = "Register `WORD_00A8_OPAQUE` writer"]
+        pub type W = crate::W<Word00a8OpaqueSpec>;
         #[doc = "Field `BITS_0_3_OPAQUE` reader - Opaque: meaning not established."]
         pub type Bits0_3OpaqueR = crate::FieldReader;
         #[doc = "Field `BITS_0_3_OPAQUE` writer - Opaque: meaning not established."]
@@ -38988,55 +38977,46 @@ pub mod phy_btagc_recovered {
         impl W {
             #[doc = "Bits 0:3 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn bits_0_3_opaque(
-                &mut self,
-            ) -> Bits0_3OpaqueW<'_, SharedRxSenseAndDetect00a8Spec> {
+            pub fn bits_0_3_opaque(&mut self) -> Bits0_3OpaqueW<'_, Word00a8OpaqueSpec> {
                 Bits0_3OpaqueW::new(self, 0)
             }
             #[doc = "Bits 4:11 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn bits_4_11_opaque(
-                &mut self,
-            ) -> Bits4_11OpaqueW<'_, SharedRxSenseAndDetect00a8Spec> {
+            pub fn bits_4_11_opaque(&mut self) -> Bits4_11OpaqueW<'_, Word00a8OpaqueSpec> {
                 Bits4_11OpaqueW::new(self, 4)
             }
             #[doc = "Bits 12:16 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn bits_12_16_opaque(
-                &mut self,
-            ) -> Bits12_16OpaqueW<'_, SharedRxSenseAndDetect00a8Spec> {
+            pub fn bits_12_16_opaque(&mut self) -> Bits12_16OpaqueW<'_, Word00a8OpaqueSpec> {
                 Bits12_16OpaqueW::new(self, 12)
             }
             #[doc = "Bits 17:24 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn bits_17_24_opaque(
-                &mut self,
-            ) -> Bits17_24OpaqueW<'_, SharedRxSenseAndDetect00a8Spec> {
+            pub fn bits_17_24_opaque(&mut self) -> Bits17_24OpaqueW<'_, Word00a8OpaqueSpec> {
                 Bits17_24OpaqueW::new(self, 17)
             }
         }
-        #[doc = "Project-assigned name. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace four positional fields used by the bounded baseband initializer.\n\nYou can [`read`](crate::Reg::read) this register and get [`shared_rx_sense_and_detect_00a8::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`shared_rx_sense_and_detect_00a8::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SharedRxSenseAndDetect00a8Spec;
-        impl crate::RegisterSpec for SharedRxSenseAndDetect00a8Spec {
+        #[doc = "Opaque: meaning not established. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace four positional fields used by the bounded baseband initializer.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00a8_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00a8_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word00a8OpaqueSpec;
+        impl crate::RegisterSpec for Word00a8OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`shared_rx_sense_and_detect_00a8::R`](R) reader structure"]
-        impl crate::Readable for SharedRxSenseAndDetect00a8Spec {}
-        #[doc = "`write(|w| ..)` method takes [`shared_rx_sense_and_detect_00a8::W`](W) writer structure"]
-        impl crate::Writable for SharedRxSenseAndDetect00a8Spec {
+        #[doc = "`read()` method returns [`word_00a8_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word00a8OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_00a8_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word00a8OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_RECORRECT_AND_TARGET_00B0 (rw) register accessor: Project-assigned name. Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_recorrect_and_target_00b0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_recorrect_and_target_00b0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_recorrect_and_target_00b0`] module"]
-    #[doc(alias = "AGC_RECORRECT_AND_TARGET_00B0")]
-    pub type AgcRecorrectAndTarget00b0 =
-        crate::Reg<agc_recorrect_and_target_00b0::AgcRecorrectAndTarget00b0Spec>;
-    #[doc = "Project-assigned name. Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves."]
-    pub mod agc_recorrect_and_target_00b0 {
-        #[doc = "Register `AGC_RECORRECT_AND_TARGET_00B0` reader"]
-        pub type R = crate::R<AgcRecorrectAndTarget00b0Spec>;
-        #[doc = "Register `AGC_RECORRECT_AND_TARGET_00B0` writer"]
-        pub type W = crate::W<AgcRecorrectAndTarget00b0Spec>;
+    #[doc = "WORD_00B0_OPAQUE (rw) register accessor: Opaque: meaning not established. Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00b0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00b0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_00b0_opaque`] module"]
+    #[doc(alias = "WORD_00B0_OPAQUE")]
+    pub type Word00b0Opaque = crate::Reg<word_00b0_opaque::Word00b0OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves."]
+    pub mod word_00b0_opaque {
+        #[doc = "Register `WORD_00B0_OPAQUE` reader"]
+        pub type R = crate::R<Word00b0OpaqueSpec>;
+        #[doc = "Register `WORD_00B0_OPAQUE` writer"]
+        pub type W = crate::W<Word00b0OpaqueSpec>;
         #[doc = "Field `RECORRECT_BITS_13_17` reader - Project-assigned name. bt_agc_recorrect_set replaces this field with 0x18."]
         pub type RecorrectBits13_17R = crate::FieldReader;
         #[doc = "Field `RECORRECT_BITS_13_17` writer - Project-assigned name. bt_agc_recorrect_set replaces this field with 0x18."]
@@ -39069,48 +39049,41 @@ pub mod phy_btagc_recovered {
         impl W {
             #[doc = "Bits 13:17 - Project-assigned name. bt_agc_recorrect_set replaces this field with 0x18."]
             #[inline(always)]
-            pub fn recorrect_bits_13_17(
-                &mut self,
-            ) -> RecorrectBits13_17W<'_, AgcRecorrectAndTarget00b0Spec> {
+            pub fn recorrect_bits_13_17(&mut self) -> RecorrectBits13_17W<'_, Word00b0OpaqueSpec> {
                 RecorrectBits13_17W::new(self, 13)
             }
             #[doc = "Bits 18:22 - Project-assigned name. bt_agc_recorrect_set replaces this field with 0x18."]
             #[inline(always)]
-            pub fn recorrect_bits_18_22(
-                &mut self,
-            ) -> RecorrectBits18_22W<'_, AgcRecorrectAndTarget00b0Spec> {
+            pub fn recorrect_bits_18_22(&mut self) -> RecorrectBits18_22W<'_, Word00b0OpaqueSpec> {
                 RecorrectBits18_22W::new(self, 18)
             }
             #[doc = "Bits 23:31 - Project-assigned name. bt_agc_target_set replaces this field with 0x1d4."]
             #[inline(always)]
-            pub fn target_bits_23_31(
-                &mut self,
-            ) -> TargetBits23_31W<'_, AgcRecorrectAndTarget00b0Spec> {
+            pub fn target_bits_23_31(&mut self) -> TargetBits23_31W<'_, Word00b0OpaqueSpec> {
                 TargetBits23_31W::new(self, 23)
             }
         }
-        #[doc = "Project-assigned name. Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_recorrect_and_target_00b0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_recorrect_and_target_00b0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct AgcRecorrectAndTarget00b0Spec;
-        impl crate::RegisterSpec for AgcRecorrectAndTarget00b0Spec {
+        #[doc = "Opaque: meaning not established. Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00b0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00b0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word00b0OpaqueSpec;
+        impl crate::RegisterSpec for Word00b0OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`agc_recorrect_and_target_00b0::R`](R) reader structure"]
-        impl crate::Readable for AgcRecorrectAndTarget00b0Spec {}
-        #[doc = "`write(|w| ..)` method takes [`agc_recorrect_and_target_00b0::W`](W) writer structure"]
-        impl crate::Writable for AgcRecorrectAndTarget00b0Spec {
+        #[doc = "`read()` method returns [`word_00b0_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word00b0OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_00b0_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word00b0OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_RECORRECT_AND_TARGET_00B4 (rw) register accessor: Project-assigned name. Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_recorrect_and_target_00b4::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_recorrect_and_target_00b4::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_recorrect_and_target_00b4`] module"]
-    #[doc(alias = "AGC_RECORRECT_AND_TARGET_00B4")]
-    pub type AgcRecorrectAndTarget00b4 =
-        crate::Reg<agc_recorrect_and_target_00b4::AgcRecorrectAndTarget00b4Spec>;
-    #[doc = "Project-assigned name. Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves."]
-    pub mod agc_recorrect_and_target_00b4 {
-        #[doc = "Register `AGC_RECORRECT_AND_TARGET_00B4` reader"]
-        pub type R = crate::R<AgcRecorrectAndTarget00b4Spec>;
-        #[doc = "Register `AGC_RECORRECT_AND_TARGET_00B4` writer"]
-        pub type W = crate::W<AgcRecorrectAndTarget00b4Spec>;
+    #[doc = "WORD_00B4_OPAQUE (rw) register accessor: Opaque: meaning not established. Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00b4_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00b4_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_00b4_opaque`] module"]
+    #[doc(alias = "WORD_00B4_OPAQUE")]
+    pub type Word00b4Opaque = crate::Reg<word_00b4_opaque::Word00b4OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves."]
+    pub mod word_00b4_opaque {
+        #[doc = "Register `WORD_00B4_OPAQUE` reader"]
+        pub type R = crate::R<Word00b4OpaqueSpec>;
+        #[doc = "Register `WORD_00B4_OPAQUE` writer"]
+        pub type W = crate::W<Word00b4OpaqueSpec>;
         #[doc = "Field `RECORRECT_BIT_8` reader - Project-assigned name. bt_agc_recorrect_set sets this bit."]
         pub type RecorrectBit8R = crate::BitReader;
         #[doc = "Field `RECORRECT_BIT_8` writer - Project-assigned name. bt_agc_recorrect_set sets this bit."]
@@ -39143,46 +39116,41 @@ pub mod phy_btagc_recovered {
         impl W {
             #[doc = "Bit 8 - Project-assigned name. bt_agc_recorrect_set sets this bit."]
             #[inline(always)]
-            pub fn recorrect_bit_8(&mut self) -> RecorrectBit8W<'_, AgcRecorrectAndTarget00b4Spec> {
+            pub fn recorrect_bit_8(&mut self) -> RecorrectBit8W<'_, Word00b4OpaqueSpec> {
                 RecorrectBit8W::new(self, 8)
             }
             #[doc = "Bits 9:13 - Project-assigned name. bt_agc_recorrect_set replaces this field with 0x0a."]
             #[inline(always)]
-            pub fn recorrect_bits_9_13(
-                &mut self,
-            ) -> RecorrectBits9_13W<'_, AgcRecorrectAndTarget00b4Spec> {
+            pub fn recorrect_bits_9_13(&mut self) -> RecorrectBits9_13W<'_, Word00b4OpaqueSpec> {
                 RecorrectBits9_13W::new(self, 9)
             }
             #[doc = "Bits 23:31 - Project-assigned name. bt_agc_target_set replaces this field with 0x1ce."]
             #[inline(always)]
-            pub fn target_bits_23_31(
-                &mut self,
-            ) -> TargetBits23_31W<'_, AgcRecorrectAndTarget00b4Spec> {
+            pub fn target_bits_23_31(&mut self) -> TargetBits23_31W<'_, Word00b4OpaqueSpec> {
                 TargetBits23_31W::new(self, 23)
             }
         }
-        #[doc = "Project-assigned name. Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_recorrect_and_target_00b4::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_recorrect_and_target_00b4::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct AgcRecorrectAndTarget00b4Spec;
-        impl crate::RegisterSpec for AgcRecorrectAndTarget00b4Spec {
+        #[doc = "Opaque: meaning not established. Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00b4_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00b4_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word00b4OpaqueSpec;
+        impl crate::RegisterSpec for Word00b4OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`agc_recorrect_and_target_00b4::R`](R) reader structure"]
-        impl crate::Readable for AgcRecorrectAndTarget00b4Spec {}
-        #[doc = "`write(|w| ..)` method takes [`agc_recorrect_and_target_00b4::W`](W) writer structure"]
-        impl crate::Writable for AgcRecorrectAndTarget00b4Spec {
+        #[doc = "`read()` method returns [`word_00b4_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word00b4OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_00b4_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word00b4OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SHARED_RX_SENSE_AND_DETECT_00B8 (rw) register accessor: Project-assigned name. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer.\n\nYou can [`read`](crate::Reg::read) this register and get [`shared_rx_sense_and_detect_00b8::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`shared_rx_sense_and_detect_00b8::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@shared_rx_sense_and_detect_00b8`] module"]
-    #[doc(alias = "SHARED_RX_SENSE_AND_DETECT_00B8")]
-    pub type SharedRxSenseAndDetect00b8 =
-        crate::Reg<shared_rx_sense_and_detect_00b8::SharedRxSenseAndDetect00b8Spec>;
-    #[doc = "Project-assigned name. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer."]
-    pub mod shared_rx_sense_and_detect_00b8 {
-        #[doc = "Register `SHARED_RX_SENSE_AND_DETECT_00B8` reader"]
-        pub type R = crate::R<SharedRxSenseAndDetect00b8Spec>;
-        #[doc = "Register `SHARED_RX_SENSE_AND_DETECT_00B8` writer"]
-        pub type W = crate::W<SharedRxSenseAndDetect00b8Spec>;
+    #[doc = "WORD_00B8_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00b8_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00b8_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_00b8_opaque`] module"]
+    #[doc(alias = "WORD_00B8_OPAQUE")]
+    pub type Word00b8Opaque = crate::Reg<word_00b8_opaque::Word00b8OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer."]
+    pub mod word_00b8_opaque {
+        #[doc = "Register `WORD_00B8_OPAQUE` reader"]
+        pub type R = crate::R<Word00b8OpaqueSpec>;
+        #[doc = "Register `WORD_00B8_OPAQUE` writer"]
+        pub type W = crate::W<Word00b8OpaqueSpec>;
         #[doc = "Field `BITS_8_11_OPAQUE` reader - Opaque: meaning not established."]
         pub type Bits8_11OpaqueR = crate::FieldReader;
         #[doc = "Field `BITS_8_11_OPAQUE` writer - Opaque: meaning not established."]
@@ -39206,41 +39174,36 @@ pub mod phy_btagc_recovered {
         impl W {
             #[doc = "Bits 8:11 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn bits_8_11_opaque(
-                &mut self,
-            ) -> Bits8_11OpaqueW<'_, SharedRxSenseAndDetect00b8Spec> {
+            pub fn bits_8_11_opaque(&mut self) -> Bits8_11OpaqueW<'_, Word00b8OpaqueSpec> {
                 Bits8_11OpaqueW::new(self, 8)
             }
             #[doc = "Bits 12:19 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn bits_12_19_opaque(
-                &mut self,
-            ) -> Bits12_19OpaqueW<'_, SharedRxSenseAndDetect00b8Spec> {
+            pub fn bits_12_19_opaque(&mut self) -> Bits12_19OpaqueW<'_, Word00b8OpaqueSpec> {
                 Bits12_19OpaqueW::new(self, 12)
             }
         }
-        #[doc = "Project-assigned name. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer.\n\nYou can [`read`](crate::Reg::read) this register and get [`shared_rx_sense_and_detect_00b8::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`shared_rx_sense_and_detect_00b8::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SharedRxSenseAndDetect00b8Spec;
-        impl crate::RegisterSpec for SharedRxSenseAndDetect00b8Spec {
+        #[doc = "Opaque: meaning not established. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00b8_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00b8_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word00b8OpaqueSpec;
+        impl crate::RegisterSpec for Word00b8OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`shared_rx_sense_and_detect_00b8::R`](R) reader structure"]
-        impl crate::Readable for SharedRxSenseAndDetect00b8Spec {}
-        #[doc = "`write(|w| ..)` method takes [`shared_rx_sense_and_detect_00b8::W`](W) writer structure"]
-        impl crate::Writable for SharedRxSenseAndDetect00b8Spec {
+        #[doc = "`read()` method returns [`word_00b8_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word00b8OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_00b8_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word00b8OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_RECORRECT_AND_RESTART_00BC (rw) register accessor: Project-assigned name. Complete recorrect and restart leaves independently update five observed control bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_recorrect_and_restart_00bc::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_recorrect_and_restart_00bc::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_recorrect_and_restart_00bc`] module"]
-    #[doc(alias = "AGC_RECORRECT_AND_RESTART_00BC")]
-    pub type AgcRecorrectAndRestart00bc =
-        crate::Reg<agc_recorrect_and_restart_00bc::AgcRecorrectAndRestart00bcSpec>;
-    #[doc = "Project-assigned name. Complete recorrect and restart leaves independently update five observed control bits."]
-    pub mod agc_recorrect_and_restart_00bc {
-        #[doc = "Register `AGC_RECORRECT_AND_RESTART_00BC` reader"]
-        pub type R = crate::R<AgcRecorrectAndRestart00bcSpec>;
-        #[doc = "Register `AGC_RECORRECT_AND_RESTART_00BC` writer"]
-        pub type W = crate::W<AgcRecorrectAndRestart00bcSpec>;
+    #[doc = "WORD_00BC_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete recorrect and restart leaves independently update five observed control bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00bc_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00bc_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_00bc_opaque`] module"]
+    #[doc(alias = "WORD_00BC_OPAQUE")]
+    pub type Word00bcOpaque = crate::Reg<word_00bc_opaque::Word00bcOpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete recorrect and restart leaves independently update five observed control bits."]
+    pub mod word_00bc_opaque {
+        #[doc = "Register `WORD_00BC_OPAQUE` reader"]
+        pub type R = crate::R<Word00bcOpaqueSpec>;
+        #[doc = "Register `WORD_00BC_OPAQUE` writer"]
+        pub type W = crate::W<Word00bcOpaqueSpec>;
         #[doc = "Field `RECORRECT_BIT_5` reader - Project-assigned name. bt_agc_recorrect_set sets this bit."]
         pub type RecorrectBit5R = crate::BitReader;
         #[doc = "Field `RECORRECT_BIT_5` writer - Project-assigned name. bt_agc_recorrect_set sets this bit."]
@@ -39291,235 +39254,227 @@ pub mod phy_btagc_recovered {
         impl W {
             #[doc = "Bit 5 - Project-assigned name. bt_agc_recorrect_set sets this bit."]
             #[inline(always)]
-            pub fn recorrect_bit_5(
-                &mut self,
-            ) -> RecorrectBit5W<'_, AgcRecorrectAndRestart00bcSpec> {
+            pub fn recorrect_bit_5(&mut self) -> RecorrectBit5W<'_, Word00bcOpaqueSpec> {
                 RecorrectBit5W::new(self, 5)
             }
             #[doc = "Bit 6 - Project-assigned name. bt_agc_recorrect_set clears this bit."]
             #[inline(always)]
-            pub fn recorrect_bit_6(
-                &mut self,
-            ) -> RecorrectBit6W<'_, AgcRecorrectAndRestart00bcSpec> {
+            pub fn recorrect_bit_6(&mut self) -> RecorrectBit6W<'_, Word00bcOpaqueSpec> {
                 RecorrectBit6W::new(self, 6)
             }
             #[doc = "Bit 7 - Project-assigned name. bt_agc_recorrect_set sets this bit."]
             #[inline(always)]
-            pub fn recorrect_bit_7(
-                &mut self,
-            ) -> RecorrectBit7W<'_, AgcRecorrectAndRestart00bcSpec> {
+            pub fn recorrect_bit_7(&mut self) -> RecorrectBit7W<'_, Word00bcOpaqueSpec> {
                 RecorrectBit7W::new(self, 7)
             }
             #[doc = "Bit 8 - Project-assigned name. bt_agc_recorrect_set clears this bit."]
             #[inline(always)]
-            pub fn recorrect_bit_8(
-                &mut self,
-            ) -> RecorrectBit8W<'_, AgcRecorrectAndRestart00bcSpec> {
+            pub fn recorrect_bit_8(&mut self) -> RecorrectBit8W<'_, Word00bcOpaqueSpec> {
                 RecorrectBit8W::new(self, 8)
             }
             #[doc = "Bit 31 - Project-assigned name. bt_agc_restart_set sets this bit."]
             #[inline(always)]
-            pub fn restart_bit_31(&mut self) -> RestartBit31W<'_, AgcRecorrectAndRestart00bcSpec> {
+            pub fn restart_bit_31(&mut self) -> RestartBit31W<'_, Word00bcOpaqueSpec> {
                 RestartBit31W::new(self, 31)
             }
         }
-        #[doc = "Project-assigned name. Complete recorrect and restart leaves independently update five observed control bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_recorrect_and_restart_00bc::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_recorrect_and_restart_00bc::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct AgcRecorrectAndRestart00bcSpec;
-        impl crate::RegisterSpec for AgcRecorrectAndRestart00bcSpec {
+        #[doc = "Opaque: meaning not established. Complete recorrect and restart leaves independently update five observed control bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00bc_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00bc_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word00bcOpaqueSpec;
+        impl crate::RegisterSpec for Word00bcOpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`agc_recorrect_and_restart_00bc::R`](R) reader structure"]
-        impl crate::Readable for AgcRecorrectAndRestart00bcSpec {}
-        #[doc = "`write(|w| ..)` method takes [`agc_recorrect_and_restart_00bc::W`](W) writer structure"]
-        impl crate::Writable for AgcRecorrectAndRestart00bcSpec {
+        #[doc = "`read()` method returns [`word_00bc_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word00bcOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_00bc_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word00bcOpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_DETECT_CONFIG_00C0 (rw) register accessor: Project-assigned name. Complete bt_agc_detect_set replaces five positional fields with finite images.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_detect_config_00c0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_detect_config_00c0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_detect_config_00c0`] module"]
-    #[doc(alias = "AGC_DETECT_CONFIG_00C0")]
-    pub type AgcDetectConfig00c0 = crate::Reg<agc_detect_config_00c0::AgcDetectConfig00c0Spec>;
-    #[doc = "Project-assigned name. Complete bt_agc_detect_set replaces five positional fields with finite images."]
-    pub mod agc_detect_config_00c0 {
-        #[doc = "Register `AGC_DETECT_CONFIG_00C0` reader"]
-        pub type R = crate::R<AgcDetectConfig00c0Spec>;
-        #[doc = "Register `AGC_DETECT_CONFIG_00C0` writer"]
-        pub type W = crate::W<AgcDetectConfig00c0Spec>;
-        #[doc = "Field `BITS_5_9` reader - Project-assigned name. The leaf replaces this field with 0x0a."]
-        pub type Bits5_9R = crate::FieldReader;
-        #[doc = "Field `BITS_5_9` writer - Project-assigned name. The leaf replaces this field with 0x0a."]
-        pub type Bits5_9W<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
-        #[doc = "Field `BITS_10_14` reader - Project-assigned name. The leaf replaces this field with 0x0a."]
-        pub type Bits10_14R = crate::FieldReader;
-        #[doc = "Field `BITS_10_14` writer - Project-assigned name. The leaf replaces this field with 0x0a."]
-        pub type Bits10_14W<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
-        #[doc = "Field `BITS_15_19` reader - Project-assigned name. The leaf replaces this field with 0x0a."]
-        pub type Bits15_19R = crate::FieldReader;
-        #[doc = "Field `BITS_15_19` writer - Project-assigned name. The leaf replaces this field with 0x0a."]
-        pub type Bits15_19W<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
-        #[doc = "Field `BITS_20_23` reader - Project-assigned name. The leaf replaces this field with 7."]
-        pub type Bits20_23R = crate::FieldReader;
-        #[doc = "Field `BITS_20_23` writer - Project-assigned name. The leaf replaces this field with 7."]
-        pub type Bits20_23W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
-        #[doc = "Field `BITS_24_31` reader - Project-assigned name. The leaf replaces this field with 0x9c."]
-        pub type Bits24_31R = crate::FieldReader;
-        #[doc = "Field `BITS_24_31` writer - Project-assigned name. The leaf replaces this field with 0x9c."]
-        pub type Bits24_31W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+    #[doc = "WORD_00C0_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete bt_agc_detect_set replaces five positional fields with finite images.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00c0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00c0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_00c0_opaque`] module"]
+    #[doc(alias = "WORD_00C0_OPAQUE")]
+    pub type Word00c0Opaque = crate::Reg<word_00c0_opaque::Word00c0OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete bt_agc_detect_set replaces five positional fields with finite images."]
+    pub mod word_00c0_opaque {
+        #[doc = "Register `WORD_00C0_OPAQUE` reader"]
+        pub type R = crate::R<Word00c0OpaqueSpec>;
+        #[doc = "Register `WORD_00C0_OPAQUE` writer"]
+        pub type W = crate::W<Word00c0OpaqueSpec>;
+        #[doc = "Field `BITS_5_9_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x0a."]
+        pub type Bits5_9OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_5_9_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x0a."]
+        pub type Bits5_9OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
+        #[doc = "Field `BITS_10_14_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x0a."]
+        pub type Bits10_14OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_10_14_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x0a."]
+        pub type Bits10_14OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
+        #[doc = "Field `BITS_15_19_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x0a."]
+        pub type Bits15_19OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_15_19_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x0a."]
+        pub type Bits15_19OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
+        #[doc = "Field `BITS_20_23_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 7."]
+        pub type Bits20_23OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_20_23_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 7."]
+        pub type Bits20_23OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `BITS_24_31_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x9c."]
+        pub type Bits24_31OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_24_31_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x9c."]
+        pub type Bits24_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
-            #[doc = "Bits 5:9 - Project-assigned name. The leaf replaces this field with 0x0a."]
+            #[doc = "Bits 5:9 - Opaque: meaning not established. The leaf replaces this field with 0x0a."]
             #[inline(always)]
-            pub fn bits_5_9(&self) -> Bits5_9R {
-                Bits5_9R::new(((self.bits >> 5) & 0x1f) as u8)
+            pub fn bits_5_9_opaque(&self) -> Bits5_9OpaqueR {
+                Bits5_9OpaqueR::new(((self.bits >> 5) & 0x1f) as u8)
             }
-            #[doc = "Bits 10:14 - Project-assigned name. The leaf replaces this field with 0x0a."]
+            #[doc = "Bits 10:14 - Opaque: meaning not established. The leaf replaces this field with 0x0a."]
             #[inline(always)]
-            pub fn bits_10_14(&self) -> Bits10_14R {
-                Bits10_14R::new(((self.bits >> 10) & 0x1f) as u8)
+            pub fn bits_10_14_opaque(&self) -> Bits10_14OpaqueR {
+                Bits10_14OpaqueR::new(((self.bits >> 10) & 0x1f) as u8)
             }
-            #[doc = "Bits 15:19 - Project-assigned name. The leaf replaces this field with 0x0a."]
+            #[doc = "Bits 15:19 - Opaque: meaning not established. The leaf replaces this field with 0x0a."]
             #[inline(always)]
-            pub fn bits_15_19(&self) -> Bits15_19R {
-                Bits15_19R::new(((self.bits >> 15) & 0x1f) as u8)
+            pub fn bits_15_19_opaque(&self) -> Bits15_19OpaqueR {
+                Bits15_19OpaqueR::new(((self.bits >> 15) & 0x1f) as u8)
             }
-            #[doc = "Bits 20:23 - Project-assigned name. The leaf replaces this field with 7."]
+            #[doc = "Bits 20:23 - Opaque: meaning not established. The leaf replaces this field with 7."]
             #[inline(always)]
-            pub fn bits_20_23(&self) -> Bits20_23R {
-                Bits20_23R::new(((self.bits >> 20) & 0x0f) as u8)
+            pub fn bits_20_23_opaque(&self) -> Bits20_23OpaqueR {
+                Bits20_23OpaqueR::new(((self.bits >> 20) & 0x0f) as u8)
             }
-            #[doc = "Bits 24:31 - Project-assigned name. The leaf replaces this field with 0x9c."]
+            #[doc = "Bits 24:31 - Opaque: meaning not established. The leaf replaces this field with 0x9c."]
             #[inline(always)]
-            pub fn bits_24_31(&self) -> Bits24_31R {
-                Bits24_31R::new(((self.bits >> 24) & 0xff) as u8)
+            pub fn bits_24_31_opaque(&self) -> Bits24_31OpaqueR {
+                Bits24_31OpaqueR::new(((self.bits >> 24) & 0xff) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 5:9 - Project-assigned name. The leaf replaces this field with 0x0a."]
+            #[doc = "Bits 5:9 - Opaque: meaning not established. The leaf replaces this field with 0x0a."]
             #[inline(always)]
-            pub fn bits_5_9(&mut self) -> Bits5_9W<'_, AgcDetectConfig00c0Spec> {
-                Bits5_9W::new(self, 5)
+            pub fn bits_5_9_opaque(&mut self) -> Bits5_9OpaqueW<'_, Word00c0OpaqueSpec> {
+                Bits5_9OpaqueW::new(self, 5)
             }
-            #[doc = "Bits 10:14 - Project-assigned name. The leaf replaces this field with 0x0a."]
+            #[doc = "Bits 10:14 - Opaque: meaning not established. The leaf replaces this field with 0x0a."]
             #[inline(always)]
-            pub fn bits_10_14(&mut self) -> Bits10_14W<'_, AgcDetectConfig00c0Spec> {
-                Bits10_14W::new(self, 10)
+            pub fn bits_10_14_opaque(&mut self) -> Bits10_14OpaqueW<'_, Word00c0OpaqueSpec> {
+                Bits10_14OpaqueW::new(self, 10)
             }
-            #[doc = "Bits 15:19 - Project-assigned name. The leaf replaces this field with 0x0a."]
+            #[doc = "Bits 15:19 - Opaque: meaning not established. The leaf replaces this field with 0x0a."]
             #[inline(always)]
-            pub fn bits_15_19(&mut self) -> Bits15_19W<'_, AgcDetectConfig00c0Spec> {
-                Bits15_19W::new(self, 15)
+            pub fn bits_15_19_opaque(&mut self) -> Bits15_19OpaqueW<'_, Word00c0OpaqueSpec> {
+                Bits15_19OpaqueW::new(self, 15)
             }
-            #[doc = "Bits 20:23 - Project-assigned name. The leaf replaces this field with 7."]
+            #[doc = "Bits 20:23 - Opaque: meaning not established. The leaf replaces this field with 7."]
             #[inline(always)]
-            pub fn bits_20_23(&mut self) -> Bits20_23W<'_, AgcDetectConfig00c0Spec> {
-                Bits20_23W::new(self, 20)
+            pub fn bits_20_23_opaque(&mut self) -> Bits20_23OpaqueW<'_, Word00c0OpaqueSpec> {
+                Bits20_23OpaqueW::new(self, 20)
             }
-            #[doc = "Bits 24:31 - Project-assigned name. The leaf replaces this field with 0x9c."]
+            #[doc = "Bits 24:31 - Opaque: meaning not established. The leaf replaces this field with 0x9c."]
             #[inline(always)]
-            pub fn bits_24_31(&mut self) -> Bits24_31W<'_, AgcDetectConfig00c0Spec> {
-                Bits24_31W::new(self, 24)
+            pub fn bits_24_31_opaque(&mut self) -> Bits24_31OpaqueW<'_, Word00c0OpaqueSpec> {
+                Bits24_31OpaqueW::new(self, 24)
             }
         }
-        #[doc = "Project-assigned name. Complete bt_agc_detect_set replaces five positional fields with finite images.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_detect_config_00c0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_detect_config_00c0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct AgcDetectConfig00c0Spec;
-        impl crate::RegisterSpec for AgcDetectConfig00c0Spec {
+        #[doc = "Opaque: meaning not established. Complete bt_agc_detect_set replaces five positional fields with finite images.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00c0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00c0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word00c0OpaqueSpec;
+        impl crate::RegisterSpec for Word00c0OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`agc_detect_config_00c0::R`](R) reader structure"]
-        impl crate::Readable for AgcDetectConfig00c0Spec {}
-        #[doc = "`write(|w| ..)` method takes [`agc_detect_config_00c0::W`](W) writer structure"]
-        impl crate::Writable for AgcDetectConfig00c0Spec {
+        #[doc = "`read()` method returns [`word_00c0_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word00c0OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_00c0_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word00c0OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_DETECT_CONFIG_00C4 (rw) register accessor: Project-assigned name. Complete bt_agc_detect_set replaces four positional fields with finite images.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_detect_config_00c4::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_detect_config_00c4::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_detect_config_00c4`] module"]
-    #[doc(alias = "AGC_DETECT_CONFIG_00C4")]
-    pub type AgcDetectConfig00c4 = crate::Reg<agc_detect_config_00c4::AgcDetectConfig00c4Spec>;
-    #[doc = "Project-assigned name. Complete bt_agc_detect_set replaces four positional fields with finite images."]
-    pub mod agc_detect_config_00c4 {
-        #[doc = "Register `AGC_DETECT_CONFIG_00C4` reader"]
-        pub type R = crate::R<AgcDetectConfig00c4Spec>;
-        #[doc = "Register `AGC_DETECT_CONFIG_00C4` writer"]
-        pub type W = crate::W<AgcDetectConfig00c4Spec>;
-        #[doc = "Field `BITS_10_14` reader - Project-assigned name. The leaf replaces this field with 0x0f."]
-        pub type Bits10_14R = crate::FieldReader;
-        #[doc = "Field `BITS_10_14` writer - Project-assigned name. The leaf replaces this field with 0x0f."]
-        pub type Bits10_14W<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
-        #[doc = "Field `BITS_15_19` reader - Project-assigned name. The leaf replaces this field with 0x0f."]
-        pub type Bits15_19R = crate::FieldReader;
-        #[doc = "Field `BITS_15_19` writer - Project-assigned name. The leaf replaces this field with 0x0f."]
-        pub type Bits15_19W<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
-        #[doc = "Field `BITS_20_23` reader - Project-assigned name. The leaf replaces this field with 0x0a."]
-        pub type Bits20_23R = crate::FieldReader;
-        #[doc = "Field `BITS_20_23` writer - Project-assigned name. The leaf replaces this field with 0x0a."]
-        pub type Bits20_23W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
-        #[doc = "Field `BITS_24_31` reader - Project-assigned name. The leaf replaces this field with 0x9c."]
-        pub type Bits24_31R = crate::FieldReader;
-        #[doc = "Field `BITS_24_31` writer - Project-assigned name. The leaf replaces this field with 0x9c."]
-        pub type Bits24_31W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+    #[doc = "WORD_00C4_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete bt_agc_detect_set replaces four positional fields with finite images.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00c4_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00c4_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_00c4_opaque`] module"]
+    #[doc(alias = "WORD_00C4_OPAQUE")]
+    pub type Word00c4Opaque = crate::Reg<word_00c4_opaque::Word00c4OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete bt_agc_detect_set replaces four positional fields with finite images."]
+    pub mod word_00c4_opaque {
+        #[doc = "Register `WORD_00C4_OPAQUE` reader"]
+        pub type R = crate::R<Word00c4OpaqueSpec>;
+        #[doc = "Register `WORD_00C4_OPAQUE` writer"]
+        pub type W = crate::W<Word00c4OpaqueSpec>;
+        #[doc = "Field `BITS_10_14_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x0f."]
+        pub type Bits10_14OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_10_14_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x0f."]
+        pub type Bits10_14OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
+        #[doc = "Field `BITS_15_19_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x0f."]
+        pub type Bits15_19OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_15_19_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x0f."]
+        pub type Bits15_19OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
+        #[doc = "Field `BITS_20_23_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x0a."]
+        pub type Bits20_23OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_20_23_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x0a."]
+        pub type Bits20_23OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `BITS_24_31_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x9c."]
+        pub type Bits24_31OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_24_31_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x9c."]
+        pub type Bits24_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
-            #[doc = "Bits 10:14 - Project-assigned name. The leaf replaces this field with 0x0f."]
+            #[doc = "Bits 10:14 - Opaque: meaning not established. The leaf replaces this field with 0x0f."]
             #[inline(always)]
-            pub fn bits_10_14(&self) -> Bits10_14R {
-                Bits10_14R::new(((self.bits >> 10) & 0x1f) as u8)
+            pub fn bits_10_14_opaque(&self) -> Bits10_14OpaqueR {
+                Bits10_14OpaqueR::new(((self.bits >> 10) & 0x1f) as u8)
             }
-            #[doc = "Bits 15:19 - Project-assigned name. The leaf replaces this field with 0x0f."]
+            #[doc = "Bits 15:19 - Opaque: meaning not established. The leaf replaces this field with 0x0f."]
             #[inline(always)]
-            pub fn bits_15_19(&self) -> Bits15_19R {
-                Bits15_19R::new(((self.bits >> 15) & 0x1f) as u8)
+            pub fn bits_15_19_opaque(&self) -> Bits15_19OpaqueR {
+                Bits15_19OpaqueR::new(((self.bits >> 15) & 0x1f) as u8)
             }
-            #[doc = "Bits 20:23 - Project-assigned name. The leaf replaces this field with 0x0a."]
+            #[doc = "Bits 20:23 - Opaque: meaning not established. The leaf replaces this field with 0x0a."]
             #[inline(always)]
-            pub fn bits_20_23(&self) -> Bits20_23R {
-                Bits20_23R::new(((self.bits >> 20) & 0x0f) as u8)
+            pub fn bits_20_23_opaque(&self) -> Bits20_23OpaqueR {
+                Bits20_23OpaqueR::new(((self.bits >> 20) & 0x0f) as u8)
             }
-            #[doc = "Bits 24:31 - Project-assigned name. The leaf replaces this field with 0x9c."]
+            #[doc = "Bits 24:31 - Opaque: meaning not established. The leaf replaces this field with 0x9c."]
             #[inline(always)]
-            pub fn bits_24_31(&self) -> Bits24_31R {
-                Bits24_31R::new(((self.bits >> 24) & 0xff) as u8)
+            pub fn bits_24_31_opaque(&self) -> Bits24_31OpaqueR {
+                Bits24_31OpaqueR::new(((self.bits >> 24) & 0xff) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 10:14 - Project-assigned name. The leaf replaces this field with 0x0f."]
+            #[doc = "Bits 10:14 - Opaque: meaning not established. The leaf replaces this field with 0x0f."]
             #[inline(always)]
-            pub fn bits_10_14(&mut self) -> Bits10_14W<'_, AgcDetectConfig00c4Spec> {
-                Bits10_14W::new(self, 10)
+            pub fn bits_10_14_opaque(&mut self) -> Bits10_14OpaqueW<'_, Word00c4OpaqueSpec> {
+                Bits10_14OpaqueW::new(self, 10)
             }
-            #[doc = "Bits 15:19 - Project-assigned name. The leaf replaces this field with 0x0f."]
+            #[doc = "Bits 15:19 - Opaque: meaning not established. The leaf replaces this field with 0x0f."]
             #[inline(always)]
-            pub fn bits_15_19(&mut self) -> Bits15_19W<'_, AgcDetectConfig00c4Spec> {
-                Bits15_19W::new(self, 15)
+            pub fn bits_15_19_opaque(&mut self) -> Bits15_19OpaqueW<'_, Word00c4OpaqueSpec> {
+                Bits15_19OpaqueW::new(self, 15)
             }
-            #[doc = "Bits 20:23 - Project-assigned name. The leaf replaces this field with 0x0a."]
+            #[doc = "Bits 20:23 - Opaque: meaning not established. The leaf replaces this field with 0x0a."]
             #[inline(always)]
-            pub fn bits_20_23(&mut self) -> Bits20_23W<'_, AgcDetectConfig00c4Spec> {
-                Bits20_23W::new(self, 20)
+            pub fn bits_20_23_opaque(&mut self) -> Bits20_23OpaqueW<'_, Word00c4OpaqueSpec> {
+                Bits20_23OpaqueW::new(self, 20)
             }
-            #[doc = "Bits 24:31 - Project-assigned name. The leaf replaces this field with 0x9c."]
+            #[doc = "Bits 24:31 - Opaque: meaning not established. The leaf replaces this field with 0x9c."]
             #[inline(always)]
-            pub fn bits_24_31(&mut self) -> Bits24_31W<'_, AgcDetectConfig00c4Spec> {
-                Bits24_31W::new(self, 24)
+            pub fn bits_24_31_opaque(&mut self) -> Bits24_31OpaqueW<'_, Word00c4OpaqueSpec> {
+                Bits24_31OpaqueW::new(self, 24)
             }
         }
-        #[doc = "Project-assigned name. Complete bt_agc_detect_set replaces four positional fields with finite images.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_detect_config_00c4::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_detect_config_00c4::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct AgcDetectConfig00c4Spec;
-        impl crate::RegisterSpec for AgcDetectConfig00c4Spec {
+        #[doc = "Opaque: meaning not established. Complete bt_agc_detect_set replaces four positional fields with finite images.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00c4_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00c4_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word00c4OpaqueSpec;
+        impl crate::RegisterSpec for Word00c4OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`agc_detect_config_00c4::R`](R) reader structure"]
-        impl crate::Readable for AgcDetectConfig00c4Spec {}
-        #[doc = "`write(|w| ..)` method takes [`agc_detect_config_00c4::W`](W) writer structure"]
-        impl crate::Writable for AgcDetectConfig00c4Spec {
+        #[doc = "`read()` method returns [`word_00c4_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word00c4OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_00c4_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word00c4OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_RESTART_BITS_00DC (rw) register accessor: Project-assigned name. Complete bt_agc_restart_set sets five independently observed high control bits through separate fresh-read RMW operations.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_restart_bits_00dc::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_restart_bits_00dc::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_restart_bits_00dc`] module"]
-    #[doc(alias = "AGC_RESTART_BITS_00DC")]
-    pub type AgcRestartBits00dc = crate::Reg<agc_restart_bits_00dc::AgcRestartBits00dcSpec>;
-    #[doc = "Project-assigned name. Complete bt_agc_restart_set sets five independently observed high control bits through separate fresh-read RMW operations."]
-    pub mod agc_restart_bits_00dc {
-        #[doc = "Register `AGC_RESTART_BITS_00DC` reader"]
-        pub type R = crate::R<AgcRestartBits00dcSpec>;
-        #[doc = "Register `AGC_RESTART_BITS_00DC` writer"]
-        pub type W = crate::W<AgcRestartBits00dcSpec>;
+    #[doc = "WORD_00DC_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete bt_agc_restart_set sets five independently observed high control bits through separate fresh-read RMW operations.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00dc_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00dc_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_00dc_opaque`] module"]
+    #[doc(alias = "WORD_00DC_OPAQUE")]
+    pub type Word00dcOpaque = crate::Reg<word_00dc_opaque::Word00dcOpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete bt_agc_restart_set sets five independently observed high control bits through separate fresh-read RMW operations."]
+    pub mod word_00dc_opaque {
+        #[doc = "Register `WORD_00DC_OPAQUE` reader"]
+        pub type R = crate::R<Word00dcOpaqueSpec>;
+        #[doc = "Register `WORD_00DC_OPAQUE` writer"]
+        pub type W = crate::W<Word00dcOpaqueSpec>;
         #[doc = "Field `RESTART_BIT_27` reader - Project-assigned name. The leaf sets this bit."]
         pub type RestartBit27R = crate::BitReader;
         #[doc = "Field `RESTART_BIT_27` writer - Project-assigned name. The leaf sets this bit."]
@@ -39570,39 +39525,39 @@ pub mod phy_btagc_recovered {
         impl W {
             #[doc = "Bit 27 - Project-assigned name. The leaf sets this bit."]
             #[inline(always)]
-            pub fn restart_bit_27(&mut self) -> RestartBit27W<'_, AgcRestartBits00dcSpec> {
+            pub fn restart_bit_27(&mut self) -> RestartBit27W<'_, Word00dcOpaqueSpec> {
                 RestartBit27W::new(self, 27)
             }
             #[doc = "Bit 28 - Project-assigned name. The leaf sets this bit."]
             #[inline(always)]
-            pub fn restart_bit_28(&mut self) -> RestartBit28W<'_, AgcRestartBits00dcSpec> {
+            pub fn restart_bit_28(&mut self) -> RestartBit28W<'_, Word00dcOpaqueSpec> {
                 RestartBit28W::new(self, 28)
             }
             #[doc = "Bit 29 - Project-assigned name. The leaf sets this bit."]
             #[inline(always)]
-            pub fn restart_bit_29(&mut self) -> RestartBit29W<'_, AgcRestartBits00dcSpec> {
+            pub fn restart_bit_29(&mut self) -> RestartBit29W<'_, Word00dcOpaqueSpec> {
                 RestartBit29W::new(self, 29)
             }
             #[doc = "Bit 30 - Project-assigned name. The leaf sets this bit."]
             #[inline(always)]
-            pub fn restart_bit_30(&mut self) -> RestartBit30W<'_, AgcRestartBits00dcSpec> {
+            pub fn restart_bit_30(&mut self) -> RestartBit30W<'_, Word00dcOpaqueSpec> {
                 RestartBit30W::new(self, 30)
             }
             #[doc = "Bit 31 - Project-assigned name. The leaf sets this bit."]
             #[inline(always)]
-            pub fn restart_bit_31(&mut self) -> RestartBit31W<'_, AgcRestartBits00dcSpec> {
+            pub fn restart_bit_31(&mut self) -> RestartBit31W<'_, Word00dcOpaqueSpec> {
                 RestartBit31W::new(self, 31)
             }
         }
-        #[doc = "Project-assigned name. Complete bt_agc_restart_set sets five independently observed high control bits through separate fresh-read RMW operations.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_restart_bits_00dc::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_restart_bits_00dc::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct AgcRestartBits00dcSpec;
-        impl crate::RegisterSpec for AgcRestartBits00dcSpec {
+        #[doc = "Opaque: meaning not established. Complete bt_agc_restart_set sets five independently observed high control bits through separate fresh-read RMW operations.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_00dc_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_00dc_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word00dcOpaqueSpec;
+        impl crate::RegisterSpec for Word00dcOpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`agc_restart_bits_00dc::R`](R) reader structure"]
-        impl crate::Readable for AgcRestartBits00dcSpec {}
-        #[doc = "`write(|w| ..)` method takes [`agc_restart_bits_00dc::W`](W) writer structure"]
-        impl crate::Writable for AgcRestartBits00dcSpec {
+        #[doc = "`read()` method returns [`word_00dc_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word00dcOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_00dc_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word00dcOpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -39616,64 +39571,70 @@ pub mod phy_btagc_recovered {
         pub type R = crate::R<AgcRestartImage00e0OpaqueSpec>;
         #[doc = "Register `AGC_RESTART_IMAGE_00E0_OPAQUE` writer"]
         pub type W = crate::W<AgcRestartImage00e0OpaqueSpec>;
-        #[doc = "Field `BITS_0_7` reader - Project-assigned name. The leaf replaces this field with 0x0f."]
-        pub type Bits0_7R = crate::FieldReader;
-        #[doc = "Field `BITS_0_7` writer - Project-assigned name. The leaf replaces this field with 0x0f."]
-        pub type Bits0_7W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
-        #[doc = "Field `BITS_8_15` reader - Project-assigned name. The leaf replaces this field with 0x0e."]
-        pub type Bits8_15R = crate::FieldReader;
-        #[doc = "Field `BITS_8_15` writer - Project-assigned name. The leaf replaces this field with 0x0e."]
-        pub type Bits8_15W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
-        #[doc = "Field `BITS_16_23` reader - Project-assigned name. The leaf replaces this field with 0x0e."]
-        pub type Bits16_23R = crate::FieldReader;
-        #[doc = "Field `BITS_16_23` writer - Project-assigned name. The leaf replaces this field with 0x0e."]
-        pub type Bits16_23W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
-        #[doc = "Field `BITS_24_31` reader - Project-assigned name. The leaf replaces this field with 0x14."]
-        pub type Bits24_31R = crate::FieldReader;
-        #[doc = "Field `BITS_24_31` writer - Project-assigned name. The leaf replaces this field with 0x14."]
-        pub type Bits24_31W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `BITS_0_7_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x0f."]
+        pub type Bits0_7OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_0_7_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x0f."]
+        pub type Bits0_7OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `BITS_8_15_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x0e."]
+        pub type Bits8_15OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_8_15_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x0e."]
+        pub type Bits8_15OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `BITS_16_23_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x0e."]
+        pub type Bits16_23OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_16_23_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x0e."]
+        pub type Bits16_23OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `BITS_24_31_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x14."]
+        pub type Bits24_31OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_24_31_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x14."]
+        pub type Bits24_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:7 - Project-assigned name. The leaf replaces this field with 0x0f."]
+            #[doc = "Bits 0:7 - Opaque: meaning not established. The leaf replaces this field with 0x0f."]
             #[inline(always)]
-            pub fn bits_0_7(&self) -> Bits0_7R {
-                Bits0_7R::new((self.bits & 0xff) as u8)
+            pub fn bits_0_7_opaque(&self) -> Bits0_7OpaqueR {
+                Bits0_7OpaqueR::new((self.bits & 0xff) as u8)
             }
-            #[doc = "Bits 8:15 - Project-assigned name. The leaf replaces this field with 0x0e."]
+            #[doc = "Bits 8:15 - Opaque: meaning not established. The leaf replaces this field with 0x0e."]
             #[inline(always)]
-            pub fn bits_8_15(&self) -> Bits8_15R {
-                Bits8_15R::new(((self.bits >> 8) & 0xff) as u8)
+            pub fn bits_8_15_opaque(&self) -> Bits8_15OpaqueR {
+                Bits8_15OpaqueR::new(((self.bits >> 8) & 0xff) as u8)
             }
-            #[doc = "Bits 16:23 - Project-assigned name. The leaf replaces this field with 0x0e."]
+            #[doc = "Bits 16:23 - Opaque: meaning not established. The leaf replaces this field with 0x0e."]
             #[inline(always)]
-            pub fn bits_16_23(&self) -> Bits16_23R {
-                Bits16_23R::new(((self.bits >> 16) & 0xff) as u8)
+            pub fn bits_16_23_opaque(&self) -> Bits16_23OpaqueR {
+                Bits16_23OpaqueR::new(((self.bits >> 16) & 0xff) as u8)
             }
-            #[doc = "Bits 24:31 - Project-assigned name. The leaf replaces this field with 0x14."]
+            #[doc = "Bits 24:31 - Opaque: meaning not established. The leaf replaces this field with 0x14."]
             #[inline(always)]
-            pub fn bits_24_31(&self) -> Bits24_31R {
-                Bits24_31R::new(((self.bits >> 24) & 0xff) as u8)
+            pub fn bits_24_31_opaque(&self) -> Bits24_31OpaqueR {
+                Bits24_31OpaqueR::new(((self.bits >> 24) & 0xff) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 0:7 - Project-assigned name. The leaf replaces this field with 0x0f."]
+            #[doc = "Bits 0:7 - Opaque: meaning not established. The leaf replaces this field with 0x0f."]
             #[inline(always)]
-            pub fn bits_0_7(&mut self) -> Bits0_7W<'_, AgcRestartImage00e0OpaqueSpec> {
-                Bits0_7W::new(self, 0)
+            pub fn bits_0_7_opaque(&mut self) -> Bits0_7OpaqueW<'_, AgcRestartImage00e0OpaqueSpec> {
+                Bits0_7OpaqueW::new(self, 0)
             }
-            #[doc = "Bits 8:15 - Project-assigned name. The leaf replaces this field with 0x0e."]
+            #[doc = "Bits 8:15 - Opaque: meaning not established. The leaf replaces this field with 0x0e."]
             #[inline(always)]
-            pub fn bits_8_15(&mut self) -> Bits8_15W<'_, AgcRestartImage00e0OpaqueSpec> {
-                Bits8_15W::new(self, 8)
+            pub fn bits_8_15_opaque(
+                &mut self,
+            ) -> Bits8_15OpaqueW<'_, AgcRestartImage00e0OpaqueSpec> {
+                Bits8_15OpaqueW::new(self, 8)
             }
-            #[doc = "Bits 16:23 - Project-assigned name. The leaf replaces this field with 0x0e."]
+            #[doc = "Bits 16:23 - Opaque: meaning not established. The leaf replaces this field with 0x0e."]
             #[inline(always)]
-            pub fn bits_16_23(&mut self) -> Bits16_23W<'_, AgcRestartImage00e0OpaqueSpec> {
-                Bits16_23W::new(self, 16)
+            pub fn bits_16_23_opaque(
+                &mut self,
+            ) -> Bits16_23OpaqueW<'_, AgcRestartImage00e0OpaqueSpec> {
+                Bits16_23OpaqueW::new(self, 16)
             }
-            #[doc = "Bits 24:31 - Project-assigned name. The leaf replaces this field with 0x14."]
+            #[doc = "Bits 24:31 - Opaque: meaning not established. The leaf replaces this field with 0x14."]
             #[inline(always)]
-            pub fn bits_24_31(&mut self) -> Bits24_31W<'_, AgcRestartImage00e0OpaqueSpec> {
-                Bits24_31W::new(self, 24)
+            pub fn bits_24_31_opaque(
+                &mut self,
+            ) -> Bits24_31OpaqueW<'_, AgcRestartImage00e0OpaqueSpec> {
+                Bits24_31OpaqueW::new(self, 24)
             }
         }
         #[doc = "Opaque: meaning not established. Four positional byte images written by complete bt_agc_restart_set.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_restart_image_00e0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_restart_image_00e0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -39698,64 +39659,70 @@ pub mod phy_btagc_recovered {
         pub type R = crate::R<AgcRestartImage00e4OpaqueSpec>;
         #[doc = "Register `AGC_RESTART_IMAGE_00E4_OPAQUE` writer"]
         pub type W = crate::W<AgcRestartImage00e4OpaqueSpec>;
-        #[doc = "Field `BITS_0_7` reader - Project-assigned name. The leaf replaces this field with 0xf2."]
-        pub type Bits0_7R = crate::FieldReader;
-        #[doc = "Field `BITS_0_7` writer - Project-assigned name. The leaf replaces this field with 0xf2."]
-        pub type Bits0_7W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
-        #[doc = "Field `BITS_8_15` reader - Project-assigned name. The leaf replaces this field with 0xf2."]
-        pub type Bits8_15R = crate::FieldReader;
-        #[doc = "Field `BITS_8_15` writer - Project-assigned name. The leaf replaces this field with 0xf2."]
-        pub type Bits8_15W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
-        #[doc = "Field `BITS_16_23` reader - Project-assigned name. The leaf replaces this field with 0xec."]
-        pub type Bits16_23R = crate::FieldReader;
-        #[doc = "Field `BITS_16_23` writer - Project-assigned name. The leaf replaces this field with 0xec."]
-        pub type Bits16_23W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
-        #[doc = "Field `BITS_24_31` reader - Project-assigned name. The leaf replaces this field with 0x1e."]
-        pub type Bits24_31R = crate::FieldReader;
-        #[doc = "Field `BITS_24_31` writer - Project-assigned name. The leaf replaces this field with 0x1e."]
-        pub type Bits24_31W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `BITS_0_7_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0xf2."]
+        pub type Bits0_7OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_0_7_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0xf2."]
+        pub type Bits0_7OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `BITS_8_15_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0xf2."]
+        pub type Bits8_15OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_8_15_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0xf2."]
+        pub type Bits8_15OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `BITS_16_23_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0xec."]
+        pub type Bits16_23OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_16_23_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0xec."]
+        pub type Bits16_23OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `BITS_24_31_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x1e."]
+        pub type Bits24_31OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_24_31_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x1e."]
+        pub type Bits24_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:7 - Project-assigned name. The leaf replaces this field with 0xf2."]
+            #[doc = "Bits 0:7 - Opaque: meaning not established. The leaf replaces this field with 0xf2."]
             #[inline(always)]
-            pub fn bits_0_7(&self) -> Bits0_7R {
-                Bits0_7R::new((self.bits & 0xff) as u8)
+            pub fn bits_0_7_opaque(&self) -> Bits0_7OpaqueR {
+                Bits0_7OpaqueR::new((self.bits & 0xff) as u8)
             }
-            #[doc = "Bits 8:15 - Project-assigned name. The leaf replaces this field with 0xf2."]
+            #[doc = "Bits 8:15 - Opaque: meaning not established. The leaf replaces this field with 0xf2."]
             #[inline(always)]
-            pub fn bits_8_15(&self) -> Bits8_15R {
-                Bits8_15R::new(((self.bits >> 8) & 0xff) as u8)
+            pub fn bits_8_15_opaque(&self) -> Bits8_15OpaqueR {
+                Bits8_15OpaqueR::new(((self.bits >> 8) & 0xff) as u8)
             }
-            #[doc = "Bits 16:23 - Project-assigned name. The leaf replaces this field with 0xec."]
+            #[doc = "Bits 16:23 - Opaque: meaning not established. The leaf replaces this field with 0xec."]
             #[inline(always)]
-            pub fn bits_16_23(&self) -> Bits16_23R {
-                Bits16_23R::new(((self.bits >> 16) & 0xff) as u8)
+            pub fn bits_16_23_opaque(&self) -> Bits16_23OpaqueR {
+                Bits16_23OpaqueR::new(((self.bits >> 16) & 0xff) as u8)
             }
-            #[doc = "Bits 24:31 - Project-assigned name. The leaf replaces this field with 0x1e."]
+            #[doc = "Bits 24:31 - Opaque: meaning not established. The leaf replaces this field with 0x1e."]
             #[inline(always)]
-            pub fn bits_24_31(&self) -> Bits24_31R {
-                Bits24_31R::new(((self.bits >> 24) & 0xff) as u8)
+            pub fn bits_24_31_opaque(&self) -> Bits24_31OpaqueR {
+                Bits24_31OpaqueR::new(((self.bits >> 24) & 0xff) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 0:7 - Project-assigned name. The leaf replaces this field with 0xf2."]
+            #[doc = "Bits 0:7 - Opaque: meaning not established. The leaf replaces this field with 0xf2."]
             #[inline(always)]
-            pub fn bits_0_7(&mut self) -> Bits0_7W<'_, AgcRestartImage00e4OpaqueSpec> {
-                Bits0_7W::new(self, 0)
+            pub fn bits_0_7_opaque(&mut self) -> Bits0_7OpaqueW<'_, AgcRestartImage00e4OpaqueSpec> {
+                Bits0_7OpaqueW::new(self, 0)
             }
-            #[doc = "Bits 8:15 - Project-assigned name. The leaf replaces this field with 0xf2."]
+            #[doc = "Bits 8:15 - Opaque: meaning not established. The leaf replaces this field with 0xf2."]
             #[inline(always)]
-            pub fn bits_8_15(&mut self) -> Bits8_15W<'_, AgcRestartImage00e4OpaqueSpec> {
-                Bits8_15W::new(self, 8)
+            pub fn bits_8_15_opaque(
+                &mut self,
+            ) -> Bits8_15OpaqueW<'_, AgcRestartImage00e4OpaqueSpec> {
+                Bits8_15OpaqueW::new(self, 8)
             }
-            #[doc = "Bits 16:23 - Project-assigned name. The leaf replaces this field with 0xec."]
+            #[doc = "Bits 16:23 - Opaque: meaning not established. The leaf replaces this field with 0xec."]
             #[inline(always)]
-            pub fn bits_16_23(&mut self) -> Bits16_23W<'_, AgcRestartImage00e4OpaqueSpec> {
-                Bits16_23W::new(self, 16)
+            pub fn bits_16_23_opaque(
+                &mut self,
+            ) -> Bits16_23OpaqueW<'_, AgcRestartImage00e4OpaqueSpec> {
+                Bits16_23OpaqueW::new(self, 16)
             }
-            #[doc = "Bits 24:31 - Project-assigned name. The leaf replaces this field with 0x1e."]
+            #[doc = "Bits 24:31 - Opaque: meaning not established. The leaf replaces this field with 0x1e."]
             #[inline(always)]
-            pub fn bits_24_31(&mut self) -> Bits24_31W<'_, AgcRestartImage00e4OpaqueSpec> {
-                Bits24_31W::new(self, 24)
+            pub fn bits_24_31_opaque(
+                &mut self,
+            ) -> Bits24_31OpaqueW<'_, AgcRestartImage00e4OpaqueSpec> {
+                Bits24_31OpaqueW::new(self, 24)
             }
         }
         #[doc = "Opaque: meaning not established. Four positional byte images written by complete bt_agc_restart_set.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_restart_image_00e4_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_restart_image_00e4_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -39780,50 +39747,56 @@ pub mod phy_btagc_recovered {
         pub type R = crate::R<AgcRestartImage00e8OpaqueSpec>;
         #[doc = "Register `AGC_RESTART_IMAGE_00E8_OPAQUE` writer"]
         pub type W = crate::W<AgcRestartImage00e8OpaqueSpec>;
-        #[doc = "Field `BITS_10_15` reader - Project-assigned name. The leaf replaces this field with 3."]
-        pub type Bits10_15R = crate::FieldReader;
-        #[doc = "Field `BITS_10_15` writer - Project-assigned name. The leaf replaces this field with 3."]
-        pub type Bits10_15W<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
-        #[doc = "Field `BITS_16_23` reader - Project-assigned name. The leaf replaces this field with 0xe2."]
-        pub type Bits16_23R = crate::FieldReader;
-        #[doc = "Field `BITS_16_23` writer - Project-assigned name. The leaf replaces this field with 0xe2."]
-        pub type Bits16_23W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
-        #[doc = "Field `BITS_24_31` reader - Project-assigned name. The leaf replaces this field with 0xf1."]
-        pub type Bits24_31R = crate::FieldReader;
-        #[doc = "Field `BITS_24_31` writer - Project-assigned name. The leaf replaces this field with 0xf1."]
-        pub type Bits24_31W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `BITS_10_15_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 3."]
+        pub type Bits10_15OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_10_15_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 3."]
+        pub type Bits10_15OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
+        #[doc = "Field `BITS_16_23_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0xe2."]
+        pub type Bits16_23OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_16_23_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0xe2."]
+        pub type Bits16_23OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `BITS_24_31_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0xf1."]
+        pub type Bits24_31OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_24_31_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0xf1."]
+        pub type Bits24_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
-            #[doc = "Bits 10:15 - Project-assigned name. The leaf replaces this field with 3."]
+            #[doc = "Bits 10:15 - Opaque: meaning not established. The leaf replaces this field with 3."]
             #[inline(always)]
-            pub fn bits_10_15(&self) -> Bits10_15R {
-                Bits10_15R::new(((self.bits >> 10) & 0x3f) as u8)
+            pub fn bits_10_15_opaque(&self) -> Bits10_15OpaqueR {
+                Bits10_15OpaqueR::new(((self.bits >> 10) & 0x3f) as u8)
             }
-            #[doc = "Bits 16:23 - Project-assigned name. The leaf replaces this field with 0xe2."]
+            #[doc = "Bits 16:23 - Opaque: meaning not established. The leaf replaces this field with 0xe2."]
             #[inline(always)]
-            pub fn bits_16_23(&self) -> Bits16_23R {
-                Bits16_23R::new(((self.bits >> 16) & 0xff) as u8)
+            pub fn bits_16_23_opaque(&self) -> Bits16_23OpaqueR {
+                Bits16_23OpaqueR::new(((self.bits >> 16) & 0xff) as u8)
             }
-            #[doc = "Bits 24:31 - Project-assigned name. The leaf replaces this field with 0xf1."]
+            #[doc = "Bits 24:31 - Opaque: meaning not established. The leaf replaces this field with 0xf1."]
             #[inline(always)]
-            pub fn bits_24_31(&self) -> Bits24_31R {
-                Bits24_31R::new(((self.bits >> 24) & 0xff) as u8)
+            pub fn bits_24_31_opaque(&self) -> Bits24_31OpaqueR {
+                Bits24_31OpaqueR::new(((self.bits >> 24) & 0xff) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 10:15 - Project-assigned name. The leaf replaces this field with 3."]
+            #[doc = "Bits 10:15 - Opaque: meaning not established. The leaf replaces this field with 3."]
             #[inline(always)]
-            pub fn bits_10_15(&mut self) -> Bits10_15W<'_, AgcRestartImage00e8OpaqueSpec> {
-                Bits10_15W::new(self, 10)
+            pub fn bits_10_15_opaque(
+                &mut self,
+            ) -> Bits10_15OpaqueW<'_, AgcRestartImage00e8OpaqueSpec> {
+                Bits10_15OpaqueW::new(self, 10)
             }
-            #[doc = "Bits 16:23 - Project-assigned name. The leaf replaces this field with 0xe2."]
+            #[doc = "Bits 16:23 - Opaque: meaning not established. The leaf replaces this field with 0xe2."]
             #[inline(always)]
-            pub fn bits_16_23(&mut self) -> Bits16_23W<'_, AgcRestartImage00e8OpaqueSpec> {
-                Bits16_23W::new(self, 16)
+            pub fn bits_16_23_opaque(
+                &mut self,
+            ) -> Bits16_23OpaqueW<'_, AgcRestartImage00e8OpaqueSpec> {
+                Bits16_23OpaqueW::new(self, 16)
             }
-            #[doc = "Bits 24:31 - Project-assigned name. The leaf replaces this field with 0xf1."]
+            #[doc = "Bits 24:31 - Opaque: meaning not established. The leaf replaces this field with 0xf1."]
             #[inline(always)]
-            pub fn bits_24_31(&mut self) -> Bits24_31W<'_, AgcRestartImage00e8OpaqueSpec> {
-                Bits24_31W::new(self, 24)
+            pub fn bits_24_31_opaque(
+                &mut self,
+            ) -> Bits24_31OpaqueW<'_, AgcRestartImage00e8OpaqueSpec> {
+                Bits24_31OpaqueW::new(self, 24)
             }
         }
         #[doc = "Opaque: meaning not established. Three positional finite images written by complete bt_agc_restart_set; bits 9:0 remain unassigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_restart_image_00e8_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_restart_image_00e8_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -39848,64 +39821,70 @@ pub mod phy_btagc_recovered {
         pub type R = crate::R<AgcRestartImage00ecOpaqueSpec>;
         #[doc = "Register `AGC_RESTART_IMAGE_00EC_OPAQUE` writer"]
         pub type W = crate::W<AgcRestartImage00ecOpaqueSpec>;
-        #[doc = "Field `BITS_0_7` reader - Project-assigned name. The leaf replaces this field with 0xd8."]
-        pub type Bits0_7R = crate::FieldReader;
-        #[doc = "Field `BITS_0_7` writer - Project-assigned name. The leaf replaces this field with 0xd8."]
-        pub type Bits0_7W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
-        #[doc = "Field `BITS_8_15` reader - Project-assigned name. The leaf replaces this field with 0xd3."]
-        pub type Bits8_15R = crate::FieldReader;
-        #[doc = "Field `BITS_8_15` writer - Project-assigned name. The leaf replaces this field with 0xd3."]
-        pub type Bits8_15W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
-        #[doc = "Field `BITS_16_23` reader - Project-assigned name. The leaf replaces this field with 0x28."]
-        pub type Bits16_23R = crate::FieldReader;
-        #[doc = "Field `BITS_16_23` writer - Project-assigned name. The leaf replaces this field with 0x28."]
-        pub type Bits16_23W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
-        #[doc = "Field `BITS_24_31` reader - Project-assigned name. The leaf replaces this field with 0x2d."]
-        pub type Bits24_31R = crate::FieldReader;
-        #[doc = "Field `BITS_24_31` writer - Project-assigned name. The leaf replaces this field with 0x2d."]
-        pub type Bits24_31W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `BITS_0_7_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0xd8."]
+        pub type Bits0_7OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_0_7_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0xd8."]
+        pub type Bits0_7OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `BITS_8_15_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0xd3."]
+        pub type Bits8_15OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_8_15_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0xd3."]
+        pub type Bits8_15OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `BITS_16_23_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x28."]
+        pub type Bits16_23OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_16_23_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x28."]
+        pub type Bits16_23OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `BITS_24_31_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x2d."]
+        pub type Bits24_31OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_24_31_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x2d."]
+        pub type Bits24_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:7 - Project-assigned name. The leaf replaces this field with 0xd8."]
+            #[doc = "Bits 0:7 - Opaque: meaning not established. The leaf replaces this field with 0xd8."]
             #[inline(always)]
-            pub fn bits_0_7(&self) -> Bits0_7R {
-                Bits0_7R::new((self.bits & 0xff) as u8)
+            pub fn bits_0_7_opaque(&self) -> Bits0_7OpaqueR {
+                Bits0_7OpaqueR::new((self.bits & 0xff) as u8)
             }
-            #[doc = "Bits 8:15 - Project-assigned name. The leaf replaces this field with 0xd3."]
+            #[doc = "Bits 8:15 - Opaque: meaning not established. The leaf replaces this field with 0xd3."]
             #[inline(always)]
-            pub fn bits_8_15(&self) -> Bits8_15R {
-                Bits8_15R::new(((self.bits >> 8) & 0xff) as u8)
+            pub fn bits_8_15_opaque(&self) -> Bits8_15OpaqueR {
+                Bits8_15OpaqueR::new(((self.bits >> 8) & 0xff) as u8)
             }
-            #[doc = "Bits 16:23 - Project-assigned name. The leaf replaces this field with 0x28."]
+            #[doc = "Bits 16:23 - Opaque: meaning not established. The leaf replaces this field with 0x28."]
             #[inline(always)]
-            pub fn bits_16_23(&self) -> Bits16_23R {
-                Bits16_23R::new(((self.bits >> 16) & 0xff) as u8)
+            pub fn bits_16_23_opaque(&self) -> Bits16_23OpaqueR {
+                Bits16_23OpaqueR::new(((self.bits >> 16) & 0xff) as u8)
             }
-            #[doc = "Bits 24:31 - Project-assigned name. The leaf replaces this field with 0x2d."]
+            #[doc = "Bits 24:31 - Opaque: meaning not established. The leaf replaces this field with 0x2d."]
             #[inline(always)]
-            pub fn bits_24_31(&self) -> Bits24_31R {
-                Bits24_31R::new(((self.bits >> 24) & 0xff) as u8)
+            pub fn bits_24_31_opaque(&self) -> Bits24_31OpaqueR {
+                Bits24_31OpaqueR::new(((self.bits >> 24) & 0xff) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 0:7 - Project-assigned name. The leaf replaces this field with 0xd8."]
+            #[doc = "Bits 0:7 - Opaque: meaning not established. The leaf replaces this field with 0xd8."]
             #[inline(always)]
-            pub fn bits_0_7(&mut self) -> Bits0_7W<'_, AgcRestartImage00ecOpaqueSpec> {
-                Bits0_7W::new(self, 0)
+            pub fn bits_0_7_opaque(&mut self) -> Bits0_7OpaqueW<'_, AgcRestartImage00ecOpaqueSpec> {
+                Bits0_7OpaqueW::new(self, 0)
             }
-            #[doc = "Bits 8:15 - Project-assigned name. The leaf replaces this field with 0xd3."]
+            #[doc = "Bits 8:15 - Opaque: meaning not established. The leaf replaces this field with 0xd3."]
             #[inline(always)]
-            pub fn bits_8_15(&mut self) -> Bits8_15W<'_, AgcRestartImage00ecOpaqueSpec> {
-                Bits8_15W::new(self, 8)
+            pub fn bits_8_15_opaque(
+                &mut self,
+            ) -> Bits8_15OpaqueW<'_, AgcRestartImage00ecOpaqueSpec> {
+                Bits8_15OpaqueW::new(self, 8)
             }
-            #[doc = "Bits 16:23 - Project-assigned name. The leaf replaces this field with 0x28."]
+            #[doc = "Bits 16:23 - Opaque: meaning not established. The leaf replaces this field with 0x28."]
             #[inline(always)]
-            pub fn bits_16_23(&mut self) -> Bits16_23W<'_, AgcRestartImage00ecOpaqueSpec> {
-                Bits16_23W::new(self, 16)
+            pub fn bits_16_23_opaque(
+                &mut self,
+            ) -> Bits16_23OpaqueW<'_, AgcRestartImage00ecOpaqueSpec> {
+                Bits16_23OpaqueW::new(self, 16)
             }
-            #[doc = "Bits 24:31 - Project-assigned name. The leaf replaces this field with 0x2d."]
+            #[doc = "Bits 24:31 - Opaque: meaning not established. The leaf replaces this field with 0x2d."]
             #[inline(always)]
-            pub fn bits_24_31(&mut self) -> Bits24_31W<'_, AgcRestartImage00ecOpaqueSpec> {
-                Bits24_31W::new(self, 24)
+            pub fn bits_24_31_opaque(
+                &mut self,
+            ) -> Bits24_31OpaqueW<'_, AgcRestartImage00ecOpaqueSpec> {
+                Bits24_31OpaqueW::new(self, 24)
             }
         }
         #[doc = "Opaque: meaning not established. Four positional byte images written by complete bt_agc_restart_set.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_restart_image_00ec_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_restart_image_00ec_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -39930,36 +39909,40 @@ pub mod phy_btagc_recovered {
         pub type R = crate::R<AgcRestartImage00f0OpaqueSpec>;
         #[doc = "Register `AGC_RESTART_IMAGE_00F0_OPAQUE` writer"]
         pub type W = crate::W<AgcRestartImage00f0OpaqueSpec>;
-        #[doc = "Field `BITS_16_23` reader - Project-assigned name. The leaf replaces this field with 0xa6."]
-        pub type Bits16_23R = crate::FieldReader;
-        #[doc = "Field `BITS_16_23` writer - Project-assigned name. The leaf replaces this field with 0xa6."]
-        pub type Bits16_23W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
-        #[doc = "Field `BITS_24_31` reader - Project-assigned name. The leaf replaces this field with 0xa6."]
-        pub type Bits24_31R = crate::FieldReader;
-        #[doc = "Field `BITS_24_31` writer - Project-assigned name. The leaf replaces this field with 0xa6."]
-        pub type Bits24_31W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `BITS_16_23_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0xa6."]
+        pub type Bits16_23OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_16_23_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0xa6."]
+        pub type Bits16_23OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `BITS_24_31_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0xa6."]
+        pub type Bits24_31OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_24_31_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0xa6."]
+        pub type Bits24_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
-            #[doc = "Bits 16:23 - Project-assigned name. The leaf replaces this field with 0xa6."]
+            #[doc = "Bits 16:23 - Opaque: meaning not established. The leaf replaces this field with 0xa6."]
             #[inline(always)]
-            pub fn bits_16_23(&self) -> Bits16_23R {
-                Bits16_23R::new(((self.bits >> 16) & 0xff) as u8)
+            pub fn bits_16_23_opaque(&self) -> Bits16_23OpaqueR {
+                Bits16_23OpaqueR::new(((self.bits >> 16) & 0xff) as u8)
             }
-            #[doc = "Bits 24:31 - Project-assigned name. The leaf replaces this field with 0xa6."]
+            #[doc = "Bits 24:31 - Opaque: meaning not established. The leaf replaces this field with 0xa6."]
             #[inline(always)]
-            pub fn bits_24_31(&self) -> Bits24_31R {
-                Bits24_31R::new(((self.bits >> 24) & 0xff) as u8)
+            pub fn bits_24_31_opaque(&self) -> Bits24_31OpaqueR {
+                Bits24_31OpaqueR::new(((self.bits >> 24) & 0xff) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 16:23 - Project-assigned name. The leaf replaces this field with 0xa6."]
+            #[doc = "Bits 16:23 - Opaque: meaning not established. The leaf replaces this field with 0xa6."]
             #[inline(always)]
-            pub fn bits_16_23(&mut self) -> Bits16_23W<'_, AgcRestartImage00f0OpaqueSpec> {
-                Bits16_23W::new(self, 16)
+            pub fn bits_16_23_opaque(
+                &mut self,
+            ) -> Bits16_23OpaqueW<'_, AgcRestartImage00f0OpaqueSpec> {
+                Bits16_23OpaqueW::new(self, 16)
             }
-            #[doc = "Bits 24:31 - Project-assigned name. The leaf replaces this field with 0xa6."]
+            #[doc = "Bits 24:31 - Opaque: meaning not established. The leaf replaces this field with 0xa6."]
             #[inline(always)]
-            pub fn bits_24_31(&mut self) -> Bits24_31W<'_, AgcRestartImage00f0OpaqueSpec> {
-                Bits24_31W::new(self, 24)
+            pub fn bits_24_31_opaque(
+                &mut self,
+            ) -> Bits24_31OpaqueW<'_, AgcRestartImage00f0OpaqueSpec> {
+                Bits24_31OpaqueW::new(self, 24)
             }
         }
         #[doc = "Opaque: meaning not established. Two positional high-byte images written by complete bt_agc_restart_set; bits 15:0 remain unassigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_restart_image_00f0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_restart_image_00f0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -39984,78 +39967,86 @@ pub mod phy_btagc_recovered {
         pub type R = crate::R<AgcRestartImage00f8OpaqueSpec>;
         #[doc = "Register `AGC_RESTART_IMAGE_00F8_OPAQUE` writer"]
         pub type W = crate::W<AgcRestartImage00f8OpaqueSpec>;
-        #[doc = "Field `BITS_2_7` reader - Project-assigned name. The leaf replaces this field with 0x0c."]
-        pub type Bits2_7R = crate::FieldReader;
-        #[doc = "Field `BITS_2_7` writer - Project-assigned name. The leaf replaces this field with 0x0c."]
-        pub type Bits2_7W<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
-        #[doc = "Field `BITS_8_13` reader - Project-assigned name. The leaf replaces this field with 0x0c."]
-        pub type Bits8_13R = crate::FieldReader;
-        #[doc = "Field `BITS_8_13` writer - Project-assigned name. The leaf replaces this field with 0x0c."]
-        pub type Bits8_13W<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
-        #[doc = "Field `BITS_14_19` reader - Project-assigned name. The leaf replaces this field with 0x20."]
-        pub type Bits14_19R = crate::FieldReader;
-        #[doc = "Field `BITS_14_19` writer - Project-assigned name. The leaf replaces this field with 0x20."]
-        pub type Bits14_19W<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
-        #[doc = "Field `BITS_20_25` reader - Project-assigned name. The leaf replaces this field with 5."]
-        pub type Bits20_25R = crate::FieldReader;
-        #[doc = "Field `BITS_20_25` writer - Project-assigned name. The leaf replaces this field with 5."]
-        pub type Bits20_25W<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
-        #[doc = "Field `BITS_26_31` reader - Project-assigned name. The leaf replaces this field with 0x0c."]
-        pub type Bits26_31R = crate::FieldReader;
-        #[doc = "Field `BITS_26_31` writer - Project-assigned name. The leaf replaces this field with 0x0c."]
-        pub type Bits26_31W<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
+        #[doc = "Field `BITS_2_7_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x0c."]
+        pub type Bits2_7OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_2_7_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x0c."]
+        pub type Bits2_7OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
+        #[doc = "Field `BITS_8_13_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x0c."]
+        pub type Bits8_13OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_8_13_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x0c."]
+        pub type Bits8_13OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
+        #[doc = "Field `BITS_14_19_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x20."]
+        pub type Bits14_19OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_14_19_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x20."]
+        pub type Bits14_19OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
+        #[doc = "Field `BITS_20_25_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 5."]
+        pub type Bits20_25OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_20_25_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 5."]
+        pub type Bits20_25OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
+        #[doc = "Field `BITS_26_31_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x0c."]
+        pub type Bits26_31OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_26_31_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x0c."]
+        pub type Bits26_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         impl R {
-            #[doc = "Bits 2:7 - Project-assigned name. The leaf replaces this field with 0x0c."]
+            #[doc = "Bits 2:7 - Opaque: meaning not established. The leaf replaces this field with 0x0c."]
             #[inline(always)]
-            pub fn bits_2_7(&self) -> Bits2_7R {
-                Bits2_7R::new(((self.bits >> 2) & 0x3f) as u8)
+            pub fn bits_2_7_opaque(&self) -> Bits2_7OpaqueR {
+                Bits2_7OpaqueR::new(((self.bits >> 2) & 0x3f) as u8)
             }
-            #[doc = "Bits 8:13 - Project-assigned name. The leaf replaces this field with 0x0c."]
+            #[doc = "Bits 8:13 - Opaque: meaning not established. The leaf replaces this field with 0x0c."]
             #[inline(always)]
-            pub fn bits_8_13(&self) -> Bits8_13R {
-                Bits8_13R::new(((self.bits >> 8) & 0x3f) as u8)
+            pub fn bits_8_13_opaque(&self) -> Bits8_13OpaqueR {
+                Bits8_13OpaqueR::new(((self.bits >> 8) & 0x3f) as u8)
             }
-            #[doc = "Bits 14:19 - Project-assigned name. The leaf replaces this field with 0x20."]
+            #[doc = "Bits 14:19 - Opaque: meaning not established. The leaf replaces this field with 0x20."]
             #[inline(always)]
-            pub fn bits_14_19(&self) -> Bits14_19R {
-                Bits14_19R::new(((self.bits >> 14) & 0x3f) as u8)
+            pub fn bits_14_19_opaque(&self) -> Bits14_19OpaqueR {
+                Bits14_19OpaqueR::new(((self.bits >> 14) & 0x3f) as u8)
             }
-            #[doc = "Bits 20:25 - Project-assigned name. The leaf replaces this field with 5."]
+            #[doc = "Bits 20:25 - Opaque: meaning not established. The leaf replaces this field with 5."]
             #[inline(always)]
-            pub fn bits_20_25(&self) -> Bits20_25R {
-                Bits20_25R::new(((self.bits >> 20) & 0x3f) as u8)
+            pub fn bits_20_25_opaque(&self) -> Bits20_25OpaqueR {
+                Bits20_25OpaqueR::new(((self.bits >> 20) & 0x3f) as u8)
             }
-            #[doc = "Bits 26:31 - Project-assigned name. The leaf replaces this field with 0x0c."]
+            #[doc = "Bits 26:31 - Opaque: meaning not established. The leaf replaces this field with 0x0c."]
             #[inline(always)]
-            pub fn bits_26_31(&self) -> Bits26_31R {
-                Bits26_31R::new(((self.bits >> 26) & 0x3f) as u8)
+            pub fn bits_26_31_opaque(&self) -> Bits26_31OpaqueR {
+                Bits26_31OpaqueR::new(((self.bits >> 26) & 0x3f) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 2:7 - Project-assigned name. The leaf replaces this field with 0x0c."]
+            #[doc = "Bits 2:7 - Opaque: meaning not established. The leaf replaces this field with 0x0c."]
             #[inline(always)]
-            pub fn bits_2_7(&mut self) -> Bits2_7W<'_, AgcRestartImage00f8OpaqueSpec> {
-                Bits2_7W::new(self, 2)
+            pub fn bits_2_7_opaque(&mut self) -> Bits2_7OpaqueW<'_, AgcRestartImage00f8OpaqueSpec> {
+                Bits2_7OpaqueW::new(self, 2)
             }
-            #[doc = "Bits 8:13 - Project-assigned name. The leaf replaces this field with 0x0c."]
+            #[doc = "Bits 8:13 - Opaque: meaning not established. The leaf replaces this field with 0x0c."]
             #[inline(always)]
-            pub fn bits_8_13(&mut self) -> Bits8_13W<'_, AgcRestartImage00f8OpaqueSpec> {
-                Bits8_13W::new(self, 8)
+            pub fn bits_8_13_opaque(
+                &mut self,
+            ) -> Bits8_13OpaqueW<'_, AgcRestartImage00f8OpaqueSpec> {
+                Bits8_13OpaqueW::new(self, 8)
             }
-            #[doc = "Bits 14:19 - Project-assigned name. The leaf replaces this field with 0x20."]
+            #[doc = "Bits 14:19 - Opaque: meaning not established. The leaf replaces this field with 0x20."]
             #[inline(always)]
-            pub fn bits_14_19(&mut self) -> Bits14_19W<'_, AgcRestartImage00f8OpaqueSpec> {
-                Bits14_19W::new(self, 14)
+            pub fn bits_14_19_opaque(
+                &mut self,
+            ) -> Bits14_19OpaqueW<'_, AgcRestartImage00f8OpaqueSpec> {
+                Bits14_19OpaqueW::new(self, 14)
             }
-            #[doc = "Bits 20:25 - Project-assigned name. The leaf replaces this field with 5."]
+            #[doc = "Bits 20:25 - Opaque: meaning not established. The leaf replaces this field with 5."]
             #[inline(always)]
-            pub fn bits_20_25(&mut self) -> Bits20_25W<'_, AgcRestartImage00f8OpaqueSpec> {
-                Bits20_25W::new(self, 20)
+            pub fn bits_20_25_opaque(
+                &mut self,
+            ) -> Bits20_25OpaqueW<'_, AgcRestartImage00f8OpaqueSpec> {
+                Bits20_25OpaqueW::new(self, 20)
             }
-            #[doc = "Bits 26:31 - Project-assigned name. The leaf replaces this field with 0x0c."]
+            #[doc = "Bits 26:31 - Opaque: meaning not established. The leaf replaces this field with 0x0c."]
             #[inline(always)]
-            pub fn bits_26_31(&mut self) -> Bits26_31W<'_, AgcRestartImage00f8OpaqueSpec> {
-                Bits26_31W::new(self, 26)
+            pub fn bits_26_31_opaque(
+                &mut self,
+            ) -> Bits26_31OpaqueW<'_, AgcRestartImage00f8OpaqueSpec> {
+                Bits26_31OpaqueW::new(self, 26)
             }
         }
         #[doc = "Opaque: meaning not established. Five positional six-bit images written by complete bt_agc_restart_set; bits 1:0 remain unassigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_restart_image_00f8_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_restart_image_00f8_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -40080,78 +40071,88 @@ pub mod phy_btagc_recovered {
         pub type R = crate::R<AgcRestartImage0100OpaqueSpec>;
         #[doc = "Register `AGC_RESTART_IMAGE_0100_OPAQUE` writer"]
         pub type W = crate::W<AgcRestartImage0100OpaqueSpec>;
-        #[doc = "Field `BITS_12_15` reader - Project-assigned name. The leaf replaces this field with 0x0a."]
-        pub type Bits12_15R = crate::FieldReader;
-        #[doc = "Field `BITS_12_15` writer - Project-assigned name. The leaf replaces this field with 0x0a."]
-        pub type Bits12_15W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
-        #[doc = "Field `BITS_16_19` reader - Project-assigned name. The leaf replaces this field with 8."]
-        pub type Bits16_19R = crate::FieldReader;
-        #[doc = "Field `BITS_16_19` writer - Project-assigned name. The leaf replaces this field with 8."]
-        pub type Bits16_19W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
-        #[doc = "Field `BITS_20_23` reader - Project-assigned name. The leaf replaces this field with 6."]
-        pub type Bits20_23R = crate::FieldReader;
-        #[doc = "Field `BITS_20_23` writer - Project-assigned name. The leaf replaces this field with 6."]
-        pub type Bits20_23W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
-        #[doc = "Field `BITS_24_27` reader - Project-assigned name. The leaf replaces this field with 6."]
-        pub type Bits24_27R = crate::FieldReader;
-        #[doc = "Field `BITS_24_27` writer - Project-assigned name. The leaf replaces this field with 6."]
-        pub type Bits24_27W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
-        #[doc = "Field `BITS_28_31` reader - Project-assigned name. The leaf replaces this field with 6."]
-        pub type Bits28_31R = crate::FieldReader;
-        #[doc = "Field `BITS_28_31` writer - Project-assigned name. The leaf replaces this field with 6."]
-        pub type Bits28_31W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `BITS_12_15_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x0a."]
+        pub type Bits12_15OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_12_15_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x0a."]
+        pub type Bits12_15OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `BITS_16_19_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 8."]
+        pub type Bits16_19OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_16_19_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 8."]
+        pub type Bits16_19OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `BITS_20_23_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 6."]
+        pub type Bits20_23OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_20_23_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 6."]
+        pub type Bits20_23OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `BITS_24_27_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 6."]
+        pub type Bits24_27OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_24_27_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 6."]
+        pub type Bits24_27OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `BITS_28_31_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 6."]
+        pub type Bits28_31OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_28_31_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 6."]
+        pub type Bits28_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         impl R {
-            #[doc = "Bits 12:15 - Project-assigned name. The leaf replaces this field with 0x0a."]
+            #[doc = "Bits 12:15 - Opaque: meaning not established. The leaf replaces this field with 0x0a."]
             #[inline(always)]
-            pub fn bits_12_15(&self) -> Bits12_15R {
-                Bits12_15R::new(((self.bits >> 12) & 0x0f) as u8)
+            pub fn bits_12_15_opaque(&self) -> Bits12_15OpaqueR {
+                Bits12_15OpaqueR::new(((self.bits >> 12) & 0x0f) as u8)
             }
-            #[doc = "Bits 16:19 - Project-assigned name. The leaf replaces this field with 8."]
+            #[doc = "Bits 16:19 - Opaque: meaning not established. The leaf replaces this field with 8."]
             #[inline(always)]
-            pub fn bits_16_19(&self) -> Bits16_19R {
-                Bits16_19R::new(((self.bits >> 16) & 0x0f) as u8)
+            pub fn bits_16_19_opaque(&self) -> Bits16_19OpaqueR {
+                Bits16_19OpaqueR::new(((self.bits >> 16) & 0x0f) as u8)
             }
-            #[doc = "Bits 20:23 - Project-assigned name. The leaf replaces this field with 6."]
+            #[doc = "Bits 20:23 - Opaque: meaning not established. The leaf replaces this field with 6."]
             #[inline(always)]
-            pub fn bits_20_23(&self) -> Bits20_23R {
-                Bits20_23R::new(((self.bits >> 20) & 0x0f) as u8)
+            pub fn bits_20_23_opaque(&self) -> Bits20_23OpaqueR {
+                Bits20_23OpaqueR::new(((self.bits >> 20) & 0x0f) as u8)
             }
-            #[doc = "Bits 24:27 - Project-assigned name. The leaf replaces this field with 6."]
+            #[doc = "Bits 24:27 - Opaque: meaning not established. The leaf replaces this field with 6."]
             #[inline(always)]
-            pub fn bits_24_27(&self) -> Bits24_27R {
-                Bits24_27R::new(((self.bits >> 24) & 0x0f) as u8)
+            pub fn bits_24_27_opaque(&self) -> Bits24_27OpaqueR {
+                Bits24_27OpaqueR::new(((self.bits >> 24) & 0x0f) as u8)
             }
-            #[doc = "Bits 28:31 - Project-assigned name. The leaf replaces this field with 6."]
+            #[doc = "Bits 28:31 - Opaque: meaning not established. The leaf replaces this field with 6."]
             #[inline(always)]
-            pub fn bits_28_31(&self) -> Bits28_31R {
-                Bits28_31R::new(((self.bits >> 28) & 0x0f) as u8)
+            pub fn bits_28_31_opaque(&self) -> Bits28_31OpaqueR {
+                Bits28_31OpaqueR::new(((self.bits >> 28) & 0x0f) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 12:15 - Project-assigned name. The leaf replaces this field with 0x0a."]
+            #[doc = "Bits 12:15 - Opaque: meaning not established. The leaf replaces this field with 0x0a."]
             #[inline(always)]
-            pub fn bits_12_15(&mut self) -> Bits12_15W<'_, AgcRestartImage0100OpaqueSpec> {
-                Bits12_15W::new(self, 12)
+            pub fn bits_12_15_opaque(
+                &mut self,
+            ) -> Bits12_15OpaqueW<'_, AgcRestartImage0100OpaqueSpec> {
+                Bits12_15OpaqueW::new(self, 12)
             }
-            #[doc = "Bits 16:19 - Project-assigned name. The leaf replaces this field with 8."]
+            #[doc = "Bits 16:19 - Opaque: meaning not established. The leaf replaces this field with 8."]
             #[inline(always)]
-            pub fn bits_16_19(&mut self) -> Bits16_19W<'_, AgcRestartImage0100OpaqueSpec> {
-                Bits16_19W::new(self, 16)
+            pub fn bits_16_19_opaque(
+                &mut self,
+            ) -> Bits16_19OpaqueW<'_, AgcRestartImage0100OpaqueSpec> {
+                Bits16_19OpaqueW::new(self, 16)
             }
-            #[doc = "Bits 20:23 - Project-assigned name. The leaf replaces this field with 6."]
+            #[doc = "Bits 20:23 - Opaque: meaning not established. The leaf replaces this field with 6."]
             #[inline(always)]
-            pub fn bits_20_23(&mut self) -> Bits20_23W<'_, AgcRestartImage0100OpaqueSpec> {
-                Bits20_23W::new(self, 20)
+            pub fn bits_20_23_opaque(
+                &mut self,
+            ) -> Bits20_23OpaqueW<'_, AgcRestartImage0100OpaqueSpec> {
+                Bits20_23OpaqueW::new(self, 20)
             }
-            #[doc = "Bits 24:27 - Project-assigned name. The leaf replaces this field with 6."]
+            #[doc = "Bits 24:27 - Opaque: meaning not established. The leaf replaces this field with 6."]
             #[inline(always)]
-            pub fn bits_24_27(&mut self) -> Bits24_27W<'_, AgcRestartImage0100OpaqueSpec> {
-                Bits24_27W::new(self, 24)
+            pub fn bits_24_27_opaque(
+                &mut self,
+            ) -> Bits24_27OpaqueW<'_, AgcRestartImage0100OpaqueSpec> {
+                Bits24_27OpaqueW::new(self, 24)
             }
-            #[doc = "Bits 28:31 - Project-assigned name. The leaf replaces this field with 6."]
+            #[doc = "Bits 28:31 - Opaque: meaning not established. The leaf replaces this field with 6."]
             #[inline(always)]
-            pub fn bits_28_31(&mut self) -> Bits28_31W<'_, AgcRestartImage0100OpaqueSpec> {
-                Bits28_31W::new(self, 28)
+            pub fn bits_28_31_opaque(
+                &mut self,
+            ) -> Bits28_31OpaqueW<'_, AgcRestartImage0100OpaqueSpec> {
+                Bits28_31OpaqueW::new(self, 28)
             }
         }
         #[doc = "Opaque: meaning not established. Five positional high-nibble images written by complete bt_agc_restart_set; bits 11:0 remain unassigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_restart_image_0100_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_restart_image_0100_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -40180,42 +40181,42 @@ pub mod btmac_ble_phy_init {
     #[doc = "Register block"]
     pub struct RegisterBlock {
         _reserved0: [u8; 0x74],
-        init_zero_0074: InitZero0074,
+        word_0074_opaque: Word0074Opaque,
         _reserved1: [u8; 0x3c],
         interrupt_enable: InterruptEnable,
         interrupt_clear: InterruptClear,
         _reserved3: [u8; 0x7c],
-        init_value_0138: InitValue0138,
+        word_0138_opaque: Word0138Opaque,
         _reserved4: [u8; 0x0114],
         lc_tx_on_delay_config: LcTxOnDelayConfig,
-        init_bytes_0254: InitBytes0254,
+        word_0254_opaque: Word0254Opaque,
         _reserved6: [u8; 0x01a8],
-        init_control_0400: InitControl0400,
+        word_0400_opaque: Word0400Opaque,
         _reserved7: [u8; 0x54],
-        init_high_half_0458: InitHighHalf0458,
-        init_value_045c: InitValue045c,
+        word_0458_opaque: Word0458Opaque,
+        word_045c_opaque: Word045cOpaque,
         _reserved9: [u8; 0x10],
         device_table_control: DeviceTableControl,
         device_table_first_entry: DeviceTableFirstEntry,
         _reserved11: [u8; 0x28],
-        init_dynamic_image_04a0: InitDynamicImage04a0,
-        init_bytes_04a4: InitBytes04a4,
-        init_bytes_04a8: InitBytes04a8,
+        word_04a0_opaque: Word04a0Opaque,
+        word_04a4_opaque: Word04a4Opaque,
+        word_04a8_opaque: Word04a8Opaque,
         connection_abort_control: ConnectionAbortControl,
         _reserved15: [u8; 0x90],
-        init_value_0540: InitValue0540,
+        word_0540_opaque: Word0540Opaque,
         _reserved16: [u8; 0x08],
-        init_low_5_054c: InitLow5_054c,
-        init_bytes_0550: InitBytes0550,
-        init_bytes_0554: InitBytes0554,
-        init_bytes_0558: InitBytes0558,
-        init_bytes_055c: InitBytes055c,
+        word_054c_opaque: Word054cOpaque,
+        word_0550_opaque: Word0550Opaque,
+        word_0554_opaque: Word0554Opaque,
+        word_0558_opaque: Word0558Opaque,
+        word_055c_opaque: Word055cOpaque,
     }
     impl RegisterBlock {
-        #[doc = "0x74 - Project-assigned name. BLE PHY register initialization writes the complete zero image. Inner hardware semantics remain unknown."]
+        #[doc = "0x74 - Opaque: meaning not established. BLE PHY register initialization writes the complete zero image. Inner hardware semantics remain unknown."]
         #[inline(always)]
-        pub const fn init_zero_0074(&self) -> &InitZero0074 {
-            &self.init_zero_0074
+        pub const fn word_0074_opaque(&self) -> &Word0074Opaque {
+            &self.word_0074_opaque
         }
         #[doc = "0xb4 - Project-assigned name. BLE base-stack interrupt enable bank. BLE PHY initialization preserves only source 17. The synchronous scheduler-run subscriber clears stale source 14 before enabling it here. All omitted source identities remain unknown."]
         #[inline(always)]
@@ -40227,35 +40228,35 @@ pub mod btmac_ble_phy_init {
         pub const fn interrupt_clear(&self) -> &InterruptClear {
             &self.interrupt_clear
         }
-        #[doc = "0x138 - Project-assigned name. BLE PHY register initialization writes the finite complete image 0x0000065B."]
+        #[doc = "0x138 - Opaque: meaning not established. BLE PHY register initialization writes the finite complete image 0x0000065B."]
         #[inline(always)]
-        pub const fn init_value_0138(&self) -> &InitValue0138 {
-            &self.init_value_0138
+        pub const fn word_0138_opaque(&self) -> &Word0138Opaque {
+            &self.word_0138_opaque
         }
         #[doc = "0x250 - Project-assigned name. BLE transmit timing configuration. ble_tx_config_check independently prints byte zero as lc_tx_on_delay; BLE PHY initialization writes the same runtime-derived byte image into bytes zero and two."]
         #[inline(always)]
         pub const fn lc_tx_on_delay_config(&self) -> &LcTxOnDelayConfig {
             &self.lc_tx_on_delay_config
         }
-        #[doc = "0x254 - Project-assigned name. BLE PHY initialization replaces the first three bytes with the exact images 0x01, 0x01 and 0xB2."]
+        #[doc = "0x254 - Opaque: meaning not established. BLE PHY initialization replaces the first three bytes with the exact images 0x01, 0x01 and 0xB2."]
         #[inline(always)]
-        pub const fn init_bytes_0254(&self) -> &InitBytes0254 {
-            &self.init_bytes_0254
+        pub const fn word_0254_opaque(&self) -> &Word0254Opaque {
+            &self.word_0254_opaque
         }
-        #[doc = "0x400 - Project-assigned name. BLE PHY initialization first writes bit 31 as a complete image and then sets bit 22 through a fresh-read RMW."]
+        #[doc = "0x400 - Opaque: meaning not established. BLE PHY initialization first writes bit 31 as a complete image and then sets bit 22 through a fresh-read RMW."]
         #[inline(always)]
-        pub const fn init_control_0400(&self) -> &InitControl0400 {
-            &self.init_control_0400
+        pub const fn word_0400_opaque(&self) -> &Word0400Opaque {
+            &self.word_0400_opaque
         }
-        #[doc = "0x458 - Project-assigned name. BLE PHY initialization replaces the upper halfword with the finite image 0x000F."]
+        #[doc = "0x458 - Opaque: meaning not established. BLE PHY initialization replaces the upper halfword with the finite image 0x000F."]
         #[inline(always)]
-        pub const fn init_high_half_0458(&self) -> &InitHighHalf0458 {
-            &self.init_high_half_0458
+        pub const fn word_0458_opaque(&self) -> &Word0458Opaque {
+            &self.word_0458_opaque
         }
-        #[doc = "0x45c - Project-assigned name. BLE PHY register initialization writes the finite complete image 8."]
+        #[doc = "0x45c - Opaque: meaning not established. BLE PHY register initialization writes the finite complete image 8."]
         #[inline(always)]
-        pub const fn init_value_045c(&self) -> &InitValue045c {
-            &self.init_value_045c
+        pub const fn word_045c_opaque(&self) -> &Word045cOpaque {
+            &self.word_045c_opaque
         }
         #[doc = "0x470 - Project-assigned name. Device-table control word. Every device-table change rewrites the entry count in the low byte; one complete BLE PHY initialization branch sets bit 18. Both writers preserve the other bits, whose meaning remains unknown."]
         #[inline(always)]
@@ -40267,93 +40268,93 @@ pub mod btmac_ble_phy_init {
         pub const fn device_table_first_entry(&self) -> &DeviceTableFirstEntry {
             &self.device_table_first_entry
         }
-        #[doc = "0x4a0 - Project-assigned name. BLE PHY initialization writes a runtime-derived complete image formed from a linked global address. The destination's hardware meaning remains unknown."]
+        #[doc = "0x4a0 - Opaque: meaning not established. BLE PHY initialization writes a runtime-derived complete image formed from a linked global address. The destination's hardware meaning remains unknown."]
         #[inline(always)]
-        pub const fn init_dynamic_image_04a0(&self) -> &InitDynamicImage04a0 {
-            &self.init_dynamic_image_04a0
+        pub const fn word_04a0_opaque(&self) -> &Word04a0Opaque {
+            &self.word_04a0_opaque
         }
-        #[doc = "0x4a4 - Project-assigned name. BLE PHY register initialization writes four byte images equal to 2."]
+        #[doc = "0x4a4 - Opaque: meaning not established. BLE PHY register initialization writes four byte images equal to 2."]
         #[inline(always)]
-        pub const fn init_bytes_04a4(&self) -> &InitBytes04a4 {
-            &self.init_bytes_04a4
+        pub const fn word_04a4_opaque(&self) -> &Word04a4Opaque {
+            &self.word_04a4_opaque
         }
-        #[doc = "0x4a8 - Project-assigned name. BLE PHY register initialization writes four byte images equal to 2."]
+        #[doc = "0x4a8 - Opaque: meaning not established. BLE PHY register initialization writes four byte images equal to 2."]
         #[inline(always)]
-        pub const fn init_bytes_04a8(&self) -> &InitBytes04a8 {
-            &self.init_bytes_04a8
+        pub const fn word_04a8_opaque(&self) -> &Word04a8Opaque {
+            &self.word_04a8_opaque
         }
         #[doc = "0x4ac - Project-assigned name. Connection aborted-opcode control. BLE PHY initialization and the default aborted-opcode path write 0x00FF0002, while the custom-opcode path writes 0x00FF0003. Connection link-state refresh independently replaces bit 1 from its two private control flags."]
         #[inline(always)]
         pub const fn connection_abort_control(&self) -> &ConnectionAbortControl {
             &self.connection_abort_control
         }
-        #[doc = "0x540 - Project-assigned name. BLE PHY register initialization writes the complete controller-configuration word at offset 0x40, which the pinned configuration defaults to 2000."]
+        #[doc = "0x540 - Opaque: meaning not established. BLE PHY register initialization writes the complete controller-configuration word at offset 0x40, which the pinned configuration defaults to 2000."]
         #[inline(always)]
-        pub const fn init_value_0540(&self) -> &InitValue0540 {
-            &self.init_value_0540
+        pub const fn word_0540_opaque(&self) -> &Word0540Opaque {
+            &self.word_0540_opaque
         }
-        #[doc = "0x54c - Project-assigned name. BLE PHY initialization replaces the low five bits with the finite image 0x12."]
+        #[doc = "0x54c - Opaque: meaning not established. BLE PHY initialization replaces the low five bits with the finite image 0x12."]
         #[inline(always)]
-        pub const fn init_low_5_054c(&self) -> &InitLow5_054c {
-            &self.init_low_5_054c
+        pub const fn word_054c_opaque(&self) -> &Word054cOpaque {
+            &self.word_054c_opaque
         }
-        #[doc = "0x550 - Project-assigned name. BLE PHY initialization replaces the low three bytes with 0x03, 0x03 and 0x44."]
+        #[doc = "0x550 - Opaque: meaning not established. BLE PHY initialization replaces the low three bytes with 0x03, 0x03 and 0x44."]
         #[inline(always)]
-        pub const fn init_bytes_0550(&self) -> &InitBytes0550 {
-            &self.init_bytes_0550
+        pub const fn word_0550_opaque(&self) -> &Word0550Opaque {
+            &self.word_0550_opaque
         }
-        #[doc = "0x554 - Project-assigned name. BLE PHY initialization replaces all four bytes with 0x10, 0x10, 0x3C and 0x28."]
+        #[doc = "0x554 - Opaque: meaning not established. BLE PHY initialization replaces all four bytes with 0x10, 0x10, 0x3C and 0x28."]
         #[inline(always)]
-        pub const fn init_bytes_0554(&self) -> &InitBytes0554 {
-            &self.init_bytes_0554
+        pub const fn word_0554_opaque(&self) -> &Word0554Opaque {
+            &self.word_0554_opaque
         }
-        #[doc = "0x558 - Project-assigned name. BLE PHY initialization replaces all four bytes with 0x0C, 0x08, 0x0C and 0x0C."]
+        #[doc = "0x558 - Opaque: meaning not established. BLE PHY initialization replaces all four bytes with 0x0C, 0x08, 0x0C and 0x0C."]
         #[inline(always)]
-        pub const fn init_bytes_0558(&self) -> &InitBytes0558 {
-            &self.init_bytes_0558
+        pub const fn word_0558_opaque(&self) -> &Word0558Opaque {
+            &self.word_0558_opaque
         }
-        #[doc = "0x55c - Project-assigned name. BLE PHY initialization replaces all four bytes with 0x08."]
+        #[doc = "0x55c - Opaque: meaning not established. BLE PHY initialization replaces all four bytes with 0x08."]
         #[inline(always)]
-        pub const fn init_bytes_055c(&self) -> &InitBytes055c {
-            &self.init_bytes_055c
+        pub const fn word_055c_opaque(&self) -> &Word055cOpaque {
+            &self.word_055c_opaque
         }
     }
-    #[doc = "INIT_ZERO_0074 (rw) register accessor: Project-assigned name. BLE PHY register initialization writes the complete zero image. Inner hardware semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_zero_0074::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_zero_0074::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_zero_0074`] module"]
-    #[doc(alias = "INIT_ZERO_0074")]
-    pub type InitZero0074 = crate::Reg<init_zero_0074::InitZero0074Spec>;
-    #[doc = "Project-assigned name. BLE PHY register initialization writes the complete zero image. Inner hardware semantics remain unknown."]
-    pub mod init_zero_0074 {
-        #[doc = "Register `INIT_ZERO_0074` reader"]
-        pub type R = crate::R<InitZero0074Spec>;
-        #[doc = "Register `INIT_ZERO_0074` writer"]
-        pub type W = crate::W<InitZero0074Spec>;
-        #[doc = "Field `INIT_IMAGE` reader - Project-assigned name."]
-        pub type InitImageR = crate::FieldReader<u32>;
-        #[doc = "Field `INIT_IMAGE` writer - Project-assigned name."]
-        pub type InitImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "WORD_0074_OPAQUE (rw) register accessor: Opaque: meaning not established. BLE PHY register initialization writes the complete zero image. Inner hardware semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0074_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0074_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0074_opaque`] module"]
+    #[doc(alias = "WORD_0074_OPAQUE")]
+    pub type Word0074Opaque = crate::Reg<word_0074_opaque::Word0074OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. BLE PHY register initialization writes the complete zero image. Inner hardware semantics remain unknown."]
+    pub mod word_0074_opaque {
+        #[doc = "Register `WORD_0074_OPAQUE` reader"]
+        pub type R = crate::R<Word0074OpaqueSpec>;
+        #[doc = "Register `WORD_0074_OPAQUE` writer"]
+        pub type W = crate::W<Word0074OpaqueSpec>;
+        #[doc = "Field `BITS_0_31_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueR = crate::FieldReader<u32>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl R {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_image(&self) -> InitImageR {
-                InitImageR::new(self.bits)
+            pub fn bits_0_31_opaque(&self) -> Bits0_31OpaqueR {
+                Bits0_31OpaqueR::new(self.bits)
             }
         }
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_image(&mut self) -> InitImageW<'_, InitZero0074Spec> {
-                InitImageW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, Word0074OpaqueSpec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. BLE PHY register initialization writes the complete zero image. Inner hardware semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_zero_0074::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_zero_0074::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitZero0074Spec;
-        impl crate::RegisterSpec for InitZero0074Spec {
+        #[doc = "Opaque: meaning not established. BLE PHY register initialization writes the complete zero image. Inner hardware semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0074_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0074_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0074OpaqueSpec;
+        impl crate::RegisterSpec for Word0074OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`init_zero_0074::R`](R) reader structure"]
-        impl crate::Readable for InitZero0074Spec {}
-        #[doc = "`write(|w| ..)` method takes [`init_zero_0074::W`](W) writer structure"]
-        impl crate::Writable for InitZero0074Spec {
+        #[doc = "`read()` method returns [`word_0074_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0074OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0074_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0074OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -40437,42 +40438,42 @@ pub mod btmac_ble_phy_init {
             const ONE_TO_MODIFY_FIELDS_BITMAP: u32 = 0x4000;
         }
     }
-    #[doc = "INIT_VALUE_0138 (rw) register accessor: Project-assigned name. BLE PHY register initialization writes the finite complete image 0x0000065B.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_value_0138::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_value_0138::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_value_0138`] module"]
-    #[doc(alias = "INIT_VALUE_0138")]
-    pub type InitValue0138 = crate::Reg<init_value_0138::InitValue0138Spec>;
-    #[doc = "Project-assigned name. BLE PHY register initialization writes the finite complete image 0x0000065B."]
-    pub mod init_value_0138 {
-        #[doc = "Register `INIT_VALUE_0138` reader"]
-        pub type R = crate::R<InitValue0138Spec>;
-        #[doc = "Register `INIT_VALUE_0138` writer"]
-        pub type W = crate::W<InitValue0138Spec>;
-        #[doc = "Field `INIT_IMAGE` reader - Project-assigned name."]
-        pub type InitImageR = crate::FieldReader<u32>;
-        #[doc = "Field `INIT_IMAGE` writer - Project-assigned name."]
-        pub type InitImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "WORD_0138_OPAQUE (rw) register accessor: Opaque: meaning not established. BLE PHY register initialization writes the finite complete image 0x0000065B.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0138_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0138_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0138_opaque`] module"]
+    #[doc(alias = "WORD_0138_OPAQUE")]
+    pub type Word0138Opaque = crate::Reg<word_0138_opaque::Word0138OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. BLE PHY register initialization writes the finite complete image 0x0000065B."]
+    pub mod word_0138_opaque {
+        #[doc = "Register `WORD_0138_OPAQUE` reader"]
+        pub type R = crate::R<Word0138OpaqueSpec>;
+        #[doc = "Register `WORD_0138_OPAQUE` writer"]
+        pub type W = crate::W<Word0138OpaqueSpec>;
+        #[doc = "Field `BITS_0_31_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueR = crate::FieldReader<u32>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl R {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_image(&self) -> InitImageR {
-                InitImageR::new(self.bits)
+            pub fn bits_0_31_opaque(&self) -> Bits0_31OpaqueR {
+                Bits0_31OpaqueR::new(self.bits)
             }
         }
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_image(&mut self) -> InitImageW<'_, InitValue0138Spec> {
-                InitImageW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, Word0138OpaqueSpec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. BLE PHY register initialization writes the finite complete image 0x0000065B.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_value_0138::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_value_0138::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitValue0138Spec;
-        impl crate::RegisterSpec for InitValue0138Spec {
+        #[doc = "Opaque: meaning not established. BLE PHY register initialization writes the finite complete image 0x0000065B.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0138_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0138_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0138OpaqueSpec;
+        impl crate::RegisterSpec for Word0138OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`init_value_0138::R`](R) reader structure"]
-        impl crate::Readable for InitValue0138Spec {}
-        #[doc = "`write(|w| ..)` method takes [`init_value_0138::W`](W) writer structure"]
-        impl crate::Writable for InitValue0138Spec {
+        #[doc = "`read()` method returns [`word_0138_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0138OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0138_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0138OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -40529,15 +40530,15 @@ pub mod btmac_ble_phy_init {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "INIT_BYTES_0254 (rw) register accessor: Project-assigned name. BLE PHY initialization replaces the first three bytes with the exact images 0x01, 0x01 and 0xB2.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_bytes_0254::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_bytes_0254::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_bytes_0254`] module"]
-    #[doc(alias = "INIT_BYTES_0254")]
-    pub type InitBytes0254 = crate::Reg<init_bytes_0254::InitBytes0254Spec>;
-    #[doc = "Project-assigned name. BLE PHY initialization replaces the first three bytes with the exact images 0x01, 0x01 and 0xB2."]
-    pub mod init_bytes_0254 {
-        #[doc = "Register `INIT_BYTES_0254` reader"]
-        pub type R = crate::R<InitBytes0254Spec>;
-        #[doc = "Register `INIT_BYTES_0254` writer"]
-        pub type W = crate::W<InitBytes0254Spec>;
+    #[doc = "WORD_0254_OPAQUE (rw) register accessor: Opaque: meaning not established. BLE PHY initialization replaces the first three bytes with the exact images 0x01, 0x01 and 0xB2.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0254_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0254_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0254_opaque`] module"]
+    #[doc(alias = "WORD_0254_OPAQUE")]
+    pub type Word0254Opaque = crate::Reg<word_0254_opaque::Word0254OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. BLE PHY initialization replaces the first three bytes with the exact images 0x01, 0x01 and 0xB2."]
+    pub mod word_0254_opaque {
+        #[doc = "Register `WORD_0254_OPAQUE` reader"]
+        pub type R = crate::R<Word0254OpaqueSpec>;
+        #[doc = "Register `WORD_0254_OPAQUE` writer"]
+        pub type W = crate::W<Word0254OpaqueSpec>;
         #[doc = "Field `INIT_BYTE_0` reader - Project-assigned name."]
         pub type InitByte0R = crate::FieldReader;
         #[doc = "Field `INIT_BYTE_0` writer - Project-assigned name."]
@@ -40579,46 +40580,46 @@ pub mod btmac_ble_phy_init {
         impl W {
             #[doc = "Bits 0:7 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_0(&mut self) -> InitByte0W<'_, InitBytes0254Spec> {
+            pub fn init_byte_0(&mut self) -> InitByte0W<'_, Word0254OpaqueSpec> {
                 InitByte0W::new(self, 0)
             }
             #[doc = "Bits 8:15 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_1(&mut self) -> InitByte1W<'_, InitBytes0254Spec> {
+            pub fn init_byte_1(&mut self) -> InitByte1W<'_, Word0254OpaqueSpec> {
                 InitByte1W::new(self, 8)
             }
             #[doc = "Bits 16:22 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_2_low_7(&mut self) -> InitByte2Low7W<'_, InitBytes0254Spec> {
+            pub fn init_byte_2_low_7(&mut self) -> InitByte2Low7W<'_, Word0254OpaqueSpec> {
                 InitByte2Low7W::new(self, 16)
             }
             #[doc = "Bit 23 - Project-assigned name. The first byte-two clear preserves this bit and the following OR forces it to one."]
             #[inline(always)]
-            pub fn init_byte_2_high(&mut self) -> InitByte2HighW<'_, InitBytes0254Spec> {
+            pub fn init_byte_2_high(&mut self) -> InitByte2HighW<'_, Word0254OpaqueSpec> {
                 InitByte2HighW::new(self, 23)
             }
         }
-        #[doc = "Project-assigned name. BLE PHY initialization replaces the first three bytes with the exact images 0x01, 0x01 and 0xB2.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_bytes_0254::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_bytes_0254::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitBytes0254Spec;
-        impl crate::RegisterSpec for InitBytes0254Spec {
+        #[doc = "Opaque: meaning not established. BLE PHY initialization replaces the first three bytes with the exact images 0x01, 0x01 and 0xB2.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0254_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0254_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0254OpaqueSpec;
+        impl crate::RegisterSpec for Word0254OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`init_bytes_0254::R`](R) reader structure"]
-        impl crate::Readable for InitBytes0254Spec {}
-        #[doc = "`write(|w| ..)` method takes [`init_bytes_0254::W`](W) writer structure"]
-        impl crate::Writable for InitBytes0254Spec {
+        #[doc = "`read()` method returns [`word_0254_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0254OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0254_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0254OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "INIT_CONTROL_0400 (rw) register accessor: Project-assigned name. BLE PHY initialization first writes bit 31 as a complete image and then sets bit 22 through a fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_control_0400::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_control_0400::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_control_0400`] module"]
-    #[doc(alias = "INIT_CONTROL_0400")]
-    pub type InitControl0400 = crate::Reg<init_control_0400::InitControl0400Spec>;
-    #[doc = "Project-assigned name. BLE PHY initialization first writes bit 31 as a complete image and then sets bit 22 through a fresh-read RMW."]
-    pub mod init_control_0400 {
-        #[doc = "Register `INIT_CONTROL_0400` reader"]
-        pub type R = crate::R<InitControl0400Spec>;
-        #[doc = "Register `INIT_CONTROL_0400` writer"]
-        pub type W = crate::W<InitControl0400Spec>;
+    #[doc = "WORD_0400_OPAQUE (rw) register accessor: Opaque: meaning not established. BLE PHY initialization first writes bit 31 as a complete image and then sets bit 22 through a fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0400_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0400_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0400_opaque`] module"]
+    #[doc(alias = "WORD_0400_OPAQUE")]
+    pub type Word0400Opaque = crate::Reg<word_0400_opaque::Word0400OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. BLE PHY initialization first writes bit 31 as a complete image and then sets bit 22 through a fresh-read RMW."]
+    pub mod word_0400_opaque {
+        #[doc = "Register `WORD_0400_OPAQUE` reader"]
+        pub type R = crate::R<Word0400OpaqueSpec>;
+        #[doc = "Register `WORD_0400_OPAQUE` writer"]
+        pub type W = crate::W<Word0400OpaqueSpec>;
         #[doc = "Field `INIT_ENABLE_22` reader - Project-assigned name."]
         pub type InitEnable22R = crate::BitReader;
         #[doc = "Field `INIT_ENABLE_22` writer - Project-assigned name."]
@@ -40642,36 +40643,36 @@ pub mod btmac_ble_phy_init {
         impl W {
             #[doc = "Bit 22 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_enable_22(&mut self) -> InitEnable22W<'_, InitControl0400Spec> {
+            pub fn init_enable_22(&mut self) -> InitEnable22W<'_, Word0400OpaqueSpec> {
                 InitEnable22W::new(self, 22)
             }
             #[doc = "Bit 31 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_enable_31(&mut self) -> InitEnable31W<'_, InitControl0400Spec> {
+            pub fn init_enable_31(&mut self) -> InitEnable31W<'_, Word0400OpaqueSpec> {
                 InitEnable31W::new(self, 31)
             }
         }
-        #[doc = "Project-assigned name. BLE PHY initialization first writes bit 31 as a complete image and then sets bit 22 through a fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_control_0400::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_control_0400::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitControl0400Spec;
-        impl crate::RegisterSpec for InitControl0400Spec {
+        #[doc = "Opaque: meaning not established. BLE PHY initialization first writes bit 31 as a complete image and then sets bit 22 through a fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0400_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0400_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0400OpaqueSpec;
+        impl crate::RegisterSpec for Word0400OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`init_control_0400::R`](R) reader structure"]
-        impl crate::Readable for InitControl0400Spec {}
-        #[doc = "`write(|w| ..)` method takes [`init_control_0400::W`](W) writer structure"]
-        impl crate::Writable for InitControl0400Spec {
+        #[doc = "`read()` method returns [`word_0400_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0400OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0400_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0400OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "INIT_HIGH_HALF_0458 (rw) register accessor: Project-assigned name. BLE PHY initialization replaces the upper halfword with the finite image 0x000F.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_high_half_0458::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_high_half_0458::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_high_half_0458`] module"]
-    #[doc(alias = "INIT_HIGH_HALF_0458")]
-    pub type InitHighHalf0458 = crate::Reg<init_high_half_0458::InitHighHalf0458Spec>;
-    #[doc = "Project-assigned name. BLE PHY initialization replaces the upper halfword with the finite image 0x000F."]
-    pub mod init_high_half_0458 {
-        #[doc = "Register `INIT_HIGH_HALF_0458` reader"]
-        pub type R = crate::R<InitHighHalf0458Spec>;
-        #[doc = "Register `INIT_HIGH_HALF_0458` writer"]
-        pub type W = crate::W<InitHighHalf0458Spec>;
+    #[doc = "WORD_0458_OPAQUE (rw) register accessor: Opaque: meaning not established. BLE PHY initialization replaces the upper halfword with the finite image 0x000F.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0458_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0458_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0458_opaque`] module"]
+    #[doc(alias = "WORD_0458_OPAQUE")]
+    pub type Word0458Opaque = crate::Reg<word_0458_opaque::Word0458OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. BLE PHY initialization replaces the upper halfword with the finite image 0x000F."]
+    pub mod word_0458_opaque {
+        #[doc = "Register `WORD_0458_OPAQUE` reader"]
+        pub type R = crate::R<Word0458OpaqueSpec>;
+        #[doc = "Register `WORD_0458_OPAQUE` writer"]
+        pub type W = crate::W<Word0458OpaqueSpec>;
         #[doc = "Field `INIT_HIGH_HALF` reader - Project-assigned name."]
         pub type InitHighHalfR = crate::FieldReader<u16>;
         #[doc = "Field `INIT_HIGH_HALF` writer - Project-assigned name."]
@@ -40686,58 +40687,58 @@ pub mod btmac_ble_phy_init {
         impl W {
             #[doc = "Bits 16:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_high_half(&mut self) -> InitHighHalfW<'_, InitHighHalf0458Spec> {
+            pub fn init_high_half(&mut self) -> InitHighHalfW<'_, Word0458OpaqueSpec> {
                 InitHighHalfW::new(self, 16)
             }
         }
-        #[doc = "Project-assigned name. BLE PHY initialization replaces the upper halfword with the finite image 0x000F.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_high_half_0458::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_high_half_0458::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitHighHalf0458Spec;
-        impl crate::RegisterSpec for InitHighHalf0458Spec {
+        #[doc = "Opaque: meaning not established. BLE PHY initialization replaces the upper halfword with the finite image 0x000F.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0458_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0458_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0458OpaqueSpec;
+        impl crate::RegisterSpec for Word0458OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`init_high_half_0458::R`](R) reader structure"]
-        impl crate::Readable for InitHighHalf0458Spec {}
-        #[doc = "`write(|w| ..)` method takes [`init_high_half_0458::W`](W) writer structure"]
-        impl crate::Writable for InitHighHalf0458Spec {
+        #[doc = "`read()` method returns [`word_0458_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0458OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0458_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0458OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "INIT_VALUE_045C (rw) register accessor: Project-assigned name. BLE PHY register initialization writes the finite complete image 8.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_value_045c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_value_045c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_value_045c`] module"]
-    #[doc(alias = "INIT_VALUE_045C")]
-    pub type InitValue045c = crate::Reg<init_value_045c::InitValue045cSpec>;
-    #[doc = "Project-assigned name. BLE PHY register initialization writes the finite complete image 8."]
-    pub mod init_value_045c {
-        #[doc = "Register `INIT_VALUE_045C` reader"]
-        pub type R = crate::R<InitValue045cSpec>;
-        #[doc = "Register `INIT_VALUE_045C` writer"]
-        pub type W = crate::W<InitValue045cSpec>;
-        #[doc = "Field `INIT_IMAGE` reader - Project-assigned name."]
-        pub type InitImageR = crate::FieldReader<u32>;
-        #[doc = "Field `INIT_IMAGE` writer - Project-assigned name."]
-        pub type InitImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "WORD_045C_OPAQUE (rw) register accessor: Opaque: meaning not established. BLE PHY register initialization writes the finite complete image 8.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_045c_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_045c_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_045c_opaque`] module"]
+    #[doc(alias = "WORD_045C_OPAQUE")]
+    pub type Word045cOpaque = crate::Reg<word_045c_opaque::Word045cOpaqueSpec>;
+    #[doc = "Opaque: meaning not established. BLE PHY register initialization writes the finite complete image 8."]
+    pub mod word_045c_opaque {
+        #[doc = "Register `WORD_045C_OPAQUE` reader"]
+        pub type R = crate::R<Word045cOpaqueSpec>;
+        #[doc = "Register `WORD_045C_OPAQUE` writer"]
+        pub type W = crate::W<Word045cOpaqueSpec>;
+        #[doc = "Field `BITS_0_31_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueR = crate::FieldReader<u32>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl R {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_image(&self) -> InitImageR {
-                InitImageR::new(self.bits)
+            pub fn bits_0_31_opaque(&self) -> Bits0_31OpaqueR {
+                Bits0_31OpaqueR::new(self.bits)
             }
         }
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_image(&mut self) -> InitImageW<'_, InitValue045cSpec> {
-                InitImageW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, Word045cOpaqueSpec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. BLE PHY register initialization writes the finite complete image 8.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_value_045c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_value_045c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitValue045cSpec;
-        impl crate::RegisterSpec for InitValue045cSpec {
+        #[doc = "Opaque: meaning not established. BLE PHY register initialization writes the finite complete image 8.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_045c_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_045c_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word045cOpaqueSpec;
+        impl crate::RegisterSpec for Word045cOpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`init_value_045c::R`](R) reader structure"]
-        impl crate::Readable for InitValue045cSpec {}
-        #[doc = "`write(|w| ..)` method takes [`init_value_045c::W`](W) writer structure"]
-        impl crate::Writable for InitValue045cSpec {
+        #[doc = "`read()` method returns [`word_045c_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word045cOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_045c_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word045cOpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -40754,20 +40755,20 @@ pub mod btmac_ble_phy_init {
         pub type EntryCountR = crate::FieldReader;
         #[doc = "Field `ENTRY_COUNT` writer - Project-assigned name. Number of entries of the Controller-SRAM device table the filter accept list and the resolving list share, valid or not; hardware walks this many entries."]
         pub type EntryCountW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
-        #[doc = "Field `SET_BY_PHY_INIT_BRANCH_BIT_18` reader - Project-assigned name. The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."]
-        pub type SetByPhyInitBranchBit18R = crate::BitReader;
-        #[doc = "Field `SET_BY_PHY_INIT_BRANCH_BIT_18` writer - Project-assigned name. The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."]
-        pub type SetByPhyInitBranchBit18W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_18_OPAQUE` reader - Opaque: meaning not established. The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."]
+        pub type Bit18OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_18_OPAQUE` writer - Opaque: meaning not established. The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."]
+        pub type Bit18OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bits 0:7 - Project-assigned name. Number of entries of the Controller-SRAM device table the filter accept list and the resolving list share, valid or not; hardware walks this many entries."]
             #[inline(always)]
             pub fn entry_count(&self) -> EntryCountR {
                 EntryCountR::new((self.bits & 0xff) as u8)
             }
-            #[doc = "Bit 18 - Project-assigned name. The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."]
+            #[doc = "Bit 18 - Opaque: meaning not established. The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."]
             #[inline(always)]
-            pub fn set_by_phy_init_branch_bit_18(&self) -> SetByPhyInitBranchBit18R {
-                SetByPhyInitBranchBit18R::new(((self.bits >> 18) & 1) != 0)
+            pub fn bit_18_opaque(&self) -> Bit18OpaqueR {
+                Bit18OpaqueR::new(((self.bits >> 18) & 1) != 0)
             }
         }
         impl W {
@@ -40776,12 +40777,10 @@ pub mod btmac_ble_phy_init {
             pub fn entry_count(&mut self) -> EntryCountW<'_, DeviceTableControlSpec> {
                 EntryCountW::new(self, 0)
             }
-            #[doc = "Bit 18 - Project-assigned name. The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."]
+            #[doc = "Bit 18 - Opaque: meaning not established. The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."]
             #[inline(always)]
-            pub fn set_by_phy_init_branch_bit_18(
-                &mut self,
-            ) -> SetByPhyInitBranchBit18W<'_, DeviceTableControlSpec> {
-                SetByPhyInitBranchBit18W::new(self, 18)
+            pub fn bit_18_opaque(&mut self) -> Bit18OpaqueW<'_, DeviceTableControlSpec> {
+                Bit18OpaqueW::new(self, 18)
             }
         }
         #[doc = "Project-assigned name. Device-table control word. Every device-table change rewrites the entry count in the low byte; one complete BLE PHY initialization branch sets bit 18. Both writers preserve the other bits, whose meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`device_table_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`device_table_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -40825,54 +40824,54 @@ pub mod btmac_ble_phy_init {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "INIT_DYNAMIC_IMAGE_04A0 (rw) register accessor: Project-assigned name. BLE PHY initialization writes a runtime-derived complete image formed from a linked global address. The destination's hardware meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_dynamic_image_04a0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_dynamic_image_04a0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_dynamic_image_04a0`] module"]
-    #[doc(alias = "INIT_DYNAMIC_IMAGE_04A0")]
-    pub type InitDynamicImage04a0 = crate::Reg<init_dynamic_image_04a0::InitDynamicImage04a0Spec>;
-    #[doc = "Project-assigned name. BLE PHY initialization writes a runtime-derived complete image formed from a linked global address. The destination's hardware meaning remains unknown."]
-    pub mod init_dynamic_image_04a0 {
-        #[doc = "Register `INIT_DYNAMIC_IMAGE_04A0` reader"]
-        pub type R = crate::R<InitDynamicImage04a0Spec>;
-        #[doc = "Register `INIT_DYNAMIC_IMAGE_04A0` writer"]
-        pub type W = crate::W<InitDynamicImage04a0Spec>;
-        #[doc = "Field `INIT_IMAGE` reader - Project-assigned name."]
-        pub type InitImageR = crate::FieldReader<u32>;
-        #[doc = "Field `INIT_IMAGE` writer - Project-assigned name."]
-        pub type InitImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "WORD_04A0_OPAQUE (rw) register accessor: Opaque: meaning not established. BLE PHY initialization writes a runtime-derived complete image formed from a linked global address. The destination's hardware meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_04a0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_04a0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_04a0_opaque`] module"]
+    #[doc(alias = "WORD_04A0_OPAQUE")]
+    pub type Word04a0Opaque = crate::Reg<word_04a0_opaque::Word04a0OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. BLE PHY initialization writes a runtime-derived complete image formed from a linked global address. The destination's hardware meaning remains unknown."]
+    pub mod word_04a0_opaque {
+        #[doc = "Register `WORD_04A0_OPAQUE` reader"]
+        pub type R = crate::R<Word04a0OpaqueSpec>;
+        #[doc = "Register `WORD_04A0_OPAQUE` writer"]
+        pub type W = crate::W<Word04a0OpaqueSpec>;
+        #[doc = "Field `BITS_0_31_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueR = crate::FieldReader<u32>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl R {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_image(&self) -> InitImageR {
-                InitImageR::new(self.bits)
+            pub fn bits_0_31_opaque(&self) -> Bits0_31OpaqueR {
+                Bits0_31OpaqueR::new(self.bits)
             }
         }
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_image(&mut self) -> InitImageW<'_, InitDynamicImage04a0Spec> {
-                InitImageW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, Word04a0OpaqueSpec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. BLE PHY initialization writes a runtime-derived complete image formed from a linked global address. The destination's hardware meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_dynamic_image_04a0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_dynamic_image_04a0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitDynamicImage04a0Spec;
-        impl crate::RegisterSpec for InitDynamicImage04a0Spec {
+        #[doc = "Opaque: meaning not established. BLE PHY initialization writes a runtime-derived complete image formed from a linked global address. The destination's hardware meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_04a0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_04a0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word04a0OpaqueSpec;
+        impl crate::RegisterSpec for Word04a0OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`init_dynamic_image_04a0::R`](R) reader structure"]
-        impl crate::Readable for InitDynamicImage04a0Spec {}
-        #[doc = "`write(|w| ..)` method takes [`init_dynamic_image_04a0::W`](W) writer structure"]
-        impl crate::Writable for InitDynamicImage04a0Spec {
+        #[doc = "`read()` method returns [`word_04a0_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word04a0OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_04a0_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word04a0OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "INIT_BYTES_04A4 (rw) register accessor: Project-assigned name. BLE PHY register initialization writes four byte images equal to 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_bytes_04a4::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_bytes_04a4::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_bytes_04a4`] module"]
-    #[doc(alias = "INIT_BYTES_04A4")]
-    pub type InitBytes04a4 = crate::Reg<init_bytes_04a4::InitBytes04a4Spec>;
-    #[doc = "Project-assigned name. BLE PHY register initialization writes four byte images equal to 2."]
-    pub mod init_bytes_04a4 {
-        #[doc = "Register `INIT_BYTES_04A4` reader"]
-        pub type R = crate::R<InitBytes04a4Spec>;
-        #[doc = "Register `INIT_BYTES_04A4` writer"]
-        pub type W = crate::W<InitBytes04a4Spec>;
+    #[doc = "WORD_04A4_OPAQUE (rw) register accessor: Opaque: meaning not established. BLE PHY register initialization writes four byte images equal to 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_04a4_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_04a4_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_04a4_opaque`] module"]
+    #[doc(alias = "WORD_04A4_OPAQUE")]
+    pub type Word04a4Opaque = crate::Reg<word_04a4_opaque::Word04a4OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. BLE PHY register initialization writes four byte images equal to 2."]
+    pub mod word_04a4_opaque {
+        #[doc = "Register `WORD_04A4_OPAQUE` reader"]
+        pub type R = crate::R<Word04a4OpaqueSpec>;
+        #[doc = "Register `WORD_04A4_OPAQUE` writer"]
+        pub type W = crate::W<Word04a4OpaqueSpec>;
         #[doc = "Field `INIT_BYTE_0` reader - Project-assigned name."]
         pub type InitByte0R = crate::FieldReader;
         #[doc = "Field `INIT_BYTE_0` writer - Project-assigned name."]
@@ -40914,46 +40913,46 @@ pub mod btmac_ble_phy_init {
         impl W {
             #[doc = "Bits 0:7 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_0(&mut self) -> InitByte0W<'_, InitBytes04a4Spec> {
+            pub fn init_byte_0(&mut self) -> InitByte0W<'_, Word04a4OpaqueSpec> {
                 InitByte0W::new(self, 0)
             }
             #[doc = "Bits 8:15 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_1(&mut self) -> InitByte1W<'_, InitBytes04a4Spec> {
+            pub fn init_byte_1(&mut self) -> InitByte1W<'_, Word04a4OpaqueSpec> {
                 InitByte1W::new(self, 8)
             }
             #[doc = "Bits 16:23 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_2(&mut self) -> InitByte2W<'_, InitBytes04a4Spec> {
+            pub fn init_byte_2(&mut self) -> InitByte2W<'_, Word04a4OpaqueSpec> {
                 InitByte2W::new(self, 16)
             }
             #[doc = "Bits 24:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_3(&mut self) -> InitByte3W<'_, InitBytes04a4Spec> {
+            pub fn init_byte_3(&mut self) -> InitByte3W<'_, Word04a4OpaqueSpec> {
                 InitByte3W::new(self, 24)
             }
         }
-        #[doc = "Project-assigned name. BLE PHY register initialization writes four byte images equal to 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_bytes_04a4::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_bytes_04a4::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitBytes04a4Spec;
-        impl crate::RegisterSpec for InitBytes04a4Spec {
+        #[doc = "Opaque: meaning not established. BLE PHY register initialization writes four byte images equal to 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_04a4_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_04a4_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word04a4OpaqueSpec;
+        impl crate::RegisterSpec for Word04a4OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`init_bytes_04a4::R`](R) reader structure"]
-        impl crate::Readable for InitBytes04a4Spec {}
-        #[doc = "`write(|w| ..)` method takes [`init_bytes_04a4::W`](W) writer structure"]
-        impl crate::Writable for InitBytes04a4Spec {
+        #[doc = "`read()` method returns [`word_04a4_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word04a4OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_04a4_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word04a4OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "INIT_BYTES_04A8 (rw) register accessor: Project-assigned name. BLE PHY register initialization writes four byte images equal to 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_bytes_04a8::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_bytes_04a8::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_bytes_04a8`] module"]
-    #[doc(alias = "INIT_BYTES_04A8")]
-    pub type InitBytes04a8 = crate::Reg<init_bytes_04a8::InitBytes04a8Spec>;
-    #[doc = "Project-assigned name. BLE PHY register initialization writes four byte images equal to 2."]
-    pub mod init_bytes_04a8 {
-        #[doc = "Register `INIT_BYTES_04A8` reader"]
-        pub type R = crate::R<InitBytes04a8Spec>;
-        #[doc = "Register `INIT_BYTES_04A8` writer"]
-        pub type W = crate::W<InitBytes04a8Spec>;
+    #[doc = "WORD_04A8_OPAQUE (rw) register accessor: Opaque: meaning not established. BLE PHY register initialization writes four byte images equal to 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_04a8_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_04a8_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_04a8_opaque`] module"]
+    #[doc(alias = "WORD_04A8_OPAQUE")]
+    pub type Word04a8Opaque = crate::Reg<word_04a8_opaque::Word04a8OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. BLE PHY register initialization writes four byte images equal to 2."]
+    pub mod word_04a8_opaque {
+        #[doc = "Register `WORD_04A8_OPAQUE` reader"]
+        pub type R = crate::R<Word04a8OpaqueSpec>;
+        #[doc = "Register `WORD_04A8_OPAQUE` writer"]
+        pub type W = crate::W<Word04a8OpaqueSpec>;
         #[doc = "Field `INIT_BYTE_0` reader - Project-assigned name."]
         pub type InitByte0R = crate::FieldReader;
         #[doc = "Field `INIT_BYTE_0` writer - Project-assigned name."]
@@ -40995,34 +40994,34 @@ pub mod btmac_ble_phy_init {
         impl W {
             #[doc = "Bits 0:7 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_0(&mut self) -> InitByte0W<'_, InitBytes04a8Spec> {
+            pub fn init_byte_0(&mut self) -> InitByte0W<'_, Word04a8OpaqueSpec> {
                 InitByte0W::new(self, 0)
             }
             #[doc = "Bits 8:15 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_1(&mut self) -> InitByte1W<'_, InitBytes04a8Spec> {
+            pub fn init_byte_1(&mut self) -> InitByte1W<'_, Word04a8OpaqueSpec> {
                 InitByte1W::new(self, 8)
             }
             #[doc = "Bits 16:23 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_2(&mut self) -> InitByte2W<'_, InitBytes04a8Spec> {
+            pub fn init_byte_2(&mut self) -> InitByte2W<'_, Word04a8OpaqueSpec> {
                 InitByte2W::new(self, 16)
             }
             #[doc = "Bits 24:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_3(&mut self) -> InitByte3W<'_, InitBytes04a8Spec> {
+            pub fn init_byte_3(&mut self) -> InitByte3W<'_, Word04a8OpaqueSpec> {
                 InitByte3W::new(self, 24)
             }
         }
-        #[doc = "Project-assigned name. BLE PHY register initialization writes four byte images equal to 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_bytes_04a8::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_bytes_04a8::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitBytes04a8Spec;
-        impl crate::RegisterSpec for InitBytes04a8Spec {
+        #[doc = "Opaque: meaning not established. BLE PHY register initialization writes four byte images equal to 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_04a8_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_04a8_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word04a8OpaqueSpec;
+        impl crate::RegisterSpec for Word04a8OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`init_bytes_04a8::R`](R) reader structure"]
-        impl crate::Readable for InitBytes04a8Spec {}
-        #[doc = "`write(|w| ..)` method takes [`init_bytes_04a8::W`](W) writer structure"]
-        impl crate::Writable for InitBytes04a8Spec {
+        #[doc = "`read()` method returns [`word_04a8_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word04a8OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_04a8_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word04a8OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -41084,54 +41083,54 @@ pub mod btmac_ble_phy_init {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "INIT_VALUE_0540 (rw) register accessor: Project-assigned name. BLE PHY register initialization writes the complete controller-configuration word at offset 0x40, which the pinned configuration defaults to 2000.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_value_0540::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_value_0540::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_value_0540`] module"]
-    #[doc(alias = "INIT_VALUE_0540")]
-    pub type InitValue0540 = crate::Reg<init_value_0540::InitValue0540Spec>;
-    #[doc = "Project-assigned name. BLE PHY register initialization writes the complete controller-configuration word at offset 0x40, which the pinned configuration defaults to 2000."]
-    pub mod init_value_0540 {
-        #[doc = "Register `INIT_VALUE_0540` reader"]
-        pub type R = crate::R<InitValue0540Spec>;
-        #[doc = "Register `INIT_VALUE_0540` writer"]
-        pub type W = crate::W<InitValue0540Spec>;
-        #[doc = "Field `INIT_IMAGE` reader - Project-assigned name."]
-        pub type InitImageR = crate::FieldReader<u32>;
-        #[doc = "Field `INIT_IMAGE` writer - Project-assigned name."]
-        pub type InitImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "WORD_0540_OPAQUE (rw) register accessor: Opaque: meaning not established. BLE PHY register initialization writes the complete controller-configuration word at offset 0x40, which the pinned configuration defaults to 2000.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0540_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0540_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0540_opaque`] module"]
+    #[doc(alias = "WORD_0540_OPAQUE")]
+    pub type Word0540Opaque = crate::Reg<word_0540_opaque::Word0540OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. BLE PHY register initialization writes the complete controller-configuration word at offset 0x40, which the pinned configuration defaults to 2000."]
+    pub mod word_0540_opaque {
+        #[doc = "Register `WORD_0540_OPAQUE` reader"]
+        pub type R = crate::R<Word0540OpaqueSpec>;
+        #[doc = "Register `WORD_0540_OPAQUE` writer"]
+        pub type W = crate::W<Word0540OpaqueSpec>;
+        #[doc = "Field `BITS_0_31_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueR = crate::FieldReader<u32>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl R {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_image(&self) -> InitImageR {
-                InitImageR::new(self.bits)
+            pub fn bits_0_31_opaque(&self) -> Bits0_31OpaqueR {
+                Bits0_31OpaqueR::new(self.bits)
             }
         }
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn init_image(&mut self) -> InitImageW<'_, InitValue0540Spec> {
-                InitImageW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, Word0540OpaqueSpec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. BLE PHY register initialization writes the complete controller-configuration word at offset 0x40, which the pinned configuration defaults to 2000.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_value_0540::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_value_0540::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitValue0540Spec;
-        impl crate::RegisterSpec for InitValue0540Spec {
+        #[doc = "Opaque: meaning not established. BLE PHY register initialization writes the complete controller-configuration word at offset 0x40, which the pinned configuration defaults to 2000.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0540_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0540_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0540OpaqueSpec;
+        impl crate::RegisterSpec for Word0540OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`init_value_0540::R`](R) reader structure"]
-        impl crate::Readable for InitValue0540Spec {}
-        #[doc = "`write(|w| ..)` method takes [`init_value_0540::W`](W) writer structure"]
-        impl crate::Writable for InitValue0540Spec {
+        #[doc = "`read()` method returns [`word_0540_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0540OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0540_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0540OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "INIT_LOW_5_054C (rw) register accessor: Project-assigned name. BLE PHY initialization replaces the low five bits with the finite image 0x12.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_low_5_054c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_low_5_054c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_low_5_054c`] module"]
-    #[doc(alias = "INIT_LOW_5_054C")]
-    pub type InitLow5_054c = crate::Reg<init_low_5_054c::InitLow5_054cSpec>;
-    #[doc = "Project-assigned name. BLE PHY initialization replaces the low five bits with the finite image 0x12."]
-    pub mod init_low_5_054c {
-        #[doc = "Register `INIT_LOW_5_054C` reader"]
-        pub type R = crate::R<InitLow5_054cSpec>;
-        #[doc = "Register `INIT_LOW_5_054C` writer"]
-        pub type W = crate::W<InitLow5_054cSpec>;
+    #[doc = "WORD_054C_OPAQUE (rw) register accessor: Opaque: meaning not established. BLE PHY initialization replaces the low five bits with the finite image 0x12.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_054c_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_054c_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_054c_opaque`] module"]
+    #[doc(alias = "WORD_054C_OPAQUE")]
+    pub type Word054cOpaque = crate::Reg<word_054c_opaque::Word054cOpaqueSpec>;
+    #[doc = "Opaque: meaning not established. BLE PHY initialization replaces the low five bits with the finite image 0x12."]
+    pub mod word_054c_opaque {
+        #[doc = "Register `WORD_054C_OPAQUE` reader"]
+        pub type R = crate::R<Word054cOpaqueSpec>;
+        #[doc = "Register `WORD_054C_OPAQUE` writer"]
+        pub type W = crate::W<Word054cOpaqueSpec>;
         #[doc = "Field `INIT_LOW_5` reader - Project-assigned name."]
         pub type InitLow5R = crate::FieldReader;
         #[doc = "Field `INIT_LOW_5` writer - Project-assigned name."]
@@ -41146,31 +41145,31 @@ pub mod btmac_ble_phy_init {
         impl W {
             #[doc = "Bits 0:4 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_low_5(&mut self) -> InitLow5W<'_, InitLow5_054cSpec> {
+            pub fn init_low_5(&mut self) -> InitLow5W<'_, Word054cOpaqueSpec> {
                 InitLow5W::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. BLE PHY initialization replaces the low five bits with the finite image 0x12.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_low_5_054c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_low_5_054c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitLow5_054cSpec;
-        impl crate::RegisterSpec for InitLow5_054cSpec {
+        #[doc = "Opaque: meaning not established. BLE PHY initialization replaces the low five bits with the finite image 0x12.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_054c_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_054c_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word054cOpaqueSpec;
+        impl crate::RegisterSpec for Word054cOpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`init_low_5_054c::R`](R) reader structure"]
-        impl crate::Readable for InitLow5_054cSpec {}
-        #[doc = "`write(|w| ..)` method takes [`init_low_5_054c::W`](W) writer structure"]
-        impl crate::Writable for InitLow5_054cSpec {
+        #[doc = "`read()` method returns [`word_054c_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word054cOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_054c_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word054cOpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "INIT_BYTES_0550 (rw) register accessor: Project-assigned name. BLE PHY initialization replaces the low three bytes with 0x03, 0x03 and 0x44.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_bytes_0550::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_bytes_0550::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_bytes_0550`] module"]
-    #[doc(alias = "INIT_BYTES_0550")]
-    pub type InitBytes0550 = crate::Reg<init_bytes_0550::InitBytes0550Spec>;
-    #[doc = "Project-assigned name. BLE PHY initialization replaces the low three bytes with 0x03, 0x03 and 0x44."]
-    pub mod init_bytes_0550 {
-        #[doc = "Register `INIT_BYTES_0550` reader"]
-        pub type R = crate::R<InitBytes0550Spec>;
-        #[doc = "Register `INIT_BYTES_0550` writer"]
-        pub type W = crate::W<InitBytes0550Spec>;
+    #[doc = "WORD_0550_OPAQUE (rw) register accessor: Opaque: meaning not established. BLE PHY initialization replaces the low three bytes with 0x03, 0x03 and 0x44.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0550_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0550_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0550_opaque`] module"]
+    #[doc(alias = "WORD_0550_OPAQUE")]
+    pub type Word0550Opaque = crate::Reg<word_0550_opaque::Word0550OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. BLE PHY initialization replaces the low three bytes with 0x03, 0x03 and 0x44."]
+    pub mod word_0550_opaque {
+        #[doc = "Register `WORD_0550_OPAQUE` reader"]
+        pub type R = crate::R<Word0550OpaqueSpec>;
+        #[doc = "Register `WORD_0550_OPAQUE` writer"]
+        pub type W = crate::W<Word0550OpaqueSpec>;
         #[doc = "Field `INIT_BYTE_0` reader - Project-assigned name."]
         pub type InitByte0R = crate::FieldReader;
         #[doc = "Field `INIT_BYTE_0` writer - Project-assigned name."]
@@ -41203,122 +41202,41 @@ pub mod btmac_ble_phy_init {
         impl W {
             #[doc = "Bits 0:7 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_0(&mut self) -> InitByte0W<'_, InitBytes0550Spec> {
+            pub fn init_byte_0(&mut self) -> InitByte0W<'_, Word0550OpaqueSpec> {
                 InitByte0W::new(self, 0)
             }
             #[doc = "Bits 8:15 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_1(&mut self) -> InitByte1W<'_, InitBytes0550Spec> {
+            pub fn init_byte_1(&mut self) -> InitByte1W<'_, Word0550OpaqueSpec> {
                 InitByte1W::new(self, 8)
             }
             #[doc = "Bits 16:23 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_2(&mut self) -> InitByte2W<'_, InitBytes0550Spec> {
+            pub fn init_byte_2(&mut self) -> InitByte2W<'_, Word0550OpaqueSpec> {
                 InitByte2W::new(self, 16)
             }
         }
-        #[doc = "Project-assigned name. BLE PHY initialization replaces the low three bytes with 0x03, 0x03 and 0x44.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_bytes_0550::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_bytes_0550::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitBytes0550Spec;
-        impl crate::RegisterSpec for InitBytes0550Spec {
+        #[doc = "Opaque: meaning not established. BLE PHY initialization replaces the low three bytes with 0x03, 0x03 and 0x44.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0550_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0550_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0550OpaqueSpec;
+        impl crate::RegisterSpec for Word0550OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`init_bytes_0550::R`](R) reader structure"]
-        impl crate::Readable for InitBytes0550Spec {}
-        #[doc = "`write(|w| ..)` method takes [`init_bytes_0550::W`](W) writer structure"]
-        impl crate::Writable for InitBytes0550Spec {
+        #[doc = "`read()` method returns [`word_0550_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0550OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0550_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0550OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "INIT_BYTES_0554 (rw) register accessor: Project-assigned name. BLE PHY initialization replaces all four bytes with 0x10, 0x10, 0x3C and 0x28.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_bytes_0554::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_bytes_0554::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_bytes_0554`] module"]
-    #[doc(alias = "INIT_BYTES_0554")]
-    pub type InitBytes0554 = crate::Reg<init_bytes_0554::InitBytes0554Spec>;
-    #[doc = "Project-assigned name. BLE PHY initialization replaces all four bytes with 0x10, 0x10, 0x3C and 0x28."]
-    pub mod init_bytes_0554 {
-        #[doc = "Register `INIT_BYTES_0554` reader"]
-        pub type R = crate::R<InitBytes0554Spec>;
-        #[doc = "Register `INIT_BYTES_0554` writer"]
-        pub type W = crate::W<InitBytes0554Spec>;
-        #[doc = "Field `INIT_BYTE_0` reader - Project-assigned name."]
-        pub type InitByte0R = crate::FieldReader;
-        #[doc = "Field `INIT_BYTE_0` writer - Project-assigned name."]
-        pub type InitByte0W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
-        #[doc = "Field `INIT_BYTE_1` reader - Project-assigned name."]
-        pub type InitByte1R = crate::FieldReader;
-        #[doc = "Field `INIT_BYTE_1` writer - Project-assigned name."]
-        pub type InitByte1W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
-        #[doc = "Field `INIT_BYTE_2` reader - Project-assigned name."]
-        pub type InitByte2R = crate::FieldReader;
-        #[doc = "Field `INIT_BYTE_2` writer - Project-assigned name."]
-        pub type InitByte2W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
-        #[doc = "Field `INIT_BYTE_3` reader - Project-assigned name."]
-        pub type InitByte3R = crate::FieldReader;
-        #[doc = "Field `INIT_BYTE_3` writer - Project-assigned name."]
-        pub type InitByte3W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
-        impl R {
-            #[doc = "Bits 0:7 - Project-assigned name."]
-            #[inline(always)]
-            pub fn init_byte_0(&self) -> InitByte0R {
-                InitByte0R::new((self.bits & 0xff) as u8)
-            }
-            #[doc = "Bits 8:15 - Project-assigned name."]
-            #[inline(always)]
-            pub fn init_byte_1(&self) -> InitByte1R {
-                InitByte1R::new(((self.bits >> 8) & 0xff) as u8)
-            }
-            #[doc = "Bits 16:23 - Project-assigned name."]
-            #[inline(always)]
-            pub fn init_byte_2(&self) -> InitByte2R {
-                InitByte2R::new(((self.bits >> 16) & 0xff) as u8)
-            }
-            #[doc = "Bits 24:31 - Project-assigned name."]
-            #[inline(always)]
-            pub fn init_byte_3(&self) -> InitByte3R {
-                InitByte3R::new(((self.bits >> 24) & 0xff) as u8)
-            }
-        }
-        impl W {
-            #[doc = "Bits 0:7 - Project-assigned name."]
-            #[inline(always)]
-            pub fn init_byte_0(&mut self) -> InitByte0W<'_, InitBytes0554Spec> {
-                InitByte0W::new(self, 0)
-            }
-            #[doc = "Bits 8:15 - Project-assigned name."]
-            #[inline(always)]
-            pub fn init_byte_1(&mut self) -> InitByte1W<'_, InitBytes0554Spec> {
-                InitByte1W::new(self, 8)
-            }
-            #[doc = "Bits 16:23 - Project-assigned name."]
-            #[inline(always)]
-            pub fn init_byte_2(&mut self) -> InitByte2W<'_, InitBytes0554Spec> {
-                InitByte2W::new(self, 16)
-            }
-            #[doc = "Bits 24:31 - Project-assigned name."]
-            #[inline(always)]
-            pub fn init_byte_3(&mut self) -> InitByte3W<'_, InitBytes0554Spec> {
-                InitByte3W::new(self, 24)
-            }
-        }
-        #[doc = "Project-assigned name. BLE PHY initialization replaces all four bytes with 0x10, 0x10, 0x3C and 0x28.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_bytes_0554::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_bytes_0554::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitBytes0554Spec;
-        impl crate::RegisterSpec for InitBytes0554Spec {
-            type Ux = u32;
-        }
-        #[doc = "`read()` method returns [`init_bytes_0554::R`](R) reader structure"]
-        impl crate::Readable for InitBytes0554Spec {}
-        #[doc = "`write(|w| ..)` method takes [`init_bytes_0554::W`](W) writer structure"]
-        impl crate::Writable for InitBytes0554Spec {
-            type Safety = crate::Unsafe;
-        }
-    }
-    #[doc = "INIT_BYTES_0558 (rw) register accessor: Project-assigned name. BLE PHY initialization replaces all four bytes with 0x0C, 0x08, 0x0C and 0x0C.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_bytes_0558::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_bytes_0558::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_bytes_0558`] module"]
-    #[doc(alias = "INIT_BYTES_0558")]
-    pub type InitBytes0558 = crate::Reg<init_bytes_0558::InitBytes0558Spec>;
-    #[doc = "Project-assigned name. BLE PHY initialization replaces all four bytes with 0x0C, 0x08, 0x0C and 0x0C."]
-    pub mod init_bytes_0558 {
-        #[doc = "Register `INIT_BYTES_0558` reader"]
-        pub type R = crate::R<InitBytes0558Spec>;
-        #[doc = "Register `INIT_BYTES_0558` writer"]
-        pub type W = crate::W<InitBytes0558Spec>;
+    #[doc = "WORD_0554_OPAQUE (rw) register accessor: Opaque: meaning not established. BLE PHY initialization replaces all four bytes with 0x10, 0x10, 0x3C and 0x28.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0554_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0554_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0554_opaque`] module"]
+    #[doc(alias = "WORD_0554_OPAQUE")]
+    pub type Word0554Opaque = crate::Reg<word_0554_opaque::Word0554OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. BLE PHY initialization replaces all four bytes with 0x10, 0x10, 0x3C and 0x28."]
+    pub mod word_0554_opaque {
+        #[doc = "Register `WORD_0554_OPAQUE` reader"]
+        pub type R = crate::R<Word0554OpaqueSpec>;
+        #[doc = "Register `WORD_0554_OPAQUE` writer"]
+        pub type W = crate::W<Word0554OpaqueSpec>;
         #[doc = "Field `INIT_BYTE_0` reader - Project-assigned name."]
         pub type InitByte0R = crate::FieldReader;
         #[doc = "Field `INIT_BYTE_0` writer - Project-assigned name."]
@@ -41360,46 +41278,46 @@ pub mod btmac_ble_phy_init {
         impl W {
             #[doc = "Bits 0:7 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_0(&mut self) -> InitByte0W<'_, InitBytes0558Spec> {
+            pub fn init_byte_0(&mut self) -> InitByte0W<'_, Word0554OpaqueSpec> {
                 InitByte0W::new(self, 0)
             }
             #[doc = "Bits 8:15 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_1(&mut self) -> InitByte1W<'_, InitBytes0558Spec> {
+            pub fn init_byte_1(&mut self) -> InitByte1W<'_, Word0554OpaqueSpec> {
                 InitByte1W::new(self, 8)
             }
             #[doc = "Bits 16:23 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_2(&mut self) -> InitByte2W<'_, InitBytes0558Spec> {
+            pub fn init_byte_2(&mut self) -> InitByte2W<'_, Word0554OpaqueSpec> {
                 InitByte2W::new(self, 16)
             }
             #[doc = "Bits 24:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_3(&mut self) -> InitByte3W<'_, InitBytes0558Spec> {
+            pub fn init_byte_3(&mut self) -> InitByte3W<'_, Word0554OpaqueSpec> {
                 InitByte3W::new(self, 24)
             }
         }
-        #[doc = "Project-assigned name. BLE PHY initialization replaces all four bytes with 0x0C, 0x08, 0x0C and 0x0C.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_bytes_0558::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_bytes_0558::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitBytes0558Spec;
-        impl crate::RegisterSpec for InitBytes0558Spec {
+        #[doc = "Opaque: meaning not established. BLE PHY initialization replaces all four bytes with 0x10, 0x10, 0x3C and 0x28.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0554_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0554_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0554OpaqueSpec;
+        impl crate::RegisterSpec for Word0554OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`init_bytes_0558::R`](R) reader structure"]
-        impl crate::Readable for InitBytes0558Spec {}
-        #[doc = "`write(|w| ..)` method takes [`init_bytes_0558::W`](W) writer structure"]
-        impl crate::Writable for InitBytes0558Spec {
+        #[doc = "`read()` method returns [`word_0554_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0554OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0554_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0554OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "INIT_BYTES_055C (rw) register accessor: Project-assigned name. BLE PHY initialization replaces all four bytes with 0x08.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_bytes_055c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_bytes_055c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_bytes_055c`] module"]
-    #[doc(alias = "INIT_BYTES_055C")]
-    pub type InitBytes055c = crate::Reg<init_bytes_055c::InitBytes055cSpec>;
-    #[doc = "Project-assigned name. BLE PHY initialization replaces all four bytes with 0x08."]
-    pub mod init_bytes_055c {
-        #[doc = "Register `INIT_BYTES_055C` reader"]
-        pub type R = crate::R<InitBytes055cSpec>;
-        #[doc = "Register `INIT_BYTES_055C` writer"]
-        pub type W = crate::W<InitBytes055cSpec>;
+    #[doc = "WORD_0558_OPAQUE (rw) register accessor: Opaque: meaning not established. BLE PHY initialization replaces all four bytes with 0x0C, 0x08, 0x0C and 0x0C.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0558_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0558_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0558_opaque`] module"]
+    #[doc(alias = "WORD_0558_OPAQUE")]
+    pub type Word0558Opaque = crate::Reg<word_0558_opaque::Word0558OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. BLE PHY initialization replaces all four bytes with 0x0C, 0x08, 0x0C and 0x0C."]
+    pub mod word_0558_opaque {
+        #[doc = "Register `WORD_0558_OPAQUE` reader"]
+        pub type R = crate::R<Word0558OpaqueSpec>;
+        #[doc = "Register `WORD_0558_OPAQUE` writer"]
+        pub type W = crate::W<Word0558OpaqueSpec>;
         #[doc = "Field `INIT_BYTE_0` reader - Project-assigned name."]
         pub type InitByte0R = crate::FieldReader;
         #[doc = "Field `INIT_BYTE_0` writer - Project-assigned name."]
@@ -41441,34 +41359,115 @@ pub mod btmac_ble_phy_init {
         impl W {
             #[doc = "Bits 0:7 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_0(&mut self) -> InitByte0W<'_, InitBytes055cSpec> {
+            pub fn init_byte_0(&mut self) -> InitByte0W<'_, Word0558OpaqueSpec> {
                 InitByte0W::new(self, 0)
             }
             #[doc = "Bits 8:15 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_1(&mut self) -> InitByte1W<'_, InitBytes055cSpec> {
+            pub fn init_byte_1(&mut self) -> InitByte1W<'_, Word0558OpaqueSpec> {
                 InitByte1W::new(self, 8)
             }
             #[doc = "Bits 16:23 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_2(&mut self) -> InitByte2W<'_, InitBytes055cSpec> {
+            pub fn init_byte_2(&mut self) -> InitByte2W<'_, Word0558OpaqueSpec> {
                 InitByte2W::new(self, 16)
             }
             #[doc = "Bits 24:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn init_byte_3(&mut self) -> InitByte3W<'_, InitBytes055cSpec> {
+            pub fn init_byte_3(&mut self) -> InitByte3W<'_, Word0558OpaqueSpec> {
                 InitByte3W::new(self, 24)
             }
         }
-        #[doc = "Project-assigned name. BLE PHY initialization replaces all four bytes with 0x08.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_bytes_055c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_bytes_055c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitBytes055cSpec;
-        impl crate::RegisterSpec for InitBytes055cSpec {
+        #[doc = "Opaque: meaning not established. BLE PHY initialization replaces all four bytes with 0x0C, 0x08, 0x0C and 0x0C.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0558_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0558_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0558OpaqueSpec;
+        impl crate::RegisterSpec for Word0558OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`init_bytes_055c::R`](R) reader structure"]
-        impl crate::Readable for InitBytes055cSpec {}
-        #[doc = "`write(|w| ..)` method takes [`init_bytes_055c::W`](W) writer structure"]
-        impl crate::Writable for InitBytes055cSpec {
+        #[doc = "`read()` method returns [`word_0558_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0558OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0558_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0558OpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "WORD_055C_OPAQUE (rw) register accessor: Opaque: meaning not established. BLE PHY initialization replaces all four bytes with 0x08.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_055c_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_055c_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_055c_opaque`] module"]
+    #[doc(alias = "WORD_055C_OPAQUE")]
+    pub type Word055cOpaque = crate::Reg<word_055c_opaque::Word055cOpaqueSpec>;
+    #[doc = "Opaque: meaning not established. BLE PHY initialization replaces all four bytes with 0x08."]
+    pub mod word_055c_opaque {
+        #[doc = "Register `WORD_055C_OPAQUE` reader"]
+        pub type R = crate::R<Word055cOpaqueSpec>;
+        #[doc = "Register `WORD_055C_OPAQUE` writer"]
+        pub type W = crate::W<Word055cOpaqueSpec>;
+        #[doc = "Field `INIT_BYTE_0` reader - Project-assigned name."]
+        pub type InitByte0R = crate::FieldReader;
+        #[doc = "Field `INIT_BYTE_0` writer - Project-assigned name."]
+        pub type InitByte0W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `INIT_BYTE_1` reader - Project-assigned name."]
+        pub type InitByte1R = crate::FieldReader;
+        #[doc = "Field `INIT_BYTE_1` writer - Project-assigned name."]
+        pub type InitByte1W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `INIT_BYTE_2` reader - Project-assigned name."]
+        pub type InitByte2R = crate::FieldReader;
+        #[doc = "Field `INIT_BYTE_2` writer - Project-assigned name."]
+        pub type InitByte2W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `INIT_BYTE_3` reader - Project-assigned name."]
+        pub type InitByte3R = crate::FieldReader;
+        #[doc = "Field `INIT_BYTE_3` writer - Project-assigned name."]
+        pub type InitByte3W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        impl R {
+            #[doc = "Bits 0:7 - Project-assigned name."]
+            #[inline(always)]
+            pub fn init_byte_0(&self) -> InitByte0R {
+                InitByte0R::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bits 8:15 - Project-assigned name."]
+            #[inline(always)]
+            pub fn init_byte_1(&self) -> InitByte1R {
+                InitByte1R::new(((self.bits >> 8) & 0xff) as u8)
+            }
+            #[doc = "Bits 16:23 - Project-assigned name."]
+            #[inline(always)]
+            pub fn init_byte_2(&self) -> InitByte2R {
+                InitByte2R::new(((self.bits >> 16) & 0xff) as u8)
+            }
+            #[doc = "Bits 24:31 - Project-assigned name."]
+            #[inline(always)]
+            pub fn init_byte_3(&self) -> InitByte3R {
+                InitByte3R::new(((self.bits >> 24) & 0xff) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:7 - Project-assigned name."]
+            #[inline(always)]
+            pub fn init_byte_0(&mut self) -> InitByte0W<'_, Word055cOpaqueSpec> {
+                InitByte0W::new(self, 0)
+            }
+            #[doc = "Bits 8:15 - Project-assigned name."]
+            #[inline(always)]
+            pub fn init_byte_1(&mut self) -> InitByte1W<'_, Word055cOpaqueSpec> {
+                InitByte1W::new(self, 8)
+            }
+            #[doc = "Bits 16:23 - Project-assigned name."]
+            #[inline(always)]
+            pub fn init_byte_2(&mut self) -> InitByte2W<'_, Word055cOpaqueSpec> {
+                InitByte2W::new(self, 16)
+            }
+            #[doc = "Bits 24:31 - Project-assigned name."]
+            #[inline(always)]
+            pub fn init_byte_3(&mut self) -> InitByte3W<'_, Word055cOpaqueSpec> {
+                InitByte3W::new(self, 24)
+            }
+        }
+        #[doc = "Opaque: meaning not established. BLE PHY initialization replaces all four bytes with 0x08.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_055c_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_055c_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word055cOpaqueSpec;
+        impl crate::RegisterSpec for Word055cOpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`word_055c_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word055cOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_055c_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word055cOpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -41523,8 +41522,8 @@ pub mod bluetooth_controller_core {
         iso_coex_control_0: IsoCoexControl0,
         iso_coex_threshold: IsoCoexThreshold,
         iso_coex_control_1: IsoCoexControl1,
-        operational_control_0204: OperationalControl0204,
-        operational_status_0208: OperationalStatus0208,
+        word_0204_opaque: Word0204Opaque,
+        word_0208_opaque: Word0208Opaque,
         iso_coex_state_0: IsoCoexState0,
         iso_coex_state_1: IsoCoexState1,
         iso_coex_timing_0: IsoCoexTiming0,
@@ -41532,9 +41531,9 @@ pub mod bluetooth_controller_core {
         _reserved34: [u8; 0x18],
         iso_coex_timing_1: IsoCoexTiming1,
         _reserved35: [u8; 0x0c],
-        phy_init_zero_0244: PhyInitZero0244,
+        word_0244_opaque: Word0244Opaque,
         gpio_diag_control: GpioDiagControl,
-        phy_init_dynamic_image_024c: PhyInitDynamicImage024c,
+        word_024c_opaque: Word024cOpaque,
         hal_init_scheduler_control: HalInitSchedulerControl,
         scheduler_command_0: SchedulerCommand0,
         scheduler_command_1: SchedulerCommand1,
@@ -41551,11 +41550,11 @@ pub mod bluetooth_controller_core {
         _reserved50: [u8; 0x08],
         scan_hw_snapshot: ScanHwSnapshot,
         _reserved51: [u8; 0x80],
-        operational_status_0324: OperationalStatus0324,
+        word_0324_opaque: Word0324Opaque,
         _reserved52: [u8; 0x24],
         hal_init_slot_map: [HalInitSlotMap; 2],
         _reserved53: [u8; 0x18],
-        operational_word_036c: OperationalWord036c,
+        word_036c_opaque: Word036cOpaque,
     }
     impl RegisterBlock {
         #[doc = "0x00 - Project-assigned name. Final hardware command of scheduler run. The complete current run prologue always returns zero after dynamic IRQ preparation and synchronous broker publication, so the following complete leaf writes finite image 1; the same-chip named predecessor identifies the composed operation as r_btdm_sched_run."]
@@ -41698,15 +41697,15 @@ pub mod bluetooth_controller_core {
         pub const fn iso_coex_control_1(&self) -> &IsoCoexControl1 {
             &self.iso_coex_control_1
         }
-        #[doc = "0x204 - Project-assigned name. Complete operational functions independently set and clear bit zero through fresh-read RMW operations. The scheduler cancellation path sets bit zero after publishing its hardware-list index in OPERATIONAL_WORD_036C bits 7:4 and acknowledging interrupt source 7, waits on OPERATIONAL_STATUS_0324 and OPERATIONAL_STATUS_0208, and clears bit zero after its skip requests. The hardware effect of bit zero is not established."]
+        #[doc = "0x204 - Opaque: meaning not established. Complete operational functions independently set and clear bit zero through fresh-read RMW operations. The scheduler cancellation path sets bit zero after publishing its hardware-list index in WORD_036C_OPAQUE bits 7:4 and acknowledging interrupt source 7, waits on WORD_0324_OPAQUE and WORD_0208_OPAQUE, and clears bit zero after its skip requests. The hardware effect of bit zero is not established."]
         #[inline(always)]
-        pub const fn operational_control_0204(&self) -> &OperationalControl0204 {
-            &self.operational_control_0204
+        pub const fn word_0204_opaque(&self) -> &Word0204Opaque {
+            &self.word_0204_opaque
         }
-        #[doc = "0x208 - Project-assigned name. Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown."]
+        #[doc = "0x208 - Opaque: meaning not established. Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting WORD_0204_OPAQUE bit zero. They continue waiting while this bit is one and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown."]
         #[inline(always)]
-        pub const fn operational_status_0208(&self) -> &OperationalStatus0208 {
-            &self.operational_status_0208
+        pub const fn word_0208_opaque(&self) -> &Word0208Opaque {
+            &self.word_0208_opaque
         }
         #[doc = "0x20c - Project-assigned name. ISO coexistence initialization and deinitialization write the complete zero image."]
         #[inline(always)]
@@ -41733,20 +41732,20 @@ pub mod bluetooth_controller_core {
         pub const fn iso_coex_timing_1(&self) -> &IsoCoexTiming1 {
             &self.iso_coex_timing_1
         }
-        #[doc = "0x244 - Project-assigned name. Complete BLE PHY initialization writes the finite whole-word zero image. Inner hardware meaning remains unknown."]
+        #[doc = "0x244 - Opaque: meaning not established. Complete BLE PHY initialization writes the finite whole-word zero image. Inner hardware meaning remains unknown."]
         #[inline(always)]
-        pub const fn phy_init_zero_0244(&self) -> &PhyInitZero0244 {
-            &self.phy_init_zero_0244
+        pub const fn word_0244_opaque(&self) -> &Word0244Opaque {
+            &self.word_0244_opaque
         }
         #[doc = "0x248 - Project-assigned name. GPIO diagnostic control of r_obh_link_gpio_diag_set, whose first argument replaces bits 7:4. Complete BLE PHY initialization writes the whole-word image 0x00000FFF."]
         #[inline(always)]
         pub const fn gpio_diag_control(&self) -> &GpioDiagControl {
             &self.gpio_diag_control
         }
-        #[doc = "0x24c - Project-assigned name. Complete BLE PHY initialization writes a runtime-derived complete image formed from a linked global address plus 0x40. The destination's inner hardware meaning remains unknown."]
+        #[doc = "0x24c - Opaque: meaning not established. Complete BLE PHY initialization writes a runtime-derived complete image formed from a linked global address plus 0x40. The destination's inner hardware meaning remains unknown."]
         #[inline(always)]
-        pub const fn phy_init_dynamic_image_024c(&self) -> &PhyInitDynamicImage024c {
-            &self.phy_init_dynamic_image_024c
+        pub const fn word_024c_opaque(&self) -> &Word024cOpaque {
+            &self.word_024c_opaque
         }
         #[doc = "0x250 - Project-assigned name. BTDM HAL initialization configures byte one to 0x20, bits 16..20 to 0x10 and sets bit 31. Names remain positional because the controller meaning is not recovered."]
         #[inline(always)]
@@ -41813,10 +41812,10 @@ pub mod bluetooth_controller_core {
         pub const fn scan_hw_snapshot(&self) -> &ScanHwSnapshot {
             &self.scan_hw_snapshot
         }
-        #[doc = "0x324 - Project-assigned name. The two scheduler cancellation paths read this word after setting OPERATIONAL_CONTROL_0204 bit zero and wait while bit zero is clear and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown."]
+        #[doc = "0x324 - Opaque: meaning not established. The two scheduler cancellation paths read this word after setting WORD_0204_OPAQUE bit zero and wait while bit zero is clear and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown."]
         #[inline(always)]
-        pub const fn operational_status_0324(&self) -> &OperationalStatus0324 {
-            &self.operational_status_0324
+        pub const fn word_0324_opaque(&self) -> &Word0324Opaque {
+            &self.word_0324_opaque
         }
         #[doc = "0x34c..0x354 - Project-assigned name. The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop first clears bits 3:2, then sets bit 0, conditionally sets but never clears bit 1, and publishes the global-index high bit into bit 2. The hardware meaning of the words and values remains unknown."]
         #[inline(always)]
@@ -41829,10 +41828,10 @@ pub mod bluetooth_controller_core {
         pub fn hal_init_slot_map_iter(&self) -> impl Iterator<Item = &HalInitSlotMap> {
             self.hal_init_slot_map.iter()
         }
-        #[doc = "0x36c - Project-assigned name. Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index in bits 3:0 through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. The scheduler cancellation path does the same for bits 7:4 before setting OPERATIONAL_CONTROL_0204 bit zero. Other fields remain unassigned."]
+        #[doc = "0x36c - Opaque: meaning not established. Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index in bits 3:0 through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. The scheduler cancellation path does the same for bits 7:4 before setting WORD_0204_OPAQUE bit zero. Other fields remain unassigned."]
         #[inline(always)]
-        pub const fn operational_word_036c(&self) -> &OperationalWord036c {
-            &self.operational_word_036c
+        pub const fn word_036c_opaque(&self) -> &Word036cOpaque {
+            &self.word_036c_opaque
         }
     }
     #[doc = "SCHEDULER_CONTROL (w) register accessor: Project-assigned name. Final hardware command of scheduler run. The complete current run prologue always returns zero after dynamic IRQ preparation and synchronous broker publication, so the following complete leaf writes finite image 1; the same-chip named predecessor identifies the composed operation as r_btdm_sched_run.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_control::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_control`] module"]
@@ -41897,13 +41896,13 @@ pub mod bluetooth_controller_core {
     pub mod scheduler_lifecycle_request {
         #[doc = "Register `SCHEDULER_LIFECYCLE_REQUEST` writer"]
         pub type W = crate::W<SchedulerLifecycleRequestSpec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name. Complete lifecycle-request image."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name. Complete lifecycle-request image."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name. Complete lifecycle-request image."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, SchedulerLifecycleRequestSpec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, SchedulerLifecycleRequestSpec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. The scheduler lifecycle function reached from both BTDM task disable and shutdown writes complete image 1 only after its initial BUSY gate, dynamic interrupt masking, synchronous scheduler-run source disable and command-readiness wait. It then waits for scheduler BUSY to clear. The hardware meaning of this request remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_lifecycle_request::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -42170,22 +42169,22 @@ pub mod bluetooth_controller_core {
         pub type R = crate::R<BtlcTimerValue0Spec>;
         #[doc = "Register `BTLC_TIMER_VALUE_0` writer"]
         pub type W = crate::W<BtlcTimerValue0Spec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `VALUE` reader - Project-assigned name."]
+        pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl R {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, BtlcTimerValue0Spec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, BtlcTimerValue0Spec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. First of the three words r_obd_update_btlc_timer writes before BTLC_TIMER_CONTROL.TIMER_ARM.\n\nYou can [`read`](crate::Reg::read) this register and get [`btlc_timer_value_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`btlc_timer_value_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -42209,22 +42208,22 @@ pub mod bluetooth_controller_core {
         pub type R = crate::R<BtlcTimerValue1Spec>;
         #[doc = "Register `BTLC_TIMER_VALUE_1` writer"]
         pub type W = crate::W<BtlcTimerValue1Spec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `VALUE` reader - Project-assigned name."]
+        pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl R {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, BtlcTimerValue1Spec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, BtlcTimerValue1Spec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. Second of the three words r_obd_update_btlc_timer writes before BTLC_TIMER_CONTROL.TIMER_ARM.\n\nYou can [`read`](crate::Reg::read) this register and get [`btlc_timer_value_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`btlc_timer_value_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -42248,22 +42247,22 @@ pub mod bluetooth_controller_core {
         pub type R = crate::R<BtlcTimerValue2Spec>;
         #[doc = "Register `BTLC_TIMER_VALUE_2` writer"]
         pub type W = crate::W<BtlcTimerValue2Spec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `VALUE` reader - Project-assigned name."]
+        pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl R {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, BtlcTimerValue2Spec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, BtlcTimerValue2Spec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. Third of the three words r_obd_update_btlc_timer writes before BTLC_TIMER_CONTROL.TIMER_ARM.\n\nYou can [`read`](crate::Reg::read) this register and get [`btlc_timer_value_2::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`btlc_timer_value_2::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -42285,13 +42284,13 @@ pub mod bluetooth_controller_core {
     pub mod btlc_timer_capture_0 {
         #[doc = "Register `BTLC_TIMER_CAPTURE_0` reader"]
         pub type R = crate::R<BtlcTimerCapture0Spec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` reader - Project-assigned name."]
+        pub type ValueR = crate::FieldReader<u32>;
         impl R {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         #[doc = "Project-assigned name. First word of the timer capture r_obd_capture_btlc_timer reads after BTLC_TIMER_CONTROL.LATCH_REQUEST clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`btlc_timer_capture_0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -42309,13 +42308,13 @@ pub mod bluetooth_controller_core {
     pub mod btlc_timer_capture_1 {
         #[doc = "Register `BTLC_TIMER_CAPTURE_1` reader"]
         pub type R = crate::R<BtlcTimerCapture1Spec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` reader - Project-assigned name."]
+        pub type ValueR = crate::FieldReader<u32>;
         impl R {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         #[doc = "Project-assigned name. Second word of the same timer capture.\n\nYou can [`read`](crate::Reg::read) this register and get [`btlc_timer_capture_1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -42333,13 +42332,13 @@ pub mod bluetooth_controller_core {
     pub mod btlc_timer_capture_2 {
         #[doc = "Register `BTLC_TIMER_CAPTURE_2` reader"]
         pub type R = crate::R<BtlcTimerCapture2Spec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` reader - Project-assigned name."]
+        pub type ValueR = crate::FieldReader<u32>;
         impl R {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         #[doc = "Project-assigned name. Third word of the same timer capture.\n\nYou can [`read`](crate::Reg::read) this register and get [`btlc_timer_capture_2::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -42923,13 +42922,13 @@ pub mod bluetooth_controller_core {
     pub mod gpio_diag_argument_1 {
         #[doc = "Register `GPIO_DIAG_ARGUMENT_1` writer"]
         pub type W = crate::W<GpioDiagArgument1Spec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, GpioDiagArgument1Spec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, GpioDiagArgument1Spec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. Second argument of r_obh_link_gpio_diag_set. Complete BLE PHY initialization writes the whole-word image 0x55.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gpio_diag_argument_1::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -43121,22 +43120,22 @@ pub mod bluetooth_controller_core {
         pub type R = crate::R<IsoCoexState0Spec>;
         #[doc = "Register `ISO_COEX_STATE_0` writer"]
         pub type W = crate::W<IsoCoexState0Spec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `VALUE` reader - Project-assigned name."]
+        pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl R {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, IsoCoexState0Spec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, IsoCoexState0Spec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. ISO coexistence initialization and deinitialization write the complete zero image.\n\nYou can [`read`](crate::Reg::read) this register and get [`iso_coex_state_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iso_coex_state_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -43160,22 +43159,22 @@ pub mod bluetooth_controller_core {
         pub type R = crate::R<IsoCoexState1Spec>;
         #[doc = "Register `ISO_COEX_STATE_1` writer"]
         pub type W = crate::W<IsoCoexState1Spec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `VALUE` reader - Project-assigned name."]
+        pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl R {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, IsoCoexState1Spec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, IsoCoexState1Spec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. ISO coexistence initialization and deinitialization write the complete zero image.\n\nYou can [`read`](crate::Reg::read) this register and get [`iso_coex_state_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iso_coex_state_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -43296,29 +43295,29 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "PHY_INIT_ZERO_0244 (w) register accessor: Project-assigned name. Complete BLE PHY initialization writes the finite whole-word zero image. Inner hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_zero_0244::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@phy_init_zero_0244`] module"]
-    #[doc(alias = "PHY_INIT_ZERO_0244")]
-    pub type PhyInitZero0244 = crate::Reg<phy_init_zero_0244::PhyInitZero0244Spec>;
-    #[doc = "Project-assigned name. Complete BLE PHY initialization writes the finite whole-word zero image. Inner hardware meaning remains unknown."]
-    pub mod phy_init_zero_0244 {
-        #[doc = "Register `PHY_INIT_ZERO_0244` writer"]
-        pub type W = crate::W<PhyInitZero0244Spec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "WORD_0244_OPAQUE (w) register accessor: Opaque: meaning not established. Complete BLE PHY initialization writes the finite whole-word zero image. Inner hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0244_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0244_opaque`] module"]
+    #[doc(alias = "WORD_0244_OPAQUE")]
+    pub type Word0244Opaque = crate::Reg<word_0244_opaque::Word0244OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete BLE PHY initialization writes the finite whole-word zero image. Inner hardware meaning remains unknown."]
+    pub mod word_0244_opaque {
+        #[doc = "Register `WORD_0244_OPAQUE` writer"]
+        pub type W = crate::W<Word0244OpaqueSpec>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, PhyInitZero0244Spec> {
-                ImageW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, Word0244OpaqueSpec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete BLE PHY initialization writes the finite whole-word zero image. Inner hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_zero_0244::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct PhyInitZero0244Spec;
-        impl crate::RegisterSpec for PhyInitZero0244Spec {
+        #[doc = "Opaque: meaning not established. Complete BLE PHY initialization writes the finite whole-word zero image. Inner hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0244_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0244OpaqueSpec;
+        impl crate::RegisterSpec for Word0244OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`phy_init_zero_0244::W`](W) writer structure"]
-        impl crate::Writable for PhyInitZero0244Spec {
+        #[doc = "`write(|w| ..)` method takes [`word_0244_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0244OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -43329,13 +43328,13 @@ pub mod bluetooth_controller_core {
     pub mod gpio_diag_control {
         #[doc = "Register `GPIO_DIAG_CONTROL` writer"]
         pub type W = crate::W<GpioDiagControlSpec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, GpioDiagControlSpec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, GpioDiagControlSpec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. GPIO diagnostic control of r_obh_link_gpio_diag_set, whose first argument replaces bits 7:4. Complete BLE PHY initialization writes the whole-word image 0x00000FFF.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gpio_diag_control::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -43348,30 +43347,29 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "PHY_INIT_DYNAMIC_IMAGE_024C (w) register accessor: Project-assigned name. Complete BLE PHY initialization writes a runtime-derived complete image formed from a linked global address plus 0x40. The destination's inner hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_dynamic_image_024c::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@phy_init_dynamic_image_024c`] module"]
-    #[doc(alias = "PHY_INIT_DYNAMIC_IMAGE_024C")]
-    pub type PhyInitDynamicImage024c =
-        crate::Reg<phy_init_dynamic_image_024c::PhyInitDynamicImage024cSpec>;
-    #[doc = "Project-assigned name. Complete BLE PHY initialization writes a runtime-derived complete image formed from a linked global address plus 0x40. The destination's inner hardware meaning remains unknown."]
-    pub mod phy_init_dynamic_image_024c {
-        #[doc = "Register `PHY_INIT_DYNAMIC_IMAGE_024C` writer"]
-        pub type W = crate::W<PhyInitDynamicImage024cSpec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "WORD_024C_OPAQUE (w) register accessor: Opaque: meaning not established. Complete BLE PHY initialization writes a runtime-derived complete image formed from a linked global address plus 0x40. The destination's inner hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_024c_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_024c_opaque`] module"]
+    #[doc(alias = "WORD_024C_OPAQUE")]
+    pub type Word024cOpaque = crate::Reg<word_024c_opaque::Word024cOpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete BLE PHY initialization writes a runtime-derived complete image formed from a linked global address plus 0x40. The destination's inner hardware meaning remains unknown."]
+    pub mod word_024c_opaque {
+        #[doc = "Register `WORD_024C_OPAQUE` writer"]
+        pub type W = crate::W<Word024cOpaqueSpec>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, PhyInitDynamicImage024cSpec> {
-                ImageW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, Word024cOpaqueSpec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete BLE PHY initialization writes a runtime-derived complete image formed from a linked global address plus 0x40. The destination's inner hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_dynamic_image_024c::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct PhyInitDynamicImage024cSpec;
-        impl crate::RegisterSpec for PhyInitDynamicImage024cSpec {
+        #[doc = "Opaque: meaning not established. Complete BLE PHY initialization writes a runtime-derived complete image formed from a linked global address plus 0x40. The destination's inner hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_024c_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word024cOpaqueSpec;
+        impl crate::RegisterSpec for Word024cOpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`phy_init_dynamic_image_024c::W`](W) writer structure"]
-        impl crate::Writable for PhyInitDynamicImage024cSpec {
+        #[doc = "`write(|w| ..)` method takes [`word_024c_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word024cOpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -43465,10 +43463,10 @@ pub mod bluetooth_controller_core {
         pub type Status24R = crate::BitReader;
         #[doc = "Field `STATUS_24` writer - Project-assigned name."]
         pub type Status24W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `OPAQUE_25` reader - Project-assigned name."]
-        pub type Opaque25R = crate::BitReader;
-        #[doc = "Field `OPAQUE_25` writer - Project-assigned name."]
-        pub type Opaque25W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_25_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bit25OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_25_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bit25OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `STATUS_26` reader - Project-assigned name."]
         pub type Status26R = crate::BitReader;
         #[doc = "Field `STATUS_26` writer - Project-assigned name."]
@@ -43477,10 +43475,10 @@ pub mod bluetooth_controller_core {
         pub type ExecutionLockResultR = crate::FieldReader;
         #[doc = "Field `EXECUTION_LOCK_RESULT` writer - Project-assigned name."]
         pub type ExecutionLockResultW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
-        #[doc = "Field `OPAQUE_30` reader - Project-assigned name."]
-        pub type Opaque30R = crate::BitReader;
-        #[doc = "Field `OPAQUE_30` writer - Project-assigned name."]
-        pub type Opaque30W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_30_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bit30OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_30_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bit30OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `START` reader - Project-assigned name."]
         pub type StartR = crate::BitReader;
         #[doc = "Field `START` writer - Project-assigned name."]
@@ -43501,10 +43499,10 @@ pub mod bluetooth_controller_core {
             pub fn status_24(&self) -> Status24R {
                 Status24R::new(((self.bits >> 24) & 1) != 0)
             }
-            #[doc = "Bit 25 - Project-assigned name."]
+            #[doc = "Bit 25 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn opaque_25(&self) -> Opaque25R {
-                Opaque25R::new(((self.bits >> 25) & 1) != 0)
+            pub fn bit_25_opaque(&self) -> Bit25OpaqueR {
+                Bit25OpaqueR::new(((self.bits >> 25) & 1) != 0)
             }
             #[doc = "Bit 26 - Project-assigned name."]
             #[inline(always)]
@@ -43516,10 +43514,10 @@ pub mod bluetooth_controller_core {
             pub fn execution_lock_result(&self) -> ExecutionLockResultR {
                 ExecutionLockResultR::new(((self.bits >> 27) & 7) as u8)
             }
-            #[doc = "Bit 30 - Project-assigned name."]
+            #[doc = "Bit 30 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn opaque_30(&self) -> Opaque30R {
-                Opaque30R::new(((self.bits >> 30) & 1) != 0)
+            pub fn bit_30_opaque(&self) -> Bit30OpaqueR {
+                Bit30OpaqueR::new(((self.bits >> 30) & 1) != 0)
             }
             #[doc = "Bit 31 - Project-assigned name."]
             #[inline(always)]
@@ -43545,10 +43543,10 @@ pub mod bluetooth_controller_core {
             pub fn status_24(&mut self) -> Status24W<'_, SchedulerCommand0Spec> {
                 Status24W::new(self, 24)
             }
-            #[doc = "Bit 25 - Project-assigned name."]
+            #[doc = "Bit 25 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn opaque_25(&mut self) -> Opaque25W<'_, SchedulerCommand0Spec> {
-                Opaque25W::new(self, 25)
+            pub fn bit_25_opaque(&mut self) -> Bit25OpaqueW<'_, SchedulerCommand0Spec> {
+                Bit25OpaqueW::new(self, 25)
             }
             #[doc = "Bit 26 - Project-assigned name."]
             #[inline(always)]
@@ -43562,10 +43560,10 @@ pub mod bluetooth_controller_core {
             ) -> ExecutionLockResultW<'_, SchedulerCommand0Spec> {
                 ExecutionLockResultW::new(self, 27)
             }
-            #[doc = "Bit 30 - Project-assigned name."]
+            #[doc = "Bit 30 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn opaque_30(&mut self) -> Opaque30W<'_, SchedulerCommand0Spec> {
-                Opaque30W::new(self, 30)
+            pub fn bit_30_opaque(&mut self) -> Bit30OpaqueW<'_, SchedulerCommand0Spec> {
+                Bit30OpaqueW::new(self, 30)
             }
             #[doc = "Bit 31 - Project-assigned name."]
             #[inline(always)]
@@ -43598,10 +43596,10 @@ pub mod bluetooth_controller_core {
         pub type HardwareListMaskR = crate::FieldReader<u16>;
         #[doc = "Field `HARDWARE_LIST_MASK` writer - Project-assigned name."]
         pub type HardwareListMaskW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
-        #[doc = "Field `OPAQUE_16` reader - Project-assigned name. Mode bit published with the list mask and START. Insertion publishes zero; deletion of a whole running list publishes one. Its hardware effect is not established."]
-        pub type Opaque16R = crate::BitReader;
-        #[doc = "Field `OPAQUE_16` writer - Project-assigned name. Mode bit published with the list mask and START. Insertion publishes zero; deletion of a whole running list publishes one. Its hardware effect is not established."]
-        pub type Opaque16W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_16_OPAQUE` reader - Opaque: meaning not established. Mode bit published with the list mask and START. Insertion publishes zero; deletion of a whole running list publishes one. Its hardware effect is not established."]
+        pub type Bit16OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_16_OPAQUE` writer - Opaque: meaning not established. Mode bit published with the list mask and START. Insertion publishes zero; deletion of a whole running list publishes one. Its hardware effect is not established."]
+        pub type Bit16OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `STATUS_17` reader - Project-assigned name."]
         pub type Status17R = crate::BitReader;
         #[doc = "Field `STATUS_17` writer - Project-assigned name."]
@@ -43628,10 +43626,10 @@ pub mod bluetooth_controller_core {
             pub fn hardware_list_mask(&self) -> HardwareListMaskR {
                 HardwareListMaskR::new((self.bits & 0xffff) as u16)
             }
-            #[doc = "Bit 16 - Project-assigned name. Mode bit published with the list mask and START. Insertion publishes zero; deletion of a whole running list publishes one. Its hardware effect is not established."]
+            #[doc = "Bit 16 - Opaque: meaning not established. Mode bit published with the list mask and START. Insertion publishes zero; deletion of a whole running list publishes one. Its hardware effect is not established."]
             #[inline(always)]
-            pub fn opaque_16(&self) -> Opaque16R {
-                Opaque16R::new(((self.bits >> 16) & 1) != 0)
+            pub fn bit_16_opaque(&self) -> Bit16OpaqueR {
+                Bit16OpaqueR::new(((self.bits >> 16) & 1) != 0)
             }
             #[doc = "Bit 17 - Project-assigned name."]
             #[inline(always)]
@@ -43665,10 +43663,10 @@ pub mod bluetooth_controller_core {
             pub fn hardware_list_mask(&mut self) -> HardwareListMaskW<'_, SchedulerCommand1Spec> {
                 HardwareListMaskW::new(self, 0)
             }
-            #[doc = "Bit 16 - Project-assigned name. Mode bit published with the list mask and START. Insertion publishes zero; deletion of a whole running list publishes one. Its hardware effect is not established."]
+            #[doc = "Bit 16 - Opaque: meaning not established. Mode bit published with the list mask and START. Insertion publishes zero; deletion of a whole running list publishes one. Its hardware effect is not established."]
             #[inline(always)]
-            pub fn opaque_16(&mut self) -> Opaque16W<'_, SchedulerCommand1Spec> {
-                Opaque16W::new(self, 16)
+            pub fn bit_16_opaque(&mut self) -> Bit16OpaqueW<'_, SchedulerCommand1Spec> {
+                Bit16OpaqueW::new(self, 16)
             }
             #[doc = "Bit 17 - Project-assigned name."]
             #[inline(always)]
@@ -44115,13 +44113,13 @@ pub mod bluetooth_controller_core {
     pub mod scan_hw_snapshot {
         #[doc = "Register `SCAN_HW_SNAPSHOT` reader"]
         pub type R = crate::R<ScanHwSnapshotSpec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` reader - Project-assigned name."]
+        pub type ValueR = crate::FieldReader<u32>;
         impl R {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         #[doc = "Project-assigned name. BLE scan code reads this complete word twice until stable, converts it and stores the result in scan state. Inner hardware encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`scan_hw_snapshot::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -44644,13 +44642,13 @@ pub mod bluetooth_controller_core {
     pub mod btlc_timer_cc_0 {
         #[doc = "Register `BTLC_TIMER_CC_0` writer"]
         pub type W = crate::W<BtlcTimerCc0Spec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, BtlcTimerCc0Spec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, BtlcTimerCc0Spec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. Timer compare slot 0 of r_obh_link_btlc_timer_cc_set; controller initialization writes zero.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`btlc_timer_cc_0::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -44670,13 +44668,13 @@ pub mod bluetooth_controller_core {
     pub mod btlc_timer_cc_1 {
         #[doc = "Register `BTLC_TIMER_CC_1` writer"]
         pub type W = crate::W<BtlcTimerCc1Spec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, BtlcTimerCc1Spec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, BtlcTimerCc1Spec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. Timer compare slot 1 of r_obh_link_btlc_timer_cc_set; controller initialization writes zero.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`btlc_timer_cc_1::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -44689,16 +44687,15 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "OPERATIONAL_CONTROL_0204 (rw) register accessor: Project-assigned name. Complete operational functions independently set and clear bit zero through fresh-read RMW operations. The scheduler cancellation path sets bit zero after publishing its hardware-list index in OPERATIONAL_WORD_036C bits 7:4 and acknowledging interrupt source 7, waits on OPERATIONAL_STATUS_0324 and OPERATIONAL_STATUS_0208, and clears bit zero after its skip requests. The hardware effect of bit zero is not established.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_control_0204::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_control_0204::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@operational_control_0204`] module"]
-    #[doc(alias = "OPERATIONAL_CONTROL_0204")]
-    pub type OperationalControl0204 =
-        crate::Reg<operational_control_0204::OperationalControl0204Spec>;
-    #[doc = "Project-assigned name. Complete operational functions independently set and clear bit zero through fresh-read RMW operations. The scheduler cancellation path sets bit zero after publishing its hardware-list index in OPERATIONAL_WORD_036C bits 7:4 and acknowledging interrupt source 7, waits on OPERATIONAL_STATUS_0324 and OPERATIONAL_STATUS_0208, and clears bit zero after its skip requests. The hardware effect of bit zero is not established."]
-    pub mod operational_control_0204 {
-        #[doc = "Register `OPERATIONAL_CONTROL_0204` reader"]
-        pub type R = crate::R<OperationalControl0204Spec>;
-        #[doc = "Register `OPERATIONAL_CONTROL_0204` writer"]
-        pub type W = crate::W<OperationalControl0204Spec>;
+    #[doc = "WORD_0204_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete operational functions independently set and clear bit zero through fresh-read RMW operations. The scheduler cancellation path sets bit zero after publishing its hardware-list index in WORD_036C_OPAQUE bits 7:4 and acknowledging interrupt source 7, waits on WORD_0324_OPAQUE and WORD_0208_OPAQUE, and clears bit zero after its skip requests. The hardware effect of bit zero is not established.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0204_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0204_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0204_opaque`] module"]
+    #[doc(alias = "WORD_0204_OPAQUE")]
+    pub type Word0204Opaque = crate::Reg<word_0204_opaque::Word0204OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete operational functions independently set and clear bit zero through fresh-read RMW operations. The scheduler cancellation path sets bit zero after publishing its hardware-list index in WORD_036C_OPAQUE bits 7:4 and acknowledging interrupt source 7, waits on WORD_0324_OPAQUE and WORD_0208_OPAQUE, and clears bit zero after its skip requests. The hardware effect of bit zero is not established."]
+    pub mod word_0204_opaque {
+        #[doc = "Register `WORD_0204_OPAQUE` reader"]
+        pub type R = crate::R<Word0204OpaqueSpec>;
+        #[doc = "Register `WORD_0204_OPAQUE` writer"]
+        pub type W = crate::W<Word0204OpaqueSpec>;
         #[doc = "Field `CONTROL_0` reader - Project-assigned name."]
         pub type Control0R = crate::BitReader;
         #[doc = "Field `CONTROL_0` writer - Project-assigned name."]
@@ -44713,29 +44710,29 @@ pub mod bluetooth_controller_core {
         impl W {
             #[doc = "Bit 0 - Project-assigned name."]
             #[inline(always)]
-            pub fn control_0(&mut self) -> Control0W<'_, OperationalControl0204Spec> {
+            pub fn control_0(&mut self) -> Control0W<'_, Word0204OpaqueSpec> {
                 Control0W::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete operational functions independently set and clear bit zero through fresh-read RMW operations. The scheduler cancellation path sets bit zero after publishing its hardware-list index in OPERATIONAL_WORD_036C bits 7:4 and acknowledging interrupt source 7, waits on OPERATIONAL_STATUS_0324 and OPERATIONAL_STATUS_0208, and clears bit zero after its skip requests. The hardware effect of bit zero is not established.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_control_0204::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_control_0204::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct OperationalControl0204Spec;
-        impl crate::RegisterSpec for OperationalControl0204Spec {
+        #[doc = "Opaque: meaning not established. Complete operational functions independently set and clear bit zero through fresh-read RMW operations. The scheduler cancellation path sets bit zero after publishing its hardware-list index in WORD_036C_OPAQUE bits 7:4 and acknowledging interrupt source 7, waits on WORD_0324_OPAQUE and WORD_0208_OPAQUE, and clears bit zero after its skip requests. The hardware effect of bit zero is not established.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0204_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0204_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0204OpaqueSpec;
+        impl crate::RegisterSpec for Word0204OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`operational_control_0204::R`](R) reader structure"]
-        impl crate::Readable for OperationalControl0204Spec {}
-        #[doc = "`write(|w| ..)` method takes [`operational_control_0204::W`](W) writer structure"]
-        impl crate::Writable for OperationalControl0204Spec {
+        #[doc = "`read()` method returns [`word_0204_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0204OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0204_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0204OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "OPERATIONAL_STATUS_0208 (r) register accessor: Project-assigned name. Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_status_0208::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@operational_status_0208`] module"]
-    #[doc(alias = "OPERATIONAL_STATUS_0208")]
-    pub type OperationalStatus0208 = crate::Reg<operational_status_0208::OperationalStatus0208Spec>;
-    #[doc = "Project-assigned name. Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown."]
-    pub mod operational_status_0208 {
-        #[doc = "Register `OPERATIONAL_STATUS_0208` reader"]
-        pub type R = crate::R<OperationalStatus0208Spec>;
+    #[doc = "WORD_0208_OPAQUE (r) register accessor: Opaque: meaning not established. Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting WORD_0204_OPAQUE bit zero. They continue waiting while this bit is one and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0208_opaque::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0208_opaque`] module"]
+    #[doc(alias = "WORD_0208_OPAQUE")]
+    pub type Word0208Opaque = crate::Reg<word_0208_opaque::Word0208OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting WORD_0204_OPAQUE bit zero. They continue waiting while this bit is one and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown."]
+    pub mod word_0208_opaque {
+        #[doc = "Register `WORD_0208_OPAQUE` reader"]
+        pub type R = crate::R<Word0208OpaqueSpec>;
         #[doc = "Field `STATUS_0` reader - Project-assigned name."]
         pub type Status0R = crate::BitReader;
         impl R {
@@ -44745,13 +44742,13 @@ pub mod bluetooth_controller_core {
                 Status0R::new((self.bits & 1) != 0)
             }
         }
-        #[doc = "Project-assigned name. Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_status_0208::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct OperationalStatus0208Spec;
-        impl crate::RegisterSpec for OperationalStatus0208Spec {
+        #[doc = "Opaque: meaning not established. Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting WORD_0204_OPAQUE bit zero. They continue waiting while this bit is one and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0208_opaque::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0208OpaqueSpec;
+        impl crate::RegisterSpec for Word0208OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`operational_status_0208::R`](R) reader structure"]
-        impl crate::Readable for OperationalStatus0208Spec {}
+        #[doc = "`read()` method returns [`word_0208_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0208OpaqueSpec {}
     }
     #[doc = "SCHEDULER_LOCK_MODIFY_REQUEST (rw) register accessor: Project-assigned name. The scheduler insert-with-lock-modify path publishes START with a compressed SRAM pointer. Before and after publication it may progress whenever either START or the diagnostic scheduler BUSY sample is clear. When that publication wait ends it reports zero when BUSY is clear, otherwise the positional four-bit RESULT image returned in bits 30:27; this is not radio-item completion.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_lock_modify_request::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_lock_modify_request::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_lock_modify_request`] module"]
     #[doc(alias = "SCHEDULER_LOCK_MODIFY_REQUEST")]
@@ -44840,13 +44837,13 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "OPERATIONAL_STATUS_0324 (r) register accessor: Project-assigned name. The two scheduler cancellation paths read this word after setting OPERATIONAL_CONTROL_0204 bit zero and wait while bit zero is clear and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_status_0324::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@operational_status_0324`] module"]
-    #[doc(alias = "OPERATIONAL_STATUS_0324")]
-    pub type OperationalStatus0324 = crate::Reg<operational_status_0324::OperationalStatus0324Spec>;
-    #[doc = "Project-assigned name. The two scheduler cancellation paths read this word after setting OPERATIONAL_CONTROL_0204 bit zero and wait while bit zero is clear and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown."]
-    pub mod operational_status_0324 {
-        #[doc = "Register `OPERATIONAL_STATUS_0324` reader"]
-        pub type R = crate::R<OperationalStatus0324Spec>;
+    #[doc = "WORD_0324_OPAQUE (r) register accessor: Opaque: meaning not established. The two scheduler cancellation paths read this word after setting WORD_0204_OPAQUE bit zero and wait while bit zero is clear and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0324_opaque::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0324_opaque`] module"]
+    #[doc(alias = "WORD_0324_OPAQUE")]
+    pub type Word0324Opaque = crate::Reg<word_0324_opaque::Word0324OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. The two scheduler cancellation paths read this word after setting WORD_0204_OPAQUE bit zero and wait while bit zero is clear and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown."]
+    pub mod word_0324_opaque {
+        #[doc = "Register `WORD_0324_OPAQUE` reader"]
+        pub type R = crate::R<Word0324OpaqueSpec>;
         #[doc = "Field `STATUS_0` reader - Project-assigned name."]
         pub type Status0R = crate::BitReader;
         impl R {
@@ -44856,31 +44853,31 @@ pub mod bluetooth_controller_core {
                 Status0R::new((self.bits & 1) != 0)
             }
         }
-        #[doc = "Project-assigned name. The two scheduler cancellation paths read this word after setting OPERATIONAL_CONTROL_0204 bit zero and wait while bit zero is clear and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_status_0324::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct OperationalStatus0324Spec;
-        impl crate::RegisterSpec for OperationalStatus0324Spec {
+        #[doc = "Opaque: meaning not established. The two scheduler cancellation paths read this word after setting WORD_0204_OPAQUE bit zero and wait while bit zero is clear and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0324_opaque::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0324OpaqueSpec;
+        impl crate::RegisterSpec for Word0324OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`operational_status_0324::R`](R) reader structure"]
-        impl crate::Readable for OperationalStatus0324Spec {}
+        #[doc = "`read()` method returns [`word_0324_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0324OpaqueSpec {}
     }
-    #[doc = "OPERATIONAL_WORD_036C (rw) register accessor: Project-assigned name. Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index in bits 3:0 through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. The scheduler cancellation path does the same for bits 7:4 before setting OPERATIONAL_CONTROL_0204 bit zero. Other fields remain unassigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_word_036c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_word_036c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@operational_word_036c`] module"]
-    #[doc(alias = "OPERATIONAL_WORD_036C")]
-    pub type OperationalWord036c = crate::Reg<operational_word_036c::OperationalWord036cSpec>;
-    #[doc = "Project-assigned name. Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index in bits 3:0 through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. The scheduler cancellation path does the same for bits 7:4 before setting OPERATIONAL_CONTROL_0204 bit zero. Other fields remain unassigned."]
-    pub mod operational_word_036c {
-        #[doc = "Register `OPERATIONAL_WORD_036C` reader"]
-        pub type R = crate::R<OperationalWord036cSpec>;
-        #[doc = "Register `OPERATIONAL_WORD_036C` writer"]
-        pub type W = crate::W<OperationalWord036cSpec>;
+    #[doc = "WORD_036C_OPAQUE (rw) register accessor: Opaque: meaning not established. Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index in bits 3:0 through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. The scheduler cancellation path does the same for bits 7:4 before setting WORD_0204_OPAQUE bit zero. Other fields remain unassigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_036c_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_036c_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_036c_opaque`] module"]
+    #[doc(alias = "WORD_036C_OPAQUE")]
+    pub type Word036cOpaque = crate::Reg<word_036c_opaque::Word036cOpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index in bits 3:0 through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. The scheduler cancellation path does the same for bits 7:4 before setting WORD_0204_OPAQUE bit zero. Other fields remain unassigned."]
+    pub mod word_036c_opaque {
+        #[doc = "Register `WORD_036C_OPAQUE` reader"]
+        pub type R = crate::R<Word036cOpaqueSpec>;
+        #[doc = "Register `WORD_036C_OPAQUE` writer"]
+        pub type W = crate::W<Word036cOpaqueSpec>;
         #[doc = "Field `LOCK_MODIFY_HARDWARE_LIST_INDEX` reader - Project-assigned name. Zero-based hardware-list index cleared and then published by scheduler insert-with-lock-modify."]
         pub type LockModifyHardwareListIndexR = crate::FieldReader;
         #[doc = "Field `LOCK_MODIFY_HARDWARE_LIST_INDEX` writer - Project-assigned name. Zero-based hardware-list index cleared and then published by scheduler insert-with-lock-modify."]
         pub type LockModifyHardwareListIndexW<'a, REG> =
             crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
-        #[doc = "Field `CANCELLATION_HARDWARE_LIST_INDEX` reader - Project-assigned name. Zero-based hardware-list index cleared and then published by the scheduler cancellation path before it sets OPERATIONAL_CONTROL_0204 bit zero."]
+        #[doc = "Field `CANCELLATION_HARDWARE_LIST_INDEX` reader - Project-assigned name. Zero-based hardware-list index cleared and then published by the scheduler cancellation path before it sets WORD_0204_OPAQUE bit zero."]
         pub type CancellationHardwareListIndexR = crate::FieldReader;
-        #[doc = "Field `CANCELLATION_HARDWARE_LIST_INDEX` writer - Project-assigned name. Zero-based hardware-list index cleared and then published by the scheduler cancellation path before it sets OPERATIONAL_CONTROL_0204 bit zero."]
+        #[doc = "Field `CANCELLATION_HARDWARE_LIST_INDEX` writer - Project-assigned name. Zero-based hardware-list index cleared and then published by the scheduler cancellation path before it sets WORD_0204_OPAQUE bit zero."]
         pub type CancellationHardwareListIndexW<'a, REG> =
             crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         impl R {
@@ -44889,7 +44886,7 @@ pub mod bluetooth_controller_core {
             pub fn lock_modify_hardware_list_index(&self) -> LockModifyHardwareListIndexR {
                 LockModifyHardwareListIndexR::new((self.bits & 0x0f) as u8)
             }
-            #[doc = "Bits 4:7 - Project-assigned name. Zero-based hardware-list index cleared and then published by the scheduler cancellation path before it sets OPERATIONAL_CONTROL_0204 bit zero."]
+            #[doc = "Bits 4:7 - Project-assigned name. Zero-based hardware-list index cleared and then published by the scheduler cancellation path before it sets WORD_0204_OPAQUE bit zero."]
             #[inline(always)]
             pub fn cancellation_hardware_list_index(&self) -> CancellationHardwareListIndexR {
                 CancellationHardwareListIndexR::new(((self.bits >> 4) & 0x0f) as u8)
@@ -44900,26 +44897,26 @@ pub mod bluetooth_controller_core {
             #[inline(always)]
             pub fn lock_modify_hardware_list_index(
                 &mut self,
-            ) -> LockModifyHardwareListIndexW<'_, OperationalWord036cSpec> {
+            ) -> LockModifyHardwareListIndexW<'_, Word036cOpaqueSpec> {
                 LockModifyHardwareListIndexW::new(self, 0)
             }
-            #[doc = "Bits 4:7 - Project-assigned name. Zero-based hardware-list index cleared and then published by the scheduler cancellation path before it sets OPERATIONAL_CONTROL_0204 bit zero."]
+            #[doc = "Bits 4:7 - Project-assigned name. Zero-based hardware-list index cleared and then published by the scheduler cancellation path before it sets WORD_0204_OPAQUE bit zero."]
             #[inline(always)]
             pub fn cancellation_hardware_list_index(
                 &mut self,
-            ) -> CancellationHardwareListIndexW<'_, OperationalWord036cSpec> {
+            ) -> CancellationHardwareListIndexW<'_, Word036cOpaqueSpec> {
                 CancellationHardwareListIndexW::new(self, 4)
             }
         }
-        #[doc = "Project-assigned name. Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index in bits 3:0 through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. The scheduler cancellation path does the same for bits 7:4 before setting OPERATIONAL_CONTROL_0204 bit zero. Other fields remain unassigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_word_036c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_word_036c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct OperationalWord036cSpec;
-        impl crate::RegisterSpec for OperationalWord036cSpec {
+        #[doc = "Opaque: meaning not established. Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index in bits 3:0 through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. The scheduler cancellation path does the same for bits 7:4 before setting WORD_0204_OPAQUE bit zero. Other fields remain unassigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_036c_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_036c_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word036cOpaqueSpec;
+        impl crate::RegisterSpec for Word036cOpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`operational_word_036c::R`](R) reader structure"]
-        impl crate::Readable for OperationalWord036cSpec {}
-        #[doc = "`write(|w| ..)` method takes [`operational_word_036c::W`](W) writer structure"]
-        impl crate::Writable for OperationalWord036cSpec {
+        #[doc = "`read()` method returns [`word_036c_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word036cOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_036c_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word036cOpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -45252,69 +45249,69 @@ pub mod bluetooth_interrupt_bank {
     pub mod irq_clear_0 {
         #[doc = "Register `IRQ_CLEAR_0` writer"]
         pub type W = crate::W<IrqClear0Spec>;
-        #[doc = "Field `UNCLASSIFIED_0_6` writer - Project-assigned name."]
-        pub type Unclassified0_6W<'a, REG> = crate::FieldWriter<'a, REG, 7>;
-        #[doc = "Field `SOURCE_7` writer - Project-assigned name. Acknowledged with complete image 0x80 by the scheduler cancellation path before it sets BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_CONTROL_0204 bit zero."]
+        #[doc = "Field `BITS_0_6_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_6OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        #[doc = "Field `SOURCE_7` writer - Project-assigned name. Acknowledged with complete image 0x80 by the scheduler cancellation path before it sets BLUETOOTH_CONTROLLER_CORE.WORD_0204_OPAQUE bit zero."]
         pub type Source7W<'a, REG> = crate::BitWriter1C<'a, REG>;
-        #[doc = "Field `UNCLASSIFIED_8_14` writer - Project-assigned name."]
-        pub type Unclassified8_14W<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        #[doc = "Field `BITS_8_14_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits8_14OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
         #[doc = "Field `SOURCE_15` writer - Project-assigned name."]
         pub type Source15W<'a, REG> = crate::BitWriter1C<'a, REG>;
-        #[doc = "Field `UNCLASSIFIED_16_20` writer - Project-assigned name."]
-        pub type Unclassified16_20W<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        #[doc = "Field `BITS_16_20_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits16_20OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
         #[doc = "Field `SOURCE_21` writer - Project-assigned name."]
         pub type Source21W<'a, REG> = crate::BitWriter1C<'a, REG>;
-        #[doc = "Field `UNCLASSIFIED_22_26` writer - Project-assigned name."]
-        pub type Unclassified22_26W<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        #[doc = "Field `BITS_22_26_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits22_26OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
         #[doc = "Field `SOURCES_27_28` writer - Project-assigned name."]
         pub type Sources27_28W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
-        #[doc = "Field `UNCLASSIFIED_29_31` writer - Project-assigned name."]
-        pub type Unclassified29_31W<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `BITS_29_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits29_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
         impl W {
-            #[doc = "Bits 0:6 - Project-assigned name."]
+            #[doc = "Bits 0:6 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn unclassified_0_6(&mut self) -> Unclassified0_6W<'_, IrqClear0Spec> {
-                Unclassified0_6W::new(self, 0)
+            pub fn bits_0_6_opaque(&mut self) -> Bits0_6OpaqueW<'_, IrqClear0Spec> {
+                Bits0_6OpaqueW::new(self, 0)
             }
-            #[doc = "Bit 7 - Project-assigned name. Acknowledged with complete image 0x80 by the scheduler cancellation path before it sets BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_CONTROL_0204 bit zero."]
+            #[doc = "Bit 7 - Project-assigned name. Acknowledged with complete image 0x80 by the scheduler cancellation path before it sets BLUETOOTH_CONTROLLER_CORE.WORD_0204_OPAQUE bit zero."]
             #[inline(always)]
             pub fn source_7(&mut self) -> Source7W<'_, IrqClear0Spec> {
                 Source7W::new(self, 7)
             }
-            #[doc = "Bits 8:14 - Project-assigned name."]
+            #[doc = "Bits 8:14 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn unclassified_8_14(&mut self) -> Unclassified8_14W<'_, IrqClear0Spec> {
-                Unclassified8_14W::new(self, 8)
+            pub fn bits_8_14_opaque(&mut self) -> Bits8_14OpaqueW<'_, IrqClear0Spec> {
+                Bits8_14OpaqueW::new(self, 8)
             }
             #[doc = "Bit 15 - Project-assigned name."]
             #[inline(always)]
             pub fn source_15(&mut self) -> Source15W<'_, IrqClear0Spec> {
                 Source15W::new(self, 15)
             }
-            #[doc = "Bits 16:20 - Project-assigned name."]
+            #[doc = "Bits 16:20 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn unclassified_16_20(&mut self) -> Unclassified16_20W<'_, IrqClear0Spec> {
-                Unclassified16_20W::new(self, 16)
+            pub fn bits_16_20_opaque(&mut self) -> Bits16_20OpaqueW<'_, IrqClear0Spec> {
+                Bits16_20OpaqueW::new(self, 16)
             }
             #[doc = "Bit 21 - Project-assigned name."]
             #[inline(always)]
             pub fn source_21(&mut self) -> Source21W<'_, IrqClear0Spec> {
                 Source21W::new(self, 21)
             }
-            #[doc = "Bits 22:26 - Project-assigned name."]
+            #[doc = "Bits 22:26 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn unclassified_22_26(&mut self) -> Unclassified22_26W<'_, IrqClear0Spec> {
-                Unclassified22_26W::new(self, 22)
+            pub fn bits_22_26_opaque(&mut self) -> Bits22_26OpaqueW<'_, IrqClear0Spec> {
+                Bits22_26OpaqueW::new(self, 22)
             }
             #[doc = "Bits 27:28 - Project-assigned name."]
             #[inline(always)]
             pub fn sources_27_28(&mut self) -> Sources27_28W<'_, IrqClear0Spec> {
                 Sources27_28W::new(self, 27)
             }
-            #[doc = "Bits 29:31 - Project-assigned name."]
+            #[doc = "Bits 29:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn unclassified_29_31(&mut self) -> Unclassified29_31W<'_, IrqClear0Spec> {
-                Unclassified29_31W::new(self, 29)
+            pub fn bits_29_31_opaque(&mut self) -> Bits29_31OpaqueW<'_, IrqClear0Spec> {
+                Bits29_31OpaqueW::new(self, 29)
             }
         }
         #[doc = "Project-assigned name. First controller interrupt-clear bank. Primary and NRT handlers copy their respective first-bank status images here as complete words.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`irq_clear_0::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -45335,55 +45332,55 @@ pub mod bluetooth_interrupt_bank {
     pub mod irq_status_0 {
         #[doc = "Register `IRQ_STATUS_0` reader"]
         pub type R = crate::R<IrqStatus0Spec>;
-        #[doc = "Field `UNCLASSIFIED_0_14` reader - Project-assigned name."]
-        pub type Unclassified0_14R = crate::FieldReader<u16>;
+        #[doc = "Field `BITS_0_14_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits0_14OpaqueR = crate::FieldReader<u16>;
         #[doc = "Field `SOURCE_15` reader - Project-assigned name."]
         pub type Source15R = crate::BitReader;
-        #[doc = "Field `UNCLASSIFIED_16_20` reader - Project-assigned name."]
-        pub type Unclassified16_20R = crate::FieldReader;
+        #[doc = "Field `BITS_16_20_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits16_20OpaqueR = crate::FieldReader;
         #[doc = "Field `SOURCE_21` reader - Project-assigned name."]
         pub type Source21R = crate::BitReader;
-        #[doc = "Field `UNCLASSIFIED_22_26` reader - Project-assigned name."]
-        pub type Unclassified22_26R = crate::FieldReader;
+        #[doc = "Field `BITS_22_26_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits22_26OpaqueR = crate::FieldReader;
         #[doc = "Field `SOURCES_27_28` reader - Project-assigned name."]
         pub type Sources27_28R = crate::FieldReader;
-        #[doc = "Field `UNCLASSIFIED_29_31` reader - Project-assigned name."]
-        pub type Unclassified29_31R = crate::FieldReader;
+        #[doc = "Field `BITS_29_31_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits29_31OpaqueR = crate::FieldReader;
         impl R {
-            #[doc = "Bits 0:14 - Project-assigned name."]
+            #[doc = "Bits 0:14 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn unclassified_0_14(&self) -> Unclassified0_14R {
-                Unclassified0_14R::new((self.bits & 0x7fff) as u16)
+            pub fn bits_0_14_opaque(&self) -> Bits0_14OpaqueR {
+                Bits0_14OpaqueR::new((self.bits & 0x7fff) as u16)
             }
             #[doc = "Bit 15 - Project-assigned name."]
             #[inline(always)]
             pub fn source_15(&self) -> Source15R {
                 Source15R::new(((self.bits >> 15) & 1) != 0)
             }
-            #[doc = "Bits 16:20 - Project-assigned name."]
+            #[doc = "Bits 16:20 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn unclassified_16_20(&self) -> Unclassified16_20R {
-                Unclassified16_20R::new(((self.bits >> 16) & 0x1f) as u8)
+            pub fn bits_16_20_opaque(&self) -> Bits16_20OpaqueR {
+                Bits16_20OpaqueR::new(((self.bits >> 16) & 0x1f) as u8)
             }
             #[doc = "Bit 21 - Project-assigned name."]
             #[inline(always)]
             pub fn source_21(&self) -> Source21R {
                 Source21R::new(((self.bits >> 21) & 1) != 0)
             }
-            #[doc = "Bits 22:26 - Project-assigned name."]
+            #[doc = "Bits 22:26 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn unclassified_22_26(&self) -> Unclassified22_26R {
-                Unclassified22_26R::new(((self.bits >> 22) & 0x1f) as u8)
+            pub fn bits_22_26_opaque(&self) -> Bits22_26OpaqueR {
+                Bits22_26OpaqueR::new(((self.bits >> 22) & 0x1f) as u8)
             }
             #[doc = "Bits 27:28 - Project-assigned name."]
             #[inline(always)]
             pub fn sources_27_28(&self) -> Sources27_28R {
                 Sources27_28R::new(((self.bits >> 27) & 3) as u8)
             }
-            #[doc = "Bits 29:31 - Project-assigned name."]
+            #[doc = "Bits 29:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn unclassified_29_31(&self) -> Unclassified29_31R {
-                Unclassified29_31R::new(((self.bits >> 29) & 7) as u8)
+            pub fn bits_29_31_opaque(&self) -> Bits29_31OpaqueR {
+                Bits29_31OpaqueR::new(((self.bits >> 29) & 7) as u8)
             }
         }
         #[doc = "Project-assigned name. First masked controller interrupt-status bank; the primary source-124 handler reads this complete word before acknowledgement.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_status_0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -45538,37 +45535,37 @@ pub mod bluetooth_interrupt_bank {
     pub mod irq_clear_1 {
         #[doc = "Register `IRQ_CLEAR_1` writer"]
         pub type W = crate::W<IrqClear1Spec>;
-        #[doc = "Field `UNCLASSIFIED_0_2` writer - Project-assigned name."]
-        pub type Unclassified0_2W<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `BITS_0_2_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_2OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
         #[doc = "Field `SOURCE_3` writer - Project-assigned name."]
         pub type Source3W<'a, REG> = crate::BitWriter1C<'a, REG>;
-        #[doc = "Field `UNCLASSIFIED_4_7` writer - Project-assigned name."]
-        pub type Unclassified4_7W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `BITS_4_7_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits4_7OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
         #[doc = "Field `SOURCE_8` writer - Project-assigned name."]
         pub type Source8W<'a, REG> = crate::BitWriter1C<'a, REG>;
         #[doc = "Field `SOURCE_9` writer - Project-assigned name."]
         pub type Source9W<'a, REG> = crate::BitWriter1C<'a, REG>;
-        #[doc = "Field `UNCLASSIFIED_10_11` writer - Project-assigned name."]
-        pub type Unclassified10_11W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `BITS_10_11_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits10_11OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
         #[doc = "Field `SOURCE_12` writer - Project-assigned name."]
         pub type Source12W<'a, REG> = crate::BitWriter1C<'a, REG>;
-        #[doc = "Field `UNCLASSIFIED_13_31` writer - Project-assigned name."]
-        pub type Unclassified13_31W<'a, REG> = crate::FieldWriter<'a, REG, 19, u32>;
+        #[doc = "Field `BITS_13_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits13_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 19, u32>;
         impl W {
-            #[doc = "Bits 0:2 - Project-assigned name."]
+            #[doc = "Bits 0:2 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn unclassified_0_2(&mut self) -> Unclassified0_2W<'_, IrqClear1Spec> {
-                Unclassified0_2W::new(self, 0)
+            pub fn bits_0_2_opaque(&mut self) -> Bits0_2OpaqueW<'_, IrqClear1Spec> {
+                Bits0_2OpaqueW::new(self, 0)
             }
             #[doc = "Bit 3 - Project-assigned name."]
             #[inline(always)]
             pub fn source_3(&mut self) -> Source3W<'_, IrqClear1Spec> {
                 Source3W::new(self, 3)
             }
-            #[doc = "Bits 4:7 - Project-assigned name."]
+            #[doc = "Bits 4:7 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn unclassified_4_7(&mut self) -> Unclassified4_7W<'_, IrqClear1Spec> {
-                Unclassified4_7W::new(self, 4)
+            pub fn bits_4_7_opaque(&mut self) -> Bits4_7OpaqueW<'_, IrqClear1Spec> {
+                Bits4_7OpaqueW::new(self, 4)
             }
             #[doc = "Bit 8 - Project-assigned name."]
             #[inline(always)]
@@ -45580,20 +45577,20 @@ pub mod bluetooth_interrupt_bank {
             pub fn source_9(&mut self) -> Source9W<'_, IrqClear1Spec> {
                 Source9W::new(self, 9)
             }
-            #[doc = "Bits 10:11 - Project-assigned name."]
+            #[doc = "Bits 10:11 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn unclassified_10_11(&mut self) -> Unclassified10_11W<'_, IrqClear1Spec> {
-                Unclassified10_11W::new(self, 10)
+            pub fn bits_10_11_opaque(&mut self) -> Bits10_11OpaqueW<'_, IrqClear1Spec> {
+                Bits10_11OpaqueW::new(self, 10)
             }
             #[doc = "Bit 12 - Project-assigned name."]
             #[inline(always)]
             pub fn source_12(&mut self) -> Source12W<'_, IrqClear1Spec> {
                 Source12W::new(self, 12)
             }
-            #[doc = "Bits 13:31 - Project-assigned name."]
+            #[doc = "Bits 13:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn unclassified_13_31(&mut self) -> Unclassified13_31W<'_, IrqClear1Spec> {
-                Unclassified13_31W::new(self, 13)
+            pub fn bits_13_31_opaque(&mut self) -> Bits13_31OpaqueW<'_, IrqClear1Spec> {
+                Bits13_31OpaqueW::new(self, 13)
             }
         }
         #[doc = "Project-assigned name. Second controller interrupt-clear bank. Primary and NRT handlers copy their respective second-bank status images here as complete words.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`irq_clear_1::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -45614,37 +45611,37 @@ pub mod bluetooth_interrupt_bank {
     pub mod irq_status_1 {
         #[doc = "Register `IRQ_STATUS_1` reader"]
         pub type R = crate::R<IrqStatus1Spec>;
-        #[doc = "Field `UNCLASSIFIED_0_2` reader - Project-assigned name."]
-        pub type Unclassified0_2R = crate::FieldReader;
+        #[doc = "Field `BITS_0_2_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits0_2OpaqueR = crate::FieldReader;
         #[doc = "Field `SOURCE_3` reader - Project-assigned name."]
         pub type Source3R = crate::BitReader;
-        #[doc = "Field `UNCLASSIFIED_4_7` reader - Project-assigned name."]
-        pub type Unclassified4_7R = crate::FieldReader;
+        #[doc = "Field `BITS_4_7_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits4_7OpaqueR = crate::FieldReader;
         #[doc = "Field `SOURCE_8` reader - Project-assigned name."]
         pub type Source8R = crate::BitReader;
         #[doc = "Field `SOURCE_9` reader - Project-assigned name."]
         pub type Source9R = crate::BitReader;
-        #[doc = "Field `UNCLASSIFIED_10_11` reader - Project-assigned name."]
-        pub type Unclassified10_11R = crate::FieldReader;
+        #[doc = "Field `BITS_10_11_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits10_11OpaqueR = crate::FieldReader;
         #[doc = "Field `SOURCE_12` reader - Project-assigned name."]
         pub type Source12R = crate::BitReader;
-        #[doc = "Field `UNCLASSIFIED_13_31` reader - Project-assigned name."]
-        pub type Unclassified13_31R = crate::FieldReader<u32>;
+        #[doc = "Field `BITS_13_31_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits13_31OpaqueR = crate::FieldReader<u32>;
         impl R {
-            #[doc = "Bits 0:2 - Project-assigned name."]
+            #[doc = "Bits 0:2 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn unclassified_0_2(&self) -> Unclassified0_2R {
-                Unclassified0_2R::new((self.bits & 7) as u8)
+            pub fn bits_0_2_opaque(&self) -> Bits0_2OpaqueR {
+                Bits0_2OpaqueR::new((self.bits & 7) as u8)
             }
             #[doc = "Bit 3 - Project-assigned name."]
             #[inline(always)]
             pub fn source_3(&self) -> Source3R {
                 Source3R::new(((self.bits >> 3) & 1) != 0)
             }
-            #[doc = "Bits 4:7 - Project-assigned name."]
+            #[doc = "Bits 4:7 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn unclassified_4_7(&self) -> Unclassified4_7R {
-                Unclassified4_7R::new(((self.bits >> 4) & 0x0f) as u8)
+            pub fn bits_4_7_opaque(&self) -> Bits4_7OpaqueR {
+                Bits4_7OpaqueR::new(((self.bits >> 4) & 0x0f) as u8)
             }
             #[doc = "Bit 8 - Project-assigned name."]
             #[inline(always)]
@@ -45656,20 +45653,20 @@ pub mod bluetooth_interrupt_bank {
             pub fn source_9(&self) -> Source9R {
                 Source9R::new(((self.bits >> 9) & 1) != 0)
             }
-            #[doc = "Bits 10:11 - Project-assigned name."]
+            #[doc = "Bits 10:11 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn unclassified_10_11(&self) -> Unclassified10_11R {
-                Unclassified10_11R::new(((self.bits >> 10) & 3) as u8)
+            pub fn bits_10_11_opaque(&self) -> Bits10_11OpaqueR {
+                Bits10_11OpaqueR::new(((self.bits >> 10) & 3) as u8)
             }
             #[doc = "Bit 12 - Project-assigned name."]
             #[inline(always)]
             pub fn source_12(&self) -> Source12R {
                 Source12R::new(((self.bits >> 12) & 1) != 0)
             }
-            #[doc = "Bits 13:31 - Project-assigned name."]
+            #[doc = "Bits 13:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn unclassified_13_31(&self) -> Unclassified13_31R {
-                Unclassified13_31R::new((self.bits >> 13) & 0x0007_ffff)
+            pub fn bits_13_31_opaque(&self) -> Bits13_31OpaqueR {
+                Bits13_31OpaqueR::new((self.bits >> 13) & 0x0007_ffff)
             }
         }
         #[doc = "Project-assigned name. Second masked controller interrupt-status bank; the primary source-124 handler reads this complete word before acknowledgement.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_status_1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -45687,13 +45684,13 @@ pub mod bluetooth_interrupt_bank {
     pub mod irq_diagnostic_state {
         #[doc = "Register `IRQ_DIAGNOSTIC_STATE` reader"]
         pub type R = crate::R<IrqDiagnosticStateSpec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` reader - Project-assigned name."]
+        pub type ValueR = crate::FieldReader<u32>;
         impl R {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         #[doc = "Project-assigned name. Complete word read by the primary source-124 fault prefix when masked bank-one source 12 is pending. Inner state encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_diagnostic_state::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -45711,13 +45708,13 @@ pub mod bluetooth_interrupt_bank {
     pub mod irq_diagnostic_detail_0 {
         #[doc = "Register `IRQ_DIAGNOSTIC_DETAIL_0` reader"]
         pub type R = crate::R<IrqDiagnosticDetail0Spec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` reader - Project-assigned name."]
+        pub type ValueR = crate::FieldReader<u32>;
         impl R {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         #[doc = "Project-assigned name. First complete detail word read by the primary source-124 fault prefix when masked bank-one source 9 is pending. Inner encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_diagnostic_detail_0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -45735,13 +45732,13 @@ pub mod bluetooth_interrupt_bank {
     pub mod irq_diagnostic_detail_1 {
         #[doc = "Register `IRQ_DIAGNOSTIC_DETAIL_1` reader"]
         pub type R = crate::R<IrqDiagnosticDetail1Spec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` reader - Project-assigned name."]
+        pub type ValueR = crate::FieldReader<u32>;
         impl R {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         #[doc = "Project-assigned name. Second complete detail word read by the primary source-124 fault prefix when masked bank-one source 9 is pending. Inner encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_diagnostic_detail_1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -45857,20 +45854,20 @@ pub mod bluetooth_scheduler_interrupt_runtime {
         pub type ValueLow20R = crate::FieldReader<u32>;
         #[doc = "Field `VALUE_LOW_20` writer - Project-assigned name."]
         pub type ValueLow20W<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
-        #[doc = "Field `OPAQUE_HIGH_12` reader - Project-assigned name."]
-        pub type OpaqueHigh12R = crate::FieldReader<u16>;
-        #[doc = "Field `OPAQUE_HIGH_12` writer - Project-assigned name."]
-        pub type OpaqueHigh12W<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        #[doc = "Field `BITS_20_31_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits20_31OpaqueR = crate::FieldReader<u16>;
+        #[doc = "Field `BITS_20_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits20_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
         impl R {
             #[doc = "Bits 0:19 - Project-assigned name."]
             #[inline(always)]
             pub fn value_low_20(&self) -> ValueLow20R {
                 ValueLow20R::new(self.bits & 0x000f_ffff)
             }
-            #[doc = "Bits 20:31 - Project-assigned name."]
+            #[doc = "Bits 20:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn opaque_high_12(&self) -> OpaqueHigh12R {
-                OpaqueHigh12R::new(((self.bits >> 20) & 0x0fff) as u16)
+            pub fn bits_20_31_opaque(&self) -> Bits20_31OpaqueR {
+                Bits20_31OpaqueR::new(((self.bits >> 20) & 0x0fff) as u16)
             }
         }
         impl W {
@@ -45879,10 +45876,10 @@ pub mod bluetooth_scheduler_interrupt_runtime {
             pub fn value_low_20(&mut self) -> ValueLow20W<'_, SchedulerReferenceSpec> {
                 ValueLow20W::new(self, 0)
             }
-            #[doc = "Bits 20:31 - Project-assigned name."]
+            #[doc = "Bits 20:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn opaque_high_12(&mut self) -> OpaqueHigh12W<'_, SchedulerReferenceSpec> {
-                OpaqueHigh12W::new(self, 20)
+            pub fn bits_20_31_opaque(&mut self) -> Bits20_31OpaqueW<'_, SchedulerReferenceSpec> {
+                Bits20_31OpaqueW::new(self, 20)
             }
         }
         #[doc = "Project-assigned name. The source-124 handler can publish the complete zero image when bank-one source 3 observes an idle scheduler through the diagnostic BUSY sample. Other scheduler users compare bits 0..19 or publish complete images; upper encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_reference::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_reference::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -45914,18 +45911,18 @@ pub mod bluetooth_scheduler_interrupt_runtime {
         pub type CurrentLinkIndexR = crate::FieldReader;
         #[doc = "Field `CURRENT_LINK_INDEX` writer - Project-assigned name. Zero-based current scheduler hardware-list index returned by the complete current-link-index leaf."]
         pub type CurrentLinkIndexW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
-        #[doc = "Field `OPAQUE_STATE_24_28` reader - Project-assigned name."]
-        pub type OpaqueState24_28R = crate::FieldReader;
-        #[doc = "Field `OPAQUE_STATE_24_28` writer - Project-assigned name."]
-        pub type OpaqueState24_28W<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        #[doc = "Field `BITS_24_28_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits24_28OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_24_28_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits24_28OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
         #[doc = "Field `STATE_29` reader - Project-assigned name. Positional state sampled together with BUSY by the complete source-124 deferred-work predicate. Its independent hardware meaning remains unqualified."]
         pub type State29R = crate::BitReader;
         #[doc = "Field `STATE_29` writer - Project-assigned name. Positional state sampled together with BUSY by the complete source-124 deferred-work predicate. Its independent hardware meaning remains unqualified."]
         pub type State29W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `OPAQUE_STATE_30` reader - Project-assigned name."]
-        pub type OpaqueState30R = crate::BitReader;
-        #[doc = "Field `OPAQUE_STATE_30` writer - Project-assigned name."]
-        pub type OpaqueState30W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_30_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bit30OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_30_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bit30OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `BUSY` reader - Project-assigned name."]
         pub type BusyR = crate::BitReader;
         #[doc = "Field `BUSY` writer - Project-assigned name."]
@@ -45941,20 +45938,20 @@ pub mod bluetooth_scheduler_interrupt_runtime {
             pub fn current_link_index(&self) -> CurrentLinkIndexR {
                 CurrentLinkIndexR::new(((self.bits >> 20) & 0x0f) as u8)
             }
-            #[doc = "Bits 24:28 - Project-assigned name."]
+            #[doc = "Bits 24:28 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn opaque_state_24_28(&self) -> OpaqueState24_28R {
-                OpaqueState24_28R::new(((self.bits >> 24) & 0x1f) as u8)
+            pub fn bits_24_28_opaque(&self) -> Bits24_28OpaqueR {
+                Bits24_28OpaqueR::new(((self.bits >> 24) & 0x1f) as u8)
             }
             #[doc = "Bit 29 - Project-assigned name. Positional state sampled together with BUSY by the complete source-124 deferred-work predicate. Its independent hardware meaning remains unqualified."]
             #[inline(always)]
             pub fn state_29(&self) -> State29R {
                 State29R::new(((self.bits >> 29) & 1) != 0)
             }
-            #[doc = "Bit 30 - Project-assigned name."]
+            #[doc = "Bit 30 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn opaque_state_30(&self) -> OpaqueState30R {
-                OpaqueState30R::new(((self.bits >> 30) & 1) != 0)
+            pub fn bit_30_opaque(&self) -> Bit30OpaqueR {
+                Bit30OpaqueR::new(((self.bits >> 30) & 1) != 0)
             }
             #[doc = "Bit 31 - Project-assigned name."]
             #[inline(always)]
@@ -45973,20 +45970,20 @@ pub mod bluetooth_scheduler_interrupt_runtime {
             pub fn current_link_index(&mut self) -> CurrentLinkIndexW<'_, SchedulerStateSpec> {
                 CurrentLinkIndexW::new(self, 20)
             }
-            #[doc = "Bits 24:28 - Project-assigned name."]
+            #[doc = "Bits 24:28 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn opaque_state_24_28(&mut self) -> OpaqueState24_28W<'_, SchedulerStateSpec> {
-                OpaqueState24_28W::new(self, 24)
+            pub fn bits_24_28_opaque(&mut self) -> Bits24_28OpaqueW<'_, SchedulerStateSpec> {
+                Bits24_28OpaqueW::new(self, 24)
             }
             #[doc = "Bit 29 - Project-assigned name. Positional state sampled together with BUSY by the complete source-124 deferred-work predicate. Its independent hardware meaning remains unqualified."]
             #[inline(always)]
             pub fn state_29(&mut self) -> State29W<'_, SchedulerStateSpec> {
                 State29W::new(self, 29)
             }
-            #[doc = "Bit 30 - Project-assigned name."]
+            #[doc = "Bit 30 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn opaque_state_30(&mut self) -> OpaqueState30W<'_, SchedulerStateSpec> {
-                OpaqueState30W::new(self, 30)
+            pub fn bit_30_opaque(&mut self) -> Bit30OpaqueW<'_, SchedulerStateSpec> {
+                Bit30OpaqueW::new(self, 30)
             }
             #[doc = "Bit 31 - Project-assigned name."]
             #[inline(always)]
@@ -46367,33 +46364,33 @@ pub mod btdm_runtime_control {
     #[doc = "Register block"]
     pub struct RegisterBlock {
         runtime_timer_start_command: RuntimeTimerStartCommand,
-        command_0004: Command0004,
-        command_0008: Command0008,
+        word_0004_opaque: Word0004Opaque,
+        word_0008_opaque: Word0008Opaque,
         _reserved3: [u8; 0x04],
-        command_0010: Command0010,
-        command_0014: Command0014,
+        word_0010_opaque: Word0010Opaque,
+        word_0014_opaque: Word0014Opaque,
         _reserved5: [u8; 0x04],
-        state_001c: State001c,
-        state_0020: State0020,
-        state_0024: State0024,
+        word_001c_opaque: Word001cOpaque,
+        word_0020_opaque: Word0020Opaque,
+        word_0024_opaque: Word0024Opaque,
         _reserved8: [u8; 0x04],
-        state_002c: State002c,
+        word_002c_opaque: Word002cOpaque,
         _reserved9: [u8; 0x04],
-        command_0034: Command0034,
-        status_0038: Status0038,
+        word_0034_opaque: Word0034Opaque,
+        word_0038_opaque: Word0038Opaque,
         _reserved11: [u8; 0x04],
-        command_0040: Command0040,
-        command_0044: Command0044,
-        status_0048: Status0048,
-        command_004c: Command004c,
+        word_0040_opaque: Word0040Opaque,
+        word_0044_opaque: Word0044Opaque,
+        word_0048_opaque: Word0048Opaque,
+        word_004c_opaque: Word004cOpaque,
         _reserved15: [u8; 0x08],
-        control_0058: Control0058,
+        word_0058_opaque: Word0058Opaque,
         _reserved16: [u8; 0x08],
-        value_0064: Value0064,
-        value_0068: Value0068,
-        value_006c: Value006c,
+        word_0064_opaque: Word0064Opaque,
+        word_0068_opaque: Word0068Opaque,
+        word_006c_opaque: Word006cOpaque,
         _reserved19: [u8; 0x08],
-        control_0078: Control0078,
+        word_0078_opaque: Word0078Opaque,
     }
     impl RegisterBlock {
         #[doc = "0x00 - Project-assigned name. Complete current leaf writes finite image 1; an instruction-identical public same-chip predecessor identifies the operation as r_btdm_hal_rtc_start."]
@@ -46401,100 +46398,100 @@ pub mod btdm_runtime_control {
         pub const fn runtime_timer_start_command(&self) -> &RuntimeTimerStartCommand {
             &self.runtime_timer_start_command
         }
-        #[doc = "0x04 - Project-assigned name. Complete runtime functions write the finite image 1."]
+        #[doc = "0x04 - Opaque: meaning not established. Complete runtime functions write the finite image 1."]
         #[inline(always)]
-        pub const fn command_0004(&self) -> &Command0004 {
-            &self.command_0004
+        pub const fn word_0004_opaque(&self) -> &Word0004Opaque {
+            &self.word_0004_opaque
         }
-        #[doc = "0x08 - Project-assigned name. Complete initialization writes the finite image 1."]
+        #[doc = "0x08 - Opaque: meaning not established. Complete initialization writes the finite image 1."]
         #[inline(always)]
-        pub const fn command_0008(&self) -> &Command0008 {
-            &self.command_0008
+        pub const fn word_0008_opaque(&self) -> &Word0008Opaque {
+            &self.word_0008_opaque
         }
-        #[doc = "0x10 - Project-assigned name. Complete runtime functions write the independently observed finite images 2 and 0x00040000."]
+        #[doc = "0x10 - Opaque: meaning not established. Complete runtime functions write the independently observed finite images 2 and 0x00040000."]
         #[inline(always)]
-        pub const fn command_0010(&self) -> &Command0010 {
-            &self.command_0010
+        pub const fn word_0010_opaque(&self) -> &Word0010Opaque {
+            &self.word_0010_opaque
         }
-        #[doc = "0x14 - Project-assigned name. Complete runtime functions write the independently observed finite images 0xFFFFFFFF and 0x00040000."]
+        #[doc = "0x14 - Opaque: meaning not established. Complete runtime functions write the independently observed finite images 0xFFFFFFFF and 0x00040000."]
         #[inline(always)]
-        pub const fn command_0014(&self) -> &Command0014 {
-            &self.command_0014
+        pub const fn word_0014_opaque(&self) -> &Word0014Opaque {
+            &self.word_0014_opaque
         }
-        #[doc = "0x1c - Project-assigned name. One complete runtime function reads the complete word and writes the finite zero image. Inner state encoding remains unknown."]
+        #[doc = "0x1c - Opaque: meaning not established. One complete runtime function reads the complete word and writes the finite zero image. Inner state encoding remains unknown."]
         #[inline(always)]
-        pub const fn state_001c(&self) -> &State001c {
-            &self.state_001c
+        pub const fn word_001c_opaque(&self) -> &Word001cOpaque {
+            &self.word_001c_opaque
         }
-        #[doc = "0x20 - Project-assigned name. Complete state word read by runtime functions and cleared by two complete paths."]
+        #[doc = "0x20 - Opaque: meaning not established. Complete state word read by runtime functions and cleared by two complete paths."]
         #[inline(always)]
-        pub const fn state_0020(&self) -> &State0020 {
-            &self.state_0020
+        pub const fn word_0020_opaque(&self) -> &Word0020Opaque {
+            &self.word_0020_opaque
         }
-        #[doc = "0x24 - Project-assigned name. State word whose low byte is sampled independently; complete writes publish the finite images zero and one."]
+        #[doc = "0x24 - Opaque: meaning not established. State word whose low byte is sampled independently; complete writes publish the finite images zero and one."]
         #[inline(always)]
-        pub const fn state_0024(&self) -> &State0024 {
-            &self.state_0024
+        pub const fn word_0024_opaque(&self) -> &Word0024Opaque {
+            &self.word_0024_opaque
         }
-        #[doc = "0x2c - Project-assigned name. State word whose low byte is sampled independently; complete runtime paths clear the word."]
+        #[doc = "0x2c - Opaque: meaning not established. State word whose low byte is sampled independently; complete runtime paths clear the word."]
         #[inline(always)]
-        pub const fn state_002c(&self) -> &State002c {
-            &self.state_002c
+        pub const fn word_002c_opaque(&self) -> &Word002cOpaque {
+            &self.word_002c_opaque
         }
-        #[doc = "0x34 - Project-assigned name. Complete initialization writes the finite image 0xFFFFFFFF."]
+        #[doc = "0x34 - Opaque: meaning not established. Complete initialization writes the finite image 0xFFFFFFFF."]
         #[inline(always)]
-        pub const fn command_0034(&self) -> &Command0034 {
-            &self.command_0034
+        pub const fn word_0034_opaque(&self) -> &Word0034Opaque {
+            &self.word_0034_opaque
         }
-        #[doc = "0x38 - Project-assigned name. Complete word read by a runtime status path."]
+        #[doc = "0x38 - Opaque: meaning not established. Complete word read by a runtime status path."]
         #[inline(always)]
-        pub const fn status_0038(&self) -> &Status0038 {
-            &self.status_0038
+        pub const fn word_0038_opaque(&self) -> &Word0038Opaque {
+            &self.word_0038_opaque
         }
-        #[doc = "0x40 - Project-assigned name. Complete runtime functions write finite images with independently observed bits 0, 16 and 17."]
+        #[doc = "0x40 - Opaque: meaning not established. Complete runtime functions write finite images with independently observed bits 0, 16 and 17."]
         #[inline(always)]
-        pub const fn command_0040(&self) -> &Command0040 {
-            &self.command_0040
+        pub const fn word_0040_opaque(&self) -> &Word0040Opaque {
+            &self.word_0040_opaque
         }
-        #[doc = "0x44 - Project-assigned name. Complete runtime functions write finite images with independently observed bits 0, 16 and 17."]
+        #[doc = "0x44 - Opaque: meaning not established. Complete runtime functions write finite images with independently observed bits 0, 16 and 17."]
         #[inline(always)]
-        pub const fn command_0044(&self) -> &Command0044 {
-            &self.command_0044
+        pub const fn word_0044_opaque(&self) -> &Word0044Opaque {
+            &self.word_0044_opaque
         }
-        #[doc = "0x48 - Project-assigned name. Complete word read by multiple runtime functions."]
+        #[doc = "0x48 - Opaque: meaning not established. Complete word read by multiple runtime functions."]
         #[inline(always)]
-        pub const fn status_0048(&self) -> &Status0048 {
-            &self.status_0048
+        pub const fn word_0048_opaque(&self) -> &Word0048Opaque {
+            &self.word_0048_opaque
         }
-        #[doc = "0x4c - Project-assigned name. Complete initialization writes the finite zero image."]
+        #[doc = "0x4c - Opaque: meaning not established. Complete initialization writes the finite zero image."]
         #[inline(always)]
-        pub const fn command_004c(&self) -> &Command004c {
-            &self.command_004c
+        pub const fn word_004c_opaque(&self) -> &Word004cOpaque {
+            &self.word_004c_opaque
         }
-        #[doc = "0x58 - Project-assigned name. Shared runtime control word with independently observed RMW operations over bits 0, 1, 2 and 4. Other bits are preserved."]
+        #[doc = "0x58 - Opaque: meaning not established. Shared runtime control word with independently observed RMW operations over bits 0, 1, 2 and 4. Other bits are preserved."]
         #[inline(always)]
-        pub const fn control_0058(&self) -> &Control0058 {
-            &self.control_0058
+        pub const fn word_0058_opaque(&self) -> &Word0058Opaque {
+            &self.word_0058_opaque
         }
-        #[doc = "0x64 - Project-assigned name. One complete runtime function reads the complete word and publishes complete dynamic images. The image remains a register-level fact."]
+        #[doc = "0x64 - Opaque: meaning not established. One complete runtime function reads the complete word and publishes complete dynamic images. The image remains a register-level fact."]
         #[inline(always)]
-        pub const fn value_0064(&self) -> &Value0064 {
-            &self.value_0064
+        pub const fn word_0064_opaque(&self) -> &Word0064Opaque {
+            &self.word_0064_opaque
         }
-        #[doc = "0x68 - Project-assigned name. Complete publication replaces bits 0..23 with a runtime-derived value and clears bits 24..31."]
+        #[doc = "0x68 - Opaque: meaning not established. Complete publication replaces bits 0..23 with a runtime-derived value and clears bits 24..31."]
         #[inline(always)]
-        pub const fn value_0068(&self) -> &Value0068 {
-            &self.value_0068
+        pub const fn word_0068_opaque(&self) -> &Word0068Opaque {
+            &self.word_0068_opaque
         }
-        #[doc = "0x6c - Project-assigned name. Complete word is read by one runtime path and receives either a complete runtime-derived image or a runtime-derived low-24-bit image."]
+        #[doc = "0x6c - Opaque: meaning not established. Complete word is read by one runtime path and receives either a complete runtime-derived image or a runtime-derived low-24-bit image."]
         #[inline(always)]
-        pub const fn value_006c(&self) -> &Value006c {
-            &self.value_006c
+        pub const fn word_006c_opaque(&self) -> &Word006cOpaque {
+            &self.word_006c_opaque
         }
-        #[doc = "0x78 - Project-assigned name. Initialization sets bit 25 through a fresh-read RMW. Other bits are preserved."]
+        #[doc = "0x78 - Opaque: meaning not established. Initialization sets bit 25 through a fresh-read RMW. Other bits are preserved."]
         #[inline(always)]
-        pub const fn control_0078(&self) -> &Control0078 {
-            &self.control_0078
+        pub const fn word_0078_opaque(&self) -> &Word0078Opaque {
+            &self.word_0078_opaque
         }
     }
     #[doc = "RUNTIME_TIMER_START_COMMAND (w) register accessor: Project-assigned name. Complete current leaf writes finite image 1; an instruction-identical public same-chip predecessor identifies the operation as r_btdm_hal_rtc_start.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`runtime_timer_start_command::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@runtime_timer_start_command`] module"]
@@ -46552,455 +46549,455 @@ pub mod btdm_runtime_control {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "COMMAND_0004 (w) register accessor: Project-assigned name. Complete runtime functions write the finite image 1.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0004::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@command_0004`] module"]
-    #[doc(alias = "COMMAND_0004")]
-    pub type Command0004 = crate::Reg<command_0004::Command0004Spec>;
-    #[doc = "Project-assigned name. Complete runtime functions write the finite image 1."]
-    pub mod command_0004 {
-        #[doc = "Register `COMMAND_0004` writer"]
-        pub type W = crate::W<Command0004Spec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "WORD_0004_OPAQUE (w) register accessor: Opaque: meaning not established. Complete runtime functions write the finite image 1.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0004_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0004_opaque`] module"]
+    #[doc(alias = "WORD_0004_OPAQUE")]
+    pub type Word0004Opaque = crate::Reg<word_0004_opaque::Word0004OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete runtime functions write the finite image 1."]
+    pub mod word_0004_opaque {
+        #[doc = "Register `WORD_0004_OPAQUE` writer"]
+        pub type W = crate::W<Word0004OpaqueSpec>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, Command0004Spec> {
-                ImageW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, Word0004OpaqueSpec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete runtime functions write the finite image 1.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0004::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Command0004Spec;
-        impl crate::RegisterSpec for Command0004Spec {
+        #[doc = "Opaque: meaning not established. Complete runtime functions write the finite image 1.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0004_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0004OpaqueSpec;
+        impl crate::RegisterSpec for Word0004OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`command_0004::W`](W) writer structure"]
-        impl crate::Writable for Command0004Spec {
+        #[doc = "`write(|w| ..)` method takes [`word_0004_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0004OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "COMMAND_0008 (w) register accessor: Project-assigned name. Complete initialization writes the finite image 1.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0008::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@command_0008`] module"]
-    #[doc(alias = "COMMAND_0008")]
-    pub type Command0008 = crate::Reg<command_0008::Command0008Spec>;
-    #[doc = "Project-assigned name. Complete initialization writes the finite image 1."]
-    pub mod command_0008 {
-        #[doc = "Register `COMMAND_0008` writer"]
-        pub type W = crate::W<Command0008Spec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "WORD_0008_OPAQUE (w) register accessor: Opaque: meaning not established. Complete initialization writes the finite image 1.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0008_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0008_opaque`] module"]
+    #[doc(alias = "WORD_0008_OPAQUE")]
+    pub type Word0008Opaque = crate::Reg<word_0008_opaque::Word0008OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete initialization writes the finite image 1."]
+    pub mod word_0008_opaque {
+        #[doc = "Register `WORD_0008_OPAQUE` writer"]
+        pub type W = crate::W<Word0008OpaqueSpec>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, Command0008Spec> {
-                ImageW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, Word0008OpaqueSpec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete initialization writes the finite image 1.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0008::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Command0008Spec;
-        impl crate::RegisterSpec for Command0008Spec {
+        #[doc = "Opaque: meaning not established. Complete initialization writes the finite image 1.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0008_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0008OpaqueSpec;
+        impl crate::RegisterSpec for Word0008OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`command_0008::W`](W) writer structure"]
-        impl crate::Writable for Command0008Spec {
+        #[doc = "`write(|w| ..)` method takes [`word_0008_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0008OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "COMMAND_0010 (w) register accessor: Project-assigned name. Complete runtime functions write the independently observed finite images 2 and 0x00040000.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0010::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@command_0010`] module"]
-    #[doc(alias = "COMMAND_0010")]
-    pub type Command0010 = crate::Reg<command_0010::Command0010Spec>;
-    #[doc = "Project-assigned name. Complete runtime functions write the independently observed finite images 2 and 0x00040000."]
-    pub mod command_0010 {
-        #[doc = "Register `COMMAND_0010` writer"]
-        pub type W = crate::W<Command0010Spec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "WORD_0010_OPAQUE (w) register accessor: Opaque: meaning not established. Complete runtime functions write the independently observed finite images 2 and 0x00040000.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0010_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0010_opaque`] module"]
+    #[doc(alias = "WORD_0010_OPAQUE")]
+    pub type Word0010Opaque = crate::Reg<word_0010_opaque::Word0010OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete runtime functions write the independently observed finite images 2 and 0x00040000."]
+    pub mod word_0010_opaque {
+        #[doc = "Register `WORD_0010_OPAQUE` writer"]
+        pub type W = crate::W<Word0010OpaqueSpec>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, Command0010Spec> {
-                ImageW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, Word0010OpaqueSpec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete runtime functions write the independently observed finite images 2 and 0x00040000.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0010::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Command0010Spec;
-        impl crate::RegisterSpec for Command0010Spec {
+        #[doc = "Opaque: meaning not established. Complete runtime functions write the independently observed finite images 2 and 0x00040000.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0010_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0010OpaqueSpec;
+        impl crate::RegisterSpec for Word0010OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`command_0010::W`](W) writer structure"]
-        impl crate::Writable for Command0010Spec {
+        #[doc = "`write(|w| ..)` method takes [`word_0010_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0010OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "COMMAND_0014 (w) register accessor: Project-assigned name. Complete runtime functions write the independently observed finite images 0xFFFFFFFF and 0x00040000.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0014::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@command_0014`] module"]
-    #[doc(alias = "COMMAND_0014")]
-    pub type Command0014 = crate::Reg<command_0014::Command0014Spec>;
-    #[doc = "Project-assigned name. Complete runtime functions write the independently observed finite images 0xFFFFFFFF and 0x00040000."]
-    pub mod command_0014 {
-        #[doc = "Register `COMMAND_0014` writer"]
-        pub type W = crate::W<Command0014Spec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "WORD_0014_OPAQUE (w) register accessor: Opaque: meaning not established. Complete runtime functions write the independently observed finite images 0xFFFFFFFF and 0x00040000.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0014_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0014_opaque`] module"]
+    #[doc(alias = "WORD_0014_OPAQUE")]
+    pub type Word0014Opaque = crate::Reg<word_0014_opaque::Word0014OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete runtime functions write the independently observed finite images 0xFFFFFFFF and 0x00040000."]
+    pub mod word_0014_opaque {
+        #[doc = "Register `WORD_0014_OPAQUE` writer"]
+        pub type W = crate::W<Word0014OpaqueSpec>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, Command0014Spec> {
-                ImageW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, Word0014OpaqueSpec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete runtime functions write the independently observed finite images 0xFFFFFFFF and 0x00040000.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0014::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Command0014Spec;
-        impl crate::RegisterSpec for Command0014Spec {
+        #[doc = "Opaque: meaning not established. Complete runtime functions write the independently observed finite images 0xFFFFFFFF and 0x00040000.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0014_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0014OpaqueSpec;
+        impl crate::RegisterSpec for Word0014OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`command_0014::W`](W) writer structure"]
-        impl crate::Writable for Command0014Spec {
+        #[doc = "`write(|w| ..)` method takes [`word_0014_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0014OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "STATE_001C (rw) register accessor: Project-assigned name. One complete runtime function reads the complete word and writes the finite zero image. Inner state encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`state_001c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`state_001c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@state_001c`] module"]
-    #[doc(alias = "STATE_001C")]
-    pub type State001c = crate::Reg<state_001c::State001cSpec>;
-    #[doc = "Project-assigned name. One complete runtime function reads the complete word and writes the finite zero image. Inner state encoding remains unknown."]
-    pub mod state_001c {
-        #[doc = "Register `STATE_001C` reader"]
-        pub type R = crate::R<State001cSpec>;
-        #[doc = "Register `STATE_001C` writer"]
-        pub type W = crate::W<State001cSpec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "WORD_001C_OPAQUE (rw) register accessor: Opaque: meaning not established. One complete runtime function reads the complete word and writes the finite zero image. Inner state encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_001c_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_001c_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_001c_opaque`] module"]
+    #[doc(alias = "WORD_001C_OPAQUE")]
+    pub type Word001cOpaque = crate::Reg<word_001c_opaque::Word001cOpaqueSpec>;
+    #[doc = "Opaque: meaning not established. One complete runtime function reads the complete word and writes the finite zero image. Inner state encoding remains unknown."]
+    pub mod word_001c_opaque {
+        #[doc = "Register `WORD_001C_OPAQUE` reader"]
+        pub type R = crate::R<Word001cOpaqueSpec>;
+        #[doc = "Register `WORD_001C_OPAQUE` writer"]
+        pub type W = crate::W<Word001cOpaqueSpec>;
+        #[doc = "Field `BITS_0_31_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueR = crate::FieldReader<u32>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl R {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn bits_0_31_opaque(&self) -> Bits0_31OpaqueR {
+                Bits0_31OpaqueR::new(self.bits)
             }
         }
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, State001cSpec> {
-                ImageW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, Word001cOpaqueSpec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. One complete runtime function reads the complete word and writes the finite zero image. Inner state encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`state_001c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`state_001c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct State001cSpec;
-        impl crate::RegisterSpec for State001cSpec {
+        #[doc = "Opaque: meaning not established. One complete runtime function reads the complete word and writes the finite zero image. Inner state encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_001c_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_001c_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word001cOpaqueSpec;
+        impl crate::RegisterSpec for Word001cOpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`state_001c::R`](R) reader structure"]
-        impl crate::Readable for State001cSpec {}
-        #[doc = "`write(|w| ..)` method takes [`state_001c::W`](W) writer structure"]
-        impl crate::Writable for State001cSpec {
+        #[doc = "`read()` method returns [`word_001c_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word001cOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_001c_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word001cOpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "STATE_0020 (rw) register accessor: Project-assigned name. Complete state word read by runtime functions and cleared by two complete paths.\n\nYou can [`read`](crate::Reg::read) this register and get [`state_0020::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`state_0020::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@state_0020`] module"]
-    #[doc(alias = "STATE_0020")]
-    pub type State0020 = crate::Reg<state_0020::State0020Spec>;
-    #[doc = "Project-assigned name. Complete state word read by runtime functions and cleared by two complete paths."]
-    pub mod state_0020 {
-        #[doc = "Register `STATE_0020` reader"]
-        pub type R = crate::R<State0020Spec>;
-        #[doc = "Register `STATE_0020` writer"]
-        pub type W = crate::W<State0020Spec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "WORD_0020_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete state word read by runtime functions and cleared by two complete paths.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0020_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0020_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0020_opaque`] module"]
+    #[doc(alias = "WORD_0020_OPAQUE")]
+    pub type Word0020Opaque = crate::Reg<word_0020_opaque::Word0020OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete state word read by runtime functions and cleared by two complete paths."]
+    pub mod word_0020_opaque {
+        #[doc = "Register `WORD_0020_OPAQUE` reader"]
+        pub type R = crate::R<Word0020OpaqueSpec>;
+        #[doc = "Register `WORD_0020_OPAQUE` writer"]
+        pub type W = crate::W<Word0020OpaqueSpec>;
+        #[doc = "Field `BITS_0_31_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueR = crate::FieldReader<u32>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl R {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn bits_0_31_opaque(&self) -> Bits0_31OpaqueR {
+                Bits0_31OpaqueR::new(self.bits)
             }
         }
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, State0020Spec> {
-                ImageW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, Word0020OpaqueSpec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete state word read by runtime functions and cleared by two complete paths.\n\nYou can [`read`](crate::Reg::read) this register and get [`state_0020::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`state_0020::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct State0020Spec;
-        impl crate::RegisterSpec for State0020Spec {
+        #[doc = "Opaque: meaning not established. Complete state word read by runtime functions and cleared by two complete paths.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0020_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0020_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0020OpaqueSpec;
+        impl crate::RegisterSpec for Word0020OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`state_0020::R`](R) reader structure"]
-        impl crate::Readable for State0020Spec {}
-        #[doc = "`write(|w| ..)` method takes [`state_0020::W`](W) writer structure"]
-        impl crate::Writable for State0020Spec {
+        #[doc = "`read()` method returns [`word_0020_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0020OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0020_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0020OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "STATE_0024 (rw) register accessor: Project-assigned name. State word whose low byte is sampled independently; complete writes publish the finite images zero and one.\n\nYou can [`read`](crate::Reg::read) this register and get [`state_0024::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`state_0024::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@state_0024`] module"]
-    #[doc(alias = "STATE_0024")]
-    pub type State0024 = crate::Reg<state_0024::State0024Spec>;
-    #[doc = "Project-assigned name. State word whose low byte is sampled independently; complete writes publish the finite images zero and one."]
-    pub mod state_0024 {
-        #[doc = "Register `STATE_0024` reader"]
-        pub type R = crate::R<State0024Spec>;
-        #[doc = "Register `STATE_0024` writer"]
-        pub type W = crate::W<State0024Spec>;
+    #[doc = "WORD_0024_OPAQUE (rw) register accessor: Opaque: meaning not established. State word whose low byte is sampled independently; complete writes publish the finite images zero and one.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0024_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0024_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0024_opaque`] module"]
+    #[doc(alias = "WORD_0024_OPAQUE")]
+    pub type Word0024Opaque = crate::Reg<word_0024_opaque::Word0024OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. State word whose low byte is sampled independently; complete writes publish the finite images zero and one."]
+    pub mod word_0024_opaque {
+        #[doc = "Register `WORD_0024_OPAQUE` reader"]
+        pub type R = crate::R<Word0024OpaqueSpec>;
+        #[doc = "Register `WORD_0024_OPAQUE` writer"]
+        pub type W = crate::W<Word0024OpaqueSpec>;
         #[doc = "Field `LOW_BYTE` reader - Project-assigned name."]
         pub type LowByteR = crate::FieldReader;
         #[doc = "Field `LOW_BYTE` writer - Project-assigned name."]
         pub type LowByteW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
-        #[doc = "Field `UNCLASSIFIED_31_8` reader - Project-assigned name. Upper bits covered by complete-register evidence but not assigned a semantic role."]
-        pub type Unclassified31_8R = crate::FieldReader<u32>;
-        #[doc = "Field `UNCLASSIFIED_31_8` writer - Project-assigned name. Upper bits covered by complete-register evidence but not assigned a semantic role."]
-        pub type Unclassified31_8W<'a, REG> = crate::FieldWriter<'a, REG, 24, u32>;
+        #[doc = "Field `BITS_8_31_OPAQUE` reader - Opaque: meaning not established. Upper bits covered by complete-register evidence but not assigned a semantic role."]
+        pub type Bits8_31OpaqueR = crate::FieldReader<u32>;
+        #[doc = "Field `BITS_8_31_OPAQUE` writer - Opaque: meaning not established. Upper bits covered by complete-register evidence but not assigned a semantic role."]
+        pub type Bits8_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 24, u32>;
         impl R {
             #[doc = "Bits 0:7 - Project-assigned name."]
             #[inline(always)]
             pub fn low_byte(&self) -> LowByteR {
                 LowByteR::new((self.bits & 0xff) as u8)
             }
-            #[doc = "Bits 8:31 - Project-assigned name. Upper bits covered by complete-register evidence but not assigned a semantic role."]
+            #[doc = "Bits 8:31 - Opaque: meaning not established. Upper bits covered by complete-register evidence but not assigned a semantic role."]
             #[inline(always)]
-            pub fn unclassified_31_8(&self) -> Unclassified31_8R {
-                Unclassified31_8R::new((self.bits >> 8) & 0x00ff_ffff)
+            pub fn bits_8_31_opaque(&self) -> Bits8_31OpaqueR {
+                Bits8_31OpaqueR::new((self.bits >> 8) & 0x00ff_ffff)
             }
         }
         impl W {
             #[doc = "Bits 0:7 - Project-assigned name."]
             #[inline(always)]
-            pub fn low_byte(&mut self) -> LowByteW<'_, State0024Spec> {
+            pub fn low_byte(&mut self) -> LowByteW<'_, Word0024OpaqueSpec> {
                 LowByteW::new(self, 0)
             }
-            #[doc = "Bits 8:31 - Project-assigned name. Upper bits covered by complete-register evidence but not assigned a semantic role."]
+            #[doc = "Bits 8:31 - Opaque: meaning not established. Upper bits covered by complete-register evidence but not assigned a semantic role."]
             #[inline(always)]
-            pub fn unclassified_31_8(&mut self) -> Unclassified31_8W<'_, State0024Spec> {
-                Unclassified31_8W::new(self, 8)
+            pub fn bits_8_31_opaque(&mut self) -> Bits8_31OpaqueW<'_, Word0024OpaqueSpec> {
+                Bits8_31OpaqueW::new(self, 8)
             }
         }
-        #[doc = "Project-assigned name. State word whose low byte is sampled independently; complete writes publish the finite images zero and one.\n\nYou can [`read`](crate::Reg::read) this register and get [`state_0024::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`state_0024::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct State0024Spec;
-        impl crate::RegisterSpec for State0024Spec {
+        #[doc = "Opaque: meaning not established. State word whose low byte is sampled independently; complete writes publish the finite images zero and one.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0024_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0024_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0024OpaqueSpec;
+        impl crate::RegisterSpec for Word0024OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`state_0024::R`](R) reader structure"]
-        impl crate::Readable for State0024Spec {}
-        #[doc = "`write(|w| ..)` method takes [`state_0024::W`](W) writer structure"]
-        impl crate::Writable for State0024Spec {
+        #[doc = "`read()` method returns [`word_0024_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0024OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0024_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0024OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "STATE_002C (rw) register accessor: Project-assigned name. State word whose low byte is sampled independently; complete runtime paths clear the word.\n\nYou can [`read`](crate::Reg::read) this register and get [`state_002c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`state_002c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@state_002c`] module"]
-    #[doc(alias = "STATE_002C")]
-    pub type State002c = crate::Reg<state_002c::State002cSpec>;
-    #[doc = "Project-assigned name. State word whose low byte is sampled independently; complete runtime paths clear the word."]
-    pub mod state_002c {
-        #[doc = "Register `STATE_002C` reader"]
-        pub type R = crate::R<State002cSpec>;
-        #[doc = "Register `STATE_002C` writer"]
-        pub type W = crate::W<State002cSpec>;
+    #[doc = "WORD_002C_OPAQUE (rw) register accessor: Opaque: meaning not established. State word whose low byte is sampled independently; complete runtime paths clear the word.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_002c_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_002c_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_002c_opaque`] module"]
+    #[doc(alias = "WORD_002C_OPAQUE")]
+    pub type Word002cOpaque = crate::Reg<word_002c_opaque::Word002cOpaqueSpec>;
+    #[doc = "Opaque: meaning not established. State word whose low byte is sampled independently; complete runtime paths clear the word."]
+    pub mod word_002c_opaque {
+        #[doc = "Register `WORD_002C_OPAQUE` reader"]
+        pub type R = crate::R<Word002cOpaqueSpec>;
+        #[doc = "Register `WORD_002C_OPAQUE` writer"]
+        pub type W = crate::W<Word002cOpaqueSpec>;
         #[doc = "Field `LOW_BYTE` reader - Project-assigned name."]
         pub type LowByteR = crate::FieldReader;
         #[doc = "Field `LOW_BYTE` writer - Project-assigned name."]
         pub type LowByteW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
-        #[doc = "Field `UNCLASSIFIED_31_8` reader - Project-assigned name. Upper bits covered by complete-register evidence but not assigned a semantic role."]
-        pub type Unclassified31_8R = crate::FieldReader<u32>;
-        #[doc = "Field `UNCLASSIFIED_31_8` writer - Project-assigned name. Upper bits covered by complete-register evidence but not assigned a semantic role."]
-        pub type Unclassified31_8W<'a, REG> = crate::FieldWriter<'a, REG, 24, u32>;
+        #[doc = "Field `BITS_8_31_OPAQUE` reader - Opaque: meaning not established. Upper bits covered by complete-register evidence but not assigned a semantic role."]
+        pub type Bits8_31OpaqueR = crate::FieldReader<u32>;
+        #[doc = "Field `BITS_8_31_OPAQUE` writer - Opaque: meaning not established. Upper bits covered by complete-register evidence but not assigned a semantic role."]
+        pub type Bits8_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 24, u32>;
         impl R {
             #[doc = "Bits 0:7 - Project-assigned name."]
             #[inline(always)]
             pub fn low_byte(&self) -> LowByteR {
                 LowByteR::new((self.bits & 0xff) as u8)
             }
-            #[doc = "Bits 8:31 - Project-assigned name. Upper bits covered by complete-register evidence but not assigned a semantic role."]
+            #[doc = "Bits 8:31 - Opaque: meaning not established. Upper bits covered by complete-register evidence but not assigned a semantic role."]
             #[inline(always)]
-            pub fn unclassified_31_8(&self) -> Unclassified31_8R {
-                Unclassified31_8R::new((self.bits >> 8) & 0x00ff_ffff)
+            pub fn bits_8_31_opaque(&self) -> Bits8_31OpaqueR {
+                Bits8_31OpaqueR::new((self.bits >> 8) & 0x00ff_ffff)
             }
         }
         impl W {
             #[doc = "Bits 0:7 - Project-assigned name."]
             #[inline(always)]
-            pub fn low_byte(&mut self) -> LowByteW<'_, State002cSpec> {
+            pub fn low_byte(&mut self) -> LowByteW<'_, Word002cOpaqueSpec> {
                 LowByteW::new(self, 0)
             }
-            #[doc = "Bits 8:31 - Project-assigned name. Upper bits covered by complete-register evidence but not assigned a semantic role."]
+            #[doc = "Bits 8:31 - Opaque: meaning not established. Upper bits covered by complete-register evidence but not assigned a semantic role."]
             #[inline(always)]
-            pub fn unclassified_31_8(&mut self) -> Unclassified31_8W<'_, State002cSpec> {
-                Unclassified31_8W::new(self, 8)
+            pub fn bits_8_31_opaque(&mut self) -> Bits8_31OpaqueW<'_, Word002cOpaqueSpec> {
+                Bits8_31OpaqueW::new(self, 8)
             }
         }
-        #[doc = "Project-assigned name. State word whose low byte is sampled independently; complete runtime paths clear the word.\n\nYou can [`read`](crate::Reg::read) this register and get [`state_002c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`state_002c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct State002cSpec;
-        impl crate::RegisterSpec for State002cSpec {
+        #[doc = "Opaque: meaning not established. State word whose low byte is sampled independently; complete runtime paths clear the word.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_002c_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_002c_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word002cOpaqueSpec;
+        impl crate::RegisterSpec for Word002cOpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`state_002c::R`](R) reader structure"]
-        impl crate::Readable for State002cSpec {}
-        #[doc = "`write(|w| ..)` method takes [`state_002c::W`](W) writer structure"]
-        impl crate::Writable for State002cSpec {
+        #[doc = "`read()` method returns [`word_002c_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word002cOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_002c_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word002cOpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "COMMAND_0034 (w) register accessor: Project-assigned name. Complete initialization writes the finite image 0xFFFFFFFF.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0034::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@command_0034`] module"]
-    #[doc(alias = "COMMAND_0034")]
-    pub type Command0034 = crate::Reg<command_0034::Command0034Spec>;
-    #[doc = "Project-assigned name. Complete initialization writes the finite image 0xFFFFFFFF."]
-    pub mod command_0034 {
-        #[doc = "Register `COMMAND_0034` writer"]
-        pub type W = crate::W<Command0034Spec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "WORD_0034_OPAQUE (w) register accessor: Opaque: meaning not established. Complete initialization writes the finite image 0xFFFFFFFF.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0034_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0034_opaque`] module"]
+    #[doc(alias = "WORD_0034_OPAQUE")]
+    pub type Word0034Opaque = crate::Reg<word_0034_opaque::Word0034OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete initialization writes the finite image 0xFFFFFFFF."]
+    pub mod word_0034_opaque {
+        #[doc = "Register `WORD_0034_OPAQUE` writer"]
+        pub type W = crate::W<Word0034OpaqueSpec>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, Command0034Spec> {
-                ImageW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, Word0034OpaqueSpec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete initialization writes the finite image 0xFFFFFFFF.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0034::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Command0034Spec;
-        impl crate::RegisterSpec for Command0034Spec {
+        #[doc = "Opaque: meaning not established. Complete initialization writes the finite image 0xFFFFFFFF.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0034_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0034OpaqueSpec;
+        impl crate::RegisterSpec for Word0034OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`command_0034::W`](W) writer structure"]
-        impl crate::Writable for Command0034Spec {
+        #[doc = "`write(|w| ..)` method takes [`word_0034_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0034OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "STATUS_0038 (r) register accessor: Project-assigned name. Complete word read by a runtime status path.\n\nYou can [`read`](crate::Reg::read) this register and get [`status_0038::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@status_0038`] module"]
-    #[doc(alias = "STATUS_0038")]
-    pub type Status0038 = crate::Reg<status_0038::Status0038Spec>;
-    #[doc = "Project-assigned name. Complete word read by a runtime status path."]
-    pub mod status_0038 {
-        #[doc = "Register `STATUS_0038` reader"]
-        pub type R = crate::R<Status0038Spec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
+    #[doc = "WORD_0038_OPAQUE (r) register accessor: Opaque: meaning not established. Complete word read by a runtime status path.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0038_opaque::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0038_opaque`] module"]
+    #[doc(alias = "WORD_0038_OPAQUE")]
+    pub type Word0038Opaque = crate::Reg<word_0038_opaque::Word0038OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete word read by a runtime status path."]
+    pub mod word_0038_opaque {
+        #[doc = "Register `WORD_0038_OPAQUE` reader"]
+        pub type R = crate::R<Word0038OpaqueSpec>;
+        #[doc = "Field `BITS_0_31_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueR = crate::FieldReader<u32>;
         impl R {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn bits_0_31_opaque(&self) -> Bits0_31OpaqueR {
+                Bits0_31OpaqueR::new(self.bits)
             }
         }
-        #[doc = "Project-assigned name. Complete word read by a runtime status path.\n\nYou can [`read`](crate::Reg::read) this register and get [`status_0038::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Status0038Spec;
-        impl crate::RegisterSpec for Status0038Spec {
+        #[doc = "Opaque: meaning not established. Complete word read by a runtime status path.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0038_opaque::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0038OpaqueSpec;
+        impl crate::RegisterSpec for Word0038OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`status_0038::R`](R) reader structure"]
-        impl crate::Readable for Status0038Spec {}
+        #[doc = "`read()` method returns [`word_0038_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0038OpaqueSpec {}
     }
-    #[doc = "COMMAND_0040 (w) register accessor: Project-assigned name. Complete runtime functions write finite images with independently observed bits 0, 16 and 17.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0040::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@command_0040`] module"]
-    #[doc(alias = "COMMAND_0040")]
-    pub type Command0040 = crate::Reg<command_0040::Command0040Spec>;
-    #[doc = "Project-assigned name. Complete runtime functions write finite images with independently observed bits 0, 16 and 17."]
-    pub mod command_0040 {
-        #[doc = "Register `COMMAND_0040` writer"]
-        pub type W = crate::W<Command0040Spec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "WORD_0040_OPAQUE (w) register accessor: Opaque: meaning not established. Complete runtime functions write finite images with independently observed bits 0, 16 and 17.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0040_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0040_opaque`] module"]
+    #[doc(alias = "WORD_0040_OPAQUE")]
+    pub type Word0040Opaque = crate::Reg<word_0040_opaque::Word0040OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete runtime functions write finite images with independently observed bits 0, 16 and 17."]
+    pub mod word_0040_opaque {
+        #[doc = "Register `WORD_0040_OPAQUE` writer"]
+        pub type W = crate::W<Word0040OpaqueSpec>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, Command0040Spec> {
-                ImageW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, Word0040OpaqueSpec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete runtime functions write finite images with independently observed bits 0, 16 and 17.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0040::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Command0040Spec;
-        impl crate::RegisterSpec for Command0040Spec {
+        #[doc = "Opaque: meaning not established. Complete runtime functions write finite images with independently observed bits 0, 16 and 17.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0040_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0040OpaqueSpec;
+        impl crate::RegisterSpec for Word0040OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`command_0040::W`](W) writer structure"]
-        impl crate::Writable for Command0040Spec {
+        #[doc = "`write(|w| ..)` method takes [`word_0040_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0040OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "COMMAND_0044 (w) register accessor: Project-assigned name. Complete runtime functions write finite images with independently observed bits 0, 16 and 17.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0044::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@command_0044`] module"]
-    #[doc(alias = "COMMAND_0044")]
-    pub type Command0044 = crate::Reg<command_0044::Command0044Spec>;
-    #[doc = "Project-assigned name. Complete runtime functions write finite images with independently observed bits 0, 16 and 17."]
-    pub mod command_0044 {
-        #[doc = "Register `COMMAND_0044` writer"]
-        pub type W = crate::W<Command0044Spec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "WORD_0044_OPAQUE (w) register accessor: Opaque: meaning not established. Complete runtime functions write finite images with independently observed bits 0, 16 and 17.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0044_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0044_opaque`] module"]
+    #[doc(alias = "WORD_0044_OPAQUE")]
+    pub type Word0044Opaque = crate::Reg<word_0044_opaque::Word0044OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete runtime functions write finite images with independently observed bits 0, 16 and 17."]
+    pub mod word_0044_opaque {
+        #[doc = "Register `WORD_0044_OPAQUE` writer"]
+        pub type W = crate::W<Word0044OpaqueSpec>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, Command0044Spec> {
-                ImageW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, Word0044OpaqueSpec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete runtime functions write finite images with independently observed bits 0, 16 and 17.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0044::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Command0044Spec;
-        impl crate::RegisterSpec for Command0044Spec {
+        #[doc = "Opaque: meaning not established. Complete runtime functions write finite images with independently observed bits 0, 16 and 17.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0044_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0044OpaqueSpec;
+        impl crate::RegisterSpec for Word0044OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`command_0044::W`](W) writer structure"]
-        impl crate::Writable for Command0044Spec {
+        #[doc = "`write(|w| ..)` method takes [`word_0044_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0044OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "STATUS_0048 (r) register accessor: Project-assigned name. Complete word read by multiple runtime functions.\n\nYou can [`read`](crate::Reg::read) this register and get [`status_0048::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@status_0048`] module"]
-    #[doc(alias = "STATUS_0048")]
-    pub type Status0048 = crate::Reg<status_0048::Status0048Spec>;
-    #[doc = "Project-assigned name. Complete word read by multiple runtime functions."]
-    pub mod status_0048 {
-        #[doc = "Register `STATUS_0048` reader"]
-        pub type R = crate::R<Status0048Spec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
+    #[doc = "WORD_0048_OPAQUE (r) register accessor: Opaque: meaning not established. Complete word read by multiple runtime functions.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0048_opaque::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0048_opaque`] module"]
+    #[doc(alias = "WORD_0048_OPAQUE")]
+    pub type Word0048Opaque = crate::Reg<word_0048_opaque::Word0048OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete word read by multiple runtime functions."]
+    pub mod word_0048_opaque {
+        #[doc = "Register `WORD_0048_OPAQUE` reader"]
+        pub type R = crate::R<Word0048OpaqueSpec>;
+        #[doc = "Field `BITS_0_31_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueR = crate::FieldReader<u32>;
         impl R {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn bits_0_31_opaque(&self) -> Bits0_31OpaqueR {
+                Bits0_31OpaqueR::new(self.bits)
             }
         }
-        #[doc = "Project-assigned name. Complete word read by multiple runtime functions.\n\nYou can [`read`](crate::Reg::read) this register and get [`status_0048::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Status0048Spec;
-        impl crate::RegisterSpec for Status0048Spec {
+        #[doc = "Opaque: meaning not established. Complete word read by multiple runtime functions.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0048_opaque::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0048OpaqueSpec;
+        impl crate::RegisterSpec for Word0048OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`status_0048::R`](R) reader structure"]
-        impl crate::Readable for Status0048Spec {}
+        #[doc = "`read()` method returns [`word_0048_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0048OpaqueSpec {}
     }
-    #[doc = "COMMAND_004C (w) register accessor: Project-assigned name. Complete initialization writes the finite zero image.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_004c::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@command_004c`] module"]
-    #[doc(alias = "COMMAND_004C")]
-    pub type Command004c = crate::Reg<command_004c::Command004cSpec>;
-    #[doc = "Project-assigned name. Complete initialization writes the finite zero image."]
-    pub mod command_004c {
-        #[doc = "Register `COMMAND_004C` writer"]
-        pub type W = crate::W<Command004cSpec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "WORD_004C_OPAQUE (w) register accessor: Opaque: meaning not established. Complete initialization writes the finite zero image.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_004c_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_004c_opaque`] module"]
+    #[doc(alias = "WORD_004C_OPAQUE")]
+    pub type Word004cOpaque = crate::Reg<word_004c_opaque::Word004cOpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete initialization writes the finite zero image."]
+    pub mod word_004c_opaque {
+        #[doc = "Register `WORD_004C_OPAQUE` writer"]
+        pub type W = crate::W<Word004cOpaqueSpec>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, Command004cSpec> {
-                ImageW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, Word004cOpaqueSpec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete initialization writes the finite zero image.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_004c::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Command004cSpec;
-        impl crate::RegisterSpec for Command004cSpec {
+        #[doc = "Opaque: meaning not established. Complete initialization writes the finite zero image.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_004c_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word004cOpaqueSpec;
+        impl crate::RegisterSpec for Word004cOpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`command_004c::W`](W) writer structure"]
-        impl crate::Writable for Command004cSpec {
+        #[doc = "`write(|w| ..)` method takes [`word_004c_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word004cOpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CONTROL_0058 (rw) register accessor: Project-assigned name. Shared runtime control word with independently observed RMW operations over bits 0, 1, 2 and 4. Other bits are preserved.\n\nYou can [`read`](crate::Reg::read) this register and get [`control_0058::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control_0058::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control_0058`] module"]
-    #[doc(alias = "CONTROL_0058")]
-    pub type Control0058 = crate::Reg<control_0058::Control0058Spec>;
-    #[doc = "Project-assigned name. Shared runtime control word with independently observed RMW operations over bits 0, 1, 2 and 4. Other bits are preserved."]
-    pub mod control_0058 {
-        #[doc = "Register `CONTROL_0058` reader"]
-        pub type R = crate::R<Control0058Spec>;
-        #[doc = "Register `CONTROL_0058` writer"]
-        pub type W = crate::W<Control0058Spec>;
+    #[doc = "WORD_0058_OPAQUE (rw) register accessor: Opaque: meaning not established. Shared runtime control word with independently observed RMW operations over bits 0, 1, 2 and 4. Other bits are preserved.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0058_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0058_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0058_opaque`] module"]
+    #[doc(alias = "WORD_0058_OPAQUE")]
+    pub type Word0058Opaque = crate::Reg<word_0058_opaque::Word0058OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Shared runtime control word with independently observed RMW operations over bits 0, 1, 2 and 4. Other bits are preserved."]
+    pub mod word_0058_opaque {
+        #[doc = "Register `WORD_0058_OPAQUE` reader"]
+        pub type R = crate::R<Word0058OpaqueSpec>;
+        #[doc = "Register `WORD_0058_OPAQUE` writer"]
+        pub type W = crate::W<Word0058OpaqueSpec>;
         #[doc = "Field `CONTROL_0` reader - Project-assigned name."]
         pub type Control0R = crate::BitReader;
         #[doc = "Field `CONTROL_0` writer - Project-assigned name."]
@@ -47040,133 +47037,133 @@ pub mod btdm_runtime_control {
         impl W {
             #[doc = "Bit 0 - Project-assigned name."]
             #[inline(always)]
-            pub fn control_0(&mut self) -> Control0W<'_, Control0058Spec> {
+            pub fn control_0(&mut self) -> Control0W<'_, Word0058OpaqueSpec> {
                 Control0W::new(self, 0)
             }
             #[doc = "Bit 1 - Project-assigned name."]
             #[inline(always)]
-            pub fn control_1(&mut self) -> Control1W<'_, Control0058Spec> {
+            pub fn control_1(&mut self) -> Control1W<'_, Word0058OpaqueSpec> {
                 Control1W::new(self, 1)
             }
             #[doc = "Bit 4 - Project-assigned name."]
             #[inline(always)]
-            pub fn control_4(&mut self) -> Control4W<'_, Control0058Spec> {
+            pub fn control_4(&mut self) -> Control4W<'_, Word0058OpaqueSpec> {
                 Control4W::new(self, 4)
             }
         }
-        #[doc = "Project-assigned name. Shared runtime control word with independently observed RMW operations over bits 0, 1, 2 and 4. Other bits are preserved.\n\nYou can [`read`](crate::Reg::read) this register and get [`control_0058::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control_0058::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Control0058Spec;
-        impl crate::RegisterSpec for Control0058Spec {
+        #[doc = "Opaque: meaning not established. Shared runtime control word with independently observed RMW operations over bits 0, 1, 2 and 4. Other bits are preserved.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0058_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0058_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0058OpaqueSpec;
+        impl crate::RegisterSpec for Word0058OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`control_0058::R`](R) reader structure"]
-        impl crate::Readable for Control0058Spec {}
-        #[doc = "`write(|w| ..)` method takes [`control_0058::W`](W) writer structure"]
-        impl crate::Writable for Control0058Spec {
+        #[doc = "`read()` method returns [`word_0058_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0058OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0058_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0058OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "VALUE_0064 (rw) register accessor: Project-assigned name. One complete runtime function reads the complete word and publishes complete dynamic images. The image remains a register-level fact.\n\nYou can [`read`](crate::Reg::read) this register and get [`value_0064::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value_0064::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@value_0064`] module"]
-    #[doc(alias = "VALUE_0064")]
-    pub type Value0064 = crate::Reg<value_0064::Value0064Spec>;
-    #[doc = "Project-assigned name. One complete runtime function reads the complete word and publishes complete dynamic images. The image remains a register-level fact."]
-    pub mod value_0064 {
-        #[doc = "Register `VALUE_0064` reader"]
-        pub type R = crate::R<Value0064Spec>;
-        #[doc = "Register `VALUE_0064` writer"]
-        pub type W = crate::W<Value0064Spec>;
+    #[doc = "WORD_0064_OPAQUE (rw) register accessor: Opaque: meaning not established. One complete runtime function reads the complete word and publishes complete dynamic images. The image remains a register-level fact.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0064_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0064_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0064_opaque`] module"]
+    #[doc(alias = "WORD_0064_OPAQUE")]
+    pub type Word0064Opaque = crate::Reg<word_0064_opaque::Word0064OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. One complete runtime function reads the complete word and publishes complete dynamic images. The image remains a register-level fact."]
+    pub mod word_0064_opaque {
+        #[doc = "Register `WORD_0064_OPAQUE` reader"]
+        pub type R = crate::R<Word0064OpaqueSpec>;
+        #[doc = "Register `WORD_0064_OPAQUE` writer"]
+        pub type W = crate::W<Word0064OpaqueSpec>;
         impl core::fmt::Debug for R {
             fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                 write!(f, "{}", self.bits())
             }
         }
         impl W {}
-        #[doc = "Project-assigned name. One complete runtime function reads the complete word and publishes complete dynamic images. The image remains a register-level fact.\n\nYou can [`read`](crate::Reg::read) this register and get [`value_0064::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value_0064::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Value0064Spec;
-        impl crate::RegisterSpec for Value0064Spec {
+        #[doc = "Opaque: meaning not established. One complete runtime function reads the complete word and publishes complete dynamic images. The image remains a register-level fact.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0064_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0064_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0064OpaqueSpec;
+        impl crate::RegisterSpec for Word0064OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`value_0064::R`](R) reader structure"]
-        impl crate::Readable for Value0064Spec {}
-        #[doc = "`write(|w| ..)` method takes [`value_0064::W`](W) writer structure"]
-        impl crate::Writable for Value0064Spec {
+        #[doc = "`read()` method returns [`word_0064_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0064OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0064_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0064OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "VALUE_0068 (w) register accessor: Project-assigned name. Complete publication replaces bits 0..23 with a runtime-derived value and clears bits 24..31.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value_0068::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@value_0068`] module"]
-    #[doc(alias = "VALUE_0068")]
-    pub type Value0068 = crate::Reg<value_0068::Value0068Spec>;
-    #[doc = "Project-assigned name. Complete publication replaces bits 0..23 with a runtime-derived value and clears bits 24..31."]
-    pub mod value_0068 {
-        #[doc = "Register `VALUE_0068` writer"]
-        pub type W = crate::W<Value0068Spec>;
+    #[doc = "WORD_0068_OPAQUE (w) register accessor: Opaque: meaning not established. Complete publication replaces bits 0..23 with a runtime-derived value and clears bits 24..31.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0068_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0068_opaque`] module"]
+    #[doc(alias = "WORD_0068_OPAQUE")]
+    pub type Word0068Opaque = crate::Reg<word_0068_opaque::Word0068OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete publication replaces bits 0..23 with a runtime-derived value and clears bits 24..31."]
+    pub mod word_0068_opaque {
+        #[doc = "Register `WORD_0068_OPAQUE` writer"]
+        pub type W = crate::W<Word0068OpaqueSpec>;
         #[doc = "Field `VALUE_LOW_24` writer - Project-assigned name."]
         pub type ValueLow24W<'a, REG> = crate::FieldWriter<'a, REG, 24, u32>;
         impl W {
             #[doc = "Bits 0:23 - Project-assigned name."]
             #[inline(always)]
-            pub fn value_low_24(&mut self) -> ValueLow24W<'_, Value0068Spec> {
+            pub fn value_low_24(&mut self) -> ValueLow24W<'_, Word0068OpaqueSpec> {
                 ValueLow24W::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete publication replaces bits 0..23 with a runtime-derived value and clears bits 24..31.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value_0068::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Value0068Spec;
-        impl crate::RegisterSpec for Value0068Spec {
+        #[doc = "Opaque: meaning not established. Complete publication replaces bits 0..23 with a runtime-derived value and clears bits 24..31.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0068_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0068OpaqueSpec;
+        impl crate::RegisterSpec for Word0068OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`value_0068::W`](W) writer structure"]
-        impl crate::Writable for Value0068Spec {
+        #[doc = "`write(|w| ..)` method takes [`word_0068_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0068OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "VALUE_006C (rw) register accessor: Project-assigned name. Complete word is read by one runtime path and receives either a complete runtime-derived image or a runtime-derived low-24-bit image.\n\nYou can [`read`](crate::Reg::read) this register and get [`value_006c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value_006c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@value_006c`] module"]
-    #[doc(alias = "VALUE_006C")]
-    pub type Value006c = crate::Reg<value_006c::Value006cSpec>;
-    #[doc = "Project-assigned name. Complete word is read by one runtime path and receives either a complete runtime-derived image or a runtime-derived low-24-bit image."]
-    pub mod value_006c {
-        #[doc = "Register `VALUE_006C` reader"]
-        pub type R = crate::R<Value006cSpec>;
-        #[doc = "Register `VALUE_006C` writer"]
-        pub type W = crate::W<Value006cSpec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+    #[doc = "WORD_006C_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete word is read by one runtime path and receives either a complete runtime-derived image or a runtime-derived low-24-bit image.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_006c_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_006c_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_006c_opaque`] module"]
+    #[doc(alias = "WORD_006C_OPAQUE")]
+    pub type Word006cOpaque = crate::Reg<word_006c_opaque::Word006cOpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete word is read by one runtime path and receives either a complete runtime-derived image or a runtime-derived low-24-bit image."]
+    pub mod word_006c_opaque {
+        #[doc = "Register `WORD_006C_OPAQUE` reader"]
+        pub type R = crate::R<Word006cOpaqueSpec>;
+        #[doc = "Register `WORD_006C_OPAQUE` writer"]
+        pub type W = crate::W<Word006cOpaqueSpec>;
+        #[doc = "Field `BITS_0_31_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueR = crate::FieldReader<u32>;
+        #[doc = "Field `BITS_0_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn bits_0_31_opaque(&self) -> Bits0_31OpaqueR {
+                Bits0_31OpaqueR::new(self.bits)
             }
         }
         impl W {
-            #[doc = "Bits 0:31 - Project-assigned name."]
+            #[doc = "Bits 0:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, Value006cSpec> {
-                ImageW::new(self, 0)
+            pub fn bits_0_31_opaque(&mut self) -> Bits0_31OpaqueW<'_, Word006cOpaqueSpec> {
+                Bits0_31OpaqueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete word is read by one runtime path and receives either a complete runtime-derived image or a runtime-derived low-24-bit image.\n\nYou can [`read`](crate::Reg::read) this register and get [`value_006c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value_006c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Value006cSpec;
-        impl crate::RegisterSpec for Value006cSpec {
+        #[doc = "Opaque: meaning not established. Complete word is read by one runtime path and receives either a complete runtime-derived image or a runtime-derived low-24-bit image.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_006c_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_006c_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word006cOpaqueSpec;
+        impl crate::RegisterSpec for Word006cOpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`value_006c::R`](R) reader structure"]
-        impl crate::Readable for Value006cSpec {}
-        #[doc = "`write(|w| ..)` method takes [`value_006c::W`](W) writer structure"]
-        impl crate::Writable for Value006cSpec {
+        #[doc = "`read()` method returns [`word_006c_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word006cOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_006c_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word006cOpaqueSpec {
             type Safety = crate::Safe;
         }
     }
-    #[doc = "CONTROL_0078 (rw) register accessor: Project-assigned name. Initialization sets bit 25 through a fresh-read RMW. Other bits are preserved.\n\nYou can [`read`](crate::Reg::read) this register and get [`control_0078::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control_0078::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control_0078`] module"]
-    #[doc(alias = "CONTROL_0078")]
-    pub type Control0078 = crate::Reg<control_0078::Control0078Spec>;
-    #[doc = "Project-assigned name. Initialization sets bit 25 through a fresh-read RMW. Other bits are preserved."]
-    pub mod control_0078 {
-        #[doc = "Register `CONTROL_0078` reader"]
-        pub type R = crate::R<Control0078Spec>;
-        #[doc = "Register `CONTROL_0078` writer"]
-        pub type W = crate::W<Control0078Spec>;
+    #[doc = "WORD_0078_OPAQUE (rw) register accessor: Opaque: meaning not established. Initialization sets bit 25 through a fresh-read RMW. Other bits are preserved.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0078_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0078_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0078_opaque`] module"]
+    #[doc(alias = "WORD_0078_OPAQUE")]
+    pub type Word0078Opaque = crate::Reg<word_0078_opaque::Word0078OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Initialization sets bit 25 through a fresh-read RMW. Other bits are preserved."]
+    pub mod word_0078_opaque {
+        #[doc = "Register `WORD_0078_OPAQUE` reader"]
+        pub type R = crate::R<Word0078OpaqueSpec>;
+        #[doc = "Register `WORD_0078_OPAQUE` writer"]
+        pub type W = crate::W<Word0078OpaqueSpec>;
         #[doc = "Field `CONTROL_25` reader - Project-assigned name."]
         pub type Control25R = crate::BitReader;
         #[doc = "Field `CONTROL_25` writer - Project-assigned name."]
@@ -47181,19 +47178,19 @@ pub mod btdm_runtime_control {
         impl W {
             #[doc = "Bit 25 - Project-assigned name."]
             #[inline(always)]
-            pub fn control_25(&mut self) -> Control25W<'_, Control0078Spec> {
+            pub fn control_25(&mut self) -> Control25W<'_, Word0078OpaqueSpec> {
                 Control25W::new(self, 25)
             }
         }
-        #[doc = "Project-assigned name. Initialization sets bit 25 through a fresh-read RMW. Other bits are preserved.\n\nYou can [`read`](crate::Reg::read) this register and get [`control_0078::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control_0078::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Control0078Spec;
-        impl crate::RegisterSpec for Control0078Spec {
+        #[doc = "Opaque: meaning not established. Initialization sets bit 25 through a fresh-read RMW. Other bits are preserved.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0078_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0078_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0078OpaqueSpec;
+        impl crate::RegisterSpec for Word0078OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`control_0078::R`](R) reader structure"]
-        impl crate::Readable for Control0078Spec {}
-        #[doc = "`write(|w| ..)` method takes [`control_0078::W`](W) writer structure"]
-        impl crate::Writable for Control0078Spec {
+        #[doc = "`read()` method returns [`word_0078_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word0078OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_0078_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0078OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -47471,13 +47468,13 @@ pub mod ble_sync_publication {
     pub mod value_0 {
         #[doc = "Register `VALUE_0` writer"]
         pub type W = crate::W<Value0Spec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, Value0Spec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, Value0Spec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. One runtime-derived complete 32-bit image.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value_0::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -47811,22 +47808,22 @@ pub mod ble_hw_accelerator {
         pub type R = crate::R<InitConfigSpec>;
         #[doc = "Register `INIT_CONFIG` writer"]
         pub type W = crate::W<InitConfigSpec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `VALUE` reader - Project-assigned name."]
+        pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl R {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, InitConfigSpec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, InitConfigSpec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. BLE PHY initialization writes the complete finite image 0x000002F0. Inner semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_config::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_config::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -47876,22 +47873,22 @@ pub mod ble_hw_accelerator {
         pub type R = crate::R<EncryptConfigSpec>;
         #[doc = "Register `ENCRYPT_CONFIG` writer"]
         pub type W = crate::W<EncryptConfigSpec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `VALUE` reader - Project-assigned name."]
+        pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl R {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, EncryptConfigSpec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, EncryptConfigSpec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. r_ble_hw_encrypt_block writes the finite complete image 1 before publishing buffer pointers.\n\nYou can [`read`](crate::Reg::read) this register and get [`encrypt_config::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`encrypt_config::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -47952,13 +47949,13 @@ pub mod ble_hw_accelerator {
     pub mod encrypt_key_word_0 {
         #[doc = "Register `ENCRYPT_KEY_WORD_0` writer"]
         pub type W = crate::W<EncryptKeyWord0Spec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, EncryptKeyWord0Spec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, EncryptKeyWord0Spec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. Little-endian word assembled from encryption-key argument bytes 0 through 3.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`encrypt_key_word_0::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -47978,13 +47975,13 @@ pub mod ble_hw_accelerator {
     pub mod encrypt_key_word_1 {
         #[doc = "Register `ENCRYPT_KEY_WORD_1` writer"]
         pub type W = crate::W<EncryptKeyWord1Spec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, EncryptKeyWord1Spec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, EncryptKeyWord1Spec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. Little-endian word assembled from encryption-key argument bytes 4 through 7.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`encrypt_key_word_1::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -48004,13 +48001,13 @@ pub mod ble_hw_accelerator {
     pub mod encrypt_key_word_2 {
         #[doc = "Register `ENCRYPT_KEY_WORD_2` writer"]
         pub type W = crate::W<EncryptKeyWord2Spec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, EncryptKeyWord2Spec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, EncryptKeyWord2Spec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. Little-endian word assembled from encryption-key argument bytes 8 through 11.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`encrypt_key_word_2::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -48030,13 +48027,13 @@ pub mod ble_hw_accelerator {
     pub mod encrypt_key_word_3 {
         #[doc = "Register `ENCRYPT_KEY_WORD_3` writer"]
         pub type W = crate::W<EncryptKeyWord3Spec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, EncryptKeyWord3Spec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, EncryptKeyWord3Spec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. Little-endian word assembled from encryption-key argument bytes 12 through 15.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`encrypt_key_word_3::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -48136,13 +48133,13 @@ pub mod ble_hw_accelerator {
     pub mod resolv_list_argument {
         #[doc = "Register `RESOLV_LIST_ARGUMENT` writer"]
         pub type W = crate::W<ResolvListArgumentSpec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, ResolvListArgumentSpec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, ResolvListArgumentSpec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. Complete first argument published by r_ble_hw_resolv_list_search.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`resolv_list_argument::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -48220,13 +48217,13 @@ pub mod ble_hw_accelerator {
     pub mod resolv_result_pointer_offset {
         #[doc = "Register `RESOLV_RESULT_POINTER_OFFSET` reader"]
         pub type R = crate::R<ResolvResultPointerOffsetSpec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` reader - Project-assigned name."]
+        pub type ValueR = crate::FieldReader<u32>;
         impl R {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         #[doc = "Project-assigned name. Search result combined with SRAM prefix 0x2F000000 to form the returned pointer. The exact encoded width remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`resolv_result_pointer_offset::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -48244,13 +48241,13 @@ pub mod ble_hw_accelerator {
     pub mod resolv_result_present {
         #[doc = "Register `RESOLV_RESULT_PRESENT` reader"]
         pub type R = crate::R<ResolvResultPresentSpec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` reader - Project-assigned name."]
+        pub type ValueR = crate::FieldReader<u32>;
         impl R {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         #[doc = "Project-assigned name. Complete word tested for zero before the result pointer and metadata are consumed.\n\nYou can [`read`](crate::Reg::read) this register and get [`resolv_result_present::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -48346,13 +48343,13 @@ pub mod ble_hw_accelerator {
     pub mod encrypt_completion_status {
         #[doc = "Register `ENCRYPT_COMPLETION_STATUS` reader"]
         pub type R = crate::R<EncryptCompletionStatusSpec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` reader - Project-assigned name."]
+        pub type ValueR = crate::FieldReader<u32>;
         impl R {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         #[doc = "Project-assigned name. r_ble_hw_encrypt_block polls the complete word until nonzero, with a finite software timeout. Inner encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`encrypt_completion_status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -48372,22 +48369,22 @@ pub mod ble_hw_accelerator {
         pub type R = crate::R<InitSramRegion0Spec>;
         #[doc = "Register `INIT_SRAM_REGION_0` writer"]
         pub type W = crate::W<InitSramRegion0Spec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `VALUE` reader - Project-assigned name."]
+        pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl R {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, InitSramRegion0Spec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, InitSramRegion0Spec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. BLE PHY initialization writes the complete finite image 0x2F080000. Inner semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_sram_region_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_sram_region_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -48411,22 +48408,22 @@ pub mod ble_hw_accelerator {
         pub type R = crate::R<InitSramRegion1Spec>;
         #[doc = "Register `INIT_SRAM_REGION_1` writer"]
         pub type W = crate::W<InitSramRegion1Spec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `VALUE` reader - Project-assigned name."]
+        pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl R {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, InitSramRegion1Spec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, InitSramRegion1Spec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. BLE PHY initialization writes the complete finite image 0x2F000000. Inner semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_sram_region_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_sram_region_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -48512,10 +48509,10 @@ pub mod ble_hw_runtime_control {
         phy_init_configuration: PhyInitConfiguration,
         phy_init_configuration_followup: PhyInitConfigurationFollowup,
         _reserved4: [u8; 0x0c],
-        config_0088: Config0088,
+        word_0088_opaque: Word0088Opaque,
         _reserved5: [u8; 0x04],
-        config_0090: Config0090,
-        config_0094: Config0094,
+        word_0090_opaque: Word0090Opaque,
+        word_0094_opaque: Word0094Opaque,
     }
     impl RegisterBlock {
         #[doc = "0x30..0x50 - Project-assigned name. Complete status word read once for each of eight sources before optional diagnostic reporting."]
@@ -48550,20 +48547,20 @@ pub mod ble_hw_runtime_control {
         pub const fn phy_init_configuration_followup(&self) -> &PhyInitConfigurationFollowup {
             &self.phy_init_configuration_followup
         }
-        #[doc = "0x88 - Project-assigned name. Complete image formed from the low five bits of one controller configuration byte."]
+        #[doc = "0x88 - Opaque: meaning not established. Complete image formed from the low five bits of one controller configuration byte."]
         #[inline(always)]
-        pub const fn config_0088(&self) -> &Config0088 {
-            &self.config_0088
+        pub const fn word_0088_opaque(&self) -> &Word0088Opaque {
+            &self.word_0088_opaque
         }
-        #[doc = "0x90 - Project-assigned name. Complete image formed from two low-five-bit controller values in bits 0..4 and 8..12 plus finite one bits at positions 5 and 13."]
+        #[doc = "0x90 - Opaque: meaning not established. Complete image formed from two low-five-bit controller values in bits 0..4 and 8..12 plus finite one bits at positions 5 and 13."]
         #[inline(always)]
-        pub const fn config_0090(&self) -> &Config0090 {
-            &self.config_0090
+        pub const fn word_0090_opaque(&self) -> &Word0090Opaque {
+            &self.word_0090_opaque
         }
-        #[doc = "0x94 - Project-assigned name. Complete image formed from one controller configuration byte."]
+        #[doc = "0x94 - Opaque: meaning not established. Complete image formed from one controller configuration byte."]
         #[inline(always)]
-        pub const fn config_0094(&self) -> &Config0094 {
-            &self.config_0094
+        pub const fn word_0094_opaque(&self) -> &Word0094Opaque {
+            &self.word_0094_opaque
         }
     }
     #[doc = "STATUS (r) register accessor: Project-assigned name. Complete status word read once for each of eight sources before optional diagnostic reporting.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@status`] module"]
@@ -48657,13 +48654,13 @@ pub mod ble_hw_runtime_control {
     pub mod phy_init_configuration_followup {
         #[doc = "Register `PHY_INIT_CONFIGURATION_FOLLOWUP` writer"]
         pub type W = crate::W<PhyInitConfigurationFollowupSpec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `VALUE` writer - Project-assigned name."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
         impl W {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, PhyInitConfigurationFollowupSpec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, PhyInitConfigurationFollowupSpec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. The hardware meaning of this ordered follow-up write remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_configuration_followup::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -48676,39 +48673,39 @@ pub mod ble_hw_runtime_control {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CONFIG_0088 (w) register accessor: Project-assigned name. Complete image formed from the low five bits of one controller configuration byte.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`config_0088::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@config_0088`] module"]
-    #[doc(alias = "CONFIG_0088")]
-    pub type Config0088 = crate::Reg<config_0088::Config0088Spec>;
-    #[doc = "Project-assigned name. Complete image formed from the low five bits of one controller configuration byte."]
-    pub mod config_0088 {
-        #[doc = "Register `CONFIG_0088` writer"]
-        pub type W = crate::W<Config0088Spec>;
+    #[doc = "WORD_0088_OPAQUE (w) register accessor: Opaque: meaning not established. Complete image formed from the low five bits of one controller configuration byte.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0088_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0088_opaque`] module"]
+    #[doc(alias = "WORD_0088_OPAQUE")]
+    pub type Word0088Opaque = crate::Reg<word_0088_opaque::Word0088OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete image formed from the low five bits of one controller configuration byte."]
+    pub mod word_0088_opaque {
+        #[doc = "Register `WORD_0088_OPAQUE` writer"]
+        pub type W = crate::W<Word0088OpaqueSpec>;
         #[doc = "Field `VALUE_LOW_5` writer - Project-assigned name."]
         pub type ValueLow5W<'a, REG> = crate::FieldWriter<'a, REG, 5>;
         impl W {
             #[doc = "Bits 0:4 - Project-assigned name."]
             #[inline(always)]
-            pub fn value_low_5(&mut self) -> ValueLow5W<'_, Config0088Spec> {
+            pub fn value_low_5(&mut self) -> ValueLow5W<'_, Word0088OpaqueSpec> {
                 ValueLow5W::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete image formed from the low five bits of one controller configuration byte.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`config_0088::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Config0088Spec;
-        impl crate::RegisterSpec for Config0088Spec {
+        #[doc = "Opaque: meaning not established. Complete image formed from the low five bits of one controller configuration byte.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0088_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0088OpaqueSpec;
+        impl crate::RegisterSpec for Word0088OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`config_0088::W`](W) writer structure"]
-        impl crate::Writable for Config0088Spec {
+        #[doc = "`write(|w| ..)` method takes [`word_0088_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0088OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CONFIG_0090 (w) register accessor: Project-assigned name. Complete image formed from two low-five-bit controller values in bits 0..4 and 8..12 plus finite one bits at positions 5 and 13.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`config_0090::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@config_0090`] module"]
-    #[doc(alias = "CONFIG_0090")]
-    pub type Config0090 = crate::Reg<config_0090::Config0090Spec>;
-    #[doc = "Project-assigned name. Complete image formed from two low-five-bit controller values in bits 0..4 and 8..12 plus finite one bits at positions 5 and 13."]
-    pub mod config_0090 {
-        #[doc = "Register `CONFIG_0090` writer"]
-        pub type W = crate::W<Config0090Spec>;
+    #[doc = "WORD_0090_OPAQUE (w) register accessor: Opaque: meaning not established. Complete image formed from two low-five-bit controller values in bits 0..4 and 8..12 plus finite one bits at positions 5 and 13.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0090_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0090_opaque`] module"]
+    #[doc(alias = "WORD_0090_OPAQUE")]
+    pub type Word0090Opaque = crate::Reg<word_0090_opaque::Word0090OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete image formed from two low-five-bit controller values in bits 0..4 and 8..12 plus finite one bits at positions 5 and 13."]
+    pub mod word_0090_opaque {
+        #[doc = "Register `WORD_0090_OPAQUE` writer"]
+        pub type W = crate::W<Word0090OpaqueSpec>;
         #[doc = "Field `VALUE_0` writer - Project-assigned name."]
         pub type Value0W<'a, REG> = crate::FieldWriter<'a, REG, 5>;
         #[doc = "Field `CONFIG_5` writer - Project-assigned name."]
@@ -48720,58 +48717,58 @@ pub mod ble_hw_runtime_control {
         impl W {
             #[doc = "Bits 0:4 - Project-assigned name."]
             #[inline(always)]
-            pub fn value_0(&mut self) -> Value0W<'_, Config0090Spec> {
+            pub fn value_0(&mut self) -> Value0W<'_, Word0090OpaqueSpec> {
                 Value0W::new(self, 0)
             }
             #[doc = "Bit 5 - Project-assigned name."]
             #[inline(always)]
-            pub fn config_5(&mut self) -> Config5W<'_, Config0090Spec> {
+            pub fn config_5(&mut self) -> Config5W<'_, Word0090OpaqueSpec> {
                 Config5W::new(self, 5)
             }
             #[doc = "Bits 8:12 - Project-assigned name."]
             #[inline(always)]
-            pub fn value_1(&mut self) -> Value1W<'_, Config0090Spec> {
+            pub fn value_1(&mut self) -> Value1W<'_, Word0090OpaqueSpec> {
                 Value1W::new(self, 8)
             }
             #[doc = "Bit 13 - Project-assigned name."]
             #[inline(always)]
-            pub fn config_13(&mut self) -> Config13W<'_, Config0090Spec> {
+            pub fn config_13(&mut self) -> Config13W<'_, Word0090OpaqueSpec> {
                 Config13W::new(self, 13)
             }
         }
-        #[doc = "Project-assigned name. Complete image formed from two low-five-bit controller values in bits 0..4 and 8..12 plus finite one bits at positions 5 and 13.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`config_0090::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Config0090Spec;
-        impl crate::RegisterSpec for Config0090Spec {
+        #[doc = "Opaque: meaning not established. Complete image formed from two low-five-bit controller values in bits 0..4 and 8..12 plus finite one bits at positions 5 and 13.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0090_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0090OpaqueSpec;
+        impl crate::RegisterSpec for Word0090OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`config_0090::W`](W) writer structure"]
-        impl crate::Writable for Config0090Spec {
+        #[doc = "`write(|w| ..)` method takes [`word_0090_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0090OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CONFIG_0094 (w) register accessor: Project-assigned name. Complete image formed from one controller configuration byte.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`config_0094::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@config_0094`] module"]
-    #[doc(alias = "CONFIG_0094")]
-    pub type Config0094 = crate::Reg<config_0094::Config0094Spec>;
-    #[doc = "Project-assigned name. Complete image formed from one controller configuration byte."]
-    pub mod config_0094 {
-        #[doc = "Register `CONFIG_0094` writer"]
-        pub type W = crate::W<Config0094Spec>;
+    #[doc = "WORD_0094_OPAQUE (w) register accessor: Opaque: meaning not established. Complete image formed from one controller configuration byte.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0094_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_0094_opaque`] module"]
+    #[doc(alias = "WORD_0094_OPAQUE")]
+    pub type Word0094Opaque = crate::Reg<word_0094_opaque::Word0094OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete image formed from one controller configuration byte."]
+    pub mod word_0094_opaque {
+        #[doc = "Register `WORD_0094_OPAQUE` writer"]
+        pub type W = crate::W<Word0094OpaqueSpec>;
         #[doc = "Field `VALUE_LOW_8` writer - Project-assigned name."]
         pub type ValueLow8W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
         impl W {
             #[doc = "Bits 0:7 - Project-assigned name."]
             #[inline(always)]
-            pub fn value_low_8(&mut self) -> ValueLow8W<'_, Config0094Spec> {
+            pub fn value_low_8(&mut self) -> ValueLow8W<'_, Word0094OpaqueSpec> {
                 ValueLow8W::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Complete image formed from one controller configuration byte.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`config_0094::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Config0094Spec;
-        impl crate::RegisterSpec for Config0094Spec {
+        #[doc = "Opaque: meaning not established. Complete image formed from one controller configuration byte.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0094_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word0094OpaqueSpec;
+        impl crate::RegisterSpec for Word0094OpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`config_0094::W`](W) writer structure"]
-        impl crate::Writable for Config0094Spec {
+        #[doc = "`write(|w| ..)` method takes [`word_0094_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word0094OpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -49254,22 +49251,22 @@ pub mod bt_v3_2_baseband {
         pub type R = crate::R<RxSetupControl0Spec>;
         #[doc = "Register `RX_SETUP_CONTROL_0` writer"]
         pub type W = crate::W<RxSetupControl0Spec>;
-        #[doc = "Field `SET_BY_RX_SETUP_BIT_0` reader - Project-assigned name. Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
-        pub type SetByRxSetupBit0R = crate::BitReader;
-        #[doc = "Field `SET_BY_RX_SETUP_BIT_0` writer - Project-assigned name. Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
-        pub type SetByRxSetupBit0W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_0_OPAQUE` reader - Opaque: meaning not established. Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
+        pub type Bit0OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_0_OPAQUE` writer - Opaque: meaning not established. Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
+        pub type Bit0OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bit 0 - Project-assigned name. Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
+            #[doc = "Bit 0 - Opaque: meaning not established. Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
             #[inline(always)]
-            pub fn set_by_rx_setup_bit_0(&self) -> SetByRxSetupBit0R {
-                SetByRxSetupBit0R::new((self.bits & 1) != 0)
+            pub fn bit_0_opaque(&self) -> Bit0OpaqueR {
+                Bit0OpaqueR::new((self.bits & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bit 0 - Project-assigned name. Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
+            #[doc = "Bit 0 - Opaque: meaning not established. Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
             #[inline(always)]
-            pub fn set_by_rx_setup_bit_0(&mut self) -> SetByRxSetupBit0W<'_, RxSetupControl0Spec> {
-                SetByRxSetupBit0W::new(self, 0)
+            pub fn bit_0_opaque(&mut self) -> Bit0OpaqueW<'_, RxSetupControl0Spec> {
+                Bit0OpaqueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. Complete bt_bb_rx_set sets positional bit 0 through a fresh-read RMW. Its independent hardware meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_control_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_control_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -49387,19 +49384,19 @@ pub mod bt_v3_2_baseband {
         pub type R = crate::R<LeTxOnDelaySpec>;
         #[doc = "Register `LE_TX_ON_DELAY` writer"]
         pub type W = crate::W<LeTxOnDelaySpec>;
-        #[doc = "Field `FORCE_ZERO_BITS_16_18` reader - Project-assigned name. bt_bb_set_le_tx_on_delay clears these three low positional bits in the same RMW that writes the encoded delay. Their hardware meaning remains unknown."]
-        pub type ForceZeroBits16_18R = crate::FieldReader;
-        #[doc = "Field `FORCE_ZERO_BITS_16_18` writer - Project-assigned name. bt_bb_set_le_tx_on_delay clears these three low positional bits in the same RMW that writes the encoded delay. Their hardware meaning remains unknown."]
-        pub type ForceZeroBits16_18W<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
+        #[doc = "Field `BITS_16_18_OPAQUE` reader - Opaque: meaning not established. bt_bb_set_le_tx_on_delay clears these three low positional bits in the same RMW that writes the encoded delay. Their hardware meaning remains unknown."]
+        pub type Bits16_18OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_16_18_OPAQUE` writer - Opaque: meaning not established. bt_bb_set_le_tx_on_delay clears these three low positional bits in the same RMW that writes the encoded delay. Their hardware meaning remains unknown."]
+        pub type Bits16_18OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
         #[doc = "Field `ENCODED_VALUE_MINUS_10` reader - Project-assigned name. bt_bb_set_le_tx_on_delay stores argument 0 minus 10; bt_bb_get_le_tx_on_delay returns this field plus 10."]
         pub type EncodedValueMinus10R = crate::FieldReader;
         #[doc = "Field `ENCODED_VALUE_MINUS_10` writer - Project-assigned name. bt_bb_set_le_tx_on_delay stores argument 0 minus 10; bt_bb_get_le_tx_on_delay returns this field plus 10."]
         pub type EncodedValueMinus10W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
-            #[doc = "Bits 16:18 - Project-assigned name. bt_bb_set_le_tx_on_delay clears these three low positional bits in the same RMW that writes the encoded delay. Their hardware meaning remains unknown."]
+            #[doc = "Bits 16:18 - Opaque: meaning not established. bt_bb_set_le_tx_on_delay clears these three low positional bits in the same RMW that writes the encoded delay. Their hardware meaning remains unknown."]
             #[inline(always)]
-            pub fn force_zero_bits_16_18(&self) -> ForceZeroBits16_18R {
-                ForceZeroBits16_18R::new(((self.bits >> 16) & 7) as u8)
+            pub fn bits_16_18_opaque(&self) -> Bits16_18OpaqueR {
+                Bits16_18OpaqueR::new(((self.bits >> 16) & 7) as u8)
             }
             #[doc = "Bits 19:26 - Project-assigned name. bt_bb_set_le_tx_on_delay stores argument 0 minus 10; bt_bb_get_le_tx_on_delay returns this field plus 10."]
             #[inline(always)]
@@ -49408,10 +49405,10 @@ pub mod bt_v3_2_baseband {
             }
         }
         impl W {
-            #[doc = "Bits 16:18 - Project-assigned name. bt_bb_set_le_tx_on_delay clears these three low positional bits in the same RMW that writes the encoded delay. Their hardware meaning remains unknown."]
+            #[doc = "Bits 16:18 - Opaque: meaning not established. bt_bb_set_le_tx_on_delay clears these three low positional bits in the same RMW that writes the encoded delay. Their hardware meaning remains unknown."]
             #[inline(always)]
-            pub fn force_zero_bits_16_18(&mut self) -> ForceZeroBits16_18W<'_, LeTxOnDelaySpec> {
-                ForceZeroBits16_18W::new(self, 16)
+            pub fn bits_16_18_opaque(&mut self) -> Bits16_18OpaqueW<'_, LeTxOnDelaySpec> {
+                Bits16_18OpaqueW::new(self, 16)
             }
             #[doc = "Bits 19:26 - Project-assigned name. bt_bb_set_le_tx_on_delay stores argument 0 minus 10; bt_bb_get_le_tx_on_delay returns this field plus 10."]
             #[inline(always)]
@@ -49464,22 +49461,22 @@ pub mod bt_v3_2_baseband {
         pub type R = crate::R<RxSetupControl1Spec>;
         #[doc = "Register `RX_SETUP_CONTROL_1` writer"]
         pub type W = crate::W<RxSetupControl1Spec>;
-        #[doc = "Field `SET_BY_RX_SETUP_BIT_2` reader - Project-assigned name. Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
-        pub type SetByRxSetupBit2R = crate::BitReader;
-        #[doc = "Field `SET_BY_RX_SETUP_BIT_2` writer - Project-assigned name. Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
-        pub type SetByRxSetupBit2W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_2_OPAQUE` reader - Opaque: meaning not established. Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
+        pub type Bit2OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_2_OPAQUE` writer - Opaque: meaning not established. Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
+        pub type Bit2OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bit 2 - Project-assigned name. Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
+            #[doc = "Bit 2 - Opaque: meaning not established. Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
             #[inline(always)]
-            pub fn set_by_rx_setup_bit_2(&self) -> SetByRxSetupBit2R {
-                SetByRxSetupBit2R::new(((self.bits >> 2) & 1) != 0)
+            pub fn bit_2_opaque(&self) -> Bit2OpaqueR {
+                Bit2OpaqueR::new(((self.bits >> 2) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bit 2 - Project-assigned name. Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
+            #[doc = "Bit 2 - Opaque: meaning not established. Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven."]
             #[inline(always)]
-            pub fn set_by_rx_setup_bit_2(&mut self) -> SetByRxSetupBit2W<'_, RxSetupControl1Spec> {
-                SetByRxSetupBit2W::new(self, 2)
+            pub fn bit_2_opaque(&mut self) -> Bit2OpaqueW<'_, RxSetupControl1Spec> {
+                Bit2OpaqueW::new(self, 2)
             }
         }
         #[doc = "Project-assigned name. Complete bt_bb_rx_set sets positional bit 2 through a fresh-read RMW. Its independent hardware meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_control_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_control_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -49615,10 +49612,10 @@ pub mod bt_v3_2_baseband {
         pub type RxSetupEnableR = crate::BitReader;
         #[doc = "Field `RX_SETUP_ENABLE` writer - Project-assigned name. bt_agc_restart_set sets this independently observed low control bit."]
         pub type RxSetupEnableW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `FINAL_FORCE_ZERO_13` reader - Project-assigned name. bt_bb_v2_rx_set clears this independently observed control bit after the receive leaf sequence."]
-        pub type FinalForceZero13R = crate::BitReader;
-        #[doc = "Field `FINAL_FORCE_ZERO_13` writer - Project-assigned name. bt_bb_v2_rx_set clears this independently observed control bit after the receive leaf sequence."]
-        pub type FinalForceZero13W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_13_OPAQUE` reader - Opaque: meaning not established. bt_bb_v2_rx_set clears this independently observed control bit after the receive leaf sequence."]
+        pub type Bit13OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_13_OPAQUE` writer - Opaque: meaning not established. bt_bb_v2_rx_set clears this independently observed control bit after the receive leaf sequence."]
+        pub type Bit13OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `CONFIG_VALUE` reader - Project-assigned name. bt_bb_rx_correlator_set replaces this field with the finite value 8."]
         pub type ConfigValueR = crate::FieldReader;
         #[doc = "Field `CONFIG_VALUE` writer - Project-assigned name. bt_bb_rx_correlator_set replaces this field with the finite value 8."]
@@ -49629,10 +49626,10 @@ pub mod bt_v3_2_baseband {
             pub fn rx_setup_enable(&self) -> RxSetupEnableR {
                 RxSetupEnableR::new((self.bits & 1) != 0)
             }
-            #[doc = "Bit 13 - Project-assigned name. bt_bb_v2_rx_set clears this independently observed control bit after the receive leaf sequence."]
+            #[doc = "Bit 13 - Opaque: meaning not established. bt_bb_v2_rx_set clears this independently observed control bit after the receive leaf sequence."]
             #[inline(always)]
-            pub fn final_force_zero_13(&self) -> FinalForceZero13R {
-                FinalForceZero13R::new(((self.bits >> 13) & 1) != 0)
+            pub fn bit_13_opaque(&self) -> Bit13OpaqueR {
+                Bit13OpaqueR::new(((self.bits >> 13) & 1) != 0)
             }
             #[doc = "Bits 20:25 - Project-assigned name. bt_bb_rx_correlator_set replaces this field with the finite value 8."]
             #[inline(always)]
@@ -49646,12 +49643,10 @@ pub mod bt_v3_2_baseband {
             pub fn rx_setup_enable(&mut self) -> RxSetupEnableW<'_, RxCorrelatorControlSpec> {
                 RxSetupEnableW::new(self, 0)
             }
-            #[doc = "Bit 13 - Project-assigned name. bt_bb_v2_rx_set clears this independently observed control bit after the receive leaf sequence."]
+            #[doc = "Bit 13 - Opaque: meaning not established. bt_bb_v2_rx_set clears this independently observed control bit after the receive leaf sequence."]
             #[inline(always)]
-            pub fn final_force_zero_13(
-                &mut self,
-            ) -> FinalForceZero13W<'_, RxCorrelatorControlSpec> {
-                FinalForceZero13W::new(self, 13)
+            pub fn bit_13_opaque(&mut self) -> Bit13OpaqueW<'_, RxCorrelatorControlSpec> {
+                Bit13OpaqueW::new(self, 13)
             }
             #[doc = "Bits 20:25 - Project-assigned name. bt_bb_rx_correlator_set replaces this field with the finite value 8."]
             #[inline(always)]
@@ -49748,10 +49743,10 @@ pub mod bt_v3_2_baseband {
         pub type PeriodArgument0ImageR = crate::FieldReader<u16>;
         #[doc = "Field `PERIOD_ARGUMENT_0_IMAGE` writer - Project-assigned name. Eleven-bit image produced by bt_bb_tx_cca_period from argument 0 using the exact vendor arithmetic."]
         pub type PeriodArgument0ImageW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
-        #[doc = "Field `PERIOD_FORCE_ZERO_20_22` reader - Project-assigned name. bt_bb_tx_cca_period explicitly clears bits 20:22 in the same fresh-read update that replaces bits 23:30."]
-        pub type PeriodForceZero20_22R = crate::FieldReader;
-        #[doc = "Field `PERIOD_FORCE_ZERO_20_22` writer - Project-assigned name. bt_bb_tx_cca_period explicitly clears bits 20:22 in the same fresh-read update that replaces bits 23:30."]
-        pub type PeriodForceZero20_22W<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
+        #[doc = "Field `BITS_20_22_OPAQUE` reader - Opaque: meaning not established. bt_bb_tx_cca_period explicitly clears bits 20:22 in the same fresh-read update that replaces bits 23:30."]
+        pub type Bits20_22OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_20_22_OPAQUE` writer - Opaque: meaning not established. bt_bb_tx_cca_period explicitly clears bits 20:22 in the same fresh-read update that replaces bits 23:30."]
+        pub type Bits20_22OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
         #[doc = "Field `PERIOD_ARGUMENT_0_MINUS_ARGUMENT_1_IMAGE` reader - Project-assigned name. Eight-bit image produced by bt_bb_tx_cca_period from arguments 0 and 1 using the exact vendor arithmetic."]
         pub type PeriodArgument0MinusArgument1ImageR = crate::FieldReader;
         #[doc = "Field `PERIOD_ARGUMENT_0_MINUS_ARGUMENT_1_IMAGE` writer - Project-assigned name. Eight-bit image produced by bt_bb_tx_cca_period from arguments 0 and 1 using the exact vendor arithmetic."]
@@ -49777,10 +49772,10 @@ pub mod bt_v3_2_baseband {
             pub fn period_argument_0_image(&self) -> PeriodArgument0ImageR {
                 PeriodArgument0ImageR::new(((self.bits >> 9) & 0x07ff) as u16)
             }
-            #[doc = "Bits 20:22 - Project-assigned name. bt_bb_tx_cca_period explicitly clears bits 20:22 in the same fresh-read update that replaces bits 23:30."]
+            #[doc = "Bits 20:22 - Opaque: meaning not established. bt_bb_tx_cca_period explicitly clears bits 20:22 in the same fresh-read update that replaces bits 23:30."]
             #[inline(always)]
-            pub fn period_force_zero_20_22(&self) -> PeriodForceZero20_22R {
-                PeriodForceZero20_22R::new(((self.bits >> 20) & 7) as u8)
+            pub fn bits_20_22_opaque(&self) -> Bits20_22OpaqueR {
+                Bits20_22OpaqueR::new(((self.bits >> 20) & 7) as u8)
             }
             #[doc = "Bits 23:30 - Project-assigned name. Eight-bit image produced by bt_bb_tx_cca_period from arguments 0 and 1 using the exact vendor arithmetic."]
             #[inline(always)]
@@ -49813,12 +49808,10 @@ pub mod bt_v3_2_baseband {
             ) -> PeriodArgument0ImageW<'_, TxCcaControl0Spec> {
                 PeriodArgument0ImageW::new(self, 9)
             }
-            #[doc = "Bits 20:22 - Project-assigned name. bt_bb_tx_cca_period explicitly clears bits 20:22 in the same fresh-read update that replaces bits 23:30."]
+            #[doc = "Bits 20:22 - Opaque: meaning not established. bt_bb_tx_cca_period explicitly clears bits 20:22 in the same fresh-read update that replaces bits 23:30."]
             #[inline(always)]
-            pub fn period_force_zero_20_22(
-                &mut self,
-            ) -> PeriodForceZero20_22W<'_, TxCcaControl0Spec> {
-                PeriodForceZero20_22W::new(self, 20)
+            pub fn bits_20_22_opaque(&mut self) -> Bits20_22OpaqueW<'_, TxCcaControl0Spec> {
+                Bits20_22OpaqueW::new(self, 20)
             }
             #[doc = "Bits 23:30 - Project-assigned name. Eight-bit image produced by bt_bb_tx_cca_period from arguments 0 and 1 using the exact vendor arithmetic."]
             #[inline(always)]
@@ -50183,13 +50176,13 @@ pub mod bt_v3_2_baseband {
     pub mod tx_cca_fifo_data {
         #[doc = "Register `TX_CCA_FIFO_DATA` reader"]
         pub type R = crate::R<TxCcaFifoDataSpec>;
-        #[doc = "Field `IMAGE` reader - Project-assigned name."]
-        pub type ImageR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` reader - Project-assigned name."]
+        pub type ValueR = crate::FieldReader<u32>;
         impl R {
             #[doc = "Bits 0:31 - Project-assigned name."]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         #[doc = "Project-assigned name. Complete 32-bit FIFO word returned by bt_bb_tx_cca_fifo_read; inner encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_cca_fifo_data::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -50217,10 +50210,10 @@ pub mod bt_v3_2_baseband {
         pub type InitArgument0R = crate::FieldReader<u16>;
         #[doc = "Field `INIT_ARGUMENT_0` writer - Project-assigned name. Sixteen-bit image of bt_bb_wdt_init argument 0."]
         pub type InitArgument0W<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
-        #[doc = "Field `INIT_FORCE_ONE` reader - Project-assigned name. bt_bb_wdt_init sets this bit before writing both argument fields."]
-        pub type InitForceOneR = crate::BitReader;
-        #[doc = "Field `INIT_FORCE_ONE` writer - Project-assigned name. bt_bb_wdt_init sets this bit before writing both argument fields."]
-        pub type InitForceOneW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_31_OPAQUE` reader - Opaque: meaning not established. bt_bb_wdt_init sets this bit before writing both argument fields."]
+        pub type Bit31OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_31_OPAQUE` writer - Opaque: meaning not established. bt_bb_wdt_init sets this bit before writing both argument fields."]
+        pub type Bit31OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bits 13:14 - Project-assigned name. Two-bit image of bt_bb_wdt_init argument 1."]
             #[inline(always)]
@@ -50232,10 +50225,10 @@ pub mod bt_v3_2_baseband {
             pub fn init_argument_0(&self) -> InitArgument0R {
                 InitArgument0R::new(((self.bits >> 15) & 0xffff) as u16)
             }
-            #[doc = "Bit 31 - Project-assigned name. bt_bb_wdt_init sets this bit before writing both argument fields."]
+            #[doc = "Bit 31 - Opaque: meaning not established. bt_bb_wdt_init sets this bit before writing both argument fields."]
             #[inline(always)]
-            pub fn init_force_one(&self) -> InitForceOneR {
-                InitForceOneR::new(((self.bits >> 31) & 1) != 0)
+            pub fn bit_31_opaque(&self) -> Bit31OpaqueR {
+                Bit31OpaqueR::new(((self.bits >> 31) & 1) != 0)
             }
         }
         impl W {
@@ -50249,10 +50242,10 @@ pub mod bt_v3_2_baseband {
             pub fn init_argument_0(&mut self) -> InitArgument0W<'_, WatchdogControlSpec> {
                 InitArgument0W::new(self, 15)
             }
-            #[doc = "Bit 31 - Project-assigned name. bt_bb_wdt_init sets this bit before writing both argument fields."]
+            #[doc = "Bit 31 - Opaque: meaning not established. bt_bb_wdt_init sets this bit before writing both argument fields."]
             #[inline(always)]
-            pub fn init_force_one(&mut self) -> InitForceOneW<'_, WatchdogControlSpec> {
-                InitForceOneW::new(self, 31)
+            pub fn bit_31_opaque(&mut self) -> Bit31OpaqueW<'_, WatchdogControlSpec> {
+                Bit31OpaqueW::new(self, 31)
             }
         }
         #[doc = "Project-assigned name. Bluetooth baseband watchdog initialization word. Only the exact bt_bb_wdt_init writes are assigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`watchdog_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`watchdog_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -50277,78 +50270,86 @@ pub mod bt_v3_2_baseband {
         pub type R = crate::R<Gaussian1mCoefficient0Spec>;
         #[doc = "Register `GAUSSIAN_1M_COEFFICIENT_0` writer"]
         pub type W = crate::W<Gaussian1mCoefficient0Spec>;
-        #[doc = "Field `BITS_2_9` reader - Project-assigned name. The leaf replaces this field with 0x13."]
-        pub type Bits2_9R = crate::FieldReader;
-        #[doc = "Field `BITS_2_9` writer - Project-assigned name. The leaf replaces this field with 0x13."]
-        pub type Bits2_9W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
-        #[doc = "Field `BITS_10_16` reader - Project-assigned name. The leaf replaces this field with 3."]
-        pub type Bits10_16R = crate::FieldReader;
-        #[doc = "Field `BITS_10_16` writer - Project-assigned name. The leaf replaces this field with 3."]
-        pub type Bits10_16W<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
-        #[doc = "Field `BITS_17_22` reader - Project-assigned name. The leaf replaces this field with 0."]
-        pub type Bits17_22R = crate::FieldReader;
-        #[doc = "Field `BITS_17_22` writer - Project-assigned name. The leaf replaces this field with 0."]
-        pub type Bits17_22W<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
-        #[doc = "Field `BITS_23_27` reader - Project-assigned name. The leaf replaces this field with 0."]
-        pub type Bits23_27R = crate::FieldReader;
-        #[doc = "Field `BITS_23_27` writer - Project-assigned name. The leaf replaces this field with 0."]
-        pub type Bits23_27W<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
-        #[doc = "Field `BITS_28_31` reader - Project-assigned name. The leaf replaces this field with 0."]
-        pub type Bits28_31R = crate::FieldReader;
-        #[doc = "Field `BITS_28_31` writer - Project-assigned name. The leaf replaces this field with 0."]
-        pub type Bits28_31W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `BITS_2_9_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x13."]
+        pub type Bits2_9OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_2_9_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x13."]
+        pub type Bits2_9OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `BITS_10_16_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 3."]
+        pub type Bits10_16OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_10_16_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 3."]
+        pub type Bits10_16OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
+        #[doc = "Field `BITS_17_22_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0."]
+        pub type Bits17_22OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_17_22_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0."]
+        pub type Bits17_22OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
+        #[doc = "Field `BITS_23_27_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0."]
+        pub type Bits23_27OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_23_27_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0."]
+        pub type Bits23_27OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
+        #[doc = "Field `BITS_28_31_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0."]
+        pub type Bits28_31OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_28_31_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0."]
+        pub type Bits28_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         impl R {
-            #[doc = "Bits 2:9 - Project-assigned name. The leaf replaces this field with 0x13."]
+            #[doc = "Bits 2:9 - Opaque: meaning not established. The leaf replaces this field with 0x13."]
             #[inline(always)]
-            pub fn bits_2_9(&self) -> Bits2_9R {
-                Bits2_9R::new(((self.bits >> 2) & 0xff) as u8)
+            pub fn bits_2_9_opaque(&self) -> Bits2_9OpaqueR {
+                Bits2_9OpaqueR::new(((self.bits >> 2) & 0xff) as u8)
             }
-            #[doc = "Bits 10:16 - Project-assigned name. The leaf replaces this field with 3."]
+            #[doc = "Bits 10:16 - Opaque: meaning not established. The leaf replaces this field with 3."]
             #[inline(always)]
-            pub fn bits_10_16(&self) -> Bits10_16R {
-                Bits10_16R::new(((self.bits >> 10) & 0x7f) as u8)
+            pub fn bits_10_16_opaque(&self) -> Bits10_16OpaqueR {
+                Bits10_16OpaqueR::new(((self.bits >> 10) & 0x7f) as u8)
             }
-            #[doc = "Bits 17:22 - Project-assigned name. The leaf replaces this field with 0."]
+            #[doc = "Bits 17:22 - Opaque: meaning not established. The leaf replaces this field with 0."]
             #[inline(always)]
-            pub fn bits_17_22(&self) -> Bits17_22R {
-                Bits17_22R::new(((self.bits >> 17) & 0x3f) as u8)
+            pub fn bits_17_22_opaque(&self) -> Bits17_22OpaqueR {
+                Bits17_22OpaqueR::new(((self.bits >> 17) & 0x3f) as u8)
             }
-            #[doc = "Bits 23:27 - Project-assigned name. The leaf replaces this field with 0."]
+            #[doc = "Bits 23:27 - Opaque: meaning not established. The leaf replaces this field with 0."]
             #[inline(always)]
-            pub fn bits_23_27(&self) -> Bits23_27R {
-                Bits23_27R::new(((self.bits >> 23) & 0x1f) as u8)
+            pub fn bits_23_27_opaque(&self) -> Bits23_27OpaqueR {
+                Bits23_27OpaqueR::new(((self.bits >> 23) & 0x1f) as u8)
             }
-            #[doc = "Bits 28:31 - Project-assigned name. The leaf replaces this field with 0."]
+            #[doc = "Bits 28:31 - Opaque: meaning not established. The leaf replaces this field with 0."]
             #[inline(always)]
-            pub fn bits_28_31(&self) -> Bits28_31R {
-                Bits28_31R::new(((self.bits >> 28) & 0x0f) as u8)
+            pub fn bits_28_31_opaque(&self) -> Bits28_31OpaqueR {
+                Bits28_31OpaqueR::new(((self.bits >> 28) & 0x0f) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 2:9 - Project-assigned name. The leaf replaces this field with 0x13."]
+            #[doc = "Bits 2:9 - Opaque: meaning not established. The leaf replaces this field with 0x13."]
             #[inline(always)]
-            pub fn bits_2_9(&mut self) -> Bits2_9W<'_, Gaussian1mCoefficient0Spec> {
-                Bits2_9W::new(self, 2)
+            pub fn bits_2_9_opaque(&mut self) -> Bits2_9OpaqueW<'_, Gaussian1mCoefficient0Spec> {
+                Bits2_9OpaqueW::new(self, 2)
             }
-            #[doc = "Bits 10:16 - Project-assigned name. The leaf replaces this field with 3."]
+            #[doc = "Bits 10:16 - Opaque: meaning not established. The leaf replaces this field with 3."]
             #[inline(always)]
-            pub fn bits_10_16(&mut self) -> Bits10_16W<'_, Gaussian1mCoefficient0Spec> {
-                Bits10_16W::new(self, 10)
+            pub fn bits_10_16_opaque(
+                &mut self,
+            ) -> Bits10_16OpaqueW<'_, Gaussian1mCoefficient0Spec> {
+                Bits10_16OpaqueW::new(self, 10)
             }
-            #[doc = "Bits 17:22 - Project-assigned name. The leaf replaces this field with 0."]
+            #[doc = "Bits 17:22 - Opaque: meaning not established. The leaf replaces this field with 0."]
             #[inline(always)]
-            pub fn bits_17_22(&mut self) -> Bits17_22W<'_, Gaussian1mCoefficient0Spec> {
-                Bits17_22W::new(self, 17)
+            pub fn bits_17_22_opaque(
+                &mut self,
+            ) -> Bits17_22OpaqueW<'_, Gaussian1mCoefficient0Spec> {
+                Bits17_22OpaqueW::new(self, 17)
             }
-            #[doc = "Bits 23:27 - Project-assigned name. The leaf replaces this field with 0."]
+            #[doc = "Bits 23:27 - Opaque: meaning not established. The leaf replaces this field with 0."]
             #[inline(always)]
-            pub fn bits_23_27(&mut self) -> Bits23_27W<'_, Gaussian1mCoefficient0Spec> {
-                Bits23_27W::new(self, 23)
+            pub fn bits_23_27_opaque(
+                &mut self,
+            ) -> Bits23_27OpaqueW<'_, Gaussian1mCoefficient0Spec> {
+                Bits23_27OpaqueW::new(self, 23)
             }
-            #[doc = "Bits 28:31 - Project-assigned name. The leaf replaces this field with 0."]
+            #[doc = "Bits 28:31 - Opaque: meaning not established. The leaf replaces this field with 0."]
             #[inline(always)]
-            pub fn bits_28_31(&mut self) -> Bits28_31W<'_, Gaussian1mCoefficient0Spec> {
-                Bits28_31W::new(self, 28)
+            pub fn bits_28_31_opaque(
+                &mut self,
+            ) -> Bits28_31OpaqueW<'_, Gaussian1mCoefficient0Spec> {
+                Bits28_31OpaqueW::new(self, 28)
             }
         }
         #[doc = "Project-assigned name. First word configured by the complete set_gauss_coeff_1m leaf; names retain positional fields because individual coefficient semantics are unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`gaussian_1m_coefficient_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gaussian_1m_coefficient_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -50373,50 +50374,54 @@ pub mod bt_v3_2_baseband {
         pub type R = crate::R<Gaussian1mCoefficient1Spec>;
         #[doc = "Register `GAUSSIAN_1M_COEFFICIENT_1` writer"]
         pub type W = crate::W<Gaussian1mCoefficient1Spec>;
-        #[doc = "Field `BITS_2_12` reader - Project-assigned name. The leaf replaces this field with 0x2f2."]
-        pub type Bits2_12R = crate::FieldReader<u16>;
-        #[doc = "Field `BITS_2_12` writer - Project-assigned name. The leaf replaces this field with 0x2f2."]
-        pub type Bits2_12W<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
-        #[doc = "Field `BITS_13_22` reader - Project-assigned name. The leaf replaces this field with 0x140."]
-        pub type Bits13_22R = crate::FieldReader<u16>;
-        #[doc = "Field `BITS_13_22` writer - Project-assigned name. The leaf replaces this field with 0x140."]
-        pub type Bits13_22W<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
-        #[doc = "Field `BITS_23_31` reader - Project-assigned name. The leaf replaces this field with 0x5f."]
-        pub type Bits23_31R = crate::FieldReader<u16>;
-        #[doc = "Field `BITS_23_31` writer - Project-assigned name. The leaf replaces this field with 0x5f."]
-        pub type Bits23_31W<'a, REG> = crate::FieldWriter<'a, REG, 9, u16, crate::Safe>;
+        #[doc = "Field `BITS_2_12_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x2f2."]
+        pub type Bits2_12OpaqueR = crate::FieldReader<u16>;
+        #[doc = "Field `BITS_2_12_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x2f2."]
+        pub type Bits2_12OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
+        #[doc = "Field `BITS_13_22_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x140."]
+        pub type Bits13_22OpaqueR = crate::FieldReader<u16>;
+        #[doc = "Field `BITS_13_22_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x140."]
+        pub type Bits13_22OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
+        #[doc = "Field `BITS_23_31_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x5f."]
+        pub type Bits23_31OpaqueR = crate::FieldReader<u16>;
+        #[doc = "Field `BITS_23_31_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x5f."]
+        pub type Bits23_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16, crate::Safe>;
         impl R {
-            #[doc = "Bits 2:12 - Project-assigned name. The leaf replaces this field with 0x2f2."]
+            #[doc = "Bits 2:12 - Opaque: meaning not established. The leaf replaces this field with 0x2f2."]
             #[inline(always)]
-            pub fn bits_2_12(&self) -> Bits2_12R {
-                Bits2_12R::new(((self.bits >> 2) & 0x07ff) as u16)
+            pub fn bits_2_12_opaque(&self) -> Bits2_12OpaqueR {
+                Bits2_12OpaqueR::new(((self.bits >> 2) & 0x07ff) as u16)
             }
-            #[doc = "Bits 13:22 - Project-assigned name. The leaf replaces this field with 0x140."]
+            #[doc = "Bits 13:22 - Opaque: meaning not established. The leaf replaces this field with 0x140."]
             #[inline(always)]
-            pub fn bits_13_22(&self) -> Bits13_22R {
-                Bits13_22R::new(((self.bits >> 13) & 0x03ff) as u16)
+            pub fn bits_13_22_opaque(&self) -> Bits13_22OpaqueR {
+                Bits13_22OpaqueR::new(((self.bits >> 13) & 0x03ff) as u16)
             }
-            #[doc = "Bits 23:31 - Project-assigned name. The leaf replaces this field with 0x5f."]
+            #[doc = "Bits 23:31 - Opaque: meaning not established. The leaf replaces this field with 0x5f."]
             #[inline(always)]
-            pub fn bits_23_31(&self) -> Bits23_31R {
-                Bits23_31R::new(((self.bits >> 23) & 0x01ff) as u16)
+            pub fn bits_23_31_opaque(&self) -> Bits23_31OpaqueR {
+                Bits23_31OpaqueR::new(((self.bits >> 23) & 0x01ff) as u16)
             }
         }
         impl W {
-            #[doc = "Bits 2:12 - Project-assigned name. The leaf replaces this field with 0x2f2."]
+            #[doc = "Bits 2:12 - Opaque: meaning not established. The leaf replaces this field with 0x2f2."]
             #[inline(always)]
-            pub fn bits_2_12(&mut self) -> Bits2_12W<'_, Gaussian1mCoefficient1Spec> {
-                Bits2_12W::new(self, 2)
+            pub fn bits_2_12_opaque(&mut self) -> Bits2_12OpaqueW<'_, Gaussian1mCoefficient1Spec> {
+                Bits2_12OpaqueW::new(self, 2)
             }
-            #[doc = "Bits 13:22 - Project-assigned name. The leaf replaces this field with 0x140."]
+            #[doc = "Bits 13:22 - Opaque: meaning not established. The leaf replaces this field with 0x140."]
             #[inline(always)]
-            pub fn bits_13_22(&mut self) -> Bits13_22W<'_, Gaussian1mCoefficient1Spec> {
-                Bits13_22W::new(self, 13)
+            pub fn bits_13_22_opaque(
+                &mut self,
+            ) -> Bits13_22OpaqueW<'_, Gaussian1mCoefficient1Spec> {
+                Bits13_22OpaqueW::new(self, 13)
             }
-            #[doc = "Bits 23:31 - Project-assigned name. The leaf replaces this field with 0x5f."]
+            #[doc = "Bits 23:31 - Opaque: meaning not established. The leaf replaces this field with 0x5f."]
             #[inline(always)]
-            pub fn bits_23_31(&mut self) -> Bits23_31W<'_, Gaussian1mCoefficient1Spec> {
-                Bits23_31W::new(self, 23)
+            pub fn bits_23_31_opaque(
+                &mut self,
+            ) -> Bits23_31OpaqueW<'_, Gaussian1mCoefficient1Spec> {
+                Bits23_31OpaqueW::new(self, 23)
             }
         }
         #[doc = "Project-assigned name. Second word configured by the complete set_gauss_coeff_1m leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`gaussian_1m_coefficient_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gaussian_1m_coefficient_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -50441,36 +50446,40 @@ pub mod bt_v3_2_baseband {
         pub type R = crate::R<Gaussian1mCoefficient2Spec>;
         #[doc = "Register `GAUSSIAN_1M_COEFFICIENT_2` writer"]
         pub type W = crate::W<Gaussian1mCoefficient2Spec>;
-        #[doc = "Field `BITS_10_20` reader - Project-assigned name. The leaf replaces this field with 0x6bf."]
-        pub type Bits10_20R = crate::FieldReader<u16>;
-        #[doc = "Field `BITS_10_20` writer - Project-assigned name. The leaf replaces this field with 0x6bf."]
-        pub type Bits10_20W<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
-        #[doc = "Field `BITS_21_31` reader - Project-assigned name. The leaf replaces this field with 0x50d."]
-        pub type Bits21_31R = crate::FieldReader<u16>;
-        #[doc = "Field `BITS_21_31` writer - Project-assigned name. The leaf replaces this field with 0x50d."]
-        pub type Bits21_31W<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
+        #[doc = "Field `BITS_10_20_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x6bf."]
+        pub type Bits10_20OpaqueR = crate::FieldReader<u16>;
+        #[doc = "Field `BITS_10_20_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x6bf."]
+        pub type Bits10_20OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
+        #[doc = "Field `BITS_21_31_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x50d."]
+        pub type Bits21_31OpaqueR = crate::FieldReader<u16>;
+        #[doc = "Field `BITS_21_31_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x50d."]
+        pub type Bits21_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
         impl R {
-            #[doc = "Bits 10:20 - Project-assigned name. The leaf replaces this field with 0x6bf."]
+            #[doc = "Bits 10:20 - Opaque: meaning not established. The leaf replaces this field with 0x6bf."]
             #[inline(always)]
-            pub fn bits_10_20(&self) -> Bits10_20R {
-                Bits10_20R::new(((self.bits >> 10) & 0x07ff) as u16)
+            pub fn bits_10_20_opaque(&self) -> Bits10_20OpaqueR {
+                Bits10_20OpaqueR::new(((self.bits >> 10) & 0x07ff) as u16)
             }
-            #[doc = "Bits 21:31 - Project-assigned name. The leaf replaces this field with 0x50d."]
+            #[doc = "Bits 21:31 - Opaque: meaning not established. The leaf replaces this field with 0x50d."]
             #[inline(always)]
-            pub fn bits_21_31(&self) -> Bits21_31R {
-                Bits21_31R::new(((self.bits >> 21) & 0x07ff) as u16)
+            pub fn bits_21_31_opaque(&self) -> Bits21_31OpaqueR {
+                Bits21_31OpaqueR::new(((self.bits >> 21) & 0x07ff) as u16)
             }
         }
         impl W {
-            #[doc = "Bits 10:20 - Project-assigned name. The leaf replaces this field with 0x6bf."]
+            #[doc = "Bits 10:20 - Opaque: meaning not established. The leaf replaces this field with 0x6bf."]
             #[inline(always)]
-            pub fn bits_10_20(&mut self) -> Bits10_20W<'_, Gaussian1mCoefficient2Spec> {
-                Bits10_20W::new(self, 10)
+            pub fn bits_10_20_opaque(
+                &mut self,
+            ) -> Bits10_20OpaqueW<'_, Gaussian1mCoefficient2Spec> {
+                Bits10_20OpaqueW::new(self, 10)
             }
-            #[doc = "Bits 21:31 - Project-assigned name. The leaf replaces this field with 0x50d."]
+            #[doc = "Bits 21:31 - Opaque: meaning not established. The leaf replaces this field with 0x50d."]
             #[inline(always)]
-            pub fn bits_21_31(&mut self) -> Bits21_31W<'_, Gaussian1mCoefficient2Spec> {
-                Bits21_31W::new(self, 21)
+            pub fn bits_21_31_opaque(
+                &mut self,
+            ) -> Bits21_31OpaqueW<'_, Gaussian1mCoefficient2Spec> {
+                Bits21_31OpaqueW::new(self, 21)
             }
         }
         #[doc = "Project-assigned name. Third word configured by the complete set_gauss_coeff_1m leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`gaussian_1m_coefficient_2::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gaussian_1m_coefficient_2::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -50495,36 +50504,40 @@ pub mod bt_v3_2_baseband {
         pub type R = crate::R<Gaussian1mCoefficient3Spec>;
         #[doc = "Register `GAUSSIAN_1M_COEFFICIENT_3` writer"]
         pub type W = crate::W<Gaussian1mCoefficient3Spec>;
-        #[doc = "Field `BITS_10_20` reader - Project-assigned name. The leaf replaces this field with 0x7e9."]
-        pub type Bits10_20R = crate::FieldReader<u16>;
-        #[doc = "Field `BITS_10_20` writer - Project-assigned name. The leaf replaces this field with 0x7e9."]
-        pub type Bits10_20W<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
-        #[doc = "Field `BITS_21_31` reader - Project-assigned name. The leaf replaces this field with 0x7a0."]
-        pub type Bits21_31R = crate::FieldReader<u16>;
-        #[doc = "Field `BITS_21_31` writer - Project-assigned name. The leaf replaces this field with 0x7a0."]
-        pub type Bits21_31W<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
+        #[doc = "Field `BITS_10_20_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x7e9."]
+        pub type Bits10_20OpaqueR = crate::FieldReader<u16>;
+        #[doc = "Field `BITS_10_20_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x7e9."]
+        pub type Bits10_20OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
+        #[doc = "Field `BITS_21_31_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x7a0."]
+        pub type Bits21_31OpaqueR = crate::FieldReader<u16>;
+        #[doc = "Field `BITS_21_31_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x7a0."]
+        pub type Bits21_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
         impl R {
-            #[doc = "Bits 10:20 - Project-assigned name. The leaf replaces this field with 0x7e9."]
+            #[doc = "Bits 10:20 - Opaque: meaning not established. The leaf replaces this field with 0x7e9."]
             #[inline(always)]
-            pub fn bits_10_20(&self) -> Bits10_20R {
-                Bits10_20R::new(((self.bits >> 10) & 0x07ff) as u16)
+            pub fn bits_10_20_opaque(&self) -> Bits10_20OpaqueR {
+                Bits10_20OpaqueR::new(((self.bits >> 10) & 0x07ff) as u16)
             }
-            #[doc = "Bits 21:31 - Project-assigned name. The leaf replaces this field with 0x7a0."]
+            #[doc = "Bits 21:31 - Opaque: meaning not established. The leaf replaces this field with 0x7a0."]
             #[inline(always)]
-            pub fn bits_21_31(&self) -> Bits21_31R {
-                Bits21_31R::new(((self.bits >> 21) & 0x07ff) as u16)
+            pub fn bits_21_31_opaque(&self) -> Bits21_31OpaqueR {
+                Bits21_31OpaqueR::new(((self.bits >> 21) & 0x07ff) as u16)
             }
         }
         impl W {
-            #[doc = "Bits 10:20 - Project-assigned name. The leaf replaces this field with 0x7e9."]
+            #[doc = "Bits 10:20 - Opaque: meaning not established. The leaf replaces this field with 0x7e9."]
             #[inline(always)]
-            pub fn bits_10_20(&mut self) -> Bits10_20W<'_, Gaussian1mCoefficient3Spec> {
-                Bits10_20W::new(self, 10)
+            pub fn bits_10_20_opaque(
+                &mut self,
+            ) -> Bits10_20OpaqueW<'_, Gaussian1mCoefficient3Spec> {
+                Bits10_20OpaqueW::new(self, 10)
             }
-            #[doc = "Bits 21:31 - Project-assigned name. The leaf replaces this field with 0x7a0."]
+            #[doc = "Bits 21:31 - Opaque: meaning not established. The leaf replaces this field with 0x7a0."]
             #[inline(always)]
-            pub fn bits_21_31(&mut self) -> Bits21_31W<'_, Gaussian1mCoefficient3Spec> {
-                Bits21_31W::new(self, 21)
+            pub fn bits_21_31_opaque(
+                &mut self,
+            ) -> Bits21_31OpaqueW<'_, Gaussian1mCoefficient3Spec> {
+                Bits21_31OpaqueW::new(self, 21)
             }
         }
         #[doc = "Project-assigned name. Fourth word configured by the complete set_gauss_coeff_1m leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`gaussian_1m_coefficient_3::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gaussian_1m_coefficient_3::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -50639,50 +50652,54 @@ pub mod bt_v3_2_baseband {
         pub type R = crate::R<Gaussian2mCoefficient1Spec>;
         #[doc = "Register `GAUSSIAN_2M_COEFFICIENT_1` writer"]
         pub type W = crate::W<Gaussian2mCoefficient1Spec>;
-        #[doc = "Field `BITS_0_10` reader - Project-assigned name. The leaf replaces this field with 0x76d."]
-        pub type Bits0_10R = crate::FieldReader<u16>;
-        #[doc = "Field `BITS_0_10` writer - Project-assigned name. The leaf replaces this field with 0x76d."]
-        pub type Bits0_10W<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
-        #[doc = "Field `BITS_11_21` reader - Project-assigned name. The leaf replaces this field with 0x58e."]
-        pub type Bits11_21R = crate::FieldReader<u16>;
-        #[doc = "Field `BITS_11_21` writer - Project-assigned name. The leaf replaces this field with 0x58e."]
-        pub type Bits11_21W<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
-        #[doc = "Field `BITS_22_31` reader - Project-assigned name. The leaf replaces this field with 0x24d."]
-        pub type Bits22_31R = crate::FieldReader<u16>;
-        #[doc = "Field `BITS_22_31` writer - Project-assigned name. The leaf replaces this field with 0x24d."]
-        pub type Bits22_31W<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
+        #[doc = "Field `BITS_0_10_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x76d."]
+        pub type Bits0_10OpaqueR = crate::FieldReader<u16>;
+        #[doc = "Field `BITS_0_10_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x76d."]
+        pub type Bits0_10OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
+        #[doc = "Field `BITS_11_21_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x58e."]
+        pub type Bits11_21OpaqueR = crate::FieldReader<u16>;
+        #[doc = "Field `BITS_11_21_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x58e."]
+        pub type Bits11_21OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
+        #[doc = "Field `BITS_22_31_OPAQUE` reader - Opaque: meaning not established. The leaf replaces this field with 0x24d."]
+        pub type Bits22_31OpaqueR = crate::FieldReader<u16>;
+        #[doc = "Field `BITS_22_31_OPAQUE` writer - Opaque: meaning not established. The leaf replaces this field with 0x24d."]
+        pub type Bits22_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:10 - Project-assigned name. The leaf replaces this field with 0x76d."]
+            #[doc = "Bits 0:10 - Opaque: meaning not established. The leaf replaces this field with 0x76d."]
             #[inline(always)]
-            pub fn bits_0_10(&self) -> Bits0_10R {
-                Bits0_10R::new((self.bits & 0x07ff) as u16)
+            pub fn bits_0_10_opaque(&self) -> Bits0_10OpaqueR {
+                Bits0_10OpaqueR::new((self.bits & 0x07ff) as u16)
             }
-            #[doc = "Bits 11:21 - Project-assigned name. The leaf replaces this field with 0x58e."]
+            #[doc = "Bits 11:21 - Opaque: meaning not established. The leaf replaces this field with 0x58e."]
             #[inline(always)]
-            pub fn bits_11_21(&self) -> Bits11_21R {
-                Bits11_21R::new(((self.bits >> 11) & 0x07ff) as u16)
+            pub fn bits_11_21_opaque(&self) -> Bits11_21OpaqueR {
+                Bits11_21OpaqueR::new(((self.bits >> 11) & 0x07ff) as u16)
             }
-            #[doc = "Bits 22:31 - Project-assigned name. The leaf replaces this field with 0x24d."]
+            #[doc = "Bits 22:31 - Opaque: meaning not established. The leaf replaces this field with 0x24d."]
             #[inline(always)]
-            pub fn bits_22_31(&self) -> Bits22_31R {
-                Bits22_31R::new(((self.bits >> 22) & 0x03ff) as u16)
+            pub fn bits_22_31_opaque(&self) -> Bits22_31OpaqueR {
+                Bits22_31OpaqueR::new(((self.bits >> 22) & 0x03ff) as u16)
             }
         }
         impl W {
-            #[doc = "Bits 0:10 - Project-assigned name. The leaf replaces this field with 0x76d."]
+            #[doc = "Bits 0:10 - Opaque: meaning not established. The leaf replaces this field with 0x76d."]
             #[inline(always)]
-            pub fn bits_0_10(&mut self) -> Bits0_10W<'_, Gaussian2mCoefficient1Spec> {
-                Bits0_10W::new(self, 0)
+            pub fn bits_0_10_opaque(&mut self) -> Bits0_10OpaqueW<'_, Gaussian2mCoefficient1Spec> {
+                Bits0_10OpaqueW::new(self, 0)
             }
-            #[doc = "Bits 11:21 - Project-assigned name. The leaf replaces this field with 0x58e."]
+            #[doc = "Bits 11:21 - Opaque: meaning not established. The leaf replaces this field with 0x58e."]
             #[inline(always)]
-            pub fn bits_11_21(&mut self) -> Bits11_21W<'_, Gaussian2mCoefficient1Spec> {
-                Bits11_21W::new(self, 11)
+            pub fn bits_11_21_opaque(
+                &mut self,
+            ) -> Bits11_21OpaqueW<'_, Gaussian2mCoefficient1Spec> {
+                Bits11_21OpaqueW::new(self, 11)
             }
-            #[doc = "Bits 22:31 - Project-assigned name. The leaf replaces this field with 0x24d."]
+            #[doc = "Bits 22:31 - Opaque: meaning not established. The leaf replaces this field with 0x24d."]
             #[inline(always)]
-            pub fn bits_22_31(&mut self) -> Bits22_31W<'_, Gaussian2mCoefficient1Spec> {
-                Bits22_31W::new(self, 22)
+            pub fn bits_22_31_opaque(
+                &mut self,
+            ) -> Bits22_31OpaqueW<'_, Gaussian2mCoefficient1Spec> {
+                Bits22_31OpaqueW::new(self, 22)
             }
         }
         #[doc = "Project-assigned name. Second word configured by the complete set_gauss_coeff_2m leaf; its three observed fields cover the complete physical word.\n\nYou can [`read`](crate::Reg::read) this register and get [`gaussian_2m_coefficient_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gaussian_2m_coefficient_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -51093,36 +51110,36 @@ pub mod bt_v3_2_baseband {
         pub type R = crate::R<CoexConfigSpec>;
         #[doc = "Register `COEX_CONFIG` writer"]
         pub type W = crate::W<CoexConfigSpec>;
-        #[doc = "Field `CONFIG_FORCE_ONE_18` reader - Project-assigned name."]
-        pub type ConfigForceOne18R = crate::BitReader;
-        #[doc = "Field `CONFIG_FORCE_ONE_18` writer - Project-assigned name."]
-        pub type ConfigForceOne18W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CONFIG_FORCE_ONE_20` reader - Project-assigned name."]
-        pub type ConfigForceOne20R = crate::BitReader;
-        #[doc = "Field `CONFIG_FORCE_ONE_20` writer - Project-assigned name."]
-        pub type ConfigForceOne20W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_18_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bit18OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_18_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bit18OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_20_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bit20OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_20_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bit20OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bit 18 - Project-assigned name."]
+            #[doc = "Bit 18 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn config_force_one_18(&self) -> ConfigForceOne18R {
-                ConfigForceOne18R::new(((self.bits >> 18) & 1) != 0)
+            pub fn bit_18_opaque(&self) -> Bit18OpaqueR {
+                Bit18OpaqueR::new(((self.bits >> 18) & 1) != 0)
             }
-            #[doc = "Bit 20 - Project-assigned name."]
+            #[doc = "Bit 20 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn config_force_one_20(&self) -> ConfigForceOne20R {
-                ConfigForceOne20R::new(((self.bits >> 20) & 1) != 0)
+            pub fn bit_20_opaque(&self) -> Bit20OpaqueR {
+                Bit20OpaqueR::new(((self.bits >> 20) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bit 18 - Project-assigned name."]
+            #[doc = "Bit 18 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn config_force_one_18(&mut self) -> ConfigForceOne18W<'_, CoexConfigSpec> {
-                ConfigForceOne18W::new(self, 18)
+            pub fn bit_18_opaque(&mut self) -> Bit18OpaqueW<'_, CoexConfigSpec> {
+                Bit18OpaqueW::new(self, 18)
             }
-            #[doc = "Bit 20 - Project-assigned name."]
+            #[doc = "Bit 20 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn config_force_one_20(&mut self) -> ConfigForceOne20W<'_, CoexConfigSpec> {
-                ConfigForceOne20W::new(self, 20)
+            pub fn bit_20_opaque(&mut self) -> Bit20OpaqueW<'_, CoexConfigSpec> {
+                Bit20OpaqueW::new(self, 20)
             }
         }
         #[doc = "Project-assigned name. Bluetooth baseband coexistence configuration written by bt_bb_coex_config. Only two finite one-bits are assigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`coex_config::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`coex_config::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -51146,19 +51163,19 @@ pub mod bt_v3_2_baseband {
         pub type R = crate::R<RxDpoControlSpec>;
         #[doc = "Register `RX_DPO_CONTROL` writer"]
         pub type W = crate::W<RxDpoControlSpec>;
-        #[doc = "Field `CONFIG_FORCE_ZERO_19` reader - Project-assigned name."]
-        pub type ConfigForceZero19R = crate::BitReader;
-        #[doc = "Field `CONFIG_FORCE_ZERO_19` writer - Project-assigned name."]
-        pub type ConfigForceZero19W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_19_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bit19OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_19_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bit19OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `CONFIG_VALUE` reader - Project-assigned name. bt_bb_rx_dpo_set replaces this field with the finite value 6."]
         pub type ConfigValueR = crate::FieldReader;
         #[doc = "Field `CONFIG_VALUE` writer - Project-assigned name. bt_bb_rx_dpo_set replaces this field with the finite value 6."]
         pub type ConfigValueW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         impl R {
-            #[doc = "Bit 19 - Project-assigned name."]
+            #[doc = "Bit 19 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn config_force_zero_19(&self) -> ConfigForceZero19R {
-                ConfigForceZero19R::new(((self.bits >> 19) & 1) != 0)
+            pub fn bit_19_opaque(&self) -> Bit19OpaqueR {
+                Bit19OpaqueR::new(((self.bits >> 19) & 1) != 0)
             }
             #[doc = "Bits 20:25 - Project-assigned name. bt_bb_rx_dpo_set replaces this field with the finite value 6."]
             #[inline(always)]
@@ -51167,10 +51184,10 @@ pub mod bt_v3_2_baseband {
             }
         }
         impl W {
-            #[doc = "Bit 19 - Project-assigned name."]
+            #[doc = "Bit 19 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn config_force_zero_19(&mut self) -> ConfigForceZero19W<'_, RxDpoControlSpec> {
-                ConfigForceZero19W::new(self, 19)
+            pub fn bit_19_opaque(&mut self) -> Bit19OpaqueW<'_, RxDpoControlSpec> {
+                Bit19OpaqueW::new(self, 19)
             }
             #[doc = "Bits 20:25 - Project-assigned name. bt_bb_rx_dpo_set replaces this field with the finite value 6."]
             #[inline(always)]
@@ -51644,13 +51661,13 @@ pub mod bt_v3_2_cte {
     pub mod antenna_map_entry {
         #[doc = "Register `ANTENNA_MAP_ENTRY%s` writer"]
         pub type W = crate::W<AntennaMapEntrySpec>;
-        #[doc = "Field `IMAGE` writer - Project-assigned name. Complete 16-bit antenna-map element; the encoding remains unknown."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
+        #[doc = "Field `VALUE` writer - Project-assigned name. Complete 16-bit antenna-map element; the encoding remains unknown."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
         impl W {
             #[doc = "Bits 0:15 - Project-assigned name. Complete 16-bit antenna-map element; the encoding remains unknown."]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, AntennaMapEntrySpec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, AntennaMapEntrySpec> {
+                ValueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. First sixteen halfword slots of the indexed antenna-map window. The complete setter copies caller-provided halfwords from index zero up to its input count; sixteen slots are the exact finite effects recovered under the current analysis bound, not a claim that the hardware window ends here.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_map_entry::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -59286,9 +59303,9 @@ pub mod interrupt_snapshot {
         pub const fn is_empty(&self) -> bool {
             self.0 == 0
         }
-        /// Sampled value of SVD field `UNCLASSIFIED_0_14`.
+        /// Sampled value of SVD field `BITS_0_14_OPAQUE`.
         #[inline]
-        pub const fn unclassified_0_14(&self) -> u16 {
+        pub const fn bits_0_14_opaque(&self) -> u16 {
             (self.0 & 0x7fff) as u16
         }
         /// Sampled value of SVD field `SOURCE_15`.
@@ -59296,9 +59313,9 @@ pub mod interrupt_snapshot {
         pub const fn source_15(&self) -> bool {
             self.0 & 0x00008000 != 0
         }
-        /// Sampled value of SVD field `UNCLASSIFIED_16_20`.
+        /// Sampled value of SVD field `BITS_16_20_OPAQUE`.
         #[inline]
-        pub const fn unclassified_16_20(&self) -> u8 {
+        pub const fn bits_16_20_opaque(&self) -> u8 {
             (self.0 >> 16 & 0x1f) as u8
         }
         /// Sampled value of SVD field `SOURCE_21`.
@@ -59306,9 +59323,9 @@ pub mod interrupt_snapshot {
         pub const fn source_21(&self) -> bool {
             self.0 & 0x00200000 != 0
         }
-        /// Sampled value of SVD field `UNCLASSIFIED_22_26`.
+        /// Sampled value of SVD field `BITS_22_26_OPAQUE`.
         #[inline]
-        pub const fn unclassified_22_26(&self) -> u8 {
+        pub const fn bits_22_26_opaque(&self) -> u8 {
             (self.0 >> 22 & 0x1f) as u8
         }
         /// Sampled value of SVD field `SOURCES_27_28`.
@@ -59316,9 +59333,9 @@ pub mod interrupt_snapshot {
         pub const fn sources_27_28(&self) -> u8 {
             (self.0 >> 27 & 0x3) as u8
         }
-        /// Sampled value of SVD field `UNCLASSIFIED_29_31`.
+        /// Sampled value of SVD field `BITS_29_31_OPAQUE`.
         #[inline]
-        pub const fn unclassified_29_31(&self) -> u8 {
+        pub const fn bits_29_31_opaque(&self) -> u8 {
             (self.0 >> 29 & 0x7) as u8
         }
     }
@@ -59367,9 +59384,9 @@ pub mod interrupt_snapshot {
         pub const fn is_empty(&self) -> bool {
             self.0 == 0
         }
-        /// Sampled value of SVD field `UNCLASSIFIED_0_2`.
+        /// Sampled value of SVD field `BITS_0_2_OPAQUE`.
         #[inline]
-        pub const fn unclassified_0_2(&self) -> u8 {
+        pub const fn bits_0_2_opaque(&self) -> u8 {
             (self.0 & 0x7) as u8
         }
         /// Sampled value of SVD field `SOURCE_3`.
@@ -59377,9 +59394,9 @@ pub mod interrupt_snapshot {
         pub const fn source_3(&self) -> bool {
             self.0 & 0x00000008 != 0
         }
-        /// Sampled value of SVD field `UNCLASSIFIED_4_7`.
+        /// Sampled value of SVD field `BITS_4_7_OPAQUE`.
         #[inline]
-        pub const fn unclassified_4_7(&self) -> u8 {
+        pub const fn bits_4_7_opaque(&self) -> u8 {
             (self.0 >> 4 & 0xf) as u8
         }
         /// Sampled value of SVD field `SOURCE_8`.
@@ -59392,9 +59409,9 @@ pub mod interrupt_snapshot {
         pub const fn source_9(&self) -> bool {
             self.0 & 0x00000200 != 0
         }
-        /// Sampled value of SVD field `UNCLASSIFIED_10_11`.
+        /// Sampled value of SVD field `BITS_10_11_OPAQUE`.
         #[inline]
-        pub const fn unclassified_10_11(&self) -> u8 {
+        pub const fn bits_10_11_opaque(&self) -> u8 {
             (self.0 >> 10 & 0x3) as u8
         }
         /// Sampled value of SVD field `SOURCE_12`.
@@ -59402,9 +59419,9 @@ pub mod interrupt_snapshot {
         pub const fn source_12(&self) -> bool {
             self.0 & 0x00001000 != 0
         }
-        /// Sampled value of SVD field `UNCLASSIFIED_13_31`.
+        /// Sampled value of SVD field `BITS_13_31_OPAQUE`.
         #[inline]
-        pub const fn unclassified_13_31(&self) -> u32 {
+        pub const fn bits_13_31_opaque(&self) -> u32 {
             self.0 >> 13 & 0x7ffff
         }
     }
@@ -59940,7 +59957,7 @@ pub mod full_register_write {
         unsafe {
             registers
                 .data_0()
-                .write_with_zero(|writer| writer.opaque_data().set(value));
+                .write_with_zero(|writer| writer.bits_0_31_opaque().set(value));
         }
     }
 
@@ -59953,7 +59970,7 @@ pub mod full_register_write {
         unsafe {
             registers
                 .data_1()
-                .write_with_zero(|writer| writer.opaque_data().set(value));
+                .write_with_zero(|writer| writer.bits_0_31_opaque().set(value));
         }
     }
 
@@ -59966,7 +59983,7 @@ pub mod full_register_write {
         unsafe {
             registers
                 .data_2()
-                .write_with_zero(|writer| writer.opaque_data().set(value));
+                .write_with_zero(|writer| writer.bits_0_31_opaque().set(value));
         }
     }
 
@@ -59979,7 +59996,7 @@ pub mod full_register_write {
         unsafe {
             registers
                 .frequency_parameter_0_opaque()
-                .write_with_zero(|writer| writer.opaque_value().set(value));
+                .write_with_zero(|writer| writer.bits_0_31_opaque().set(value));
         }
     }
 
@@ -59992,7 +60009,7 @@ pub mod full_register_write {
         unsafe {
             registers
                 .saturation_gain_low()
-                .write_with_zero(|writer| writer.opaque_value().set(value));
+                .write_with_zero(|writer| writer.bits_0_31_opaque().set(value));
         }
     }
 
@@ -60005,7 +60022,7 @@ pub mod full_register_write {
         unsafe {
             registers
                 .saturation_gain_high()
-                .write_with_zero(|writer| writer.opaque_value().set(value));
+                .write_with_zero(|writer| writer.bits_0_31_opaque().set(value));
         }
     }
 
@@ -60061,7 +60078,7 @@ pub mod full_register_write {
         }
     }
 
-    /// Write every bit of `BTDM_RUNTIME_CONTROL`.`VALUE_006C` through its full-width field.
+    /// Write every bit of `BTDM_RUNTIME_CONTROL`.`WORD_006C_OPAQUE` through its full-width field.
     #[inline]
     pub fn publish_bluetooth_modem_lp_timer_compare(
         registers: &crate::BtdmRuntimeControl,
@@ -60072,8 +60089,8 @@ pub mod full_register_write {
         // reserved or partially described bits remain.
         unsafe {
             registers
-                .value_006c()
-                .write_with_zero(|writer| writer.image().set(value));
+                .word_006c_opaque()
+                .write_with_zero(|writer| writer.bits_0_31_opaque().set(value));
         }
     }
 
@@ -60086,7 +60103,7 @@ pub mod full_register_write {
         unsafe {
             registers
                 .data_0()
-                .write_with_zero(|writer| writer.opaque_data().set(value));
+                .write_with_zero(|writer| writer.bits_0_31_opaque().set(value));
         }
     }
 
@@ -60099,7 +60116,7 @@ pub mod full_register_write {
         unsafe {
             registers
                 .data_1()
-                .write_with_zero(|writer| writer.opaque_data().set(value));
+                .write_with_zero(|writer| writer.bits_0_31_opaque().set(value));
         }
     }
 
@@ -60112,7 +60129,7 @@ pub mod full_register_write {
         unsafe {
             registers
                 .data_2()
-                .write_with_zero(|writer| writer.opaque_data().set(value));
+                .write_with_zero(|writer| writer.bits_0_31_opaque().set(value));
         }
     }
 
@@ -60125,7 +60142,7 @@ pub mod full_register_write {
         unsafe {
             registers
                 .data_1()
-                .write_with_zero(|writer| writer.opaque_data().set(value));
+                .write_with_zero(|writer| writer.bits_0_31_opaque().set(value));
         }
     }
 
@@ -60138,7 +60155,7 @@ pub mod full_register_write {
         unsafe {
             registers
                 .data_2()
-                .write_with_zero(|writer| writer.opaque_data().set(value));
+                .write_with_zero(|writer| writer.bits_0_31_opaque().set(value));
         }
     }
 
@@ -60151,7 +60168,7 @@ pub mod full_register_write {
         unsafe {
             registers
                 .data_0()
-                .write_with_zero(|writer| writer.opaque_data().set(value));
+                .write_with_zero(|writer| writer.bits_0_31_opaque().set(value));
         }
     }
 
@@ -60164,7 +60181,7 @@ pub mod full_register_write {
         unsafe {
             registers
                 .data_1()
-                .write_with_zero(|writer| writer.opaque_data().set(value));
+                .write_with_zero(|writer| writer.bits_0_31_opaque().set(value));
         }
     }
 
@@ -60177,7 +60194,7 @@ pub mod full_register_write {
         unsafe {
             registers
                 .data_2()
-                .write_with_zero(|writer| writer.opaque_data().set(value));
+                .write_with_zero(|writer| writer.bits_0_31_opaque().set(value));
         }
     }
 }
@@ -60230,12 +60247,12 @@ pub mod field_read {
         registers.btlc_timer_control().read().latch_request().bit()
     }
 
-    /// Read `BLUETOOTH_CONTROLLER_CORE`.`BTLC_TIMER_CAPTURE_0`.`IMAGE` without exposing its register block.
+    /// Read `BLUETOOTH_CONTROLLER_CORE`.`BTLC_TIMER_CAPTURE_0`.`VALUE` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_controller_latched_time(
         registers: &crate::BluetoothControllerCore,
     ) -> u32 {
-        registers.btlc_timer_capture_0().read().image().bits()
+        registers.btlc_timer_capture_0().read().value().bits()
     }
 
     /// Read `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_COMMAND_0`.`STATUS_24` without exposing its register block.
@@ -60302,74 +60319,86 @@ pub mod field_read {
             .bits()
     }
 
-    /// Read `BLUETOOTH_INTERRUPT_BANK`.`IRQ_DIAGNOSTIC_DETAIL_0`.`IMAGE` without exposing its register block.
+    /// Read `BLUETOOTH_INTERRUPT_BANK`.`IRQ_DIAGNOSTIC_DETAIL_0`.`VALUE` without exposing its register block.
     #[inline]
     pub fn capture_bluetooth_irq_diagnostic_detail_0(
         registers: &crate::BluetoothInterruptBank,
     ) -> u32 {
-        registers.irq_diagnostic_detail_0().read().image().bits()
+        registers.irq_diagnostic_detail_0().read().value().bits()
     }
 
-    /// Read `BLUETOOTH_INTERRUPT_BANK`.`IRQ_DIAGNOSTIC_DETAIL_1`.`IMAGE` without exposing its register block.
+    /// Read `BLUETOOTH_INTERRUPT_BANK`.`IRQ_DIAGNOSTIC_DETAIL_1`.`VALUE` without exposing its register block.
     #[inline]
     pub fn capture_bluetooth_irq_diagnostic_detail_1(
         registers: &crate::BluetoothInterruptBank,
     ) -> u32 {
-        registers.irq_diagnostic_detail_1().read().image().bits()
+        registers.irq_diagnostic_detail_1().read().value().bits()
     }
 
-    /// Read `BLUETOOTH_INTERRUPT_BANK`.`IRQ_DIAGNOSTIC_STATE`.`IMAGE` without exposing its register block.
+    /// Read `BLUETOOTH_INTERRUPT_BANK`.`IRQ_DIAGNOSTIC_STATE`.`VALUE` without exposing its register block.
     #[inline]
     pub fn capture_bluetooth_irq_diagnostic_state(
         registers: &crate::BluetoothInterruptBank,
     ) -> u32 {
-        registers.irq_diagnostic_state().read().image().bits()
+        registers.irq_diagnostic_state().read().value().bits()
     }
 
-    /// Read `BTDM_RUNTIME_CONTROL`.`STATUS_0038`.`IMAGE` without exposing its register block.
+    /// Read `BTDM_RUNTIME_CONTROL`.`WORD_0038_OPAQUE`.`BITS_0_31_OPAQUE` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_modem_lp_timer_status_0038(
         registers: &crate::BtdmRuntimeControl,
     ) -> u32 {
-        registers.status_0038().read().image().bits()
+        registers
+            .word_0038_opaque()
+            .read()
+            .bits_0_31_opaque()
+            .bits()
     }
 
-    /// Read `BTDM_RUNTIME_CONTROL`.`VALUE_006C`.`IMAGE` without exposing its register block.
+    /// Read `BTDM_RUNTIME_CONTROL`.`WORD_006C_OPAQUE`.`BITS_0_31_OPAQUE` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_modem_lp_timer_value_006c(
         registers: &crate::BtdmRuntimeControl,
     ) -> u32 {
-        registers.value_006c().read().image().bits()
+        registers
+            .word_006c_opaque()
+            .read()
+            .bits_0_31_opaque()
+            .bits()
     }
 
-    /// Read `BTDM_RUNTIME_CONTROL`.`CONTROL_0058`.`CONTROL_2` without exposing its register block.
+    /// Read `BTDM_RUNTIME_CONTROL`.`WORD_0058_OPAQUE`.`CONTROL_2` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_modem_lp_timer_control_2(
         registers: &crate::BtdmRuntimeControl,
     ) -> bool {
-        registers.control_0058().read().control_2().bit()
+        registers.word_0058_opaque().read().control_2().bit()
     }
 
-    /// Read `BTDM_RUNTIME_CONTROL`.`STATE_0024`.`LOW_BYTE` without exposing its register block.
+    /// Read `BTDM_RUNTIME_CONTROL`.`WORD_0024_OPAQUE`.`LOW_BYTE` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_modem_lp_timer_state_0024(
         registers: &crate::BtdmRuntimeControl,
     ) -> u8 {
-        registers.state_0024().read().low_byte().bits()
+        registers.word_0024_opaque().read().low_byte().bits()
     }
 
-    /// Read `BTDM_RUNTIME_CONTROL`.`STATE_002C`.`LOW_BYTE` without exposing its register block.
+    /// Read `BTDM_RUNTIME_CONTROL`.`WORD_002C_OPAQUE`.`LOW_BYTE` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_modem_lp_timer_state_002c(
         registers: &crate::BtdmRuntimeControl,
     ) -> u8 {
-        registers.state_002c().read().low_byte().bits()
+        registers.word_002c_opaque().read().low_byte().bits()
     }
 
-    /// Read `BTDM_RUNTIME_CONTROL`.`STATUS_0048`.`IMAGE` without exposing its register block.
+    /// Read `BTDM_RUNTIME_CONTROL`.`WORD_0048_OPAQUE`.`BITS_0_31_OPAQUE` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_modem_lp_timer_counter(registers: &crate::BtdmRuntimeControl) -> u32 {
-        registers.status_0048().read().image().bits()
+        registers
+            .word_0048_opaque()
+            .read()
+            .bits_0_31_opaque()
+            .bits()
     }
 
     /// Read `LP_TSENS`.`CTRL`.`OUT` without exposing its register block.
@@ -60798,20 +60827,20 @@ pub mod field_read {
             .bit()
     }
 
-    /// Read `BLUETOOTH_CONTROLLER_CORE`.`OPERATIONAL_STATUS_0324`.`STATUS_0` without exposing its register block.
+    /// Read `BLUETOOTH_CONTROLLER_CORE`.`WORD_0324_OPAQUE`.`STATUS_0` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_scheduler_cancellation_status_0324(
         registers: &crate::BluetoothControllerCore,
     ) -> bool {
-        registers.operational_status_0324().read().status_0().bit()
+        registers.word_0324_opaque().read().status_0().bit()
     }
 
-    /// Read `BLUETOOTH_CONTROLLER_CORE`.`OPERATIONAL_STATUS_0208`.`STATUS_0` without exposing its register block.
+    /// Read `BLUETOOTH_CONTROLLER_CORE`.`WORD_0208_OPAQUE`.`STATUS_0` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_scheduler_cancellation_status_0208(
         registers: &crate::BluetoothControllerCore,
     ) -> bool {
-        registers.operational_status_0208().read().status_0().bit()
+        registers.word_0208_opaque().read().status_0().bit()
     }
 }
 
@@ -61405,7 +61434,7 @@ pub mod fixed_register_image {
         }
     }
 
-    /// Publish the SVD-qualified image `0x00000001` to `BTDM_RUNTIME_CONTROL`.`COMMAND_0004`.
+    /// Publish the SVD-qualified image `0x00000001` to `BTDM_RUNTIME_CONTROL`.`WORD_0004_OPAQUE`.
     #[inline]
     pub fn prepare_bluetooth_modem_lp_timer_command_0004(registers: &crate::BtdmRuntimeControl) {
         // SAFETY: generator validation proves that the target is a
@@ -61413,12 +61442,12 @@ pub mod fixed_register_image {
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .command_0004()
+                .word_0004_opaque()
                 .write_with_zero(|writer| writer.bits(0x00000001));
         }
     }
 
-    /// Publish the SVD-qualified image `0x00000001` to `BTDM_RUNTIME_CONTROL`.`COMMAND_0008`.
+    /// Publish the SVD-qualified image `0x00000001` to `BTDM_RUNTIME_CONTROL`.`WORD_0008_OPAQUE`.
     #[inline]
     pub fn prepare_bluetooth_modem_lp_timer_command_0008(registers: &crate::BtdmRuntimeControl) {
         // SAFETY: generator validation proves that the target is a
@@ -61426,12 +61455,12 @@ pub mod fixed_register_image {
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .command_0008()
+                .word_0008_opaque()
                 .write_with_zero(|writer| writer.bits(0x00000001));
         }
     }
 
-    /// Publish the SVD-qualified image `0xffffffff` to `BTDM_RUNTIME_CONTROL`.`COMMAND_0014`.
+    /// Publish the SVD-qualified image `0xffffffff` to `BTDM_RUNTIME_CONTROL`.`WORD_0014_OPAQUE`.
     #[inline]
     pub fn prepare_bluetooth_modem_lp_timer_command_0014(registers: &crate::BtdmRuntimeControl) {
         // SAFETY: generator validation proves that the target is a
@@ -61439,12 +61468,12 @@ pub mod fixed_register_image {
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .command_0014()
+                .word_0014_opaque()
                 .write_with_zero(|writer| writer.bits(0xffffffff));
         }
     }
 
-    /// Publish the SVD-qualified image `0xffffffff` to `BTDM_RUNTIME_CONTROL`.`COMMAND_0034`.
+    /// Publish the SVD-qualified image `0xffffffff` to `BTDM_RUNTIME_CONTROL`.`WORD_0034_OPAQUE`.
     #[inline]
     pub fn prepare_bluetooth_modem_lp_timer_command_0034(registers: &crate::BtdmRuntimeControl) {
         // SAFETY: generator validation proves that the target is a
@@ -61452,12 +61481,12 @@ pub mod fixed_register_image {
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .command_0034()
+                .word_0034_opaque()
                 .write_with_zero(|writer| writer.bits(0xffffffff));
         }
     }
 
-    /// Publish the SVD-qualified image `0x00000002` to `BTDM_RUNTIME_CONTROL`.`COMMAND_0010`.
+    /// Publish the SVD-qualified image `0x00000002` to `BTDM_RUNTIME_CONTROL`.`WORD_0010_OPAQUE`.
     #[inline]
     pub fn prepare_bluetooth_modem_lp_timer_command_0010(registers: &crate::BtdmRuntimeControl) {
         // SAFETY: generator validation proves that the target is a
@@ -61465,12 +61494,12 @@ pub mod fixed_register_image {
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .command_0010()
+                .word_0010_opaque()
                 .write_with_zero(|writer| writer.bits(0x00000002));
         }
     }
 
-    /// Publish the SVD-qualified image `0x00000001` to `BTDM_RUNTIME_CONTROL`.`STATE_0024`.
+    /// Publish the SVD-qualified image `0x00000001` to `BTDM_RUNTIME_CONTROL`.`WORD_0024_OPAQUE`.
     #[inline]
     pub fn publish_bluetooth_modem_lp_timer_software_pending(
         registers: &crate::BtdmRuntimeControl,
@@ -61480,12 +61509,12 @@ pub mod fixed_register_image {
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .state_0024()
+                .word_0024_opaque()
                 .write_with_zero(|writer| writer.bits(0x00000001));
         }
     }
 
-    /// Publish the SVD-qualified image `0x00040000` to `BTDM_RUNTIME_CONTROL`.`COMMAND_0014`.
+    /// Publish the SVD-qualified image `0x00040000` to `BTDM_RUNTIME_CONTROL`.`WORD_0014_OPAQUE`.
     #[inline]
     pub fn disable_bluetooth_modem_lp_timer_compare(registers: &crate::BtdmRuntimeControl) {
         // SAFETY: generator validation proves that the target is a
@@ -61493,12 +61522,12 @@ pub mod fixed_register_image {
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .command_0014()
+                .word_0014_opaque()
                 .write_with_zero(|writer| writer.bits(0x00040000));
         }
     }
 
-    /// Publish the SVD-qualified image `0x00040000` to `BTDM_RUNTIME_CONTROL`.`COMMAND_0010`.
+    /// Publish the SVD-qualified image `0x00040000` to `BTDM_RUNTIME_CONTROL`.`WORD_0010_OPAQUE`.
     #[inline]
     pub fn trigger_bluetooth_modem_lp_timer_command(registers: &crate::BtdmRuntimeControl) {
         // SAFETY: generator validation proves that the target is a
@@ -61506,7 +61535,7 @@ pub mod fixed_register_image {
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .command_0010()
+                .word_0010_opaque()
                 .write_with_zero(|writer| writer.bits(0x00040000));
         }
     }
@@ -61628,7 +61657,7 @@ pub mod fixed_register_image {
         }
     }
 
-    /// Publish the SVD-qualified image `0x0000065b` to `BTMAC_BLE_PHY_INIT`.`INIT_VALUE_0138`.
+    /// Publish the SVD-qualified image `0x0000065b` to `BTMAC_BLE_PHY_INIT`.`WORD_0138_OPAQUE`.
     #[inline]
     pub fn publish_ble_phy_init_value_0138(registers: &crate::BtmacBlePhyInit) {
         // SAFETY: generator validation proves that the target is a
@@ -61636,12 +61665,12 @@ pub mod fixed_register_image {
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .init_value_0138()
+                .word_0138_opaque()
                 .write_with_zero(|writer| writer.bits(0x0000065b));
         }
     }
 
-    /// Publish the SVD-qualified image `0x02020202` to `BTMAC_BLE_PHY_INIT`.`INIT_BYTES_04A4`.
+    /// Publish the SVD-qualified image `0x02020202` to `BTMAC_BLE_PHY_INIT`.`WORD_04A4_OPAQUE`.
     #[inline]
     pub fn publish_ble_phy_init_bytes_04a4(registers: &crate::BtmacBlePhyInit) {
         // SAFETY: generator validation proves that the target is a
@@ -61649,12 +61678,12 @@ pub mod fixed_register_image {
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .init_bytes_04a4()
+                .word_04a4_opaque()
                 .write_with_zero(|writer| writer.bits(0x02020202));
         }
     }
 
-    /// Publish the SVD-qualified image `0x02020202` to `BTMAC_BLE_PHY_INIT`.`INIT_BYTES_04A8`.
+    /// Publish the SVD-qualified image `0x02020202` to `BTMAC_BLE_PHY_INIT`.`WORD_04A8_OPAQUE`.
     #[inline]
     pub fn publish_ble_phy_init_bytes_04a8(registers: &crate::BtmacBlePhyInit) {
         // SAFETY: generator validation proves that the target is a
@@ -61662,7 +61691,7 @@ pub mod fixed_register_image {
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .init_bytes_04a8()
+                .word_04a8_opaque()
                 .write_with_zero(|writer| writer.bits(0x02020202));
         }
     }
@@ -61680,7 +61709,7 @@ pub mod fixed_register_image {
         }
     }
 
-    /// Publish the SVD-qualified image `0x00000008` to `BTMAC_BLE_PHY_INIT`.`INIT_VALUE_045C`.
+    /// Publish the SVD-qualified image `0x00000008` to `BTMAC_BLE_PHY_INIT`.`WORD_045C_OPAQUE`.
     #[inline]
     pub fn publish_ble_phy_init_value_045c(registers: &crate::BtmacBlePhyInit) {
         // SAFETY: generator validation proves that the target is a
@@ -61688,7 +61717,7 @@ pub mod fixed_register_image {
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .init_value_045c()
+                .word_045c_opaque()
                 .write_with_zero(|writer| writer.bits(0x00000008));
         }
     }
@@ -61745,7 +61774,7 @@ pub mod fixed_register_image {
         }
     }
 
-    /// Publish the SVD-qualified image `0x80000000` to `BTMAC_BLE_PHY_INIT`.`INIT_CONTROL_0400`.
+    /// Publish the SVD-qualified image `0x80000000` to `BTMAC_BLE_PHY_INIT`.`WORD_0400_OPAQUE`.
     #[inline]
     pub fn publish_ble_phy_init_control_0400(registers: &crate::BtmacBlePhyInit) {
         // SAFETY: generator validation proves that the target is a
@@ -61753,7 +61782,7 @@ pub mod fixed_register_image {
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .init_control_0400()
+                .word_0400_opaque()
                 .write_with_zero(|writer| writer.bits(0x80000000));
         }
     }
@@ -62650,7 +62679,7 @@ pub mod w1c_register_snapshot {
 /// Safe, SVD-declared writes of dynamic complete-register images.
 pub mod register_image_write {
 
-    /// Publish a caller-built complete image to `BTMAC_BLE_PHY_INIT`.`INIT_DYNAMIC_IMAGE_04A0`.
+    /// Publish a caller-built complete image to `BTMAC_BLE_PHY_INIT`.`WORD_04A0_OPAQUE`.
     #[inline]
     pub fn publish_ble_phy_init_environment_member(registers: &crate::BtmacBlePhyInit, image: u32) {
         // SAFETY: generator validation proves that the target is an
@@ -62658,12 +62687,12 @@ pub mod register_image_write {
         // its provenance qualify this semantic whole-image operation.
         unsafe {
             registers
-                .init_dynamic_image_04a0()
+                .word_04a0_opaque()
                 .write_with_zero(|writer| writer.bits(image));
         }
     }
 
-    /// Publish a caller-built complete image to `BTMAC_BLE_PHY_INIT`.`INIT_VALUE_0540`.
+    /// Publish a caller-built complete image to `BTMAC_BLE_PHY_INIT`.`WORD_0540_OPAQUE`.
     #[inline]
     pub fn publish_ble_phy_init_configuration_word(registers: &crate::BtmacBlePhyInit, image: u32) {
         // SAFETY: generator validation proves that the target is an
@@ -62671,12 +62700,12 @@ pub mod register_image_write {
         // its provenance qualify this semantic whole-image operation.
         unsafe {
             registers
-                .init_value_0540()
+                .word_0540_opaque()
                 .write_with_zero(|writer| writer.bits(image));
         }
     }
 
-    /// Publish a caller-built complete image to `BLUETOOTH_CONTROLLER_CORE`.`PHY_INIT_DYNAMIC_IMAGE_024C`.
+    /// Publish a caller-built complete image to `BLUETOOTH_CONTROLLER_CORE`.`WORD_024C_OPAQUE`.
     #[inline]
     pub fn publish_ble_phy_controller_environment_tail(
         registers: &crate::BluetoothControllerCore,
@@ -62687,7 +62716,7 @@ pub mod register_image_write {
         // its provenance qualify this semantic whole-image operation.
         unsafe {
             registers
-                .phy_init_dynamic_image_024c()
+                .word_024c_opaque()
                 .write_with_zero(|writer| writer.bits(image));
         }
     }
@@ -62954,7 +62983,7 @@ pub mod partition_image_read {
                 .bits(),
             62 => registers
                 .phy_baseband_config_oracle
-                .front_end_init_0c08()
+                .word_0c08_opaque()
                 .read()
                 .bits(),
             63 => registers
@@ -62979,7 +63008,7 @@ pub mod partition_image_read {
                 .bits(),
             67 => registers
                 .phy_baseband_config_oracle
-                .front_end_init_0c20()
+                .word_0c20_opaque()
                 .read()
                 .bits(),
             68 => registers.phy_btagc_recovered.cte_dc_shift().read().bits(),
@@ -62995,7 +63024,11 @@ pub mod partition_image_read {
                 .gain_offset_word_0_opaque()
                 .read()
                 .bits(),
-            73 => registers.phy_btagc_recovered.rx_config_004c().read().bits(),
+            73 => registers
+                .phy_btagc_recovered
+                .word_004c_opaque()
+                .read()
+                .bits(),
             74 => registers
                 .phy_btagc_recovered
                 .agc_gain_max_control()
@@ -63009,71 +63042,79 @@ pub mod partition_image_read {
                 .bits(),
             77 => registers
                 .phy_btagc_recovered
-                .agc_recorrect_control_006c()
+                .word_006c_opaque()
                 .read()
                 .bits(),
             78 => registers
                 .phy_btagc_recovered
-                .agc_restart_config_0084()
+                .word_0084_opaque()
                 .read()
                 .bits(),
-            79 => registers.phy_btagc_recovered.rx_config_0088().read().bits(),
-            80 => registers.phy_btagc_recovered.rx_config_008c().read().bits(),
+            79 => registers
+                .phy_btagc_recovered
+                .word_0088_opaque()
+                .read()
+                .bits(),
+            80 => registers
+                .phy_btagc_recovered
+                .word_008c_opaque()
+                .read()
+                .bits(),
             81 => registers.phy_btagc_recovered.cca_config().read().bits(),
             82 => registers.phy_btagc_recovered.cte_agc_target().read().bits(),
             83 => registers
                 .phy_btagc_recovered
-                .shared_rx_sense_and_detect_00a0()
+                .word_00a0_opaque()
                 .read()
                 .bits(),
             84 => registers
                 .phy_btagc_recovered
-                .shared_rx_sense_and_detect_00a8()
+                .word_00a8_opaque()
                 .read()
                 .bits(),
             85 => registers
                 .phy_btagc_recovered
-                .agc_recorrect_and_target_00b0()
+                .word_00b0_opaque()
                 .read()
                 .bits(),
             86 => registers
                 .phy_btagc_recovered
-                .agc_recorrect_and_target_00b4()
+                .word_00b4_opaque()
                 .read()
                 .bits(),
             87 => registers
                 .phy_btagc_recovered
-                .shared_rx_sense_and_detect_00b8()
+                .word_00b8_opaque()
                 .read()
                 .bits(),
             88 => registers
                 .phy_btagc_recovered
-                .agc_recorrect_and_restart_00bc()
+                .word_00bc_opaque()
                 .read()
                 .bits(),
             89 => registers
                 .phy_btagc_recovered
-                .agc_detect_config_00c0()
+                .word_00c0_opaque()
                 .read()
                 .bits(),
             90 => registers
                 .phy_btagc_recovered
-                .agc_detect_config_00c4()
+                .word_00c4_opaque()
                 .read()
                 .bits(),
             91 => registers
                 .phy_btagc_recovered
-                .agc_config_00d0()
+                .word_00d0_opaque()
                 .read()
                 .bits(),
             92 => registers
                 .phy_btagc_recovered
-                .agc_config_00d4()
+                .word_00d4_opaque()
                 .read()
                 .bits(),
             93 => registers
                 .phy_btagc_recovered
-                .agc_restart_bits_00dc()
+                .word_00dc_opaque()
                 .read()
                 .bits(),
             94 => registers
@@ -63219,12 +63260,12 @@ pub mod partition_image_read {
                 .bits(),
             127 => registers
                 .phy_baseband_config_oracle
-                .baseband_init_7400()
+                .word_7400_opaque()
                 .read()
                 .bits(),
             128 => registers
                 .phy_baseband_config_oracle
-                .baseband_init_7428()
+                .word_7428_opaque()
                 .read()
                 .bits(),
             129 => registers
@@ -63244,7 +63285,7 @@ pub mod partition_image_read {
                 .bits(),
             132 => registers
                 .phy_baseband_config_oracle
-                .baseband_init_743c()
+                .word_743c_opaque()
                 .read()
                 .bits(),
             133 => registers
@@ -63299,7 +63340,7 @@ pub mod partition_image_read {
                 .bits(),
             143 => registers
                 .phy_baseband_config_oracle
-                .baseband_init_7808()
+                .word_7808_opaque()
                 .read()
                 .bits(),
             144 => registers
@@ -63319,7 +63360,7 @@ pub mod partition_image_read {
                 .bits(),
             147 => registers
                 .phy_baseband_config_oracle
-                .baseband_init_7890()
+                .word_7890_opaque()
                 .read()
                 .bits(),
             148 => registers
@@ -63339,12 +63380,12 @@ pub mod partition_image_read {
                 .bits(),
             151 => registers
                 .phy_baseband_config_oracle
-                .baseband_init_78dc()
+                .word_78dc_opaque()
                 .read()
                 .bits(),
             152 => registers
                 .phy_baseband_config_oracle
-                .baseband_init_78e4()
+                .word_78e4_opaque()
                 .read()
                 .bits(),
             153 => registers
@@ -63354,17 +63395,17 @@ pub mod partition_image_read {
                 .bits(),
             154 => registers
                 .phy_baseband_config_oracle
-                .baseband_init_790c()
+                .word_790c_opaque()
                 .read()
                 .bits(),
             155 => registers
                 .phy_baseband_config_oracle
-                .baseband_init_7980()
+                .word_7980_opaque()
                 .read()
                 .bits(),
             156 => registers
                 .phy_baseband_config_oracle
-                .baseband_init_7a28()
+                .word_7a28_opaque()
                 .read()
                 .bits(),
             157 => registers
@@ -63424,12 +63465,12 @@ pub mod partition_image_read {
                 .bits(),
             168 => registers
                 .phy_baseband_config_oracle
-                .baseband_init_7ca8()
+                .word_7ca8_opaque()
                 .read()
                 .bits(),
             169 => registers
                 .phy_baseband_config_oracle
-                .baseband_init_7cd0()
+                .word_7cd0_opaque()
                 .read()
                 .bits(),
             170 => registers
@@ -64006,7 +64047,7 @@ pub mod zero_based_field_write {
         }
     }
 
-    /// Write `IMAGE` in `WIFI_MAC_TX_QUEUE_VECTOR`.`HE_CONTROL%s` while publishing zero to every other register bit.
+    /// Write `VALUE` in `WIFI_MAC_TX_QUEUE_VECTOR`.`HE_CONTROL%s` while publishing zero to every other register bit.
     #[inline]
     pub fn publish_mac_tx_he_control_field(
         registers: &crate::WifiMacTxQueueVector,
@@ -64019,7 +64060,7 @@ pub mod zero_based_field_write {
         unsafe {
             registers
                 .he_control(index)
-                .write_with_zero(|writer| writer.image().set(value));
+                .write_with_zero(|writer| writer.value().set(value));
         }
     }
 
@@ -65103,12 +65144,12 @@ pub mod zero_based_field_write {
         }
     }
 
-    /// Write `HARDWARE_LIST_MASK`, `OPAQUE_16`, `START` in `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_COMMAND_1` while publishing zero to every other register bit.
+    /// Write `HARDWARE_LIST_MASK`, `BIT_16_OPAQUE`, `START` in `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_COMMAND_1` while publishing zero to every other register bit.
     #[inline]
     pub fn publish_bluetooth_scheduler_execution_modify_list_deletion_request(
         registers: &crate::BluetoothControllerCore,
         hardware_list_mask_value: u16,
-        opaque_16_value: bool,
+        bit_16_opaque_value: bool,
         start_value: bool,
     ) {
         // SAFETY: the SVD extension explicitly qualifies the zero-based
@@ -65119,8 +65160,8 @@ pub mod zero_based_field_write {
                 writer
                     .hardware_list_mask()
                     .set(hardware_list_mask_value)
-                    .opaque_16()
-                    .bit(opaque_16_value)
+                    .bit_16_opaque()
+                    .bit(bit_16_opaque_value)
                     .start()
                     .bit(start_value)
             });
@@ -65173,33 +65214,39 @@ pub mod zero_register_write {
         }
     }
 
-    /// Publish zero to every bit of `BTDM_RUNTIME_CONTROL`.`COMMAND_004C`.
+    /// Publish zero to every bit of `BTDM_RUNTIME_CONTROL`.`WORD_004C_OPAQUE`.
     #[inline]
     pub fn prepare_bluetooth_modem_lp_timer_command_004c(registers: &crate::BtdmRuntimeControl) {
         // SAFETY: the SVD extension and its provenance explicitly
         // qualify a complete zero write to this ordinary register.
         unsafe {
-            registers.command_004c().write_with_zero(|writer| writer);
+            registers
+                .word_004c_opaque()
+                .write_with_zero(|writer| writer);
         }
     }
 
-    /// Publish zero to every bit of `BTDM_RUNTIME_CONTROL`.`STATE_0024`.
+    /// Publish zero to every bit of `BTDM_RUNTIME_CONTROL`.`WORD_0024_OPAQUE`.
     #[inline]
     pub fn clear_bluetooth_modem_lp_timer_state_0024(registers: &crate::BtdmRuntimeControl) {
         // SAFETY: the SVD extension and its provenance explicitly
         // qualify a complete zero write to this ordinary register.
         unsafe {
-            registers.state_0024().write_with_zero(|writer| writer);
+            registers
+                .word_0024_opaque()
+                .write_with_zero(|writer| writer);
         }
     }
 
-    /// Publish zero to every bit of `BTDM_RUNTIME_CONTROL`.`STATE_002C`.
+    /// Publish zero to every bit of `BTDM_RUNTIME_CONTROL`.`WORD_002C_OPAQUE`.
     #[inline]
     pub fn clear_bluetooth_modem_lp_timer_state_002c(registers: &crate::BtdmRuntimeControl) {
         // SAFETY: the SVD extension and its provenance explicitly
         // qualify a complete zero write to this ordinary register.
         unsafe {
-            registers.state_002c().write_with_zero(|writer| writer);
+            registers
+                .word_002c_opaque()
+                .write_with_zero(|writer| writer);
         }
     }
 
@@ -65213,24 +65260,26 @@ pub mod zero_register_write {
         }
     }
 
-    /// Publish zero to every bit of `BTMAC_BLE_PHY_INIT`.`INIT_ZERO_0074`.
+    /// Publish zero to every bit of `BTMAC_BLE_PHY_INIT`.`WORD_0074_OPAQUE`.
     #[inline]
     pub fn clear_ble_phy_init_zero_0074(registers: &crate::BtmacBlePhyInit) {
         // SAFETY: the SVD extension and its provenance explicitly
         // qualify a complete zero write to this ordinary register.
         unsafe {
-            registers.init_zero_0074().write_with_zero(|writer| writer);
+            registers
+                .word_0074_opaque()
+                .write_with_zero(|writer| writer);
         }
     }
 
-    /// Publish zero to every bit of `BLUETOOTH_CONTROLLER_CORE`.`PHY_INIT_ZERO_0244`.
+    /// Publish zero to every bit of `BLUETOOTH_CONTROLLER_CORE`.`WORD_0244_OPAQUE`.
     #[inline]
     pub fn clear_ble_phy_controller_value_0244(registers: &crate::BluetoothControllerCore) {
         // SAFETY: the SVD extension and its provenance explicitly
         // qualify a complete zero write to this ordinary register.
         unsafe {
             registers
-                .phy_init_zero_0244()
+                .word_0244_opaque()
                 .write_with_zero(|writer| writer);
         }
     }
@@ -65698,10 +65747,10 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BTDM_RUNTIME_CONTROL.CONTROL_0078 fields `[CONTROL_25]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into BTDM_RUNTIME_CONTROL.WORD_0078_OPAQUE fields `[CONTROL_25]` while preserving the fresh register observation.
     #[inline]
     pub fn prepare_bluetooth_modem_lp_timer_control_25(registers: &crate::BtdmRuntimeControl) {
-        registers.control_0078().modify(|reader, writer| {
+        registers.word_0078_opaque().modify(|reader, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -65711,10 +65760,10 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BTDM_RUNTIME_CONTROL.CONTROL_0058 fields `[CONTROL_1]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into BTDM_RUNTIME_CONTROL.WORD_0058_OPAQUE fields `[CONTROL_1]` while preserving the fresh register observation.
     #[inline]
     pub fn publish_bluetooth_modem_lp_timer_control_1(registers: &crate::BtdmRuntimeControl) {
-        registers.control_0058().modify(|reader, writer| {
+        registers.word_0058_opaque().modify(|reader, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -65829,10 +65878,10 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_BYTES_0254 fields `[INIT_BYTE_0, INIT_BYTE_1]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.WORD_0254_OPAQUE fields `[INIT_BYTE_0, INIT_BYTE_1]` while preserving the fresh register observation.
     #[inline]
     pub fn or_ble_phy_init_low_byte_pair(registers: &crate::BtmacBlePhyInit) {
-        registers.init_bytes_0254().modify(|reader, writer| {
+        registers.word_0254_opaque().modify(|reader, writer| {
             let input = 0x00000101_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -65846,10 +65895,10 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_BYTES_0254 fields `[INIT_BYTE_2_LOW_7, INIT_BYTE_2_HIGH]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.WORD_0254_OPAQUE fields `[INIT_BYTE_2_LOW_7, INIT_BYTE_2_HIGH]` while preserving the fresh register observation.
     #[inline]
     pub fn or_ble_phy_init_byte_2(registers: &crate::BtmacBlePhyInit) {
-        registers.init_bytes_0254().modify(|reader, writer| {
+        registers.word_0254_opaque().modify(|reader, writer| {
             let input = 0x000000b2_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -65863,10 +65912,10 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_CONTROL_0400 fields `[INIT_ENABLE_22]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.WORD_0400_OPAQUE fields `[INIT_ENABLE_22]` while preserving the fresh register observation.
     #[inline]
     pub fn enable_ble_phy_init_control_0400(registers: &crate::BtmacBlePhyInit) {
-        registers.init_control_0400().modify(|reader, writer| {
+        registers.word_0400_opaque().modify(|reader, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -65876,7 +65925,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.DEVICE_TABLE_CONTROL fields `[SET_BY_PHY_INIT_BRANCH_BIT_18]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.DEVICE_TABLE_CONTROL fields `[BIT_18_OPAQUE]` while preserving the fresh register observation.
     #[inline]
     pub fn set_ble_phy_device_table_control_bit_18(registers: &crate::BtmacBlePhyInit) {
         registers.device_table_control().modify(|reader, writer| {
@@ -65884,8 +65933,8 @@ pub mod field_or_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             writer
-                .set_by_phy_init_branch_bit_18()
-                .bit(reader.set_by_phy_init_branch_bit_18().bit() || (input & 0x00000001) != 0)
+                .bit_18_opaque()
+                .bit(reader.bit_18_opaque().bit() || (input & 0x00000001) != 0)
         });
     }
 
@@ -65915,10 +65964,10 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into PHY_BTAGC_RECOVERED.RX_CONFIG_004C fields `[CONFIG_BIT_19_OPAQUE, CONFIG_BIT_24_OPAQUE, CONFIG_BIT_26_OPAQUE, CONFIG_BIT_28_OPAQUE, CONFIG_BIT_30_OPAQUE, CONFIG_BIT_31_OPAQUE]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into PHY_BTAGC_RECOVERED.WORD_004C_OPAQUE fields `[CONFIG_BIT_19_OPAQUE, CONFIG_BIT_24_OPAQUE, CONFIG_BIT_26_OPAQUE, CONFIG_BIT_28_OPAQUE, CONFIG_BIT_30_OPAQUE, CONFIG_BIT_31_OPAQUE]` while preserving the fresh register observation.
     #[inline]
     pub fn set_bluetooth_receive_saturation_gain_004c_bits(registers: &crate::PhyBtagcRecovered) {
-        registers.rx_config_004c().modify(|reader, writer| {
+        registers.word_004c_opaque().modify(|reader, writer| {
             let input = 0xd5080000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -65938,10 +65987,10 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into PHY_BTAGC_RECOVERED.RX_CONFIG_0088 fields `[CONFIG_BIT_30_OPAQUE]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into PHY_BTAGC_RECOVERED.WORD_0088_OPAQUE fields `[CONFIG_BIT_30_OPAQUE]` while preserving the fresh register observation.
     #[inline]
     pub fn set_bluetooth_receive_saturation_gain_0088_bit_30(registers: &crate::PhyBtagcRecovered) {
-        registers.rx_config_0088().modify(|reader, writer| {
+        registers.word_0088_opaque().modify(|reader, writer| {
             let input = 0x40000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66483,10 +66532,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTDM_RUNTIME_CONTROL.CONTROL_0058 fields `[CONTROL_0, CONTROL_4]` from one reviewed logical image while preserving every other bit.
+    /// Replace BTDM_RUNTIME_CONTROL.WORD_0058_OPAQUE fields `[CONTROL_0, CONTROL_4]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_low_power_controls_0_4(registers: &crate::BtdmRuntimeControl) {
-        registers.control_0058().modify(|_, writer| {
+        registers.word_0058_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66570,7 +66619,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.LE_TX_ON_DELAY fields `[ENCODED_VALUE_MINUS_10, FORCE_ZERO_BITS_16_18]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.LE_TX_ON_DELAY fields `[ENCODED_VALUE_MINUS_10, BITS_16_18_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_le_tx_on_delay(registers: &crate::BtV3_2Baseband, input: u32) {
         registers.le_tx_on_delay().modify(|_, writer| {
@@ -66580,7 +66629,7 @@ pub mod field_replace_modify {
                 writer
                     .encoded_value_minus_10()
                     .bits((input & 0x000000ff) as u8)
-                    .force_zero_bits_16_18()
+                    .bits_16_18_opaque()
                     .bits(((input >> 8) & 0x00000007) as u8)
             }
         });
@@ -66597,10 +66646,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0254 fields `[INIT_BYTE_0, INIT_BYTE_1]` from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.WORD_0254_OPAQUE fields `[INIT_BYTE_0, INIT_BYTE_1]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_ble_phy_init_low_byte_pair(registers: &crate::BtmacBlePhyInit) {
-        registers.init_bytes_0254().modify(|_, writer| {
+        registers.word_0254_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66614,10 +66663,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0254 fields `[INIT_BYTE_2_LOW_7]` from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.WORD_0254_OPAQUE fields `[INIT_BYTE_2_LOW_7]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_ble_phy_init_byte_2_low_7(registers: &crate::BtmacBlePhyInit) {
-        registers.init_bytes_0254().modify(|_, writer| {
+        registers.word_0254_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66625,10 +66674,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0550 fields `[INIT_BYTE_0]` from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.WORD_0550_OPAQUE fields `[INIT_BYTE_0]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0550_byte_0(registers: &crate::BtmacBlePhyInit) {
-        registers.init_bytes_0550().modify(|_, writer| {
+        registers.word_0550_opaque().modify(|_, writer| {
             let input = 0x00000003_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66636,10 +66685,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0550 fields `[INIT_BYTE_1]` from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.WORD_0550_OPAQUE fields `[INIT_BYTE_1]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0550_byte_1(registers: &crate::BtmacBlePhyInit) {
-        registers.init_bytes_0550().modify(|_, writer| {
+        registers.word_0550_opaque().modify(|_, writer| {
             let input = 0x00000003_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66647,10 +66696,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0550 fields `[INIT_BYTE_2]` from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.WORD_0550_OPAQUE fields `[INIT_BYTE_2]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0550_byte_2(registers: &crate::BtmacBlePhyInit) {
-        registers.init_bytes_0550().modify(|_, writer| {
+        registers.word_0550_opaque().modify(|_, writer| {
             let input = 0x00000044_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66658,10 +66707,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0554 fields `[INIT_BYTE_0]` from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.WORD_0554_OPAQUE fields `[INIT_BYTE_0]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0554_byte_0(registers: &crate::BtmacBlePhyInit) {
-        registers.init_bytes_0554().modify(|_, writer| {
+        registers.word_0554_opaque().modify(|_, writer| {
             let input = 0x00000010_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66669,10 +66718,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0554 fields `[INIT_BYTE_1]` from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.WORD_0554_OPAQUE fields `[INIT_BYTE_1]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0554_byte_1(registers: &crate::BtmacBlePhyInit) {
-        registers.init_bytes_0554().modify(|_, writer| {
+        registers.word_0554_opaque().modify(|_, writer| {
             let input = 0x00000010_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66680,10 +66729,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0554 fields `[INIT_BYTE_2]` from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.WORD_0554_OPAQUE fields `[INIT_BYTE_2]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0554_byte_2(registers: &crate::BtmacBlePhyInit) {
-        registers.init_bytes_0554().modify(|_, writer| {
+        registers.word_0554_opaque().modify(|_, writer| {
             let input = 0x0000003c_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66691,10 +66740,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0554 fields `[INIT_BYTE_3]` from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.WORD_0554_OPAQUE fields `[INIT_BYTE_3]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0554_byte_3(registers: &crate::BtmacBlePhyInit) {
-        registers.init_bytes_0554().modify(|_, writer| {
+        registers.word_0554_opaque().modify(|_, writer| {
             let input = 0x00000028_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66702,10 +66751,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_055C fields `[INIT_BYTE_0]` from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.WORD_055C_OPAQUE fields `[INIT_BYTE_0]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_055c_byte_0(registers: &crate::BtmacBlePhyInit) {
-        registers.init_bytes_055c().modify(|_, writer| {
+        registers.word_055c_opaque().modify(|_, writer| {
             let input = 0x00000008_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66713,10 +66762,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_055C fields `[INIT_BYTE_1]` from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.WORD_055C_OPAQUE fields `[INIT_BYTE_1]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_055c_byte_1(registers: &crate::BtmacBlePhyInit) {
-        registers.init_bytes_055c().modify(|_, writer| {
+        registers.word_055c_opaque().modify(|_, writer| {
             let input = 0x00000008_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66724,10 +66773,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_055C fields `[INIT_BYTE_2]` from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.WORD_055C_OPAQUE fields `[INIT_BYTE_2]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_055c_byte_2(registers: &crate::BtmacBlePhyInit) {
-        registers.init_bytes_055c().modify(|_, writer| {
+        registers.word_055c_opaque().modify(|_, writer| {
             let input = 0x00000008_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66735,10 +66784,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_055C fields `[INIT_BYTE_3]` from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.WORD_055C_OPAQUE fields `[INIT_BYTE_3]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_055c_byte_3(registers: &crate::BtmacBlePhyInit) {
-        registers.init_bytes_055c().modify(|_, writer| {
+        registers.word_055c_opaque().modify(|_, writer| {
             let input = 0x00000008_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66746,10 +66795,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0558 fields `[INIT_BYTE_0]` from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.WORD_0558_OPAQUE fields `[INIT_BYTE_0]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0558_byte_0(registers: &crate::BtmacBlePhyInit) {
-        registers.init_bytes_0558().modify(|_, writer| {
+        registers.word_0558_opaque().modify(|_, writer| {
             let input = 0x0000000c_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66757,10 +66806,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0558 fields `[INIT_BYTE_1]` from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.WORD_0558_OPAQUE fields `[INIT_BYTE_1]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0558_byte_1(registers: &crate::BtmacBlePhyInit) {
-        registers.init_bytes_0558().modify(|_, writer| {
+        registers.word_0558_opaque().modify(|_, writer| {
             let input = 0x00000008_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66768,10 +66817,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0558 fields `[INIT_BYTE_2]` from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.WORD_0558_OPAQUE fields `[INIT_BYTE_2]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0558_byte_2(registers: &crate::BtmacBlePhyInit) {
-        registers.init_bytes_0558().modify(|_, writer| {
+        registers.word_0558_opaque().modify(|_, writer| {
             let input = 0x0000000c_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66779,10 +66828,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0558 fields `[INIT_BYTE_3]` from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.WORD_0558_OPAQUE fields `[INIT_BYTE_3]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_0558_byte_3(registers: &crate::BtmacBlePhyInit) {
-        registers.init_bytes_0558().modify(|_, writer| {
+        registers.word_0558_opaque().modify(|_, writer| {
             let input = 0x0000000c_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66790,10 +66839,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_HIGH_HALF_0458 fields `[INIT_HIGH_HALF]` from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.WORD_0458_OPAQUE fields `[INIT_HIGH_HALF]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_high_half_0458(registers: &crate::BtmacBlePhyInit) {
-        registers.init_high_half_0458().modify(|_, writer| {
+        registers.word_0458_opaque().modify(|_, writer| {
             let input = 0x0000000f_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -66801,10 +66850,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BTMAC_BLE_PHY_INIT.INIT_LOW_5_054C fields `[INIT_LOW_5]` from one reviewed logical image while preserving every other bit.
+    /// Replace BTMAC_BLE_PHY_INIT.WORD_054C_OPAQUE fields `[INIT_LOW_5]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_ble_phy_init_low_5_054c(registers: &crate::BtmacBlePhyInit) {
-        registers.init_low_5_054c().modify(|_, writer| {
+        registers.word_054c_opaque().modify(|_, writer| {
             let input = 0x00000012_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -67311,25 +67360,25 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace BT_V3_2_BASEBAND.COEX_CONFIG fields `[CONFIG_FORCE_ONE_18]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.COEX_CONFIG fields `[BIT_18_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_baseband_coexistence_18(registers: &crate::BtV3_2Baseband) {
         registers.coex_config().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.config_force_one_18().bit((input & 0x00000001) != 0)
+            writer.bit_18_opaque().bit((input & 0x00000001) != 0)
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.COEX_CONFIG fields `[CONFIG_FORCE_ONE_20]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.COEX_CONFIG fields `[BIT_20_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_baseband_coexistence_20(registers: &crate::BtV3_2Baseband) {
         registers.coex_config().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.config_force_one_20().bit((input & 0x00000001) != 0)
+            writer.bit_20_opaque().bit((input & 0x00000001) != 0)
         });
     }
 
@@ -67355,14 +67404,14 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.CCA_CONFIG fields `[CONFIG_FORCE_ONE_23]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.CCA_CONFIG fields `[BIT_23_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_baseband_cca_bit_23(registers: &crate::PhyBtagcRecovered) {
         registers.cca_config().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.config_force_one_23().bit((input & 0x00000001) != 0)
+            writer.bit_23_opaque().bit((input & 0x00000001) != 0)
         });
     }
 
@@ -67646,10 +67695,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CD0 fields `[INIT_LOW_OPAQUE, INIT_LOW_1_OPAQUE, INIT_LOW_BIT_2_OPAQUE, INIT_LOW_3_OPAQUE, INIT_HIGH_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_7CD0_OPAQUE fields `[INIT_LOW_OPAQUE, INIT_LOW_1_OPAQUE, INIT_LOW_BIT_2_OPAQUE, INIT_LOW_3_OPAQUE, INIT_HIGH_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_gain_baseband(registers: &crate::PhyBasebandConfigOracle) {
-        registers.baseband_init_7cd0().modify(|_, writer| {
+        registers.word_7cd0_opaque().modify(|_, writer| {
             let input = 0x000000ff_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -67697,60 +67746,52 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A0 fields `[BITS_16_23_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00A0_OPAQUE fields `[BITS_16_23_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_rssi_threshold_00a0(registers: &crate::PhyBtagcRecovered) {
-        registers
-            .shared_rx_sense_and_detect_00a0()
-            .modify(|_, writer| {
-                let input = 0x0000009c_u32;
-                // SAFETY: generator validation proves every logical input projection
-                // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_16_23_opaque().bits((input & 0x000000ff) as u8) }
-            });
+        registers.word_00a0_opaque().modify(|_, writer| {
+            let input = 0x0000009c_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_16_23_opaque().bits((input & 0x000000ff) as u8) }
+        });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8 fields `[BITS_17_24_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00A8_OPAQUE fields `[BITS_17_24_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_rssi_threshold_00a8_high(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers
-            .shared_rx_sense_and_detect_00a8()
-            .modify(|_, writer| {
-                let input = 0x0000009c_u32;
-                // SAFETY: generator validation proves every logical input projection
-                // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_17_24_opaque().bits((input & 0x000000ff) as u8) }
-            });
+        registers.word_00a8_opaque().modify(|_, writer| {
+            let input = 0x0000009c_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_17_24_opaque().bits((input & 0x000000ff) as u8) }
+        });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8 fields `[BITS_4_11_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00A8_OPAQUE fields `[BITS_4_11_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_rssi_threshold_00a8_low(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers
-            .shared_rx_sense_and_detect_00a8()
-            .modify(|_, writer| {
-                let input = 0x00000088_u32;
-                // SAFETY: generator validation proves every logical input projection
-                // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_4_11_opaque().bits((input & 0x000000ff) as u8) }
-            });
+        registers.word_00a8_opaque().modify(|_, writer| {
+            let input = 0x00000088_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_4_11_opaque().bits((input & 0x000000ff) as u8) }
+        });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00B8 fields `[BITS_12_19_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00B8_OPAQUE fields `[BITS_12_19_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_rssi_threshold_00b8(registers: &crate::PhyBtagcRecovered) {
-        registers
-            .shared_rx_sense_and_detect_00b8()
-            .modify(|_, writer| {
-                let input = 0x00000088_u32;
-                // SAFETY: generator validation proves every logical input projection
-                // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_12_19_opaque().bits((input & 0x000000ff) as u8) }
-            });
+        registers.word_00b8_opaque().modify(|_, writer| {
+            let input = 0x00000088_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_12_19_opaque().bits((input & 0x000000ff) as u8) }
+        });
     }
 
     /// Replace PHY_BTAGC_RECOVERED.CTE_AGC_TARGET fields `[BASEBAND_TARGET_VALUE]` from one reviewed logical image while preserving every other bit.
@@ -67768,17 +67809,15 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B0 fields `[TARGET_BITS_23_31]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00B0_OPAQUE fields `[TARGET_BITS_23_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_target_00b0(registers: &crate::PhyBtagcRecovered) {
-        registers
-            .agc_recorrect_and_target_00b0()
-            .modify(|_, writer| {
-                let input = 0x000001d4_u32;
-                // SAFETY: generator validation proves every logical input projection
-                // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.target_bits_23_31().bits((input & 0x000001ff) as u16) }
-            });
+        registers.word_00b0_opaque().modify(|_, writer| {
+            let input = 0x000001d4_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.target_bits_23_31().bits((input & 0x000001ff) as u16) }
+        });
     }
 
     /// Replace PHY_BTAGC_RECOVERED.RX_GAIN_FORCE fields `[AGC_TARGET]` from one reviewed logical image while preserving every other bit.
@@ -67792,10 +67831,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_008C fields `[TARGET_BITS_0_8]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_008C_OPAQUE fields `[TARGET_BITS_0_8]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_target_008c_low(registers: &crate::PhyBtagcRecovered) {
-        registers.rx_config_008c().modify(|_, writer| {
+        registers.word_008c_opaque().modify(|_, writer| {
             let input = 0x000001d4_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -67803,10 +67842,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_008C fields `[TARGET_BITS_9_17]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_008C_OPAQUE fields `[TARGET_BITS_9_17]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_target_008c_high(registers: &crate::PhyBtagcRecovered) {
-        registers.rx_config_008c().modify(|_, writer| {
+        registers.word_008c_opaque().modify(|_, writer| {
             let input = 0x000001dc_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -67825,23 +67864,21 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B4 fields `[TARGET_BITS_23_31]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00B4_OPAQUE fields `[TARGET_BITS_23_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_target_00b4(registers: &crate::PhyBtagcRecovered) {
-        registers
-            .agc_recorrect_and_target_00b4()
-            .modify(|_, writer| {
-                let input = 0x000001ce_u32;
-                // SAFETY: generator validation proves every logical input projection
-                // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.target_bits_23_31().bits((input & 0x000001ff) as u16) }
-            });
+        registers.word_00b4_opaque().modify(|_, writer| {
+            let input = 0x000001ce_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.target_bits_23_31().bits((input & 0x000001ff) as u16) }
+        });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_0088 fields `[CONFIG_BIT_30_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_0088_OPAQUE fields `[CONFIG_BIT_30_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_config_0088(registers: &crate::PhyBtagcRecovered) {
-        registers.rx_config_0088().modify(|_, writer| {
+        registers.word_0088_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -67849,23 +67886,21 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_RESTART_00BC fields `[RESTART_BIT_31]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00BC_OPAQUE fields `[RESTART_BIT_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_control_00bc(registers: &crate::PhyBtagcRecovered) {
-        registers
-            .agc_recorrect_and_restart_00bc()
-            .modify(|_, writer| {
-                let input = 0x00000001_u32;
-                // SAFETY: generator validation proves every logical input projection
-                // fits its named SVD field; no whole-register image crosses this API.
-                writer.restart_bit_31().bit((input & 0x00000001) != 0)
-            });
+        registers.word_00bc_opaque().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.restart_bit_31().bit((input & 0x00000001) != 0)
+        });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_CONFIG_0084 fields `[FINITE_BITS_24_31]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_0084_OPAQUE fields `[FINITE_BITS_24_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_config_0084(registers: &crate::PhyBtagcRecovered) {
-        registers.agc_restart_config_0084().modify(|_, writer| {
+        registers.word_0084_opaque().modify(|_, writer| {
             let input = 0x000000f4_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -67873,7 +67908,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0_OPAQUE fields `[BITS_24_31]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0_OPAQUE fields `[BITS_24_31_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e0_24_31(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -67882,11 +67917,11 @@ pub mod field_replace_modify {
                 let input = 0x00000014_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_24_31().bits((input & 0x000000ff) as u8) }
+                unsafe { writer.bits_24_31_opaque().bits((input & 0x000000ff) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0_OPAQUE fields `[BITS_16_23]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0_OPAQUE fields `[BITS_16_23_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e0_16_23(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -67895,11 +67930,11 @@ pub mod field_replace_modify {
                 let input = 0x0000000e_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_16_23().bits((input & 0x000000ff) as u8) }
+                unsafe { writer.bits_16_23_opaque().bits((input & 0x000000ff) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0_OPAQUE fields `[BITS_8_15]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0_OPAQUE fields `[BITS_8_15_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e0_8_15(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -67908,11 +67943,11 @@ pub mod field_replace_modify {
                 let input = 0x0000000e_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_8_15().bits((input & 0x000000ff) as u8) }
+                unsafe { writer.bits_8_15_opaque().bits((input & 0x000000ff) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4_OPAQUE fields `[BITS_16_23]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4_OPAQUE fields `[BITS_16_23_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e4_16_23(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -67921,11 +67956,11 @@ pub mod field_replace_modify {
                 let input = 0x000000ec_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_16_23().bits((input & 0x000000ff) as u8) }
+                unsafe { writer.bits_16_23_opaque().bits((input & 0x000000ff) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4_OPAQUE fields `[BITS_8_15]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4_OPAQUE fields `[BITS_8_15_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e4_8_15(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -67934,11 +67969,11 @@ pub mod field_replace_modify {
                 let input = 0x000000f2_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_8_15().bits((input & 0x000000ff) as u8) }
+                unsafe { writer.bits_8_15_opaque().bits((input & 0x000000ff) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4_OPAQUE fields `[BITS_0_7]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4_OPAQUE fields `[BITS_0_7_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e4_0_7(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -67947,11 +67982,11 @@ pub mod field_replace_modify {
                 let input = 0x000000f2_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_0_7().bits((input & 0x000000ff) as u8) }
+                unsafe { writer.bits_0_7_opaque().bits((input & 0x000000ff) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0_OPAQUE fields `[BITS_0_7]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0_OPAQUE fields `[BITS_0_7_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e0_0_7(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -67960,11 +67995,11 @@ pub mod field_replace_modify {
                 let input = 0x0000000f_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_0_7().bits((input & 0x000000ff) as u8) }
+                unsafe { writer.bits_0_7_opaque().bits((input & 0x000000ff) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E8_OPAQUE fields `[BITS_24_31]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E8_OPAQUE fields `[BITS_24_31_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e8_24_31(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -67973,11 +68008,11 @@ pub mod field_replace_modify {
                 let input = 0x000000f1_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_24_31().bits((input & 0x000000ff) as u8) }
+                unsafe { writer.bits_24_31_opaque().bits((input & 0x000000ff) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC_OPAQUE fields `[BITS_24_31]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC_OPAQUE fields `[BITS_24_31_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_ec_24_31(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -67986,11 +68021,11 @@ pub mod field_replace_modify {
                 let input = 0x0000002d_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_24_31().bits((input & 0x000000ff) as u8) }
+                unsafe { writer.bits_24_31_opaque().bits((input & 0x000000ff) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC_OPAQUE fields `[BITS_8_15]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC_OPAQUE fields `[BITS_8_15_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_ec_8_15(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -67999,11 +68034,11 @@ pub mod field_replace_modify {
                 let input = 0x000000d3_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_8_15().bits((input & 0x000000ff) as u8) }
+                unsafe { writer.bits_8_15_opaque().bits((input & 0x000000ff) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F0_OPAQUE fields `[BITS_24_31]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F0_OPAQUE fields `[BITS_24_31_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_f0_24_31(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -68012,11 +68047,11 @@ pub mod field_replace_modify {
                 let input = 0x000000a6_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_24_31().bits((input & 0x000000ff) as u8) }
+                unsafe { writer.bits_24_31_opaque().bits((input & 0x000000ff) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4_OPAQUE fields `[BITS_24_31]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4_OPAQUE fields `[BITS_24_31_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e4_24_31(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -68025,11 +68060,11 @@ pub mod field_replace_modify {
                 let input = 0x0000001e_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_24_31().bits((input & 0x000000ff) as u8) }
+                unsafe { writer.bits_24_31_opaque().bits((input & 0x000000ff) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E8_OPAQUE fields `[BITS_16_23]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E8_OPAQUE fields `[BITS_16_23_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e8_16_23(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -68038,11 +68073,11 @@ pub mod field_replace_modify {
                 let input = 0x000000e2_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_16_23().bits((input & 0x000000ff) as u8) }
+                unsafe { writer.bits_16_23_opaque().bits((input & 0x000000ff) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC_OPAQUE fields `[BITS_16_23]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC_OPAQUE fields `[BITS_16_23_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_ec_16_23(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -68051,11 +68086,11 @@ pub mod field_replace_modify {
                 let input = 0x00000028_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_16_23().bits((input & 0x000000ff) as u8) }
+                unsafe { writer.bits_16_23_opaque().bits((input & 0x000000ff) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC_OPAQUE fields `[BITS_0_7]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC_OPAQUE fields `[BITS_0_7_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_ec_0_7(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -68064,11 +68099,11 @@ pub mod field_replace_modify {
                 let input = 0x000000d8_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_0_7().bits((input & 0x000000ff) as u8) }
+                unsafe { writer.bits_0_7_opaque().bits((input & 0x000000ff) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F0_OPAQUE fields `[BITS_16_23]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F0_OPAQUE fields `[BITS_16_23_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_f0_16_23(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -68077,11 +68112,11 @@ pub mod field_replace_modify {
                 let input = 0x000000a6_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_16_23().bits((input & 0x000000ff) as u8) }
+                unsafe { writer.bits_16_23_opaque().bits((input & 0x000000ff) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100_OPAQUE fields `[BITS_20_23]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100_OPAQUE fields `[BITS_20_23_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_100_20_23(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -68090,11 +68125,11 @@ pub mod field_replace_modify {
                 let input = 0x00000006_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_20_23().bits((input & 0x0000000f) as u8) }
+                unsafe { writer.bits_20_23_opaque().bits((input & 0x0000000f) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100_OPAQUE fields `[BITS_24_27]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100_OPAQUE fields `[BITS_24_27_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_100_24_27(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -68103,11 +68138,11 @@ pub mod field_replace_modify {
                 let input = 0x00000006_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_24_27().bits((input & 0x0000000f) as u8) }
+                unsafe { writer.bits_24_27_opaque().bits((input & 0x0000000f) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100_OPAQUE fields `[BITS_16_19]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100_OPAQUE fields `[BITS_16_19_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_100_16_19(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -68116,11 +68151,11 @@ pub mod field_replace_modify {
                 let input = 0x00000008_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_16_19().bits((input & 0x0000000f) as u8) }
+                unsafe { writer.bits_16_19_opaque().bits((input & 0x0000000f) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100_OPAQUE fields `[BITS_12_15]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100_OPAQUE fields `[BITS_12_15_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_100_12_15(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -68129,11 +68164,11 @@ pub mod field_replace_modify {
                 let input = 0x0000000a_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_12_15().bits((input & 0x0000000f) as u8) }
+                unsafe { writer.bits_12_15_opaque().bits((input & 0x0000000f) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100_OPAQUE fields `[BITS_28_31]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100_OPAQUE fields `[BITS_28_31_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_100_28_31(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -68142,11 +68177,11 @@ pub mod field_replace_modify {
                 let input = 0x00000006_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_28_31().bits((input & 0x0000000f) as u8) }
+                unsafe { writer.bits_28_31_opaque().bits((input & 0x0000000f) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E8_OPAQUE fields `[BITS_10_15]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E8_OPAQUE fields `[BITS_10_15_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_e8_10_15(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -68155,7 +68190,7 @@ pub mod field_replace_modify {
                 let input = 0x00000003_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_10_15().bits((input & 0x0000003f) as u8) }
+                unsafe { writer.bits_10_15_opaque().bits((input & 0x0000003f) as u8) }
             });
     }
 
@@ -68266,10 +68301,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC fields `[RESTART_BIT_31]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00DC_OPAQUE fields `[RESTART_BIT_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_btagc_31(registers: &crate::PhyBtagcRecovered) {
-        registers.agc_restart_bits_00dc().modify(|_, writer| {
+        registers.word_00dc_opaque().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -68277,10 +68312,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC fields `[RESTART_BIT_30]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00DC_OPAQUE fields `[RESTART_BIT_30]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_btagc_30(registers: &crate::PhyBtagcRecovered) {
-        registers.agc_restart_bits_00dc().modify(|_, writer| {
+        registers.word_00dc_opaque().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -68288,10 +68323,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC fields `[RESTART_BIT_29]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00DC_OPAQUE fields `[RESTART_BIT_29]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_btagc_29(registers: &crate::PhyBtagcRecovered) {
-        registers.agc_restart_bits_00dc().modify(|_, writer| {
+        registers.word_00dc_opaque().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -68299,10 +68334,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC fields `[RESTART_BIT_27]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00DC_OPAQUE fields `[RESTART_BIT_27]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_btagc_27(registers: &crate::PhyBtagcRecovered) {
-        registers.agc_restart_bits_00dc().modify(|_, writer| {
+        registers.word_00dc_opaque().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -68310,10 +68345,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC fields `[RESTART_BIT_28]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00DC_OPAQUE fields `[RESTART_BIT_28]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_btagc_28(registers: &crate::PhyBtagcRecovered) {
-        registers.agc_restart_bits_00dc().modify(|_, writer| {
+        registers.word_00dc_opaque().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -68321,7 +68356,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8_OPAQUE fields `[BITS_2_7]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8_OPAQUE fields `[BITS_2_7_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_f8_2_7(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -68330,11 +68365,11 @@ pub mod field_replace_modify {
                 let input = 0x0000000c_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_2_7().bits((input & 0x0000003f) as u8) }
+                unsafe { writer.bits_2_7_opaque().bits((input & 0x0000003f) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8_OPAQUE fields `[BITS_8_13]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8_OPAQUE fields `[BITS_8_13_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_f8_8_13(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -68343,11 +68378,11 @@ pub mod field_replace_modify {
                 let input = 0x0000000c_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_8_13().bits((input & 0x0000003f) as u8) }
+                unsafe { writer.bits_8_13_opaque().bits((input & 0x0000003f) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8_OPAQUE fields `[BITS_14_19]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8_OPAQUE fields `[BITS_14_19_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_f8_14_19(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -68356,11 +68391,11 @@ pub mod field_replace_modify {
                 let input = 0x00000020_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_14_19().bits((input & 0x0000003f) as u8) }
+                unsafe { writer.bits_14_19_opaque().bits((input & 0x0000003f) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8_OPAQUE fields `[BITS_26_31]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8_OPAQUE fields `[BITS_26_31_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_f8_26_31(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -68369,11 +68404,11 @@ pub mod field_replace_modify {
                 let input = 0x0000000c_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_26_31().bits((input & 0x0000003f) as u8) }
+                unsafe { writer.bits_26_31_opaque().bits((input & 0x0000003f) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8_OPAQUE fields `[BITS_20_25]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8_OPAQUE fields `[BITS_20_25_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_restart_f8_20_25(registers: &crate::PhyBtagcRecovered) {
         registers
@@ -68382,61 +68417,55 @@ pub mod field_replace_modify {
                 let input = 0x00000005_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_20_25().bits((input & 0x0000003f) as u8) }
+                unsafe { writer.bits_20_25_opaque().bits((input & 0x0000003f) as u8) }
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B4 fields `[RECORRECT_BIT_8]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00B4_OPAQUE fields `[RECORRECT_BIT_8]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_recorrection_00b4_bit_8(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers
-            .agc_recorrect_and_target_00b4()
-            .modify(|_, writer| {
-                let input = 0x00000001_u32;
-                // SAFETY: generator validation proves every logical input projection
-                // fits its named SVD field; no whole-register image crosses this API.
-                writer.recorrect_bit_8().bit((input & 0x00000001) != 0)
-            });
+        registers.word_00b4_opaque().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.recorrect_bit_8().bit((input & 0x00000001) != 0)
+        });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B4 fields `[RECORRECT_BITS_9_13]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00B4_OPAQUE fields `[RECORRECT_BITS_9_13]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_recorrection_00b4_bits_9_13(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers
-            .agc_recorrect_and_target_00b4()
-            .modify(|_, writer| {
-                let input = 0x0000000a_u32;
-                // SAFETY: generator validation proves every logical input projection
-                // fits its named SVD field; no whole-register image crosses this API.
-                unsafe {
-                    writer
-                        .recorrect_bits_9_13()
-                        .bits((input & 0x0000001f) as u8)
-                }
-            });
+        registers.word_00b4_opaque().modify(|_, writer| {
+            let input = 0x0000000a_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .recorrect_bits_9_13()
+                    .bits((input & 0x0000001f) as u8)
+            }
+        });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_RESTART_00BC fields `[RECORRECT_BIT_5, RECORRECT_BIT_7]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00BC_OPAQUE fields `[RECORRECT_BIT_5, RECORRECT_BIT_7]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_recorrection_00bc_set_pair(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers
-            .agc_recorrect_and_restart_00bc()
-            .modify(|_, writer| {
-                let input = 0x00000003_u32;
-                // SAFETY: generator validation proves every logical input projection
-                // fits its named SVD field; no whole-register image crosses this API.
-                writer
-                    .recorrect_bit_5()
-                    .bit((input & 0x00000001) != 0)
-                    .recorrect_bit_7()
-                    .bit(((input >> 1) & 0x00000001) != 0)
-            });
+        registers.word_00bc_opaque().modify(|_, writer| {
+            let input = 0x00000003_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .recorrect_bit_5()
+                .bit((input & 0x00000001) != 0)
+                .recorrect_bit_7()
+                .bit(((input >> 1) & 0x00000001) != 0)
+        });
     }
 
     /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE fields `[BITS_13_OPAQUE]` from one reviewed logical image while preserving every other bit.
@@ -68452,23 +68481,21 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_RESTART_00BC fields `[RECORRECT_BIT_6, RECORRECT_BIT_8]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00BC_OPAQUE fields `[RECORRECT_BIT_6, RECORRECT_BIT_8]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_recorrection_00bc_clear_pair(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers
-            .agc_recorrect_and_restart_00bc()
-            .modify(|_, writer| {
-                let input = 0x00000000_u32;
-                // SAFETY: generator validation proves every logical input projection
-                // fits its named SVD field; no whole-register image crosses this API.
-                writer
-                    .recorrect_bit_6()
-                    .bit((input & 0x00000001) != 0)
-                    .recorrect_bit_8()
-                    .bit(((input >> 1) & 0x00000001) != 0)
-            });
+        registers.word_00bc_opaque().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .recorrect_bit_6()
+                .bit((input & 0x00000001) != 0)
+                .recorrect_bit_8()
+                .bit(((input >> 1) & 0x00000001) != 0)
+        });
     }
 
     /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE fields `[BITS_5_OPAQUE]` from one reviewed logical image while preserving every other bit.
@@ -68510,42 +68537,38 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B0 fields `[RECORRECT_BITS_18_22]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00B0_OPAQUE fields `[RECORRECT_BITS_18_22]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_recorrection_00b0_bits_18_22(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers
-            .agc_recorrect_and_target_00b0()
-            .modify(|_, writer| {
-                let input = 0x00000018_u32;
-                // SAFETY: generator validation proves every logical input projection
-                // fits its named SVD field; no whole-register image crosses this API.
-                unsafe {
-                    writer
-                        .recorrect_bits_18_22()
-                        .bits((input & 0x0000001f) as u8)
-                }
-            });
+        registers.word_00b0_opaque().modify(|_, writer| {
+            let input = 0x00000018_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .recorrect_bits_18_22()
+                    .bits((input & 0x0000001f) as u8)
+            }
+        });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B0 fields `[RECORRECT_BITS_13_17]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00B0_OPAQUE fields `[RECORRECT_BITS_13_17]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_recorrection_00b0_bits_13_17(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers
-            .agc_recorrect_and_target_00b0()
-            .modify(|_, writer| {
-                let input = 0x00000018_u32;
-                // SAFETY: generator validation proves every logical input projection
-                // fits its named SVD field; no whole-register image crosses this API.
-                unsafe {
-                    writer
-                        .recorrect_bits_13_17()
-                        .bits((input & 0x0000001f) as u8)
-                }
-            });
+        registers.word_00b0_opaque().modify(|_, writer| {
+            let input = 0x00000018_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .recorrect_bits_13_17()
+                    .bits((input & 0x0000001f) as u8)
+            }
+        });
     }
 
     /// Replace PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE fields `[BITS_0_4_OPAQUE]` from one reviewed logical image while preserving every other bit.
@@ -68561,12 +68584,12 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_RECORRECT_CONTROL_006C fields `[FINITE_BITS_24_31]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_006C_OPAQUE fields `[FINITE_BITS_24_31]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_recorrection_control_006c(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers.agc_recorrect_control_006c().modify(|_, writer| {
+        registers.word_006c_opaque().modify(|_, writer| {
             let input = 0x0000000f_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -68574,306 +68597,298 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A0 fields `[BITS_24_27_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00A0_OPAQUE fields `[BITS_24_27_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00a0(registers: &crate::PhyBtagcRecovered) {
-        registers
-            .shared_rx_sense_and_detect_00a0()
-            .modify(|_, writer| {
-                let input = 0x00000004_u32;
-                // SAFETY: generator validation proves every logical input projection
-                // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_24_27_opaque().bits((input & 0x0000000f) as u8) }
-            });
+        registers.word_00a0_opaque().modify(|_, writer| {
+            let input = 0x00000004_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_24_27_opaque().bits((input & 0x0000000f) as u8) }
+        });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0 fields `[BITS_5_9]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00C0_OPAQUE fields `[BITS_5_9_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00c0_bits_5_9(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers.agc_detect_config_00c0().modify(|_, writer| {
+        registers.word_00c0_opaque().modify(|_, writer| {
             let input = 0x0000000a_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_5_9().bits((input & 0x0000001f) as u8) }
+            unsafe { writer.bits_5_9_opaque().bits((input & 0x0000001f) as u8) }
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8 fields `[BITS_12_16_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00A8_OPAQUE fields `[BITS_12_16_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00a8_middle(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers
-            .shared_rx_sense_and_detect_00a8()
-            .modify(|_, writer| {
-                let input = 0x00000004_u32;
-                // SAFETY: generator validation proves every logical input projection
-                // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_12_16_opaque().bits((input & 0x0000001f) as u8) }
-            });
+        registers.word_00a8_opaque().modify(|_, writer| {
+            let input = 0x00000004_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_12_16_opaque().bits((input & 0x0000001f) as u8) }
+        });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8 fields `[BITS_0_3_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00A8_OPAQUE fields `[BITS_0_3_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00a8_low(registers: &crate::PhyBtagcRecovered) {
-        registers
-            .shared_rx_sense_and_detect_00a8()
-            .modify(|_, writer| {
-                let input = 0x00000007_u32;
-                // SAFETY: generator validation proves every logical input projection
-                // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_0_3_opaque().bits((input & 0x0000000f) as u8) }
-            });
+        registers.word_00a8_opaque().modify(|_, writer| {
+            let input = 0x00000007_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_0_3_opaque().bits((input & 0x0000000f) as u8) }
+        });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0 fields `[BITS_10_14]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00C0_OPAQUE fields `[BITS_10_14_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00c0_bits_10_14(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers.agc_detect_config_00c0().modify(|_, writer| {
+        registers.word_00c0_opaque().modify(|_, writer| {
             let input = 0x0000000a_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_10_14().bits((input & 0x0000001f) as u8) }
+            unsafe { writer.bits_10_14_opaque().bits((input & 0x0000001f) as u8) }
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00B8 fields `[BITS_8_11_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00B8_OPAQUE fields `[BITS_8_11_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00b8(registers: &crate::PhyBtagcRecovered) {
-        registers
-            .shared_rx_sense_and_detect_00b8()
-            .modify(|_, writer| {
-                let input = 0x00000007_u32;
-                // SAFETY: generator validation proves every logical input projection
-                // fits its named SVD field; no whole-register image crosses this API.
-                unsafe { writer.bits_8_11_opaque().bits((input & 0x0000000f) as u8) }
-            });
+        registers.word_00b8_opaque().modify(|_, writer| {
+            let input = 0x00000007_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_8_11_opaque().bits((input & 0x0000000f) as u8) }
+        });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C4 fields `[BITS_10_14]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00C4_OPAQUE fields `[BITS_10_14_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00c4_bits_10_14(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers.agc_detect_config_00c4().modify(|_, writer| {
+        registers.word_00c4_opaque().modify(|_, writer| {
             let input = 0x0000000f_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_10_14().bits((input & 0x0000001f) as u8) }
+            unsafe { writer.bits_10_14_opaque().bits((input & 0x0000001f) as u8) }
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0 fields `[BITS_24_31]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00C0_OPAQUE fields `[BITS_24_31_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00c0_bits_24_31(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers.agc_detect_config_00c0().modify(|_, writer| {
+        registers.word_00c0_opaque().modify(|_, writer| {
             let input = 0x0000009c_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_24_31().bits((input & 0x000000ff) as u8) }
+            unsafe { writer.bits_24_31_opaque().bits((input & 0x000000ff) as u8) }
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0 fields `[BITS_20_23]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00C0_OPAQUE fields `[BITS_20_23_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00c0_bits_20_23(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers.agc_detect_config_00c0().modify(|_, writer| {
+        registers.word_00c0_opaque().modify(|_, writer| {
             let input = 0x00000007_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_20_23().bits((input & 0x0000000f) as u8) }
+            unsafe { writer.bits_20_23_opaque().bits((input & 0x0000000f) as u8) }
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0 fields `[BITS_15_19]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00C0_OPAQUE fields `[BITS_15_19_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00c0_bits_15_19(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers.agc_detect_config_00c0().modify(|_, writer| {
+        registers.word_00c0_opaque().modify(|_, writer| {
             let input = 0x0000000a_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_15_19().bits((input & 0x0000001f) as u8) }
+            unsafe { writer.bits_15_19_opaque().bits((input & 0x0000001f) as u8) }
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C4 fields `[BITS_24_31]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00C4_OPAQUE fields `[BITS_24_31_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00c4_bits_24_31(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers.agc_detect_config_00c4().modify(|_, writer| {
+        registers.word_00c4_opaque().modify(|_, writer| {
             let input = 0x0000009c_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_24_31().bits((input & 0x000000ff) as u8) }
+            unsafe { writer.bits_24_31_opaque().bits((input & 0x000000ff) as u8) }
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C4 fields `[BITS_20_23]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00C4_OPAQUE fields `[BITS_20_23_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00c4_bits_20_23(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers.agc_detect_config_00c4().modify(|_, writer| {
+        registers.word_00c4_opaque().modify(|_, writer| {
             let input = 0x0000000a_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_20_23().bits((input & 0x0000000f) as u8) }
+            unsafe { writer.bits_20_23_opaque().bits((input & 0x0000000f) as u8) }
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C4 fields `[BITS_15_19]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00C4_OPAQUE fields `[BITS_15_19_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_detection_00c4_bits_15_19(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers.agc_detect_config_00c4().modify(|_, writer| {
+        registers.word_00c4_opaque().modify(|_, writer| {
             let input = 0x0000000f_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_15_19().bits((input & 0x0000001f) as u8) }
+            unsafe { writer.bits_15_19_opaque().bits((input & 0x0000001f) as u8) }
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields `[BITS_28_31]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields `[BITS_28_31_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_0_bits_28_31(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_0().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_28_31().bits((input & 0x0000000f) as u8) }
+            unsafe { writer.bits_28_31_opaque().bits((input & 0x0000000f) as u8) }
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields `[BITS_23_27]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields `[BITS_23_27_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_0_bits_23_27(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_0().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_23_27().bits((input & 0x0000001f) as u8) }
+            unsafe { writer.bits_23_27_opaque().bits((input & 0x0000001f) as u8) }
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields `[BITS_17_22]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields `[BITS_17_22_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_0_bits_17_22(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_0().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_17_22().bits((input & 0x0000003f) as u8) }
+            unsafe { writer.bits_17_22_opaque().bits((input & 0x0000003f) as u8) }
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields `[BITS_10_16]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields `[BITS_10_16_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_0_bits_10_16(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_0().modify(|_, writer| {
             let input = 0x00000003_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_10_16().bits((input & 0x0000007f) as u8) }
+            unsafe { writer.bits_10_16_opaque().bits((input & 0x0000007f) as u8) }
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields `[BITS_2_9]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields `[BITS_2_9_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_0_bits_2_9(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_0().modify(|_, writer| {
             let input = 0x00000013_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_2_9().bits((input & 0x000000ff) as u8) }
+            unsafe { writer.bits_2_9_opaque().bits((input & 0x000000ff) as u8) }
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1 fields `[BITS_23_31]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1 fields `[BITS_23_31_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_1_bits_23_31(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_1().modify(|_, writer| {
             let input = 0x0000005f_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_23_31().bits((input & 0x000001ff) as u16) }
+            unsafe { writer.bits_23_31_opaque().bits((input & 0x000001ff) as u16) }
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1 fields `[BITS_13_22]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1 fields `[BITS_13_22_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_1_bits_13_22(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_1().modify(|_, writer| {
             let input = 0x00000140_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_13_22().bits((input & 0x000003ff) as u16) }
+            unsafe { writer.bits_13_22_opaque().bits((input & 0x000003ff) as u16) }
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1 fields `[BITS_2_12]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1 fields `[BITS_2_12_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_1_bits_2_12(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_1().modify(|_, writer| {
             let input = 0x000002f2_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_2_12().bits((input & 0x000007ff) as u16) }
+            unsafe { writer.bits_2_12_opaque().bits((input & 0x000007ff) as u16) }
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_2 fields `[BITS_21_31]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_2 fields `[BITS_21_31_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_2_bits_21_31(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_2().modify(|_, writer| {
             let input = 0x0000050d_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_21_31().bits((input & 0x000007ff) as u16) }
+            unsafe { writer.bits_21_31_opaque().bits((input & 0x000007ff) as u16) }
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_2 fields `[BITS_10_20]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_2 fields `[BITS_10_20_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_2_bits_10_20(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_2().modify(|_, writer| {
             let input = 0x000006bf_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_10_20().bits((input & 0x000007ff) as u16) }
+            unsafe { writer.bits_10_20_opaque().bits((input & 0x000007ff) as u16) }
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_3 fields `[BITS_21_31]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_3 fields `[BITS_21_31_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_3_bits_21_31(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_3().modify(|_, writer| {
             let input = 0x000007a0_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_21_31().bits((input & 0x000007ff) as u16) }
+            unsafe { writer.bits_21_31_opaque().bits((input & 0x000007ff) as u16) }
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_3 fields `[BITS_10_20]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_3 fields `[BITS_10_20_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_1m_3_bits_10_20(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_1m_coefficient_3().modify(|_, writer| {
             let input = 0x000007e9_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_10_20().bits((input & 0x000007ff) as u16) }
+            unsafe { writer.bits_10_20_opaque().bits((input & 0x000007ff) as u16) }
         });
     }
 
@@ -68928,36 +68943,36 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1 fields `[BITS_22_31]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1 fields `[BITS_22_31_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_2m_1_bits_22_31(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_2m_coefficient_1().modify(|_, writer| {
             let input = 0x0000024d_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_22_31().bits((input & 0x000003ff) as u16) }
+            unsafe { writer.bits_22_31_opaque().bits((input & 0x000003ff) as u16) }
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1 fields `[BITS_11_21]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1 fields `[BITS_11_21_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_2m_1_bits_11_21(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_2m_coefficient_1().modify(|_, writer| {
             let input = 0x0000058e_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_11_21().bits((input & 0x000007ff) as u16) }
+            unsafe { writer.bits_11_21_opaque().bits((input & 0x000007ff) as u16) }
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1 fields `[BITS_0_10]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1 fields `[BITS_0_10_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_gaussian_2m_1_bits_0_10(registers: &crate::BtV3_2Baseband) {
         registers.gaussian_2m_coefficient_1().modify(|_, writer| {
             let input = 0x0000076d_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.bits_0_10().bits((input & 0x000007ff) as u16) }
+            unsafe { writer.bits_0_10_opaque().bits((input & 0x000007ff) as u16) }
         });
     }
 
@@ -68972,14 +68987,14 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_DPO_CONTROL fields `[CONFIG_FORCE_ZERO_19]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_DPO_CONTROL fields `[BIT_19_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_dpo_bit_19(registers: &crate::BtV3_2Baseband) {
         registers.rx_dpo_control().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.config_force_zero_19().bit((input & 0x00000001) != 0)
+            writer.bit_19_opaque().bit((input & 0x00000001) != 0)
         });
     }
 
@@ -69060,14 +69075,14 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_CORRELATOR_CONTROL fields `[FINAL_FORCE_ZERO_13]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_CORRELATOR_CONTROL fields `[BIT_13_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_correlator_final(registers: &crate::BtV3_2Baseband) {
         registers.rx_correlator_control().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.final_force_zero_13().bit((input & 0x00000001) != 0)
+            writer.bit_13_opaque().bit((input & 0x00000001) != 0)
         });
     }
 
@@ -69108,23 +69123,21 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_SETUP_CONTROL_1 fields `[SET_BY_RX_SETUP_BIT_2]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_SETUP_CONTROL_1 fields `[BIT_2_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_bluetooth_receive_setup_control_1_bit_2(registers: &crate::BtV3_2Baseband) {
         registers.rx_setup_control_1().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer
-                .set_by_rx_setup_bit_2()
-                .bit((input & 0x00000001) != 0)
+            writer.bit_2_opaque().bit((input & 0x00000001) != 0)
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_CONFIG_00D0 fields `[CONFIG_VALUE_HIGH]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00D0_OPAQUE fields `[CONFIG_VALUE_HIGH]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_agc_00d0_high(registers: &crate::PhyBtagcRecovered) {
-        registers.agc_config_00d0().modify(|_, writer| {
+        registers.word_00d0_opaque().modify(|_, writer| {
             let input = 0x00000014_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -69132,10 +69145,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_CONFIG_00D0 fields `[CONFIG_VALUE_LOW]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00D0_OPAQUE fields `[CONFIG_VALUE_LOW]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_agc_00d0_low(registers: &crate::PhyBtagcRecovered) {
-        registers.agc_config_00d0().modify(|_, writer| {
+        registers.word_00d0_opaque().modify(|_, writer| {
             let input = 0x00000014_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -69143,10 +69156,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.AGC_CONFIG_00D4 fields `[CONFIG_VALUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_00D4_OPAQUE fields `[CONFIG_VALUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_agc_00d4(registers: &crate::PhyBtagcRecovered) {
-        registers.agc_config_00d4().modify(|_, writer| {
+        registers.word_00d4_opaque().modify(|_, writer| {
             let input = 0x000003c0_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -69154,38 +69167,38 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_008C fields `[CONFIG_FORCE_ZERO_29]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_008C_OPAQUE fields `[BIT_29_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_008c_bit_29_initial(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers.rx_config_008c().modify(|_, writer| {
+        registers.word_008c_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.config_force_zero_29().bit((input & 0x00000001) != 0)
+            writer.bit_29_opaque().bit((input & 0x00000001) != 0)
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_0088 fields `[CONFIG_FORCE_ZERO_29]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_0088_OPAQUE fields `[BIT_29_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_0088_bit_29(registers: &crate::PhyBtagcRecovered) {
-        registers.rx_config_0088().modify(|_, writer| {
+        registers.word_0088_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.config_force_zero_29().bit((input & 0x00000001) != 0)
+            writer.bit_29_opaque().bit((input & 0x00000001) != 0)
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_0088 fields `[CONFIG_FORCE_ONE_18]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_0088_OPAQUE fields `[BIT_18_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_0088_bit_18(registers: &crate::PhyBtagcRecovered) {
-        registers.rx_config_0088().modify(|_, writer| {
+        registers.word_0088_opaque().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.config_force_one_18().bit((input & 0x00000001) != 0)
+            writer.bit_18_opaque().bit((input & 0x00000001) != 0)
         });
     }
 
@@ -69244,10 +69257,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_004C fields `[CONFIG_BIT_26_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_004C_OPAQUE fields `[CONFIG_BIT_26_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_004c_bit_26(registers: &crate::PhyBtagcRecovered) {
-        registers.rx_config_004c().modify(|_, writer| {
+        registers.word_004c_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -69255,12 +69268,12 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_004C fields `[SAT_GAIN_BITS_0_18]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_004C_OPAQUE fields `[SAT_GAIN_BITS_0_18]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_saturation_gain_004c_low(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers.rx_config_004c().modify(|_, writer| {
+        registers.word_004c_opaque().modify(|_, writer| {
             let input = 0x00001770_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -69279,29 +69292,27 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_CONFIG_008C fields `[CONFIG_FORCE_ZERO_29]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.WORD_008C_OPAQUE fields `[BIT_29_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_setup_008c_bit_29_final(
         registers: &crate::PhyBtagcRecovered,
     ) {
-        registers.rx_config_008c().modify(|_, writer| {
+        registers.word_008c_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.config_force_zero_29().bit((input & 0x00000001) != 0)
+            writer.bit_29_opaque().bit((input & 0x00000001) != 0)
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.RX_SETUP_CONTROL_0 fields `[SET_BY_RX_SETUP_BIT_0]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.RX_SETUP_CONTROL_0 fields `[BIT_0_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_bluetooth_receive_setup_control_0_bit_0(registers: &crate::BtV3_2Baseband) {
         registers.rx_setup_control_0().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer
-                .set_by_rx_setup_bit_0()
-                .bit((input & 0x00000001) != 0)
+            writer.bit_0_opaque().bit((input & 0x00000001) != 0)
         });
     }
 
@@ -69349,7 +69360,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.LE_TX_ON_DELAY fields `[FORCE_ZERO_BITS_16_18, ENCODED_VALUE_MINUS_10]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.LE_TX_ON_DELAY fields `[BITS_16_18_OPAQUE, ENCODED_VALUE_MINUS_10]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_le_tx_delay(registers: &crate::BtV3_2Baseband) {
         registers.le_tx_on_delay().modify(|_, writer| {
@@ -69358,7 +69369,7 @@ pub mod field_replace_modify {
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe {
                 writer
-                    .force_zero_bits_16_18()
+                    .bits_16_18_opaque()
                     .bits((input & 0x00000007) as u8)
                     .encoded_value_minus_10()
                     .bits(((input >> 3) & 0x000000ff) as u8)
@@ -69366,7 +69377,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BT_V3_2_BASEBAND.TX_CCA_CONTROL_0 fields `[PERIOD_FORCE_ZERO_20_22, PERIOD_ARGUMENT_0_MINUS_ARGUMENT_1_IMAGE]` from one reviewed logical image while preserving every other bit.
+    /// Replace BT_V3_2_BASEBAND.TX_CCA_CONTROL_0 fields `[BITS_20_22_OPAQUE, PERIOD_ARGUMENT_0_MINUS_ARGUMENT_1_IMAGE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_tx_cca_period_difference(registers: &crate::BtV3_2Baseband) {
         registers.tx_cca_control_0().modify(|_, writer| {
@@ -69375,7 +69386,7 @@ pub mod field_replace_modify {
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe {
                 writer
-                    .period_force_zero_20_22()
+                    .bits_20_22_opaque()
                     .bits((input & 0x00000007) as u8)
                     .period_argument_0_minus_argument_1_image()
                     .bits(((input >> 3) & 0x000000ff) as u8)
@@ -69738,12 +69749,12 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields `[LOCK_MODIFY_HARDWARE_LIST_INDEX]` from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.WORD_036C_OPAQUE fields `[LOCK_MODIFY_HARDWARE_LIST_INDEX]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_lock_modify_hardware_list_index(
         registers: &crate::BluetoothControllerCore,
     ) {
-        registers.operational_word_036c().modify(|_, writer| {
+        registers.word_036c_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -69755,13 +69766,13 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields `[LOCK_MODIFY_HARDWARE_LIST_INDEX]` from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.WORD_036C_OPAQUE fields `[LOCK_MODIFY_HARDWARE_LIST_INDEX]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_bluetooth_scheduler_lock_modify_hardware_list_index(
         registers: &crate::BluetoothControllerCore,
         input: u32,
     ) {
-        registers.operational_word_036c().modify(|_, writer| {
+        registers.word_036c_opaque().modify(|_, writer| {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe {
@@ -72269,10 +72280,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CD0 fields `[INIT_LOW_OPAQUE, INIT_LOW_1_OPAQUE, INIT_LOW_3_OPAQUE, INIT_HIGH_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_7CD0_OPAQUE fields `[INIT_LOW_OPAQUE, INIT_LOW_1_OPAQUE, INIT_LOW_3_OPAQUE, INIT_HIGH_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_bt_wifi_baseband_fields(registers: &crate::PhyBasebandConfigOracle) {
-        registers.baseband_init_7cd0().modify(|_, writer| {
+        registers.word_7cd0_opaque().modify(|_, writer| {
             let input = 0x0000007f_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -72318,10 +72329,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7890 fields `[HE_RU26_GOOD_RESPONSE_ENABLE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_7890_OPAQUE fields `[HE_RU26_GOOD_RESPONSE_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_he_ru26_good_response(registers: &crate::PhyBasebandConfigOracle) {
-        registers.baseband_init_7890().modify(|_, writer| {
+        registers.word_7890_opaque().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -72331,10 +72342,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7890 fields `[HE_RU26_GOOD_RESPONSE_DISABLE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_7890_OPAQUE fields `[HE_RU26_GOOD_RESPONSE_DISABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_he_ru26_good_response_disable(registers: &crate::PhyBasebandConfigOracle) {
-        registers.baseband_init_7890().modify(|_, writer| {
+        registers.word_7890_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -72481,10 +72492,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7400 fields `[INIT_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_7400_OPAQUE fields `[INIT_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_baseband_prefix(registers: &crate::PhyBasebandConfigOracle) {
-        registers.baseband_init_7400().modify(|_, writer| {
+        registers.word_7400_opaque().modify(|_, writer| {
             let input = 0x00000003_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -72492,10 +72503,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7808 fields `[INIT_VALUE_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_7808_OPAQUE fields `[INIT_VALUE_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_baseband_7808(registers: &crate::PhyBasebandConfigOracle) {
-        registers.baseband_init_7808().modify(|_, writer| {
+        registers.word_7808_opaque().modify(|_, writer| {
             let input = 0x00000060_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -72503,10 +72514,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_78DC fields `[INIT_VALUE_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_78DC_OPAQUE fields `[INIT_VALUE_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_baseband_78dc(registers: &crate::PhyBasebandConfigOracle) {
-        registers.baseband_init_78dc().modify(|_, writer| {
+        registers.word_78dc_opaque().modify(|_, writer| {
             let input = 0x00000002_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -72514,10 +72525,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_78E4 fields `[INIT_CLEAR_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_78E4_OPAQUE fields `[INIT_CLEAR_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_baseband_78e4(registers: &crate::PhyBasebandConfigOracle) {
-        registers.baseband_init_78e4().modify(|_, writer| {
+        registers.word_78e4_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -72540,10 +72551,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C fields `[INIT_CLEAR_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_790C_OPAQUE fields `[INIT_CLEAR_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_baseband_790c_init(registers: &crate::PhyBasebandConfigOracle) {
-        registers.baseband_init_790c().modify(|_, writer| {
+        registers.word_790c_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -72551,10 +72562,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CA8 fields `[INIT_ENABLE_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_7CA8_OPAQUE fields `[INIT_ENABLE_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_baseband_7ca8_init(registers: &crate::PhyBasebandConfigOracle) {
-        registers.baseband_init_7ca8().modify(|_, writer| {
+        registers.word_7ca8_opaque().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -72562,10 +72573,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7980 fields `[INIT_CLEAR_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_7980_OPAQUE fields `[INIT_CLEAR_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_baseband_7980_init(registers: &crate::PhyBasebandConfigOracle) {
-        registers.baseband_init_7980().modify(|_, writer| {
+        registers.word_7980_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -72573,10 +72584,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7A28 fields `[INIT_CLEAR_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_7A28_OPAQUE fields `[INIT_CLEAR_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_baseband_7a28_init(registers: &crate::PhyBasebandConfigOracle) {
-        registers.baseband_init_7a28().modify(|_, writer| {
+        registers.word_7a28_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -72584,10 +72595,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CD0 fields `[INIT_LOW_OPAQUE, INIT_LOW_1_OPAQUE, INIT_LOW_BIT_2_OPAQUE, INIT_LOW_3_OPAQUE, INIT_HIGH_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_7CD0_OPAQUE fields `[INIT_LOW_OPAQUE, INIT_LOW_1_OPAQUE, INIT_LOW_BIT_2_OPAQUE, INIT_LOW_3_OPAQUE, INIT_HIGH_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_baseband_mode_fields(registers: &crate::PhyBasebandConfigOracle) {
-        registers.baseband_init_7cd0().modify(|_, writer| {
+        registers.word_7cd0_opaque().modify(|_, writer| {
             let input = 0x000000ff_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -72620,10 +72631,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_743C fields `[INIT_CLEAR_LOW_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_743C_OPAQUE fields `[INIT_CLEAR_LOW_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_baseband_743c_low(registers: &crate::PhyBasebandConfigOracle) {
-        registers.baseband_init_743c().modify(|_, writer| {
+        registers.word_743c_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -72635,10 +72646,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_743C fields `[INIT_CLEAR_HIGH_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_743C_OPAQUE fields `[INIT_CLEAR_HIGH_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_baseband_743c_high(registers: &crate::PhyBasebandConfigOracle) {
-        registers.baseband_init_743c().modify(|_, writer| {
+        registers.word_743c_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -72648,10 +72659,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7428 fields `[INIT_ENABLE_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_7428_OPAQUE fields `[INIT_ENABLE_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_phy_baseband_7428_init(registers: &crate::PhyBasebandConfigOracle) {
-        registers.baseband_init_7428().modify(|_, writer| {
+        registers.word_7428_opaque().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -72659,10 +72670,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7428 fields `[INIT_VALUE_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_7428_OPAQUE fields `[INIT_VALUE_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_baseband_7428_value(registers: &crate::PhyBasebandConfigOracle) {
-        registers.baseband_init_7428().modify(|_, writer| {
+        registers.word_7428_opaque().modify(|_, writer| {
             let input = 0x00000015_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -73184,10 +73195,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_INIT_0C08 fields `[INIT_FIRST_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_0C08_OPAQUE fields `[INIT_FIRST_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_front_end_first(registers: &crate::PhyBasebandConfigOracle) {
-        registers.front_end_init_0c08().modify(|_, writer| {
+        registers.word_0c08_opaque().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -73195,10 +73206,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_INIT_0C08 fields `[INIT_SECOND_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_0C08_OPAQUE fields `[INIT_SECOND_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_front_end_second(registers: &crate::PhyBasebandConfigOracle) {
-        registers.front_end_init_0c08().modify(|_, writer| {
+        registers.word_0c08_opaque().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -73318,10 +73329,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_INIT_0C20 fields `[INIT_LOW_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_0C20_OPAQUE fields `[INIT_LOW_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_phy_front_end_low(registers: &crate::PhyBasebandConfigOracle) {
-        registers.front_end_init_0c20().modify(|_, writer| {
+        registers.word_0c20_opaque().modify(|_, writer| {
             let input = 0x00000057_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -73346,13 +73357,13 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C fields `[CHANNEL_DUMP_VALUE_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_790C_OPAQUE fields `[CHANNEL_DUMP_VALUE_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_channel_dump_value(
         registers: &crate::PhyBasebandConfigOracle,
         input: u32,
     ) {
-        registers.baseband_init_790c().modify(|_, writer| {
+        registers.word_790c_opaque().modify(|_, writer| {
             let input = input.wrapping_sub(0x00000000) & 0x0000000f;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -73364,10 +73375,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C fields `[INIT_CLEAR_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_790C_OPAQUE fields `[INIT_CLEAR_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_channel_dump_mode(registers: &crate::PhyBasebandConfigOracle, input: u32) {
-        registers.baseband_init_790c().modify(|_, writer| {
+        registers.word_790c_opaque().modify(|_, writer| {
             let input = input.wrapping_sub(0x00000000) & 0x00000001;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -73498,10 +73509,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C fields `[LLTF_MASK_INPUT_0]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_790C_OPAQUE fields `[LLTF_MASK_INPUT_0]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_lltf_mask_0(registers: &crate::PhyBasebandConfigOracle, input: u32) {
-        registers.baseband_init_790c().modify(|_, writer| {
+        registers.word_790c_opaque().modify(|_, writer| {
             let input = input.wrapping_sub(0x00000000) & 0x00000001;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -73509,10 +73520,10 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C fields `[LLTF_MASK_INPUT_1]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.WORD_790C_OPAQUE fields `[LLTF_MASK_INPUT_1]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_lltf_mask_1(registers: &crate::PhyBasebandConfigOracle, input: u32) {
-        registers.baseband_init_790c().modify(|_, writer| {
+        registers.word_790c_opaque().modify(|_, writer| {
             let input = input.wrapping_sub(0x00000000) & 0x00000001;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -74252,12 +74263,12 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields `[CANCELLATION_HARDWARE_LIST_INDEX]` from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.WORD_036C_OPAQUE fields `[CANCELLATION_HARDWARE_LIST_INDEX]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_cancellation_hardware_list_index(
         registers: &crate::BluetoothControllerCore,
     ) {
-        registers.operational_word_036c().modify(|_, writer| {
+        registers.word_036c_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -74269,13 +74280,13 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields `[CANCELLATION_HARDWARE_LIST_INDEX]` from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.WORD_036C_OPAQUE fields `[CANCELLATION_HARDWARE_LIST_INDEX]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn publish_bluetooth_scheduler_cancellation_hardware_list_index(
         registers: &crate::BluetoothControllerCore,
         input: u32,
     ) {
-        registers.operational_word_036c().modify(|_, writer| {
+        registers.word_036c_opaque().modify(|_, writer| {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe {
@@ -74286,12 +74297,12 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_CONTROL_0204 fields `[CONTROL_0]` from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.WORD_0204_OPAQUE fields `[CONTROL_0]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_bluetooth_scheduler_cancellation_control(
         registers: &crate::BluetoothControllerCore,
     ) {
-        registers.operational_control_0204().modify(|_, writer| {
+        registers.word_0204_opaque().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -74299,12 +74310,12 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_CONTROL_0204 fields `[CONTROL_0]` from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.WORD_0204_OPAQUE fields `[CONTROL_0]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_cancellation_control(
         registers: &crate::BluetoothControllerCore,
     ) {
-        registers.operational_control_0204().modify(|_, writer| {
+        registers.word_0204_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.

@@ -69,7 +69,15 @@ Every published register and field carries `naming`:
 `RegisterModel::load_for_publication`, which publication uses, rejects a model
 where one lacks it, while `RegisterModel::load` also opens unreviewed drafts
 such as an SVD import. An `_OPAQUE` name and `naming = "opaque"` require each
-other, and no published name spells unknown meaning as `UNKNOWN` or `UNNAMED`,
-so an unreviewed name cannot claim or hide it. `naming` applies only
+other, and no published name spells unknown meaning as `UNKNOWN`, `UNNAMED`,
+`UNCLASSIFIED` or `OPAQUE` inside the name, so an unreviewed name cannot claim
+or hide it. A `descriptive` name states meaning, not position or the vendor's
+write: a trailing register offset (`CONFIG_0088`), bit positions alone
+(`BITS_5_9`), a write action (`SET_BY_…`, `FORCE_ZERO`, `FORCE_ONE`) or a
+complete written image (`IMAGE`, `INIT_IMAGE`) is opaque instead. An opaque
+register is named `WORD_<offset>_OPAQUE` and an opaque field
+`BIT_<n>_OPAQUE` or `BITS_<low>_<high>_OPAQUE`; the whole content of a register
+whose meaning is established is its `VALUE` field. Vendor names keep their
+source's spelling. `naming` applies only
 to registers and fields. The SVD description carries the marker, so raw PAC
 documentation shows it too.

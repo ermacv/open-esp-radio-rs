@@ -13,14 +13,14 @@ baseAddress = 0x20101400
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "INIT_ZERO_0074"
+name = "WORD_0074_OPAQUE"
 description = "BLE PHY register initialization writes the complete zero image. Inner hardware semantics remain unknown."
 addressOffset = 0x74
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "INIT_IMAGE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -64,14 +64,14 @@ bitWidth = 1
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "INIT_VALUE_0138"
+name = "WORD_0138_OPAQUE"
 description = "BLE PHY register initialization writes the finite complete image 0x0000065B."
 addressOffset = 0x138
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "INIT_IMAGE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -99,7 +99,7 @@ bitWidth = 8
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "INIT_BYTES_0254"
+name = "WORD_0254_OPAQUE"
 description = "BLE PHY initialization replaces the first three bytes with the exact images 0x01, 0x01 and 0xB2."
 addressOffset = 0x254
 size = 32
@@ -129,7 +129,7 @@ bitWidth = 1
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "INIT_CONTROL_0400"
+name = "WORD_0400_OPAQUE"
 description = "BLE PHY initialization first writes bit 31 as a complete image and then sets bit 22 through a fresh-read RMW."
 addressOffset = 0x400
 size = 32
@@ -148,7 +148,7 @@ bitWidth = 1
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "INIT_HIGH_HALF_0458"
+name = "WORD_0458_OPAQUE"
 description = "BLE PHY initialization replaces the upper halfword with the finite image 0x000F."
 addressOffset = 0x458
 size = 32
@@ -162,14 +162,14 @@ bitWidth = 16
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "INIT_VALUE_045C"
+name = "WORD_045C_OPAQUE"
 description = "BLE PHY register initialization writes the finite complete image 8."
 addressOffset = 0x45C
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "INIT_IMAGE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -189,7 +189,7 @@ bitOffset = 0
 bitWidth = 8
 
 [[peripherals.registers.register.fields]]
-name = "SET_BY_PHY_INIT_BRANCH_BIT_18"
+name = "BIT_18_OPAQUE"
 description = "The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."
 bitOffset = 18
 bitWidth = 1
@@ -215,21 +215,21 @@ maximum = 0xFFFFF
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "INIT_DYNAMIC_IMAGE_04A0"
+name = "WORD_04A0_OPAQUE"
 description = "BLE PHY initialization writes a runtime-derived complete image formed from a linked global address. The destination's hardware meaning remains unknown."
 addressOffset = 0x4A0
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "INIT_IMAGE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "INIT_BYTES_04A4"
+name = "WORD_04A4_OPAQUE"
 description = "BLE PHY register initialization writes four byte images equal to 2."
 addressOffset = 0x4A4
 size = 32
@@ -258,7 +258,7 @@ bitWidth = 8
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "INIT_BYTES_04A8"
+name = "WORD_04A8_OPAQUE"
 description = "BLE PHY register initialization writes four byte images equal to 2."
 addressOffset = 0x4A8
 size = 32
@@ -307,21 +307,21 @@ bitWidth = 1
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "INIT_VALUE_0540"
+name = "WORD_0540_OPAQUE"
 description = "BLE PHY register initialization writes the complete controller-configuration word at offset 0x40, which the pinned configuration defaults to 2000."
 addressOffset = 0x540
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "INIT_IMAGE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "INIT_LOW_5_054C"
+name = "WORD_054C_OPAQUE"
 description = "BLE PHY initialization replaces the low five bits with the finite image 0x12."
 addressOffset = 0x54C
 size = 32
@@ -335,7 +335,7 @@ bitWidth = 5
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "INIT_BYTES_0550"
+name = "WORD_0550_OPAQUE"
 description = "BLE PHY initialization replaces the low three bytes with 0x03, 0x03 and 0x44."
 addressOffset = 0x550
 size = 32
@@ -359,7 +359,7 @@ bitWidth = 8
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "INIT_BYTES_0554"
+name = "WORD_0554_OPAQUE"
 description = "BLE PHY initialization replaces all four bytes with 0x10, 0x10, 0x3C and 0x28."
 addressOffset = 0x554
 size = 32
@@ -388,7 +388,7 @@ bitWidth = 8
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "INIT_BYTES_0558"
+name = "WORD_0558_OPAQUE"
 description = "BLE PHY initialization replaces all four bytes with 0x0C, 0x08, 0x0C and 0x0C."
 addressOffset = 0x558
 size = 32
@@ -417,7 +417,7 @@ bitWidth = 8
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "INIT_BYTES_055C"
+name = "WORD_055C_OPAQUE"
 description = "BLE PHY initialization replaces all four bytes with 0x08."
 addressOffset = 0x55C
 size = 32
@@ -483,24 +483,24 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.DEVICE_TABLE_CONTROL.SET_BY_PHY_INIT_BRANCH_BIT_18"
-naming = "descriptive"
+entity = "BTMAC_BLE_PHY_INIT.DEVICE_TABLE_CONTROL.BIT_18_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_ZERO_0074"
-naming = "descriptive"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0074_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_ZERO_0074.INIT_IMAGE"
-naming = "descriptive"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0074_OPAQUE.BITS_0_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -547,16 +547,16 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_0138"
-naming = "descriptive"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0138_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_0138.INIT_IMAGE"
-naming = "descriptive"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0138_OPAQUE.BITS_0_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -587,15 +587,15 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0254"
-naming = "descriptive"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0254_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0254.INIT_BYTE_0"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0254_OPAQUE.INIT_BYTE_0"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -603,7 +603,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0254.INIT_BYTE_1"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0254_OPAQUE.INIT_BYTE_1"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -611,7 +611,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0254.INIT_BYTE_2_LOW_7"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0254_OPAQUE.INIT_BYTE_2_LOW_7"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -619,7 +619,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0254.INIT_BYTE_2_HIGH"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0254_OPAQUE.INIT_BYTE_2_HIGH"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -627,15 +627,15 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_0400"
-naming = "descriptive"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0400_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_0400.INIT_ENABLE_22"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0400_OPAQUE.INIT_ENABLE_22"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -643,7 +643,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_0400.INIT_ENABLE_31"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0400_OPAQUE.INIT_ENABLE_31"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -651,15 +651,15 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_HIGH_HALF_0458"
-naming = "descriptive"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0458_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_HIGH_HALF_0458.INIT_HIGH_HALF"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0458_OPAQUE.INIT_HIGH_HALF"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -667,47 +667,47 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_045C"
-naming = "descriptive"
+entity = "BTMAC_BLE_PHY_INIT.WORD_045C_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_045C.INIT_IMAGE"
-naming = "descriptive"
+entity = "BTMAC_BLE_PHY_INIT.WORD_045C_OPAQUE.BITS_0_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_DYNAMIC_IMAGE_04A0"
-naming = "descriptive"
+entity = "BTMAC_BLE_PHY_INIT.WORD_04A0_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_DYNAMIC_IMAGE_04A0.INIT_IMAGE"
-naming = "descriptive"
+entity = "BTMAC_BLE_PHY_INIT.WORD_04A0_OPAQUE.BITS_0_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A4"
-naming = "descriptive"
+entity = "BTMAC_BLE_PHY_INIT.WORD_04A4_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A4.INIT_BYTE_0"
+entity = "BTMAC_BLE_PHY_INIT.WORD_04A4_OPAQUE.INIT_BYTE_0"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -715,7 +715,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A4.INIT_BYTE_1"
+entity = "BTMAC_BLE_PHY_INIT.WORD_04A4_OPAQUE.INIT_BYTE_1"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -723,7 +723,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A4.INIT_BYTE_2"
+entity = "BTMAC_BLE_PHY_INIT.WORD_04A4_OPAQUE.INIT_BYTE_2"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -731,7 +731,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A4.INIT_BYTE_3"
+entity = "BTMAC_BLE_PHY_INIT.WORD_04A4_OPAQUE.INIT_BYTE_3"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -739,15 +739,15 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A8"
-naming = "descriptive"
+entity = "BTMAC_BLE_PHY_INIT.WORD_04A8_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A8.INIT_BYTE_0"
+entity = "BTMAC_BLE_PHY_INIT.WORD_04A8_OPAQUE.INIT_BYTE_0"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -755,7 +755,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A8.INIT_BYTE_1"
+entity = "BTMAC_BLE_PHY_INIT.WORD_04A8_OPAQUE.INIT_BYTE_1"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -763,7 +763,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A8.INIT_BYTE_2"
+entity = "BTMAC_BLE_PHY_INIT.WORD_04A8_OPAQUE.INIT_BYTE_2"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -771,7 +771,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A8.INIT_BYTE_3"
+entity = "BTMAC_BLE_PHY_INIT.WORD_04A8_OPAQUE.INIT_BYTE_3"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -806,31 +806,31 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_0540"
-naming = "descriptive"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0540_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_0540.INIT_IMAGE"
-naming = "descriptive"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0540_OPAQUE.BITS_0_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_LOW_5_054C"
-naming = "descriptive"
+entity = "BTMAC_BLE_PHY_INIT.WORD_054C_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_LOW_5_054C.INIT_LOW_5"
+entity = "BTMAC_BLE_PHY_INIT.WORD_054C_OPAQUE.INIT_LOW_5"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -838,15 +838,15 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0550"
-naming = "descriptive"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0550_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0550.INIT_BYTE_0"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0550_OPAQUE.INIT_BYTE_0"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -854,7 +854,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0550.INIT_BYTE_1"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0550_OPAQUE.INIT_BYTE_1"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -862,7 +862,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0550.INIT_BYTE_2"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0550_OPAQUE.INIT_BYTE_2"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -870,15 +870,15 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0554"
-naming = "descriptive"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0554_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0554.INIT_BYTE_0"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0554_OPAQUE.INIT_BYTE_0"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -886,7 +886,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0554.INIT_BYTE_1"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0554_OPAQUE.INIT_BYTE_1"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -894,7 +894,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0554.INIT_BYTE_2"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0554_OPAQUE.INIT_BYTE_2"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -902,7 +902,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0554.INIT_BYTE_3"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0554_OPAQUE.INIT_BYTE_3"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -910,15 +910,15 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0558"
-naming = "descriptive"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0558_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0558.INIT_BYTE_0"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0558_OPAQUE.INIT_BYTE_0"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -926,7 +926,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0558.INIT_BYTE_1"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0558_OPAQUE.INIT_BYTE_1"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -934,7 +934,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0558.INIT_BYTE_2"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0558_OPAQUE.INIT_BYTE_2"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -942,7 +942,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0558.INIT_BYTE_3"
+entity = "BTMAC_BLE_PHY_INIT.WORD_0558_OPAQUE.INIT_BYTE_3"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -950,15 +950,15 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_055C"
-naming = "descriptive"
+entity = "BTMAC_BLE_PHY_INIT.WORD_055C_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_055C.INIT_BYTE_0"
+entity = "BTMAC_BLE_PHY_INIT.WORD_055C_OPAQUE.INIT_BYTE_0"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -966,7 +966,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_055C.INIT_BYTE_1"
+entity = "BTMAC_BLE_PHY_INIT.WORD_055C_OPAQUE.INIT_BYTE_1"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -974,7 +974,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_055C.INIT_BYTE_2"
+entity = "BTMAC_BLE_PHY_INIT.WORD_055C_OPAQUE.INIT_BYTE_2"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -982,7 +982,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_055C.INIT_BYTE_3"
+entity = "BTMAC_BLE_PHY_INIT.WORD_055C_OPAQUE.INIT_BYTE_3"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"

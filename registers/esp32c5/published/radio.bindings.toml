@@ -427,12 +427,12 @@ access = "read-write"
 address = 1611270160
 width = 32
 access = "read-write"
-identity = "PHY_BASEBAND_CONFIG.POWER_DETECTOR_WORD_810"
+identity = "PHY_BASEBAND_CONFIG.WORD_0810_OPAQUE"
 peripheral = "PHY_BASEBAND_CONFIG"
 peripheral-type = "PhyBasebandConfig"
 peripheral-module = "phy_baseband_config"
 scope = []
-register-method = "power_detector_word_810"
+register-method = "word_0810_opaque"
 
 [[registers.fields]]
 svd-name = "STATE"
@@ -445,12 +445,12 @@ access = "read-write"
 address = 1611270164
 width = 32
 access = "read-write"
-identity = "PHY_BASEBAND_CONFIG.POWER_DETECTOR_WORD_814"
+identity = "PHY_BASEBAND_CONFIG.WORD_0814_OPAQUE"
 peripheral = "PHY_BASEBAND_CONFIG"
 peripheral-type = "PhyBasebandConfig"
 peripheral-module = "phy_baseband_config"
 scope = []
-register-method = "power_detector_word_814"
+register-method = "word_0814_opaque"
 
 [[registers.fields]]
 svd-name = "STATE"
@@ -499,12 +499,12 @@ access = "read-write"
 address = 1611270280
 width = 32
 access = "read-write"
-identity = "PHY_BASEBAND_CONFIG.FRONT_END_INIT_0888"
+identity = "PHY_BASEBAND_CONFIG.WORD_0888_OPAQUE"
 peripheral = "PHY_BASEBAND_CONFIG"
 peripheral-type = "PhyBasebandConfig"
 peripheral-module = "phy_baseband_config"
 scope = []
-register-method = "front_end_init_0888"
+register-method = "word_0888_opaque"
 
 [[registers.fields]]
 svd-name = "IQ_SWAP_OPAQUE"
@@ -517,12 +517,12 @@ access = "read-write"
 address = 1611270292
 width = 32
 access = "read-write"
-identity = "PHY_BASEBAND_CONFIG.FRONT_END_INIT_0894"
+identity = "PHY_BASEBAND_CONFIG.WORD_0894_OPAQUE"
 peripheral = "PHY_BASEBAND_CONFIG"
 peripheral-type = "PhyBasebandConfig"
 peripheral-module = "phy_baseband_config"
 scope = []
-register-method = "front_end_init_0894"
+register-method = "word_0894_opaque"
 
 [[registers.fields]]
 svd-name = "FE_INIT_ENABLE_OPAQUE"
@@ -560,12 +560,12 @@ access = "read-write"
 address = 1611271176
 width = 32
 access = "read-write"
-identity = "PHY_BASEBAND_CONFIG.FRONT_END_INIT_0C08"
+identity = "PHY_BASEBAND_CONFIG.WORD_0C08_OPAQUE"
 peripheral = "PHY_BASEBAND_CONFIG"
 peripheral-type = "PhyBasebandConfig"
 peripheral-module = "phy_baseband_config"
 scope = []
-register-method = "front_end_init_0c08"
+register-method = "word_0c08_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_FIRST_OPAQUE"
@@ -610,12 +610,12 @@ access = "read-write"
 address = 1611271200
 width = 32
 access = "read-write"
-identity = "PHY_BASEBAND_CONFIG.FRONT_END_INIT_0C20"
+identity = "PHY_BASEBAND_CONFIG.WORD_0C20_OPAQUE"
 peripheral = "PHY_BASEBAND_CONFIG"
 peripheral-type = "PhyBasebandConfig"
 peripheral-module = "phy_baseband_config"
 scope = []
-register-method = "front_end_init_0c20"
+register-method = "word_0c20_opaque"
 
 [[registers.fields]]
 svd-name = "INIT_LOW_OPAQUE"
@@ -3415,12 +3415,12 @@ access = "read-only"
 address = 1611299104
 width = 32
 access = "read-write"
-identity = "PHY_BASEBAND_CONFIG.RX_EVM_WORD_7920"
+identity = "PHY_BASEBAND_CONFIG.WORD_7920_OPAQUE"
 peripheral = "PHY_BASEBAND_CONFIG"
 peripheral-type = "PhyBasebandConfig"
 peripheral-module = "phy_baseband_config"
 scope = []
-register-method = "rx_evm_word_7920"
+register-method = "word_7920_opaque"
 
 [[registers.fields]]
 svd-name = "CLEAR_OPAQUE"

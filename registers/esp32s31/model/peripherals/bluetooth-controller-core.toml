@@ -41,7 +41,7 @@ addressOffset = 0x04
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 description = "Complete lifecycle-request image."
 bitOffset = 0
 bitWidth = 32
@@ -146,7 +146,7 @@ addressOffset = 0x94
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 [[peripherals.registers]]
@@ -157,7 +157,7 @@ addressOffset = 0x98
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 [[peripherals.registers]]
@@ -168,7 +168,7 @@ addressOffset = 0x9C
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 [[peripherals.registers]]
@@ -179,7 +179,7 @@ addressOffset = 0xAC
 size = 32
 access = "read-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 [[peripherals.registers]]
@@ -190,7 +190,7 @@ addressOffset = 0xB0
 size = 32
 access = "read-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 [[peripherals.registers]]
@@ -201,7 +201,7 @@ addressOffset = 0xB4
 size = 32
 access = "read-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 [[peripherals.registers]]
@@ -404,7 +404,7 @@ addressOffset = 0x1F0
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -464,7 +464,7 @@ addressOffset = 0x20C
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 [[peripherals.registers]]
@@ -475,7 +475,7 @@ addressOffset = 0x210
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 [[peripherals.registers]]
@@ -510,13 +510,13 @@ bitOffset = 31
 bitWidth = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "PHY_INIT_ZERO_0244"
+name = "WORD_0244_OPAQUE"
 description = "Complete BLE PHY initialization writes the finite whole-word zero image. Inner hardware meaning remains unknown."
 addressOffset = 0x244
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -528,19 +528,19 @@ addressOffset = 0x248
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "PHY_INIT_DYNAMIC_IMAGE_024C"
+name = "WORD_024C_OPAQUE"
 description = "Complete BLE PHY initialization writes a runtime-derived complete image formed from a linked global address plus 0x40. The destination's inner hardware meaning remains unknown."
 addressOffset = 0x24C
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -595,7 +595,7 @@ name = "STATUS_24"
 bitOffset = 24
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "OPAQUE_25"
+name = "BIT_25_OPAQUE"
 bitOffset = 25
 bitWidth = 1
 [[peripherals.registers.register.fields]]
@@ -607,7 +607,7 @@ name = "EXECUTION_LOCK_RESULT"
 bitOffset = 27
 bitWidth = 3
 [[peripherals.registers.register.fields]]
-name = "OPAQUE_30"
+name = "BIT_30_OPAQUE"
 bitOffset = 30
 bitWidth = 1
 [[peripherals.registers.register.fields]]
@@ -629,7 +629,7 @@ bitWidth = 16
 minimum = 0
 maximum = 0xFFFF
 [[peripherals.registers.register.fields]]
-name = "OPAQUE_16"
+name = "BIT_16_OPAQUE"
 description = "Mode bit published with the list mask and START. Insertion publishes zero; deletion of a whole running list publishes one. Its hardware effect is not established."
 bitOffset = 16
 bitWidth = 1
@@ -796,7 +796,7 @@ addressOffset = 0x2A0
 size = 32
 access = "read-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 [[peripherals.registers]]
@@ -946,7 +946,7 @@ addressOffset = 0x8C
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -958,14 +958,14 @@ addressOffset = 0xB8
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "OPERATIONAL_CONTROL_0204"
-description = "Complete operational functions independently set and clear bit zero through fresh-read RMW operations. The scheduler cancellation path sets bit zero after publishing its hardware-list index in OPERATIONAL_WORD_036C bits 7:4 and acknowledging interrupt source 7, waits on OPERATIONAL_STATUS_0324 and OPERATIONAL_STATUS_0208, and clears bit zero after its skip requests. The hardware effect of bit zero is not established."
+name = "WORD_0204_OPAQUE"
+description = "Complete operational functions independently set and clear bit zero through fresh-read RMW operations. The scheduler cancellation path sets bit zero after publishing its hardware-list index in WORD_036C_OPAQUE bits 7:4 and acknowledging interrupt source 7, waits on WORD_0324_OPAQUE and WORD_0208_OPAQUE, and clears bit zero after its skip requests. The hardware effect of bit zero is not established."
 addressOffset = 0x204
 size = 32
 access = "read-write"
@@ -976,8 +976,8 @@ bitWidth = 1
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "OPERATIONAL_STATUS_0208"
-description = "Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown."
+name = "WORD_0208_OPAQUE"
+description = "Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting WORD_0204_OPAQUE bit zero. They continue waiting while this bit is one and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown."
 addressOffset = 0x208
 size = 32
 access = "read-only"
@@ -1015,8 +1015,8 @@ bitWidth = 1
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "OPERATIONAL_STATUS_0324"
-description = "The two scheduler cancellation paths read this word after setting OPERATIONAL_CONTROL_0204 bit zero and wait while bit zero is clear and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown."
+name = "WORD_0324_OPAQUE"
+description = "The two scheduler cancellation paths read this word after setting WORD_0204_OPAQUE bit zero and wait while bit zero is clear and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown."
 addressOffset = 0x324
 size = 32
 access = "read-only"
@@ -1027,8 +1027,8 @@ bitWidth = 1
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "OPERATIONAL_WORD_036C"
-description = "Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index in bits 3:0 through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. The scheduler cancellation path does the same for bits 7:4 before setting OPERATIONAL_CONTROL_0204 bit zero. Other fields remain unassigned."
+name = "WORD_036C_OPAQUE"
+description = "Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index in bits 3:0 through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. The scheduler cancellation path does the same for bits 7:4 before setting WORD_0204_OPAQUE bit zero. Other fields remain unassigned."
 addressOffset = 0x36C
 size = 32
 access = "read-write"
@@ -1042,7 +1042,7 @@ minimum = 0
 maximum = 0x0F
 [[peripherals.registers.register.fields]]
 name = "CANCELLATION_HARDWARE_LIST_INDEX"
-description = "Zero-based hardware-list index cleared and then published by the scheduler cancellation path before it sets OPERATIONAL_CONTROL_0204 bit zero."
+description = "Zero-based hardware-list index cleared and then published by the scheduler cancellation path before it sets WORD_0204_OPAQUE bit zero."
 bitOffset = 4
 bitWidth = 4
 [peripherals.registers.register.fields.writeConstraint.range]
@@ -1080,7 +1080,7 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.GPIO_DIAG_ARGUMENT_1.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.GPIO_DIAG_ARGUMENT_1.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -1088,15 +1088,15 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_ZERO_0244"
-naming = "descriptive"
+entity = "BLUETOOTH_CONTROLLER_CORE.WORD_0244_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_ZERO_0244.IMAGE"
-naming = "descriptive"
+entity = "BLUETOOTH_CONTROLLER_CORE.WORD_0244_OPAQUE.BITS_0_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1110,7 +1110,7 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.GPIO_DIAG_CONTROL.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.GPIO_DIAG_CONTROL.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -1118,15 +1118,15 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_DYNAMIC_IMAGE_024C"
-naming = "descriptive"
+entity = "BLUETOOTH_CONTROLLER_CORE.WORD_024C_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_DYNAMIC_IMAGE_024C.IMAGE"
-naming = "descriptive"
+entity = "BLUETOOTH_CONTROLLER_CORE.WORD_024C_OPAQUE.BITS_0_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1243,7 +1243,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_VALUE_0.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_VALUE_0.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
 provenance = "observed"
@@ -1259,7 +1259,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_VALUE_1.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_VALUE_1.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
 provenance = "observed"
@@ -1275,7 +1275,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_VALUE_2.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_VALUE_2.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
 provenance = "observed"
@@ -1291,7 +1291,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CAPTURE_0.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CAPTURE_0.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "BLOB_LIBBTDM_SLEEP_TIMER_SNAPSHOT", "PUBLIC_ESP32S31_BT_TIME_ROLES"]
 provenance = "observed"
@@ -1451,7 +1451,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_STATE_0.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_STATE_0.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_ISO_COEX_REGISTERS"]
 provenance = "observed"
@@ -1467,7 +1467,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_STATE_1.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_STATE_1.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_ISO_COEX_REGISTERS"]
 provenance = "observed"
@@ -1555,8 +1555,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_0.OPAQUE_25"
-naming = "descriptive"
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_0.BIT_25_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1579,8 +1579,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_0.OPAQUE_30"
-naming = "descriptive"
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_0.BIT_30_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_SCHEDULER_INSERTION_EXECUTION_COMMANDS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1611,8 +1611,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_1.OPAQUE_16"
-naming = "descriptive"
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_1.BIT_16_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_SCHEDULER_INSERTION_EXECUTION_COMMANDS", "BLOB_LIBBTDM_SCHEDULER_LIST_DELETION", "PUBLIC_ESP32S31_BT_SCHEDULER_LIST_DELETION_ROLE"]
 provenance = "observed"
 accuracy = "exact"
@@ -1819,7 +1819,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SCAN_HW_SNAPSHOT.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.SCAN_HW_SNAPSHOT.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_SCAN_HW_SNAPSHOT"]
 provenance = "observed"
@@ -1835,7 +1835,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_LIFECYCLE_REQUEST.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_LIFECYCLE_REQUEST.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_LIFECYCLE"]
 provenance = "observed"
@@ -2306,7 +2306,7 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CC_0.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CC_0.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_CONTROLLER_OPERATIONAL_GAPS"]
 provenance = "observed"
@@ -2321,7 +2321,7 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CC_1.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CC_1.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_CONTROLLER_OPERATIONAL_GAPS"]
 provenance = "observed"
@@ -2329,14 +2329,14 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_CONTROL_0204"
-naming = "descriptive"
+entity = "BLUETOOTH_CONTROLLER_CORE.WORD_0204_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_CONTROL_0204.CONTROL_0"
+entity = "BLUETOOTH_CONTROLLER_CORE.WORD_0204_OPAQUE.CONTROL_0"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
 provenance = "observed"
@@ -2344,14 +2344,14 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_STATUS_0208"
-naming = "descriptive"
+entity = "BLUETOOTH_CONTROLLER_CORE.WORD_0208_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_SCHEDULER_WAIT_TAIL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_STATUS_0208.STATUS_0"
+entity = "BLUETOOTH_CONTROLLER_CORE.WORD_0208_OPAQUE.STATUS_0"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_WAIT_TAIL", "BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
 provenance = "observed"
@@ -2395,14 +2395,14 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_STATUS_0324"
-naming = "descriptive"
+entity = "BLUETOOTH_CONTROLLER_CORE.WORD_0324_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_STATUS_0324.STATUS_0"
+entity = "BLUETOOTH_CONTROLLER_CORE.WORD_0324_OPAQUE.STATUS_0"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
 provenance = "observed"
@@ -2410,15 +2410,15 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C"
-naming = "descriptive"
+entity = "BLUETOOTH_CONTROLLER_CORE.WORD_036C_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C.LOCK_MODIFY_HARDWARE_LIST_INDEX"
+entity = "BLUETOOTH_CONTROLLER_CORE.WORD_036C_OPAQUE.LOCK_MODIFY_HARDWARE_LIST_INDEX"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_LIST_INDEX"]
 provenance = "observed"
@@ -2426,7 +2426,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C.CANCELLATION_HARDWARE_LIST_INDEX"
+entity = "BLUETOOTH_CONTROLLER_CORE.WORD_036C_OPAQUE.CANCELLATION_HARDWARE_LIST_INDEX"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_CANCELLATION", "PUBLIC_ESP32S31_BT_SCHEDULER_CANCELLATION_ROLES"]
 provenance = "observed"
@@ -2456,7 +2456,7 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CAPTURE_1.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CAPTURE_1.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_SNAPSHOT"]
 provenance = "observed"
@@ -2471,7 +2471,7 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CAPTURE_2.IMAGE"
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CAPTURE_2.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_SNAPSHOT"]
 provenance = "observed"

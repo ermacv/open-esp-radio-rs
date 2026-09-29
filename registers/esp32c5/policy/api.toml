@@ -959,7 +959,7 @@ source-bit-offset = 0
 [[field-replace-modifies]]
 name = "clear_phy_front_end_init_0c08_first"
 peripheral = "PHY_BASEBAND_CONFIG"
-register = "FRONT_END_INIT_0C08"
+register = "WORD_0C08_OPAQUE"
 fields = [{ field = "INIT_FIRST_OPAQUE", source-bit-offset = 0 }]
 value = 0x0
 exposure = "facade"
@@ -968,7 +968,7 @@ sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
 [[field-or-modifies]]
 name = "set_phy_front_end_init_0c08"
 peripheral = "PHY_BASEBAND_CONFIG"
-register = "FRONT_END_INIT_0C08"
+register = "WORD_0C08_OPAQUE"
 value = 0x6000000
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
@@ -993,7 +993,7 @@ sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
 [[field-or-modifies]]
 name = "enable_phy_front_end_0894"
 peripheral = "PHY_BASEBAND_CONFIG"
-register = "FRONT_END_INIT_0894"
+register = "WORD_0894_OPAQUE"
 value = 0x1
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
@@ -1089,7 +1089,7 @@ sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
 [[field-or-modifies]]
 name = "set_phy_front_end_iq_swap"
 peripheral = "PHY_BASEBAND_CONFIG"
-register = "FRONT_END_INIT_0888"
+register = "WORD_0888_OPAQUE"
 value = 0x1
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
@@ -1101,7 +1101,7 @@ source-bit-offset = 0
 [[field-replace-modifies]]
 name = "clear_phy_front_end_iq_swap"
 peripheral = "PHY_BASEBAND_CONFIG"
-register = "FRONT_END_INIT_0888"
+register = "WORD_0888_OPAQUE"
 fields = [{ field = "IQ_SWAP_OPAQUE", source-bit-offset = 0 }]
 value = 0x0
 exposure = "facade"
@@ -1110,7 +1110,7 @@ sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
 [[field-replace-modifies]]
 name = "set_phy_front_end_init_0c20"
 peripheral = "PHY_BASEBAND_CONFIG"
-register = "FRONT_END_INIT_0C20"
+register = "WORD_0C20_OPAQUE"
 fields = [{ field = "INIT_LOW_OPAQUE", source-bit-offset = 0 }]
 value = 0x57
 exposure = "facade"
@@ -1128,14 +1128,14 @@ sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
 [[fixed-register-images]]
 name = "set_phy_power_detector_word_810"
 peripheral = "PHY_BASEBAND_CONFIG"
-register = "POWER_DETECTOR_WORD_810"
+register = "WORD_0810_OPAQUE"
 value = 0x0f0f0fff
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
 
 [[fixed-register-images]]
 name = "set_phy_power_detector_word_814"
 peripheral = "PHY_BASEBAND_CONFIG"
-register = "POWER_DETECTOR_WORD_814"
+register = "WORD_0814_OPAQUE"
 value = 0xff0f64
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
 
@@ -1469,7 +1469,7 @@ sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
 [[field-replace-modifies]]
 name = "clear_phy_rx_evm_word_7920"
 peripheral = "PHY_BASEBAND_CONFIG"
-register = "RX_EVM_WORD_7920"
+register = "WORD_7920_OPAQUE"
 fields = [{ field = "CLEAR_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"

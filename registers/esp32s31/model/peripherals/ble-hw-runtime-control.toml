@@ -67,13 +67,13 @@ addressOffset = 0x78
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "CONFIG_0088"
+name = "WORD_0088_OPAQUE"
 description = "Complete image formed from the low five bits of one controller configuration byte."
 addressOffset = 0x88
 size = 32
@@ -85,7 +85,7 @@ bitWidth = 5
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "CONFIG_0090"
+name = "WORD_0090_OPAQUE"
 description = "Complete image formed from two low-five-bit controller values in bits 0..4 and 8..12 plus finite one bits at positions 5 and 13."
 addressOffset = 0x90
 size = 32
@@ -109,7 +109,7 @@ bitWidth = 1
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "CONFIG_0094"
+name = "WORD_0094_OPAQUE"
 description = "Complete image formed from one controller configuration byte."
 addressOffset = 0x94
 size = 32
@@ -163,7 +163,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLE_HW_RUNTIME_CONTROL.PHY_INIT_CONFIGURATION_FOLLOWUP.IMAGE"
+entity = "BLE_HW_RUNTIME_CONTROL.PHY_INIT_CONFIGURATION_FOLLOWUP.VALUE"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -201,14 +201,14 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0088"
-naming = "descriptive"
+entity = "BLE_HW_RUNTIME_CONTROL.WORD_0088_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_HW_RUNTIME_CONFIG"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0088.VALUE_LOW_5"
+entity = "BLE_HW_RUNTIME_CONTROL.WORD_0088_OPAQUE.VALUE_LOW_5"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RUNTIME_CONFIG"]
 provenance = "observed"
@@ -216,35 +216,35 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0090"
-naming = "descriptive"
+entity = "BLE_HW_RUNTIME_CONTROL.WORD_0090_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_HW_RUNTIME_CONFIG"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0090.VALUE_0"
+entity = "BLE_HW_RUNTIME_CONTROL.WORD_0090_OPAQUE.VALUE_0"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RUNTIME_CONFIG"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0090.CONFIG_5"
+entity = "BLE_HW_RUNTIME_CONTROL.WORD_0090_OPAQUE.CONFIG_5"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RUNTIME_CONFIG"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0090.VALUE_1"
+entity = "BLE_HW_RUNTIME_CONTROL.WORD_0090_OPAQUE.VALUE_1"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RUNTIME_CONFIG"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0090.CONFIG_13"
+entity = "BLE_HW_RUNTIME_CONTROL.WORD_0090_OPAQUE.CONFIG_13"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RUNTIME_CONFIG"]
 provenance = "observed"
@@ -252,14 +252,14 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0094"
-naming = "descriptive"
+entity = "BLE_HW_RUNTIME_CONTROL.WORD_0094_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBLE_HW_RUNTIME_CONFIG"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0094.VALUE_LOW_8"
+entity = "BLE_HW_RUNTIME_CONTROL.WORD_0094_OPAQUE.VALUE_LOW_8"
 naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RUNTIME_CONFIG"]
 provenance = "observed"

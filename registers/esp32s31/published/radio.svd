@@ -1278,8 +1278,8 @@
           <access>write-only</access>
           <fields>
             <field>
-              <name>OPAQUE_DATA</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <writeConstraint>
@@ -1299,8 +1299,8 @@
           <access>write-only</access>
           <fields>
             <field>
-              <name>OPAQUE_DATA</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <writeConstraint>
@@ -1320,8 +1320,8 @@
           <access>write-only</access>
           <fields>
             <field>
-              <name>OPAQUE_DATA</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <writeConstraint>
@@ -1505,8 +1505,8 @@
           <access>write-only</access>
           <fields>
             <field>
-              <name>OPAQUE_VALUE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <writeConstraint>
@@ -2968,8 +2968,8 @@
           <access>write-only</access>
           <fields>
             <field>
-              <name>OPAQUE_VALUE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <writeConstraint>
@@ -3059,8 +3059,8 @@
           <access>write-only</access>
           <fields>
             <field>
-              <name>OPAQUE_VALUE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <writeConstraint>
@@ -4289,8 +4289,8 @@
           </fields>
         </register>
         <register>
-          <name>FRONT_END_INIT_0C08</name>
-          <description>Project-assigned name. Both complete source bodies set bit 25 and then bit 26 through separate fresh-read RMW edges.</description>
+          <name>WORD_0C08_OPAQUE</name>
+          <description>Opaque: meaning not established. Both complete source bodies set bit 25 and then bit 26 through separate fresh-read RMW edges.</description>
           <addressOffset>0xC08</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -4361,8 +4361,8 @@
           </fields>
         </register>
         <register>
-          <name>FRONT_END_INIT_0C20</name>
-          <description>Project-assigned name. Final complete phy_fe_reg_init RMW replaces the low byte with 0x57.</description>
+          <name>WORD_0C20_OPAQUE</name>
+          <description>Opaque: meaning not established. Final complete phy_fe_reg_init RMW replaces the low byte with 0x57.</description>
           <addressOffset>0xC20</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -4436,8 +4436,8 @@
           </fields>
         </register>
         <register>
-          <name>BASEBAND_INIT_7400</name>
-          <description>Project-assigned name. Complete phy_bb_reg_init sets bits 14:13.</description>
+          <name>WORD_7400_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete phy_bb_reg_init sets bits 14:13.</description>
           <addressOffset>0x7400</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -4457,8 +4457,8 @@
           </fields>
         </register>
         <register>
-          <name>BASEBAND_INIT_7428</name>
-          <description>Project-assigned name. Complete phy_bb_reg_init sets bit 14 and replaces bits 13:8 with 0x15.</description>
+          <name>WORD_7428_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete phy_bb_reg_init sets bit 14 and replaces bits 13:8 with 0x15.</description>
           <addressOffset>0x7428</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -4484,8 +4484,8 @@
           </fields>
         </register>
         <register>
-          <name>BASEBAND_INIT_743C</name>
-          <description>Project-assigned name. Complete phy_bb_reg_init clears bits 8:6 through two fresh-read updates.</description>
+          <name>WORD_743C_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete phy_bb_reg_init clears bits 8:6 through two fresh-read updates.</description>
           <addressOffset>0x743C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -4871,8 +4871,8 @@
           </fields>
         </register>
         <register>
-          <name>BASEBAND_INIT_7808</name>
-          <description>Project-assigned name. Complete phy_bb_reg_init replaces bits 13:7 with 0x60.</description>
+          <name>WORD_7808_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete phy_bb_reg_init replaces bits 13:7 with 0x60.</description>
           <addressOffset>0x7808</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -4892,8 +4892,8 @@
           </fields>
         </register>
         <register>
-          <name>BASEBAND_INIT_7890</name>
-          <description>Project-assigned name. Complete phy_bb_reg_init and phy_hemu_ru26_good_res both clear bit 25 then set bit 24 through separate fresh-read RMWs.</description>
+          <name>WORD_7890_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete phy_bb_reg_init and phy_hemu_ru26_good_res both clear bit 25 then set bit 24 through separate fresh-read RMWs.</description>
           <addressOffset>0x7890</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -4913,8 +4913,8 @@
           </fields>
         </register>
         <register>
-          <name>BASEBAND_INIT_78DC</name>
-          <description>Project-assigned name. Complete phy_bb_reg_init replaces bits 13:7 with two.</description>
+          <name>WORD_78DC_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete phy_bb_reg_init replaces bits 13:7 with two.</description>
           <addressOffset>0x78DC</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -4934,8 +4934,8 @@
           </fields>
         </register>
         <register>
-          <name>BASEBAND_INIT_78E4</name>
-          <description>Project-assigned name. Complete phy_bb_reg_init clears bit 22.</description>
+          <name>WORD_78E4_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete phy_bb_reg_init clears bit 22.</description>
           <addressOffset>0x78E4</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -4949,8 +4949,8 @@
           </fields>
         </register>
         <register>
-          <name>BASEBAND_INIT_790C</name>
-          <description>Project-assigned name. Complete phy_bb_reg_init clears bit 11; complete phy_lltf_mask_en independently replaces bits thirteen and twelve; complete phy_chan_dump_cfg replaces bits 7:4 and bit 11 through separate fresh-read RMWs.</description>
+          <name>WORD_790C_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete phy_bb_reg_init clears bit 11; complete phy_lltf_mask_en independently replaces bits thirteen and twelve; complete phy_chan_dump_cfg replaces bits 7:4 and bit 11 through separate fresh-read RMWs.</description>
           <addressOffset>0x790C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -4988,8 +4988,8 @@
           </fields>
         </register>
         <register>
-          <name>BASEBAND_INIT_7980</name>
-          <description>Project-assigned name. Complete phy_bb_reg_init clears bit 25.</description>
+          <name>WORD_7980_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete phy_bb_reg_init clears bit 25.</description>
           <addressOffset>0x7980</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -5003,8 +5003,8 @@
           </fields>
         </register>
         <register>
-          <name>BASEBAND_INIT_7A28</name>
-          <description>Project-assigned name. Complete phy_bb_reg_init clears bit 22.</description>
+          <name>WORD_7A28_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete phy_bb_reg_init clears bit 22.</description>
           <addressOffset>0x7A28</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -5190,8 +5190,8 @@
           <access>write-only</access>
         </register>
         <register>
-          <name>BASEBAND_INIT_7CA8</name>
-          <description>Project-assigned name. Complete phy_bb_reg_init sets bit 20.</description>
+          <name>WORD_7CA8_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete phy_bb_reg_init sets bit 20.</description>
           <addressOffset>0x7CA8</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -5205,8 +5205,8 @@
           </fields>
         </register>
         <register>
-          <name>BASEBAND_INIT_7CD0</name>
-          <description>Project-assigned name. Complete phy_bb_reg_init sets both nibbles to 0xf; complete phy_btbb_wifi_bb_cfg2 preserves low bit two, sets the other low bits and sets the high nibble.</description>
+          <name>WORD_7CD0_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete phy_bb_reg_init sets both nibbles to 0xf; complete phy_btbb_wifi_bb_cfg2 preserves low bit two, sets the other low bits and sets the high nibble.</description>
           <addressOffset>0x7CD0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -8344,7 +8344,7 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name. Complete four-byte HE-Control image. Its A-Control subfields depend on the control ID; keep the finite protocol interpretation in the handwritten IEEE 802.11 layer rather than exposing overlapping mode-dependent SVD fields.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -16885,8 +16885,8 @@
           </fields>
         </register>
         <register>
-          <name>RX_CONFIG_004C</name>
-          <description>Project-assigned name. Bluetooth receive setup clears bit 26. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, later replaces bits 18:0 and sets bits 19, 24, 26, 28, 30 and 31 in two fresh-read RMW operations.</description>
+          <name>WORD_004C_OPAQUE</name>
+          <description>Opaque: meaning not established. Bluetooth receive setup clears bit 26. bt_agc_sat_gain, tail-called by bt_bb_v2_rx_set, later replaces bits 18:0 and sets bits 19, 24, 26, 28, 30 and 31 in two fresh-read RMW operations.</description>
           <addressOffset>0x4C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -17048,8 +17048,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>CONFIG_FORCE_ONE_23</name>
-              <description>Project-assigned name.</description>
+              <name>BIT_23_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>23</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -17095,21 +17095,21 @@
           </fields>
         </register>
         <register>
-          <name>RX_CONFIG_0088</name>
-          <description>Project-assigned name. Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations. bt_agc_restart_set clears bit 30 and bt_agc_sat_gain sets it again.</description>
+          <name>WORD_0088_OPAQUE</name>
+          <description>Opaque: meaning not established. Bluetooth receive setup clears bit 29 and sets bit 18 through separate fresh-read operations. bt_agc_restart_set clears bit 30 and bt_agc_sat_gain sets it again.</description>
           <addressOffset>0x88</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>CONFIG_FORCE_ONE_18</name>
-              <description>Project-assigned name.</description>
+              <name>BIT_18_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>18</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>CONFIG_FORCE_ZERO_29</name>
-              <description>Project-assigned name.</description>
+              <name>BIT_29_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>29</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -17122,15 +17122,15 @@
           </fields>
         </register>
         <register>
-          <name>RX_CONFIG_008C</name>
-          <description>Project-assigned name. Bluetooth receive setup and target configuration update three disjoint positional fields and clear one independently observed control bit.</description>
+          <name>WORD_008C_OPAQUE</name>
+          <description>Opaque: meaning not established. Bluetooth receive setup and target configuration update three disjoint positional fields and clear one independently observed control bit.</description>
           <addressOffset>0x8C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>CONFIG_FORCE_ZERO_29</name>
-              <description>Project-assigned name.</description>
+              <name>BIT_29_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>29</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -17161,8 +17161,8 @@
           </fields>
         </register>
         <register>
-          <name>AGC_CONFIG_00D0</name>
-          <description>Project-assigned name. bt_agc_v2_set replaces two seven-bit fields with the finite value 20.</description>
+          <name>WORD_00D0_OPAQUE</name>
+          <description>Opaque: meaning not established. bt_agc_v2_set replaces two seven-bit fields with the finite value 20.</description>
           <addressOffset>0xD0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -17194,8 +17194,8 @@
           </fields>
         </register>
         <register>
-          <name>AGC_CONFIG_00D4</name>
-          <description>Project-assigned name. bt_agc_v2_set replaces bits 24:6 with the finite image 0x003C0.</description>
+          <name>WORD_00D4_OPAQUE</name>
+          <description>Opaque: meaning not established. bt_agc_v2_set replaces bits 24:6 with the finite image 0x003C0.</description>
           <addressOffset>0xD4</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -17341,8 +17341,8 @@
           <access>write-only</access>
         </register>
         <register>
-          <name>AGC_RECORRECT_CONTROL_006C</name>
-          <description>Project-assigned name. Complete bt_agc_recorrect_set replaces the high byte with one finite image.</description>
+          <name>WORD_006C_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete bt_agc_recorrect_set replaces the high byte with one finite image.</description>
           <addressOffset>0x6C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -17362,8 +17362,8 @@
           </fields>
         </register>
         <register>
-          <name>AGC_RESTART_CONFIG_0084</name>
-          <description>Project-assigned name. Complete bt_agc_restart_set replaces the high byte with one finite image.</description>
+          <name>WORD_0084_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete bt_agc_restart_set replaces the high byte with one finite image.</description>
           <addressOffset>0x84</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -17383,8 +17383,8 @@
           </fields>
         </register>
         <register>
-          <name>SHARED_RX_SENSE_AND_DETECT_00A0</name>
-          <description>Project-assigned name. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer.</description>
+          <name>WORD_00A0_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer.</description>
           <addressOffset>0xA0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -17416,8 +17416,8 @@
           </fields>
         </register>
         <register>
-          <name>SHARED_RX_SENSE_AND_DETECT_00A8</name>
-          <description>Project-assigned name. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace four positional fields used by the bounded baseband initializer.</description>
+          <name>WORD_00A8_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace four positional fields used by the bounded baseband initializer.</description>
           <addressOffset>0xA8</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -17473,8 +17473,8 @@
           </fields>
         </register>
         <register>
-          <name>AGC_RECORRECT_AND_TARGET_00B0</name>
-          <description>Project-assigned name. Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves.</description>
+          <name>WORD_00B0_OPAQUE</name>
+          <description>Opaque: meaning not established. Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves.</description>
           <addressOffset>0xB0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -17518,8 +17518,8 @@
           </fields>
         </register>
         <register>
-          <name>AGC_RECORRECT_AND_TARGET_00B4</name>
-          <description>Project-assigned name. Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves.</description>
+          <name>WORD_00B4_OPAQUE</name>
+          <description>Opaque: meaning not established. Finite images written by complete bt_agc_recorrect_set and bt_agc_target_set leaves.</description>
           <addressOffset>0xB4</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -17557,8 +17557,8 @@
           </fields>
         </register>
         <register>
-          <name>SHARED_RX_SENSE_AND_DETECT_00B8</name>
-          <description>Project-assigned name. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer.</description>
+          <name>WORD_00B8_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete bt_bb_set_rx_sense publishes a complete dynamic image. Independent finite RMWs replace two positional fields used by the bounded baseband initializer.</description>
           <addressOffset>0xB8</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -17590,8 +17590,8 @@
           </fields>
         </register>
         <register>
-          <name>AGC_RECORRECT_AND_RESTART_00BC</name>
-          <description>Project-assigned name. Complete recorrect and restart leaves independently update five observed control bits.</description>
+          <name>WORD_00BC_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete recorrect and restart leaves independently update five observed control bits.</description>
           <addressOffset>0xBC</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -17629,15 +17629,15 @@
           </fields>
         </register>
         <register>
-          <name>AGC_DETECT_CONFIG_00C0</name>
-          <description>Project-assigned name. Complete bt_agc_detect_set replaces five positional fields with finite images.</description>
+          <name>WORD_00C0_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete bt_agc_detect_set replaces five positional fields with finite images.</description>
           <addressOffset>0xC0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>BITS_5_9</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x0a.</description>
+              <name>BITS_5_9_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x0a.</description>
               <bitOffset>5</bitOffset>
               <bitWidth>5</bitWidth>
               <writeConstraint>
@@ -17648,8 +17648,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_10_14</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x0a.</description>
+              <name>BITS_10_14_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x0a.</description>
               <bitOffset>10</bitOffset>
               <bitWidth>5</bitWidth>
               <writeConstraint>
@@ -17660,8 +17660,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_15_19</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x0a.</description>
+              <name>BITS_15_19_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x0a.</description>
               <bitOffset>15</bitOffset>
               <bitWidth>5</bitWidth>
               <writeConstraint>
@@ -17672,8 +17672,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_20_23</name>
-              <description>Project-assigned name. The leaf replaces this field with 7.</description>
+              <name>BITS_20_23_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 7.</description>
               <bitOffset>20</bitOffset>
               <bitWidth>4</bitWidth>
               <writeConstraint>
@@ -17684,8 +17684,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_24_31</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x9c.</description>
+              <name>BITS_24_31_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x9c.</description>
               <bitOffset>24</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -17698,15 +17698,15 @@
           </fields>
         </register>
         <register>
-          <name>AGC_DETECT_CONFIG_00C4</name>
-          <description>Project-assigned name. Complete bt_agc_detect_set replaces four positional fields with finite images.</description>
+          <name>WORD_00C4_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete bt_agc_detect_set replaces four positional fields with finite images.</description>
           <addressOffset>0xC4</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>BITS_10_14</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x0f.</description>
+              <name>BITS_10_14_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x0f.</description>
               <bitOffset>10</bitOffset>
               <bitWidth>5</bitWidth>
               <writeConstraint>
@@ -17717,8 +17717,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_15_19</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x0f.</description>
+              <name>BITS_15_19_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x0f.</description>
               <bitOffset>15</bitOffset>
               <bitWidth>5</bitWidth>
               <writeConstraint>
@@ -17729,8 +17729,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_20_23</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x0a.</description>
+              <name>BITS_20_23_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x0a.</description>
               <bitOffset>20</bitOffset>
               <bitWidth>4</bitWidth>
               <writeConstraint>
@@ -17741,8 +17741,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_24_31</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x9c.</description>
+              <name>BITS_24_31_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x9c.</description>
               <bitOffset>24</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -17755,8 +17755,8 @@
           </fields>
         </register>
         <register>
-          <name>AGC_RESTART_BITS_00DC</name>
-          <description>Project-assigned name. Complete bt_agc_restart_set sets five independently observed high control bits through separate fresh-read RMW operations.</description>
+          <name>WORD_00DC_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete bt_agc_restart_set sets five independently observed high control bits through separate fresh-read RMW operations.</description>
           <addressOffset>0xDC</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -17801,8 +17801,8 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>BITS_0_7</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x0f.</description>
+              <name>BITS_0_7_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x0f.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -17813,8 +17813,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_8_15</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x0e.</description>
+              <name>BITS_8_15_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x0e.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -17825,8 +17825,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_16_23</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x0e.</description>
+              <name>BITS_16_23_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x0e.</description>
               <bitOffset>16</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -17837,8 +17837,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_24_31</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x14.</description>
+              <name>BITS_24_31_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x14.</description>
               <bitOffset>24</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -17858,8 +17858,8 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>BITS_0_7</name>
-              <description>Project-assigned name. The leaf replaces this field with 0xf2.</description>
+              <name>BITS_0_7_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0xf2.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -17870,8 +17870,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_8_15</name>
-              <description>Project-assigned name. The leaf replaces this field with 0xf2.</description>
+              <name>BITS_8_15_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0xf2.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -17882,8 +17882,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_16_23</name>
-              <description>Project-assigned name. The leaf replaces this field with 0xec.</description>
+              <name>BITS_16_23_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0xec.</description>
               <bitOffset>16</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -17894,8 +17894,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_24_31</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x1e.</description>
+              <name>BITS_24_31_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x1e.</description>
               <bitOffset>24</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -17915,8 +17915,8 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>BITS_10_15</name>
-              <description>Project-assigned name. The leaf replaces this field with 3.</description>
+              <name>BITS_10_15_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 3.</description>
               <bitOffset>10</bitOffset>
               <bitWidth>6</bitWidth>
               <writeConstraint>
@@ -17927,8 +17927,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_16_23</name>
-              <description>Project-assigned name. The leaf replaces this field with 0xe2.</description>
+              <name>BITS_16_23_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0xe2.</description>
               <bitOffset>16</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -17939,8 +17939,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_24_31</name>
-              <description>Project-assigned name. The leaf replaces this field with 0xf1.</description>
+              <name>BITS_24_31_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0xf1.</description>
               <bitOffset>24</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -17960,8 +17960,8 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>BITS_0_7</name>
-              <description>Project-assigned name. The leaf replaces this field with 0xd8.</description>
+              <name>BITS_0_7_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0xd8.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -17972,8 +17972,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_8_15</name>
-              <description>Project-assigned name. The leaf replaces this field with 0xd3.</description>
+              <name>BITS_8_15_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0xd3.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -17984,8 +17984,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_16_23</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x28.</description>
+              <name>BITS_16_23_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x28.</description>
               <bitOffset>16</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -17996,8 +17996,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_24_31</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x2d.</description>
+              <name>BITS_24_31_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x2d.</description>
               <bitOffset>24</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -18017,8 +18017,8 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>BITS_16_23</name>
-              <description>Project-assigned name. The leaf replaces this field with 0xa6.</description>
+              <name>BITS_16_23_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0xa6.</description>
               <bitOffset>16</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -18029,8 +18029,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_24_31</name>
-              <description>Project-assigned name. The leaf replaces this field with 0xa6.</description>
+              <name>BITS_24_31_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0xa6.</description>
               <bitOffset>24</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -18050,8 +18050,8 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>BITS_2_7</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x0c.</description>
+              <name>BITS_2_7_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x0c.</description>
               <bitOffset>2</bitOffset>
               <bitWidth>6</bitWidth>
               <writeConstraint>
@@ -18062,8 +18062,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_8_13</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x0c.</description>
+              <name>BITS_8_13_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x0c.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>6</bitWidth>
               <writeConstraint>
@@ -18074,8 +18074,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_14_19</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x20.</description>
+              <name>BITS_14_19_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x20.</description>
               <bitOffset>14</bitOffset>
               <bitWidth>6</bitWidth>
               <writeConstraint>
@@ -18086,8 +18086,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_20_25</name>
-              <description>Project-assigned name. The leaf replaces this field with 5.</description>
+              <name>BITS_20_25_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 5.</description>
               <bitOffset>20</bitOffset>
               <bitWidth>6</bitWidth>
               <writeConstraint>
@@ -18098,8 +18098,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_26_31</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x0c.</description>
+              <name>BITS_26_31_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x0c.</description>
               <bitOffset>26</bitOffset>
               <bitWidth>6</bitWidth>
               <writeConstraint>
@@ -18119,8 +18119,8 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>BITS_12_15</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x0a.</description>
+              <name>BITS_12_15_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x0a.</description>
               <bitOffset>12</bitOffset>
               <bitWidth>4</bitWidth>
               <writeConstraint>
@@ -18131,8 +18131,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_16_19</name>
-              <description>Project-assigned name. The leaf replaces this field with 8.</description>
+              <name>BITS_16_19_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 8.</description>
               <bitOffset>16</bitOffset>
               <bitWidth>4</bitWidth>
               <writeConstraint>
@@ -18143,8 +18143,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_20_23</name>
-              <description>Project-assigned name. The leaf replaces this field with 6.</description>
+              <name>BITS_20_23_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 6.</description>
               <bitOffset>20</bitOffset>
               <bitWidth>4</bitWidth>
               <writeConstraint>
@@ -18155,8 +18155,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_24_27</name>
-              <description>Project-assigned name. The leaf replaces this field with 6.</description>
+              <name>BITS_24_27_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 6.</description>
               <bitOffset>24</bitOffset>
               <bitWidth>4</bitWidth>
               <writeConstraint>
@@ -18167,8 +18167,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_28_31</name>
-              <description>Project-assigned name. The leaf replaces this field with 6.</description>
+              <name>BITS_28_31_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 6.</description>
               <bitOffset>28</bitOffset>
               <bitWidth>4</bitWidth>
               <writeConstraint>
@@ -18192,15 +18192,15 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
       <baseAddress>0x20101400</baseAddress>
       <registers>
         <register>
-          <name>INIT_ZERO_0074</name>
-          <description>Project-assigned name. BLE PHY register initialization writes the complete zero image. Inner hardware semantics remain unknown.</description>
+          <name>WORD_0074_OPAQUE</name>
+          <description>Opaque: meaning not established. BLE PHY register initialization writes the complete zero image. Inner hardware semantics remain unknown.</description>
           <addressOffset>0x74</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>INIT_IMAGE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
@@ -18244,15 +18244,15 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
           </fields>
         </register>
         <register>
-          <name>INIT_VALUE_0138</name>
-          <description>Project-assigned name. BLE PHY register initialization writes the finite complete image 0x0000065B.</description>
+          <name>WORD_0138_OPAQUE</name>
+          <description>Opaque: meaning not established. BLE PHY register initialization writes the finite complete image 0x0000065B.</description>
           <addressOffset>0x138</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>INIT_IMAGE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
@@ -18280,8 +18280,8 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
           </fields>
         </register>
         <register>
-          <name>INIT_BYTES_0254</name>
-          <description>Project-assigned name. BLE PHY initialization replaces the first three bytes with the exact images 0x01, 0x01 and 0xB2.</description>
+          <name>WORD_0254_OPAQUE</name>
+          <description>Opaque: meaning not established. BLE PHY initialization replaces the first three bytes with the exact images 0x01, 0x01 and 0xB2.</description>
           <addressOffset>0x254</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18313,8 +18313,8 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
           </fields>
         </register>
         <register>
-          <name>INIT_CONTROL_0400</name>
-          <description>Project-assigned name. BLE PHY initialization first writes bit 31 as a complete image and then sets bit 22 through a fresh-read RMW.</description>
+          <name>WORD_0400_OPAQUE</name>
+          <description>Opaque: meaning not established. BLE PHY initialization first writes bit 31 as a complete image and then sets bit 22 through a fresh-read RMW.</description>
           <addressOffset>0x400</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18334,8 +18334,8 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
           </fields>
         </register>
         <register>
-          <name>INIT_HIGH_HALF_0458</name>
-          <description>Project-assigned name. BLE PHY initialization replaces the upper halfword with the finite image 0x000F.</description>
+          <name>WORD_0458_OPAQUE</name>
+          <description>Opaque: meaning not established. BLE PHY initialization replaces the upper halfword with the finite image 0x000F.</description>
           <addressOffset>0x458</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18349,15 +18349,15 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
           </fields>
         </register>
         <register>
-          <name>INIT_VALUE_045C</name>
-          <description>Project-assigned name. BLE PHY register initialization writes the finite complete image 8.</description>
+          <name>WORD_045C_OPAQUE</name>
+          <description>Opaque: meaning not established. BLE PHY register initialization writes the finite complete image 8.</description>
           <addressOffset>0x45C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>INIT_IMAGE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
@@ -18377,8 +18377,8 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
               <bitWidth>8</bitWidth>
             </field>
             <field>
-              <name>SET_BY_PHY_INIT_BRANCH_BIT_18</name>
-              <description>Project-assigned name. The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven.</description>
+              <name>BIT_18_OPAQUE</name>
+              <description>Opaque: meaning not established. The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven.</description>
               <bitOffset>18</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -18406,23 +18406,23 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
           </fields>
         </register>
         <register>
-          <name>INIT_DYNAMIC_IMAGE_04A0</name>
-          <description>Project-assigned name. BLE PHY initialization writes a runtime-derived complete image formed from a linked global address. The destination's hardware meaning remains unknown.</description>
+          <name>WORD_04A0_OPAQUE</name>
+          <description>Opaque: meaning not established. BLE PHY initialization writes a runtime-derived complete image formed from a linked global address. The destination's hardware meaning remains unknown.</description>
           <addressOffset>0x4A0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>INIT_IMAGE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>INIT_BYTES_04A4</name>
-          <description>Project-assigned name. BLE PHY register initialization writes four byte images equal to 2.</description>
+          <name>WORD_04A4_OPAQUE</name>
+          <description>Opaque: meaning not established. BLE PHY register initialization writes four byte images equal to 2.</description>
           <addressOffset>0x4A4</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18454,8 +18454,8 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
           </fields>
         </register>
         <register>
-          <name>INIT_BYTES_04A8</name>
-          <description>Project-assigned name. BLE PHY register initialization writes four byte images equal to 2.</description>
+          <name>WORD_04A8_OPAQUE</name>
+          <description>Opaque: meaning not established. BLE PHY register initialization writes four byte images equal to 2.</description>
           <addressOffset>0x4A8</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18508,23 +18508,23 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
           </fields>
         </register>
         <register>
-          <name>INIT_VALUE_0540</name>
-          <description>Project-assigned name. BLE PHY register initialization writes the complete controller-configuration word at offset 0x40, which the pinned configuration defaults to 2000.</description>
+          <name>WORD_0540_OPAQUE</name>
+          <description>Opaque: meaning not established. BLE PHY register initialization writes the complete controller-configuration word at offset 0x40, which the pinned configuration defaults to 2000.</description>
           <addressOffset>0x540</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>INIT_IMAGE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>INIT_LOW_5_054C</name>
-          <description>Project-assigned name. BLE PHY initialization replaces the low five bits with the finite image 0x12.</description>
+          <name>WORD_054C_OPAQUE</name>
+          <description>Opaque: meaning not established. BLE PHY initialization replaces the low five bits with the finite image 0x12.</description>
           <addressOffset>0x54C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18538,8 +18538,8 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
           </fields>
         </register>
         <register>
-          <name>INIT_BYTES_0550</name>
-          <description>Project-assigned name. BLE PHY initialization replaces the low three bytes with 0x03, 0x03 and 0x44.</description>
+          <name>WORD_0550_OPAQUE</name>
+          <description>Opaque: meaning not established. BLE PHY initialization replaces the low three bytes with 0x03, 0x03 and 0x44.</description>
           <addressOffset>0x550</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18565,8 +18565,8 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
           </fields>
         </register>
         <register>
-          <name>INIT_BYTES_0554</name>
-          <description>Project-assigned name. BLE PHY initialization replaces all four bytes with 0x10, 0x10, 0x3C and 0x28.</description>
+          <name>WORD_0554_OPAQUE</name>
+          <description>Opaque: meaning not established. BLE PHY initialization replaces all four bytes with 0x10, 0x10, 0x3C and 0x28.</description>
           <addressOffset>0x554</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18598,8 +18598,8 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
           </fields>
         </register>
         <register>
-          <name>INIT_BYTES_0558</name>
-          <description>Project-assigned name. BLE PHY initialization replaces all four bytes with 0x0C, 0x08, 0x0C and 0x0C.</description>
+          <name>WORD_0558_OPAQUE</name>
+          <description>Opaque: meaning not established. BLE PHY initialization replaces all four bytes with 0x0C, 0x08, 0x0C and 0x0C.</description>
           <addressOffset>0x558</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18631,8 +18631,8 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
           </fields>
         </register>
         <register>
-          <name>INIT_BYTES_055C</name>
-          <description>Project-assigned name. BLE PHY initialization replaces all four bytes with 0x08.</description>
+          <name>WORD_055C_OPAQUE</name>
+          <description>Opaque: meaning not established. BLE PHY initialization replaces all four bytes with 0x08.</description>
           <addressOffset>0x55C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -18711,7 +18711,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name. Complete lifecycle-request image.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -18864,7 +18864,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           <access>read-write</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -18879,7 +18879,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           <access>read-write</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -18894,7 +18894,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           <access>read-write</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -18909,7 +18909,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           <access>read-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -18924,7 +18924,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           <access>read-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -18939,7 +18939,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           <access>read-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -19233,7 +19233,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -19314,7 +19314,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           <access>read-write</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -19329,7 +19329,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           <access>read-write</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -19379,15 +19379,15 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>PHY_INIT_ZERO_0244</name>
-          <description>Project-assigned name. Complete BLE PHY initialization writes the finite whole-word zero image. Inner hardware meaning remains unknown.</description>
+          <name>WORD_0244_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete BLE PHY initialization writes the finite whole-word zero image. Inner hardware meaning remains unknown.</description>
           <addressOffset>0x244</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
@@ -19401,7 +19401,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -19409,15 +19409,15 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>PHY_INIT_DYNAMIC_IMAGE_024C</name>
-          <description>Project-assigned name. Complete BLE PHY initialization writes a runtime-derived complete image formed from a linked global address plus 0x40. The destination's inner hardware meaning remains unknown.</description>
+          <name>WORD_024C_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete BLE PHY initialization writes a runtime-derived complete image formed from a linked global address plus 0x40. The destination's inner hardware meaning remains unknown.</description>
           <addressOffset>0x24C</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
@@ -19500,8 +19500,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>OPAQUE_25</name>
-              <description>Project-assigned name.</description>
+              <name>BIT_25_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>25</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -19518,8 +19518,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               <bitWidth>3</bitWidth>
             </field>
             <field>
-              <name>OPAQUE_30</name>
-              <description>Project-assigned name.</description>
+              <name>BIT_30_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>30</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -19551,8 +19551,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               </writeConstraint>
             </field>
             <field>
-              <name>OPAQUE_16</name>
-              <description>Project-assigned name. Mode bit published with the list mask and START. Insertion publishes zero; deletion of a whole running list publishes one. Its hardware effect is not established.</description>
+              <name>BIT_16_OPAQUE</name>
+              <description>Opaque: meaning not established. Mode bit published with the list mask and START. Insertion publishes zero; deletion of a whole running list publishes one. Its hardware effect is not established.</description>
               <bitOffset>16</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -19797,7 +19797,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           <access>read-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -20016,7 +20016,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -20031,7 +20031,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -20039,8 +20039,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>OPERATIONAL_CONTROL_0204</name>
-          <description>Project-assigned name. Complete operational functions independently set and clear bit zero through fresh-read RMW operations. The scheduler cancellation path sets bit zero after publishing its hardware-list index in OPERATIONAL_WORD_036C bits 7:4 and acknowledging interrupt source 7, waits on OPERATIONAL_STATUS_0324 and OPERATIONAL_STATUS_0208, and clears bit zero after its skip requests. The hardware effect of bit zero is not established.</description>
+          <name>WORD_0204_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete operational functions independently set and clear bit zero through fresh-read RMW operations. The scheduler cancellation path sets bit zero after publishing its hardware-list index in WORD_036C_OPAQUE bits 7:4 and acknowledging interrupt source 7, waits on WORD_0324_OPAQUE and WORD_0208_OPAQUE, and clears bit zero after its skip requests. The hardware effect of bit zero is not established.</description>
           <addressOffset>0x204</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -20054,8 +20054,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>OPERATIONAL_STATUS_0208</name>
-          <description>Project-assigned name. Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown.</description>
+          <name>WORD_0208_OPAQUE</name>
+          <description>Opaque: meaning not established. Two complete operational functions, the scheduler cancellation paths, consume bit zero as the second wait predicate after setting WORD_0204_OPAQUE bit zero. They continue waiting while this bit is one and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown.</description>
           <addressOffset>0x208</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
@@ -20108,8 +20108,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>OPERATIONAL_STATUS_0324</name>
-          <description>Project-assigned name. The two scheduler cancellation paths read this word after setting OPERATIONAL_CONTROL_0204 bit zero and wait while bit zero is clear and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown.</description>
+          <name>WORD_0324_OPAQUE</name>
+          <description>Opaque: meaning not established. The two scheduler cancellation paths read this word after setting WORD_0204_OPAQUE bit zero and wait while bit zero is clear and the diagnostic scheduler BUSY sample is set. The remaining bits and the hardware meaning of bit zero are unknown.</description>
           <addressOffset>0x324</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
@@ -20123,8 +20123,8 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>OPERATIONAL_WORD_036C</name>
-          <description>Project-assigned name. Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index in bits 3:0 through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. The scheduler cancellation path does the same for bits 7:4 before setting OPERATIONAL_CONTROL_0204 bit zero. Other fields remain unassigned.</description>
+          <name>WORD_036C_OPAQUE</name>
+          <description>Opaque: meaning not established. Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index in bits 3:0 through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. The scheduler cancellation path does the same for bits 7:4 before setting WORD_0204_OPAQUE bit zero. Other fields remain unassigned.</description>
           <addressOffset>0x36C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -20143,7 +20143,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
             </field>
             <field>
               <name>CANCELLATION_HARDWARE_LIST_INDEX</name>
-              <description>Project-assigned name. Zero-based hardware-list index cleared and then published by the scheduler cancellation path before it sets OPERATIONAL_CONTROL_0204 bit zero.</description>
+              <description>Project-assigned name. Zero-based hardware-list index cleared and then published by the scheduler cancellation path before it sets WORD_0204_OPAQUE bit zero.</description>
               <bitOffset>4</bitOffset>
               <bitWidth>4</bitWidth>
               <writeConstraint>
@@ -20277,20 +20277,20 @@ also exposing scheduler, sleep or memory-management state.
           <modifiedWriteValues>oneToClear</modifiedWriteValues>
           <fields>
             <field>
-              <name>UNCLASSIFIED_0_6</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_6_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>7</bitWidth>
             </field>
             <field>
               <name>SOURCE_7</name>
-              <description>Project-assigned name. Acknowledged with complete image 0x80 by the scheduler cancellation path before it sets BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_CONTROL_0204 bit zero.</description>
+              <description>Project-assigned name. Acknowledged with complete image 0x80 by the scheduler cancellation path before it sets BLUETOOTH_CONTROLLER_CORE.WORD_0204_OPAQUE bit zero.</description>
               <bitOffset>7</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_8_14</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_8_14_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>7</bitWidth>
             </field>
@@ -20301,8 +20301,8 @@ also exposing scheduler, sleep or memory-management state.
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_16_20</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_16_20_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>16</bitOffset>
               <bitWidth>5</bitWidth>
             </field>
@@ -20313,8 +20313,8 @@ also exposing scheduler, sleep or memory-management state.
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_22_26</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_22_26_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>22</bitOffset>
               <bitWidth>5</bitWidth>
             </field>
@@ -20325,8 +20325,8 @@ also exposing scheduler, sleep or memory-management state.
               <bitWidth>2</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_29_31</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_29_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>29</bitOffset>
               <bitWidth>3</bitWidth>
             </field>
@@ -20340,8 +20340,8 @@ also exposing scheduler, sleep or memory-management state.
           <access>read-only</access>
           <fields>
             <field>
-              <name>UNCLASSIFIED_0_14</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_14_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>15</bitWidth>
             </field>
@@ -20352,8 +20352,8 @@ also exposing scheduler, sleep or memory-management state.
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_16_20</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_16_20_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>16</bitOffset>
               <bitWidth>5</bitWidth>
             </field>
@@ -20364,8 +20364,8 @@ also exposing scheduler, sleep or memory-management state.
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_22_26</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_22_26_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>22</bitOffset>
               <bitWidth>5</bitWidth>
             </field>
@@ -20376,8 +20376,8 @@ also exposing scheduler, sleep or memory-management state.
               <bitWidth>2</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_29_31</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_29_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>29</bitOffset>
               <bitWidth>3</bitWidth>
             </field>
@@ -20449,8 +20449,8 @@ also exposing scheduler, sleep or memory-management state.
           <modifiedWriteValues>oneToClear</modifiedWriteValues>
           <fields>
             <field>
-              <name>UNCLASSIFIED_0_2</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_2_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>3</bitWidth>
             </field>
@@ -20461,8 +20461,8 @@ also exposing scheduler, sleep or memory-management state.
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_4_7</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_4_7_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>4</bitOffset>
               <bitWidth>4</bitWidth>
             </field>
@@ -20479,8 +20479,8 @@ also exposing scheduler, sleep or memory-management state.
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_10_11</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_10_11_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>10</bitOffset>
               <bitWidth>2</bitWidth>
             </field>
@@ -20491,8 +20491,8 @@ also exposing scheduler, sleep or memory-management state.
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_13_31</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_13_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>13</bitOffset>
               <bitWidth>19</bitWidth>
             </field>
@@ -20506,8 +20506,8 @@ also exposing scheduler, sleep or memory-management state.
           <access>read-only</access>
           <fields>
             <field>
-              <name>UNCLASSIFIED_0_2</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_2_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>3</bitWidth>
             </field>
@@ -20518,8 +20518,8 @@ also exposing scheduler, sleep or memory-management state.
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_4_7</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_4_7_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>4</bitOffset>
               <bitWidth>4</bitWidth>
             </field>
@@ -20536,8 +20536,8 @@ also exposing scheduler, sleep or memory-management state.
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_10_11</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_10_11_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>10</bitOffset>
               <bitWidth>2</bitWidth>
             </field>
@@ -20548,8 +20548,8 @@ also exposing scheduler, sleep or memory-management state.
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_13_31</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_13_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>13</bitOffset>
               <bitWidth>19</bitWidth>
             </field>
@@ -20563,7 +20563,7 @@ also exposing scheduler, sleep or memory-management state.
           <access>read-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -20578,7 +20578,7 @@ also exposing scheduler, sleep or memory-management state.
           <access>read-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -20593,7 +20593,7 @@ also exposing scheduler, sleep or memory-management state.
           <access>read-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -20659,8 +20659,8 @@ controller partition prevents either owner from manufacturing an MMIO alias.
               <bitWidth>20</bitWidth>
             </field>
             <field>
-              <name>OPAQUE_HIGH_12</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_20_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>20</bitOffset>
               <bitWidth>12</bitWidth>
             </field>
@@ -20686,8 +20686,8 @@ controller partition prevents either owner from manufacturing an MMIO alias.
               <bitWidth>4</bitWidth>
             </field>
             <field>
-              <name>OPAQUE_STATE_24_28</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_24_28_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>24</bitOffset>
               <bitWidth>5</bitWidth>
             </field>
@@ -20698,8 +20698,8 @@ controller partition prevents either owner from manufacturing an MMIO alias.
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>OPAQUE_STATE_30</name>
-              <description>Project-assigned name.</description>
+              <name>BIT_30_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>30</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -20940,98 +20940,98 @@ avoid assigning undocumented peripheral semantics.
           </fields>
         </register>
         <register>
-          <name>COMMAND_0004</name>
-          <description>Project-assigned name. Complete runtime functions write the finite image 1.</description>
+          <name>WORD_0004_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete runtime functions write the finite image 1.</description>
           <addressOffset>0x4</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>COMMAND_0008</name>
-          <description>Project-assigned name. Complete initialization writes the finite image 1.</description>
+          <name>WORD_0008_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete initialization writes the finite image 1.</description>
           <addressOffset>0x8</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>COMMAND_0010</name>
-          <description>Project-assigned name. Complete runtime functions write the independently observed finite images 2 and 0x00040000.</description>
+          <name>WORD_0010_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete runtime functions write the independently observed finite images 2 and 0x00040000.</description>
           <addressOffset>0x10</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>COMMAND_0014</name>
-          <description>Project-assigned name. Complete runtime functions write the independently observed finite images 0xFFFFFFFF and 0x00040000.</description>
+          <name>WORD_0014_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete runtime functions write the independently observed finite images 0xFFFFFFFF and 0x00040000.</description>
           <addressOffset>0x14</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>STATE_001C</name>
-          <description>Project-assigned name. One complete runtime function reads the complete word and writes the finite zero image. Inner state encoding remains unknown.</description>
+          <name>WORD_001C_OPAQUE</name>
+          <description>Opaque: meaning not established. One complete runtime function reads the complete word and writes the finite zero image. Inner state encoding remains unknown.</description>
           <addressOffset>0x1C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>IMAGE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>STATE_0020</name>
-          <description>Project-assigned name. Complete state word read by runtime functions and cleared by two complete paths.</description>
+          <name>WORD_0020_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete state word read by runtime functions and cleared by two complete paths.</description>
           <addressOffset>0x20</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>IMAGE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>STATE_0024</name>
-          <description>Project-assigned name. State word whose low byte is sampled independently; complete writes publish the finite images zero and one.</description>
+          <name>WORD_0024_OPAQUE</name>
+          <description>Opaque: meaning not established. State word whose low byte is sampled independently; complete writes publish the finite images zero and one.</description>
           <addressOffset>0x24</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -21043,16 +21043,16 @@ avoid assigning undocumented peripheral semantics.
               <bitWidth>8</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_31_8</name>
-              <description>Project-assigned name. Upper bits covered by complete-register evidence but not assigned a semantic role.</description>
+              <name>BITS_8_31_OPAQUE</name>
+              <description>Opaque: meaning not established. Upper bits covered by complete-register evidence but not assigned a semantic role.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>24</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>STATE_002C</name>
-          <description>Project-assigned name. State word whose low byte is sampled independently; complete runtime paths clear the word.</description>
+          <name>WORD_002C_OPAQUE</name>
+          <description>Opaque: meaning not established. State word whose low byte is sampled independently; complete runtime paths clear the word.</description>
           <addressOffset>0x2C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -21064,106 +21064,106 @@ avoid assigning undocumented peripheral semantics.
               <bitWidth>8</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_31_8</name>
-              <description>Project-assigned name. Upper bits covered by complete-register evidence but not assigned a semantic role.</description>
+              <name>BITS_8_31_OPAQUE</name>
+              <description>Opaque: meaning not established. Upper bits covered by complete-register evidence but not assigned a semantic role.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>24</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>COMMAND_0034</name>
-          <description>Project-assigned name. Complete initialization writes the finite image 0xFFFFFFFF.</description>
+          <name>WORD_0034_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete initialization writes the finite image 0xFFFFFFFF.</description>
           <addressOffset>0x34</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>STATUS_0038</name>
-          <description>Project-assigned name. Complete word read by a runtime status path.</description>
+          <name>WORD_0038_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete word read by a runtime status path.</description>
           <addressOffset>0x38</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>COMMAND_0040</name>
-          <description>Project-assigned name. Complete runtime functions write finite images with independently observed bits 0, 16 and 17.</description>
+          <name>WORD_0040_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete runtime functions write finite images with independently observed bits 0, 16 and 17.</description>
           <addressOffset>0x40</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>COMMAND_0044</name>
-          <description>Project-assigned name. Complete runtime functions write finite images with independently observed bits 0, 16 and 17.</description>
+          <name>WORD_0044_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete runtime functions write finite images with independently observed bits 0, 16 and 17.</description>
           <addressOffset>0x44</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>STATUS_0048</name>
-          <description>Project-assigned name. Complete word read by multiple runtime functions.</description>
+          <name>WORD_0048_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete word read by multiple runtime functions.</description>
           <addressOffset>0x48</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>COMMAND_004C</name>
-          <description>Project-assigned name. Complete initialization writes the finite zero image.</description>
+          <name>WORD_004C_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete initialization writes the finite zero image.</description>
           <addressOffset>0x4C</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>CONTROL_0058</name>
-          <description>Project-assigned name. Shared runtime control word with independently observed RMW operations over bits 0, 1, 2 and 4. Other bits are preserved.</description>
+          <name>WORD_0058_OPAQUE</name>
+          <description>Opaque: meaning not established. Shared runtime control word with independently observed RMW operations over bits 0, 1, 2 and 4. Other bits are preserved.</description>
           <addressOffset>0x58</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -21196,15 +21196,15 @@ avoid assigning undocumented peripheral semantics.
           </fields>
         </register>
         <register>
-          <name>VALUE_0064</name>
-          <description>Project-assigned name. One complete runtime function reads the complete word and publishes complete dynamic images. The image remains a register-level fact.</description>
+          <name>WORD_0064_OPAQUE</name>
+          <description>Opaque: meaning not established. One complete runtime function reads the complete word and publishes complete dynamic images. The image remains a register-level fact.</description>
           <addressOffset>0x64</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
         </register>
         <register>
-          <name>VALUE_0068</name>
-          <description>Project-assigned name. Complete publication replaces bits 0..23 with a runtime-derived value and clears bits 24..31.</description>
+          <name>WORD_0068_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete publication replaces bits 0..23 with a runtime-derived value and clears bits 24..31.</description>
           <addressOffset>0x68</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
@@ -21218,15 +21218,15 @@ avoid assigning undocumented peripheral semantics.
           </fields>
         </register>
         <register>
-          <name>VALUE_006C</name>
-          <description>Project-assigned name. Complete word is read by one runtime path and receives either a complete runtime-derived image or a runtime-derived low-24-bit image.</description>
+          <name>WORD_006C_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete word is read by one runtime path and receives either a complete runtime-derived image or a runtime-derived low-24-bit image.</description>
           <addressOffset>0x6C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>IMAGE</name>
-              <description>Project-assigned name.</description>
+              <name>BITS_0_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <writeConstraint>
@@ -21239,8 +21239,8 @@ avoid assigning undocumented peripheral semantics.
           </fields>
         </register>
         <register>
-          <name>CONTROL_0078</name>
-          <description>Project-assigned name. Initialization sets bit 25 through a fresh-read RMW. Other bits are preserved.</description>
+          <name>WORD_0078_OPAQUE</name>
+          <description>Opaque: meaning not established. Initialization sets bit 25 through a fresh-read RMW. Other bits are preserved.</description>
           <addressOffset>0x78</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -21386,7 +21386,7 @@ not turn that context into an undocumented hardware meaning.
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -21485,7 +21485,7 @@ geometry, values, ordering and predicates all come from ESP32-S31 bytes.
           <access>read-write</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -21515,7 +21515,7 @@ geometry, values, ordering and predicates all come from ESP32-S31 bytes.
           <access>read-write</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -21545,7 +21545,7 @@ geometry, values, ordering and predicates all come from ESP32-S31 bytes.
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -21560,7 +21560,7 @@ geometry, values, ordering and predicates all come from ESP32-S31 bytes.
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -21575,7 +21575,7 @@ geometry, values, ordering and predicates all come from ESP32-S31 bytes.
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -21590,7 +21590,7 @@ geometry, values, ordering and predicates all come from ESP32-S31 bytes.
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -21650,7 +21650,7 @@ geometry, values, ordering and predicates all come from ESP32-S31 bytes.
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -21701,7 +21701,7 @@ geometry, values, ordering and predicates all come from ESP32-S31 bytes.
           <access>read-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -21716,7 +21716,7 @@ geometry, values, ordering and predicates all come from ESP32-S31 bytes.
           <access>read-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -21767,7 +21767,7 @@ geometry, values, ordering and predicates all come from ESP32-S31 bytes.
           <access>read-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -21782,7 +21782,7 @@ geometry, values, ordering and predicates all come from ESP32-S31 bytes.
           <access>read-write</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -21797,7 +21797,7 @@ geometry, values, ordering and predicates all come from ESP32-S31 bytes.
           <access>read-write</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -21917,7 +21917,7 @@ semantics instead of promoting diagnostic strings to hardware truth.
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -21925,8 +21925,8 @@ semantics instead of promoting diagnostic strings to hardware truth.
           </fields>
         </register>
         <register>
-          <name>CONFIG_0088</name>
-          <description>Project-assigned name. Complete image formed from the low five bits of one controller configuration byte.</description>
+          <name>WORD_0088_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete image formed from the low five bits of one controller configuration byte.</description>
           <addressOffset>0x88</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
@@ -21940,8 +21940,8 @@ semantics instead of promoting diagnostic strings to hardware truth.
           </fields>
         </register>
         <register>
-          <name>CONFIG_0090</name>
-          <description>Project-assigned name. Complete image formed from two low-five-bit controller values in bits 0..4 and 8..12 plus finite one bits at positions 5 and 13.</description>
+          <name>WORD_0090_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete image formed from two low-five-bit controller values in bits 0..4 and 8..12 plus finite one bits at positions 5 and 13.</description>
           <addressOffset>0x90</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
@@ -21973,8 +21973,8 @@ semantics instead of promoting diagnostic strings to hardware truth.
           </fields>
         </register>
         <register>
-          <name>CONFIG_0094</name>
-          <description>Project-assigned name. Complete image formed from one controller configuration byte.</description>
+          <name>WORD_0094_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete image formed from one controller configuration byte.</description>
           <addressOffset>0x94</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
@@ -22100,8 +22100,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
           <access>read-write</access>
           <fields>
             <field>
-              <name>SET_BY_RX_SETUP_BIT_0</name>
-              <description>Project-assigned name. Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven.</description>
+              <name>BIT_0_OPAQUE</name>
+              <description>Opaque: meaning not established. Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -22163,8 +22163,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
           <access>read-write</access>
           <fields>
             <field>
-              <name>FORCE_ZERO_BITS_16_18</name>
-              <description>Project-assigned name. bt_bb_set_le_tx_on_delay clears these three low positional bits in the same RMW that writes the encoded delay. Their hardware meaning remains unknown.</description>
+              <name>BITS_16_18_OPAQUE</name>
+              <description>Opaque: meaning not established. bt_bb_set_le_tx_on_delay clears these three low positional bits in the same RMW that writes the encoded delay. Their hardware meaning remains unknown.</description>
               <bitOffset>16</bitOffset>
               <bitWidth>3</bitWidth>
               <writeConstraint>
@@ -22211,8 +22211,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
           <access>read-write</access>
           <fields>
             <field>
-              <name>SET_BY_RX_SETUP_BIT_2</name>
-              <description>Project-assigned name. Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven.</description>
+              <name>BIT_2_OPAQUE</name>
+              <description>Opaque: meaning not established. Complete bt_bb_rx_set sets this positional bit. No enable semantic is proven.</description>
               <bitOffset>2</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -22286,8 +22286,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>FINAL_FORCE_ZERO_13</name>
-              <description>Project-assigned name. bt_bb_v2_rx_set clears this independently observed control bit after the receive leaf sequence.</description>
+              <name>BIT_13_OPAQUE</name>
+              <description>Opaque: meaning not established. bt_bb_v2_rx_set clears this independently observed control bit after the receive leaf sequence.</description>
               <bitOffset>13</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -22361,8 +22361,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
               </writeConstraint>
             </field>
             <field>
-              <name>PERIOD_FORCE_ZERO_20_22</name>
-              <description>Project-assigned name. bt_bb_tx_cca_period explicitly clears bits 20:22 in the same fresh-read update that replaces bits 23:30.</description>
+              <name>BITS_20_22_OPAQUE</name>
+              <description>Opaque: meaning not established. bt_bb_tx_cca_period explicitly clears bits 20:22 in the same fresh-read update that replaces bits 23:30.</description>
               <bitOffset>20</bitOffset>
               <bitWidth>3</bitWidth>
               <writeConstraint>
@@ -22565,7 +22565,7 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
           <access>read-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
@@ -22592,8 +22592,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
               <bitWidth>16</bitWidth>
             </field>
             <field>
-              <name>INIT_FORCE_ONE</name>
-              <description>Project-assigned name. bt_bb_wdt_init sets this bit before writing both argument fields.</description>
+              <name>BIT_31_OPAQUE</name>
+              <description>Opaque: meaning not established. bt_bb_wdt_init sets this bit before writing both argument fields.</description>
               <bitOffset>31</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -22607,8 +22607,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
           <access>read-write</access>
           <fields>
             <field>
-              <name>BITS_2_9</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x13.</description>
+              <name>BITS_2_9_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x13.</description>
               <bitOffset>2</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -22619,8 +22619,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_10_16</name>
-              <description>Project-assigned name. The leaf replaces this field with 3.</description>
+              <name>BITS_10_16_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 3.</description>
               <bitOffset>10</bitOffset>
               <bitWidth>7</bitWidth>
               <writeConstraint>
@@ -22631,8 +22631,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_17_22</name>
-              <description>Project-assigned name. The leaf replaces this field with 0.</description>
+              <name>BITS_17_22_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0.</description>
               <bitOffset>17</bitOffset>
               <bitWidth>6</bitWidth>
               <writeConstraint>
@@ -22643,8 +22643,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_23_27</name>
-              <description>Project-assigned name. The leaf replaces this field with 0.</description>
+              <name>BITS_23_27_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0.</description>
               <bitOffset>23</bitOffset>
               <bitWidth>5</bitWidth>
               <writeConstraint>
@@ -22655,8 +22655,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_28_31</name>
-              <description>Project-assigned name. The leaf replaces this field with 0.</description>
+              <name>BITS_28_31_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0.</description>
               <bitOffset>28</bitOffset>
               <bitWidth>4</bitWidth>
               <writeConstraint>
@@ -22676,8 +22676,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
           <access>read-write</access>
           <fields>
             <field>
-              <name>BITS_2_12</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x2f2.</description>
+              <name>BITS_2_12_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x2f2.</description>
               <bitOffset>2</bitOffset>
               <bitWidth>11</bitWidth>
               <writeConstraint>
@@ -22688,8 +22688,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_13_22</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x140.</description>
+              <name>BITS_13_22_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x140.</description>
               <bitOffset>13</bitOffset>
               <bitWidth>10</bitWidth>
               <writeConstraint>
@@ -22700,8 +22700,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_23_31</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x5f.</description>
+              <name>BITS_23_31_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x5f.</description>
               <bitOffset>23</bitOffset>
               <bitWidth>9</bitWidth>
               <writeConstraint>
@@ -22721,8 +22721,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
           <access>read-write</access>
           <fields>
             <field>
-              <name>BITS_10_20</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x6bf.</description>
+              <name>BITS_10_20_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x6bf.</description>
               <bitOffset>10</bitOffset>
               <bitWidth>11</bitWidth>
               <writeConstraint>
@@ -22733,8 +22733,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_21_31</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x50d.</description>
+              <name>BITS_21_31_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x50d.</description>
               <bitOffset>21</bitOffset>
               <bitWidth>11</bitWidth>
               <writeConstraint>
@@ -22754,8 +22754,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
           <access>read-write</access>
           <fields>
             <field>
-              <name>BITS_10_20</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x7e9.</description>
+              <name>BITS_10_20_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x7e9.</description>
               <bitOffset>10</bitOffset>
               <bitWidth>11</bitWidth>
               <writeConstraint>
@@ -22766,8 +22766,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_21_31</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x7a0.</description>
+              <name>BITS_21_31_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x7a0.</description>
               <bitOffset>21</bitOffset>
               <bitWidth>11</bitWidth>
               <writeConstraint>
@@ -22844,8 +22844,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
           <access>read-write</access>
           <fields>
             <field>
-              <name>BITS_0_10</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x76d.</description>
+              <name>BITS_0_10_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x76d.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>11</bitWidth>
               <writeConstraint>
@@ -22856,8 +22856,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_11_21</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x58e.</description>
+              <name>BITS_11_21_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x58e.</description>
               <bitOffset>11</bitOffset>
               <bitWidth>11</bitWidth>
               <writeConstraint>
@@ -22868,8 +22868,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
               </writeConstraint>
             </field>
             <field>
-              <name>BITS_22_31</name>
-              <description>Project-assigned name. The leaf replaces this field with 0x24d.</description>
+              <name>BITS_22_31_OPAQUE</name>
+              <description>Opaque: meaning not established. The leaf replaces this field with 0x24d.</description>
               <bitOffset>22</bitOffset>
               <bitWidth>10</bitWidth>
               <writeConstraint>
@@ -23075,14 +23075,14 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
           <access>read-write</access>
           <fields>
             <field>
-              <name>CONFIG_FORCE_ONE_18</name>
-              <description>Project-assigned name.</description>
+              <name>BIT_18_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>18</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>CONFIG_FORCE_ONE_20</name>
-              <description>Project-assigned name.</description>
+              <name>BIT_20_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>20</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -23096,8 +23096,8 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
           <access>read-write</access>
           <fields>
             <field>
-              <name>CONFIG_FORCE_ZERO_19</name>
-              <description>Project-assigned name.</description>
+              <name>BIT_19_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>19</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -23321,7 +23321,7 @@ by those accessors are described; untouched bits remain unassigned.</description
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <description>Project-assigned name. Complete 16-bit antenna-map element; the encoding remains unknown.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>

@@ -34,79 +34,79 @@ value = 1
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "COMMAND_0004"
+name = "WORD_0004_OPAQUE"
 description = "Complete runtime functions write the finite image 1."
 addressOffset = 0x4
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "COMMAND_0008"
+name = "WORD_0008_OPAQUE"
 description = "Complete initialization writes the finite image 1."
 addressOffset = 0x8
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "COMMAND_0010"
+name = "WORD_0010_OPAQUE"
 description = "Complete runtime functions write the independently observed finite images 2 and 0x00040000."
 addressOffset = 0x10
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "COMMAND_0014"
+name = "WORD_0014_OPAQUE"
 description = "Complete runtime functions write the independently observed finite images 0xFFFFFFFF and 0x00040000."
 addressOffset = 0x14
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "STATE_001C"
+name = "WORD_001C_OPAQUE"
 description = "One complete runtime function reads the complete word and writes the finite zero image. Inner state encoding remains unknown."
 addressOffset = 0x1C
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "STATE_0020"
+name = "WORD_0020_OPAQUE"
 description = "Complete state word read by runtime functions and cleared by two complete paths."
 addressOffset = 0x20
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "STATE_0024"
+name = "WORD_0024_OPAQUE"
 description = "State word whose low byte is sampled independently; complete writes publish the finite images zero and one."
 addressOffset = 0x24
 size = 32
@@ -116,14 +116,14 @@ name = "LOW_BYTE"
 bitOffset = 0
 bitWidth = 8
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_31_8"
+name = "BITS_8_31_OPAQUE"
 description = "Upper bits covered by complete-register evidence but not assigned a semantic role."
 bitOffset = 8
 bitWidth = 24
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "STATE_002C"
+name = "WORD_002C_OPAQUE"
 description = "State word whose low byte is sampled independently; complete runtime paths clear the word."
 addressOffset = 0x2C
 size = 32
@@ -133,86 +133,86 @@ name = "LOW_BYTE"
 bitOffset = 0
 bitWidth = 8
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_31_8"
+name = "BITS_8_31_OPAQUE"
 description = "Upper bits covered by complete-register evidence but not assigned a semantic role."
 bitOffset = 8
 bitWidth = 24
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "COMMAND_0034"
+name = "WORD_0034_OPAQUE"
 description = "Complete initialization writes the finite image 0xFFFFFFFF."
 addressOffset = 0x34
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "STATUS_0038"
+name = "WORD_0038_OPAQUE"
 description = "Complete word read by a runtime status path."
 addressOffset = 0x38
 size = 32
 access = "read-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "COMMAND_0040"
+name = "WORD_0040_OPAQUE"
 description = "Complete runtime functions write finite images with independently observed bits 0, 16 and 17."
 addressOffset = 0x40
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "COMMAND_0044"
+name = "WORD_0044_OPAQUE"
 description = "Complete runtime functions write finite images with independently observed bits 0, 16 and 17."
 addressOffset = 0x44
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "STATUS_0048"
+name = "WORD_0048_OPAQUE"
 description = "Complete word read by multiple runtime functions."
 addressOffset = 0x48
 size = 32
 access = "read-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "COMMAND_004C"
+name = "WORD_004C_OPAQUE"
 description = "Complete initialization writes the finite zero image."
 addressOffset = 0x4C
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "CONTROL_0058"
+name = "WORD_0058_OPAQUE"
 description = "Shared runtime control word with independently observed RMW operations over bits 0, 1, 2 and 4. Other bits are preserved."
 addressOffset = 0x58
 size = 32
@@ -237,7 +237,7 @@ bitWidth = 1
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "VALUE_0064"
+name = "WORD_0064_OPAQUE"
 description = "One complete runtime function reads the complete word and publishes complete dynamic images. The image remains a register-level fact."
 addressOffset = 0x64
 size = 32
@@ -245,7 +245,7 @@ access = "read-write"
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "VALUE_0068"
+name = "WORD_0068_OPAQUE"
 description = "Complete publication replaces bits 0..23 with a runtime-derived value and clears bits 24..31."
 addressOffset = 0x68
 size = 32
@@ -257,13 +257,13 @@ bitWidth = 24
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "VALUE_006C"
+name = "WORD_006C_OPAQUE"
 description = "Complete word is read by one runtime path and receives either a complete runtime-derived image or a runtime-derived low-24-bit image."
 addressOffset = 0x6C
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 [peripherals.registers.register.fields.writeConstraint.range]
@@ -272,7 +272,7 @@ maximum = 0xFFFFFFFF
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "CONTROL_0078"
+name = "WORD_0078_OPAQUE"
 description = "Initialization sets bit 25 through a fresh-read RMW. Other bits are preserved."
 addressOffset = 0x78
 size = 32
@@ -314,217 +314,217 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.COMMAND_0004"
-naming = "descriptive"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0004_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.COMMAND_0004.IMAGE"
-naming = "descriptive"
-sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-
-[[review]]
-entity = "BTDM_RUNTIME_CONTROL.COMMAND_0008"
-naming = "descriptive"
-sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-[[review]]
-entity = "BTDM_RUNTIME_CONTROL.COMMAND_0008.IMAGE"
-naming = "descriptive"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0004_OPAQUE.BITS_0_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.COMMAND_0010"
-naming = "descriptive"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0008_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.COMMAND_0010.IMAGE"
-naming = "descriptive"
-sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-
-[[review]]
-entity = "BTDM_RUNTIME_CONTROL.COMMAND_0014"
-naming = "descriptive"
-sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-[[review]]
-entity = "BTDM_RUNTIME_CONTROL.COMMAND_0014.IMAGE"
-naming = "descriptive"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0008_OPAQUE.BITS_0_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.STATE_0020"
-naming = "descriptive"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0010_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.STATE_0020.IMAGE"
-naming = "descriptive"
-sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-
-[[review]]
-entity = "BTDM_RUNTIME_CONTROL.STATE_0024"
-naming = "descriptive"
-sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-[[review]]
-entity = "BTDM_RUNTIME_CONTROL.STATE_0024.LOW_BYTE"
-naming = "descriptive"
-sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-[[review]]
-entity = "BTDM_RUNTIME_CONTROL.STATE_0024.UNCLASSIFIED_31_8"
-naming = "descriptive"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0010_OPAQUE.BITS_0_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.STATE_002C"
-naming = "descriptive"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0014_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.STATE_002C.LOW_BYTE"
-naming = "descriptive"
-sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-[[review]]
-entity = "BTDM_RUNTIME_CONTROL.STATE_002C.UNCLASSIFIED_31_8"
-naming = "descriptive"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0014_OPAQUE.BITS_0_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.COMMAND_0034"
-naming = "descriptive"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0020_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.COMMAND_0034.IMAGE"
-naming = "descriptive"
-sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-
-[[review]]
-entity = "BTDM_RUNTIME_CONTROL.STATUS_0038"
-naming = "descriptive"
-sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-[[review]]
-entity = "BTDM_RUNTIME_CONTROL.STATUS_0038.IMAGE"
-naming = "descriptive"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0020_OPAQUE.BITS_0_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.COMMAND_0040"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0024_OPAQUE"
+naming = "opaque"
+sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+[[review]]
+entity = "BTDM_RUNTIME_CONTROL.WORD_0024_OPAQUE.LOW_BYTE"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.COMMAND_0040.IMAGE"
-naming = "descriptive"
-sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-
-[[review]]
-entity = "BTDM_RUNTIME_CONTROL.COMMAND_0044"
-naming = "descriptive"
-sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-[[review]]
-entity = "BTDM_RUNTIME_CONTROL.COMMAND_0044.IMAGE"
-naming = "descriptive"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0024_OPAQUE.BITS_8_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.STATUS_0048"
+entity = "BTDM_RUNTIME_CONTROL.WORD_002C_OPAQUE"
+naming = "opaque"
+sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+[[review]]
+entity = "BTDM_RUNTIME_CONTROL.WORD_002C_OPAQUE.LOW_BYTE"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.STATUS_0048.IMAGE"
-naming = "descriptive"
-sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-
-[[review]]
-entity = "BTDM_RUNTIME_CONTROL.COMMAND_004C"
-naming = "descriptive"
-sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-[[review]]
-entity = "BTDM_RUNTIME_CONTROL.COMMAND_004C.IMAGE"
-naming = "descriptive"
+entity = "BTDM_RUNTIME_CONTROL.WORD_002C_OPAQUE.BITS_8_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.CONTROL_0058"
-naming = "descriptive"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0034_OPAQUE"
+naming = "opaque"
+sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+[[review]]
+entity = "BTDM_RUNTIME_CONTROL.WORD_0034_OPAQUE.BITS_0_31_OPAQUE"
+naming = "opaque"
+sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTDM_RUNTIME_CONTROL.WORD_0038_OPAQUE"
+naming = "opaque"
+sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+[[review]]
+entity = "BTDM_RUNTIME_CONTROL.WORD_0038_OPAQUE.BITS_0_31_OPAQUE"
+naming = "opaque"
+sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTDM_RUNTIME_CONTROL.WORD_0040_OPAQUE"
+naming = "opaque"
+sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+[[review]]
+entity = "BTDM_RUNTIME_CONTROL.WORD_0040_OPAQUE.BITS_0_31_OPAQUE"
+naming = "opaque"
+sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTDM_RUNTIME_CONTROL.WORD_0044_OPAQUE"
+naming = "opaque"
+sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+[[review]]
+entity = "BTDM_RUNTIME_CONTROL.WORD_0044_OPAQUE.BITS_0_31_OPAQUE"
+naming = "opaque"
+sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTDM_RUNTIME_CONTROL.WORD_0048_OPAQUE"
+naming = "opaque"
+sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+[[review]]
+entity = "BTDM_RUNTIME_CONTROL.WORD_0048_OPAQUE.BITS_0_31_OPAQUE"
+naming = "opaque"
+sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTDM_RUNTIME_CONTROL.WORD_004C_OPAQUE"
+naming = "opaque"
+sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+[[review]]
+entity = "BTDM_RUNTIME_CONTROL.WORD_004C_OPAQUE.BITS_0_31_OPAQUE"
+naming = "opaque"
+sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTDM_RUNTIME_CONTROL.WORD_0058_OPAQUE"
+naming = "opaque"
 sources = [
     "BLOB_LIBBTDM_RUNTIME_CONTROL",
     "BLOB_LIBBTDM_MODEM_LP_TIMER_IRQ",
@@ -533,28 +533,28 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.CONTROL_0058.CONTROL_0"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0058_OPAQUE.CONTROL_0"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.CONTROL_0058.CONTROL_1"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0058_OPAQUE.CONTROL_1"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.CONTROL_0058.CONTROL_2"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0058_OPAQUE.CONTROL_2"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_IRQ"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.CONTROL_0058.CONTROL_4"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0058_OPAQUE.CONTROL_4"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
@@ -562,14 +562,14 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.VALUE_0068"
-naming = "descriptive"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0068_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.VALUE_0068.VALUE_LOW_24"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0068_OPAQUE.VALUE_LOW_24"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
@@ -577,29 +577,29 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.VALUE_006C"
-naming = "descriptive"
+entity = "BTDM_RUNTIME_CONTROL.WORD_006C_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.VALUE_006C.IMAGE"
-naming = "descriptive"
+entity = "BTDM_RUNTIME_CONTROL.WORD_006C_OPAQUE.BITS_0_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.CONTROL_0078"
-naming = "descriptive"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0078_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.CONTROL_0078.CONTROL_25"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0078_OPAQUE.CONTROL_25"
 naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
@@ -607,23 +607,23 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.STATE_001C"
-naming = "descriptive"
+entity = "BTDM_RUNTIME_CONTROL.WORD_001C_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_RUNTIME_OPERATIONAL_GAPS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.STATE_001C.IMAGE"
-naming = "descriptive"
+entity = "BTDM_RUNTIME_CONTROL.WORD_001C_OPAQUE.BITS_0_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_RUNTIME_OPERATIONAL_GAPS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.VALUE_0064"
-naming = "descriptive"
+entity = "BTDM_RUNTIME_CONTROL.WORD_0064_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTDM_RUNTIME_OPERATIONAL_GAPS"]
 provenance = "observed"
 accuracy = "exact"

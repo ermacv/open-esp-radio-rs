@@ -742,7 +742,7 @@ maximum = 0xFF
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "FRONT_END_INIT_0C08"
+name = "WORD_0C08_OPAQUE"
 description = "Both complete source bodies set bit 25 and then bit 26 through separate fresh-read RMW edges."
 addressOffset = 0xC08
 size = 32
@@ -806,7 +806,7 @@ bitWidth = 1
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "FRONT_END_INIT_0C20"
+name = "WORD_0C20_OPAQUE"
 description = "Final complete phy_fe_reg_init RMW replaces the low byte with 0x57."
 addressOffset = 0xC20
 size = 32
@@ -870,7 +870,7 @@ bitWidth = 1
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "BASEBAND_INIT_7400"
+name = "WORD_7400_OPAQUE"
 description = "Complete phy_bb_reg_init sets bits 14:13."
 addressOffset = 0x7400
 size = 32
@@ -888,7 +888,7 @@ maximum = 0x3
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "BASEBAND_INIT_7428"
+name = "WORD_7428_OPAQUE"
 description = "Complete phy_bb_reg_init sets bit 14 and replaces bits 13:8 with 0x15."
 addressOffset = 0x7428
 size = 32
@@ -911,7 +911,7 @@ bitWidth = 1
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "BASEBAND_INIT_743C"
+name = "WORD_743C_OPAQUE"
 description = "Complete phy_bb_reg_init clears bits 8:6 through two fresh-read updates."
 addressOffset = 0x743C
 size = 32
@@ -1248,7 +1248,7 @@ value = 3
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "BASEBAND_INIT_7808"
+name = "WORD_7808_OPAQUE"
 description = "Complete phy_bb_reg_init replaces bits 13:7 with 0x60."
 addressOffset = 0x7808
 size = 32
@@ -1266,7 +1266,7 @@ maximum = 0x7F
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "BASEBAND_INIT_7890"
+name = "WORD_7890_OPAQUE"
 description = "Complete phy_bb_reg_init and phy_hemu_ru26_good_res both clear bit 25 then set bit 24 through separate fresh-read RMWs."
 addressOffset = 0x7890
 size = 32
@@ -1285,7 +1285,7 @@ bitWidth = 1
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "BASEBAND_INIT_78DC"
+name = "WORD_78DC_OPAQUE"
 description = "Complete phy_bb_reg_init replaces bits 13:7 with two."
 addressOffset = 0x78DC
 size = 32
@@ -1303,7 +1303,7 @@ maximum = 0x7F
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "BASEBAND_INIT_78E4"
+name = "WORD_78E4_OPAQUE"
 description = "Complete phy_bb_reg_init clears bit 22."
 addressOffset = 0x78E4
 size = 32
@@ -1317,7 +1317,7 @@ bitWidth = 1
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "BASEBAND_INIT_790C"
+name = "WORD_790C_OPAQUE"
 description = "Complete phy_bb_reg_init clears bit 11; complete phy_lltf_mask_en independently replaces bits thirteen and twelve; complete phy_chan_dump_cfg replaces bits 7:4 and bit 11 through separate fresh-read RMWs."
 addressOffset = 0x790C
 size = 32
@@ -1351,7 +1351,7 @@ bitWidth = 1
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "BASEBAND_INIT_7980"
+name = "WORD_7980_OPAQUE"
 description = "Complete phy_bb_reg_init clears bit 25."
 addressOffset = 0x7980
 size = 32
@@ -1365,7 +1365,7 @@ bitWidth = 1
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "BASEBAND_INIT_7A28"
+name = "WORD_7A28_OPAQUE"
 description = "Complete phy_bb_reg_init clears bit 22."
 addressOffset = 0x7A28
 size = 32
@@ -1534,7 +1534,7 @@ access = "write-only"
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "BASEBAND_INIT_7CA8"
+name = "WORD_7CA8_OPAQUE"
 description = "Complete phy_bb_reg_init sets bit 20."
 addressOffset = 0x7CA8
 size = 32
@@ -1548,7 +1548,7 @@ bitWidth = 1
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "BASEBAND_INIT_7CD0"
+name = "WORD_7CD0_OPAQUE"
 description = "Complete phy_bb_reg_init sets both nibbles to 0xf; complete phy_btbb_wifi_bb_cfg2 preserves low bit two, sets the other low bits and sets the high nibble."
 addressOffset = 0x7CD0
 size = 32
@@ -1923,8 +1923,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_INIT_0C08"
-naming = "descriptive"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_0C08_OPAQUE"
+naming = "opaque"
 sources = [
     "ROM_REV0_PHY_FE_REG_INIT",
     "BLOB_LIBPHY_PHY_FE_REG_UPDATE",
@@ -1976,8 +1976,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_INIT_0C20"
-naming = "descriptive"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_0C20_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_FE_REG_INIT"]
 provenance = "observed"
 accuracy = "exact"
@@ -2000,24 +2000,24 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7400"
-naming = "descriptive"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7400_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7428"
-naming = "descriptive"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7428_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_743C"
-naming = "descriptive"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_743C_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
 provenance = "observed"
 accuracy = "exact"
@@ -2136,16 +2136,16 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7808"
-naming = "descriptive"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7808_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7890"
-naming = "descriptive"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7890_OPAQUE"
+naming = "opaque"
 sources = [
     "ROM_REV0_PHY_REGISTER_INITIALIZATION",
     "ROM_REV0_PHY_CBW_FEATURE_WATCHDOG",
@@ -2155,24 +2155,24 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_78DC"
-naming = "descriptive"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_78DC_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_78E4"
-naming = "descriptive"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_78E4_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C"
-naming = "descriptive"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_790C_OPAQUE"
+naming = "opaque"
 sources = [
     "ROM_REV0_PHY_REGISTER_INITIALIZATION",
     "ROM_REV0_PHY_CBW_FEATURE_WATCHDOG",
@@ -2183,7 +2183,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C.CHANNEL_DUMP_VALUE_OPAQUE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_790C_OPAQUE.CHANNEL_DUMP_VALUE_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_CHAN_DUMP_CFG"]
 provenance = "observed"
@@ -2191,16 +2191,16 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7980"
-naming = "descriptive"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7980_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7A28"
-naming = "descriptive"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7A28_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
 provenance = "observed"
 accuracy = "exact"
@@ -2293,16 +2293,16 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CA8"
-naming = "descriptive"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7CA8_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CD0"
-naming = "descriptive"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7CD0_OPAQUE"
+naming = "opaque"
 sources = [
     "ROM_REV0_PHY_REGISTER_INITIALIZATION",
     "ROM_REV0_PHY_BTBB_WIFI_BB_CFG2",
@@ -2532,11 +2532,11 @@ entity = "PHY_BASEBAND_CONFIG_ORACLE.DAC_SCALE_CONTROL.DAC_SCALE_HIGH_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_INIT_0C08.INIT_FIRST_OPAQUE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_0C08_OPAQUE.INIT_FIRST_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_INIT_0C08.INIT_SECOND_OPAQUE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_0C08_OPAQUE.INIT_SECOND_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2548,7 +2548,7 @@ entity = "PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX.TX_IQ_PHASE_COEFFICIENT"
 naming = "descriptive"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_INIT_0C20.INIT_LOW_OPAQUE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_0C20_OPAQUE.INIT_LOW_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2568,23 +2568,23 @@ entity = "PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_CONTROL.AUTO_CONTROL_HIGH_OPAQU
 naming = "opaque"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7400.INIT_OPAQUE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7400_OPAQUE.INIT_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7428.INIT_VALUE_OPAQUE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7428_OPAQUE.INIT_VALUE_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7428.INIT_ENABLE_OPAQUE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7428_OPAQUE.INIT_ENABLE_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_743C.INIT_CLEAR_LOW_OPAQUE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_743C_OPAQUE.INIT_CLEAR_LOW_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_743C.INIT_CLEAR_HIGH_OPAQUE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_743C_OPAQUE.INIT_CLEAR_HIGH_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2668,43 +2668,43 @@ entity = "PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL.FORCE_TRIGGER"
 naming = "descriptive"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7808.INIT_VALUE_OPAQUE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7808_OPAQUE.INIT_VALUE_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7890.HE_RU26_GOOD_RESPONSE_ENABLE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7890_OPAQUE.HE_RU26_GOOD_RESPONSE_ENABLE"
 naming = "descriptive"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7890.HE_RU26_GOOD_RESPONSE_DISABLE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7890_OPAQUE.HE_RU26_GOOD_RESPONSE_DISABLE"
 naming = "descriptive"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_78DC.INIT_VALUE_OPAQUE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_78DC_OPAQUE.INIT_VALUE_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_78E4.INIT_CLEAR_OPAQUE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_78E4_OPAQUE.INIT_CLEAR_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C.INIT_CLEAR_OPAQUE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_790C_OPAQUE.INIT_CLEAR_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C.LLTF_MASK_INPUT_1"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_790C_OPAQUE.LLTF_MASK_INPUT_1"
 naming = "descriptive"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C.LLTF_MASK_INPUT_0"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_790C_OPAQUE.LLTF_MASK_INPUT_0"
 naming = "descriptive"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7980.INIT_CLEAR_OPAQUE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7980_OPAQUE.INIT_CLEAR_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7A28.INIT_CLEAR_OPAQUE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7A28_OPAQUE.INIT_CLEAR_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2752,25 +2752,25 @@ entity = "PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_ENABLE_1.AUTO_ENABLE_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CA8.INIT_ENABLE_OPAQUE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7CA8_OPAQUE.INIT_ENABLE_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CD0.INIT_LOW_OPAQUE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7CD0_OPAQUE.INIT_LOW_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CD0.INIT_LOW_1_OPAQUE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7CD0_OPAQUE.INIT_LOW_1_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CD0.INIT_LOW_BIT_2_OPAQUE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7CD0_OPAQUE.INIT_LOW_BIT_2_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CD0.INIT_LOW_3_OPAQUE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7CD0_OPAQUE.INIT_LOW_3_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CD0.INIT_HIGH_OPAQUE"
+entity = "PHY_BASEBAND_CONFIG_ORACLE.WORD_7CD0_OPAQUE.INIT_HIGH_OPAQUE"
 naming = "opaque"

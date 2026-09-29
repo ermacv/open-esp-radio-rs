@@ -31,7 +31,7 @@ pub fn query_tx_power_table(source: &mut impl MacTxPowerSource) -> MacTxPowerTab
 ///
 /// SOURCE: complete pinned `libpp.a[hal_debug.o]` body recorded as
 /// `BLOB_LIBPP_DBG_READ_TX_POWER`. Its results are discarded. The rev0 ROM
-/// implementation also reasserts the same BASEBAND_INIT_7428 fields already
+/// implementation also reasserts the same WORD_7428_OPAQUE fields already
 /// owned by open PHY initialization; those redundant RMWs are not part of this
 /// PHY-data query boundary.
 pub fn run_tx_power_diagnostic_queries(source: &mut impl MacTxPowerSource) {

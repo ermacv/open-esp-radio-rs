@@ -349,7 +349,7 @@ fn newest_runs(runs: &Path, count: usize) -> Vec<Value> {
 /// many of its planned scenarios finished. `None` when its events or plan
 /// cannot be read or use a vocabulary this build does not know.
 fn progress(run: &Path) -> Option<Value> {
-    use oer_hil_runner_core::evidence::run::{PlanDisposition, RunPlan};
+    use oer_hil_evidence::run::{PlanDisposition, RunPlan};
     use oer_hil_schema::run::{RunEvent, RunEventKind};
     let events = std::fs::read_to_string(run.join("events.jsonl"))
         .ok()?

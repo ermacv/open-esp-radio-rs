@@ -1,7 +1,7 @@
 //! Classify errors as scenario or infrastructure failures without changing the
 //! public run-record schema.
 
-use crate::evidence::run::{Failure, FailureKind};
+use oer_hil_evidence::run::{Failure, FailureKind};
 
 pub fn classify(error: &(dyn std::error::Error + 'static)) -> Failure {
     let mut cause = Some(error);

@@ -87,7 +87,7 @@ fn fixture_lifecycle_harness() {
         .expect("injected fixture failure");
         assert_eq!(
             hil_core::failure::classify(&*error).kind,
-            hil_core::evidence::run::FailureKind::Infrastructure
+            oer_hil_evidence::run::FailureKind::Infrastructure
         );
         scope.finish().unwrap();
         return;
@@ -190,7 +190,7 @@ fn fixture_lifecycle_harness() {
         if case == "monitor-error" || case == "monitor-existing" {
             assert_eq!(
                 hil_core::failure::classify(&**result.as_ref().err().unwrap()).kind,
-                hil_core::evidence::run::FailureKind::Infrastructure
+                oer_hil_evidence::run::FailureKind::Infrastructure
             );
         }
         if case.ends_with("cancel") {

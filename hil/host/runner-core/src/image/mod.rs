@@ -21,6 +21,7 @@ use oer_hil_image_class::{FeatureDelta, ImageClass};
 pub mod esp_idf;
 pub use esp_idf::XTASK_ENV;
 pub mod frozen;
+pub mod record;
 pub mod source_inputs;
 pub mod stack;
 
@@ -133,7 +134,7 @@ pub struct Artifacts {
     /// `source-inputs.json`: the repository files the image was built from.
     pub source_inputs: Option<PathBuf>,
     /// Host tools that produced this build, recorded in its provenance.
-    pub environment: crate::evidence::build::BuildEnvironment,
+    pub environment: oer_hil_evidence::build::BuildEnvironment,
     /// The seed the runtime's code and read-only data were shuffled by;
     /// `None` is the linker's natural order.
     pub layout_seed: Option<NonZeroU32>,
@@ -723,7 +724,7 @@ fn build_resolved(
             effective_bootstrap_lock,
         },
         source_inputs: Some(source_inputs),
-        environment: crate::evidence::build::BuildEnvironment::capture(),
+        environment: oer_hil_evidence::build::BuildEnvironment::capture(),
         layout_seed,
         features: features.clone(),
     })

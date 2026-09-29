@@ -225,7 +225,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             )?;
         }
         let created = runs_dirty(&stores, &run_ids);
-        if std::env::var_os(oer_hil_runner_core::experiment::EXPERIMENT_ENV).is_some() {
+        if std::env::var_os(oer_hil_evidence::experiment::EXPERIMENT_ENV).is_some() {
             eprintln!("hil: an A/B experiment run is diagnostic: no evidence recorded");
         } else {
             let flag = |name: &str| {
@@ -1549,7 +1549,7 @@ fn devices(
 /// Delete the firmware objects no run links to from this checkout's object
 /// store and those of the other registered checkouts; a checkout that
 /// cannot be collected is reported and skipped.
-fn collect_objects(ctx: &Context) -> oer_hil_runner_core::evidence::build::CollectedObjects {
+fn collect_objects(ctx: &Context) -> oer_hil_evidence::build::CollectedObjects {
     let mut checkouts = vec![ctx.root.clone()];
     if let Ok(arbiter) = oer_hil_arbiter::Arbiter::open()
         && let Ok(registered) = arbiter.registered_checkouts()
@@ -1558,10 +1558,10 @@ fn collect_objects(ctx: &Context) -> oer_hil_runner_core::evidence::build::Colle
     }
     checkouts.sort();
     checkouts.dedup();
-    let mut total = oer_hil_runner_core::evidence::build::CollectedObjects::default();
+    let mut total = oer_hil_evidence::build::CollectedObjects::default();
     for checkout in checkouts {
         let target = checkout.join("target/hil").join(HIL_TARGET);
-        match oer_hil_runner_core::evidence::build::collect_objects(&target) {
+        match oer_hil_evidence::build::collect_objects(&target) {
             Ok(collected) => {
                 total.objects += collected.objects;
                 total.bytes += collected.bytes;

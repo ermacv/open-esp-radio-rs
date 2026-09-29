@@ -59,7 +59,7 @@ fn task_polls_become_typed_measurements_per_reporting_task() {
             .find(|measurement| measurement.name == name)
             .map(|measurement| (measurement.value, measurement.unit))
     };
-    use hil_core::evidence::run::MeasurementUnit;
+    use oer_hil_evidence::run::MeasurementUnit;
     assert_eq!(
         value("task_poll.radio.poll_us"),
         Some((390_000, MeasurementUnit::Microseconds))

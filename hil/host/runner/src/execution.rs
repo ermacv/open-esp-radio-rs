@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use crate::scenario::Scenario;
-use hil_core::{evidence::run::Failure, evidence::run::FailureKind, evidence::run::Outcome};
+use oer_hil_evidence::run::{Failure, FailureKind, Outcome};
 
 pub(crate) mod doctor;
 pub(crate) mod firmware;
@@ -16,7 +16,7 @@ pub(crate) use hil_core::failure::classify;
 
 #[derive(Default)]
 pub(crate) struct ExecutionEvidence {
-    pub(crate) measurements: Vec<hil_core::evidence::run::Measurement>,
+    pub(crate) measurements: Vec<oer_hil_evidence::run::Measurement>,
     pub(crate) failure: Option<Failure>,
     pub(crate) interrupted: bool,
     /// The stand quarantined the board after this repetition.

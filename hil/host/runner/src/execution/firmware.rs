@@ -1,13 +1,16 @@
 //! Run-local firmware preparation and exact-image flash ordering.
 
-use hil_core::evidence::run::RunEventKind;
+use oer_hil_evidence::run::RunEventKind;
 use std::path::Path;
 
 use crate::Result;
 use hil_core::{
-    evidence::run::Failure, evidence::run::FailureKind, evidence::run::Outcome,
-    evidence::run::PlannedFirmware, evidence::run::RunSession, evidence::verify::ArchivedFirmware,
-    image::Artifacts, image::CurrentBuild, lab::config::LabConfig,
+    image::{Artifacts, CurrentBuild},
+    lab::config::LabConfig,
+};
+use oer_hil_evidence::{
+    run::{Failure, FailureKind, Outcome, PlannedFirmware, RunSession},
+    verify::ArchivedFirmware,
 };
 use oer_hil_image_class::ImageClass;
 
@@ -68,7 +71,7 @@ pub(crate) fn build_image(
     session: &mut RunSession,
 ) -> Result<Built> {
     session.record_event(RunEventKind::ImageBuildStarted, None, Some(class), None)?;
-    let artifacts = match session.build_frozen_image(class, build) {
+    let artifacts = match hil_core::image::frozen::build_for_run(session, class, build) {
         Ok(artifacts) => artifacts,
         Err(error) => {
             oer_process::check_cancelled()?;
@@ -203,7 +206,8 @@ fn archive_built(
     mut artifacts: Artifacts,
     session: &mut RunSession,
 ) -> Result<Artifacts> {
-    artifacts.application_image = session.record_firmware(class, &artifacts)?;
+    artifacts.application_image =
+        hil_core::image::record::firmware::record(session, class, &artifacts)?;
     session.record_event(
         RunEventKind::ImageBuildFinished,
         None,

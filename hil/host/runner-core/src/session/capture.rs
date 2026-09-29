@@ -9,7 +9,7 @@ use std::{
 };
 
 impl SerialCapture {
-    pub fn record_into(mut self, recorder: crate::evidence::measurements::CaptureRecorder) -> Self {
+    pub fn record_into(mut self, recorder: crate::measurements::CaptureRecorder) -> Self {
         self.measurements = Some(recorder);
         self
     }

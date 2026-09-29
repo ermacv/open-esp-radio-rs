@@ -1,13 +1,14 @@
 use super::*;
+use crate::run::test_support::TestRecipe;
 use crate::{
-    evidence::run::{
-        Attachment, Measurement, MeasurementUnit, Outcome, RepetitionResult, ScenarioResult,
-        SuiteCounts, write_integrity_index,
-    },
-    lab::provenance::{
+    lab::{
         AccessPointDefinition, FixtureObservation, HostInterfaceObservation, HostObservation,
         LabDefinition, LabProvenance, SensitiveValueDisposition, StationFixtureDefinition,
         StationIpv4Definition,
+    },
+    run::{
+        Attachment, Measurement, MeasurementUnit, Outcome, RepetitionResult, ScenarioResult,
+        SuiteCounts, write_integrity_index,
     },
 };
 use oer_hil_durable::atomic_json;
@@ -166,7 +167,7 @@ fn add_build_provenance(run: &Path) {
             sha256: artifact.runtime_elf_sha256.clone(),
         },
     ];
-    let build_id = crate::evidence::build::build_id(&subjects);
+    let build_id = crate::build::build_id(&subjects);
     let provenance_path = PathBuf::from("firmware/correctness/build-provenance.json");
     artifact.build_id = Some(build_id.clone());
     artifact.build_provenance_path = Some(provenance_path.clone());
@@ -177,11 +178,11 @@ fn add_build_provenance(run: &Path) {
             schema: BUILD_PROVENANCE_SCHEMA,
             build_id,
             build_type: String::from("open-esp-radio-hil-firmware/v1"),
-            parameters: crate::evidence::build::BuildParameters {
+            parameters: crate::build::BuildParameters {
                 network: None,
                 image: ImageClass::Correctness,
                 runtime_profile: ImageClass::Correctness.runtime_profile().to_owned(),
-                target: crate::image::TARGET.to_owned(),
+                target: String::from("riscv32imafc-unknown-none-elf"),
                 runtime_features: ImageClass::Correctness.runtime_features().to_owned(),
                 layout_seed: None,
                 features: oer_hil_image_class::FeatureDelta::default(),
@@ -200,14 +201,14 @@ fn add_build_provenance(run: &Path) {
                 untracked_files: Vec::new(),
                 limitations: Vec::new(),
             }],
-            files: vec![crate::evidence::build::BuildFileMaterial {
+            files: vec![crate::build::BuildFileMaterial {
                 name: String::from("embedded-lock"),
                 path: PathBuf::from("hil/targets/esp32s31/Cargo.lock"),
                 archive_path: Some(effective_lock_path.clone()),
                 size_bytes: 14,
                 sha256: sha256_file(&run.join(&effective_lock_path)).unwrap(),
             }],
-            environment: crate::evidence::build::BuildEnvironment {
+            environment: crate::build::BuildEnvironment {
                 tools: Vec::new(),
                 inherited_rustflags: None,
                 inherited_encoded_rustflags: None,
@@ -216,7 +217,7 @@ fn add_build_provenance(run: &Path) {
             },
             subjects,
             source_reconstructable: true,
-            reproducibility: crate::evidence::build::BuildReproducibility::Unverified,
+            reproducibility: crate::build::BuildReproducibility::Unverified,
         },
     )
     .unwrap();
@@ -232,7 +233,7 @@ fn add_lab_provenance(run: &Path, device_id: &str) {
         &run.join(path),
         &LabProvenance {
             scope: Default::default(),
-            schema: crate::lab::provenance::LAB_PROVENANCE_SCHEMA,
+            schema: crate::lab::LAB_PROVENANCE_SCHEMA,
             captured_unix_millis: 150,
             definition: LabDefinition {
                 bluetooth_adapter: None,
@@ -279,7 +280,7 @@ fn add_lab_provenance(run: &Path, device_id: &str) {
 #[test]
 fn verifies_firmware_and_attachment_content() {
     let (root, _) = fixture();
-    let completion = verify(&root, "esp32s31", None).unwrap();
+    let completion = verify(&root, "esp32s31", None, &TestRecipe).unwrap();
     assert_eq!(completion.status, "verified");
     assert_eq!(completion.runs, 1);
     assert_eq!(completion.attachments, 1);
@@ -292,10 +293,10 @@ fn verifies_firmware_and_attachment_content() {
 fn verifies_typed_lab_provenance_and_rejects_wrong_device_binding() {
     let (root, run) = fixture();
     add_lab_provenance(&run, "dut-1");
-    verify(&root, "esp32s31", Some("run-1")).unwrap();
+    verify(&root, "esp32s31", Some("run-1"), &TestRecipe).unwrap();
 
     add_lab_provenance(&run, "another-dut");
-    let error = verify(&root, "esp32s31", Some("run-1"))
+    let error = verify(&root, "esp32s31", Some("run-1"), &TestRecipe)
         .expect_err("reject lab snapshot for another device");
     assert!(error.to_string().contains("not bound"));
     fs::remove_dir_all(root).unwrap();
@@ -306,11 +307,11 @@ fn system_provenance_requires_a_matching_scenario_snapshot() {
     let (root, run) = fixture();
     add_lab_provenance(&run, "dut-1");
     let mut provenance: LabProvenance = read_json(&run.join("lab-provenance.json")).unwrap();
-    provenance.scope = crate::lab::provenance::ObservationScope::System;
+    provenance.scope = crate::lab::ObservationScope::System;
     provenance.fixture = FixtureObservation::NotUsed;
     atomic_json(&run.join("lab-provenance.json"), &provenance).unwrap();
     let mut scenario = oer_hil_scenario::test_family::scenario(include_str!(
-        "../../../../../scenarios/system/boot-smoke.toml"
+        "../../../../scenarios/system/boot-smoke.toml"
     ));
     let snapshot = run
         .join("scenarios")
@@ -318,16 +319,16 @@ fn system_provenance_requires_a_matching_scenario_snapshot() {
         .join("scenario.json");
     fs::create_dir_all(snapshot.parent().unwrap()).unwrap();
     atomic_json(&snapshot, &scenario).unwrap();
-    let plan = crate::evidence::run::RunPlan {
+    let plan = crate::run::RunPlan {
         schema: RUN_SCHEMA,
         run_id: "run-1".into(),
         selection: "boot-smoke".into(),
         firmware: None,
-        entries: vec![crate::evidence::run::PlanEntry {
+        entries: vec![crate::run::PlanEntry {
             scenario: scenario.id().to_owned(),
             image: scenario.image(),
             repetitions: scenario.repetitions(),
-            disposition: crate::evidence::run::PlanDisposition::Selected,
+            disposition: crate::run::PlanDisposition::Selected,
             reason: None,
             requirements: Some(scenario.requirements()),
         }],
@@ -353,26 +354,26 @@ fn bluetooth_plan_accepts_system_provenance_with_an_adapter_requirement() {
     let (root, run) = fixture();
     add_lab_provenance(&run, "dut-1");
     let mut provenance: LabProvenance = read_json(&run.join("lab-provenance.json")).unwrap();
-    provenance.scope = crate::lab::provenance::ObservationScope::System;
+    provenance.scope = crate::lab::ObservationScope::System;
     provenance.fixture = FixtureObservation::NotUsed;
     provenance.definition.bluetooth_adapter = Some("hci0".into());
     atomic_json(&run.join("lab-provenance.json"), &provenance).unwrap();
     let scenario = oer_hil_scenario::test_family::scenario(include_str!(
-        "../../../../../scenarios/system/boot-smoke.toml"
+        "../../../../scenarios/system/boot-smoke.toml"
     ));
     let directory = run.join("scenarios").join(scenario.id());
     fs::create_dir_all(&directory).unwrap();
     atomic_json(&directory.join("scenario.json"), &scenario).unwrap();
-    let plan = crate::evidence::run::RunPlan {
+    let plan = crate::run::RunPlan {
         schema: RUN_SCHEMA,
         run_id: "run-1".into(),
         selection: scenario.id().to_owned(),
         firmware: None,
-        entries: vec![crate::evidence::run::PlanEntry {
+        entries: vec![crate::run::PlanEntry {
             scenario: scenario.id().to_owned(),
             image: scenario.image(),
             repetitions: scenario.repetitions(),
-            disposition: crate::evidence::run::PlanDisposition::Selected,
+            disposition: crate::run::PlanDisposition::Selected,
             reason: None,
             requirements: Some(oer_hil_scenario::requirements::Requirements {
                 bluetooth_adapter: true,
@@ -389,15 +390,27 @@ fn bluetooth_plan_accepts_system_provenance_with_an_adapter_requirement() {
 #[test]
 fn selects_only_verified_archived_firmware_for_replay() {
     let (root, run) = fixture();
-    let firmware = archived_firmware(&root, "esp32s31", "run-1", ImageClass::Correctness)
-        .expect("select archived firmware");
+    let firmware = archived_firmware(
+        &root,
+        "esp32s31",
+        "run-1",
+        ImageClass::Correctness,
+        &TestRecipe,
+    )
+    .expect("select archived firmware");
     assert_eq!(
         firmware.application_path,
         run.join("firmware/correctness/application.bin")
     );
     assert_eq!(firmware.application_sha256.len(), 64);
-    let error = archived_firmware(&root, "esp32s31", "run-1", ImageClass::Performance)
-        .expect_err("reject absent image class");
+    let error = archived_firmware(
+        &root,
+        "esp32s31",
+        "run-1",
+        ImageClass::Performance,
+        &TestRecipe,
+    )
+    .expect_err("reject absent image class");
     assert!(
         error
             .to_string()
@@ -410,7 +423,7 @@ fn selects_only_verified_archived_firmware_for_replay() {
 fn verifies_complete_build_provenance_and_all_firmware_subjects() {
     let (root, run) = fixture();
     add_build_provenance(&run);
-    let completion = verify(&root, "esp32s31", Some("run-1")).unwrap();
+    let completion = verify(&root, "esp32s31", Some("run-1"), &TestRecipe).unwrap();
     assert_eq!(completion.firmware_artifacts, 1);
     fs::remove_dir_all(root).unwrap();
 }
@@ -423,7 +436,7 @@ fn a_manifest_seed_must_be_the_build_records_seed() {
     manifest.firmware[0].layout_seed = std::num::NonZeroU32::new(7);
     atomic_json(&run.join("manifest.json"), &manifest).unwrap();
     write_integrity_index(&run, "run-1").unwrap();
-    let error = verify(&root, "esp32s31", Some("run-1")).unwrap_err();
+    let error = verify(&root, "esp32s31", Some("run-1"), &TestRecipe).unwrap_err();
     assert!(
         error.to_string().contains("build provenance inconsistent"),
         "{error}"
@@ -440,7 +453,7 @@ fn rejects_tampered_archived_runtime_elf() {
     let (root, run) = fixture();
     add_build_provenance(&run);
     fs::write(run.join("firmware/correctness/runtime.elf"), b"runtime elF").unwrap();
-    let error = verify(&root, "esp32s31", Some("run-1")).unwrap_err();
+    let error = verify(&root, "esp32s31", Some("run-1"), &TestRecipe).unwrap_err();
     assert!(error.to_string().contains("SHA-256"));
     fs::remove_dir_all(root).unwrap();
 }
@@ -459,7 +472,7 @@ fn rejects_replay_origin_not_bound_to_the_firmware_build() {
     });
     atomic_json(&run.join("manifest.json"), &manifest).unwrap();
     write_integrity_index(&run, "run-1").unwrap();
-    let error = verify(&root, "esp32s31", Some("run-1")).unwrap_err();
+    let error = verify(&root, "esp32s31", Some("run-1"), &TestRecipe).unwrap_err();
     assert!(error.to_string().contains("inconsistent replay origin"));
     fs::remove_dir_all(root).unwrap();
 }
@@ -472,7 +485,7 @@ fn rejects_tampered_attachment() {
         b"serial evidencE",
     )
     .unwrap();
-    let error = verify(&root, "esp32s31", Some("run-1")).unwrap_err();
+    let error = verify(&root, "esp32s31", Some("run-1"), &TestRecipe).unwrap_err();
     assert!(error.to_string().contains("SHA-256"));
     fs::remove_dir_all(root).unwrap();
 }
@@ -483,7 +496,7 @@ fn rejects_paths_escaping_the_run_bundle() {
     let mut suite: SuiteResult = read_json(&run.join("suite.json")).unwrap();
     suite.scenarios[0].repetitions[0].attachments[0].path = PathBuf::from("../outside");
     atomic_json(&run.join("suite.json"), &suite).unwrap();
-    let error = verify(&root, "esp32s31", None).unwrap_err();
+    let error = verify(&root, "esp32s31", None, &TestRecipe).unwrap_err();
     assert!(
         error
             .to_string()
@@ -496,7 +509,7 @@ fn rejects_paths_escaping_the_run_bundle() {
 fn rejects_unindexed_files() {
     let (root, run) = fixture();
     fs::write(run.join("injected.log"), b"not sealed").unwrap();
-    let error = verify(&root, "esp32s31", None).unwrap_err();
+    let error = verify(&root, "esp32s31", None, &TestRecipe).unwrap_err();
     assert!(error.to_string().contains("sealed file inventory"));
     fs::remove_dir_all(root).unwrap();
 }
@@ -505,7 +518,7 @@ fn rejects_unindexed_files() {
 fn rejects_tampered_derived_report() {
     let (root, run) = fixture();
     fs::write(run.join("report.html"), b"tampered report").unwrap();
-    let error = verify(&root, "esp32s31", None).unwrap_err();
+    let error = verify(&root, "esp32s31", None, &TestRecipe).unwrap_err();
     assert!(error.to_string().contains("sealed file inventory"));
     fs::remove_dir_all(root).unwrap();
 }
@@ -545,13 +558,16 @@ fn a_referenced_observer_build_must_be_stored_under_its_digest() {
     manifest["runner"]["observer"] = reference.clone();
     atomic_json(&run.join("manifest.json"), &manifest).unwrap();
     write_integrity_index(&run, "run-1").unwrap();
-    verify(&root, "esp32s31", None).unwrap();
+    verify(&root, "esp32s31", None, &TestRecipe).unwrap();
 
     let file =
         observer_store::path(&store, observer_store::build_digest(&reference).unwrap()).unwrap();
     let stored = fs::read(&file).unwrap();
     fs::remove_file(&file).unwrap();
-    assert!(verify(&root, "esp32s31", None).is_err(), "a missing build");
+    assert!(
+        verify(&root, "esp32s31", None, &TestRecipe).is_err(),
+        "a missing build"
+    );
     fs::write(&file, stored).unwrap();
     fs::write(
         store
@@ -561,7 +577,7 @@ fn a_referenced_observer_build_must_be_stored_under_its_digest() {
     )
     .unwrap();
     assert!(
-        verify(&root, "esp32s31", None).is_err(),
+        verify(&root, "esp32s31", None, &TestRecipe).is_err(),
         "a build that does not hash to its name"
     );
     fs::remove_dir_all(root).unwrap();

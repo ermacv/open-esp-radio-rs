@@ -791,8 +791,8 @@ impl TaskPollSet {
     /// The poll residence of each task that reported, as typed
     /// measurements `task_poll.<task>.<counter>`, so run comparisons and
     /// performance reports see it beside throughput.
-    pub fn measurements(self) -> Vec<hil_core::evidence::run::Measurement> {
-        use hil_core::evidence::run::{Measurement, MeasurementUnit::*};
+    pub fn measurements(self) -> Vec<oer_hil_evidence::run::Measurement> {
+        use oer_hil_evidence::run::{Measurement, MeasurementUnit::*};
         [
             ("network", self.network),
             ("radio", self.radio),

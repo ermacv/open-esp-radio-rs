@@ -13,7 +13,7 @@
 //! B of one seed, holds a whole-stand lease of its own, so drift of the air
 //! and the calibrations falls on both arms alike, and other owners' shorter
 //! work goes between rounds. Every run records its arm and variant in its
-//! manifest ([`oer_hil_runner_core::experiment`]) and no evidence. The
+//! manifest ([`oer_hil_evidence::experiment`]) and no evidence. The
 //! report compares, per scenario and measurement, the arms' run means with
 //! [`crate::hil_perf::compare`] and is written to `ab-report.json`.
 
@@ -26,7 +26,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use oer_hil_runner_core::experiment::{Arm, DependencyOverride, Experiment, Variant};
+use oer_hil_evidence::experiment::{Arm, DependencyOverride, Experiment, Variant};
 use oer_hil_source_snapshot::Dependency;
 use serde::Serialize;
 
@@ -517,7 +517,7 @@ impl PreparedArm {
         command
             .env(oer_hil_arbiter::OWNER_ENV, owner)
             .env(
-                oer_hil_runner_core::experiment::EXPERIMENT_ENV,
+                oer_hil_evidence::experiment::EXPERIMENT_ENV,
                 serde_json::to_string(&experiment)?,
             )
             .env(RUN_RECEIPT_ENV, receipt)

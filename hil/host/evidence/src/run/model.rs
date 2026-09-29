@@ -69,7 +69,7 @@ impl Measurement {
         self
     }
 
-    pub(in crate::evidence) fn is_consistent(&self) -> bool {
+    pub(crate) fn is_consistent(&self) -> bool {
         match (self.threshold, self.verdict) {
             (None, None) => true,
             (Some(threshold), Some(verdict)) => {
@@ -155,9 +155,7 @@ impl ScenarioResult {
     }
 }
 
-pub(in crate::evidence) fn aggregate_outcome(
-    outcomes: impl IntoIterator<Item = Outcome>,
-) -> Outcome {
+pub fn aggregate_outcome(outcomes: impl IntoIterator<Item = Outcome>) -> Outcome {
     let observed = outcomes.into_iter().collect::<Vec<_>>();
     if !observed.is_empty() && observed.iter().all(|outcome| outcome.is_passed()) {
         Outcome::Passed
@@ -483,17 +481,17 @@ impl RunManifest {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(in crate::evidence) struct IntegrityFile {
-    pub(in crate::evidence) path: PathBuf,
-    pub(in crate::evidence) size_bytes: u64,
-    pub(in crate::evidence) sha256: String,
+pub struct IntegrityFile {
+    pub(crate) path: PathBuf,
+    pub(crate) size_bytes: u64,
+    pub(crate) sha256: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(in crate::evidence) struct IntegrityIndex {
-    pub(in crate::evidence) schema: u16,
-    pub(in crate::evidence) run_id: String,
-    pub(in crate::evidence) files: Vec<IntegrityFile>,
+pub struct IntegrityIndex {
+    pub(crate) schema: u16,
+    pub(crate) run_id: String,
+    pub(crate) files: Vec<IntegrityFile>,
 }
 
 #[derive(Debug, Serialize)]

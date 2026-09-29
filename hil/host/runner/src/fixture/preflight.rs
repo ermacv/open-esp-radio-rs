@@ -4,10 +4,8 @@ use crate::{
     Result,
     scenario::{Family, Scenario},
 };
-use hil_core::{
-    evidence::run::Failure, evidence::run::FailureKind, lab::config::LabConfig,
-    lab::config::StationFixtureConfig,
-};
+use hil_core::lab::config::{LabConfig, StationFixtureConfig};
+use oer_hil_evidence::run::{Failure, FailureKind};
 
 pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
     let plan = scenario.plan();

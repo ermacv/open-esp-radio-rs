@@ -1,7 +1,7 @@
 //! Projection of decoded protocol values into the host measurement vocabulary.
 
-use crate::evidence::run::{Measurement, MeasurementUnit as Unit};
 use crate::session::Received;
+use oer_hil_evidence::run::{Measurement, MeasurementUnit as Unit};
 use oer_hil_protocol::{
     base::LinkHealth, network::EvidenceRecord, network::TransportEvidence, system::StackUsage,
 };

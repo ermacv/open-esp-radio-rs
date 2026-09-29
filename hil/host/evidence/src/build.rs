@@ -16,13 +16,14 @@ use sha2::{Digest, Sha256};
 use crate::Result;
 use oer_hil_durable::{atomic_write, sha256_file};
 use oer_hil_image_class::ImageClass;
+use oer_hil_source_snapshot::FrozenSources;
 
-pub(super) const BUILD_PROVENANCE_SCHEMA: u16 = 1;
+pub const BUILD_PROVENANCE_SCHEMA: u16 = 1;
 static ARCHIVE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(super) enum SourceRebuildStatus {
+pub enum SourceRebuildStatus {
     SourceSnapshot,
     CleanCommit,
     TrackedPatch,
@@ -31,68 +32,68 @@ pub(super) enum SourceRebuildStatus {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(super) enum SourceLimitation {
+pub enum SourceLimitation {
     RepositoryStateNotCaptured,
     SourceRemoteUnavailable,
     UntrackedContentNotArchived,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(super) struct SourceFileIdentity {
-    pub(super) path: PathBuf,
-    pub(super) size_bytes: u64,
-    pub(super) sha256: String,
+pub struct SourceFileIdentity {
+    pub path: PathBuf,
+    pub size_bytes: u64,
+    pub sha256: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(super) struct SourceMaterial {
-    pub(super) name: String,
-    pub(super) checkout_path: PathBuf,
-    pub(super) remote: Option<String>,
-    pub(super) commit: String,
-    pub(super) dirty: bool,
-    pub(super) workspace_sha256: String,
-    pub(super) rebuild_status: SourceRebuildStatus,
-    pub(super) tracked_patch_path: Option<PathBuf>,
-    pub(super) tracked_patch_size_bytes: Option<u64>,
-    pub(super) tracked_patch_sha256: Option<String>,
-    pub(super) untracked_files: Vec<SourceFileIdentity>,
-    pub(super) limitations: Vec<SourceLimitation>,
+pub struct SourceMaterial {
+    pub name: String,
+    pub checkout_path: PathBuf,
+    pub remote: Option<String>,
+    pub commit: String,
+    pub dirty: bool,
+    pub workspace_sha256: String,
+    pub rebuild_status: SourceRebuildStatus,
+    pub tracked_patch_path: Option<PathBuf>,
+    pub tracked_patch_size_bytes: Option<u64>,
+    pub tracked_patch_sha256: Option<String>,
+    pub untracked_files: Vec<SourceFileIdentity>,
+    pub limitations: Vec<SourceLimitation>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(super) struct BuildFileMaterial {
-    pub(super) name: String,
-    pub(super) path: PathBuf,
-    pub(super) archive_path: Option<PathBuf>,
-    pub(super) size_bytes: u64,
-    pub(super) sha256: String,
+pub struct BuildFileMaterial {
+    pub name: String,
+    pub path: PathBuf,
+    pub archive_path: Option<PathBuf>,
+    pub size_bytes: u64,
+    pub sha256: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(super) struct BuildParameters {
-    pub(super) image: ImageClass,
+pub struct BuildParameters {
+    pub image: ImageClass,
     /// None is retained when decoding older bundles with no recorded selection.
     #[serde(default)]
-    pub(super) network: Option<String>,
-    pub(super) runtime_profile: String,
-    pub(super) target: String,
-    pub(super) runtime_features: String,
+    pub network: Option<String>,
+    pub runtime_profile: String,
+    pub target: String,
+    pub runtime_features: String,
     /// The seed the runtime was linked with; absent for the natural order.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(super) layout_seed: Option<std::num::NonZeroU32>,
+    pub layout_seed: Option<std::num::NonZeroU32>,
     /// Runtime features added to or removed from the class's own; an image
     /// built with any is an experiment's, never its class's.
     #[serde(
         default,
         skip_serializing_if = "oer_hil_image_class::FeatureDelta::is_empty"
     )]
-    pub(super) features: oer_hil_image_class::FeatureDelta,
+    pub features: oer_hil_image_class::FeatureDelta,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(super) enum BuildSubjectRole {
+pub enum BuildSubjectRole {
     Application,
     BootstrapElf,
     RuntimeBin,
@@ -102,11 +103,11 @@ pub(super) enum BuildSubjectRole {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(super) struct BuildSubject {
-    pub(super) role: BuildSubjectRole,
-    pub(super) path: PathBuf,
-    pub(super) size_bytes: u64,
-    pub(super) sha256: String,
+pub struct BuildSubject {
+    pub role: BuildSubjectRole,
+    pub path: PathBuf,
+    pub size_bytes: u64,
+    pub sha256: String,
 }
 
 /// One host tool that took part in a firmware build.
@@ -175,29 +176,29 @@ impl BuildEnvironment {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(super) enum BuildReproducibility {
+pub enum BuildReproducibility {
     Unverified,
     Verified,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(super) struct BuildProvenance {
-    pub(super) schema: u16,
-    pub(super) build_id: String,
-    pub(super) build_type: String,
-    pub(super) parameters: BuildParameters,
-    pub(super) sources: Vec<SourceMaterial>,
-    pub(super) files: Vec<BuildFileMaterial>,
-    pub(super) environment: BuildEnvironment,
-    pub(super) subjects: Vec<BuildSubject>,
-    pub(super) source_reconstructable: bool,
-    pub(super) reproducibility: BuildReproducibility,
+pub struct BuildProvenance {
+    pub schema: u16,
+    pub build_id: String,
+    pub build_type: String,
+    pub parameters: BuildParameters,
+    pub sources: Vec<SourceMaterial>,
+    pub files: Vec<BuildFileMaterial>,
+    pub environment: BuildEnvironment,
+    pub subjects: Vec<BuildSubject>,
+    pub source_reconstructable: bool,
+    pub reproducibility: BuildReproducibility,
 }
 
 #[derive(Clone)]
-pub(super) struct ArchivedFile {
-    pub(super) size_bytes: u64,
-    pub(super) sha256: String,
+pub struct ArchivedFile {
+    pub size_bytes: u64,
+    pub sha256: String,
 }
 
 struct GitSourceState {
@@ -208,7 +209,7 @@ struct GitSourceState {
     workspace_sha256: String,
 }
 
-pub(super) fn archive_content_addressed(
+pub fn archive_content_addressed(
     source: &Path,
     destination: &Path,
     target_directory: &Path,
@@ -391,7 +392,7 @@ fn copy_regular_file(source: &Path, destination: &Path) -> Result<()> {
     result
 }
 
-pub(super) fn capture_sources(root: &Path, run_directory: &Path) -> Result<Vec<SourceMaterial>> {
+pub fn capture_sources(root: &Path, run_directory: &Path) -> Result<Vec<SourceMaterial>> {
     let mut materials = vec![capture_source_material(
         "repository",
         root,
@@ -410,7 +411,7 @@ pub(super) fn capture_sources(root: &Path, run_directory: &Path) -> Result<Vec<S
     Ok(materials)
 }
 
-pub(super) fn capture_source_material(
+pub fn capture_source_material(
     name: &str,
     root: &Path,
     run_directory: &Path,
@@ -568,7 +569,7 @@ fn sanitize_git_remote(remote: String) -> String {
     )
 }
 
-pub(super) fn build_id(subjects: &[BuildSubject]) -> String {
+pub fn build_id(subjects: &[BuildSubject]) -> String {
     let mut digest = Sha256::new();
     digest.update(b"open-esp-radio-hil-build-v1\0");
     for subject in subjects {
@@ -582,93 +583,8 @@ pub(super) fn build_id(subjects: &[BuildSubject]) -> String {
     format!("{:x}", digest.finalize())
 }
 
-pub(super) fn create_provenance(
-    root: &Path,
-    selection: (
-        ImageClass,
-        crate::image::Integration,
-        crate::image::LayoutSeed,
-        &oer_hil_image_class::FeatureDelta,
-        // The chip, its Rust target and how it boots.
-        (&str, &str, oer_chip_profile::Boot),
-    ),
-    build_id: String,
-    sources: Vec<SourceMaterial>,
-    subjects: Vec<BuildSubject>,
-    effective_locks: Vec<BuildFileMaterial>,
-    environment: BuildEnvironment,
-) -> Result<BuildProvenance> {
-    let (image, network, layout_seed, features, (chip, rust_target, boot)) = selection;
-    let files = match boot {
-        oer_chip_profile::Boot::Staged => vec![
-            ("workspace-lock", String::from("Cargo.lock")),
-            (
-                "embedded-workspace",
-                String::from("hil/targets/esp32s31/Cargo.toml"),
-            ),
-            (
-                "stack-policy",
-                String::from("hil/targets/esp32s31/stack.toml"),
-            ),
-            // The HIL stack policy extends the production one.
-            (
-                "stack-policy-base",
-                String::from("platform/esp32s31/stack.toml"),
-            ),
-            (
-                "partition-table",
-                String::from("platform/esp32s31/partitions/applications.csv"),
-            ),
-        ],
-        // The chip profile fixes the flash layout the image is written with.
-        oer_chip_profile::Boot::EspIdfBootloader => vec![
-            ("workspace-lock", String::from("Cargo.lock")),
-            (
-                "embedded-workspace",
-                format!("hil/targets/{chip}/Cargo.toml"),
-            ),
-            ("chip-profile", format!("platform/{chip}/chip.toml")),
-        ],
-    };
-    let mut files = files
-        .into_iter()
-        .map(|(name, path)| build_file_material(root, name, Path::new(&path)))
-        .collect::<Result<Vec<_>>>()?;
-    files.extend(effective_locks);
-    files.sort_by(|left, right| left.name.cmp(&right.name));
-    Ok(BuildProvenance {
-        schema: BUILD_PROVENANCE_SCHEMA,
-        build_id,
-        build_type: String::from("open-esp-radio-hil-firmware/v1"),
-        parameters: BuildParameters {
-            image,
-            // An ESP-IDF application has no network integration.
-            network: (boot == oer_chip_profile::Boot::Staged).then(|| network.id().to_owned()),
-            runtime_profile: image.runtime_profile().to_owned(),
-            target: rust_target.to_owned(),
-            runtime_features: match boot {
-                oer_chip_profile::Boot::Staged => {
-                    features.apply(&image.build_features(network.feature()))
-                }
-                oer_chip_profile::Boot::EspIdfBootloader => {
-                    features.apply(image.runtime_features())
-                }
-            },
-            layout_seed,
-            features: features.clone(),
-        },
-        source_reconstructable: sources
-            .iter()
-            .all(|source| source.rebuild_status != SourceRebuildStatus::Incomplete),
-        sources,
-        files,
-        environment,
-        subjects,
-        reproducibility: BuildReproducibility::Unverified,
-    })
-}
-
-fn build_file_material(root: &Path, name: &str, path: &Path) -> Result<BuildFileMaterial> {
+/// The material of the repository file `path`, named `name`.
+pub fn build_file_material(root: &Path, name: &str, path: &Path) -> Result<BuildFileMaterial> {
     let absolute = root.join(path);
     let metadata = fs::symlink_metadata(&absolute)?;
     if !metadata.file_type().is_file() {
@@ -687,7 +603,7 @@ fn build_file_material(root: &Path, name: &str, path: &Path) -> Result<BuildFile
     })
 }
 
-pub(super) fn archived_file_material(
+pub fn archived_file_material(
     name: &str,
     path: &Path,
     archive_path: PathBuf,
@@ -759,6 +675,58 @@ fn command_version(program: &str, arguments: &[&str]) -> Option<String> {
         .status
         .success()
         .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+/// Archive the snapshot in `directory` into the bundle at `output`, with its
+/// objects in the store below `target`, and open the archived copy in a
+/// free build workspace of `build_slots`.
+pub fn archive_snapshot(
+    directory: &Path,
+    output: &Path,
+    target: &Path,
+    build_slots: &Path,
+) -> Result<(FrozenSources, Vec<SourceMaterial>, Vec<BuildFileMaterial>)> {
+    let destination = output.join("source/snapshot");
+    let mut files: Vec<BuildFileMaterial> = Vec::new();
+    for (name, filename) in [
+        ("source-snapshot-metadata", "snapshot.json"),
+        ("source-snapshot-manifest", "manifest.json"),
+        ("source-snapshot-archive", "sources.tar"),
+    ] {
+        let relative = PathBuf::from("source/snapshot").join(filename);
+        let archived =
+            archive_content_addressed(&directory.join(filename), &output.join(&relative), target)?;
+        files.push(archived_file_material(
+            name,
+            Path::new(filename),
+            relative,
+            &archived,
+        ));
+    }
+    // A persistent host build slot keeps unchanged sources, so Cargo
+    // rebuilds only the packages whose sources changed on each run.
+    let frozen = FrozenSources::open_in_free_workspace(&destination, build_slots)?;
+    let sources = frozen
+        .sources()
+        .iter()
+        .map(|source| {
+            Ok(SourceMaterial {
+                name: source.name.clone(),
+                checkout_path: PathBuf::from(&source.name),
+                remote: None,
+                commit: source.commit.clone(),
+                dirty: source.dirty,
+                workspace_sha256: oer_hil_source_snapshot::identity(source)?,
+                rebuild_status: SourceRebuildStatus::SourceSnapshot,
+                tracked_patch_path: None,
+                tracked_patch_size_bytes: None,
+                tracked_patch_sha256: None,
+                untracked_files: Vec::new(),
+                limitations: Vec::new(),
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok((frozen, sources, files))
 }
 
 #[cfg(test)]

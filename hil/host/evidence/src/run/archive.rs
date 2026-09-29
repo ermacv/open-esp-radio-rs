@@ -4,16 +4,25 @@ use oer_hil_durable::atomic_json;
 use std::path::{Path, PathBuf};
 
 use crate::Result;
-use crate::evidence::build;
-use crate::evidence::run::{FirmwareReplayOrigin, RunSession};
+use crate::build;
+use crate::run::{FirmwareArtifact, FirmwareReplayOrigin, RunSession};
 use oer_hil_image_class::ImageClass;
 
+/// Where a run's firmware is archived: the bundle, the object store and the
+/// sources and materials its build provenance cites.
+pub struct FirmwareArchive<'a> {
+    pub directory: &'a Path,
+    pub target_directory: &'a Path,
+    pub source_root: PathBuf,
+    pub source_materials: &'a [build::SourceMaterial],
+    pub snapshot_materials: &'a [build::BuildFileMaterial],
+}
+
 impl RunSession {
-    pub fn record_firmware(
-        &mut self,
-        image: ImageClass,
-        artifacts: &crate::image::Artifacts,
-    ) -> Result<PathBuf> {
+    /// Where the image builder archives the `image` firmware of this run:
+    /// the bundle, the object store and the run's frozen sources, which must
+    /// be unchanged. Refuses an image the run already has.
+    pub fn firmware_archive(&self, image: ImageClass) -> Result<FirmwareArchive<'_>> {
         if self
             .manifest
             .firmware
@@ -27,26 +36,32 @@ impl RunSession {
             .as_ref()
             .ok_or("firmware requires a bound source snapshot")?;
         frozen.verify_unchanged()?;
-        let (artifact, archived_application) = crate::evidence::firmware::archive(
-            crate::evidence::firmware::Context {
-                directory: &self.directory,
-                target_directory: &self.target_directory,
-                source_root: &frozen.repository(),
-                source_materials: &self.source_materials,
-                snapshot_materials: &self.snapshot_materials,
-            },
-            image,
-            artifacts,
-        )?;
-        self.manifest.firmware.retain(|entry| entry.image != image);
+        Ok(FirmwareArchive {
+            directory: &self.directory,
+            target_directory: &self.target_directory,
+            source_root: frozen.repository(),
+            source_materials: &self.source_materials,
+            snapshot_materials: &self.snapshot_materials,
+        })
+    }
+
+    /// Bind the firmware record the image builder archived.
+    pub fn bind_firmware(&mut self, artifact: FirmwareArtifact) -> Result<()> {
+        if self
+            .manifest
+            .firmware
+            .iter()
+            .any(|entry| entry.image == artifact.image)
+        {
+            return Err("firmware already bound to this run cannot be replaced".into());
+        }
         self.manifest.firmware.push(artifact);
-        atomic_json(&self.directory.join("manifest.json"), &self.manifest)?;
-        Ok(archived_application)
+        atomic_json(&self.directory.join("manifest.json"), &self.manifest)
     }
 
     pub fn record_replayed_firmware(
         &mut self,
-        archived: &crate::evidence::verify::ArchivedFirmware,
+        archived: &crate::verify::ArchivedFirmware,
     ) -> Result<PathBuf> {
         if self
             .manifest

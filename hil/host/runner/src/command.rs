@@ -10,7 +10,8 @@ use crate::{
     emit_json, execution::firmware::RunFirmware, execution::orchestration, fixture,
     repository_root,
 };
-use hil_core::{image, lab, output};
+use hil_core::output;
+use hil_core::{image, lab};
 use oer_hil_scenario::SCENARIO_SCHEMA;
 
 pub(crate) fn run() -> Result<()> {
@@ -148,7 +149,7 @@ pub(crate) fn run() -> Result<()> {
                                 layout_seed,
                                 &oer_hil_image_class::FeatureDelta::default(),
                             )?;
-                            let record = hil_core::evidence::build_record::publish(
+                            let record = hil_core::image::record::publish(
                                 &root, snapshot, class, &artifacts,
                             )?;
                             eprintln!("build_record={}", record.display());
@@ -170,14 +171,22 @@ pub(crate) fn run() -> Result<()> {
         CliCommand::Report {
             command: ReportCommand::Verify { run_id, chip },
         } => {
-            use hil_core::evidence::verify;
+            use oer_hil_evidence::verify;
             let chips = match (chip, run_id.as_deref()) {
                 (Some(chip), _) => vec![chip],
                 (None, Some(run)) => vec![verify::chip_of_run(&root, run)?],
                 (None, None) => verify::chips_with_runs(&root)?,
             };
             for chip in chips {
-                emit_json(&verify::verify(&root, &chip, run_id.as_deref())?, false)?;
+                emit_json(
+                    &verify::verify(
+                        &root,
+                        &chip,
+                        run_id.as_deref(),
+                        &hil_core::image::record::Recipe,
+                    )?,
+                    false,
+                )?;
             }
             Ok(())
         }
@@ -210,7 +219,7 @@ pub(crate) fn run() -> Result<()> {
             // An image with other features is not its class's image: only an
             // experiment, whose runs never qualify, may build one.
             if features.as_ref().is_some_and(|delta| !delta.is_empty())
-                && hil_core::experiment::Experiment::from_environment()?.is_none()
+                && oer_hil_evidence::experiment::Experiment::from_environment()?.is_none()
             {
                 return Err(
                     "--features builds an experiment's image; use `cargo hil ab` with a \
@@ -266,8 +275,12 @@ pub(crate) fn run() -> Result<()> {
             let firmware = match firmware_from {
                 Some(run_id) => {
                     let class = orchestration::single_image_class(&selected)?;
-                    RunFirmware::Replay(Box::new(hil_core::evidence::verify::archived_firmware(
-                        &root, &chip, &run_id, class,
+                    RunFirmware::Replay(Box::new(oer_hil_evidence::verify::archived_firmware(
+                        &root,
+                        &chip,
+                        &run_id,
+                        class,
+                        &hil_core::image::record::Recipe,
                     )?))
                 }
                 None => RunFirmware::BuildCurrent(hil_core::image::CurrentBuild {

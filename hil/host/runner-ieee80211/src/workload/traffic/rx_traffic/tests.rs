@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn reported_rates_preserve_the_existing_host_and_target_gate_resolutions() {
-    let recorder = hil_core::evidence::measurements::Recorder::default();
+    let recorder = hil_core::measurements::Recorder::default();
     record_rates(&recorder, 1, 1_998, 1_999);
     let values = recorder.snapshot();
     let target = values
@@ -15,11 +15,11 @@ fn reported_rates_preserve_the_existing_host_and_target_gate_resolutions() {
         .unwrap();
     assert_eq!(
         target.verdict,
-        Some(hil_core::evidence::run::MeasurementVerdict::Passed)
+        Some(oer_hil_evidence::run::MeasurementVerdict::Passed)
     );
     assert_eq!(
         host.verdict,
-        Some(hil_core::evidence::run::MeasurementVerdict::Failed)
+        Some(oer_hil_evidence::run::MeasurementVerdict::Failed)
     );
     assert_eq!(target.threshold.unwrap().value, 1_000);
     assert_eq!(host.threshold.unwrap().value, 1_999);

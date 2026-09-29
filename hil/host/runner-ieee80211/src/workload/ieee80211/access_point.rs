@@ -773,7 +773,7 @@ fn session_report(direction: Direction, evidence: &SessionEvidence) -> SessionRe
 fn validate_rate_criteria(
     report: &SessionReport,
     criteria: RateFloors,
-    measurements: &hil_core::evidence::measurements::Recorder,
+    measurements: &hil_core::measurements::Recorder,
 ) -> Result<()> {
     if report.elapsed_micros == 0 {
         return Err("AP transport reported zero elapsed time".into());

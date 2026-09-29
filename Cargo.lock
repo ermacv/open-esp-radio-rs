@@ -2994,6 +2994,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-hil-evidence"
+version = "0.1.0"
+dependencies = [
+ "fs2",
+ "oer-chip-profile",
+ "oer-hil-durable",
+ "oer-hil-image-class",
+ "oer-hil-protocol",
+ "oer-hil-scenario",
+ "oer-hil-schema",
+ "oer-hil-source-snapshot",
+ "oer-process",
+ "roxmltree",
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+]
+
+[[package]]
 name = "oer-hil-fixture"
 version = "0.1.0"
 dependencies = [
@@ -3074,6 +3095,7 @@ dependencies = [
  "oer-esp32s31-hil-board",
  "oer-hil-board",
  "oer-hil-durable",
+ "oer-hil-evidence",
  "oer-hil-fixture-install",
  "oer-hil-image-class",
  "oer-hil-protocol",
@@ -3104,6 +3126,7 @@ dependencies = [
  "futures-lite",
  "heapless 0.9.3",
  "oer-hil-durable",
+ "oer-hil-evidence",
  "oer-hil-fixture",
  "oer-hil-image-class",
  "oer-hil-protocol",
@@ -3134,6 +3157,7 @@ dependencies = [
  "oer-hil-arbiter",
  "oer-hil-board",
  "oer-hil-durable",
+ "oer-hil-evidence",
  "oer-hil-fixture",
  "oer-hil-fixture-install",
  "oer-hil-image-class",
@@ -3151,7 +3175,6 @@ dependencies = [
  "oer-trace",
  "postcard",
  "postcard-schema",
- "roxmltree",
  "rustix",
  "serde",
  "serde_json",
@@ -3169,6 +3192,7 @@ version = "0.1.0"
 dependencies = [
  "mio",
  "oer-hil-durable",
+ "oer-hil-evidence",
  "oer-hil-fixture",
  "oer-hil-image-class",
  "oer-hil-protocol",
@@ -3619,6 +3643,7 @@ dependencies = [
  "oer-esp32s31-firmware",
  "oer-hil-arbiter",
  "oer-hil-board",
+ "oer-hil-evidence",
  "oer-hil-image-class",
  "oer-hil-runner-core",
  "oer-hil-schema",

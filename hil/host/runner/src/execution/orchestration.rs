@@ -1,6 +1,6 @@
 //! Suite, scenario and repetition lifecycle orchestration.
 
-use hil_core::evidence::run::RunEventKind;
+use oer_hil_evidence::run::RunEventKind;
 use std::{
     ffi::OsString,
     fs,
@@ -8,11 +8,10 @@ use std::{
 };
 
 use crate::{Result, emit_json, fixture};
-use hil_core::{
-    evidence::run::Failure, evidence::run::FailureKind, evidence::run::Outcome,
-    evidence::run::PlanDisposition, evidence::run::PlanEntry, evidence::run::PlannedFirmware,
-    evidence::run::RUN_SCHEMA, evidence::run::RepetitionResult, evidence::run::RunPlan,
-    evidence::run::RunSession, evidence::run::ScenarioResult, lab::config::LabConfig,
+use hil_core::lab::config::LabConfig;
+use oer_hil_evidence::run::{
+    Failure, FailureKind, Outcome, PlanDisposition, PlanEntry, PlannedFirmware, RUN_SCHEMA,
+    RepetitionResult, RunPlan, RunSession, ScenarioResult,
 };
 use oer_hil_image_class::ImageClass;
 
@@ -345,8 +344,7 @@ fn lease_stand(
         &session.directory().join("air.json"),
         &hil_core::lab::lock::air_record(&request)?,
     )?;
-    let lab_provenance =
-        hil_core::lab::provenance::LabProvenance::capture(lab, requirements(selected))?;
+    let lab_provenance = hil_core::lab::provenance::capture(lab, requirements(selected))?;
     session.record_lab_provenance(&lab_provenance)?;
     session.record_event(RunEventKind::LabProvenanceCaptured, None, None, None)?;
     Ok(fixture)
@@ -739,8 +737,14 @@ fn start_run(
         &lab.dut.serial,
         invocation.arguments,
     )?;
+    session.report_interruption_to(|report| {
+        let _ = hil_core::emit_json(report, false);
+    });
     if let Some(snapshot) = invocation.snapshot {
-        session.bind_source_snapshot(snapshot.directory())?;
+        session.bind_source_snapshot(
+            snapshot.directory(),
+            &hil_core::image::frozen::build_slots(lab.chip())?,
+        )?;
     } else if matches!(firmware, Some(PlannedFirmware::BuildCurrent)) {
         return Err("current-source HIL run requires a source snapshot".into());
     }
@@ -938,7 +942,7 @@ fn finalize_repetition(
     cleanup: hil_core::fixture::cleanup::Scope,
     mut outcome: Outcome,
     mut failure: Option<Failure>,
-    measurements: Vec<hil_core::evidence::run::Measurement>,
+    measurements: Vec<oer_hil_evidence::run::Measurement>,
 ) -> Result<RepetitionResult> {
     let cleanup = cleanup.finish()?;
     let cleanup_failures = cleanup
@@ -947,13 +951,13 @@ fn finalize_repetition(
         .collect::<Vec<_>>();
     apply_cleanup_failures(&mut outcome, &mut failure, &cleanup_failures);
     usb.record(output);
-    let attachments = hil_core::evidence::run::collect_attachments(output, artifacts)?;
+    let attachments = oer_hil_evidence::run::collect_attachments(output, artifacts)?;
     let result = RepetitionResult {
         schema: RUN_SCHEMA,
         repetition,
         outcome,
         started_unix_millis,
-        duration_millis: hil_core::evidence::run::duration_millis(started.elapsed()),
+        duration_millis: oer_hil_evidence::run::duration_millis(started.elapsed()),
         artifact_directory: artifacts.to_owned(),
         attachments,
         measurements,

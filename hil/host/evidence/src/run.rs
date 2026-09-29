@@ -10,25 +10,22 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[cfg(test)]
-use std::sync::atomic::Ordering;
-
 use crate::Result;
-use crate::evidence::{build, build::SourceMaterial};
+use crate::build::{self, SourceMaterial};
 use oer_hil_image_class::ImageClass;
 
 mod archive;
+pub use archive::FirmwareArchive;
 mod attempt;
 pub use attempt::completed_attempts;
 mod integrity;
 mod model;
 mod snapshot;
 pub mod validation;
-use crate::evidence::reporting::render;
+use crate::reporting::render;
 
 pub use integrity::collect_attachments;
-// Evidence submodules share the durable-file helpers through this owner.
-pub(super) use integrity::{collect_integrity_files, write_integrity_index};
+pub use integrity::{collect_integrity_files, write_integrity_index};
 pub use model::RunManifest;
 pub use model::RunnerProvenance;
 pub use model::{
@@ -38,12 +35,12 @@ pub use model::{
     Threshold,
 };
 pub use model::{Boot, SubjectRecord};
-pub(super) use model::{
+pub use model::{
     CellProvenance, FirmwareArtifact, FirmwareReplayOrigin, IntegrityFile, IntegrityIndex,
     RepositoryProvenance, aggregate_outcome,
 };
 use model::{EventRecord, ToolVersion};
-pub(super) use oer_hil_durable::{atomic_json, atomic_write, sha256_file, unix_millis};
+pub(crate) use oer_hil_durable::{atomic_json, atomic_write, sha256_file, unix_millis};
 
 pub struct RunSession {
     target_directory: PathBuf,
@@ -55,6 +52,21 @@ pub struct RunSession {
     started: Instant,
     events: File,
     finished: bool,
+    interruption: Option<InterruptionSink>,
+}
+
+/// Where an interrupted run hands its report.
+type InterruptionSink = Box<dyn FnOnce(&InterruptionReport) + Send>;
+
+/// What a run that ends without finishing reports once it is sealed as
+/// interrupted.
+#[derive(Debug, serde::Serialize)]
+pub struct InterruptionReport {
+    pub schema: u16,
+    pub run_id: String,
+    pub outcome: &'static str,
+    pub run_directory: PathBuf,
+    pub integrity_report: PathBuf,
 }
 
 struct UnpublishedRunDirectory {
@@ -165,6 +177,7 @@ impl RunSession {
             started,
             events,
             finished: false,
+            interruption: None,
         };
         session.record_event(RunEventKind::RunStarted, None, None, None)?;
         unpublished_directory.publish();
@@ -188,10 +201,7 @@ impl RunSession {
         atomic_json(&self.directory.join("plan.json"), plan)
     }
 
-    pub fn record_lab_provenance(
-        &mut self,
-        provenance: &crate::lab::provenance::LabProvenance,
-    ) -> Result<()> {
+    pub fn record_lab_provenance(&mut self, provenance: &crate::lab::LabProvenance) -> Result<()> {
         let path = PathBuf::from("lab-provenance.json");
         atomic_json(&self.directory.join(&path), provenance)?;
         self.manifest.lab_provenance_path = Some(path);
@@ -276,6 +286,17 @@ impl RunSession {
     }
 }
 
+impl RunSession {
+    /// Hand the report of an interrupted run to `report`, which the caller
+    /// publishes where it publishes run outcomes.
+    pub fn report_interruption_to(
+        &mut self,
+        report: impl FnOnce(&InterruptionReport) + Send + 'static,
+    ) {
+        self.interruption = Some(Box::new(report));
+    }
+}
+
 impl Drop for RunSession {
     fn drop(&mut self) {
         if self.finished {
@@ -293,15 +314,16 @@ impl Drop for RunSession {
         self.manifest.duration_millis = Some(duration_millis(self.started.elapsed()));
         let _ = atomic_json(&self.directory.join("manifest.json"), &self.manifest);
         match write_integrity_index(&self.directory, &self.manifest.run_id) {
-            Ok(integrity) => {
-                let _ = crate::emit_json(
-                    &serde_json::json!({
-                        "schema": RUN_SCHEMA, "run_id": self.manifest.run_id,
-                        "outcome": "interrupted", "run_directory": self.directory,
-                        "integrity_report": integrity,
-                    }),
-                    false,
-                );
+            Ok(integrity_report) => {
+                if let Some(report) = self.interruption.take() {
+                    report(&InterruptionReport {
+                        schema: RUN_SCHEMA,
+                        run_id: self.manifest.run_id.clone(),
+                        outcome: "interrupted",
+                        run_directory: self.directory.clone(),
+                        integrity_report,
+                    });
+                }
             }
             Err(error) => eprintln!("cannot seal interrupted HIL run: {error}"),
         }
@@ -492,5 +514,7 @@ fn command_version(program: &str) -> Option<String> {
         .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 #[cfg(test)]
 mod tests;

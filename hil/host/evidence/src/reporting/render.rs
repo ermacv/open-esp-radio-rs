@@ -2,7 +2,7 @@
 
 use std::fmt::Write as _;
 
-use crate::evidence::run::{
+use crate::run::{
     MeasurementVerdict, Outcome, RepetitionResult, RunManifest, ScenarioResult, SuiteResult,
 };
 

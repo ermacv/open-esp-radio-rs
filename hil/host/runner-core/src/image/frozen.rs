@@ -113,3 +113,22 @@ fn finish(frozen: &FrozenSources, output: &Path) -> Result<()> {
     atomic_json(&output.join("source-snapshot.json"), frozen.snapshot())?;
     Ok(())
 }
+
+/// Build `class` for the chip of `session` from the sources it bound.
+pub fn build_for_run(
+    session: &oer_hil_evidence::run::RunSession,
+    class: ImageClass,
+    build: crate::image::CurrentBuild,
+) -> Result<Artifacts> {
+    let frozen = session
+        .frozen_sources()
+        .ok_or("HIL build requires a bound source snapshot")?;
+    build_for_chip(
+        frozen,
+        session.target(),
+        class,
+        build.network,
+        build.layout_seed,
+        &build.features,
+    )
+}

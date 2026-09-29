@@ -15,7 +15,8 @@ Separate Cargo packages bound the privilege and radio-family scopes:
 | Package | Binaries | Role |
 | --- | --- | --- |
 | `runner/` (`oer-hil-runner`) | `oer-hil-runner` | Unprivileged CLI, run orchestration, workload dispatch and the cross-family fixture preflight |
-| `runner-core/` (`oer-hil-runner-core`) | none | Laboratory, UART session, workload context, images and sealed run evidence |
+| `runner-core/` (`oer-hil-runner-core`) | none | Laboratory, UART session, workload context, measurements and images, including the image builder's firmware and build records |
+| `evidence/` (`oer-hil-evidence`) | none | Sealed run evidence: the run writer and its seal, build provenance and the content-addressed object store, verification of a recorded run against the image builder's recipe, reports, and the experiment and laboratory records a run keeps |
 | `scenario/` (`oer-hil-scenario`) | none | The family-independent scenario envelope, catalog and campaign plan, with the laboratory requirements, Wi-Fi link vocabulary and target settings a scenario declares |
 | `image-class/` (`oer-hil-image-class`) | none | Image classes, their build features and the image keys each class serves, and the check of a device's reported keys against them |
 | `source-snapshot/` (`oer-hil-source-snapshot`) | none | Source snapshots: capture of the repository and local dependency checkouts, their identity, and verified materialization into build workspaces |
@@ -467,22 +468,37 @@ all radio, lifecycle and traffic evidence uses the typed HIL protocol.
 
 ## Source ownership
 
-`runner-core` and the family packages follow execution and evidence
-boundaries:
+The host packages follow the roles of the
+[HIL terminology](../../docs/hil-terminology.md#roles-and-their-owners):
 
-- `scenario` owns catalog values, discovery and semantic acceptance rules;
-  `image/class` owns image identities and feature recipes.
-- `image` owns build/rebuild and placement/stack auditing; the reusable ELF
-  analyzer remains `tools/memory-report`.
-- `lab` owns local configuration, topology/provenance, the exclusive fixture
-  guard and the laboratory error type. Each family package's `fixture`
-  implements its controlled host and peer capabilities: the Wi-Fi `local`
-  (laptop radio and helper) and `openwrt` (SSH-managed router) providers each
-  own their AP, client, monitors and session evidence, `controlled_ap` selects
-  between them and `prepared` owns a scenario's AP lifetime. The runner binary
-  runs every family's fixture preconditions before a scenario.
-- `session` owns one UART capture and its protocol/readiness/validation state;
-  it needs only the laboratory and the scenario's target settings.
+- `oer-hil-scenario` owns catalog values, discovery, semantic acceptance
+  rules and the campaign plan, with the requirements, Wi-Fi link vocabulary
+  and target settings a scenario declares; `oer-hil-image-class` owns image
+  identities, their feature recipes and the keys each class serves.
+- `oer-hil-evidence` owns sealed run models, the run writer and its seal,
+  build provenance and the content-addressed object store, verification and
+  the bundle's HTML/JUnit reports. It depends on no stand, board or image
+  builder code: the image builder hands it firmware records and implements
+  `verify::FirmwareRecipe`, which verification checks build records against,
+  and a run reports its interruption through a callback its caller
+  publishes. `oer-hil-source-snapshot` captures and verifies the sources
+  builds and runs are made from, and `oer-hil-durable` provides atomic files,
+  digests and timestamps to every producer.
+- `runner-core`'s `image` owns build/rebuild and placement/stack auditing,
+  builds from a frozen snapshot (`image::frozen`) and the records it hands to
+  evidence (`image::record`); the reusable ELF analyzer remains
+  `tools/memory-report`.
+- `lab` owns local configuration, the pre-run observation of the cell, the
+  exclusive fixture guard and the laboratory error type. Each family
+  package's `fixture` implements its controlled host and peer capabilities:
+  the Wi-Fi `local` (laptop radio and helper) and `openwrt` (SSH-managed
+  router) providers each own their AP, client, monitors and session evidence,
+  `controlled_ap` selects between them and `prepared` owns a scenario's AP
+  lifetime. The runner binary runs every family's fixture preconditions
+  before a scenario.
+- `session` owns one UART capture and its protocol/readiness/validation
+  state; it needs only the laboratory and the scenario's target settings.
+  `measurements` projects decoded messages into measurements.
 - `context` gives one workload repetition its laboratory, target settings,
   capture lifecycle and measurements; workloads that control the AP receive
   the prepared fixture explicitly.
@@ -492,17 +508,16 @@ boundaries:
 - `post_mortem` asks a failed repetition's target, attached without a reset,
   for its boot evidence and trace, and classifies hangs and unexpected
   resets; `recovery` owns the reset ladder for a target that does not answer
-  and decides whether its board is recoverable or quarantined.
-- `evidence` owns sealed run models, integrity/verification and build
-  provenance; `evidence::reporting` renders the bundle's HTML/JUnit. `failure` classifies errors as scenario or
-  infrastructure failures, and `durable` provides atomic files, digests and
-  timestamps to every producer.
+  and decides whether its board is recoverable or quarantined. `failure`
+  classifies errors as scenario or infrastructure failures.
 
 Dependencies form a directed acyclic graph that Cargo enforces: the binary
-depends on the family packages, and each family on `runner-core`, never the
+depends on the family packages, each family on `runner-core`, and
+`runner-core` on the scenario, evidence and image-class packages, never the
 reverse. Inside `runner-core`, the context depends on session and laboratory
-owners, never the reverse. `runner-core`'s `test-support` feature exposes its
-session and evidence test doubles to the other packages' tests.
+owners, never the reverse. The `test-support` features of `runner-core`,
+`oer-hil-scenario`, `oer-hil-evidence` and `oer-hil-source-snapshot` expose
+their test doubles and fixtures to the other packages' tests.
 
 The recursive [catalog contract](../scenarios/README.md) is checked independently
 by the runner and qualification evaluator. Shared synthetic input documents

@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::Result;
-use crate::evidence::run::{Attachment, IntegrityFile, IntegrityIndex, RUN_SCHEMA};
+use crate::run::{Attachment, IntegrityFile, IntegrityIndex, RUN_SCHEMA};
 use oer_hil_durable::{atomic_json, sha256_file};
 
 pub fn collect_attachments(output: &Path, artifact_directory: &Path) -> Result<Vec<Attachment>> {

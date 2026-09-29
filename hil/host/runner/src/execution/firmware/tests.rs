@@ -45,7 +45,7 @@ fn build_inputs(root: &Path) -> Artifacts {
         rust_target: String::from(hil_core::image::TARGET),
         application_image: root.join("build/application.bin"),
         source_inputs: None,
-        environment: hil_core::evidence::build::BuildEnvironment::synthetic(),
+        environment: oer_hil_evidence::build::BuildEnvironment::synthetic(),
     }
 }
 
@@ -61,7 +61,12 @@ fn session(root: &Path) -> RunSession {
     )
     .unwrap();
     let (_snapshot_root, snapshot) = oer_hil_source_snapshot::test_snapshot(root);
-    session.bind_source_snapshot(snapshot.directory()).unwrap();
+    session
+        .bind_source_snapshot(
+            snapshot.directory(),
+            &hil_core::image::frozen::build_slots("esp32s31").unwrap(),
+        )
+        .unwrap();
     session
 }
 
@@ -140,11 +145,12 @@ fn replay_import_is_archived_before_flashing_the_new_run_local_path() {
     archive_and_flash_built(ImageClass::Correctness, artifacts, &mut source, |_| Ok(())).unwrap();
     source.finish(Vec::new()).unwrap();
 
-    let archived = hil_core::evidence::verify::archived_firmware(
+    let archived = oer_hil_evidence::verify::archived_firmware(
         root.path(),
         "esp32s31",
         &source_id,
         ImageClass::Correctness,
+        &hil_core::image::record::Recipe,
     )
     .unwrap();
     let mut replay = session(root.path());
@@ -173,11 +179,12 @@ fn corrupt_replay_is_rejected_before_flash_without_a_build_fallback() {
     archive_and_flash_built(ImageClass::Correctness, artifacts, &mut source, |_| Ok(())).unwrap();
     source.finish(Vec::new()).unwrap();
 
-    let archived = hil_core::evidence::verify::archived_firmware(
+    let archived = oer_hil_evidence::verify::archived_firmware(
         root.path(),
         "esp32s31",
         &source_id,
         ImageClass::Correctness,
+        &hil_core::image::record::Recipe,
     )
     .unwrap();
     #[cfg(unix)]

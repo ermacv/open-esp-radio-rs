@@ -34,7 +34,7 @@ pub(super) struct TcpWorkload {
 pub(super) fn qualify_tcp(
     capture: &SerialCapture,
     config: &Config,
-    measurements: &hil_core::evidence::measurements::Recorder,
+    measurements: &hil_core::measurements::Recorder,
     target: Ipv4Addr,
     workload: TcpWorkload,
     floors: RateFloors,

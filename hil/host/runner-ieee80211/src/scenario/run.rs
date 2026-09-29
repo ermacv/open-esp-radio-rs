@@ -217,7 +217,7 @@ fn assess_protection(
     peer: Option<MacAddress>,
     context: &Context<'_>,
 ) -> Result<()> {
-    use hil_core::evidence::run::{Comparison, Measurement, MeasurementUnit};
+    use oer_hil_evidence::run::{Comparison, Measurement, MeasurementUnit};
     let evidence = capture.finish(peer)?;
     if evidence.data_ppdus < MINIMUM_PROTECTION_PPDUS || evidence.nav_evaluated == 0 {
         return Err(format!(
@@ -252,7 +252,7 @@ fn assess_protection(
     let failed = measurements
         .iter()
         .filter(|measurement| {
-            measurement.verdict == Some(hil_core::evidence::run::MeasurementVerdict::Failed)
+            measurement.verdict == Some(oer_hil_evidence::run::MeasurementVerdict::Failed)
         })
         .map(|measurement| format!("{}={}", measurement.name, measurement.value))
         .collect::<Vec<_>>();

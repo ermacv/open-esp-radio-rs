@@ -5,7 +5,8 @@ use std::{path::Path, time::Duration};
 use oer_hil_scenario::ScenarioFamily as _;
 
 use crate::{Result, fixture, scenario::Scenario};
-use hil_core::{evidence::run::Failure, lab::config::LabConfig, session::SerialCapture};
+use hil_core::{lab::config::LabConfig, session::SerialCapture};
+use oer_hil_evidence::run::Failure;
 use oer_hil_image_class::{DeviceImageKeys, ImageClass};
 
 pub(crate) fn scenario_failure(lab: &LabConfig, selected: &Scenario) -> Option<Failure> {

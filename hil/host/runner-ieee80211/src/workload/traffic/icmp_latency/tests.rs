@@ -1,6 +1,6 @@
 use std::{net::Ipv4Addr, time::Duration};
 
-use hil_core::evidence::run::MeasurementVerdict;
+use oer_hil_evidence::run::MeasurementVerdict;
 
 use super::{Config, LatencySummary, checksum, measurements};
 

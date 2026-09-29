@@ -18,7 +18,7 @@ fn event<M: oer_hil_protocol::Message>(
         body,
     ))
 }
-use crate::evidence::run::{Comparison, MeasurementUnit};
+use oer_hil_evidence::run::{Comparison, MeasurementUnit};
 use oer_hil_protocol::{
     network::EvidenceRecord, network::FlowTransportEvidence, network::TransportEvidence,
 };
@@ -229,7 +229,7 @@ fn semantic_checks_record_only_explicit_observations() {
     assert_eq!(values[0].value, 0);
     assert_eq!(
         values[0].verdict,
-        Some(crate::evidence::run::MeasurementVerdict::Failed)
+        Some(oer_hil_evidence::run::MeasurementVerdict::Failed)
     );
     assert_eq!(values[0].threshold.unwrap().value, 1);
     recorder.check("wifi.maintenance.same-link", true);
@@ -237,7 +237,7 @@ fn semantic_checks_record_only_explicit_observations() {
         recorder
             .snapshot()
             .iter()
-            .filter(|value| value.verdict == Some(crate::evidence::run::MeasurementVerdict::Passed))
+            .filter(|value| value.verdict == Some(oer_hil_evidence::run::MeasurementVerdict::Passed))
             .count(),
         1
     );

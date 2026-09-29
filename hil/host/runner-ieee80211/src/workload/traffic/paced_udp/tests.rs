@@ -60,6 +60,6 @@ fn failed_sender_retains_admitted_bytes_and_original_io_cause() {
     assert_eq!(failure.progress.bytes, 200);
     assert_eq!(
         hil_core::failure::classify(&*error).kind,
-        hil_core::evidence::run::FailureKind::Infrastructure
+        oer_hil_evidence::run::FailureKind::Infrastructure
     );
 }

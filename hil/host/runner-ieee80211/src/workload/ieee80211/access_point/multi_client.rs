@@ -352,7 +352,7 @@ impl MultiClientObservation {
         self,
         output: &Path,
         criteria: &MultiClientCriteria,
-        measurements: &hil_core::evidence::measurements::Recorder,
+        measurements: &hil_core::measurements::Recorder,
     ) -> Result<TrafficReport> {
         // Preserve delivery even when terminal evidence or a later gate fails.
         // Raw per-flow host observations must not depend on qualification.
@@ -572,9 +572,9 @@ pub(super) fn validate_multi_client_fairness(
     flows: &[MultiClientFlowReport; SESSION_FLOW_CAPACITY],
     direction: Direction,
     criteria: &MultiClientCriteria,
-    measurements: &hil_core::evidence::measurements::Recorder,
+    measurements: &hil_core::measurements::Recorder,
 ) -> Result<()> {
-    use hil_core::evidence::run::{Comparison, Measurement, MeasurementUnit};
+    use oer_hil_evidence::run::{Comparison, Measurement, MeasurementUnit};
     let validate = |label: &str, rates: [u64; SESSION_FLOW_CAPACITY]| -> Result<()> {
         let minimum = criteria.minimum_bps_per_flow;
         let name = |metric: &str| format!("ap.{}.{metric}", label.to_ascii_lowercase());

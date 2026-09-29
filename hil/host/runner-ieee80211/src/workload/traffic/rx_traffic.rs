@@ -866,7 +866,7 @@ impl Config {
 }
 
 fn record_rates(
-    recorder: &hil_core::evidence::measurements::Recorder,
+    recorder: &hil_core::measurements::Recorder,
     target_kbps: u64,
     host_bps: u64,
     minimum_bps: u64,

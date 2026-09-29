@@ -1,24 +1,32 @@
 //! Shared firmware publication for observations and build-only records.
-use super::{
-    build::{self, BuildFileMaterial, BuildSubject, BuildSubjectRole, SourceMaterial},
-    run::{FirmwareArtifact, atomic_json},
-};
+use super::Recipe;
 use crate::{
     Result,
-    image::{Artifacts, BootArtifacts},
+    image::{Artifacts, BootArtifacts, Integration, LayoutSeed},
+};
+use oer_hil_durable::atomic_json;
+use oer_hil_evidence::{
+    build::{self, BuildSubject, BuildSubjectRole},
+    run::{FirmwareArchive, FirmwareArtifact, RunSession},
+    verify::FirmwareRecipe as _,
 };
 use oer_hil_image_class::ImageClass;
 use std::path::{Path, PathBuf};
 
-pub(super) struct Context<'a> {
-    pub directory: &'a Path,
-    pub target_directory: &'a Path,
-    pub source_root: &'a Path,
-    pub source_materials: &'a [SourceMaterial],
-    pub snapshot_materials: &'a [BuildFileMaterial],
+/// Archive `artifacts` as the `image` firmware of `session` and bind it to
+/// the run. Returns the archived application, the bytes to flash.
+pub fn record(
+    session: &mut RunSession,
+    image: ImageClass,
+    artifacts: &Artifacts,
+) -> Result<PathBuf> {
+    let (artifact, application) = archive(&session.firmware_archive(image)?, image, artifacts)?;
+    session.bind_firmware(artifact)?;
+    Ok(application)
 }
+
 pub(super) fn archive(
-    context: Context<'_>,
+    context: &FirmwareArchive<'_>,
     image: ImageClass,
     artifacts: &Artifacts,
 ) -> Result<(FirmwareArtifact, PathBuf)> {
@@ -84,7 +92,7 @@ pub(super) fn archive(
         runtime_elf_path: Some(runtime_elf_path.clone()),
         runtime_elf_size_bytes: Some(runtime_elf.size_bytes),
         runtime_elf_sha256: runtime_elf.sha256.clone(),
-        boot: super::run::Boot::Staged,
+        boot: oer_hil_evidence::run::Boot::Staged,
         runtime_bin_path: None,
         runtime_bin_size_bytes: None,
         runtime_bin_sha256: None,
@@ -139,7 +147,7 @@ pub(super) fn archive(
             )?;
             subjects.push(subject(BuildSubjectRole::Bootloader, &bootloader));
             subjects.push(subject(BuildSubjectRole::PartitionTable, &partition_table));
-            artifact.boot = super::run::Boot::EspIdfBootloader;
+            artifact.boot = oer_hil_evidence::run::Boot::EspIdfBootloader;
             artifact.bootloader_path = Some(bootloader.0);
             artifact.bootloader_size_bytes = Some(bootloader.1.size_bytes);
             artifact.bootloader_sha256 = Some(bootloader.1.sha256);
@@ -158,8 +166,8 @@ pub(super) fn archive(
     let build_id = build::build_id(&subjects);
     let build_provenance_path = firmware_directory.join("build-provenance.json");
     locks.extend(context.snapshot_materials.to_vec());
-    let provenance = build::create_provenance(
-        context.source_root,
+    let provenance = create_provenance(
+        &context.source_root,
         selection,
         build_id.clone(),
         context.source_materials.to_vec(),
@@ -171,4 +179,86 @@ pub(super) fn archive(
     artifact.build_id = Some(build_id);
     artifact.build_provenance_path = Some(build_provenance_path);
     Ok((artifact, archived_application))
+}
+
+pub(super) fn create_provenance(
+    root: &Path,
+    selection: (
+        ImageClass,
+        Integration,
+        LayoutSeed,
+        &oer_hil_image_class::FeatureDelta,
+        // The chip, its Rust target and how it boots.
+        (&str, &str, oer_chip_profile::Boot),
+    ),
+    build_id: String,
+    sources: Vec<build::SourceMaterial>,
+    subjects: Vec<build::BuildSubject>,
+    effective_locks: Vec<build::BuildFileMaterial>,
+    environment: build::BuildEnvironment,
+) -> Result<build::BuildProvenance> {
+    let (image, network, layout_seed, features, (chip, rust_target, boot)) = selection;
+    let files = match boot {
+        oer_chip_profile::Boot::Staged => vec![
+            ("workspace-lock", String::from("Cargo.lock")),
+            (
+                "embedded-workspace",
+                String::from("hil/targets/esp32s31/Cargo.toml"),
+            ),
+            (
+                "stack-policy",
+                String::from("hil/targets/esp32s31/stack.toml"),
+            ),
+            // The HIL stack policy extends the production one.
+            (
+                "stack-policy-base",
+                String::from("platform/esp32s31/stack.toml"),
+            ),
+            (
+                "partition-table",
+                String::from("platform/esp32s31/partitions/applications.csv"),
+            ),
+        ],
+        // The chip profile fixes the flash layout the image is written with.
+        oer_chip_profile::Boot::EspIdfBootloader => vec![
+            ("workspace-lock", String::from("Cargo.lock")),
+            (
+                "embedded-workspace",
+                format!("hil/targets/{chip}/Cargo.toml"),
+            ),
+            ("chip-profile", format!("platform/{chip}/chip.toml")),
+        ],
+    };
+    let mut files = files
+        .into_iter()
+        .map(|(name, path)| build::build_file_material(root, name, Path::new(&path)))
+        .collect::<Result<Vec<_>>>()?;
+    files.extend(effective_locks);
+    files.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(build::BuildProvenance {
+        schema: build::BUILD_PROVENANCE_SCHEMA,
+        build_id,
+        build_type: String::from("open-esp-radio-hil-firmware/v1"),
+        parameters: build::BuildParameters {
+            image,
+            // An ESP-IDF application has no network integration.
+            network: (boot == oer_chip_profile::Boot::Staged).then(|| network.id().to_owned()),
+            runtime_profile: image.runtime_profile().to_owned(),
+            target: rust_target.to_owned(),
+            runtime_features: features.apply(&Recipe.runtime_features(
+                image,
+                (boot == oer_chip_profile::Boot::Staged).then(|| network.id()),
+            )?),
+            layout_seed,
+            features: features.clone(),
+        },
+        source_reconstructable: sources
+            .iter()
+            .all(|source| source.rebuild_status != build::SourceRebuildStatus::Incomplete),
+        sources,
+        files,
+        environment,
+        subjects,
+        reproducibility: build::BuildReproducibility::Unverified,
+    })
 }

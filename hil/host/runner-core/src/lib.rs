@@ -8,12 +8,11 @@
 
 pub mod context;
 pub mod error;
-pub mod evidence;
-pub mod experiment;
 pub mod failure;
 pub mod fixture;
 pub mod image;
 pub mod lab;
+pub mod measurements;
 pub mod output;
 pub mod post_mortem;
 pub mod profile;

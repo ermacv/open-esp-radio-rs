@@ -11,7 +11,8 @@ mod scenario;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use hil_core::{Result, emit_json, repository_root};
+pub(crate) use hil_core::emit_json;
+pub(crate) use hil_core::{Result, repository_root};
 
 /// This executable's host build record, embedded by its build script.
 const RUNNER_BUILD: &str = include_str!(concat!(env!("OUT_DIR"), "/runner-build.json"));
@@ -34,12 +35,11 @@ fn main() {
         println!("{}", serde_json::to_string(&tree).unwrap_or_default());
         return;
     }
-    let registered =
-        hil_core::evidence::run::register_runner(hil_core::evidence::run::RunnerBuild {
-            record: RUNNER_BUILD,
-            package: env!("CARGO_PKG_NAME"),
-            version: env!("CARGO_PKG_VERSION"),
-        });
+    let registered = oer_hil_evidence::run::register_runner(oer_hil_evidence::run::RunnerBuild {
+        record: RUNNER_BUILD,
+        package: env!("CARGO_PKG_NAME"),
+        version: env!("CARGO_PKG_VERSION"),
+    });
     if let Err(error) = registered.and_then(|()| command::run()) {
         eprintln!("error: {error}");
         std::process::exit(if oer_process::is_cancelled(&*error) {

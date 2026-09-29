@@ -9,7 +9,8 @@ use std::{
 use serde::Serialize;
 
 use crate::Result;
-use crate::evidence::{
+use crate::lab::LabProvenance;
+use crate::{
     build::{
         BUILD_PROVENANCE_SCHEMA, BuildProvenance, BuildReproducibility, BuildSubject,
         BuildSubjectRole, SourceMaterial, SourceRebuildStatus, build_id,
@@ -20,7 +21,6 @@ use crate::evidence::{
         validation::{read_json, validate_manifest, validate_suite},
     },
 };
-use crate::lab::provenance::LabProvenance;
 
 #[derive(Debug, Serialize)]
 pub struct VerificationCompletion {
@@ -31,6 +31,23 @@ pub struct VerificationCompletion {
     pub attachments: usize,
     pub firmware_artifacts: usize,
     pub verified_run_ids: Vec<String>,
+}
+
+/// What the image builder derives from a build's recorded selection.
+/// Verification checks each build record against it, so a record cannot
+/// claim a target or features its image class does not build with.
+pub trait FirmwareRecipe {
+    /// The Rust target `chip` images build for.
+    fn rust_target(&self, chip: &str) -> Result<String>;
+
+    /// The runtime features `image` builds with before any feature delta,
+    /// for the recorded network integration, or none for an image that
+    /// links no network integration.
+    fn runtime_features(
+        &self,
+        image: oer_hil_image_class::ImageClass,
+        network: Option<&str>,
+    ) -> Result<String>;
 }
 
 #[derive(Debug, Serialize)]
@@ -49,8 +66,18 @@ pub struct ArchivedFirmware {
     pub(super) build_provenance: Option<BuildProvenance>,
 }
 
-pub fn verify(root: &Path, target: &str, run_id: Option<&str>) -> Result<VerificationCompletion> {
-    verify_at(&root.join("target/hil").join(target), target, run_id)
+pub fn verify(
+    root: &Path,
+    target: &str,
+    run_id: Option<&str>,
+    recipe: &dyn FirmwareRecipe,
+) -> Result<VerificationCompletion> {
+    verify_at(
+        &root.join("target/hil").join(target),
+        target,
+        run_id,
+        recipe,
+    )
 }
 
 /// The supported chips, sorted, that have a run directory in this checkout.
@@ -91,8 +118,9 @@ pub fn archived_firmware(
     target: &str,
     run_id: &str,
     image: oer_hil_image_class::ImageClass,
+    recipe: &dyn FirmwareRecipe,
 ) -> Result<ArchivedFirmware> {
-    verify(root, target, Some(run_id))?;
+    verify(root, target, Some(run_id), recipe)?;
     let run_directory = runs_directory(&root.join("target/hil").join(target))?.join(run_id);
     let manifest: RunManifest = read_json(&run_directory.join("manifest.json"))?;
     let artifact = manifest
@@ -129,6 +157,7 @@ pub fn verify_at(
     target_directory: &Path,
     target: &str,
     run_id: Option<&str>,
+    recipe: &dyn FirmwareRecipe,
 ) -> Result<VerificationCompletion> {
     let runs_directory = runs_directory(target_directory)?;
     let run_directories = select_run_directories(&runs_directory, run_id)?;
@@ -149,7 +178,7 @@ pub fn verify_at(
             .into());
         }
         validate_lab_provenance(&run_directory, &manifest)?;
-        validate_firmware(&run_directory, &manifest)?;
+        validate_firmware(&run_directory, &manifest, recipe)?;
         firmware_artifacts += manifest.firmware.len();
 
         if manifest.state == RunState::Completed {
@@ -182,7 +211,7 @@ fn validate_observer(runs_directory: &Path, manifest: &RunManifest) -> Result<()
     let Some(record) = manifest.observer() else {
         return Ok(());
     };
-    let directory = crate::evidence::run::observer_directory(runs_directory)?;
+    let directory = crate::run::observer_directory(runs_directory)?;
     oer_hil_schema::observer_store::detach(record, &directory).map_err(|error| {
         format!(
             "HIL run `{}` has an invalid observer record: {error}",
@@ -195,8 +224,7 @@ fn validate_observer(runs_directory: &Path, manifest: &RunManifest) -> Result<()
 /// Every stored observer build is named by the digest of its bytes.
 fn validate_observer_store(runs_directory: &Path) -> Result<()> {
     use oer_hil_schema::observer_store;
-    let directory =
-        crate::evidence::run::observer_directory(runs_directory)?.join(observer_store::DIRECTORY);
+    let directory = crate::run::observer_directory(runs_directory)?.join(observer_store::DIRECTORY);
     let entries = match fs::read_dir(&directory) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -237,12 +265,12 @@ fn validate_lab_provenance(run_directory: &Path, manifest: &RunManifest) -> Resu
     }
     require_regular_file_below(run_directory, path)?;
     let provenance: LabProvenance = read_json(&run_directory.join(path))?;
-    if provenance.scope == crate::lab::provenance::ObservationScope::System {
-        let plan: crate::evidence::run::RunPlan = read_json(&run_directory.join("plan.json"))?;
+    if provenance.scope == crate::lab::ObservationScope::System {
+        let plan: crate::run::RunPlan = read_json(&run_directory.join("plan.json"))?;
         let selected: Vec<_> = plan
             .entries
             .iter()
-            .filter(|entry| entry.disposition == crate::evidence::run::PlanDisposition::Selected)
+            .filter(|entry| entry.disposition == crate::run::PlanDisposition::Selected)
             .collect();
         if plan.run_id != manifest.run_id
             || plan.schema != RUN_SCHEMA
@@ -346,7 +374,11 @@ fn select_run_directories(runs_directory: &Path, run_id: Option<&str>) -> Result
     Ok(directories)
 }
 
-fn validate_firmware(run_directory: &Path, manifest: &RunManifest) -> Result<()> {
+fn validate_firmware(
+    run_directory: &Path,
+    manifest: &RunManifest,
+    recipe: &dyn FirmwareRecipe,
+) -> Result<()> {
     let mut images = BTreeSet::new();
     let mut paths = BTreeSet::new();
     for artifact in &manifest.firmware {
@@ -418,7 +450,14 @@ fn validate_firmware(run_directory: &Path, manifest: &RunManifest) -> Result<()>
                     )
                     .into());
                 }
-                validate_build_provenance(run_directory, manifest, artifact, build_id, path)?;
+                validate_build_provenance(
+                    run_directory,
+                    manifest,
+                    artifact,
+                    build_id,
+                    path,
+                    recipe,
+                )?;
             }
             _ => {
                 return Err(format!(
@@ -430,20 +469,6 @@ fn validate_firmware(run_directory: &Path, manifest: &RunManifest) -> Result<()>
         }
     }
     Ok(())
-}
-
-/// The Rust target a build of `artifact` must name: the staged images'
-/// triple, or the triple of the chip profile of the run's target.
-fn expected_rust_target(
-    manifest: &RunManifest,
-    artifact: &super::run::FirmwareArtifact,
-) -> Result<String> {
-    Ok(match artifact.boot {
-        super::run::Boot::Staged => crate::image::TARGET.to_owned(),
-        super::run::Boot::EspIdfBootloader => {
-            crate::image::chip_profile(&manifest.target)?.rust_target
-        }
-    })
 }
 
 fn validate_optional_firmware_file(
@@ -475,6 +500,7 @@ fn validate_build_provenance(
     artifact: &super::run::FirmwareArtifact,
     expected_build_id: &str,
     path: &Path,
+    recipe: &dyn FirmwareRecipe,
 ) -> Result<()> {
     validate_relative_path(path, "build provenance")?;
     require_regular_file_below(run_directory, path)?;
@@ -489,11 +515,11 @@ fn validate_build_provenance(
             != provenance
                 .parameters
                 .features
-                .apply(&match &provenance.parameters.network {
-                    Some(network) => artifact.image.build_features(network.parse::<crate::image::Integration>()?.feature()),
-                    None => artifact.image.runtime_features().to_owned(),
-                })
-        || provenance.parameters.target != expected_rust_target(manifest, artifact)?
+                .apply(&recipe.runtime_features(
+                    artifact.image,
+                    provenance.parameters.network.as_deref(),
+                )?)
+        || provenance.parameters.target != recipe.rust_target(&manifest.target)?
         // The manifest's seed is the one the build record says the image
         // was linked with, so a run cannot claim another layout.
         || provenance.parameters.layout_seed != artifact.layout_seed

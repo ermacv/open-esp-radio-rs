@@ -282,7 +282,7 @@ pub struct SerialCapture {
     worker: Option<thread::JoinHandle<()>>,
     output: PathBuf,
     persisted: bool,
-    measurements: Option<crate::evidence::measurements::CaptureRecorder>,
+    measurements: Option<crate::measurements::CaptureRecorder>,
     /// The armed program-counter profile, drained when the capture finishes.
     profile: Option<oer_hil_scenario::ProfileRequest>,
 }

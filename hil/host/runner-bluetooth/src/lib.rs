@@ -5,4 +5,5 @@ pub mod fixture;
 pub mod scenario;
 pub mod workload;
 
-pub(crate) use hil_core::{Result, emit_json};
+pub(crate) use hil_core::Result;
+pub(crate) use hil_core::emit_json;

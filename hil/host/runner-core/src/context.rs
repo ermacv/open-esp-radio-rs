@@ -3,7 +3,7 @@
 use crate::lab::config::LabConfig;
 use crate::{
     Result,
-    evidence::measurements::Recorder,
+    measurements::Recorder,
     session::{SerialCapture, Target},
 };
 use oer_hil_scenario::Settings;

@@ -1,20 +1,22 @@
 //! Bind one complete source snapshot before any experiment can be sealed.
 
 use super::*;
-use crate::image::Artifacts;
 
 impl RunSession {
-    pub fn bind_source_snapshot(&mut self, directory: &Path) -> Result<()> {
+    /// Bind the snapshot in `directory`, archived into this run and checked
+    /// out in a free build workspace of `build_slots`.
+    pub fn bind_source_snapshot(&mut self, directory: &Path, build_slots: &Path) -> Result<()> {
         if self.frozen_sources.is_some()
             || !self.manifest.firmware.is_empty()
             || self.directory.join("attempts").exists()
         {
             return Err("source snapshot must be bound once, before firmware or attempts".into());
         }
-        let (frozen, sources, files) = crate::evidence::build_record::archive_snapshot(
+        let (frozen, sources, files) = crate::build::archive_snapshot(
             directory,
             &self.directory,
             &self.target_directory,
+            build_slots,
         )?;
         let primary = sources
             .first()
@@ -32,22 +34,18 @@ impl RunSession {
         self.record_event(RunEventKind::SourceSnapshotBound, None, None, None)
     }
 
-    pub fn build_frozen_image(
-        &self,
-        class: ImageClass,
-        build: crate::image::CurrentBuild,
-    ) -> Result<Artifacts> {
-        let frozen = self
-            .frozen_sources
-            .as_ref()
-            .ok_or("HIL build requires a bound source snapshot")?;
-        crate::image::frozen::build_for_chip(
-            frozen,
-            &self.manifest.target,
-            class,
-            build.network,
-            build.layout_seed,
-            &build.features,
-        )
+    /// The sources this run builds from, once bound.
+    pub fn frozen_sources(&self) -> Option<&oer_hil_source_snapshot::FrozenSources> {
+        self.frozen_sources.as_ref()
+    }
+
+    /// The chip this run is for.
+    pub fn target(&self) -> &str {
+        &self.manifest.target
+    }
+
+    /// The run's manifest as recorded so far.
+    pub fn manifest(&self) -> &RunManifest {
+        &self.manifest
     }
 }

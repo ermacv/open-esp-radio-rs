@@ -3,11 +3,11 @@ use crate::Result;
 use oer_hil_protocol::network::TransportEvidence;
 
 pub(super) fn record_rx_silence(
-    recorder: &hil_core::evidence::measurements::Recorder,
+    recorder: &hil_core::measurements::Recorder,
     limit_ms: Option<u32>,
     evidence: TransportEvidence,
 ) {
-    use hil_core::evidence::run::{Comparison, Measurement, MeasurementUnit};
+    use oer_hil_evidence::run::{Comparison, Measurement, MeasurementUnit};
     if let Some(observed) = evidence.rx_maximum_silence_micros {
         let measurement = Measurement::observed(
             "udp.rx.maximum-silence",
@@ -75,7 +75,7 @@ mod tests {
             elapsed_micros: 100_000,
             transport_errors: 0,
         };
-        let recorder = hil_core::evidence::measurements::Recorder::default();
+        let recorder = hil_core::measurements::Recorder::default();
         record_rx_silence(&recorder, Some(50), evidence);
         assert!(recorder.snapshot().is_empty());
         evidence.rx_maximum_silence_micros = Some(50_001);
@@ -85,7 +85,7 @@ mod tests {
         assert_eq!(values[0].threshold.unwrap().value, 50_000);
         assert_eq!(
             values[0].verdict,
-            Some(hil_core::evidence::run::MeasurementVerdict::Failed)
+            Some(oer_hil_evidence::run::MeasurementVerdict::Failed)
         );
     }
 }

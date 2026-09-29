@@ -3,9 +3,9 @@
 
 use std::path::Path;
 
-use hil_core::evidence::run::Boot;
 use hil_core::image::{Artifacts, BootArtifacts};
 use oer_hil_board::{Board, Companions, EspIdf, FlashImage};
+use oer_hil_evidence::run::Boot;
 use oer_hil_image_class::ImageClass;
 
 use crate::Result;

@@ -3,7 +3,8 @@
 //! A recorder belongs to one repetition. Captures publish decoded observations
 //! even when teardown or a gate fails; replayed evidence is counted only once.
 
-use crate::{Result, evidence::run::Measurement};
+use crate::Result;
+use oer_hil_evidence::run::Measurement;
 use std::{
     collections::BTreeMap,
     path::{Component, Path},
@@ -25,7 +26,7 @@ impl Recorder {
     /// Record the outcome of an actually attempted semantic check. A missing
     /// check stays absent; scenario success must never synthesize it later.
     pub fn check(&self, name: &str, passed: bool) {
-        use crate::evidence::run::{Comparison, MeasurementUnit};
+        use oer_hil_evidence::run::{Comparison, MeasurementUnit};
         let mut recorded = self
             .0
             .lock()
@@ -46,7 +47,7 @@ impl Recorder {
     /// Publish the exact rate used by a workload's existing validator. Callers
     /// supply its resolved floor, including any legacy integer rounding.
     pub fn rate(&self, name: &str, value: u64, floor: Option<u64>) {
-        use crate::evidence::run::{Comparison, MeasurementUnit};
+        use oer_hil_evidence::run::{Comparison, MeasurementUnit};
         let measured = Measurement::observed(name, value, MeasurementUnit::BitsPerSecond);
         self.record([match floor {
             Some(floor) => measured.evaluated(Comparison::AtLeast, floor),

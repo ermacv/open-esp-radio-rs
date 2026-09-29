@@ -5,11 +5,11 @@ use super::*;
 fn association_timeout_is_distinct_from_remote_setup_failure() {
     use std::os::unix::process::ExitStatusExt;
     for (code, kind) in [
-        (1, hil_core::evidence::run::FailureKind::Infrastructure),
-        (255, hil_core::evidence::run::FailureKind::Infrastructure),
+        (1, oer_hil_evidence::run::FailureKind::Infrastructure),
+        (255, oer_hil_evidence::run::FailureKind::Infrastructure),
         (
             ASSOCIATION_TIMEOUT,
-            hil_core::evidence::run::FailureKind::Scenario,
+            oer_hil_evidence::run::FailureKind::Scenario,
         ),
     ] {
         let error = require_association(std::process::Output {

@@ -13,6 +13,7 @@ description = "Shared HIL runner core: scenarios, laboratory, session, context, 
 test-support = ["oer-hil-scenario/test-support"]
 
 [dependencies]
+oer-hil-evidence = { path = "../evidence" }
 oer-hil-scenario = { path = "../scenario" }
 oer-hil-source-snapshot = { path = "../source-snapshot" }
 oer-hil-durable = { path = "../durable" }
@@ -50,6 +51,7 @@ toml = "1.1"
 zeroize = "1.8.1"
 
 [dev-dependencies]
+oer-hil-evidence = { path = "../evidence", features = ["test-support"] }
 oer-hil-scenario = { path = "../scenario", features = ["test-support"] }
 oer-hil-source-snapshot = { path = "../source-snapshot", features = ["test-support"] }
 oer-ieee80211-trace = { path = "../../../crates/protocols/ieee80211/trace" }
@@ -57,7 +59,6 @@ oer-phy-trace = { path = "../../../crates/hardware/radio/trace" }
 oer-ieee802154-trace = { path = "../../../crates/hardware/ieee802154/trace" }
 postcard-schema = { version = "0.2.5", features = ["derive"] }
 oer-hil-schema = { path = "../../schema", features = ["producer"] }
-roxmltree = "0.20"
 
 [lints]
 workspace = true

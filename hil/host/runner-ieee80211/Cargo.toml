@@ -9,6 +9,7 @@ publish = false
 description = "Wi-Fi HIL workloads and laptop and OpenWrt fixtures"
 
 [dependencies]
+oer-hil-evidence = { path = "../evidence" }
 oer-hil-scenario = { path = "../scenario" }
 oer-hil-durable = { path = "../durable" }
 oer-hil-image-class = { path = "../image-class" }

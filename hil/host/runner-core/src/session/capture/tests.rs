@@ -84,7 +84,7 @@ fn rx_delivery_event_wakes_the_session_waiter() {
 #[test]
 fn measurements_survive_link_failure_and_unwinding_capture() {
     let output = Output::new();
-    let recorder = crate::evidence::measurements::Recorder::default();
+    let recorder = crate::measurements::Recorder::default();
     let (capture, input) = capture(&output, false);
     let capture = capture.record_into(recorder.capture(Path::new("boot-001")).unwrap());
     activate(&capture, &input);
@@ -859,7 +859,7 @@ fn target_session_failure_does_not_turn_into_an_evidence_timeout() {
     assert_eq!(error.to_string(), "target session 9 failed: Network");
     assert_eq!(
         crate::failure::classify(&*error).kind,
-        crate::evidence::run::FailureKind::Scenario
+        oer_hil_evidence::run::FailureKind::Scenario
     );
 }
 
@@ -1122,7 +1122,7 @@ fn finalization_failure_keeps_the_primary_cause_and_both_messages() {
     assert!(error.to_string().contains("end of stream"));
     assert_eq!(
         crate::failure::classify(&*error).kind,
-        crate::evidence::run::FailureKind::Scenario
+        oer_hil_evidence::run::FailureKind::Scenario
     );
     let records = fs::read_to_string(output.0.join("protocol.jsonl")).unwrap();
     assert!(records.contains("end of stream"));
@@ -1236,7 +1236,7 @@ fn replay_before_acknowledgement(changed: bool) {
         assert!(error.to_string().contains("changed the retained result"));
         assert_eq!(
             crate::failure::classify(&*error).kind,
-            crate::evidence::run::FailureKind::Infrastructure
+            oer_hil_evidence::run::FailureKind::Infrastructure
         );
     } else {
         result.unwrap();

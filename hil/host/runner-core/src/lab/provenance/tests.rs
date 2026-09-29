@@ -12,7 +12,7 @@ fn before_observation_accepts_down_vifs_but_does_not_hide_probe_errors() {
 #[test]
 fn inactive_before_state_is_valid_provenance_for_a_network_scenario() {
     let lab = LabConfig::for_test();
-    let mut provenance = LabProvenance::capture(&lab, Default::default()).unwrap();
+    let mut provenance = capture(&lab, Default::default()).unwrap();
     provenance.scope = ObservationScope::Network;
     provenance.fixture = FixtureObservation::OpenWrtInactive {
         wireless_interface: "phy0-ap0".into(),
@@ -37,7 +37,7 @@ fn system_observation_does_not_contact_the_configured_access_point() {
         unreachable!()
     };
     config.ssh_target = "unused-fixture.invalid".into();
-    let provenance = LabProvenance::capture(&lab, Default::default()).unwrap();
+    let provenance = capture(&lab, Default::default()).unwrap();
     assert_eq!(provenance.scope, ObservationScope::System);
     assert_eq!(provenance.fixture, FixtureObservation::NotUsed);
     assert!(provenance.host.ipv4_routes.is_empty());
@@ -55,7 +55,7 @@ fn system_observation_does_not_contact_the_configured_access_point() {
 
 #[test]
 fn definition_omits_credentials_and_transport_endpoint() {
-    let definition = LabDefinition::from_config(&LabConfig::for_test());
+    let definition = definition(&LabConfig::for_test());
     let json = serde_json::to_string(&definition).unwrap();
 
     assert!(!json.contains("test-password"));

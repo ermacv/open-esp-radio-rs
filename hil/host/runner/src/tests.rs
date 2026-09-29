@@ -1,7 +1,7 @@
 //! Tests that need this executable's embedded build record.
 /// Register this test executable's build identity, as `main` does.
 pub(crate) fn register() {
-    let _ = hil_core::evidence::run::register_runner(hil_core::evidence::run::RunnerBuild {
+    let _ = oer_hil_evidence::run::register_runner(oer_hil_evidence::run::RunnerBuild {
         record: crate::RUNNER_BUILD,
         package: env!("CARGO_PKG_NAME"),
         version: env!("CARGO_PKG_VERSION"),
@@ -11,7 +11,7 @@ pub(crate) fn register() {
 #[test]
 fn runner_identity_comes_from_executable_and_embedded_build() {
     register();
-    let provenance = hil_core::evidence::run::runner_provenance().unwrap();
+    let provenance = oer_hil_evidence::run::runner_provenance().unwrap();
     let observer = provenance.observer.unwrap();
     #[cfg(target_os = "linux")]
     assert_eq!(

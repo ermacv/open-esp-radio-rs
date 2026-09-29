@@ -129,7 +129,7 @@ pub fn build(
             flash,
         }),
         source_inputs: None,
-        environment: crate::evidence::build::BuildEnvironment::capture(),
+        environment: oer_hil_evidence::build::BuildEnvironment::capture(),
         layout_seed: None,
         features: features.clone(),
     })

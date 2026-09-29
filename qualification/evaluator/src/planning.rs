@@ -54,6 +54,11 @@ impl Plan {
                         "satisfied",
                         "Existing applicable evidence satisfies this obligation.".into(),
                     )
+                } else if decision.status == EvidenceStatus::LastKnownPass {
+                    (
+                        "last-known",
+                        "It passed on earlier sources; rerun it when qualifying a baseline.".into(),
+                    )
                 } else {
                     match decision.next_work() {
                         Some((WorkKind::AssessApplicability, reason)) => ("review", reason),

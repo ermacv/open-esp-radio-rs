@@ -124,6 +124,9 @@ impl VendorProof {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum HilProof {
     Qualified,
+    /// Every obligation passed, some only on sources that have changed
+    /// since: the last known state, reported, not a missing proof.
+    LastKnown,
     Missing,
     NotApplicable,
 }
@@ -132,6 +135,7 @@ impl HilProof {
     pub(crate) const fn label(self) -> &'static str {
         match self {
             Self::Qualified => "qualified",
+            Self::LastKnown => "last-known",
             Self::Missing => "missing",
             Self::NotApplicable => "not-applicable",
         }
@@ -776,10 +780,14 @@ fn evaluate_capability(
     } else {
         let requirements = validated.hil_requirements;
         let mut complete = !requirements.is_empty() && !has_gap(&gaps, Axis::Hil);
+        let mut last_known = complete;
         for decision in &hil_decisions {
             match &decision.evidence {
                 Some(reference) => evidence.push(reference.clone()),
-                None => complete = false,
+                None => {
+                    complete = false;
+                    last_known &= decision.status == crate::hil::EvidenceStatus::LastKnownPass;
+                }
             }
             if decision.status == crate::hil::EvidenceStatus::UnresolvedFailure {
                 ensure_gap(&mut gaps, Axis::Hil, "current-hil-failure-unresolved");
@@ -787,6 +795,8 @@ fn evaluate_capability(
         }
         if complete {
             HilProof::Qualified
+        } else if last_known {
+            HilProof::LastKnown
         } else {
             ensure_gap(&mut gaps, Axis::Hil, "current-hil-evidence-missing");
             HilProof::Missing

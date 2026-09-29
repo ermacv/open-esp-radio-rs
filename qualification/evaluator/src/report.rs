@@ -245,11 +245,12 @@ pub(crate) fn print(qualification: &Qualification) {
         }
         for decision in &capability.hil_decisions {
             println!(
-                "HIL-OBLIGATION\t{}\tscenario={}\tstatus={}\tevidence={}",
+                "HIL-OBLIGATION\t{}\tscenario={}\tstatus={}\tevidence={}\tlast-known={}",
                 capability.id,
                 decision.scenario,
                 decision.status.label(),
-                decision.evidence.as_deref().unwrap_or("none")
+                decision.evidence.as_deref().unwrap_or("none"),
+                decision.last_known.as_deref().unwrap_or("none")
             );
         }
         for decision in &capability.hil_decisions {

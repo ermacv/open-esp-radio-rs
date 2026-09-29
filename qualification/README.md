@@ -339,7 +339,8 @@ unselected ones; the evaluator report describes only the resolved product set.
 
 `cargo qualification plan --manifest <program> [--capability <id>]` emits a
 read-only JSON selection from the same HIL decisions as `status` and `gate`.
-Each obligation explains `satisfied`, `run`, `review` or `investigate` and binds
+Each obligation explains `satisfied`, `last-known`, `run`, `review` or
+`investigate` and binds
 its property scope. It performs no build, test or hardware action; run the
 scenarios it names with `cargo hil run`.
 Unknown impact requests review rather than silently inheriting success. A focused
@@ -476,7 +477,14 @@ eligible proof, not necessarily that the check has never been executed.
 JSON `hil_decisions` explains each complete obligation: its applicability policy,
 completion boundary, status, selected evidence, and every observed scenario's
 exclusion reasons and unmet requirements. Console `HIL-OBLIGATION` rows summarize
-these decisions. Completed scenarios remain candidates when an unrelated
+these decisions. When no observation is current but a complete one passed on a
+commit or snapshot the checkout has since moved away from, the status is
+`last-known-pass`: the decision names that run as `last_known`, the capability's
+HIL proof is `last-known` rather than `missing`, and no rerun is listed as
+work. At this stage stale evidence is information; qualification reruns the
+scenarios on a baseline the user chooses. A pass from a dirty tree, a replay or
+a mismatched procedure or observer is never a last known pass.
+Completed scenarios remain candidates when an unrelated
 scenario fails in the same sealed suite. A failed current scenario or repetition
 cannot be hidden by selecting a later PASS. The status is `unresolved-failure`
 until an explicit [failure disposition](evidence-reviews.md#resolving-a-failure)

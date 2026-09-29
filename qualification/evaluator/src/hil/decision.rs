@@ -63,6 +63,10 @@ impl Exclusion {
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum EvidenceStatus {
     Satisfied,
+    /// No current observation, but one passed on sources that have changed
+    /// since: information about the last known state, not a gap to close
+    /// before the next baseline.
+    LastKnownPass,
     Missing,
     UnresolvedFailure,
 }
@@ -71,6 +75,7 @@ impl EvidenceStatus {
     pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Satisfied => "satisfied",
+            Self::LastKnownPass => "last-known-pass",
             Self::Missing => "missing",
             Self::UnresolvedFailure => "unresolved-failure",
         }
@@ -114,6 +119,10 @@ pub(crate) struct EvidenceDecision {
     completion_boundary: &'static str,
     pub(crate) status: EvidenceStatus,
     pub(crate) evidence: Option<String>,
+    /// The newest observation that passed on sources that have changed
+    /// since, when no current one does.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) last_known: Option<String>,
     observations: Vec<ObservationDecision>,
     pub(crate) reviews: Vec<review::ReviewDecision>,
     pub(crate) property: Option<review::PropertyBinding>,
@@ -193,7 +202,9 @@ impl EvidenceDecision {
     fn observed_work(&self) -> Option<(crate::model::WorkKind, &'static str)> {
         use crate::model::WorkKind;
         match self.status {
-            EvidenceStatus::Satisfied => None,
+            // The last known state is information; rerunning it belongs to
+            // qualifying a baseline, not to the next piece of work.
+            EvidenceStatus::Satisfied | EvidenceStatus::LastKnownPass => None,
             EvidenceStatus::UnresolvedFailure => Some((
                 WorkKind::InvestigateFailure,
                 "An applicable failure remains unresolved; another PASS does not close it.",
@@ -245,6 +256,7 @@ impl HilEvidenceIndex {
             completion_boundary: "scenario-repetition-set",
             status: EvidenceStatus::Missing,
             evidence: None,
+            last_known: None,
             observations: Vec::new(),
             reviews: Vec::new(),
             property: None,
@@ -253,6 +265,8 @@ impl HilEvidenceIndex {
                 .map(str::to_owned),
         };
         let mut candidates = Vec::new();
+        // Complete passes excluded only because the tree moved since.
+        let mut earlier = Vec::new();
         for observation in self
             .scenarios
             .get(&requirement.scenario)
@@ -310,6 +324,12 @@ impl HilEvidenceIndex {
                 if gaps.is_empty() {
                     candidates.push(observation);
                 }
+            } else if gaps.is_empty()
+                && procedure_matches
+                && !exclusions.is_empty()
+                && exclusions.iter().all(Exclusion::is_tree_binding)
+            {
+                earlier.push(observation);
             }
             decision.observations.push(ObservationDecision {
                 applicable,
@@ -350,6 +370,20 @@ impl HilEvidenceIndex {
             }
             decision.status = EvidenceStatus::Satisfied;
             decision.evidence = Some(reference);
+        }
+        if decision.status == EvidenceStatus::Missing
+            && let Some(observation) = earlier
+                .into_iter()
+                .max_by_key(|entry| (entry.started_unix_millis, &entry.run_id))
+        {
+            decision.status = EvidenceStatus::LastKnownPass;
+            decision.last_known = Some(format!(
+                "hil:{}/{}:repetitions={}:started-unix-millis={}",
+                observation.run_id,
+                requirement.scenario,
+                observation.repetitions,
+                observation.started_unix_millis
+            ));
         }
         if decision
             .observations

@@ -711,3 +711,25 @@ fn the_shared_compile_caches_move_only_when_overridden() {
         Path::new("/main/target/hil/esp32s31/build-cache")
     );
 }
+
+#[test]
+fn an_unchanged_embedded_runtime_keeps_its_timestamp() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("runtime.bin");
+    let target = directory.path().join("bootstrap/stage-two-runtime.bin");
+    fs::write(&source, b"runtime").unwrap();
+    replace_if_changed(&source, &target).unwrap();
+    let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1);
+    fs::File::options()
+        .write(true)
+        .open(&target)
+        .unwrap()
+        .set_modified(old)
+        .unwrap();
+    replace_if_changed(&source, &target).unwrap();
+    assert_eq!(fs::metadata(&target).unwrap().modified().unwrap(), old);
+    fs::write(&source, b"changed").unwrap();
+    replace_if_changed(&source, &target).unwrap();
+    assert_eq!(fs::read(&target).unwrap(), b"changed");
+    assert_ne!(fs::metadata(&target).unwrap().modified().unwrap(), old);
+}

@@ -901,12 +901,17 @@ fn build_resolved(
         .map_err(|error| log.failed("runtime placement audit", error))?;
     fs::write(output.join("placement.txt"), placement)?;
 
+    // The bootstrap embeds the runtime with `include_bytes!`; a stable path
+    // that keeps its timestamp while its bytes are unchanged leaves the
+    // bootstrap fresh.
+    let embedded_runtime = bootstrap_target.join("stage-two-runtime.bin");
+    replace_if_changed(&runtime_bin, &embedded_runtime)?;
     let mut bootstrap = cargo_command();
     bootstrap.current_dir(root);
     oer_esp32s31_firmware::bootstrap_command(
         &mut bootstrap,
         root,
-        &absolute(&runtime_bin)?,
+        &absolute(&embedded_runtime)?,
         &bootstrap_target,
     );
     if local_esp_hal.is_none() {
@@ -1285,6 +1290,20 @@ fn absolute(path: &Path) -> Result<PathBuf> {
     } else {
         env::current_dir()?.join(path)
     })
+}
+
+/// Copy `source` to `target` unless `target` already holds the same bytes, so
+/// that an unchanged file keeps the timestamp Cargo compares.
+fn replace_if_changed(source: &Path, target: &Path) -> Result<()> {
+    let bytes = fs::read(source)?;
+    if fs::read(target).is_ok_and(|existing| existing == bytes) {
+        return Ok(());
+    }
+    fs::create_dir_all(target.parent().ok_or("target has no parent")?)?;
+    let mut staged = tempfile::NamedTempFile::new_in(target.parent().ok_or("no parent")?)?;
+    std::io::Write::write_all(&mut staged, &bytes)?;
+    staged.persist(target)?;
+    Ok(())
 }
 
 fn require_file(path: &Path, description: &str) -> Result<()> {

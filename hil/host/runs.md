@@ -194,7 +194,13 @@ interrupted, abandoned) it does not start and ends no-run itself, saying why,
 so a broken chain stops at its first link. `--after-any JOB` starts it
 whatever the outcome. `--enqueue` first has the runner check a `run`'s
 scenarios, target and options (`run --validate-only`), so a mistake such as
-an unknown scenario fails in the terminal instead of in the job. `wait JOB` blocks until the job ends and exits with its outcome:
+an unknown scenario fails in the terminal instead of in the job. It also
+fixes what the job runs with before it waits: a copy of the xtask below
+`target/hil/jobs/xtask/`, the runner built now and, for a `run` that builds,
+a source snapshot of the checkout taken now with the run's own
+`--source-include` and `--include-untracked`. Edits, pulls and rebuilds of the
+checkout while the job waits or runs do not reach it; a job whose fixed parts
+were deleted meanwhile fails and asks to be enqueued again. `wait JOB` blocks until the job ends and exits with its outcome:
 0 passed, 1 failed, 2 interrupted (or on a quarantined board), 3 blocked or
 skipped, 4 broken, 5 no run created, 6 abandoned (its process is gone without
 finishing, told by its PID and start time). Every `run` and `run-all`, enqueued or in the foreground, is such a job from its start, so
@@ -263,7 +269,11 @@ on both arms. Every run records `experiment` (its id, arm and variant: the
 commit and each override's path, commit and dirtiness) in its manifest and
 no evidence. A comparison takes hours, so like a run it is a job: `--enqueue`
 starts it detached and prints the job id for `cargo hil wait`, and `--after
-JOB` orders it after another job.
+JOB` orders it after another job. Every round runs the xtask and runner fixed
+when the comparison was enqueued or started, so a pull into the checkout
+meanwhile cannot change the protocol the arms are run with. A job enqueued
+from a worktree without an owner of its own runs for the owner of the
+checkout the worktree was added from.
 
 The report takes one value per run and measurement (the mean over the run's
 repetitions) and compares the arms with `hil_perf::compare`: each arm's mean,

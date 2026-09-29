@@ -18,6 +18,14 @@ use crate::{Context, Result};
 
 /// Names the job a `cargo hil` process runs as.
 pub const JOB_ENV: &str = "OER_HIL_JOB";
+/// The xtask, runner and runner receipt a job runs with, fixed when it was
+/// enqueued (or, for an experiment, when it started).
+pub const FROZEN_XTASK_ENV: &str = "OER_HIL_JOB_XTASK";
+pub const FROZEN_RUNNER_ENV: &str = "OER_HIL_JOB_RUNNER";
+pub const FROZEN_RECEIPT_ENV: &str = "OER_HIL_JOB_RECEIPT";
+/// The source snapshot an enqueued `run` builds from, captured when it was
+/// enqueued.
+pub const FROZEN_SNAPSHOT_ENV: &str = "OER_HIL_JOB_SNAPSHOT";
 pub const ENQUEUE: &str = "--enqueue";
 pub const AFTER: &str = "--after";
 pub const AFTER_ANY: &str = "--after-any";
@@ -374,6 +382,95 @@ fn unix_millis() -> u64 {
         .map_or(0, |elapsed| elapsed.as_millis() as u64)
 }
 
+/// What a job runs with, fixed before it waits: a copy of this xtask, the
+/// checkout's runner with its receipt, and for a `run` the source snapshot.
+/// Edits, pulls and rebuilds of the checkout after that do not reach the job,
+/// which otherwise built them in the middle of an experiment.
+#[derive(Clone, Debug)]
+pub struct Frozen {
+    pub xtask: PathBuf,
+    pub runner: PathBuf,
+    pub receipt: PathBuf,
+    pub snapshot: Option<PathBuf>,
+}
+
+impl Frozen {
+    /// This xtask and the checkout's runner as they are now.
+    pub fn capture(ctx: &Context) -> Result<Self> {
+        use sha2::{Digest as _, Sha256};
+        let (runner, receipt) = crate::hil::prepare(ctx)?;
+        let bytes = fs::read(std::env::current_exe()?)?;
+        let directory = ctx
+            .root
+            .join("target/hil/jobs/xtask")
+            .join(format!("{:x}", Sha256::digest(&bytes)));
+        fs::create_dir_all(&directory)?;
+        let xtask = directory.join("oer-xtask");
+        if !xtask.is_file() {
+            let mut copy = tempfile::NamedTempFile::new_in(&directory)?;
+            std::io::Write::write_all(&mut copy, &bytes)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt as _;
+                copy.as_file()
+                    .set_permissions(fs::Permissions::from_mode(0o755))?;
+            }
+            copy.persist(&xtask)?;
+        }
+        Ok(Self {
+            xtask,
+            runner,
+            receipt,
+            snapshot: None,
+        })
+    }
+
+    /// The parts this process's job was fixed with, if it is such a job.
+    pub fn inherited() -> Result<Option<Self>> {
+        let variable = |name| std::env::var_os(name).map(PathBuf::from);
+        let (Some(xtask), Some(runner), Some(receipt)) = (
+            variable(FROZEN_XTASK_ENV),
+            variable(FROZEN_RUNNER_ENV),
+            variable(FROZEN_RECEIPT_ENV),
+        ) else {
+            return Ok(None);
+        };
+        for path in [&xtask, &runner, &receipt] {
+            if !path.is_file() {
+                return Err(format!(
+                    "{} was fixed for this job when it was enqueued and is gone; enqueue it again",
+                    path.display()
+                )
+                .into());
+            }
+        }
+        Ok(Some(Self {
+            xtask,
+            runner,
+            receipt,
+            snapshot: variable(FROZEN_SNAPSHOT_ENV),
+        }))
+    }
+
+    /// A command running this frozen xtask's `hil` in `ctx`'s checkout, with
+    /// the frozen parts in its environment.
+    pub fn hil_command(&self, ctx: &Context) -> std::process::Command {
+        let mut command = ctx.command(&self.xtask);
+        command
+            .arg("--root")
+            .arg(&ctx.root)
+            .arg("hil")
+            .env(FROZEN_XTASK_ENV, &self.xtask)
+            .env(FROZEN_RUNNER_ENV, &self.runner)
+            .env(FROZEN_RECEIPT_ENV, &self.receipt);
+        match &self.snapshot {
+            Some(snapshot) => command.env(FROZEN_SNAPSHOT_ENV, snapshot),
+            None => command.env_remove(FROZEN_SNAPSHOT_ENV),
+        };
+        command
+    }
+}
+
 /// `--enqueue` and `--after JOB` (or `--after-any JOB`) taken from `cargo
 /// hil` arguments, up to a `--`.
 pub fn take(args: Vec<OsString>) -> Result<(bool, Option<After>, Vec<OsString>)> {
@@ -424,6 +521,7 @@ pub fn enqueue(
     owner: &str,
     args: &[OsString],
     after: Option<After>,
+    frozen: &Frozen,
 ) -> Result<String> {
     let jobs = Jobs::open()?;
     if let Some(after) = &after {
@@ -452,10 +550,8 @@ pub fn enqueue(
     };
     jobs.write(&job)?;
     let output = fs::File::create(&log)?;
-    let mut command = std::process::Command::new(std::env::current_exe()?);
+    let mut command = frozen.hil_command(ctx);
     command
-        .current_dir(&ctx.root)
-        .arg("hil")
         .args(args)
         .args(after.iter().flat_map(|after| {
             [

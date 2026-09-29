@@ -213,6 +213,7 @@ pub fn compare(runs: &[(Arm, hil_runs::Run)]) -> Vec<MeasurementComparison> {
 pub(crate) fn run(
     ctx: &Context,
     owner: &str,
+    frozen: &crate::hil_jobs::Frozen,
     args: &[OsString],
 ) -> Result<Vec<(String, Option<oer_hil_schema::run::Outcome>)>> {
     use clap::Parser as _;
@@ -256,6 +257,7 @@ pub(crate) fn run(
         owner,
         id: &id,
         directory: &directory,
+        frozen,
     };
     let mut loaded = Vec::new();
     // The first round of each seed builds each arm's images.
@@ -376,6 +378,8 @@ struct Session<'a> {
     owner: &'a str,
     id: &'a str,
     directory: &'a Path,
+    /// The xtask and runner every round runs.
+    frozen: &'a crate::hil_jobs::Frozen,
 }
 
 struct PreparedArm {
@@ -478,12 +482,10 @@ impl PreparedArm {
             owner,
             id,
             directory,
+            frozen,
         } = *session;
-        let mut command = ctx.cargo();
-        command
-            .current_dir(&ctx.root)
-            .args(["hil", "run"])
-            .args(scenarios);
+        let mut command = frozen.hil_command(ctx);
+        command.arg("run").args(scenarios);
         match launch {
             Launch::Build(seed) => {
                 command

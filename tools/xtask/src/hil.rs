@@ -111,8 +111,8 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         return Err("--enqueue and --after apply to run and run-all".into());
     }
     if enqueue {
-        validate_enqueued(ctx, &args)?;
-        let id = crate::hil_jobs::enqueue(ctx, &options.owner(ctx)?, &args, after)?;
+        let frozen = freeze_enqueued(ctx, &args)?;
+        let id = crate::hil_jobs::enqueue(ctx, &options.owner(ctx)?, &args, after, &frozen)?;
         eprintln!("hil: enqueued job {id}; `cargo hil wait {id}` blocks until it ends");
         println!("{id}");
         return Ok(std::process::ExitCode::SUCCESS);
@@ -138,7 +138,20 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         eprintln!("hil: the automatic cache sweep failed: {error}");
     }
     crate::sweep::ensure_space(&ctx.root)?;
-    let (runner, receipt_path) = prepare(ctx)?;
+    // An enqueued job runs the runner and sources fixed when it was
+    // enqueued; the evidence decision below still reads its own arguments.
+    let frozen = crate::hil_jobs::Frozen::inherited()?;
+    let (runner, receipt_path) = match &frozen {
+        Some(frozen) => (frozen.runner.clone(), frozen.receipt.clone()),
+        None => prepare(ctx)?,
+    };
+    let runner_args = match frozen
+        .as_ref()
+        .and_then(|frozen| frozen.snapshot.as_deref())
+    {
+        Some(snapshot) => with_source_snapshot(args, snapshot),
+        None => args.to_vec(),
+    };
     if hands_off_terminal(args) {
         // Fixture installation ends in a foreground sudo handoff. A supervised
         // child runs in its own process group, which is a background group for
@@ -149,7 +162,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             use std::os::unix::process::CommandExt as _;
             let error = ctx
                 .command(&runner)
-                .args(args)
+                .args(&runner_args)
                 .envs(options.environment(ctx)?)
                 .env("OER_OBSERVER_RECEIPT", &receipt_path)
                 .exec();
@@ -163,7 +176,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     let run_receipt = tempfile::NamedTempFile::new()?;
     let mut command = ctx.command(&runner);
     command
-        .args(args)
+        .args(&runner_args)
         .envs(options.environment(ctx)?)
         .env("OER_OBSERVER_RECEIPT", &receipt_path)
         .env(RUN_RECEIPT_ENV, run_receipt.path());
@@ -415,10 +428,19 @@ impl LeaseOptions {
         }) {
             return Ok(owner);
         }
-        let owner = oer_hil_arbiter::Arbiter::open()?
-            .checkout_owner(&ctx.root)?
-            .ok_or_else(|| oer_hil_arbiter::NoOwner(ctx.root.clone()))?;
-        Ok(owner.id().to_owned())
+        let arbiter = oer_hil_arbiter::Arbiter::open()?;
+        if let Some(owner) = arbiter.checkout_owner(&ctx.root)? {
+            return Ok(owner.id().to_owned());
+        }
+        // A worktree added from a registered checkout acts for that
+        // checkout's owner until it registers one of its own.
+        if let Some(main) = main_checkout(&ctx.root)
+            && main != ctx.root
+            && let Some(owner) = arbiter.checkout_owner(&main)?
+        {
+            return Ok(owner.id().to_owned());
+        }
+        Err(oer_hil_arbiter::NoOwner(ctx.root.clone()).into())
     }
 
     /// The owner for the runner, when one is known; a runner that leases
@@ -643,13 +665,20 @@ fn queue(args: &[OsString]) -> Result<std::process::ExitCode> {
 fn ab(ctx: &Context, owner: &str, args: &[OsString]) -> Result<std::process::ExitCode> {
     let (enqueue, after, args) = crate::hil_jobs::take(args.to_vec())?;
     if enqueue {
-        let id = crate::hil_jobs::enqueue(ctx, owner, &args, after)?;
+        let frozen = crate::hil_jobs::Frozen::capture(ctx)?;
+        let id = crate::hil_jobs::enqueue(ctx, owner, &args, after, &frozen)?;
         eprintln!("hil: enqueued job {id}; `cargo hil wait {id}` blocks until it ends");
         println!("{id}");
         return Ok(std::process::ExitCode::SUCCESS);
     }
     let mut job = crate::hil_jobs::Running::begin(ctx, owner, &args, after.as_ref())?;
-    let runs = crate::hil_ab::run(ctx, owner, &args[1..])?;
+    // Every round runs the xtask and runner of the experiment's start: a pull
+    // into the checkout meanwhile must not change the arms' protocol.
+    let frozen = match crate::hil_jobs::Frozen::inherited()? {
+        Some(frozen) => frozen,
+        None => crate::hil_jobs::Frozen::capture(ctx)?,
+    };
+    let runs = crate::hil_ab::run(ctx, owner, &frozen, &args[1..])?;
     let (ids, outcomes): (Vec<_>, Vec<_>) = runs.into_iter().unzip();
     job.finish(&ids, &outcomes)?;
     Ok(std::process::ExitCode::SUCCESS)
@@ -1544,13 +1573,18 @@ pub(crate) const HIL_TARGET: &str = "esp32s31";
 /// Check an enqueued `run`'s scenarios and options with the runner now, so
 /// a mistake shows in the terminal instead of in a job that ends no-run
 /// minutes later.
-fn validate_enqueued(ctx: &Context, args: &[OsString]) -> Result<()> {
+/// Check an enqueued command and fix what it runs with: this xtask, the
+/// runner and, for a `run` that builds, a source snapshot of the checkout
+/// taken now with the run's own source options.
+fn freeze_enqueued(ctx: &Context, args: &[OsString]) -> Result<crate::hil_jobs::Frozen> {
+    let mut frozen = crate::hil_jobs::Frozen::capture(ctx)?;
     if args.first().and_then(|arg| arg.to_str()) != Some("run") {
-        return Ok(());
+        return Ok(frozen);
     }
-    let (runner, _) = prepare(ctx)?;
     let output = oer_process::output(
-        ctx.command(&runner).args(args).arg("--validate-only"),
+        ctx.command(&frozen.runner)
+            .args(args)
+            .arg("--validate-only"),
         Some(std::time::Duration::from_secs(120)),
     )?;
     if !output.status.success() {
@@ -1560,7 +1594,100 @@ fn validate_enqueued(ctx: &Context, args: &[OsString]) -> Result<()> {
         )
         .into());
     }
-    Ok(())
+    if has_flag(args, "--firmware-from") || has_flag(args, "--source-snapshot") {
+        return Ok(frozen);
+    }
+    let output = oer_process::output(
+        ctx.command(&frozen.runner)
+            .args(["image", "snapshot"])
+            .args(source_options(args)),
+        Some(std::time::Duration::from_secs(600)),
+    )?;
+    if !output.status.success() {
+        return Err(format!(
+            "not enqueued: the source snapshot failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )
+        .into());
+    }
+    let snapshot: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+    let directory = snapshot["directory"]
+        .as_str()
+        .ok_or("the source snapshot names no directory")?;
+    frozen.snapshot = Some(PathBuf::from(directory));
+    Ok(frozen)
+}
+
+/// The main checkout of the worktree at `root`: the directory holding the
+/// repository's common `.git`.
+fn main_checkout(root: &Path) -> Option<PathBuf> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .output()
+        .ok()?;
+    output.status.success().then_some(())?;
+    checkout_of_common_dir(Path::new(String::from_utf8(output.stdout).ok()?.trim()))
+}
+
+/// The checkout whose `.git` directory is `common`.
+fn checkout_of_common_dir(common: &Path) -> Option<PathBuf> {
+    (common.file_name()? == ".git").then(|| common.parent().map(Path::to_owned))?
+}
+
+/// Whether `args` hold the option `name`, alone or as `name=value`.
+fn has_flag(args: &[OsString], name: &str) -> bool {
+    args.iter().any(|arg| {
+        arg.to_str().is_some_and(|arg| {
+            arg == name
+                || arg
+                    .strip_prefix(name)
+                    .is_some_and(|rest| rest.starts_with('='))
+        })
+    })
+}
+
+/// The options of `args` that choose a run's sources: they make its snapshot.
+const SOURCE_OPTIONS: [(&str, bool); 2] =
+    [("--source-include", true), ("--include-untracked", false)];
+
+/// `args`' source options, with their values.
+fn source_options(args: &[OsString]) -> Vec<OsString> {
+    split_source_options(args).0
+}
+
+/// `args` split into the source options and the rest.
+fn split_source_options(args: &[OsString]) -> (Vec<OsString>, Vec<OsString>) {
+    let (mut sources, mut rest) = (Vec::new(), Vec::new());
+    let mut arguments = args.iter();
+    while let Some(argument) = arguments.next() {
+        let text = argument.to_str().unwrap_or_default();
+        match SOURCE_OPTIONS.iter().find(|(name, _)| {
+            text == *name
+                || text
+                    .strip_prefix(name)
+                    .is_some_and(|rest| rest.starts_with('='))
+        }) {
+            Some((name, takes_value)) => {
+                sources.push(argument.clone());
+                if *takes_value && text == *name {
+                    sources.extend(arguments.next().cloned());
+                }
+            }
+            None => rest.push(argument.clone()),
+        }
+    }
+    (sources, rest)
+}
+
+/// The runner arguments of a run whose sources were captured into
+/// `snapshot` when it was enqueued: its source options already made it.
+fn with_source_snapshot(args: &[OsString], snapshot: &Path) -> Vec<OsString> {
+    let mut arguments = split_source_options(args).1;
+    arguments.push("--source-snapshot".into());
+    arguments.push(snapshot.into());
+    arguments
 }
 
 /// The runner's run receipt variable; see oer-hil-runner-core.
@@ -2079,6 +2206,68 @@ enum DevicesCommand {
 
 #[cfg(test)]
 mod tests {
+    use super::{
+        OsString, Path, PathBuf, checkout_of_common_dir, has_flag, source_options,
+        with_source_snapshot,
+    };
+
+    #[test]
+    fn an_enqueued_run_builds_from_its_snapshot_instead_of_its_source_options() {
+        let args = [
+            "run",
+            "a",
+            "--source-include",
+            "x.rs",
+            "--source-include=y.rs",
+            "--include-untracked",
+            "--layout-seed",
+            "3",
+        ]
+        .map(OsString::from);
+        assert_eq!(
+            source_options(&args),
+            [
+                "--source-include",
+                "x.rs",
+                "--source-include=y.rs",
+                "--include-untracked"
+            ]
+            .map(OsString::from)
+        );
+        assert_eq!(
+            with_source_snapshot(&args, Path::new("/snapshots/s1")),
+            [
+                "run",
+                "a",
+                "--layout-seed",
+                "3",
+                "--source-snapshot",
+                "/snapshots/s1"
+            ]
+            .map(OsString::from)
+        );
+        assert!(has_flag(&args, "--layout-seed"));
+        assert!(!has_flag(&args, "--firmware-from"));
+        // A flag that only begins with the name is another flag.
+        assert!(!has_flag(
+            &[OsString::from("--source-includes")],
+            "--source-include"
+        ));
+    }
+
+    #[test]
+    fn a_worktree_belongs_to_the_checkout_holding_the_common_git_directory() {
+        assert_eq!(
+            checkout_of_common_dir(Path::new("/home/dev/checkout/.git")),
+            Some(PathBuf::from("/home/dev/checkout"))
+        );
+        // A bare repository has no checkout of its own.
+        assert_eq!(
+            checkout_of_common_dir(Path::new("/srv/repository.git")),
+            None
+        );
+    }
+
     #[test]
     fn a_profile_report_stays_outside_the_sealed_run() {
         let root = Path::new("/checkout");

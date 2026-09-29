@@ -218,7 +218,16 @@ where
                 outcome,
                 counters,
             };
-            match lease.disable_phy_modem_clocks(PhyClockModule::Calibration, clocks) {
+            // DIAGNOSTIC #38 arm A: republish before the calibration clock release.
+            if option_env!("OER_DIAG38_ARM") == Some("A") {
+                diag_republish_bluetooth_tx_gain(lease);
+            }
+            let released = lease.disable_phy_modem_clocks(PhyClockModule::Calibration, clocks);
+            // DIAGNOSTIC #38 arm B: republish after the calibration clock release.
+            if option_env!("OER_DIAG38_ARM") == Some("B") {
+                diag_republish_bluetooth_tx_gain(lease);
+            }
+            match released {
                 Ok(()) => Ok(registration),
                 Err(error) => Err(ConcurrentPhyRegisterFailure::CalibrationClock {
                     registration,

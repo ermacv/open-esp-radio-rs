@@ -126,7 +126,9 @@ fn build(
     let jobs = parse_jobs(jobs)?;
     for probe in probes(chip) {
         eprintln!("Building {chip} {} comparison probe", probe.role);
-        execute(&mut command(context, probe, jobs))?;
+        crate::phase::timed(&format!("build {chip} {} probe", probe.role), || {
+            execute(&mut command(context, probe, jobs))
+        })?;
     }
     Ok(())
 }

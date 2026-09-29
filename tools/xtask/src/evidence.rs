@@ -449,7 +449,8 @@ fn regenerate(
             .iter()
             .find(|s| s.chip == chip && s.scenario == name)
             .expect("partitioned stand");
-        let shard = stand_shard(ctx, chip, stand)?;
+        let shard =
+            crate::phase::timed(&format!("stand {name}"), || stand_shard(ctx, chip, stand))?;
         write(&ctx.root.join(directory), &shard)?;
     }
     if selected.is_empty() {

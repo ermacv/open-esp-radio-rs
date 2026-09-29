@@ -32,41 +32,46 @@ pub fn run(ctx: &Context, chip: &str, args: &[OsString]) -> Result<std::process:
     let Some((scenario, rest)) = args.split_first() else {
         return Err("select a scenario, for example `gain`".into());
     };
-    process::run(crate::blobray::cargo(ctx, "build").args([
-        "--profile",
-        "blobray",
-        "-p",
-        "blobray-next",
-        "--bin",
-        "blobray",
-    ]))?;
-    // Cargo keeps a `.d` only beside a root unit's output, so the verdict
-    // libraries are built as roots first; the binary links the same units.
-    let libraries = crate::blobray::cargo(ctx, "build")
-        .args([
+    crate::phase::timed("build blobray", || {
+        process::run(crate::blobray::cargo(ctx, "build").args([
             "--profile",
             "blobray",
             "-p",
-            ENGINE_PACKAGE,
+            "blobray-next",
+            "--bin",
+            "blobray",
+        ]))
+    })?;
+    // Cargo keeps a `.d` only beside a root unit's output, so the verdict
+    // libraries are built as roots first; the binary links the same units.
+    let verdict = crate::phase::timed("build vendor scenarios", || -> Result<Vec<PathBuf>> {
+        let libraries = crate::blobray::cargo(ctx, "build")
+            .args([
+                "--profile",
+                "blobray",
+                "-p",
+                ENGINE_PACKAGE,
+                "-p",
+                library,
+                "--lib",
+                MESSAGE_FORMAT,
+            ])
+            .stderr(std::process::Stdio::inherit())
+            .output()?;
+        if !libraries.status.success() {
+            return Err(format!("building {ENGINE_PACKAGE} and {library} failed").into());
+        }
+        let verdict = verdict_dep_info(&libraries.stdout, &[ENGINE_PACKAGE, library])?;
+        process::run(crate::blobray::cargo(ctx, "build").args([
+            "--profile",
+            "blobray",
             "-p",
-            library,
-            "--lib",
-            MESSAGE_FORMAT,
-        ])
-        .stderr(std::process::Stdio::inherit())
-        .output()?;
-    if !libraries.status.success() {
-        return Err(format!("building {ENGINE_PACKAGE} and {library} failed").into());
-    }
-    let verdict = verdict_dep_info(&libraries.stdout, &[ENGINE_PACKAGE, library])?;
-    process::run(crate::blobray::cargo(ctx, "build").args([
-        "--profile",
-        "blobray",
-        "-p",
-        package,
-        "--bin",
-        binary,
-    ]))?;
+            package,
+            "--bin",
+            binary,
+        ]))?;
+        Ok(verdict)
+    })?;
     let mut command = ctx.command(crate::blobray::binary(ctx, binary));
     command
         .arg(scenario)
@@ -76,8 +81,11 @@ pub fn run(ctx: &Context, chip: &str, args: &[OsString]) -> Result<std::process:
     for file in verdict {
         command.arg(VERDICT_DEP_INFO).arg(file);
     }
-    let mut child = oer_process::owned::Child::spawn(&mut command)?;
-    Ok(crate::hil::exit_code(child.wait_forwarding_cancellation()?))
+    let label = format!("scenario {}", scenario.to_string_lossy());
+    crate::phase::timed(&label, || {
+        let mut child = oer_process::owned::Child::spawn(&mut command)?;
+        Ok(crate::hil::exit_code(child.wait_forwarding_cancellation()?))
+    })
 }
 
 /// The dep-info files of the library targets of `packages` in Cargo's JSON

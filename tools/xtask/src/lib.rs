@@ -31,6 +31,7 @@ pub mod hil_perf;
 pub mod hil_runs;
 pub mod hil_store;
 pub mod paths;
+pub mod phase;
 pub mod process;
 pub mod push;
 pub mod register_inventory;

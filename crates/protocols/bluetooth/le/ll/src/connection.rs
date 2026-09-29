@@ -783,7 +783,7 @@ struct PendingPhyUpdate {
 
 /// Why a peer Channel Map Update cannot enter the pending instant owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LePeripheralChannelMapUpdateError {
+pub enum LeChannelMapUpdateError {
     InstantPassed,
     ProcedureAlreadyPending,
     IncompatibleProcedurePending,
@@ -791,7 +791,7 @@ pub enum LePeripheralChannelMapUpdateError {
 
 /// Why a peer Connection Update cannot enter the pending instant owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LePeripheralConnectionUpdateError {
+pub enum LeConnectionUpdateError {
     InstantPassed,
     ProcedureAlreadyPending,
     IncompatibleProcedurePending,
@@ -799,7 +799,7 @@ pub enum LePeripheralConnectionUpdateError {
 
 /// Why a peer PHY Update cannot enter the pending instant owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LePeripheralPhyUpdateError {
+pub enum LePhyUpdateError {
     InstantPassed,
     ProcedureAlreadyPending,
     IncompatibleProcedurePending,
@@ -812,7 +812,7 @@ pub enum LePeripheralPhyUpdateError {
 /// activity. The first such event remains distinct from the later activity
 /// anchor used by supervision policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LePeripheralConnectionState {
+pub enum LeConnectionState {
     Created,
     Established {
         establishment_event_counter: u16,
@@ -820,7 +820,7 @@ pub enum LePeripheralConnectionState {
     },
 }
 
-impl LePeripheralConnectionState {
+impl LeConnectionState {
     pub const fn establishment_event_counter(self) -> Option<u16> {
         match self {
             Self::Created => None,
@@ -844,7 +844,7 @@ impl LePeripheralConnectionState {
 
 /// Whether the completed connection event observed activity from the peer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LePeripheralConnectionEventPeerActivity {
+pub enum LeConnectionEventPeerActivity {
     Observed,
     Missed,
 }
@@ -855,9 +855,9 @@ pub enum LePeripheralConnectionEventPeerActivity {
 /// distance from a skipped-event count makes the scheduler relation explicit:
 /// `delta = skipped + 1`.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct LePeripheralConnectionEventDelta(NonZeroU16);
+pub struct LeConnectionEventDelta(NonZeroU16);
 
-impl LePeripheralConnectionEventDelta {
+impl LeConnectionEventDelta {
     pub const fn new(delta: u16) -> Option<Self> {
         match NonZeroU16::new(delta) {
             Some(delta) => Some(Self(delta)),
@@ -884,22 +884,50 @@ impl LePeripheralConnectionEventDelta {
     }
 }
 
-/// Portable peripheral connection between hardware events.
+/// The local role in a connection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LeConnectionRole {
+    /// The side that sent `CONNECT_IND` and owns the anchors.
+    Central,
+    /// The side that accepted `CONNECT_IND` and follows the anchors.
+    Peripheral,
+}
+
+/// Portable LE connection between hardware events, in either role.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "prepare the next event or retain the connection"]
 // CAPABILITY: portable-peripheral-connection, bluetooth-connection-update-channel-map-update
-pub struct LePeripheralConnection {
+pub struct LeConnection {
+    role: LeConnectionRole,
     timeline: Timeline,
     initial_transmit_window_pending: bool,
-    state: LePeripheralConnectionState,
+    state: LeConnectionState,
     maintenance: maintenance::State,
 }
 
-impl LePeripheralConnection {
-    /// Negotiate the legacy connection using both devices' ChSel fields.
+impl LeConnection {
+    /// The Peripheral's connection from an accepted `CONNECT_IND`.
     /// `advertised_algorithm` describes the exact ADV_IND/ADV_DIRECT_IND sent.
+    pub const fn peripheral(
+        request: LeLegacyConnectionRequest,
+        advertised_algorithm: LeChannelSelectionAlgorithm,
+    ) -> Self {
+        Self::negotiate(LeConnectionRole::Peripheral, request, advertised_algorithm)
+    }
+
+    /// The Central's connection from the `CONNECT_IND` it sent in answer to
+    /// an advertisement with `advertised_algorithm`.
+    pub const fn central(
+        request: LeLegacyConnectionRequest,
+        advertised_algorithm: LeChannelSelectionAlgorithm,
+    ) -> Self {
+        Self::negotiate(LeConnectionRole::Central, request, advertised_algorithm)
+    }
+
+    /// Negotiate the legacy connection using both devices' ChSel fields.
     /// Core Vol 6, Part B, 4.5.8 requires algorithm one if either bit was zero.
-    pub const fn from_request(
+    const fn negotiate(
+        role: LeConnectionRole,
         request: LeLegacyConnectionRequest,
         advertised_algorithm: LeChannelSelectionAlgorithm,
     ) -> Self {
@@ -921,6 +949,7 @@ impl LePeripheralConnection {
             ),
         };
         Self {
+            role,
             timeline: Timeline {
                 request,
                 event_counter: 0,
@@ -931,9 +960,13 @@ impl LePeripheralConnection {
                 pending_phy_update: None,
             },
             initial_transmit_window_pending: true,
-            state: LePeripheralConnectionState::Created,
+            state: LeConnectionState::Created,
             maintenance: maintenance::State::new(),
         }
+    }
+
+    pub const fn role(&self) -> LeConnectionRole {
+        self.role
     }
 
     pub const fn request(&self) -> LeLegacyConnectionRequest {
@@ -952,7 +985,7 @@ impl LePeripheralConnection {
         self.timeline.event_counter
     }
 
-    pub const fn state(&self) -> LePeripheralConnectionState {
+    pub const fn state(&self) -> LeConnectionState {
         self.state
     }
 
@@ -982,7 +1015,7 @@ impl LePeripheralConnection {
     }
 
     /// Prepare one exact event without advancing channel or counter state.
-    pub const fn prepare_event(self) -> LePeripheralConnectionEventPrepared {
+    pub const fn prepare_event(self) -> LeConnectionEventPrepared {
         let mut connection = self;
         let channel_map_updated = connection
             .timeline
@@ -997,7 +1030,7 @@ impl LePeripheralConnection {
             .timeline
             .selector
             .preview(connection.timeline.event_counter);
-        LePeripheralConnectionEventPrepared {
+        LeConnectionEventPrepared {
             connection,
             channel,
             unmapped,
@@ -1126,8 +1159,8 @@ impl Timeline {
 /// Protocol event not yet accepted by a hardware backend.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "submit, cancel, or retain the prepared connection event"]
-pub struct LePeripheralConnectionEventPrepared {
-    connection: LePeripheralConnection,
+pub struct LeConnectionEventPrepared {
+    connection: LeConnection,
     channel: LeDataChannelIndex,
     unmapped: u8,
     channel_map_updated: bool,
@@ -1135,7 +1168,7 @@ pub struct LePeripheralConnectionEventPrepared {
     phy_transition: Option<LePhyTransition>,
 }
 
-impl LePeripheralConnectionEventPrepared {
+impl LeConnectionEventPrepared {
     /// The PHYs of this event, after a PHY Update at its instant.
     pub const fn phys(&self) -> ConnectionPhys {
         self.connection.timeline.phys
@@ -1151,7 +1184,7 @@ impl LePeripheralConnectionEventPrepared {
     }
 
     /// Establishment and supervision state before this event.
-    pub const fn state(&self) -> LePeripheralConnectionState {
+    pub const fn state(&self) -> LeConnectionState {
         self.connection.state
     }
 
@@ -1175,24 +1208,24 @@ impl LePeripheralConnectionEventPrepared {
     }
 
     /// Reject lower admission without advancing protocol time or hopping state.
-    pub const fn cancel(self) -> LePeripheralConnection {
+    pub const fn cancel(self) -> LeConnection {
         self.connection
     }
 
     /// Mark the point where a lower backend accepted this exact event.
-    pub const fn into_submitted(self) -> LePeripheralConnectionEventInFlight {
-        LePeripheralConnectionEventInFlight { prepared: self }
+    pub const fn into_submitted(self) -> LeConnectionEventInFlight {
+        LeConnectionEventInFlight { prepared: self }
     }
 }
 
 /// Portable continuation retained alongside one lower hardware transaction.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "complete the exact backend event or retain its connection owner"]
-pub struct LePeripheralConnectionEventInFlight {
-    prepared: LePeripheralConnectionEventPrepared,
+pub struct LeConnectionEventInFlight {
+    prepared: LeConnectionEventPrepared,
 }
 
-impl LePeripheralConnectionEventInFlight {
+impl LeConnectionEventInFlight {
     pub const fn event_counter(&self) -> u16 {
         self.prepared.event_counter()
     }
@@ -1208,9 +1241,9 @@ impl LePeripheralConnectionEventInFlight {
     /// the connection or refreshes its supervision anchor.
     pub const fn complete(
         self,
-        peer_activity: LePeripheralConnectionEventPeerActivity,
-    ) -> LePeripheralConnectionEventCompleted {
-        let LePeripheralConnectionEventPrepared {
+        peer_activity: LeConnectionEventPeerActivity,
+    ) -> LeConnectionEventCompleted {
+        let LeConnectionEventPrepared {
             mut connection,
             channel,
             unmapped,
@@ -1223,26 +1256,25 @@ impl LePeripheralConnectionEventInFlight {
         connection.timeline.event_counter = connection.timeline.event_counter.wrapping_add(1);
         connection.initial_transmit_window_pending = false;
         connection.state = match (connection.state, peer_activity) {
+            (LeConnectionState::Created, LeConnectionEventPeerActivity::Observed) => {
+                LeConnectionState::Established {
+                    establishment_event_counter: event_counter,
+                    supervision_anchor_event_counter: event_counter,
+                }
+            }
             (
-                LePeripheralConnectionState::Created,
-                LePeripheralConnectionEventPeerActivity::Observed,
-            ) => LePeripheralConnectionState::Established {
-                establishment_event_counter: event_counter,
-                supervision_anchor_event_counter: event_counter,
-            },
-            (
-                LePeripheralConnectionState::Established {
+                LeConnectionState::Established {
                     establishment_event_counter,
                     ..
                 },
-                LePeripheralConnectionEventPeerActivity::Observed,
-            ) => LePeripheralConnectionState::Established {
+                LeConnectionEventPeerActivity::Observed,
+            ) => LeConnectionState::Established {
                 establishment_event_counter,
                 supervision_anchor_event_counter: event_counter,
             },
-            (state, LePeripheralConnectionEventPeerActivity::Missed) => state,
+            (state, LeConnectionEventPeerActivity::Missed) => state,
         };
-        LePeripheralConnectionEventCompleted {
+        LeConnectionEventCompleted {
             connection,
             event_counter,
             channel,
@@ -1257,17 +1289,17 @@ impl LePeripheralConnectionEventInFlight {
 /// One closed radio event paired with its uniquely advanced LL successor.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "inspect completion or retain its advanced connection successor"]
-pub struct LePeripheralConnectionEventCompleted {
-    connection: LePeripheralConnection,
+pub struct LeConnectionEventCompleted {
+    connection: LeConnection,
     event_counter: u16,
     channel: LeDataChannelIndex,
-    peer_activity: LePeripheralConnectionEventPeerActivity,
+    peer_activity: LeConnectionEventPeerActivity,
     channel_map_updated: bool,
     connection_timing_transition: Option<LeConnectionTimingTransition>,
     phy_transition: Option<LePhyTransition>,
 }
 
-impl LePeripheralConnectionEventCompleted {
+impl LeConnectionEventCompleted {
     /// PHYs applied by the event which just closed, or by a PHY Update whose
     /// instant is the next event.
     pub const fn phy_transition(&self) -> Option<LePhyTransition> {
@@ -1296,11 +1328,11 @@ impl LePeripheralConnectionEventCompleted {
         self.channel
     }
 
-    pub const fn peer_activity(&self) -> LePeripheralConnectionEventPeerActivity {
+    pub const fn peer_activity(&self) -> LeConnectionEventPeerActivity {
         self.peer_activity
     }
 
-    pub const fn connection_state(&self) -> LePeripheralConnectionState {
+    pub const fn connection_state(&self) -> LeConnectionState {
         self.connection.state
     }
 
@@ -1320,8 +1352,7 @@ impl LePeripheralConnectionEventCompleted {
     /// The backend must check this before scheduling another event; this is
     /// distinct from the elapsed-time supervision of an established connection.
     pub const fn establishment_failed(&self) -> bool {
-        matches!(self.connection.state, LePeripheralConnectionState::Created)
-            && self.event_counter >= 5
+        matches!(self.connection.state, LeConnectionState::Created) && self.event_counter >= 5
     }
 
     /// Stage a valid Central Channel Map Update until its connection instant.
@@ -1329,23 +1360,23 @@ impl LePeripheralConnectionEventCompleted {
         &mut self,
         channel_map: LeDataChannelMap,
         instant: u16,
-    ) -> Result<(), LePeripheralChannelMapUpdateError> {
+    ) -> Result<(), LeChannelMapUpdateError> {
         if self.connection.timeline.pending_channel_map.is_some() {
-            return Err(LePeripheralChannelMapUpdateError::ProcedureAlreadyPending);
+            return Err(LeChannelMapUpdateError::ProcedureAlreadyPending);
         }
         if self.channel_map_updated {
-            return Err(LePeripheralChannelMapUpdateError::ProcedureAlreadyPending);
+            return Err(LeChannelMapUpdateError::ProcedureAlreadyPending);
         }
         if self.connection.timeline.pending_connection_update.is_some()
             || self.connection_timing_transition.is_some()
             || self.connection.timeline.pending_phy_update.is_some()
             || self.phy_transition.is_some()
         {
-            return Err(LePeripheralChannelMapUpdateError::IncompatibleProcedurePending);
+            return Err(LeChannelMapUpdateError::IncompatibleProcedurePending);
         }
         let distance = instant.wrapping_sub(self.event_counter);
         if distance >= 0x7fff {
-            return Err(LePeripheralChannelMapUpdateError::InstantPassed);
+            return Err(LeChannelMapUpdateError::InstantPassed);
         }
         if distance == 0 {
             self.connection.timeline.selector = self
@@ -1370,23 +1401,23 @@ impl LePeripheralConnectionEventCompleted {
         &mut self,
         timing: LeConnectionTiming,
         instant: u16,
-    ) -> Result<(), LePeripheralConnectionUpdateError> {
+    ) -> Result<(), LeConnectionUpdateError> {
         if self.connection.timeline.pending_connection_update.is_some() {
-            return Err(LePeripheralConnectionUpdateError::ProcedureAlreadyPending);
+            return Err(LeConnectionUpdateError::ProcedureAlreadyPending);
         }
         if self.connection_timing_transition.is_some() {
-            return Err(LePeripheralConnectionUpdateError::ProcedureAlreadyPending);
+            return Err(LeConnectionUpdateError::ProcedureAlreadyPending);
         }
         if self.connection.timeline.pending_channel_map.is_some()
             || self.channel_map_updated
             || self.connection.timeline.pending_phy_update.is_some()
             || self.phy_transition.is_some()
         {
-            return Err(LePeripheralConnectionUpdateError::IncompatibleProcedurePending);
+            return Err(LeConnectionUpdateError::IncompatibleProcedurePending);
         }
         let distance = instant.wrapping_sub(self.event_counter);
         if distance >= 0x7fff {
-            return Err(LePeripheralConnectionUpdateError::InstantPassed);
+            return Err(LeConnectionUpdateError::InstantPassed);
         }
         if distance == 0 {
             self.connection_timing_transition = Some(LeConnectionTimingTransition {
@@ -1410,20 +1441,20 @@ impl LePeripheralConnectionEventCompleted {
         &mut self,
         phys: ConnectionPhys,
         instant: u16,
-    ) -> Result<(), LePeripheralPhyUpdateError> {
+    ) -> Result<(), LePhyUpdateError> {
         if self.connection.timeline.pending_phy_update.is_some() || self.phy_transition.is_some() {
-            return Err(LePeripheralPhyUpdateError::ProcedureAlreadyPending);
+            return Err(LePhyUpdateError::ProcedureAlreadyPending);
         }
         if self.connection.timeline.pending_channel_map.is_some()
             || self.channel_map_updated
             || self.connection.timeline.pending_connection_update.is_some()
             || self.connection_timing_transition.is_some()
         {
-            return Err(LePeripheralPhyUpdateError::IncompatibleProcedurePending);
+            return Err(LePhyUpdateError::IncompatibleProcedurePending);
         }
         let distance = instant.wrapping_sub(self.event_counter);
         if distance >= 0x7fff {
-            return Err(LePeripheralPhyUpdateError::InstantPassed);
+            return Err(LePhyUpdateError::InstantPassed);
         }
         if distance == 0 {
             self.phy_transition = Some(LePhyTransition::new(self.connection.timeline.phys, phys));
@@ -1443,8 +1474,8 @@ impl LePeripheralConnectionEventCompleted {
     /// accept it before the LL successor is committed.
     pub const fn prepare_recurring_event(
         self,
-        delta: LePeripheralConnectionEventDelta,
-    ) -> LePeripheralConnectionRecurringEventProvisional {
+        delta: LeConnectionEventDelta,
+    ) -> LeConnectionRecurringEventProvisional {
         let skipped = delta.skipped();
         let event_counter = self.connection.timeline.event_counter.wrapping_add(skipped);
         let mut selector = self.connection.timeline.selector.skip(skipped);
@@ -1476,7 +1507,7 @@ impl LePeripheralConnectionEventCompleted {
             Some(update) => update.phys,
             None => self.connection.timeline.phys,
         };
-        LePeripheralConnectionRecurringEventProvisional {
+        LeConnectionRecurringEventProvisional {
             completed: self,
             delta,
             event_counter,
@@ -1492,7 +1523,7 @@ impl LePeripheralConnectionEventCompleted {
     }
 
     /// Consume the completion record into the already advanced successor.
-    pub fn into_connection(self) -> LePeripheralConnection {
+    pub fn into_connection(self) -> LeConnection {
         self.connection
     }
 }
@@ -1500,9 +1531,9 @@ impl LePeripheralConnectionEventCompleted {
 /// Recurring-event candidate whose advanced successor is not yet committed.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "inspect and commit the recurring event, or recover its completion owner"]
-pub struct LePeripheralConnectionRecurringEventProvisional {
-    completed: LePeripheralConnectionEventCompleted,
-    delta: LePeripheralConnectionEventDelta,
+pub struct LeConnectionRecurringEventProvisional {
+    completed: LeConnectionEventCompleted,
+    delta: LeConnectionEventDelta,
     event_counter: u16,
     phys: ConnectionPhys,
     channel: LeDataChannelIndex,
@@ -1511,12 +1542,12 @@ pub struct LePeripheralConnectionRecurringEventProvisional {
     maintenance_skip: bool,
 }
 
-impl LePeripheralConnectionRecurringEventProvisional {
+impl LeConnectionRecurringEventProvisional {
     pub const fn request(&self) -> LeLegacyConnectionRequest {
         self.completed.connection.timeline.request
     }
 
-    pub const fn delta(&self) -> LePeripheralConnectionEventDelta {
+    pub const fn delta(&self) -> LeConnectionEventDelta {
         self.delta
     }
 
@@ -1545,7 +1576,7 @@ impl LePeripheralConnectionRecurringEventProvisional {
         }
     }
 
-    pub const fn connection_state(&self) -> LePeripheralConnectionState {
+    pub const fn connection_state(&self) -> LeConnectionState {
         self.completed.connection_state()
     }
 
@@ -1555,12 +1586,12 @@ impl LePeripheralConnectionRecurringEventProvisional {
     }
 
     /// Reject lower admission and recover the exact completed-event owner.
-    pub const fn cancel(self) -> LePeripheralConnectionEventCompleted {
+    pub const fn cancel(self) -> LeConnectionEventCompleted {
         self.completed
     }
 
     /// Commit the preview after lower admission and prepare the exact event.
-    pub const fn commit(self) -> LePeripheralConnectionEventPrepared {
+    pub const fn commit(self) -> LeConnectionEventPrepared {
         let Self {
             completed,
             delta,
@@ -1588,7 +1619,7 @@ impl LePeripheralConnectionRecurringEventProvisional {
             .timeline
             .apply_phy_update_for_target(event_counter, skipped);
         let (_, unmapped) = connection.timeline.selector.preview(event_counter);
-        LePeripheralConnectionEventPrepared {
+        LeConnectionEventPrepared {
             connection,
             channel,
             unmapped,

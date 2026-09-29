@@ -14,9 +14,8 @@
 //! See the [Link Layer specification](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-62/out/en/low-energy-controller/link-layer-specification.html).
 
 use super::{
-    LePeripheralConnectionEventCompleted, LePeripheralConnectionEventDelta,
-    LePeripheralConnectionEventPeerActivity, LePeripheralConnectionRecurringEventProvisional,
-    LePeripheralConnectionState,
+    LeConnectionEventCompleted, LeConnectionEventDelta, LeConnectionEventPeerActivity,
+    LeConnectionRecurringEventProvisional, LeConnectionState,
 };
 
 /// A deliberate miss is unavailable; ordinary event processing remains legal.
@@ -34,6 +33,8 @@ pub enum SkipBlocked {
     InstantAcknowledgement,
     /// The omitted range includes an Instant or its immediately preceding event.
     InstantProcedure,
+    /// A Central sends in every event; only a Peripheral skips.
+    CentralRole,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -88,7 +89,7 @@ impl State {
     }
 }
 
-impl LePeripheralConnectionEventCompleted {
+impl LeConnectionEventCompleted {
     /// Observe the header of a valid received Data Channel PDU in this event.
     ///
     /// The backend must validate CRC and, where applicable, MIC and sequence
@@ -101,10 +102,7 @@ impl LePeripheralConnectionEventCompleted {
     /// raw RX activity alone does not, because it precedes MIC validation.
     /// This does not renew supervision or advance the event counter.
     pub fn observe_valid_packet_header(&mut self, header: u8) {
-        if matches!(
-            self.peer_activity,
-            LePeripheralConnectionEventPeerActivity::Observed
-        ) {
+        if matches!(self.peer_activity, LeConnectionEventPeerActivity::Observed) {
             self.connection
                 .maintenance
                 .observe_header(header, self.connection.timeline.instant_pending());
@@ -130,12 +128,15 @@ impl LePeripheralConnectionEventCompleted {
     /// PDUs and validate its packets before inspection. `Ok` alone is never an RF grant.
     pub fn maintenance_skip_eligible(
         &self,
-        delta: LePeripheralConnectionEventDelta,
+        delta: LeConnectionEventDelta,
     ) -> Result<(), SkipBlocked> {
+        if matches!(self.connection.role, super::LeConnectionRole::Central) {
+            return Err(SkipBlocked::CentralRole);
+        }
         if delta.skipped() == 0 || delta.get() > i16::MAX as u16 {
             return Err(SkipBlocked::InvalidPause);
         }
-        if matches!(self.connection.state, LePeripheralConnectionState::Created) {
+        if matches!(self.connection.state, LeConnectionState::Created) {
             return Err(SkipBlocked::Establishment);
         }
         if !self.connection.maintenance.initial_acknowledged {
@@ -191,8 +192,8 @@ impl LePeripheralConnectionEventCompleted {
     )]
     pub fn prepare_maintenance_event(
         self,
-        delta: LePeripheralConnectionEventDelta,
-    ) -> Result<LePeripheralConnectionRecurringEventProvisional, (SkipBlocked, Self)> {
+        delta: LeConnectionEventDelta,
+    ) -> Result<LeConnectionRecurringEventProvisional, (SkipBlocked, Self)> {
         if let Err(error) = self.maintenance_skip_eligible(delta) {
             return Err((error, self));
         }

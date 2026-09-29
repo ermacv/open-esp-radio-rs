@@ -6,8 +6,8 @@
 //! Optional features are deliberately absent until their procedures are closed.
 
 use crate::connection::{
-    LeConnectionTiming, LeDataChannelMap, LePeripheralChannelMapUpdateError,
-    LePeripheralConnectionUpdateError, LePeripheralPhyUpdateError,
+    LeChannelMapUpdateError, LeConnectionTiming, LeConnectionUpdateError, LeDataChannelMap,
+    LePhyUpdateError,
 };
 use crate::data_length::{LeDataLength, LeDataLengthProcedure, LeDataLengths};
 use crate::phy::{ConnectionPhy, ConnectionPhys, LePhyPreference, phy_from_single_mask};
@@ -96,9 +96,9 @@ pub enum LePeripheralControlError {
     ResponseQueueFull,
     PeerTermination { reason: u8 },
     MandatoryProcedureUnavailable { opcode: u8 },
-    ChannelMapUpdate(LePeripheralChannelMapUpdateError),
-    ConnectionUpdate(LePeripheralConnectionUpdateError),
-    PhyUpdate(LePeripheralPhyUpdateError),
+    ChannelMapUpdate(LeChannelMapUpdateError),
+    ConnectionUpdate(LeConnectionUpdateError),
+    PhyUpdate(LePhyUpdateError),
 }
 
 impl LePeripheralControlError {
@@ -106,23 +106,19 @@ impl LePeripheralControlError {
     pub const fn termination_reason(self) -> Option<u8> {
         match self {
             Self::PeerTermination { .. } => None,
-            Self::ChannelMapUpdate(LePeripheralChannelMapUpdateError::InstantPassed) => Some(0x28),
-            Self::ChannelMapUpdate(LePeripheralChannelMapUpdateError::ProcedureAlreadyPending) => {
-                Some(0x23)
+            Self::ChannelMapUpdate(LeChannelMapUpdateError::InstantPassed) => Some(0x28),
+            Self::ChannelMapUpdate(LeChannelMapUpdateError::ProcedureAlreadyPending) => Some(0x23),
+            Self::ChannelMapUpdate(LeChannelMapUpdateError::IncompatibleProcedurePending) => {
+                Some(0x2a)
             }
-            Self::ChannelMapUpdate(
-                LePeripheralChannelMapUpdateError::IncompatibleProcedurePending,
-            ) => Some(0x2a),
-            Self::ConnectionUpdate(LePeripheralConnectionUpdateError::InstantPassed) => Some(0x28),
-            Self::ConnectionUpdate(LePeripheralConnectionUpdateError::ProcedureAlreadyPending) => {
-                Some(0x23)
+            Self::ConnectionUpdate(LeConnectionUpdateError::InstantPassed) => Some(0x28),
+            Self::ConnectionUpdate(LeConnectionUpdateError::ProcedureAlreadyPending) => Some(0x23),
+            Self::ConnectionUpdate(LeConnectionUpdateError::IncompatibleProcedurePending) => {
+                Some(0x2a)
             }
-            Self::ConnectionUpdate(
-                LePeripheralConnectionUpdateError::IncompatibleProcedurePending,
-            ) => Some(0x2a),
-            Self::PhyUpdate(LePeripheralPhyUpdateError::InstantPassed) => Some(0x28),
-            Self::PhyUpdate(LePeripheralPhyUpdateError::ProcedureAlreadyPending) => Some(0x23),
-            Self::PhyUpdate(LePeripheralPhyUpdateError::IncompatibleProcedurePending) => Some(0x2a),
+            Self::PhyUpdate(LePhyUpdateError::InstantPassed) => Some(0x28),
+            Self::PhyUpdate(LePhyUpdateError::ProcedureAlreadyPending) => Some(0x23),
+            Self::PhyUpdate(LePhyUpdateError::IncompatibleProcedurePending) => Some(0x2a),
             Self::MalformedPdu => Some(0x1e),
             Self::UnsupportedHeader | Self::MandatoryProcedureUnavailable { .. } => Some(0x20),
             Self::ResponseQueueFull => Some(0x1f),
@@ -1429,22 +1425,20 @@ mod tests {
     #[test]
     fn peer_control_failures_have_protocol_termination_reasons() {
         assert_eq!(
-            LePeripheralControlError::ChannelMapUpdate(
-                LePeripheralChannelMapUpdateError::InstantPassed
-            )
-            .termination_reason(),
+            LePeripheralControlError::ChannelMapUpdate(LeChannelMapUpdateError::InstantPassed)
+                .termination_reason(),
             Some(0x28)
         );
         assert_eq!(
             LePeripheralControlError::ChannelMapUpdate(
-                LePeripheralChannelMapUpdateError::ProcedureAlreadyPending
+                LeChannelMapUpdateError::ProcedureAlreadyPending
             )
             .termination_reason(),
             Some(0x23)
         );
         assert_eq!(
             LePeripheralControlError::ConnectionUpdate(
-                LePeripheralConnectionUpdateError::IncompatibleProcedurePending
+                LeConnectionUpdateError::IncompatibleProcedurePending
             )
             .termination_reason(),
             Some(0x2a)

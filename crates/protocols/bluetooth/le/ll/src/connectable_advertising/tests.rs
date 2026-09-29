@@ -3,7 +3,7 @@ use crate::{
     advertising::LEGACY_ADVERTISING_PDU_CAPACITY,
     connection::{
         LEGACY_CONNECT_IND_PAYLOAD_BYTES, LEGACY_CONNECT_IND_PDU_BYTES,
-        LeChannelSelectionAlgorithm, LeLegacyConnectionRequest, LePeripheralConnection,
+        LeChannelSelectionAlgorithm, LeConnection, LeLegacyConnectionRequest,
     },
 };
 
@@ -90,7 +90,7 @@ fn legacy_channel_selection_uses_both_advertising_and_initiating_bits() {
     ] {
         let pdu = connection_request(ADVERTISER_BYTES, peer_two);
         let request = LeLegacyConnectionRequest::decode(&pdu).unwrap();
-        let connection = LePeripheralConnection::from_request(request, advertised);
+        let connection = LeConnection::peripheral(request, advertised);
         assert_eq!(connection.request(), request);
         assert_eq!(connection.channel_selection(), expected);
         let first = connection.prepare_event();

@@ -29,29 +29,27 @@ pub(super) fn connection_request(
     pdu
 }
 
-fn complete_missed(connection: LePeripheralConnection) -> LePeripheralConnectionEventCompleted {
+fn complete_missed(connection: LeConnection) -> LeConnectionEventCompleted {
     connection
         .prepare_event()
         .into_submitted()
-        .complete(LePeripheralConnectionEventPeerActivity::Missed)
+        .complete(LeConnectionEventPeerActivity::Missed)
 }
 
 #[test]
 fn establishment_expires_after_six_misses_but_a_packet_in_event_six_establishes() {
     for last_activity in [
-        LePeripheralConnectionEventPeerActivity::Missed,
-        LePeripheralConnectionEventPeerActivity::Observed,
+        LeConnectionEventPeerActivity::Missed,
+        LeConnectionEventPeerActivity::Observed,
     ] {
         let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
-        let mut connection = LePeripheralConnection::from_request(
-            request,
-            LeChannelSelectionAlgorithm::AlgorithmTwo,
-        );
+        let mut connection =
+            LeConnection::peripheral(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
         for counter in 0..6 {
             let activity = if counter == 5 {
                 last_activity
             } else {
-                LePeripheralConnectionEventPeerActivity::Missed
+                LeConnectionEventPeerActivity::Missed
             };
             let completed = connection
                 .prepare_event()
@@ -60,7 +58,7 @@ fn establishment_expires_after_six_misses_but_a_packet_in_event_six_establishes(
             assert_eq!(completed.event_counter(), counter);
             assert_eq!(
                 completed.establishment_failed(),
-                counter == 5 && last_activity == LePeripheralConnectionEventPeerActivity::Missed
+                counter == 5 && last_activity == LeConnectionEventPeerActivity::Missed
             );
             connection = completed.into_connection();
         }
@@ -177,7 +175,7 @@ fn csa1_commits_hop_only_after_exact_event_completion() {
     let mut pdu = connection_request(false);
     pdu[30..35].copy_from_slice(&[0x06, 0, 0, 0, 0]);
     let request = LeLegacyConnectionRequest::decode(&pdu).unwrap();
-    let connection = LePeripheralConnection::from_request(
+    let connection = LeConnection::peripheral(
         request,
         crate::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
     );
@@ -193,17 +191,14 @@ fn csa1_commits_hop_only_after_exact_event_completion() {
 
     let completed = retry
         .into_submitted()
-        .complete(LePeripheralConnectionEventPeerActivity::Missed);
+        .complete(LeConnectionEventPeerActivity::Missed);
     assert_eq!(completed.event_counter(), 0);
     assert_eq!(completed.channel().get(), 2);
     assert_eq!(
         completed.peer_activity(),
-        LePeripheralConnectionEventPeerActivity::Missed
+        LeConnectionEventPeerActivity::Missed
     );
-    assert_eq!(
-        completed.connection_state(),
-        LePeripheralConnectionState::Created
-    );
+    assert_eq!(completed.connection_state(), LeConnectionState::Created);
 
     let second = completed.into_connection().prepare_event();
     assert_eq!(second.event_counter(), 1);
@@ -214,11 +209,11 @@ fn csa1_commits_hop_only_after_exact_event_completion() {
 #[test]
 fn observed_and_missed_events_advance_once_and_retain_lifecycle_anchors() {
     let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
-    let connection = LePeripheralConnection::from_request(
+    let connection = LeConnection::peripheral(
         request,
         crate::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
     );
-    assert_eq!(connection.state(), LePeripheralConnectionState::Created);
+    assert_eq!(connection.state(), LeConnectionState::Created);
     assert_eq!(connection.next_event_distance_from_establishment(), None);
     assert_eq!(
         connection.next_event_distance_from_supervision_anchor(),
@@ -229,12 +224,12 @@ fn observed_and_missed_events_advance_once_and_retain_lifecycle_anchors() {
     let first_channel = first.channel();
     let completed = first
         .into_submitted()
-        .complete(LePeripheralConnectionEventPeerActivity::Observed);
+        .complete(LeConnectionEventPeerActivity::Observed);
     assert_eq!(completed.event_counter(), 0);
     assert_eq!(completed.channel(), first_channel);
     assert_eq!(
         completed.connection_state(),
-        LePeripheralConnectionState::Established {
+        LeConnectionState::Established {
             establishment_event_counter: 0,
             supervision_anchor_event_counter: 0,
         }
@@ -251,12 +246,12 @@ fn observed_and_missed_events_advance_once_and_retain_lifecycle_anchors() {
     let second_channel = second.channel();
     let completed = second
         .into_submitted()
-        .complete(LePeripheralConnectionEventPeerActivity::Missed);
+        .complete(LeConnectionEventPeerActivity::Missed);
     assert_eq!(completed.event_counter(), 1);
     assert_eq!(completed.channel(), second_channel);
     assert_eq!(
         completed.connection_state(),
-        LePeripheralConnectionState::Established {
+        LeConnectionState::Established {
             establishment_event_counter: 0,
             supervision_anchor_event_counter: 0,
         }
@@ -272,11 +267,11 @@ fn observed_and_missed_events_advance_once_and_retain_lifecycle_anchors() {
     let third = connection.prepare_event();
     let completed = third
         .into_submitted()
-        .complete(LePeripheralConnectionEventPeerActivity::Observed);
+        .complete(LeConnectionEventPeerActivity::Observed);
     assert_eq!(completed.event_counter(), 2);
     assert_eq!(
         completed.connection_state(),
-        LePeripheralConnectionState::Established {
+        LeConnectionState::Established {
             establishment_event_counter: 0,
             supervision_anchor_event_counter: 2,
         }
@@ -293,7 +288,7 @@ fn observed_and_missed_events_advance_once_and_retain_lifecycle_anchors() {
 #[test]
 fn event_counter_wraps_without_reusing_an_in_flight_owner() {
     let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
-    let mut connection = LePeripheralConnection::from_request(
+    let mut connection = LeConnection::peripheral(
         request,
         crate::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
     );
@@ -301,40 +296,30 @@ fn event_counter_wraps_without_reusing_an_in_flight_owner() {
 
     let in_flight = connection.prepare_event().into_submitted();
     assert_eq!(in_flight.event_counter(), u16::MAX);
-    let completed = in_flight.complete(LePeripheralConnectionEventPeerActivity::Missed);
+    let completed = in_flight.complete(LeConnectionEventPeerActivity::Missed);
     assert_eq!(completed.event_counter(), u16::MAX);
     assert_eq!(completed.into_connection().event_counter(), 0);
 }
 
 #[test]
 fn recurring_event_delta_is_nonzero_and_rejects_skipped_overflow() {
-    assert_eq!(LePeripheralConnectionEventDelta::new(0), None);
+    assert_eq!(LeConnectionEventDelta::new(0), None);
+    assert_eq!(LeConnectionEventDelta::from_skipped(0).unwrap().get(), 1);
     assert_eq!(
-        LePeripheralConnectionEventDelta::from_skipped(0)
-            .unwrap()
-            .get(),
-        1
-    );
-    assert_eq!(
-        LePeripheralConnectionEventDelta::from_skipped(6)
-            .unwrap()
-            .skipped(),
+        LeConnectionEventDelta::from_skipped(6).unwrap().skipped(),
         6
     );
-    assert_eq!(
-        LePeripheralConnectionEventDelta::from_skipped(u16::MAX),
-        None
-    );
+    assert_eq!(LeConnectionEventDelta::from_skipped(u16::MAX), None);
 }
 
 #[test]
 fn delta_one_prepares_immediate_csa1_successor_without_double_advance() {
     let request = LeLegacyConnectionRequest::decode(&connection_request(false)).unwrap();
-    let completed = complete_missed(LePeripheralConnection::from_request(
+    let completed = complete_missed(LeConnection::peripheral(
         request,
         crate::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
     ));
-    let delta = LePeripheralConnectionEventDelta::from_skipped(0).unwrap();
+    let delta = LeConnectionEventDelta::from_skipped(0).unwrap();
 
     let provisional = completed.prepare_recurring_event(delta);
     assert_eq!(provisional.delta(), delta);
@@ -348,7 +333,7 @@ fn delta_one_prepares_immediate_csa1_successor_without_double_advance() {
     assert_eq!(prepared.channel().get(), 10);
     let completed = prepared
         .into_submitted()
-        .complete(LePeripheralConnectionEventPeerActivity::Missed);
+        .complete(LeConnectionEventPeerActivity::Missed);
     assert_eq!(completed.event_counter(), 1);
     assert_eq!(completed.into_connection().event_counter(), 2);
 }
@@ -359,14 +344,14 @@ fn csa1_skipped_events_match_repeated_advancement_and_commit_once() {
     pdu[30..35].copy_from_slice(&[0x06, 0, 0, 0, 0]);
     let request = LeLegacyConnectionRequest::decode(&pdu).unwrap();
 
-    let completed = complete_missed(LePeripheralConnection::from_request(
+    let completed = complete_missed(LeConnection::peripheral(
         request,
         crate::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
     ));
-    let delta = LePeripheralConnectionEventDelta::from_skipped(3).unwrap();
+    let delta = LeConnectionEventDelta::from_skipped(3).unwrap();
     let provisional = completed.prepare_recurring_event(delta);
 
-    let mut reference = complete_missed(LePeripheralConnection::from_request(
+    let mut reference = complete_missed(LeConnection::peripheral(
         request,
         crate::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
     ))
@@ -388,7 +373,7 @@ fn csa1_skipped_events_match_repeated_advancement_and_commit_once() {
     assert_eq!(prepared.channel(), reference_target.channel());
     let completed = prepared
         .into_submitted()
-        .complete(LePeripheralConnectionEventPeerActivity::Missed);
+        .complete(LeConnectionEventPeerActivity::Missed);
     let next = completed.into_connection().prepare_event();
     assert_eq!(next.event_counter(), 5);
     assert_eq!(next.channel().get(), 1);
@@ -397,15 +382,15 @@ fn csa1_skipped_events_match_repeated_advancement_and_commit_once() {
 #[test]
 fn recurring_candidate_cancel_restores_exact_completed_owner() {
     let request = LeLegacyConnectionRequest::decode(&connection_request(false)).unwrap();
-    let completed = complete_missed(LePeripheralConnection::from_request(
+    let completed = complete_missed(LeConnection::peripheral(
         request,
         crate::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
     ));
-    let expected = complete_missed(LePeripheralConnection::from_request(
+    let expected = complete_missed(LeConnection::peripheral(
         request,
         crate::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
     ));
-    let delta = LePeripheralConnectionEventDelta::from_skipped(3).unwrap();
+    let delta = LeConnectionEventDelta::from_skipped(3).unwrap();
 
     let restored = completed.prepare_recurring_event(delta).cancel();
 
@@ -418,13 +403,13 @@ fn recurring_candidate_cancel_restores_exact_completed_owner() {
 #[test]
 fn csa2_recurring_preview_selects_the_final_wrapped_counter() {
     let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
-    let mut connection = LePeripheralConnection::from_request(
+    let mut connection = LeConnection::peripheral(
         request,
         crate::connection::LeChannelSelectionAlgorithm::AlgorithmTwo,
     );
     connection.timeline.event_counter = u16::MAX;
     let completed = complete_missed(connection);
-    let delta = LePeripheralConnectionEventDelta::from_skipped(1).unwrap();
+    let delta = LeConnectionEventDelta::from_skipped(1).unwrap();
 
     let provisional = completed.prepare_recurring_event(delta);
 
@@ -446,7 +431,7 @@ fn csa2_recurring_preview_selects_the_final_wrapped_counter() {
 #[test]
 fn channel_map_update_applies_at_the_exact_csa1_instant() {
     let request = LeLegacyConnectionRequest::decode(&connection_request(false)).unwrap();
-    let mut completed = complete_missed(LePeripheralConnection::from_request(
+    let mut completed = complete_missed(LeConnection::peripheral(
         request,
         LeChannelSelectionAlgorithm::AlgorithmOne,
     ));
@@ -460,7 +445,7 @@ fn channel_map_update_applies_at_the_exact_csa1_instant() {
         assert_eq!(prepared.request().channel_map(), request.channel_map());
         connection = prepared
             .into_submitted()
-            .complete(LePeripheralConnectionEventPeerActivity::Missed)
+            .complete(LeConnectionEventPeerActivity::Missed)
             .into_connection();
     }
 
@@ -471,7 +456,7 @@ fn channel_map_update_applies_at_the_exact_csa1_instant() {
     assert!(
         instant
             .into_submitted()
-            .complete(LePeripheralConnectionEventPeerActivity::Missed)
+            .complete(LeConnectionEventPeerActivity::Missed)
             .channel_map_updated()
     );
 }
@@ -479,13 +464,13 @@ fn channel_map_update_applies_at_the_exact_csa1_instant() {
 #[test]
 fn skipped_channel_map_instant_is_previewed_without_consuming_cancel_owner() {
     let request = LeLegacyConnectionRequest::decode(&connection_request(false)).unwrap();
-    let mut completed = complete_missed(LePeripheralConnection::from_request(
+    let mut completed = complete_missed(LeConnection::peripheral(
         request,
         LeChannelSelectionAlgorithm::AlgorithmOne,
     ));
     let new_map = LeDataChannelMap::new([0x03, 0, 0, 0, 0]).unwrap();
     completed.schedule_channel_map_update(new_map, 6).unwrap();
-    let delta = LePeripheralConnectionEventDelta::new(6).unwrap();
+    let delta = LeConnectionEventDelta::new(6).unwrap();
 
     let restored = completed.prepare_recurring_event(delta).cancel();
     assert_eq!(
@@ -497,7 +482,7 @@ fn skipped_channel_map_instant_is_previewed_without_consuming_cancel_owner() {
         request.channel_map()
     );
 
-    let mut completed = complete_missed(LePeripheralConnection::from_request(
+    let mut completed = complete_missed(LeConnection::peripheral(
         request,
         LeChannelSelectionAlgorithm::AlgorithmOne,
     ));
@@ -514,7 +499,7 @@ fn skipped_channel_map_instant_is_previewed_without_consuming_cancel_owner() {
 fn channel_map_instant_wraps_and_rejects_past_or_colliding_updates() {
     let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
     let mut connection =
-        LePeripheralConnection::from_request(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
+        LeConnection::peripheral(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
     connection.timeline.event_counter = 0xfffa;
     let mut completed = complete_missed(connection);
     let new_map = LeDataChannelMap::new([0x03, 0, 0, 0, 0]).unwrap();
@@ -527,21 +512,21 @@ fn channel_map_instant_wraps_and_rejects_past_or_colliding_updates() {
         new_map
     );
     let mut connection =
-        LePeripheralConnection::from_request(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
+        LeConnection::peripheral(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
     connection.timeline.event_counter = 0xfffa;
     let mut completed = complete_missed(connection);
     assert_eq!(
         completed.schedule_channel_map_update(new_map, 0x7ff9),
-        Err(LePeripheralChannelMapUpdateError::InstantPassed)
+        Err(LeChannelMapUpdateError::InstantPassed)
     );
     completed.schedule_channel_map_update(new_map, 0).unwrap();
     assert_eq!(
         completed.schedule_channel_map_update(LeDataChannelMap::all(), 1),
-        Err(LePeripheralChannelMapUpdateError::ProcedureAlreadyPending)
+        Err(LeChannelMapUpdateError::ProcedureAlreadyPending)
     );
 
     let prepared = completed
-        .prepare_recurring_event(LePeripheralConnectionEventDelta::new(6).unwrap())
+        .prepare_recurring_event(LeConnectionEventDelta::new(6).unwrap())
         .commit();
     assert_eq!(prepared.event_counter(), 0);
     assert_eq!(prepared.request().channel_map(), new_map);
@@ -554,7 +539,7 @@ fn channel_map_instant_wraps_and_rejects_past_or_colliding_updates() {
 #[test]
 fn connection_update_commits_timing_only_at_the_exact_instant() {
     let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
-    let mut completed = complete_missed(LePeripheralConnection::from_request(
+    let mut completed = complete_missed(LeConnection::peripheral(
         request,
         LeChannelSelectionAlgorithm::AlgorithmTwo,
     ));
@@ -568,13 +553,12 @@ fn connection_update_commits_timing_only_at_the_exact_instant() {
         assert_eq!(prepared.timing(), request.timing());
         connection = prepared
             .into_submitted()
-            .complete(LePeripheralConnectionEventPeerActivity::Missed)
+            .complete(LeConnectionEventPeerActivity::Missed)
             .into_connection();
     }
 
     let completed = complete_missed(connection);
-    let provisional =
-        completed.prepare_recurring_event(LePeripheralConnectionEventDelta::new(1).unwrap());
+    let provisional = completed.prepare_recurring_event(LeConnectionEventDelta::new(1).unwrap());
     let transition = provisional.connection_timing_transition().unwrap();
     assert_eq!(transition.previous(), request.timing());
     assert_eq!(transition.updated(), updated);
@@ -585,13 +569,13 @@ fn connection_update_commits_timing_only_at_the_exact_instant() {
     let restored = provisional.cancel();
     assert_eq!(restored.timing(), request.timing());
     let prepared = restored
-        .prepare_recurring_event(LePeripheralConnectionEventDelta::new(1).unwrap())
+        .prepare_recurring_event(LeConnectionEventDelta::new(1).unwrap())
         .commit();
     assert_eq!(prepared.event_counter(), 4);
     assert_eq!(prepared.timing(), updated);
     let applied = prepared
         .into_submitted()
-        .complete(LePeripheralConnectionEventPeerActivity::Missed);
+        .complete(LeConnectionEventPeerActivity::Missed);
     assert_eq!(applied.connection_timing_transition(), Some(transition));
     assert_eq!(applied.timing(), updated);
 }
@@ -599,7 +583,7 @@ fn connection_update_commits_timing_only_at_the_exact_instant() {
 #[test]
 fn connection_anchor_move_is_not_a_host_parameter_change() {
     let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
-    let mut completed = complete_missed(LePeripheralConnection::from_request(
+    let mut completed = complete_missed(LeConnection::peripheral(
         request,
         LeChannelSelectionAlgorithm::AlgorithmTwo,
     ));
@@ -616,7 +600,7 @@ fn connection_anchor_move_is_not_a_host_parameter_change() {
         .schedule_connection_update(anchor_move, 1)
         .unwrap();
     let transition = completed
-        .prepare_recurring_event(LePeripheralConnectionEventDelta::new(1).unwrap())
+        .prepare_recurring_event(LeConnectionEventDelta::new(1).unwrap())
         .connection_timing_transition()
         .unwrap();
     assert!(!transition.host_parameters_changed());
@@ -628,7 +612,7 @@ fn connection_update_handles_same_event_past_instant_and_procedure_collisions() 
     let updated = LeConnectionTiming::new(2, 1, 40, 3, 200).unwrap();
     let map = LeDataChannelMap::new([0x03, 0, 0, 0, 0]).unwrap();
     let mut connection =
-        LePeripheralConnection::from_request(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
+        LeConnection::peripheral(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
     connection.timeline.event_counter = 0xfffa;
     let mut completed = complete_missed(connection);
 
@@ -642,39 +626,39 @@ fn connection_update_handles_same_event_past_instant_and_procedure_collisions() 
     );
     assert_eq!(
         completed.schedule_connection_update(updated, 0xfffa),
-        Err(LePeripheralConnectionUpdateError::ProcedureAlreadyPending)
+        Err(LeConnectionUpdateError::ProcedureAlreadyPending)
     );
     assert_eq!(
         completed.schedule_channel_map_update(map, 0xfffa),
-        Err(LePeripheralChannelMapUpdateError::IncompatibleProcedurePending)
+        Err(LeChannelMapUpdateError::IncompatibleProcedurePending)
     );
 
     let mut connection =
-        LePeripheralConnection::from_request(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
+        LeConnection::peripheral(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
     connection.timeline.event_counter = 0xfffa;
     let mut completed = complete_missed(connection);
     assert_eq!(
         completed.schedule_connection_update(updated, 0x7ff9),
-        Err(LePeripheralConnectionUpdateError::InstantPassed)
+        Err(LeConnectionUpdateError::InstantPassed)
     );
     completed.schedule_channel_map_update(map, 0).unwrap();
     assert_eq!(
         completed.schedule_connection_update(updated, 1),
-        Err(LePeripheralConnectionUpdateError::IncompatibleProcedurePending)
+        Err(LeConnectionUpdateError::IncompatibleProcedurePending)
     );
 
     let mut connection =
-        LePeripheralConnection::from_request(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
+        LeConnection::peripheral(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
     connection.timeline.event_counter = 0xfffa;
     let mut completed = complete_missed(connection);
     completed.schedule_connection_update(updated, 0).unwrap();
     assert_eq!(
         completed.schedule_channel_map_update(map, 1),
-        Err(LePeripheralChannelMapUpdateError::IncompatibleProcedurePending)
+        Err(LeChannelMapUpdateError::IncompatibleProcedurePending)
     );
     assert_eq!(
         completed.schedule_connection_update(updated, 2),
-        Err(LePeripheralConnectionUpdateError::ProcedureAlreadyPending)
+        Err(LeConnectionUpdateError::ProcedureAlreadyPending)
     );
 }
 
@@ -685,9 +669,9 @@ const TWO: ConnectionPhys = ConnectionPhys {
 
 /// A connection whose PHY Update at event 3 is pending, with events 1 and
 /// 2 run on LE 1M.
-fn before_phy_instant() -> LePeripheralConnection {
+fn before_phy_instant() -> LeConnection {
     let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
-    let mut completed = complete_missed(LePeripheralConnection::from_request(
+    let mut completed = complete_missed(LeConnection::peripheral(
         request,
         LeChannelSelectionAlgorithm::AlgorithmTwo,
     ));
@@ -700,7 +684,7 @@ fn before_phy_instant() -> LePeripheralConnection {
         assert_eq!(prepared.phys(), ConnectionPhys::LE_1M);
         connection = prepared
             .into_submitted()
-            .complete(LePeripheralConnectionEventPeerActivity::Missed)
+            .complete(LeConnectionEventPeerActivity::Missed)
             .into_connection();
     }
     connection
@@ -718,25 +702,24 @@ fn phy_update_applies_from_the_exact_instant_in_both_event_paths() {
     let completed = before_phy_instant()
         .prepare_event()
         .into_submitted()
-        .complete(LePeripheralConnectionEventPeerActivity::Missed);
+        .complete(LeConnectionEventPeerActivity::Missed);
     assert_eq!(completed.phys(), TWO);
     let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
     let mut connection =
-        LePeripheralConnection::from_request(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
+        LeConnection::peripheral(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
     connection.timeline.event_counter = 1;
     let mut completed = complete_missed(connection);
     completed.schedule_phy_update(TWO, 3).unwrap();
-    let provisional =
-        completed.prepare_recurring_event(LePeripheralConnectionEventDelta::new(2).unwrap());
+    let provisional = completed.prepare_recurring_event(LeConnectionEventDelta::new(2).unwrap());
     assert_eq!(provisional.event_counter(), 3);
     assert_eq!(provisional.phys(), TWO);
     let restored = provisional.cancel();
     assert_eq!(restored.phys(), ConnectionPhys::LE_1M);
     let applied = restored
-        .prepare_recurring_event(LePeripheralConnectionEventDelta::new(2).unwrap())
+        .prepare_recurring_event(LeConnectionEventDelta::new(2).unwrap())
         .commit()
         .into_submitted()
-        .complete(LePeripheralConnectionEventPeerActivity::Missed);
+        .complete(LeConnectionEventPeerActivity::Missed);
     let transition = applied.phy_transition().expect("applied at the instant");
     assert_eq!(transition.previous(), ConnectionPhys::LE_1M);
     assert_eq!(transition.updated(), TWO);
@@ -750,10 +733,8 @@ fn phy_update_handles_same_event_past_instant_and_procedure_collisions() {
     let updated = LeConnectionTiming::new(2, 1, 40, 3, 200).unwrap();
     let map = LeDataChannelMap::new([0x03, 0, 0, 0, 0]).unwrap();
     let fresh = || {
-        let mut connection = LePeripheralConnection::from_request(
-            request,
-            LeChannelSelectionAlgorithm::AlgorithmTwo,
-        );
+        let mut connection =
+            LeConnection::peripheral(request, LeChannelSelectionAlgorithm::AlgorithmTwo);
         connection.timeline.event_counter = 0xfffa;
         complete_missed(connection)
     };
@@ -764,33 +745,33 @@ fn phy_update_handles_same_event_past_instant_and_procedure_collisions() {
     assert_eq!(completed.phys(), TWO);
     assert_eq!(
         completed.schedule_phy_update(TWO, 0xfffb),
-        Err(LePeripheralPhyUpdateError::ProcedureAlreadyPending)
+        Err(LePhyUpdateError::ProcedureAlreadyPending)
     );
     assert_eq!(
         completed.schedule_connection_update(updated, 0xfffb),
-        Err(LePeripheralConnectionUpdateError::IncompatibleProcedurePending)
+        Err(LeConnectionUpdateError::IncompatibleProcedurePending)
     );
 
     let mut completed = fresh();
     assert_eq!(
         completed.schedule_phy_update(TWO, 0x7ff9),
-        Err(LePeripheralPhyUpdateError::InstantPassed)
+        Err(LePhyUpdateError::InstantPassed)
     );
     completed.schedule_phy_update(TWO, 2).unwrap();
     assert_eq!(
         completed.schedule_channel_map_update(map, 3),
-        Err(LePeripheralChannelMapUpdateError::IncompatibleProcedurePending)
+        Err(LeChannelMapUpdateError::IncompatibleProcedurePending)
     );
     assert_eq!(
         completed.schedule_connection_update(updated, 3),
-        Err(LePeripheralConnectionUpdateError::IncompatibleProcedurePending)
+        Err(LeConnectionUpdateError::IncompatibleProcedurePending)
     );
 
     let mut completed = fresh();
     completed.schedule_channel_map_update(map, 1).unwrap();
     assert_eq!(
         completed.schedule_phy_update(TWO, 2),
-        Err(LePeripheralPhyUpdateError::IncompatibleProcedurePending)
+        Err(LePhyUpdateError::IncompatibleProcedurePending)
     );
 }
 
@@ -876,4 +857,47 @@ fn the_covering_sleep_clock_class_is_the_tightest_that_holds() {
         500
     );
     assert_eq!(LeSleepClockAccuracy::covering(501), None);
+}
+
+#[test]
+fn a_central_connection_negotiates_like_its_peer_and_never_skips() {
+    let request = LeLegacyConnectionRequest::decode(&connection_request(true)).unwrap();
+    for (advertised, negotiated) in [
+        (
+            LeChannelSelectionAlgorithm::AlgorithmTwo,
+            LeChannelSelectionAlgorithm::AlgorithmTwo,
+        ),
+        (
+            LeChannelSelectionAlgorithm::AlgorithmOne,
+            LeChannelSelectionAlgorithm::AlgorithmOne,
+        ),
+    ] {
+        let central = LeConnection::central(request, advertised);
+        let peripheral = LeConnection::peripheral(request, advertised);
+        assert_eq!(central.role(), LeConnectionRole::Central);
+        assert_eq!(peripheral.role(), LeConnectionRole::Peripheral);
+        assert_eq!(central.channel_selection(), negotiated);
+        // Both sides hop to the same channel on every event.
+        let (mut central, mut peripheral) = (central, peripheral);
+        for _ in 0..5 {
+            let (c, p) = (central.prepare_event(), peripheral.prepare_event());
+            assert_eq!(c.channel(), p.channel());
+            central = c
+                .into_submitted()
+                .complete(LeConnectionEventPeerActivity::Observed)
+                .into_connection();
+            peripheral = p
+                .into_submitted()
+                .complete(LeConnectionEventPeerActivity::Observed)
+                .into_connection();
+        }
+    }
+    let completed = LeConnection::central(request, LeChannelSelectionAlgorithm::AlgorithmTwo)
+        .prepare_event()
+        .into_submitted()
+        .complete(LeConnectionEventPeerActivity::Observed);
+    assert_eq!(
+        completed.maintenance_skip_eligible(LeConnectionEventDelta::new(3).unwrap()),
+        Err(maintenance::SkipBlocked::CentralRole)
+    );
 }

@@ -47,11 +47,10 @@ use oer_bluetooth_hci::{
 use oer_bluetooth_ll::{
     LeDeviceAddressKind,
     connection::{
-        LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS, LeChannelSelectionAlgorithm,
-        LeLegacyConnectionRequest, LePeripheralConnection, LePeripheralConnectionEventCompleted,
-        LePeripheralConnectionEventDelta, LePeripheralConnectionEventInFlight,
-        LePeripheralConnectionEventPeerActivity, LePeripheralConnectionEventPrepared,
-        LePeripheralConnectionState,
+        LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS, LeChannelSelectionAlgorithm, LeConnection,
+        LeConnectionEventCompleted, LeConnectionEventDelta, LeConnectionEventInFlight,
+        LeConnectionEventPeerActivity, LeConnectionEventPrepared, LeConnectionState,
+        LeLegacyConnectionRequest,
     },
     control::{
         LeChannelMapUpdate, LeConnectionUpdate, LePeripheralControl, LePeripheralControlError,
@@ -138,9 +137,9 @@ enum Pending {
 /// The Link Layer connection between and during events.
 enum Link {
     /// Before the first event.
-    Created(LePeripheralConnection),
-    InFlight(LePeripheralConnectionEventInFlight),
-    Completed(LePeripheralConnectionEventCompleted),
+    Created(LeConnection),
+    InFlight(LeConnectionEventInFlight),
+    Completed(LeConnectionEventCompleted),
     /// Transiently moved out.
     Moved,
 }
@@ -169,7 +168,7 @@ struct Connection {
     last_activity: Option<RadioInstant>,
     event: Option<Event>,
     /// The event whose request is at the backend.
-    submitting: Option<(LePeripheralConnectionEventPrepared, Event)>,
+    submitting: Option<(LeConnectionEventPrepared, Event)>,
     opened: bool,
     open_sent: bool,
     control: LePeripheralControl,
@@ -337,7 +336,7 @@ impl Peripheral {
     /// Create the connection from an accepted indication.
     pub(crate) fn open(&mut self, indication: ConnectionIndication) {
         let request = indication.request;
-        let connection = LePeripheralConnection::from_request(
+        let connection = LeConnection::peripheral(
             request,
             // The connectable set advertises Channel Selection Algorithm #2.
             LeChannelSelectionAlgorithm::AlgorithmTwo,
@@ -575,7 +574,7 @@ impl Peripheral {
             connection.link = Link::Completed(
                 prepared
                     .into_submitted()
-                    .complete(LePeripheralConnectionEventPeerActivity::Missed),
+                    .complete(LeConnectionEventPeerActivity::Missed),
             );
             return None;
         };
@@ -665,9 +664,8 @@ impl Peripheral {
                     connection.event = Some(event);
                 } else {
                     // A refused event is a missed one.
-                    connection.link = Link::Completed(
-                        in_flight.complete(LePeripheralConnectionEventPeerActivity::Missed),
-                    );
+                    connection.link =
+                        Link::Completed(in_flight.complete(LeConnectionEventPeerActivity::Missed));
                     connection.after_event(&mut self.events);
                 }
             }
@@ -708,9 +706,9 @@ impl Peripheral {
                             transmit_window: 0,
                         };
                         connection.last_activity = Some(anchor);
-                        LePeripheralConnectionEventPeerActivity::Observed
+                        LeConnectionEventPeerActivity::Observed
                     }
-                    _ => LePeripheralConnectionEventPeerActivity::Missed,
+                    _ => LeConnectionEventPeerActivity::Missed,
                 };
                 connection.link = Link::Completed(in_flight.complete(activity));
                 connection.after_event(&mut self.events);
@@ -1175,7 +1173,7 @@ impl Connection {
         if let Some(reason) = failure {
             self.control.request_local_termination(reason);
         }
-        let established = completed.connection_state() != LePeripheralConnectionState::Created;
+        let established = completed.connection_state() != LeConnectionState::Created;
         let reason = if let Some(reason) = self.peer_termination {
             Some(Status::new(reason))
         } else if self.control.local_termination_acknowledged() {
@@ -1203,7 +1201,7 @@ impl Connection {
         &mut self,
         earliest: RadioInstant,
         timing: RadioTiming,
-    ) -> Option<(LePeripheralConnectionEventPrepared, Event)> {
+    ) -> Option<(LeConnectionEventPrepared, Event)> {
         match core::mem::replace(&mut self.link, Link::Moved) {
             Link::Created(connection) => {
                 let prepared = connection.prepare_event();
@@ -1225,7 +1223,7 @@ impl Connection {
                 self.link = Link::Completed(
                     prepared
                         .into_submitted()
-                        .complete(LePeripheralConnectionEventPeerActivity::Missed),
+                        .complete(LeConnectionEventPeerActivity::Missed),
                 );
                 self.plan(earliest, timing)
             }
@@ -1239,15 +1237,15 @@ impl Connection {
 
     fn plan_recurring(
         &mut self,
-        mut completed: LePeripheralConnectionEventCompleted,
+        mut completed: LeConnectionEventCompleted,
         earliest: RadioInstant,
         timing: RadioTiming,
-    ) -> Option<(LePeripheralConnectionEventPrepared, Event)> {
+    ) -> Option<(LeConnectionEventPrepared, Event)> {
         let peer_ppm = self.request.sleep_clock_accuracy().worst_case_ppm();
         let supervision = u64::from(completed.timing().supervision_timeout_micros());
         let mut delta = 1_u16;
         for _ in 0..PLAN_ATTEMPTS {
-            let Some(step) = LePeripheralConnectionEventDelta::new(delta) else {
+            let Some(step) = LeConnectionEventDelta::new(delta) else {
                 break;
             };
             let provisional = completed.prepare_recurring_event(step);
@@ -1264,7 +1262,7 @@ impl Connection {
                 });
                 return None;
             }
-            if provisional.connection_state() == LePeripheralConnectionState::Created
+            if provisional.connection_state() == LeConnectionState::Created
                 && provisional.event_counter() >= 6
             {
                 completed = provisional.cancel();
@@ -1313,7 +1311,7 @@ impl Connection {
     /// the last one.
     fn anchor_of(
         &self,
-        provisional: &oer_bluetooth_ll::connection::LePeripheralConnectionRecurringEventProvisional,
+        provisional: &oer_bluetooth_ll::connection::LeConnectionRecurringEventProvisional,
         delta: u16,
     ) -> (RadioInstant, u32) {
         let last = provisional.event_counter().wrapping_sub(delta);

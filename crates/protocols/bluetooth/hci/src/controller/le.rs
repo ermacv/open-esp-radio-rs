@@ -6,6 +6,7 @@
 pub(crate) mod accept_list;
 pub(crate) mod acl;
 pub(crate) mod advertising;
+pub(crate) mod central;
 pub(crate) mod data_length;
 pub(crate) mod dtm;
 pub(crate) mod peripheral;

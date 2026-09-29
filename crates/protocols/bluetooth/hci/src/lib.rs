@@ -84,6 +84,10 @@ pub use controller::le::advertising::{
     LeLegacyAdvertisingRole, LeLegacyNonconnectableAdvertisingEnableRequest,
     LeLegacyResponseCapableAdvertisingEnableRequest, LeLegacyScanResponseData,
 };
+pub use controller::le::central::{
+    LE_CENTRAL_COMMAND_RESPONSE_CAPACITY, LeCentralCommand, LeCentralCommandResponse,
+    LeCreateConnectionParameters, LeInitiatorPeer,
+};
 pub use controller::le::data_length::{
     LE_DATA_LENGTH_CHANGE_EVENT_CAPACITY, LE_DATA_LENGTH_COMMAND_COMPLETE_EVENT_CAPACITY,
     LeDataLengthChangeEvent, LeDataLengthCommand, LeDataLengthCommandCompleteEvent,

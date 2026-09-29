@@ -477,8 +477,11 @@ known gap is checked: production sends no BlockAckReq, while the vendor
 (`ppFillAMPDUBar`, `ppReSendBar`) requests a BlockAck starting after the
 aggregate head when a resort discards that head as aged, or acknowledges it
 while the station has a request pending for the TID. Rate control sets that
-pending bit when it resumes aggregation (`trc_onAmpduOp`). The cases check
-the request's TID and starting sequence.
+pending bit when it resumes aggregation (`trc_onAmpduOp`). The vendor sends
+that request only while the aggregate keeps an MPDU after the resort, and a
+later MPDU discarded as aged in the same resort cancels it; cases with the
+head and later MPDUs aged, or with nothing left, check that no request is
+sent. The cases check the request's TID and starting sequence.
 
 The retry bound is compared too. Both sides keep a missing MPDU in the
 aggregate without counting publications (MATCH with the vendor's descriptor

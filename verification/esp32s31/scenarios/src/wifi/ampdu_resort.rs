@@ -257,6 +257,8 @@ enum Aging {
     Expired,
     /// Only the head was queued a lifetime earlier than the others.
     HeadExpired,
+    /// The head and the third MPDU were queued a lifetime earlier.
+    HeadAndThirdExpired,
 }
 
 const fn completion(
@@ -361,6 +363,37 @@ const COMPLETIONS: &[Completion] = &[
             vendor_retry: false,
         }),
         ..completion("lifetime-expired-head", 4, 100, 100, 0b1010)
+    },
+    // The head and a later MPDU both aged out, as when every MPDU of the
+    // aggregate starts its lifetime at the same moment: discarding the later
+    // one after the head leaves the vendor without a BlockAckReq.
+    Completion {
+        aging: Some(Aging::Expired),
+        ..completion("lifetime-expired-head-and-later", 4, 100, 100, 0b1010)
+    },
+    // The head and a later MPDU aged out while the last MPDU stays: the
+    // later discard cancels the head's BlockAckReq.
+    Completion {
+        aging: Some(Aging::HeadAndThirdExpired),
+        difference: Some(Difference {
+            reason: LIFETIME_ORIGIN,
+            mpdu: 0,
+            vendor_retry: false,
+        }),
+        ..completion("lifetime-expired-head-and-third", 4, 100, 100, 0b0010)
+    },
+    // Only the head is missing and aged and the rest are acknowledged: the
+    // aggregate ends empty, and an empty aggregate sends no BlockAckReq.
+    Completion {
+        aging: Some(Aging::Expired),
+        ..completion("lifetime-expired-head-only", 4, 100, 100, 0b1110)
+    },
+    // The head is acknowledged while a request is pending, and a later
+    // MPDU aged out: the later discard likewise cancels the request.
+    Completion {
+        bar_pending: true,
+        aging: Some(Aging::Expired),
+        ..completion("bar-pending-later-aged", 4, 100, 100, 0b0101)
     },
     // The agreement ended before the resort: both sides send the missing
     // MPDUs individually.
@@ -715,12 +748,19 @@ fn case_rows(
         record: None,
     };
     for (address, mut bytes) in aggregate.regions() {
-        if address == ARENA_DESCRIPTOR && completion.aging == Some(Aging::HeadExpired) {
-            word(
-                &mut bytes,
-                DESCRIPTOR_ENQUEUED,
-                ENQUEUED_US - lifetime - EXPIRED_MARGIN_US,
-            );
+        if address == ARENA_DESCRIPTOR {
+            let aged: &[usize] = match completion.aging {
+                Some(Aging::HeadExpired) => &[0],
+                Some(Aging::HeadAndThirdExpired) => &[0, 2],
+                _ => &[],
+            };
+            for index in aged {
+                word(
+                    &mut bytes,
+                    index * DESCRIPTOR_BYTES as usize + DESCRIPTOR_ENQUEUED,
+                    ENQUEUED_US - lifetime - EXPIRED_MARGIN_US,
+                );
+            }
         }
         memory.push(known(address, bytes.len() as u32, &bytes)?);
     }
@@ -755,7 +795,9 @@ fn case_rows(
         ARENA_ACCESS,
     ));
     let elapsed = match completion.aging {
-        None | Some(Aging::Fresh) | Some(Aging::HeadExpired) => 0,
+        None | Some(Aging::Fresh) | Some(Aging::HeadExpired) | Some(Aging::HeadAndThirdExpired) => {
+            0
+        }
         Some(Aging::Expired) => lifetime + EXPIRED_MARGIN_US,
     };
     if completion.aging.is_some() {

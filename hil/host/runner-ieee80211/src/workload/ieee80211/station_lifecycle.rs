@@ -34,7 +34,7 @@ pub fn run(
     require_no_beacon_loss: bool,
 ) -> Result<()> {
     let options = options.validate()?;
-    if options.boots > 1 && context.lab.device.startup_artifact.is_none() {
+    if options.boots > 1 && context.lab.dut.startup_artifact.is_none() {
         return Err(
             "multi-boot station lifecycle qualification requires a configured startup artifact"
                 .into(),

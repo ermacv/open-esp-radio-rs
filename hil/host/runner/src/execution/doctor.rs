@@ -52,7 +52,7 @@ pub(crate) fn run(root: &Path, lab: &LabConfig, scenarios: &[&Scenario]) -> Resu
             .then_some(())
             .ok_or_else(|| "missing embedded HIL workspace".into())
     })?;
-    checks.run("serial-device", || fs_device_exists(&lab.device.serial))?;
+    checks.run("serial-device", || fs_device_exists(&lab.dut.serial))?;
     for (variable, program) in [
         ("CARGO", "cargo"),
         ("LLVM_OBJCOPY", "llvm-objcopy"),
@@ -81,7 +81,7 @@ pub(crate) fn run(root: &Path, lab: &LabConfig, scenarios: &[&Scenario]) -> Resu
             "schema": 1,
             "status": if checks.passed() { "passed" } else { "failed" },
             "cell_id": lab.cell_id(),
-            "device_id": lab.device.id,
+            "device_id": lab.dut.id,
             "lab_config": lab.path(),
             "requirements": required,
             "checks": checks.checks,

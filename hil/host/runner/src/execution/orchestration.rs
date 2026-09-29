@@ -733,10 +733,10 @@ fn start_run(
 ) -> Result<RunSession> {
     let mut session = RunSession::create(
         root,
-        lab.target(),
+        lab.chip(),
         lab.cell_id(),
-        &lab.device.id,
-        &lab.device.serial,
+        &lab.dut.id,
+        &lab.dut.serial,
         invocation.arguments,
     )?;
     if let Some(snapshot) = invocation.snapshot {
@@ -847,7 +847,7 @@ fn run_scenario_repetition(
     let started = std::time::Instant::now();
     let peer_serial = lab.peer.as_ref().and_then(|peer| peer.serial().ok());
     let usb = hil_core::usb_events::UsbWatch::start(
-        std::iter::once(lab.device.serial.as_path()).chain(peer_serial.as_deref()),
+        std::iter::once(lab.dut.serial.as_path()).chain(peer_serial.as_deref()),
         started_unix_millis,
     );
     let cleanup = hil_core::fixture::cleanup::Scope::new(output);

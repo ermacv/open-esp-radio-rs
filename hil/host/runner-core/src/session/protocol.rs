@@ -153,7 +153,7 @@ impl SerialCapture {
         target: Target<'_>,
     ) -> Result<(DeviceImageKeys, Option<StartupArtifactStatus>)> {
         let capabilities = self.request_image_keys(PROTOCOL_READY_TIMEOUT)?;
-        let artifact_path = target.lab.device.startup_artifact.as_deref();
+        let artifact_path = target.lab.dut.startup_artifact.as_deref();
         if artifact_path.is_some() && !capabilities.has::<oer_hil_protocol::phy::StartupArtifact>()
         {
             return Err("firmware does not support a host-owned startup artifact".into());
@@ -168,7 +168,7 @@ impl SerialCapture {
         {
             self.upload_startup_artifact(&bytes, PROTOCOL_READY_TIMEOUT)?;
             crate::lab::lock::record_board(
-                &target.lab.device.serial,
+                &target.lab.dut.serial,
                 oer_hil_arbiter::BoardEventKind::StartupArtifactUploaded {
                     path: path.display().to_string(),
                     sha256: crate::durable::sha256_bytes(&bytes),
@@ -198,7 +198,7 @@ impl SerialCapture {
             }
             crate::session::startup_artifact::persist_atomically(path, &bytes)?;
             crate::lab::lock::record_board(
-                &target.lab.device.serial,
+                &target.lab.dut.serial,
                 oer_hil_arbiter::BoardEventKind::StartupArtifactWritten {
                     path: path.display().to_string(),
                     sha256: crate::durable::sha256_bytes(&bytes),

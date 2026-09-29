@@ -16,7 +16,7 @@ fn boot_smoke_preflight_never_opens_a_serial_capture() {
         use std::os::unix::fs::PermissionsExt as _;
         std::fs::set_permissions(&lab_path, std::fs::Permissions::from_mode(0o600)).unwrap();
     }
-    let lab = LabConfig::load(&lab_path).expect("example lab config");
+    let lab = LabConfig::load(&lab_path, "esp32s31").expect("example lab config");
     let output = tempfile::tempdir().unwrap();
     validate_flashed_image(&lab, catalog().get("boot-smoke").unwrap(), output.path()).unwrap();
     assert!(std::fs::read_dir(output.path()).unwrap().next().is_none());

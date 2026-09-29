@@ -134,11 +134,13 @@ fn an_explicit_selection_refuses_an_unsupported_scenario_and_a_tag_skips_it() {
     let explicit = crate::cli::Selection {
         scenario: Some(unsupported.id().to_owned()),
         tag: Vec::new(),
+        chip: None,
     };
     assert!(explicit.resolve(&catalog).is_err());
     let tagged = crate::cli::Selection {
         scenario: None,
         tag: unsupported.header.tags.clone(),
+        chip: None,
     };
     let selected = tagged.resolve(&catalog).unwrap_or_default();
     assert!(

@@ -145,7 +145,7 @@ fn bluetooth_and_wifi_fixture_commands_share_one_namespace() {
         Cli::try_parse_from(["cargo-hil", "fixture", "check", "station-udp-tx-he20"]).unwrap();
     assert!(matches!(
         cli.command,
-        CliCommand::Fixture { command: FixtureCommand::Check { scenario } }
+        CliCommand::Fixture { command: FixtureCommand::Check { scenario, chip: None } }
             if scenario == "station-udp-tx-he20"
     ));
 }

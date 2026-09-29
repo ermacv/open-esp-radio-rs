@@ -332,6 +332,7 @@ fn run_all_selection_has_one_ordered_image_plan_and_requirement_union() {
     let selected = crate::cli::Selection {
         scenario: None,
         tag: tags,
+        chip: None,
     }
     .resolve(&catalog)
     .unwrap();

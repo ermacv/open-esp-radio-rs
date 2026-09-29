@@ -171,7 +171,7 @@ impl FixtureLock {
 
     fn lock_now(lab: &super::config::LabConfig, keys: &[String], device: bool) -> Result<Self> {
         let device = device
-            .then(|| oer_esp32s31_firmware::device::DeviceLease::acquire(&lab.device.serial))
+            .then(|| oer_esp32s31_firmware::device::DeviceLease::acquire(&lab.dut.serial))
             .transpose()?;
         let root = oer_esp32s31_firmware::device::lease_directory()?;
         let resources = Self::acquire_resources(&root, keys.to_vec())?;
@@ -269,7 +269,7 @@ fn claims(
     use oer_hil_arbiter::Claim;
     let mut claims = Vec::new();
     if request.device {
-        claims.push(Claim::board(&board_identity(&lab.device.serial)));
+        claims.push(Claim::board(&board_identity(&lab.dut.serial)));
     }
     // A peer whose board is not attached is claimed by no port; the run's
     // preflight reports it.

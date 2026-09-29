@@ -325,7 +325,7 @@ impl LabDefinition {
         };
         Self {
             cell_id: lab.cell_id().to_owned(),
-            device_id: lab.device.id.clone(),
+            device_id: lab.dut.id.clone(),
             bluetooth_adapter: lab.bluetooth_adapter.map(|adapter| adapter.to_string()),
             peer: lab.peer.as_ref().map(|peer| peer.id.clone()),
             station_ipv4,

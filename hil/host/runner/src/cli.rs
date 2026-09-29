@@ -139,6 +139,10 @@ pub(crate) enum CliCommand {
         /// repeated.
         #[arg(long, value_name = "SCENARIO")]
         exclude: Vec<String>,
+        /// Chip whose device under test runs the scenarios; default: the only
+        /// chip whose HIL agent builds every image they use.
+        #[arg(long, value_name = "CHIP")]
+        chip: Option<String>,
     },
 }
 
@@ -150,6 +154,10 @@ pub(crate) struct Selection {
     /// Require every supplied tag. May be repeated.
     #[arg(long)]
     pub(crate) tag: Vec<String>,
+    /// Chip whose device under test the selection is for; default: the only
+    /// chip whose HIL agent builds every image the selection uses.
+    #[arg(long, value_name = "CHIP")]
+    pub(crate) chip: Option<String>,
 }
 
 impl Selection {
@@ -255,5 +263,11 @@ pub(crate) enum FixtureCommand {
         adapter: Vec<String>,
     },
     /// Validate prerequisites and exercise AP preparation/restoration without firmware or serial.
-    Check { scenario: String },
+    Check {
+        scenario: String,
+        /// Chip whose device under test the scenario would run on; default:
+        /// the only chip whose HIL agent builds its image.
+        #[arg(long, value_name = "CHIP")]
+        chip: Option<String>,
+    },
 }

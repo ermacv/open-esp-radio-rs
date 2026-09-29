@@ -353,8 +353,8 @@ fn production_boot(
     lifecycle: Lifecycle,
 ) -> Result<(String, String)> {
     let mut lab = lab.clone();
-    lab.device.startup_artifact = Some(artifact.to_owned());
-    let capture = SerialCapture::start_with_reset(&lab.device.serial, output)?;
+    lab.dut.startup_artifact = Some(artifact.to_owned());
+    let capture = SerialCapture::start_with_reset(&lab.dut.serial, output)?;
     let result = (|| {
         // The IEEE 802.15.4 session replaces the image's own initialization:
         // it is admitted only before it, and publishes no startup artifact.
@@ -513,8 +513,8 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         Some(path) => path.clone(),
         None => LabConfig::default_path()?,
     };
-    let lab = LabConfig::load(&lab_path)?;
-    let port = lab.device.serial.clone();
+    let lab = LabConfig::load(&lab_path, "esp32s31")?;
+    let port = lab.dut.serial.clone();
     let (vendor_project, production_image) = arguments.lifecycle.images();
     let vendor_project = arguments
         .vendor_project

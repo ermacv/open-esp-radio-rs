@@ -96,12 +96,12 @@ fixture. It is ignored by Git; scenarios contain no lab secrets or
 machine-specific paths. The identities are written into every run manifest so
 results from different cells and boards cannot be silently mixed.
 
-Each device under test belongs to a chip: `[targets.<chip>]` names it (its
+Each device under test belongs to a chip: `[duts.<chip>]` names it (its
 identity, serial port or board, startup artifact), keyed by a chip id with a
-profile in `platform/<chip>/chip.toml`. `[device]` is the same as
-`[targets.esp32s31]` and stays the default; another chip's board is resolved
-only when a run for that chip asks for it, so an absent board fails only such
-a run.
+profile in `platform/<chip>/chip.toml`. There is no default chip: a command
+that uses a device under test takes it from its `--chip` or from the only chip
+that builds its scenarios' images, and resolves only that chip's board, so an
+absent board fails only runs for its chip.
 
 Multi-boot station lifecycle scenarios require a configured startup artifact.
 Their first boot may create or replace it; every later boot must report
@@ -113,8 +113,7 @@ ESP-IDF catalog image: the [IEEE 802.15.4 peer](../peers/esp32c5-ieee802154/READ
 the [Thread peer](../peers/esp32c5-openthread/README.md) or the
 [Bluetooth LE Direct Test Mode peer](../peers/esp32c5-ble-dtm/README.md).
 Name the board's stable identity and serial port, or its registered board
-name, in the `[peer]` table (`[ieee802154_peer]`, its earlier name, is read
-the same). A run of a peer scenario claims the peer board beside the device
+name, in the `[peer]` table. A run of a peer scenario claims the peer board beside the device
 under test and the air in its one lease. Before the first scenario that
 needs an image, the runner brings the board to that image's current catalog
 build with `cargo hil firmware flash IMAGE --if-changed`, and writes the

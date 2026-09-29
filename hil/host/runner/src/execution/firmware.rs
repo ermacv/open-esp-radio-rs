@@ -117,12 +117,12 @@ pub(crate) fn flash_archived_artifacts(
     session: &mut RunSession,
 ) -> Result<Option<Failure>> {
     let failure = flash_archived_build(class, artifacts, session, |artifacts| {
-        device::flash(root, artifacts, &lab.device.serial)
+        device::flash(root, artifacts, &lab.dut.serial)
     })?;
     if failure.is_none() {
         let repository = session.repository();
         hil_core::lab::lock::record_flash(
-            &lab.device.serial,
+            &lab.dut.serial,
             class.id(),
             &artifacts.application_image,
             Some(repository.commit.clone()),
@@ -146,7 +146,7 @@ pub(crate) fn reflash_replayed(
         Some(archived.image),
         None,
     )?;
-    if let Err(error) = device::flash_archived(root, archived, &lab.device.serial) {
+    if let Err(error) = device::flash_archived(root, archived, &lab.dut.serial) {
         oer_process::check_cancelled()?;
         session.record_event(
             RunEventKind::ImageFlashFailed,
@@ -166,7 +166,7 @@ pub(crate) fn reflash_replayed(
         Some(Outcome::Passed),
     )?;
     hil_core::lab::lock::record_flash(
-        &lab.device.serial,
+        &lab.dut.serial,
         archived.image.id(),
         &archived.application_path,
         None,
@@ -246,14 +246,14 @@ fn prepare_replayed_image(
             application,
             &run_id,
             archived.image,
-            &lab.device.serial,
+            &lab.dut.serial,
         )?;
         flashed = Some(application.to_owned());
         Ok(())
     })?;
     if let Some(application) = flashed {
         hil_core::lab::lock::record_flash(
-            &lab.device.serial,
+            &lab.dut.serial,
             archived.image.id(),
             &application,
             None,

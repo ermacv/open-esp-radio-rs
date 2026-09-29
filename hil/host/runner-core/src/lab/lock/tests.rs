@@ -219,7 +219,7 @@ fn a_run_claims_its_boards_fixtures_and_the_air() {
     assert_eq!(
         claims,
         [
-            Claim::board(&board_identity(&lab.device.serial)),
+            Claim::board(&board_identity(&lab.dut.serial)),
             Claim::exclusive("openwrt-host-boot:x"),
             range,
             coarse,

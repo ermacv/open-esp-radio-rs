@@ -32,7 +32,7 @@ pub(crate) fn validate_flashed_image(
     let preflight = output.join("image-preflight");
     let error = match image_keys_of(lab, &preflight) {
         Ok(image_keys) => {
-            return check_flashed_image_keys(lab.target(), selected, &image_keys);
+            return check_flashed_image_keys(lab.chip(), selected, &image_keys);
         }
         Err(error) => error,
     };
@@ -54,9 +54,9 @@ pub(crate) fn validate_flashed_image(
     let mut attempt = 0;
     let mut answered = None;
     let escalation = hil_core::recovery::escalate_boot_loop(
-        &lab.device.serial,
+        &lab.dut.serial,
         None,
-        lab.target(),
+        lab.chip(),
         found,
         output,
         &origin,
@@ -73,7 +73,7 @@ pub(crate) fn validate_flashed_image(
                 "hil: {:?} cleared the boot loop",
                 escalation.steps.last().map(|step| step.step)
             );
-            check_flashed_image_keys(lab.target(), selected, &image_keys)
+            check_flashed_image_keys(lab.chip(), selected, &image_keys)
         }
         None => Err(format!(
             "{error}; the bootloader reset in a loop ({}) and {} did not clear it: the board is \
@@ -94,7 +94,7 @@ pub(crate) fn validate_flashed_image(
 /// Reset the device and ask its image for its image keys, capturing the
 /// console into `directory`.
 fn image_keys_of(lab: &LabConfig, directory: &Path) -> Result<DeviceImageKeys> {
-    let capture = SerialCapture::start_with_reset(&lab.device.serial, directory)?;
+    let capture = SerialCapture::start_with_reset(&lab.dut.serial, directory)?;
     let image_keys = capture.request_image_keys(Duration::from_secs(10));
     capture.finish_with(image_keys)
 }

@@ -53,7 +53,7 @@ impl<'a> Context<'a> {
             .map_err(|_| "capture output is outside its repetition")?;
         let recorder = self.measurements.capture(relative)?;
         let capture =
-            SerialCapture::start_with_reset(&self.lab.device.serial, output)?.record_into(recorder);
+            SerialCapture::start_with_reset(&self.lab.dut.serial, output)?.record_into(recorder);
         Ok(match self.profile {
             Some(profile) => capture.profiled(profile)?,
             None => capture,

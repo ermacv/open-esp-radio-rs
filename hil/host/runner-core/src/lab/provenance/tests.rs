@@ -18,14 +18,14 @@ fn inactive_before_state_is_valid_provenance_for_a_network_scenario() {
         wireless_interface: "phy0-ap0".into(),
     };
     provenance
-        .validate_binding(lab.cell_id(), &lab.device.id, 0, None)
+        .validate_binding(lab.cell_id(), &lab.dut.id, 0, None)
         .unwrap();
     provenance.fixture = FixtureObservation::OpenWrtInactive {
         wireless_interface: "another-radio".into(),
     };
     assert!(
         provenance
-            .validate_binding(lab.cell_id(), &lab.device.id, 0, None)
+            .validate_binding(lab.cell_id(), &lab.dut.id, 0, None)
             .is_err()
     );
 }
@@ -49,7 +49,7 @@ fn system_observation_does_not_contact_the_configured_access_point() {
             .all(|entry| entry.wireless_link.is_none() && entry.ipv4_addresses.is_empty())
     );
     provenance
-        .validate_binding(lab.cell_id(), &lab.device.id, 0, None)
+        .validate_binding(lab.cell_id(), &lab.dut.id, 0, None)
         .unwrap();
 }
 

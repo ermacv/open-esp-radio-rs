@@ -6,21 +6,19 @@
 # Stable physical cell identity recorded in every immutable run manifest.
 id = "berlin-esp32s31-01"
 
-[device]
+# One device under test per chip id from platform/<chip>/chip.toml. A run for
+# a chip uses its table; a table whose board is absent fails only such a run.
+[duts.esp32s31]
 # Stable DUT identity; do not use a transient /dev path as the identity.
 id = "esp32s31-qfn80-01"
-# The ESP32-S31 the runner uses: a serial port, or instead
-# `board = "NAME-or-MAC"` from `cargo hil devices`, resolved to its port.
+# A serial port, or instead `board = "NAME-or-MAC"` from `cargo hil devices`,
+# resolved to its port.
 serial = "/dev/ttyACM0"
 # Optional opaque calibration/startup state persisted by the HIL runner; a
 # relative path belongs to each checkout.
 startup_artifact = "target/hil/esp32s31/startup-artifact.bin"
 
-# Devices under test of other chips, one table per chip id from
-# platform/<chip>/chip.toml, with the same fields as [device]; [device] is the
-# same as [targets.esp32s31]. A run for a chip uses its table; a table whose
-# board is absent fails only such a run.
-# [targets.esp32c5]
+# [duts.esp32c5]
 # id = "esp32c5-devkit-01"
 # board = "esp32c5"
 
@@ -31,8 +29,7 @@ adapter = "hci0"
 # Optional, used only by peer workloads: the reference peer board, an
 # ESP32-C5 that each such scenario brings up to the catalog image it needs
 # (hil/peers/*). Prefer a stable /dev/serial/by-id path, or
-# `board = "NAME-or-MAC"` instead of serial; `id` then defaults to it. The
-# earlier table name `[ieee802154_peer]` is read the same.
+# `board = "NAME-or-MAC"` instead of serial; `id` then defaults to it.
 [peer]
 id = "esp32c5-peer-01"
 serial = "/dev/ttyUSB0"

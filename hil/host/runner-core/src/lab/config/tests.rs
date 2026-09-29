@@ -27,7 +27,11 @@ fn linux_fixture_requires_explicit_radio_and_network_settings() {
         let mut file = tempfile::NamedTempFile::new().unwrap();
         file.write_all(toml::to_string(&candidate).unwrap().as_bytes())
             .unwrap();
-        assert_eq!(LabConfig::load(file.path()).is_ok(), valid, "{key}");
+        assert_eq!(
+            LabConfig::load(file.path(), "esp32s31").is_ok(),
+            valid,
+            "{key}"
+        );
     }
 }
 
@@ -103,7 +107,7 @@ fn openwrt_accepts_each_declared_phy_and_multiple_profiles() {
         &["ht20", "ht40", "he20"][..],
     ] {
         let file = openwrt_config(phys);
-        let config = LabConfig::load(file.path()).unwrap();
+        let config = LabConfig::load(file.path(), "esp32s31").unwrap();
         for phy in [
             PhyExpectation::Ht20,
             PhyExpectation::Ht40,
@@ -121,7 +125,7 @@ fn openwrt_accepts_each_declared_phy_and_multiple_profiles() {
 fn openwrt_rejects_empty_duplicate_and_unknown_phy_profiles() {
     for phys in [&[][..], &["ht40", "ht40"][..], &["unknown"][..]] {
         let file = openwrt_config(phys);
-        assert!(LabConfig::load(file.path()).is_err());
+        assert!(LabConfig::load(file.path(), "esp32s31").is_err());
     }
 }
 
@@ -171,13 +175,13 @@ fn independent_observer_accepts_only_safe_identifiers_and_managed_ap() {
         let mut file = tempfile::NamedTempFile::new().unwrap();
         file.write_all(toml::to_string(&candidate).unwrap().as_bytes())
             .unwrap();
-        assert_eq!(LabConfig::load(file.path()).is_ok(), !invalid);
+        assert_eq!(LabConfig::load(file.path(), "esp32s31").is_ok(), !invalid);
     }
     raw["station_fixture"] = toml::from_str("kind='external'\nphys=['ht40']\n").unwrap();
     let mut file = tempfile::NamedTempFile::new().unwrap();
     file.write_all(toml::to_string(&raw).unwrap().as_bytes())
         .unwrap();
-    assert!(LabConfig::load(file.path()).is_err());
+    assert!(LabConfig::load(file.path(), "esp32s31").is_err());
 }
 
 #[test]
@@ -188,7 +192,7 @@ fn the_peer_board_is_optional_and_needs_an_identity() {
         let mut file = tempfile::NamedTempFile::new().unwrap();
         file.write_all(toml::to_string(value).unwrap().as_bytes())
             .unwrap();
-        LabConfig::load(file.path())
+        LabConfig::load(file.path(), "esp32s31")
     };
     let lab = load(&raw).unwrap();
     assert_eq!(
@@ -204,12 +208,6 @@ fn the_peer_board_is_optional_and_needs_an_identity() {
     let mut anonymous = raw.clone();
     anonymous["peer"]["id"] = toml::Value::String(String::from(" "));
     assert!(load(&anonymous).is_err());
-    // The table's earlier name names the same board.
-    let mut earlier = raw.clone();
-    let table = earlier.as_table_mut().unwrap();
-    let peer = table.remove("peer").unwrap();
-    table.insert(String::from("ieee802154_peer"), peer);
-    assert_eq!(load(&earlier).unwrap().peer, lab.peer);
 }
 
 #[test]
@@ -227,10 +225,10 @@ fn devices_are_named_by_serial_port_or_by_registered_board() {
         let mut file = tempfile::NamedTempFile::new().unwrap();
         file.write_all(toml::to_string(value).unwrap().as_bytes())
             .unwrap();
-        LabConfig::load_resolving(file.path(), &resolve)
+        LabConfig::load_resolving(file.path(), "esp32s31", &resolve)
     };
     let mut boards = raw.clone();
-    let device = boards["device"].as_table_mut().unwrap();
+    let device = boards["duts"]["esp32s31"].as_table_mut().unwrap();
     device.remove("serial");
     device.insert("board".into(), "esp32s31".into());
     let peer = boards["peer"].as_table_mut().unwrap();
@@ -238,7 +236,7 @@ fn devices_are_named_by_serial_port_or_by_registered_board() {
     peer.remove("id");
     peer.insert("board".into(), "esp32c5".into());
     let lab = load(&boards).unwrap();
-    assert_eq!(lab.device.serial, std::path::PathBuf::from("/dev/ttyACM0"));
+    assert_eq!(lab.dut.serial, std::path::PathBuf::from("/dev/ttyACM0"));
     assert_eq!(
         lab.peer,
         Some(PeerBoardConfig::new(
@@ -256,21 +254,24 @@ fn devices_are_named_by_serial_port_or_by_registered_board() {
     let mut file = tempfile::NamedTempFile::new().unwrap();
     file.write_all(toml::to_string(&boards).unwrap().as_bytes())
         .unwrap();
-    let lab = LabConfig::load_resolving(file.path(), &detached).unwrap();
-    assert_eq!(lab.device.serial, std::path::PathBuf::from("/dev/ttyACM0"));
+    let lab = LabConfig::load_resolving(file.path(), "esp32s31", &detached).unwrap();
+    assert_eq!(lab.dut.serial, std::path::PathBuf::from("/dev/ttyACM0"));
     let error = lab.peer.unwrap().serial().unwrap_err();
     assert!(error.to_string().contains("not attached"), "{error}");
     let mut both = boards.clone();
-    both["device"]
+    both["duts"]["esp32s31"]
         .as_table_mut()
         .unwrap()
         .insert("serial".into(), "/dev/ttyACM0".into());
     assert!(load(&both).is_err());
     let mut neither = boards.clone();
-    neither["device"].as_table_mut().unwrap().remove("board");
+    neither["duts"]["esp32s31"]
+        .as_table_mut()
+        .unwrap()
+        .remove("board");
     assert!(load(&neither).is_err());
     let mut unknown = boards;
-    unknown["device"]["board"] = "esp32c5".into();
+    unknown["duts"]["esp32s31"]["board"] = "esp32c5".into();
     assert!(
         load(&unknown).is_err(),
         "the device must resolve as an esp32s31"
@@ -303,7 +304,7 @@ fn a_wifi_link_occupies_its_channel_and_secondary_channel() {
 }
 
 #[test]
-fn devices_under_test_are_keyed_by_chip_and_device_is_the_esp32s31() {
+fn devices_under_test_are_keyed_by_chip_and_a_load_names_its_chip() {
     use std::io::Write;
     let raw: toml::Value = toml::from_str(include_str!("../../../../../lab.example.toml")).unwrap();
     let resolve = |board: &str, chip: Option<&str>| -> crate::Result<std::path::PathBuf> {
@@ -314,54 +315,52 @@ fn devices_under_test_are_keyed_by_chip_and_device_is_the_esp32s31() {
             _ => Err(format!("unexpected {board} {chip:?}").into()),
         }
     };
-    let load = |value: &toml::Value| {
+    let load = |value: &toml::Value, chip: &str| {
         let mut file = tempfile::NamedTempFile::new().unwrap();
         file.write_all(toml::to_string(value).unwrap().as_bytes())
             .unwrap();
-        LabConfig::load_resolving(file.path(), &resolve)
+        LabConfig::load_resolving(file.path(), chip, &resolve)
     };
-    let target = |board: &str| {
+    let dut = |board: &str| {
         let mut table = toml::Table::new();
         table.insert("id".into(), "esp32c5-dut".into());
         table.insert("board".into(), board.into());
         toml::Value::Table(table)
     };
-    // [device] is the esp32s31 and stays the default; another chip resolves
-    // only when a run asks for it.
     let mut both = raw.clone();
-    let mut targets = toml::Table::new();
-    targets.insert("esp32c5".into(), target("esp32c5"));
-    both.as_table_mut()
+    both["duts"]
+        .as_table_mut()
         .unwrap()
-        .insert("targets".into(), toml::Value::Table(targets));
-    let lab = load(&both).unwrap();
-    assert_eq!(lab.target(), "esp32s31");
-    assert_eq!(lab.targets(), ["esp32c5", "esp32s31"]);
-    let esp32c5 = lab.for_target_resolving("esp32c5", &resolve).unwrap();
-    assert_eq!(esp32c5.target(), "esp32c5");
-    assert_eq!(esp32c5.device.id, "esp32c5-dut");
+        .insert("esp32c5".into(), dut("esp32c5"));
+    let lab = load(&both, "esp32s31").unwrap();
+    assert_eq!(lab.chip(), "esp32s31");
+    assert_eq!(lab.chips(), ["esp32c5", "esp32s31"]);
+    let esp32c5 = load(&both, "esp32c5").unwrap();
+    assert_eq!(esp32c5.chip(), "esp32c5");
+    assert_eq!(esp32c5.dut.id, "esp32c5-dut");
+    assert_eq!(esp32c5.dut.serial, std::path::PathBuf::from("/dev/ttyACM1"));
     assert_eq!(
-        esp32c5.device.serial,
-        std::path::PathBuf::from("/dev/ttyACM1")
+        lab.for_chip_resolving("esp32c5", &resolve).unwrap().dut.id,
+        "esp32c5-dut"
     );
-    assert!(lab.for_target_resolving("esp32h2", &resolve).is_err());
-    // An unattached board of another chip does not fail the load.
+    assert!(load(&both, "esp32h2").is_err());
+    // An unattached board of another chip does not fail a load for this one.
     let mut absent = both.clone();
-    absent["targets"]["esp32c5"]["board"] = "gone".into();
-    let lab = load(&absent).unwrap();
-    assert!(lab.for_target_resolving("esp32c5", &resolve).is_err());
-    // [device] and [targets.esp32s31] name one device; an unknown chip is refused.
-    let mut twice = both.clone();
-    let device = twice["device"].clone();
-    twice["targets"]
+    absent["duts"]["esp32c5"]["board"] = "gone".into();
+    let lab = load(&absent, "esp32s31").unwrap();
+    assert!(lab.for_chip_resolving("esp32c5", &resolve).is_err());
+    // An unknown chip is refused, and so are the removed tables.
+    let mut unknown = both.clone();
+    unknown["duts"]
         .as_table_mut()
         .unwrap()
-        .insert("esp32s31".into(), device);
-    assert!(load(&twice).is_err());
-    let mut unknown = both;
-    unknown["targets"]
-        .as_table_mut()
-        .unwrap()
-        .insert("esp32x9".into(), target("esp32c5"));
-    assert!(load(&unknown).is_err());
+        .insert("esp32x9".into(), dut("esp32c5"));
+    assert!(load(&unknown, "esp32s31").is_err());
+    for removed in ["device", "targets", "ieee802154_peer"] {
+        let mut old = both.clone();
+        old.as_table_mut()
+            .unwrap()
+            .insert(removed.into(), toml::Value::Table(toml::Table::new()));
+        assert!(load(&old, "esp32s31").is_err(), "{removed}");
+    }
 }

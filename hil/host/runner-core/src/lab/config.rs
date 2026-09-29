@@ -23,12 +23,12 @@ use crate::{
 pub struct LabConfig {
     path: PathBuf,
     cell_id: String,
-    /// The chip of `device`.
-    target: String,
-    /// Every device under test by chip, resolved by [`Self::for_target`].
-    targets: std::collections::BTreeMap<String, RawDeviceConfig>,
-    /// The device under test of `target`.
-    pub device: DeviceConfig,
+    /// The chip of `dut`.
+    chip: String,
+    /// Every device under test by chip, resolved by [`Self::for_chip`].
+    duts: std::collections::BTreeMap<String, RawDeviceConfig>,
+    /// The device under test of `chip`.
+    pub dut: DeviceConfig,
     pub bluetooth_adapter: Option<oer_hil_fixture::bluetooth::model::Adapter>,
     /// The IEEE 802.15.4 reference peer (`hil/peers/esp32c5-ieee802154`).
     pub peer: Option<PeerBoardConfig>,
@@ -52,15 +52,11 @@ pub struct LegacyBssConfig {
 #[serde(deny_unknown_fields)]
 struct RawLabConfig {
     lab: RawLabIdentity,
-    /// The esp32s31 device under test; the same as `[targets.esp32s31]`.
-    device: Option<RawDeviceConfig>,
-    /// Devices under test by chip id.
+    /// Devices under test by chip id: `[duts.<chip>]`.
     #[serde(default)]
-    targets: std::collections::BTreeMap<String, RawDeviceConfig>,
+    duts: std::collections::BTreeMap<String, RawDeviceConfig>,
     bluetooth: Option<RawBluetoothConfig>,
-    /// The reference peer board; `[ieee802154_peer]`, its earlier name, is
-    /// read the same.
-    #[serde(alias = "ieee802154_peer")]
+    /// The reference peer board.
     peer: Option<RawPeerBoardConfig>,
     station: RawStationConfig,
     access_point: RawAccessPointConfig,
@@ -309,23 +305,20 @@ fn board_port(
     }
 }
 
-/// The chip whose device a lab configuration uses unless a run names another.
-pub const DEFAULT_TARGET: &str = "esp32s31";
-
 /// The serial port, id and startup artifact of `chip`'s device under test.
-fn resolve_target(
-    targets: &std::collections::BTreeMap<String, RawDeviceConfig>,
+fn resolve_dut(
+    duts: &std::collections::BTreeMap<String, RawDeviceConfig>,
     chip: &str,
     resolve: &dyn Fn(&str, Option<&str>) -> Result<PathBuf>,
 ) -> Result<(PathBuf, String, Option<PathBuf>)> {
-    let device = targets.get(chip).cloned().ok_or_else(|| {
+    let device = duts.get(chip).cloned().ok_or_else(|| {
         format!(
-            "HIL lab config has no device under test for {chip}; add [targets.{chip}] (configured: {})",
-            targets.keys().cloned().collect::<Vec<_>>().join(", ")
+            "HIL lab config has no device under test for {chip}; add [duts.{chip}] (configured: {})",
+            duts.keys().cloned().collect::<Vec<_>>().join(", ")
         )
     })?;
     let serial = board_port(
-        &format!("targets.{chip}"),
+        &format!("duts.{chip}"),
         device.serial,
         device.board.as_deref(),
         Some(chip),
@@ -375,14 +368,16 @@ impl LabConfig {
         Ok(host)
     }
 
-    pub fn load(path: &Path) -> Result<Self> {
-        Self::load_resolving(path, &resolve_board)
+    /// The configuration at `path` with `chip`'s device under test.
+    pub fn load(path: &Path, chip: &str) -> Result<Self> {
+        Self::load_resolving(path, chip, &resolve_board)
     }
 
     /// Load with `resolve` mapping a `board` reference and its required chip
     /// to the board's serial port.
     pub(crate) fn load_resolving(
         path: &Path,
+        chip: &str,
         resolve: &dyn Fn(&str, Option<&str>) -> Result<PathBuf>,
     ) -> Result<Self> {
         require_private_permissions(path)?;
@@ -404,40 +399,20 @@ impl LabConfig {
         }
         validate_identifier("lab.id", &raw.lab.id)?;
         let root = repository_root()?;
-        let mut targets = std::mem::take(&mut raw.targets);
-        if let Some(device) = raw.device.take() {
-            if targets.contains_key(DEFAULT_TARGET) {
-                return Err(format!(
-                    "HIL lab config names both [device] and [targets.{DEFAULT_TARGET}]; keep one"
-                )
-                .into());
-            }
-            targets.insert(DEFAULT_TARGET.to_owned(), device);
-        }
+        let duts = std::mem::take(&mut raw.duts);
         let supported = oer_chip_profile::supported(&root)?;
-        for (chip, device) in &targets {
-            if !supported.contains(chip) {
+        for (known, device) in &duts {
+            if !supported.contains(known) {
                 return Err(format!(
-                    "HIL lab config [targets.{chip}] names no supported chip; supported: {}",
+                    "HIL lab config [duts.{known}] names no supported chip; supported: {}",
                     supported.join(", ")
                 )
                 .into());
             }
-            validate_identifier(&format!("targets.{chip}.id"), &device.id)?;
+            validate_identifier(&format!("duts.{known}.id"), &device.id)?;
         }
-        let target = match targets.len() {
-            _ if targets.contains_key(DEFAULT_TARGET) => DEFAULT_TARGET.to_owned(),
-            1 => targets.keys().next().cloned().unwrap_or_default(),
-            0 => return Err("HIL lab config needs [device] or a [targets.<chip>] table".into()),
-            _ => {
-                return Err(format!(
-                    "HIL lab config [targets] must include {DEFAULT_TARGET} or name exactly one chip"
-                )
-                .into());
-            }
-        };
         let (device_serial, device_id, device_startup_artifact) =
-            resolve_target(&targets, &target, resolve)?;
+            resolve_dut(&duts, chip, resolve)?;
         if raw.station.ssid.is_empty() || raw.station.ssid.len() > 32 {
             return Err("HIL station SSID must contain 1..=32 bytes".into());
         }
@@ -617,9 +592,9 @@ impl LabConfig {
                     Ok(PeerBoardConfig { id, port })
                 })
                 .transpose()?,
-            target,
-            targets,
-            device: DeviceConfig {
+            chip: chip.to_owned(),
+            duts,
+            dut: DeviceConfig {
                 id: device_id,
                 serial: device_serial,
                 startup_artifact,
@@ -747,34 +722,34 @@ impl LabConfig {
     }
 
     /// The chip of the device under test this configuration uses.
-    pub fn target(&self) -> &str {
-        &self.target
+    pub fn chip(&self) -> &str {
+        &self.chip
     }
 
     /// The chips with a device under test.
-    pub fn targets(&self) -> Vec<&str> {
-        self.targets.keys().map(String::as_str).collect()
+    pub fn chips(&self) -> Vec<&str> {
+        self.duts.keys().map(String::as_str).collect()
     }
 
     /// This configuration with `chip`'s device under test, resolving its
     /// board now so an absent board of another chip never fails a load.
-    pub fn for_target(&self, chip: &str) -> Result<Self> {
-        self.for_target_resolving(chip, &resolve_board)
+    pub fn for_chip(&self, chip: &str) -> Result<Self> {
+        self.for_chip_resolving(chip, &resolve_board)
     }
 
-    pub(crate) fn for_target_resolving(
+    pub(crate) fn for_chip_resolving(
         &self,
         chip: &str,
         resolve: &dyn Fn(&str, Option<&str>) -> Result<PathBuf>,
     ) -> Result<Self> {
-        if chip == self.target {
+        if chip == self.chip {
             return Ok(self.clone());
         }
-        let (serial, id, startup_artifact) = resolve_target(&self.targets, chip, resolve)?;
+        let (serial, id, startup_artifact) = resolve_dut(&self.duts, chip, resolve)?;
         let root = repository_root()?;
         let mut lab = self.clone();
-        lab.target = chip.to_owned();
-        lab.device = DeviceConfig {
+        lab.chip = chip.to_owned();
+        lab.dut = DeviceConfig {
             id,
             serial,
             startup_artifact: startup_artifact.map(|path| {
@@ -805,9 +780,9 @@ impl LabConfig {
             cell_id: String::from("test-cell"),
             bluetooth_adapter: None,
             peer: None,
-            target: DEFAULT_TARGET.to_owned(),
-            targets: std::collections::BTreeMap::new(),
-            device: DeviceConfig {
+            chip: String::from("esp32s31"),
+            duts: std::collections::BTreeMap::new(),
+            dut: DeviceConfig {
                 id: String::from("test-device"),
                 serial: PathBuf::from("/dev/ttyACM0"),
                 startup_artifact: None,

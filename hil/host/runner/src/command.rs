@@ -55,18 +55,20 @@ pub(crate) fn run() -> Result<()> {
             hil_bluetooth::fixture::bluetooth::check(&root, adapter, dtm_version)
         }
         CliCommand::Fixture {
-            command: crate::cli::FixtureCommand::Check { scenario: id },
+            command: crate::cli::FixtureCommand::Check { scenario: id, chip },
         } => {
             let catalog = Catalog::load(&catalog_path)?;
             let selected = catalog.get(&id)?;
-            let lab = lab::config::LabConfig::load(&lab_path)?;
+            let chip = orchestration::select_chip(&root, &[selected], chip.as_deref())?;
+            let lab = lab::config::LabConfig::load(&lab_path, &chip)?;
             // The stand's lease takes the fixture software once granted.
             crate::execution::fixture_check::check_without_device(&root, &lab, selected)
         }
         CliCommand::Doctor(selection) => {
             let catalog = Catalog::load(&catalog_path)?;
             let selected = selection.resolve(&catalog)?;
-            let lab = lab::config::LabConfig::load(&lab_path)?;
+            let chip = orchestration::select_chip(&root, &selected, selection.chip.as_deref())?;
+            let lab = lab::config::LabConfig::load(&lab_path, &chip)?;
             let required = requirements(&selected);
             let _software =
                 hil_core::fixture::software::SoftwareLease::acquire_for(&lab, required)?;
@@ -263,7 +265,7 @@ pub(crate) fn run() -> Result<()> {
                     features: features.clone().unwrap_or_default(),
                 }),
             };
-            let lab = lab::config::LabConfig::load(&lab_path)?.for_target(&chip)?;
+            let lab = lab::config::LabConfig::load(&lab_path, &chip)?;
             let selected = selected.iter().collect::<Vec<_>>();
             let required = requirements(&selected);
             hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
@@ -290,15 +292,18 @@ pub(crate) fn run() -> Result<()> {
             include_untracked,
             all: _,
             exclude,
+            chip,
         } => {
             let catalog = Catalog::load(&catalog_path)?;
-            let lab = lab::config::LabConfig::load(&lab_path)?;
             let selected = crate::cli::Selection {
                 scenario: None,
                 tag: tag.clone(),
+                chip: None,
             }
             .resolve(&catalog)?;
             let selected = excluding(selected, &exclude)?;
+            let chip = orchestration::select_chip(&root, &selected, chip.as_deref())?;
+            let lab = lab::config::LabConfig::load(&lab_path, &chip)?;
             let snapshot = image::snapshot::capture(&root, &source_include, include_untracked)?;
             let required = requirements(&selected);
             hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;

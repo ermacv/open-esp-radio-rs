@@ -46,7 +46,7 @@ pub(crate) fn execute_workload(
     fixture: &hil_wifi::fixture::prepared::Prepared,
 ) -> ExecutionEvidence {
     // The board's MAC outlives its port name, which a reset can change.
-    let mac = hil_core::post_mortem::board_mac(&lab.device.serial);
+    let mac = hil_core::post_mortem::board_mac(&lab.dut.serial);
     let context = hil_core::context::Context::new(lab, selected.plan().settings, output)
         .with_profile(selected.header.profile);
     let result = selected.family.run(output, &context, fixture);
@@ -59,19 +59,14 @@ pub(crate) fn execute_workload(
         .is_some_and(|error| !oer_process::is_cancelled(&**error));
     let mut post_mortem = failed
         .then(|| {
-            hil_core::post_mortem::inspect(
-                &lab.device.serial,
-                mac.as_deref(),
-                output,
-                elf.as_deref(),
-            )
+            hil_core::post_mortem::inspect(&lab.dut.serial, mac.as_deref(), output, elf.as_deref())
         })
         .flatten();
     // A target that does not answer is read through its JTAG before any
     // reset erases where it stopped.
     if failed && post_mortem.is_none() {
         hil_core::post_mortem::jtag_snapshot_through_stand_openocd(
-            lab.target(),
+            lab.chip(),
             mac.as_deref(),
             output,
             elf.as_deref(),
@@ -85,7 +80,7 @@ pub(crate) fn execute_workload(
                 .and_then(|run| run.file_name())
                 .map_or_else(String::new, |run| run.to_string_lossy().into_owned());
             hil_core::recovery::recover(
-                &lab.device.serial,
+                &lab.dut.serial,
                 mac.as_deref(),
                 output,
                 elf.as_deref(),

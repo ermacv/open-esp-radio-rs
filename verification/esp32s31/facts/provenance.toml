@@ -4015,6 +4015,12 @@ code = "8972f91be0d3ae2a9e5a73326cb933392b938a344579bd748c3c2f55d532b17d"
 [[function]]
 artifact = "libpp"
 member = "lmac.o"
+symbol = "lmacEndRetryAMPDUFail"
+code = "55118cc28a74bc4e957b66cfe9ee8bdfdf23c86a006bdf46799abbf6859d6b07"
+
+[[function]]
+artifact = "libpp"
+member = "lmac.o"
 symbol = "lmacInit"
 code = "569e4ca681506aea16e70bc014349e294d626caaf219cb675fa599ceff00f412"
 
@@ -4284,6 +4290,18 @@ decisions = ["coverage.toml"]
 [[function]]
 artifact = "libpp"
 member = "pp.o"
+symbol = "ppFillAMPDUBar"
+code = "5b7ebc731e172d074255eee1e7730900d97eab214c0a276f1fd0274dddfdd3a3"
+
+[[function]]
+artifact = "libpp"
+member = "pp.o"
+symbol = "ppPrepareBarFrame"
+code = "01386488d8e7dcbe6489c62cd812768a4a2b5e947d342861b4fa1fa78bf018d0"
+
+[[function]]
+artifact = "libpp"
+member = "pp.o"
 symbol = "ppProcessLifeTime"
 code = "f2e4b60c066af35ba219908ad7d7371f9b0094dbce0faf9cac9a5a1c163c39db"
 decisions = ["coverage.toml"]
@@ -4293,6 +4311,12 @@ artifact = "libpp"
 member = "pp.o"
 symbol = "ppProcessTxQ"
 code = "7c64459d3c9c4f13bac49564ebcea30032121c9e1716b9f86e486200536ca5f9"
+
+[[function]]
+artifact = "libpp"
+member = "pp.o"
+symbol = "ppReSendBar"
+code = "32d2982476c0357233a74f15d0404ded6bc5c2da1bdb1112ad93b84ff101d41b"
 
 [[function]]
 artifact = "libpp"
@@ -5115,6 +5139,12 @@ artifact = "rom"
 member = ""
 symbol = "lmacEndFrameExchangeSequence"
 code = "487e2483631bbd6f68e5c4f71bcce12d277c565d5d0633aa1402c75a075083e4"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "lmacEndRetryAMPDUFail"
+code = "98c265c3d2df9efa0aa00bfbab36d2ab1c2c32d5680148cd1f37c85712060149"
 
 [[function]]
 artifact = "rom"
@@ -6378,6 +6408,12 @@ decisions = ["coverage.toml"]
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "ppFillAMPDUBar"
+code = "d7531c05d32d3c57e16f9efe5d4e9f33406ee27d65ab3cf9587cedc570ce7f18"
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "ppHEAMPDU2Normal"
 code = "07d45271bd75958e1cb83692bc0b53c325418fdccc2b0a237768b2ea173252fa"
 
@@ -6393,6 +6429,12 @@ artifact = "rom"
 member = ""
 symbol = "ppProcessTxQ"
 code = "11971620bcfe1d85b7b26c9c61322ea149c842e06271d6a3e67d758cae1b6bb5"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "ppReSendBar"
+code = "01e088a29c62e8b98e8a719d98dcc27530b1cd7b6ce01bb50e9fa00131e192ee"
 
 [[function]]
 artifact = "rom"

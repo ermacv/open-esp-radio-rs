@@ -129,14 +129,14 @@ impl ElfSink for Selection {
     }
 }
 
-/// Research the function `request` selects in the prepared `object` into
+/// Research the function `symbol` defines in the prepared `object` into
 /// `sink`. `references` keeps each section's prepared relocations for the
 /// object's other functions.
 #[allow(clippy::too_many_arguments)]
 fn research_function<'m>(
     object: &mut blobray_artifacts::PreparedObject<'_, '_>,
     references: &mut AdmittedVec<'m, (u32, blobray_analysis::PreparedReferences<'m>)>,
-    request: &FunctionRequest,
+    symbol: &SymbolId,
     input: u64,
     payload: &ArtifactId,
     decoder: &dyn FunctionSemantics,
@@ -147,7 +147,7 @@ fn research_function<'m>(
     let mut position = RunPosition {
         phase: RunPhase::AnalyzeFunction,
         input: Some(input),
-        member: match request.selector.object().location {
+        member: match symbol.object.location {
             ObjectLocation::Standalone => None,
             ObjectLocation::ArchiveMember { ordinal } => Some(ordinal),
         },
@@ -156,7 +156,7 @@ fn research_function<'m>(
     position.artifact(payload);
     control.set_position(position);
     control.checkpoint(0)?;
-    object.with_function(request, control, |view, control| {
+    object.with_function(symbol, control, |view, control| {
         let index = if let Some(index) = references
             .iter()
             .position(|(section, _)| *section == view.section)
@@ -251,7 +251,7 @@ fn analyze_object(
         && (!selection.executable.is_empty() || elf.as_ref().is_some_and(|e| e.object_type == 2))
     {
         gap(
-            "executable sections have no selected function symbols or explicit ranges",
+            "executable sections have no selected function symbols",
             control,
         )?;
     }
@@ -276,17 +276,11 @@ fn analyze_object(
             entered = true;
             let mut references = AdmittedVec::new(memory);
             for function in &functions {
-                let request = FunctionRequest {
-                    selector: FunctionSelector::Symbol {
-                        symbol: function.symbol.clone(),
-                    },
-                    extent: None,
-                };
                 let mut records = RecordBuffer::new(memory);
                 let researched = research_function(
                     prepared,
                     &mut references,
-                    &request,
+                    &function.symbol,
                     input,
                     &payload,
                     decoder,

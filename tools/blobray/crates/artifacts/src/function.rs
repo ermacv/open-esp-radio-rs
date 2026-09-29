@@ -8,7 +8,6 @@ pub struct FunctionView<'a> {
     pub image: Option<&'a dyn ImageMemory>,
     pub section: u32,
     pub extent: CodeRange,
-    pub user_extent: bool,
     pub code: &'a [u8],
     pub relocations: &'a [FunctionRelocation],
     pub data_ranges: &'a [CodeRange],
@@ -151,13 +150,13 @@ pub fn with_prepared_object<T>(
 pub fn with_function<T>(
     source: &dyn ByteSource,
     payload: &ArtifactId,
-    request: &FunctionRequest,
+    symbol: &SymbolId,
     memory: &WorkingMemory,
     control: &mut dyn RunControl,
     consume: impl FnOnce(FunctionView<'_>, &mut dyn RunControl) -> Result<T>,
 ) -> Result<T> {
     with_prepared_object(source, payload, memory, control, |object, c| {
-        object.with_function(request, c, consume)
+        object.with_function(symbol, c, consume)
     })
 }
 impl<'data> PreparedObject<'data, '_> {
@@ -451,55 +450,32 @@ impl<'data> PreparedObject<'data, '_> {
         Ok(())
     }
 
+    /// The function `symbol` defines, over its declared size.
     pub fn with_function<T>(
         &mut self,
-        request: &FunctionRequest,
+        symbol: &SymbolId,
         control: &mut dyn RunControl,
         consume: impl FnOnce(FunctionView<'_>, &mut dyn RunControl) -> Result<T>,
     ) -> Result<T> {
-        let occurrence = request.selector.object();
+        let occurrence = &symbol.object;
         if self.occurrence.as_ref().is_some_and(|id| id != occurrence) {
             return Err(invalid("prepared object belongs to another occurrence"));
         }
         self.occurrence = Some(occurrence.clone());
         let file = &self.file;
-        let (section_index, extent, required_start, user_extent) = match &request.selector {
-            FunctionSelector::Symbol { symbol } => {
-                let symbol = self.selected_symbol(occurrence, symbol)?;
-                let section = symbol
-                    .section_index()
-                    .ok_or_else(|| invalid("function symbol has no defined section"))?;
-                if request.extent.is_none() && symbol.size() == 0 {
-                    return Err(Error::new(
-                        ErrorCode::NeedsExtent,
-                        "symbol size is unknown; supply an explicit extent starting at the selected symbol",
-                    ));
-                }
-                (
-                    section,
-                    request.extent.unwrap_or(CodeRange {
-                        start: symbol.address(),
-                        length: symbol.size(),
-                    }),
-                    symbol.address(),
-                    request.extent.is_some(),
-                )
-            }
-            FunctionSelector::Range {
-                section, extent, ..
-            } => {
-                if request.extent.is_some() {
-                    return Err(invalid(
-                        "range selection cannot have a symbol extent override",
-                    ));
-                }
-                (
-                    object::SectionIndex(*section as usize),
-                    *extent,
-                    extent.start,
-                    true,
-                )
-            }
+        let symbol = self.selected_symbol(occurrence, symbol)?;
+        let section_index = symbol
+            .section_index()
+            .ok_or_else(|| invalid("function symbol has no defined section"))?;
+        if symbol.size() == 0 {
+            return Err(Error::new(
+                ErrorCode::NeedsExtent,
+                "symbol size is unknown, so the function has no extent",
+            ));
+        }
+        let extent = CodeRange {
+            start: symbol.address(),
+            length: symbol.size(),
         };
         let section = file.section_by_index(section_index).map_err(parse)?;
         if !matches!(section.flags(),object::SectionFlags::Elf{sh_flags} if sh_flags&u64::from(object::elf::SHF_EXECINSTR)!=0)
@@ -510,8 +486,7 @@ impl<'data> PreparedObject<'data, '_> {
             .start
             .checked_add(extent.length)
             .ok_or_else(|| invalid("function extent overflow"))?;
-        if extent.start != required_start
-            || !extent.start.is_multiple_of(2)
+        if !extent.start.is_multiple_of(2)
             || extent.length == 0
             || extent.start < section.address()
             || section
@@ -520,7 +495,7 @@ impl<'data> PreparedObject<'data, '_> {
                 .is_none_or(|limit| end > limit)
         {
             return Err(invalid(
-                "function extent must start at the selected aligned address and stay in its section",
+                "function extent must be aligned and stay in its section",
             ));
         }
         self.prepare_section(section_index, occurrence, control)?;
@@ -551,7 +526,6 @@ impl<'data> PreparedObject<'data, '_> {
                 image: image.as_ref().map(|v| v as &dyn ImageMemory),
                 section: section_index.0 as u32,
                 extent,
-                user_extent,
                 code,
                 relocations: &prepared.relocations,
                 data_ranges: &prepared.mappings.ranges,

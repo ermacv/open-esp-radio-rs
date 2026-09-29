@@ -87,24 +87,19 @@ static relocations: their targets retain the `sh_link` table identity. Relocatio
 using another table are explicitly unsupported by this static profile. Mapping
 markers from both tables share the same validation and admitted interval owner.
 
-Explicit code ranges do not require a symbol table. They reject an additional
-symbol extent override and share executable-section/backing checks with symbol
-views. Empty, unaligned, overflowing, non-executable and unbacked selections fail;
-no neighboring symbol is consulted.
+A function view is the declared extent of one physical symbol. A zero-sized
+symbol has no extent and fails with `needs-extent`. Empty, unaligned,
+overflowing, non-executable and unbacked extents fail; no neighboring symbol is
+consulted.
 
-Data views expose their relocation coordinate space and maximum known write
-width beside the borrowed records. These are structural facts for pointer-slot
-interpretation; artifacts neither applies RISC-V relocations nor chooses targets.
+Data views expose their relocation coordinate space beside the borrowed
+records, from which data export counts the relocations overlapping a range;
+artifacts neither applies RISC-V relocations nor chooses targets.
 
 `PreparedObject::code_symbol_address` validates an exact physical FUNC/NOTYPE
 entry in ET_EXEC executable file-backed bytes and their load mapping. It permits
 zero-sized symbols as addresses, without inferring an extent or decoding a body.
 Application alone decides whether that source belongs to an execution scenario.
-
-`PreparedObject::runtime_root` resolves physical runtime-interface roots from an
-already verified ET_EXEC object: allocated section, defined/absolute symbol plus
-addend, or exact entry selector. It lends no mutable memory and evaluates no runtime
-path, guard or call model; those belong to application-owned execution sessions.
 
 `PreparedObject::executable_bytes` lends a bounded 2/4-byte prefix from an executable
 file-backed load mapping. ISA consumers validate instruction meaning through their

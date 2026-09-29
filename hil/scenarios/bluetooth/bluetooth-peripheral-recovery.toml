@@ -1,6 +1,6 @@
 schema = 5
 id = "bluetooth-peripheral-recovery"
-description = "Runner-driven HCI Host: two LE peripheral connections, each with two backpressured 251-octet ACL echoes around the central's Connection and Channel Map Updates, peer Reset, supervision timeout and advertising again"
+description = "Runner-driven HCI Host: two LE peripheral connections, each with two backpressured 251-octet ACL echoes around the central's Connection and Channel Map Updates, peer Reset ended by supervision timeout or remote termination, and advertising again"
 repetitions = 3
 tags = ["bluetooth", "peripheral", "connection", "connection-update", "channel-map-update", "acl", "flow-control", "recovery", "air-exclusive"]
 

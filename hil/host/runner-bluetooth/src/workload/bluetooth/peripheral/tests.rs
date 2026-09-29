@@ -131,7 +131,8 @@ fn each_termination_requires_its_own_disconnection_reason() {
     assert!(finished(Termination::PeerRfkill, Some(REMOTE_USER_TERMINATED)).is_ok());
     assert!(finished(Termination::TargetDisconnect, Some(LOCAL_HOST_TERMINATED)).is_ok());
     assert!(finished(Termination::TargetReset, None).is_ok());
-    assert!(finished(Termination::PeerReset, Some(REMOTE_USER_TERMINATED)).is_err());
+    assert!(finished(Termination::PeerReset, Some(REMOTE_USER_TERMINATED)).is_ok());
+    assert!(finished(Termination::PeerReset, Some(LOCAL_HOST_TERMINATED)).is_err());
     assert!(finished(Termination::TargetDisconnect, Some(SUPERVISION_TIMEOUT)).is_err());
     assert!(finished(Termination::TargetReset, Some(SUPERVISION_TIMEOUT)).is_err());
 }

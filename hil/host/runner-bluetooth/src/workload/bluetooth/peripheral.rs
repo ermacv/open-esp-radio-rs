@@ -69,6 +69,9 @@ const CYCLE_DEADLINE: Duration = Duration::from_secs(50);
 const ADVERTISING_INTERVAL: u16 = 160;
 /// The helper's requested connection interval, 120 ms, in 1.25 ms units.
 const UPDATED_INTERVAL: u16 = 96;
+/// The default event mask plus Encryption Key Refresh Complete (bit 47),
+/// which the default leaves out, and LE Meta.
+const EVENT_MASK: [u8; 8] = [0xff, 0xff, 0xff, 0xff, 0xff, 0x9f, 0x00, 0x20];
 /// A key the central does not hold.
 const WRONG_LTK: [u8; 16] = [0xa5; 16];
 
@@ -181,7 +184,8 @@ impl Profile {
             phy_tracking: false,
             mic_fault: false,
             reasons: match termination {
-                Termination::PeerReset => &[SUPERVISION_TIMEOUT],
+                // The adapter's Reset may still end the link gracefully.
+                Termination::PeerReset => &[SUPERVISION_TIMEOUT, REMOTE_USER_TERMINATED],
                 Termination::PeerRfkill => &[SUPERVISION_TIMEOUT, REMOTE_USER_TERMINATED],
                 Termination::TargetDisconnect => &[LOCAL_HOST_TERMINATED],
                 Termination::TargetReset => &[],
@@ -446,7 +450,7 @@ impl<'a> Host<'a> {
     pub(super) fn initialize(&self) -> Result<()> {
         let capture = self.capture;
         hci::command(capture, hci::RESET, &[])?;
-        hci::command(capture, hci::SET_EVENT_MASK, &hci::EVENT_MASK_WITH_LE_META)?;
+        hci::command(capture, hci::SET_EVENT_MASK, &EVENT_MASK)?;
         let buffers = hci::command(capture, hci::LE_READ_BUFFER_SIZE, &[])?;
         let length = buffers
             .get(0..2)

@@ -1064,22 +1064,31 @@ fn runs(
 ) -> Result<std::process::ExitCode> {
     use crate::hil_runs;
     use clap::Parser as _;
-    let local = ctx.root.join("target/hil").join(HIL_TARGET).join("runs");
-    let directory = if local.exists() {
-        local
-    } else {
-        crate::hil_store::shared_runs(HIL_TARGET)?
+    // Each chip's runs lie in its own store; this checkout's runs directory
+    // of a chip stands for that chip's store.
+    let runs_of = |chip: &str| -> Result<PathBuf> {
+        let local = ctx.root.join("target/hil").join(chip).join("runs");
+        if local.exists() {
+            Ok(local)
+        } else {
+            crate::hil_store::shared_runs(chip)
+        }
     };
+    let directory = runs_of(HIL_TARGET)?;
+    let stores = oer_chip_profile::supported(&ctx.root)?
+        .iter()
+        .map(|chip| runs_of(chip))
+        .collect::<Result<Vec<_>>>()?;
+    // Pins and pruning stay with the esp32s31 store.
     let store = crate::hil_store::shared_runs(HIL_TARGET)?
         .parent()
         .ok_or("the run store has no parent")?
         .to_owned();
     let parsed = RunsCli::try_parse_from(args)?;
     // Reading every run takes long; commands about one run read only it.
-    let all = || hil_runs::all(&directory);
+    let all = || hil_runs::all_in(&stores);
     let find = |id: &str| {
-        hil_runs::load(&directory.join(id))
-            .ok_or_else(|| format!("no run {id} in {}", directory.display()))
+        hil_runs::find_in(&stores, id).ok_or_else(|| format!("no run {id} in any chip's run store"))
     };
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
@@ -1132,7 +1141,8 @@ fn runs(
             );
         }
         RunsCli::Pin { run, reason } => {
-            find(&run)?;
+            hil_runs::load(&directory.join(&run))
+                .ok_or_else(|| format!("no run {run} in {}", directory.display()))?;
             hil_runs::set_pin(
                 &store,
                 &run,
@@ -1147,7 +1157,7 @@ fn runs(
             keep_failed,
             apply,
         } => {
-            let all = all()?;
+            let all = hil_runs::all(&directory)?;
             let pinned = hil_runs::pins(&store).into_keys().collect();
             let keep = hil_runs::retained(
                 &all,

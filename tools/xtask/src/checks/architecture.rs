@@ -27,6 +27,9 @@ pub fn run(ctx: &Context) -> Result<()> {
     // A verdict package never depends on a report package, so report code
     // stays out of the shards' sources.
     validate_evidence_edges(&sources)?;
+    // Observation never depends on stand operation, so operating the stand
+    // never changes what a run observes.
+    validate_hil_edges(&sources)?;
     let tracked = String::from_utf8(
         process::capture(ctx.command("git").args(["ls-files", "crates/hardware"]))?.stdout,
     )?;

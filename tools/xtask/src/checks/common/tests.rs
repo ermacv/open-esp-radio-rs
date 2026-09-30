@@ -564,6 +564,31 @@ fn a_verdict_never_depends_on_a_report() {
 }
 
 #[test]
+fn only_hil_packages_declare_a_hil_role() {
+    assert_eq!(
+        hil_role("o", "hil", Some("observation")).unwrap(),
+        Some(Hil::Observation)
+    );
+    assert_eq!(
+        hil_role("s", "hil", Some("operation")).unwrap(),
+        Some(Hil::Operation)
+    );
+    assert!(hil_role("o", "hil", None).is_err());
+    assert!(hil_role("o", "hil", Some("other")).is_err());
+    assert_eq!(hil_role("t", "tool", None).unwrap(), None);
+    assert!(hil_role("t", "tool", Some("observation")).is_err());
+}
+
+#[test]
+fn observation_never_depends_on_stand_operation() {
+    let (observation, operation) = (Some(Hil::Observation), Some(Hil::Operation));
+    assert!(!hil_edge_allowed(observation, operation));
+    assert!(hil_edge_allowed(operation, observation));
+    assert!(hil_edge_allowed(observation, observation));
+    assert!(hil_edge_allowed(None, operation));
+}
+
+#[test]
 fn a_chip_package_compiles_for_its_own_chip_target() {
     let repository = architecture_repository("dependencies", "contract");
     set_classification(

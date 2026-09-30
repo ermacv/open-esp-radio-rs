@@ -31,3 +31,4 @@ workspace = true
 scope = "development"
 layer = "hil"
 platform = "host"
+hil = "operation"

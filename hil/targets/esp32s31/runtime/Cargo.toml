@@ -317,6 +317,7 @@ scope = "development"
 layer = "hil"
 platform = "chip"
 chip = "esp32s31"
+hil = "observation"
 default-configuration = false
 supported-feature-profiles = [
     "open-radio-hil,owned-network",

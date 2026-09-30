@@ -209,6 +209,8 @@ pub struct Classification<'a> {
     pub platform: Platform<'a>,
     /// The role of a verification package in the evidence shards.
     pub evidence: Option<Evidence>,
+    /// The role of a HIL package in a run's observation.
+    pub hil: Option<Hil>,
 }
 
 /// What a verification package's code does for the evidence shards: decide
@@ -272,6 +274,68 @@ pub fn validate_evidence_edges(packages: &[SourcePackage]) -> Result<()> {
     Ok(())
 }
 
+/// What a HIL package's code does for a run: observe the device under test
+/// (protocol, scenarios, the link, fixtures, target firmware, evidence), or
+/// operate the stand (arbitration, boards, image builds, recovery) or reach
+/// code that does. An image build reaches a run's evidence only through the
+/// build inputs the run records.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Hil {
+    Observation,
+    Operation,
+}
+
+/// The layer whose packages declare a [`Hil`] role.
+const HIL_LAYER: &str = "hil";
+
+/// The HIL role `value` declares for a package of `layer`: required in the
+/// HIL layer and forbidden elsewhere.
+pub fn hil_role(name: &str, layer: &str, value: Option<&str>) -> Result<Option<Hil>> {
+    match (layer == HIL_LAYER, value) {
+        (true, Some("observation")) => Ok(Some(Hil::Observation)),
+        (true, Some("operation")) => Ok(Some(Hil::Operation)),
+        (true, _) => Err(format!(
+            "package {name} of the hil layer needs open-radio.hil = \"observation\" or \"operation\""
+        )
+        .into()),
+        (false, None) => Ok(None),
+        (false, Some(_)) => {
+            Err(format!("package {name} outside the hil layer declares open-radio.hil").into())
+        }
+    }
+}
+
+/// Whether a package with HIL role `source` may depend on one with role
+/// `target`: observation never depends on operation, so stand code can
+/// neither change what a run observes nor enter its evidence.
+pub fn hil_edge_allowed(source: Option<Hil>, target: Option<Hil>) -> bool {
+    !(source == Some(Hil::Observation) && target == Some(Hil::Operation))
+}
+
+/// Apply [`hil_edge_allowed`] to every path dependency of `packages`.
+pub fn validate_hil_edges(packages: &[SourcePackage]) -> Result<()> {
+    for source in packages {
+        let source_role = classification(&source.package)?.hil;
+        for dependency in &source.package.dependencies {
+            let Some(path) = &dependency.path else {
+                continue;
+            };
+            let manifest = path.join("Cargo.toml").as_std_path().canonicalize()?;
+            let Some(target) = packages.iter().find(|item| item.manifest == manifest) else {
+                continue;
+            };
+            if !hil_edge_allowed(source_role, classification(&target.package)?.hil) {
+                return Err(format!(
+                    "observation package {} depends on stand operation package {}",
+                    source.package.name, dependency.name
+                )
+                .into());
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Classification is required for every source package, regardless of its path.
 pub fn classification(package: &Package) -> Result<Classification<'_>> {
     let metadata = package.metadata.get("open-radio");
@@ -320,11 +384,19 @@ pub fn classification(package: &Package) -> Result<Classification<'_>> {
             .and_then(|value| value.get("evidence"))
             .and_then(serde_json::Value::as_str),
     )?;
+    let hil = hil_role(
+        &package.name,
+        layer,
+        metadata
+            .and_then(|value| value.get("hil"))
+            .and_then(serde_json::Value::as_str),
+    )?;
     let class = Classification {
         scope,
         layer,
         platform,
         evidence,
+        hil,
     };
     let expected_scope = match class.layer {
         "contract" | "protocol" | "hardware" | "role" | "adapter" | "runtime" | "service"

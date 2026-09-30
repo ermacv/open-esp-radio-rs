@@ -51,6 +51,7 @@ scope = "development"
 layer = "hil"
 platform = "chip"
 chip = "esp32c5"
+hil = "observation"
 default-configuration = false
 supported-feature-profiles = [
     "boot-smoke",

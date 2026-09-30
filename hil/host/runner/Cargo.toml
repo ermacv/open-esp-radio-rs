@@ -49,6 +49,7 @@ workspace = true
 scope = "development"
 layer = "hil"
 platform = "host"
+hil = "operation"
 
 [build-dependencies]
 oer-hil-schema = { path = "../../schema", features = ["producer"] }

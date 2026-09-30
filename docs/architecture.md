@@ -237,10 +237,16 @@ on a chip project; the scenarios depend on Blobray.
 
 ## HIL and operating-system boundaries
 
-The host runner separates `scenario`, `image`, `lab`, `fixture`, `session`,
-`workload`, `evidence` and `reporting`. Image construction owns build recipes;
-the lab owns fixture exclusion; session owns the live UART capture; evidence
-owns archive/seal publication; reporting renders observations.
+Every HIL package declares `package.metadata.open-radio.hil` as
+`observation` or `operation`. Observation packages decide what a run observes:
+the protocol, scenarios, the live link to the device under test
+(`oer-hil-link`), fixtures, target firmware and evidence. Operation packages run
+the stand: arbitration, boards, image builds (`oer-hil-image`), stand
+configuration and recovery (`oer-hil-stand`), and every package that still
+reaches one of them. The architecture check rejects an observation package
+that depends on an operation package, so stand code cannot change what a run
+observes; an image build reaches a run's evidence only through the build
+inputs the run records.
 
 Scenario IDs are stable logical identities within a recursive protocol/role
 catalog. Producer and evaluator independently validate the format and reject

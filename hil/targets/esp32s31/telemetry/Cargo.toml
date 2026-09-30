@@ -23,6 +23,7 @@ scope = "development"
 layer = "hil"
 platform = "chip"
 chip = "esp32s31"
+hil = "observation"
 
 [lints]
 workspace = true

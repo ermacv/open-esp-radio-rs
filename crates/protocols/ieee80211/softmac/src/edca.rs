@@ -103,6 +103,30 @@ impl EdcaContention {
     pub fn reset(&mut self) {
         self.retries = 0;
     }
+
+    /// Install a new `ECWmin` and `ECWmax`, clamped as by [`Self::new`],
+    /// while a frame may be in progress: the current window is kept where it
+    /// still lies inside the new bounds, lowered to a smaller `CWmax` and
+    /// raised to a larger `CWmin`.
+    pub fn reconfigure(&mut self, cw_min_exponent: u8, cw_max_exponent: u8) {
+        let current = self.cw_exponent();
+        let bounds = Self::new(cw_min_exponent, cw_max_exponent);
+        let current = current.clamp(bounds.cw_min_exponent, bounds.cw_max_exponent);
+        *self = Self {
+            retries: current - bounds.cw_min_exponent,
+            ..bounds
+        };
+    }
+
+    /// The exponent of `CWmin`.
+    pub const fn cw_min_exponent(self) -> u8 {
+        self.cw_min_exponent
+    }
+
+    /// The exponent of `CWmax`.
+    pub const fn cw_max_exponent(self) -> u8 {
+        self.cw_max_exponent
+    }
 }
 
 /// The backoff of attempt `retries + 1` of a frame under `parameters`,

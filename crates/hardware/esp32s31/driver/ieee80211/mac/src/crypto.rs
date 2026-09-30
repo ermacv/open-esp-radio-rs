@@ -11,7 +11,8 @@ use oer_esp32s31_hal::{
     types::{MacCcmpKeyIdentity, MacKeyInstallOutcome},
 };
 
-use oer_ieee80211_mac::ccmp::ccmp_header;
+use oer_espressif_ieee80211_policy::ccmp::TX_PACKET_NUMBER_STEP;
+use oer_ieee80211_mac::ccmp::{CcmpKeyId, CcmpTxPacketNumber as PacketNumberAllocator};
 
 use subtle::ConstantTimeEq;
 
@@ -28,43 +29,30 @@ const AP_GROUP_HARDWARE_INDEX_BASE: u8 = 1;
 const MAX_WPA2_GTK_ID: u8 = 3;
 const CCMP_KEY_BYTES: usize = 16;
 
-const fn advance_esp32s31_tx_pn(low: u32, high: u16) -> Option<(u32, u16)> {
-    let next_low = low.wrapping_add(3);
-    if next_low < low {
-        if high == u16::MAX {
-            None
-        } else {
-            Some((next_low, high + 1))
-        }
-    } else {
-        Some((next_low, high))
-    }
-}
-
 /// Exhaustion of one key's finite 48-bit CCMP transmit packet-number space.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CcmpTxPacketNumberError {
-    Exhausted,
-}
+pub use oer_ieee80211_mac::ccmp::CcmpTxPacketNumberError;
 
-/// Unique software owner of one installed key's transmit packet number.
-struct CcmpTxPacketNumber {
-    low: u32,
-    high: u16,
-}
+/// Unique software owner of one installed key's transmit packet number: the
+/// portable allocator at the Espressif `net80211` step of three
+/// (`oer_espressif_ieee80211_policy::ccmp`).
+struct CcmpTxPacketNumber(PacketNumberAllocator);
 
 impl CcmpTxPacketNumber {
     const fn new() -> Self {
-        Self { low: 0, high: 0 }
+        Self(PacketNumberAllocator::new(TX_PACKET_NUMBER_STEP))
     }
 
-    fn next_header(&mut self, key_id_bits: u8) -> Result<[u8; 8], CcmpTxPacketNumberError> {
-        let Some((low, high)) = advance_esp32s31_tx_pn(self.low, self.high) else {
-            return Err(CcmpTxPacketNumberError::Exhausted);
-        };
-        self.low = low;
-        self.high = high;
-        Ok(ccmp_header(low, u32::from(high), key_id_bits))
+    /// An allocator whose last emitted 48-bit PN is `last`.
+    #[cfg(test)]
+    fn after(last: u64) -> Self {
+        Self(PacketNumberAllocator::continuing_after(
+            TX_PACKET_NUMBER_STEP,
+            oer_ieee80211_mac::ccmp::CcmpPacketNumber::new(last).expect("a 48-bit PN"),
+        ))
+    }
+
+    fn next_header(&mut self, key_id: CcmpKeyId) -> Result<[u8; 8], CcmpTxPacketNumberError> {
+        self.0.next_header(key_id)
     }
 }
 
@@ -253,6 +241,7 @@ pub struct ApPairwiseCcmpSlot {
 #[must_use = "the installed hardware key must remain owned until it is explicitly cleared"]
 pub struct ApGroupCcmpSlot {
     key_id: u8,
+    tx_key_id: CcmpKeyId,
     hardware_index: u8,
     tx_packet_number: CcmpTxPacketNumber,
 }
@@ -298,12 +287,13 @@ impl StaPairwiseCcmpSlot {
     /// Advances the vendor-compatible 48-bit TX packet number and returns the
     /// eight-byte CCMP header for one pairwise MPDU.
     ///
-    /// The pinned S31 net80211 implementation advances by three. A newly
+    /// The pinned S31 net80211 implementation advances by three
+    /// (`oer_espressif_ieee80211_policy::ccmp::TX_PACKET_NUMBER_STEP`). A newly
     /// installed key therefore emits PN 3 first. Pairwise traffic uses key ID
     /// zero, so only the ExtIV bit is present in byte three. Once PN 2^48 - 1
     /// has been emitted, later calls fail without wrapping or mutating state.
     pub fn next_tx_ccmp_header(&mut self) -> Result<[u8; 8], CcmpTxPacketNumberError> {
-        self.tx_packet_number.next_header(0)
+        self.tx_packet_number.next_header(CcmpKeyId::PAIRWISE)
     }
 
     pub fn clear<H: CcmpKeyHardware>(self, hardware: &mut H) {
@@ -325,7 +315,7 @@ impl ApPairwiseCcmpSlot {
     }
 
     pub fn next_tx_ccmp_header(&mut self) -> Result<[u8; 8], CcmpTxPacketNumberError> {
-        self.tx_packet_number.next_header(0)
+        self.tx_packet_number.next_header(CcmpKeyId::PAIRWISE)
     }
 
     pub fn clear<H: CcmpKeyHardware>(self, hardware: &mut H) {
@@ -343,7 +333,7 @@ impl ApGroupCcmpSlot {
     }
 
     pub fn next_tx_ccmp_header(&mut self) -> Result<[u8; 8], CcmpTxPacketNumberError> {
-        self.tx_packet_number.next_header(self.key_id << 6)
+        self.tx_packet_number.next_header(self.tx_key_id)
     }
 
     pub fn clear<H: CcmpKeyHardware>(self, hardware: &mut H) {
@@ -483,9 +473,10 @@ pub fn install_ap_group_ccmp<H: CcmpKeyHardware>(
     key_id: u8,
     temporal_key: &[u8; CCMP_KEY_BYTES],
 ) -> Result<ApGroupCcmpSlot, CryptoKeyError> {
-    if key_id > MAX_WPA2_GTK_ID {
-        return Err(CryptoKeyError::InvalidGroupKeyId);
-    }
+    let tx_key_id = match CcmpKeyId::new(key_id) {
+        Some(tx_key_id) if key_id <= MAX_WPA2_GTK_ID => tx_key_id,
+        _ => return Err(CryptoKeyError::InvalidGroupKeyId),
+    };
     let hardware_index = AP_GROUP_HARDWARE_INDEX_BASE + key_id;
     match hardware.install_ap_ccmp_entry(
         hardware_index,
@@ -498,6 +489,7 @@ pub fn install_ap_group_ccmp<H: CcmpKeyHardware>(
     }
     Ok(ApGroupCcmpSlot {
         key_id,
+        tx_key_id,
         hardware_index,
         tx_packet_number: CcmpTxPacketNumber::new(),
     })

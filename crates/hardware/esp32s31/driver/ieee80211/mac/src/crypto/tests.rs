@@ -39,20 +39,19 @@ impl CcmpKeyHardware for Hardware {
 
 #[test]
 fn tx_packet_number_emits_the_48_bit_maximum_once_then_fails_closed() {
-    let mut packet_number = CcmpTxPacketNumber {
-        low: u32::MAX - 3,
-        high: u16::MAX,
-    };
+    let mut packet_number =
+        CcmpTxPacketNumber::after(u64::from(u16::MAX) << 32 | u64::from(u32::MAX - 3));
+    let key_id = CcmpKeyId::new(1).unwrap();
     assert_eq!(
-        packet_number.next_header(0x40),
+        packet_number.next_header(key_id),
         Ok([0xff, 0xff, 0, 0x60, 0xff, 0xff, 0xff, 0xff])
     );
     assert_eq!(
-        packet_number.next_header(0x40),
+        packet_number.next_header(key_id),
         Err(CcmpTxPacketNumberError::Exhausted)
     );
     assert_eq!(
-        packet_number.next_header(0x40),
+        packet_number.next_header(key_id),
         Err(CcmpTxPacketNumberError::Exhausted)
     );
 }
@@ -65,10 +64,7 @@ fn exhausted_pairwise_slot_retains_hardware_clear_authority() {
     };
     let mut slot = StaPairwiseCcmpSlot {
         peer: [1, 2, 3, 4, 5, 6],
-        tx_packet_number: CcmpTxPacketNumber {
-            low: u32::MAX,
-            high: u16::MAX,
-        },
+        tx_packet_number: CcmpTxPacketNumber::after((1 << 48) - 1),
     };
     assert_eq!(
         slot.next_tx_ccmp_header(),
@@ -81,10 +77,7 @@ fn exhausted_pairwise_slot_retains_hardware_clear_authority() {
 
 #[test]
 fn ap_pairwise_and_group_slots_share_the_fail_closed_pn_boundary() {
-    let exhausted = || CcmpTxPacketNumber {
-        low: u32::MAX,
-        high: u16::MAX,
-    };
+    let exhausted = || CcmpTxPacketNumber::after((1 << 48) - 1);
     let mut pairwise = ApPairwiseCcmpSlot {
         peer: [1, 2, 3, 4, 5, 6],
         association_id: 1,
@@ -93,6 +86,7 @@ fn ap_pairwise_and_group_slots_share_the_fail_closed_pn_boundary() {
     };
     let mut group = ApGroupCcmpSlot {
         key_id: 1,
+        tx_key_id: CcmpKeyId::new(1).unwrap(),
         hardware_index: AP_GROUP_HARDWARE_INDEX_BASE + 1,
         tx_packet_number: exhausted(),
     };

@@ -50,3 +50,18 @@ fn recovered_boundary_records_match_the_pinned_tables() {
     );
     assert!(RateScheduleRef::new(RateScheduleKind::Lora, 2).is_none());
 }
+
+#[test]
+fn legacy_codes_locate_their_dot11g_records() {
+    // 54 Mb/s (code 0x0c) is record zero; 1 Mb/s (code 0x00) record ten.
+    assert_eq!(
+        dot11g_schedule_for_legacy_rate(0x0c),
+        RateScheduleRef::new(RateScheduleKind::Dot11G, 0)
+    );
+    assert_eq!(
+        dot11g_schedule_for_legacy_rate(0x00),
+        RateScheduleRef::new(RateScheduleKind::Dot11G, 10)
+    );
+    assert_eq!(dot11g_schedule_for_legacy_rate(0x10), None);
+    assert_eq!(rate_to_schedule_index(RateIndexMap::Lora, 0x2a), 0);
+}

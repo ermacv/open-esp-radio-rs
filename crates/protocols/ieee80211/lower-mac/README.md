@@ -89,15 +89,40 @@ The PHY and channel values come from
 `TxStatus`. `MacOperationOwnership::hardware_services` turns a softmac
 service description into `HardwareServices`.
 
+## Above the port
+
+What a backend does not report in its `HardwareServices` is software above
+the port, written once in portable packages for every backend:
+
+| Work | Owner |
+| --- | --- |
+| Retry counters, limits and the Retry bit of an MPDU; the rate of each attempt through a `RateLadder` | `oer-ieee80211-upper-mac` `retry` |
+| Which A-MPDU subframes the next attempt resends after a `BlockAckReport` (`BlockAckReport::acknowledges`), republication after a failed protection exchange, the BlockAckReq, individual retries, aging | `oer-ieee80211-upper-mac` `ampdu` |
+| RTS/CTS or CTS-to-self and the control-frame rate of each PPDU | `oer-ieee80211-upper-mac` `protection` |
+| One exchange as a sequence of `TxAttempt`s, and its statistics | `oer-ieee80211-upper-mac` `tx::TxPlanner`, driven over a port by `oer-ieee80211-upper-mac-service` |
+| The backoff draw | `oer-ieee80211-softmac` `EdcaContention` |
+| Transmit packet numbers and receive replay | `oer-ieee80211-mac` `ccmp` |
+| Receive Block Ack reordering | `oer-ieee80211-mac` `block_ack::reorder` |
+
+Limits, rate ladders and duration estimates in which implementations differ
+are parameters of those algorithms; the Espressif values recovered from the
+vendor stack are the family package `oer-espressif-ieee80211-policy`.
+
 ## Implementers
 
 | Backend | Base port | `LowerMacAmpdu` | `LowerMacBeaconTiming` | `LowerMacMonitor` | `LowerMacCancelPublished` |
 | --- | --- | --- | --- | --- | --- |
-| Host model (the crate's tests) | Yes, four queues | Yes | Yes | Yes | Yes |
+| Host model (`model` feature, `LowerMacModel`) | Yes, four queues | Yes | Yes | Yes | Yes |
 | ESP32-S31 (`Esp32s31LowerMac`) | Yes, four queues | HT only, when built with aggregate owners | Station TSF and TBTT; access-point TSF restart only | Yes, without receiving interfaces | No |
 
-The crate's tests implement the port and every extension with an in-memory
-model to show that they need no chip types.
+The `model` module (built for the crate's tests and with the `model` feature)
+implements the port and every extension with an in-memory backend to show
+that they need no chip types. `LowerMacModel` keeps every admitted attempt in
+flight until the test ends it (`complete`, `complete_with`), or ends each
+attempt as soon as it is published with the outcomes queued by `respond`
+(success, a given `BlockAckReport`, or a failure status); `submitted` records
+what every admitted attempt carried. Packages that drive the port test
+against it, as `oer-ieee80211-upper-mac-service` does.
 
 The ESP32-S31 MAC converts its chip values in
 [`mac/src/portable.rs`](../../../hardware/esp32s31/driver/ieee80211/mac/src/portable.rs):

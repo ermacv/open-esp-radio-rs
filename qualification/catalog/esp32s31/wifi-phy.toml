@@ -524,7 +524,7 @@ limits = "Requires the hardware slot, crypto enable and invalidation contract. W
 source-paths = ["crates/hardware/esp32s31/driver/ieee80211/mac/src/crypto.rs"]
 
 [capabilities.development]
-knowledge = ["crates/hardware/esp32s31/driver/ieee80211/mac/src/crypto.rs"]
+knowledge = ["crates/hardware/esp32s31/driver/ieee80211/mac/src/crypto.rs", "crates/protocols/ieee80211/mac/src/ccmp.rs", "crates/protocols/espressif/ieee80211/policy/src/ccmp.rs"]
 host-tests = [{ manifest = "crates/hardware/esp32s31/driver/ieee80211/mac/Cargo.toml", filter = "crypto::tests", source = "crates/hardware/esp32s31/driver/ieee80211/mac/src/crypto/tests.rs" }]
 
 [capabilities.catalog-scope]
@@ -627,7 +627,7 @@ hil-requirements = [
 ]
 
 [capabilities.development]
-knowledge = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station/execution.rs", "crates/runtime/esp32s31/ieee80211/src/roles/station/lifecycle.rs", "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/protection.rs", "registers/esp32s31/model/peripherals/wifi-mac-tx-queue-control.toml"]
+knowledge = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station/execution.rs", "crates/runtime/esp32s31/ieee80211/src/roles/station/lifecycle.rs", "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/protection.rs", "crates/protocols/ieee80211/upper-mac/src/protection.rs", "registers/esp32s31/model/peripherals/wifi-mac-tx-queue-control.toml"]
 host-tests = [
   { manifest = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml", filter = "late_epoch_wakes_cannot_prevent_restarting_the_permanent_worker", source = "crates/composition/esp32s31/embassy/ieee80211/tests/connected_worker.rs" },
   { manifest = "crates/protocols/ieee80211/sta/Cargo.toml", filter = "station::tests", source = "crates/protocols/ieee80211/sta/src/station/tests.rs" },

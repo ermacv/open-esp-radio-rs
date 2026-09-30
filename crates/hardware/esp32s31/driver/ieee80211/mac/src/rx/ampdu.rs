@@ -1,12 +1,20 @@
-//! Allocation-free receive BlockAck reorder state in the live MAC crate.
+//! Allocation-free receive BlockAck agreements and reorder banks of the
+//! ESP32-S31 MAC.
 //!
 //! The vendor implementation allocates one 40-byte agreement object and a
 //! variable pointer array for every receive TID. This module keeps negotiation
 //! state and the data-plane reorder engine as separate owned values. The
-//! integration layer binds the latter to its exact staging-pool capacity, and
-//! raw packet pointers stay outside both state machines.
+//! reorder window of one agreement is the portable
+//! `oer_ieee80211_mac::block_ack::RxReorderBuffer`, bound here to the S31
+//! window profile; the eight hardware-bank agreements that own those windows
+//! stay with the chip. The integration layer binds the reorder to its exact
+//! staging-pool capacity, and raw packet pointers stay outside both state
+//! machines.
 
-use oer_ieee80211_mac::sequence::SequenceNumber;
+use oer_ieee80211_mac::{
+    block_ack::{RxReorderBuffer, RxReorderError, RxReorderMpdu, RxReorderRelease},
+    sequence::SequenceNumber,
+};
 
 use crate::{
     MacInterface,
@@ -147,20 +155,12 @@ pub fn rx_block_ack_request_key(
     })
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct RxAmpduMpdu {
-    pub sequence: SequenceNumber,
-    pub slot: u8,
-}
+/// One received MPDU of an agreement: the portable reorder value.
+pub type RxAmpduMpdu = RxReorderMpdu;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RxAmpduError {
-    InvalidWindow(u16),
-    InvalidSlot(u8),
-    InvalidHardwareBank(u8),
-    DuplicateSequence(SequenceNumber),
-    SlotAlreadyOwned(u8),
-}
+/// Why the reorder owner refused an operation: the portable reorder error,
+/// whose `InvalidBank` names an agreement outside the eight hardware banks.
+pub type RxAmpduError = RxReorderError;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RxAddbaResponseError {
@@ -809,7 +809,7 @@ impl<const SLOT_CAPACITY: usize> RxBlockAckReorderBanks<SLOT_CAPACITY> {
     ) -> Result<Option<RxAmpduRelease>, RxAmpduError> {
         let bank = usize::from(agreement.hardware_index);
         if bank >= RX_BLOCK_ACK_BANK_COUNT {
-            return Err(RxAmpduError::InvalidHardwareBank(agreement.hardware_index));
+            return Err(RxAmpduError::InvalidBank(agreement.hardware_index));
         }
         let state = RxBlockAckReorderState::new(agreement.starting_sequence, agreement.window)?;
         let released = self.stop_bank(bank);
@@ -913,320 +913,25 @@ pub fn write_declined_addba_response(
     Ok(())
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct RxAmpduRelease {
-    pub frames: [Option<RxAmpduMpdu>; RX_AMPDU_SLOT_CAPACITY],
-    pub count: u8,
-    pub missing: u16,
-    pub rejected: Option<RxAmpduMpdu>,
-    pub buffered: bool,
-}
+/// The MPDUs one reorder operation releases, bound to the S31 window
+/// profile.
+pub type RxAmpduRelease = RxReorderRelease<RX_AMPDU_SLOT_CAPACITY>;
 
-impl RxAmpduRelease {
-    const fn empty() -> Self {
-        Self {
-            frames: [None; RX_AMPDU_SLOT_CAPACITY],
-            count: 0,
-            missing: 0,
-            rejected: None,
-            buffered: false,
-        }
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = RxAmpduMpdu> + '_ {
-        self.frames[..usize::from(self.count)]
-            .iter()
-            .copied()
-            .flatten()
-    }
-
-    fn push(&mut self, frame: RxAmpduMpdu) {
-        let index = usize::from(self.count);
-        debug_assert!(index < self.frames.len());
-        self.frames[index] = Some(frame);
-        self.count += 1;
-    }
-}
-
-/// One receive BlockAck agreement with a fixed maximum sequence window and an
-/// explicit integration-owned frame-token domain.
+/// One receive BlockAck agreement's reorder window with a fixed maximum
+/// sequence window and an explicit integration-owned frame-token domain: the
+/// portable reorder buffer bound to the S31 window profile.
 ///
 /// Every retained packet is represented only by a checked slot index. The
 /// owner maps that index to its independent frame storage and recycles every frame
 /// returned by `ingest`, `expire_gap`, or `stop`.
-pub struct RxBlockAckReorderState<const SLOT_CAPACITY: usize> {
-    starting_sequence: SequenceNumber,
-    next_sequence: SequenceNumber,
-    window: u16,
-    occupied: u64,
-    frames: [Option<RxAmpduMpdu>; RX_AMPDU_SLOT_CAPACITY],
-}
-
-impl<const SLOT_CAPACITY: usize> RxBlockAckReorderState<SLOT_CAPACITY> {
-    pub const fn new(starting_sequence: SequenceNumber, window: u16) -> Result<Self, RxAmpduError> {
-        if window == 0 || window > RX_BLOCK_ACK_MAX_WINDOW {
-            return Err(RxAmpduError::InvalidWindow(window));
-        }
-        Ok(Self {
-            starting_sequence,
-            next_sequence: starting_sequence,
-            window,
-            occupied: 0,
-            frames: [None; RX_AMPDU_SLOT_CAPACITY],
-        })
-    }
-
-    pub const fn next_sequence(&self) -> SequenceNumber {
-        self.next_sequence
-    }
-
-    pub const fn window(&self) -> u16 {
-        self.window
-    }
-
-    pub const fn occupied(&self) -> u32 {
-        self.occupied.count_ones()
-    }
-
-    /// Rebase the one-shot first-A-MPDU sequence mismatch handled by the
-    /// vendor reorder path.
-    ///
-    /// A newly negotiated agreement normally accepts the first aggregate in
-    /// the forward half of its sequence space. If that aggregate is instead
-    /// behind the current software frontier, the vendor releases all retained
-    /// frames and moves both the software and hardware windows. HT and older
-    /// formats first fall back to the negotiated SSN; only an aggregate that
-    /// is also behind that SSN moves the window to include its received
-    /// sequence. Newer formats use the received sequence directly.
-    pub fn resynchronize_stale_initial_ampdu(
-        &mut self,
-        sequence: SequenceNumber,
-        use_received_sequence: bool,
-    ) -> Option<(RxAmpduRelease, SequenceNumber)> {
-        if self.next_sequence.forward_distance(sequence) < SequenceNumber::HALF_SPACE {
-            return None;
-        }
-
-        let mut next_sequence = self.starting_sequence;
-        if use_received_sequence
-            || self.starting_sequence.forward_distance(sequence) >= SequenceNumber::HALF_SPACE
-        {
-            next_sequence = sequence.wrapping_sub(self.window - 1);
-            if use_received_sequence {
-                next_sequence = sequence;
-            }
-        }
-
-        let released = self.stop();
-        self.next_sequence = next_sequence;
-        Some((released, next_sequence))
-    }
-
-    /// Decide whether this sequence will remain owned after a successful
-    /// [`Self::ingest`].
-    ///
-    /// The next expected sequence is released immediately. Every forward
-    /// sequence has at least that first gap in front of it, including after a
-    /// bounded window advance, and must therefore receive persistent backing.
-    /// A stale frame is rejected by `ingest` and needs no retained owner.
-    pub fn retains_on_ingest(&self, sequence: SequenceNumber) -> Result<bool, RxAmpduError> {
-        let distance = self.next_sequence.forward_distance(sequence);
-        if distance >= SequenceNumber::HALF_SPACE {
-            return Ok(false);
-        }
-        if distance < self.window && self.has_sequence(sequence) {
-            return Err(RxAmpduError::DuplicateSequence(sequence));
-        }
-        let distance_after_advance = if distance >= self.window {
-            self.window - 1
-        } else {
-            distance
-        };
-        Ok(distance_after_advance != 0)
-    }
-
-    /// Consume the common in-order frame without materializing a maximum-size
-    /// release list.
-    ///
-    /// A buffered successor still requires the ordinary ingest path because
-    /// receiving the missing frontier frame must release the complete
-    /// contiguous run in sequence order. A gap, stale frame or window advance
-    /// likewise returns `None` without changing the reorder state.
-    pub fn try_ingest_immediate(
-        &mut self,
-        frame: RxAmpduMpdu,
-    ) -> Result<Option<RxAmpduMpdu>, RxAmpduError> {
-        if SLOT_CAPACITY == 0
-            || SLOT_CAPACITY > usize::from(u8::MAX) + 1
-            || usize::from(frame.slot) >= SLOT_CAPACITY
-        {
-            return Err(RxAmpduError::InvalidSlot(frame.slot));
-        }
-        if frame.sequence != self.next_sequence {
-            return Ok(None);
-        }
-        if self.has_sequence(frame.sequence) {
-            return Err(RxAmpduError::DuplicateSequence(frame.sequence));
-        }
-        let successor = self.next_sequence.wrapping_add(1);
-        if self.has_sequence(successor) {
-            return Ok(None);
-        }
-        self.next_sequence = successor;
-        Ok(Some(frame))
-    }
-
-    #[inline(always)]
-    pub fn ingest(&mut self, frame: RxAmpduMpdu) -> Result<RxAmpduRelease, RxAmpduError> {
-        if SLOT_CAPACITY == 0
-            || SLOT_CAPACITY > usize::from(u8::MAX) + 1
-            || usize::from(frame.slot) >= SLOT_CAPACITY
-        {
-            return Err(RxAmpduError::InvalidSlot(frame.slot));
-        }
-        if self
-            .frames
-            .iter()
-            .flatten()
-            .any(|owned| owned.slot == frame.slot)
-        {
-            return Err(RxAmpduError::SlotAlreadyOwned(frame.slot));
-        }
-
-        let mut release = RxAmpduRelease::empty();
-        let distance = self.next_sequence.forward_distance(frame.sequence);
-        if distance >= SequenceNumber::HALF_SPACE {
-            release.rejected = Some(frame);
-            return Ok(release);
-        }
-        if distance >= self.window {
-            let advance = distance - self.window + 1;
-            self.advance(advance, &mut release);
-        }
-
-        let index = slot_index(frame.sequence);
-        if self.occupied & (1_u64 << index) != 0 {
-            return Err(RxAmpduError::DuplicateSequence(frame.sequence));
-        }
-        self.frames[index] = Some(frame);
-        self.occupied |= 1_u64 << index;
-        self.release_contiguous(&mut release);
-        release.buffered = self.occupied & (1_u64 << index) != 0;
-        Ok(release)
-    }
-
-    /// Release the first buffered run after an async reorder-age timer edge.
-    ///
-    /// The scan is bounded by the negotiated window. It never reads time or
-    /// waits; the async owner decides when this edge is due.
-    pub fn expire_gap(&mut self) -> RxAmpduRelease {
-        let mut release = RxAmpduRelease::empty();
-        let mut distance = 0_u16;
-        while distance < self.window {
-            let sequence = self.next_sequence.wrapping_add(distance);
-            if self.has_sequence(sequence) {
-                self.advance(distance, &mut release);
-                self.release_contiguous(&mut release);
-                return release;
-            }
-            distance += 1;
-        }
-        release
-    }
-
-    /// Move the window start to a received BlockAckReq's starting sequence.
-    ///
-    /// Every retained frame before `starting_sequence` is released in order,
-    /// then the contiguous run from the new start. A starting sequence equal
-    /// to the current start or behind it (in the backward half of the sequence
-    /// space) is ignored and returns `None`.
-    ///
-    /// SOURCE: `libnet80211.a::ieee80211_process_bar_info` ignores those two
-    /// cases and otherwise calls `ampdu_dispatch_upto(ni, rx, ssn)` (blobray
-    /// RX BlockAckReq answer). The contiguous release after the move is the
-    /// recipient behaviour of IEEE Std 802.11-2020 10.25.6.6.
-    pub fn move_window_to(&mut self, starting_sequence: SequenceNumber) -> Option<RxAmpduRelease> {
-        let distance = self.next_sequence.forward_distance(starting_sequence);
-        if distance == 0 || distance >= SequenceNumber::HALF_SPACE {
-            return None;
-        }
-        let mut release = RxAmpduRelease::empty();
-        self.advance(distance, &mut release);
-        self.release_contiguous(&mut release);
-        Some(release)
-    }
-
-    pub fn stop(&mut self) -> RxAmpduRelease {
-        let mut release = RxAmpduRelease::empty();
-        let mut distance = 0_u16;
-        while distance < self.window {
-            let sequence = self.next_sequence.wrapping_add(distance);
-            if let Some(frame) = self.take_sequence(sequence) {
-                release.push(frame);
-            }
-            distance += 1;
-        }
-        self.occupied = 0;
-        release
-    }
-
-    #[inline(always)]
-    fn advance(&mut self, count: u16, release: &mut RxAmpduRelease) {
-        let retained_span = count.min(self.window);
-        let released_before = release.count;
-        let mut offset = 0_u16;
-        while offset < retained_span {
-            let sequence = self.next_sequence.wrapping_add(offset);
-            if let Some(frame) = self.take_sequence(sequence) {
-                release.push(frame);
-            }
-            offset += 1;
-        }
-        let released_while_advancing = release.count - released_before;
-        release.missing = release
-            .missing
-            .saturating_add(count.saturating_sub(u16::from(released_while_advancing)));
-        self.next_sequence = self.next_sequence.wrapping_add(count);
-    }
-
-    #[inline(always)]
-    fn release_contiguous(&mut self, release: &mut RxAmpduRelease) {
-        let mut count = 0_u16;
-        while count < self.window {
-            let Some(frame) = self.take_sequence(self.next_sequence) else {
-                break;
-            };
-            release.push(frame);
-            self.next_sequence = self.next_sequence.wrapping_add(1);
-            count += 1;
-        }
-    }
-
-    fn has_sequence(&self, sequence: SequenceNumber) -> bool {
-        let index = slot_index(sequence);
-        self.occupied & (1_u64 << index) != 0
-            && self.frames[index].is_some_and(|frame| frame.sequence == sequence)
-    }
-
-    fn take_sequence(&mut self, sequence: SequenceNumber) -> Option<RxAmpduMpdu> {
-        let index = slot_index(sequence);
-        if !self.has_sequence(sequence) {
-            return None;
-        }
-        self.occupied &= !(1_u64 << index);
-        self.frames[index].take()
-    }
-}
+pub type RxBlockAckReorderState<const SLOT_CAPACITY: usize> =
+    RxReorderBuffer<RX_AMPDU_SLOT_CAPACITY, SLOT_CAPACITY>;
 
 /// Reorder state bound to the MAC crate's default receive-slot domain.
 ///
 /// Integrations whose staging pool has a different compile-time size use
 /// [`RxBlockAckReorderState`] directly.
 pub type RxBlockAckReorder = RxBlockAckReorderState<RX_REORDER_SLOT_ID_CAPACITY>;
-
-const fn slot_index(sequence: SequenceNumber) -> usize {
-    sequence.get() as usize % RX_AMPDU_SLOT_CAPACITY
-}
 
 #[cfg(test)]
 mod tests;

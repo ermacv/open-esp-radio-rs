@@ -16,6 +16,7 @@ use oer_esp32s31_ieee80211_dma::tx_ampdu_storage::{
     AmpduDmaState, AmpduDmaStorage, AmpduDmaStorageError, PinnedAmpduDmaStorage, RetainedAmpduDma,
     RetainedAmpduDmaStorage,
 };
+use oer_ieee80211_upper_mac::ampdu::set_retry_bit;
 use oer_memory::StableDmaBacking;
 
 use crate::tx::{HeAmpduTxConfig, HtAmpduTxConfig, LegacyTxQueue, TxCookie, TxSlotState};
@@ -383,7 +384,7 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
                     .map_err(|_| HtAmpduTxError::BackingUnavailable {
                         index: location.index as u8,
                     })?;
-                bytes[TX_AMPDU_METADATA_SIZE + 1] |= 0x08;
+                set_retry_bit(&mut bytes[TX_AMPDU_METADATA_SIZE..]);
             }
         }
         let mut source_indices = [0_u8; SLOTS];

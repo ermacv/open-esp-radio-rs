@@ -58,8 +58,13 @@ pub use tx::{
     TxCompletion, TxFault, TxId, TxPayload, TxPower, TxResponse, TxStatus,
 };
 
+#[cfg(any(test, feature = "model"))]
+extern crate alloc;
 #[cfg(test)]
 extern crate std;
+
+#[cfg(any(test, feature = "model"))]
+pub mod model;
 
 #[cfg(test)]
 mod tests;

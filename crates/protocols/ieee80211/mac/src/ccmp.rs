@@ -1,10 +1,16 @@
-//! Hardware-independent CCMP header and receive replay ownership.
+//! Hardware-independent CCMP header, transmit packet numbers and receive
+//! replay ownership.
 //!
-//! Packet-number allocation, key-slot mapping and hardware publication belong
-//! to the concrete MAC backend. This module validates and encodes the public
-//! eight-byte header and owns a two-phase receive replay frontier. A caller
-//! must prepare replay only after its per-TID BlockAck reorder release, then
-//! commit only after cryptographic authentication and peer admission.
+//! Packet numbers are allocated above the lower-MAC port unless a backend
+//! reports `HardwareServices::PACKET_NUMBERS`; key-slot mapping and hardware
+//! publication belong to the concrete MAC backend. This module validates and
+//! encodes the public eight-byte header, allocates each key's transmit packet
+//! numbers ([`CcmpTxPacketNumber`]) and owns a two-phase receive replay
+//! frontier. A caller must prepare replay only after its per-TID BlockAck
+//! reorder release, then commit only after cryptographic authentication and
+//! peer admission.
+
+use core::num::NonZeroU8;
 
 pub const CCMP_HEADER_LEN: usize = 8;
 pub const CCMP_PACKET_NUMBER_MAX: u64 = (1_u64 << 48) - 1;
@@ -141,6 +147,99 @@ pub enum CcmpHeaderError {
     ReservedOctet,
     ExtIvMissing,
     ReservedKeyBits,
+}
+
+/// How far a key's transmit packet number advances per MPDU.
+///
+/// IEEE Std 802.11-2020 12.5.3.3.2 (PN processing) requires only that the PN of each MPDU
+/// under one key increases, and that the fragments of one MSDU take
+/// consecutive PNs; one is the ordinary step. A backend or vendor profile
+/// that must stay compatible with a peer implementation's numbering supplies
+/// its own step: the Espressif `net80211` stack advances by three
+/// (`oer-espressif-ieee80211-policy`).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct CcmpPacketNumberStep(NonZeroU8);
+
+impl CcmpPacketNumberStep {
+    /// The ordinary step of one.
+    pub const ONE: Self = Self(NonZeroU8::MIN);
+
+    /// A step of `step`; `None` for zero, which would repeat a PN.
+    pub const fn new(step: u8) -> Option<Self> {
+        match NonZeroU8::new(step) {
+            Some(step) => Some(Self(step)),
+            None => None,
+        }
+    }
+
+    pub const fn get(self) -> u8 {
+        self.0.get()
+    }
+}
+
+/// The 48-bit transmit PN space of one key is used up.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CcmpTxPacketNumberError {
+    /// The next PN would exceed [`CCMP_PACKET_NUMBER_MAX`]; the key must be
+    /// replaced.
+    Exhausted,
+}
+
+/// The unique allocator of one installed key's transmit packet numbers.
+///
+/// A new key has emitted no PN; its first MPDU carries `step`. Each call
+/// hands out the next PN exactly once, so a retransmission of the same MPDU
+/// reuses the header it was first encoded with instead of allocating again.
+/// Once [`CCMP_PACKET_NUMBER_MAX`] could be exceeded, every later call fails
+/// without wrapping or changing state.
+#[derive(Debug, Eq, PartialEq)]
+pub struct CcmpTxPacketNumber {
+    last: u64,
+    step: CcmpPacketNumberStep,
+}
+
+impl CcmpTxPacketNumber {
+    pub const fn new(step: CcmpPacketNumberStep) -> Self {
+        Self { last: 0, step }
+    }
+
+    /// An allocator whose last handed-out PN is `last`: the next MPDU
+    /// carries `last + step`. A key whose counter lives on across an owner
+    /// change continues from its last PN this way.
+    pub const fn continuing_after(step: CcmpPacketNumberStep, last: CcmpPacketNumber) -> Self {
+        Self {
+            last: last.value(),
+            step,
+        }
+    }
+
+    /// The last PN handed out; zero before the first.
+    pub const fn last(&self) -> CcmpPacketNumber {
+        CcmpPacketNumber(self.last)
+    }
+
+    pub const fn step(&self) -> CcmpPacketNumberStep {
+        self.step
+    }
+
+    /// Allocate the PN of the next MPDU.
+    pub fn next(&mut self) -> Result<CcmpPacketNumber, CcmpTxPacketNumberError> {
+        let next = self.last + u64::from(self.step.get());
+        if next > CCMP_PACKET_NUMBER_MAX {
+            return Err(CcmpTxPacketNumberError::Exhausted);
+        }
+        self.last = next;
+        Ok(CcmpPacketNumber(next))
+    }
+
+    /// Allocate the PN of the next MPDU and encode its CCMP header.
+    pub fn next_header(
+        &mut self,
+        key_id: CcmpKeyId,
+    ) -> Result<[u8; CCMP_HEADER_LEN], CcmpTxPacketNumberError> {
+        let packet_number = self.next()?;
+        Ok(CcmpHeader::new(packet_number, key_id).encode())
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

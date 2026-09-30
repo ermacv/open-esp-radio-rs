@@ -137,6 +137,31 @@ impl HtRate {
     pub const fn short_gi(self) -> bool {
         self.short_gi
     }
+
+    /// The data rate in kb/s: the one-stream rate of IEEE Std 802.11-2020
+    /// Tables 19-27 and 19-28, rounded to 100 kb/s as the tables print it,
+    /// times the spatial streams.
+    pub const fn nominal_kbps(self) -> u32 {
+        const HT20_LGI: [u32; 8] = [
+            6_500, 13_000, 19_500, 26_000, 39_000, 52_000, 58_500, 65_000,
+        ];
+        const HT20_SGI: [u32; 8] = [
+            7_200, 14_400, 21_700, 28_900, 43_300, 57_800, 65_000, 72_200,
+        ];
+        const HT40_LGI: [u32; 8] = [
+            13_500, 27_000, 40_500, 54_000, 81_000, 108_000, 121_500, 135_000,
+        ];
+        const HT40_SGI: [u32; 8] = [
+            15_000, 30_000, 45_000, 60_000, 90_000, 120_000, 135_000, 150_000,
+        ];
+        let table = match (self.bandwidth, self.short_gi) {
+            (PpduBandwidth::Mhz40, false) => &HT40_LGI,
+            (PpduBandwidth::Mhz40, true) => &HT40_SGI,
+            (_, false) => &HT20_LGI,
+            (_, true) => &HT20_SGI,
+        };
+        table[(self.mcs.0 % 8) as usize] * self.mcs.spatial_streams() as u32
+    }
 }
 
 /// HE MCS index 0 through 11 (IEEE 802.11ax-2021 27.5).
@@ -263,6 +288,41 @@ impl HeRate {
     pub const fn dcm(self) -> bool {
         self.dcm
     }
+
+    /// The data rate in kb/s, rounded down: data bits per OFDM symbol over
+    /// the 12.8 µs symbol plus guard interval (IEEE Std 802.11ax-2021
+    /// 27.5.1), for the full-bandwidth resource unit; DCM halves the data
+    /// subcarriers.
+    pub const fn nominal_kbps(self) -> u32 {
+        // Data subcarriers of the 242-, 484-, 996- and 2x996-tone RUs.
+        let subcarriers: u64 = match self.bandwidth {
+            PpduBandwidth::Mhz20 => 234,
+            PpduBandwidth::Mhz40 => 468,
+            PpduBandwidth::Mhz80 => 980,
+            PpduBandwidth::Mhz160 => 1_960,
+        };
+        // Coded bits per subcarrier and coding rate of MCS 0-11.
+        const MODULATION: [(u64, u64, u64); 12] = [
+            (1, 1, 2),
+            (2, 1, 2),
+            (2, 3, 4),
+            (4, 1, 2),
+            (4, 3, 4),
+            (6, 2, 3),
+            (6, 3, 4),
+            (6, 5, 6),
+            (8, 3, 4),
+            (8, 5, 6),
+            (10, 3, 4),
+            (10, 5, 6),
+        ];
+        let (bits, rate_numerator, rate_denominator) = MODULATION[self.mcs.0 as usize];
+        let symbol_ns = 12_800 + self.gi_ltf.guard_interval_ns() as u64;
+        let dcm = if self.dcm { 2 } else { 1 };
+        let kbps = subcarriers * bits * rate_numerator * self.spatial_streams.0 as u64 * 1_000_000
+            / (rate_denominator * dcm * symbol_ns);
+        kbps as u32
+    }
 }
 
 /// The PHY rate of one PPDU.
@@ -280,6 +340,15 @@ impl PhyRate {
             Self::Legacy(_) => PpduBandwidth::Mhz20,
             Self::Ht(rate) => rate.bandwidth,
             Self::He(rate) => rate.bandwidth,
+        }
+    }
+
+    /// The nominal data rate in kb/s.
+    pub const fn nominal_kbps(self) -> u32 {
+        match self {
+            Self::Legacy(rate) => rate.kbps(),
+            Self::Ht(rate) => rate.nominal_kbps(),
+            Self::He(rate) => rate.nominal_kbps(),
         }
     }
 }

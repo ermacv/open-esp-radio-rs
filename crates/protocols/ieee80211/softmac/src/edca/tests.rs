@@ -97,3 +97,26 @@ fn out_of_range_exponents_are_clamped() {
     fixed.record_failure();
     assert_eq!(fixed.cw(), 31);
 }
+
+#[test]
+fn reconfiguration_keeps_the_current_window_inside_the_new_bounds() {
+    let mut contention = EdcaContention::new(4, 10);
+    contention.record_failure();
+    contention.record_failure();
+    assert_eq!(contention.cw_exponent(), 6);
+    // Still inside: kept.
+    contention.reconfigure(5, 10);
+    assert_eq!(contention.cw_exponent(), 6);
+    // Above a lower maximum: lowered.
+    contention.reconfigure(2, 3);
+    assert_eq!(contention.cw_exponent(), 3);
+    // Below a higher minimum: raised.
+    contention.reconfigure(7, 9);
+    assert_eq!(contention.cw_exponent(), 7);
+    assert_eq!(
+        (contention.cw_min_exponent(), contention.cw_max_exponent()),
+        (7, 9)
+    );
+    contention.reset();
+    assert_eq!(contention.cw_exponent(), 7);
+}

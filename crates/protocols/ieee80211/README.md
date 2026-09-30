@@ -48,7 +48,14 @@ advertisement. The portable codec carries no implicit ESP32-S31 profile.
 [`lower-mac`](lower-mac/README.md) declares the radio port every Wi-Fi backend
 implements; one submission is one hardware transmission attempt. Optional
 features are its extension traits. `softmac/src/edca.rs` draws the EDCA
-backoff each attempt carries.
+backoff each attempt carries. [`upper-mac`](upper-mac/README.md) decides
+everything else above the port for a transmission: the retry ladder and
+Retry bit, A-MPDU retry selection, protection, and the planner that turns an
+exchange into attempts; `mac/src/block_ack/reorder.rs` reorders received
+Block Ack sessions and `mac/src/ccmp.rs` allocates transmit packet numbers and
+checks receive replay. Vendor limits, ladders and estimates for these
+algorithms are parameters; the Espressif ones live in
+[`oer-espressif-ieee80211-policy`](../espressif/ieee80211/policy/README.md).
 
 `softmac/src/contract` describes operation ownership, service capabilities,
 resource limits and normalized statuses. Configuration, VIF and monitor

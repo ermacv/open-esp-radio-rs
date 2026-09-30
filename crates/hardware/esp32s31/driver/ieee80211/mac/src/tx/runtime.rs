@@ -11,6 +11,13 @@ use oer_ieee80211_mac::qos::{
 };
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
+use oer_espressif_ieee80211_policy::lmac;
+use oer_ieee80211_upper_mac::{
+    AmpduAttemptResult, AmpduRetryDecision as UpperAmpduRetryDecision,
+    AmpduRetryError as UpperAmpduRetryError, AmpduRetryState as UpperAmpduRetryState,
+    ContentionUpdate, MpduRetryState, RetryDecision, RetryOutcome, retry::RetryStateError,
+};
+
 use crate::{
     edca::{EdcaAccessPolicy, EdcaContentionParameters, EdcaParametersError, EdcaQueues},
     rate::schedule::{RateScheduleKind, RateScheduleRef, schedule_rate_after_failures},
@@ -295,10 +302,11 @@ impl Default for WifiTxRuntimePolicy {
     }
 }
 
-/// Complete `lmacInit` defaults stored in `lmacConfMib[0x15]` and `[0x14]`.
-pub const VENDOR_SHORT_RETRY_LIMIT: u8 = 0x20;
-pub const VENDOR_LONG_RETRY_LIMIT: u8 = 0x20;
-pub const VENDOR_RTS_THRESHOLD_BYTES: u32 = 0x092a;
+/// Complete `lmacInit` defaults stored in `lmacConfMib[0x15]` and `[0x14]`:
+/// the Espressif family's policy data of `oer_espressif_ieee80211_policy::lmac`.
+pub const VENDOR_SHORT_RETRY_LIMIT: u8 = lmac::SHORT_RETRY_LIMIT;
+pub const VENDOR_LONG_RETRY_LIMIT: u8 = lmac::LONG_RETRY_LIMIT;
+pub const VENDOR_RTS_THRESHOLD_BYTES: u32 = lmac::RTS_THRESHOLD_BYTES as u32;
 
 /// Invalid construction or a missing normal-schedule rate entry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -381,35 +389,27 @@ pub enum OrdinaryRetryDecision {
     },
 }
 
-/// Vendor short/long classification used by the separate retry counters.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum OrdinaryFrameClass {
-    Short,
-    Long,
-}
+/// Vendor short/long classification used by the separate retry counters:
+/// the portable retry state's frame class.
+pub use oer_ieee80211_upper_mac::FrameClass as OrdinaryFrameClass;
 
 /// Descriptor retry bytes consumed by `rcGetRate`, `rcReachRetryLimit` and
-/// the LMAC short/long retry-limit checks.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct OrdinaryRetryCounters {
-    pub mpdu: u8,
-    pub short: u8,
-    pub long: u8,
-}
+/// the LMAC short/long retry-limit checks: the portable retry counters.
+pub use oer_ieee80211_upper_mac::RetryCounters as OrdinaryRetryCounters;
 
 /// One bounded ordinary-MPDU retry transaction for the normal schedule path.
 ///
-/// The caller retains the encoded MPDU and its DMA storage. This type owns
-/// the three vendor descriptor counters, publication count, normal
-/// `rcGetRate` ladder selection and EDCA CW changes.
+/// The caller retains the encoded MPDU and its DMA storage. The retry
+/// counters, publication count and the retry decision are the portable
+/// `oer_ieee80211_upper_mac::MpduRetryState` under the Espressif LMAC limits
+/// (`oer_espressif_ieee80211_policy::lmac::RETRY_LIMITS`); this adapter adds
+/// the chip's rate ladders over [`TxPhyRate`] and applies the contention
+/// changes to the queue's EDCA state.
 pub struct OrdinaryMpduRetryState {
     queue: LegacyTxQueue,
     initial_rate: TxPhyRate,
     rate_policy: OrdinaryRetryRatePolicy,
-    mpdu_retry_limit: u8,
-    publications: u8,
-    frame_class: OrdinaryFrameClass,
-    counters: OrdinaryRetryCounters,
+    retry: MpduRetryState,
 }
 
 impl OrdinaryMpduRetryState {
@@ -419,21 +419,17 @@ impl OrdinaryMpduRetryState {
         mpdu_retry_limit: u8,
         frame_class: OrdinaryFrameClass,
     ) -> Result<Self, OrdinaryRetryError> {
-        if mpdu_retry_limit == 0 {
-            return Err(OrdinaryRetryError::ZeroMpduRetryLimit);
-        }
+        let retry = match MpduRetryState::new(lmac::RETRY_LIMITS, mpdu_retry_limit, frame_class) {
+            Ok(retry) => retry,
+            Err(RetryStateError::ZeroMpduRetryLimit) => {
+                return Err(OrdinaryRetryError::ZeroMpduRetryLimit);
+            }
+        };
         Ok(Self {
             queue,
             initial_rate,
             rate_policy: OrdinaryRetryRatePolicy::Normal,
-            mpdu_retry_limit,
-            publications: 1,
-            frame_class,
-            counters: OrdinaryRetryCounters {
-                mpdu: 0,
-                short: 0,
-                long: 0,
-            },
+            retry,
         })
     }
 
@@ -495,11 +491,11 @@ impl OrdinaryMpduRetryState {
     }
 
     pub const fn publications(&self) -> u8 {
-        self.publications
+        self.retry.attempts()
     }
 
     pub const fn counters(&self) -> OrdinaryRetryCounters {
-        self.counters
+        self.retry.counters()
     }
 
     /// Select the rate for the current publication.
@@ -510,8 +506,7 @@ impl OrdinaryMpduRetryState {
     /// `max(desc[5], desc[6])`; a long collision changes only `desc[7]` and
     /// therefore retains its current rate.
     pub fn current_rate(&self) -> Result<TxPhyRate, OrdinaryRetryError> {
-        let retry_index = self.counters.mpdu.max(self.counters.short);
-        self.rate_after_failed_attempts(retry_index)
+        self.rate_after_failed_attempts(self.retry.counters().ladder_step())
     }
 
     /// Inspect one retry-series rate without advancing ownership.
@@ -545,81 +540,35 @@ impl OrdinaryMpduRetryState {
     }
 
     /// Apply one typed completion after the raw status/detail dispatcher.
+    ///
+    /// The portable retry state decides: only an ACK timeout sets the Retry
+    /// bit, a CTS timeout advances the short counter, a collision the
+    /// counter of the frame's class, and a terminal failure ends the
+    /// exchange.
     pub fn observe_completion(
         &mut self,
         policy: &mut WifiTxRuntimePolicy,
         disposition: TxCompletionDisposition,
     ) -> OrdinaryRetryDecision {
-        match disposition {
-            TxCompletionDisposition::Success => {
+        let step = self.retry.observe(disposition.tx_status());
+        match (step.contention, step.decision) {
+            (_, RetryDecision::Complete(RetryOutcome::Delivered)) => {
                 policy.record_success(self.queue);
-                OrdinaryRetryDecision::Complete
             }
-            TxCompletionDisposition::AckTimeout => self.observe_ack_timeout(policy),
-            TxCompletionDisposition::CtsTimeout => self.observe_cts_timeout(policy),
-            TxCompletionDisposition::Collision => self.observe_collision(policy),
-            TxCompletionDisposition::Terminal(_) => {
-                policy.reset_terminal_exchange(self.queue);
-                OrdinaryRetryDecision::Complete
+            (ContentionUpdate::Reset, _) => policy.reset_terminal_exchange(self.queue),
+            (ContentionUpdate::Double, _) => policy.record_retry_failure(self.queue),
+        }
+        match step.decision {
+            RetryDecision::Complete(_) => OrdinaryRetryDecision::Complete,
+            RetryDecision::Retry { set_retry_bit } => {
+                OrdinaryRetryDecision::Retry { set_retry_bit }
             }
         }
-    }
-
-    fn observe_ack_timeout(&mut self, policy: &mut WifiTxRuntimePolicy) -> OrdinaryRetryDecision {
-        // SOURCE: complete `libpp.a[lmac.o]::lmacProcessAckTimeout`. Only a
-        // frame inside a granted TXOP (descriptor word-0 bit 8) reaches
-        // `lmacProcessLongRetryFail`; every other frame, whatever its length,
-        // reaches `lmacProcessShortRetryFail(context, 0, 0, _)`, which counts
-        // the MPDU and short retries against the short limit. Production
-        // requests no TXOP, so its ACK timeouts always take the short path.
-        self.counters.mpdu = self.counters.mpdu.saturating_add(1);
-        self.counters.short = self.counters.short.saturating_add(1);
-        self.finish_or_retry(
-            policy,
-            self.counters.short >= VENDOR_SHORT_RETRY_LIMIT
-                || self.counters.mpdu >= self.mpdu_retry_limit,
-            true,
-        )
-    }
-
-    fn observe_cts_timeout(&mut self, policy: &mut WifiTxRuntimePolicy) -> OrdinaryRetryDecision {
-        self.counters.short = self.counters.short.saturating_add(1);
-        self.finish_or_retry(
-            policy,
-            self.counters.short >= VENDOR_SHORT_RETRY_LIMIT,
-            false,
-        )
     }
 
     /// Apply one detached ordinary-queue collision.
     pub fn observe_collision(&mut self, policy: &mut WifiTxRuntimePolicy) -> OrdinaryRetryDecision {
-        let class_limit_reached = match self.frame_class {
-            OrdinaryFrameClass::Short => {
-                self.counters.short = self.counters.short.saturating_add(1);
-                self.counters.short >= VENDOR_SHORT_RETRY_LIMIT
-            }
-            OrdinaryFrameClass::Long => {
-                self.counters.long = self.counters.long.saturating_add(1);
-                self.counters.long >= VENDOR_LONG_RETRY_LIMIT
-            }
-        };
-        self.finish_or_retry(policy, class_limit_reached, false)
-    }
-
-    fn finish_or_retry(
-        &mut self,
-        policy: &mut WifiTxRuntimePolicy,
-        limit_reached: bool,
-        set_retry_bit: bool,
-    ) -> OrdinaryRetryDecision {
-        if limit_reached {
-            policy.reset_terminal_exchange(self.queue);
-            OrdinaryRetryDecision::Complete
-        } else {
-            policy.record_retry_failure(self.queue);
-            self.publications = self.publications.saturating_add(1);
-            OrdinaryRetryDecision::Retry { set_retry_bit }
-        }
+        self.observe_completion(policy, TxCompletionDisposition::Collision)
     }
 
     /// End ownership after a non-retryable executor or hardware error.
@@ -682,20 +631,8 @@ pub fn select_schedule_retry_rate(
 }
 
 /// Lifetime of an A-MPDU member MSDU, in microseconds: 1536 lifetime units
-/// of 1024 us.
-///
-/// SOURCE: `libpp.a[lmac.o]::lmacMSDUAged` compares the time since the
-/// MSDU's enqueue timestamp with the `lmacConfMib` lifetime that `lmacInit`
-/// installs, 1536 units for an aggregate member (descriptor bit 22) and 1024
-/// for an ordinary MPDU, each unit `<< 10` microseconds; executed in the
-/// ampdu-resort comparison (blobray 28d6fd3e0).
-pub const VENDOR_AMPDU_MSDU_LIFETIME_MICROS: u32 = 1536 << 10;
-
-/// An MSDU with less than one lifetime unit left is aged.
-///
-/// SOURCE: `libpp.a[lmac.o]::lmacMSDUAged`, as for
-/// [`VENDOR_AMPDU_MSDU_LIFETIME_MICROS`].
-const VENDOR_MSDU_AGED_MARGIN_MICROS: u64 = 1 << 10;
+/// of 1024 us (`oer_espressif_ieee80211_policy::lmac`).
+pub const VENDOR_AMPDU_MSDU_LIFETIME_MICROS: u32 = lmac::AMPDU_MSDU_LIFETIME_MICROS;
 
 /// Policy for retained A-MPDU retries.
 ///
@@ -790,29 +727,20 @@ impl AmpduRetryDecision {
 
 /// One bounded BlockAck/retry transaction.
 ///
-/// Sequence numbers are kept independently of descriptor indices because a
-/// partial BlockAck retry compacts only missing MPDUs toward slot zero.
+/// The retry selection is the portable
+/// `oer_ieee80211_upper_mac::AmpduRetryState` under the Espressif LMAC retry
+/// limit and aging margin (`oer_espressif_ieee80211_policy::lmac`). This
+/// adapter bounds the aggregate by the S31 hardware BlockAck window and the
+/// DMA owner's `CAPACITY`, reads the chip completion and keeps the 32-bit
+/// masks of the S31 descriptor chain.
+///
+/// SOURCE: complete `libpp.a[pp.o]::ppResortTxAMPDU` preserves Sequence
+/// Control and compacts only the MPDUs absent from BlockAck. Complete
+/// `libpp.a[lmac.o]::lmacRetryTxFrame` skips `rcGetRate` for the state
+/// written by `lmacProcessLongRetryFail`, so a retained aggregate keeps its
+/// PHY rate.
 pub struct AmpduRetryState<const CAPACITY: usize> {
-    first_sequence: SequenceNumber,
-    /// Original aggregate indices still represented by the compacted
-    /// descriptor chain. Hardware BlockAck windows are bounded to 32 MPDUs,
-    /// so one mask preserves every non-contiguous sequence after compaction
-    /// without carrying a movable 32-entry sequence table.
-    pending_original_indices: u32,
-    /// Original aggregate indices absent from the last observed completion.
-    missing_original_indices: u32,
-    current_subframes: u8,
-    policy: AmpduRetryPolicy,
-    /// From this instant on the aggregate's MSDUs are aged: less than one
-    /// lifetime unit remains of the lifetime that runs from their commit.
-    aged_from_micros: u64,
-    aggregate_attempts: u8,
-    acknowledged: u8,
-    block_ack_mpdu_attempts: u16,
-    trigger_flow_completions: u8,
-    protection_failures: u8,
-    /// Publications that ended without any BlockAck.
-    ack_timeouts: u8,
+    state: UpperAmpduRetryState,
 }
 
 impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
@@ -840,41 +768,33 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
                 capacity: CAPACITY,
             });
         }
-        let pending_original_indices = if subframes == 32 {
-            u32::MAX
-        } else {
-            (1_u32 << subframes) - 1
-        };
-        Ok(Self {
+        UpperAmpduRetryState::new(
             first_sequence,
-            pending_original_indices,
-            missing_original_indices: 0,
-            current_subframes: subframes,
-            policy,
-            aged_from_micros: committed_at_micros
-                .saturating_add(u64::from(policy.lifetime_micros))
-                .saturating_sub(VENDOR_MSDU_AGED_MARGIN_MICROS)
-                .saturating_add(1),
-            aggregate_attempts: 1,
-            acknowledged: 0,
-            block_ack_mpdu_attempts: 0,
-            trigger_flow_completions: 0,
-            protection_failures: 0,
-            ack_timeouts: 0,
-        })
+            subframes,
+            lmac::ampdu_retry_policy(policy.lifetime_micros, policy.retain_single_mpdu),
+            committed_at_micros,
+        )
+        .map(|state| Self { state })
+        .map_err(Self::error)
     }
 
     /// Apply one completion after the hardware queue has been detached.
     ///
-    /// SOURCE: complete `libpp.a[pp.o]::ppResortTxAMPDU` preserves
-    /// Sequence Control and compacts only the MPDUs absent from BlockAck.
-    /// Complete `libpp.a[lmac.o]::lmacRetryTxFrame` skips
-    /// `rcGetRate` for the state written by
-    /// `lmacProcessLongRetryFail`, so a retained aggregate keeps its PHY rate.
     /// A missing MPDU stays in the aggregate until it is aged at
     /// `now_micros`; aged MPDUs end the aggregate and are discarded. Once
     /// the TID's BlockAck agreement is no longer `block_ack_operational`,
     /// the live missing MPDUs leave the aggregate for individual retry.
+    ///
+    /// SOURCE: complete `libpp.a[lmac.o]::lmacProcessTxComplete` maps status
+    /// five to `lmacProcessAckTimeout`. Both its short- and long-frame
+    /// leaves call `lmacProcessTBSuccess(queue, 0x7f)` instead of retrying
+    /// when the queue is in Trigger flow and its applicable packet counts
+    /// are zero ([`crate::tx::TxCompletion::completes_vendor_trigger_flow`]),
+    /// which ends the exchange without an ordinary BlockAck. A CTS timeout is
+    /// a failed protection exchange (`lmacProcessCtsTimeout`). Without the
+    /// hardware's BlockAck-received result every MPDU is retried; with it,
+    /// the bitmap under [`HtAmpduTxCompletion::valid_block_ack`] resorts the
+    /// aggregate.
     pub fn observe(
         &mut self,
         completion: HtAmpduTxCompletion,
@@ -882,84 +802,28 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         now_micros: u64,
         block_ack_operational: bool,
     ) -> Result<AmpduRetryDecision, AmpduRetryError> {
-        if observed_subframes != self.current_subframes {
-            return Err(AmpduRetryError::FrameCountChanged {
-                expected: self.current_subframes,
-                observed: observed_subframes,
-            });
-        }
-
-        // Complete `libpp.a[lmac.o]::lmacProcessTxComplete` maps
-        // status five to `lmacProcessAckTimeout`. Both its short- and
-        // long-frame leaves call `lmacProcessTBSuccess(queue, 0x7f)` instead
-        // of retrying when the queue is in Trigger flow and its applicable
-        // packet counts are zero. Keep this before BlockAck accounting: the
-        // vendor path terminates the frame-exchange sequence without an
-        // ordinary BlockAck or an ordinary MPDU attempt count.
-        if completion.tx.completes_vendor_trigger_flow() {
-            self.trigger_flow_completions = self.trigger_flow_completions.saturating_add(1);
-            self.missing_original_indices = 0;
-            return Ok(AmpduRetryDecision::FinishTriggerFlow);
-        }
-        if completion.tx.disposition() == TxCompletionDisposition::CtsTimeout {
-            self.protection_failures = self.protection_failures.saturating_add(1);
-            // No MPDU reached the receiver.
-            self.missing_original_indices = self.pending_original_indices;
-            let retry_mask = if observed_subframes == 32 {
-                u32::MAX
-            } else {
-                (1_u32 << observed_subframes) - 1
-            };
-            if self.protection_failures < VENDOR_SHORT_RETRY_LIMIT {
-                return Ok(AmpduRetryDecision::RepublishUnchanged { retry_mask });
-            }
-            // The exhausted short retry ends this frame-exchange sequence;
-            // the aggregate survives it and asks for its BlockAck.
-            self.protection_failures = 0;
-            return Ok(AmpduRetryDecision::RequestBlockAck {
-                retry_mask,
-                starting_sequence: self.current_first_sequence(),
-            });
-        }
-        self.block_ack_mpdu_attempts = self
-            .block_ack_mpdu_attempts
-            .saturating_add(u16::from(observed_subframes));
-
-        // Without any BlockAck every MPDU is retried, and a retry counter
-        // bounds the aggregate as well as the MSDU lifetime.
-        //
-        // SOURCE: `libpp.a[lmac.o]::lmacProcessAckTimeout` enters
-        // `lmacProcessShortRetryFail`/`lmacProcessLongRetryFail`, which set
-        // the Retry bit on every MPDU and republish the aggregate until the
-        // `lmacConfMib` retry limit or `lmacMSDUAged`; executed, both
-        // descriptor lengths end on the 32nd timeout through
-        // `lmacEndFrameExchangeSequence` (blobray 156c54e0e). The
-        // `rcReachRetryLimit` cap of 11 attempts applies only while
-        // ESP-WIFI-MESH runs (`g_mesh_is_started`), which this driver
-        // does not compose.
-        if !completion.block_ack_received {
-            self.ack_timeouts = self.ack_timeouts.saturating_add(1);
-            self.missing_original_indices = self.pending_original_indices;
-            let retry_mask = if observed_subframes == 32 {
-                u32::MAX
-            } else {
-                (1_u32 << observed_subframes) - 1
-            };
-            if self.ack_timeouts >= VENDOR_SHORT_RETRY_LIMIT || self.aged(now_micros) {
-                return Ok(AmpduRetryDecision::Finish { retry_mask });
-            }
-            return Ok(self.retain_or_unaggregate(
-                retry_mask,
+        let result = if completion.tx.completes_vendor_trigger_flow() {
+            AmpduAttemptResult::TriggerFlowEnd
+        } else if completion.tx.disposition() == TxCompletionDisposition::CtsTimeout {
+            AmpduAttemptResult::ProtectionFailure
+        } else if !completion.block_ack_received {
+            AmpduAttemptResult::NoResponse
+        } else {
+            AmpduAttemptResult::Answered(
+                completion
+                    .valid_block_ack()
+                    .map(|block_ack| block_ack.report()),
+            )
+        };
+        self.state
+            .observe(
+                result,
                 observed_subframes,
+                now_micros,
                 block_ack_operational,
-            ));
-        }
-
-        Ok(self.resort(
-            |sequence| completion.acknowledges(sequence),
-            now_micros,
-            block_ack_operational,
-        ))
+            )
+            .map(Self::decision)
+            .map_err(Self::error)
     }
 
     /// Resort the kept aggregate by the answer to its BlockAckReq.
@@ -974,123 +838,104 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         now_micros: u64,
         block_ack_operational: bool,
     ) -> AmpduRetryDecision {
-        self.resort(
-            |sequence| {
-                block_ack.is_some_and(|block_ack| block_ack.block_ack.acknowledges(sequence))
-            },
+        Self::decision(self.state.observe_block_ack_request(
+            block_ack.map(|observation| observation.block_ack.report()),
             now_micros,
             block_ack_operational,
-        )
+        ))
     }
 
-    /// Keep the MPDUs `acknowledged` does not report in the aggregate.
-    ///
-    /// SOURCE: complete `libpp.a[pp.o]::ppResortTxAMPDU` preserves
-    /// Sequence Control and compacts only the MPDUs absent from BlockAck.
-    fn resort(
-        &mut self,
-        acknowledged: impl Fn(SequenceNumber) -> bool,
-        now_micros: u64,
-        block_ack_operational: bool,
-    ) -> AmpduRetryDecision {
-        let mut retry_mask = 0_u32;
-        let mut retry_original_indices = 0_u32;
-        let mut index = 0_u8;
-        while index < self.current_subframes {
-            let original_index = self.original_index(index);
-            let sequence = self.first_sequence.wrapping_add(u16::from(original_index));
-            if acknowledged(sequence) {
-                self.acknowledged = self.acknowledged.saturating_add(1);
-            } else {
-                retry_mask |= 1_u32 << index;
-                retry_original_indices |= 1_u32 << original_index;
+    const fn decision(decision: UpperAmpduRetryDecision) -> AmpduRetryDecision {
+        // The S31 aggregate holds at most `HARDWARE_BLOCK_ACK_WINDOW`
+        // subframes, so every mask fits the descriptor chain's 32 bits.
+        match decision {
+            UpperAmpduRetryDecision::RetainAggregate { retry_mask } => {
+                AmpduRetryDecision::RetainAggregate {
+                    retry_mask: retry_mask as u32,
+                }
             }
-            index += 1;
+            UpperAmpduRetryDecision::RepublishUnchanged { retry_mask } => {
+                AmpduRetryDecision::RepublishUnchanged {
+                    retry_mask: retry_mask as u32,
+                }
+            }
+            UpperAmpduRetryDecision::RequestBlockAck {
+                retry_mask,
+                starting_sequence,
+            } => AmpduRetryDecision::RequestBlockAck {
+                retry_mask: retry_mask as u32,
+                starting_sequence,
+            },
+            UpperAmpduRetryDecision::Unaggregate { retry_mask } => {
+                AmpduRetryDecision::Unaggregate {
+                    retry_mask: retry_mask as u32,
+                }
+            }
+            UpperAmpduRetryDecision::Finish { retry_mask } => AmpduRetryDecision::Finish {
+                retry_mask: retry_mask as u32,
+            },
+            UpperAmpduRetryDecision::FinishTriggerFlow => AmpduRetryDecision::FinishTriggerFlow,
         }
-        self.missing_original_indices = retry_original_indices;
-        let missing = retry_mask.count_ones() as u8;
-        if missing == 0 || self.aged(now_micros) {
-            return AmpduRetryDecision::Finish { retry_mask };
-        }
-        let decision = self.retain_or_unaggregate(retry_mask, missing, block_ack_operational);
-        if matches!(decision, AmpduRetryDecision::RetainAggregate { .. }) {
-            self.pending_original_indices = retry_original_indices;
-            self.current_subframes = missing;
-        }
-        decision
     }
 
-    /// Keep `missing` live MPDUs in the aggregate, or hand them to the
-    /// ordinary queue when the agreement ended or one HT MPDU remains.
-    fn retain_or_unaggregate(
-        &mut self,
-        retry_mask: u32,
-        missing: u8,
-        block_ack_operational: bool,
-    ) -> AmpduRetryDecision {
-        if !block_ack_operational || (missing == 1 && !self.policy.retain_single_mpdu) {
-            return AmpduRetryDecision::Unaggregate { retry_mask };
+    const fn error(error: UpperAmpduRetryError) -> AmpduRetryError {
+        match error {
+            UpperAmpduRetryError::ZeroLifetime => AmpduRetryError::ZeroLifetime,
+            UpperAmpduRetryError::EmptyAggregate => AmpduRetryError::EmptyAggregate,
+            UpperAmpduRetryError::TooManySubframes { subframes } => {
+                AmpduRetryError::AggregateExceedsCapacity {
+                    subframes,
+                    capacity: CAPACITY,
+                }
+            }
+            UpperAmpduRetryError::FrameCountChanged { expected, observed } => {
+                AmpduRetryError::FrameCountChanged { expected, observed }
+            }
         }
-        self.aggregate_attempts = self.aggregate_attempts.saturating_add(1);
-        AmpduRetryDecision::RetainAggregate { retry_mask }
     }
 
     pub const fn current_subframes(&self) -> u8 {
-        self.current_subframes
+        self.state.current_subframes()
     }
 
     /// Whether the aggregate's MSDUs are aged at `now_micros`: less than
     /// one lifetime unit remains.
     pub const fn aged(&self, now_micros: u64) -> bool {
-        now_micros >= self.aged_from_micros
+        self.state.aged(now_micros)
     }
 
     pub const fn current_first_sequence(&self) -> SequenceNumber {
-        self.first_sequence
-            .wrapping_add(self.pending_original_indices.trailing_zeros() as u16)
+        self.state.current_first_sequence()
     }
 
     /// Original aggregate positions (bit `i` is the `i`th MPDU of the first
     /// publication) absent from the last observed completion. Retries
     /// compact the descriptor chain; these positions do not move.
     pub const fn missing_original_indices(&self) -> u32 {
-        self.missing_original_indices
+        self.state.missing_original_indices() as u32
     }
 
     pub const fn aggregate_attempts(&self) -> u8 {
-        self.aggregate_attempts
+        self.state.aggregate_attempts()
     }
 
     pub const fn acknowledged(&self) -> u8 {
-        self.acknowledged
+        self.state.acknowledged()
     }
 
     pub const fn block_ack_mpdu_attempts(&self) -> u16 {
-        self.block_ack_mpdu_attempts
+        self.state.block_ack_mpdu_attempts()
     }
 
     /// Protection exchanges (RTS/CTS) that failed before the data PPDU.
     pub const fn protection_failures(&self) -> u8 {
-        self.protection_failures
+        self.state.protection_failures()
     }
 
     /// Number of terminal completions handled through `lmacProcessTBSuccess`
     /// semantics rather than an ordinary BlockAck.
     pub const fn trigger_flow_completions(&self) -> u8 {
-        self.trigger_flow_completions
-    }
-
-    fn original_index(&self, compacted_index: u8) -> u8 {
-        let mut remaining = self.pending_original_indices;
-        let mut position = compacted_index;
-        loop {
-            let original = remaining.trailing_zeros() as u8;
-            if position == 0 {
-                return original;
-            }
-            remaining &= remaining - 1;
-            position -= 1;
-        }
+        self.state.trigger_flow_completions()
     }
 }
 

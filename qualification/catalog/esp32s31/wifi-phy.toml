@@ -359,7 +359,7 @@ limits = "AXI-GDMA is a separate engine from Wi-Fi MAC DMA and is not composed i
 source-paths = [
   "crates/adapters/esp-hal/esp32s31/soc/src/dma/mem2mem/transfer.rs",
   "crates/adapters/esp-hal/esp32s31/soc/src/dma/mem2mem/descriptor.rs",
-  "hil/targets/esp32s31/runtime/src/gdma_mem2mem_probe.rs",
+  "hil/targets/esp32s31/agent/src/gdma_mem2mem_probe.rs",
 ]
 
 [[capabilities.source-contracts]]

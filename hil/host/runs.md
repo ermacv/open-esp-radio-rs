@@ -57,7 +57,7 @@ source line), and the code the stalled hart kept running; a core 1 stall seen
 together with a core 0 stall is reported as depending on core 0's timers.
 The watchdog also sees a task that awaits forever while both executors run:
 a task whose work can wait for it owns a named slot (`console`,
-`session-evidence`) in `oer_hil_target_core::liveness`, armed while its work
+`session-evidence`) in `oer_hil_agent::liveness`, armed while its work
 waits, and a slot armed past its deadline (5 s for the console, 10 s for
 session evidence) is a hang of that task, reported as `hang: task <slot> made
 no progress for N ms while executors ran`. A

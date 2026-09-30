@@ -885,7 +885,7 @@ mod tests {
         }});
         let packages = image_packages(&root, &provenance).unwrap().unwrap();
         for expected in [
-            "hil/targets/esp32s31/runtime",
+            "hil/targets/esp32s31/agent",
             "crates/hardware/esp32s31/driver/bluetooth",
             "platform/esp32s31/bootstrap",
         ] {

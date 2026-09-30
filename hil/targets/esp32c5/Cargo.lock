@@ -1191,16 +1191,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-esp32c5-soc-esp-hal"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "esp-hal",
- "oer-soc-deadline",
-]
-
-[[package]]
-name = "oer-hil-esp32c5-runtime"
+name = "oer-esp32c5-hil-agent"
 version = "0.1.0"
 dependencies = [
  "critical-section",
@@ -1213,10 +1204,33 @@ dependencies = [
  "esp-rtos",
  "heapless 0.9.3",
  "oer-esp32c5-soc-esp-hal",
+ "oer-hil-agent",
  "oer-hil-image-keys",
  "oer-hil-protocol",
- "oer-hil-target-core",
  "static_cell",
+]
+
+[[package]]
+name = "oer-esp32c5-soc-esp-hal"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "esp-hal",
+ "oer-soc-deadline",
+]
+
+[[package]]
+name = "oer-hil-agent"
+version = "0.1.0"
+dependencies = [
+ "crc",
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "embedded-io-async 0.7.0",
+ "heapless 0.9.3",
+ "log",
+ "oer-hil-protocol",
+ "oer-trace",
 ]
 
 [[package]]
@@ -1239,20 +1253,6 @@ dependencies = [
  "postcard-schema",
  "serde",
  "zeroize",
-]
-
-[[package]]
-name = "oer-hil-target-core"
-version = "0.1.0"
-dependencies = [
- "crc",
- "embassy-futures",
- "embassy-sync 0.8.0",
- "embedded-io-async 0.7.0",
- "heapless 0.9.3",
- "log",
- "oer-hil-protocol",
- "oer-trace",
 ]
 
 [[package]]

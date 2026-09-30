@@ -17,11 +17,11 @@ use crate::{DeviceImageKeys, ImageClass};
 const RUNTIME_MANIFESTS: [(&str, &str); 2] = [
     (
         "esp32s31",
-        include_str!("../../../targets/esp32s31/runtime/Cargo.toml"),
+        include_str!("../../../targets/esp32s31/agent/Cargo.toml"),
     ),
     (
         "esp32c5",
-        include_str!("../../../targets/esp32c5/runtime/Cargo.toml"),
+        include_str!("../../../targets/esp32c5/agent/Cargo.toml"),
     ),
 ];
 

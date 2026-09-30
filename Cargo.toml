@@ -16,7 +16,7 @@ members = [
     "hil/image-keys",
     "hil/protocol",
     "hil/schema",
-    "hil/target-core",
+    "hil/agent",
     "hil/trace",
     "crates/memory",
     "crates/trace",

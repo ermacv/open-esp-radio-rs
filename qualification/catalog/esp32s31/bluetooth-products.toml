@@ -130,7 +130,7 @@ id = "secure-gatt-current-host-boundary"
 composition = "production"
 scope = "The portable GATT application owns Numeric Comparison policy with console confirmation, authenticated ATT access, caller-owned asynchronous bond storage with a bounded RAM backend and the Host epoch runner"
 limits = "The HIL secure GATT image composes the Host with the production Controller and restarts the Controller epoch on request; coordinated terminal fault disposition remains open. Bond insertion must succeed before application authorization; restored encryption must match the retained record. RAM bonds do not survive SoC reset; imported metadata does not prove pairing-method provenance. Repeated eligible evidence is required; source coverage does not qualify the product"
-source-paths = ["examples/bluetooth-gatt/src/security/gatt.rs", "examples/bluetooth-gatt/src/security/epoch.rs", "examples/bluetooth-gatt/src/security/bonds.rs", "examples/bluetooth-gatt/src/security/comparison.rs", "examples/bluetooth-gatt/src/security/console.rs", "hil/targets/esp32s31/runtime/src/bluetooth/secure.rs"]
+source-paths = ["examples/bluetooth-gatt/src/security/gatt.rs", "examples/bluetooth-gatt/src/security/epoch.rs", "examples/bluetooth-gatt/src/security/bonds.rs", "examples/bluetooth-gatt/src/security/comparison.rs", "examples/bluetooth-gatt/src/security/console.rs", "hil/targets/esp32s31/agent/src/bluetooth/secure.rs"]
 
 [capabilities.development]
 knowledge = ["examples/bluetooth-gatt/src/security/gatt.rs"]

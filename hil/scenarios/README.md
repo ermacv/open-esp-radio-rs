@@ -207,7 +207,7 @@ qualification requirement on it stays open, and `cargo qualification next`
 shows the reason. The field is not part of the executed procedure, so
 recorded evidence stays comparable. The runner's catalog test fails when a
 marked scenario is served, or an unmarked one is not, by the image classes
-declared in `hil/targets/esp32s31/runtime/Cargo.toml` and their declared
+declared in `hil/targets/esp32s31/agent/Cargo.toml` and their declared
 capabilities; after flashing, the runner checks the same roles against the
 capabilities the image reports.
 

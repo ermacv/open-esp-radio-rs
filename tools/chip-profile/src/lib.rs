@@ -118,7 +118,13 @@ impl Profile {
 
     /// The package of the chip's HIL agent firmware in that workspace.
     pub fn hil_agent_package(&self) -> String {
-        format!("oer-hil-{}-runtime", self.id)
+        format!("oer-{}-hil-agent", self.id)
+    }
+
+    /// The manifest of that package, which declares the features the
+    /// agent's images select from.
+    pub fn hil_agent_manifest(&self, root: &Path) -> PathBuf {
+        self.hil_agent_workspace(root).join("agent/Cargo.toml")
     }
 
     /// The Cargo workspace of the chip's platform, which holds the

@@ -32,7 +32,7 @@ hil/
 │   └── linux-bluetooth/ privileged Linux Bluetooth fixture
 ├── peers/             ESP-IDF reference peer images (esp32c5)
 ├── bootloaders/       second-stage bootloader per chip
-├── target-core/       chip-independent target logic
+├── agent/            chip-independent HIL agent logic
 └── targets/
     └── esp32s31/      current embedded target workspace
 ```

@@ -9,7 +9,7 @@ mod unsafe_policy;
 
 const INTEGRATION: &str = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml";
 const INTEGRATION_PACKAGE: &str = "oer-esp32s31-ieee80211-system";
-const HIL_RUNTIME: &str = "hil/targets/esp32s31/runtime/Cargo.toml";
+const HIL_RUNTIME: &str = "hil/targets/esp32s31/agent/Cargo.toml";
 
 pub fn run(ctx: &Context) -> Result<()> {
     // The Blobray workspace names its own packages.

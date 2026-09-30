@@ -32,7 +32,7 @@ pub const REPOSITORY_DIRECTORY: &str = "hil/host/image";
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 pub const TARGET: &str = "riscv32imafc-unknown-none-elf";
-const RUNTIME_BIN: &str = "oer-hil-esp32s31-runtime";
+const RUNTIME_BIN: &str = "oer-esp32s31-hil-agent";
 use oer_esp32s31_firmware::{BOOTSTRAP_BIN, audit_application_image, pack_runtime};
 
 /// Version of the `image build`/`image flash` artifact report on stdout.
@@ -1078,7 +1078,7 @@ pub fn ensure_no_old_application_dependency(root: &Path) -> Result<()> {
     for relative in [
         "hil/targets/esp32s31/Cargo.toml",
         "platform/esp32s31/bootstrap/Cargo.toml",
-        "hil/targets/esp32s31/runtime/Cargo.toml",
+        "hil/targets/esp32s31/agent/Cargo.toml",
         "platform/esp32s31/board/Cargo.toml",
     ] {
         let path = root.join(relative);

@@ -245,7 +245,7 @@ pub fn profiles() -> [Profile; 10] {
         },
         Profile {
             boundary: OwnedProduct,
-            manifest: "hil/targets/esp32s31/runtime/Cargo.toml",
+            manifest: "hil/targets/esp32s31/agent/Cargo.toml",
             features: &[
                 "--no-default-features",
                 "--features",

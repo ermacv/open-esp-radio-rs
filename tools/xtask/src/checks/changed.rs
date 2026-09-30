@@ -493,7 +493,7 @@ mod tests {
                 .contains("oer-hil-evidence")
         );
         assert!(
-            run(&["hil/targets/esp32s31/runtime/Cargo.toml"])
+            run(&["hil/targets/esp32s31/agent/Cargo.toml"])
                 .packages
                 .contains("oer-qualification")
         );
@@ -514,7 +514,7 @@ mod tests {
     #[test]
     fn source_changes_select_the_firmware_check_and_prose_does_not() {
         for path in [
-            "hil/targets/esp32s31/runtime/src/console.rs",
+            "hil/targets/esp32s31/agent/src/console.rs",
             "hil/protocol/src/system.rs",
             "crates/hardware/esp32s31/driver/ieee80211/mac/src/lib.rs",
         ] {

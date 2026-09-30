@@ -1,6 +1,6 @@
 # ESP32-C5 HIL target
 
-This workspace builds the esp32c5's HIL runtime, `oer-hil-esp32c5-runtime`,
+This workspace builds the esp32c5's HIL runtime, `oer-esp32c5-hil-agent`,
 for `riscv32imac-unknown-none-elf`. The chip boots through the ESP-IDF
 second-stage bootloader of [`hil/bootloaders/esp32c5`](../../bootloaders/esp32c5/),
 which loads an esp-hal application linked with `linkall.x`

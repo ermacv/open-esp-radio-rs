@@ -393,7 +393,7 @@ the evidence bound to its sources, reads only their protocol modules: the
 Bluetooth images the `bluetooth` family, the radio-free `system-watchdog`
 image the `system` family, and the Wi-Fi images the `wifi` family, each with
 the shared core. The IEEE 802.15.4 images and the memory benchmark image are
-built on the Wi-Fi runtime (`product_hil`, its console and target-core's
+built on the Wi-Fi runtime (`product_hil`, its console and `oer-hil-agent`'s
 `wifi` modules), so they also compile the `wifi` family and about thirty
 Wi-Fi runtime files: a Wi-Fi source change stales their evidence, while an
 IEEE 802.15.4 change leaves Wi-Fi evidence valid. Separating them needs an

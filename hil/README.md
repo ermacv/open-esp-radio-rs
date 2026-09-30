@@ -23,7 +23,7 @@ decision.
 The wire contract lives in `protocol/`, versioned scenarios in `scenarios/`,
 host orchestration in `host/runner/`, and embedded consumers in `targets/`.
 Chip-independent target logic and its host tests live in
-[`target-core/`](target-core/README.md).
+[`agent/`](agent/README.md).
 The evidence contract shared by the runner and the qualification evaluator —
 observer build identity, Cargo input projection and canonical scenarios —
 lives in the `schema/` crate; its `producer` feature adds the Cargo-running

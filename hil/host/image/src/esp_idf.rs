@@ -1,7 +1,7 @@
 //! Images of chips whose ESP-IDF second-stage bootloader loads the
 //! application from its partition.
 //!
-//! The runtime of `hil/targets/<chip>` is built for the class's features and
+//! The HIL agent of `hil/targets/<chip>` is built for the class's features and
 //! encoded as an ESP application with `espflash save-image`. The chip's
 //! catalog bootloader and its partition table come from the ESP-IDF build of
 //! `hil/bootloaders/<chip>`, which only the `cargo hil` wrapper can run: the
@@ -26,23 +26,17 @@ use crate::Result;
 /// catalog bootloader for the runner.
 pub const XTASK_ENV: &str = "OER_HIL_XTASK";
 
-/// The runtime package of `chip`'s HIL target workspace.
-fn runtime_package(chip: &str) -> String {
-    format!("oer-hil-{chip}-runtime")
-}
-
-/// Whether `chip`'s HIL target at `root` builds `class`: its runtime
-/// declares every feature the class selects.
+/// Whether `chip`'s HIL agent at `root` builds `class`: the agent declares
+/// every feature the class selects.
 pub fn serves(root: &Path, chip: &str, class: ImageClass) -> Result<bool> {
-    let manifest = root
-        .join("hil/targets")
-        .join(chip)
-        .join("runtime/Cargo.toml");
-    let manifest: toml::Value = toml::from_str(&fs::read_to_string(&manifest)?)?;
+    let path = oer_chip_profile::Profile::load(root, chip)
+        .map_err(|error| error.to_string())?
+        .hil_agent_manifest(root);
+    let manifest: toml::Value = toml::from_str(&fs::read_to_string(&path)?)?;
     let declared = manifest
         .get("features")
         .and_then(toml::Value::as_table)
-        .ok_or_else(|| format!("hil/targets/{chip}/runtime declares no features"))?;
+        .ok_or_else(|| format!("{} declares no features", path.display()))?;
     Ok(class
         .runtime_features()
         .split(',')
@@ -67,7 +61,7 @@ pub fn build(
         )
     })?;
     let workspace = source.join("hil/targets").join(&profile.id);
-    let package = runtime_package(&profile.id);
+    let package = profile.hil_agent_package();
     fs::create_dir_all(output)?;
     fs::write(output.join("image-class.txt"), format!("{}\n", class.id()))?;
     let log = BuildLog::create(&output.join("build.log"))?;
@@ -86,7 +80,7 @@ pub fn build(
         .env("CARGO_TARGET_DIR", cache)
         .env("CARGO_INCREMENTAL", "0");
     super::ensure_fetched(&workspace, &workspace.join("Cargo.toml"), |_| {})?;
-    log.run(&mut runtime, "build the HIL runtime")?;
+    log.run(&mut runtime, "build the HIL agent")?;
     let compiled = cache
         .join(&profile.rust_target)
         .join("release")

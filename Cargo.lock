@@ -2964,6 +2964,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-hil-agent"
+version = "0.1.0"
+dependencies = [
+ "bt-hci",
+ "crc",
+ "critical-section",
+ "embassy-futures",
+ "embassy-net",
+ "embassy-sync 0.8.0",
+ "embassy-time",
+ "embedded-io 0.7.1",
+ "embedded-io-async 0.7.0",
+ "heapless 0.9.3",
+ "log",
+ "oer-bluetooth-controller",
+ "oer-bluetooth-hci",
+ "oer-example-bluetooth-gatt",
+ "oer-hil-protocol",
+ "oer-trace",
+ "trouble-host",
+ "xarxa",
+]
+
+[[package]]
 name = "oer-hil-arbiter"
 version = "0.1.0"
 dependencies = [
@@ -3342,30 +3366,6 @@ dependencies = [
  "tempfile",
  "toml",
  "zeroize",
-]
-
-[[package]]
-name = "oer-hil-target-core"
-version = "0.1.0"
-dependencies = [
- "bt-hci",
- "crc",
- "critical-section",
- "embassy-futures",
- "embassy-net",
- "embassy-sync 0.8.0",
- "embassy-time",
- "embedded-io 0.7.1",
- "embedded-io-async 0.7.0",
- "heapless 0.9.3",
- "log",
- "oer-bluetooth-controller",
- "oer-bluetooth-hci",
- "oer-example-bluetooth-gatt",
- "oer-hil-protocol",
- "oer-trace",
- "trouble-host",
- "xarxa",
 ]
 
 [[package]]

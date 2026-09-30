@@ -83,7 +83,7 @@ fn selection_requirements_union_every_family() {
 fn a_scenario_is_marked_unsupported_exactly_when_no_current_image_serves_it() {
     let root = crate::repository_root().unwrap();
     let manifest: toml::Table = toml::from_str(
-        &std::fs::read_to_string(root.join("hil/targets/esp32s31/runtime/Cargo.toml")).unwrap(),
+        &std::fs::read_to_string(root.join("hil/targets/esp32s31/agent/Cargo.toml")).unwrap(),
     )
     .unwrap();
     let features = manifest["features"].as_table().unwrap();

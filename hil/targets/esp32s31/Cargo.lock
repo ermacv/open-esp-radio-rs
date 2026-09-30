@@ -1653,6 +1653,9 @@ dependencies = [
 [[package]]
 name = "oer-bluetooth-radio"
 version = "0.1.0"
+dependencies = [
+ "oer-time",
+]
 
 [[package]]
 name = "oer-bluetooth-runtime"
@@ -1834,6 +1837,7 @@ dependencies = [
  "oer-ieee802154",
  "oer-ieee802154-engine",
  "oer-network-interface",
+ "oer-time-embassy",
  "oer-trace",
  "open-esp-radio",
  "openthread",
@@ -1947,6 +1951,7 @@ dependencies = [
  "oer-ieee80211-trace",
  "oer-memory",
  "oer-network-interface",
+ "oer-time-embassy",
  "oer-trace",
  "riscv",
  "static_cell",
@@ -2294,6 +2299,7 @@ dependencies = [
  "cmac",
  "hmac",
  "oer-ieee80211-mac",
+ "oer-time",
  "p256",
  "pbkdf2",
  "sha1",
@@ -2326,6 +2332,7 @@ version = "0.1.0"
 dependencies = [
  "oer-ieee80211-mac",
  "oer-ieee80211-rsn",
+ "oer-time",
 ]
 
 [[package]]
@@ -2338,6 +2345,9 @@ dependencies = [
 [[package]]
 name = "oer-ieee802154"
 version = "0.1.0"
+dependencies = [
+ "oer-time",
+]
 
 [[package]]
 name = "oer-ieee802154-engine"
@@ -2408,11 +2418,20 @@ name = "oer-soc-deadline"
 version = "0.1.0"
 
 [[package]]
-name = "oer-trace"
+name = "oer-time"
+version = "0.1.0"
+
+[[package]]
+name = "oer-time-embassy"
 version = "0.1.0"
 dependencies = [
  "embassy-time",
+ "oer-time",
 ]
+
+[[package]]
+name = "oer-trace"
+version = "0.1.0"
 
 [[package]]
 name = "once_cell"

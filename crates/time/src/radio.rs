@@ -1,4 +1,4 @@
-//! Monotonic radio time.
+//! A radio backend's monotonic epoch.
 
 /// Microseconds in the backend's monotonic radio epoch.
 ///

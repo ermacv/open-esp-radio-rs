@@ -293,6 +293,7 @@ oer-esp32s31-soc-esp-hal.workspace = true
 # Recording is on in every image; only freeze triggers record unless a
 # domain feature adds its trace points.
 oer-trace = { path = "../../../../crates/trace", features = ["record"] }
+oer-time-embassy = { path = "../../../../crates/adapters/embassy/time" }
 oer-esp32s31-executor-embassy.workspace = true
 oer-esp32s31-ieee80211-esp-hal = { workspace = true, features = ["esp32s31"], optional = true }
 oer-hil-protocol = { workspace = true, optional = true, features = ["async-io"] }

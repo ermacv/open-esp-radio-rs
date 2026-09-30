@@ -29,7 +29,7 @@ const WORDS: usize = 0;
 
 #[unsafe(link_section = ".rtc_fast.persistent")]
 static RETAINED: Retained<ENTRIES, SLOTS, WORDS> = Retained::new();
-static TRACE: Trace = Trace::new(&RETAINED);
+static TRACE: Trace = Trace::new(&RETAINED, oer_time_embassy::now_micros);
 
 /// Every channel records until the host chooses its own.
 const DEFAULT_MASK: u64 = u64::MAX;

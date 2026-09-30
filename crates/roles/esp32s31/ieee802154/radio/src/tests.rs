@@ -8,7 +8,7 @@ use oer_ieee802154::{
     AppliedSecurity, AutoPendingMode, CSL_IE_TEMPLATE, CcaMode, Channel, CommandError,
     Configuration, EnergyScanRequest, FrameAddress, FramePending, FrameView, Interface,
     InterfaceSetting, MacKeys, PendingTableHalf, RadioCommand, RadioEvent, RadioState,
-    RadioTimestamp, RequestId, RestingState, ScheduledReceiveRequest, SentAcknowledgement, TxMode,
+    RadioInstant, RequestId, RestingState, ScheduledReceiveRequest, SentAcknowledgement, TxMode,
     TxRequest, TxSecurity, TxStatus, csl_phase,
 };
 use oer_ieee802154_engine::engine::{
@@ -1007,7 +1007,7 @@ impl Bench {
         self.submit(RadioCommand::ScheduledReceive(ScheduledReceiveRequest {
             id: RequestId::new(id),
             channel: channel(15),
-            start: RadioTimestamp::from_micros(start),
+            start: RadioInstant::from_micros(start),
             duration_us,
         }))
         .unwrap();
@@ -1118,7 +1118,7 @@ fn a_transmission_ends_a_window() {
 /// `esp_ieee802154_transmit_at` with `cca` does.
 #[test]
 fn a_scheduled_transmission_can_assess_the_channel() {
-    let at = RadioTimestamp::from_micros(5_000);
+    let at = RadioInstant::from_micros(5_000);
     let mut bench = Bench::enabled();
     bench
         .transmit(6, &DATA, 15, TxMode::Scheduled { at, cca: true })
@@ -1137,7 +1137,7 @@ fn a_scheduled_transmission_can_assess_the_channel() {
 #[test]
 fn the_radio_clock_is_the_platform_clock() {
     let bench = Bench::enabled();
-    assert_eq!(bench.radio.now(), RadioTimestamp::from_micros(42));
+    assert_eq!(bench.radio.now(), RadioInstant::from_micros(42));
 }
 
 /// A 2015 data frame requesting an ACK, without security.

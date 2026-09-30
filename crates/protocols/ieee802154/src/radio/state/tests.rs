@@ -402,7 +402,7 @@ fn window(id: u32, on: u8) -> RadioCommand<'static> {
     RadioCommand::ScheduledReceive(crate::ScheduledReceiveRequest {
         id: RequestId::new(id),
         channel: channel(on),
-        start: crate::RadioTimestamp::from_micros(1_000),
+        start: crate::RadioInstant::from_micros(1_000),
         duration_us: 500,
     })
 }

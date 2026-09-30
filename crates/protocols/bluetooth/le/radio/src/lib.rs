@@ -25,12 +25,12 @@ mod channel;
 mod outcome;
 mod pdu;
 mod request;
-mod time;
 
 pub use activity::RadioActivity;
 pub use channel::{
     AdvertisingChannel, AdvertisingChannels, ChannelError, DataChannel, TestChannel,
 };
+pub use oer_time::{RadioDuration, RadioInstant, RadioWindow, WindowError};
 pub use outcome::{EventResult, RadioFault, RadioOutcome, ReceivedPdu, TestReport};
 pub use pdu::{AdvertisingPdu, DataPdu, DataPduKind, PduError, TestPayloadType};
 pub use request::{
@@ -40,4 +40,3 @@ pub use request::{
     EventId, RadioRequest, RadioTiming, RequestError, ScanFilterPolicy, ScanType, ScanWindow,
     ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestTransmit, TxPower,
 };
-pub use time::{RadioDuration, RadioInstant, RadioWindow, WindowError};

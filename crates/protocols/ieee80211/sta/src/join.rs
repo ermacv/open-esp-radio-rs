@@ -10,6 +10,8 @@
 
 use core::future::Future;
 
+use oer_time::{Duration, Instant, Timer};
+
 use oer_ieee80211_mac::security::LinkProtection;
 use oer_ieee80211_mac::sequence::SequenceNumber;
 use oer_ieee80211_mac::station::{AssociationResponse, StaSequenceCounter};
@@ -38,8 +40,6 @@ mod test_support;
 /// association branch `.L356`, both arm their software timer with immediate
 /// `0x3e8`.
 pub const STA_RESPONSE_TIMEOUT_MS: u32 = 1_000;
-
-const MICROS_PER_MILLISECOND: u64 = 1_000;
 
 /// Whether a finite RX drain should continue after one completed descriptor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -97,12 +97,6 @@ pub trait StaJoinBackend {
     ) -> impl Future<Output = Result<(), Self::Error>> + 'a
     where
         O: StaJoinRxObserver + 'a;
-}
-
-/// Monotonic clock used by the join runner.
-pub trait StaJoinTimer {
-    fn now_micros(&self) -> u64;
-    fn wait_until_micros(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -215,7 +209,7 @@ pub struct StaJoinRunner<B, T> {
 impl<B, T> StaJoinRunner<B, T>
 where
     B: StaJoinBackend,
-    T: StaJoinTimer,
+    T: Timer,
 {
     pub const fn new(backend: B, timer: T) -> Self {
         Self { backend, timer }
@@ -242,16 +236,13 @@ where
 
     async fn wait_boundary(
         &mut self,
-        started_micros: u64,
+        started: Instant,
         elapsed_ms: u32,
     ) -> Result<(), StaJoinError<B::Error>> {
-        let offset = u64::from(elapsed_ms)
-            .checked_mul(MICROS_PER_MILLISECOND)
+        let deadline = started
+            .checked_add(Duration::from_millis(elapsed_ms))
             .ok_or(StaJoinError::ClockOverflow)?;
-        let deadline = started_micros
-            .checked_add(offset)
-            .ok_or(StaJoinError::ClockOverflow)?;
-        self.timer.wait_until_micros(deadline).await;
+        self.timer.wait_until(deadline).await;
         Ok(())
     }
 
@@ -278,7 +269,7 @@ where
             self.stop_receive().await?;
             return Err(StaJoinError::Backend(error));
         }
-        let started_micros = self.timer.now_micros();
+        let started_micros = self.timer.now();
         let mut elapsed_ms = 0_u32;
         loop {
             elapsed_ms = elapsed_ms
@@ -346,7 +337,7 @@ where
                 self.stop_receive().await?;
                 return Err(StaJoinError::Backend(error));
             }
-            let started_micros = self.timer.now_micros();
+            let started_micros = self.timer.now();
             let mut terminal = None;
             for elapsed_ms in 1..=attempt.response_timeout_ms {
                 self.wait_boundary(started_micros, elapsed_ms).await?;
@@ -429,7 +420,7 @@ where
                 self.stop_receive().await?;
                 return Err(StaJoinError::Backend(error));
             }
-            let started_micros = *started_micros.get_or_insert_with(|| self.timer.now_micros());
+            let started_micros = *started_micros.get_or_insert_with(|| self.timer.now());
             let boundary_ms = runtime
                 .ticks()
                 .checked_add(1)

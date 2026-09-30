@@ -38,7 +38,7 @@ use embassy_time::{Duration, Instant, Timer};
 use oer_esp32s31_ieee802154_radio::{Ieee802154Radio, Ieee802154RadioSink};
 use oer_ieee802154::{
     AcceptedCommand, AppliedSecurity, AutoPendingMode, CommandError, Frame, Interface, MacKeys,
-    PendingTable, RadioCommand, RadioEvent, RadioFault, RadioState, RadioTimestamp, ReceivedFrame,
+    PendingTable, RadioCommand, RadioEvent, RadioFault, RadioState, RadioInstant, ReceivedFrame,
     RequestId, RestingState, RxMetadata, TxStatus,
 };
 use oer_ieee802154_engine::engine::{Ieee802154Engine, PENDING_TABLE_SIZE};
@@ -602,7 +602,7 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
     /// # Errors
     ///
     /// No radio is installed.
-    pub fn now(&self) -> Result<RadioTimestamp, Ieee802154RuntimeError> {
+    pub fn now(&self) -> Result<RadioInstant, Ieee802154RuntimeError> {
         self.with_radio(|radio, _, _| radio.now())
     }
 

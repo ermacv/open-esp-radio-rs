@@ -19,7 +19,7 @@ use oer_hil_protocol::{
     ieee802154::Ieee802154AirTransmit, ieee802154::Ieee802154AirWindow,
 };
 use oer_ieee802154::{
-    Channel, Configuration, EnergyScanRequest, FrameView, Interface, RadioCommand, RadioTimestamp,
+    Channel, Configuration, EnergyScanRequest, FrameView, Interface, RadioCommand, RadioInstant,
     RequestId, ScheduledReceiveRequest, TxMode, TxRequest, TxSecurity,
 };
 
@@ -150,7 +150,7 @@ async fn run_cycle(
             frame,
             channel,
             mode: TxMode::Scheduled {
-                at: RadioTimestamp::from_micros(at),
+                at: RadioInstant::from_micros(at),
                 cca: false,
             },
             transmit_power_dbm: None,
@@ -212,7 +212,7 @@ async fn run_cycle(
     submit(RadioCommand::ScheduledReceive(ScheduledReceiveRequest {
         id: id(),
         channel,
-        start: RadioTimestamp::from_micros(start_micros),
+        start: RadioInstant::from_micros(start_micros),
         duration_us: request.scheduled_window_micros,
     }))?;
     let bound = Duration::from_micros(
@@ -229,7 +229,7 @@ async fn run_cycle(
                 window.received_frames = window.received_frames.saturating_add(1);
                 if window.first_frame_at_micros.is_none() {
                     window.first_frame_at_micros =
-                        frame.metadata.timestamp.map(RadioTimestamp::as_micros);
+                        frame.metadata.timestamp.map(RadioInstant::as_micros);
                 }
             }
             embassy_futures::select::Either::Second(Ok(

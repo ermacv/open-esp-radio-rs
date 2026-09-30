@@ -25,7 +25,7 @@ use oer_ieee802154::{
     CommandError, Configuration, CsmaCa, ENH_ACK_PROBING_IE_CAPACITY, EnhAckProbing, FcsStatus,
     FramePending, FrameRetries, FrameType, FrameVersion, FrameView, Interface, InterfaceSetting,
     KeyIdMode, MacKeys, PendingTableHalf, PhrFrame, RadioCapabilities, RadioCommand, RadioEvent,
-    RadioFault, RadioState, RadioStateMachine, RadioTimestamp, ReceivedFrame, RequestId,
+    RadioFault, RadioState, RadioStateMachine, RadioInstant, ReceivedFrame, RequestId,
     RestingState, RetryStart, RxMetadata, SecurityStatus, SentAcknowledgement, TimeSync, TxMode,
     TxSecurity, TxStatus, csl_phase, generate_enhanced_ack, write_csl_ie,
 };
@@ -739,7 +739,7 @@ fn received_frame<'image>(
             // The S31 RSSI compensation is zero.
             rssi_dbm: image[length - 1] as i8,
             link_quality: image[length],
-            timestamp: Some(RadioTimestamp::from_micros(info.timestamp)),
+            timestamp: Some(RadioInstant::from_micros(info.timestamp)),
             fcs: FcsStatus::Valid,
             security: SecurityStatus::Unprocessed,
             frame_pending,
@@ -833,8 +833,8 @@ impl<'storage> Ieee802154Radio<'storage> {
 
     /// The radio clock (`otPlatRadioGetNow`): the monotonic epoch of
     /// scheduled operations and receive timestamps.
-    pub fn now(&self) -> RadioTimestamp {
-        RadioTimestamp::from_micros((self.platform.now_micros)())
+    pub fn now(&self) -> RadioInstant {
+        RadioInstant::from_micros((self.platform.now_micros)())
     }
 
     /// The radio clock as a function, for callers that read it without the

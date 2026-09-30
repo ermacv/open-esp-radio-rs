@@ -31,22 +31,8 @@ impl RequestId {
     }
 }
 
-/// Microseconds in a backend-defined monotonic radio epoch.
+/// Microseconds in the backend's monotonic radio epoch.
 ///
 /// The epoch is deliberately not wall-clock time. An adapter must use one
 /// stable epoch for every timestamp it publishes in a controller instance.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[repr(transparent)]
-pub struct RadioTimestamp(u64);
-
-impl RadioTimestamp {
-    /// Construct a timestamp from monotonic microseconds.
-    pub const fn from_micros(micros: u64) -> Self {
-        Self(micros)
-    }
-
-    /// Return monotonic microseconds.
-    pub const fn as_micros(self) -> u64 {
-        self.0
-    }
-}
+pub use oer_time::RadioInstant;

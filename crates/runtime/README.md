@@ -19,7 +19,9 @@ and `embassy-futures` (select/join). Time is the `embassy-time` interface:
 through `embassy-time-driver`. The final image links exactly one driver — the
 ESP32-S31 [platform timer queue](../adapters/embassy/esp32s31/executor/) on the
 chip, the `std` driver in host tests. A runtime never installs a driver and does
-not assume which executor wakes its timers.
+not assume which executor wakes its timers. Portable protocol runners below the
+runtime take time as an [`oer-time`](../time/src/lib.rs) `Timer` port; a runtime
+passes them `oer_time_embassy::EmbassyClock`, the same timebase.
 
 | Module | Responsibility |
 | --- | --- |

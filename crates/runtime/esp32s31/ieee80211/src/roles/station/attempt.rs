@@ -13,13 +13,13 @@ use crate::{
     },
     roles::station::{
         join_port::{StaJoinPort, StaJoinRadio, StaJoinRx, StaJoinStation, StaJoinStorage},
-        join_time::EmbassyStaJoinTimer,
         wpa2_port::Wpa2Rx,
-        wpa2_time::EmbassyWpa2HandshakeTimer,
     },
 };
 
 use oer_esp32s31_hal::owner::RadioRuntimeOwner;
+
+use oer_time_embassy::EmbassyClock;
 
 use oer_esp32s31_phy::{ConcurrentWifiChannelError, PhyAsyncDelay, PhyTargetObserver};
 

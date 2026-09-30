@@ -6,7 +6,9 @@
 //! adapters.
 
 use core::future::Future;
+
 use oer_ieee80211_mac::sequence::SequenceNumber;
+use oer_time::{Duration, Instant, Timer};
 
 use crate::{
     EapolKeyMessage, OwnedEapolFrame, Pmk, RsnInterface,
@@ -21,7 +23,6 @@ use crate::{
 };
 
 const EAPOL_CAPACITY: usize = 512;
-const MICROS_PER_MILLISECOND: u64 = 1_000;
 
 /// One finite RX pass. `more` requests another pass at the same executor
 /// boundary, normally because the backend stopped after copying one EAPOL
@@ -70,11 +71,6 @@ pub trait RsnHandshakeBackend {
         frame: &'a RsnTxFrame<EAPOL_CAPACITY>,
         sequence_number: SequenceNumber,
     ) -> impl Future<Output = Result<(), Self::Error>> + 'a;
-}
-
-pub trait RsnHandshakeTimer {
-    fn now_micros(&self) -> u64;
-    fn wait_until_micros(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_;
 }
 
 /// HMAC-owned sequence-number source used for EAPOL Message 2.
@@ -355,7 +351,7 @@ pub struct RsnHandshakeRunner<B, T, U> {
 impl<B, T, U> RsnHandshakeRunner<B, T, U>
 where
     B: RsnHandshakeBackend,
-    T: RsnHandshakeTimer,
+    T: Timer,
     U: AsyncRsnKeyUnwrap,
 {
     pub const fn new(backend: B, timer: T, key_unwrap: U) -> Self {
@@ -383,16 +379,13 @@ where
 
     async fn wait_boundary(
         &mut self,
-        started_micros: u64,
+        started: Instant,
         elapsed_ms: u32,
     ) -> Result<(), RsnHandshakeError<B::Error, U::Error>> {
-        let offset = u64::from(elapsed_ms)
-            .checked_mul(MICROS_PER_MILLISECOND)
+        let deadline = started
+            .checked_add(Duration::from_millis(elapsed_ms))
             .ok_or(RsnHandshakeError::ClockOverflow)?;
-        let deadline = started_micros
-            .checked_add(offset)
-            .ok_or(RsnHandshakeError::ClockOverflow)?;
-        self.timer.wait_until_micros(deadline).await;
+        self.timer.wait_until(deadline).await;
         Ok(())
     }
 
@@ -433,7 +426,7 @@ where
         let mut completed_frames = 0_u32;
         let mut message2_transmissions = 0_u16;
         let mut message1_deadline = RsnStaResponseDeadline::new(RsnStaResponseWait::Message1);
-        let message1_started = self.timer.now_micros();
+        let message1_started = self.timer.now();
 
         'message1: loop {
             let boundary = message1_deadline
@@ -500,7 +493,7 @@ where
         }
 
         let mut message3_deadline = RsnStaResponseDeadline::new(RsnStaResponseWait::Message3);
-        let message3_started = self.timer.now_micros();
+        let message3_started = self.timer.now();
         loop {
             let boundary = message3_deadline
                 .elapsed_ms()

@@ -431,6 +431,14 @@ fn binds_executor(layer: &str) -> bool {
     matches!(layer, "adapter" | "composition" | "facade")
 }
 
+/// Crates that read or wait on the image's one time driver. Lower layers
+/// take time through the `oer-time` clock and timer ports.
+const TIME_DRIVERS: &[&str] = &["embassy-time"];
+
+fn binds_time_driver(layer: &str) -> bool {
+    matches!(layer, "adapter" | "runtime" | "composition" | "facade")
+}
+
 /// Apply declared production edges, including optional and build dependencies.
 /// Dev dependencies may compose experiments with the real production owners.
 /// `families` maps each chip to its family for chip-to-family edges.
@@ -445,6 +453,15 @@ pub fn validate_production_edges(
             {
                 return Err(format!(
                     "{} package {} depends on executor {}; only adapters and compositions bind an executor",
+                    source_class.layer, source.package.name, dependency.name
+                )
+                .into());
+            }
+            if TIME_DRIVERS.contains(&dependency.name.as_str())
+                && !binds_time_driver(source_class.layer)
+            {
+                return Err(format!(
+                    "{} package {} depends on time driver {}; lower layers take time through oer-time",
                     source_class.layer, source.package.name, dependency.name
                 )
                 .into());

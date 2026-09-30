@@ -165,6 +165,9 @@ dependencies = [
 [[package]]
 name = "oer-ieee802154"
 version = "0.1.0"
+dependencies = [
+ "oer-time",
+]
 
 [[package]]
 name = "oer-ieee802154-engine"
@@ -196,6 +199,10 @@ version = "0.1.0"
 
 [[package]]
 name = "oer-radio-clock"
+version = "0.1.0"
+
+[[package]]
+name = "oer-time"
 version = "0.1.0"
 
 [[package]]

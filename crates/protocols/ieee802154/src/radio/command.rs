@@ -1,6 +1,6 @@
 //! Caller-owned command values; frame bytes are borrowed only for admission.
 
-use super::{RadioTimestamp, RequestId, channel::Channel, interface::Interface};
+use super::{RadioInstant, RequestId, channel::Channel, interface::Interface};
 use crate::mac::frame::FrameView;
 use crate::mac::header::FrameAddress;
 use crate::mac::pending::AutoPendingMode;
@@ -126,7 +126,7 @@ pub enum TxMode {
     /// optionally after one clear-channel assessment that ends at that time.
     Scheduled {
         /// Requested start time.
-        at: RadioTimestamp,
+        at: RadioInstant,
         /// Assess the channel first (ESP-IDF `esp_ieee802154_transmit_at`
         /// with `cca`, as OpenThread's `mCsmaCaEnabled` asks).
         cca: bool,
@@ -196,7 +196,7 @@ pub struct ScheduledReceiveRequest {
     /// Receive channel.
     pub channel: Channel,
     /// Time the receiver is on, in the radio's monotonic epoch.
-    pub start: RadioTimestamp,
+    pub start: RadioInstant,
     /// Window length in microseconds; zero leaves the window open.
     pub duration_us: u32,
 }

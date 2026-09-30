@@ -9,7 +9,7 @@ use oer_esp32s31_ieee802154_runtime::{
 };
 use oer_ieee802154::{
     AppliedSecurity, Channel, CommandError, Configuration, EnergyScanRequest, FrameView, Interface,
-    LinkMetrics, PendingTableHalf, RadioCommand, RadioState, RadioTimestamp, RequestId,
+    LinkMetrics, PendingTableHalf, RadioCommand, RadioState, RadioInstant, RequestId,
     ScheduledReceiveRequest, TimeSync, TxMode, TxRequest, TxSecurity,
 };
 use openthread_radio::{
@@ -166,9 +166,9 @@ where
     }
 
     /// The full radio-clock instant of a 32-bit OpenThread radio time.
-    fn radio_timestamp(&self, low: u32) -> RadioTimestamp {
+    fn radio_timestamp(&self, low: u32) -> RadioInstant {
         let now = self.clock.map_or(0, |clock| clock());
-        RadioTimestamp::from_micros(radio_time(now, low))
+        RadioInstant::from_micros(radio_time(now, low))
     }
 
     /// A request identifier; the runtime reserves `u32::MAX`.
@@ -323,7 +323,7 @@ where
                     rssi: Some(ack.metadata.rssi_dbm),
                     lqi: Some(ack.metadata.link_quality),
                     ack: None,
-                    timestamp: ack.metadata.timestamp.map(RadioTimestamp::as_micros),
+                    timestamp: ack.metadata.timestamp.map(RadioInstant::as_micros),
                 })
             }
             _ => None,
@@ -635,7 +635,7 @@ where
             channel: frame.metadata.channel.get(),
             rssi: Some(frame.metadata.rssi_dbm),
             lqi: Some(frame.metadata.link_quality),
-            timestamp: frame.metadata.timestamp.map(RadioTimestamp::as_micros),
+            timestamp: frame.metadata.timestamp.map(RadioInstant::as_micros),
             ack: Some(SentAck {
                 frame_pending: sent.frame_pending,
                 security: sent_ack_security(sent).map(|(frame_counter, key_id)| AckSecurity {

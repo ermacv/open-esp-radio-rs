@@ -203,7 +203,7 @@ where
             .with_listen_interval(owner.listen_interval),
         );
         port.prepare_authentication();
-        let mut runner = StaJoinRunner::new(port, EmbassyStaJoinTimer);
+        let mut runner = StaJoinRunner::new(port, EmbassyClock);
         let result = match sae {
             Some(exchange) => runner
                 .authenticate_sae(exchange, owner.security.sequences.non_qos_mut())
@@ -285,7 +285,7 @@ where
             )
             .with_listen_interval(owner.listen_interval),
         );
-        let mut runner = StaJoinRunner::new(port, EmbassyStaJoinTimer);
+        let mut runner = StaJoinRunner::new(port, EmbassyClock);
         let result = runner
             .associate(
                 owner.station.station_address,
@@ -395,8 +395,7 @@ where
             Wpa2HandshakeStorage::new(owner.frame),
             station,
         );
-        let mut runner =
-            RsnHandshakeRunner::new(port, EmbassyWpa2HandshakeTimer, RsnSoftwareAes::new());
+        let mut runner = RsnHandshakeRunner::new(port, EmbassyClock, RsnSoftwareAes::new());
         let (pmk, supplicant_nonce, sequences) =
             owner.security.wpa2_handshake_parts().ok_or_else(|| {
                 StaAttemptStepError::terminal(StaAttemptTargetError::State(

@@ -1,3 +1,4 @@
+use core::cell::Cell;
 use core::future::ready;
 
 use crate::{
@@ -9,6 +10,7 @@ use crate::{
 
 use super::*;
 use oer_ieee80211_mac::station::StaSequenceCounter;
+use oer_time::{Clock, Instant, Timer};
 
 const LOCAL: [u8; 6] = [1; 6];
 const AP: [u8; 6] = [2; 6];
@@ -188,21 +190,23 @@ impl RsnHandshakeBackend for Backend {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Debug, Default)]
 struct TestTimer {
-    now_micros: u64,
-    waits: u32,
+    now_micros: Cell<u64>,
+    waits: Cell<u32>,
 }
 
-impl RsnHandshakeTimer for TestTimer {
-    fn now_micros(&self) -> u64 {
-        self.now_micros
+impl Clock for TestTimer {
+    fn now(&self) -> Instant {
+        Instant::from_micros(self.now_micros.get())
     }
+}
 
-    fn wait_until_micros(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_ {
-        assert!(deadline_micros >= self.now_micros);
-        self.now_micros = deadline_micros;
-        self.waits += 1;
+impl Timer for TestTimer {
+    fn wait_until(&self, deadline: Instant) -> impl Future<Output = ()> {
+        assert!(deadline.as_micros() >= self.now_micros.get());
+        self.now_micros.set(deadline.as_micros());
+        self.waits.set(self.waits.get() + 1);
         ready(())
     }
 }
@@ -388,8 +392,8 @@ fn message1_timeout_is_exact_and_stops_the_live_ring() {
             completed_frames: 0,
         })
     ));
-    assert_eq!(runner.timer.now_micros, 3_000_000);
-    assert_eq!(runner.timer.waits, RSN_STA_MESSAGE1_TIMEOUT_MS);
+    assert_eq!(runner.timer.now_micros.get(), 3_000_000);
+    assert_eq!(runner.timer.waits.get(), RSN_STA_MESSAGE1_TIMEOUT_MS);
     assert!(!runner.backend().receive_live);
     assert_eq!(runner.backend().stops, 1);
 }
@@ -417,9 +421,9 @@ fn peer_message1_sends_m2_once_but_never_retries_it_on_local_timeout() {
     assert_eq!(runner.backend().transmissions, 1);
     assert_eq!(runner.backend().last_sequence, Some(seq(0x123)));
     assert_eq!(sequence.peek(), seq(0x124));
-    assert_eq!(runner.timer.now_micros, 6_001_000);
+    assert_eq!(runner.timer.now_micros.get(), 6_001_000);
     assert_eq!(
-        runner.timer.waits,
+        runner.timer.waits.get(),
         RSN_STA_MESSAGE1_TIMEOUT_MS.min(1) + RSN_STA_MESSAGE3_TIMEOUT_MS
     );
 }
@@ -444,7 +448,7 @@ fn repeated_peer_message1_is_the_only_message2_refresh_source() {
     ));
     assert_eq!(runner.backend().transmissions, 2);
     assert_eq!(sequence.peek(), seq(9));
-    assert_eq!(runner.timer.now_micros, 6_001_000);
+    assert_eq!(runner.timer.now_micros.get(), 6_001_000);
 }
 
 #[test]
@@ -466,5 +470,5 @@ fn message1_on_exact_deadline_is_serviced_before_timeout() {
         })
     ));
     assert_eq!(runner.backend().transmissions, 1);
-    assert_eq!(runner.timer.now_micros, 9_000_000);
+    assert_eq!(runner.timer.now_micros.get(), 9_000_000);
 }

@@ -1,9 +1,9 @@
 use super::*;
 
-const CLIENTS: [PhyModemClient; 3] = [
-    PhyModemClient::Wifi,
-    PhyModemClient::Bluetooth,
-    PhyModemClient::Ieee802154,
+const CLIENTS: [RadioClient; 3] = [
+    RadioClient::Wifi,
+    RadioClient::Bluetooth,
+    RadioClient::Ieee802154,
 ];
 
 struct FixedClock(u64);
@@ -40,7 +40,7 @@ impl<const COUNT: usize> PhyPllTrackClock for ScriptedClock<COUNT> {
 trait PhyClientStateTestExt: Sized {
     fn acquire_at(
         self,
-        client: PhyModemClient,
+        client: RadioClient,
         now_micros: u64,
     ) -> Result<PhyClientAcquireOutcome, PhyClientAcquireFailure>;
 
@@ -58,7 +58,7 @@ trait PhyClientStateTestExt: Sized {
 impl PhyClientStateTestExt for PhyClientState {
     fn acquire_at(
         self,
-        client: PhyModemClient,
+        client: RadioClient,
         now_micros: u64,
     ) -> Result<PhyClientAcquireOutcome, PhyClientAcquireFailure> {
         self.acquire(client, &mut FixedClock(now_micros))
@@ -90,7 +90,7 @@ fn state_for_mask(mask: u8, now_micros: u64) -> PhyClientState {
     assert!(mask <= VALID_CLIENT_BITS);
     let mut state = PhyClientState::new_empty(DEFAULT_PLL_TRACK_PERIOD_MICROS);
     for client in CLIENTS {
-        if mask & client.bit() != 0 {
+        if mask & client_bit(client) != 0 {
             state = complete_acquire_for_test(state.acquire_at(client, now_micros).unwrap());
         }
     }
@@ -100,7 +100,7 @@ fn state_for_mask(mask: u8, now_micros: u64) -> PhyClientState {
 fn observed_mask(snapshot: PhyClientSnapshot) -> u8 {
     CLIENTS.into_iter().fold(0, |mask, client| {
         mask | if snapshot.contains(client) {
-            client.bit()
+            client_bit(client)
         } else {
             0
         }
@@ -113,7 +113,7 @@ fn exhaustive_acquire_preserves_unrelated_bits_and_reports_first_user() {
         for client in CLIENTS {
             let state = state_for_mask(mask, 0);
             let before = state.snapshot();
-            if mask & client.bit() != 0 {
+            if mask & client_bit(client) != 0 {
                 let failure = state.acquire_at(client, 0).unwrap_err();
                 assert_eq!(
                     failure.error(),
@@ -135,7 +135,7 @@ fn exhaustive_acquire_preserves_unrelated_bits_and_reports_first_user() {
             );
             assert_eq!(
                 observed_mask(outcome.owner().snapshot()),
-                mask | client.bit()
+                mask | client_bit(client)
             );
             assert!(outcome.owner().snapshot().tracker_model_armed());
         }
@@ -148,7 +148,7 @@ fn exhaustive_release_preserves_unrelated_bits_and_reports_last_user() {
         for client in CLIENTS {
             let state = state_for_mask(mask, 0);
             let before = state.snapshot();
-            if mask & client.bit() == 0 {
+            if mask & client_bit(client) == 0 {
                 let failure = state.release(client).unwrap_err();
                 assert_eq!(failure.error(), PhyClientReleaseError::NotAcquired(client));
                 assert_eq!(failure.owner().snapshot(), before);
@@ -156,14 +156,14 @@ fn exhaustive_release_preserves_unrelated_bits_and_reports_last_user() {
             }
 
             let outcome = state.release(client).unwrap();
-            assert_eq!(outcome.is_last(), mask == client.bit());
+            assert_eq!(outcome.is_last(), mask == client_bit(client));
             assert_eq!(
                 observed_mask(outcome.owner().snapshot()),
-                mask & !client.bit()
+                mask & !client_bit(client)
             );
             assert_eq!(
                 outcome.owner().snapshot().tracker_model_armed(),
-                mask & !client.bit() != 0
+                mask & !client_bit(client) != 0
             );
         }
     }
@@ -173,7 +173,7 @@ fn exhaustive_release_preserves_unrelated_bits_and_reports_last_user() {
 fn strict_threshold_equality_does_not_request_but_greater_does() {
     let state = complete_acquire_for_test(
         PhyClientState::new_empty(DEFAULT_PLL_TRACK_PERIOD_MICROS)
-            .acquire_at(PhyModemClient::Ieee802154, DEFAULT_PLL_TRACK_PERIOD_MICROS)
+            .acquire_at(RadioClient::Ieee802154, DEFAULT_PLL_TRACK_PERIOD_MICROS)
             .unwrap(),
     );
     let equal = state
@@ -195,10 +195,7 @@ fn strict_threshold_equality_does_not_request_but_greater_does() {
 fn bluetooth_and_ieee_share_timestamp_and_request_class() {
     let state = complete_acquire_for_test(
         PhyClientState::new_empty(DEFAULT_PLL_TRACK_PERIOD_MICROS)
-            .acquire_at(
-                PhyModemClient::Bluetooth,
-                DEFAULT_PLL_TRACK_PERIOD_MICROS + 1,
-            )
+            .acquire_at(RadioClient::Bluetooth, DEFAULT_PLL_TRACK_PERIOD_MICROS + 1)
             .unwrap(),
     );
     assert_eq!(
@@ -209,10 +206,7 @@ fn bluetooth_and_ieee_share_timestamp_and_request_class() {
     );
 
     let outcome = state
-        .acquire_at(
-            PhyModemClient::Ieee802154,
-            DEFAULT_PLL_TRACK_PERIOD_MICROS + 2,
-        )
+        .acquire_at(RadioClient::Ieee802154, DEFAULT_PLL_TRACK_PERIOD_MICROS + 2)
         .unwrap();
     assert!(outcome.request().is_none());
     assert_eq!(
@@ -243,21 +237,18 @@ fn request_booleans_describe_every_active_class() {
 fn one_due_class_refreshes_and_requests_all_active_classes() {
     let state = complete_acquire_for_test(
         PhyClientState::new_empty(DEFAULT_PLL_TRACK_PERIOD_MICROS)
-            .acquire_at(PhyModemClient::Wifi, DEFAULT_PLL_TRACK_PERIOD_MICROS + 1)
+            .acquire_at(RadioClient::Wifi, DEFAULT_PLL_TRACK_PERIOD_MICROS + 1)
             .unwrap(),
     );
-    let state = state.release(PhyModemClient::Wifi).unwrap().into_owner();
+    let state = state.release(RadioClient::Wifi).unwrap().into_owner();
     let state = complete_acquire_for_test(
         state
-            .acquire_at(
-                PhyModemClient::Ieee802154,
-                DEFAULT_PLL_TRACK_PERIOD_MICROS + 2,
-            )
+            .acquire_at(RadioClient::Ieee802154, DEFAULT_PLL_TRACK_PERIOD_MICROS + 2)
             .unwrap(),
     );
     let state = complete_acquire_for_test(
         state
-            .acquire_at(PhyModemClient::Wifi, DEFAULT_PLL_TRACK_PERIOD_MICROS + 2)
+            .acquire_at(RadioClient::Wifi, DEFAULT_PLL_TRACK_PERIOD_MICROS + 2)
             .unwrap(),
     );
     let evaluation = state
@@ -358,10 +349,7 @@ fn periodic_tracking_samples_each_active_class_once_without_due_samples() {
 #[test]
 fn pending_request_cannot_release_owner_without_explicit_resolution() {
     let outcome = PhyClientState::new_empty(DEFAULT_PLL_TRACK_PERIOD_MICROS)
-        .acquire_at(
-            PhyModemClient::Ieee802154,
-            DEFAULT_PLL_TRACK_PERIOD_MICROS + 1,
-        )
+        .acquire_at(RadioClient::Ieee802154, DEFAULT_PLL_TRACK_PERIOD_MICROS + 1)
         .unwrap();
     let pending = match outcome.into_owner() {
         Ok(_) => panic!("due hardware work released the owner"),
@@ -430,7 +418,7 @@ fn pending_request_runs_outer_tracking_before_owner_recovery() {
         .advance(PhyParamTrackingCompletion::ExitedCritical)
         .unwrap();
     let owner = tracking.into_owner().unwrap();
-    assert!(owner.snapshot().contains(PhyModemClient::Ieee802154));
+    assert!(owner.snapshot().contains(RadioClient::Ieee802154));
 }
 
 #[test]
@@ -678,11 +666,11 @@ fn complete_temperature_child(
 fn time_reversal_rejects_acquire_and_restores_exact_owner() {
     let state = complete_acquire_for_test(
         PhyClientState::new_empty(DEFAULT_PLL_TRACK_PERIOD_MICROS)
-            .acquire_at(PhyModemClient::Wifi, DEFAULT_PLL_TRACK_PERIOD_MICROS + 1)
+            .acquire_at(RadioClient::Wifi, DEFAULT_PLL_TRACK_PERIOD_MICROS + 1)
             .unwrap(),
     );
     let before = state.snapshot();
-    let failure = state.acquire_at(PhyModemClient::Ieee802154, 0).unwrap_err();
+    let failure = state.acquire_at(RadioClient::Ieee802154, 0).unwrap_err();
     assert_eq!(
         failure.error(),
         PhyClientAcquireError::TrackingTime(PhyTrackTimeError::TimeReversed {
@@ -698,10 +686,7 @@ fn time_reversal_rejects_acquire_and_restores_exact_owner() {
 fn time_reversal_rejects_immediate_evaluation_and_restores_exact_owner() {
     let state = complete_acquire_for_test(
         PhyClientState::new_empty(DEFAULT_PLL_TRACK_PERIOD_MICROS)
-            .acquire_at(
-                PhyModemClient::Ieee802154,
-                DEFAULT_PLL_TRACK_PERIOD_MICROS + 1,
-            )
+            .acquire_at(RadioClient::Ieee802154, DEFAULT_PLL_TRACK_PERIOD_MICROS + 1)
             .unwrap(),
     );
     let before = state.snapshot();
@@ -721,10 +706,7 @@ fn time_reversal_rejects_immediate_evaluation_and_restores_exact_owner() {
 fn time_reversal_rejects_periodic_callback_and_restores_exact_owner() {
     let state = complete_acquire_for_test(
         PhyClientState::new_empty(DEFAULT_PLL_TRACK_PERIOD_MICROS)
-            .acquire_at(
-                PhyModemClient::Ieee802154,
-                DEFAULT_PLL_TRACK_PERIOD_MICROS + 1,
-            )
+            .acquire_at(RadioClient::Ieee802154, DEFAULT_PLL_TRACK_PERIOD_MICROS + 1)
             .unwrap(),
     );
     let before = state.snapshot();
@@ -770,15 +752,12 @@ fn tracking_deadline_excludes_released_classes_and_detects_overflow() {
         owner.snapshot().next_tracking_deadline_micros(),
         Ok(Some(1_000_101))
     );
-    let owner = owner.release(PhyModemClient::Wifi).unwrap().into_owner();
+    let owner = owner.release(RadioClient::Wifi).unwrap().into_owner();
     assert_eq!(
         owner.snapshot().next_tracking_deadline_micros(),
         Ok(Some(1_000_201))
     );
-    let mut owner = owner
-        .release(PhyModemClient::Bluetooth)
-        .unwrap()
-        .into_owner();
+    let mut owner = owner.release(RadioClient::Bluetooth).unwrap().into_owner();
     assert_eq!(
         owner.snapshot().next_tracking_deadline_micros(),
         Ok(Some(1_000_201))
@@ -790,10 +769,7 @@ fn tracking_deadline_excludes_released_classes_and_detects_overflow() {
             class: PhyPllTrackClass::BluetoothIeee802154
         })
     );
-    let owner = owner
-        .release(PhyModemClient::Ieee802154)
-        .unwrap()
-        .into_owner();
+    let owner = owner.release(RadioClient::Ieee802154).unwrap().into_owner();
     assert_eq!(owner.snapshot().next_tracking_deadline_micros(), Ok(None));
 }
 

@@ -41,6 +41,7 @@ pub use capabilities::{
 pub use channel::{
     AdvertisingChannel, AdvertisingChannels, ChannelError, DataChannel, TestChannel,
 };
+pub use oer_radio_coex::CoexPriority;
 pub use oer_time::{RadioDuration, RadioInstant, RadioWindow, WindowError};
 pub use outcome::{EventResult, RadioFault, RadioOutcome, ReceivedPdu, TestReport};
 pub use pdu::{AdvertisingPdu, DataPdu, DataPduKind, PduError, TestPayloadType};
@@ -49,6 +50,6 @@ pub use request::{
     AcceptListChange, AcceptListDevice, AccessAddress, AdvertisingConfiguration, AdvertisingEvent,
     AdvertisingReception, AdvertisingSetId, CoexistenceLevel, ConnectionAllowances,
     ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming, ConnectionId, CrcInit,
-    EventId, RadioRequest, RadioTiming, RequestError, ScanFilterPolicy, ScanType, ScanWindow,
-    ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestTransmit, TxPower,
+    EventId, IdlePriority, RadioRequest, RadioTiming, RequestError, ScanFilterPolicy, ScanType,
+    ScanWindow, ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestTransmit, TxPower,
 };

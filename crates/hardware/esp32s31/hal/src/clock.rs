@@ -110,20 +110,14 @@ impl PlatformClockRefs {
 }
 
 /// Protocol clients that can share the powered radio.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RadioClient {
-    Wifi,
-    Bluetooth,
-    Ieee802154,
-}
+pub use oer_radio_coex::RadioClient;
 
-impl RadioClient {
-    const fn bit(self) -> u8 {
-        match self {
-            Self::Wifi => 1,
-            Self::Bluetooth => 1 << 1,
-            Self::Ieee802154 => 1 << 2,
-        }
+/// The membership bit of `client` in [`CommonRadioPower`].
+const fn client_bit(client: RadioClient) -> u8 {
+    match client {
+        RadioClient::Wifi => 1,
+        RadioClient::Bluetooth => 1 << 1,
+        RadioClient::Ieee802154 => 1 << 2,
     }
 }
 
@@ -164,7 +158,7 @@ pub(crate) struct CommonRadioPower {
 impl CommonRadioPower {
     /// Whether `client` currently holds common power.
     pub(crate) const fn holds(&self, client: RadioClient) -> bool {
-        self.clients & client.bit() != 0
+        self.clients & client_bit(client) != 0
     }
 
     /// Whether any client holds common power.
@@ -179,7 +173,7 @@ impl CommonRadioPower {
 
     #[cfg(test)]
     pub(crate) fn hold_for_test(&mut self, client: RadioClient) {
-        self.clients |= client.bit();
+        self.clients |= client_bit(client);
     }
 
     /// Enter common power; only the first client runs the power sequence.
@@ -207,7 +201,7 @@ impl CommonRadioPower {
                 .map_err(CommonRadioPowerError::Power)?;
             self.wifi_resets_pulsed = true;
         }
-        self.clients |= client.bit();
+        self.clients |= client_bit(client);
         Ok(())
     }
 
@@ -224,7 +218,7 @@ impl CommonRadioPower {
         if !self.holds(client) {
             return Err(CommonRadioPowerError::NotEntered);
         }
-        if self.clients == client.bit() {
+        if self.clients == client_bit(client) {
             self.refs.release(PlatformClock::AnalogI2cMaster);
             self.power
                 .restore(port)
@@ -232,7 +226,7 @@ impl CommonRadioPower {
             self.refs.release(PlatformClock::Pll160m);
             self.refs.release(PlatformClock::Mpll);
         }
-        self.clients &= !client.bit();
+        self.clients &= !client_bit(client);
         Ok(())
     }
 }

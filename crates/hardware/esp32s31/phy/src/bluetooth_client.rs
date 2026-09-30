@@ -22,7 +22,7 @@ use crate::{
     concurrent::{
         ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError, acquire_client, release_client,
     },
-    state::client::{PhyModemClient, PhyPllTrackClock},
+    state::client::PhyPllTrackClock,
 };
 
 /// Bluetooth holds a client bit in the shared PHY domain and a reference on
@@ -88,7 +88,7 @@ pub fn join_bluetooth(
     if lease.holds_btbb(RadioClient::Bluetooth) {
         return Err(BluetoothPhyClientError::Btbb(BtbbError::AlreadyAcquired));
     }
-    let acquired = acquire_client(lease, PhyModemClient::Bluetooth, clock)
+    let acquired = acquire_client(lease, RadioClient::Bluetooth, clock)
         .map_err(BluetoothPhyClientError::Phy)?;
 
     #[allow(
@@ -106,7 +106,7 @@ pub fn join_bluetooth(
     if let Err(error) = btbb {
         // Both rejections were checked above; undo the client bit when the
         // domain still permits it.
-        let _ = release_client(lease, PhyModemClient::Bluetooth);
+        let _ = release_client(lease, RadioClient::Bluetooth);
         return Err(BluetoothPhyClientError::Btbb(error));
     }
     Ok((BluetoothPhyMembership { _private: () }, acquired))
@@ -160,7 +160,7 @@ pub fn leave_bluetooth(
             error: BluetoothPhyClientError::Btbb(BtbbError::NotAcquired),
         });
     }
-    let last = match release_client(lease, PhyModemClient::Bluetooth) {
+    let last = match release_client(lease, RadioClient::Bluetooth) {
         Ok(last) => last,
         Err(error) => {
             return Err(BluetoothPhyLeaveFailure {

@@ -953,6 +953,7 @@ name = "oer-esp32c5-hal"
 version = "0.1.0"
 dependencies = [
  "oer-esp32c5-pac",
+ "oer-espressif-coex",
  "oer-espressif-ieee802154-engine",
  "oer-radio-analog",
  "oer-radio-clock",
@@ -991,9 +992,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-espressif-coex"
+version = "0.1.0"
+dependencies = [
+ "oer-radio-coex",
+]
+
+[[package]]
 name = "oer-espressif-ieee802154-engine"
 version = "0.1.0"
 dependencies = [
+ "oer-espressif-coex",
  "oer-ieee802154",
  "oer-ieee802154-trace",
  "oer-trace",
@@ -1030,6 +1039,10 @@ version = "0.1.0"
 
 [[package]]
 name = "oer-radio-clock"
+version = "0.1.0"
+
+[[package]]
+name = "oer-radio-coex"
 version = "0.1.0"
 
 [[package]]

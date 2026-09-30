@@ -45,7 +45,7 @@ fn ieee802154_is_client(lease: &SharedRadioLease<'_, ConcurrentPhy>) -> bool {
     lease
         .attachment()
         .client_snapshot()
-        .is_some_and(|snapshot| snapshot.contains(PhyModemClient::Ieee802154))
+        .is_some_and(|snapshot| snapshot.contains(RadioClient::Ieee802154))
 }
 
 #[test]
@@ -89,7 +89,7 @@ fn leaving_without_the_btbb_reference_keeps_the_membership_and_the_client() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
     assert_eq!(
-        acquire_client(&mut lease, PhyModemClient::Ieee802154, &mut Clock(0)),
+        acquire_client(&mut lease, RadioClient::Ieee802154, &mut Clock(0)),
         Ok(ConcurrentAcquire::Settled)
     );
 

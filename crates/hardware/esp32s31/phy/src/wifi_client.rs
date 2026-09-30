@@ -22,7 +22,7 @@ use crate::{
     concurrent::{
         ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError, acquire_client, release_client,
     },
-    state::client::{PhyModemClient, PhyPllTrackClock},
+    state::client::{PhyPllTrackClock, RadioClient},
 };
 
 /// Wi-Fi holds a client bit in the shared PHY domain.
@@ -60,7 +60,7 @@ pub fn join_wifi(
     clock: &mut impl PhyPllTrackClock,
 ) -> Result<(WifiPhyMembership, ConcurrentAcquire), ConcurrentPhyError> {
     let _ = clocked;
-    let acquired = acquire_client(lease, PhyModemClient::Wifi, clock)?;
+    let acquired = acquire_client(lease, RadioClient::Wifi, clock)?;
     Ok((WifiPhyMembership { _private: () }, acquired))
 }
 
@@ -119,7 +119,7 @@ pub fn leave_wifi(
     membership: WifiPhyMembership,
 ) -> Result<bool, WifiPhyLeaveFailure> {
     let _ = clocked;
-    match release_client(lease, PhyModemClient::Wifi) {
+    match release_client(lease, RadioClient::Wifi) {
         Ok(last) => {
             let WifiPhyMembership { _private: () } = membership;
             Ok(last)
@@ -191,7 +191,7 @@ pub fn suspend_wifi(
     membership: WifiPhyMembership,
 ) -> Result<(WifiPhySuspended, bool), WifiPhyLeaveFailure> {
     let _ = clocks;
-    match release_client(lease, PhyModemClient::Wifi) {
+    match release_client(lease, RadioClient::Wifi) {
         Ok(last) => {
             let WifiPhyMembership { _private: () } = membership;
             Ok((WifiPhySuspended { _private: () }, last))
@@ -215,7 +215,7 @@ pub fn resume_wifi(
     clock: &mut impl PhyPllTrackClock,
 ) -> Result<(WifiPhyMembership, ConcurrentAcquire), WifiPhySuspendedFailure> {
     let _ = clocks;
-    match acquire_client(lease, PhyModemClient::Wifi, clock) {
+    match acquire_client(lease, RadioClient::Wifi, clock) {
         Ok(acquired) => {
             let WifiPhySuspended { _private: () } = suspended;
             Ok((WifiPhyMembership { _private: () }, acquired))

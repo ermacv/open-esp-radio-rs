@@ -8,6 +8,7 @@ repository.workspace = true
 description = "Allocation-free hardware-independent Bluetooth LE radio event contract"
 
 [dependencies]
+oer-radio-coex = { path = "../../../../radio/coex" }
 oer-time = { path = "../../../../time" }
 
 [lints]

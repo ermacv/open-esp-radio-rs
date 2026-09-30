@@ -27,6 +27,8 @@
 //! notifies them of through [`RadioSystem::wifi_coex_phase`] and
 //! [`RadioSystem::bluetooth_coex_phase`].
 
+#[cfg(any(test, target_arch = "riscv32"))]
+mod lease;
 #[cfg(target_arch = "riscv32")]
 mod system;
 

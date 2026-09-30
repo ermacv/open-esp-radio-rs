@@ -52,21 +52,16 @@ pub trait PhyTrackingTimer: PhyPllTrackClock {
     fn wait_until_micros(&mut self, deadline: u64) -> impl core::future::Future<Output = ()>;
 }
 
-/// One typed user of the shared PHY software client set.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PhyModemClient {
-    Wifi,
-    Bluetooth,
-    Ieee802154,
-}
+/// One typed user of the shared PHY software client set: the portable
+/// radio client.
+pub use oer_esp32s31_hal::shared_radio::RadioClient;
 
-impl PhyModemClient {
-    const fn bit(self) -> u8 {
-        match self {
-            Self::Wifi => WIFI_BIT,
-            Self::Bluetooth => BLUETOOTH_BIT,
-            Self::Ieee802154 => IEEE802154_BIT,
-        }
+/// The bit of `client` in the reviewed software client set.
+pub(crate) const fn client_bit(client: RadioClient) -> u8 {
+    match client {
+        RadioClient::Wifi => WIFI_BIT,
+        RadioClient::Bluetooth => BLUETOOTH_BIT,
+        RadioClient::Ieee802154 => IEEE802154_BIT,
     }
 }
 
@@ -90,11 +85,11 @@ pub struct PhyClientSnapshot {
 }
 
 impl PhyClientSnapshot {
-    pub const fn contains(self, client: PhyModemClient) -> bool {
+    pub const fn contains(self, client: RadioClient) -> bool {
         match client {
-            PhyModemClient::Wifi => self.wifi,
-            PhyModemClient::Bluetooth => self.bluetooth,
-            PhyModemClient::Ieee802154 => self.ieee802154,
+            RadioClient::Wifi => self.wifi,
+            RadioClient::Bluetooth => self.bluetooth,
+            RadioClient::Ieee802154 => self.ieee802154,
         }
     }
 
@@ -259,10 +254,10 @@ impl PhyClientState {
     /// arm is an infallible model fact, not evidence of a target timer.
     pub fn acquire(
         mut self,
-        client: PhyModemClient,
+        client: RadioClient,
         clock: &mut impl PhyPllTrackClock,
     ) -> Result<PhyClientAcquireOutcome, PhyClientAcquireFailure> {
-        let bit = client.bit();
+        let bit = client_bit(client);
         if self.bits & bit != 0 {
             return Err(PhyClientAcquireFailure {
                 owner: self,
@@ -311,9 +306,9 @@ impl PhyClientState {
     /// executor or rollback contract.
     pub fn release(
         mut self,
-        client: PhyModemClient,
+        client: RadioClient,
     ) -> Result<PhyClientReleaseOutcome, PhyClientReleaseFailure> {
-        let bit = client.bit();
+        let bit = client_bit(client);
         if self.bits & bit == 0 {
             return Err(PhyClientReleaseFailure {
                 owner: self,
@@ -782,7 +777,7 @@ pub enum PhyTrackTimeError {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyClientAcquireError {
-    AlreadyAcquired(PhyModemClient),
+    AlreadyAcquired(RadioClient),
     TrackingTime(PhyTrackTimeError),
 }
 
@@ -819,7 +814,7 @@ impl PhyClientAcquireFailure {
 /// Successful pure acquisition and its source-reviewed facts.
 #[must_use = "the outcome retains the unique PHY client owner"]
 pub struct PhyClientAcquireOutcome {
-    client: PhyModemClient,
+    client: RadioClient,
     was_empty: bool,
     ordering: PhyClientAcquireOrdering,
     continuation: TrackContinuation,
@@ -838,7 +833,7 @@ impl fmt::Debug for PhyClientAcquireOutcome {
 }
 
 impl PhyClientAcquireOutcome {
-    pub const fn client(&self) -> PhyModemClient {
+    pub const fn client(&self) -> RadioClient {
         self.client
     }
 
@@ -866,7 +861,7 @@ impl PhyClientAcquireOutcome {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyClientReleaseError {
-    NotAcquired(PhyModemClient),
+    NotAcquired(RadioClient),
 }
 
 /// Failed release retaining the exact unchanged owner.
@@ -903,7 +898,7 @@ impl PhyClientReleaseFailure {
 #[must_use = "the outcome retains the unique PHY client owner"]
 pub struct PhyClientReleaseOutcome {
     owner: PhyClientState,
-    client: PhyModemClient,
+    client: RadioClient,
     is_last: bool,
 }
 
@@ -918,7 +913,7 @@ impl fmt::Debug for PhyClientReleaseOutcome {
 }
 
 impl PhyClientReleaseOutcome {
-    pub const fn client(&self) -> PhyModemClient {
+    pub const fn client(&self) -> RadioClient {
         self.client
     }
 

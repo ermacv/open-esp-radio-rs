@@ -40,6 +40,13 @@ use oer_esp32s31_phy::{
 };
 use oer_esp32s31_phy_runtime::EmbassyPhyTime;
 
+use crate::lease::{LeaseReleaseNotice, LeaseWaiters};
+
+/// Lease waiters registered apart: one per concurrently waiting radio task
+/// (the tracking and schedule timers and the protocol runtimes) with room to
+/// spare.
+const LEASE_WAITERS: usize = 8;
+
 /// The external coexistence schedule status bits `ic_set_extern_coex` sets
 /// and `ic_stop_extern_coex` clears (`coex_schm_status_bit_set(3, 1 | 2)`).
 const EXTERNAL_COEX_STATUS: u16 = 0x01 | 0x02;
@@ -61,9 +68,6 @@ fn first_share(schedule: &CoexSchedule) -> u8 {
         .phase_by_index(0)
         .map_or(0, |phase| phase.share_percent())
 }
-
-/// Retry period while another holder owns the arbiter lease.
-const LEASE_RETRY_MICROS: u64 = 100;
 
 /// The platform resources every shared-PHY transaction borrows.
 pub struct RadioResources<P, C> {
@@ -200,6 +204,9 @@ impl CoexSignals {
 // CAPABILITY: coex-protocol-integration-and-lifetime-wifi-ble-coexistence, whole-radio-active-operation-power-saving-and-shutdown-protocol-active-operation
 pub struct RadioSystem<P, C> {
     radio: SharedRadio<ConcurrentPhy>,
+    /// The tasks waiting for the arbiter lease; every guard wakes them after
+    /// its lease is released.
+    waiters: LeaseWaiters<CriticalSectionRawMutex, LEASE_WAITERS>,
     /// Taken only while the arbiter lease is held, so taking it never waits.
     resources: Mutex<CriticalSectionRawMutex, RadioResources<P, C>>,
     identity: PhyCalibrationIdentity,
@@ -215,6 +222,8 @@ pub struct RadioGuard<'radio, P, C> {
     lease: SharedRadioLease<'radio, ConcurrentPhy>,
     identity: PhyCalibrationIdentity,
     coex: &'radio CoexSignals,
+    // Declared after the lease so the waiters wake once it is released.
+    _released: LeaseReleaseNotice<'radio, CriticalSectionRawMutex, LEASE_WAITERS>,
 }
 
 /// How [`RadioGuard::prepare_phy`] made the shared PHY ready.
@@ -318,6 +327,7 @@ impl<P, C: PlatformClockProvider> RadioSystem<P, C> {
         (
             Self {
                 radio,
+                waiters: LeaseWaiters::new(),
                 resources: Mutex::new(RadioResources {
                     platform,
                     clocks,
@@ -347,13 +357,16 @@ impl<P, C: PlatformClockProvider> RadioSystem<P, C> {
 
     /// Take the arbiter lease and the platform resources, waiting while
     /// another holder owns the lease, as ESP-IDF waits for its PHY lock.
+    ///
+    /// The wait sleeps until a holder's guard is dropped: the guard releases
+    /// its lease, then wakes every waiting task, which race for the lease
+    /// again. Dropping the future while it waits takes nothing.
     pub async fn lock(&self) -> RadioGuard<'_, P, C> {
-        let lease = loop {
-            match self.radio.try_acquire() {
-                Ok(lease) => break lease,
-                Err(_) => Timer::after_micros(LEASE_RETRY_MICROS).await,
-            }
-        };
+        // Bound before the lease so that, should this future be dropped
+        // with the lease taken, the lease is released before the waiters
+        // wake. A drop while waiting wakes them spuriously, which is harmless.
+        let released = LeaseReleaseNotice::new(&self.waiters);
+        let lease = self.waiters.acquire(|| self.radio.try_acquire()).await;
         // Every holder of the resources holds the lease, so this is free.
         let resources = self.resources.lock().await;
         RadioGuard {
@@ -361,6 +374,7 @@ impl<P, C: PlatformClockProvider> RadioSystem<P, C> {
             lease,
             identity: self.identity,
             coex: &self.coex,
+            _released: released,
         }
     }
 

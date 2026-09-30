@@ -281,7 +281,7 @@ title = "Coexistence hardware/core infrastructure"
 status = "partial"
 level = "lower-primitive"
 scope-and-limitations = "[Coex inventory](coex/FEATURES.md) separates recovered tables/timers, validation-only HAL access and the absent live request/grant/release integration."
-packages = ["oer-esp32s31-coex"]
+packages = ["oer-espressif-coex", "oer-esp32s31-coex"]
 
 [[items]]
 id = "whole-radio-concurrent-ownership-and-arbitration-external-rf-arbitration-boundary"

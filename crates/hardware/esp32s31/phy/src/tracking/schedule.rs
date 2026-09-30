@@ -6,9 +6,7 @@
 //! the consuming tracking transition; a copied demand is not an epoch token.
 
 use super::parameters::PhyParamTrackRequest;
-use crate::state::client::{
-    PhyClientSnapshot, PhyModemClient, PhyPllTrackClass, PhyTrackTimeError,
-};
+use crate::state::client::{PhyClientSnapshot, PhyPllTrackClass, PhyTrackTimeError, RadioClient};
 
 /// Scheduling observation, independent of executor and hardware admission.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -52,9 +50,9 @@ impl PhyClientSnapshot {
     /// This observation does not replace the source-exact sample order in
     /// `evaluate_immediate_tracking` or its consuming ownership transition.
     pub fn tracking_schedule_at(self, now_micros: u64) -> Result<Schedule, PhyTrackTimeError> {
-        let wifi = self.contains(PhyModemClient::Wifi);
+        let wifi = self.contains(RadioClient::Wifi);
         let shared =
-            self.contains(PhyModemClient::Bluetooth) || self.contains(PhyModemClient::Ieee802154);
+            self.contains(RadioClient::Bluetooth) || self.contains(RadioClient::Ieee802154);
         for (active, class) in [
             (wifi, PhyPllTrackClass::Wifi),
             (shared, PhyPllTrackClass::BluetoothIeee802154),

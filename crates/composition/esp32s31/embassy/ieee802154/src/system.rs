@@ -32,7 +32,7 @@ use oer_esp32s31_phy::{
         RegisteredIeee802154OperationalRoute, leave_ieee802154,
     },
     maintain_concurrent_phy,
-    state::client::PhyModemClient,
+    state::client::RadioClient,
 };
 use oer_esp32s31_phy_runtime::EmbassyPhyTime;
 use oer_esp32s31_radio_runtime::{Ieee802154JoinError, RadioGuard, RadioPhyError, RadioSystem};
@@ -653,7 +653,7 @@ impl Ieee802154System {
             return Ok(Ieee802154PhyMaintenance::NotDue);
         }
         let others = lease.attachment().client_snapshot().is_some_and(|clients| {
-            clients.contains(PhyModemClient::Wifi) || clients.contains(PhyModemClient::Bluetooth)
+            clients.contains(RadioClient::Wifi) || clients.contains(RadioClient::Bluetooth)
         });
         if others {
             return Ok(Ieee802154PhyMaintenance::AwaitingOtherClients);

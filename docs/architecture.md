@@ -162,6 +162,13 @@ and nothing changed), `Recoverable` (admitted work ended without its result;
 the port remains usable) and `Poisoned` (the backend's state is unknown; only
 a reset restores the port).
 
+**Shared RF path.** Protocols that share one radio name themselves with the
+portable [`RadioClient`](../crates/radio/coex/src/lib.rs) of `oer-radio-coex`
+and express how urgently an operation needs the antenna as its
+`CoexPriority`; each protocol's own levels convert into it. The backend maps
+both onto its arbitration (event numbers, request kinds, hardware
+priorities), which stays below the port.
+
 **Names.** `*Port` is a portable contract trait. `*Service` is a portable
 state machine that consumes ports. `*Hardware` is a chip or family register
 seam below a port. Bluetooth is `bluetooth`/`Bluetooth` in every package,

@@ -11,24 +11,7 @@
 
 /// One four-bit coexistence priority, the shared-table domain every
 /// supported chip's MAC PTI field accepts.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub struct CoexPti(u8);
-
-impl CoexPti {
-    /// A priority of the four-bit hardware domain, or `None` above it.
-    pub const fn new(value: u8) -> Option<Self> {
-        if value <= 0x0f {
-            Some(Self(value))
-        } else {
-            None
-        }
-    }
-
-    /// The priority value.
-    pub const fn value(self) -> u8 {
-        self.0
-    }
-}
+pub use oer_espressif_coex::CoexPti;
 
 /// Operation scene of the TX/RX PTI (`ieee802154_txrx_scene_t`).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

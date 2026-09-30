@@ -1,16 +1,16 @@
-//! Coexistence ports implemented over the ESP32-S31 radio HAL.
+//! The coexistence clock port of the Espressif policy over this HAL.
 //!
 //! The HAL owns register access and reports decoded clock observations. This
-//! binding maps those observations and typed timer values into the
-//! executor-neutral [`CoexClockHardware`] and [`CoexTimerHardware`] ports.
+//! binding maps those observations into the executor-neutral
+//! [`CoexClockHardware`] port of `oer-espressif-coex`.
 
-use oer_esp32s31_hal::{
+use oer_espressif_coex::{CoexClockHardware, CoexClockSelector, CoexError, CoexTimerClock};
+
+use crate::{
     coex::CoexTimerBank,
     ieee80211::mac::WifiMacColdHal,
     types::{CoexistenceLowPowerClockObservation, CoexistenceLowPowerClockSource},
 };
-
-use crate::{CoexClockHardware, CoexClockSelector, CoexError, CoexTimerClock};
 
 /// Main crystal frequency of every supported ESP32-S31 board profile.
 const XTAL_MHZ: u32 = 40;
@@ -19,7 +19,7 @@ const XTAL_MHZ: u32 = 40;
 ///
 /// `real_chip` selects the silicon Selector8 frequency; the alternative is the
 /// vendor's FPGA constant retained for compiled comparison.
-pub(crate) fn timer_clock(
+pub fn timer_clock(
     observation: Option<CoexistenceLowPowerClockObservation>,
     real_chip: bool,
 ) -> Result<CoexTimerClock, CoexError> {

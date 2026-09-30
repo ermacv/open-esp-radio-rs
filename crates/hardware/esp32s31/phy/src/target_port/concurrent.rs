@@ -8,8 +8,8 @@ use crate::{
         evaluate_periodic_tracking,
     },
     domain::PhyDomain,
-    state::client::PhyModemClient,
     state::client::PhyPllTrackClock,
+    state::client::RadioClient,
 };
 use oer_esp32s31_hal::shared_radio::{
     ClientQuiescence, ModemClockError, PhyClockModule, PlatformClockProvider, SharedRadioLease,
@@ -671,9 +671,9 @@ fn wifi_channel_state<'domain>(
             ConcurrentPhyError::EpochMismatch,
         ));
     }
-    if !domain.client_snapshot().contains(PhyModemClient::Wifi) {
+    if !domain.client_snapshot().contains(RadioClient::Wifi) {
         return Err(ConcurrentWifiChannelError::Rejected(
-            ConcurrentPhyError::ClientAbsent(PhyModemClient::Wifi),
+            ConcurrentPhyError::ClientAbsent(RadioClient::Wifi),
         ));
     }
     Ok(domain.registered.target_state_mut())

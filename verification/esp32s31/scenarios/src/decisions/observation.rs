@@ -313,26 +313,32 @@ pub const DECISIONS: &[Decision] = &[
             relation, requiring the production report to equal the vendor's `timer_arm_us` \
             microseconds and the phase callbacks it called",
         places: &[
-            ("driver/coex/src/schedule.rs", "self.wifi != 0"),
             (
-                "driver/coex/src/schedule.rs",
+                "crates/hardware/espressif/coex/src/schedule.rs",
+                "self.wifi != 0",
+            ),
+            (
+                "crates/hardware/espressif/coex/src/schedule.rs",
                 "self.bluetooth[0] != 0 || self.bluetooth[1] != 0",
             ),
             (
-                "driver/coex/src/schedule.rs",
+                "crates/hardware/espressif/coex/src/schedule.rs",
                 "return Err(CoexScheduleIdle::LastPhase);",
             ),
-            ("driver/coex/src/schedule.rs", "u32::from(scheme.period)"),
             (
-                "driver/coex/src/schedule.rs",
+                "crates/hardware/espressif/coex/src/schedule.rs",
+                "u32::from(scheme.period)",
+            ),
+            (
+                "crates/hardware/espressif/coex/src/schedule.rs",
                 ".wrapping_mul(self.interval)",
             ),
             (
-                "driver/coex/src/schedule.rs",
+                "crates/hardware/espressif/coex/src/schedule.rs",
                 "notify_wifi: phase.notifies_wifi(),",
             ),
             (
-                "driver/coex/src/schedule.rs",
+                "crates/hardware/espressif/coex/src/schedule.rs",
                 "notify_bluetooth: phase.notifies_bluetooth(),",
             ),
         ],
@@ -344,19 +350,19 @@ pub const DECISIONS: &[Decision] = &[
             program or disable, whose register effects and return compare",
         places: &[
             (
-                "driver/coex/src/core.rs",
+                "crates/hardware/espressif/coex/src/core.rs",
                 "self.active[usize::from(index.value())] = Some(CoexRequest { client, request });",
             ),
             (
-                "driver/coex/src/core.rs",
+                "crates/hardware/espressif/coex/src/core.rs",
                 "self.uncertain_timers |= timer_bit(index);",
             ),
             (
-                "driver/coex/src/core.rs",
+                "crates/hardware/espressif/coex/src/core.rs",
                 "self.active[usize::from(index.value())] = None;",
             ),
             (
-                "driver/coex/src/core.rs",
+                "crates/hardware/espressif/coex/src/core.rs",
                 "self.uncertain_timers &= !timer_bit(index);",
             ),
         ],

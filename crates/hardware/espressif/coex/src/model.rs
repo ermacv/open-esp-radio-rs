@@ -1,4 +1,6 @@
-pub use oer_esp32s31_hal::coex::{COEX_EVENT_COUNT, CoexEventId, CoexPti, CoexPtiTable};
+use oer_radio_coex::RadioClient;
+
+use crate::CoexEventId;
 
 pub const COEX_TIMER_COUNT: usize = 5;
 
@@ -132,6 +134,42 @@ impl CoexClient {
     /// radio's requests.
     pub const fn timer_client_value(self) -> u8 {
         REVIEWED_TIMER_CLIENT_MAP[self as usize]
+    }
+
+    /// The request kind of a portable client, or `None` for IEEE 802.15.4,
+    /// which publishes its priorities to its MAC and requests no timer.
+    pub const fn from_radio(client: RadioClient) -> Option<Self> {
+        match client {
+            RadioClient::Wifi => Some(Self::Wifi),
+            RadioClient::Bluetooth => Some(Self::Bluetooth),
+            RadioClient::Ieee802154 => None,
+        }
+    }
+
+    /// The portable client of this request kind.
+    pub const fn radio(self) -> RadioClient {
+        match self {
+            Self::Wifi => RadioClient::Wifi,
+            Self::Bluetooth => RadioClient::Bluetooth,
+        }
+    }
+}
+
+/// A portable client without a timer request kind.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NoRequestKind(pub RadioClient);
+
+impl TryFrom<RadioClient> for CoexClient {
+    type Error = NoRequestKind;
+
+    fn try_from(client: RadioClient) -> Result<Self, Self::Error> {
+        Self::from_radio(client).ok_or(NoRequestKind(client))
+    }
+}
+
+impl From<CoexClient> for RadioClient {
+    fn from(client: CoexClient) -> Self {
+        client.radio()
     }
 }
 

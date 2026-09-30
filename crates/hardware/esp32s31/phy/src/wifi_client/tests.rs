@@ -51,7 +51,7 @@ fn wifi_joins_and_leaves_the_shared_domain_as_its_last_client() {
         lease
             .attachment()
             .client_snapshot()
-            .is_some_and(|clients| clients.contains(PhyModemClient::Wifi))
+            .is_some_and(|clients| clients.contains(RadioClient::Wifi))
     );
     // A second membership would double the client bit.
     assert!(matches!(
@@ -92,7 +92,7 @@ fn a_suspended_wifi_leaves_the_domain_and_resumes_as_a_client() {
         lease
             .attachment()
             .client_snapshot()
-            .is_some_and(|clients| !clients.contains(PhyModemClient::Wifi))
+            .is_some_and(|clients| !clients.contains(RadioClient::Wifi))
     );
     let (membership, acquired) =
         resume_wifi(&mut lease, clocked.clocks_on(), suspended, &mut Clock(0))
@@ -102,7 +102,7 @@ fn a_suspended_wifi_leaves_the_domain_and_resumes_as_a_client() {
         lease
             .attachment()
             .client_snapshot()
-            .is_some_and(|clients| clients.contains(PhyModemClient::Wifi))
+            .is_some_and(|clients| clients.contains(RadioClient::Wifi))
     );
     let (suspended, _) = suspend_wifi(&mut lease, clocked.clocks_on(), membership)
         .unwrap_or_else(|failure| panic!("second suspend failed: {failure:?}"));

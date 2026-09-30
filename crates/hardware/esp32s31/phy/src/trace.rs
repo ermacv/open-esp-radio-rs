@@ -12,27 +12,27 @@ use crate::{
     PhyState,
     calibration::registration::PhyCalibrationPath,
     concurrent::ConcurrentPhyError,
-    state::client::{PhyClientSnapshot, PhyModemClient},
+    state::client::{PhyClientSnapshot, RadioClient},
     tracking::PhyParamTrackingOutcome,
 };
 
-pub(crate) const fn client(client: PhyModemClient) -> Client {
+pub(crate) const fn client(client: RadioClient) -> Client {
     match client {
-        PhyModemClient::Wifi => Client::Wifi,
-        PhyModemClient::Bluetooth => Client::Bluetooth,
-        PhyModemClient::Ieee802154 => Client::Ieee802154,
+        RadioClient::Wifi => Client::Wifi,
+        RadioClient::Bluetooth => Client::Bluetooth,
+        RadioClient::Ieee802154 => Client::Ieee802154,
     }
 }
 
 pub(crate) const fn clients(snapshot: PhyClientSnapshot) -> Clients {
     let mut clients = Clients::NONE;
-    if snapshot.contains(PhyModemClient::Wifi) {
+    if snapshot.contains(RadioClient::Wifi) {
         clients = clients.with(Client::Wifi);
     }
-    if snapshot.contains(PhyModemClient::Bluetooth) {
+    if snapshot.contains(RadioClient::Bluetooth) {
         clients = clients.with(Client::Bluetooth);
     }
-    if snapshot.contains(PhyModemClient::Ieee802154) {
+    if snapshot.contains(RadioClient::Ieee802154) {
         clients = clients.with(Client::Ieee802154);
     }
     clients

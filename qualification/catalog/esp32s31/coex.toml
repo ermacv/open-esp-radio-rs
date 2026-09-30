@@ -18,6 +18,7 @@ limits = "Core tables and clock conversion run through the radio runtime's arbit
 source-paths = [
   "crates/hardware/esp32s31/hal/src/coex.rs",
   "crates/hardware/esp32s31/driver/coex/src/lib.rs",
+  "crates/hardware/espressif/coex/src/lib.rs",
   "crates/runtime/esp32s31/radio/src/system.rs",
 ]
 
@@ -97,8 +98,8 @@ section = "coex-internal-arbitration-hardware-and-models"
 title = "Event PTI table"
 status = "implemented"
 level = "lower-primitive"
-scope-and-limitations = "The [radio arbiter](../../hal/src/coex.rs) owns the 49-event `coex_pti_tab` of esp-coex-lib `02c57071`, event validation and the four-bit PTI domain; the core and the Wi-Fi cold MAC queries read priorities from it. This is a shared table, not live priority scheduling."
-packages = ["oer-esp32s31-hal", "oer-esp32s31-coex"]
+scope-and-limitations = "The [radio arbiter](../../hal/src/coex.rs) owns the [shared Espressif table](../../../espressif/coex/src/pti.rs), the 49-event `coex_pti_tab` of esp-coex-lib `02c57071`, event validation and the four-bit PTI domain; the core and the Wi-Fi cold MAC queries read priorities from it. This is a shared table, not live priority scheduling."
+packages = ["oer-espressif-coex", "oer-esp32s31-hal"]
 
 [[items]]
 id = "coex-internal-arbitration-hardware-and-models-event-to-timer-mapping"
@@ -131,9 +132,9 @@ section = "coex-internal-arbitration-hardware-and-models"
 title = "Timer clock conversion"
 status = "implemented"
 level = "lower-primitive"
-scope-and-limitations = "[Clock model](src/clock.rs) implements four selector domains and reviewed integer conversion rules. [Wi-Fi HAL](../../hal/src/ieee80211/mac.rs) can sample the custom PAC shared-clock fields in production; this clock access does not compose the validation-only timer bridge or a coexistence runtime."
+scope-and-limitations = "[Clock model](../../../espressif/coex/src/clock.rs) implements four selector domains and reviewed integer conversion rules. [Wi-Fi HAL](../../hal/src/ieee80211/mac.rs) can sample the custom PAC shared-clock fields in production; this clock access does not compose the validation-only timer bridge or a coexistence runtime."
 packages = [
-    "oer-esp32s31-coex",
+    "oer-espressif-coex",
     "oer-esp32s31-hal",
 ]
 
@@ -143,8 +144,8 @@ section = "coex-internal-arbitration-hardware-and-models"
 title = "Timer programming sequence"
 status = "implemented"
 level = "lower-primitive"
-scope-and-limitations = "[Generic program](src/timer.rs) orders client/PTI, duration and latency programming, with a fresh clock sample for each target. This is a trait-driven sequence; timer enable is separate."
-packages = ["oer-esp32s31-coex"]
+scope-and-limitations = "[Generic program](../../../espressif/coex/src/timer.rs) orders client/PTI, duration and latency programming, with a fresh clock sample for each target. This is a trait-driven sequence; timer enable is separate."
+packages = ["oer-espressif-coex"]
 
 [[items]]
 id = "coex-internal-arbitration-hardware-and-models-physical-timer-set-enable-disable"
@@ -169,8 +170,8 @@ section = "coex-internal-arbitration-hardware-and-models"
 title = "Core request semantics"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "[Core](src/core.rs) checks enabled state, maps the event, programs/enables its timer and records the request. This does not own RF grant notification, deadline/cancellation or a complete radio exchange."
-packages = ["oer-esp32s31-coex"]
+scope-and-limitations = "[Core](../../../espressif/coex/src/core.rs) checks enabled state, maps the event, programs/enables its timer and records the request. This does not own RF grant notification, deadline/cancellation or a complete radio exchange."
+packages = ["oer-espressif-coex"]
 
 [[items]]
 id = "coex-internal-arbitration-hardware-and-models-core-release-disable-status"
@@ -186,8 +187,8 @@ section = "coex-coexistence-policy-and-scheduler"
 title = "Scheduler state"
 status = "implemented"
 level = "lower-primitive"
-scope-and-limitations = "[Schedule](src/schedule.rs) holds the `coex_schm_env` state of esp-coex-lib `c758e7b5`: the five status words, the selected scheme, the phase index, the interval and the flexible period. It is executor-neutral state; `CoexScheduleExecutor` adds its phase timer as generation-checked commands, and the radio runtime arms that timer."
-packages = ["oer-esp32s31-coex"]
+scope-and-limitations = "[Schedule](../../../espressif/coex/src/schedule.rs) holds the `coex_schm_env` state of esp-coex-lib `c758e7b5`: the five status words, the selected scheme, the phase index, the interval and the flexible period. It is executor-neutral state; `CoexScheduleExecutor` adds its phase timer as generation-checked commands, and the radio runtime arms that timer."
+packages = ["oer-espressif-coex"]
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-phase-representation"
@@ -261,8 +262,8 @@ section = "coex-coexistence-policy-and-scheduler"
 title = "IEEE 802.15.4 operation priorities"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The [radio arbiter](../../hal/src/coex.rs) resolves the four IEEE 802.15.4 coexistence levels to priorities from the shared table, as `coex_ieee802154_pti_get` does. The [MAC scenes](../../hal/src/ieee802154/coex.rs) follow `ieee802154_set_txrx_pti` of ESP-IDF `7b9cc1ac`: the ACK PTI takes the middle level at MAC initialization, the TX/RX PTI the idle level, and each transmission, reception, energy detection and CCA switches it to its scene's level. The composition publishes the vendor default levels resolved from the table at start or at `update_coexistence`; a later change of the shared table is not re-read at each scene, and the OpenThread role-dependent TX/RX level is not applied."
-packages = ["oer-esp32s31-hal"]
+scope-and-limitations = "The [radio arbiter](../../hal/src/coex.rs) resolves the four IEEE 802.15.4 coexistence levels to priorities from the [shared table](../../../espressif/coex/src/pti.rs), as `coex_ieee802154_pti_get` does. The [MAC scenes](../../hal/src/ieee802154/coex.rs) follow `ieee802154_set_txrx_pti` of ESP-IDF `7b9cc1ac`: the ACK PTI takes the middle level at MAC initialization, the TX/RX PTI the idle level, and each transmission, reception, energy detection and CCA switches it to its scene's level. The composition publishes the vendor default levels resolved from the table at start or at `update_coexistence`; a later change of the shared table is not re-read at each scene, and the OpenThread role-dependent TX/RX level is not applied."
+packages = ["oer-espressif-coex", "oer-esp32s31-hal"]
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-mesh-status-driven-schemes"

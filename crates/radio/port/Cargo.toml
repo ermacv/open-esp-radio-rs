@@ -1,0 +1,20 @@
+[package]
+name = "oer-radio-port"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Vocabulary every radio port shares: failure classes, event loss and poisoning, lifecycle, correlation identities and clock relation"
+readme = "README.md"
+
+[dependencies]
+oer-time = { path = "../../time" }
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "production"
+layer = "contract"
+platform = "portable"

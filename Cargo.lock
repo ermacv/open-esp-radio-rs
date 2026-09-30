@@ -3735,6 +3735,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-radio-port"
+version = "0.1.0"
+dependencies = [
+ "oer-time",
+]
+
+[[package]]
 name = "oer-register-contracts"
 version = "0.1.0"
 dependencies = [

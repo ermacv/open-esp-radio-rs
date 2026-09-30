@@ -24,6 +24,7 @@ members = [
     "crates/network/interface",
     "crates/radio",
     "crates/radio/coex",
+    "crates/radio/port",
     "crates/adapters/embassy-net/owned",
     "experiments/network-engine",
     "crates/runtime/bluetooth",

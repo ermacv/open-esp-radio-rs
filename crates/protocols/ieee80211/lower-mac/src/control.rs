@@ -1,9 +1,8 @@
-//! Settings, keys, TSF and lifecycle of the lower-MAC port.
+//! Settings, keys and lifecycle of the lower-MAC port.
 
 use oer_ieee80211_mac::{channel::Channel, sequence::SequenceNumber};
-use oer_radio_coex::CoexPriority;
 
-use crate::tx::TxId;
+use crate::{failure::FailureClass, tx::TxId};
 
 /// A 48-bit IEEE MAC address in transmission order.
 pub type MacAddress = [u8; 6];
@@ -23,11 +22,38 @@ pub enum VifRole {
     AccessPoint,
 }
 
+/// A set of interface roles.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct VifRoleSet(u8);
+
+impl VifRoleSet {
+    pub const NONE: Self = Self(0);
+    pub const STATION: Self = Self(1 << 0);
+    pub const ACCESS_POINT: Self = Self(1 << 1);
+
+    pub const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    pub const fn contains(self, role: VifRole) -> bool {
+        let bit = match role {
+            VifRole::Station => Self::STATION.0,
+            VifRole::AccessPoint => Self::ACCESS_POINT.0,
+        };
+        self.0 & bit != 0
+    }
+}
+
 /// Which received frames the backend delivers for one interface.
 ///
-/// The filter is a set of admission rules; a frame admitted by any rule is
-/// delivered. Frames addressed to the interface are acknowledged by the
-/// hardware whatever the filter says about other frames.
+/// The filter is a set of admission rules; a frame admitted by any rule of
+/// any interface is delivered, and a frame no rule admits is not, whatever
+/// superset the hardware passes. Frames addressed to the interface are
+/// acknowledged by the hardware whatever the filter says about other
+/// frames. The rules of [`Self::BSS_MEMBER`] belong to a BSS: a station
+/// without a BSSID can request only [`Self::OTHER_BSS_MANAGEMENT`].
+/// Receiving every frame regardless of address is
+/// [`LowerMacMonitor`](crate::LowerMacMonitor), not a filter rule.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct ReceiveFilter(u8);
 
@@ -44,8 +70,6 @@ impl ReceiveFilter {
     pub const OTHER_BSS_MANAGEMENT: Self = Self(1 << 3);
     /// Control frames addressed to the interface (BlockAckReq, PS-Poll).
     pub const OWN_CONTROL: Self = Self(1 << 4);
-    /// Every frame the PHY decodes with a valid FCS.
-    pub const PROMISCUOUS: Self = Self(1 << 5);
 
     /// What a station or access point needs for its own BSS.
     pub const BSS_MEMBER: Self = Self(
@@ -56,8 +80,16 @@ impl ReceiveFilter {
         Self(self.0 | other.0)
     }
 
+    pub const fn intersection(self, other: Self) -> Self {
+        Self(self.0 & other.0)
+    }
+
     pub const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
     }
 }
 
@@ -69,7 +101,83 @@ pub struct VifConfig {
     /// The BSS the interface belongs to; `None` for a station that has not
     /// joined one.
     pub bssid: Option<MacAddress>,
+    /// At most the role's
+    /// [`LowerMacCapabilities::receive_filters`](crate::LowerMacCapabilities::receive_filters).
     pub receive: ReceiveFilter,
+}
+
+/// Frame Control type of management frames.
+const TYPE_MANAGEMENT: u8 = 0;
+/// Frame Control type of control frames.
+const TYPE_CONTROL: u8 = 1;
+/// Frame Control type of data frames.
+const TYPE_DATA: u8 = 2;
+const SUBTYPE_PROBE_RESPONSE: u8 = 5;
+const SUBTYPE_BEACON: u8 = 8;
+
+impl VifConfig {
+    /// The BSS the interface belongs to: its BSSID, or an access point's
+    /// own address.
+    pub const fn bss(&self) -> Option<MacAddress> {
+        match (self.role, self.bssid) {
+            (_, Some(bssid)) => Some(bssid),
+            (VifRole::AccessPoint, None) => Some(self.address),
+            (VifRole::Station, None) => None,
+        }
+    }
+
+    /// Whether the interface's receive filter admits `frame`, an MPDU
+    /// without FCS. A backend whose hardware passes a superset of the
+    /// requested rules narrows its reception with this.
+    pub fn admits(&self, frame: &[u8]) -> bool {
+        let filter = self.receive;
+        let Some(address1) = address(frame, 4) else {
+            return false;
+        };
+        let frame_type = (frame[0] >> 2) & 0b11;
+        let subtype = frame[0] >> 4;
+        if frame_type == TYPE_CONTROL {
+            return filter.contains(ReceiveFilter::OWN_CONTROL) && address1 == self.address;
+        }
+        let management = frame_type == TYPE_MANAGEMENT;
+        if management
+            && matches!(subtype, SUBTYPE_BEACON | SUBTYPE_PROBE_RESPONSE)
+            && filter.contains(ReceiveFilter::OTHER_BSS_MANAGEMENT)
+        {
+            return true;
+        }
+        if filter.contains(ReceiveFilter::OWN_UNICAST) && address1 == self.address {
+            return true;
+        }
+        let Some(bss) = self.bss() else {
+            return false;
+        };
+        let in_bss = frame_bssid(frame).is_some_and(|bssid| bssid == bss);
+        if management && subtype == SUBTYPE_BEACON {
+            return in_bss && filter.contains(ReceiveFilter::OWN_BSS_BEACONS);
+        }
+        address1[0] & 1 != 0 && in_bss && filter.contains(ReceiveFilter::OWN_BSS_GROUP)
+    }
+}
+
+fn address(frame: &[u8], offset: usize) -> Option<MacAddress> {
+    frame.get(offset..offset + 6)?.try_into().ok()
+}
+
+/// The BSSID a management or data frame carries.
+fn frame_bssid(frame: &[u8]) -> Option<MacAddress> {
+    match (frame[0] >> 2) & 0b11 {
+        TYPE_MANAGEMENT => address(frame, 16),
+        TYPE_DATA => match frame.get(1)? & 0b11 {
+            0b00 => address(frame, 16),
+            // From the DS: Address 2 is the BSSID.
+            0b10 => address(frame, 10),
+            // To the DS: Address 1 is the BSSID.
+            0b01 => address(frame, 4),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 /// Handle of one installed key, chosen by the backend.
@@ -115,20 +223,6 @@ pub struct RxBlockAckAgreement {
     pub window: u16,
 }
 
-/// A value of an interface's Timing Synchronization Function in
-/// microseconds (IEEE 802.11-2020 11.1.3).
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Tsf(pub u64);
-
-/// When the backend reports target beacon transmission times.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct TbttSchedule {
-    /// The beacon interval in time units of 1024 µs.
-    pub beacon_interval_tu: u16,
-    /// The next target beacon transmission time.
-    pub next: Tsf,
-}
-
 /// A setting the backend applies outside transmission attempts.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LowerMacSetting {
@@ -149,26 +243,15 @@ pub enum LowerMacSetting {
         peer: MacAddress,
         tid: u8,
     },
-    /// Set an interface's TSF.
-    SetTsf { vif: VifId, tsf: Tsf },
-    /// Report target beacon transmission times of an interface, or stop
-    /// (`None`).
-    Tbtt {
-        vif: VifId,
-        schedule: Option<TbttSchedule>,
-    },
-    /// Hold or release attempts to `peer`, or to every receiver of the
-    /// interface when `peer` is `None`, while power save keeps them
-    /// asleep. A held attempt waits in the backend; submission still admits
-    /// it.
-    PowerSaveTxBlock {
-        vif: VifId,
-        peer: Option<MacAddress>,
-        blocked: bool,
-    },
-    /// How urgently Wi-Fi needs the shared antenna now; the backend maps it
-    /// onto its coexistence arbitration.
-    CoexPriority(CoexPriority),
+    /// Open or close the transmit gate of every queue, as the station's own
+    /// doze or a coexistence slice needs. While the gate is closed the
+    /// backend admits attempts and holds them unpublished; opening it
+    /// publishes them. A backend may refuse to close the gate while an
+    /// attempt is already published (`SettingError::Busy`), because the
+    /// hardware could then end that attempt with a timeout
+    /// ([`TxStatus::Aborted`](crate::TxStatus::Aborted)). Per-peer
+    /// power-save buffering is software policy above the port.
+    TxGate { open: bool },
 }
 
 /// Why the backend refused a setting; nothing changed.
@@ -177,9 +260,9 @@ pub enum SettingError {
     /// The setting names an interface the backend does not have or has not
     /// configured.
     UnknownVif,
-    /// The backend cannot tune to the channel.
+    /// The channel lies outside the backend's bands and widths.
     UnsupportedChannel,
-    /// The backend does not implement the interface role.
+    /// The interface role lies outside the backend's interfaces.
     UnsupportedRole,
     /// Every key slot is in use.
     NoKeySlot,
@@ -192,9 +275,9 @@ pub enum SettingError {
     /// The agreement's TID or window exceeds the backend's limits, or no
     /// such agreement exists.
     InvalidBlockAck,
-    /// The setting needs the port quiesced and attempts are in flight.
+    /// The setting needs work in flight to finish first.
     Busy,
-    /// The backend does not implement the setting.
+    /// A value lies outside the limits the backend's capabilities declare.
     Unsupported,
 }
 
@@ -202,7 +285,7 @@ pub enum SettingError {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum LifecycleCommand {
     /// Start receiving and admitting attempts; ends with
-    /// [`LifecycleEvent::Enabled`].
+    /// [`LifecycleEvent::Enabled`], or [`LifecycleEvent::Failed`].
     Enable,
     /// Stop admitting attempts, abort those in flight and stop receiving;
     /// ends with [`LifecycleEvent::Disabled`] after the completion of every
@@ -212,9 +295,12 @@ pub enum LifecycleCommand {
     /// [`LifecycleEvent::Quiesced`] after the last completion. Enable
     /// resumes admission.
     Quiesce,
-    /// End one admitted attempt; its terminal event is its completion,
-    /// [`TxStatus::Aborted`](crate::TxStatus::Aborted) unless it had
-    /// already completed.
+    /// End one admitted attempt. The terminal event is the attempt's own
+    /// completion: [`TxStatus::Aborted`](crate::TxStatus::Aborted) for an
+    /// attempt the backend has not yet published, and for a published one
+    /// whatever it ends with, which may be its natural completion. Ending a
+    /// published attempt on the air is
+    /// [`LowerMacCancelPublished`](crate::LowerMacCancelPublished).
     Cancel(TxId),
 }
 
@@ -224,6 +310,13 @@ pub enum LifecycleEvent {
     Enabled,
     Disabled,
     Quiesced,
+    /// An admitted command failed. A `Recoverable` failure leaves the port
+    /// in the state it was in before the command; a `Poisoned` one leaves
+    /// it unusable until a reset.
+    Failed {
+        command: LifecycleCommand,
+        class: FailureClass,
+    },
 }
 
 /// Why the backend refused a lifecycle command; nothing changed.

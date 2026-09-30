@@ -212,14 +212,49 @@ pub fn control_frame<P: WifiTxPowerProfile>(
     data: TxPhyRate,
     decision: TxProtectionDecision,
 ) -> TxControlFrame {
+    capped_control_frame(power, data, decision, None)
+}
+
+/// [`control_frame`] with its power codes bounded by `ceiling`.
+fn capped_control_frame<P: WifiTxPowerProfile>(
+    power: &P,
+    data: TxPhyRate,
+    decision: TxProtectionDecision,
+    ceiling: Option<i8>,
+) -> TxControlFrame {
     let mut control = TxControlFrame {
         protection: decision.protection,
         ..TxControlFrame::UNPROTECTED
     };
-    let pair = power.power_pair(control.rate(data).code());
+    let pair = capped_power(power.power_pair(control.rate(data).code()), ceiling);
     control.power_primary = pair.primary as u8;
     control.power_alternate = pair.alternate as u8;
     control
+}
+
+/// Bound a calibrated power pair by a caller's ceiling.
+///
+/// The S31 power code is the vendor's quarter-dBm target arithmetic-shifted
+/// right by two (`phy/src/tx/power.rs`, `PhyTxTargetPowerProfile::pair`,
+/// after `phy_get_max_pwr`), so one code step is one dBm of the calibrated
+/// target and a ceiling in dBm compares with it directly. The codes are
+/// the vendor's table convention, not a measured radiated power.
+const fn capped_power(pair: WifiTxPowerPair, ceiling: Option<i8>) -> WifiTxPowerPair {
+    match ceiling {
+        None => pair,
+        Some(ceiling) => WifiTxPowerPair {
+            primary: if pair.primary < ceiling {
+                pair.primary
+            } else {
+                ceiling
+            },
+            alternate: if pair.alternate < ceiling {
+                pair.alternate
+            } else {
+                ceiling
+            },
+        },
+    }
 }
 
 /// Everything needed to publish one already encoded MPDU.
@@ -253,11 +288,48 @@ pub enum SingleAttemptProtection {
     CtsToSelf,
 }
 
+/// The caller's choices for one single-attempt publication
+/// ([`OrdinaryTxOwner::start_single_attempt`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SingleAttempt {
+    pub protection: SingleAttemptProtection,
+    /// Backoff slots the queue counts down after the AIFS: the value of its
+    /// ten-bit contention-window field, at most
+    /// [`MAX_SINGLE_ATTEMPT_BACKOFF_SLOTS`].
+    pub backoff_slots: u16,
+    /// Ceiling on the data and control power codes, in dBm (see
+    /// [`WifiTxPowerProfile`]); `None` publishes the calibrated codes.
+    pub power_ceiling_dbm: Option<i8>,
+    /// Publish an individually addressed frame without soliciting an ACK.
+    /// Only the legacy program carries the response field, so a non-legacy
+    /// rate is refused. On-air behaviour of an unsolicited-ACK unicast is
+    /// not confirmed on hardware.
+    pub no_ack: bool,
+}
+
+impl SingleAttempt {
+    /// The caller's protection at the calibrated power, with no backoff,
+    /// soliciting the response the frame's addresses imply.
+    pub const fn new(protection: SingleAttemptProtection) -> Self {
+        Self {
+            protection,
+            backoff_slots: 0,
+            power_ceiling_dbm: None,
+            no_ack: false,
+        }
+    }
+}
+
+/// The largest backoff the ordinary queue's ten-bit contention-window field
+/// holds.
+pub const MAX_SINGLE_ATTEMPT_BACKOFF_SLOTS: u16 = 0x03ff;
+
 struct ActiveTx {
     cookie: TxCookie,
-    /// `Some` for a single-attempt publication: the caller's protection, and
-    /// no re-publication whatever the completion says.
-    single_attempt: Option<SingleAttemptProtection>,
+    /// `Some` for a single-attempt publication: the caller's protection,
+    /// backoff and power ceiling, and no re-publication whatever the
+    /// completion says.
+    single_attempt: Option<SingleAttempt>,
     retry: OrdinaryMpduRetryState,
     frame_length: usize,
     descriptor_capacity: u32,
@@ -542,25 +614,30 @@ where
     /// Start exactly one hardware publication of the encoded MPDU.
     ///
     /// This is the lower-MAC port's attempt: the owner publishes the MPDU
-    /// once at `plan.exchange.initial_rate` with the caller's `protection`,
+    /// once at `plan.exchange.initial_rate` with the caller's protection,
     /// and every completion, collision or timeout ends the transaction. No
     /// retry ladder, rate fallback, Retry-bit rewrite or BSS protection
     /// selection is applied, and `plan.exchange.publication_limit` is not
-    /// consulted. The EDCA contention window stays at the queue's minimum:
-    /// a success records success and every other end resets the exchange,
-    /// because the retry policy that would widen it lies above the port.
+    /// consulted. The queue counts down the caller's `backoff_slots` rather
+    /// than a draw from the owner's EDCA state: the contention window and
+    /// its widening after failures belong to the caller's retry policy
+    /// above the port. The owner's own EDCA state is left at its minimum.
+    /// A power ceiling bounds the data and the protection control frame.
     pub fn start_single_attempt<H: TxHardware>(
         &mut self,
         hardware: &mut H,
         mut plan: OrdinaryTxPlan,
-        protection: SingleAttemptProtection,
+        attempt: SingleAttempt,
     ) -> Result<WifiTxProgress, OrdinaryTxError> {
+        if attempt.backoff_slots > MAX_SINGLE_ATTEMPT_BACKOFF_SLOTS {
+            return Err(OrdinaryTxError::Tx(TxError::Invalid));
+        }
         plan.exchange.publication_limit = 1;
         self.start_transaction(
             hardware,
             plan,
             OrdinaryRetryRatePolicy::Normal,
-            Some(protection),
+            Some(attempt),
         )
     }
 
@@ -569,7 +646,7 @@ where
         hardware: &mut H,
         plan: OrdinaryTxPlan,
         retry_rate_policy: OrdinaryRetryRatePolicy,
-        single_attempt: Option<SingleAttemptProtection>,
+        single_attempt: Option<SingleAttempt>,
     ) -> Result<WifiTxProgress, OrdinaryTxError> {
         if self.active.is_some() {
             return Err(OrdinaryTxError::Busy);
@@ -602,7 +679,8 @@ where
                 .try_into()
                 .expect("an encoded MPDU carries Address 1");
             let receiver = TxReceiver::from_address1(&address1);
-            let response = if receiver == TxReceiver::Group {
+            let no_ack = single_attempt.is_some_and(|attempt| attempt.no_ack);
+            let response = if receiver == TxReceiver::Group || no_ack {
                 MacLegacyTxResponse::None
             } else if buffer[TX_METADATA_SIZE] == BLOCK_ACK_REQUEST_FRAME_CONTROL {
                 MacLegacyTxResponse::BlockAck
@@ -615,6 +693,14 @@ where
             && !matches!(plan.exchange.initial_rate, TxPhyRate::Legacy(_))
         {
             return Err(OrdinaryTxError::BlockAckRequestRate);
+        }
+        // Only the legacy program publishes the response field; an HT or HE
+        // publication of a unicast frame would still wait for its ACK.
+        if receiver == TxReceiver::Individual
+            && response == MacLegacyTxResponse::None
+            && !matches!(plan.exchange.initial_rate, TxPhyRate::Legacy(_))
+        {
+            return Err(OrdinaryTxError::Tx(TxError::Invalid));
         }
         let retry = OrdinaryMpduRetryState::new_with_rate_policy(
             LegacyTxQueue::from_access_category(plan.exchange.access_category),
@@ -903,7 +989,8 @@ where
                         },
                         attempts,
                         final_rate,
-                        acknowledged: (active.receiver == TxReceiver::Individual)
+                        acknowledged: (active.receiver == TxReceiver::Individual
+                            && active.response != MacLegacyTxResponse::None)
                             .then_some(success),
                         ack_snr_db: completion.ack_snr_sample(),
                         airtime_micros: None,
@@ -959,7 +1046,9 @@ where
                     result: MacTxResult::HardwareTimeout,
                     attempts,
                     final_rate,
-                    acknowledged: (active.receiver == TxReceiver::Individual).then_some(false),
+                    acknowledged: (active.receiver == TxReceiver::Individual
+                        && active.response != MacLegacyTxResponse::None)
+                        .then_some(false),
                     ack_snr_db: None,
                     airtime_micros: None,
                 },
@@ -1062,7 +1151,13 @@ where
         let queue = active.route.queue();
         let rate = active.retry.current_rate()?;
         let contention = self.policy.contention_parameters(queue);
-        let contention_window = self.policy.select_backoff(queue, self.entropy.next_u32());
+        let contention_window = match active.single_attempt {
+            Some(attempt) => attempt.backoff_slots,
+            None => self.policy.select_backoff(queue, self.entropy.next_u32()),
+        };
+        let ceiling = active
+            .single_attempt
+            .and_then(|attempt| attempt.power_ceiling_dbm);
         let psdu_length = u16::try_from(
             active
                 .frame_length
@@ -1080,8 +1175,9 @@ where
                 );
                 let mut config = LegacyTxConfig::management_1m(psdu_length);
                 config.rate = rate;
-                config.control = self.control_frame(TxPhyRate::Legacy(rate), decision);
-                config.data_power = self.power.power_pair(rate.code()).primary as u8;
+                config.control = self.control_frame(TxPhyRate::Legacy(rate), decision, ceiling);
+                config.data_power =
+                    capped_power(self.power.power_pair(rate.code()), ceiling).primary as u8;
                 config.aifsn = contention.aifsn();
                 config.contention_window = contention_window;
                 config.scheduler_priority = active.scheduler_priority;
@@ -1108,10 +1204,11 @@ where
                     .map_err(|_| OrdinaryTxError::BufferSizeOverflow)?;
                 let mut config = HtTxConfig::single_mpdu(rate, frame_length, mic_length)
                     .ok_or(OrdinaryTxError::BufferSizeOverflow)?;
-                let data_power = self.power.power_pair(rate.power_lookup_code());
+                let data_power =
+                    capped_power(self.power.power_pair(rate.power_lookup_code()), ceiling);
                 config.data_power_primary = data_power.primary as u8;
                 config.data_power_alternate = data_power.alternate as u8;
-                config.control = self.control_frame(TxPhyRate::Ht(rate), decision);
+                config.control = self.control_frame(TxPhyRate::Ht(rate), decision, ceiling);
                 config.protection_spacing = self.policy.ht_ampdu().protection_spacing();
                 config.aifsn = contention.aifsn();
                 config.contention_window = contention_window;
@@ -1142,10 +1239,11 @@ where
                     TxPhyRate::He(rate),
                     config.apep_length().into(),
                 );
-                let data_power = self.power.power_pair(rate.power_lookup_code());
+                let data_power =
+                    capped_power(self.power.power_pair(rate.power_lookup_code()), ceiling);
                 config.data_power_primary = data_power.primary as u8;
                 config.data_power_alternate = data_power.alternate as u8;
-                config.control = self.control_frame(TxPhyRate::He(rate), decision);
+                config.control = self.control_frame(TxPhyRate::He(rate), decision, ceiling);
                 config.aifsn = contention.aifsn();
                 config.contention_window = contention_window;
                 config.scheduler_priority = active.scheduler_priority;
@@ -1170,13 +1268,13 @@ where
 
     fn select_protection(
         &self,
-        single_attempt: Option<SingleAttemptProtection>,
+        single_attempt: Option<SingleAttempt>,
         receiver: TxReceiver,
         rate: TxPhyRate,
         psdu_length: u32,
     ) -> TxProtectionDecision {
         if let Some(chosen) = single_attempt {
-            let protection = match chosen {
+            let protection = match chosen.protection {
                 SingleAttemptProtection::None => TxProtection::None,
                 SingleAttemptProtection::RtsCts => TxProtection::RtsCts {
                     rate: self.policy.protection().control_rate(rate),
@@ -1199,8 +1297,13 @@ where
         })
     }
 
-    fn control_frame(&self, data: TxPhyRate, decision: TxProtectionDecision) -> TxControlFrame {
-        control_frame(&self.power, data, decision)
+    fn control_frame(
+        &self,
+        data: TxPhyRate,
+        decision: TxProtectionDecision,
+        ceiling: Option<i8>,
+    ) -> TxControlFrame {
+        capped_control_frame(&self.power, data, decision, ceiling)
     }
 
     fn reset_required(

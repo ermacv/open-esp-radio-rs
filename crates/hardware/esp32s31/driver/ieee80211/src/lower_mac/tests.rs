@@ -1,18 +1,19 @@
 use core::{future::ready, pin::Pin};
-use std::vec::Vec;
+use std::{boxed::Box, vec::Vec};
 
 use oer_esp32s31_hal::types::{
     MacCcmpKeyIdentity, MacHeTxProgram, MacHtAmpduCompletionObservation, MacHtTxProgram,
-    MacKeyInstallOutcome, MacLegacyTxProgram, MacStaApReceivePlan, MacTxCompletionObservation,
-    MacTxDetachOutcome, MacTxDetachReason, MacTxProtection, MacTxQueueDetached,
+    MacKeyInstallOutcome, MacLegacyTxProgram, MacLegacyTxResponse, MacStaApReceivePlan,
+    MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason, MacTxProtection,
+    MacTxQueueDetached,
 };
 use oer_esp32s31_ieee80211_mac::{
     irq::{EVENT_COLLISION, EVENT_TX_COMPLETE, EVENT_TX_TIMEOUT},
     rx::RxPhyInfo,
-    tx::{HardwareOwnedTxDma, PreparedTxDma, TxSlot, runtime::WifiTxRuntimePolicy},
+    tx::{HardwareOwnedTxDma, PreparedTxDma, runtime::WifiTxRuntimePolicy},
 };
 use oer_ieee80211_lower_mac::{
-    AmpduSubmission, HardwareServices, KeyInstall, LowerMacEvent, PhyRate, RxEvidence, TbttSchedule,
+    HardwareServices, LowerMacEvent, PhyRate, RxEvidence, TxAttempt, TxPayload,
 };
 use oer_ieee80211_mac::{
     channel::ChannelWidth,
@@ -29,9 +30,16 @@ const STATION: MacAddress = [0x02, 0x03, 0x04, 0x05, 0x06, 0x07];
 const ACCESS_POINT: MacAddress = [0x02, 0x11, 0x12, 0x13, 0x14, 0x15];
 const BSSID: MacAddress = [0x20, 0x21, 0x22, 0x23, 0x24, 0x25];
 const PEER: MacAddress = [0x30, 0x31, 0x32, 0x33, 0x34, 0x35];
+const OTHER_BSS: MacAddress = [0x40, 0x41, 0x42, 0x43, 0x44, 0x45];
 const STA: VifId = VifId(0);
 const AP: VifId = VifId(1);
 const TIMEOUT: u64 = 250_000;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StationPolicy {
+    Link(MacAddress),
+    OtherBss(MacAddress),
+}
 
 #[derive(Default)]
 struct Hardware {
@@ -46,12 +54,16 @@ struct Hardware {
     cleared_keys: Vec<u8>,
     rx_block_acks: Vec<S31RxBlockAckAgreement>,
     cleared_rx_block_acks: Vec<u8>,
-    station_policy: Option<MacAddress>,
+    station_policy: Option<StationPolicy>,
     station_disabled: usize,
     access_point_policy: Option<MacAddress>,
     access_point_disabled: usize,
     access_point_tsf_resets: usize,
+    promiscuous: bool,
     station_tsf: u64,
+    tbtt: Option<StaTbttSchedule>,
+    tbtt_stops: usize,
+    tx_blocked: bool,
 }
 
 impl Hardware {
@@ -225,7 +237,23 @@ impl StaApRegisterHardware for Hardware {
 
 impl StaLinkRxPolicyHardware for Hardware {
     fn apply_sta_link_policy(&mut self, bssid: [u8; 6]) {
-        self.station_policy = Some(bssid);
+        self.station_policy = Some(StationPolicy::Link(bssid));
+    }
+}
+
+impl StaEspNowRxPolicyHardware for Hardware {
+    fn apply_sta_esp_now_policy(&mut self, bssid: [u8; 6]) {
+        self.station_policy = Some(StationPolicy::OtherBss(bssid));
+    }
+}
+
+impl MacSnifferHardware for Hardware {
+    fn configure_open_promiscuous_receive(&mut self) {
+        self.promiscuous = true;
+    }
+
+    fn disable_open_promiscuous_receive(&mut self) {
+        self.promiscuous = false;
     }
 }
 
@@ -257,6 +285,23 @@ impl StationTsfHardware for Hardware {
 
     fn set_station_tsf(&mut self, value: u64) {
         self.station_tsf = value;
+    }
+}
+
+impl StationTbttHardware for Hardware {
+    fn start_station_tbtt(&mut self, schedule: StaTbttSchedule) {
+        self.tbtt = Some(schedule);
+    }
+
+    fn stop_station_tbtt(&mut self) {
+        self.tbtt = None;
+        self.tbtt_stops += 1;
+    }
+}
+
+impl TxGateHardware for Hardware {
+    fn set_power_save_tx_block(&mut self, blocked: bool) {
+        self.tx_blocked = blocked;
     }
 }
 
@@ -296,12 +341,15 @@ fn entropy() -> u32 {
     0x1234_5678
 }
 
-type Core<'a> = LowerMacCore<'a, Power, fn() -> u32, Timer, 512>;
+const SPARE: usize = 2;
+
+type Core = LowerMacCore<'static, Power, fn() -> u32, Timer, 512, SPARE>;
 
 #[derive(Default)]
 struct Events {
     completions: Vec<TxCompletion>,
     lifecycle: Vec<LifecycleEvent>,
+    tbtts: Vec<TbttEvent>,
 }
 
 impl LowerMacSink for Events {
@@ -312,21 +360,31 @@ impl LowerMacSink for Events {
     fn lifecycle(&mut self, event: LifecycleEvent) {
         self.lifecycle.push(event);
     }
+
+    fn tbtt(&mut self, event: TbttEvent) {
+        self.tbtts.push(event);
+    }
 }
 
 fn channel(number: u8) -> WifiChannel {
     WifiChannel::mhz20(number).unwrap()
 }
 
-fn core(slot: Pin<&mut TxSlot<512>>) -> Core<'_> {
+/// A model slot in permanently retained storage, as target SRAM is.
+fn slot() -> Pin<&'static mut TxSlot<512>> {
+    Pin::static_mut(Box::leak(Box::new(TxSlot::new_model())))
+}
+
+fn core() -> Core {
     LowerMacCore::new(
         OrdinaryTxOwner::new(WifiTxResources {
-            slot,
+            slot: slot(),
             policy: WifiTxRuntimePolicy::vendor_defaults(),
             power: Power,
             entropy: entropy as fn() -> u32,
             timer: Timer::default(),
         }),
+        [slot(), slot()],
         LowerMacConfig {
             station_address: STATION,
             channel: channel(6),
@@ -354,8 +412,8 @@ fn access_point() -> VifConfig {
 }
 
 /// An enabled core with a station interface on channel 6.
-fn enabled<'a>(slot: Pin<&'a mut TxSlot<512>>, hardware: &mut Hardware) -> Core<'a> {
-    let mut core = core(slot);
+fn enabled(hardware: &mut Hardware) -> Core {
+    let mut core = core();
     assert_eq!(
         core.apply(
             hardware,
@@ -386,20 +444,40 @@ fn data_frame(receiver: MacAddress) -> [u8; 26] {
     frame
 }
 
-fn attempt(id: u32, frame: &[u8]) -> TxAttempt<'_> {
+/// An attempt carrying `frame` in a slot the core lends.
+fn attempt(core: &mut Core, id: u32, frame: &[u8]) -> Esp32s31MpduAttempt<'static, 512> {
+    let mut buffer = core.tx_buffer(frame.len()).expect("a spare slot");
+    buffer.frame_mut().copy_from_slice(frame);
     TxAttempt {
         id: TxId(id),
         vif: STA,
         access_category: WmmAccessCategory::BestEffort,
-        payload: TxPayload::Mpdu {
-            frame,
+        payload: TxPayload {
+            frame: buffer,
             response: TxResponse::Ack,
         },
         rate: PhyRate::Legacy(LegacyRate::Ofdm24M),
         protection: Protection::None,
         key: KeySelector::Plaintext,
         power: TxPower::Calibrated,
+        backoff: Backoff::Slots(7),
+        coex: CoexPriority::Normal,
     }
+}
+
+/// Submit and hand a refused attempt's slot back to the core.
+fn submit(
+    core: &mut Core,
+    hardware: &mut Hardware,
+    attempt: Esp32s31MpduAttempt<'static, 512>,
+) -> Result<Result<(), SubmitError>, LowerMacFault> {
+    Ok(match core.submit(hardware, attempt)? {
+        Ok(()) => Ok(()),
+        Err(refused) => {
+            core.release_tx_buffer(refused.attempt.payload.frame);
+            Err(refused.error)
+        }
+    })
 }
 
 fn interrupt(events: u32) -> WifiTxWake {
@@ -407,12 +485,12 @@ fn interrupt(events: u32) -> WifiTxWake {
 }
 
 /// Deliver a completion with `status` and return the completion event.
-fn complete(core: &mut Core<'_>, hardware: &mut Hardware, status: u8) -> Vec<TxCompletion> {
+fn complete(core: &mut Core, hardware: &mut Hardware, status: u8) -> Vec<TxCompletion> {
     complete_with(core, hardware, status, 0)
 }
 
 fn complete_with(
-    core: &mut Core<'_>,
+    core: &mut Core,
     hardware: &mut Hardware,
     status: u8,
     detail: u8,
@@ -424,9 +502,14 @@ fn complete_with(
     events.completions
 }
 
+fn spare_slots(core: &Core) -> usize {
+    core.spare.iter().flatten().count()
+}
+
 #[test]
-fn capabilities_are_the_s31_mac_services_on_2_4_ghz() {
-    let caps = ESP32S31_LOWER_MAC_CAPABILITIES;
+fn capabilities_are_the_s31_limits_on_2_4_ghz() {
+    let caps = esp32s31_lower_mac_capabilities(512);
+    assert_eq!(caps, core().capabilities());
     assert_eq!(
         caps.services,
         ESP32S31_MAC_SERVICE_CAPABILITIES
@@ -435,22 +518,41 @@ fn capabilities_are_the_s31_mac_services_on_2_4_ghz() {
     );
     assert!(caps.services.contains(HardwareServices::FCS));
     assert!(!caps.services.contains(HardwareServices::RETRY_POLICY));
+    assert!(!caps.services.contains(HardwareServices::BACKOFF_DRAW));
     assert!(caps.supports_channel(Channel::ghz2_4(6, ChannelWidth::Mhz40Above).unwrap()));
     assert!(!caps.supports_channel(Channel::ghz5(36, ChannelWidth::Mhz20).unwrap()));
     assert_eq!(caps.vifs, 2);
-    assert_eq!(caps.max_ampdu_subframes, 0);
+    assert_eq!(caps.tx_queues, 1);
+    // Metadata word, MPDU, MIC and FCS fill the slot.
+    assert_eq!(
+        usize::from(caps.max_mpdu_length) + TX_METADATA_SIZE + TX_CCMP_MIC_SIZE + TX_FCS_SIZE,
+        512
+    );
+    assert_eq!(caps.max_backoff_slots, 1023);
+    assert!(caps.coex_priorities.contains(CoexPriority::Normal));
+    assert!(!caps.coex_priorities.contains(CoexPriority::Elevated));
+    assert!(
+        caps.individual_no_ack
+            .contains_rate(PhyRate::Legacy(LegacyRate::Ofdm6M))
+    );
+    assert_eq!(caps.access_point_receive_filters, ReceiveFilter::BSS_MEMBER);
     assert_eq!(usize::from(caps.key_slots), LOWER_MAC_KEY_SLOTS);
     assert_eq!(caps.rx_block_ack_agreements, RESOURCES.rx_block_ack_entries);
 }
 
 #[test]
-fn an_attempt_is_one_publication_and_its_success_is_reported() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+fn an_attempt_is_published_from_the_slot_it_was_written_in() {
     let mut hardware = Hardware::default();
-    let mut core = enabled(slot.as_mut(), &mut hardware);
+    let mut core = enabled(&mut hardware);
     let frame = data_frame(BSSID);
 
-    assert_eq!(core.submit(&mut hardware, attempt(1, &frame)), Ok(Ok(())));
+    let request = attempt(&mut core, 1, &frame);
+    let lent = request.payload.frame.slot.as_ref().buffer_address();
+    assert_eq!(spare_slots(&core), SPARE - 1);
+    assert_eq!(submit(&mut core, &mut hardware, request), Ok(Ok(())));
+    // The owner publishes the lent slot; its previous slot is now a spare.
+    assert_eq!(core.tx.slot.as_ref().buffer_address(), lent);
+    assert_eq!(spare_slots(&core), SPARE);
     assert_eq!(hardware.legacy.len(), 1);
     assert_eq!(hardware.legacy[0].1.interface(), MacInterface::Station);
     assert_eq!(core.next_deadline_micros(), Some(TIMEOUT));
@@ -467,14 +569,70 @@ fn an_attempt_is_one_publication_and_its_success_is_reported() {
         }]
     );
     assert_eq!(core.next_deadline_micros(), None);
-    assert_eq!(core.submit(&mut hardware, attempt(2, &frame)), Ok(Ok(())));
+    let next = attempt(&mut core, 2, &frame);
+    assert_eq!(submit(&mut core, &mut hardware, next), Ok(Ok(())));
+}
+
+#[test]
+fn buffers_are_bounded_and_a_released_one_is_lent_again() {
+    let mut core = core();
+    let longest = usize::from(core.capabilities().max_mpdu_length);
+    assert!(core.tx_buffer(longest + 1).is_none());
+    let first = core.tx_buffer(longest).unwrap();
+    let second = core.tx_buffer(24).unwrap();
+    assert!(core.tx_buffer(24).is_none());
+    core.release_tx_buffer(first);
+    core.release_tx_buffer(second);
+    assert_eq!(spare_slots(&core), SPARE);
+    assert!(core.tx_buffer(24).is_some());
+}
+
+#[test]
+fn the_callers_backoff_is_counted_down_instead_of_a_draw() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    let frame = data_frame(BSSID);
+    for (id, slots) in [(1, 0), (2, 700), (3, 1023)] {
+        let mut request = attempt(&mut core, id, &frame);
+        request.backoff = Backoff::Slots(slots);
+        submit(&mut core, &mut hardware, request).unwrap().unwrap();
+        assert_eq!(hardware.legacy.last().unwrap().1.contention_window(), slots);
+        assert_eq!(core.tx().work().backoff_slots, u32::from(slots));
+        complete(&mut core, &mut hardware, 5);
+    }
+}
+
+#[test]
+fn a_power_ceiling_bounds_the_data_and_the_control_frame() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    let frame = data_frame(BSSID);
+    // The profile's calibrated codes are 5 and 6.
+    for (id, power, data, control) in [
+        (1, TxPower::Calibrated, 5, (5, 6)),
+        (2, TxPower::MaxDbm(3), 3, (3, 3)),
+        (3, TxPower::MaxDbm(10), 5, (5, 6)),
+        (4, TxPower::MaxDbm(0), 0, (0, 0)),
+    ] {
+        let mut request = attempt(&mut core, id, &frame);
+        request.power = power;
+        request.protection = Protection::RtsCts;
+        submit(&mut core, &mut hardware, request).unwrap().unwrap();
+        let program = hardware.legacy.last().unwrap().1;
+        assert_eq!(program.data_power(), data);
+        let control_frame = program.control();
+        assert_eq!(
+            (control_frame.power_primary, control_frame.power_alternate),
+            control
+        );
+        complete(&mut core, &mut hardware, 0);
+    }
 }
 
 #[test]
 fn an_unacknowledged_attempt_is_reported_and_never_published_again() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware::default();
-    let mut core = enabled(slot.as_mut(), &mut hardware);
+    let mut core = enabled(&mut hardware);
     let frame = data_frame(BSSID);
 
     // ACK timeout, CTS timeout and a collision completion each end the
@@ -487,7 +645,8 @@ fn an_unacknowledged_attempt_is_reported_and_never_published_again() {
         (4, 4, 0xc0, TxStatus::Fault(TxFault::KeyUnavailable)),
     ] {
         let published = hardware.publications();
-        assert_eq!(core.submit(&mut hardware, attempt(id, &frame)), Ok(Ok(())));
+        let request = attempt(&mut core, id, &frame);
+        assert_eq!(submit(&mut core, &mut hardware, request), Ok(Ok(())));
         let completions = complete_with(&mut core, &mut hardware, status, detail);
         assert_eq!(completions.len(), 1);
         assert_eq!(completions[0].id, TxId(id));
@@ -501,14 +660,12 @@ fn an_unacknowledged_attempt_is_reported_and_never_published_again() {
 
 #[test]
 fn a_collision_detach_ends_the_attempt() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware::default();
-    let mut core = enabled(slot.as_mut(), &mut hardware);
+    let mut core = enabled(&mut hardware);
     let frame = data_frame(BSSID);
 
-    core.submit(&mut hardware, attempt(7, &frame))
-        .unwrap()
-        .unwrap();
+    let request = attempt(&mut core, 7, &frame);
+    submit(&mut core, &mut hardware, request).unwrap().unwrap();
     hardware.collision_pending = true;
     let mut events = Events::default();
     core.service(&mut hardware, interrupt(EVENT_COLLISION), &mut events)
@@ -520,14 +677,12 @@ fn a_collision_detach_ends_the_attempt() {
 
 #[test]
 fn a_hardware_timeout_ends_the_attempt_as_aborted() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware::default();
-    let mut core = enabled(slot.as_mut(), &mut hardware);
+    let mut core = enabled(&mut hardware);
     let frame = data_frame(BSSID);
 
-    core.submit(&mut hardware, attempt(3, &frame))
-        .unwrap()
-        .unwrap();
+    let request = attempt(&mut core, 3, &frame);
+    submit(&mut core, &mut hardware, request).unwrap().unwrap();
     hardware.timeout_pending = true;
     let mut events = Events::default();
     core.service(&mut hardware, interrupt(EVENT_TX_TIMEOUT), &mut events)
@@ -544,19 +699,19 @@ fn a_hardware_timeout_ends_the_attempt_as_aborted() {
 
 #[test]
 fn a_block_ack_request_reports_its_block_ack() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware::default();
-    let mut core = enabled(slot.as_mut(), &mut hardware);
+    let mut core = enabled(&mut hardware);
     let mut frame = [0; 24];
     frame[0] = BLOCK_ACK_REQUEST_FRAME_CONTROL;
     frame[4..10].copy_from_slice(&BSSID);
-    let mut request = attempt(4, &frame);
-    request.payload = TxPayload::Mpdu {
-        frame: &frame,
-        response: TxResponse::BlockAck,
-    };
+    let mut request = attempt(&mut core, 4, &frame);
+    request.payload.response = TxResponse::BlockAck;
 
-    core.submit(&mut hardware, request).unwrap().unwrap();
+    submit(&mut core, &mut hardware, request).unwrap().unwrap();
+    assert_eq!(
+        hardware.legacy[0].1.response(),
+        MacLegacyTxResponse::BlockAck
+    );
     hardware.block_ack_completion = Some(MacHtAmpduCompletionObservation::new_model(
         MacTxCompletionObservation::new_model(0, 0),
         0,
@@ -576,21 +731,21 @@ fn a_block_ack_request_reports_its_block_ack() {
     );
 
     // A BlockAckReq at an HT rate has no single-frame BlockAck program.
-    request.id = TxId(5);
+    let mut request = attempt(&mut core, 5, &frame);
+    request.payload.response = TxResponse::BlockAck;
     request.rate = PhyRate::Ht(
         phy::HtRate::new(phy::HtMcs::new(0).unwrap(), PpduBandwidth::Mhz20, false).unwrap(),
     );
     assert_eq!(
-        core.submit(&mut hardware, request),
+        submit(&mut core, &mut hardware, request),
         Ok(Err(SubmitError::UnsupportedRate))
     );
 }
 
 #[test]
 fn ht_and_he_attempts_use_their_programs_and_unsendable_rates_are_refused() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware::default();
-    let mut core = enabled(slot.as_mut(), &mut hardware);
+    let mut core = enabled(&mut hardware);
     let frame = data_frame(BSSID);
     let ht = |mcs, bandwidth| {
         PhyRate::Ht(phy::HtRate::new(phy::HtMcs::new(mcs).unwrap(), bandwidth, true).unwrap())
@@ -609,15 +764,19 @@ fn ht_and_he_attempts_use_their_programs_and_unsendable_rates_are_refused() {
         )
     };
 
-    let mut ht_attempt = attempt(1, &frame);
+    let mut ht_attempt = attempt(&mut core, 1, &frame);
     ht_attempt.rate = ht(7, PpduBandwidth::Mhz20);
-    core.submit(&mut hardware, ht_attempt).unwrap().unwrap();
+    submit(&mut core, &mut hardware, ht_attempt)
+        .unwrap()
+        .unwrap();
     assert_eq!(hardware.ht.len(), 1);
     complete(&mut core, &mut hardware, 0);
 
-    let mut he_attempt = attempt(2, &frame);
+    let mut he_attempt = attempt(&mut core, 2, &frame);
     he_attempt.rate = he(1, PpduBandwidth::Mhz20);
-    core.submit(&mut hardware, he_attempt).unwrap().unwrap();
+    submit(&mut core, &mut hardware, he_attempt)
+        .unwrap()
+        .unwrap();
     assert_eq!(hardware.he.len(), 1);
     complete(&mut core, &mut hardware, 0);
 
@@ -629,10 +788,10 @@ fn ht_and_he_attempts_use_their_programs_and_unsendable_rates_are_refused() {
         he(2, PpduBandwidth::Mhz20),
         he(1, PpduBandwidth::Mhz40),
     ] {
-        let mut refused = attempt(3, &frame);
+        let mut refused = attempt(&mut core, 3, &frame);
         refused.rate = rate;
         assert_eq!(
-            core.submit(&mut hardware, refused),
+            submit(&mut core, &mut hardware, refused),
             Ok(Err(SubmitError::UnsupportedRate))
         );
     }
@@ -641,9 +800,8 @@ fn ht_and_he_attempts_use_their_programs_and_unsendable_rates_are_refused() {
 
 #[test]
 fn the_callers_protection_is_published() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware::default();
-    let mut core = enabled(slot.as_mut(), &mut hardware);
+    let mut core = enabled(&mut hardware);
     let frame = data_frame(BSSID);
 
     for (id, protection, expected) in [
@@ -651,9 +809,9 @@ fn the_callers_protection_is_published() {
         (2, Protection::CtsToSelf, MacTxProtection::CtsToSelf),
         (3, Protection::None, MacTxProtection::None),
     ] {
-        let mut request = attempt(id, &frame);
+        let mut request = attempt(&mut core, id, &frame);
         request.protection = protection;
-        core.submit(&mut hardware, request).unwrap().unwrap();
+        submit(&mut core, &mut hardware, request).unwrap().unwrap();
         assert_eq!(
             hardware.legacy.last().unwrap().1.control().protection,
             expected
@@ -663,16 +821,15 @@ fn the_callers_protection_is_published() {
 }
 
 #[test]
-fn submissions_the_backend_cannot_send_are_refused_without_publication() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+fn submissions_outside_the_limits_are_refused_without_publication() {
     let mut hardware = Hardware::default();
-    let mut core = core(slot.as_mut());
+    let mut core = core();
     let frame = data_frame(BSSID);
     let group = data_frame([0xff; 6]);
-    let subframes: [&[u8]; 1] = [&frame];
 
+    let request = attempt(&mut core, 1, &frame);
     assert_eq!(
-        core.submit(&mut hardware, attempt(1, &frame)),
+        submit(&mut core, &mut hardware, request),
         Ok(Err(SubmitError::Disabled))
     );
     core.apply(
@@ -687,76 +844,108 @@ fn submissions_the_backend_cannot_send_are_refused_without_publication() {
     core.lifecycle(LifecycleCommand::Enable, &mut Events::default())
         .unwrap();
 
-    let mut unknown_vif = attempt(1, &frame);
-    unknown_vif.vif = AP;
-    let mut ampdu = attempt(1, &frame);
-    ampdu.payload = TxPayload::Ampdu(AmpduSubmission {
-        subframes: &subframes,
-        tid: 0,
-        min_mpdu_start_spacing: 0,
-    });
-    let mut limited = attempt(1, &frame);
-    limited.power = TxPower::MaxDbm(10);
-    let mut no_ack = attempt(1, &frame);
-    no_ack.payload = TxPayload::Mpdu {
-        frame: &frame,
-        response: TxResponse::None,
-    };
-    let mut group_ack = attempt(1, &group);
-    group_ack.payload = TxPayload::Mpdu {
-        frame: &group,
-        response: TxResponse::Ack,
-    };
-    let short = attempt(1, &frame[..9]);
-    let long_frame = [0; 512];
-    let mut long = attempt(1, &long_frame);
-    long.payload = TxPayload::Mpdu {
-        frame: &long_frame,
-        response: TxResponse::None,
-    };
-    let mut unknown_key = attempt(1, &frame);
-    unknown_key.key = KeySelector::Key(KeyHandle(0));
-
-    for (request, expected) in [
-        (unknown_vif, SubmitError::UnknownVif),
-        (ampdu, SubmitError::Unsupported),
-        (limited, SubmitError::Unsupported),
-        (no_ack, SubmitError::Unsupported),
-        (group_ack, SubmitError::Unsupported),
-        (short, SubmitError::InvalidLength),
-        (long, SubmitError::InvalidLength),
-        (unknown_key, SubmitError::UnknownKey),
-    ] {
-        assert_eq!(core.submit(&mut hardware, request), Ok(Err(expected)));
+    let ht = PhyRate::Ht(
+        phy::HtRate::new(phy::HtMcs::new(0).unwrap(), PpduBandwidth::Mhz20, false).unwrap(),
+    );
+    let refusals: [(
+        &[u8],
+        fn(&mut Esp32s31MpduAttempt<'static, 512>),
+        SubmitError,
+    ); 10] = [
+        (&frame, |request| request.vif = AP, SubmitError::UnknownVif),
+        (
+            &frame,
+            |request| request.backoff = Backoff::HardwareDraw { cw_exponent: 4 },
+            SubmitError::Unsupported,
+        ),
+        (
+            &frame,
+            |request| request.backoff = Backoff::Slots(1024),
+            SubmitError::Unsupported,
+        ),
+        (
+            &frame,
+            |request| request.power = TxPower::MaxDbm(-1),
+            SubmitError::Unsupported,
+        ),
+        (
+            &frame,
+            |request| request.coex = CoexPriority::Elevated,
+            SubmitError::Unsupported,
+        ),
+        (&group, |_| {}, SubmitError::Unsupported),
+        (&frame[..9], |_| {}, SubmitError::InvalidLength),
+        (
+            &frame,
+            |request| request.key = KeySelector::Key(KeyHandle(0)),
+            SubmitError::UnknownKey,
+        ),
+        (
+            &frame,
+            |request| request.payload.response = TxResponse::BlockAck,
+            SubmitError::Unsupported,
+        ),
+        (&frame, |_| {}, SubmitError::Busy),
+    ];
+    for (index, (bytes, mutate, expected)) in refusals.into_iter().enumerate() {
+        if expected == SubmitError::Busy {
+            let first = attempt(&mut core, 100, &frame);
+            submit(&mut core, &mut hardware, first).unwrap().unwrap();
+            let duplicate = attempt(&mut core, 100, &frame);
+            assert_eq!(
+                submit(&mut core, &mut hardware, duplicate),
+                Ok(Err(SubmitError::DuplicateId))
+            );
+        }
+        let mut request = attempt(&mut core, index as u32, bytes);
+        mutate(&mut request);
+        assert_eq!(
+            submit(&mut core, &mut hardware, request),
+            Ok(Err(expected)),
+            "refusal {index}"
+        );
+        assert_eq!(
+            hardware.publications(),
+            usize::from(expected == SubmitError::Busy)
+        );
     }
-    assert_eq!(hardware.publications(), 0);
+    // A unicast frame without acknowledgement only at a legacy rate.
+    complete(&mut core, &mut hardware, 0);
+    let mut no_ack = attempt(&mut core, 200, &frame);
+    no_ack.payload.response = TxResponse::None;
+    no_ack.rate = ht;
+    assert_eq!(
+        submit(&mut core, &mut hardware, no_ack),
+        Ok(Err(SubmitError::Unsupported))
+    );
+    // Every refused slot came back.
+    assert_eq!(spare_slots(&core), SPARE);
+}
 
-    core.submit(&mut hardware, attempt(1, &frame))
-        .unwrap()
-        .unwrap();
+#[test]
+fn a_legacy_unicast_frame_is_sent_without_acknowledgement_on_request() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    let frame = data_frame(BSSID);
+    let mut request = attempt(&mut core, 1, &frame);
+    request.payload.response = TxResponse::None;
+    submit(&mut core, &mut hardware, request).unwrap().unwrap();
+    assert_eq!(hardware.legacy[0].1.response(), MacLegacyTxResponse::None);
     assert_eq!(
-        core.submit(&mut hardware, attempt(1, &frame)),
-        Ok(Err(SubmitError::DuplicateId))
+        complete(&mut core, &mut hardware, 0)[0].status,
+        TxStatus::Success
     );
-    assert_eq!(
-        core.submit(&mut hardware, attempt(2, &frame)),
-        Ok(Err(SubmitError::Busy))
-    );
-    assert_eq!(hardware.publications(), 1);
 }
 
 #[test]
 fn a_group_frame_solicits_no_response() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware::default();
-    let mut core = enabled(slot.as_mut(), &mut hardware);
+    let mut core = enabled(&mut hardware);
     let frame = data_frame([0xff; 6]);
-    let mut request = attempt(1, &frame);
-    request.payload = TxPayload::Mpdu {
-        frame: &frame,
-        response: TxResponse::None,
-    };
-    assert_eq!(core.submit(&mut hardware, request), Ok(Ok(())));
+    let mut request = attempt(&mut core, 1, &frame);
+    request.payload.response = TxResponse::None;
+    assert_eq!(submit(&mut core, &mut hardware, request), Ok(Ok(())));
+    assert_eq!(hardware.legacy[0].1.response(), MacLegacyTxResponse::None);
     assert_eq!(
         complete(&mut core, &mut hardware, 0)[0].status,
         TxStatus::Success
@@ -765,9 +954,8 @@ fn a_group_frame_solicits_no_response() {
 
 #[test]
 fn channels_outside_2_4_ghz_are_refused_and_enable_retunes() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware::default();
-    let mut core = core(slot.as_mut());
+    let mut core = core();
     let mut events = Events::default();
 
     assert_eq!(
@@ -791,7 +979,7 @@ fn channels_outside_2_4_ghz_are_refused_and_enable_retunes() {
         core.lifecycle(LifecycleCommand::Enable, &mut events),
         Err(LifecycleError::AlreadyInState)
     );
-    core.finish_retune(true, &mut events).unwrap();
+    core.finish_retune(true, &mut events);
     assert_eq!(events.lifecycle, [LifecycleEvent::Enabled]);
     assert_eq!(core.channel(), eleven);
 
@@ -818,10 +1006,9 @@ fn channels_outside_2_4_ghz_are_refused_and_enable_retunes() {
 }
 
 #[test]
-fn a_failed_retune_poisons_and_leaves_the_port_disabled() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+fn a_failed_retune_fails_enable_recoverably_and_leaves_the_port_disabled() {
     let mut hardware = Hardware::default();
-    let mut core = core(slot.as_mut());
+    let mut core = core();
     let mut events = Events::default();
     core.apply(
         &mut hardware,
@@ -831,60 +1018,76 @@ fn a_failed_retune_poisons_and_leaves_the_port_disabled() {
     .unwrap();
     core.lifecycle(LifecycleCommand::Enable, &mut events)
         .unwrap();
+    core.finish_retune(false, &mut events);
     assert_eq!(
-        core.finish_retune(false, &mut events),
-        Err(LowerMacFault::Retune)
+        events.lifecycle,
+        [LifecycleEvent::Failed {
+            command: LifecycleCommand::Enable,
+            class: oer_ieee80211_lower_mac::FailureClass::Recoverable,
+        }]
     );
-    assert!(events.lifecycle.is_empty());
     assert_eq!(core.state, PortState::Disabled);
+    // The channel stays configured: the next Enable retunes again.
+    assert_eq!(
+        core.lifecycle(LifecycleCommand::Enable, &mut events),
+        Ok(LifecycleStart::Retune(channel(1)))
+    );
 }
 
 #[test]
-fn receive_filters_map_onto_the_role_policies() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+fn receive_filters_map_onto_the_smallest_superset_policy() {
     let mut hardware = Hardware::default();
-    let mut core = core(slot.as_mut());
-    let configure = |core: &mut Core<'_>, hardware: &mut Hardware, vif, config| {
+    let mut core = core();
+    let mut configure = |hardware: &mut Hardware, vif, config| {
         core.apply(hardware, LowerMacSetting::Vif { vif, config })
     };
 
-    configure(&mut core, &mut hardware, STA, Some(station()))
+    for (receive, bssid, expected) in [
+        (
+            ReceiveFilter::BSS_MEMBER,
+            Some(BSSID),
+            StationPolicy::Link(BSSID),
+        ),
+        // A subset of a policy's rules takes that policy.
+        (
+            ReceiveFilter::OWN_UNICAST,
+            Some(BSSID),
+            StationPolicy::Link(BSSID),
+        ),
+        (
+            ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
+            Some(BSSID),
+            StationPolicy::OtherBss(BSSID),
+        ),
+        // Scanning outside a BSS matches the broadcast BSSID.
+        (
+            ReceiveFilter::OTHER_BSS_MANAGEMENT,
+            None,
+            StationPolicy::OtherBss([0xff; 6]),
+        ),
+    ] {
+        configure(
+            &mut hardware,
+            STA,
+            Some(VifConfig {
+                receive,
+                bssid,
+                ..station()
+            }),
+        )
         .unwrap()
         .unwrap();
-    assert_eq!(hardware.station_policy, Some(BSSID));
-    configure(&mut core, &mut hardware, AP, Some(access_point()))
+        assert_eq!(hardware.station_policy, Some(expected));
+    }
+    configure(&mut hardware, AP, Some(access_point()))
         .unwrap()
         .unwrap();
     assert_eq!(hardware.access_point_policy, Some(ACCESS_POINT));
 
-    // Filters without a register transaction, a second station, a station
+    // Rules no policy provides a superset of, a second station, a station
     // address other than the published one and an access point whose BSSID
     // is not its address are refused before any register write.
     let refused = [
-        (
-            STA,
-            VifConfig {
-                receive: ReceiveFilter::PROMISCUOUS,
-                ..station()
-            },
-            SettingError::Unsupported,
-        ),
-        (
-            STA,
-            VifConfig {
-                receive: ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
-                ..station()
-            },
-            SettingError::Unsupported,
-        ),
-        (
-            STA,
-            VifConfig {
-                receive: ReceiveFilter::OWN_UNICAST,
-                ..station()
-            },
-            SettingError::Unsupported,
-        ),
         (
             STA,
             VifConfig {
@@ -904,6 +1107,14 @@ fn receive_filters_map_onto_the_role_policies() {
         (
             AP,
             VifConfig {
+                receive: ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
+                ..access_point()
+            },
+            SettingError::Unsupported,
+        ),
+        (
+            AP,
+            VifConfig {
                 bssid: Some(PEER),
                 ..access_point()
             },
@@ -914,16 +1125,18 @@ fn receive_filters_map_onto_the_role_policies() {
     ];
     for (vif, config, expected) in refused {
         assert_eq!(
-            configure(&mut core, &mut hardware, vif, Some(config)),
+            configure(&mut hardware, vif, Some(config)),
             Ok(Err(expected))
         );
     }
-    assert_eq!(hardware.station_policy, Some(BSSID));
+    assert_eq!(
+        hardware.station_policy,
+        Some(StationPolicy::OtherBss([0xff; 6]))
+    );
     assert_eq!(hardware.access_point_policy, Some(ACCESS_POINT));
 
     // No receive filter closes the role's context; removal closes it too.
     configure(
-        &mut core,
         &mut hardware,
         STA,
         Some(VifConfig {
@@ -935,21 +1148,134 @@ fn receive_filters_map_onto_the_role_policies() {
     .unwrap()
     .unwrap();
     assert_eq!(hardware.station_disabled, 1);
-    configure(&mut core, &mut hardware, AP, None)
-        .unwrap()
-        .unwrap();
+    configure(&mut hardware, AP, None).unwrap().unwrap();
     assert_eq!(hardware.access_point_disabled, 1);
     assert_eq!(
-        configure(&mut core, &mut hardware, AP, None),
+        configure(&mut hardware, AP, None),
         Ok(Err(SettingError::UnknownVif))
     );
 }
 
+fn normalized(mpdu: &[u8]) -> NormalizedRxFrame<'_> {
+    NormalizedRxFrame {
+        mpdu,
+        metadata: MacRxMetadata {
+            channel: MacRxEvidence::Unavailable,
+            rate: MacRxEvidence::<RxPhyInfo>::Unavailable,
+            rssi_dbm: MacRxEvidence::HardwareObserved(-42),
+            crypto: MacRxEvidence::Unavailable,
+            s_mpdu: MacRxEvidence::HardwareObserved(false),
+            ampdu: MacRxEvidence::Unavailable,
+            amsdu: MacRxEvidence::Unavailable,
+        },
+        logical_length: mpdu.len(),
+    }
+}
+
+/// A management frame of `subtype` in `bssid` to `receiver`.
+fn management(subtype: u8, receiver: MacAddress, bssid: MacAddress) -> [u8; 24] {
+    let mut frame = [0; 24];
+    frame[0] = subtype << 4;
+    frame[4..10].copy_from_slice(&receiver);
+    frame[10..16].copy_from_slice(&bssid);
+    frame[16..22].copy_from_slice(&bssid);
+    frame
+}
+
+#[test]
+fn received_frames_are_narrowed_to_the_requested_rules() {
+    let mut hardware = Hardware::default();
+    let mut core = core();
+    let unicast = data_frame(STATION);
+    let beacon = management(8, [0xff; 6], BSSID);
+    let other_beacon = management(8, [0xff; 6], OTHER_BSS);
+
+    assert!(core.received(&normalized(&unicast)).is_none());
+    // Unicast only: the link policy passes the BSS's beacons as well.
+    core.apply(
+        &mut hardware,
+        LowerMacSetting::Vif {
+            vif: STA,
+            config: Some(VifConfig {
+                receive: ReceiveFilter::OWN_UNICAST,
+                ..station()
+            }),
+        },
+    )
+    .unwrap()
+    .unwrap();
+    core.lifecycle(LifecycleCommand::Enable, &mut Events::default())
+        .unwrap();
+    let (bytes, meta) = core.received(&normalized(&unicast)).unwrap();
+    assert_eq!(bytes, unicast);
+    assert_eq!(meta.channel, Channel::from_wifi_channel(channel(6)));
+    assert_eq!(meta.rssi_dbm, RxEvidence::HardwareObserved(-42));
+    assert_eq!(meta.noise_floor_dbm, RxEvidence::Unavailable);
+    let view = LowerMacEvent::Received { frame: bytes, meta };
+    assert!(matches!(view, LowerMacEvent::Received { .. }));
+    assert!(core.received(&normalized(&beacon)).is_none());
+
+    // Scanning while joined: the ESP-NOW policy passes everything the
+    // filter names, and nothing else is delivered.
+    core.apply(
+        &mut hardware,
+        LowerMacSetting::Vif {
+            vif: STA,
+            config: Some(VifConfig {
+                receive: ReceiveFilter::OWN_BSS_BEACONS.union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
+                ..station()
+            }),
+        },
+    )
+    .unwrap()
+    .unwrap();
+    assert!(core.received(&normalized(&beacon)).is_some());
+    assert!(core.received(&normalized(&other_beacon)).is_some());
+    assert!(core.received(&normalized(&unicast)).is_none());
+}
+
+#[test]
+fn monitor_reception_runs_only_while_no_interface_receives() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    let other_beacon = management(8, [0xff; 6], OTHER_BSS);
+
+    assert_eq!(
+        core.set_monitor(&mut hardware, true),
+        Err(SettingError::Unsupported)
+    );
+    assert!(!hardware.promiscuous);
+    let quiet = LowerMacSetting::Vif {
+        vif: STA,
+        config: Some(VifConfig {
+            receive: ReceiveFilter::NONE,
+            ..station()
+        }),
+    };
+    core.apply(&mut hardware, quiet).unwrap().unwrap();
+    assert_eq!(core.set_monitor(&mut hardware, true), Ok(()));
+    assert!(hardware.promiscuous);
+    assert!(core.received(&normalized(&other_beacon)).is_some());
+    // An interface cannot start receiving under the promiscuous policy.
+    assert_eq!(
+        core.apply(
+            &mut hardware,
+            LowerMacSetting::Vif {
+                vif: STA,
+                config: Some(station()),
+            }
+        ),
+        Ok(Err(SettingError::Unsupported))
+    );
+    assert_eq!(core.set_monitor(&mut hardware, false), Ok(()));
+    assert!(!hardware.promiscuous);
+    assert!(core.received(&normalized(&other_beacon)).is_none());
+}
+
 #[test]
 fn keys_install_into_their_role_slots_and_protect_attempts() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware::default();
-    let mut core = enabled(slot.as_mut(), &mut hardware);
+    let mut core = enabled(&mut hardware);
     core.apply(
         &mut hardware,
         LowerMacSetting::Vif {
@@ -1009,9 +1335,11 @@ fn keys_install_into_their_role_slots_and_protect_attempts() {
     assert_eq!(hardware.installed_keys[1].0, 8);
 
     let frame = data_frame(BSSID);
-    let mut protected = attempt(1, &frame);
+    let mut protected = attempt(&mut core, 1, &frame);
     protected.key = KeySelector::Key(pairwise);
-    core.submit(&mut hardware, protected).unwrap().unwrap();
+    submit(&mut core, &mut hardware, protected)
+        .unwrap()
+        .unwrap();
     assert_eq!(hardware.legacy.len(), 1);
     // The attempt's key cannot go while the attempt is in flight.
     assert_eq!(
@@ -1028,10 +1356,10 @@ fn keys_install_into_their_role_slots_and_protect_attempts() {
         core.apply(&mut hardware, LowerMacSetting::RemoveKey(pairwise)),
         Ok(Err(SettingError::UnknownKey))
     );
-    let mut stale = attempt(2, &frame);
+    let mut stale = attempt(&mut core, 2, &frame);
     stale.key = KeySelector::Key(pairwise);
     assert_eq!(
-        core.submit(&mut hardware, stale),
+        submit(&mut core, &mut hardware, stale),
         Ok(Err(SubmitError::UnknownKey))
     );
 
@@ -1050,9 +1378,8 @@ fn keys_install_into_their_role_slots_and_protect_attempts() {
 
 #[test]
 fn receive_block_ack_agreements_use_the_ordinary_banks() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware::default();
-    let mut core = enabled(slot.as_mut(), &mut hardware);
+    let mut core = enabled(&mut hardware);
     let agreement = |tid, window| RxBlockAckAgreement {
         vif: STA,
         peer: BSSID,
@@ -1116,10 +1443,9 @@ fn receive_block_ack_agreements_use_the_ordinary_banks() {
 }
 
 #[test]
-fn the_station_tsf_is_set_and_read_and_the_access_point_tsf_only_resets() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+fn the_station_tsf_is_set_and_read_and_the_access_point_tsf_only_restarts() {
     let mut hardware = Hardware::default();
-    let mut core = enabled(slot.as_mut(), &mut hardware);
+    let mut core = enabled(&mut hardware);
     core.apply(
         &mut hardware,
         LowerMacSetting::Vif {
@@ -1129,84 +1455,145 @@ fn the_station_tsf_is_set_and_read_and_the_access_point_tsf_only_resets() {
     )
     .unwrap()
     .unwrap();
-    let set = |vif, tsf| LowerMacSetting::SetTsf { vif, tsf: Tsf(tsf) };
 
-    assert_eq!(core.apply(&mut hardware, set(STA, 123_456)), Ok(Ok(())));
+    assert_eq!(core.set_tsf(&mut hardware, STA, Tsf(123_456)), Ok(()));
     assert_eq!(core.tsf(&mut hardware, STA), Ok(Tsf(123_456)));
-    assert_eq!(core.apply(&mut hardware, set(AP, 0)), Ok(Ok(())));
+    assert_eq!(core.set_tsf(&mut hardware, AP, Tsf(0)), Ok(()));
     assert_eq!(hardware.access_point_tsf_resets, 1);
     assert_eq!(
-        core.apply(&mut hardware, set(AP, 5)),
-        Ok(Err(SettingError::Unsupported))
+        core.set_tsf(&mut hardware, AP, Tsf(5)),
+        Err(SettingError::Unsupported)
     );
     assert_eq!(core.tsf(&mut hardware, AP), Err(SettingError::Unsupported));
     assert_eq!(
         core.tsf(&mut hardware, VifId(2)),
         Err(SettingError::UnknownVif)
     );
+    let caps = ESP32S31_BEACON_TIMING_CAPABILITIES;
+    assert!(caps.tsf_restart.contains(VifRole::AccessPoint));
+    assert!(!caps.tsf_read.contains(VifRole::AccessPoint));
 }
 
 #[test]
-fn tbtt_reports_and_coexistence_hints_are_unsupported() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+fn the_station_tbtt_schedule_is_programmed_and_its_events_announce_the_next_tbtt() {
     let mut hardware = Hardware::default();
-    let mut core = enabled(slot.as_mut(), &mut hardware);
-    for setting in [
-        LowerMacSetting::Tbtt {
-            vif: STA,
-            schedule: Some(TbttSchedule {
-                beacon_interval_tu: 100,
-                next: Tsf(0),
-            }),
-        },
-        LowerMacSetting::CoexPriority(Default::default()),
+    let mut core = enabled(&mut hardware);
+    let schedule = TbttSchedule {
+        beacon_interval_tu: 100,
+        next: Tsf(1_000_000),
+        lead_micros: 3_000,
+    };
+    assert_eq!(core.set_tbtt(&mut hardware, STA, Some(schedule)), Ok(()));
+    assert_eq!(
+        hardware.tbtt,
+        Some(StaTbttSchedule {
+            first_tbtt_tsf: 1_000_000,
+            interval_micros: 102_400,
+            ahead_micros: 3_000,
+            wake_ahead_micros: 4_500,
+        })
+    );
+
+    let mut events = Events::default();
+    for (now, announced) in [
+        (997_000, 1_000_000),
+        (1_099_400, 1_102_400),
+        // A missed event does not shift the schedule.
+        (1_304_000, 1_307_200),
     ] {
+        hardware.station_tsf = now;
+        core.station_tbtt(&mut hardware, &mut events);
         assert_eq!(
-            core.apply(&mut hardware, setting),
-            Ok(Err(SettingError::Unsupported))
+            events.tbtts.pop(),
+            Some(TbttEvent {
+                vif: STA,
+                tsf: Tsf(announced)
+            })
         );
     }
+
+    for refused in [
+        TbttSchedule {
+            beacon_interval_tu: 0,
+            ..schedule
+        },
+        TbttSchedule {
+            lead_micros: u16::MAX,
+            ..schedule
+        },
+    ] {
+        assert_eq!(
+            core.set_tbtt(&mut hardware, STA, Some(refused)),
+            Err(SettingError::Unsupported)
+        );
+    }
+    core.apply(
+        &mut hardware,
+        LowerMacSetting::Vif {
+            vif: AP,
+            config: Some(access_point()),
+        },
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        core.set_tbtt(&mut hardware, AP, Some(schedule)),
+        Err(SettingError::Unsupported)
+    );
+
+    assert_eq!(core.set_tbtt(&mut hardware, STA, None), Ok(()));
+    assert_eq!(hardware.tbtt, None);
+    // A stale edge after the stop reports nothing.
+    core.station_tbtt(&mut hardware, &mut events);
+    assert!(events.tbtts.is_empty());
+
+    // Removing the station stops its schedule.
+    core.set_tbtt(&mut hardware, STA, Some(schedule)).unwrap();
+    core.apply(
+        &mut hardware,
+        LowerMacSetting::Vif {
+            vif: STA,
+            config: None,
+        },
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(hardware.tbtt, None);
+    assert_eq!(hardware.tbtt_stops, 2);
 }
 
 #[test]
-fn a_power_save_hold_keeps_the_attempt_unpublished_until_released() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+fn a_closed_gate_blocks_the_queues_and_holds_the_attempt_until_it_opens() {
     let mut hardware = Hardware::default();
-    let mut core = enabled(slot.as_mut(), &mut hardware);
+    let mut core = enabled(&mut hardware);
     let frame = data_frame(BSSID);
-    let hold = |peer, blocked| LowerMacSetting::PowerSaveTxBlock {
-        vif: STA,
-        peer,
-        blocked,
-    };
+    let gate = |open| LowerMacSetting::TxGate { open };
 
-    core.apply(&mut hardware, hold(Some(BSSID), true))
-        .unwrap()
-        .unwrap();
-    assert_eq!(core.submit(&mut hardware, attempt(1, &frame)), Ok(Ok(())));
+    core.apply(&mut hardware, gate(false)).unwrap().unwrap();
+    assert!(hardware.tx_blocked);
+    let request = attempt(&mut core, 1, &frame);
+    assert_eq!(submit(&mut core, &mut hardware, request), Ok(Ok(())));
     assert_eq!(hardware.publications(), 0);
     assert_eq!(core.next_deadline_micros(), None);
-    // Releasing another peer leaves the hold in place.
-    core.apply(&mut hardware, hold(Some(PEER), false))
-        .unwrap()
-        .unwrap();
-    assert_eq!(hardware.publications(), 0);
-    core.apply(&mut hardware, hold(Some(BSSID), false))
-        .unwrap()
-        .unwrap();
+    core.apply(&mut hardware, gate(true)).unwrap().unwrap();
+    assert!(!hardware.tx_blocked);
     assert_eq!(hardware.publications(), 1);
+    // A published attempt keeps the gate open: the blocked queue would
+    // end it with a hardware timeout.
+    assert_eq!(
+        core.apply(&mut hardware, gate(false)),
+        Ok(Err(SettingError::Busy))
+    );
+    assert!(!hardware.tx_blocked);
     assert_eq!(
         complete(&mut core, &mut hardware, 0)[0].status,
         TxStatus::Success
     );
 
     // Cancelling a held attempt ends it without a publication.
-    core.apply(&mut hardware, hold(None, true))
-        .unwrap()
-        .unwrap();
-    core.submit(&mut hardware, attempt(2, &frame))
-        .unwrap()
-        .unwrap();
+    core.apply(&mut hardware, gate(false)).unwrap().unwrap();
+    let request = attempt(&mut core, 2, &frame);
+    submit(&mut core, &mut hardware, request).unwrap().unwrap();
     let mut events = Events::default();
     assert_eq!(
         core.lifecycle(LifecycleCommand::Cancel(TxId(2)), &mut events),
@@ -1214,35 +1601,24 @@ fn a_power_save_hold_keeps_the_attempt_unpublished_until_released() {
     );
     assert_eq!(events.completions[0].status, TxStatus::Aborted);
     assert_eq!(hardware.publications(), 1);
-    assert_eq!(
-        core.apply(
-            &mut hardware,
-            LowerMacSetting::PowerSaveTxBlock {
-                vif: AP,
-                peer: None,
-                blocked: true
-            }
-        ),
-        Ok(Err(SettingError::UnknownVif))
-    );
+    assert_eq!(spare_slots(&core), SPARE);
 }
 
 #[test]
 fn quiesce_and_disable_end_after_the_published_attempt() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware::default();
-    let mut core = enabled(slot.as_mut(), &mut hardware);
+    let mut core = enabled(&mut hardware);
     let frame = data_frame(BSSID);
     let mut events = Events::default();
 
-    core.submit(&mut hardware, attempt(1, &frame))
-        .unwrap()
-        .unwrap();
+    let request = attempt(&mut core, 1, &frame);
+    submit(&mut core, &mut hardware, request).unwrap().unwrap();
     core.lifecycle(LifecycleCommand::Quiesce, &mut events)
         .unwrap();
     assert!(events.lifecycle.is_empty());
+    let request = attempt(&mut core, 2, &frame);
     assert_eq!(
-        core.submit(&mut hardware, attempt(2, &frame)),
+        submit(&mut core, &mut hardware, request),
         Ok(Err(SubmitError::Disabled))
     );
     // A published attempt cannot be withdrawn: the cancel is admitted and
@@ -1270,17 +1646,17 @@ fn quiesce_and_disable_end_after_the_published_attempt() {
         core.lifecycle(LifecycleCommand::Disable, &mut events),
         Err(LifecycleError::AlreadyInState)
     );
+    let request = attempt(&mut core, 2, &frame);
     assert_eq!(
-        core.submit(&mut hardware, attempt(2, &frame)),
+        submit(&mut core, &mut hardware, request),
         Ok(Err(SubmitError::Disabled))
     );
 }
 
 #[test]
 fn quiesce_without_an_attempt_ends_at_once_and_enable_resumes() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware::default();
-    let mut core = enabled(slot.as_mut(), &mut hardware);
+    let mut core = enabled(&mut hardware);
     let mut events = Events::default();
     core.lifecycle(LifecycleCommand::Quiesce, &mut events)
         .unwrap();
@@ -1291,45 +1667,4 @@ fn quiesce_without_an_attempt_ends_at_once_and_enable_resumes() {
         events.lifecycle,
         [LifecycleEvent::Quiesced, LifecycleEvent::Enabled]
     );
-}
-
-#[test]
-fn received_frames_carry_the_configured_channel_while_receiving() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
-    let mut hardware = Hardware::default();
-    let mut core = core(slot.as_mut());
-    let mpdu = data_frame(STATION);
-    let frame = NormalizedRxFrame {
-        mpdu: &mpdu,
-        metadata: MacRxMetadata {
-            channel: MacRxEvidence::Unavailable,
-            rate: MacRxEvidence::<RxPhyInfo>::Unavailable,
-            rssi_dbm: MacRxEvidence::HardwareObserved(-42),
-            crypto: MacRxEvidence::Unavailable,
-            s_mpdu: MacRxEvidence::HardwareObserved(false),
-            ampdu: MacRxEvidence::Unavailable,
-            amsdu: MacRxEvidence::Unavailable,
-        },
-        logical_length: mpdu.len(),
-    };
-
-    assert!(core.received(&frame).is_none());
-    core.apply(
-        &mut hardware,
-        LowerMacSetting::Vif {
-            vif: STA,
-            config: Some(station()),
-        },
-    )
-    .unwrap()
-    .unwrap();
-    core.lifecycle(LifecycleCommand::Enable, &mut Events::default())
-        .unwrap();
-    let (bytes, meta) = core.received(&frame).unwrap();
-    assert_eq!(bytes, mpdu);
-    assert_eq!(meta.channel, Channel::from_wifi_channel(channel(6)));
-    assert_eq!(meta.rssi_dbm, RxEvidence::HardwareObserved(-42));
-    assert_eq!(meta.noise_floor_dbm, RxEvidence::Unavailable);
-    let view = LowerMacEvent::Received { frame: bytes, meta };
-    assert!(matches!(view, LowerMacEvent::Received { .. }));
 }

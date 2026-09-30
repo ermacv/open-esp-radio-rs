@@ -1,31 +1,53 @@
 //! Sans-IO ESP32-S31 backend of the IEEE 802.11 lower-MAC port.
 //!
 //! [`LowerMacCore`] holds the state the port needs between calls (interfaces,
-//! installed keys, receive Block Ack banks, the one attempt in flight and the
-//! lifecycle state) and drives the existing ESP32-S31 register seams through
-//! a caller-supplied [`LowerMacHardware`]. It never waits: the runtime layer
-//! owns the event queue, the interrupt entry, the publication deadline and
-//! the asynchronous PHY retune an `Enable` needs, and implements
-//! `Ieee80211LowerMacPort` over this core.
+//! installed keys, receive Block Ack banks, the transmit buffers, the one
+//! attempt in flight and the lifecycle state) and drives the existing
+//! ESP32-S31 register seams through a caller-supplied [`LowerMacHardware`].
+//! It never waits: the runtime layer owns the event queue, the interrupt
+//! entries, the publication deadline and the asynchronous PHY retune an
+//! `Enable` needs, and implements `Ieee80211LowerMacPort` and the extensions
+//! the S31 has (`LowerMacBeaconTiming` for the station, `LowerMacMonitor`)
+//! over this core.
 //!
 //! # One submission, one publication
 //!
 //! An admitted MPDU is published through
 //! [`OrdinaryTxOwner::start_single_attempt`]: exactly one descriptor
-//! publication at the submitted rate with the caller's protection. Its
-//! completion, a collision detach or the hardware timeout abort ends the
-//! attempt; the owner's retry ladder, rate fallback and BSS protection
-//! selection are not applied on this path.
+//! publication at the submitted rate with the caller's protection, backoff
+//! and power ceiling. Its completion, a collision detach or the hardware
+//! timeout abort ends the attempt; the owner's retry ladder, rate fallback,
+//! backoff draw and BSS protection selection are not applied on this path.
 //!
-//! # What the ESP32-S31 does not do here
+//! # Transmit buffers
 //!
-//! A-MPDU attempts, per-attempt power limits, TBTT events, the access-point
-//! TSF other than its reset, coexistence priority hints and receive filters
-//! other than "nothing" and a BSS member's are refused as unsupported: the
-//! existing seams have no transaction for them. A published attempt cannot be
-//! withdrawn: the S31 abort path needs the queue's hardware timeout edge, so
-//! `Cancel` ends only an attempt the backend still holds.
+//! The port's buffers are ordinary TX slots ([`TxSlot`]): the pinned
+//! descriptor and source buffer the hardware reads. A lent buffer is a whole
+//! slot, the caller encodes the MPDU into its DMA buffer, and submission
+//! swaps that slot into the ordinary TX owner, so the frame is published
+//! where it was written. The owner's previous slot, idle, joins the spare
+//! slots. One slot is always the owner's; `TX_BUFFERS` spare slots are lent.
+//!
+//! # Limits
+//!
+//! One attempt is in flight at a time (`tx_queues` is one): a single
+//! ordinary TX owner serves every access category, whose EDCA parameters the
+//! attempt still contends with. The S31 draws its backoff in software, so
+//! only `Backoff::Slots` is accepted. Coexistence maps only
+//! `CoexPriority::Normal`, onto the static per-access-category priority of
+//! [`LegacyTxQueue::vendor_data_packet_priority`]; which arbitration events
+//! the other levels select is a pending policy decision. An individually
+//! addressed frame without acknowledgement is published at legacy rates
+//! only, the one program with a response field; hardware has not confirmed
+//! its on-air behaviour. A published attempt cannot be withdrawn: the S31
+//! abort path needs the queue's hardware timeout edge, so `Cancel` ends only
+//! an attempt the backend still holds, and there is no
+//! `LowerMacCancelPublished`. A-MPDU through the port and access-point TBTT
+//! schedules are not implemented; the qualification catalog records why.
 
+use core::pin::Pin;
+
+use oer_esp32s31_hal::types::StaTbttSchedule;
 use oer_esp32s31_ieee80211_mac::{
     MacInterface,
     ap_policy::ApRxPolicyHardware,
@@ -36,33 +58,36 @@ use oer_esp32s31_ieee80211_mac::{
         StaPairwiseCcmpSlot, install_ap_group_ccmp, install_ap_pairwise_ccmp,
         install_sta_group_ccmp, install_sta_pairwise_ccmp,
     },
-    init::StaLinkRxPolicyHardware,
+    init::{MacSnifferHardware, StaEspNowRxPolicyHardware, StaLinkRxPolicyHardware},
     portable,
     rx::{
         NormalizedRxFrame,
         hardware::{RxBlockAckHardware, S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
     },
     sta_ap_registers::StaApRegisterHardware,
-    tx::{LegacyTxQueue, TxHardware, TxPhyRate},
+    tx::{LegacyTxQueue, TxError, TxHardware, TxPhyRate, TxSlot, TxSlotState},
 };
 use oer_ieee80211_lower_mac::{
-    BandSet, BlockAckReport, Channel, Cipher, KeyHandle, KeyInstall, KeyScope, KeySelector,
-    LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacCapabilities, LowerMacSetting,
-    MacAddress, Protection, RateSupport, ReceiveFilter, RxBlockAckAgreement, RxMeta, SettingError,
-    SubmitError, Tsf, TxAttempt, TxCompletion, TxFault, TxId, TxPayload, TxPower, TxResponse,
-    TxStatus, VifConfig, VifId, VifRole, WidthSet,
+    Backoff, BandSet, BeaconTimingCapabilities, BlockAckReport, Channel, Cipher, CoexPriority,
+    CoexPrioritySet, KeyHandle, KeyInstall, KeyScope, KeySelector, LifecycleCommand,
+    LifecycleError, LifecycleEvent, LowerMacCapabilities, LowerMacSetting, MacAddress,
+    MonitorCapabilities, MpduAttempt, PhyFormatSet, Protection, RateSupport, ReceiveFilter,
+    Refused, RxBlockAckAgreement, RxMeta, SettingError, SubmitError, TbttEvent, TbttSchedule, Tsf,
+    TxBuffer, TxCompletion, TxFault, TxId, TxPower, TxResponse, TxStatus, VifConfig, VifId,
+    VifRole, VifRoleSet, WidthSet,
 };
 use oer_ieee80211_mac::{
     channel::{Band, WifiChannel},
+    management::BROADCAST_ADDRESS,
     phy::{HeMcs, HtMcs},
 };
 use oer_ieee80211_softmac::MacTxPlan;
 
 use crate::{
     ordinary_tx::{
-        OrdinaryTxError, OrdinaryTxInterface, OrdinaryTxOutcome, OrdinaryTxOwner, OrdinaryTxPlan,
-        SingleAttemptProtection, TX_CCMP_MIC_SIZE, TX_FCS_SIZE, TX_METADATA_SIZE, WifiTxEntropy,
-        WifiTxPowerProfile, WifiTxTimer,
+        MAX_SINGLE_ATTEMPT_BACKOFF_SLOTS, OrdinaryTxError, OrdinaryTxInterface, OrdinaryTxOutcome,
+        OrdinaryTxOwner, OrdinaryTxPlan, SingleAttempt, SingleAttemptProtection, TX_CCMP_MIC_SIZE,
+        TX_FCS_SIZE, TX_METADATA_SIZE, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
     },
     tx::{WifiTxProgress, WifiTxWake},
 };
@@ -81,54 +106,108 @@ pub const LOWER_MAC_KEY_SLOTS: usize = (RESOURCES.station_pairwise_ccmp_slots
     + RESOURCES.access_point_pairwise_ccmp_slots
     + RESOURCES.access_point_group_ccmp_slots) as usize;
 
-/// Power-save holds the core keeps at once.
-pub const LOWER_MAC_HOLDS: usize = 8;
-
 const CCMP_128_KEY_BYTES: usize = 16;
 const RX_BLOCK_ACK_BANKS: usize = RESOURCES.rx_block_ack_entries as usize;
 /// First Frame Control byte of a BlockAckReq: control type, subtype eight.
 const BLOCK_ACK_REQUEST_FRAME_CONTROL: u8 = 0x84;
 /// Frame Control, Duration and Address 1: the bytes the owner reads.
 const MIN_FRAME_LENGTH: usize = 10;
+/// Microseconds of one time unit.
+const TIME_UNIT_MICROS: u32 = 1024;
 
-/// What the ESP32-S31 lower MAC supports through this core.
+/// Light-sleep wake lead the vendor power manager publishes beside the
+/// station TBTT lead (`g_pm_cfg[16]`, as
+/// `roles/esp32s31/ieee80211/sta/src/modem_sleep.rs` records it). The port
+/// reports TBTTs only; it keeps the vendor relation between the two leads.
+const STATION_TBTT_WAKE_WINDOW_MICROS: u16 = 1_500;
+
+/// The receive rules the station context provides: its link policy (six)
+/// for the BSS-member rules, and the ESP-NOW policy (six, mode two) that
+/// also admits management frames of other BSSs.
+const STATION_RECEIVE_FILTERS: ReceiveFilter =
+    ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::OTHER_BSS_MANAGEMENT);
+
+/// What the ESP32-S31 lower MAC accepts through this core, with TX slots of
+/// `buffer_size` bytes.
 ///
 /// The rates are those `TxPhyRate::try_from(PhyRate)` accepts: DSSS/CCK and
 /// OFDM, HT MCS 0-7 at 20 and 40 MHz, and HE SU MCS 0-9 at 20 MHz with BCC
 /// or LDPC and DCM; the DCM MCS limits are checked at submission. The
 /// services are exactly the hardware-owned operations of
-/// [`ESP32S31_MAC_SERVICE_CAPABILITIES`]. `tx_queues` counts the EDCA
-/// parameter sets an attempt contends with; one attempt is in flight at a
-/// time. `max_ampdu_subframes` is zero: A-MPDU attempts are not supported.
-pub const ESP32S31_LOWER_MAC_CAPABILITIES: LowerMacCapabilities = LowerMacCapabilities {
-    bands: BandSet::GHZ2_4,
-    widths: WidthSet::MHZ20.union(WidthSet::MHZ40),
-    rates: RateSupport {
-        dsss_cck: true,
-        ofdm: true,
-        ht_max_mcs: HtMcs::new(7),
-        he_max_mcs: HeMcs::new(9),
-        he_max_bandwidth_mhz: 20,
-        he_dcm: true,
-        he_ldpc: true,
-        spatial_streams: 1,
-    },
-    services: ESP32S31_MAC_SERVICE_CAPABILITIES
-        .operations
-        .hardware_services(),
-    vifs: LOWER_MAC_VIFS,
-    tx_queues: RESOURCES.ordinary_tx_queues,
-    max_ampdu_subframes: 0,
-    key_slots: LOWER_MAC_KEY_SLOTS as u8,
-    rx_block_ack_agreements: RESOURCES.rx_block_ack_entries,
-    rx_block_ack_max_tid: RESOURCES.rx_block_ack_max_tid,
-    rx_block_ack_max_window: RESOURCES.rx_block_ack_max_window,
+/// [`ESP32S31_MAC_SERVICE_CAPABILITIES`]. The longest MPDU leaves room for
+/// the TX metadata word, the CCMP MIC and the FCS in the four-byte-aligned
+/// descriptor capacity. 5 GHz is absent from the ESP32-S31.
+pub const fn esp32s31_lower_mac_capabilities(buffer_size: usize) -> LowerMacCapabilities {
+    let usable =
+        (buffer_size & !3).saturating_sub(TX_METADATA_SIZE + TX_CCMP_MIC_SIZE + TX_FCS_SIZE);
+    LowerMacCapabilities {
+        bands: BandSet::GHZ2_4,
+        widths: WidthSet::MHZ20.union(WidthSet::MHZ40),
+        rates: RateSupport {
+            dsss_cck: true,
+            ofdm: true,
+            ht_max_mcs: HtMcs::new(7),
+            he_max_mcs: HeMcs::new(9),
+            he_max_bandwidth_mhz: 20,
+            he_dcm: true,
+            he_ldpc: true,
+            spatial_streams: 1,
+        },
+        services: ESP32S31_MAC_SERVICE_CAPABILITIES
+            .operations
+            .hardware_services(),
+        vifs: LOWER_MAC_VIFS,
+        tx_queues: 1,
+        max_mpdu_length: if usable > u16::MAX as usize {
+            u16::MAX
+        } else {
+            usable as u16
+        },
+        max_backoff_slots: MAX_SINGLE_ATTEMPT_BACKOFF_SLOTS,
+        tx_power_ceiling_min_dbm: Some(0),
+        coex_priorities: CoexPrioritySet::only(CoexPriority::Normal),
+        individual_no_ack: PhyFormatSet::NON_HT,
+        station_receive_filters: STATION_RECEIVE_FILTERS,
+        access_point_receive_filters: ReceiveFilter::BSS_MEMBER,
+        key_slots: LOWER_MAC_KEY_SLOTS as u8,
+        rx_block_ack_agreements: RESOURCES.rx_block_ack_entries,
+        rx_block_ack_max_tid: RESOURCES.rx_block_ack_max_tid,
+        rx_block_ack_max_window: RESOURCES.rx_block_ack_max_window,
+    }
+}
+
+/// The station TSF is read, set and scheduled; the access-point TSF only
+/// restarts from zero.
+pub const ESP32S31_BEACON_TIMING_CAPABILITIES: BeaconTimingCapabilities =
+    BeaconTimingCapabilities {
+        tsf_read: VifRoleSet::STATION,
+        tsf_set: VifRoleSet::STATION,
+        tsf_restart: VifRoleSet::STATION.union(VifRoleSet::ACCESS_POINT),
+        tbtt: VifRoleSet::STATION,
+    };
+
+/// The open promiscuous policy replaces the role receive policies, so it
+/// runs only while no interface receives.
+pub const ESP32S31_MONITOR_CAPABILITIES: MonitorCapabilities = MonitorCapabilities {
+    with_receiving_interfaces: false,
 };
 
 /// The station TSF of the MAC's interface-zero timer.
 pub trait StationTsfHardware {
     fn station_tsf(&mut self) -> u64;
     fn set_station_tsf(&mut self, value: u64);
+}
+
+/// The station TBTT schedule of the MAC's interface-zero timer, whose event
+/// fires on the power interrupt (`MacPowerWakeCause::StaTbtt`).
+pub trait StationTbttHardware {
+    fn start_station_tbtt(&mut self, schedule: StaTbttSchedule);
+    fn stop_station_tbtt(&mut self);
+}
+
+/// The power-save block of every ordinary TX queue.
+pub trait TxGateHardware {
+    fn set_power_save_tx_block(&mut self, blocked: bool);
 }
 
 /// Every register seam the core drives.
@@ -138,9 +217,13 @@ pub trait LowerMacHardware:
     + RxBlockAckHardware
     + StaApRegisterHardware
     + StaLinkRxPolicyHardware
+    + StaEspNowRxPolicyHardware
+    + MacSnifferHardware
     + ApRxPolicyHardware
     + ApTsfHardware
     + StationTsfHardware
+    + StationTbttHardware
+    + TxGateHardware
 {
 }
 
@@ -150,9 +233,13 @@ impl<H> LowerMacHardware for H where
         + RxBlockAckHardware
         + StaApRegisterHardware
         + StaLinkRxPolicyHardware
+        + StaEspNowRxPolicyHardware
+        + MacSnifferHardware
         + ApRxPolicyHardware
         + ApTsfHardware
         + StationTsfHardware
+        + StationTbttHardware
+        + TxGateHardware
 {
 }
 
@@ -160,6 +247,7 @@ impl<H> LowerMacHardware for H where
 pub trait LowerMacSink {
     fn tx_completed(&mut self, completion: TxCompletion);
     fn lifecycle(&mut self, event: LifecycleEvent);
+    fn tbtt(&mut self, event: TbttEvent);
 }
 
 /// Why the backend's state is unknown: the port is poisoned.
@@ -169,8 +257,6 @@ pub enum LowerMacFault {
     Tx(OrdinaryTxError),
     /// A receive Block Ack bank did not read back as programmed.
     RxBlockAckReadback,
-    /// The channel retune of an `Enable` failed.
-    Retune,
 }
 
 /// What a lifecycle command needs from the runtime.
@@ -193,6 +279,43 @@ pub struct LowerMacConfig {
     /// Executor watchdog of one publication.
     pub publication_timeout_micros: u64,
 }
+
+/// One lent transmit buffer: a whole ordinary TX slot, whose DMA buffer
+/// holds the MPDU after the TX metadata word. It goes back to the core by
+/// submission or [`LowerMacCore::release_tx_buffer`]; a dropped buffer's
+/// slot is lost until the core is rebuilt over new storage.
+pub struct Esp32s31TxBuffer<'slot, const BUFFER_SIZE: usize> {
+    slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
+    len: usize,
+}
+
+impl<const BUFFER_SIZE: usize> TxBuffer for Esp32s31TxBuffer<'_, BUFFER_SIZE> {
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn frame_mut(&mut self) -> &mut [u8] {
+        let buffer = self
+            .slot
+            .as_mut()
+            .buffer_mut()
+            .expect("a lent slot stays free until it is submitted");
+        &mut buffer[TX_METADATA_SIZE..TX_METADATA_SIZE + self.len]
+    }
+}
+
+impl<const BUFFER_SIZE: usize> core::fmt::Debug for Esp32s31TxBuffer<'_, BUFFER_SIZE> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("Esp32s31TxBuffer")
+            .field("len", &self.len)
+            .finish_non_exhaustive()
+    }
+}
+
+/// A submission of the core: one MPDU in a lent slot.
+pub type Esp32s31MpduAttempt<'slot, const BUFFER_SIZE: usize> =
+    MpduAttempt<Esp32s31TxBuffer<'slot, BUFFER_SIZE>>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PortState {
@@ -244,18 +367,11 @@ struct RxBlockAckEntry {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Hold {
-    vif: VifId,
-    peer: Option<MacAddress>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AttemptPhase {
-    /// Copied into the descriptor buffer, not yet published: a power-save
-    /// hold covers its receiver.
+    /// In the owner's slot, not yet published: the transmit gate is closed.
     Held {
         plan: OrdinaryTxPlan,
-        protection: SingleAttemptProtection,
+        single: SingleAttempt,
     },
     Published,
 }
@@ -265,13 +381,35 @@ struct Attempt {
     id: TxId,
     vif: VifId,
     key: Option<KeyHandle>,
-    receiver: MacAddress,
     phase: AttemptPhase,
 }
 
+/// The running station TBTT schedule.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct StationTbtt {
+    vif: VifId,
+    first: u64,
+    interval: u64,
+}
+
+impl StationTbtt {
+    /// The TBTT an event at station TSF `now` announces: the first one at
+    /// or after `now`, since the event fires its lead before it.
+    const fn announced(self, now: u64) -> u64 {
+        if now <= self.first {
+            return self.first;
+        }
+        let periods = (now - self.first).div_ceil(self.interval);
+        self.first
+            .saturating_add(periods.saturating_mul(self.interval))
+    }
+}
+
 /// The ESP32-S31 lower-MAC state between port calls.
-pub struct LowerMacCore<'slot, P, E, T, const BUFFER_SIZE: usize> {
+pub struct LowerMacCore<'slot, P, E, T, const BUFFER_SIZE: usize, const TX_BUFFERS: usize> {
     tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
+    /// Idle slots the core lends; `None` while lent.
+    spare: [Option<Pin<&'slot mut TxSlot<BUFFER_SIZE>>>; TX_BUFFERS],
     config: LowerMacConfig,
     state: PortState,
     /// Report `Quiesced` before `Disabled`: a `Disable` overtook a `Quiesce`.
@@ -283,20 +421,29 @@ pub struct LowerMacCore<'slot, P, E, T, const BUFFER_SIZE: usize> {
     vifs: [Option<VifConfig>; LOWER_MAC_VIFS as usize],
     keys: [Option<InstalledKey>; LOWER_MAC_KEY_SLOTS],
     rx_block_acks: [Option<RxBlockAckEntry>; RX_BLOCK_ACK_BANKS],
-    holds: [Option<Hold>; LOWER_MAC_HOLDS],
+    gate_open: bool,
+    monitor: bool,
+    tbtt: Option<StationTbtt>,
     attempt: Option<Attempt>,
 }
 
-impl<'slot, P, E, T, const BUFFER_SIZE: usize> LowerMacCore<'slot, P, E, T, BUFFER_SIZE>
+impl<'slot, P, E, T, const BUFFER_SIZE: usize, const TX_BUFFERS: usize>
+    LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS>
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
 {
-    /// A disabled core over an idle ordinary TX owner.
-    pub fn new(tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>, config: LowerMacConfig) -> Self {
+    /// A disabled core over an idle ordinary TX owner and the idle slots it
+    /// lends as transmit buffers.
+    pub fn new(
+        tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
+        spare: [Pin<&'slot mut TxSlot<BUFFER_SIZE>>; TX_BUFFERS],
+        config: LowerMacConfig,
+    ) -> Self {
         Self {
             tx,
+            spare: spare.map(Some),
             config,
             state: PortState::Disabled,
             quiesce_pending: false,
@@ -305,13 +452,15 @@ where
             vifs: [None; LOWER_MAC_VIFS as usize],
             keys: [const { None }; LOWER_MAC_KEY_SLOTS],
             rx_block_acks: [None; RX_BLOCK_ACK_BANKS],
-            holds: [None; LOWER_MAC_HOLDS],
+            gate_open: true,
+            monitor: false,
+            tbtt: None,
             attempt: None,
         }
     }
 
     pub const fn capabilities(&self) -> LowerMacCapabilities {
-        ESP32S31_LOWER_MAC_CAPABILITIES
+        esp32s31_lower_mac_capabilities(BUFFER_SIZE)
     }
 
     /// The channel received frames are reported on.
@@ -352,37 +501,128 @@ where
         self.vifs.get(usize::from(vif.0)).and_then(Option::as_ref)
     }
 
-    /// Admit one attempt.
+    /// Lend an idle slot for an MPDU of `len` bytes.
+    pub fn tx_buffer(&mut self, len: usize) -> Option<Esp32s31TxBuffer<'slot, BUFFER_SIZE>> {
+        if len > usize::from(self.capabilities().max_mpdu_length) {
+            return None;
+        }
+        let spare = self.spare.iter_mut().find(|slot| {
+            slot.as_ref()
+                .is_some_and(|slot| slot.state() == TxSlotState::Free)
+        })?;
+        let slot = spare.take()?;
+        Some(Esp32s31TxBuffer { slot, len })
+    }
+
+    /// Take back a lent slot.
+    pub fn release_tx_buffer(&mut self, buffer: Esp32s31TxBuffer<'slot, BUFFER_SIZE>) {
+        self.return_slot(buffer.slot);
+    }
+
+    fn return_slot(&mut self, slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>) {
+        // Every slot the core lends has a free place: the count of places
+        // equals the count of lendable slots.
+        if let Some(place) = self.spare.iter_mut().find(|place| place.is_none()) {
+            *place = Some(slot);
+        }
+    }
+
+    /// Admit one attempt. A refused attempt comes back with its buffer.
+    #[allow(
+        clippy::type_complexity,
+        clippy::result_large_err,
+        reason = "the refusal hands the caller's attempt back by value"
+    )]
     pub fn submit<H: LowerMacHardware>(
         &mut self,
         hardware: &mut H,
-        attempt: TxAttempt<'_>,
-    ) -> Result<Result<(), SubmitError>, LowerMacFault> {
+        mut attempt: Esp32s31MpduAttempt<'slot, BUFFER_SIZE>,
+    ) -> Result<Result<(), Refused<Esp32s31MpduAttempt<'slot, BUFFER_SIZE>>>, LowerMacFault> {
+        let admission = match self.admit(&mut attempt) {
+            Ok(admission) => admission,
+            Err(error) => return Ok(Err(Refused { error, attempt })),
+        };
+        // Publish from the caller's slot: it becomes the owner's, and the
+        // owner's idle slot becomes a spare.
+        core::mem::swap(&mut self.tx.slot, &mut attempt.payload.frame.slot);
+        let mut admitted = Attempt {
+            id: attempt.id,
+            vif: attempt.vif,
+            key: admission.key,
+            phase: AttemptPhase::Held {
+                plan: admission.plan,
+                single: admission.single,
+            },
+        };
+        if self.gate_open {
+            match self
+                .tx
+                .start_single_attempt(hardware, admission.plan, admission.single)
+            {
+                Ok(_) => admitted.phase = AttemptPhase::Published,
+                Err(
+                    OrdinaryTxError::BufferSizeOverflow | OrdinaryTxError::Tx(TxError::Invalid),
+                ) => {
+                    // Nothing was reserved: hand the caller's slot back.
+                    core::mem::swap(&mut self.tx.slot, &mut attempt.payload.frame.slot);
+                    return Ok(Err(Refused {
+                        error: SubmitError::InvalidLength,
+                        attempt,
+                    }));
+                }
+                Err(error) => return Err(LowerMacFault::Tx(error)),
+            }
+        }
+        self.return_slot(attempt.payload.frame.slot);
+        self.attempt = Some(admitted);
+        Ok(Ok(()))
+    }
+
+    /// Check one attempt against the port's state and limits and plan its
+    /// publication.
+    // CAPABILITY: wifi-interfaces-and-operating-modes-lower-mac-port-individual-no-ack, wifi-interfaces-and-operating-modes-lower-mac-port-coexistence-levels
+    fn admit(
+        &self,
+        attempt: &mut Esp32s31MpduAttempt<'slot, BUFFER_SIZE>,
+    ) -> Result<Admission, SubmitError> {
         if self.state != PortState::Enabled {
-            return Ok(Err(SubmitError::Disabled));
+            return Err(SubmitError::Disabled);
         }
         if let Some(active) = self.attempt {
-            return Ok(Err(if active.id == attempt.id {
+            return Err(if active.id == attempt.id {
                 SubmitError::DuplicateId
             } else {
                 SubmitError::Busy
-            }));
+            });
         }
-        let Some(vif) = self.vif(attempt.vif).copied() else {
-            return Ok(Err(SubmitError::UnknownVif));
-        };
-        let (frame, response) = match attempt.payload {
-            TxPayload::Mpdu { frame, response } => (frame, response),
-            TxPayload::Ampdu(_) => return Ok(Err(SubmitError::Unsupported)),
-        };
-        let Ok(rate) = TxPhyRate::try_from(attempt.rate) else {
-            return Ok(Err(SubmitError::UnsupportedRate));
-        };
-        if !ESP32S31_LOWER_MAC_CAPABILITIES.supports_rate(attempt.rate, self.channel()) {
-            return Ok(Err(SubmitError::UnsupportedRate));
+        let vif = self
+            .vif(attempt.vif)
+            .copied()
+            .ok_or(SubmitError::UnknownVif)?;
+        let rate = TxPhyRate::try_from(attempt.rate).map_err(|_| SubmitError::UnsupportedRate)?;
+        let capabilities = self.capabilities();
+        if !capabilities.supports_rate(attempt.rate, self.channel()) {
+            return Err(SubmitError::UnsupportedRate);
         }
-        if !matches!(attempt.power, TxPower::Calibrated) {
-            return Ok(Err(SubmitError::Unsupported));
+        let power_ceiling_dbm = match attempt.power {
+            TxPower::Calibrated => None,
+            TxPower::MaxDbm(dbm)
+                if capabilities
+                    .tx_power_ceiling_min_dbm
+                    .is_some_and(|floor| dbm >= floor) =>
+            {
+                Some(dbm)
+            }
+            TxPower::MaxDbm(_) => return Err(SubmitError::Unsupported),
+        };
+        let backoff_slots = match attempt.backoff {
+            Backoff::Slots(slots) if capabilities.supports_backoff(attempt.backoff) => slots,
+            Backoff::Slots(_) | Backoff::HardwareDraw { .. } => {
+                return Err(SubmitError::Unsupported);
+            }
+        };
+        if !capabilities.coex_priorities.contains(attempt.coex) {
+            return Err(SubmitError::Unsupported);
         }
         let (key, hardware_key_selector, hardware_mic_length) = match attempt.key {
             KeySelector::Plaintext => (None, 0, 0),
@@ -392,35 +632,41 @@ where
                     installed.token.hardware_index(),
                     TX_CCMP_MIC_SIZE,
                 ),
-                _ => return Ok(Err(SubmitError::UnknownKey)),
+                _ => return Err(SubmitError::UnknownKey),
             },
         };
-        if frame.len() < MIN_FRAME_LENGTH
-            || TX_METADATA_SIZE + frame.len() + hardware_mic_length + TX_FCS_SIZE > BUFFER_SIZE
+        let length = attempt.payload.frame.len();
+        if length < MIN_FRAME_LENGTH
+            || TX_METADATA_SIZE + length + hardware_mic_length + TX_FCS_SIZE > BUFFER_SIZE
         {
-            return Ok(Err(SubmitError::InvalidLength));
+            return Err(SubmitError::InvalidLength);
         }
-        let receiver: MacAddress = frame[4..10].try_into().expect("checked length");
-        // The owner derives the solicited response from the frame; a request
-        // it cannot express, such as a No-Ack individually addressed frame,
-        // is refused rather than sent with another response.
-        let solicited = if receiver[0] & 1 != 0 {
-            TxResponse::None
-        } else if frame[0] == BLOCK_ACK_REQUEST_FRAME_CONTROL {
-            TxResponse::BlockAck
-        } else {
-            TxResponse::Ack
+        let frame = attempt.payload.frame.frame_mut();
+        let group = frame[4] & 1 != 0;
+        let block_ack_request = frame[0] == BLOCK_ACK_REQUEST_FRAME_CONTROL;
+        // The owner derives the solicited response from the frame; a
+        // request it cannot express is refused rather than sent with
+        // another response.
+        let no_ack = match (attempt.payload.response, group, block_ack_request) {
+            (TxResponse::None, true, _) => false,
+            (TxResponse::BlockAck, false, true) => {
+                if !matches!(rate, TxPhyRate::Legacy(_)) {
+                    return Err(SubmitError::UnsupportedRate);
+                }
+                false
+            }
+            (TxResponse::Ack, false, false) => false,
+            (TxResponse::None, false, false)
+                if capabilities.individual_no_ack.contains_rate(attempt.rate) =>
+            {
+                true
+            }
+            _ => return Err(SubmitError::Unsupported),
         };
-        if solicited != response {
-            return Ok(Err(SubmitError::Unsupported));
-        }
-        if response == TxResponse::BlockAck && !matches!(rate, TxPhyRate::Legacy(_)) {
-            return Ok(Err(SubmitError::UnsupportedRate));
-        }
 
         let queue = LegacyTxQueue::from_access_category(attempt.access_category);
         let plan = OrdinaryTxPlan {
-            frame_length: frame.len(),
+            frame_length: length,
             descriptor_capacity: None,
             exchange: MacTxPlan {
                 access_category: attempt.access_category,
@@ -434,42 +680,23 @@ where
                 VifRole::Station => OrdinaryTxInterface::Station,
                 VifRole::AccessPoint => OrdinaryTxInterface::AccessPoint,
             },
+            // `CoexPriority::Normal`: the static priority vendor data
+            // encapsulation assigns the access category.
             scheduler_priority: queue.vendor_data_scheduler_priority(),
             packet_priority: queue.vendor_data_packet_priority(),
             priority_count: 1,
         };
-        let protection = match attempt.protection {
-            Protection::None => SingleAttemptProtection::None,
-            Protection::RtsCts => SingleAttemptProtection::RtsCts,
-            Protection::CtsToSelf => SingleAttemptProtection::CtsToSelf,
+        let single = SingleAttempt {
+            protection: match attempt.protection {
+                Protection::None => SingleAttemptProtection::None,
+                Protection::RtsCts => SingleAttemptProtection::RtsCts,
+                Protection::CtsToSelf => SingleAttemptProtection::CtsToSelf,
+            },
+            backoff_slots,
+            power_ceiling_dbm,
+            no_ack,
         };
-        let buffer = self.tx.buffer_mut().map_err(LowerMacFault::Tx)?;
-        buffer[TX_METADATA_SIZE..TX_METADATA_SIZE + frame.len()].copy_from_slice(frame);
-
-        let mut admitted = Attempt {
-            id: attempt.id,
-            vif: attempt.vif,
-            key,
-            receiver,
-            phase: AttemptPhase::Held { plan, protection },
-        };
-        if !self.held(&admitted) {
-            match self.tx.start_single_attempt(hardware, plan, protection) {
-                Ok(_) => admitted.phase = AttemptPhase::Published,
-                Err(OrdinaryTxError::BufferSizeOverflow) => {
-                    return Ok(Err(SubmitError::InvalidLength));
-                }
-                Err(error) => return Err(LowerMacFault::Tx(error)),
-            }
-        }
-        self.attempt = Some(admitted);
-        Ok(Ok(()))
-    }
-
-    fn held(&self, attempt: &Attempt) -> bool {
-        self.holds.iter().flatten().any(|hold| {
-            hold.vif == attempt.vif && hold.peer.is_none_or(|peer| peer == attempt.receiver)
-        })
+        Ok(Admission { plan, single, key })
     }
 
     fn key(&self, handle: KeyHandle) -> Option<&InstalledKey> {
@@ -531,12 +758,14 @@ where
     }
 
     /// The owned view of one received MPDU, or `None` while the port does
-    /// not receive.
+    /// not receive or no receive rule admits it. The hardware policies pass
+    /// a superset of the requested rules; this narrows it to them.
     pub fn received<'frame>(
         &self,
         frame: &NormalizedRxFrame<'frame>,
     ) -> Option<(&'frame [u8], RxMeta)> {
-        self.receiving().then(|| {
+        let admitted = self.monitor || self.vifs.iter().flatten().any(|vif| vif.admits(frame.mpdu));
+        (self.receiving() && admitted).then(|| {
             (
                 frame.mpdu,
                 portable::rx_meta(frame.metadata, self.channel()),
@@ -604,7 +833,7 @@ where
     }
 
     /// End a held attempt with [`TxStatus::Aborted`]: it never reached the
-    /// hardware.
+    /// hardware, and its slot stays the owner's, idle.
     fn abort_held<S: LowerMacSink>(&mut self, sink: &mut S) {
         if let Some(Attempt {
             id,
@@ -623,23 +852,24 @@ where
         }
     }
 
-    /// Complete an `Enable` after the runtime retuned the radio.
-    pub fn finish_retune<S: LowerMacSink>(
-        &mut self,
-        retuned: bool,
-        sink: &mut S,
-    ) -> Result<(), LowerMacFault> {
+    /// Complete an `Enable` after the runtime retuned the radio. A refused
+    /// retune fails the command recoverably: the port stays disabled on the
+    /// channel it was tuned to.
+    pub fn finish_retune<S: LowerMacSink>(&mut self, retuned: bool, sink: &mut S) {
         if self.state != PortState::Enabling {
-            return Ok(());
+            return;
         }
         if !retuned {
             self.state = PortState::Disabled;
-            return Err(LowerMacFault::Retune);
+            sink.lifecycle(LifecycleEvent::Failed {
+                command: LifecycleCommand::Enable,
+                class: oer_ieee80211_lower_mac::FailureClass::Recoverable,
+            });
+            return;
         }
         self.tuned = self.channel;
         self.state = PortState::Enabled;
         sink.lifecycle(LifecycleEvent::Enabled);
-        Ok(())
     }
 
     /// Apply one setting.
@@ -656,16 +886,7 @@ where
             LowerMacSetting::RemoveRxBlockAck { vif, peer, tid } => {
                 self.remove_rx_block_ack(hardware, vif, peer, tid)
             }
-            LowerMacSetting::SetTsf { vif, tsf } => Ok(self.set_tsf(hardware, vif, tsf)),
-            LowerMacSetting::PowerSaveTxBlock { vif, peer, blocked } => {
-                self.power_save_hold(hardware, vif, peer, blocked)
-            }
-            // No transaction of the S31 seams reports TBTTs as events, and
-            // Wi-Fi has no reviewed mapping from a coexistence level to its
-            // arbitration events.
-            LowerMacSetting::Tbtt { .. } | LowerMacSetting::CoexPriority(_) => {
-                Ok(Err(SettingError::Unsupported))
-            }
+            LowerMacSetting::TxGate { open } => self.set_tx_gate(hardware, open),
         }
     }
 
@@ -710,6 +931,10 @@ where
         if other_role {
             return Err(SettingError::UnsupportedRole);
         }
+        // The open promiscuous policy replaces the role policies.
+        if self.monitor && !config.receive.is_empty() {
+            return Err(SettingError::Unsupported);
+        }
         let policy = receive_policy(&self.config, &config)?;
         if self.vifs[index].is_some_and(|previous| previous.role != config.role) {
             self.remove_vif(hardware, vif);
@@ -717,6 +942,7 @@ where
         match policy {
             ReceivePolicy::StationDisabled => hardware.disable_station_receive_registers(),
             ReceivePolicy::Station { bssid } => hardware.apply_sta_link_policy(bssid),
+            ReceivePolicy::StationOtherBss { bssid } => hardware.apply_sta_esp_now_policy(bssid),
             ReceivePolicy::AccessPointDisabled => hardware.disable_ap_link_policy(),
             ReceivePolicy::AccessPoint { address } => hardware.apply_ap_link_policy(address),
         }
@@ -724,8 +950,8 @@ where
         Ok(())
     }
 
-    /// Close the interface's receive context and clear its keys and
-    /// receive Block Ack banks.
+    /// Close the interface's receive context and clear its keys, receive
+    /// Block Ack banks and TBTT schedule.
     fn remove_vif<H: LowerMacHardware>(&mut self, hardware: &mut H, vif: VifId) {
         let Some(previous) = self.vifs[usize::from(vif.0)].take() else {
             return;
@@ -742,10 +968,9 @@ where
                 let _ = hardware.clear_rx_block_ack(index as u8);
             }
         }
-        for hold in &mut self.holds {
-            if hold.is_some_and(|hold| hold.vif == vif) {
-                *hold = None;
-            }
+        if self.tbtt.is_some_and(|tbtt| tbtt.vif == vif) {
+            self.tbtt = None;
+            hardware.stop_station_tbtt();
         }
         match previous.role {
             VifRole::Station => hardware.disable_station_receive_registers(),
@@ -920,7 +1145,62 @@ where
         Ok(Ok(()))
     }
 
-    fn set_tsf<H: LowerMacHardware>(
+    /// Open or close the transmit gate: the power-save block of every
+    /// ordinary queue. Closing it while an attempt is published is refused
+    /// (`Busy`), because the blocked queue would end that attempt with a
+    /// hardware timeout; an attempt admitted behind the closed gate is held
+    /// in the owner's slot and published when the gate opens.
+    fn set_tx_gate<H: LowerMacHardware>(
+        &mut self,
+        hardware: &mut H,
+        open: bool,
+    ) -> Result<Result<(), SettingError>, LowerMacFault> {
+        if !open {
+            if matches!(
+                self.attempt,
+                Some(Attempt {
+                    phase: AttemptPhase::Published,
+                    ..
+                })
+            ) {
+                return Ok(Err(SettingError::Busy));
+            }
+            hardware.set_power_save_tx_block(true);
+            self.gate_open = false;
+            return Ok(Ok(()));
+        }
+        hardware.set_power_save_tx_block(false);
+        self.gate_open = true;
+        if let Some(mut attempt) = self.attempt
+            && let AttemptPhase::Held { plan, single } = attempt.phase
+        {
+            self.tx
+                .start_single_attempt(hardware, plan, single)
+                .map_err(LowerMacFault::Tx)?;
+            attempt.phase = AttemptPhase::Published;
+            self.attempt = Some(attempt);
+        }
+        Ok(Ok(()))
+    }
+
+    /// Read an interface's TSF: the station timer; the access-point timer
+    /// has no read seam.
+    // CAPABILITY: wifi-interfaces-and-operating-modes-lower-mac-port-access-point-tsf
+    pub fn tsf<H: StationTsfHardware>(
+        &self,
+        hardware: &mut H,
+        vif: VifId,
+    ) -> Result<Tsf, SettingError> {
+        let role = self.vif(vif).ok_or(SettingError::UnknownVif)?.role;
+        if !ESP32S31_BEACON_TIMING_CAPABILITIES.tsf_read.contains(role) {
+            return Err(SettingError::Unsupported);
+        }
+        Ok(Tsf(hardware.station_tsf()))
+    }
+
+    /// Set an interface's TSF: the station timer to any value, the
+    /// access-point timer only back to zero through its reset seam.
+    pub fn set_tsf<H: LowerMacHardware>(
         &mut self,
         hardware: &mut H,
         vif: VifId,
@@ -928,65 +1208,100 @@ where
     ) -> Result<(), SettingError> {
         match self.vif(vif).ok_or(SettingError::UnknownVif)?.role {
             VifRole::Station => hardware.set_station_tsf(tsf.0),
-            // The access-point TSF seam only resets and starts the timer.
             VifRole::AccessPoint if tsf == Tsf(0) => hardware.reset_and_start_access_point_tsf(),
             VifRole::AccessPoint => return Err(SettingError::Unsupported),
         }
         Ok(())
     }
 
-    /// Read an interface's TSF: the station timer; the access-point timer
-    /// has no read seam.
-    pub fn tsf<H: StationTsfHardware>(
-        &self,
-        hardware: &mut H,
-        vif: VifId,
-    ) -> Result<Tsf, SettingError> {
-        match self.vif(vif).ok_or(SettingError::UnknownVif)?.role {
-            VifRole::Station => Ok(Tsf(hardware.station_tsf())),
-            VifRole::AccessPoint => Err(SettingError::Unsupported),
-        }
-    }
-
-    /// Hold or release attempts. A hold keeps an admitted attempt in the
-    /// descriptor buffer without publishing it; the release publishes it.
-    fn power_save_hold<H: TxHardware>(
+    /// Program or stop the station TBTT schedule. The event fires
+    /// `lead_micros` before each TBTT; the wake lead published beside it
+    /// keeps the vendor's window above the lead.
+    pub fn set_tbtt<H: LowerMacHardware>(
         &mut self,
         hardware: &mut H,
         vif: VifId,
-        peer: Option<MacAddress>,
-        blocked: bool,
-    ) -> Result<Result<(), SettingError>, LowerMacFault> {
-        if self.vif(vif).is_none() {
-            return Ok(Err(SettingError::UnknownVif));
+        schedule: Option<TbttSchedule>,
+    ) -> Result<(), SettingError> {
+        let role = self.vif(vif).ok_or(SettingError::UnknownVif)?.role;
+        if !ESP32S31_BEACON_TIMING_CAPABILITIES.tbtt.contains(role) {
+            return Err(SettingError::Unsupported);
         }
-        let hold = Hold { vif, peer };
-        if blocked {
-            if !self.holds.contains(&Some(hold)) {
-                let Some(free) = self.holds.iter().position(Option::is_none) else {
-                    return Ok(Err(SettingError::Unsupported));
-                };
-                self.holds[free] = Some(hold);
+        let Some(schedule) = schedule else {
+            if self.tbtt.is_some_and(|tbtt| tbtt.vif == vif) {
+                self.tbtt = None;
+                hardware.stop_station_tbtt();
             }
-            return Ok(Ok(()));
+            return Ok(());
+        };
+        let interval_micros = u32::from(schedule.beacon_interval_tu) * TIME_UNIT_MICROS;
+        let wake_ahead_micros = schedule
+            .lead_micros
+            .checked_add(STATION_TBTT_WAKE_WINDOW_MICROS)
+            .ok_or(SettingError::Unsupported)?;
+        if interval_micros == 0 {
+            return Err(SettingError::Unsupported);
         }
-        for entry in &mut self.holds {
-            if *entry == Some(hold) {
-                *entry = None;
-            }
-        }
-        if let Some(mut attempt) = self.attempt
-            && let AttemptPhase::Held { plan, protection } = attempt.phase
-            && !self.held(&attempt)
-        {
-            self.tx
-                .start_single_attempt(hardware, plan, protection)
-                .map_err(LowerMacFault::Tx)?;
-            attempt.phase = AttemptPhase::Published;
-            self.attempt = Some(attempt);
-        }
-        Ok(Ok(()))
+        hardware.start_station_tbtt(StaTbttSchedule {
+            first_tbtt_tsf: schedule.next.0,
+            interval_micros,
+            ahead_micros: schedule.lead_micros,
+            wake_ahead_micros,
+        });
+        self.tbtt = Some(StationTbtt {
+            vif,
+            first: schedule.next.0,
+            interval: u64::from(interval_micros),
+        });
+        Ok(())
     }
+
+    /// Report the station TBTT whose event the power interrupt delivered
+    /// (`MacPowerWakeCause::StaTbtt`). Without a schedule the edge is stale
+    /// and reports nothing.
+    pub fn station_tbtt<H: StationTsfHardware, S: LowerMacSink>(
+        &self,
+        hardware: &mut H,
+        sink: &mut S,
+    ) {
+        if let Some(tbtt) = self.tbtt {
+            sink.tbtt(TbttEvent {
+                vif: tbtt.vif,
+                tsf: Tsf(tbtt.announced(hardware.station_tsf())),
+            });
+        }
+    }
+
+    /// Start or stop monitor reception through the open promiscuous
+    /// policy. It runs only while no interface receives.
+    pub fn set_monitor<H: LowerMacHardware>(
+        &mut self,
+        hardware: &mut H,
+        enabled: bool,
+    ) -> Result<(), SettingError> {
+        if enabled {
+            if self
+                .vifs
+                .iter()
+                .flatten()
+                .any(|vif| !vif.receive.is_empty())
+            {
+                return Err(SettingError::Unsupported);
+            }
+            hardware.configure_open_promiscuous_receive();
+        } else if self.monitor {
+            hardware.disable_open_promiscuous_receive();
+        }
+        self.monitor = enabled;
+        Ok(())
+    }
+}
+
+/// A submission that passed admission.
+struct Admission {
+    plan: OrdinaryTxPlan,
+    single: SingleAttempt,
+    key: Option<KeyHandle>,
 }
 
 const fn mac_interface(role: VifRole) -> MacInterface {
@@ -999,37 +1314,61 @@ const fn mac_interface(role: VifRole) -> MacInterface {
 /// The one receive-policy transaction a configuration maps onto.
 enum ReceivePolicy {
     StationDisabled,
-    Station { bssid: MacAddress },
+    /// Station policy six: the BSS-member rules.
+    Station {
+        bssid: MacAddress,
+    },
+    /// Station policy six, mode two: the BSS-member rules and management
+    /// frames of every BSS.
+    StationOtherBss {
+        bssid: MacAddress,
+    },
     AccessPointDisabled,
-    AccessPoint { address: MacAddress },
+    /// Access-point policy eight: the BSS-member rules.
+    AccessPoint {
+        address: MacAddress,
+    },
 }
 
-/// Map a receive filter onto the S31 receive-policy seams: nothing, or the
-/// complete BSS-member policy of the role (station policy six, access-point
-/// policy eight). Other combinations have no register transaction.
+/// Map a receive filter onto the smallest S31 receive policy that passes a
+/// superset of it; [`LowerMacCore::received`] narrows the superset.
 fn receive_policy(config: &LowerMacConfig, vif: &VifConfig) -> Result<ReceivePolicy, SettingError> {
+    let limits = esp32s31_lower_mac_capabilities(0).receive_filters(vif.role);
+    if !limits.contains(vif.receive) {
+        return Err(SettingError::Unsupported);
+    }
     match vif.role {
         VifRole::Station => {
             // The station address is published by the cold start only.
             if vif.address != config.station_address {
                 return Err(SettingError::Unsupported);
             }
-            match (vif.receive, vif.bssid) {
-                (ReceiveFilter::NONE, _) => Ok(ReceivePolicy::StationDisabled),
-                (ReceiveFilter::BSS_MEMBER, Some(bssid)) => Ok(ReceivePolicy::Station { bssid }),
-                _ => Err(SettingError::Unsupported),
+            let other_bss = vif.receive.contains(ReceiveFilter::OTHER_BSS_MANAGEMENT);
+            match vif.bssid {
+                _ if vif.receive.is_empty() => Ok(ReceivePolicy::StationDisabled),
+                // Outside a BSS only other BSSs' management is defined; the
+                // policy matches the broadcast BSSID, as standalone ESP-NOW
+                // reception does.
+                None if vif.receive == ReceiveFilter::OTHER_BSS_MANAGEMENT => {
+                    Ok(ReceivePolicy::StationOtherBss {
+                        bssid: BROADCAST_ADDRESS,
+                    })
+                }
+                None => Err(SettingError::Unsupported),
+                Some(bssid) if other_bss => Ok(ReceivePolicy::StationOtherBss { bssid }),
+                Some(bssid) => Ok(ReceivePolicy::Station { bssid }),
             }
         }
         VifRole::AccessPoint => {
             if vif.address[0] & 1 != 0 || vif.bssid.is_some_and(|bssid| bssid != vif.address) {
                 return Err(SettingError::Unsupported);
             }
-            match vif.receive {
-                ReceiveFilter::NONE => Ok(ReceivePolicy::AccessPointDisabled),
-                ReceiveFilter::BSS_MEMBER => Ok(ReceivePolicy::AccessPoint {
+            if vif.receive.is_empty() {
+                Ok(ReceivePolicy::AccessPointDisabled)
+            } else {
+                Ok(ReceivePolicy::AccessPoint {
                     address: vif.address,
-                }),
-                _ => Err(SettingError::Unsupported),
+                })
             }
         }
     }

@@ -256,6 +256,21 @@ impl MacLegacyTxProgram {
     pub const fn signal(self) -> u16 {
         self.parameters.signal
     }
+
+    /// Power code of the data PPDU.
+    pub const fn data_power(self) -> u8 {
+        self.parameters.data_power
+    }
+
+    /// Backoff slots the queue counts down.
+    pub const fn contention_window(self) -> u16 {
+        self.parameters.contention_window
+    }
+
+    /// Response the MAC awaits after the PPDU.
+    pub const fn response(self) -> MacLegacyTxResponse {
+        self.parameters.response
+    }
 }
 
 /// Reviewed MCS selector for one non-HE HT PPDU.

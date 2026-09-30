@@ -6,17 +6,17 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use oer_esp32s31_hal::types::{
     MacCcmpKeyIdentity, MacHtAmpduCompletionObservation, MacKeyInstallOutcome, MacLegacyTxProgram,
     MacStaApReceivePlan, MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason,
-    MacTxQueueDetached,
+    MacTxQueueDetached, StaTbttSchedule,
 };
 use oer_esp32s31_ieee80211::{
-    lower_mac::{LowerMacConfig, StationTsfHardware},
+    lower_mac::{LowerMacConfig, StationTbttHardware, StationTsfHardware, TxGateHardware},
     ordinary_tx::{OrdinaryTxOwner, WifiTxPowerPair, WifiTxResources},
 };
 use oer_esp32s31_ieee80211_mac::{
     ap_policy::ApRxPolicyHardware,
     ap_tsf::ApTsfHardware,
     crypto::CcmpKeyHardware,
-    init::StaLinkRxPolicyHardware,
+    init::{MacSnifferHardware, StaEspNowRxPolicyHardware, StaLinkRxPolicyHardware},
     irq::EVENT_TX_COMPLETE,
     rx::{
         RxPhyInfo,
@@ -26,8 +26,9 @@ use oer_esp32s31_ieee80211_mac::{
     tx::{HardwareOwnedTxDma, PreparedTxDma, TxHardware, TxSlot, runtime::WifiTxRuntimePolicy},
 };
 use oer_ieee80211_lower_mac::{
-    Channel, ChannelWidth, KeySelector, MacAddress, PhyRate, Protection, ReceiveFilter, TxId,
-    TxPayload, TxPower, TxResponse, TxStatus, VifConfig, VifRole,
+    Backoff, Channel, ChannelWidth, CoexPriority, FailureClass, KeySelector, MacAddress, PhyRate,
+    Protection, ReceiveFilter, SubmitError, TxAttempt, TxBuffer, TxId, TxPayload, TxPower,
+    TxResponse, TxStatus, VifConfig, VifRole,
 };
 use oer_ieee80211_mac::{phy::LegacyRate, qos::WmmAccessCategory, sequence::SequenceNumber};
 use oer_ieee80211_softmac::{MacRxEvidence, MacRxMetadata};
@@ -44,6 +45,8 @@ const STA: VifId = VifId(0);
 struct Hardware {
     legacy: Vec<MacLegacyTxProgram>,
     completion: Option<MacTxCompletionObservation>,
+    station_tsf: u64,
+    tbtt: Option<StaTbttSchedule>,
 }
 
 impl TxHardware for Hardware {
@@ -158,6 +161,29 @@ impl StaLinkRxPolicyHardware for Hardware {
     fn apply_sta_link_policy(&mut self, _bssid: [u8; 6]) {}
 }
 
+impl StaEspNowRxPolicyHardware for Hardware {
+    fn apply_sta_esp_now_policy(&mut self, _bssid: [u8; 6]) {}
+}
+
+impl MacSnifferHardware for Hardware {
+    fn configure_open_promiscuous_receive(&mut self) {}
+    fn disable_open_promiscuous_receive(&mut self) {}
+}
+
+impl StationTbttHardware for Hardware {
+    fn start_station_tbtt(&mut self, schedule: StaTbttSchedule) {
+        self.tbtt = Some(schedule);
+    }
+
+    fn stop_station_tbtt(&mut self) {
+        self.tbtt = None;
+    }
+}
+
+impl TxGateHardware for Hardware {
+    fn set_power_save_tx_block(&mut self, _blocked: bool) {}
+}
+
 impl ApRxPolicyHardware for Hardware {
     fn apply_ap_link_policy(&mut self, _access_point: [u8; 6]) {}
     fn disable_ap_link_policy(&mut self) {}
@@ -170,10 +196,12 @@ impl ApTsfHardware for Hardware {
 
 impl StationTsfHardware for Hardware {
     fn station_tsf(&mut self) -> u64 {
-        7
+        self.station_tsf
     }
 
-    fn set_station_tsf(&mut self, _value: u64) {}
+    fn set_station_tsf(&mut self, value: u64) {
+        self.station_tsf = value;
+    }
 }
 
 struct Power;
@@ -222,8 +250,8 @@ fn entropy() -> u32 {
     0x1234_5678
 }
 
-type Port<'a> = Esp32s31LowerMac<
-    'a,
+type Port = Esp32s31LowerMac<
+    'static,
     CriticalSectionRawMutex,
     Power,
     fn() -> u32,
@@ -231,24 +259,29 @@ type Port<'a> = Esp32s31LowerMac<
     Hardware,
     Retune,
     512,
+    1,
     2,
     64,
 >;
 
-fn install<'a>(
-    port: &Port<'a>,
-    slot: Pin<&'a mut TxSlot<512>>,
-    accept_retune: bool,
-) -> &'static std::sync::Mutex<Vec<WifiChannel>> {
+/// A model slot in permanently retained storage, as target SRAM is.
+fn slot() -> Pin<&'static mut TxSlot<512>> {
+    Pin::static_mut(std::boxed::Box::leak(std::boxed::Box::new(
+        TxSlot::new_model(),
+    )))
+}
+
+fn install(port: &Port, accept_retune: bool) -> &'static std::sync::Mutex<Vec<WifiChannel>> {
     let tuned = std::boxed::Box::leak(std::boxed::Box::new(std::sync::Mutex::new(Vec::new())));
     let core = LowerMacCore::new(
         OrdinaryTxOwner::new(WifiTxResources {
-            slot,
+            slot: slot(),
             policy: WifiTxRuntimePolicy::vendor_defaults(),
             power: Power,
             entropy: entropy as fn() -> u32,
             timer: ModelTimer,
         }),
+        [slot()],
         LowerMacConfig {
             station_address: STATION,
             channel: WifiChannel::mhz20(6).unwrap(),
@@ -280,12 +313,13 @@ fn install<'a>(
     tuned
 }
 
-fn next(port: &Port<'_>) -> Result<LowerMacEvent<'static>, EventsLost> {
+fn next_owned(port: &Port) -> Result<&'static Esp32s31LowerMacEvent<64>, EventsLost> {
     // Views borrow the owned event; tests compare leaked copies.
-    block_on(port.next_event()).map(|event| {
-        let event: &'static _ = std::boxed::Box::leak(std::boxed::Box::new(event));
-        Port::view(event)
-    })
+    block_on(port.next_event()).map(|event| &*std::boxed::Box::leak(std::boxed::Box::new(event)))
+}
+
+fn next(port: &Port) -> Result<LowerMacEvent<'static>, EventsLost> {
+    next_owned(port).map(Port::view)
 }
 
 fn data_frame() -> [u8; 26] {
@@ -296,37 +330,51 @@ fn data_frame() -> [u8; 26] {
     frame
 }
 
-fn attempt(id: u32, frame: &[u8]) -> TxAttempt<'_> {
+fn attempt(port: &Port, id: u32, frame: &[u8]) -> Esp32s31MpduAttempt<'static, 512> {
+    let mut buffer = port.tx_buffer(frame.len()).expect("a spare slot");
+    buffer.frame_mut().copy_from_slice(frame);
     TxAttempt {
         id: TxId(id),
         vif: STA,
         access_category: WmmAccessCategory::BestEffort,
-        payload: TxPayload::Mpdu {
-            frame,
+        payload: TxPayload {
+            frame: buffer,
             response: TxResponse::Ack,
         },
         rate: PhyRate::Legacy(LegacyRate::Ofdm12M),
         protection: Protection::None,
         key: KeySelector::Plaintext,
         power: TxPower::Calibrated,
+        backoff: Backoff::Slots(3),
+        coex: CoexPriority::Normal,
     }
 }
 
-fn with_hardware<U>(port: &Port<'_>, entry: impl FnOnce(&mut Hardware) -> U) -> U {
+/// Submit, handing a refused attempt's buffer back.
+fn submit(
+    port: &Port,
+    attempt: Esp32s31MpduAttempt<'static, 512>,
+) -> Result<Result<(), SubmitError>, Esp32s31LowerMacError> {
+    Ok(port.submit(attempt)?.map_err(|refused| {
+        port.release_tx_buffer(refused.attempt.payload.frame);
+        refused.error
+    }))
+}
+
+fn with_hardware<U>(port: &Port, entry: impl FnOnce(&mut Hardware) -> U) -> U {
     port.installed
         .lock(|installed| entry(&mut installed.borrow_mut().as_mut().unwrap().hardware))
 }
 
 #[test]
 fn an_attempt_completes_through_the_interrupt_entry_and_the_queue() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let port = Port::new();
-    install(&port, slot.as_mut(), true);
+    install(&port, true);
     let frame = data_frame();
 
-    assert_eq!(port.capabilities(), ESP32S31_LOWER_MAC_CAPABILITIES);
+    assert_eq!(port.capabilities(), esp32s31_lower_mac_capabilities(512));
     assert_eq!(
-        port.submit(attempt(1, &frame)),
+        submit(&port, attempt(&port, 1, &frame)),
         Ok(Err(SubmitError::Disabled))
     );
     assert_eq!(port.lifecycle(LifecycleCommand::Enable), Ok(Ok(())));
@@ -336,7 +384,12 @@ fn an_attempt_completes_through_the_interrupt_entry_and_the_queue() {
     );
 
     // A NoAck completion is reported, not retried.
-    assert_eq!(port.submit(attempt(1, &frame)), Ok(Ok(())));
+    assert_eq!(submit(&port, attempt(&port, 1, &frame)), Ok(Ok(())));
+    // The one spare slot was published; the owner's previous slot is lent
+    // next.
+    let spare = port.tx_buffer(frame.len()).unwrap();
+    assert!(port.tx_buffer(frame.len()).is_none());
+    port.release_tx_buffer(spare);
     with_hardware(&port, |hardware| {
         hardware.completion = Some(MacTxCompletionObservation::new_model(5, 0));
     });
@@ -348,15 +401,15 @@ fn an_attempt_completes_through_the_interrupt_entry_and_the_queue() {
     assert_eq!(completion.status, TxStatus::AckTimeout);
     assert_eq!(with_hardware(&port, |hardware| hardware.legacy.len()), 1);
 
+    assert_eq!(port.set_tsf(STA, Tsf(7)), Ok(Ok(())));
     assert_eq!(port.tsf(STA), Ok(Ok(Tsf(7))));
     assert_eq!(port.now(), Ok(RadioInstant::from_micros(0)));
 }
 
 #[test]
 fn enable_after_a_channel_change_retunes_in_next_event() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let port = Port::new();
-    let tuned = install(&port, slot.as_mut(), true);
+    let tuned = install(&port, true);
 
     assert_eq!(
         port.apply(LowerMacSetting::Channel(
@@ -378,39 +431,83 @@ fn enable_after_a_channel_change_retunes_in_next_event() {
 }
 
 #[test]
-fn a_refused_retune_poisons_the_port() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+fn a_refused_retune_fails_enable_recoverably() {
     let port = Port::new();
-    install(&port, slot.as_mut(), false);
+    install(&port, false);
     port.apply(LowerMacSetting::Channel(
         Channel::ghz2_4(1, ChannelWidth::Mhz20).unwrap(),
     ))
     .unwrap()
     .unwrap();
     port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
-
-    // The retune runs inside the wait, before the queued event ends it.
-    port.events
-        .try_send(Esp32s31LowerMacEvent::Lifecycle(LifecycleEvent::Disabled))
-        .unwrap();
-    let _ = next(&port);
     assert_eq!(
-        port.submit(attempt(1, &data_frame())),
-        Err(Esp32s31LowerMacError::Poisoned(LowerMacFault::Retune))
+        next(&port),
+        Ok(LowerMacEvent::Lifecycle(LifecycleEvent::Failed {
+            command: LifecycleCommand::Enable,
+            class: FailureClass::Recoverable,
+        }))
+    );
+    // The port is usable and disabled.
+    assert_eq!(
+        submit(&port, attempt(&port, 1, &data_frame())),
+        Ok(Err(SubmitError::Disabled))
+    );
+    assert_eq!(port.lifecycle(LifecycleCommand::Enable), Ok(Ok(())));
+}
+
+#[test]
+fn station_tbtts_arrive_through_the_power_interrupt() {
+    let port = Port::new();
+    install(&port, true);
+    let tbtt = oer_esp32s31_hal::types::MacPowerInterruptObservation::from_semantic_events(
+        false, false, false, false, true, false,
+    );
+    // Without a schedule the edge reports nothing.
+    port.on_power_interrupt(tbtt);
+    assert!(port.events.try_receive().is_err());
+
+    let schedule = TbttSchedule {
+        beacon_interval_tu: 100,
+        next: Tsf(1_000_000),
+        lead_micros: 3_000,
+    };
+    assert_eq!(port.set_tbtt(STA, Some(schedule)), Ok(Ok(())));
+    assert_eq!(
+        with_hardware(&port, |hardware| hardware
+            .tbtt
+            .map(|tbtt| tbtt.interval_micros)),
+        Some(102_400)
+    );
+    with_hardware(&port, |hardware| hardware.station_tsf = 997_000);
+    port.on_power_interrupt(tbtt);
+    let event = next_owned(&port).unwrap();
+    assert_eq!(Port::view(event), LowerMacEvent::Extension);
+    assert_eq!(
+        Port::tbtt(event),
+        Some(TbttEvent {
+            vif: STA,
+            tsf: Tsf(1_000_000)
+        })
+    );
+    assert_eq!(
+        port.beacon_timing_capabilities().tbtt,
+        oer_ieee80211_lower_mac::VifRoleSet::STATION
     );
 }
 
 #[test]
 fn received_frames_are_copied_and_overflow_is_reported_once() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let port = Port::new();
-    install(&port, slot.as_mut(), true);
+    install(&port, true);
     port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
     assert_eq!(
         next(&port),
         Ok(LowerMacEvent::Lifecycle(LifecycleEvent::Enabled))
     );
-    let mpdu = data_frame();
+    // A frame to the station: the station's receive rules admit it.
+    let mut mpdu = data_frame();
+    mpdu[4..10].copy_from_slice(&STATION);
+    mpdu[10..16].copy_from_slice(&BSSID);
     let received = |mpdu: &'static [u8]| NormalizedRxFrame {
         mpdu,
         metadata: MacRxMetadata {

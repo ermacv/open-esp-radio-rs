@@ -3,6 +3,13 @@
 use oer_ieee80211_mac::{
     channel::{Band, Channel, ChannelWidth},
     phy::{FecCoding, HeMcs, HtMcs, PhyRate},
+    qos::WmmAccessCategory,
+};
+use oer_radio_coex::CoexPriority;
+
+use crate::{
+    control::{ReceiveFilter, VifRole},
+    tx::Backoff,
 };
 
 /// A set of bands.
@@ -47,6 +54,53 @@ impl WidthSet {
             ChannelWidth::Mhz40Above | ChannelWidth::Mhz40Below => Self::MHZ40.0,
         };
         self.0 & bit != 0
+    }
+}
+
+/// A set of PPDU formats.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct PhyFormatSet(u8);
+
+impl PhyFormatSet {
+    pub const NONE: Self = Self(0);
+    /// Non-HT PPDUs: DSSS, CCK and OFDM.
+    pub const NON_HT: Self = Self(1 << 0);
+    pub const HT: Self = Self(1 << 1);
+    pub const HE: Self = Self(1 << 2);
+
+    pub const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    /// Whether the format of `rate` is in the set.
+    pub const fn contains_rate(self, rate: PhyRate) -> bool {
+        let bit = match rate {
+            PhyRate::Legacy(_) => Self::NON_HT.0,
+            PhyRate::Ht(_) => Self::HT.0,
+            PhyRate::He(_) => Self::HE.0,
+        };
+        self.0 & bit != 0
+    }
+}
+
+/// A set of coexistence priority levels.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct CoexPrioritySet(u8);
+
+impl CoexPrioritySet {
+    pub const NONE: Self = Self(0);
+
+    /// The set of one level.
+    pub const fn only(priority: CoexPriority) -> Self {
+        Self(1 << priority as u8)
+    }
+
+    pub const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    pub const fn contains(self, priority: CoexPriority) -> bool {
+        self.0 & (1 << priority as u8) != 0
     }
 }
 
@@ -151,7 +205,16 @@ impl HardwareServices {
     }
 }
 
-/// What a backend supports; it does not change while the port exists.
+/// The parametric limits of a backend: which values of the base port's
+/// operations it accepts. It does not change while the port exists.
+///
+/// A value outside these limits is refused as `Unsupported`. Optional
+/// operations are not limits: a backend that has one implements its
+/// extension trait ([`LowerMacAmpdu`](crate::LowerMacAmpdu),
+/// [`LowerMacBeaconTiming`](crate::LowerMacBeaconTiming),
+/// [`LowerMacMonitor`](crate::LowerMacMonitor),
+/// [`LowerMacCancelPublished`](crate::LowerMacCancelPublished)), whose own
+/// capabilities state that operation's limits.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct LowerMacCapabilities {
     pub bands: BandSet,
@@ -160,10 +223,28 @@ pub struct LowerMacCapabilities {
     pub services: HardwareServices,
     /// Virtual interfaces the backend configures at once.
     pub vifs: u8,
-    /// EDCA transmit queues, one per access category when four.
+    /// Transmit queues, each holding at most one attempt in flight: one or
+    /// four. With four, queue `n` serves the access category whose ACI is
+    /// `n`; with one, every access category shares it. See
+    /// [`Self::tx_queue`].
     pub tx_queues: u8,
-    /// Subframes of one A-MPDU attempt; zero without A-MPDU transmission.
-    pub max_ampdu_subframes: u16,
+    /// The longest MPDU a [`TxBuffer`](crate::TxBuffer) holds, without FCS
+    /// and MIC.
+    pub max_mpdu_length: u16,
+    /// The largest [`Backoff::Slots`] count.
+    pub max_backoff_slots: u16,
+    /// The lowest [`TxPower::MaxDbm`](crate::TxPower::MaxDbm) ceiling the
+    /// backend applies; `None` when it applies none.
+    pub tx_power_ceiling_min_dbm: Option<i8>,
+    /// The coexistence levels an attempt may carry.
+    pub coex_priorities: CoexPrioritySet,
+    /// The PPDU formats that send an individually addressed frame with
+    /// [`TxResponse::None`](crate::TxResponse::None).
+    pub individual_no_ack: PhyFormatSet,
+    /// The receive rules a station interface may request.
+    pub station_receive_filters: ReceiveFilter,
+    /// The receive rules an access-point interface may request.
+    pub access_point_receive_filters: ReceiveFilter,
     /// Installed keys at once.
     pub key_slots: u8,
     /// Receive Block Ack agreements at once.
@@ -187,5 +268,30 @@ impl LowerMacCapabilities {
         self.rates.supports(rate)
             && !dsss_in_5ghz
             && rate.bandwidth().mhz() <= channel.bandwidth_mhz()
+    }
+
+    /// The queue an attempt of `access_category` occupies.
+    pub const fn tx_queue(self, access_category: WmmAccessCategory) -> u8 {
+        if self.tx_queues >= 4 {
+            access_category as u8
+        } else {
+            0
+        }
+    }
+
+    /// The receive rules an interface of `role` may request.
+    pub const fn receive_filters(self, role: VifRole) -> ReceiveFilter {
+        match role {
+            VifRole::Station => self.station_receive_filters,
+            VifRole::AccessPoint => self.access_point_receive_filters,
+        }
+    }
+
+    /// Whether the backend counts down `backoff`.
+    pub const fn supports_backoff(self, backoff: Backoff) -> bool {
+        match backoff {
+            Backoff::Slots(slots) => slots <= self.max_backoff_slots,
+            Backoff::HardwareDraw { .. } => self.services.contains(HardwareServices::BACKOFF_DRAW),
+        }
     }
 }

@@ -46,7 +46,9 @@ hardware queue. AP encoders take an explicit `Advertisement`;
 advertisement. The portable codec carries no implicit ESP32-S31 profile.
 
 [`lower-mac`](lower-mac/README.md) declares the radio port every Wi-Fi backend
-implements; one submission is one hardware transmission attempt.
+implements; one submission is one hardware transmission attempt. Optional
+features are its extension traits. `softmac/src/edca.rs` draws the EDCA
+backoff each attempt carries.
 
 `softmac/src/contract` describes operation ownership, service capabilities,
 resource limits and normalized statuses. Configuration, VIF and monitor

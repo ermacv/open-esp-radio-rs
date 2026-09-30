@@ -159,6 +159,19 @@ protocol:
 | Lifecycle | Enable, disable, quiesce and cancel of submitted work, each with a terminal event |
 | Clock | The backend's radio time on the shared time contract, with a stated resolution; asynchronous under the same conditions as submission |
 
+**Capability model.** A port states what a backend can do in three separate
+places. A structural optional feature (an operation some backends lack
+entirely, such as aggregate transmission or TBTT reporting) is an extension
+trait over the base port: an upper layer that needs it requires that trait
+bound, and a backend without it does not implement the trait, so the missing
+feature cannot be requested. The parametric limits of what a backend has
+(bands, rates, queues, key slots, window sizes, the accepted range of a
+value) are its capabilities, read before submission; a value outside them is
+refused as unsupported, and that refusal means nothing else. Why a backend
+lacks a feature or a value (hardware absent, glue not written, vendor
+knowledge not recovered, policy decision pending) is recorded in the
+qualification catalog, not in code.
+
 **Failure classes.** Every port error is one of three classes, so callers
 handle any protocol's failures alike: `Rejected` (the request was not admitted
 and nothing changed), `Recoverable` (admitted work ended without its result;

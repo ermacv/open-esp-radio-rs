@@ -520,6 +520,22 @@ impl crate::lower_mac::StationTsfHardware for CooperativeRadioHardware<'_> {
     }
 }
 
+impl crate::lower_mac::StationTbttHardware for CooperativeRadioHardware<'_> {
+    fn start_station_tbtt(&mut self, schedule: oer_esp32s31_hal::types::StaTbttSchedule) {
+        CooperativeRadioHardware::start_station_tbtt(self, schedule);
+    }
+
+    fn stop_station_tbtt(&mut self) {
+        CooperativeRadioHardware::stop_station_tbtt(self);
+    }
+}
+
+impl crate::lower_mac::TxGateHardware for CooperativeRadioHardware<'_> {
+    fn set_power_save_tx_block(&mut self, blocked: bool) {
+        CooperativeRadioHardware::set_power_save_tx_block(self, blocked);
+    }
+}
+
 impl CooperativeRadioHardware<'_> {
     pub fn station_tsf(&mut self) -> u64 {
         self.wifi_mac_hal().station_tsf()

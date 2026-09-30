@@ -1036,6 +1036,81 @@ scope-and-limitations = "The [coexistence core](../coex/src/lib.rs) and schedule
 packages = ["oer-esp32s31-radio-runtime", "oer-espressif-coex", "oer-esp32s31-coex", "oer-esp32s31-ieee80211-sta", "oer-esp32s31-ieee80211-runtime"]
 
 [[items]]
+id = "wifi-interfaces-and-operating-modes-lower-mac-port-a-mpdu"
+section = "wifi-interfaces-and-operating-modes"
+title = "Lower-MAC port: A-MPDU attempts"
+status = "absent"
+level = "lower-primitive"
+scope-and-limitations = "Reason: glue not written. The ESP32-S31 backend of the portable lower-MAC port does not implement `LowerMacAmpdu`. The retained-DMA aggregate owner (`RetainedDmaAmpduTx`) serves the bounded STA/AP aggregate paths, but no port composition lends aggregate buffers, publishes one aggregate as one attempt or reports its BlockAck through the port."
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-lower-mac-port-concurrent-queue-attempts"
+section = "wifi-interfaces-and-operating-modes"
+title = "Lower-MAC port: one attempt per EDCA queue"
+status = "absent"
+level = "lower-primitive"
+scope-and-limitations = "Reason: glue not written. The port allows one attempt in flight per transmit queue; the ESP32-S31 backend declares one queue, because a single ordinary TX owner and its single-queue interrupt service serve every access category (each attempt still contends with its own category's EDCA parameters). Per-queue owners and a per-queue completion, timeout and collision demultiplexer are not composed."
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-lower-mac-port-hardware-backoff-draw"
+section = "wifi-interfaces-and-operating-modes"
+title = "Lower-MAC port: hardware backoff draw"
+status = "absent"
+level = "lower-primitive"
+scope-and-limitations = "Reason: hardware absent. The ordinary queue counts down the ten-bit contention-window value software publishes; the vendor draws it in software (`lmacTxFrame` masks `hal_random`). The backend accepts `Backoff::Slots` up to 1023 and refuses `Backoff::HardwareDraw`."
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-lower-mac-port-access-point-tbtt"
+section = "wifi-interfaces-and-operating-modes"
+title = "Lower-MAC port: access-point TBTT schedule"
+status = "absent"
+level = "lower-primitive"
+scope-and-limitations = "Reason: vendor knowledge not recovered. `LowerMacBeaconTiming` programs and reports the station TBTT schedule only; no reviewed access-point TBTT register transaction or power-interrupt cause exists in the PAC/HAL, so the backend's beacon-timing capabilities exclude the access-point role from TBTT."
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-lower-mac-port-access-point-tsf"
+section = "wifi-interfaces-and-operating-modes"
+title = "Lower-MAC port: access-point TSF read and arbitrary set"
+status = "fail-closed"
+level = "lower-primitive"
+scope-and-limitations = "Reason: vendor knowledge not recovered. The reviewed access-point TSF seam only resets and starts or stops the timer, so `LowerMacBeaconTiming` restarts the access-point TSF from zero and refuses reading it or setting another value as outside its limits. The station TSF is read and set."
+packages = ["oer-esp32s31-ieee80211"]
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-lower-mac-port-on-air-cancel"
+section = "wifi-interfaces-and-operating-modes"
+title = "Lower-MAC port: cancel of a published attempt"
+status = "absent"
+level = "lower-primitive"
+scope-and-limitations = "Reason: vendor knowledge not recovered. The recovered queue abort runs only after the queue's hardware timeout edge (forced CCA, 16-us settle, detach); no software-initiated abort of a live ordinary queue is recovered. The backend does not implement `LowerMacCancelPublished`; the base `Cancel` ends a held attempt as aborted and a published one with its own completion."
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-lower-mac-port-individual-no-ack"
+section = "wifi-interfaces-and-operating-modes"
+title = "Lower-MAC port: individually addressed frames without acknowledgement"
+status = "fail-closed"
+level = "lower-primitive"
+scope-and-limitations = "Reason: vendor knowledge not recovered. Only the legacy publication program carries the response field (PLCP format zero), so a unicast frame is sent without soliciting an ACK at non-HT rates only, and HT and HE requests are refused as outside the limits. On-air behaviour of the legacy case has no HIL evidence yet."
+packages = ["oer-esp32s31-ieee80211"]
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-lower-mac-port-coexistence-levels"
+section = "wifi-interfaces-and-operating-modes"
+title = "Lower-MAC port: coexistence priority levels"
+status = "fail-closed"
+level = "lower-primitive"
+scope-and-limitations = "Reason: policy decision pending. An attempt at `CoexPriority::Normal` carries the static per-access-category priority of vendor data encapsulation (events 10-13 through `coex_pti_tab`). Which arbitration events the Idle, Elevated and Critical levels select is undecided, so those levels are refused as outside the limits rather than mapped by invention."
+packages = ["oer-esp32s31-ieee80211"]
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-lower-mac-port-5-ghz"
+section = "wifi-interfaces-and-operating-modes"
+title = "Lower-MAC port: 5 GHz channels"
+status = "absent"
+level = "lower-primitive"
+scope-and-limitations = "Reason: hardware absent. The ESP32-S31 radio and PHY are 2.4 GHz only; the portable `Channel` represents 5 GHz, and the backend's capabilities exclude the band and refuse its channels."
+
+[[items]]
 id = "wifi-legacy-and-ht-mac-behavior-rts-protection"
 section = "wifi-legacy-and-ht-mac-behavior"
 title = "RTS protection"

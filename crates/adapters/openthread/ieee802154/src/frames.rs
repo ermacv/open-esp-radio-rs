@@ -1,10 +1,9 @@
 //! The translations between OpenThread's radio values and the portable
 //! IEEE 802.15.4 contract.
 
-use oer_esp32s31_hal::{coex::Ieee802154CoexLevel, ieee802154::coex::Ieee802154CoexConfig};
 use oer_ieee802154::{
-    AppliedSecurity, AutoPendingMode, Configuration, EnhAckProbing, FrameAddress, LinkMetrics,
-    MAX_MAC_FRAME_LEN, MacKeys, SentAcknowledgement, TxSecurity, TxStatus,
+    AppliedSecurity, AutoPendingMode, Configuration, FrameAddress, LinkMetrics, MAX_MAC_FRAME_LEN,
+    ProbingInitiator, SentAcknowledgement, TxSecurity, TxStatus,
 };
 
 /// Bytes of the FCS OpenThread counts in every PSDU; the MAC appends it on
@@ -98,10 +97,6 @@ pub const fn scan_micros(duration_millis: u16) -> u32 {
     duration_millis as u32 * 1_000
 }
 
-/// The MAC keys and frame counter of ESP-IDF's OpenThread port before
-/// OpenThread sets any: its zeroed statics.
-pub const PORT_INITIAL_KEYS: MacKeys = MacKeys::new(0, [0; 16], [0; 16], [0; 16], 0);
-
 /// Who secures a frame, from its OpenThread transmit information: nobody
 /// when the stack secured it (`mIsSecurityProcessed`), the radio under the
 /// frame's own counter and key index for a retransmission (`mIsARetx`),
@@ -134,29 +129,6 @@ pub fn write_applied_security(applied: AppliedSecurity, psdu: &mut [u8]) -> bool
     }
     psdu.copy_from_slice(&image[1..=length]);
     true
-}
-
-/// Replace the keys (`otPlatRadioSetMacKey`), keeping the frame counter.
-pub fn set_mac_keys(
-    keys: &mut Option<MacKeys>,
-    key_id: u8,
-    previous: [u8; 16],
-    current: [u8; 16],
-    next: [u8; 16],
-) {
-    keys.get_or_insert(PORT_INITIAL_KEYS)
-        .set_keys(key_id, previous, current, next);
-}
-
-/// Replace the frame counter (`otPlatRadioSetMacFrameCounter`), or raise it
-/// (`otPlatRadioSetMacFrameCounterIfLarger`).
-pub fn set_frame_counter(keys: &mut Option<MacKeys>, frame_counter: u32, if_larger: bool) {
-    let keys = keys.get_or_insert(PORT_INITIAL_KEYS);
-    if if_larger {
-        keys.set_frame_counter_if_larger(frame_counter);
-    } else {
-        keys.set_frame_counter(frame_counter);
-    }
 }
 
 /// The frame counter and key index of the secured enhanced ACK a received
@@ -229,42 +201,49 @@ pub fn pending_changes(
     }
 }
 
-/// The scene levels after an OpenThread role change, as ESP-IDF's
-/// `handle_ot_role_change` sets them with software coexistence: immediate
-/// transmission and reception at the low level while the device keeps its
-/// receiver on when idle, at the middle level for a sleepy device; the
-/// other levels stay.
-pub const fn role_coex_config(
-    current: Ieee802154CoexConfig,
-    rx_on_when_idle: bool,
-) -> Ieee802154CoexConfig {
-    Ieee802154CoexConfig {
-        txrx: if rx_on_when_idle {
-            Ieee802154CoexLevel::Low
-        } else {
-            Ieee802154CoexLevel::Middle
-        },
-        ..current
+/// The coexistence priority of immediate transmission and reception after
+/// an OpenThread role change, as ESP-IDF's `handle_ot_role_change` sets it
+/// with software coexistence; the other scene levels stay. The composition
+/// maps it to its radio's coexistence levels.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum RoleCoexPriority {
+    /// The low level: the device keeps its receiver on when idle.
+    Low,
+    /// The middle level: a sleepy device.
+    Middle,
+}
+
+/// The TX/RX coexistence priority of a device that keeps its receiver on
+/// when idle, or not.
+pub const fn role_txrx_priority(rx_on_when_idle: bool) -> RoleCoexPriority {
+    if rx_on_when_idle {
+        RoleCoexPriority::Low
+    } else {
+        RoleCoexPriority::Middle
+    }
+}
+
+/// One enhanced-ACK probing initiator of OpenThread's table: its short
+/// address, its extended address as `otExtAddress` holds it (most
+/// significant byte first) and its metrics. The radio keeps the extended
+/// address in frame byte order.
+pub const fn probing_initiator(
+    short_address: u16,
+    extended_address: [u8; 8],
+    metrics: LinkMetrics,
+) -> ProbingInitiator {
+    let mut frame_order = [0; 8];
+    let mut index = 0;
+    while index < 8 {
+        frame_order[index] = extended_address[7 - index];
+        index += 1;
+    }
+    ProbingInitiator {
+        short_address,
+        extended_address: frame_order,
+        metrics,
     }
 }
 
 #[cfg(test)]
 mod tests;
-
-/// Replace the probing initiators of `probing` with OpenThread's table:
-/// `initiators` yields short address, extended address as `otExtAddress`
-/// holds it (most significant byte first) and metrics, most recently added
-/// first, as `otPlatRadioConfigureEnhAckProbing` built it. The radio keeps
-/// the extended address in frame byte order, and adding the initiators
-/// oldest first keeps the newest matching first. An initiator the radio's
-/// table has no room for is left out.
-pub fn replace_enh_ack_probing<const N: usize>(
-    probing: &mut EnhAckProbing<N>,
-    initiators: impl DoubleEndedIterator<Item = (u16, [u8; 8], LinkMetrics)>,
-) {
-    probing.reset();
-    for (short, mut extended, metrics) in initiators.rev() {
-        extended.reverse();
-        let _ = probing.configure(short, extended, metrics);
-    }
-}

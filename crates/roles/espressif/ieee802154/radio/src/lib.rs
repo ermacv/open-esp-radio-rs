@@ -59,7 +59,8 @@ pub const IEEE802154_RADIO_CAPABILITIES: RadioCapabilities = RadioCapabilities::
     .union(RadioCapabilities::RECEIVE_TIMESTAMP)
     .union(RadioCapabilities::AUTOMATIC_ACKNOWLEDGEMENT)
     .union(RadioCapabilities::SOURCE_MATCH)
-    .union(RadioCapabilities::TIME_SYNC);
+    .union(RadioCapabilities::TIME_SYNC)
+    .union(RadioCapabilities::CANCEL);
 
 /// Header IE bytes an enhanced ACK carries at most (OpenThread
 /// `OT_ACK_IE_MAX_SIZE`).
@@ -290,6 +291,9 @@ struct Transmission {
     /// The interface whose keys and extended address secure the frame.
     interface: Ieee802154MultipanIndex,
     phase: Phase,
+    /// A cancellation stopped the transmission: a failed attempt ends it
+    /// instead of backing off or retrying.
+    cancelled: bool,
 }
 
 impl Transmission {
@@ -869,6 +873,12 @@ impl<'storage> Ieee802154Radio<'storage> {
         self.machine.state()
     }
 
+    /// The portable capabilities: [`IEEE802154_RADIO_CAPABILITIES`], with
+    /// [`RadioCapabilities::MULTI_PAN`] over a multi-PAN engine.
+    pub const fn capabilities(&self) -> RadioCapabilities {
+        self.machine.capabilities()
+    }
+
     /// The engine, for vendor configuration the portable contract has no
     /// command for (pending table, transmit security, multi-PAN identity).
     /// Operation entries must go through [`Self::submit`].
@@ -912,6 +922,9 @@ impl<'storage> Ieee802154Radio<'storage> {
             return Err(CommandError::PendingTableFull);
         }
         let accepted = self.machine.admit(command)?;
+        // A cancellation flushes frames on the channel the stopped
+        // operation received on.
+        let cancel_flushed_on = self.backoff_receive_channel();
         let mut collector =
             Collector::new(self.platform, &mut self.enhanced_ack, &mut self.security);
         let engine = &mut self.engine;
@@ -1000,6 +1013,7 @@ impl<'storage> Ieee802154Radio<'storage> {
                     interface: multipan_index(request.interface)
                         .expect("the state machine admits only the engine's interfaces"),
                     phase: Phase::Attempting,
+                    cancelled: false,
                 };
                 collector.security.time_sync = request.time_sync;
                 transmission.start_access(engine, ll, &mut collector);
@@ -1026,14 +1040,74 @@ impl<'storage> Ieee802154Radio<'storage> {
                 engine.pib().set_channel(hal_channel(channel));
                 engine.cca(ll, &mut collector);
             }
+            RadioCommand::Cancel { .. } => {
+                // A stopped attempt ends the transmission.
+                if let Some(transmission) = self.transmission.as_mut() {
+                    transmission.cancelled = true;
+                }
+                // `ieee802154_sleep` stops whatever the MAC runs: a stopped
+                // transmission reports its abort, or the outcome it had
+                // already reached; a measurement and a window end silently.
+                engine.sleep(ll, &mut collector);
+            }
         }
-        let flushed_on = match accepted.previous {
-            RadioState::Resting(RestingState::Receiving { channel }) => Some(channel),
+        let flushed_on = match (command, accepted.previous) {
+            (RadioCommand::Cancel { .. }, _) => cancel_flushed_on,
+            (_, RadioState::Resting(RestingState::Receiving { channel })) => Some(channel),
             _ => None,
         };
         let notifications = collector.notifications;
         self.deliver(ll, notifications, Some(flushed_on), sink);
+        if let RadioCommand::Cancel { target, .. } = command {
+            self.end_cancelled(ll, target, sink);
+        }
         Ok(accepted)
+    }
+
+    /// Report the terminal event of a cancelled operation the stopped
+    /// engine did not report itself, then rest as the operation would
+    /// have left the radio: receiving again on the resting channel.
+    fn end_cancelled<L: Ieee802154LowLevel + ?Sized, S: Ieee802154RadioSink + ?Sized>(
+        &mut self,
+        ll: &mut L,
+        target: RequestId,
+        sink: &mut S,
+    ) {
+        let event = match self.machine.state() {
+            RadioState::Transmitting { id, .. } if id == target => Some(RadioEvent::TransmitDone {
+                id,
+                status: TxStatus::Aborted,
+                acknowledgement: None,
+                security: self.transmission.as_ref().and_then(|t| t.applied),
+            }),
+            RadioState::EnergyScanning { id, .. } if id == target => {
+                Some(RadioEvent::EnergyScanFailed { id })
+            }
+            RadioState::AssessingChannel { id, .. } if id == target => {
+                Some(RadioEvent::ClearChannelAssessmentFailed { id })
+            }
+            RadioState::Resting(RestingState::ScheduledReceiving { id, .. }) if id == target => {
+                let event = RadioEvent::ScheduledReceiveDone { id };
+                if self.machine.observe(event).is_ok() {
+                    sink.event(event);
+                }
+                None
+            }
+            // The engine reported the operation's end while stopping it.
+            _ => None,
+        };
+        if let Some(event) = event {
+            // The engine sleeps, so a restore is the receive below.
+            let _ = self.finish(event, sink);
+        }
+        if let RadioState::Resting(RestingState::Receiving { channel }) = self.machine.state() {
+            let mut collector =
+                Collector::new(self.platform, &mut self.enhanced_ack, &mut self.security);
+            self.engine.pib().set_channel(hal_channel(channel));
+            self.engine.receive(ll, &mut collector);
+            let notifications = collector.notifications;
+            self.deliver(ll, notifications, Some(Some(channel)), sink);
+        }
     }
 
     /// `esp_ieee802154_set_transmit_security` for the secured `[PHR, PSDU...]`
@@ -1233,6 +1307,7 @@ impl<'storage> Ieee802154Radio<'storage> {
                 };
                 let mut status = tx_status(error);
                 if let Some(transmission) = self.transmission.as_mut()
+                    && !transmission.cancelled
                     && let Some(failure) = attempt_failure(error)
                 {
                     match transmission.retry(failure) {

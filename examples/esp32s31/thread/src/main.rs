@@ -22,11 +22,12 @@ use esp_hal::{
 };
 use log::{error, info};
 use oer::systems::esp32s31::embassy::ieee802154::{
-    EspHalRadioPlatform, IEEE802154_EVENT_CAPACITY, Ieee802154MacOwners, Ieee802154Parked,
-    Ieee802154PibDefaults, Ieee802154System,
+    EspHalRadioPlatform, IEEE802154_DEFAULT_TX_POWER_DBM, IEEE802154_RECEIVE_SENSITIVITY_DBM,
+    Ieee802154CoexConfig, Ieee802154CoexLevel, Ieee802154Parked, Ieee802154PibDefaults,
+    Ieee802154System, Ieee802154SystemRuntime,
     openthread::{
         OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults,
-        frames::role_coex_config,
+        frames::{RoleCoexPriority, role_txrx_priority},
     },
     start,
 };
@@ -35,19 +36,11 @@ use oer_esp32s31_executor_embassy::{self as platform_executor, Executor};
 use openthread::{OpenThread, OtResources, OtUdpResources, SimpleRamSettings, UdpSocket};
 use static_cell::{ConstStaticCell, StaticCell};
 
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use tinyrlibc as _;
 
 /// Frames OpenThread has not taken yet while it transmits or scans.
 const RX_QUEUE: usize = 8;
-type ThreadRadio = OpenThreadRadio<
-    'static,
-    'static,
-    CriticalSectionRawMutex,
-    Ieee802154MacOwners,
-    IEEE802154_EVENT_CAPACITY,
-    RX_QUEUE,
->;
+type ThreadRadio = OpenThreadRadio<'static, Ieee802154SystemRuntime, RX_QUEUE>;
 
 const UDP_PORT: u16 = 1212;
 const UDP_BUFFER: usize = 1280;
@@ -168,7 +161,10 @@ async fn thread_task(
     let thread_radio = OpenThreadRadio::new(
         system.runtime(),
         system.recent_rssi_reader(),
-        OpenThreadRadioDefaults::ESP_IDF,
+        OpenThreadRadioDefaults::esp_idf(
+            IEEE802154_DEFAULT_TX_POWER_DBM,
+            IEEE802154_RECEIVE_SENSITIVITY_DBM,
+        ),
     );
     spawner.spawn(openthread_task(ot.clone(), thread_radio).expect("OpenThread task storage"));
     spawner.spawn(role_task(ot.clone(), system, radio).expect("role task storage"));
@@ -240,7 +236,14 @@ async fn role_task(
         let current = ot.device_role();
         if role != Some(current) {
             role = Some(current);
-            let config = role_coex_config(system.coex_config(), ot.rx_on_when_idle());
+            let txrx = match role_txrx_priority(ot.rx_on_when_idle()) {
+                RoleCoexPriority::Low => Ieee802154CoexLevel::Low,
+                RoleCoexPriority::Middle => Ieee802154CoexLevel::Middle,
+            };
+            let config = Ieee802154CoexConfig {
+                txrx,
+                ..system.coex_config()
+            };
             if system.update_coexistence(radio, config).await.is_err() {
                 error!("the coexistence level of role {current:?} was not applied");
             }

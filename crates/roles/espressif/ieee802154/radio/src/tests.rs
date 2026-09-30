@@ -1576,3 +1576,161 @@ fn the_time_ie_gets_the_network_time_at_the_sfd() {
     assert_eq!(image[1 + 6..1 + 14], 1_042_u64.to_le_bytes());
     assert_eq!(image[1..4], [0x41, 0x88, 0x2a]);
 }
+
+fn cancel(bench: &mut Bench, target: u32) -> Result<(), CommandError> {
+    bench.submit(RadioCommand::Cancel {
+        id: RequestId::new(90),
+        target: RequestId::new(target),
+    })
+}
+
+/// A cancelled transmission stops the MAC, ends aborted and the radio
+/// receives again on its resting channel.
+#[test]
+fn a_cancelled_transmission_ends_aborted_and_receive_resumes() {
+    let mut bench = Bench::enabled();
+    bench
+        .submit(RadioCommand::Receive {
+            id: RequestId::new(2),
+            channel: channel(15),
+        })
+        .unwrap();
+    bench.transmit(5, &DATA, 15, TxMode::Direct).unwrap();
+    assert_eq!(bench.hw.command, Some(Ieee802154LlCommand::TxStart));
+    assert_eq!(
+        cancel(&mut bench, 6),
+        Err(CommandError::NotRunning {
+            target: RequestId::new(6)
+        })
+    );
+    cancel(&mut bench, 5).unwrap();
+    assert_eq!(
+        bench.seen(),
+        [Seen::TransmitDone {
+            id: RequestId::new(5),
+            status: TxStatus::Aborted,
+            ack_pending: None,
+        }]
+    );
+    assert_eq!(
+        bench.radio.state(),
+        RadioState::Resting(RestingState::Receiving {
+            channel: channel(15)
+        })
+    );
+    assert_eq!(bench.hw.command, Some(Ieee802154LlCommand::RxStart));
+    // The ended transmission is not cancelled twice.
+    assert_eq!(
+        cancel(&mut bench, 5),
+        Err(CommandError::NotRunning {
+            target: RequestId::new(5)
+        })
+    );
+}
+
+/// A cancellation while the MAC waits for the acknowledgement ends the
+/// transmission with the missing acknowledgement, without the retries it
+/// still had.
+#[test]
+fn a_cancelled_transmission_is_not_retried() {
+    let mut bench = Bench::enabled();
+    bench
+        .submit(RadioCommand::Transmit(TxRequest {
+            id: RequestId::new(5),
+            frame: FrameView::new(&DATA_ACK).unwrap(),
+            channel: channel(20),
+            mode: TxMode::Direct,
+            transmit_power_dbm: None,
+            max_frame_retries: 3,
+            security: Default::default(),
+            interface: Interface::PRIMARY,
+            time_sync: None,
+        }))
+        .unwrap();
+    bench.interrupt(&[Ieee802154Event::TxDone]);
+    assert!(bench.seen().is_empty(), "the MAC waits for the ACK");
+    cancel(&mut bench, 5).unwrap();
+    assert_eq!(
+        bench.seen(),
+        [Seen::TransmitDone {
+            id: RequestId::new(5),
+            status: TxStatus::NoAcknowledgement,
+            ack_pending: None,
+        }]
+    );
+    assert_eq!(
+        bench.radio.state(),
+        RadioState::Resting(RestingState::Sleeping)
+    );
+    assert_eq!(bench.radio.take_delay(), None, "no retry is due");
+}
+
+/// A transmission cancelled during its CSMA-CA backoff ends aborted.
+#[test]
+fn a_transmission_cancelled_in_its_backoff_ends_aborted() {
+    let mut bench = Bench::enabled();
+    bench
+        .transmit(5, &DATA, 20, TxMode::CsmaCa { max_backoffs: 4 })
+        .unwrap();
+    assert!(bench.radio.take_delay().is_some(), "the backoff runs");
+    cancel(&mut bench, 5).unwrap();
+    assert_eq!(
+        bench.seen(),
+        [Seen::TransmitDone {
+            id: RequestId::new(5),
+            status: TxStatus::Aborted,
+            ack_pending: None,
+        }]
+    );
+    // The backoff's end finds nothing to continue.
+    bench.radio.delay_elapsed(&mut bench.hw, &mut bench.sink);
+    assert!(bench.seen().is_empty());
+    assert_ne!(bench.hw.command, Some(Ieee802154LlCommand::CcaTxStart));
+    assert_eq!(
+        bench.radio.state(),
+        RadioState::Resting(RestingState::Sleeping)
+    );
+}
+
+/// Cancelled measurements and windows report their failure or end.
+#[test]
+fn cancelled_measurements_and_windows_report_their_end() {
+    let mut bench = Bench::enabled();
+    bench
+        .submit(RadioCommand::EnergyScan(EnergyScanRequest {
+            id: RequestId::new(3),
+            channel: channel(11),
+            duration_us: 1_000,
+        }))
+        .unwrap();
+    cancel(&mut bench, 3).unwrap();
+    bench
+        .submit(RadioCommand::ClearChannelAssessment {
+            id: RequestId::new(4),
+            channel: channel(11),
+        })
+        .unwrap();
+    cancel(&mut bench, 4).unwrap();
+    bench
+        .submit(RadioCommand::ScheduledReceive(ScheduledReceiveRequest {
+            id: RequestId::new(7),
+            channel: channel(12),
+            start: RadioInstant::from_micros(10_000),
+            duration_us: 1_000,
+        }))
+        .unwrap();
+    cancel(&mut bench, 7).unwrap();
+    assert_eq!(
+        bench.seen(),
+        [
+            Seen::EnergyScanFailed,
+            Seen::ClearChannelAssessmentFailed,
+            Seen::ScheduledReceiveDone(RequestId::new(7)),
+        ]
+    );
+    assert_eq!(
+        bench.radio.state(),
+        RadioState::Resting(RestingState::Sleeping)
+    );
+    assert_eq!(bench.radio.engine().state(), Ieee802154State::Sleep);
+}

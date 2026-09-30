@@ -43,6 +43,7 @@ use oer_espressif_ieee802154_engine::{
 use oer_espressif_ieee802154_runtime::{
     Ieee802154Platform, Ieee802154Runtime, Ieee802154RuntimeError, Ieee802154RuntimeParts,
 };
+use oer_ieee802154::Ieee802154RadioPort;
 use static_cell::ConstStaticCell;
 
 use crate::maintenance::{
@@ -518,12 +519,13 @@ fn coexistence(
 }
 
 impl Ieee802154System {
-    /// The runtime that accepts commands and yields events.
+    /// The runtime that accepts commands and yields events: the client's
+    /// [`Ieee802154RadioPort`].
     pub fn runtime(&self) -> &'static Ieee802154SystemRuntime {
         &RUNTIME
     }
 
-    /// The live RSSI read of [`Ieee802154SystemRuntime::recent_rssi`] as a
+    /// The live RSSI read of [`Ieee802154RadioPort::recent_rssi`] as a
     /// function, for synchronous callers that hold no system, such as
     /// OpenThread's `otPlatRadioGetRssi`. It reads `None` while no radio is
     /// installed.

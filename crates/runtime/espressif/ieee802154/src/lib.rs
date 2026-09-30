@@ -9,11 +9,15 @@
 //! in one blocking mutex over a caller-chosen raw mutex, as the vendor driver
 //! holds its state under `ieee802154_enter_critical`. The platform interrupt
 //! handler and every command run inside that lock. Portable events leave the
-//! lock as owned values through a bounded queue that any executor may await
-//! with [`Ieee802154Runtime::next_event`].
+//! lock as owned values through a bounded queue that any executor may await.
+//! The runtime is an [`Ieee802154RadioPort`]: commands, events, the clock,
+//! the state and the settings the interrupt handler reads (MAC keys, CSL,
+//! the enhanced-ACK generator, armed transmit security) go through the
+//! port; installation, pause and resume, coexistence, statistics and the
+//! frame-pending table stay inherent.
 //!
 //! CSMA-CA backoffs and the delays before retries run on `embassy-time`
-//! inside [`Ieee802154Runtime::next_event`], as ESP-IDF's OpenThread
+//! inside [`Ieee802154RadioPort::next_event`], as ESP-IDF's OpenThread
 //! `SubMac` runs them on its tasklet timer: a waiting transmission
 //! progresses while its consumer awaits events, which it must do to learn
 //! the outcome.
@@ -46,18 +50,20 @@ use oer_espressif_ieee802154_engine::{
     ll::{Ieee802154LowLevel, Ieee802154RecentRssi},
     types::Ieee802154MultipanIndex,
 };
-use oer_espressif_ieee802154_radio::{Ieee802154Radio, Ieee802154RadioSink};
+use oer_espressif_ieee802154_radio::{
+    Ieee802154Csl, Ieee802154EnhancedAckGenerator, Ieee802154Radio, Ieee802154RadioSink,
+};
 use oer_ieee802154::{
-    AcceptedCommand, AppliedSecurity, AutoPendingMode, CommandError, Frame, Interface, MacKeys,
-    PendingTable, RadioCommand, RadioEvent, RadioFault, RadioInstant, RadioState, ReceivedFrame,
-    RequestId, RestingState, RxMetadata, TxStatus,
+    AcceptedCommand, AppliedSecurity, AutoPendingMode, CommandError, EventsLost, Frame,
+    FrameCounterUpdate, Ieee802154RadioPort, Interface, MacKeys, PendingTable, RadioCapabilities,
+    RadioCommand, RadioEvent, RadioFault, RadioInstant, RadioSetting, RadioState, ReceivedFrame,
+    RequestId, RestingState, RxMetadata, SettingError, TxStatus,
 };
 use oer_ieee802154_trace::{Lease, PauseRefusal};
 
 pub use oer_espressif_ieee802154_radio::{
     IEEE802154_ENH_ACK_PROBING_CAPACITY, IEEE802154_ENHANCED_ACK_IE_CAPACITY,
-    IEEE802154_RADIO_CAPABILITIES, Ieee802154Csl, Ieee802154EnhancedAckGenerator,
-    Ieee802154EnhancedAckIeTooLong, Ieee802154Platform,
+    IEEE802154_RADIO_CAPABILITIES, Ieee802154Platform,
 };
 
 /// A received frame copied out of the receive ring.
@@ -209,18 +215,11 @@ impl Ieee802154RadioEvent {
     }
 }
 
-/// The bounded event queue overflowed and dropped the events it could not
-/// hold.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Ieee802154EventsLost;
-
-/// Why a runtime operation did not run.
+/// Why the runtime cannot serve: the port's error.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Ieee802154RuntimeError {
-    /// No radio is installed.
+    /// No radio is installed, or it is paused.
     NotInstalled,
-    /// The portable state machine rejected the command.
-    Rejected(CommandError),
 }
 
 /// The engine and the hardware it drives: the HAL `Ieee802154MacOwners`,
@@ -305,7 +304,7 @@ impl<M: RawMutex, const EVENTS: usize> Ieee802154RadioSink for QueueSink<'_, M, 
 /// The radio role, its hardware and the event queue.
 ///
 /// `EVENTS` bounds the events waiting for the consumer. Overflow drops the
-/// newest event and reports [`Ieee802154EventsLost`] once.
+/// newest event and reports [`EventsLost`] once.
 // CAPABILITY: ieee802154-mac-operation-subset
 pub struct Ieee802154Runtime<'storage, M: RawMutex, H, const EVENTS: usize> {
     installed: Mutex<M, RefCell<Option<Installed<'storage, H>>>>,
@@ -315,23 +314,6 @@ pub struct Ieee802154Runtime<'storage, M: RawMutex, H, const EVENTS: usize> {
     backoff_until: Mutex<M, Cell<Option<Instant>>>,
     /// Raised when a delay starts, so an awaiting consumer rearms.
     backoff_started: Signal<M, ()>,
-}
-
-impl<'storage, M: RawMutex, H, const EVENTS: usize> Ieee802154Runtime<'storage, M, H, EVENTS>
-where
-    H: Ieee802154LowLevel + Ieee802154RecentRssi,
-{
-    /// The live RSSI in dBm of the most recent reception
-    /// (`esp_ieee802154_get_recent_rssi`, `otPlatRadioGetRssi`), read from
-    /// the hardware whatever the radio's state, as the vendor reads it.
-    ///
-    /// # Errors
-    ///
-    /// No radio is installed.
-    // CAPABILITY: ieee802154-phy-and-rf-rssi
-    pub fn recent_rssi(&self) -> Result<i8, Ieee802154RuntimeError> {
-        self.with_radio(|_, hardware, _| hardware.recent_rssi())
-    }
 }
 
 impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize> Default
@@ -596,16 +578,6 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         }
     }
 
-    /// The radio clock (`otPlatRadioGetNow`): the monotonic epoch of
-    /// scheduled operations and receive timestamps.
-    ///
-    /// # Errors
-    ///
-    /// No radio is installed.
-    pub fn now(&self) -> Result<RadioInstant, Ieee802154RuntimeError> {
-        self.with_radio(|radio, _, _| radio.now())
-    }
-
     /// Collect the vendor's TX/RX statistics
     /// (`CONFIG_IEEE802154_TXRX_STATISTIC`), from zero, or stop collecting
     /// them.
@@ -638,40 +610,11 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         self.with_radio(|radio, _, _| radio.engine().clear_txrx_statistics())
     }
 
-    /// The radio clock as a function (`otPlatRadioGetNow`), for callers
-    /// that read it without the runtime's lock.
-    ///
-    /// # Errors
-    ///
-    /// No radio is installed.
-    pub fn clock(&self) -> Result<fn() -> u64, Ieee802154RuntimeError> {
-        self.with_radio(|radio, _, _| radio.clock())
-    }
-
-    /// Change the radio's CSL receiver state (`otPlatRadioEnableCsl`,
-    /// `otPlatRadioUpdateCslSampleTime`); the interrupt handler reads it
-    /// under the same lock.
-    ///
-    /// # Errors
-    ///
-    /// No radio is installed.
-    pub fn with_csl<T>(
-        &self,
-        change: impl FnOnce(&mut Ieee802154Csl) -> T,
-    ) -> Result<T, Ieee802154RuntimeError> {
-        self.with_radio(|radio, _, _| change(radio.csl()))
-    }
-
     /// Admit and start one portable command.
-    ///
-    /// # Errors
-    ///
-    /// No radio is installed, or the portable state machine rejected the
-    /// command.
-    pub fn submit(
+    fn submit_locked(
         &self,
         command: RadioCommand<'_>,
-    ) -> Result<AcceptedCommand, Ieee802154RuntimeError> {
+    ) -> Result<Result<AcceptedCommand, CommandError>, Ieee802154RuntimeError> {
         let submitted = self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
             let installed = installed
@@ -688,29 +631,16 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         });
         let (accepted, backoff) = submitted?;
         self.start_backoff(backoff);
-        accepted.map_err(Ieee802154RuntimeError::Rejected)
-    }
-
-    /// The portable state.
-    ///
-    /// # Errors
-    ///
-    /// No radio is installed.
-    pub fn state(&self) -> Result<RadioState, Ieee802154RuntimeError> {
-        self.with_radio(|radio, _, _| radio.state())
+        Ok(accepted)
     }
 
     /// Wait for the next event, running a transmission's CSMA-CA backoff or
     /// retry delay meanwhile: when it ends, the transmission goes on.
     /// Cancelling the wait keeps the delay for the next call.
-    ///
-    /// # Errors
-    ///
-    /// Reports once that the queue overflowed before the events after it.
-    pub async fn next_event(&self) -> Result<Ieee802154RadioEvent, Ieee802154EventsLost> {
+    async fn wait_event(&self) -> Result<Ieee802154RadioEvent, EventsLost> {
         loop {
             if self.lost.swap(false, Ordering::AcqRel) {
-                return Err(Ieee802154EventsLost);
+                return Err(EventsLost);
             }
             let until = self.backoff_until.lock(Cell::get);
             let backoff = async {
@@ -748,59 +678,6 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         self.with_radio(|radio, _, _| change(radio.engine().pending_table()))
     }
 
-    /// Read or change the MAC keys and frame counter the radio secures
-    /// transmissions and enhanced ACKs with
-    /// ([`Ieee802154Radio::mac_keys`]).
-    ///
-    /// # Errors
-    ///
-    /// No radio is installed.
-    pub fn with_mac_keys<T>(
-        &self,
-        change: impl FnOnce(&mut Option<MacKeys>) -> T,
-    ) -> Result<T, Ieee802154RuntimeError> {
-        self.with_radio(|radio, _, _| change(radio.mac_keys()))
-    }
-
-    /// Read or change the MAC keys and frame counter of one interface of a
-    /// multi-PAN radio ([`Ieee802154Radio::interface_mac_keys`]); `None`
-    /// for an interface the radio does not have.
-    ///
-    /// # Errors
-    ///
-    /// No radio is installed.
-    pub fn with_interface_mac_keys<T>(
-        &self,
-        interface: Interface,
-        change: impl FnOnce(&mut Option<MacKeys>) -> T,
-    ) -> Result<Option<T>, Ieee802154RuntimeError> {
-        self.with_radio(|radio, _, _| radio.interface_mac_keys(interface).map(change))
-    }
-
-    /// The number of addressing interfaces of the installed radio.
-    ///
-    /// # Errors
-    ///
-    /// No radio is installed.
-    pub fn interfaces(&self) -> Result<u8, Ieee802154RuntimeError> {
-        self.with_radio(|radio, _, _| radio.interfaces())
-    }
-
-    /// Change the enhanced-ACK generator of the installed radio: install
-    /// one (`None` refuses every enhanced ACK, the vendor default) or set
-    /// its header IEs; secured ACKs use [`Self::with_mac_keys`]. The
-    /// interrupt handler uses it under the same lock.
-    ///
-    /// # Errors
-    ///
-    /// No radio is installed.
-    pub fn with_enhanced_ack<T>(
-        &self,
-        change: impl FnOnce(&mut Option<Ieee802154EnhancedAckGenerator>) -> T,
-    ) -> Result<T, Ieee802154RuntimeError> {
-        self.with_radio(|radio, _, _| change(radio.enhanced_ack()))
-    }
-
     /// `esp_ieee802154_set_pending_mode`: how the automatic acknowledgement
     /// decides frame pending. The PIB publishes it before the next operation.
     ///
@@ -828,22 +705,156 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
     ) -> Result<(), Ieee802154RuntimeError> {
         self.with_radio(|radio, _, _| radio.engine().set_coexistence(coexistence))
     }
+}
 
-    /// `esp_ieee802154_set_transmit_security` for the secured `[PHR, PSDU...]`
-    /// image the next transmission sends; its later attempts arm it again.
-    ///
-    /// # Errors
-    ///
-    /// No radio is installed.
-    pub fn set_transmit_security(
-        &self,
-        frame: &[u8],
-        key: &[u8; 16],
-        address: &[u8; 8],
-    ) -> Result<(), Ieee802154RuntimeError> {
-        self.with_radio(|radio, port, _| {
-            radio.set_transmit_security(port, frame, key, address);
+/// Apply one portable setting to the radio under the runtime's lock.
+fn apply_setting<L: Ieee802154LowLevel + ?Sized>(
+    radio: &mut Ieee802154Radio<'_>,
+    hardware: &mut L,
+    setting: RadioSetting<'_>,
+) -> Result<(), SettingError> {
+    fn keys<'r>(
+        radio: &'r mut Ieee802154Radio<'_>,
+        interface: Interface,
+    ) -> Result<&'r mut Option<MacKeys>, SettingError> {
+        let interfaces = radio.interfaces();
+        radio
+            .interface_mac_keys(interface)
+            .ok_or(SettingError::UnknownInterface {
+                interface,
+                interfaces,
+            })
+    }
+    match setting {
+        RadioSetting::MacKeys {
+            interface,
+            key_id,
+            previous,
+            current,
+            next,
+        } => keys(radio, interface)?
+            .get_or_insert(MacKeys::ZEROED)
+            .set_keys(key_id, previous, current, next),
+        RadioSetting::FrameCounter { interface, update } => {
+            let keys = keys(radio, interface)?.get_or_insert(MacKeys::ZEROED);
+            match update {
+                FrameCounterUpdate::Set(counter) => keys.set_frame_counter(counter),
+                FrameCounterUpdate::SetIfLarger(counter) => {
+                    keys.set_frame_counter_if_larger(counter);
+                }
+            }
+        }
+        RadioSetting::RemoveMacKeys { interface } => *keys(radio, interface)? = None,
+        RadioSetting::Csl(csl) => {
+            *radio.csl() = Ieee802154Csl {
+                period: csl.period,
+                sample_time: csl.sample_time,
+            };
+        }
+        RadioSetting::EnhancedAck(generation) => {
+            *radio.enhanced_ack() = generation.map(|generation| {
+                let mut generator = Ieee802154EnhancedAckGenerator::new();
+                generator
+                    .probing()
+                    .set_noise_floor(generation.noise_floor_dbm);
+                generator
+            });
+        }
+        RadioSetting::EnhancedAckHeaderIes(ies) => radio
+            .enhanced_ack()
+            .as_mut()
+            .ok_or(SettingError::EnhancedAckDisabled)?
+            .set_header_ies(ies)
+            .map_err(|_| SettingError::HeaderIesTooLong {
+                capacity: IEEE802154_ENHANCED_ACK_IE_CAPACITY,
+            })?,
+        RadioSetting::EnhancedAckProbing(initiators) => radio
+            .enhanced_ack()
+            .as_mut()
+            .ok_or(SettingError::EnhancedAckDisabled)?
+            .probing()
+            .replace(initiators),
+        // `esp_ieee802154_set_transmit_security`; the transmission's later
+        // attempts arm it again.
+        RadioSetting::TransmitSecurity(arming) => {
+            radio.set_transmit_security(hardware, arming.frame, &arming.key, &arming.address);
+        }
+    }
+    Ok(())
+}
+
+impl<M: RawMutex, H, const EVENTS: usize> Ieee802154RadioPort
+    for Ieee802154Runtime<'_, M, H, EVENTS>
+where
+    H: Ieee802154LowLevel + Ieee802154RecentRssi,
+{
+    type Event = Ieee802154RadioEvent;
+    type Error = Ieee802154RuntimeError;
+
+    fn view(event: &Ieee802154RadioEvent) -> RadioEvent<'_> {
+        event.portable()
+    }
+
+    /// The installed radio's capabilities, or the role's without one.
+    fn capabilities(&self) -> RadioCapabilities {
+        self.installed.lock(|installed| {
+            installed
+                .borrow()
+                .as_ref()
+                .map_or(IEEE802154_RADIO_CAPABILITIES, |installed| {
+                    installed.radio.capabilities()
+                })
         })
+    }
+
+    fn submit(
+        &self,
+        command: RadioCommand<'_>,
+    ) -> Result<Result<AcceptedCommand, CommandError>, Ieee802154RuntimeError> {
+        self.submit_locked(command)
+    }
+
+    async fn next_event(&self) -> Result<Ieee802154RadioEvent, EventsLost> {
+        self.wait_event().await
+    }
+
+    /// The radio clock (`otPlatRadioGetNow`).
+    fn now(&self) -> Result<RadioInstant, Ieee802154RuntimeError> {
+        self.with_radio(|radio, _, _| radio.now())
+    }
+
+    fn clock(&self) -> Result<fn() -> u64, Ieee802154RuntimeError> {
+        self.with_radio(|radio, _, _| radio.clock())
+    }
+
+    fn state(&self) -> Result<RadioState, Ieee802154RuntimeError> {
+        self.with_radio(|radio, _, _| radio.state())
+    }
+
+    fn interfaces(&self) -> Result<u8, Ieee802154RuntimeError> {
+        self.with_radio(|radio, _, _| radio.interfaces())
+    }
+
+    fn apply(
+        &self,
+        setting: RadioSetting<'_>,
+    ) -> Result<Result<(), SettingError>, Ieee802154RuntimeError> {
+        self.with_radio(|radio, hardware, _| apply_setting(radio, hardware, setting))
+    }
+
+    fn frame_counter(&self, interface: Interface) -> Result<Option<u32>, Ieee802154RuntimeError> {
+        self.with_radio(|radio, _, _| {
+            radio
+                .interface_mac_keys(interface)
+                .and_then(|keys| keys.as_ref().map(MacKeys::frame_counter))
+        })
+    }
+
+    /// The live RSSI (`esp_ieee802154_get_recent_rssi`), read from the
+    /// hardware whatever the radio's state, as the vendor reads it.
+    // CAPABILITY: ieee802154-phy-and-rf-rssi
+    fn recent_rssi(&self) -> Result<i8, Ieee802154RuntimeError> {
+        self.with_radio(|_, hardware, _| hardware.recent_rssi())
     }
 }
 

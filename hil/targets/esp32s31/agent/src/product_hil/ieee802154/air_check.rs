@@ -19,8 +19,8 @@ use oer_hil_protocol::{
     ieee802154::Ieee802154AirTransmit, ieee802154::Ieee802154AirWindow,
 };
 use oer_ieee802154::{
-    Channel, Configuration, EnergyScanRequest, FrameView, Interface, RadioCommand, RadioInstant,
-    RequestId, ScheduledReceiveRequest, TxMode, TxRequest, TxSecurity,
+    Channel, Configuration, EnergyScanRequest, FrameView, Ieee802154RadioPort, Interface,
+    RadioCommand, RadioInstant, RequestId, ScheduledReceiveRequest, TxMode, TxRequest, TxSecurity,
 };
 
 use super::client::{Client, now_micros, tx_outcome};
@@ -92,11 +92,9 @@ async fn run_cycle(
         next_id += 1;
         RequestId::new(next_id)
     };
-    let submit = |command| {
-        runtime
-            .submit(command)
-            .map(|_| ())
-            .map_err(|_| Stop(Ieee802154AirCheckStop::CommandRejected))
+    let submit = |command| match runtime.submit(command) {
+        Ok(Ok(_)) => Ok(()),
+        _ => Err(Stop(Ieee802154AirCheckStop::CommandRejected)),
     };
     submit(RadioCommand::Enable { id: id() })?;
 

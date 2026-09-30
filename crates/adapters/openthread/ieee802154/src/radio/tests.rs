@@ -16,6 +16,7 @@ use oer_espressif_ieee802154_engine::{
 use oer_espressif_ieee802154_runtime::{
     Ieee802154Platform, Ieee802154Runtime, Ieee802154RuntimeParts,
 };
+use oer_ieee802154::{Ieee802154RadioPort, Interface};
 use openthread_radio::{
     Config, CslConfig, FrameCounterUpdate, MacCapabilities, MacKeys, Radio, RadioErrorKind,
     SrcMatchConfig, TxFrame,
@@ -23,11 +24,13 @@ use openthread_radio::{
 
 use super::{OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults};
 use crate::frames::{
-    CSL_ACCURACY_PPM, CSL_UNCERTAINTY, csl_period, extended_pending_address, short_pending_address,
+    CSL_ACCURACY_PPM, CSL_UNCERTAINTY, extended_pending_address, short_pending_address,
 };
 
+mod model;
+
 type Runtime = Ieee802154Runtime<'static, NoopRawMutex, Ieee802154LlModel, 16>;
-type Thread = OpenThreadRadio<'static, 'static, NoopRawMutex, Ieee802154LlModel, 16, 4>;
+type Thread = OpenThreadRadio<'static, Runtime, 4>;
 
 static LEVELS: [i8; 3] = [-24, 0, 21];
 
@@ -110,8 +113,7 @@ fn frame(psdu: &mut [u8]) -> TxFrame<'_> {
 }
 
 /// `init` enables the runtime and reports ESP-IDF's figures and
-/// capabilities, with the port's zeroed keys and an enhanced-ACK generator
-/// installed.
+/// capabilities, with the port's zeroed keys installed.
 #[test]
 fn init_enables_the_radio_and_reports_the_port_capabilities() {
     let (runtime, mut radio) = radio();
@@ -123,11 +125,7 @@ fn init_enables_the_radio_and_reports_the_port_capabilities() {
     assert_eq!(caps.receive_sensitivity, -104);
     assert_eq!(caps.csl_accuracy, CSL_ACCURACY_PPM);
     assert_eq!(caps.csl_uncertainty, CSL_UNCERTAINTY);
-    assert_eq!(runtime.with_mac_keys(|keys| keys.is_some()), Ok(true));
-    assert_eq!(
-        runtime.with_enhanced_ack(|generator| generator.is_some()),
-        Ok(true)
-    );
+    assert_eq!(runtime.frame_counter(Interface::PRIMARY), Ok(Some(0)));
     // A second init finds the radio enabled.
     assert!(block_on(radio.init()).is_ok());
 }
@@ -296,18 +294,16 @@ fn an_abandoned_transmission_ends_before_the_next_operation() {
     );
 }
 
-/// OpenThread's CSL period and sample time reach the runtime's CSL state.
+/// OpenThread's CSL period and sample time are accepted by the runtime.
 #[test]
 fn csl_reaches_the_runtime() {
-    let (runtime, mut radio) = initialized();
-    block_on(radio.set_csl(CslConfig {
-        period: 3125,
-        sample_time: 123_456,
-    }))
-    .unwrap();
+    let (_, mut radio) = initialized();
     assert_eq!(
-        runtime.with_csl(|csl| (csl.period, csl.sample_time)),
-        Ok((csl_period(3125), 123_456))
+        block_on(radio.set_csl(CslConfig {
+            period: 3125,
+            sample_time: 123_456,
+        })),
+        Ok(())
     );
 }
 
@@ -355,11 +351,7 @@ fn the_frame_counter_follows_openthread() {
     let (runtime, mut radio) = initialized();
     block_on(radio.set_mac_frame_counter(FrameCounterUpdate::Set(10))).unwrap();
     block_on(radio.set_mac_frame_counter(FrameCounterUpdate::SetIfLarger(5))).unwrap();
-    let counter = |runtime: &Runtime| {
-        runtime
-            .with_mac_keys(|keys| keys.as_ref().unwrap().frame_counter())
-            .unwrap()
-    };
+    let counter = |runtime: &Runtime| runtime.frame_counter(Interface::PRIMARY).unwrap().unwrap();
     assert_eq!(counter(runtime), 10);
     block_on(radio.set_mac_frame_counter(FrameCounterUpdate::SetIfLarger(12))).unwrap();
     assert_eq!(counter(runtime), 12);
@@ -419,11 +411,7 @@ fn the_radio_secures_frames_with_openthread_keys() {
     }))
     .unwrap();
     block_on(radio.set_mac_frame_counter(FrameCounterUpdate::Set(10))).unwrap();
-    let counter = |runtime: &Runtime| {
-        runtime
-            .with_mac_keys(|keys| keys.as_ref().unwrap().frame_counter())
-            .unwrap()
-    };
+    let counter = |runtime: &Runtime| runtime.frame_counter(Interface::PRIMARY).unwrap().unwrap();
 
     let mut psdu = SECURED_PSDU;
     assert!(secured_transmission(runtime, &mut radio, &mut psdu, false));

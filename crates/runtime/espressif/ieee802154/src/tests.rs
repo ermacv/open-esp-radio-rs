@@ -23,14 +23,14 @@ use oer_espressif_ieee802154_engine::{
     types::{Ieee802154Event, Ieee802154TxAbortReason, Ieee802154TxAbortReasonObservation},
 };
 use oer_ieee802154::{
-    Channel, CommandError, FrameView, Interface, MacKeys, RadioCommand, RadioState, RequestId,
-    RestingState, TxMode, TxRequest, TxStatus,
+    Channel, CommandError, CslReceiver, EnhancedAckGeneration, EventsLost, FrameCounterUpdate,
+    FrameView, Ieee802154RadioPort, Interface, RadioCapabilities, RadioCommand, RadioSetting,
+    RadioState, RequestId, RestingState, SettingError, TxMode, TxRequest, TxStatus,
 };
 
 use super::{
-    Ieee802154Csl, Ieee802154EnhancedAckGenerator, Ieee802154EventsLost, Ieee802154Platform,
-    Ieee802154RadioEvent, Ieee802154Runtime, Ieee802154RuntimeError, Ieee802154RuntimeParts,
-    Ieee802154TxRxStatistics,
+    IEEE802154_RADIO_CAPABILITIES, Ieee802154Platform, Ieee802154RadioEvent, Ieee802154Runtime,
+    Ieee802154RuntimeError, Ieee802154RuntimeParts, Ieee802154TxRxStatistics,
 };
 
 static LEVELS: [i8; 1] = [0];
@@ -80,6 +80,7 @@ fn enabled<const EVENTS: usize>() -> Runtime<EVENTS> {
         .submit(RadioCommand::Enable {
             id: RequestId::new(1),
         })
+        .unwrap()
         .unwrap();
     runtime
 }
@@ -108,12 +109,13 @@ fn install_admits_commands_only_after_enable() {
         runtime.submit(RadioCommand::Sleep {
             id: RequestId::new(2)
         }),
-        Err(Ieee802154RuntimeError::Rejected(CommandError::Disabled))
+        Ok(Err(CommandError::Disabled))
     );
     runtime
         .submit(RadioCommand::Enable {
             id: RequestId::new(3),
         })
+        .unwrap()
         .unwrap();
     assert_eq!(
         runtime.state(),
@@ -129,6 +131,7 @@ fn a_received_frame_arrives_as_an_owned_portable_event() {
             id: RequestId::new(2),
             channel: channel(15),
         })
+        .unwrap()
         .unwrap();
     runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
     let Ok(Ieee802154RadioEvent::Received(frame)) = block_on(runtime.next_event()) else {
@@ -155,6 +158,7 @@ fn a_transmission_completes_through_the_event_queue() {
             interface: Interface::PRIMARY,
             time_sync: None,
         }))
+        .unwrap()
         .unwrap();
     runtime.model_interrupt(None, &[Ieee802154Event::TxDone]);
     assert_eq!(
@@ -181,11 +185,12 @@ fn an_overflowing_queue_reports_the_loss_once() {
             id: RequestId::new(2),
             channel: channel(11),
         })
+        .unwrap()
         .unwrap();
     for _ in 0..3 {
         runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
     }
-    assert_eq!(block_on(runtime.next_event()), Err(Ieee802154EventsLost));
+    assert_eq!(block_on(runtime.next_event()), Err(EventsLost));
     assert!(matches!(
         block_on(runtime.next_event()),
         Ok(Ieee802154RadioEvent::Received(_))
@@ -200,6 +205,7 @@ fn uninstall_returns_the_parts_and_discards_events() {
             id: RequestId::new(2),
             channel: channel(11),
         })
+        .unwrap()
         .unwrap();
     runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
     assert!(runtime.uninstall().is_some());
@@ -242,12 +248,14 @@ fn uninstall_returns_the_coexistence_ptis_to_the_foundation_image() {
         .submit(RadioCommand::Enable {
             id: RequestId::new(1),
         })
+        .unwrap()
         .unwrap();
     runtime
         .submit(RadioCommand::Receive {
             id: RequestId::new(2),
             channel: channel(11),
         })
+        .unwrap()
         .unwrap();
     runtime.installed.lock(|installed| {
         let installed = installed.borrow();
@@ -289,6 +297,7 @@ fn pausing_leaves_receive_mode_and_resuming_enters_it_again() {
             id: RequestId::new(2),
             channel: channel(15),
         })
+        .unwrap()
         .unwrap();
     let mut paused = runtime.pause().unwrap();
     assert_eq!(paused.receiving(), Some(channel(15)));
@@ -356,6 +365,7 @@ fn a_running_operation_or_a_missing_radio_refuses_the_pause() {
             interface: Interface::PRIMARY,
             time_sync: None,
         }))
+        .unwrap()
         .unwrap();
     assert_eq!(runtime.pause().err(), Some(Ieee802154PauseError::Busy));
     assert!(matches!(
@@ -376,20 +386,20 @@ fn resuming_over_an_installed_radio_returns_the_paused_one() {
 /// frame reaches the queue once the ACK is sent.
 #[test]
 fn an_installed_enhanced_ack_generator_answers_2015_frames() {
+    let generation = RadioSetting::EnhancedAck(Some(EnhancedAckGeneration { noise_floor_dbm: 0 }));
     let runtime = Runtime::<4>::new();
     assert_eq!(
-        runtime.with_enhanced_ack(|_| ()),
+        runtime.apply(generation),
         Err(Ieee802154RuntimeError::NotInstalled)
     );
     let runtime = enabled::<4>();
-    runtime
-        .with_enhanced_ack(|generator| *generator = Some(Ieee802154EnhancedAckGenerator::new()))
-        .unwrap();
+    assert_eq!(runtime.apply(generation), Ok(Ok(())));
     runtime
         .submit(RadioCommand::Receive {
             id: RequestId::new(2),
             channel: channel(11),
         })
+        .unwrap()
         .unwrap();
     // 2015 data frame requesting an ACK, short addresses, compressed PAN.
     let mac = [0x61, 0xa8, 0x05, 0x34, 0x12, 0x01, 0x00, 0x02, 0x00, 0xaa];
@@ -425,6 +435,7 @@ fn next_event_runs_csma_ca_backoffs() {
             interface: Interface::PRIMARY,
             time_sync: None,
         }))
+        .unwrap()
         .unwrap();
     let command = || {
         runtime
@@ -482,6 +493,7 @@ fn next_event_runs_retry_delays() {
             interface: Interface::PRIMARY,
             time_sync: None,
         }))
+        .unwrap()
         .unwrap();
     // The last MAC command, cleared once read.
     let take_command = || {
@@ -533,15 +545,21 @@ fn the_clock_and_csl_state_belong_to_the_installed_radio() {
     let runtime = enabled::<4>();
     let clock = runtime.clock().unwrap();
     assert_eq!(clock(), (PLATFORM.now_micros)());
-    runtime
-        .with_csl(|csl| {
-            *csl = Ieee802154Csl {
-                period: 100,
-                sample_time: 5_000,
-            }
-        })
-        .unwrap();
-    assert_eq!(runtime.with_csl(|csl| csl.period), Ok(100));
+    assert_eq!(
+        runtime.now().map(oer_ieee802154::RadioInstant::as_micros),
+        Ok((PLATFORM.now_micros)())
+    );
+    assert_eq!(
+        runtime.apply(RadioSetting::Csl(CslReceiver {
+            period: 100,
+            sample_time: 5_000,
+        })),
+        Ok(Ok(()))
+    );
+    assert_eq!(
+        runtime.with_radio(|radio, _, _| (radio.csl().period, radio.csl().sample_time)),
+        Ok((100, 5_000))
+    );
 }
 
 /// The runtime reads the hardware's live RSSI in any radio state, and only
@@ -572,6 +590,7 @@ fn recent_rssi_reads_the_hardware_live() {
         .submit(RadioCommand::Sleep {
             id: RequestId::new(2),
         })
+        .unwrap()
         .unwrap();
     assert_eq!(runtime.recent_rssi(), Ok(-87));
 }
@@ -587,6 +606,7 @@ fn txrx_statistics_are_collected_on_request() {
             id: RequestId::new(2),
             channel: channel(15),
         })
+        .unwrap()
         .unwrap();
     runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
     let statistics = runtime.txrx_statistics().unwrap().unwrap();
@@ -605,9 +625,15 @@ fn interface_keys_belong_to_the_interfaces_of_the_installed_radio() {
     let single = enabled::<4>();
     assert_eq!(single.interfaces(), Ok(1));
     assert_eq!(
-        single.with_interface_mac_keys(Interface::new(1), |_| ()),
-        Ok(None)
+        single.apply(RadioSetting::RemoveMacKeys {
+            interface: Interface::new(1)
+        }),
+        Ok(Err(SettingError::UnknownInterface {
+            interface: Interface::new(1),
+            interfaces: 1,
+        }))
     );
+    assert_eq!(single.frame_counter(Interface::new(1)), Ok(None));
 
     let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
     let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
@@ -627,16 +653,50 @@ fn interface_keys_belong_to_the_interfaces_of_the_installed_radio() {
             .is_ok()
     );
     assert_eq!(runtime.interfaces(), Ok(2));
-    let keys = MacKeys::new(1, [1; 16], [2; 16], [3; 16], 9);
-    assert_eq!(
-        runtime.with_interface_mac_keys(Interface::new(1), |slot| *slot = Some(keys)),
-        Ok(Some(()))
+    assert!(
+        runtime
+            .capabilities()
+            .contains(RadioCapabilities::MULTI_PAN | RadioCapabilities::CANCEL)
     );
-    assert_eq!(runtime.with_mac_keys(|slot| slot.is_none()), Ok(true));
+    // Keys start from the zeroed ones and keep the counter; the counter
+    // keeps the keys.
+    let second = Interface::new(1);
+    let keys = RadioSetting::MacKeys {
+        interface: second,
+        key_id: 1,
+        previous: [1; 16],
+        current: [2; 16],
+        next: [3; 16],
+    };
+    assert_eq!(runtime.apply(keys), Ok(Ok(())));
+    assert_eq!(runtime.frame_counter(second), Ok(Some(0)));
+    for update in [
+        FrameCounterUpdate::Set(9),
+        FrameCounterUpdate::SetIfLarger(5),
+    ] {
+        assert_eq!(
+            runtime.apply(RadioSetting::FrameCounter {
+                interface: second,
+                update,
+            }),
+            Ok(Ok(()))
+        );
+    }
+    assert_eq!(runtime.frame_counter(second), Ok(Some(9)));
+    assert_eq!(runtime.frame_counter(Interface::PRIMARY), Ok(None));
+    let installed = runtime.with_radio(|radio, _, _| {
+        radio
+            .interface_mac_keys(second)
+            .and_then(|keys| *keys)
+            .map(|mut keys| keys.transmit_security(false))
+    });
+    let security = installed.unwrap().unwrap();
+    assert_eq!((security.key_id, security.key), (Some(1), [2; 16]));
     assert_eq!(
-        runtime.with_interface_mac_keys(Interface::new(1), |slot| *slot),
-        Ok(Some(Some(keys)))
+        runtime.apply(RadioSetting::RemoveMacKeys { interface: second }),
+        Ok(Ok(()))
     );
+    assert_eq!(runtime.frame_counter(second), Ok(None));
 }
 
 /// Pausing and resuming record the lease with the receive channel, and a
@@ -657,6 +717,7 @@ fn the_lease_and_a_dropped_frame_are_traced() {
             id: RequestId::new(2),
             channel: channel(15),
         })
+        .unwrap()
         .unwrap();
     leases();
     let paused = runtime.pause().unwrap();
@@ -695,5 +756,104 @@ fn the_lease_and_a_dropped_frame_are_traced() {
             length: 12,
             result: RxResult::Dropped(RxDrop::QueueFull),
         }]
+    );
+}
+
+/// The port reports the role's capabilities, cancellation included, before
+/// and after installation.
+#[test]
+fn the_port_reports_the_role_capabilities() {
+    let runtime = Runtime::<4>::new();
+    assert_eq!(runtime.capabilities(), IEEE802154_RADIO_CAPABILITIES);
+    assert!(
+        enabled::<4>()
+            .capabilities()
+            .contains(RadioCapabilities::CANCEL)
+    );
+}
+
+/// A cancelled transmission's aborted end arrives through the queue.
+#[test]
+fn a_cancellation_ends_the_transmission_through_the_queue() {
+    let runtime = enabled::<4>();
+    runtime
+        .submit(RadioCommand::Transmit(TxRequest {
+            id: RequestId::new(5),
+            frame: FrameView::new(&MAC).unwrap(),
+            channel: channel(20),
+            mode: TxMode::Direct,
+            transmit_power_dbm: None,
+            max_frame_retries: 0,
+            security: Default::default(),
+            interface: Interface::PRIMARY,
+            time_sync: None,
+        }))
+        .unwrap()
+        .unwrap();
+    runtime
+        .submit(RadioCommand::Cancel {
+            id: RequestId::new(6),
+            target: RequestId::new(5),
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        block_on(runtime.next_event()),
+        Ok(Ieee802154RadioEvent::TransmitDone {
+            id: RequestId::new(5),
+            status: TxStatus::Aborted,
+            acknowledgement: None,
+            security: None,
+        })
+    );
+    assert_eq!(
+        runtime.state(),
+        Ok(RadioState::Resting(RestingState::Sleeping))
+    );
+}
+
+/// Enhanced-ACK settings need a generator; header IEs are bounded.
+#[test]
+fn enhanced_ack_settings_need_the_generator() {
+    let runtime = enabled::<4>();
+    assert_eq!(
+        runtime.apply(RadioSetting::EnhancedAckHeaderIes(&[1, 2])),
+        Ok(Err(SettingError::EnhancedAckDisabled))
+    );
+    assert_eq!(
+        runtime.apply(RadioSetting::EnhancedAckProbing(&[])),
+        Ok(Err(SettingError::EnhancedAckDisabled))
+    );
+    runtime
+        .apply(RadioSetting::EnhancedAck(Some(EnhancedAckGeneration {
+            noise_floor_dbm: -100,
+        })))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        runtime.apply(RadioSetting::EnhancedAckHeaderIes(&[0; 17])),
+        Ok(Err(SettingError::HeaderIesTooLong { capacity: 16 }))
+    );
+    assert_eq!(
+        runtime.apply(RadioSetting::EnhancedAckHeaderIes(&[1, 2])),
+        Ok(Ok(()))
+    );
+    let (ies, floor) = runtime
+        .with_radio(|radio, _, _| {
+            let generator = radio.enhanced_ack().as_mut().unwrap();
+            (
+                generator.header_ies().to_vec(),
+                generator.probing().noise_floor(),
+            )
+        })
+        .unwrap();
+    assert_eq!((ies.as_slice(), floor), (&[1, 2][..], -100));
+    runtime
+        .apply(RadioSetting::EnhancedAck(None))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        runtime.with_radio(|radio, _, _| radio.enhanced_ack().is_none()),
+        Ok(true)
     );
 }

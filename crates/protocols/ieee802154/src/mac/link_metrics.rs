@@ -119,6 +119,18 @@ pub const fn link_margin(noise_floor: i8, rssi: i8) -> u8 {
     }
 }
 
+/// One probing initiator as a stack configures it
+/// (`otPlatRadioConfigureEnhAckProbing`).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ProbingInitiator {
+    /// The initiator's short address.
+    pub short_address: u16,
+    /// The initiator's extended address in frame byte order.
+    pub extended_address: [u8; 8],
+    /// The metrics its enhanced ACKs carry.
+    pub metrics: LinkMetrics,
+}
+
 /// One probing initiator (`LinkMetricsDataInfo`).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 struct Initiator {
@@ -228,6 +240,22 @@ impl<const N: usize> EnhAckProbing<N> {
     /// `otLinkMetricsResetEnhAckProbing`: remove every initiator.
     pub fn reset(&mut self) {
         self.initiators = [None; N];
+    }
+
+    /// Replace every initiator with `initiators`, listed most recently
+    /// added first as `otPlatRadioConfigureEnhAckProbing` built its table,
+    /// keeping the noise floor. Configuring them oldest first keeps the
+    /// newest matching first; an initiator the table has no room for is
+    /// left out.
+    pub fn replace(&mut self, initiators: &[ProbingInitiator]) {
+        self.reset();
+        for initiator in initiators.iter().rev() {
+            let _ = self.configure(
+                initiator.short_address,
+                initiator.extended_address,
+                initiator.metrics,
+            );
+        }
     }
 
     /// The metrics probed for the initiator at `source`, if any.

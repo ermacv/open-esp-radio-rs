@@ -623,3 +623,93 @@ fn a_time_ie_needs_the_time_sync_capability() {
         .admit(request)
         .unwrap();
 }
+
+/// A cancellation names the running operation, leaves the state to the
+/// operation's terminal event, and is refused for anything else.
+#[test]
+fn cancel_admits_only_the_running_operation() {
+    let capabilities = RadioCapabilities::ENERGY_SCAN | RadioCapabilities::CANCEL;
+    let mut machine = enabled(capabilities);
+    let cancel = |target| RadioCommand::Cancel {
+        id: RequestId::new(40),
+        target,
+    };
+    // Nothing runs.
+    assert_eq!(
+        machine.admit(cancel(ID)),
+        Err(CommandError::NotRunning { target: ID })
+    );
+    machine
+        .admit(RadioCommand::EnergyScan(EnergyScanRequest {
+            id: ID,
+            channel: channel(11),
+            duration_us: 128,
+        }))
+        .unwrap();
+    let scanning = machine.state();
+    assert_eq!(
+        machine.admit(cancel(RequestId::new(8))),
+        Err(CommandError::NotRunning {
+            target: RequestId::new(8)
+        })
+    );
+    let accepted = machine.admit(cancel(ID)).unwrap();
+    assert_eq!(accepted.kind, CommandKind::Cancel);
+    assert_eq!((accepted.previous, accepted.current), (scanning, scanning));
+    assert_eq!(machine.state(), scanning);
+    machine
+        .observe(RadioEvent::EnergyScanFailed { id: ID })
+        .unwrap();
+    assert_eq!(machine.state(), RadioState::Resting(RestingState::Sleeping));
+    assert_eq!(
+        machine.admit(cancel(ID)),
+        Err(CommandError::NotRunning { target: ID })
+    );
+}
+
+/// An open scheduled receive window can be cancelled; its end event
+/// completes it.
+#[test]
+fn cancel_ends_a_scheduled_receive_window() {
+    let capabilities = RadioCapabilities::SCHEDULED_RECEIVE | RadioCapabilities::CANCEL;
+    let mut machine = enabled(capabilities);
+    machine
+        .admit(RadioCommand::ScheduledReceive(
+            crate::ScheduledReceiveRequest {
+                id: ID,
+                channel: channel(12),
+                start: crate::RadioInstant::from_micros(100),
+                duration_us: 1_000,
+            },
+        ))
+        .unwrap();
+    machine
+        .admit(RadioCommand::Cancel {
+            id: RequestId::new(41),
+            target: ID,
+        })
+        .unwrap();
+    machine
+        .observe(RadioEvent::ScheduledReceiveDone { id: ID })
+        .unwrap();
+    assert_eq!(machine.state(), RadioState::Resting(RestingState::Sleeping));
+}
+
+/// Cancellation needs its capability, and an enabled radio.
+#[test]
+fn cancel_needs_the_capability_and_an_enabled_radio() {
+    let command = RadioCommand::Cancel {
+        id: RequestId::new(42),
+        target: ID,
+    };
+    let mut disabled = RadioStateMachine::new(RadioCapabilities::CANCEL);
+    assert_eq!(disabled.admit(command), Err(CommandError::Disabled));
+    let mut machine = enabled(RadioCapabilities::NONE);
+    assert_eq!(
+        machine.admit(command),
+        Err(CommandError::Unsupported {
+            command: CommandKind::Cancel,
+            required: RadioCapabilities::CANCEL,
+        })
+    );
+}

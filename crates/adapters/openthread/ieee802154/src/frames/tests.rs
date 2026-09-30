@@ -4,10 +4,10 @@ use oer_ieee802154::{
 };
 
 use super::{
-    PORT_INITIAL_KEYS, TransmitFailure, csl_period, extended_address, extended_pending_address,
-    pending_changes, pending_mode, psdu_mac, radio_time, replace_enh_ack_probing, role_coex_config,
-    scan_micros, sent_ack_security, set_frame_counter, set_mac_keys, short_pending_address,
-    transmit_failure, tx_security, write_applied_security, write_psdu,
+    RoleCoexPriority, TransmitFailure, csl_period, extended_address, extended_pending_address,
+    pending_changes, pending_mode, probing_initiator, psdu_mac, radio_time, role_txrx_priority,
+    scan_micros, sent_ack_security, short_pending_address, transmit_failure, tx_security,
+    write_applied_security, write_psdu,
 };
 
 #[test]
@@ -115,25 +115,6 @@ fn applied_security_is_written_into_the_psdu() {
     assert_eq!(plain, before);
 }
 
-/// Keys and counter updates start from the port's zeroed state and keep
-/// each other.
-#[test]
-fn keys_and_counter_updates_keep_each_other() {
-    let mut keys = None;
-    set_frame_counter(&mut keys, 40, true);
-    set_mac_keys(&mut keys, 2, [1; 16], [2; 16], [3; 16]);
-    let mut installed = keys.unwrap();
-    assert_eq!(installed.frame_counter(), 40);
-    let security = installed.transmit_security(false);
-    assert_eq!((security.key_id, security.key), (Some(2), [2; 16]));
-
-    set_frame_counter(&mut keys, 30, true);
-    assert_eq!(keys.unwrap().frame_counter(), 40);
-    set_frame_counter(&mut keys, 30, false);
-    assert_eq!(keys.unwrap().frame_counter(), 30);
-    assert_eq!(PORT_INITIAL_KEYS.frame_counter(), 0);
-}
-
 /// Only a secured enhanced ACK of key identifier mode 1 reports its fields.
 #[test]
 fn sent_ack_security_needs_a_key_index() {
@@ -187,27 +168,12 @@ fn pending_changes_follow_the_table_entry_by_entry() {
     assert_eq!(none, 0);
 }
 
-/// A role change sets the TX/RX level from the link mode and keeps the
-/// others, as `handle_ot_role_change` does.
+/// A role change sets the TX/RX priority from the link mode, as
+/// `handle_ot_role_change` does.
 #[test]
-fn role_changes_set_the_txrx_level_from_the_link_mode() {
-    use oer_esp32s31_hal::{coex::Ieee802154CoexLevel, ieee802154::coex::Ieee802154CoexConfig};
-    let current = Ieee802154CoexConfig {
-        idle: Ieee802154CoexLevel::Idle,
-        txrx: Ieee802154CoexLevel::High,
-        txrx_at: Ieee802154CoexLevel::High,
-    };
-    assert_eq!(
-        role_coex_config(current, true),
-        Ieee802154CoexConfig {
-            txrx: Ieee802154CoexLevel::Low,
-            ..current
-        }
-    );
-    assert_eq!(
-        role_coex_config(current, false).txrx,
-        Ieee802154CoexLevel::Middle
-    );
+fn role_changes_set_the_txrx_priority_from_the_link_mode() {
+    assert_eq!(role_txrx_priority(true), RoleCoexPriority::Low);
+    assert_eq!(role_txrx_priority(false), RoleCoexPriority::Middle);
 }
 
 /// OpenThread's probing table reaches the radio with extended addresses in
@@ -227,14 +193,14 @@ fn the_probing_table_reaches_the_radio_in_frame_byte_order() {
     let frame_order = FrameAddress::Extended([8, 7, 6, 5, 4, 3, 2, 1]);
     let mut probing = EnhAckProbing::<4>::new(-97);
     // Newest first: short 2 was added after short 1, with the same device.
-    replace_enh_ack_probing(
-        &mut probing,
-        [(2, canonical, rssi), (1, canonical, lqi)].into_iter(),
-    );
+    probing.replace(&[
+        probing_initiator(2, canonical, rssi),
+        probing_initiator(1, canonical, lqi),
+    ]);
     assert_eq!(probing.metrics(frame_order), Some(rssi));
     assert_eq!(probing.metrics(FrameAddress::Short([1, 0])), Some(lqi));
 
-    replace_enh_ack_probing(&mut probing, [(1, canonical, lqi)].into_iter());
+    probing.replace(&[probing_initiator(1, canonical, lqi)]);
     assert_eq!(probing.metrics(FrameAddress::Short([2, 0])), None);
     assert_eq!(probing.metrics(frame_order), Some(lqi));
     assert_eq!(probing.noise_floor(), -97);

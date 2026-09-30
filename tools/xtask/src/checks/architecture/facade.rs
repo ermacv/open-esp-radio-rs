@@ -104,7 +104,7 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
             features: Some("openthread"),
             required: &[
                 "oer-esp32s31-ieee802154-system",
-                "oer-esp32s31-ieee802154-openthread",
+                "oer-ieee802154-openthread",
             ],
             forbidden: &[WIFI],
         },

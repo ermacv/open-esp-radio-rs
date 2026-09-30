@@ -1,28 +1,23 @@
-//! `openthread_radio::Radio` over the IEEE 802.15.4 runtime.
+//! `openthread_radio::Radio` over an IEEE 802.15.4 radio port.
 
-use embassy_sync::blocking_mutex::raw::RawMutex;
 use heapless::Deque;
-use oer_esp32s31_hal::ieee802154::ll::Ieee802154LowLevel;
-use oer_espressif_ieee802154_runtime::{
-    Ieee802154Csl, Ieee802154EnhancedAckGenerator, Ieee802154OwnedFrame, Ieee802154RadioEvent,
-    Ieee802154Runtime, Ieee802154RuntimeError,
-};
 use oer_ieee802154::{
-    AppliedSecurity, Channel, CommandError, Configuration, EnergyScanRequest, FrameView, Interface,
-    LinkMetrics, PendingTableHalf, RadioCommand, RadioInstant, RadioState, RequestId,
-    ScheduledReceiveRequest, TimeSync, TxMode, TxRequest, TxSecurity,
+    AppliedSecurity, Channel, CommandError, Configuration, CslReceiver, EnergyScanRequest,
+    EnhancedAckGeneration, FrameCounterUpdate, FrameView, Ieee802154RadioPort, Interface,
+    LinkMetrics, PendingTableHalf, ProbingInitiator, RadioCommand, RadioEvent, RadioInstant,
+    RadioSetting, RadioState, ReceivedFrame, RequestId, ScheduledReceiveRequest, SettingError,
+    TimeSync, TxMode, TxRequest, TxSecurity,
 };
 use openthread_radio::{
-    AckSecurity, Capabilities, Config, CslConfig, EnhAckProbingConfig, FrameCounterUpdate,
+    AckSecurity, Capabilities, Config, CslConfig, ENH_ACK_PROBING_CAPACITY, EnhAckProbingConfig,
     MacCapabilities, MacKeys, PsduMeta, Radio, RadioCaps, RadioClock, RadioErrorKind, RadioRssi,
     SentAck, SrcMatchConfig, TxFrame,
 };
 
 use crate::frames::{
-    CSL_ACCURACY_PPM, CSL_UNCERTAINTY, PORT_INITIAL_KEYS, TransmitFailure, csl_period,
-    extended_address, pending_changes, pending_mode, psdu_mac, radio_time, replace_enh_ack_probing,
-    scan_micros, sent_ack_security, set_frame_counter, set_mac_keys, transmit_failure, tx_security,
-    write_applied_security, write_psdu,
+    CSL_ACCURACY_PPM, CSL_UNCERTAINTY, TransmitFailure, csl_period, extended_address,
+    pending_changes, pending_mode, probing_initiator, psdu_mac, radio_time, scan_micros,
+    sent_ack_security, transmit_failure, tx_security, write_applied_security, write_psdu,
 };
 
 /// The PHY capabilities the radio reports, as ESP-IDF's OpenThread port
@@ -47,37 +42,44 @@ pub struct OpenThreadRadioDefaults {
 }
 
 impl OpenThreadRadioDefaults {
-    /// The figures ESP-IDF's OpenThread port reports on the ESP32-S31: the
-    /// transmit power `ieee802154_pib_init` gives every channel, the highest
-    /// BTBB provider level (`esp_ieee802154_get_txpower`); the Kconfig default
-    /// `CONFIG_IEEE802154_CCA_THRESHOLD` of -75 dBm
-    /// (`esp_ieee802154_get_cca_threshold`); and `IEEE802154_RX_SENSITIVITY`
-    /// of the ESP32-S31 `ieee802154_ll.h`
-    /// (`esp_ieee802154_get_receive_sensitivity`).
-    pub const ESP_IDF: Self = Self {
-        tx_power_dbm: oer_esp32s31_hal::ieee802154::ESP32S31_TX_POWER_LEVELS.highest_dbm(),
-        cca_threshold_dbm: -75,
-        receive_sensitivity_dbm: oer_espressif_ieee802154_engine::engine::RECEIVE_SENSITIVITY_DBM,
-    };
+    /// The Kconfig default `CONFIG_IEEE802154_CCA_THRESHOLD` of ESP-IDF
+    /// (`esp_ieee802154_get_cca_threshold`), in dBm.
+    pub const ESP_IDF_CCA_THRESHOLD_DBM: i8 = -75;
+
+    /// The figures ESP-IDF's OpenThread port reports for a chip whose
+    /// driver gives every channel `tx_power_dbm` (`ieee802154_pib_init`
+    /// takes the highest level of the chip's transmit power table,
+    /// `esp_ieee802154_get_txpower`) and whose receive sensitivity is
+    /// `receive_sensitivity_dbm` (`IEEE802154_RX_SENSITIVITY` of the chip's
+    /// `ieee802154_ll.h`, `esp_ieee802154_get_receive_sensitivity`), with
+    /// the Kconfig CCA threshold [`Self::ESP_IDF_CCA_THRESHOLD_DBM`].
+    pub const fn esp_idf(tx_power_dbm: i8, receive_sensitivity_dbm: i8) -> Self {
+        Self {
+            tx_power_dbm,
+            cca_threshold_dbm: Self::ESP_IDF_CCA_THRESHOLD_DBM,
+            receive_sensitivity_dbm,
+        }
+    }
 }
 
-/// The ESP32-S31 IEEE 802.15.4 runtime as an OpenThread radio.
+/// An IEEE 802.15.4 radio port as an OpenThread radio.
 ///
 /// Frames that arrive while a transmission or energy scan runs wait in a
 /// queue of `QUEUE` frames for [`Radio::receive`]; a full queue drops the
 /// newest, as the trait allows. A transmission whose future OpenThread drops
-/// finishes in the runtime; the next operation first waits for its end.
+/// finishes in the backend; the next operation first waits for its end.
 // CAPABILITY: ieee802154-product-stacks-thread
-pub struct OpenThreadRadio<'r, 's, M: RawMutex, H, const EVENTS: usize, const QUEUE: usize> {
-    runtime: &'r Ieee802154Runtime<'s, M, H, EVENTS>,
+pub struct OpenThreadRadio<'r, P: Ieee802154RadioPort, const QUEUE: usize> {
+    port: &'r P,
     /// The composition's live RSSI read (`otPlatRadioGetRssi`).
     rssi: RadioRssi,
     defaults: OpenThreadRadioDefaults,
-    received: Deque<Ieee802154OwnedFrame, QUEUE>,
+    /// Received-frame events.
+    received: Deque<P::Event, QUEUE>,
     /// An operation whose terminal event is still owed.
     pending: Option<RequestId>,
     next_id: u32,
-    /// The runtime's radio clock, once the radio is initialized.
+    /// The port's radio clock, once the radio is initialized.
     clock: Option<RadioClock>,
     /// The CCA threshold the radio holds, in dBm.
     cca_threshold: Option<i8>,
@@ -106,29 +108,20 @@ struct Outgoing<'a> {
 }
 
 /// The terminal event of one operation.
-enum Terminal {
-    Transmitted(Ieee802154RadioEvent),
+enum Terminal<E> {
+    Transmitted(E),
     Scanned(Option<i8>),
     /// The event was lost with an overflow, or the radio faulted.
     Lost,
 }
 
-impl<'r, 's, M, H, const EVENTS: usize, const QUEUE: usize>
-    OpenThreadRadio<'r, 's, M, H, EVENTS, QUEUE>
-where
-    M: RawMutex,
-    H: Ieee802154LowLevel,
-{
-    /// Drive `runtime`, which the composition started. `rssi` reads the
-    /// runtime's live RSSI (`esp_ieee802154_get_recent_rssi`) for
+impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEUE> {
+    /// Drive `port`, which the composition started. `rssi` reads the
+    /// port's live RSSI ([`Ieee802154RadioPort::recent_rssi`]) for
     /// OpenThread's synchronous `otPlatRadioGetRssi`.
-    pub const fn new(
-        runtime: &'r Ieee802154Runtime<'s, M, H, EVENTS>,
-        rssi: RadioRssi,
-        defaults: OpenThreadRadioDefaults,
-    ) -> Self {
+    pub const fn new(port: &'r P, rssi: RadioRssi, defaults: OpenThreadRadioDefaults) -> Self {
         Self {
-            runtime,
+            port,
             rssi,
             defaults,
             received: Deque::new(),
@@ -144,14 +137,12 @@ where
     fn submit_configuration(&mut self, configuration: Configuration) -> Result<(), PendingRefusal> {
         let id = self.id();
         match self
-            .runtime
+            .port
             .submit(RadioCommand::Configure { id, configuration })
         {
-            Ok(_) => Ok(()),
-            Err(Ieee802154RuntimeError::Rejected(CommandError::PendingTableFull)) => {
-                Err(PendingRefusal::TableFull)
-            }
-            Err(_) => Err(PendingRefusal::Other),
+            Ok(Ok(_)) => Ok(()),
+            Ok(Err(CommandError::PendingTableFull)) => Err(PendingRefusal::TableFull),
+            _ => Err(PendingRefusal::Other),
         }
     }
 
@@ -171,7 +162,8 @@ where
         RadioInstant::from_micros(radio_time(now, low))
     }
 
-    /// A request identifier; the runtime reserves `u32::MAX`.
+    /// A request identifier; `u32::MAX` stays free for the backend (the
+    /// Espressif runtime's own pause and resume).
     fn id(&mut self) -> RequestId {
         self.next_id = if self.next_id >= u32::MAX - 1 {
             1
@@ -182,42 +174,48 @@ where
     }
 
     fn submit(&mut self, command: RadioCommand<'_>) -> Result<(), RadioErrorKind> {
-        match self.runtime.submit(command) {
-            Ok(_) => Ok(()),
-            Err(_) => Err(RadioErrorKind::Other),
+        match self.port.submit(command) {
+            Ok(Ok(_)) => Ok(()),
+            _ => Err(RadioErrorKind::Other),
         }
     }
 
-    fn queue(&mut self, frame: Ieee802154OwnedFrame) {
-        let _ = self.received.push_back(frame);
+    /// Change one setting of the port.
+    fn apply(&self, setting: RadioSetting<'_>) -> Result<(), RadioErrorKind> {
+        match self.port.apply(setting) {
+            Ok(Ok(())) => Ok(()),
+            _ => Err(RadioErrorKind::Other),
+        }
     }
 
     /// Wait for the terminal event of `id`, queueing frames meanwhile.
-    async fn terminal(&mut self, id: RequestId) -> Terminal {
+    async fn terminal(&mut self, id: RequestId) -> Terminal<P::Event> {
         loop {
-            let event = match self.runtime.next_event().await {
+            let event = match self.port.next_event().await {
                 Ok(event) => event,
                 // The terminal event may have been lost with the overflow.
-                Err(_) => match self.runtime.state() {
+                Err(_) => match self.port.state() {
                     Ok(RadioState::Resting(_)) | Ok(RadioState::Disabled) | Err(_) => {
                         return Terminal::Lost;
                     }
                     Ok(_) => continue,
                 },
             };
-            match event {
-                Ieee802154RadioEvent::Received(frame) => self.queue(frame),
-                Ieee802154RadioEvent::TransmitDone { id: done, .. } if done == id => {
+            match P::view(&event) {
+                RadioEvent::Received(_) => {
+                    let _ = self.received.push_back(event);
+                }
+                RadioEvent::TransmitDone { id: done, .. } if done == id => {
                     return Terminal::Transmitted(event);
                 }
-                Ieee802154RadioEvent::EnergyScanDone {
+                RadioEvent::EnergyScanDone {
                     id: done,
                     energy_dbm,
                 } if done == id => return Terminal::Scanned(Some(energy_dbm)),
-                Ieee802154RadioEvent::EnergyScanFailed { id: done } if done == id => {
+                RadioEvent::EnergyScanFailed { id: done } if done == id => {
                     return Terminal::Scanned(None);
                 }
-                Ieee802154RadioEvent::Fault { .. } => return Terminal::Lost,
+                RadioEvent::Fault { .. } => return Terminal::Lost,
                 // The end of an operation OpenThread abandoned earlier.
                 _ => {}
             }
@@ -296,12 +294,15 @@ where
         self.pending = Some(id);
         let terminal = self.terminal(id).await;
         self.pending = None;
-        let Terminal::Transmitted(Ieee802154RadioEvent::TransmitDone {
+        let Terminal::Transmitted(event) = terminal else {
+            return (Err(RadioErrorKind::Other), None);
+        };
+        let RadioEvent::TransmitDone {
             status,
             acknowledgement,
             security,
             ..
-        }) = terminal
+        } = P::view(&event)
         else {
             return (Err(RadioErrorKind::Other), None);
         };
@@ -317,7 +318,7 @@ where
         }
         let ack = match (acknowledgement, ack_psdu_buf) {
             (Some(ack), Some(buffer)) => {
-                write_psdu(ack.frame.as_bytes(), buffer).map(|len| PsduMeta {
+                write_psdu(ack.frame.bytes(), buffer).map(|len| PsduMeta {
                     len,
                     channel: ack.metadata.channel.get(),
                     rssi: Some(ack.metadata.rssi_dbm),
@@ -336,42 +337,29 @@ fn channel(number: u8) -> Result<Channel, RadioErrorKind> {
     Channel::new(number).map_err(|_| RadioErrorKind::Other)
 }
 
-impl<M, H, const EVENTS: usize, const QUEUE: usize> Radio
-    for OpenThreadRadio<'_, '_, M, H, EVENTS, QUEUE>
-where
-    M: RawMutex,
-    H: Ieee802154LowLevel,
-{
+impl<P: Ieee802154RadioPort, const QUEUE: usize> Radio for OpenThreadRadio<'_, P, QUEUE> {
     type Error = RadioErrorKind;
 
     async fn init(&mut self) -> Result<RadioCaps, Self::Error> {
         self.settle().await;
         let id = self.id();
-        match self.runtime.submit(RadioCommand::Enable { id }) {
-            Ok(_)
-            | Err(oer_espressif_ieee802154_runtime::Ieee802154RuntimeError::Rejected(
-                CommandError::AlreadyEnabled,
-            )) => {}
-            Err(_) => return Err(RadioErrorKind::Other),
+        match self.port.submit(RadioCommand::Enable { id }) {
+            Ok(Ok(_)) | Ok(Err(CommandError::AlreadyEnabled)) => {}
+            _ => return Err(RadioErrorKind::Other),
         }
         // The radio secures frames and enhanced ACKs with OpenThread's keys,
-        // starting from the port's zeroed ones.
-        self.runtime
-            .with_mac_keys(|keys| {
-                keys.get_or_insert(PORT_INITIAL_KEYS);
-            })
-            .map_err(|_| RadioErrorKind::Other)?;
+        // starting from the port's zeroed ones: raising the frame counter to
+        // zero installs them and keeps keys already set.
+        self.apply(RadioSetting::FrameCounter {
+            interface: Interface::PRIMARY,
+            update: FrameCounterUpdate::SetIfLarger(0),
+        })?;
         // Link margins are measured from the receive sensitivity the radio
         // reports; ESP-IDF's port leaves the noise floor at zero.
-        let noise_floor = self.defaults.receive_sensitivity_dbm;
-        self.runtime
-            .with_enhanced_ack(|generator| {
-                let mut installed = Ieee802154EnhancedAckGenerator::new();
-                installed.probing().set_noise_floor(noise_floor);
-                *generator = Some(installed);
-            })
-            .map_err(|_| RadioErrorKind::Other)?;
-        self.clock = Some(self.runtime.clock().map_err(|_| RadioErrorKind::Other)?);
+        self.apply(RadioSetting::EnhancedAck(Some(EnhancedAckGeneration {
+            noise_floor_dbm: self.defaults.receive_sensitivity_dbm,
+        })))?;
+        self.clock = Some(self.port.clock().map_err(|_| RadioErrorKind::Other)?);
         // The radio holds the threshold OpenThread starts from.
         self.cca_threshold = None;
         self.apply_cca_threshold(self.defaults.cca_threshold_dbm)?;
@@ -546,118 +534,130 @@ where
     }
 
     async fn set_csl(&mut self, csl: CslConfig) -> Result<(), Self::Error> {
-        self.runtime
-            .with_csl(|installed| {
-                *installed = Ieee802154Csl {
-                    period: csl_period(csl.period),
-                    sample_time: csl.sample_time,
-                }
-            })
-            .map_err(|_| RadioErrorKind::Other)
+        self.apply(RadioSetting::Csl(CslReceiver {
+            period: csl_period(csl.period),
+            sample_time: csl.sample_time,
+        }))
     }
 
     async fn set_enh_ack_probing(
         &mut self,
         config: &EnhAckProbingConfig,
     ) -> Result<(), Self::Error> {
-        self.runtime
-            .with_enhanced_ack(|generator| {
-                if let Some(generator) = generator {
-                    replace_enh_ack_probing(
-                        generator.probing(),
-                        config.initiators.iter().map(|initiator| {
-                            (
-                                initiator.short_address,
-                                initiator.ext_address,
-                                LinkMetrics {
-                                    pdu_count: initiator.metrics.pdu_count,
-                                    lqi: initiator.metrics.lqi,
-                                    link_margin: initiator.metrics.link_margin,
-                                    rssi: initiator.metrics.rssi,
-                                },
-                            )
-                        }),
-                    );
-                }
+        let initiators: heapless::Vec<ProbingInitiator, ENH_ACK_PROBING_CAPACITY> = config
+            .initiators
+            .iter()
+            .map(|initiator| {
+                probing_initiator(
+                    initiator.short_address,
+                    initiator.ext_address,
+                    LinkMetrics {
+                        pdu_count: initiator.metrics.pdu_count,
+                        lqi: initiator.metrics.lqi,
+                        link_margin: initiator.metrics.link_margin,
+                        rssi: initiator.metrics.rssi,
+                    },
+                )
             })
-            .map_err(|_| RadioErrorKind::Other)
+            .collect();
+        match self
+            .port
+            .apply(RadioSetting::EnhancedAckProbing(&initiators))
+        {
+            // Without a generator there is no ACK to probe in.
+            Ok(Ok(())) | Ok(Err(SettingError::EnhancedAckDisabled)) => Ok(()),
+            _ => Err(RadioErrorKind::Other),
+        }
     }
 
     async fn set_mac_keys(&mut self, keys: &MacKeys) -> Result<(), Self::Error> {
-        self.runtime
-            .with_mac_keys(|installed| {
-                set_mac_keys(
-                    installed,
-                    keys.key_id,
-                    keys.previous,
-                    keys.current,
-                    keys.next,
-                );
-            })
-            .map_err(|_| RadioErrorKind::Other)
+        self.apply(RadioSetting::MacKeys {
+            interface: Interface::PRIMARY,
+            key_id: keys.key_id,
+            previous: keys.previous,
+            current: keys.current,
+            next: keys.next,
+        })
     }
 
     async fn set_mac_frame_counter(
         &mut self,
-        update: FrameCounterUpdate,
+        update: openthread_radio::FrameCounterUpdate,
     ) -> Result<(), Self::Error> {
-        let (counter, if_larger) = match update {
-            FrameCounterUpdate::Set(counter) => (counter, false),
-            FrameCounterUpdate::SetIfLarger(counter) => (counter, true),
+        let update = match update {
+            openthread_radio::FrameCounterUpdate::Set(counter) => FrameCounterUpdate::Set(counter),
+            openthread_radio::FrameCounterUpdate::SetIfLarger(counter) => {
+                FrameCounterUpdate::SetIfLarger(counter)
+            }
         };
-        self.runtime
-            .with_mac_keys(|keys| set_frame_counter(keys, counter, if_larger))
-            .map_err(|_| RadioErrorKind::Other)
+        self.apply(RadioSetting::FrameCounter {
+            interface: Interface::PRIMARY,
+            update,
+        })
     }
 
     async fn receive(&mut self, psdu_buf: &mut [u8]) -> Result<PsduMeta, Self::Error> {
-        let frame = loop {
-            if let Some(frame) = self.received.pop_front() {
-                break frame;
+        let event = loop {
+            if let Some(event) = self.received.pop_front() {
+                break event;
             }
-            match self.runtime.next_event().await {
-                Ok(Ieee802154RadioEvent::Received(frame)) => break frame,
-                // The end of an abandoned operation.
-                Ok(event) => {
-                    if let Some(id) = self.pending
-                        && terminal_of(&event) == Some(id)
-                    {
-                        self.pending = None;
+            match self.port.next_event().await {
+                Ok(event) => match P::view(&event) {
+                    RadioEvent::Received(_) => break event,
+                    // The end of an abandoned operation.
+                    view => {
+                        if let Some(id) = self.pending
+                            && terminal_of(view) == Some(id)
+                        {
+                            self.pending = None;
+                        }
                     }
-                }
+                },
                 Err(_) => {}
             }
         };
-        let len = write_psdu(frame.frame.as_bytes(), psdu_buf).ok_or(RadioErrorKind::RxInvalid)?;
-        let sent = frame.metadata.sent_acknowledgement;
-        Ok(PsduMeta {
-            len,
-            channel: frame.metadata.channel.get(),
-            rssi: Some(frame.metadata.rssi_dbm),
-            lqi: Some(frame.metadata.link_quality),
-            timestamp: frame.metadata.timestamp.map(RadioInstant::as_micros),
-            ack: Some(SentAck {
-                frame_pending: sent.frame_pending,
-                security: sent_ack_security(sent).map(|(frame_counter, key_id)| AckSecurity {
-                    frame_counter,
-                    key_id,
-                }),
-            }),
-        })
+        match P::view(&event) {
+            RadioEvent::Received(frame) => received_meta(frame, psdu_buf),
+            // Only received frames are kept.
+            _ => Err(RadioErrorKind::RxInvalid),
+        }
     }
 }
 
+/// Copy a received frame into OpenThread's PSDU buffer with its metadata.
+fn received_meta(
+    frame: ReceivedFrame<'_>,
+    psdu_buf: &mut [u8],
+) -> Result<PsduMeta, RadioErrorKind> {
+    let len = write_psdu(frame.frame.bytes(), psdu_buf).ok_or(RadioErrorKind::RxInvalid)?;
+    let sent = frame.metadata.sent_acknowledgement;
+    Ok(PsduMeta {
+        len,
+        channel: frame.metadata.channel.get(),
+        rssi: Some(frame.metadata.rssi_dbm),
+        lqi: Some(frame.metadata.link_quality),
+        timestamp: frame.metadata.timestamp.map(RadioInstant::as_micros),
+        ack: Some(SentAck {
+            frame_pending: sent.frame_pending,
+            security: sent_ack_security(sent).map(|(frame_counter, key_id)| AckSecurity {
+                frame_counter,
+                key_id,
+            }),
+        }),
+    })
+}
+
 /// The request a terminal event ends.
-fn terminal_of(event: &Ieee802154RadioEvent) -> Option<RequestId> {
-    match *event {
-        Ieee802154RadioEvent::TransmitDone { id, .. }
-        | Ieee802154RadioEvent::EnergyScanDone { id, .. }
-        | Ieee802154RadioEvent::EnergyScanFailed { id }
-        | Ieee802154RadioEvent::ClearChannelAssessmentDone { id, .. }
-        | Ieee802154RadioEvent::ClearChannelAssessmentFailed { id }
-        | Ieee802154RadioEvent::ScheduledReceiveDone { id } => Some(id),
-        Ieee802154RadioEvent::Fault { id, .. } => id,
-        Ieee802154RadioEvent::Received(_) => None,
+fn terminal_of(event: RadioEvent<'_>) -> Option<RequestId> {
+    match event {
+        RadioEvent::TransmitDone { id, .. }
+        | RadioEvent::EnergyScanDone { id, .. }
+        | RadioEvent::EnergyScanFailed { id }
+        | RadioEvent::ClearChannelAssessmentDone { id, .. }
+        | RadioEvent::ClearChannelAssessmentFailed { id }
+        | RadioEvent::ScheduledReceiveDone { id } => Some(id),
+        RadioEvent::Fault { id, .. } => id,
+        RadioEvent::Received(_) => None,
     }
 }
 

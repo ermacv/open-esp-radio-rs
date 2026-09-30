@@ -1,9 +1,14 @@
-# ESP32-S31 IEEE 802.15.4 OpenThread radio
+# IEEE 802.15.4 OpenThread radio
 
-`oer-esp32s31-ieee802154-openthread` implements the `Radio` trait of the
-[`openthread`](https://crates.io/crates/openthread) crate over the ESP32-S31
-IEEE 802.15.4 runtime, so the OpenThread stack that crate binds can run on
-the composed client.
+`oer-ieee802154-openthread` implements the `Radio` trait of the
+[`openthread`](https://crates.io/crates/openthread) crate over any
+[`Ieee802154RadioPort`](../../../protocols/ieee802154/src/port.rs), so the
+OpenThread stack that crate binds can run on any backend of the portable
+IEEE 802.15.4 radio port. It is portable: it depends on the protocol
+package and the trait crate alone. The ESP32-S31 composition's runtime
+(`oer-espressif-ieee802154-runtime`) is the port the Thread example and the
+HIL target use; the ESP-IDF behaviour described below is that of this
+adapter over that runtime.
 
 It depends on `openthread-radio`, the trait crate of the repository's fork
 of that crate,
@@ -30,18 +35,28 @@ Link Metrics subject (`Radio::set_enh_ack_probing`), and, with its
 
 ## Use
 
-Start the IEEE 802.15.4 composition, then hand its runtime and its live
+Start the IEEE 802.15.4 composition, then hand its port and its live
 RSSI reader (`Ieee802154System::recent_rssi_reader`) to
 `OpenThreadRadio::new` with the transmit power, CCA threshold and receive
 sensitivity to report, and give the radio to the `openthread` crate. The
-radio enables the runtime, installs the port's zeroed MAC keys and an
-enhanced-ACK generator and serves OpenThread's operations through the
-runtime's commands and events. Declare `OPEN_THREAD_RADIO_CAPABILITIES`
+figures are the composition's: `OpenThreadRadioDefaults::esp_idf` takes the
+chip's default transmit power and receive sensitivity (on the ESP32-S31,
+`IEEE802154_DEFAULT_TX_POWER_DBM` and `IEEE802154_RECEIVE_SENSITIVITY_DBM`
+of the composition) with ESP-IDF's default CCA threshold. The radio enables
+the port, installs zeroed MAC keys and an enhanced-ACK generator through
+`RadioSetting`s and serves OpenThread's operations through the port's
+commands and events. Declare `OPEN_THREAD_RADIO_CAPABILITIES`
 with `OtResources::set_radio_caps` before building the OpenThread instance:
 OpenThread's `SubMac` reads the capabilities once, when the instance is
 built, and leaves transmit security to the radio only when it saw it there. The
 application still supplies what the `openthread` crate asks of a platform:
 entropy, settings storage and the C library functions OpenThread links.
+
+After an OpenThread role change, `frames::role_txrx_priority` gives the
+coexistence priority of immediate transmission and reception ESP-IDF's
+`handle_ot_role_change` sets (low with the receiver on when idle, middle for
+a sleepy device); the composition maps it to its radio's coexistence levels,
+as the Thread example does with `Ieee802154System::update_coexistence`.
 
 ## What the radio reports
 
@@ -76,18 +91,19 @@ receive information does. Unlike the port, which reports the counter after
 the one the ACK carried, the radio reports the one the ACK carried. The
 radio acknowledges no second short address.
 
-`otPlatRadioGetRssi` reads the runtime's live RSSI, as the port reads
+`otPlatRadioGetRssi` reads the composition's live RSSI reader, over the
+runtime's `Ieee802154RadioPort::recent_rssi`, as the port reads
 `esp_ieee802154_get_recent_rssi`: the low byte of the shared baseband's
 current receive information, of the most recent reception whichever
 protocol received it; OpenThread's invalid RSSI while no radio is
 installed.
 
-The radio clock is the runtime's (ESP-HAL's microsecond clock, the port's
-`esp_timer`); OpenThread's 32-bit radio times are taken as the nearest
+The radio clock is the port's `clock` (over the runtime, ESP-HAL's
+microsecond clock, where ESP-IDF's port reads `esp_timer`); OpenThread's 32-bit radio times are taken as the nearest
 instant of it. A CSL receiver's `otPlatRadioReceiveAt` becomes a scheduled
 receive window, outside which the radio sleeps; the first frame of the
 window ends it, as in the vendor driver. `otPlatRadioEnableCsl` and
-`otPlatRadioUpdateCslSampleTime` set the runtime's CSL state: enhanced ACKs
+`otPlatRadioUpdateCslSampleTime` set the port's CSL state (`RadioSetting::Csl`): enhanced ACKs
 then carry a CSL IE, every CSL IE the radio sends gets the period and the
 phase to the next sample time when its SFD goes out, and retransmissions
 take a new frame counter, all as the port does. A CSL transmitter's delayed
@@ -95,8 +111,8 @@ frame becomes a scheduled transmission, with a CCA when OpenThread asks for
 one.
 
 A Link Metrics subject's probing initiators
-(`otPlatRadioConfigureEnhAckProbing`) reach the runtime's enhanced-ACK
-generator, whose ACKs to an initiator carry the Thread enhanced-ACK
+(`otPlatRadioConfigureEnhAckProbing`) reach the port's enhanced-ACK
+generator (`RadioSetting::EnhancedAckProbing`), whose ACKs to an initiator carry the Thread enhanced-ACK
 probing IE with the frame's metrics, as the port's generator adds
 `otLinkMetricsEnhAckGenData`. Link margins are measured from the receive
 sensitivity the radio reports; ESP-IDF's port never sets the noise floor
@@ -109,15 +125,16 @@ them; OpenThread reads the same clock (`otPlatTimeGet`).
 
 Frames that arrive during a transmission or energy scan wait in a bounded
 queue for `receive`; a full queue drops the newest. A transmission whose
-future OpenThread drops finishes in the runtime, and the next operation waits
+future OpenThread drops finishes in the backend, and the next operation waits
 for its end.
 
 ## Build
 
 The adapter needs no OpenThread C library: `openthread-radio` holds the
 trait alone, so the adapter builds and is tested on the host, where its tests
-drive the trait as OpenThread does over the runtime and the engine's register
-model. The application's `openthread` crate compiles OpenThread from source
+drive the trait as OpenThread does over the Espressif runtime and the
+engine's register model, and over a host model of the port that has no
+runtime, engine or chip behind it. The application's `openthread` crate compiles OpenThread from source
 for the chip target through `openthread-sys`, which needs system-installed
 CMake, Clang and libclang; host builds of the workspace do not compile it.
 
@@ -127,5 +144,5 @@ The HIL cell `ieee802154-thread-exchange` attaches an end device over the
 adapter to a network ESP-IDF's OpenThread leads and exchanges UDP both ways;
 CSL, time synchronization and secured enhanced ACKs are not exercised on air.
 The
-[Thread example](../../../../../examples/esp32s31/thread/README.md) runs an
+[Thread example](../../../../examples/esp32s31/thread/README.md) runs an
 OpenThread end device over it.

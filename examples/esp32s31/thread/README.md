@@ -5,7 +5,7 @@ This example runs [OpenThread](https://github.com/esp-rs/openthread) (the
 802.15.4 client on the [shared radio system](../../../crates/runtime/esp32s31/radio/README.md),
 spawns the radio system's periodic PHY tracking and hands the client's
 runtime to OpenThread through the
-[OpenThread radio adapter](../../../crates/adapters/openthread/esp32s31/ieee802154/README.md).
+[OpenThread radio adapter](../../../crates/adapters/openthread/ieee802154/README.md).
 The device joins the network of the active operational dataset, logs its
 role and addresses on every state change and echoes UDP datagrams on port
 1212. It reaches the radio only through the `oer` facade's `openthread`
@@ -71,7 +71,7 @@ The example uses the adapter's fork of the `openthread` crate, whose radio
 trait carries OpenThread's MAC keys and frame counter: the radio secures
 frames and enhanced ACKs as ESP-IDF's OpenThread port does. The
 capabilities and limits are described in the
-[adapter README](../../../crates/adapters/openthread/esp32s31/ieee802154/README.md). The device is a minimal end
+[adapter README](../../../crates/adapters/openthread/ieee802154/README.md). The device is a minimal end
 device of an existing network: it neither forms a network nor commissions
 joiners. The HIL cell `ieee802154-thread-exchange` runs OpenThread over the
 same adapter against an ESP-IDF Thread leader on air; this example has no HIL

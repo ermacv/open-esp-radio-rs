@@ -16,11 +16,9 @@ use embassy_futures::{
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use esp_hal::{efuse, rng::Trng};
-use oer_esp32s31_hal::ieee802154::ll::Ieee802154MacOwners;
-use oer_esp32s31_ieee802154_openthread::{
-    OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults,
+use oer_esp32s31_ieee802154_system::{
+    IEEE802154_DEFAULT_TX_POWER_DBM, IEEE802154_RECEIVE_SENSITIVITY_DBM, Ieee802154SystemRuntime,
 };
-use oer_esp32s31_ieee802154_system::IEEE802154_EVENT_CAPACITY;
 use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
 use oer_hil_protocol::{
     ieee802154::IEEE802154_THREAD_RECORDED_DATAGRAMS, ieee802154::Ieee802154SessionResult,
@@ -29,7 +27,10 @@ use oer_hil_protocol::{
     ieee802154::Ieee802154ThreadSendRequest, ieee802154::Ieee802154ThreadStartRequest,
     ieee802154::Ieee802154ThreadState,
 };
-use oer_ieee802154::{RadioCommand, RequestId};
+use oer_ieee802154::{Ieee802154RadioPort, RadioCommand, RequestId};
+use oer_ieee802154_openthread::{
+    OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults,
+};
 use openthread::{
     DeviceRole, OpenThread, OtResources, OtUdpResources, SimpleRamSettings, UdpSocket,
 };
@@ -46,14 +47,7 @@ const RX_QUEUE: usize = 8;
 const UDP_SOCKETS: usize = 1;
 const UDP_BUFFER: usize = 1280;
 
-type ThreadRadio = OpenThreadRadio<
-    'static,
-    'static,
-    CriticalSectionRawMutex,
-    Ieee802154MacOwners,
-    IEEE802154_EVENT_CAPACITY,
-    RX_QUEUE,
->;
+type ThreadRadio = OpenThreadRadio<'static, Ieee802154SystemRuntime, RX_QUEUE>;
 
 static TRNG: StaticCell<Trng> = StaticCell::new();
 static OT_RESOURCES: StaticCell<OtResources> = StaticCell::new();
@@ -282,7 +276,10 @@ pub(in crate::product_hil) async fn run_thread(
     let radio: ThreadRadio = OpenThreadRadio::new(
         system.runtime(),
         system.recent_rssi_reader(),
-        OpenThreadRadioDefaults::ESP_IDF,
+        OpenThreadRadioDefaults::esp_idf(
+            IEEE802154_DEFAULT_TX_POWER_DBM,
+            IEEE802154_RECEIVE_SENSITIVITY_DBM,
+        ),
     );
     let tracking_stop = Signal::<CriticalSectionRawMutex, ()>::new();
     let tracking = async {

@@ -2,8 +2,13 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-//! The [`openthread`] crate's `Radio` over the ESP32-S31 IEEE 802.15.4
-//! runtime.
+//! The [`openthread`] crate's `Radio` over any IEEE 802.15.4 radio port
+//! ([`oer_ieee802154::Ieee802154RadioPort`]), such as the Espressif
+//! IEEE 802.15.4 runtime. The composition supplies what the port does not
+//! carry: the transmit power and receive sensitivity OpenThread is told
+//! ([`OpenThreadRadioDefaults`]), the synchronous live RSSI read, and the
+//! mapping of a role change's coexistence priority
+//! ([`frames::role_txrx_priority`]) to its radio's coexistence levels.
 //!
 //! It builds on `openthread-radio`, the C-free trait crate of the
 //! repository's fork of that crate (<https://github.com/ermacv/openthread>,

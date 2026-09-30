@@ -14,7 +14,7 @@ use oer_hil_protocol::{
     ieee802154::Ieee802154SessionMaintenanceCounts, ieee802154::Ieee802154SessionMaintenancePolicy,
     ieee802154::Ieee802154SessionPhyMaintenance, ieee802154::Ieee802154SessionResult,
 };
-use oer_ieee802154::RadioCommand;
+use oer_ieee802154::{Ieee802154RadioPort, RadioCommand};
 
 use super::super::client::Client;
 use crate::console::{

@@ -244,7 +244,7 @@ ieee802154-trace = [
 # OpenThread over the composed client: host-driven Thread sessions.
 ieee802154-thread = [
     "ieee802154-radio",
-    "dep:oer-esp32s31-ieee802154-openthread",
+    "dep:oer-ieee802154-openthread",
     "dep:openthread",
     "dep:tinyrlibc",
 ]
@@ -284,7 +284,7 @@ oer-espressif-ieee802154-engine = { workspace = true, optional = true }
 oer-esp32s31-ieee802154-esp-hal = { workspace = true, optional = true }
 oer-espressif-ieee802154-runtime = { workspace = true, optional = true }
 oer-esp32s31-ieee802154-system = { workspace = true, optional = true }
-oer-esp32s31-ieee802154-openthread = { workspace = true, optional = true }
+oer-ieee802154-openthread = { workspace = true, optional = true }
 openthread = { workspace = true, optional = true }
 tinyrlibc = { workspace = true, optional = true }
 oer-esp32s31-radio-runtime = { workspace = true, optional = true }

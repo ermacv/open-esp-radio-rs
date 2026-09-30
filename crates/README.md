@@ -30,7 +30,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `protocols/bluetooth/le/radio/` | Portable LE radio event contract: configured roles, timed event requests and their outcomes in physical values |
 | `protocols/bluetooth/le/controller/` | Sans-IO LE Controller core: HCI command service, concurrent Link Layer roles (advertising, scanning, one peripheral connection with control procedures, encryption and ACL, Direct Test Mode) and the radio event arbiter |
 | `protocols/bluetooth/hci/` | `wire` holds packet views; `transport` holds the synchronous Controller-to-Host queue and packet validation; `controller` holds reset-scoped bootstrap state, command classification and the `le` codecs |
-| `protocols/ieee802154/` | `mac/frame` holds bounded bytes; `radio/{command,event,state,channel,capabilities}` holds portable contracts and one state machine |
+| `protocols/ieee802154/` | `mac/frame` holds bounded bytes; `radio/{command,event,state,channel,capabilities}` holds portable contracts and one state machine; `port` declares the `Ieee802154RadioPort` every backend implements and the settings it applies |
 | `services/ieee80211/{sta,rsn}/` | Executor-independent drivers of the protocol state machines: station join, candidate scan and lifecycle; WPA2 handshake and key-install runners |
 | `services/bluetooth/hci/transport/` | Bounded in-process HCI Host/Controller transport and the storage of one HCI epoch |
 | `hardware/esp32s31/{pac,hal,phy}/` | PAC `ownership` partitions register authority; HAL `root` and `owner` own the radio root and protocol routes; domain modules hold register operations, transactions and RF algorithms |
@@ -45,6 +45,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `hardware/esp32s31/driver/{bluetooth,coex}/` | Chip radio drivers; the Bluetooth root is the role-free hardware engine (clocks, PHY, IRQ, scheduler) and its `memory/` holds its lower ownership boundary; `ieee802154/` keeps only the ESP32-S31 IEEE 802.15.4 capability page |
 | `adapters/esp-hal/esp32s31/{soc,radio,ieee80211,ieee802154}/` | Upstream SoC access, singleton acquisition and concrete hardware bindings |
 | `adapters/embassy/radio/` | Embassy mailbox and role-epoch actor binding the `radio` service port |
+| `adapters/openthread/ieee802154/` | Portable OpenThread `Radio` over any `Ieee802154RadioPort` |
 | `adapters/embassy/esp32s31/executor/` | Scheduler-free Embassy executor and time driver |
 | `runtime/ieee80211/` | Portable Wi-Fi execution primitives: monitor handoffs, task shutdown, station network ownership and poll boundaries |
 | `runtime/bluetooth/` | Portable service loop joining the in-process HCI transport, the LE Controller core and a radio port |

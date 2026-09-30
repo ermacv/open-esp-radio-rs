@@ -100,6 +100,12 @@ pub enum CommandError {
         /// The radio's interface count.
         interfaces: u8,
     },
+    /// A cancellation named no running operation: the operation already
+    /// ended, or never ran.
+    NotRunning {
+        /// The operation the cancellation named.
+        target: RequestId,
+    },
     /// The controller did not publish the required capability.
     Unsupported {
         /// Rejected operation kind.
@@ -350,6 +356,14 @@ impl RadioStateMachine {
                     resume,
                 }
             }
+            // The operation's terminal event, observed as usual, ends it.
+            RadioCommand::Cancel { target, .. } => {
+                require_capability(self.capabilities, kind, RadioCapabilities::CANCEL)?;
+                if cancellable_id(previous) != Some(target) {
+                    return Err(CommandError::NotRunning { target });
+                }
+                previous
+            }
         };
 
         self.state = current;
@@ -481,6 +495,15 @@ const fn active_id(state: RadioState) -> Option<RequestId> {
         | RadioState::EnergyScanning { id, .. }
         | RadioState::AssessingChannel { id, .. } => Some(id),
         RadioState::Disabled | RadioState::Resting(_) => None,
+    }
+}
+
+/// The operation a cancellation may end in `state`: the active operation or
+/// the open scheduled receive window.
+const fn cancellable_id(state: RadioState) -> Option<RequestId> {
+    match state {
+        RadioState::Resting(RestingState::ScheduledReceiving { id, .. }) => Some(id),
+        state => active_id(state),
     }
 }
 

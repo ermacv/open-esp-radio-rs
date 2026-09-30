@@ -130,9 +130,9 @@ below it is the backend's. [`LeRadioPort`](../crates/protocols/bluetooth/le/radi
 is the Bluetooth LE port and
 [`Ieee802154RadioPort`](../crates/protocols/ieee802154/src/port.rs) the
 IEEE 802.15.4 port, which the Espressif runtime implements and the OpenThread
-adapter consumes. `LeRadioPort` keeps submission and its clock asynchronous
-because the ESP32-S31 backend admits every request against a fresh
-controller-time latch that completes only after the hardware latched the time.
+adapter consumes. `LeRadioPort` declares submission and its clock
+asynchronous: the ESP32-S31 backend admits every request against a fresh
+controller-time latch, a bounded wait for the hardware.
 
 **Placement follows hardware autonomy.** Work the backend performs without
 software on the air timeline (acknowledgement turnaround, FCS or CRC,
@@ -150,11 +150,11 @@ protocol:
 
 | Part | Semantics |
 | --- | --- |
-| Submission | Synchronous admission of one request with a caller-chosen correlation identity; refusal is a value, not a fault |
+| Submission | Immediate admission of one request with a caller-chosen correlation identity: refusal is the call's result, never a later event, and a value, not a fault. Submission is synchronous when a backend can decide without waiting; a port whose backends need a fresh hardware reading to decide may declare it asynchronous, provided the wait is bounded, depends on no other submission or event, and dropping the future admits nothing |
 | Events | Asynchronous stream of owned events, each viewed through a borrowed portable value; loss of events is reported, never silent |
 | Capabilities | What the backend supports and what it performs autonomously, read before submission |
 | Lifecycle | Enable, disable, quiesce and cancel of submitted work, each with a terminal event |
-| Clock | The backend's radio time on the shared time contract, with a stated resolution |
+| Clock | The backend's radio time on the shared time contract, with a stated resolution; asynchronous under the same conditions as submission |
 
 **Failure classes.** Every port error is one of three classes, so callers
 handle any protocol's failures alike: `Rejected` (the request was not admitted

@@ -130,7 +130,10 @@ below it is the backend's. [`LeRadioPort`](../crates/protocols/bluetooth/le/radi
 is the Bluetooth LE port and
 [`Ieee802154RadioPort`](../crates/protocols/ieee802154/src/port.rs) the
 IEEE 802.15.4 port, which the Espressif runtime implements and the OpenThread
-adapter consumes. `LeRadioPort` declares submission and its clock
+adapter consumes, and
+[`Ieee80211LowerMacPort`](../crates/protocols/ieee80211/lower-mac/README.md)
+the Wi-Fi port, carrying the portable `Channel` and `PhyRate` values of
+`oer-ieee80211-mac`. `LeRadioPort` declares submission and its clock
 asynchronous: the ESP32-S31 backend admits every request against a fresh
 controller-time latch, a bounded wait for the hardware.
 

@@ -24,6 +24,7 @@ pub mod ht;
 pub mod management;
 pub mod management_protection;
 pub mod ndpa;
+pub mod phy;
 pub mod protection;
 pub mod scan;
 pub mod security;

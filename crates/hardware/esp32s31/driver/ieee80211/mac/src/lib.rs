@@ -26,6 +26,8 @@ pub mod he;
 pub mod init;
 mod interface_address;
 pub mod irq;
+/// Conversions to and from the portable values of the lower-MAC port.
+pub mod portable;
 pub mod rx;
 mod sniffer;
 pub mod sta_ap_registers;

@@ -25,6 +25,8 @@ protocol that owns them:
 | `station/sequence` | Separate management/non-QoS and per-TID TX sequence owners |
 | `data/duplicate` | Association/peer-scoped receive retry history |
 | `qos` | Typed traffic intent, UP/AC and DSCP classification helpers |
+| `channel` | `Channel` (2.4 GHz and 5 GHz, 20/40 MHz geometry of the global operating classes) and the 2.4 GHz `WifiChannel` the role owners configure |
+| `phy` | `PhyRate`: validated non-HT, HT and HE SU rates |
 | `extensions/wmm` | WMM AC parameters and vendor IE parsing |
 | `extensions/espressif/esp_now` | ESP-NOW v1/v2 framing and protected-envelope validation |
 | `extensions/espressif/esp_now/v2/reassembly` | Caller-owned storage for a validated v2 datagram |
@@ -42,6 +44,9 @@ advertised WMM Parameter Set neither acquires admission nor selects a
 hardware queue. AP encoders take an explicit `Advertisement`;
 `roles/esp32s31/ieee80211/ap/src/profile.rs` selects the hardware
 advertisement. The portable codec carries no implicit ESP32-S31 profile.
+
+[`lower-mac`](lower-mac/README.md) declares the radio port every Wi-Fi backend
+implements; one submission is one hardware transmission attempt.
 
 `softmac/src/contract` describes operation ownership, service capabilities,
 resource limits and normalized statuses. Configuration, VIF and monitor

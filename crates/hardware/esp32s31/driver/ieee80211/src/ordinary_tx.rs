@@ -833,7 +833,7 @@ where
                         result: if success {
                             MacTxResult::Transmitted
                         } else {
-                            MacTxResult::HardwareFailure(completion.status())
+                            MacTxResult::HardwareFailure(completion.tx_status())
                         },
                         attempts,
                         final_rate,

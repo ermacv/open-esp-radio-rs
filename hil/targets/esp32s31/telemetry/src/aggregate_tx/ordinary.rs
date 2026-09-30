@@ -194,7 +194,7 @@ mod tests {
         let completion = TxCompletion::new_model(TxCookie(1), 2, 0);
         counters.record(Some(OrdinaryTxOutcome::HardwareFailure(OrdinaryTxReport {
             status: MacTxStatus {
-                result: MacTxResult::HardwareFailure(completion.status()),
+                result: MacTxResult::HardwareFailure(completion.tx_status()),
                 attempts: 1,
                 final_rate: TxPhyRate::Legacy(LegacyRate::Ofdm24M),
                 acknowledged: Some(false),

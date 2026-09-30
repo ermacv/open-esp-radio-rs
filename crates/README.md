@@ -26,6 +26,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `trace/` | Typed, reset-retained event trace and snapshot slots; drivers define the events, images place the storage |
 | `network/interface/` | Stack-neutral interface, link and error values |
 | `protocols/ieee80211/{mac,softmac,sta,ap,security/rsn}/` | Sans-IO frame/protocol code, MAC contracts, role policy and security state machines, and the ports their drivers wait on |
+| `protocols/ieee80211/lower-mac/` | The [`Ieee80211LowerMacPort`](protocols/ieee80211/lower-mac/README.md) every Wi-Fi backend implements: one hardware transmission attempt per submission, receive events with portable `RxMeta`, interface, key, Block Ack, TSF and coexistence controls, and the backend's capabilities and hardware services |
 | `protocols/ieee80211/datapath/` | Software TX frame ownership, destination queues, airtime scheduling and physical materialization contracts |
 | `protocols/bluetooth/le/ll/` | Portable LE PDU codecs, protocol-role state, the software Link Layer acknowledgement (`connection::acknowledgement`) and the Direct Test Mode session planner |
 | `protocols/bluetooth/le/radio/` | Portable LE radio event contract: configured roles, timed event requests and their outcomes in physical values; the `LeRadioPort` a service loop drives, its capabilities (roles, PHYs, data payload, acknowledgement owner) and `NoRadio` |

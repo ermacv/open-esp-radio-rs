@@ -17,9 +17,9 @@ use crate::{
     workload::ieee80211::control::report_stack, workload::ieee80211::control::require_transition,
     workload::ieee80211::control::start_station, workload::ieee80211::control::stop_station,
 };
-use hil_core::lab::config::StationFixtureConfig;
 use oer_hil_link::{SerialCapture, SessionEvidence};
 use oer_hil_scenario::link::{HtGuardIntervalExpectation, PhyExpectation};
+use oer_hil_stand::config::StationFixtureConfig;
 
 mod clients;
 mod icmp;

@@ -28,11 +28,11 @@ impl Family {
     /// connections hop across it, the 2.4 GHz band.
     pub(crate) fn air_ranges(
         &self,
-        lab: &hil_core::lab::config::LabConfig,
+        lab: &oer_hil_stand::config::LabConfig,
         wifi: oer_hil_scenario::link::WifiLabUse,
     ) -> Vec<(u64, u64)> {
-        use hil_core::lab::lock::{BAND_2G4, Emits, Need, Spectrum};
         use hil_ieee802154::scenario::Ieee802154Scenario as Ieee802154;
+        use oer_hil_stand::lock::{BAND_2G4, Emits, Need, Spectrum};
         let channel = |channel: u8| Spectrum::ieee802154(channel, Need::None, Emits::None);
         let range = |spectrum: Spectrum| (spectrum.low_khz, spectrum.high_khz);
         match self {

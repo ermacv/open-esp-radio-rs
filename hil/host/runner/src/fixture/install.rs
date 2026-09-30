@@ -60,9 +60,9 @@ pub(crate) fn run(
         // worse than a late one.
         eprintln!(
             "hil-arbiter: queueing for {}",
-            hil_core::fixture::software::resource(provider)
+            oer_hil_stand::software::resource(provider)
         );
-        let grant = hil_core::fixture::software::install_grant(provider)?;
+        let grant = oer_hil_stand::software::install_grant(provider)?;
         // sudo runs in this foreground process group with the terminal's
         // standard streams, so it owns password echo, input and job control,
         // and its exit status is the command's.

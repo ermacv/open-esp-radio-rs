@@ -71,8 +71,8 @@ fn fixture_lifecycle_harness() {
     let root = PathBuf::from(std::env::var_os("OER_TEST_STATE").unwrap());
     let _signals = oer_process::install_signal_handlers().unwrap();
     let scope = hil_core::fixture::cleanup::Scope::new(&root);
-    let lab = hil_core::lab::config::LabConfig::for_test();
-    let hil_core::lab::config::StationFixtureConfig::OpenWrt(config) = &lab.station_fixture else {
+    let lab = oer_hil_stand::config::LabConfig::for_test();
+    let oer_hil_stand::config::StationFixtureConfig::OpenWrt(config) = &lab.station_fixture else {
         panic!("OpenWrt test lab required");
     };
     if case.starts_with("ap-") {

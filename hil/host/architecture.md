@@ -15,7 +15,8 @@ Separate Cargo packages bound the privilege and radio-family scopes:
 | Package | Binaries | Role |
 | --- | --- | --- |
 | `runner/` (`oer-hil-runner`) | `oer-hil-runner` | Unprivileged CLI, run orchestration, workload dispatch and the cross-family fixture preflight |
-| `runner-core/` (`oer-hil-runner-core`) | none | Laboratory, the workload context and failure classification; implements the link's `Dut` and `StationNetwork` ports |
+| `runner-core/` (`oer-hil-runner-core`) | none | The workload context, failure classification, per-repetition fixture cleanup, the peers' line console and profile reports |
+| `stand/` (`oer-hil-stand`) | none | Stand operation: laboratory configuration and locks, the cell's pre-run observation, fixture software leases, recovery and post-mortem; implements the link's `Dut` and `StationNetwork` ports |
 | `link/` (`oer-hil-link`) | none | The host/target link: one UART capture and its protocol exchange, readiness, reboots and validation, the host traffic transports and measurements; reaches the board only through its `Dut` and `StationNetwork` ports |
 | `image/` (`oer-hil-image`) | none | The image builder: firmware construction from the live tree or a frozen source snapshot, placement and stack audits, and the firmware and build records it hands to evidence |
 | `evidence/` (`oer-hil-evidence`) | none | Sealed run evidence: the run writer and its seal, build provenance and the content-addressed object store, verification of a recorded run against the image builder's recipe, reports, and the experiment and laboratory records a run keeps |
@@ -492,8 +493,10 @@ The host packages follow the roles of the
   against); the reusable ELF analyzer remains `tools/memory-report`. The
   builder does not print: `artifact_report` returns the report the CLI
   publishes.
-- `lab` owns local configuration, the pre-run observation of the cell, the
-  exclusive fixture guard and the laboratory error type. Each family
+- `oer-hil-stand` owns local configuration, the pre-run observation of the
+  cell, the exclusive fixture guard, fixture software leases and the
+  laboratory error type, and implements the link's ports for the leased
+  board. Each family
   package's `fixture` implements its controlled host and peer capabilities:
   the Wi-Fi `local` (laptop radio and helper) and `openwrt` (SSH-managed
   router) providers each own their AP, client, monitors and session evidence,
@@ -505,25 +508,26 @@ The host packages follow the roles of the
   decoded messages into measurements. A session's `Target` holds the board
   as a `Dut` (console, application reset, startup artifact, journal of the
   changes the link makes), the `StationNetwork` a station target joins and
-  the scenario's target settings; `lab` implements both ports.
+  the scenario's target settings; the stand implements both ports.
 - `context` gives one workload repetition its laboratory, target settings,
   capture lifecycle and measurements; workloads that control the AP receive
   the prepared fixture explicitly.
 - Each family's `workload` module owns its operations: system, IEEE 802.15.4,
   IEEE 802.11 role and network traffic, and Bluetooth LE. They report scenario
   outcomes, not product readiness.
-- `post_mortem` asks a failed repetition's target, attached without a reset,
-  for its boot evidence and trace, and classifies hangs and unexpected
-  resets; `recovery` owns the reset ladder for a target that does not answer
-  and decides whether its board is recoverable or quarantined. `failure`
-  classifies errors as scenario or infrastructure failures.
+- The stand's `post_mortem` asks a failed repetition's target, attached
+  without a reset, for its boot evidence and trace, and classifies hangs and
+  unexpected resets; its `recovery` owns the reset ladder for a target that
+  does not answer and decides whether its board is recoverable or
+  quarantined. `runner-core`'s `failure` classifies errors as scenario or
+  infrastructure failures.
 
 Dependencies form a directed acyclic graph that Cargo enforces: the binary
 depends on the family packages and the image builder, each family on
-`runner-core`, and `runner-core` on the link, scenario, evidence and
-image-class packages, never the reverse. The image builder depends on evidence, never the
-reverse, and nothing but the binary and `xtask` depends on the builder. Inside `runner-core`, the context depends on session and laboratory
-owners, never the reverse. The `test-support` features of `runner-core`,
+`runner-core`, and `runner-core` on the stand, link, scenario and evidence
+packages, never the reverse. The stand depends on the link to implement its
+ports, never the reverse. The image builder depends on evidence, never the
+reverse, and nothing but the binary and `xtask` depends on the builder. The `test-support` features of `runner-core`,
 `oer-hil-scenario`, `oer-hil-evidence` and `oer-hil-source-snapshot` expose
 their test doubles and fixtures to the other packages' tests.
 

@@ -10,7 +10,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::Result;
-use hil_core::lab::config::StationFixtureConfig;
+use oer_hil_stand::config::StationFixtureConfig;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BenchmarkIpv4Route {

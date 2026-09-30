@@ -204,7 +204,7 @@ fn a_board_is_refused_only_when_its_newest_flash_is_another_image() {
 #[test]
 fn a_run_claims_its_boards_fixtures_and_the_air() {
     use oer_hil_arbiter::{AIR, Claim};
-    let lab = crate::lab::config::LabConfig::for_test();
+    let lab = crate::config::LabConfig::for_test();
     let measured = Spectrum::new(BAND_2G4, Need::Strict, Emits::Noisy);
     let request = LeaseRequest {
         air: vec![measured],
@@ -238,7 +238,7 @@ fn a_run_claims_its_boards_fixtures_and_the_air() {
 #[test]
 fn a_run_shares_its_fixture_software_with_other_runs_but_not_an_installation() {
     use oer_hil_arbiter::Claim;
-    let lab = crate::lab::config::LabConfig::for_test();
+    let lab = crate::config::LabConfig::for_test();
     let required = oer_hil_scenario::requirements::Requirements {
         bluetooth_adapter: true,
         ..Default::default()
@@ -250,14 +250,13 @@ fn a_run_shares_its_fixture_software_with_other_runs_but_not_an_installation() {
             ..LeaseRequest::device(required)
         },
     );
-    let software =
-        crate::fixture::software::resource(oer_hil_fixture_install::Provider::LinuxBluetooth);
+    let software = crate::software::resource(oer_hil_fixture_install::Provider::LinuxBluetooth);
     assert!(claims.contains(&Claim::shared(&software)), "{claims:?}");
     assert!(!claims.contains(&Claim::exclusive(&software)));
 }
 
 fn claims_of(
-    lab: &crate::lab::config::LabConfig,
+    lab: &crate::config::LabConfig,
     request: &LeaseRequest,
 ) -> Vec<oer_hil_arbiter::Claim> {
     claims(lab, request, &[])

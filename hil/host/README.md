@@ -14,7 +14,8 @@ hil/
 ├── evidence/          recorded evidence shards per chip
 ├── host/
 │   ├── runner/        CLI, run orchestration and workload dispatch
-│   ├── runner-core/   lab, workload context and the link's ports
+│   ├── runner-core/   workload context, failure classification, peer console
+│   ├── stand/         laboratory config and locks, recovery, post-mortem
 │   ├── link/          UART session, protocol, transports and measurements
 │   ├── evidence/      run writer, seal, verification and reports
 │   ├── image/         image builder, audits and firmware records

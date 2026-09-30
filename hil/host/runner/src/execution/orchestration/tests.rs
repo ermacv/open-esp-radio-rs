@@ -286,7 +286,7 @@ fn cleanup_is_written_before_attachment_indexing_and_preserves_partial_output() 
     let result = finalize_repetition(
         1,
         Path::new("scenarios/test/repetition-001"),
-        &hil_core::usb_events::UsbWatch::start([], 1),
+        &oer_hil_stand::usb_events::UsbWatch::start([], 1),
         output.path(),
         1,
         started,
@@ -425,7 +425,7 @@ fn a_failed_reflash_after_yielding_blocks_only_the_next_scenario() {
 
 #[test]
 fn a_series_yields_and_an_air_measurement_claims_its_ranges_strictly() {
-    use hil_core::lab::lock::{BAND_2G4, Emits, Need, Spectrum};
+    use oer_hil_stand::lock::{BAND_2G4, Emits, Need, Spectrum};
     let catalog = catalog();
     let lab = LabConfig::for_test();
     let lease_request = |selected: &[&Scenario]| lease_request(&lab, selected);

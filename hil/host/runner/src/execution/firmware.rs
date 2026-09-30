@@ -4,13 +4,13 @@ use oer_hil_evidence::run::RunEventKind;
 use std::path::Path;
 
 use crate::Result;
-use hil_core::lab::config::LabConfig;
 use oer_hil_evidence::{
     run::{Failure, FailureKind, Outcome, PlannedFirmware, RunSession},
     verify::ArchivedFirmware,
 };
 use oer_hil_image::{Artifacts, CurrentBuild};
 use oer_hil_image_class::ImageClass;
+use oer_hil_stand::config::LabConfig;
 
 pub(crate) enum RunFirmware {
     BuildCurrent(CurrentBuild),
@@ -124,7 +124,7 @@ pub(crate) fn flash_archived_artifacts(
     })?;
     if failure.is_none() {
         let repository = session.repository();
-        hil_core::lab::lock::record_flash(
+        oer_hil_stand::lock::record_flash(
             &lab.dut.serial,
             class.id(),
             &artifacts.application_image,
@@ -177,7 +177,7 @@ pub(crate) fn reflash_replayed(
         Some(archived.image),
         Some(Outcome::Passed),
     )?;
-    hil_core::lab::lock::record_flash(
+    oer_hil_stand::lock::record_flash(
         &lab.dut.serial,
         archived.image.id(),
         &archived.application_path,
@@ -260,7 +260,7 @@ fn prepare_replayed_image(
         Ok(())
     })?;
     if let Some(application) = flashed {
-        hil_core::lab::lock::record_flash(
+        oer_hil_stand::lock::record_flash(
             &lab.dut.serial,
             archived.image.id(),
             &application,

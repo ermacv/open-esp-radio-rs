@@ -10,10 +10,10 @@ use crate::{
     emit_json, execution::firmware::RunFirmware, execution::orchestration, fixture,
     repository_root,
 };
-use hil_core::lab;
 use hil_core::output;
 use oer_hil_image as image;
 use oer_hil_scenario::SCENARIO_SCHEMA;
+use oer_hil_stand as lab;
 
 pub(crate) fn run() -> Result<()> {
     let root = repository_root()?;
@@ -52,7 +52,7 @@ pub(crate) fn run() -> Result<()> {
                     dtm_version,
                 },
         } => {
-            let _software = hil_core::fixture::software::SoftwareLease::acquire_one(
+            let _software = oer_hil_stand::software::SoftwareLease::acquire_one(
                 oer_hil_fixture_install::Provider::LinuxBluetooth,
             )?;
             hil_bluetooth::fixture::bluetooth::check(&root, adapter, dtm_version)
@@ -73,8 +73,7 @@ pub(crate) fn run() -> Result<()> {
             let chip = orchestration::select_chip(&root, &selected, selection.chip.as_deref())?;
             let lab = lab::config::LabConfig::load(&lab_path, &chip)?;
             let required = requirements(&selected);
-            let _software =
-                hil_core::fixture::software::SoftwareLease::acquire_for(&lab, required)?;
+            let _software = oer_hil_stand::software::SoftwareLease::acquire_for(&lab, required)?;
             crate::execution::doctor::run(&root, &lab, &selected)
         }
         CliCommand::Plan { selection, proofs } => {

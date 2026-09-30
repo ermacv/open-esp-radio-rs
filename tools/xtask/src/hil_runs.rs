@@ -620,7 +620,7 @@ pub fn why(run: &Run, tail_lines: usize) -> String {
                 }
             }
             // Whether the host saw a board's USB bridge drop off the bus.
-            match oer_hil_runner_core::usb_events::recorded(&directory) {
+            match oer_hil_stand::usb_events::recorded(&directory) {
                 Ok(events) => {
                     for event in events {
                         text.push_str(&format!(

@@ -10,8 +10,8 @@ use std::{
 use zeroize::Zeroizing;
 
 use crate::Result;
-use hil_core::lab::config::{OpenWrtConfig, StationConfig};
 use oer_hil_scenario::link::{AccessPointSecurity, ManagementFrameProtection, PhyExpectation};
+use oer_hil_stand::config::{OpenWrtConfig, StationConfig};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Observation {

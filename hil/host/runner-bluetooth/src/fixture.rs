@@ -2,4 +2,4 @@
 pub mod bluetooth;
 pub mod dtm_peer;
 
-pub use hil_core::fixture::Error;
+pub use oer_hil_stand::Error;

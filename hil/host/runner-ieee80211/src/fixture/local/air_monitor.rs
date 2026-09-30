@@ -19,7 +19,7 @@ use crate::{
     fixture::openwrt::evidence::resolve_station_mac,
     fixture::openwrt::tx_monitor::MacFrameKey,
 };
-use hil_core::lab::config::OpenWrtConfig;
+use oer_hil_stand::config::OpenWrtConfig;
 
 const MONITOR_INTERFACE: &str = "mon0";
 const MAX_CAPTURE_BYTES: u64 = 128 * 1024 * 1024;

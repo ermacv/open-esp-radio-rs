@@ -16,7 +16,7 @@ use std::{
 };
 
 pub fn check(root: &Path, adapter: Adapter, dtm_version: DtmVersion) -> crate::Result<()> {
-    let _lease = hil_core::lab::lock::acquire_bluetooth(adapter)?;
+    let _lease = oer_hil_stand::lock::acquire_bluetooth(adapter)?;
     let directory = root.join("target/hil/fixture-checks");
     fs::create_dir_all(&directory)?;
     let output = tempfile::Builder::new()

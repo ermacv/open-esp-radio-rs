@@ -74,7 +74,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         Some("__command-tree") => return command_tree(ctx),
         Some("devices") => return devices(ctx, &options, &args[1..]),
         Some("fixtures") => {
-            let lab = oer_hil_runner_core::lab::config::LabConfig::default_path()?;
+            let lab = oer_hil_stand::config::LabConfig::default_path()?;
             print!(
                 "{}",
                 crate::hil_fixtures::describe(&crate::hil_fixtures::probe(&lab))

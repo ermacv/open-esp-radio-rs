@@ -14,4 +14,4 @@ pub mod station_fixture;
 #[cfg(all(test, unix))]
 mod test_support;
 
-pub use hil_core::fixture::Error;
+pub use oer_hil_stand::Error;

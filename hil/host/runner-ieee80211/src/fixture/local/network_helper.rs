@@ -5,20 +5,20 @@ use std::process::Command;
 
 use crate::Result;
 
-pub use hil_core::lab::NETWORK_HELPER as PATH;
+pub use oer_hil_stand::NETWORK_HELPER as PATH;
 const REQUIRED_CAPABILITIES: &str = "schema=14 station_ap=ht20,ht40,he20 legacy_ap=dsss client=ht,non-ht observer=20,40 managed=1 rfkill=restore";
 
 /// Validate the installed command protocol before a selected run can flash or
 /// reset the DUT. System-only and remote-only workloads do not need this helper.
 pub fn require_for(
-    lab: &hil_core::lab::config::LabConfig,
+    lab: &oer_hil_stand::config::LabConfig,
     required: oer_hil_scenario::requirements::Requirements,
 ) -> Result<()> {
     if required.local_radio()
         || (required.station_network
             && matches!(
                 lab.station_fixture,
-                hil_core::lab::config::StationFixtureConfig::LocalLinux(_)
+                oer_hil_stand::config::StationFixtureConfig::LocalLinux(_)
             ))
     {
         doctor()?;

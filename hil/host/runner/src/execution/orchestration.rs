@@ -8,12 +8,12 @@ use std::{
 };
 
 use crate::{Result, emit_json, fixture};
-use hil_core::lab::config::LabConfig;
 use oer_hil_evidence::run::{
     Failure, FailureKind, Outcome, PlanDisposition, PlanEntry, PlannedFirmware, RUN_SCHEMA,
     RepetitionResult, RunPlan, RunSession, ScenarioResult,
 };
 use oer_hil_image_class::ImageClass;
+use oer_hil_stand::config::LabConfig;
 
 use crate::scenario::{Catalog, Scenario, requirements};
 
@@ -284,8 +284,8 @@ pub(crate) const AIR_NOISY_TAG: &str = "air-noisy";
 
 /// How `scenario` uses the air: its family's ranges, tolerant of others'
 /// protocol traffic and transmitting normally unless its tags say otherwise.
-pub(crate) fn air_use(lab: &LabConfig, scenario: &Scenario) -> Vec<hil_core::lab::lock::Spectrum> {
-    use hil_core::lab::lock::{Emits, Need, Spectrum};
+pub(crate) fn air_use(lab: &LabConfig, scenario: &Scenario) -> Vec<oer_hil_stand::lock::Spectrum> {
+    use oer_hil_stand::lock::{Emits, Need, Spectrum};
     let tagged = |tag: &str| scenario.header.tags.iter().any(|known| known == tag);
     let need = if tagged(AIR_EXCLUSIVE_TAG) || tagged(AIR_STRICT_TAG) {
         Need::Strict
@@ -311,14 +311,14 @@ pub(crate) fn air_use(lab: &LabConfig, scenario: &Scenario) -> Vec<hil_core::lab
 pub(crate) fn lease_request(
     lab: &LabConfig,
     selected: &[&Scenario],
-) -> hil_core::lab::lock::LeaseRequest {
+) -> oer_hil_stand::lock::LeaseRequest {
     let mut air = Vec::new();
     for range in selected.iter().flat_map(|scenario| air_use(lab, scenario)) {
         if !air.contains(&range) {
             air.push(range);
         }
     }
-    hil_core::lab::lock::LeaseRequest {
+    oer_hil_stand::lock::LeaseRequest {
         required: requirements(selected),
         scenarios: selected
             .iter()
@@ -335,16 +335,16 @@ fn lease_stand(
     session: &mut RunSession,
     lab: &LabConfig,
     selected: &[&Scenario],
-) -> Result<hil_core::lab::lock::FixtureLock> {
+) -> Result<oer_hil_stand::lock::FixtureLock> {
     session.record_event(RunEventKind::StandLeaseRequested, None, None, None)?;
     let request = lease_request(lab, selected);
-    let fixture = hil_core::lab::lock::FixtureLock::lease(lab, request.clone())?;
+    let fixture = oer_hil_stand::lock::FixtureLock::lease(lab, request.clone())?;
     session.record_event(RunEventKind::StandLeaseGranted, None, None, None)?;
     oer_hil_durable::atomic_json(
         &session.directory().join("air.json"),
-        &hil_core::lab::lock::air_record(&request)?,
+        &oer_hil_stand::lock::air_record(&request)?,
     )?;
-    let lab_provenance = hil_core::lab::provenance::capture(lab, requirements(selected))?;
+    let lab_provenance = oer_hil_stand::provenance::capture(lab, requirements(selected))?;
     session.record_lab_provenance(&lab_provenance)?;
     session.record_event(RunEventKind::LabProvenanceCaptured, None, None, None)?;
     Ok(fixture)
@@ -361,13 +361,13 @@ struct LiveSuite<'a> {
     firmware: FirmwarePreparation<'a>,
     /// Images built before the lease; a class without one is prepared whole.
     prebuilt: Vec<(ImageClass, firmware::Built)>,
-    lease: Option<hil_core::lab::lock::FixtureLock>,
+    lease: Option<oer_hil_stand::lock::FixtureLock>,
     /// The class on the device and, when built by this run, its archive.
     flashed: Option<(ImageClass, Option<Box<oer_hil_image::Artifacts>>)>,
     /// The peer image this run brought up to its current catalog build.
     peer_image: Option<&'static str>,
     /// What the board journal recorded for that image's flash.
-    peer_flash: Option<hil_core::lab::lock::PeerImageRecord>,
+    peer_flash: Option<oer_hil_stand::lock::PeerImageRecord>,
 }
 
 trait SuiteEffects {
@@ -547,7 +547,7 @@ impl LiveSuite<'_> {
             return Ok(());
         }
         let lease = self.lease.as_ref().ok_or("the run holds no stand lease")?;
-        let board = hil_core::lab::lock::board_identity(&peer.serial()?);
+        let board = oer_hil_stand::lock::board_identity(&peer.serial()?);
         let mut command =
             std::process::Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
         command
@@ -564,7 +564,7 @@ impl LiveSuite<'_> {
             .envs(lease.environment());
         oer_process::run(&mut command)?;
         self.peer_image = Some(image);
-        self.peer_flash = hil_core::lab::lock::peer_flash(&board, image)?;
+        self.peer_flash = oer_hil_stand::lock::peer_flash(&board, image)?;
         Ok(())
     }
 }
@@ -850,12 +850,12 @@ fn run_scenario_repetition(
     let started_unix_millis = oer_hil_durable::unix_millis()?;
     let started = std::time::Instant::now();
     let peer_serial = lab.peer.as_ref().and_then(|peer| peer.serial().ok());
-    let usb = hil_core::usb_events::UsbWatch::start(
+    let usb = oer_hil_stand::usb_events::UsbWatch::start(
         std::iter::once(lab.dut.serial.as_path()).chain(peer_serial.as_deref()),
         started_unix_millis,
     );
     let cleanup = hil_core::fixture::cleanup::Scope::new(output);
-    if hil_core::recovery::device_quarantined() {
+    if oer_hil_stand::recovery::device_quarantined() {
         return finalize_repetition(
             repetition,
             artifacts,
@@ -872,7 +872,7 @@ fn run_scenario_repetition(
             Vec::new(),
         );
     }
-    if hil_core::recovery::image_silent(selected.image().id()) {
+    if oer_hil_stand::recovery::image_silent(selected.image().id()) {
         return finalize_repetition(
             repetition,
             artifacts,
@@ -935,7 +935,7 @@ fn run_scenario_repetition(
 fn finalize_repetition(
     repetition: u8,
     artifacts: &Path,
-    usb: &hil_core::usb_events::UsbWatch,
+    usb: &oer_hil_stand::usb_events::UsbWatch,
     output: &Path,
     started_unix_millis: u64,
     started: std::time::Instant,

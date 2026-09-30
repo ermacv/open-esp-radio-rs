@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::Result;
 use crate::scenario::Scenario;
-use hil_core::lab::config::LabConfig;
+use oer_hil_stand::config::LabConfig;
 
 pub(crate) fn check_without_device(
     root: &Path,
@@ -14,7 +14,7 @@ pub(crate) fn check_without_device(
     let resolved = lab.resolve(plan.wifi);
     let lab = &resolved;
     let required = plan.requirements;
-    let _lease = hil_core::lab::lock::FixtureLock::acquire_without_device(lab, required)?;
+    let _lease = oer_hil_stand::lock::FixtureLock::acquire_without_device(lab, required)?;
     let output = root.join("target/hil/fixture-checks").join(format!(
         "{}-{}",
         oer_hil_durable::unix_millis()?,
@@ -30,7 +30,7 @@ pub(crate) fn check_without_device(
                 ap.stop()?;
                 ap.restart()?;
             }
-            if let hil_core::lab::config::StationFixtureConfig::OpenWrt(config) =
+            if let oer_hil_stand::config::StationFixtureConfig::OpenWrt(config) =
                 &lab.station_fixture
             {
                 if required.station_udp_rx_capture || required.station_udp_tx_capture {

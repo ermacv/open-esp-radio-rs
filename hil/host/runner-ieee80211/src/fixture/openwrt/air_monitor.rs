@@ -6,7 +6,7 @@ use crate::fixture::{
     local,
     openwrt::capture::{RemoteCapture, SnapshotLength, ssh, ssh_target},
 };
-use hil_core::{lab::config::LabConfig, lab::config::StationFixtureConfig};
+use oer_hil_stand::config::{LabConfig, StationFixtureConfig};
 use oer_process::CommandExt as _;
 use std::{fs, net::Ipv4Addr, path::Path, time::Duration};
 
@@ -111,7 +111,7 @@ impl Capture {
 }
 
 /// The BSSID of the station fixture AP.
-pub fn fixture_bssid(ap: &hil_core::lab::config::OpenWrtConfig) -> Result<MacAddress> {
+pub fn fixture_bssid(ap: &oer_hil_stand::config::OpenWrtConfig) -> Result<MacAddress> {
     let output = ssh(
         ap,
         &format!("cat /sys/class/net/{}/address", ap.wireless_interface),

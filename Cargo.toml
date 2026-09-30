@@ -94,6 +94,7 @@ members = [
     "hil/host/evidence",
     "hil/host/image",
     "hil/host/link",
+    "hil/host/stand",
     "hil/host/runner",
     "hil/host/runner-bluetooth",
     "hil/host/runner-core",

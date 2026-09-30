@@ -71,7 +71,7 @@ esac
                 .unwrap()
                 .into(),
         };
-        let config = hil_core::lab::config::AirObserverConfig {
+        let config = oer_hil_stand::config::AirObserverConfig {
             ssh_target: "unused".into(),
             phy: "phy0".into(),
             interface: "observe0".into(),

@@ -14,8 +14,8 @@ use zeroize::{Zeroize, Zeroizing};
 use oer_hil_protocol::wifi::WifiAccessPointSecurity;
 
 use crate::Result;
-use hil_core::lab::config::{AccessPointConfig, OpenWrtConfig};
 use oer_hil_scenario::link::HtGuardIntervalExpectation;
+use oer_hil_stand::config::{AccessPointConfig, OpenWrtConfig};
 
 // Linux network-interface names contain at most IFNAMSIZ-1 (15) bytes.
 // Keeping the fixture name below that boundary avoids an opaque nl80211

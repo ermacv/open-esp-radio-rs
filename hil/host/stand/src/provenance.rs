@@ -8,7 +8,7 @@ use oer_hil_protocol::wifi::NetworkIpv4Configuration;
 
 use crate::{
     Result,
-    lab::config::{LabConfig, OpenWrtConfig, StationFixtureConfig},
+    config::{LabConfig, OpenWrtConfig, StationFixtureConfig},
 };
 use oer_hil_evidence::lab::{
     AccessPointDefinition, FixtureObservation, HostInterfaceObservation, HostIpv4Route,

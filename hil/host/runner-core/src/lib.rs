@@ -8,15 +8,9 @@
 pub mod context;
 pub mod failure;
 pub mod fixture;
-pub mod lab;
 pub mod output;
-pub mod post_mortem;
 pub mod profile;
-pub mod recovery;
-mod repository;
-pub mod usb_events;
 pub mod workload;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 pub use output::emit_json;
-pub use repository::repository_root;

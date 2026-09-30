@@ -4,49 +4,48 @@ use crate::{
     Result,
     scenario::{Family, Scenario},
 };
-use hil_core::lab::config::{LabConfig, StationFixtureConfig};
 use oer_hil_evidence::run::{Failure, FailureKind};
+use oer_hil_stand::config::{LabConfig, StationFixtureConfig};
 
 pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
     let plan = scenario.plan();
     let resolved = lab.resolve(plan.wifi);
     let lab = &resolved;
     if let Some(failure) = scenario_precondition(lab, scenario) {
-        return Err(hil_core::fixture::Error::new(failure.message).into());
+        return Err(oer_hil_stand::Error::new(failure.message).into());
     }
     let required = plan.requirements;
     if let StationFixtureConfig::OpenWrt(config) = &lab.station_fixture
         && config.read_only
         && (required.station_control || required.openwrt_client || required.openwrt_tx_monitor)
     {
-        return Err(hil_core::fixture::Error::new(
+        return Err(oer_hil_stand::Error::new(
             "scenario requires mutations forbidden by read-only OpenWrt fixture",
         )
         .into());
     }
     if required.air_observer && lab.air_observer.is_none() {
-        return Err(hil_core::fixture::Error::new(
-            "scenario requires the independent [air_observer]",
-        )
-        .into());
+        return Err(
+            oer_hil_stand::Error::new("scenario requires the independent [air_observer]").into(),
+        );
     }
     if (required.non_ht_member || required.legacy_bss)
         && !matches!(lab.station_fixture, StationFixtureConfig::OpenWrt(_))
     {
-        return Err(hil_core::fixture::Error::new(
+        return Err(oer_hil_stand::Error::new(
             "induced BSS protection requires the OpenWrt station fixture",
         )
         .into());
     }
     if required.legacy_bss && lab.legacy_bss.is_none() {
-        return Err(hil_core::fixture::Error::new(
+        return Err(oer_hil_stand::Error::new(
             "scenario requires the [legacy_bss] laboratory capability",
         )
         .into());
     }
     if required.probe_load {
         if !std::path::Path::new("/usr/local/libexec/open-radio-probe").is_file() {
-            return Err(hil_core::fixture::Error::new(
+            return Err(oer_hil_stand::Error::new(
                 "probe load requires cargo hil fixture install --provider linux-net",
             )
             .into());
@@ -70,7 +69,7 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
                         plan.wifi.access_point_security,
                     ),
                 )
-                .map_err(hil_core::fixture::Error::context)?;
+                .map_err(oer_hil_stand::Error::context)?;
                 // Both directions consume remote counters and command-line capture tools.
                 if required.station_udp_rx_capture || required.station_udp_tx_capture {
                     hil_wifi::fixture::openwrt::evidence::doctor_tools(config)?;
@@ -82,13 +81,13 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
                     &lab.station,
                     lab.fixture_phy(plan.wifi),
                 )
-                .map_err(hil_core::fixture::Error::context)?;
+                .map_err(oer_hil_stand::Error::context)?;
                 if required.station_udp_rx_capture || required.station_udp_tx_capture {
                     oer_hil_image::require_program(std::ffi::OsStr::new("dumpcap"))?;
                 }
             }
             StationFixtureConfig::External(_) if required.station_control => {
-                return Err(hil_core::fixture::Error::new(
+                return Err(oer_hil_stand::Error::new(
                     "scenario requires a controllable AP fixture",
                 )
                 .into());
@@ -101,17 +100,13 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
     }
     if required.openwrt_client {
         let StationFixtureConfig::OpenWrt(config) = &lab.station_fixture else {
-            return Err(
-                hil_core::fixture::Error::new("scenario requires an OpenWrt client").into(),
-            );
+            return Err(oer_hil_stand::Error::new("scenario requires an OpenWrt client").into());
         };
         hil_wifi::fixture::openwrt::client::doctor(&lab.access_point, config)?;
     }
     if required.openwrt_tx_monitor {
         let StationFixtureConfig::OpenWrt(config) = &lab.station_fixture else {
-            return Err(
-                hil_core::fixture::Error::new("scenario requires an OpenWrt monitor").into(),
-            );
+            return Err(oer_hil_stand::Error::new("scenario requires an OpenWrt monitor").into());
         };
         hil_wifi::fixture::openwrt::tx_monitor::doctor(config)?;
     }
@@ -143,7 +138,7 @@ pub(crate) fn scenario_precondition(lab: &LabConfig, selected: &Scenario) -> Opt
     if let Some(image) = selected.family.peer_image()
         && let Some(peer) = &lab.peer
         && let Err(error) = peer.serial().and_then(|serial| {
-            hil_core::lab::lock::require_board_image(&serial, image.name, image.reflash)
+            oer_hil_stand::lock::require_board_image(&serial, image.name, image.reflash)
         })
     {
         return Some(Failure::new(FailureKind::Precondition, error.to_string()));

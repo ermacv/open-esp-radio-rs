@@ -310,8 +310,8 @@ fn existing_generic_ht40_setting_still_requires_exact_active_geometry() {
 
 #[test]
 fn management_frame_protection_selects_the_openwrt_ieee80211w_option() {
-    let config = hil_core::lab::config::LabConfig::for_test();
-    let hil_core::lab::config::StationFixtureConfig::OpenWrt(openwrt) = &config.station_fixture
+    let config = oer_hil_stand::config::LabConfig::for_test();
+    let oer_hil_stand::config::StationFixtureConfig::OpenWrt(openwrt) = &config.station_fixture
     else {
         panic!("OpenWrt test lab required");
     };
@@ -333,8 +333,8 @@ fn management_frame_protection_selects_the_openwrt_ieee80211w_option() {
 
 #[test]
 fn wpa3_security_selects_sae_and_management_frame_protection() {
-    let config = hil_core::lab::config::LabConfig::for_test();
-    let hil_core::lab::config::StationFixtureConfig::OpenWrt(openwrt) = &config.station_fixture
+    let config = oer_hil_stand::config::LabConfig::for_test();
+    let oer_hil_stand::config::StationFixtureConfig::OpenWrt(openwrt) = &config.station_fixture
     else {
         panic!("OpenWrt test lab required");
     };

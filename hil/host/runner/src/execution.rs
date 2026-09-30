@@ -40,13 +40,13 @@ impl ExecutionEvidence {
 }
 
 pub(crate) fn execute_workload(
-    lab: &hil_core::lab::config::LabConfig,
+    lab: &oer_hil_stand::config::LabConfig,
     selected: &Scenario,
     output: &Path,
     fixture: &hil_wifi::fixture::prepared::Prepared,
 ) -> ExecutionEvidence {
     // The board's MAC outlives its port name, which a reset can change.
-    let mac = hil_core::post_mortem::board_mac(&lab.dut.serial);
+    let mac = oer_hil_stand::post_mortem::board_mac(&lab.dut.serial);
     let context = hil_core::context::Context::new(lab, selected.plan().settings, output)
         .with_profile(selected.header.profile);
     let result = selected.family.run(output, &context, fixture);
@@ -59,13 +59,18 @@ pub(crate) fn execute_workload(
         .is_some_and(|error| !oer_process::is_cancelled(&**error));
     let mut post_mortem = failed
         .then(|| {
-            hil_core::post_mortem::inspect(&lab.dut.serial, mac.as_deref(), output, elf.as_deref())
+            oer_hil_stand::post_mortem::inspect(
+                &lab.dut.serial,
+                mac.as_deref(),
+                output,
+                elf.as_deref(),
+            )
         })
         .flatten();
     // A target that does not answer is read through its JTAG before any
     // reset erases where it stopped.
     if failed && post_mortem.is_none() {
-        hil_core::post_mortem::jtag_snapshot_through_stand_openocd(
+        oer_hil_stand::post_mortem::jtag_snapshot_through_stand_openocd(
             lab.chip(),
             mac.as_deref(),
             output,
@@ -79,7 +84,7 @@ pub(crate) fn execute_workload(
                 .find(|directory| directory.join("manifest.json").is_file())
                 .and_then(|run| run.file_name())
                 .map_or_else(String::new, |run| run.to_string_lossy().into_owned());
-            hil_core::recovery::recover(
+            oer_hil_stand::recovery::recover(
                 &lab.dut.serial,
                 mac.as_deref(),
                 output,
@@ -88,16 +93,16 @@ pub(crate) fn execute_workload(
             )
         })
         .flatten();
-    if let Some(hil_core::recovery::Recovery::Recovered { finding, .. }) = &recovery {
+    if let Some(oer_hil_stand::recovery::Recovery::Recovered { finding, .. }) = &recovery {
         post_mortem = Some((**finding).clone());
     }
-    if let Some(hil_core::recovery::Recovery::BootedSilent { .. }) = &recovery {
-        hil_core::recovery::mark_image_silent(selected.image().id());
+    if let Some(oer_hil_stand::recovery::Recovery::BootedSilent { .. }) = &recovery {
+        oer_hil_stand::recovery::mark_image_silent(selected.image().id());
     }
     let mut evidence = ExecutionEvidence {
         quarantined: recovery
             .as_ref()
-            .is_some_and(hil_core::recovery::Recovery::quarantined),
+            .is_some_and(oer_hil_stand::recovery::Recovery::quarantined),
         measurements: context.measurements.snapshot(),
         interrupted: result
             .as_ref()

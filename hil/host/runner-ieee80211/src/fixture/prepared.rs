@@ -4,8 +4,8 @@
 
 use super::controlled_ap::ControlledAp;
 use crate::Result;
-use hil_core::lab::config::{LabConfig, StationFixtureConfig};
 use oer_hil_scenario::Plan;
+use oer_hil_stand::config::{LabConfig, StationFixtureConfig};
 use std::{
     cell::{RefCell, RefMut},
     path::Path,

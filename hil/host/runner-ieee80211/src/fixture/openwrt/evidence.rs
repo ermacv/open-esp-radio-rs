@@ -10,8 +10,8 @@ use std::{
 };
 
 use crate::Result;
-use hil_core::lab::config::OpenWrtConfig;
 use oer_hil_scenario::link::{HtGuardIntervalExpectation, PhyExpectation};
+use oer_hil_stand::config::OpenWrtConfig;
 
 const PRE_WORKLOAD_CHANNEL_SAMPLE: Duration = Duration::from_secs(12);
 

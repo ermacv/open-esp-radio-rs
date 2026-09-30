@@ -9,6 +9,7 @@ publish = false
 description = "Host build, placement-audit and HIL runner for open ESP radio"
 
 [dependencies]
+oer-hil-stand = { path = "../stand" }
 oer-hil-link = { path = "../link" }
 oer-hil-image = { path = "../image" }
 oer-hil-evidence = { path = "../evidence" }

@@ -2,7 +2,7 @@
 //! Readiness and stop use process events; only created interfaces are removed.
 use crate::Result;
 use crate::fixture::capture_process;
-use hil_core::lab::config::OpenWrtConfig;
+use oer_hil_stand::config::OpenWrtConfig;
 use oer_process::CommandExt as _;
 use std::{
     fs::{self, File},
@@ -165,7 +165,7 @@ impl RemoteCapture {
 
     /// A dedicated idle PHY; never borrows or retunes another interface.
     pub(in crate::fixture) fn start_independent(
-        config: &hil_core::lab::config::AirObserverConfig,
+        config: &oer_hil_stand::config::AirObserverConfig,
         geometry: crate::fixture::channel::Geometry,
         filter: &str,
         snapshot_length: SnapshotLength,
@@ -310,7 +310,7 @@ mod tests;
 impl RemoteInterface {
     fn independent_script(
         &self,
-        config: &hil_core::lab::config::AirObserverConfig,
+        config: &oer_hil_stand::config::AirObserverConfig,
         geometry: crate::fixture::channel::Geometry,
         filter: &str,
         snapshot_length: SnapshotLength,

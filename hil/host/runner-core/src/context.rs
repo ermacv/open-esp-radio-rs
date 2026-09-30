@@ -1,9 +1,9 @@
 //! Immutable laboratory inputs and initialization policy for one workload.
 
 use crate::Result;
-use crate::lab::config::LabConfig;
 use oer_hil_link::{SerialCapture, Target, measurements::Recorder};
 use oer_hil_scenario::Settings;
+use oer_hil_stand::config::LabConfig;
 use std::path::Path;
 
 pub struct Context<'a> {

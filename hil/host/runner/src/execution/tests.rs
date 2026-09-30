@@ -37,7 +37,7 @@ fn operation_context_preserves_the_infrastructure_classification() {
 fn fixture_setup_failure_is_broken_even_through_operation_context() {
     let error = oer_hil_link::error::context(
         "prepare AP client",
-        hil_core::fixture::Error::new("OpenWrt radio does not match the laboratory configuration")
+        oer_hil_stand::Error::new("OpenWrt radio does not match the laboratory configuration")
             .into(),
     );
     let evidence = ExecutionEvidence {

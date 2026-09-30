@@ -13,7 +13,7 @@ use std::{
 };
 
 use crate::{Result, fixture::openwrt::evidence::resolve_station_mac};
-use hil_core::lab::config::OpenWrtConfig;
+use oer_hil_stand::config::OpenWrtConfig;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct MacFrameKey {

@@ -35,12 +35,12 @@ use crate::{
     workload::traffic::paced_udp::send as send_paced_udp, workload::traffic::tx_traffic::Burst,
     workload::traffic::tx_traffic::Receiver, workload::traffic::tx_traffic::describe_bursts,
 };
-use hil_core::lab::config::StationFixtureConfig;
 use oer_hil_link::{
     SessionEvidence, await_udp_rx_ready,
     transport::udp::{configure_qualification_receive_buffer, confirm_reverse_flow},
 };
 use oer_hil_scenario::link::HtGuardIntervalExpectation;
+use oer_hil_stand::config::StationFixtureConfig;
 
 const DEFAULT_PORT: u16 = 4_323;
 const DEFAULT_RATE_BPS: u64 = 10_000_000;

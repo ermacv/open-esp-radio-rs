@@ -13,8 +13,8 @@ use crate::{
     fixture::openwrt::client::ControlledOpenWrtClient,
     fixture::openwrt::client::OpenWrtClientLinkObservation,
 };
-use hil_core::lab::config::StationFixtureConfig;
 use oer_hil_scenario::link::HtGuardIntervalExpectation;
+use oer_hil_stand::config::StationFixtureConfig;
 
 pub(super) enum ConnectedClients {
     Laptop {
@@ -94,7 +94,7 @@ pub(super) fn connect_clients(
         }
     };
     let timeout = config.timeout;
-    let openwrt_fixture = || -> Result<&hil_core::lab::config::OpenWrtConfig> {
+    let openwrt_fixture = || -> Result<&oer_hil_stand::config::OpenWrtConfig> {
         match &context.lab.station_fixture {
             StationFixtureConfig::OpenWrt(fixture) => Ok(fixture),
             _ => Err("AP OpenWrt client requires the OpenWrt station fixture".into()),

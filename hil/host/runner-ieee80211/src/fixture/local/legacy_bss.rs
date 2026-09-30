@@ -19,7 +19,7 @@ use crate::{
     Result,
     fixture::local::wpa_control::{Control, field},
 };
-use hil_core::lab::config::LegacyBssConfig;
+use oer_hil_stand::config::LegacyBssConfig;
 
 const SSID: &str = "open-radio-legacy-bss";
 

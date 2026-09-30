@@ -2,11 +2,11 @@ use super::*;
 
 #[test]
 fn coexistence_override_is_explicit_and_applies_only_to_ht40() {
-    let lab = hil_core::lab::config::LabConfig::for_test();
+    let lab = oer_hil_stand::config::LabConfig::for_test();
     let mut fixture = config();
     for policy in [
-        hil_core::lab::config::Coexistence::Respect,
-        hil_core::lab::config::Coexistence::ForceHt40,
+        oer_hil_stand::config::Coexistence::Respect,
+        oer_hil_stand::config::Coexistence::ForceHt40,
     ] {
         fixture.coexistence = policy;
         for phy in [
@@ -18,7 +18,7 @@ fn coexistence_override_is_explicit_and_applies_only_to_ht40() {
             assert!(output.status.success());
             let config = String::from_utf8(output.stdout).unwrap();
             let force = phy == PhyExpectation::Ht40
-                && policy == hil_core::lab::config::Coexistence::ForceHt40;
+                && policy == oer_hil_stand::config::Coexistence::ForceHt40;
             assert_eq!(
                 field(&config, "noscan"),
                 Some(if force { "1" } else { "0" })
@@ -30,7 +30,7 @@ fn coexistence_override_is_explicit_and_applies_only_to_ht40() {
 
 #[test]
 fn startup_log_keeps_bounded_failure_context_and_redacts_credentials() {
-    let lab = hil_core::lab::config::LabConfig::for_test();
+    let lab = oer_hil_stand::config::LabConfig::for_test();
     let input = profile(&config(), &lab.station, PhyExpectation::Ht40).unwrap();
     let mut log = tempfile::NamedTempFile::new().unwrap();
     log.write_all(&vec![b'x'; 70000]).unwrap();
@@ -74,7 +74,7 @@ fn config() -> LocalLinuxConfig {
         ht40_above: false,
         address: "10.42.0.1".parse().unwrap(),
         prefix_length: 24,
-        coexistence: hil_core::lab::config::Coexistence::Respect,
+        coexistence: oer_hil_stand::config::Coexistence::Respect,
     }
 }
 
@@ -103,7 +103,7 @@ fn render(input: &str) -> std::process::Output {
 
 #[test]
 fn helper_generates_each_scenario_mode_from_the_typed_request() {
-    let lab = hil_core::lab::config::LabConfig::for_test();
+    let lab = oer_hil_stand::config::LabConfig::for_test();
     for (phy, ht, he) in [
         (PhyExpectation::Ht20, "[SHORT-GI-20]", "0"),
         (PhyExpectation::He20, "[SHORT-GI-20]", "1"),
@@ -145,7 +145,7 @@ fn helper_generates_each_scenario_mode_from_the_typed_request() {
 
 #[test]
 fn helper_rejects_directive_injection_and_impossible_channel_combinations() {
-    let lab = hil_core::lab::config::LabConfig::for_test();
+    let lab = oer_hil_stand::config::LabConfig::for_test();
     let input = profile(&config(), &lab.station, PhyExpectation::He20).unwrap();
     for (line, invalid) in [
         (0, "ssid=other"),
@@ -185,7 +185,7 @@ fn dhcp_pool_uses_the_configured_subnet_without_leasing_the_ap_address() {
 #[test]
 fn helper_failure_retains_the_reason_without_credentials() {
     use std::os::unix::process::ExitStatusExt;
-    let lab = hil_core::lab::config::LabConfig::for_test();
+    let lab = oer_hil_stand::config::LabConfig::for_test();
     let input = profile(&config(), &lab.station, PhyExpectation::He20).unwrap();
     let (ssid, password) = lab.station.credentials();
     let output = std::process::Output {
@@ -205,7 +205,7 @@ fn helper_failure_retains_the_reason_without_credentials() {
 fn helper_owns_private_transient_profile_and_removes_it_on_stop() {
     let directory = tempfile::tempdir().unwrap();
     let helper = Path::new(env!("CARGO_MANIFEST_DIR")).join("../linux-net/open-radio-net");
-    let lab = hil_core::lab::config::LabConfig::for_test();
+    let lab = oer_hil_stand::config::LabConfig::for_test();
     let input = profile(&config(), &lab.station, PhyExpectation::He20).unwrap();
     let mut child = Command::new("bash")
         .args(["-c", include_str!("tests/start-stop.sh"), "helper-test"])

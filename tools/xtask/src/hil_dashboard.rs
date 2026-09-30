@@ -35,7 +35,7 @@ static FIXTURES: std::sync::Mutex<Vec<crate::hil_fixtures::Fixture>> =
 
 /// Probe the host fixtures now and every [`FIXTURE_REFRESH`] after.
 fn watch_fixtures() {
-    let Ok(lab) = oer_hil_runner_core::lab::config::LabConfig::default_path() else {
+    let Ok(lab) = oer_hil_stand::config::LabConfig::default_path() else {
         return;
     };
     std::thread::spawn(move || {

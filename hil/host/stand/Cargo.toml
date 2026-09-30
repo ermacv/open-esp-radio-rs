@@ -1,0 +1,53 @@
+[package]
+name = "oer-hil-stand"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "HIL stand operation: laboratory configuration and locks, the cell's pre-run observation, fixture software leases, recovery and post-mortem"
+
+[features]
+# The laboratory fixtures of the runner's cross-package tests.
+test-support = []
+
+[dependencies]
+oer-chip-profile = { path = "../../../tools/chip-profile" }
+oer-esp32s31-firmware = { path = "../../../tools/firmware" }
+oer-hil-arbiter = { path = "../arbiter" }
+oer-hil-board = { path = "../board" }
+oer-hil-durable = { path = "../durable" }
+oer-hil-evidence = { path = "../evidence" }
+oer-hil-fixture = { path = "../fixture" }
+oer-hil-fixture-install = { path = "../fixture-install" }
+oer-hil-link = { path = "../link" }
+oer-hil-protocol = { path = "../../protocol", features = ["registry"] }
+oer-hil-scenario = { path = "../scenario" }
+oer-hil-trace = { path = "../../trace", features = ["describe"] }
+oer-process = { path = "../../../tools/process" }
+oer-trace = { path = "../../../crates/trace" }
+addr2line = { version = "=0.27.1", default-features = false, features = ["loader", "rustc-demangle"] }
+fs2 = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serialport = { version = "4.8.1", default-features = false }
+sha2 = "0.10"
+tempfile = "3"
+toml = "1.1"
+zeroize = "1.8.1"
+
+[dev-dependencies]
+libc = "0.2"
+rustix = { version = "1.1.4", features = ["process"] }
+oer-ieee80211-trace = { path = "../../../crates/protocols/ieee80211/trace" }
+oer-phy-trace = { path = "../../../crates/hardware/radio/trace" }
+oer-ieee802154-trace = { path = "../../../crates/hardware/ieee802154/trace" }
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "hil"
+platform = "host"

@@ -5,10 +5,10 @@ use std::{path::Path, time::Duration};
 use oer_hil_scenario::ScenarioFamily as _;
 
 use crate::{Result, fixture, scenario::Scenario};
-use hil_core::lab::config::LabConfig;
 use oer_hil_evidence::run::Failure;
 use oer_hil_image_class::{DeviceImageKeys, ImageClass};
 use oer_hil_link::SerialCapture;
+use oer_hil_stand::config::LabConfig;
 
 pub(crate) fn scenario_failure(lab: &LabConfig, selected: &Scenario) -> Option<Failure> {
     fixture::preflight::scenario_precondition(lab, selected).or_else(|| {
@@ -36,7 +36,7 @@ pub(crate) fn validate_flashed_image(
     // A bootloader that resets in a loop keeps state an RTS reset and a
     // reflash leave: climb to the resets that clear it.
     let console = std::fs::read_to_string(preflight.join("uart.log")).unwrap_or_default();
-    let Some(found) = hil_core::recovery::boot_loop(&console) else {
+    let Some(found) = oer_hil_stand::recovery::boot_loop(&console) else {
         return Err(error);
     };
     eprintln!(
@@ -50,7 +50,7 @@ pub(crate) fn validate_flashed_image(
         .map_or_else(String::new, |run| run.to_string_lossy().into_owned());
     let mut attempt = 0;
     let mut answered = None;
-    let escalation = hil_core::recovery::escalate_boot_loop(
+    let escalation = oer_hil_stand::recovery::escalate_boot_loop(
         &lab.dut.serial,
         None,
         lab.chip(),
@@ -82,7 +82,7 @@ pub(crate) fn validate_flashed_image(
                 .map(|step| format!("{:?}", step.step))
                 .collect::<Vec<_>>()
                 .join(", "),
-            hil_core::recovery::RESET_ESCALATION_FILE
+            oer_hil_stand::recovery::RESET_ESCALATION_FILE
         )
         .into()),
     }

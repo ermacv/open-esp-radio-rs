@@ -11,8 +11,8 @@
 use crate::registers::{Register, Space};
 use crate::{Result, repository_root, vendor};
 use oer_hil_link::{SerialCapture, Target};
-use oer_hil_runner_core::lab::config::LabConfig;
 use oer_hil_scenario::Settings;
+use oer_hil_stand::config::LabConfig;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::{Path, PathBuf};

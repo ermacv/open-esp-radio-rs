@@ -17,7 +17,7 @@ pub struct SoftwareLease {
 
 impl SoftwareLease {
     pub fn acquire_for(
-        lab: &crate::lab::config::LabConfig,
+        lab: &crate::config::LabConfig,
         required: oer_hil_scenario::requirements::Requirements,
     ) -> Result<Self> {
         Self::acquire(providers(lab, required))
@@ -53,7 +53,7 @@ impl SoftwareLease {
 
 /// The fixture software providers `required` runs on.
 pub fn providers(
-    lab: &crate::lab::config::LabConfig,
+    lab: &crate::config::LabConfig,
     required: oer_hil_scenario::requirements::Requirements,
 ) -> Vec<Provider> {
     let mut providers = Vec::new();
@@ -64,7 +64,7 @@ pub fn providers(
         || (required.station_network
             && matches!(
                 lab.station_fixture,
-                crate::lab::config::StationFixtureConfig::LocalLinux(_)
+                crate::config::StationFixtureConfig::LocalLinux(_)
             ))
     {
         providers.push(Provider::LinuxNet);

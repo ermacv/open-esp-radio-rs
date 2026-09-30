@@ -11,8 +11,9 @@ mod scenario;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use hil_core::Result;
 pub(crate) use hil_core::emit_json;
-pub(crate) use hil_core::{Result, repository_root};
+pub(crate) use oer_hil_stand::repository_root;
 
 /// This executable's host build record, embedded by its build script.
 const RUNNER_BUILD: &str = include_str!(concat!(env!("OUT_DIR"), "/runner-build.json"));

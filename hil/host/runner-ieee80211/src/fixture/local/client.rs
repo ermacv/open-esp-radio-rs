@@ -10,7 +10,7 @@ use std::{
 use zeroize::Zeroizing;
 
 use crate::Result;
-use hil_core::lab::config::{AccessPointConfig, StationConfig};
+use oer_hil_stand::config::{AccessPointConfig, StationConfig};
 
 /// The PHY capabilities the laptop station advertises.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

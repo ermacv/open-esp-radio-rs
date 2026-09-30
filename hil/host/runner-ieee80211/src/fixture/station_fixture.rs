@@ -7,8 +7,8 @@ use crate::{
     fixture::local::evidence::LocalLinuxRxEvidence, fixture::openwrt::evidence::OpenWrtRxCapture,
     fixture::openwrt::evidence::OpenWrtRxEvidence,
 };
-use hil_core::lab::config::StationFixtureConfig;
 use oer_hil_scenario::link::{HtGuardIntervalExpectation, PhyExpectation};
+use oer_hil_stand::config::StationFixtureConfig;
 
 pub enum RxCapture {
     LocalLinux(Box<LocalLinuxRxCapture>),

@@ -5,8 +5,8 @@ use crate::fixture::{
     channel::Geometry,
     local::wpa_control::{Control, field},
 };
-use hil_core::lab::config::{LocalLinuxConfig, StationConfig};
 use oer_hil_scenario::link::PhyExpectation;
+use oer_hil_stand::config::{LocalLinuxConfig, StationConfig};
 use oer_process::CommandExt as _;
 use std::{
     io::{Read, Seek, SeekFrom, Write},
@@ -246,7 +246,7 @@ fn profile(
         config.prefix_length,
         u8::from(
             phy == PhyExpectation::Ht40
-                && config.coexistence == hil_core::lab::config::Coexistence::ForceHt40
+                && config.coexistence == oer_hil_stand::config::Coexistence::ForceHt40
         )
     )))
 }

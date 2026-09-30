@@ -20,7 +20,7 @@ pub struct FixtureLock {
     _device: Option<oer_esp32s31_firmware::device::DeviceLease>,
     _resources: Vec<ResourceLease>,
     /// Keeps the fixture software from being reinstalled during the lease.
-    _software: Option<crate::fixture::software::SoftwareLease>,
+    _software: Option<crate::software::SoftwareLease>,
     // Declared last so the fixture locks are released before the stand's
     // lease that ordered them.
     grant: Option<oer_hil_arbiter::Grant>,
@@ -99,8 +99,8 @@ impl FixtureLock {
         let mut owner = wait_for_fixture(|| Self::lock_now(lab, &keys, request.device))?;
         // Taken only once granted: a queued run must not block an
         // installation queued before it.
-        owner._software = Some(crate::fixture::software::SoftwareLease::acquire(
-            crate::fixture::software::providers(lab, request.required),
+        owner._software = Some(crate::software::SoftwareLease::acquire(
+            crate::software::providers(lab, request.required),
         )?);
         owner.grant = Some(grant);
         owner.request = Some(request);
@@ -287,9 +287,9 @@ fn claims(
             .map(Claim::exclusive),
     );
     claims.extend(
-        crate::fixture::software::providers(lab, request.required)
+        crate::software::providers(lab, request.required)
             .into_iter()
-            .map(|provider| Claim::shared(crate::fixture::software::resource(provider))),
+            .map(|provider| Claim::shared(crate::software::resource(provider))),
     );
     claims.extend(request.air.iter().flat_map(Spectrum::claims));
     claims

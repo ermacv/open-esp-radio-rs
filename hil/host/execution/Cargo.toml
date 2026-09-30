@@ -1,12 +1,12 @@
 [package]
-name = "oer-hil-runner-core"
+name = "oer-hil-execution"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "Shared HIL runner core: laboratory, session, context and measurements"
+description = "HIL workload execution: the repetition context, failure classification, fixture cleanup evidence and profile reports"
 
 [features]
 # Test helpers for the runner's cross-package end-to-end tests.

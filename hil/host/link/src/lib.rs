@@ -427,6 +427,7 @@ use validation::validate_stack_usage;
 pub mod startup_artifact;
 
 pub mod measurements;
+pub mod peer_line;
 pub mod transport;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;

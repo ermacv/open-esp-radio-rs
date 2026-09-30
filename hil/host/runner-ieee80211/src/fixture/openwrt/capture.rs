@@ -263,7 +263,7 @@ impl Drop for RemoteCapture {
         oer_process::cleanup(|| {
             drop(self.child.take());
             let cleanup = self.remote.cleanup_script();
-            hil_core::fixture::cleanup::command(
+            oer_hil_execution::fixture::cleanup::command(
                 "clean up OpenWrt capture",
                 &mut ssh_target(&self.ssh_target, &cleanup),
             );

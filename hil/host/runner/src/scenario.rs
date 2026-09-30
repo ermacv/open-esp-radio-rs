@@ -3,8 +3,8 @@
 
 use std::path::Path;
 
-use hil_core::context::Context;
 use hil_wifi::{fixture::prepared::Prepared, scenario::WifiScenario};
+use oer_hil_execution::context::Context;
 use oer_hil_scenario::{Plan, ScenarioFamily, requirements::Requirements};
 use serde::{Deserialize, Serialize};
 
@@ -101,7 +101,7 @@ impl ScenarioFamily for Family {
 impl Family {
     /// The catalog image the reference peer board must carry, when the
     /// scenario uses the peer.
-    pub(crate) fn peer_image(&self) -> Option<hil_core::fixture::peer_line::PeerImage> {
+    pub(crate) fn peer_image(&self) -> Option<oer_hil_link::peer_line::PeerImage> {
         match self {
             Self::Ieee802154(scenario) => scenario.peer_image(),
             Self::Bluetooth(scenario) => scenario.peer_image(),

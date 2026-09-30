@@ -13,7 +13,7 @@ oer-hil-link = { path = "../link" }
 oer-hil-scenario = { path = "../scenario" }
 oer-hil-durable = { path = "../durable" }
 oer-hil-image-class = { path = "../image-class" }
-hil-core = { package = "oer-hil-runner-core", path = "../runner-core" }
+oer-hil-execution = { path = "../execution" }
 oer-process = { path = "../../../tools/process" }
 oer-hil-protocol = { path = "../../protocol" }
 oer-hil-trace = { path = "../../trace" }

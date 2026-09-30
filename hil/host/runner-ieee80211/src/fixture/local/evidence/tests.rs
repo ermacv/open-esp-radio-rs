@@ -14,7 +14,7 @@ fn failed_or_malformed_capture_is_infrastructure() {
             .finish()
             .unwrap_err();
         assert_eq!(
-            hil_core::failure::classify(&*error).kind,
+            oer_hil_execution::failure::classify(&*error).kind,
             oer_hil_evidence::run::FailureKind::Infrastructure
         );
     }

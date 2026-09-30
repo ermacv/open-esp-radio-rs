@@ -2883,9 +2883,9 @@ dependencies = [
  "oer-esp32s31-hil-calibration-artifact",
  "oer-esp32s31-phy",
  "oer-hil-board",
+ "oer-hil-execution",
  "oer-hil-link",
  "oer-hil-protocol",
- "oer-hil-runner-core",
  "oer-hil-scenario",
  "oer-hil-stand",
  "oer-register-model",
@@ -3017,6 +3017,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-hil-execution"
+version = "0.1.0"
+dependencies = [
+ "addr2line",
+ "oer-hil-durable",
+ "oer-hil-evidence",
+ "oer-hil-link",
+ "oer-hil-protocol",
+ "oer-hil-scenario",
+ "oer-hil-stand",
+ "oer-ieee80211-trace",
+ "oer-ieee802154-trace",
+ "oer-phy-trace",
+ "oer-process",
+ "postcard-schema",
+ "rustix",
+ "serde",
+ "serde_json",
+ "serialport",
+ "tempfile",
+]
+
+[[package]]
 name = "oer-hil-fixture"
 version = "0.1.0"
 dependencies = [
@@ -3141,13 +3164,13 @@ dependencies = [
  "oer-hil-board",
  "oer-hil-durable",
  "oer-hil-evidence",
+ "oer-hil-execution",
  "oer-hil-fixture-install",
  "oer-hil-image",
  "oer-hil-image-class",
  "oer-hil-link",
  "oer-hil-protocol",
  "oer-hil-runner-bluetooth",
- "oer-hil-runner-core",
  "oer-hil-runner-ieee80211",
  "oer-hil-runner-ieee802154",
  "oer-hil-runner-system",
@@ -3175,11 +3198,11 @@ dependencies = [
  "heapless 0.9.3",
  "oer-hil-durable",
  "oer-hil-evidence",
+ "oer-hil-execution",
  "oer-hil-fixture",
  "oer-hil-image-class",
  "oer-hil-link",
  "oer-hil-protocol",
- "oer-hil-runner-core",
  "oer-hil-scenario",
  "oer-hil-stand",
  "oer-process",
@@ -3192,40 +3215,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-hil-runner-core"
-version = "0.1.0"
-dependencies = [
- "addr2line",
- "oer-hil-durable",
- "oer-hil-evidence",
- "oer-hil-link",
- "oer-hil-protocol",
- "oer-hil-scenario",
- "oer-hil-stand",
- "oer-ieee80211-trace",
- "oer-ieee802154-trace",
- "oer-phy-trace",
- "oer-process",
- "postcard-schema",
- "rustix",
- "serde",
- "serde_json",
- "serialport",
- "tempfile",
-]
-
-[[package]]
 name = "oer-hil-runner-ieee80211"
 version = "0.1.0"
 dependencies = [
  "mio",
  "oer-hil-durable",
  "oer-hil-evidence",
+ "oer-hil-execution",
  "oer-hil-fixture",
  "oer-hil-image-class",
  "oer-hil-link",
  "oer-hil-protocol",
- "oer-hil-runner-core",
  "oer-hil-scenario",
  "oer-hil-stand",
  "oer-process",
@@ -3241,10 +3241,10 @@ dependencies = [
 name = "oer-hil-runner-ieee802154"
 version = "0.1.0"
 dependencies = [
+ "oer-hil-execution",
  "oer-hil-image-class",
  "oer-hil-link",
  "oer-hil-protocol",
- "oer-hil-runner-core",
  "oer-hil-scenario",
  "serde",
  "serde_json",
@@ -3257,10 +3257,10 @@ name = "oer-hil-runner-system"
 version = "0.1.0"
 dependencies = [
  "oer-hil-durable",
+ "oer-hil-execution",
  "oer-hil-image-class",
  "oer-hil-link",
  "oer-hil-protocol",
- "oer-hil-runner-core",
  "oer-hil-scenario",
  "oer-hil-trace",
  "oer-process",
@@ -3710,9 +3710,9 @@ dependencies = [
  "oer-hil-arbiter",
  "oer-hil-board",
  "oer-hil-evidence",
+ "oer-hil-execution",
  "oer-hil-image",
  "oer-hil-image-class",
- "oer-hil-runner-core",
  "oer-hil-schema",
  "oer-hil-source-snapshot",
  "oer-hil-stand",

@@ -49,7 +49,7 @@ pub(super) fn qualify_udp(
     output: &std::path::Path,
     capture: &SerialCapture,
     config: &Config,
-    context: &hil_core::context::Context<'_>,
+    context: &oer_hil_execution::context::Context<'_>,
     clients: &ConnectedClients,
     workload: UdpWorkload,
     criteria: UdpCriteria,

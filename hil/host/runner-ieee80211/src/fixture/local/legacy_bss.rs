@@ -78,15 +78,18 @@ impl LegacyBss {
 impl Drop for LegacyBss {
     fn drop(&mut self) {
         oer_process::cleanup(|| {
-            hil_core::fixture::cleanup::record("restore managed Wi-Fi after legacy BSS", || {
-                let status = Command::new("sudo")
-                    .args(["-n", crate::fixture::local::network_helper::PATH, "managed"])
-                    .supervised_status()?;
-                if !status.success() {
-                    return Err(format!("legacy BSS restore failed with {status}").into());
-                }
-                Ok(())
-            });
+            oer_hil_execution::fixture::cleanup::record(
+                "restore managed Wi-Fi after legacy BSS",
+                || {
+                    let status = Command::new("sudo")
+                        .args(["-n", crate::fixture::local::network_helper::PATH, "managed"])
+                        .supervised_status()?;
+                    if !status.success() {
+                        return Err(format!("legacy BSS restore failed with {status}").into());
+                    }
+                    Ok(())
+                },
+            );
         });
     }
 }

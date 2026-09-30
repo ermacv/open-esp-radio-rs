@@ -4,14 +4,14 @@
 //! Controller behind a line protocol on its console (see that README). Every
 //! command is answered by `@OK` or `@ERR`; `END` first prints the Controller's
 //! packet count. The transport, `SYNC` and the transcript are the stand's
-//! shared peer console ([`hil_core::fixture::peer_line`]).
+//! shared peer console ([`oer_hil_link::peer_line`]).
 
 use std::{
     path::Path,
     time::{Duration, Instant},
 };
 
-use hil_core::fixture::peer_line::{
+use oer_hil_link::peer_line::{
     PeerImage, PeerLink, PeerTranscript, RecordingLink, SerialLink, SyncAnswer, synchronize_link,
 };
 

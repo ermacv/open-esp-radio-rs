@@ -93,7 +93,7 @@ impl Drop for Source {
         // EOF cancels an armed/running source. Its owned process group is the
         // bounded fallback if it fails to observe that event or to clean up.
         self.child.stdin.take();
-        hil_core::fixture::cleanup::record("wait for probe source cleanup", || {
+        oer_hil_execution::fixture::cleanup::record("wait for probe source cleanup", || {
             // Closing stdin is the cooperative stop request. Do not race the
             // helper's cleanup children with the process owner's SIGTERM.
             // The owned child still terminates the group on this deadline.

@@ -42,7 +42,7 @@ const STAND_OPERATION: [&str; 6] = [
     "hil/host/stand/src/post_mortem.rs",
     "hil/host/stand/src/recovery.rs",
     "hil/host/stand/src/usb_events.rs",
-    "hil/host/runner-core/src/profile.rs",
+    "hil/host/execution/src/profile.rs",
 ];
 
 /// Files below [`STAND_OPERATION`] that do shape an observation.

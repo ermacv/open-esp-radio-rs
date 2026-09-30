@@ -1,7 +1,7 @@
 //! Pre-initialization copy diagnostics with preserved partial observations.
 
 use crate::Result;
-use hil_core::context::Context;
+use oer_hil_execution::context::Context;
 use oer_hil_protocol::{
     system::MemoryBenchmarkEvidence, system::MemoryBenchmarkMode, system::MemoryBenchmarkRequest,
     system::MemoryBenchmarkSource, system::MemoryBenchmarkStop,

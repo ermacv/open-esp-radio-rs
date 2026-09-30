@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use hil_core::context::Context;
+use oer_hil_execution::context::Context;
 use oer_hil_image_class::DeviceImageKeys;
 use oer_hil_image_class::ImageClass;
 use oer_hil_protocol::bluetooth;
@@ -97,7 +97,7 @@ impl BluetoothScenario {
     /// The catalog image the reference peer board must carry, when the
     /// scenario uses the peer; [`crate::fixture::dtm_peer`] drives the
     /// Direct Test Mode peer.
-    pub fn peer_image(&self) -> Option<hil_core::fixture::peer_line::PeerImage> {
+    pub fn peer_image(&self) -> Option<oer_hil_link::peer_line::PeerImage> {
         match self {
             Self::DtmPeer { .. } => Some(crate::fixture::dtm_peer::DTM_PEER_IMAGE),
             _ => None,

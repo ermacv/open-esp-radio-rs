@@ -738,7 +738,7 @@ fn start_run(
         invocation.arguments,
     )?;
     session.report_interruption_to(|report| {
-        let _ = hil_core::emit_json(report, false);
+        let _ = oer_hil_execution::emit_json(report, false);
     });
     if let Some(snapshot) = invocation.snapshot {
         session.bind_source_snapshot(
@@ -854,7 +854,7 @@ fn run_scenario_repetition(
         std::iter::once(lab.dut.serial.as_path()).chain(peer_serial.as_deref()),
         started_unix_millis,
     );
-    let cleanup = hil_core::fixture::cleanup::Scope::new(output);
+    let cleanup = oer_hil_execution::fixture::cleanup::Scope::new(output);
     if oer_hil_stand::recovery::device_quarantined() {
         return finalize_repetition(
             repetition,
@@ -939,7 +939,7 @@ fn finalize_repetition(
     output: &Path,
     started_unix_millis: u64,
     started: std::time::Instant,
-    cleanup: hil_core::fixture::cleanup::Scope,
+    cleanup: oer_hil_execution::fixture::cleanup::Scope,
     mut outcome: Outcome,
     mut failure: Option<Failure>,
     measurements: Vec<oer_hil_evidence::run::Measurement>,

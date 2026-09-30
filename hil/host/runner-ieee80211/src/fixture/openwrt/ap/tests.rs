@@ -205,7 +205,7 @@ fn restores_after_partial_apply_readback_failure_and_stop_failure() {
 #[test]
 fn restore_failure_is_not_a_successful_owner_release() {
     let directory = tempfile::tempdir().unwrap();
-    let scope = hil_core::fixture::cleanup::Scope::new(directory.path());
+    let scope = oer_hil_execution::fixture::cleanup::Scope::new(directory.path());
     let fake = Fake {
         calls: Default::default(),
         fail: "restore",
@@ -233,7 +233,7 @@ fn restore_failure_is_not_a_successful_owner_release() {
             .iter()
             .any(|record| record.failure.is_some())
     );
-    assert!(hil_core::fixture::cleanup::require_healthy().is_err());
+    assert!(oer_hil_execution::fixture::cleanup::require_healthy().is_err());
 }
 
 #[test]

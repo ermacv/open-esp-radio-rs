@@ -1,6 +1,6 @@
 //! SoC reset evidence without a radio peer; distinct from DTM RF evidence.
 use crate::Result;
-use hil_core::context::Context;
+use oer_hil_execution::context::Context;
 use oer_hil_protocol::{base::ResetReason, system::WatchdogTestMode as Mode};
 use std::{path::Path, time::Duration};
 

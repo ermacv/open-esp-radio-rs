@@ -19,7 +19,7 @@ oer-hil-durable = { path = "../durable" }
 oer-hil-image-class = { path = "../image-class" }
 oer-esp32s31-hil-board = { path = "../board/esp32s31" }
 oer-hil-board = { path = "../board" }
-hil-core = { package = "oer-hil-runner-core", path = "../runner-core" }
+oer-hil-execution = { path = "../execution" }
 hil-wifi = { package = "oer-hil-runner-ieee80211", path = "../runner-ieee80211" }
 hil-bluetooth = { package = "oer-hil-runner-bluetooth", path = "../runner-bluetooth" }
 oer-command-tree = { path = "../../../tools/command-tree", features = ["clap"] }
@@ -40,7 +40,7 @@ oer-hil-evidence = { path = "../evidence", features = ["test-support"] }
 oer-hil-source-snapshot = { path = "../source-snapshot", features = ["test-support"] }
 libc = "0.2"
 toml = "1.1"
-hil-core = { package = "oer-hil-runner-core", path = "../runner-core", features = ["test-support"] }
+oer-hil-execution = { path = "../execution", features = ["test-support"] }
 
 [lints]
 workspace = true

@@ -97,7 +97,7 @@ members = [
     "hil/host/stand",
     "hil/host/runner",
     "hil/host/runner-bluetooth",
-    "hil/host/runner-core",
+    "hil/host/execution",
     "hil/host/runner-ieee802154",
     "hil/host/runner-system",
     "hil/host/runner-ieee80211",

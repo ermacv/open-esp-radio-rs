@@ -1866,7 +1866,7 @@ fn with_source_snapshot(args: &[OsString], snapshot: &Path) -> Vec<OsString> {
     arguments
 }
 
-/// The runner's run receipt variable; see oer-hil-runner-core.
+/// The runner's run receipt variable; see oer-hil-evidence.
 const RUN_RECEIPT_ENV: &str = "OER_HIL_RUN_RECEIPT";
 
 /// Name `run_ids` in the receipt of whatever invoked this command (a
@@ -2178,7 +2178,7 @@ fn profile(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             {
                 continue;
             }
-            let report = oer_hil_runner_core::profile::report(&path, elf.as_deref(), cli.top)?;
+            let report = oer_hil_execution::profile::report(&path, elf.as_deref(), cli.top)?;
             let relative = path
                 .parent()
                 .unwrap_or(&path)

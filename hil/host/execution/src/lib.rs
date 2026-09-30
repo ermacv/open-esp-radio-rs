@@ -1,5 +1,7 @@
-//! Shared HIL runner core: laboratory configuration and locks, the UART
-//! session and target protocol, workload context and measurements.
+//! HIL workload execution: the context a repetition runs in, the
+//! classification of its failures as scenario or infrastructure failures,
+//! the fixture cleanup evidence it records, profile reports and the
+//! workload operations shared by radio families.
 //!
 //! Radio-family workloads and their fixtures live in the domain packages that
 //! depend on this crate; the `oer-hil-runner` binary composes them.

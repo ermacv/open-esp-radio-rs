@@ -4,7 +4,7 @@
 //! reset-isolated, route-detached transaction. It does not classify the full
 //! `EVENT_STATUS` register or claim operational PHY/RF/BTBB readiness.
 
-use hil_core::context::Context;
+use oer_hil_execution::context::Context;
 use std::{fs, path::Path, time::Duration};
 
 use oer_hil_protocol::{

@@ -21,7 +21,7 @@ pub(crate) fn check_without_device(
         scenario.id()
     ));
     std::fs::create_dir_all(&output)?;
-    let cleanup = hil_core::fixture::cleanup::Scope::new(&output);
+    let cleanup = oer_hil_execution::fixture::cleanup::Scope::new(&output);
     let result = crate::fixture::preflight::check(lab, scenario)
         .and_then(|()| hil_wifi::fixture::prepared::Prepared::start(lab, &plan, &output))
         .and_then(|prepared| {

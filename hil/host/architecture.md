@@ -15,16 +15,16 @@ Separate Cargo packages bound the privilege and radio-family scopes:
 | Package | Binaries | Role |
 | --- | --- | --- |
 | `runner/` (`oer-hil-runner`) | `oer-hil-runner` | Unprivileged CLI, run orchestration, workload dispatch and the cross-family fixture preflight |
-| `runner-core/` (`oer-hil-runner-core`) | none | The workload context, failure classification, per-repetition fixture cleanup, the peers' line console and profile reports |
+| `execution/` (`oer-hil-execution`) | none | The repetition context, failure classification, per-repetition fixture cleanup evidence, profile reports and the workload operations shared by radio families |
 | `stand/` (`oer-hil-stand`) | none | Stand operation: laboratory configuration and locks, the cell's pre-run observation, fixture software leases, recovery and post-mortem; implements the link's `Dut` and `StationNetwork` ports |
-| `link/` (`oer-hil-link`) | none | The host/target link: one UART capture and its protocol exchange, readiness, reboots and validation, the host traffic transports and measurements; reaches the board only through its `Dut` and `StationNetwork` ports |
+| `link/` (`oer-hil-link`) | none | The host/target link: one UART capture and its protocol exchange, readiness, reboots and validation, the host traffic transports and measurements; reaches the board only through its `Dut` and `StationNetwork` ports; also the reference peers' line console |
 | `image/` (`oer-hil-image`) | none | The image builder: firmware construction from the live tree or a frozen source snapshot, placement and stack audits, and the firmware and build records it hands to evidence |
 | `evidence/` (`oer-hil-evidence`) | none | Sealed run evidence: the run writer and its seal, build provenance and the content-addressed object store, verification of a recorded run against the image builder's recipe, reports, and the experiment and laboratory records a run keeps |
 | `scenario/` (`oer-hil-scenario`) | none | The family-independent scenario envelope, catalog and campaign plan, with the laboratory requirements, Wi-Fi link vocabulary and target settings a scenario declares |
 | `image-class/` (`oer-hil-image-class`) | none | Image classes, their build features and the image keys each class serves, and the check of a device's reported keys against them |
 | `source-snapshot/` (`oer-hil-source-snapshot`) | none | Source snapshots: capture of the repository and local dependency checkouts, their identity, and verified materialization into build workspaces |
 | `durable/` (`oer-hil-durable`) | none | Durable host files: atomic replacement, content digests and timestamps |
-| `runner-ieee80211/`, `runner-bluetooth/`, `runner-system/`, `runner-ieee802154/` | none | One radio family's workloads and fixtures; each depends on `runner-core`, never on another family |
+| `runner-ieee80211/`, `runner-bluetooth/`, `runner-system/`, `runner-ieee802154/` | none | One radio family's workloads and fixtures; each depends on `oer-hil-execution`, never on another family |
 | `fixture/` (`oer-hil-fixture`) | `open-radio-bluetooth`, `open-radio-probe` | Finite Linux helpers; the library is their versioned request/report contract with the runner |
 | `fixture-install/` (`oer-hil-fixture-install`) | `open-radio-fixture-install` and the three fixed launchers | Root-executed installation and admission; the runner uses the same library to plan and prepare |
 
@@ -62,7 +62,7 @@ An installation therefore waits only for runs using its provider, never for a
 queued run, and runs queued after it wait for the new generation.
 
 The runner entry point in `runner/src/main.rs` registers the executable's build
-identity with `runner-core`, then maps the top-level result to the process exit
+identity with `oer-hil-evidence`, then maps the top-level result to the process exit
 status. `runner/src/command.rs` owns CLI
 startup and command-specific dispatch. Run selection and the suite/scenario/
 repetition lifecycle are in `runner/src/execution/orchestration.rs`, while
@@ -71,8 +71,8 @@ publication before calling the existing image and device owners.
 `runner/src/execution/preflight.rs` owns run selection compatibility and
 hardware-facing scenario/image checks, and `execution/doctor.rs` the
 selection-scoped environment report; declarative resource discovery remains
-under `lab::requirements`. Machine JSON retains its dedicated descriptor in
-`runner-core/src/output.rs`. Workload dispatch and typed execution evidence remain
+under `oer_hil_scenario::requirements`. Machine JSON retains its dedicated descriptor in
+`execution/src/output.rs`. Workload dispatch and typed execution evidence remain
 in `runner/src/execution.rs`; `evidence::run::RunSession` is still the sole run
 writer and sealing owner.
 
@@ -519,15 +519,16 @@ The host packages follow the roles of the
   without a reset, for its boot evidence and trace, and classifies hangs and
   unexpected resets; its `recovery` owns the reset ladder for a target that
   does not answer and decides whether its board is recoverable or
-  quarantined. `runner-core`'s `failure` classifies errors as scenario or
+  quarantined. `oer-hil-execution`'s `failure` classifies errors as scenario or
   infrastructure failures.
 
 Dependencies form a directed acyclic graph that Cargo enforces: the binary
 depends on the family packages and the image builder, each family on
-`runner-core`, and `runner-core` on the stand, link, scenario and evidence
+`oer-hil-execution`, and `oer-hil-execution` on the stand, link, scenario and
+evidence
 packages, never the reverse. The stand depends on the link to implement its
 ports, never the reverse. The image builder depends on evidence, never the
-reverse, and nothing but the binary and `xtask` depends on the builder. The `test-support` features of `runner-core`,
+reverse, and nothing but the binary and `xtask` depends on the builder. The `test-support` features of `oer-hil-execution`, `oer-hil-stand`,
 `oer-hil-scenario`, `oer-hil-evidence` and `oer-hil-source-snapshot` expose
 their test doubles and fixtures to the other packages' tests.
 

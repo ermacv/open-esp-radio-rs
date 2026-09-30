@@ -240,7 +240,8 @@ the same explicit review requirement applies.
 
 The evaluator checks the relevant current inputs selected by
 [`observer-inputs.json`](../hil/schema/observer-inputs.json). Shared execution
-and transport mechanisms are the common `runner-core` package; each radio
+and transport mechanisms are the common execution, link, stand and evidence
+packages; each radio
 family's workloads and fixtures are a separate package in its own domain, so a
 change in one family never invalidates another family's observations. The embedded build schema 2 retains Cargo's normal/build resolution view,
 local manifests, full file provenance, compiler and build environment. Applicability projects the selected direct dependency groups and

@@ -541,7 +541,7 @@ mod tests {
             assert!(
                 build_inputs::dependencies(&registry, kind)
                     .unwrap()
-                    .contains("oer-hil-runner-core")
+                    .contains("oer-hil-execution")
             );
         }
         assert_eq!(family("wifi/station-udp"), ["oer-hil-runner-ieee80211"]);

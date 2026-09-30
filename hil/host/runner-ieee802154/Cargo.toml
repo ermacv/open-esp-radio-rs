@@ -12,7 +12,7 @@ description = "IEEE 802.15.4 HIL workloads"
 oer-hil-link = { path = "../link" }
 oer-hil-scenario = { path = "../scenario" }
 oer-hil-image-class = { path = "../image-class" }
-hil-core = { package = "oer-hil-runner-core", path = "../runner-core" }
+oer-hil-execution = { path = "../execution" }
 oer-hil-protocol = { path = "../../protocol" }
 serde = { version = "1.0", features = ["derive"] }
 serialport = { version = "4.8.1", default-features = false }

@@ -4,4 +4,4 @@
 pub mod scenario;
 pub mod workload;
 
-pub(crate) use hil_core::Result;
+pub(crate) use oer_hil_execution::Result;

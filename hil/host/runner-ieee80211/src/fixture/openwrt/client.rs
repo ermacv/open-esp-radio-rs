@@ -425,7 +425,7 @@ impl Drop for ControlledOpenWrtClient {
     fn drop(&mut self) {
         oer_process::cleanup(|| {
             if !self.restored {
-                hil_core::fixture::cleanup::record("restore OpenWrt client", || {
+                oer_hil_execution::fixture::cleanup::record("restore OpenWrt client", || {
                     restore(&self.fixture)
                 });
             }

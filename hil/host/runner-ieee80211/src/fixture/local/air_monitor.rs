@@ -259,7 +259,7 @@ impl Drop for LocalAirMonitorCapture {
     fn drop(&mut self) {
         oer_process::cleanup(|| {
             drop(self.child.take());
-            hil_core::fixture::cleanup::record("restore monitor interface", || {
+            oer_hil_execution::fixture::cleanup::record("restore monitor interface", || {
                 self.restore_managed()
             });
         });

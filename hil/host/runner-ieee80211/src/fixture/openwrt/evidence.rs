@@ -131,7 +131,9 @@ impl OpenWrtRateMask {
 impl Drop for OpenWrtRateMask {
     fn drop(&mut self) {
         oer_process::cleanup(|| {
-            hil_core::fixture::cleanup::record("restore automatic rate mask", || self.clear());
+            oer_hil_execution::fixture::cleanup::record("restore automatic rate mask", || {
+                self.clear()
+            });
         });
     }
 }

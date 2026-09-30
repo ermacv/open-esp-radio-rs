@@ -53,7 +53,7 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
         oer_hil_image::require_program(std::ffi::OsStr::new("tshark"))?;
     }
     if required.station_network {
-        hil_core::fixture::cleanup::require_healthy()?;
+        oer_hil_execution::fixture::cleanup::require_healthy()?;
     }
     hil_wifi::fixture::local::network_helper::require_for(lab, required)?;
     if required.station_network {

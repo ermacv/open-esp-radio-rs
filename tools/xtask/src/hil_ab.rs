@@ -562,7 +562,7 @@ fn created_run(receipt: &Path, status: std::process::ExitStatus) -> Result<Strin
         .ok_or_else(|| format!("the runner created no run ({status})").into())
 }
 
-/// The runner's run receipt variable; see oer-hil-runner-core.
+/// The runner's run receipt variable; see oer-hil-evidence.
 const RUN_RECEIPT_ENV: &str = "OER_HIL_RUN_RECEIPT";
 
 pub fn summary(report: &Report) -> String {

@@ -12,7 +12,7 @@ use std::{
 };
 
 use crate::Result;
-pub use hil_core::fixture::peer_line::{
+pub use oer_hil_link::peer_line::{
     PeerLink, PeerTranscript, RecordingLink, SerialLink, SyncAnswer, synchronize_link,
 };
 

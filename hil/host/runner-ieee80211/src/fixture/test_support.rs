@@ -70,7 +70,7 @@ fn fixture_lifecycle_harness() {
     };
     let root = PathBuf::from(std::env::var_os("OER_TEST_STATE").unwrap());
     let _signals = oer_process::install_signal_handlers().unwrap();
-    let scope = hil_core::fixture::cleanup::Scope::new(&root);
+    let scope = oer_hil_execution::fixture::cleanup::Scope::new(&root);
     let lab = oer_hil_stand::config::LabConfig::for_test();
     let oer_hil_stand::config::StationFixtureConfig::OpenWrt(config) = &lab.station_fixture else {
         panic!("OpenWrt test lab required");
@@ -86,7 +86,7 @@ fn fixture_lifecycle_harness() {
         .err()
         .expect("injected fixture failure");
         assert_eq!(
-            hil_core::failure::classify(&*error).kind,
+            oer_hil_execution::failure::classify(&*error).kind,
             oer_hil_evidence::run::FailureKind::Infrastructure
         );
         scope.finish().unwrap();
@@ -102,7 +102,7 @@ fn fixture_lifecycle_harness() {
         if case.starts_with("cleanup-process-") {
             fs::write(root.join("process"), "running").unwrap();
         }
-        hil_core::fixture::cleanup::record("restore OpenWrt client", || {
+        oer_hil_execution::fixture::cleanup::record("restore OpenWrt client", || {
             super::openwrt::client::restore(config)
         });
         let records = scope.finish().unwrap();
@@ -189,7 +189,7 @@ fn fixture_lifecycle_harness() {
         }
         if case == "monitor-error" || case == "monitor-existing" {
             assert_eq!(
-                hil_core::failure::classify(&**result.as_ref().err().unwrap()).kind,
+                oer_hil_execution::failure::classify(&**result.as_ref().err().unwrap()).kind,
                 oer_hil_evidence::run::FailureKind::Infrastructure
             );
         }

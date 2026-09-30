@@ -10,7 +10,7 @@ use crate::{
     emit_json, execution::firmware::RunFirmware, execution::orchestration, fixture,
     repository_root,
 };
-use hil_core::output;
+use oer_hil_execution::output;
 use oer_hil_image as image;
 use oer_hil_scenario::SCENARIO_SCHEMA;
 use oer_hil_stand as lab;

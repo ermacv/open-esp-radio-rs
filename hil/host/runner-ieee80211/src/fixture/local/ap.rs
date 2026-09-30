@@ -140,7 +140,7 @@ fn verify_geometry(expected: Geometry, observed: Geometry) -> Result<()> {
 
 impl Drop for AccessPoint {
     fn drop(&mut self) {
-        hil_core::fixture::cleanup::record("restore managed Wi-Fi", || {
+        oer_hil_execution::fixture::cleanup::record("restore managed Wi-Fi", || {
             helper("managed", None).map(drop)
         });
     }

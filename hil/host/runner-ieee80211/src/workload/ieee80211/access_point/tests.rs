@@ -71,7 +71,7 @@ fn cleanup_annotation_preserves_fixture_cancellation_and_scenario_causes() {
         ),
     ] {
         let error = with_cleanup_errors(primary, Some("restore failed".into()), None, None, None);
-        assert_eq!(hil_core::failure::classify(&*error).kind, expected);
+        assert_eq!(oer_hil_execution::failure::classify(&*error).kind, expected);
         assert_eq!(oer_process::is_cancelled(&*error), cancelled);
         assert!(error.to_string().contains("client restore failed"));
     }

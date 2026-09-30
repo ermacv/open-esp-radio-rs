@@ -1,6 +1,6 @@
 //! Scoped ownership of AP client fixtures.
 
-use hil_core::context::Context;
+use oer_hil_execution::context::Context;
 use std::net::Ipv4Addr;
 
 use oer_hil_protocol::wifi::WifiAccessPointSecurity;

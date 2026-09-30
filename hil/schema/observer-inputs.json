@@ -5,7 +5,7 @@
   ],
   "dependencies": {
     "common": [
-      "oer-hil-runner-core",
+      "oer-hil-execution",
       "oer-hil-board",
       "oer-hil-image-class",
       "oer-hil-durable",

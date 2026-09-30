@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use hil_core::context::Context;
+use oer_hil_execution::context::Context;
 use oer_hil_image_class::ImageClass;
 use oer_hil_scenario::{Plan, bounded};
 use serde::{Deserialize, Serialize};

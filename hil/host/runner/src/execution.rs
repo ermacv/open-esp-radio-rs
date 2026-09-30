@@ -12,7 +12,7 @@ pub(crate) mod orchestration;
 pub(crate) mod preflight;
 #[cfg(test)]
 mod tests;
-pub(crate) use hil_core::failure::classify;
+pub(crate) use oer_hil_execution::failure::classify;
 
 #[derive(Default)]
 pub(crate) struct ExecutionEvidence {
@@ -47,7 +47,7 @@ pub(crate) fn execute_workload(
 ) -> ExecutionEvidence {
     // The board's MAC outlives its port name, which a reset can change.
     let mac = oer_hil_stand::post_mortem::board_mac(&lab.dut.serial);
-    let context = hil_core::context::Context::new(lab, selected.plan().settings, output)
+    let context = oer_hil_execution::context::Context::new(lab, selected.plan().settings, output)
         .with_profile(selected.header.profile);
     let result = selected.family.run(output, &context, fixture);
     let elf = runtime_elf(output, selected.image().id());

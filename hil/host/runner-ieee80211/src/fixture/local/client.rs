@@ -211,7 +211,10 @@ impl Drop for ControlledClient {
     fn drop(&mut self) {
         oer_process::cleanup(|| {
             if !self.restored {
-                hil_core::fixture::cleanup::record("restore managed Wi-Fi", restore_managed);
+                oer_hil_execution::fixture::cleanup::record(
+                    "restore managed Wi-Fi",
+                    restore_managed,
+                );
             }
         });
     }

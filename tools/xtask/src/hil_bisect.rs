@@ -473,7 +473,7 @@ fn unix_millis() -> u64 {
         .map_or(0, |elapsed| elapsed.as_millis() as u64)
 }
 
-/// The runner's run receipt variable; see oer-hil-runner-core.
+/// The runner's run receipt variable; see oer-hil-evidence.
 const RUN_RECEIPT_ENV: &str = "OER_HIL_RUN_RECEIPT";
 
 fn step_line(step: &Step) -> String {

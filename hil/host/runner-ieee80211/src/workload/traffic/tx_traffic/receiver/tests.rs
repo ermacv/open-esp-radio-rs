@@ -211,7 +211,7 @@ fn kernel_overflow_invalidates_delivery_as_an_infrastructure_failure() {
     )
     .unwrap_err();
     assert_eq!(
-        hil_core::failure::classify(&*error).kind,
+        oer_hil_execution::failure::classify(&*error).kind,
         oer_hil_evidence::run::FailureKind::Infrastructure
     );
     let record = saved(output.path());

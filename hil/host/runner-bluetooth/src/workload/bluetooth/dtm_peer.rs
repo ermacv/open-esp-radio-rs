@@ -11,11 +11,9 @@ use crate::{
     Result,
     fixture::dtm_peer::{DTM_PEER_TRANSCRIPT, DtmPeer, DtmRxPhy, DtmTxPhy, DtmVersion},
 };
-use hil_core::{
-    context::Context,
-    fixture::peer_line::{PeerLink, PeerTranscript},
-};
+use oer_hil_execution::context::Context;
 use oer_hil_link::SerialCapture;
+use oer_hil_link::peer_line::{PeerLink, PeerTranscript};
 use serde::Serialize;
 use std::{path::Path, thread, time::Duration};
 

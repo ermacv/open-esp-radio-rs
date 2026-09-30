@@ -14,9 +14,9 @@ hil/
 ├── evidence/          recorded evidence shards per chip
 ├── host/
 │   ├── runner/        CLI, run orchestration and workload dispatch
-│   ├── runner-core/   workload context, failure classification, peer console
+│   ├── execution/     repetition context, failure classification, cleanup evidence
 │   ├── stand/         laboratory config and locks, recovery, post-mortem
-│   ├── link/          UART session, protocol, transports and measurements
+│   ├── link/          UART session, protocol, transports, measurements, peer console
 │   ├── evidence/      run writer, seal, verification and reports
 │   ├── image/         image builder, audits and firmware records
 │   ├── scenario/      scenario envelope, catalog, campaign plan and requirements
@@ -131,7 +131,7 @@ the scenario's `peer-image.json`, which the scenario's seal covers. Each
 workload takes the running peer over with its `SYNC` command instead of a
 reset: a USB Serial/JTAG reset of an ESP32-C5 whose radio runs can leave it in
 ROM download. The peer drivers share one console transport,
-`hil_core::fixture::peer_line`, which also records the transcript of every
+`oer_hil_link::peer_line`, which also records the transcript of every
 exchange.
 
 ## Build and run

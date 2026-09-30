@@ -5,7 +5,7 @@
 //! based on device-side RX, TX-vector, placement and DMA-health evidence; a
 //! successful host `send` alone is not evidence that the radio received it.
 
-use hil_core::context::Context;
+use oer_hil_execution::context::Context;
 use std::{
     collections::BTreeMap,
     fmt::Write as _,

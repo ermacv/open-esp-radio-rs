@@ -294,7 +294,7 @@ impl<B: Backend> AccessPoint<B> {
 impl<B: Backend> Drop for AccessPoint<B> {
     fn drop(&mut self) {
         if !self.restored {
-            hil_core::fixture::cleanup::record("restore OpenWrt scenario profile", || {
+            oer_hil_execution::fixture::cleanup::record("restore OpenWrt scenario profile", || {
                 self.restore()
             });
         }

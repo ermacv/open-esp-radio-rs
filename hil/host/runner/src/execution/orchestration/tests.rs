@@ -277,11 +277,13 @@ fn single_scenario_preserves_its_original_preflight_prepare_event_order() {
 
 #[test]
 fn cleanup_is_written_before_attachment_indexing_and_preserves_partial_output() {
-    hil_core::fixture::cleanup::reset_for_test();
+    oer_hil_execution::fixture::cleanup::reset_for_test();
     let output = tempfile::tempdir().unwrap();
     fs::write(output.path().join("partial.json"), b"{\"seen\":true}\n").unwrap();
-    let cleanup = hil_core::fixture::cleanup::Scope::new(output.path());
-    hil_core::fixture::cleanup::record("restore fixture", || Err("injected cleanup error".into()));
+    let cleanup = oer_hil_execution::fixture::cleanup::Scope::new(output.path());
+    oer_hil_execution::fixture::cleanup::record("restore fixture", || {
+        Err("injected cleanup error".into())
+    });
     let started = std::time::Instant::now();
     let result = finalize_repetition(
         1,
@@ -309,8 +311,8 @@ fn cleanup_is_written_before_attachment_indexing_and_preserves_partial_output() 
         .collect::<BTreeSet<_>>();
     assert!(names.contains("cleanup.json"));
     assert!(names.contains("partial.json"));
-    assert!(hil_core::fixture::cleanup::require_healthy().is_err());
-    hil_core::fixture::cleanup::reset_for_test();
+    assert!(oer_hil_execution::fixture::cleanup::require_healthy().is_err());
+    oer_hil_execution::fixture::cleanup::reset_for_test();
 }
 
 #[test]

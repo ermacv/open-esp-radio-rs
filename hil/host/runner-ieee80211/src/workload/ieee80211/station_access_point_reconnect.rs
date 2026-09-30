@@ -1,7 +1,7 @@
 //! Controlled upstream loss and explicit same-channel STA+AP restart.
 
 use crate::fixture::prepared::Prepared;
-use hil_core::context::Context;
+use oer_hil_execution::context::Context;
 use std::{fs, path::Path, time::Duration};
 
 use oer_hil_protocol::{

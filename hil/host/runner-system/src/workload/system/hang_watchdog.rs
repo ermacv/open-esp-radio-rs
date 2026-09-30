@@ -2,7 +2,7 @@
 //! that stops taking commands while both executors run, leaves a post-mortem
 //! naming the stall, and the chip resets.
 use crate::Result;
-use hil_core::context::Context;
+use oer_hil_execution::context::Context;
 use oer_hil_protocol::{
     base::{Fault, HangFault, ResetReason, TaskSlot},
     system::HangTarget,

@@ -66,7 +66,7 @@ use oer_bluetooth_ll::{
 };
 use oer_bluetooth_radio::{
     AccessAddress, ConnectionConfiguration, ConnectionEvent, ConnectionId, CrcInit, DataChannel,
-    DataPdu, DataPduKind, EventId, EventResult, RadioDuration, RadioInstant, RadioOutcome,
+    DataPdu, DataPduKind, EventId, EventResult, LePhy, RadioDuration, RadioInstant, RadioOutcome,
     RadioRequest, RadioTiming, RadioWindow, TxPower,
 };
 
@@ -443,6 +443,7 @@ impl Peripheral {
                 crc_init: CrcInit(connection.request.crc_initialization().wire_bytes()),
                 created_at: connection.created_at,
                 tx_power: TxPower::from_dbm(0),
+                phy: LePhy::Le1M,
             }));
         }
         if let Some(closing) = &mut connection.closing {

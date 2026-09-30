@@ -18,11 +18,12 @@ use oer_bluetooth_hci_transport::{
     InProcessHciHostTransport, LeControllerHciEndpoints, LeControllerHciResources,
 };
 use oer_bluetooth_radio::{
-    ConnectionAllowances, EventId, EventResult, RadioActivity, RadioDuration, RadioInstant,
-    RadioOutcome, RadioRequest, RadioTiming, RequestError,
+    ConnectionAllowances, EventId, EventResult, LePhys, LeRadioCapabilities, LeRadioPort, NoRadio,
+    OutcomesLost, RadioActivity, RadioDuration, RadioInstant, RadioOutcome, RadioRequest,
+    RadioTiming, RequestError,
 };
 
-use crate::{LeRadioPort, NoRadio, OutcomesLost, ServeExit, serve};
+use crate::{ServeExit, serve};
 
 type Resources = LeControllerHciResources<NoopRawMutex, 4, 4, 258>;
 type Host<'c> = InProcessHciHostTransport<'c, NoopRawMutex, 4, 4, 258>;
@@ -118,6 +119,15 @@ impl LeRadioPort for ModelRadio {
     type Outcome = EventId;
     type Error = ();
 
+    /// The model serves the advertising the tests drive.
+    fn capabilities(&self) -> LeRadioCapabilities {
+        LeRadioCapabilities {
+            legacy_advertising: true,
+            phys: LePhys::LE_1M,
+            ..LeRadioCapabilities::NONE
+        }
+    }
+
     async fn clock(&self) -> Result<(RadioInstant, RadioTiming), ()> {
         Ok((
             RadioInstant::from_micros(embassy_time::Instant::now().as_micros()),
@@ -138,7 +148,7 @@ impl LeRadioPort for ModelRadio {
         ))
     }
 
-    async fn request(&self, request: RadioRequest<'_>) -> Result<Result<(), RequestError>, ()> {
+    async fn submit(&self, request: RadioRequest<'_>) -> Result<Result<(), RequestError>, ()> {
         if *self.refuse.borrow() {
             return Ok(Err(RequestError::Busy));
         }
@@ -161,7 +171,7 @@ impl LeRadioPort for ModelRadio {
         }
     }
 
-    async fn activity(&self, activity: RadioActivity) -> Result<(), ()> {
+    fn activity(&self, activity: RadioActivity) -> Result<(), ()> {
         self.activity.borrow_mut().push(activity);
         Ok(())
     }

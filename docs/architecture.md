@@ -126,11 +126,13 @@ check enforces the prefix. The Blobray workspace names its own packages.
 A radio port is the contract between the protocol logic of one radio
 protocol and the backend that executes it: a chip, a family driver or a host
 model. Everything above a port is written once for every backend; everything
-below it is the backend's. [`LeRadioPort`](../crates/runtime/bluetooth/src/lib.rs)
+below it is the backend's. [`LeRadioPort`](../crates/protocols/bluetooth/le/radio/src/port.rs)
 is the Bluetooth LE port and
 [`Ieee802154RadioPort`](../crates/protocols/ieee802154/src/port.rs) the
 IEEE 802.15.4 port, which the Espressif runtime implements and the OpenThread
-adapter consumes.
+adapter consumes. `LeRadioPort` keeps submission and its clock asynchronous
+because the ESP32-S31 backend admits every request against a fresh
+controller-time latch that completes only after the hardware latched the time.
 
 **Placement follows hardware autonomy.** Work the backend performs without
 software on the air timeline (acknowledgement turnaround, FCS or CRC,

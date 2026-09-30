@@ -115,7 +115,9 @@ pub use le_rx_chain::{
     LeRxChain, LeRxChainBindError, LeRxChainError, LeRxChainStorage, LeRxSource, LeRxTag,
 };
 
-pub use le_rx_packet::{LePacketCapturedTime, LeReceivedPdu, LeRxError, LeRxOutcome};
+pub use le_rx_packet::{
+    BLUETOOTH_LE_RX_PAYLOAD_CAPACITY, LePacketCapturedTime, LeReceivedPdu, LeRxError, LeRxOutcome,
+};
 
 pub use le_tx_packet::{
     BLUETOOTH_LE_BUFFER_HEADER_BYTES, BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES, LeTxPacketPrepareError,

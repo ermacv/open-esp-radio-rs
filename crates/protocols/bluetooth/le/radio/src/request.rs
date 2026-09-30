@@ -1,7 +1,7 @@
 //! Caller requests and long-lived role configuration.
 
 use crate::{
-    AdvertisingChannels, AdvertisingPdu, DataChannel, DataPdu, RadioDuration, RadioInstant,
+    AdvertisingChannels, AdvertisingPdu, DataChannel, DataPdu, LePhy, RadioDuration, RadioInstant,
     RadioWindow, TestChannel, TestPayloadType, channel::AdvertisingChannel,
 };
 
@@ -103,6 +103,8 @@ pub struct AdvertisingConfiguration<'pdu> {
     pub reception: AdvertisingReception<'pdu>,
     /// Transmit power.
     pub tx_power: TxPower,
+    /// PHY of the advertising PDUs and their responses.
+    pub phy: LePhy,
 }
 
 /// How urgently one event needs the shared antenna.
@@ -165,6 +167,8 @@ pub struct ScannerConfiguration {
     pub filter_policy: ScanFilterPolicy,
     /// Transmit power retained by the scanner profile.
     pub tx_power: TxPower,
+    /// PHY listened on.
+    pub phy: LePhy,
 }
 
 /// Which advertisers a scanner receives from.
@@ -234,6 +238,8 @@ pub struct ConnectionConfiguration {
     pub created_at: RadioInstant,
     /// Transmit power.
     pub tx_power: TxPower,
+    /// PHY of the connection in both directions.
+    pub phy: LePhy,
 }
 
 /// How long the peripheral listens for the central in one event.

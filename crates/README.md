@@ -26,8 +26,8 @@ Cargo package identities are independent of this directory hierarchy.
 | `network/interface/` | Stack-neutral interface, link and error values |
 | `protocols/ieee80211/{mac,softmac,sta,ap,security/rsn}/` | Sans-IO frame/protocol code, MAC contracts, role policy and security state machines, and the ports their drivers wait on |
 | `protocols/ieee80211/datapath/` | Software TX frame ownership, destination queues, airtime scheduling and physical materialization contracts |
-| `protocols/bluetooth/le/ll/` | Portable LE PDU codecs, protocol-role state and the Direct Test Mode session planner |
-| `protocols/bluetooth/le/radio/` | Portable LE radio event contract: configured roles, timed event requests and their outcomes in physical values |
+| `protocols/bluetooth/le/ll/` | Portable LE PDU codecs, protocol-role state, the software Link Layer acknowledgement (`connection::acknowledgement`) and the Direct Test Mode session planner |
+| `protocols/bluetooth/le/radio/` | Portable LE radio event contract: configured roles, timed event requests and their outcomes in physical values; the `LeRadioPort` a service loop drives, its capabilities (roles, PHYs, data payload, acknowledgement owner) and `NoRadio` |
 | `protocols/bluetooth/le/controller/` | Sans-IO LE Controller core: HCI command service, concurrent Link Layer roles (advertising, scanning, one peripheral connection with control procedures, encryption and ACL, Direct Test Mode) and the radio event arbiter |
 | `protocols/bluetooth/hci/` | `wire` holds packet views; `transport` holds the synchronous Controller-to-Host queue and packet validation; `controller` holds reset-scoped bootstrap state, command classification and the `le` codecs |
 | `protocols/ieee802154/` | `mac/frame` holds bounded bytes; `radio/{command,event,state,channel,capabilities}` holds portable contracts and one state machine; `port` declares the `Ieee802154RadioPort` every backend implements and the settings it applies |

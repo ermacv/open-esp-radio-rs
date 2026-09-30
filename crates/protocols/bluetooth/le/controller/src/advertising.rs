@@ -35,8 +35,8 @@ use oer_bluetooth_ll::{
 };
 use oer_bluetooth_radio::{
     AdvertisingChannels, AdvertisingConfiguration, AdvertisingEvent, AdvertisingPdu,
-    AdvertisingReception, AdvertisingSetId, EventId, RadioDuration, RadioInstant, RadioOutcome,
-    RadioRequest, RadioTiming, RadioWindow, TxPower,
+    AdvertisingReception, AdvertisingSetId, EventId, LePhy, RadioDuration, RadioInstant,
+    RadioOutcome, RadioRequest, RadioTiming, RadioWindow, TxPower,
 };
 
 use crate::{
@@ -357,6 +357,7 @@ impl Advertiser {
                             (_, None) => AdvertisingReception::None,
                         },
                         tx_power: TxPower::from_dbm(0),
+                        phy: LePhy::Le1M,
                     },
                 ))
             }

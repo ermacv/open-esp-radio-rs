@@ -5,6 +5,10 @@
 //! advances Channel Selection Algorithm #1 or #2 without MMIO, controller SRAM,
 //! HCI, an executor or an allocator. A chip backend must retain the affine
 //! event owner with its own hardware ticket before reporting completion.
+//!
+//! [`acknowledgement`] owns the data PDU header's SN, NESN and MD fields and
+//! the acknowledgement and flow control of a backend that runs them in
+//! software; [`maintenance`] reads received headers through it.
 
 use core::num::NonZeroU16;
 
@@ -1337,4 +1341,5 @@ impl LePeripheralConnectionRecurringEventProvisional {
 #[cfg(test)]
 mod tests;
 
+pub mod acknowledgement;
 pub mod maintenance;

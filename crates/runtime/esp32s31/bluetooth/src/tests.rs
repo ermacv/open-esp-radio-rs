@@ -10,7 +10,7 @@ use embassy_time::Timer;
 use oer_bluetooth_radio::{
     AcceptListChange, AcceptListDevice, AdvertisingChannel, AdvertisingChannels,
     AdvertisingConfiguration, AdvertisingEvent, AdvertisingPdu, AdvertisingReception,
-    AdvertisingSetId, CoexistenceLevel, EventId, EventResult, RadioDuration, RadioFault,
+    AdvertisingSetId, CoexistenceLevel, EventId, EventResult, LePhy, RadioDuration, RadioFault,
     RadioInstant, RadioOutcome, RadioRequest, RadioWindow, ReceivedPdu, RequestError,
     ScanFilterPolicy, ScanType, ScannerConfiguration, ScannerId, TestChannel, TestPhy, TestReceive,
     TxPower,
@@ -255,6 +255,7 @@ fn configure() -> RadioRequest<'static> {
         pdu: AdvertisingPdu::new(&NONCONN).unwrap(),
         reception: AdvertisingReception::None,
         tx_power: TxPower::from_dbm(0),
+        phy: LePhy::Le1M,
     })
 }
 
@@ -331,6 +332,7 @@ fn an_accepted_scanner_publishes_the_scan_start_once() {
             scan_type: ScanType::Active,
             filter_policy: ScanFilterPolicy::AcceptAll,
             tx_power: TxPower::from_dbm(0),
+            phy: LePhy::Le1M,
         })
     };
     block_on(runtime.request(scanner())).unwrap();
@@ -518,29 +520,66 @@ fn an_oversized_pdu_becomes_a_memory_fault() {
 
 #[test]
 fn as_a_radio_port_a_refusal_answers_and_a_missing_radio_ends_service() {
-    use oer_bluetooth_runtime::LeRadioPort;
+    use oer_bluetooth_radio::LeRadioPort;
 
     let model = Model::default();
     model.0.borrow_mut().time = 20_000;
     let runtime = installed(&model);
     block_on(async {
+        assert_eq!(LeRadioPort::submit(&runtime, configure()).await, Ok(Ok(())));
         assert_eq!(
-            LeRadioPort::request(&runtime, configure()).await,
-            Ok(Ok(()))
-        );
-        assert_eq!(
-            LeRadioPort::request(&runtime, advertise(1, 5_000)).await,
+            LeRadioPort::submit(&runtime, advertise(1, 5_000)).await,
             Ok(Err(RequestError::TooLate))
         );
     });
     let empty = Runtime::new();
     assert_eq!(
-        block_on(LeRadioPort::request(&empty, configure())),
+        block_on(LeRadioPort::submit(&empty, configure())),
         Err(BluetoothRuntimeError::NotInstalled)
     );
     assert_eq!(
         block_on(LeRadioPort::clock(&empty)),
         Err(BluetoothRuntimeError::NotInstalled)
+    );
+}
+
+#[test]
+fn as_a_radio_port_it_states_le_1m_and_hardware_acknowledgement() {
+    use oer_bluetooth_radio::{LeRadioPort, LinkAcknowledgement};
+
+    let model = Model::default();
+    let runtime = installed(&model);
+    let capabilities = LeRadioPort::capabilities(&runtime);
+    assert!(capabilities.legacy_advertising && capabilities.active_scanning);
+    assert!(capabilities.phys.contains(LePhy::Le1M));
+    assert!(!capabilities.phys.contains(LePhy::Le2M));
+    let connection = capabilities
+        .peripheral_connection
+        .expect("the runtime has a connection");
+    assert_eq!(
+        connection.link_acknowledgement,
+        LinkAcknowledgement::Hardware
+    );
+    // Every PDU the radio can carry fits an owned outcome.
+    assert_eq!(
+        crate::MAX_PDU_BYTES,
+        2 + usize::from(connection.max_data_payload)
+    );
+
+    let RadioRequest::ConfigureAdvertising(configuration) = configure() else {
+        unreachable!()
+    };
+    let le_2m = RadioRequest::ConfigureAdvertising(AdvertisingConfiguration {
+        phy: LePhy::Le2M,
+        ..configuration
+    });
+    assert_eq!(
+        block_on(LeRadioPort::submit(&runtime, le_2m)),
+        Ok(Err(RequestError::Unsupported))
+    );
+    assert_eq!(
+        block_on(LeRadioPort::submit(&runtime, configure())),
+        Ok(Ok(()))
     );
 }
 

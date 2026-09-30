@@ -7,7 +7,8 @@ use oer_bluetooth_radio::{
     AcceptListChange, AcceptListDevice, AdvertisingChannel, AdvertisingConfiguration,
     AdvertisingEvent, AdvertisingReception, AdvertisingSetId, ConnectionAllowances,
     ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming, ConnectionId, DataPduKind,
-    EventId, EventResult, RadioDuration, RadioFault, RadioInstant, RadioOutcome, RadioRequest,
+    EventId, EventResult, LeConnectionCapabilities, LePhys, LeRadioCapabilities,
+    LinkAcknowledgement, RadioDuration, RadioFault, RadioInstant, RadioOutcome, RadioRequest,
     RadioTiming, ReceivedPdu, RequestError, ScanFilterPolicy, ScanType, ScanWindow,
     ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestReport, TestTransmit, TxPower,
 };
@@ -20,24 +21,24 @@ use oer_esp32s31_bluetooth::{
     },
 };
 use oer_esp32s31_bluetooth_memory::{
-    BlePhyLe1MPacketStartCalibration, DirectionFindingWorkspaceLink, DtmPool,
-    DtmReceiverEventPhase, DtmRole, DtmSchedulerItemCompletionStatus, DtmSchedulerItemEventType,
-    DtmSchedulerReceiverPhy, DtmSchedulerTransmitterPhy, LeDeviceTable, LeDeviceTableError,
-    LeDeviceTablePublication, LeFilterAcceptListDevice, LeRxChain, LeRxOutcome, LeRxSource,
-    LeTxPower, LegacyAdvertisingPool, LegacyAdvertisingPrimaryChannelPlan,
-    LegacyConnectableAdvIndPacketInput, LegacyConnectableAdvertisingMemoryInput,
-    LegacyConnectableAdvertisingOwnAddress, LegacyConnectableAdvertisingPool,
-    LegacyConnectableScanResponsePacketInput, LegacyScanEventTiming, LegacyScanFilterPolicy,
-    LegacyScanPool, LegacyScanPrimaryChannel, LegacyScanResetConfig, LegacyScanSchedulerWindow,
-    LegacyScanStartSelection, LegacyScanType, LegacyScanWindowTicks,
-    PeripheralConnectionCapturedAnchorAvailability, PeripheralConnectionDataChannel,
-    PeripheralConnectionEventSpan, PeripheralConnectionFirstEvent, PeripheralConnectionIdentity,
-    PeripheralConnectionPool, PeripheralConnectionReceiveTime, PeripheralConnectionReceiveWait,
-    PeripheralConnectionRecurringEvent, PeripheralConnectionRecurringReceiveWait,
-    PeripheralConnectionSchedulerItemCompletionStatus, PeripheralConnectionSchedulerPriority,
-    PeripheralConnectionSchedulerWindow, PeripheralConnectionTransmitPduKind,
-    SchedulerItemCompletionStatus, SchedulerItemId, SchedulerItemSpace, SchedulerRoleInstance,
-    SchedulerRoleKind,
+    BLUETOOTH_LE_RX_PAYLOAD_CAPACITY, BlePhyLe1MPacketStartCalibration,
+    DirectionFindingWorkspaceLink, DtmPool, DtmReceiverEventPhase, DtmRole,
+    DtmSchedulerItemCompletionStatus, DtmSchedulerItemEventType, DtmSchedulerReceiverPhy,
+    DtmSchedulerTransmitterPhy, LeDeviceTable, LeDeviceTableError, LeDeviceTablePublication,
+    LeFilterAcceptListDevice, LeRxChain, LeRxOutcome, LeRxSource, LeTxPower, LegacyAdvertisingPool,
+    LegacyAdvertisingPrimaryChannelPlan, LegacyConnectableAdvIndPacketInput,
+    LegacyConnectableAdvertisingMemoryInput, LegacyConnectableAdvertisingOwnAddress,
+    LegacyConnectableAdvertisingPool, LegacyConnectableScanResponsePacketInput,
+    LegacyScanEventTiming, LegacyScanFilterPolicy, LegacyScanPool, LegacyScanPrimaryChannel,
+    LegacyScanResetConfig, LegacyScanSchedulerWindow, LegacyScanStartSelection, LegacyScanType,
+    LegacyScanWindowTicks, PeripheralConnectionCapturedAnchorAvailability,
+    PeripheralConnectionDataChannel, PeripheralConnectionEventSpan, PeripheralConnectionFirstEvent,
+    PeripheralConnectionIdentity, PeripheralConnectionPool, PeripheralConnectionReceiveTime,
+    PeripheralConnectionReceiveWait, PeripheralConnectionRecurringEvent,
+    PeripheralConnectionRecurringReceiveWait, PeripheralConnectionSchedulerItemCompletionStatus,
+    PeripheralConnectionSchedulerPriority, PeripheralConnectionSchedulerWindow,
+    PeripheralConnectionTransmitPduKind, SchedulerItemCompletionStatus, SchedulerItemId,
+    SchedulerItemSpace, SchedulerRoleInstance, SchedulerRoleKind,
 };
 use oer_esp32s31_hal::bluetooth::{
     BluetoothControllerReset, BluetoothControllerTimeScale, BluetoothSchedulerStopped,
@@ -354,6 +355,32 @@ impl<
     const ITEMS: usize,
 > BluetoothRadio<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>
 {
+    /// What the radio serves with these pools.
+    ///
+    /// Advertising, scanning and the peripheral connection run on LE 1M; the
+    /// Direct Test Mode transmitter and receiver also run on LE 2M and LE
+    /// Coded. The hardware keeps SN and NESN, retransmits the queued PDU
+    /// until the peer acknowledges it and answers with empty PDUs, so the
+    /// connection's acknowledgement is [`LinkAcknowledgement::Hardware`]. A
+    /// data PDU payload, MIC included, fills at most one receive allocation.
+    pub const CAPABILITIES: LeRadioCapabilities = LeRadioCapabilities {
+        legacy_advertising: LEGACY + CONNECTABLE > 0,
+        passive_scanning: SCANNERS > 0,
+        active_scanning: SCANNERS > 0,
+        filter_accept_list: true,
+        peripheral_connection: if CONNECTIONS > 0 {
+            Some(LeConnectionCapabilities {
+                max_data_payload: BLUETOOTH_LE_RX_PAYLOAD_CAPACITY as u8,
+                link_acknowledgement: LinkAcknowledgement::Hardware,
+            })
+        } else {
+            None
+        },
+        direct_test_mode: true,
+        phys: LePhys::LE_1M,
+        test_phys: LePhys::ALL,
+    };
+
     /// Take the memory of an initialized scheduler epoch. `sample` is the
     /// first live controller-time sample of the epoch and
     /// `local_sleep_clock_ppm` the board's worst-case sleep-clock accuracy.
@@ -466,6 +493,9 @@ impl<
     ) -> Result<(), RequestError> {
         if self.faulted {
             return Err(RequestError::Unavailable);
+        }
+        if !Self::CAPABILITIES.supports(&request) {
+            return Err(RequestError::Unsupported);
         }
         // A test session owns the Link Layer: no other role schedules air
         // activity until Test End.

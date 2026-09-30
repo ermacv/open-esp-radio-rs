@@ -2971,6 +2971,7 @@ dependencies = [
  "oer-bluetooth-controller",
  "oer-bluetooth-hci",
  "oer-bluetooth-hci-transport",
+ "oer-bluetooth-radio",
  "oer-bluetooth-runtime",
  "trouble-host",
 ]

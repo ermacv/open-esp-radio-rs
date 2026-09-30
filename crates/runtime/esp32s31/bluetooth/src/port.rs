@@ -2,9 +2,9 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_bluetooth_radio::{
-    RadioActivity, RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError,
+    LeRadioCapabilities, LeRadioPort, OutcomesLost, RadioActivity, RadioInstant, RadioOutcome,
+    RadioRequest, RadioTiming, RequestError,
 };
-use oer_bluetooth_runtime::{LeRadioPort, OutcomesLost};
 
 use crate::{BluetoothOutcome, BluetoothRadioHardware, BluetoothRuntime, BluetoothRuntimeError};
 
@@ -37,11 +37,15 @@ impl<
     /// Never [`BluetoothRuntimeError::Rejected`]: a refusal is an answer.
     type Error = BluetoothRuntimeError;
 
+    fn capabilities(&self) -> LeRadioCapabilities {
+        BluetoothRuntime::capabilities(self)
+    }
+
     async fn clock(&self) -> Result<(RadioInstant, RadioTiming), BluetoothRuntimeError> {
         BluetoothRuntime::clock(self).await
     }
 
-    async fn request(
+    async fn submit(
         &self,
         request: RadioRequest<'_>,
     ) -> Result<Result<(), RequestError>, BluetoothRuntimeError> {
@@ -62,7 +66,7 @@ impl<
         outcome.portable()
     }
 
-    async fn activity(&self, activity: RadioActivity) -> Result<(), BluetoothRuntimeError> {
+    fn activity(&self, activity: RadioActivity) -> Result<(), BluetoothRuntimeError> {
         self.publish_activity(activity);
         Ok(())
     }

@@ -19,9 +19,15 @@
 //! - [`BluetoothRuntime::quiesce`] stops the scheduler, lends the Bluetooth
 //!   quiescence proof to shared-PHY maintenance and resumes it.
 //!
-//! The runtime is the [`oer_bluetooth_runtime::LeRadioPort`] of the portable
+//! The runtime is the [`oer_bluetooth_radio::LeRadioPort`] of the portable
 //! Controller service loop: a refused request is an answer to the Controller
 //! core, while a missing radio, a fault or a failed time sample ends the loop.
+//! Submission and the clock stay asynchronous because each takes a fresh
+//! controller-time latch, which completes only after the hardware latched
+//! the time, and shares the lock the runner holds across scheduler stops.
+//! [`BluetoothRuntime::capabilities`] states LE 1M roles and hardware Link
+//! Layer acknowledgement: the hardware keeps SN and NESN, retransmits and
+//! answers with empty PDUs.
 //!
 //! Outcomes leave the lock as owned values through a bounded queue that any
 //! executor may await with [`BluetoothRuntime::next_outcome`]. The platform

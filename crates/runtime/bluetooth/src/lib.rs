@@ -5,7 +5,8 @@
 //!
 //! [`serve`] moves packets and radio work between three owners: the
 //! Controller end of an in-process HCI transport, the sans-IO
-//! [`LeController`] core and one [`LeRadioPort`]. It publishes the core's
+//! [`LeController`] core and one [`LeRadioPort`], which the protocol
+//! package `oer-bluetooth-radio` declares. It publishes the core's
 //! queued packets, takes the next Host command when the core is ready for
 //! one, submits the core's radio requests one at a time and feeds every
 //! radio outcome back. A refused request is retried after
@@ -22,53 +23,16 @@
 #[cfg(test)]
 extern crate std;
 
-use core::future::Future;
-
 use embassy_futures::select::{Either4, select4};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::{Duration, Instant, Timer};
 use oer_bluetooth_controller::LeController;
 use oer_bluetooth_hci::HostToControllerFrame;
 use oer_bluetooth_hci_transport::{HciChannelError, InProcessHciControllerTransport};
-use oer_bluetooth_radio::{
-    RadioActivity, RadioFault, RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError,
-};
+use oer_bluetooth_radio::{LeRadioPort, OutcomesLost, RadioActivity, RadioFault};
 
 /// Delay before asking the core again after the radio refused a request.
 pub const REFUSED_RETRY_DELAY: Duration = Duration::from_millis(1);
-
-/// The radio queue overflowed and dropped outcomes; the roles can no longer
-/// account their events.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct OutcomesLost;
-
-/// A radio backend as the service loop drives it.
-pub trait LeRadioPort {
-    /// One owned outcome.
-    type Outcome;
-    /// Why the port cannot serve at all.
-    type Error;
-
-    /// A fresh radio time and the radio's admission timing.
-    fn clock(&self) -> impl Future<Output = Result<(RadioInstant, RadioTiming), Self::Error>>;
-
-    /// Submit one request: `Ok(Err(_))` when the radio refused it.
-    fn request(
-        &self,
-        request: RadioRequest<'_>,
-    ) -> impl Future<Output = Result<Result<(), RequestError>, Self::Error>>;
-
-    /// The next outcome. Dropping the future loses no outcome.
-    fn next_outcome(&self) -> impl Future<Output = Result<Self::Outcome, OutcomesLost>>;
-
-    /// The portable view of an owned outcome.
-    fn view(outcome: &Self::Outcome) -> RadioOutcome<'_>;
-
-    /// The roles active now. The loop reports every change, starting from
-    /// [`RadioActivity::IDLE`], so a radio that shares the antenna can
-    /// publish them to its coexistence arbiter.
-    fn activity(&self, activity: RadioActivity) -> impl Future<Output = Result<(), Self::Error>>;
-}
 
 /// Why [`serve`] ended.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -83,56 +47,6 @@ pub enum ServeExit<E> {
     Fault(RadioFault),
     /// The radio dropped outcomes.
     OutcomesLost,
-}
-
-/// A port without a radio: time stands still and every request is refused
-/// as unavailable. Radio commands then complete with a failure status.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct NoRadio;
-
-/// [`NoRadio`] never fails and never produces an outcome.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Never {}
-
-impl LeRadioPort for NoRadio {
-    type Outcome = Never;
-    type Error = Never;
-
-    async fn clock(&self) -> Result<(RadioInstant, RadioTiming), Never> {
-        Ok((
-            RadioInstant::from_micros(0),
-            RadioTiming {
-                preparation_lead: oer_bluetooth_radio::RadioDuration::from_micros(0),
-                admission_guard: oer_bluetooth_radio::RadioDuration::from_micros(0),
-                connection: oer_bluetooth_radio::ConnectionAllowances {
-                    local_sleep_clock_ppm: 0,
-                    widening_jitter: oer_bluetooth_radio::RadioDuration::from_micros(0),
-                    receive_guard: oer_bluetooth_radio::RadioDuration::from_micros(0),
-                    receive_tail: oer_bluetooth_radio::RadioDuration::from_micros(0),
-                    boundary_guard: oer_bluetooth_radio::RadioDuration::from_micros(0),
-                    first_event_guard: oer_bluetooth_radio::RadioDuration::from_micros(0),
-                    event_length: oer_bluetooth_radio::RadioDuration::from_micros(0),
-                    first_event_length: oer_bluetooth_radio::RadioDuration::from_micros(0),
-                },
-            },
-        ))
-    }
-
-    async fn request(&self, _: RadioRequest<'_>) -> Result<Result<(), RequestError>, Never> {
-        Ok(Err(RequestError::Unavailable))
-    }
-
-    async fn next_outcome(&self) -> Result<Never, OutcomesLost> {
-        core::future::pending().await
-    }
-
-    fn view(outcome: &Never) -> RadioOutcome<'_> {
-        match *outcome {}
-    }
-
-    async fn activity(&self, _: RadioActivity) -> Result<(), Never> {
-        Ok(())
-    }
 }
 
 /// Serve the Host through `transport` with `core` over `radio` until the
@@ -160,7 +74,7 @@ where
         // Report a change of the active roles first.
         let activity = core.activity();
         if activity != reported {
-            if let Err(error) = radio.activity(activity).await {
+            if let Err(error) = radio.activity(activity) {
                 return ServeExit::Radio(error);
             }
             reported = activity;
@@ -187,7 +101,7 @@ where
                 Err(error) => return ServeExit::Radio(error),
             };
             if let Some(request) = core.next_request(now, timing) {
-                let result = match radio.request(request).await {
+                let result = match radio.submit(request).await {
                     Ok(result) => result,
                     Err(error) => return ServeExit::Radio(error),
                 };

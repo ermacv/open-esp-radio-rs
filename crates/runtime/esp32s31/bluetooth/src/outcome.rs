@@ -4,9 +4,12 @@ use oer_bluetooth_radio::{
     ConnectionId, EventId, EventResult, RadioFault, RadioInstant, RadioOutcome, ReceivedPdu,
     TestReport,
 };
+use oer_esp32s31_bluetooth_memory::BLUETOOTH_LE_RX_PAYLOAD_CAPACITY;
 
-/// The longest Link Layer PDU: a two-byte header and a 251-byte payload.
-pub const MAX_PDU_BYTES: usize = 2 + 251;
+/// The longest Link Layer PDU: a two-byte header and the longest payload
+/// one receive allocation holds, which covers 251 octets of data and an
+/// encrypted PDU's MIC.
+pub const MAX_PDU_BYTES: usize = 2 + BLUETOOTH_LE_RX_PAYLOAD_CAPACITY;
 
 /// A received PDU copied out of its receive chain.
 #[derive(Clone, Debug, Eq, PartialEq)]

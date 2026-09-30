@@ -6,7 +6,8 @@ use embassy_futures::select::select;
 use embassy_sync::{blocking_mutex::raw::RawMutex, channel::Channel, mutex::Mutex, signal::Signal};
 use embassy_time::{Duration, Timer};
 use oer_bluetooth_radio::{
-    RadioActivity, RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError,
+    LeRadioCapabilities, RadioActivity, RadioInstant, RadioOutcome, RadioRequest, RadioTiming,
+    RequestError,
 };
 use oer_esp32s31_bluetooth::{
     ControllerTimeSample,
@@ -429,6 +430,12 @@ impl<
             .map_err(BluetoothRuntimeError::Time)?;
         installed.radio.observe_time(&sample);
         Ok((installed.radio.now(), installed.radio.timing()))
+    }
+
+    /// What the radio serves: its roles on LE 1M, Direct Test Mode and
+    /// connections whose acknowledgement the hardware runs.
+    pub const fn capabilities(&self) -> LeRadioCapabilities {
+        Radio::<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>::CAPABILITIES
     }
 
     /// The platform's scheduler interrupt published a wake for the worker.

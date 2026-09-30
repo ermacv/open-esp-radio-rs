@@ -90,10 +90,12 @@ pub fn plan(
         if path.starts_with("qualification") && !path.starts_with("qualification/evaluator") {
             plan.packages.insert(String::from("oer-qualification"));
         }
-        // The runner's evidence workflow tests run the evaluator binary, so
-        // an evaluator change that no Cargo edge reaches can break them.
+        // The evaluator reads the evidence the runner writes, an edge Cargo's
+        // dependency graph does not show, so an evaluator change tests the
+        // evidence writer and the runner too.
         if path.starts_with("qualification/evaluator") {
-            plan.packages.insert(String::from("oer-hil-runner-core"));
+            plan.packages.insert(String::from("oer-hil-evidence"));
+            plan.packages.insert(String::from("oer-hil-runner"));
         }
         // The evaluator resolves image source graphs with `cargo tree` over
         // the HIL runtime's features, so a runtime manifest change can break
@@ -115,9 +117,9 @@ pub fn plan(
         .iter()
         .any(|prefix| path.starts_with(prefix))
             // Host code under `hil/host` never reaches an image; the image
-            // build and audit code does.
+            // builder, the image classes and the source snapshot do.
             && (!path.starts_with("hil/host")
-                || path.starts_with("hil/host/runner-core/src/image"));
+                || IMAGE_BUILDER.iter().any(|package| path.starts_with(package)));
         if image_input && path.extension().is_none_or(|extension| extension != "md") {
             plan.firmware = true;
         }
@@ -181,6 +183,13 @@ pub fn plan(
     }
     Ok(plan)
 }
+
+/// The host packages that decide what an image build produces.
+const IMAGE_BUILDER: [&str; 3] = [
+    "hil/host/image",
+    "hil/host/image-class",
+    "hil/host/source-snapshot",
+];
 
 fn git(ctx: &Context, arguments: &[&str]) -> Result<Vec<PathBuf>> {
     let output = process::capture(ctx.command("git").args(arguments))?;
@@ -481,7 +490,7 @@ mod tests {
         assert!(
             run(&["qualification/evaluator/src/main.rs"])
                 .packages
-                .contains("oer-hil-runner-core")
+                .contains("oer-hil-evidence")
         );
         assert!(
             run(&["hil/targets/esp32s31/runtime/Cargo.toml"])
@@ -513,7 +522,14 @@ mod tests {
         }
         assert!(!run(&["docs/guide.md"]).firmware);
         assert!(!run(&["hil/host/runner/src/main.rs"]).firmware);
-        assert!(run(&["hil/host/runner-core/src/image/mod.rs"]).firmware);
+        for builder in [
+            "hil/host/image/src/lib.rs",
+            "hil/host/image-class/src/lib.rs",
+            "hil/host/source-snapshot/src/lib.rs",
+        ] {
+            assert!(run(&[builder]).firmware, "{builder}");
+        }
+        assert!(!run(&["hil/host/stand/src/lib.rs"]).firmware);
     }
 
     #[test]

@@ -39,9 +39,9 @@ const FILES: [&str; 4] = [
 const STAND_OPERATION: [&str; 6] = [
     "hil/host/arbiter",
     "hil/host/board",
-    "hil/host/runner-core/src/post_mortem.rs",
-    "hil/host/runner-core/src/recovery.rs",
-    "hil/host/runner-core/src/usb_events.rs",
+    "hil/host/stand/src/post_mortem.rs",
+    "hil/host/stand/src/recovery.rs",
+    "hil/host/stand/src/usb_events.rs",
     "hil/host/runner-core/src/profile.rs",
 ];
 
@@ -384,23 +384,26 @@ mod tests {
     fn stand_operation_leaves_the_evidence_current_and_observing_code_does_not() {
         let closure = Closure::from_directories(&[
             "hil/host/arbiter",
-            "hil/host/runner-core",
+            "hil/host/stand",
+            "hil/host/link",
+            "hil/host/evidence",
             "hil/host/runner-ieee80211",
         ]);
         for neutral in [
             "hil/host/arbiter/src/queue.rs",
             "hil/host/board/src/esp_idf.rs",
-            "hil/host/runner-core/src/post_mortem.rs",
-            "hil/host/runner-core/src/image/tests.rs",
-            "hil/host/runner-core/tests/session.rs",
-            "hil/host/runner-core/README.md",
+            "hil/host/stand/src/post_mortem.rs",
+            "hil/host/stand/src/recovery.rs",
+            "hil/host/link/src/tests.rs",
+            "hil/host/link/tests/session.rs",
+            "hil/host/stand/README.md",
         ] {
             assert!(!closure.contains(Path::new(neutral)), "{neutral}");
         }
         for observing in [
             "hil/host/arbiter/src/spectrum.rs",
-            "hil/host/runner-core/src/session.rs",
-            "hil/host/runner-core/src/evidence/verify.rs",
+            "hil/host/link/src/lib.rs",
+            "hil/host/evidence/src/verify.rs",
             "hil/host/runner-ieee80211/src/workload/traffic.rs",
         ] {
             assert!(closure.contains(Path::new(observing)), "{observing}");

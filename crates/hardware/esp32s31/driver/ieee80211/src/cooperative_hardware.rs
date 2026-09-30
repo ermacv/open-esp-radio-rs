@@ -510,6 +510,16 @@ impl RxDma for CooperativeRadioHardware<'_> {
     }
 }
 
+impl crate::lower_mac::StationTsfHardware for CooperativeRadioHardware<'_> {
+    fn station_tsf(&mut self) -> u64 {
+        CooperativeRadioHardware::station_tsf(self)
+    }
+
+    fn set_station_tsf(&mut self, value: u64) {
+        CooperativeRadioHardware::set_station_tsf(self, value);
+    }
+}
+
 impl CooperativeRadioHardware<'_> {
     pub fn station_tsf(&mut self) -> u64 {
         self.wifi_mac_hal().station_tsf()

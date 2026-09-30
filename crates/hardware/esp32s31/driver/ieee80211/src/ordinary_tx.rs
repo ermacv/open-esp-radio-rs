@@ -14,7 +14,7 @@ use oer_esp32s31_ieee80211_mac::{
     MacInterface,
     edca::EdcaContentionParameters,
     tx::ampdu::HtBlockAckObservation,
-    tx::protection::{ProtectedPpdu, TxProtectionDecision, TxPsdu, TxReceiver},
+    tx::protection::{ProtectedPpdu, TxProtection, TxProtectionDecision, TxPsdu, TxReceiver},
     tx::runtime::{
         OrdinaryFrameClass, OrdinaryMpduRetryState, OrdinaryRetryCounters, OrdinaryRetryDecision,
         OrdinaryRetryError, OrdinaryRetryRatePolicy, VENDOR_RTS_THRESHOLD_BYTES,
@@ -240,8 +240,24 @@ pub struct OrdinaryTxPlan {
     pub priority_count: u16,
 }
 
+/// The protection exchange a caller chose for one single-attempt
+/// publication ([`OrdinaryTxOwner::start_single_attempt`]).
+///
+/// The control frame's rate is still the BSS policy's
+/// ([`WifiTxProtectionPolicy::control_rate`](oer_esp32s31_ieee80211_mac::tx::protection::WifiTxProtectionPolicy::control_rate));
+/// only the choice of exchange moves to the caller.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SingleAttemptProtection {
+    None,
+    RtsCts,
+    CtsToSelf,
+}
+
 struct ActiveTx {
     cookie: TxCookie,
+    /// `Some` for a single-attempt publication: the caller's protection, and
+    /// no re-publication whatever the completion says.
+    single_attempt: Option<SingleAttemptProtection>,
     retry: OrdinaryMpduRetryState,
     frame_length: usize,
     descriptor_capacity: u32,
@@ -520,6 +536,41 @@ where
         plan: OrdinaryTxPlan,
         retry_rate_policy: OrdinaryRetryRatePolicy,
     ) -> Result<WifiTxProgress, OrdinaryTxError> {
+        self.start_transaction(hardware, plan, retry_rate_policy, None)
+    }
+
+    /// Start exactly one hardware publication of the encoded MPDU.
+    ///
+    /// This is the lower-MAC port's attempt: the owner publishes the MPDU
+    /// once at `plan.exchange.initial_rate` with the caller's `protection`,
+    /// and every completion, collision or timeout ends the transaction. No
+    /// retry ladder, rate fallback, Retry-bit rewrite or BSS protection
+    /// selection is applied, and `plan.exchange.publication_limit` is not
+    /// consulted. The EDCA contention window stays at the queue's minimum:
+    /// a success records success and every other end resets the exchange,
+    /// because the retry policy that would widen it lies above the port.
+    pub fn start_single_attempt<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        mut plan: OrdinaryTxPlan,
+        protection: SingleAttemptProtection,
+    ) -> Result<WifiTxProgress, OrdinaryTxError> {
+        plan.exchange.publication_limit = 1;
+        self.start_transaction(
+            hardware,
+            plan,
+            OrdinaryRetryRatePolicy::Normal,
+            Some(protection),
+        )
+    }
+
+    fn start_transaction<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        plan: OrdinaryTxPlan,
+        retry_rate_policy: OrdinaryRetryRatePolicy,
+        single_attempt: Option<SingleAttemptProtection>,
+    ) -> Result<WifiTxProgress, OrdinaryTxError> {
         if self.active.is_some() {
             return Err(OrdinaryTxError::Busy);
         }
@@ -587,6 +638,7 @@ where
 
         let mut active = ActiveTx {
             cookie: TxCookie(0),
+            single_attempt,
             retry,
             frame_length: plan.frame_length,
             descriptor_capacity,
@@ -819,9 +871,23 @@ where
         let attempts = active.retry.publications();
         let final_rate = active.retry.current_rate()?;
         let disposition = completion.disposition();
-        let decision = active
-            .retry
-            .observe_completion(&mut self.policy, disposition);
+        let decision = if active.single_attempt.is_some() {
+            // One publication is the whole transaction: the retry state
+            // never sees the completion, so it can never re-publish.
+            if matches!(
+                disposition,
+                oer_esp32s31_ieee80211_mac::tx::TxCompletionDisposition::Success
+            ) {
+                self.policy.record_success(active.route.queue());
+            } else {
+                active.retry.abort(&mut self.policy);
+            }
+            OrdinaryRetryDecision::Complete
+        } else {
+            active
+                .retry
+                .observe_completion(&mut self.policy, disposition)
+        };
         match decision {
             OrdinaryRetryDecision::Complete => {
                 let success = matches!(
@@ -906,7 +972,12 @@ where
             return Ok(WifiTxProgress::Complete);
         }
 
-        let decision = active.retry.observe_collision(&mut self.policy);
+        let decision = if active.single_attempt.is_some() {
+            active.retry.abort(&mut self.policy);
+            OrdinaryRetryDecision::Complete
+        } else {
+            active.retry.observe_collision(&mut self.policy)
+        };
         match decision {
             OrdinaryRetryDecision::Retry { set_retry_bit } => {
                 debug_assert!(!set_retry_bit);
@@ -1002,6 +1073,7 @@ where
         match rate {
             TxPhyRate::Legacy(rate) => {
                 let decision = self.select_protection(
+                    active.single_attempt,
                     active.receiver,
                     TxPhyRate::Legacy(rate),
                     psdu_length.into(),
@@ -1025,6 +1097,7 @@ where
             }
             TxPhyRate::Ht(rate) => {
                 let decision = self.select_protection(
+                    active.single_attempt,
                     active.receiver,
                     TxPhyRate::Ht(rate),
                     psdu_length.into(),
@@ -1064,6 +1137,7 @@ where
                     HeSmpduTxConfig::new(rate, self.policy.he_bss_color(), mpdu_length)
                         .ok_or(OrdinaryTxError::BufferSizeOverflow)?;
                 let decision = self.select_protection(
+                    active.single_attempt,
                     active.receiver,
                     TxPhyRate::He(rate),
                     config.apep_length().into(),
@@ -1096,10 +1170,26 @@ where
 
     fn select_protection(
         &self,
+        single_attempt: Option<SingleAttemptProtection>,
         receiver: TxReceiver,
         rate: TxPhyRate,
         psdu_length: u32,
     ) -> TxProtectionDecision {
+        if let Some(chosen) = single_attempt {
+            let protection = match chosen {
+                SingleAttemptProtection::None => TxProtection::None,
+                SingleAttemptProtection::RtsCts => TxProtection::RtsCts {
+                    rate: self.policy.protection().control_rate(rate),
+                },
+                SingleAttemptProtection::CtsToSelf => TxProtection::CtsToSelf {
+                    rate: self.policy.protection().control_rate(rate),
+                },
+            };
+            return TxProtectionDecision {
+                protection,
+                ..TxProtectionDecision::UNPROTECTED
+            };
+        }
         self.policy.protection().select(ProtectedPpdu {
             rate,
             receiver,

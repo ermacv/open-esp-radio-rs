@@ -466,7 +466,10 @@ impl WifiTxProtectionPolicy {
     /// falls back to the ERP mandatory set. DSSS/HR control frames use the
     /// short preamble only when the BSS allows it and does not require
     /// Barker long preambles; 1 Mbit/s always uses the long preamble.
-    fn control_rate(&self, data: TxPhyRate) -> LegacyRate {
+    ///
+    /// A caller that chooses the protection exchange itself, such as the
+    /// lower-MAC port's single-attempt path, takes its control rate from here.
+    pub fn control_rate(&self, data: TxPhyRate) -> LegacyRate {
         let dsss_only = self.bss.erp.use_protection();
         let eligible = |rate: &LegacyRate| !dsss_only || is_dsss(*rate);
         let basic = if self.bss.basic_rates.rates().any(|rate| eligible(&rate)) {

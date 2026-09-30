@@ -41,6 +41,10 @@ booleans.
 
 See catalog section `wifi-interfaces-and-operating-modes`.
 
+The portable lower-MAC port has an ESP32-S31 backend in
+[`src/lower_mac.rs`](src/lower_mac.rs); its operation mapping and limits are
+in [the port's README](../../../../protocols/ieee80211/lower-mac/README.md#implementers).
+
 ## Legacy and HT MAC behavior
 
 See catalog section `wifi-legacy-and-ht-mac-behavior`.

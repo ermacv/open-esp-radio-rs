@@ -44,16 +44,38 @@ needs no chip types.
 The ESP32-S31 MAC converts its chip values in
 [`mac/src/portable.rs`](../../../hardware/esp32s31/driver/ieee80211/mac/src/portable.rs):
 `TxPhyRate` to and from `PhyRate`, the receive prefix `RxPhyInfo` to
-`PhyRate` and `RxMeta`, and a completion to `TxStatus`. The ESP32-S31 does not
-implement the port yet. Its register seams map onto the port as follows:
+`PhyRate` and `RxMeta`, and a completion to `TxStatus`. The ESP32-S31
+implements the port in two layers:
 
-| Port operation | ESP32-S31 seam |
+- [`LowerMacCore`](../../../hardware/esp32s31/driver/ieee80211/src/lower_mac.rs)
+  in `oer-esp32s31-ieee80211` is sans-IO and generic over the register seams
+  (`LowerMacHardware`), so host tests drive it through the seams' test
+  doubles.
+- [`Esp32s31LowerMac`](../../../runtime/esp32s31/ieee80211/src/lower_mac.rs)
+  in `oer-esp32s31-ieee80211-runtime` implements `Ieee80211LowerMacPort` over
+  the core: a bounded owned-event queue, the interrupt and receive entries,
+  the publication watchdog and the PHY retune of `Enable`.
+
+The station and access-point roles do not use the port yet. Its operations
+map onto the S31 seams as follows:
+
+| Port operation | ESP32-S31 implementation |
 | --- | --- |
-| `submit`, `TxCompleted` | `TxHardware` prepare/start of one queue and `take_tx_completion` in `mac/src/tx.rs`; A-MPDUs through `HtAmpduHardware` and `take_block_ack_completion` |
-| `TxStatus`, `ack_snr_db` | `TxCompletion::disposition` and `ack_snr_sample` in `mac/src/tx.rs`; the S31 reports no ACK RSSI |
-| `Received`, `RxMeta` | `RxDma` and `decode_normalized_rx_metadata` in `mac/src/rx.rs`; the prefix gives rate, RSSI and aggregation, not noise floor or timestamp |
-| `install_key`, `RemoveKey` | `CcmpKeyHardware` in `mac/src/crypto.rs` |
-| `Vif`, `ReceiveFilter` | `StaApRegisterHardware` and `ApRxPolicyHardware` over `MacStaApReceivePlan` in `mac/src/sta_ap_registers.rs` and `mac/src/ap_policy.rs` |
-| `AddRxBlockAck`, `RemoveRxBlockAck` | `RxBlockAckHardware` in `mac/src/rx/hardware.rs` |
-| `SetTsf`, `Tbtt`, `tsf` | `ApTsfHardware` in `mac/src/ap_tsf.rs` resets, starts and stops the access-point TSF |
-| `HardwareServices` | `ESP32S31_MAC_SERVICE_CAPABILITIES` in `mac/src/capabilities.rs`: FCS, immediate ACK, backoff countdown, CCMP transform, receive Block Ack matching and transmit Block Ack capture |
+| `submit` of one MPDU | `OrdinaryTxOwner::start_single_attempt` in `src/ordinary_tx.rs`: one `TxHardware` publication at the submitted rate with the caller's protection; the owner's retry ladder, rate fallback and BSS protection selection are not applied. One attempt is in flight at a time (`Busy`) |
+| `TxCompleted` | `take_tx_completion` through `TxCompletion::tx_status`; a collision detach is `Collision`, the hardware timeout abort `Aborted`; `ack_snr_db` from `ack_snr_sample`, no ACK RSSI |
+| `TxResponse::BlockAck` | A BlockAckReq at a non-HT rate; `take_block_ack_completion` gives the `BlockAckReport` |
+| `Received`, `RxMeta` | `Esp32s31LowerMac::on_received` takes the `NormalizedRxFrame` of `mac/src/rx.rs`; `portable::rx_meta` on the configured channel |
+| `Channel` | 2.4 GHz, 20 and 40 MHz, while disabled; `Enable` retunes through `LowerMacRetune` |
+| `Vif`, `ReceiveFilter` | `ReceiveFilter::NONE` or `BSS_MEMBER`: station policy six (`StaLinkRxPolicyHardware`, `StaApRegisterHardware` to close it) and access-point policy eight (`ApRxPolicyHardware`). One station and one access point; the station address is the one the cold start published |
+| `install_key`, `RemoveKey` | CCMP-128 through `CcmpKeyHardware`: the station's pairwise and group slots, the access point's pairwise slots (lowest free association slot) and group slot |
+| `AddRxBlockAck`, `RemoveRxBlockAck` | The eight ordinary banks of `RxBlockAckHardware` |
+| `SetTsf`, `tsf` | The station TSF (`StationTsfHardware`); the access-point TSF only through `ApTsfHardware`'s reset, `SetTsf` to zero |
+| `PowerSaveTxBlock` | A software hold: the admitted attempt stays unpublished until released |
+| `HardwareServices` | The hardware-owned operations of `ESP32S31_MAC_SERVICE_CAPABILITIES` in `mac/src/capabilities.rs` |
+
+Refused as unsupported: A-MPDU attempts (`max_ampdu_subframes` is zero),
+`TxPower::MaxDbm`, individually addressed frames without an ACK, other
+receive filters (promiscuous, other BSSs' management), `Tbtt`, reading or
+setting the access-point TSF other than its reset, and `CoexPriority`. A
+published attempt cannot be withdrawn: `Cancel` ends a held attempt as
+`Aborted`, and a published one with its own completion.

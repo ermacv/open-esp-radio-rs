@@ -356,23 +356,12 @@ pub fn classification(package: &Package) -> Result<Classification<'_>> {
     let layer = field("layer")?;
     let chip = metadata.and_then(|value| value.get("chip"));
     let family = metadata.and_then(|value| value.get("family"));
-    let identifier = |value: &'_ serde_json::Value, key: &str| {
-        value
-            .as_str()
-            .filter(|id| oer_chip_profile::valid_identifier(id))
-            .ok_or_else(|| {
-                format!(
-                    "package {} has invalid open-radio.{key} identifier",
-                    package.name
-                )
-            })
-    };
     let platform = match (field("platform")?, chip, family) {
         ("portable", None, None) => Platform::Portable,
         ("host", None, None) => Platform::Host,
         ("selected", None, None) => Platform::Selected,
-        ("chip", Some(chip), None) => Platform::Chip(identifier(chip, "chip")?),
-        ("family", None, Some(family)) => Platform::Family(identifier(family, "family")?),
+        ("chip", Some(chip), None) => Platform::Chip(identifier(package, chip, "chip")?),
+        ("family", None, Some(family)) => Platform::Family(identifier(package, family, "family")?),
         _ => {
             return Err(format!(
                 "package {} has inconsistent platform/chip classification",
@@ -419,6 +408,20 @@ pub fn classification(package: &Package) -> Result<Classification<'_>> {
         .into());
     }
     Ok(class)
+}
+
+/// The chip or family identifier `value` of `package`'s `open-radio.<key>`.
+fn identifier<'a>(package: &Package, value: &'a serde_json::Value, key: &str) -> Result<&'a str> {
+    value
+        .as_str()
+        .filter(|id| oer_chip_profile::valid_identifier(id))
+        .ok_or_else(|| {
+            format!(
+                "package {} has invalid open-radio.{key} identifier",
+                package.name
+            )
+            .into()
+        })
 }
 
 /// Executor crates. Lower layers expose futures that any executor may poll.

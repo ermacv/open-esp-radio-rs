@@ -6,12 +6,9 @@ use bt_hci::{
     },
     event::{CommandComplete, CommandCompleteWithStatus, EventKind},
     param::{Error as HciError, Status},
-    transport::Transport,
 };
-use embassy_futures::block_on;
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
-use crate::{HostToControllerFrame, InProcessHciChannel};
+use crate::test_support::command_packet;
 
 use super::{
     LE_RECEIVER_TEST_V1_OPCODE, LE_RECEIVER_TEST_V2_OPCODE, LE_TEST_END_OPCODE,
@@ -19,8 +16,6 @@ use super::{
     LeDtmCommand, LeDtmCommandDecodeError, LeDtmCommandKind, LeDtmIdleSessionDisposition,
     LeDtmModulationIndex, LeDtmPayloadPattern, LeDtmPhy,
 };
-
-type TestChannel = InProcessHciChannel<NoopRawMutex, 1, 1, 16>;
 
 #[test]
 fn legacy_transmitter_opcode_does_not_collide_with_read_supported_states() {
@@ -396,18 +391,8 @@ fn active_test_end_stays_owned_until_terminal_count_is_available() {
 }
 
 fn cross_hci_boundary<T: bt_hci::transport::PacketToController>(command: &T) -> LeDtmCommand {
-    let mut channel = TestChannel::new();
-    let (host, controller) = channel.split();
-    block_on(async {
-        host.write(command).await.unwrap();
-        let mut buffer = [0; 16];
-        let HostToControllerFrame::Command(command) =
-            controller.receive(&mut buffer).await.unwrap()
-        else {
-            panic!("typed HCI command changed packet class");
-        };
-        LeDtmCommand::decode(command).unwrap()
-    })
+    let mut buffer = [0; 16];
+    LeDtmCommand::decode(command_packet(command, &mut buffer)).unwrap()
 }
 
 fn parse_command_complete(bytes: &[u8]) -> CommandCompleteWithStatus<'_> {

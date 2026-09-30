@@ -4,7 +4,7 @@
 //! framing and carry no Controller epoch or command/response authority.
 
 use bt_hci::{
-    PacketKind,
+    FromHciBytesError, PacketKind,
     cmd::{Opcode, OpcodeGroup},
     data::{AclPacket, IsoPacket, SyncPacket},
 };
@@ -58,11 +58,20 @@ impl HostToControllerFrame<'_> {
     }
 }
 
-/// Decode a command body after the transport has validated its full length.
-pub(crate) fn command_from_validated_bytes(bytes: &[u8]) -> HciCommandPacket<'_> {
-    let raw = u16::from_le_bytes([bytes[0], bytes[1]]);
-    HciCommandPacket {
-        opcode: Opcode::new(OpcodeGroup::new((raw >> 10) as u8), raw & 0x03ff),
-        parameters: &bytes[3..],
+impl<'packet> HciCommandPacket<'packet> {
+    /// Decode one complete command packet body: the three-byte header and
+    /// exactly the parameter bytes it declares.
+    pub fn from_hci_bytes(bytes: &'packet [u8]) -> Result<Self, FromHciBytesError> {
+        let [low, high, length, parameters @ ..] = bytes else {
+            return Err(FromHciBytesError::InvalidSize);
+        };
+        if parameters.len() != usize::from(*length) {
+            return Err(FromHciBytesError::InvalidSize);
+        }
+        let raw = u16::from_le_bytes([*low, *high]);
+        Ok(HciCommandPacket {
+            opcode: Opcode::new(OpcodeGroup::new((raw >> 10) as u8), raw & 0x03ff),
+            parameters,
+        })
     }
 }

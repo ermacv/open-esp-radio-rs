@@ -19,7 +19,7 @@ use oer_esp32s31_ieee80211_mac::crypto::{
 
 use oer_ieee80211_rsn::{
     OwnedEapolFrame,
-    aes::{RsnSoftwareAes, SoftwareAesKeyUnwrapError},
+    aes::{SoftwareAesKeyUnwrapError, software_aes128_key_unwrap},
     keys::RsnKeyKind,
     supplicant::{
         RsnConnectedAction, RsnConnectedProcessError, RsnConnectedSupplicant,
@@ -80,7 +80,6 @@ pub struct ConnectedWpa2Security {
     replay: StaCcmpRxReplayControlEndpoint,
     /// Receive protection of robust management frames, when negotiated.
     management: Option<StationManagementProtection>,
-    unwrap: RsnSoftwareAes,
     tx_in_flight: bool,
     group_message1: u32,
     duplicate_message3: u32,
@@ -107,7 +106,6 @@ impl ConnectedWpa2Security {
             used_group_key_ids,
             replay,
             management,
-            unwrap: RsnSoftwareAes::new(),
             tx_in_flight: false,
             group_message1: 0,
             duplicate_message3: 0,
@@ -187,7 +185,7 @@ impl ConnectedWpa2Security {
     ) -> DatapathControlProgress<ConnectedDisconnectReason> {
         match frame {
             ConnectedSecurityFrame::Protected(frame) => {
-                self.process_group_message1(hardware, tx, frame).await
+                self.process_group_message1(hardware, tx, frame)
             }
             ConnectedSecurityFrame::Unprotected(frame) => {
                 self.process_duplicate_message3(hardware, tx, frame)
@@ -224,24 +222,17 @@ impl ConnectedWpa2Security {
         }
     }
 
-    async fn process_group_message1<H: ConnectedControlHardware, X: ConnectedControlTx>(
+    fn process_group_message1<H: ConnectedControlHardware, X: ConnectedControlTx>(
         &mut self,
         hardware: &mut H,
         tx: &mut X,
         frame: oer_ieee80211_rsn::OwnedEapolFrame,
     ) -> DatapathControlProgress<ConnectedDisconnectReason> {
         self.group_message1 = self.group_message1.saturating_add(1);
-        let action = match self
-            .supplicant
-            .on_group_message1(frame, &mut self.unwrap)
-            .await
-        {
+        let action = match self.supplicant.on_group_message1(frame) {
             Ok(action) => action,
-            Err(RsnConnectedProcessError::Supplicant(error)) => {
+            Err(error) => {
                 return self.fail(ConnectedWpa2SecurityFailure::Protocol(error));
-            }
-            Err(RsnConnectedProcessError::KeyUnwrap(error)) => {
-                return self.fail(ConnectedWpa2SecurityFailure::KeyUnwrap(error));
             }
         };
         let response = match action {
@@ -249,7 +240,23 @@ impl ConnectedWpa2Security {
                 self.retransmitted = self.retransmitted.saturating_add(1);
                 response
             }
-            RsnConnectedAction::InstallGroupKey(request) => {
+            RsnConnectedAction::UnwrapGroupKeyData(request) => {
+                // The RustCrypto key unwrap completes synchronously; the
+                // connected owner needs no asynchronous AES backend.
+                let unwrapped =
+                    software_aes128_key_unwrap(request.kek(), request.wrapped_key_data());
+                let request = match self
+                    .supplicant
+                    .complete_group_key_data_unwrap(request, unwrapped)
+                {
+                    Ok(request) => request,
+                    Err(RsnConnectedProcessError::Supplicant(error)) => {
+                        return self.fail(ConnectedWpa2SecurityFailure::Protocol(error));
+                    }
+                    Err(RsnConnectedProcessError::KeyUnwrap(error)) => {
+                        return self.fail(ConnectedWpa2SecurityFailure::KeyUnwrap(error));
+                    }
+                };
                 let RsnKeyKind::Group { key_id, .. } = request.group().kind() else {
                     let _ = self.supplicant.complete_group_key_install(request, false);
                     return self.fail(ConnectedWpa2SecurityFailure::InvalidGroupKeyKind);

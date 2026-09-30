@@ -13,9 +13,9 @@ use oer_bluetooth_hci::bt_hci::{
     param::{AddrKind, AdvChannelMap, AdvFilterPolicy, AdvKind, BdAddr, Duration as HciDuration},
     transport::Transport,
 };
-use oer_bluetooth_hci::{
-    BluetoothPublicDeviceAddress, InProcessHciHostTransport, LeControllerBootstrapConfig,
-    LeControllerHciEndpoints, LeControllerHciResources,
+use oer_bluetooth_hci::{BluetoothPublicDeviceAddress, LeControllerBootstrapConfig};
+use oer_bluetooth_hci_transport::{
+    InProcessHciHostTransport, LeControllerHciEndpoints, LeControllerHciResources,
 };
 use oer_bluetooth_radio::{
     ConnectionAllowances, EventId, EventResult, RadioActivity, RadioDuration, RadioInstant,

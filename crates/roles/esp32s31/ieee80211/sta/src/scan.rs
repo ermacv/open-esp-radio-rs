@@ -119,7 +119,8 @@ pub trait StaScanPort {
     fn select_candidate(&mut self) -> Result<Option<Self::Candidate>, Self::Error>;
 }
 
-/// ESP32-S31 transaction adapter for `StaCandidateScanService`.
+/// ESP32-S31 transaction adapter for the `StaCandidateScanService` of
+/// `oer-ieee80211-sta-service`.
 ///
 /// The owner type remains explicit so the compiler cannot conflate a cold
 /// radio owner with a later running-rescan owner. Both nevertheless reuse this

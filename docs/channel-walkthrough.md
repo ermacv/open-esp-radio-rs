@@ -129,8 +129,9 @@ The cooperative path obtains serialized channel-only authority through
 The [runtime target binding](../crates/runtime/esp32s31/ieee80211/src/roles/scan/target.rs)
 implements `ScanPhyPort` for this chip owner. Runtime scan services combine
 channel switching with RX/TX and dwell timing. Above them, the
-[portable scan service](../crates/protocols/ieee80211/sta/src/scan.rs) uses
-`StaCandidateScanBackend`: begin once, visit the supplied channel plan, then
+[portable scan service](../crates/services/ieee80211/sta/src/scan.rs) drives
+the `StaCandidateScanBackend` port of the
+[station protocol](../crates/protocols/ieee80211/sta/src/scan.rs): begin once, visit the supplied channel plan, then
 select a candidate. Every outcome carries the exact returned backend owner.
 
 ```mermaid

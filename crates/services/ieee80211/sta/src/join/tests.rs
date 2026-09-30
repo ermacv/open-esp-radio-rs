@@ -1,11 +1,17 @@
 use core::cell::Cell;
-use core::future::ready;
+use core::future::{Future, ready};
 use oer_ieee80211_mac::security::SaePwe;
 use oer_ieee80211_mac::sequence::SequenceNumber;
+use oer_ieee80211_mac::station::AssociationResponse;
+use oer_ieee80211_sta::join::{
+    association::{StaAssociationAttempt, StaAssociationFailure},
+    authentication::{StaAuthenticationAttempt, StaAuthenticationFailure},
+    sae::{StaSaeFailure, StaSaeTransmission},
+};
 
 use super::*;
 use crate::test_support::block_on;
-use oer_time::{Clock, Instant, Timer};
+use oer_time::Clock;
 
 const LOCAL: [u8; 6] = [0x02, 0, 0, 0x12, 0x34, 0x56];
 const BSSID: [u8; 6] = [0x30, 0x05, 0x5c, 0x11, 0x22, 0x33];

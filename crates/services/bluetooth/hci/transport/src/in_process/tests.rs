@@ -19,7 +19,7 @@ use embassy_futures::{
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
 use super::{HciChannelError, HostToControllerFrame, InProcessHciChannel};
-use crate::{
+use oer_bluetooth_hci::{
     LE_TEST_END_OPCODE, LeControllerCommandClassification, LeDtmCommand,
     classify_le_controller_command,
 };

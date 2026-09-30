@@ -79,6 +79,17 @@ the public facade. These rules are independent of directory names and chip IDs.
 | adapter, runtime | contract, protocol, hardware, role, adapter, runtime, service |
 | composition, facade | all production layers except facade |
 
+Protocol logic is sans-IO. A `protocol` package is a set of state machines:
+received frames, completed operations and the current time enter as values
+(`oer_time::Instant`), and the actions to take and the next deadline leave as
+values. It may declare the asynchronous ports its drivers implement, but it
+never awaits; the architecture check rejects every `async` body and `.await`
+in a protocol package's library sources. The drivers that wait on ports and
+timers and feed the state machines are `service` packages, and a runtime or
+an adapter polls them. The same state machine therefore runs under any
+executor, in a synchronous interrupt context and against a host model with
+virtual time.
+
 Hardware owns chip resources and the wire codecs its registers carry. A role
 composes portable role protocols (station, access point, security) with that
 hardware, without an executor. A service declares executor-free ports; an

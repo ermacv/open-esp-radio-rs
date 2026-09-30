@@ -44,9 +44,10 @@ use oer_ieee80211_mac::{
 
 use oer_ieee80211_sta::{
     request::{StationDiscovery, WifiSsid},
-    scan::{StaCandidateScanExit, StaCandidateScanService, StaScanPlanError, StaScanProgress},
+    scan::{StaCandidateScanExit, StaScanPlanError, StaScanProgress},
     station::{StaAttemptFailure, StaAttemptOutcome, StaFailureDisposition, StaLifecycleStage},
 };
+use oer_ieee80211_sta_service::scan::StaCandidateScanService;
 
 use super::composer::StationInitialScanExit;
 

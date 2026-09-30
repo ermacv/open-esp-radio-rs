@@ -17,7 +17,12 @@ use embassy_sync::{
 
 use embedded_io::{ErrorKind, ErrorType, ReadExactError, Write};
 
-use super::packet::{PacketSlot, decode_complete_packet};
+use oer_bluetooth_hci::{
+    ControllerToHostQueueError, HciCommandPacket, HostToControllerFrame,
+    validate_controller_to_host_packet,
+};
+
+use crate::packet::PacketSlot;
 
 mod codec;
 mod queue;
@@ -26,8 +31,6 @@ use codec::{
     require_profile_buffer,
 };
 use queue::{AsyncPacketQueue, PacketQueueEpoch};
-
-use crate::{ControllerToHostQueueError, HostToControllerFrame};
 
 /// Opaque identity of one live in-process HCI resource epoch.
 ///

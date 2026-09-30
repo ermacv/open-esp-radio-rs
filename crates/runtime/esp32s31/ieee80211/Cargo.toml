@@ -31,6 +31,8 @@ oer-ieee80211-softmac = { path = "../../../protocols/ieee80211/softmac" }
 oer-ieee80211-datapath = { path = "../../../protocols/ieee80211/datapath" }
 oer-ieee80211-sta = { path = "../../../protocols/ieee80211/sta" }
 oer-ieee80211-rsn = { path = "../../../protocols/ieee80211/security/rsn" }
+oer-ieee80211-sta-service = { path = "../../../services/ieee80211/sta" }
+oer-ieee80211-rsn-service = { path = "../../../services/ieee80211/rsn" }
 oer-ieee80211-runtime = { path = "../../ieee80211" }
 static_cell = "2.1.1"
 log = { version = "0.4", optional = true }

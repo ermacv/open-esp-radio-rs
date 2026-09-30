@@ -2356,11 +2356,19 @@ name = "oer-bluetooth-hci"
 version = "0.1.0"
 dependencies = [
  "bt-hci",
+]
+
+[[package]]
+name = "oer-bluetooth-hci-transport"
+version = "0.1.0"
+dependencies = [
+ "bt-hci",
  "critical-section",
  "embassy-futures",
  "embassy-sync 0.8.0",
  "embedded-io 0.7.1",
  "embedded-io-async 0.7.0",
+ "oer-bluetooth-hci",
  "trouble-host",
 ]
 
@@ -2389,6 +2397,7 @@ dependencies = [
  "embassy-time",
  "oer-bluetooth-controller",
  "oer-bluetooth-hci",
+ "oer-bluetooth-hci-transport",
  "oer-bluetooth-radio",
 ]
 
@@ -2527,6 +2536,7 @@ dependencies = [
  "embassy-time",
  "oer-bluetooth-controller",
  "oer-bluetooth-hci",
+ "oer-bluetooth-hci-transport",
  "oer-bluetooth-radio",
  "oer-bluetooth-runtime",
  "oer-esp32s31-bluetooth",
@@ -2699,9 +2709,11 @@ dependencies = [
  "oer-ieee80211-datapath",
  "oer-ieee80211-mac",
  "oer-ieee80211-rsn",
+ "oer-ieee80211-rsn-service",
  "oer-ieee80211-runtime",
  "oer-ieee80211-softmac",
  "oer-ieee80211-sta",
+ "oer-ieee80211-sta-service",
  "oer-ieee80211-trace",
  "oer-memory",
  "oer-network-interface",
@@ -2726,6 +2738,7 @@ dependencies = [
  "oer-ieee80211-rsn",
  "oer-ieee80211-softmac",
  "oer-ieee80211-sta",
+ "oer-ieee80211-sta-service",
  "oer-ieee80211-trace",
  "oer-trace",
  "riscv",
@@ -2972,6 +2985,7 @@ dependencies = [
  "heapless 0.9.3",
  "oer-bluetooth-controller",
  "oer-bluetooth-hci",
+ "oer-bluetooth-hci-transport",
  "oer-bluetooth-runtime",
  "trouble-host",
 ]
@@ -2993,6 +3007,7 @@ dependencies = [
  "log",
  "oer-bluetooth-controller",
  "oer-bluetooth-hci",
+ "oer-bluetooth-hci-transport",
  "oer-example-bluetooth-gatt",
  "oer-hil-protocol",
  "oer-trace",
@@ -3432,16 +3447,24 @@ version = "0.1.0"
 dependencies = [
  "aes",
  "cmac",
- "embassy-futures",
  "hmac",
  "oer-ieee80211-mac",
- "oer-time",
  "p256",
  "pbkdf2",
  "sha1",
  "sha2 0.10.9",
  "subtle",
  "zeroize",
+]
+
+[[package]]
+name = "oer-ieee80211-rsn-service"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures",
+ "oer-ieee80211-mac",
+ "oer-ieee80211-rsn",
+ "oer-time",
 ]
 
 [[package]]
@@ -3470,6 +3493,16 @@ version = "0.1.0"
 dependencies = [
  "oer-ieee80211-mac",
  "oer-ieee80211-rsn",
+ "oer-time",
+]
+
+[[package]]
+name = "oer-ieee80211-sta-service"
+version = "0.1.0"
+dependencies = [
+ "oer-ieee80211-mac",
+ "oer-ieee80211-rsn",
+ "oer-ieee80211-sta",
  "oer-time",
 ]
 
@@ -3767,6 +3800,7 @@ name = "open-esp-radio"
 version = "0.1.0"
 dependencies = [
  "oer-bluetooth-hci",
+ "oer-bluetooth-hci-transport",
  "oer-bluetooth-ll",
  "oer-esp32s31-bluetooth",
  "oer-esp32s31-hal",
@@ -3782,8 +3816,10 @@ dependencies = [
  "oer-ieee80211-datapath",
  "oer-ieee80211-mac",
  "oer-ieee80211-rsn",
+ "oer-ieee80211-rsn-service",
  "oer-ieee80211-softmac",
  "oer-ieee80211-sta",
+ "oer-ieee80211-sta-service",
  "oer-ieee802154",
  "oer-memory",
  "oer-network-interface",

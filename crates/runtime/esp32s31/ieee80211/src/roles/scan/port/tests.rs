@@ -12,7 +12,8 @@ use oer_esp32s31_ieee80211_sta::scan::{StaScanBackend, StaScanConfig};
 
 use oer_ieee80211_mac::scan::ScanObservation;
 
-use oer_ieee80211_sta::scan::{StaCandidateScanExit, StaCandidateScanService};
+use oer_ieee80211_sta::scan::StaCandidateScanExit;
+use oer_ieee80211_sta_service::scan::StaCandidateScanService;
 
 use std::vec::Vec;
 

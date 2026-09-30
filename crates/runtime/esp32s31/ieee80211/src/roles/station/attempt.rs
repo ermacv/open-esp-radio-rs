@@ -61,16 +61,17 @@ use oer_ieee80211_mac::{
 };
 
 use oer_ieee80211_sta::{
-    join::{StaAuthenticationSuccess, StaJoinError, StaJoinRunner, sae::StaSaeAuthentication},
+    join::{StaAuthenticationSuccess, StaJoinError, sae::StaSaeAuthentication},
     station::StaFailureDisposition,
 };
+use oer_ieee80211_sta_service::join::StaJoinRunner;
 
 use oer_ieee80211_rsn::{
     aes::{RsnSoftwareAes, SoftwareAesKeyUnwrapError},
-    runner::{
-        RsnEstablished, RsnHandshakeConfig, RsnHandshakeError, RsnHandshakeRunner,
-        RsnKeyInstallError, RsnKeyInstallRunner, RsnPendingKeyInstall,
-    },
+    runner::{RsnHandshakeConfig, RsnHandshakeError, RsnKeyInstallError},
+};
+use oer_ieee80211_rsn_service::runner::{
+    RsnEstablished, RsnHandshakeRunner, RsnKeyInstallRunner, RsnPendingKeyInstall,
 };
 
 mod channel;

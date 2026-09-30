@@ -68,6 +68,7 @@ use oer_ieee80211_rsn::{
     frames::{OwnedRsnIe, RsnGtk, RsnPlainKeyData, RsnTxFrame},
     supplicant::{RsnConnectedSupplicant, RsnStaSupplicant, RsnStaSupplicantAction},
 };
+use oer_ieee80211_rsn_service::supplicant::process_frame;
 
 use oer_esp32s31_ieee80211_sta::{
     connected_control::{ConnectedPowerCommand, PowerCoexSnapshot},
@@ -113,7 +114,12 @@ fn established_supplicant() -> (RsnConnectedSupplicant, Ptk) {
     )
     .unwrap();
     assert!(matches!(
-        embassy_futures::block_on(supplicant.on_frame(owned_eapol(&message1), &pmk, &mut aes,)),
+        embassy_futures::block_on(process_frame(
+            &mut supplicant,
+            owned_eapol(&message1),
+            &pmk,
+            &mut aes
+        )),
         Ok(RsnStaSupplicantAction::Transmit(_))
     ));
 
@@ -131,10 +137,13 @@ fn established_supplicant() -> (RsnConnectedSupplicant, Ptk) {
     )
     .unwrap()
     .authenticate(&peer_ptk);
-    let RsnStaSupplicantAction::InstallKeys(request) =
-        embassy_futures::block_on(supplicant.on_frame(owned_eapol(&message3), &pmk, &mut aes))
-            .unwrap()
-    else {
+    let RsnStaSupplicantAction::InstallKeys(request) = embassy_futures::block_on(process_frame(
+        &mut supplicant,
+        owned_eapol(&message3),
+        &pmk,
+        &mut aes,
+    ))
+    .unwrap() else {
         panic!("authenticated Message 3 must establish connected WPA2 state")
     };
     assert!(matches!(
@@ -789,7 +798,8 @@ fn completed_wpa2_fixture(hardware: &mut Hardware) -> CompletedWpa2Fixture {
         WPA2_ANONCE,
     )
     .unwrap();
-    let RsnStaSupplicantAction::Transmit(_) = embassy_futures::block_on(supplicant.on_frame(
+    let RsnStaSupplicantAction::Transmit(_) = embassy_futures::block_on(process_frame(
+        &mut supplicant,
         owned_station_eapol(&message1),
         &pmk,
         &mut aes,
@@ -811,9 +821,12 @@ fn completed_wpa2_fixture(hardware: &mut Hardware) -> CompletedWpa2Fixture {
     )
     .unwrap()
     .authenticate(&ptk);
-    let RsnStaSupplicantAction::InstallKeys(request) = embassy_futures::block_on(
-        supplicant.on_frame(owned_station_eapol(&message3), &pmk, &mut aes),
-    )
+    let RsnStaSupplicantAction::InstallKeys(request) = embassy_futures::block_on(process_frame(
+        &mut supplicant,
+        owned_station_eapol(&message3),
+        &pmk,
+        &mut aes,
+    ))
     .unwrap() else {
         panic!("Message 3 must produce the initial key transaction")
     };

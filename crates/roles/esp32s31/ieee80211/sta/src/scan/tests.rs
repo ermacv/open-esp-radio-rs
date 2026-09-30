@@ -2,7 +2,8 @@ use core::future::ready;
 
 use crate::test_support::block_on;
 
-use oer_ieee80211_sta::scan::{StaCandidateScanExit, StaCandidateScanService};
+use oer_ieee80211_sta::scan::StaCandidateScanExit;
+use oer_ieee80211_sta_service::scan::StaCandidateScanService;
 
 use std::vec::Vec;
 

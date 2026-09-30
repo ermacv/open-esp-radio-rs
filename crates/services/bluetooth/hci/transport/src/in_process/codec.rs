@@ -1,7 +1,6 @@
 //! Complete packet validation and conversion at the async channel boundary.
 
 use super::*;
-use crate::wire::command_from_validated_bytes;
 
 pub(super) fn require_profile_buffer<const PACKET_CAPACITY: usize>(
     available: usize,
@@ -29,7 +28,7 @@ pub(super) fn controller_slot<const PACKET_CAPACITY: usize>(
             capacity: PACKET_CAPACITY,
         });
     }
-    decode_complete_packet(kind, bytes).map_err(map_controller_packet_error)?;
+    validate_controller_to_host_packet(kind, bytes).map_err(map_controller_packet_error)?;
 
     let mut slot = PacketSlot::EMPTY;
     slot.kind = kind;
@@ -195,9 +194,9 @@ pub(super) fn decode_host_slot<'buffer, const PACKET_CAPACITY: usize>(
     validate_host_packet(slot.kind, bytes).map_err(|_| HciChannelError::CorruptRetainedPacket)?;
 
     match slot.kind {
-        PacketKind::Cmd => Ok(HostToControllerFrame::Command(
-            command_from_validated_bytes(bytes),
-        )),
+        PacketKind::Cmd => HciCommandPacket::from_hci_bytes(bytes)
+            .map(HostToControllerFrame::Command)
+            .map_err(|_| HciChannelError::CorruptRetainedPacket),
         PacketKind::AclData => AclPacket::from_hci_bytes(bytes)
             .map(|(packet, _)| HostToControllerFrame::Acl(packet))
             .map_err(|_| HciChannelError::CorruptRetainedPacket),

@@ -46,6 +46,7 @@ embassy-time = { version = "0.5.1", features = ["std", "generic-queue-64"] }
 embedded-io = "0.7.1"
 oer-bluetooth-controller = { path = "../../crates/protocols/bluetooth/le/controller" }
 oer-bluetooth-hci = { path = "../../crates/protocols/bluetooth/hci" }
+oer-bluetooth-hci-transport = { path = "../../crates/services/bluetooth/hci/transport" }
 
 [lints]
 workspace = true

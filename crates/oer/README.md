@@ -9,8 +9,10 @@ use oer::ieee80211::{mac, softmac};
 use oer::ieee80211::sta::association::{PhyMode, Preference};
 ```
 
-The default `wifi` feature exposes portable Wi-Fi control and IEEE 802.11
-protocols. `bluetooth` exposes `bluetooth::hci` and `bluetooth::le::ll`;
+The default `wifi` feature exposes portable Wi-Fi control, IEEE 802.11
+protocols and their executor-independent drivers (`ieee80211::services`).
+`bluetooth` exposes `bluetooth::hci`, the in-process `bluetooth::hci_transport`
+and `bluetooth::le::ll`;
 `ieee802154` exposes the IEEE 802.15.4 contracts. These features build without
 a chip or executor. Memory and network value contracts are always available.
 

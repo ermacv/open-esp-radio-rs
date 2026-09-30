@@ -25,13 +25,14 @@ test failure or a reason to change the lockfile.
 ## Follow one scan and its error return
 
 ```console
-cargo test -p oer-ieee80211-sta scan::tests --locked --offline
+cargo test -p oer-ieee80211-sta-service scan::tests --locked --offline
 ```
 
 The current selector runs six tests. Confirm a nonzero executed-test count and
 successful results. Read the [policy contract](../crates/protocols/ieee80211/sta/README.md),
-[`scan.rs`](../crates/protocols/ieee80211/sta/src/scan.rs) and its
-[tests](../crates/protocols/ieee80211/sta/src/scan/tests.rs).
+the [scan port](../crates/protocols/ieee80211/sta/src/scan.rs), its
+[driver](../crates/services/ieee80211/sta/src/scan.rs) and the driver's
+[tests](../crates/services/ieee80211/sta/src/scan/tests.rs).
 
 Start with `selected_candidate_follows_the_complete_ordered_channel_plan`:
 the fake backend sees channels `[1, 6, 11]` in order before candidate selection.

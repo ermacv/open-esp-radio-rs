@@ -10,9 +10,11 @@
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use oer_bluetooth_controller::{LeController, LeControllerConfig, LeVersionInformation};
 use oer_bluetooth_hci::{
-    BluetoothPublicDeviceAddress, HciRestartError, HciRetired, HciRetirementError,
-    InProcessHciControllerTransport, InProcessHciHostTransport, LeControllerBootstrapConfig,
-    LeControllerHciEndpoints, LeControllerHciResources, LeRandomSource, LeRandomUnavailable,
+    BluetoothPublicDeviceAddress, LeControllerBootstrapConfig, LeRandomSource, LeRandomUnavailable,
+};
+use oer_bluetooth_hci_transport::{
+    HciRestartError, HciRetired, HciRetirementError, InProcessHciControllerTransport,
+    InProcessHciHostTransport, LeControllerHciEndpoints, LeControllerHciResources,
 };
 use oer_bluetooth_runtime::{ServeExit, serve};
 use oer_esp32s31_bluetooth_memory::BLUETOOTH_FILTER_ACCEPT_LIST_CAPACITY;

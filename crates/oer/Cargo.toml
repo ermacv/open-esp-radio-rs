@@ -13,8 +13,18 @@ name = "oer"
 
 [features]
 default = ["wifi"]
-wifi = ["radio/wifi", "dep:mac", "dep:softmac", "dep:datapath", "dep:sta", "dep:ap", "dep:rsn"]
-bluetooth = ["dep:hci", "dep:le-ll"]
+wifi = [
+    "radio/wifi",
+    "dep:mac",
+    "dep:softmac",
+    "dep:datapath",
+    "dep:sta",
+    "dep:sta-service",
+    "dep:ap",
+    "dep:rsn",
+    "dep:rsn-service",
+]
+bluetooth = ["dep:hci", "dep:hci-transport", "dep:le-ll"]
 ieee802154 = ["dep:ieee802154"]
 esp32s31 = ["dep:chip-hal"]
 esp32s31-wifi = ["esp32s31", "wifi", "dep:chip-mac", "dep:chip-sta", "dep:chip-ap"]
@@ -56,7 +66,10 @@ datapath = { package = "oer-ieee80211-datapath", path = "../protocols/ieee80211/
 sta = { package = "oer-ieee80211-sta", path = "../protocols/ieee80211/sta", optional = true }
 ap = { package = "oer-ieee80211-ap", path = "../protocols/ieee80211/ap", optional = true }
 rsn = { package = "oer-ieee80211-rsn", path = "../protocols/ieee80211/security/rsn", optional = true }
+sta-service = { package = "oer-ieee80211-sta-service", path = "../services/ieee80211/sta", optional = true }
+rsn-service = { package = "oer-ieee80211-rsn-service", path = "../services/ieee80211/rsn", optional = true }
 hci = { package = "oer-bluetooth-hci", path = "../protocols/bluetooth/hci", optional = true }
+hci-transport = { package = "oer-bluetooth-hci-transport", path = "../services/bluetooth/hci/transport", optional = true }
 le-ll = { package = "oer-bluetooth-ll", path = "../protocols/bluetooth/le/ll", optional = true }
 ieee802154 = { package = "oer-ieee802154", path = "../protocols/ieee802154", optional = true }
 chip-hal = { package = "oer-esp32s31-hal", path = "../hardware/esp32s31/hal", optional = true }

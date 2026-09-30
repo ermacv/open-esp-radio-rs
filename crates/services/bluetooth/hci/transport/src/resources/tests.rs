@@ -1,7 +1,7 @@
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
 use super::{LeControllerHciResources, LeControllerHciResourcesError};
-use crate::{BluetoothPublicDeviceAddress, LeControllerBootstrapConfig};
+use oer_bluetooth_hci::{BluetoothPublicDeviceAddress, LeControllerBootstrapConfig};
 
 fn config(payload: u16, credits: u8) -> LeControllerBootstrapConfig {
     LeControllerBootstrapConfig::new(

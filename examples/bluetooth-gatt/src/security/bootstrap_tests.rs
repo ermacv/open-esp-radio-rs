@@ -11,6 +11,7 @@ use embassy_futures::select::{Either, select};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use oer_bluetooth_controller::{LeController, LeControllerConfig};
 use oer_bluetooth_hci::*;
+use oer_bluetooth_hci_transport::*;
 use oer_bluetooth_runtime::{NoRadio, serve};
 use trouble_host::{BleHostError, Error as HostError, prelude::*};
 

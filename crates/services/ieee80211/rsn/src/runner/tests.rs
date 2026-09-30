@@ -1,16 +1,19 @@
 use core::cell::Cell;
-use core::future::ready;
+use core::future::{Future, ready};
 
-use crate::{
-    PtkContext, RsnInterface,
-    aes::{AsyncRsnKeyUnwrap, RsnUnwrappedKeyData},
-    frames::{OwnedRsnIe, RsnGtk, RsnPlainKeyData, RsnTxFrame},
+use oer_ieee80211_mac::security::rsn::Akm;
+use oer_ieee80211_mac::sequence::SequenceNumber;
+use oer_ieee80211_rsn::{
+    OwnedEapolFrame, Pmk, PtkContext,
+    aes::RsnUnwrappedKeyData,
+    frames::{OwnedRsnIe, RsnGtk, RsnPlainKeyData},
+    runner::RsnRxProgress,
     supplicant::{RSN_STA_MESSAGE1_TIMEOUT_MS, RSN_STA_MESSAGE3_TIMEOUT_MS},
 };
 
 use super::*;
 use oer_ieee80211_mac::station::StaSequenceCounter;
-use oer_time::{Clock, Instant, Timer};
+use oer_time::Clock;
 
 const LOCAL: [u8; 6] = [1; 6];
 const AP: [u8; 6] = [2; 6];
@@ -70,14 +73,14 @@ impl Backend {
     }
 
     fn message1() -> OwnedEapolFrame<512> {
-        let frame = RsnTxFrame::<512>::message1(crate::Akm::Psk, LOCAL, 7, ANONCE).unwrap();
+        let frame = RsnTxFrame::<512>::message1(Akm::Psk, LOCAL, 7, ANONCE).unwrap();
         OwnedEapolFrame::try_copy(RsnInterface::Station, AP, frame.as_bytes()).unwrap()
     }
 
     fn message3_with_replay(replay_counter: u64) -> OwnedEapolFrame<512> {
         let pmk = Pmk::derive(b"password", b"ssid").unwrap();
         let ptk = pmk.derive_ptk(
-            crate::Akm::Psk,
+            Akm::Psk,
             PtkContext {
                 authenticator_address: AP,
                 supplicant_address: LOCAL,
@@ -89,7 +92,7 @@ impl Backend {
         let gtk = RsnGtk::new(2, false, [0x5a; 16]).unwrap();
         let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
         let frame = RsnTxFrame::<512>::message3(
-            crate::Akm::Psk,
+            Akm::Psk,
             LOCAL,
             replay_counter,
             ANONCE,
@@ -115,7 +118,7 @@ impl Backend {
     }
 
     fn unsupported_message() -> OwnedEapolFrame<512> {
-        let frame = RsnTxFrame::<512>::message4(crate::Akm::Psk, LOCAL, 8).unwrap();
+        let frame = RsnTxFrame::<512>::message4(Akm::Psk, LOCAL, 8).unwrap();
         OwnedEapolFrame::try_copy(RsnInterface::Station, AP, frame.as_bytes()).unwrap()
     }
 
@@ -182,7 +185,7 @@ impl RsnHandshakeBackend for Backend {
     ) -> impl Future<Output = Result<(), Self::Error>> + '_ {
         assert_eq!(
             frame.key_frame().message(),
-            crate::EapolKeyMessage::PairwiseMessage2
+            EapolKeyMessage::PairwiseMessage2
         );
         self.transmissions += 1;
         self.last_sequence = Some(sequence_number);
@@ -228,12 +231,12 @@ struct IdentityUnwrap;
 impl AsyncRsnKeyUnwrap for IdentityUnwrap {
     type Error = ();
 
-    async fn unwrap_key_data(
-        &mut self,
-        _kek: &[u8; 16],
-        encrypted: &[u8],
-    ) -> Result<RsnUnwrappedKeyData, Self::Error> {
-        RsnUnwrappedKeyData::try_copy(encrypted).map_err(|_| ())
+    fn unwrap_key_data<'a>(
+        &'a mut self,
+        _kek: &'a [u8; 16],
+        encrypted: &'a [u8],
+    ) -> impl Future<Output = Result<RsnUnwrappedKeyData, Self::Error>> + 'a {
+        ready(RsnUnwrappedKeyData::try_copy(encrypted).map_err(|_| ()))
     }
 }
 
@@ -380,7 +383,7 @@ fn message1_timeout_is_exact_and_stops_the_live_ring() {
     let mut runner = RsnHandshakeRunner::new(
         backend,
         TestTimer::default(),
-        crate::aes::RsnSoftwareAes::new(),
+        oer_ieee80211_rsn::aes::RsnSoftwareAes::new(),
     );
     let mut sequence = StaSequenceCounter::new(seq(0x123));
 
@@ -405,7 +408,7 @@ fn peer_message1_sends_m2_once_but_never_retries_it_on_local_timeout() {
     let mut runner = RsnHandshakeRunner::new(
         backend,
         TestTimer::default(),
-        crate::aes::RsnSoftwareAes::new(),
+        oer_ieee80211_rsn::aes::RsnSoftwareAes::new(),
     );
     let mut sequence = StaSequenceCounter::new(seq(0x123));
 
@@ -435,7 +438,7 @@ fn repeated_peer_message1_is_the_only_message2_refresh_source() {
     let mut runner = RsnHandshakeRunner::new(
         backend,
         TestTimer::default(),
-        crate::aes::RsnSoftwareAes::new(),
+        oer_ieee80211_rsn::aes::RsnSoftwareAes::new(),
     );
     let mut sequence = StaSequenceCounter::new(seq(7));
 
@@ -458,7 +461,7 @@ fn message1_on_exact_deadline_is_serviced_before_timeout() {
     let mut runner = RsnHandshakeRunner::new(
         backend,
         TestTimer::default(),
-        crate::aes::RsnSoftwareAes::new(),
+        oer_ieee80211_rsn::aes::RsnSoftwareAes::new(),
     );
     let mut sequence = StaSequenceCounter::new(seq(0));
 

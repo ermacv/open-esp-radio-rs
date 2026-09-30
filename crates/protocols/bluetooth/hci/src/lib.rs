@@ -1,20 +1,14 @@
 #![no_std]
 #![forbid(unsafe_code)]
 
-//! Executor-neutral HCI transport and codecs for an LE Controller.
+//! Sans-IO HCI packet values and codecs for an LE Controller.
 //!
-//! [`LeControllerHciResources`] owns bounded packet storage for one epoch and
-//! splits into a Host transport accepted by `bt_hci::ExternalController` and
-//! a raw [`InProcessHciControllerTransport`]. The in-process channel carries
-//! HCI packet bodies with a separate typed packet kind, so no UART/H4 framing
-//! exists inside the process. Both directions have bounded storage,
-//! wake-driven backpressure and cancellation-safe waits.
-//!
-//! The Controller side can close both directions for good, or retire an epoch
-//! whose queues are empty and restart it with a fresh generation; old Host
-//! handles stay closed. While a connection's radio packet owner is busy,
-//! [`InProcessHciControllerTransport::try_receive_admitted`] lets commands
-//! bypass queued ACL data.
+//! HCI packet bodies travel with a separate typed packet kind, so no UART/H4
+//! framing exists inside the process. [`HostToControllerFrame`] and
+//! [`HciCommandPacket`] are the borrowed Host packets a Controller consumes;
+//! [`ControllerToHostQueue`] is a synchronous bounded FIFO of validated
+//! Controller packets. The asynchronous in-process Host/Controller transport
+//! and the bounded storage of one HCI epoch are `oer-bluetooth-hci-transport`.
 //!
 //! The codecs decode the supported commands into owned semantic values and
 //! build complete responses and events:
@@ -31,16 +25,16 @@
 //!   Completed Packets and fragmented Controller ACL packets.
 //!
 //! The crate owns no command ordering, role state, Link Layer, radio, MMIO,
-//! interrupt, executor or allocator; the Controller core does.
+//! interrupt, executor or allocator, and never waits; the Controller core
+//! does.
 
 #[cfg(test)]
 extern crate std;
 
-mod controller;
+#[cfg(test)]
+mod test_support;
 
-pub use controller::{
-    LeControllerHciEndpoints, LeControllerHciResources, LeControllerHciResourcesError,
-};
+mod controller;
 
 pub use controller::random::{
     LeRandCommand, LeRandCommandCompleteEvent, LeRandomSource, LeRandomSourceAlreadyConfigured,
@@ -126,14 +120,9 @@ pub use controller::le::scanning::{
 pub use controller::response::{
     HciControllerResponse, LeControllerCommandComplete, UnknownCommandCompleteEvent,
 };
-pub(crate) use transport::InProcessHciChannel;
-pub use transport::{
-    HciChannelError, HciEpochIdentity, HciRestartError, HciRetired, HciRetirementError,
-    InProcessHciControllerTransport, InProcessHciHostTransport, LeHostAclCreditSender,
-};
-
 pub use transport::{
     ControllerToHostQueue, ControllerToHostQueueError, INITIAL_CONTROLLER_TO_HOST_PACKET_CAPACITY,
+    validate_controller_to_host_packet,
 };
 
 pub use wire::{HciCommandPacket, HostToControllerFrame};

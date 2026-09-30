@@ -10,6 +10,7 @@ use core::{
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use oer_bluetooth_controller::{LeController, LeControllerConfig};
 use oer_bluetooth_hci::*;
+use oer_bluetooth_hci_transport::*;
 use trouble_host::prelude::*;
 
 mod bootstrap;

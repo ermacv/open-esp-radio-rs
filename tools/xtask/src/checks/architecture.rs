@@ -4,6 +4,7 @@ use super::{TARGET, common::*};
 
 mod facade;
 mod pac_transactions;
+mod sans_io;
 mod shared_words;
 mod unsafe_policy;
 
@@ -42,6 +43,8 @@ pub fn run(ctx: &Context) -> Result<()> {
     let packages = production_packages(ctx)?;
     validate_production_edges(&packages, &oer_chip_profile::families(&ctx.root)?)?;
     unsafe_policy::check(&packages)?;
+    // Protocol logic is sans-IO; drivers that wait live in services.
+    sans_io::check(&packages)?;
     let configurations = architecture_configurations(&ctx.root, &packages, TARGET)?;
     // Clippy compiles each isolated profile and applies every crate's own
     // lint policy from its manifest `[lints]` and crate attributes.

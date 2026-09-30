@@ -59,7 +59,7 @@ reason = "first-client shared PHY registration under the radio arbiter's lease r
 
 [[reviewed_frames]]
 function_contains = "::station::StaLifecycleService<"
-source_ends_with = ["crates/protocols/ieee80211/sta/src/station.rs", "oer-ieee80211-sta-0.1.0/src/station.rs"]
+source_ends_with = ["crates/services/ieee80211/sta/src/station.rs", "oer-ieee80211-sta-service-0.1.0/src/station.rs"]
 max_bytes = 19712
 reason = "compiled station lifecycle poll materializes the unique disconnected/connected owner union, including bounded power-save, TWT and ESP-NOW control state; the Wi-Fi frontier retains registered PHY state and its shared client scheduler through role transfers"
 

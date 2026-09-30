@@ -1624,8 +1624,6 @@ name = "oer-bluetooth-hci"
 version = "0.1.0"
 dependencies = [
  "bt-hci",
- "embassy-sync 0.8.0",
- "embedded-io 0.7.1",
 ]
 
 [[package]]
@@ -1852,9 +1850,11 @@ dependencies = [
  "oer-ieee80211-datapath",
  "oer-ieee80211-mac",
  "oer-ieee80211-rsn",
+ "oer-ieee80211-rsn-service",
  "oer-ieee80211-runtime",
  "oer-ieee80211-softmac",
  "oer-ieee80211-sta",
+ "oer-ieee80211-sta-service",
  "oer-ieee80211-trace",
  "oer-memory",
  "oer-network-interface",
@@ -2138,13 +2138,20 @@ dependencies = [
  "cmac",
  "hmac",
  "oer-ieee80211-mac",
- "oer-time",
  "p256",
  "pbkdf2",
  "sha1",
  "sha2",
  "subtle",
  "zeroize",
+]
+
+[[package]]
+name = "oer-ieee80211-rsn-service"
+version = "0.1.0"
+dependencies = [
+ "oer-ieee80211-rsn",
+ "oer-time",
 ]
 
 [[package]]
@@ -2171,6 +2178,15 @@ version = "0.1.0"
 dependencies = [
  "oer-ieee80211-mac",
  "oer-ieee80211-rsn",
+ "oer-time",
+]
+
+[[package]]
+name = "oer-ieee80211-sta-service"
+version = "0.1.0"
+dependencies = [
+ "oer-ieee80211-mac",
+ "oer-ieee80211-sta",
  "oer-time",
 ]
 
@@ -2292,8 +2308,10 @@ dependencies = [
  "oer-ieee80211-datapath",
  "oer-ieee80211-mac",
  "oer-ieee80211-rsn",
+ "oer-ieee80211-rsn-service",
  "oer-ieee80211-softmac",
  "oer-ieee80211-sta",
+ "oer-ieee80211-sta-service",
  "oer-ieee802154",
  "oer-memory",
  "oer-network-interface",

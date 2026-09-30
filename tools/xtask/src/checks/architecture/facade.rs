@@ -7,6 +7,8 @@ use super::super::{TARGET, common::*};
 const MANIFEST: &str = "crates/oer/Cargo.toml";
 const WIFI: &[&str] = &[
     "oer-ieee80211-sta",
+    "oer-ieee80211-sta-service",
+    "oer-ieee80211-rsn-service",
     "oer-ieee80211-ap",
     "oer-ieee80211-softmac",
     "oer-esp32s31-ieee80211-mac",
@@ -26,6 +28,7 @@ const BACKENDS: &[&str] = &[
 ];
 const BLUETOOTH: &[&str] = &[
     "oer-bluetooth-hci",
+    "oer-bluetooth-hci-transport",
     "oer-bluetooth-ll",
     "oer-esp32s31-bluetooth",
 ];

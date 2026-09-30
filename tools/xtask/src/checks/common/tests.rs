@@ -793,8 +793,7 @@ fn a_family_package_compiles_for_every_target_of_its_family() {
     );
     let packages = production_packages(&context).unwrap();
     let error = architecture_configurations(repository.path(), &packages, "host-target")
-        .err()
-        .expect("a family no chip declares must fail")
+        .unwrap_err()
         .to_string();
     assert!(error.contains("which no chip declares"), "{error}");
 }

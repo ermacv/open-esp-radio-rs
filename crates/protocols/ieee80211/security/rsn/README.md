@@ -1,9 +1,12 @@
 # RSN security
 
 `oer-ieee80211-rsn` holds the allocation-free, hardware-independent RSN (IEEE 802.11
-robust security network) protocol shared by WPA2 and WPA3 suites. It owns no
-executor, timer, key slot or transmit path; chip role crates execute its typed
-transmit and key-install requests.
+robust security network) protocol shared by WPA2 and WPA3 suites. It is
+sans-IO and owns no executor, timer, key slot or transmit path: chip role
+crates execute its typed key-data unwrap, transmit and key-install requests,
+and the handshake runners of
+[`oer-ieee80211-rsn-service`](../../../../services/ieee80211/rsn/README.md)
+wait on its ports.
 
 | Module | Responsibility |
 | --- | --- |
@@ -14,9 +17,10 @@ transmit and key-install requests.
 | `crypto` | Zeroizing PMK/PTK owners, PSK passphrase derivation and the association security binding |
 | `eapol` | Validated borrowed/owned EAPOL-Key packets and MIC verification |
 | `frames` | EAPOL-Key/Ethernet construction, GTK key data and owned security elements |
-| `aes` | RFC 3394 key wrap and the asynchronous unwrap capability |
+| `aes` | RFC 3394 key wrap and unwrap and the asynchronous unwrap port |
 | `state` | Station and authenticator four-way-handshake transitions |
-| `supplicant`, `runner` | Station orchestration, deadlines and key-publication ordering |
+| `supplicant` | Station orchestration: typed key-data unwrap and key-install requests and their completions, response deadlines |
+| `runner` | Ports and values of the handshake and key-install runners |
 | `keys`, `retry` | Owned CCMP key installs and event-driven EAPOL retransmission |
 
 A `Ptk` records the suite that derived it, so MIC generation and verification

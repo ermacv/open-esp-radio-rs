@@ -7,9 +7,8 @@ use core::{
     pin::pin,
     task::{Context, Poll, Waker},
 };
-use oer_bluetooth_hci::{
-    BluetoothPublicDeviceAddress, LeControllerBootstrapConfig, LeControllerHciResources,
-};
+use oer_bluetooth_hci::{BluetoothPublicDeviceAddress, LeControllerBootstrapConfig};
+use oer_bluetooth_hci_transport::LeControllerHciResources;
 
 fn ready<T>(future: impl Future<Output = T>) -> T {
     match pin!(future)

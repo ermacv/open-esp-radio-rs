@@ -28,7 +28,8 @@ use embassy_futures::select::{Either4, select4};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::{Duration, Instant, Timer};
 use oer_bluetooth_controller::LeController;
-use oer_bluetooth_hci::{HciChannelError, HostToControllerFrame, InProcessHciControllerTransport};
+use oer_bluetooth_hci::HostToControllerFrame;
+use oer_bluetooth_hci_transport::{HciChannelError, InProcessHciControllerTransport};
 use oer_bluetooth_radio::{
     RadioActivity, RadioFault, RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError,
 };

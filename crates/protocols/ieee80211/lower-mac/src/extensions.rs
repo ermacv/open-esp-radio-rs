@@ -8,6 +8,7 @@
 //! lacks a feature is recorded in its qualification catalog, not in code.
 
 use crate::{
+    capabilities::PhyFormatSet,
     control::{LifecycleError, SettingError, VifId, VifRoleSet},
     port::{Ieee80211LowerMacPort, SubmitResult},
     tx::TxId,
@@ -43,6 +44,13 @@ pub struct AmpduPayload<A> {
 pub struct AmpduCapabilities {
     /// Subframes of one A-MPDU attempt.
     pub max_subframes: u16,
+    /// The PPDU formats an A-MPDU attempt is sent in; an attempt at a rate
+    /// of another format is refused as `Unsupported`.
+    pub formats: PhyFormatSet,
+    /// The longest A-MPDU in octets, delimiters and padding included, that
+    /// the backend sends at every rate of `formats`. The recipient's own
+    /// Maximum A-MPDU Length stays the caller's to respect.
+    pub max_length: u32,
 }
 
 /// One A-MPDU attempt.
@@ -68,8 +76,10 @@ pub trait LowerMacAmpdu: Ieee80211LowerMacPort {
     fn release_ampdu_buffer(&self, buffer: Self::AmpduBuffer);
 
     /// Admit one A-MPDU attempt, with the base port's admission rules. An
-    /// empty aggregate is `InvalidLength`, one above
-    /// [`AmpduCapabilities::max_subframes`] `Unsupported`.
+    /// empty aggregate is `InvalidLength`; one above
+    /// [`AmpduCapabilities::max_subframes`] or
+    /// [`AmpduCapabilities::max_length`], or at a rate outside
+    /// [`AmpduCapabilities::formats`], is `Unsupported`.
     fn submit_ampdu(
         &self,
         attempt: AmpduAttempt<Self::AmpduBuffer>,

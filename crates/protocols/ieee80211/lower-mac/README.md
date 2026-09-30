@@ -69,7 +69,7 @@ feature does not implement it, so the feature cannot be requested.
 
 | Extension | Operations |
 | --- | --- |
-| `LowerMacAmpdu` | `ampdu_buffer`, `submit_ampdu(TxAttempt<AmpduPayload>)` answered by a BlockAck in the completion, `AmpduCapabilities` |
+| `LowerMacAmpdu` | `ampdu_buffer`, `submit_ampdu(TxAttempt<AmpduPayload>)` answered by a BlockAck in the completion, `AmpduCapabilities` (subframes, PPDU formats, longest aggregate) |
 | `LowerMacBeaconTiming` | `tsf`, `set_tsf`, `set_tbtt(TbttSchedule)` with `TbttEvent`s viewed through `tbtt(event)`; `BeaconTimingCapabilities` state which roles each operation serves |
 | `LowerMacMonitor` | `set_monitor`: every frame with a valid FCS is received; `MonitorCapabilities` state whether it runs beside receiving interfaces |
 | `LowerMacCancelPublished` | `cancel_published(TxId)`: withdraw a published attempt from the air |
@@ -94,7 +94,7 @@ service description into `HardwareServices`.
 | Backend | Base port | `LowerMacAmpdu` | `LowerMacBeaconTiming` | `LowerMacMonitor` | `LowerMacCancelPublished` |
 | --- | --- | --- | --- | --- | --- |
 | Host model (the crate's tests) | Yes, four queues | Yes | Yes | Yes | Yes |
-| ESP32-S31 (`Esp32s31LowerMac`) | Yes, one queue | No | Station TSF and TBTT; access-point TSF restart only | Yes, without receiving interfaces | No |
+| ESP32-S31 (`Esp32s31LowerMac`) | Yes, four queues | HT only, when built with aggregate owners | Station TSF and TBTT; access-point TSF restart only | Yes, without receiving interfaces | No |
 
 The crate's tests implement the port and every extension with an in-memory
 model to show that they need no chip types.
@@ -111,6 +111,7 @@ implements the port in two layers:
   doubles.
 - [`Esp32s31LowerMac`](../../../runtime/esp32s31/ieee80211/src/lower_mac.rs)
   in `oer-esp32s31-ieee80211-runtime` implements `Ieee80211LowerMacPort`,
+  `LowerMacAmpdu` (for a core built with aggregate owners),
   `LowerMacBeaconTiming` and `LowerMacMonitor` over the core: a bounded
   owned-event queue, the MAC, power and receive interrupt entries, the
   publication watchdog and the PHY retune of `Enable`.
@@ -120,8 +121,10 @@ map onto the S31 seams as follows:
 
 | Port operation | ESP32-S31 implementation |
 | --- | --- |
-| `tx_buffer`, `TxBuffer` | A whole ordinary TX slot (`TxSlot`, pinned descriptor and DMA buffer); the MPDU is written after the metadata word. Submission swaps the slot into the ordinary TX owner, so the frame is published where it was written and the owner's idle slot becomes a spare. `TX_BUFFERS` spare slots are lent |
-| `submit` of one MPDU | `OrdinaryTxOwner::start_single_attempt` in `src/ordinary_tx.rs`: one `TxHardware` publication at the submitted rate with the caller's protection, backoff (the queue's ten-bit contention-window field) and power ceiling; the owner's retry ladder, rate fallback, backoff draw and BSS protection selection are not applied. One attempt is in flight at a time (`tx_queues` is one) |
+| `tx_buffer`, `TxBuffer` | A whole ordinary TX slot (`TxSlot`, pinned descriptor and DMA buffer); the MPDU is written after the metadata word. The attempt publishes that slot, so the frame is published where it was written, and the slot is lent again after the completion. `TX_BUFFERS` spare slots are lent |
+| `submit` of one MPDU | `OrdinaryTxOwner::start_queued_single_attempt` in `src/ordinary_tx.rs`: one `TxHardware` publication at the submitted rate with the caller's protection, backoff (the queue's ten-bit contention-window field) and power ceiling; the owner's retry ladder, rate fallback, backoff draw and BSS protection selection are not applied |
+| Queues | The four ordinary EDCA queues (voice, video, best effort, background), each with its own descriptor, completion bank and latched completion, timeout and collision state; one attempt per queue. Every MAC interrupt edge is offered to every published queue, which claims only its own state. A timeout abort forces the MAC-wide CCA for 16 µs, so aborts run one at a time and a queue timing out meanwhile aborts when that settle ends |
+| `LowerMacAmpdu` | One `RetainedDmaAmpduTx` per lent aggregate, in single-attempt mode: `begin`, `commit_ht` of every subframe, one `submit`; never `retain_for_ampdu_retry`. Subframes are `StableDmaBacking` leases of the integrator's `AmpduBackingSource` (as the station and access-point aggregate paths publish from), released to it on completion. HT only, at most the owner's slots and 6490 octets (the vendor's MCS 0 ceiling, `rx11NRate2AMPDULimit`); `min_mpdu_start_spacing` selects the queue's `HtProtectionSpacing`; the publication follows `ht_ampdu_publication_config` with the caller's protection, backoff and power ceiling. The completion's `BlockAckReport` is the BlockAck the hardware marks received (`HtAmpduTxCompletion::valid_block_ack`); without one the attempt failed |
 | `Backoff` | `Slots` up to 1023; `HardwareDraw` is refused: the S31 draws in software and the hardware only counts down |
 | `TxPower::MaxDbm` | The smaller of the calibrated pair and the ceiling, for the data and the RTS/CTS control frame, down to 0 dBm. S31 power codes follow the vendor's quarter-dBm target shifted right by two (`phy/src/tx/power.rs`), not a measured radiated power |
 | `coex` | `Normal` only: the static per-access-category priority of vendor data encapsulation (events 10-13 through `coex_pti_tab`). Other levels are refused; their event mapping is a pending policy decision |
@@ -141,8 +144,8 @@ map onto the S31 seams as follows:
 A published attempt cannot be withdrawn: the S31 abort path needs the
 queue's hardware timeout edge, so `Cancel` ends a held attempt as `Aborted`
 and a published one with its own completion. What the ESP32-S31 lacks and
-why (A-MPDU through the port, the access-point TBTT schedule, the
+why (HE and Trigger-based A-MPDU, the access-point TBTT schedule, the
 access-point TSF read and arbitrary set, on-air cancel, unicast no-ACK at HT
-and HE rates, coexistence levels other than `Normal`, concurrent per-queue
-attempts, 5 GHz) is recorded in the
+and HE rates, coexistence levels other than `Normal`, 5 GHz) is recorded in
+the
 [Wi-Fi/PHY catalog](../../../../qualification/catalog/esp32s31/wifi-phy.toml).

@@ -1,8 +1,9 @@
-use core::{future::ready, pin::Pin};
+use core::{cell::RefCell, future::ready, pin::Pin};
 use std::{boxed::Box, vec::Vec};
 
 use oer_esp32s31_hal::types::{
-    MacCcmpKeyIdentity, MacHeTxProgram, MacHtAmpduCompletionObservation, MacHtTxProgram,
+    MacCcmpKeyIdentity, MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
+    MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHtAmpduCompletionObservation, MacHtTxProgram,
     MacKeyInstallOutcome, MacLegacyTxProgram, MacLegacyTxResponse, MacStaApReceivePlan,
     MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason, MacTxProtection,
     MacTxQueueDetached,
@@ -10,10 +11,14 @@ use oer_esp32s31_hal::types::{
 use oer_esp32s31_ieee80211_mac::{
     irq::{EVENT_COLLISION, EVENT_TX_COMPLETE, EVENT_TX_TIMEOUT},
     rx::RxPhyInfo,
-    tx::{HardwareOwnedTxDma, PreparedTxDma, runtime::WifiTxRuntimePolicy},
+    tx::{
+        HardwareOwnedTxDma, PreparedTxDma, TxHardware,
+        ampdu::{HtAmpduTxStorage, RetainedAmpduDmaStorage, RetainedDmaAmpduTx},
+        runtime::WifiTxRuntimePolicy,
+    },
 };
 use oer_ieee80211_lower_mac::{
-    HardwareServices, LowerMacEvent, PhyRate, RxEvidence, TxAttempt, TxPayload,
+    AmpduPayload, HardwareServices, LowerMacEvent, PhyRate, RxEvidence, TxAttempt,
 };
 use oer_ieee80211_mac::{
     channel::ChannelWidth,
@@ -22,6 +27,9 @@ use oer_ieee80211_mac::{
     sequence::SequenceNumber,
 };
 use oer_ieee80211_softmac::{MacRxEvidence, MacRxMetadata};
+use oer_memory::{
+    DmaIndexReturn, PinnedDmaTxPool, PinnedDmaTxRadioLease, ReturningStableDmaBacking,
+};
 
 use super::*;
 use crate::ordinary_tx::{WifiTxPowerPair, WifiTxResources};
@@ -41,15 +49,22 @@ enum StationPolicy {
     OtherBss(MacAddress),
 }
 
+/// The hardware index of the best-effort queue, where the helpers' attempts
+/// go.
+const BE: usize = 2;
+
+/// Register owner model with the four ordinary queues' latched state.
 #[derive(Default)]
 struct Hardware {
     legacy: Vec<(u8, MacLegacyTxProgram)>,
     ht: Vec<(u8, MacHtTxProgram)>,
     he: Vec<(u8, MacHeTxProgram)>,
-    completion: Option<MacTxCompletionObservation>,
-    block_ack_completion: Option<MacHtAmpduCompletionObservation>,
-    timeout_pending: bool,
-    collision_pending: bool,
+    completion: [Option<MacTxCompletionObservation>; 4],
+    block_ack_completion: [Option<MacHtAmpduCompletionObservation>; 4],
+    timeout_pending: [bool; 4],
+    collision_pending: [bool; 4],
+    /// The MAC-wide CCA a timeout abort forces until its detach.
+    cca_forced: bool,
     installed_keys: Vec<(u8, MacCcmpKeyIdentity)>,
     cleared_keys: Vec<u8>,
     rx_block_acks: Vec<S31RxBlockAckAgreement>,
@@ -109,28 +124,40 @@ impl TxHardware for Hardware {
 
     fn start_bound_he_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8) {}
 
-    fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionObservation> {
-        self.completion.take()
+    fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {
+        self.completion[usize::from(queue)].take()
     }
 
-    fn take_block_ack_completion(&mut self, _queue: u8) -> Option<MacHtAmpduCompletionObservation> {
-        self.block_ack_completion.take()
+    fn take_block_ack_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionObservation> {
+        self.block_ack_completion[usize::from(queue)].take()
     }
 
-    fn begin_tx_timeout_abort(&mut self, _queue: u8) -> bool {
-        self.timeout_pending
+    fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool {
+        if !self.timeout_pending[usize::from(queue)] {
+            return false;
+        }
+        assert!(!self.cca_forced, "one timeout abort forces CCA at a time");
+        self.cca_forced = true;
+        true
     }
 
     fn with_tx_queue_detached<R>(
         &mut self,
-        _queue: u8,
+        queue: u8,
         expected_descriptor_head: u32,
         reason: MacTxDetachReason,
         detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
     ) -> MacTxDetachOutcome<R> {
+        let queue = usize::from(queue);
         let pending = match reason {
-            MacTxDetachReason::Timeout => core::mem::take(&mut self.timeout_pending),
-            MacTxDetachReason::Collision => core::mem::take(&mut self.collision_pending),
+            MacTxDetachReason::Timeout => {
+                let pending = core::mem::take(&mut self.timeout_pending[queue]);
+                if pending {
+                    self.cca_forced = false;
+                }
+                pending
+            }
+            MacTxDetachReason::Collision => core::mem::take(&mut self.collision_pending[queue]),
             MacTxDetachReason::Completed => true,
         };
         if pending {
@@ -140,6 +167,23 @@ impl TxHardware for Hardware {
         } else {
             MacTxDetachOutcome::NoEvent
         }
+    }
+}
+
+impl HtAmpduHardware for Hardware {
+    fn prepare_he_trigger_based_queue(
+        &mut self,
+        _policy: MacHeTbTidLimit,
+        _reservation: MacHeTbLinkReservation,
+        _tid: MacHeTid,
+        _mpdu_lengths: &[u16],
+        _queued_msdu_bytes: u32,
+    ) -> Result<MacHeTriggerTxQueueSnapshot, MacHeTbProgramError> {
+        unreachable!("the port publishes no Trigger-based aggregate")
+    }
+
+    fn clear_he_trigger_based_queue(&mut self, _reservation: MacHeTbLinkReservation) {
+        unreachable!("the port publishes no Trigger-based aggregate")
     }
 }
 
@@ -341,9 +385,73 @@ fn entropy() -> u32 {
     0x1234_5678
 }
 
-const SPARE: usize = 2;
+const SPARE: usize = 4;
+/// Subframes of one aggregate.
+const SUBFRAMES: usize = 4;
+/// Bytes of one subframe backing.
+const BACKING: usize = 2048;
+const BACKINGS: usize = 8;
 
-type Core = LowerMacCore<'static, Power, fn() -> u32, Timer, 512, SPARE>;
+type Lease = PinnedDmaTxRadioLease<'static, BACKING, 0, 0>;
+type Backing = ReturningStableDmaBacking<Lease, &'static FreeBackings>;
+
+/// The pool indices of free backings.
+#[derive(Default)]
+struct FreeBackings(RefCell<Vec<u8>>);
+
+impl DmaIndexReturn for &'static FreeBackings {
+    fn return_index(&self, index: u8) {
+        self.0.borrow_mut().push(index);
+    }
+}
+
+/// Subframe memory from a pinned DMA TX pool, as the station's network TX
+/// path lends it.
+struct Backings {
+    pool: &'static PinnedDmaTxPool<BACKING, 0, 0, BACKINGS>,
+    free: &'static FreeBackings,
+}
+
+impl Backings {
+    fn free(&self) -> usize {
+        self.free.0.borrow().len()
+    }
+}
+
+impl AmpduBacking for Backings {
+    type Backing = Backing;
+}
+
+impl AmpduBackingSource for Backings {
+    fn backing(&self) -> Option<Backing> {
+        let index = self.free.0.borrow_mut().pop()?;
+        self.pool.claim_network(index).publish(BACKING, |_| ());
+        Some(ReturningStableDmaBacking::new(
+            self.pool.claim_radio(index),
+            self.free,
+        ))
+    }
+}
+
+fn backings() -> &'static Backings {
+    let pool = PinnedDmaTxPool::pin_static(Box::leak(Box::new(PinnedDmaTxPool::new())));
+    let free: &'static FreeBackings = Box::leak(Box::default());
+    free.0.borrow_mut().extend((0..BACKINGS as u8).rev());
+    Box::leak(Box::new(Backings {
+        pool: Pin::into_ref(pool).get_ref(),
+        free,
+    }))
+}
+
+fn ampdu_owner() -> Esp32s31AmpduOwner<'static, Backing, SUBFRAMES> {
+    RetainedDmaAmpduTx::new_model(
+        Pin::static_mut(Box::leak(Box::new(HtAmpduTxStorage::new()))),
+        Box::leak(Box::new(RetainedAmpduDmaStorage::new())),
+    )
+    .unwrap()
+}
+
+type Core = LowerMacCore<'static, Power, fn() -> u32, Timer, 512, SPARE, Backings, SUBFRAMES, 2>;
 
 #[derive(Default)]
 struct Events {
@@ -376,7 +484,7 @@ fn slot() -> Pin<&'static mut TxSlot<512>> {
 }
 
 fn core() -> Core {
-    LowerMacCore::new(
+    LowerMacCore::with_ampdu(
         OrdinaryTxOwner::new(WifiTxResources {
             slot: slot(),
             policy: WifiTxRuntimePolicy::vendor_defaults(),
@@ -384,7 +492,9 @@ fn core() -> Core {
             entropy: entropy as fn() -> u32,
             timer: Timer::default(),
         }),
-        [slot(), slot()],
+        [slot(), slot(), slot(), slot()],
+        [ampdu_owner(), ampdu_owner()],
+        backings(),
         LowerMacConfig {
             station_address: STATION,
             channel: channel(6),
@@ -495,7 +605,7 @@ fn complete_with(
     status: u8,
     detail: u8,
 ) -> Vec<TxCompletion> {
-    hardware.completion = Some(MacTxCompletionObservation::new_model(status, detail));
+    hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(status, detail));
     let mut events = Events::default();
     core.service(hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
         .unwrap();
@@ -504,6 +614,14 @@ fn complete_with(
 
 fn spare_slots(core: &Core) -> usize {
     core.spare.iter().flatten().count()
+}
+
+/// The single attempt published on queue `index`.
+fn queued(core: &Core, index: usize) -> &QueuedSingleAttempt<'static, 512> {
+    match core.queues[index].as_ref().map(|attempt| &attempt.work) {
+        Some(Work::Mpdu(queued)) => queued,
+        _ => panic!("queue {index} holds a published MPDU"),
+    }
 }
 
 #[test]
@@ -522,7 +640,8 @@ fn capabilities_are_the_s31_limits_on_2_4_ghz() {
     assert!(caps.supports_channel(Channel::ghz2_4(6, ChannelWidth::Mhz40Above).unwrap()));
     assert!(!caps.supports_channel(Channel::ghz5(36, ChannelWidth::Mhz20).unwrap()));
     assert_eq!(caps.vifs, 2);
-    assert_eq!(caps.tx_queues, 1);
+    assert_eq!(caps.tx_queues, 4);
+    assert_eq!(caps.tx_queue(WmmAccessCategory::Voice), 3);
     // Metadata word, MPDU, MIC and FCS fill the slot.
     assert_eq!(
         usize::from(caps.max_mpdu_length) + TX_METADATA_SIZE + TX_CCMP_MIC_SIZE + TX_FCS_SIZE,
@@ -550,9 +669,9 @@ fn an_attempt_is_published_from_the_slot_it_was_written_in() {
     let lent = request.payload.frame.slot.as_ref().buffer_address();
     assert_eq!(spare_slots(&core), SPARE - 1);
     assert_eq!(submit(&mut core, &mut hardware, request), Ok(Ok(())));
-    // The owner publishes the lent slot; its previous slot is now a spare.
-    assert_eq!(core.tx.slot.as_ref().buffer_address(), lent);
-    assert_eq!(spare_slots(&core), SPARE);
+    // The queue publishes the lent slot; it is lent again after completion.
+    assert_eq!(queued(&core, BE).slot().buffer_address(), lent);
+    assert_eq!(spare_slots(&core), SPARE - 1);
     assert_eq!(hardware.legacy.len(), 1);
     assert_eq!(hardware.legacy[0].1.interface(), MacInterface::Station);
     assert_eq!(core.next_deadline_micros(), Some(TIMEOUT));
@@ -569,6 +688,7 @@ fn an_attempt_is_published_from_the_slot_it_was_written_in() {
         }]
     );
     assert_eq!(core.next_deadline_micros(), None);
+    assert_eq!(spare_slots(&core), SPARE);
     let next = attempt(&mut core, 2, &frame);
     assert_eq!(submit(&mut core, &mut hardware, next), Ok(Ok(())));
 }
@@ -579,10 +699,12 @@ fn buffers_are_bounded_and_a_released_one_is_lent_again() {
     let longest = usize::from(core.capabilities().max_mpdu_length);
     assert!(core.tx_buffer(longest + 1).is_none());
     let first = core.tx_buffer(longest).unwrap();
-    let second = core.tx_buffer(24).unwrap();
+    let rest: Vec<_> = (1..SPARE).map(|_| core.tx_buffer(24).unwrap()).collect();
     assert!(core.tx_buffer(24).is_none());
     core.release_tx_buffer(first);
-    core.release_tx_buffer(second);
+    for buffer in rest {
+        core.release_tx_buffer(buffer);
+    }
     assert_eq!(spare_slots(&core), SPARE);
     assert!(core.tx_buffer(24).is_some());
 }
@@ -597,7 +719,10 @@ fn the_callers_backoff_is_counted_down_instead_of_a_draw() {
         request.backoff = Backoff::Slots(slots);
         submit(&mut core, &mut hardware, request).unwrap().unwrap();
         assert_eq!(hardware.legacy.last().unwrap().1.contention_window(), slots);
-        assert_eq!(core.tx().work().backoff_slots, u32::from(slots));
+        assert_eq!(
+            queued(&core, BE).slot().work().backoff_slots,
+            u32::from(slots)
+        );
         complete(&mut core, &mut hardware, 5);
     }
 }
@@ -655,7 +780,15 @@ fn an_unacknowledged_attempt_is_reported_and_never_published_again() {
         assert_eq!(hardware.publications(), published + 1);
     }
     // The Retry bit the ladder sets before a re-publication is untouched.
-    assert_eq!(core.tx.buffer_mut().unwrap()[TX_METADATA_SIZE + 1], 0x01);
+    let published = core
+        .spare
+        .iter_mut()
+        .flatten()
+        .map(|slot| slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 1])
+        .filter(|flags| *flags != 0)
+        .collect::<Vec<_>>();
+    assert!(!published.is_empty());
+    assert!(published.iter().all(|flags| *flags == 0x01));
 }
 
 #[test]
@@ -666,7 +799,7 @@ fn a_collision_detach_ends_the_attempt() {
 
     let request = attempt(&mut core, 7, &frame);
     submit(&mut core, &mut hardware, request).unwrap().unwrap();
-    hardware.collision_pending = true;
+    hardware.collision_pending[BE] = true;
     let mut events = Events::default();
     core.service(&mut hardware, interrupt(EVENT_COLLISION), &mut events)
         .unwrap();
@@ -683,7 +816,7 @@ fn a_hardware_timeout_ends_the_attempt_as_aborted() {
 
     let request = attempt(&mut core, 3, &frame);
     submit(&mut core, &mut hardware, request).unwrap().unwrap();
-    hardware.timeout_pending = true;
+    hardware.timeout_pending[BE] = true;
     let mut events = Events::default();
     core.service(&mut hardware, interrupt(EVENT_TX_TIMEOUT), &mut events)
         .unwrap();
@@ -712,7 +845,7 @@ fn a_block_ack_request_reports_its_block_ack() {
         hardware.legacy[0].1.response(),
         MacLegacyTxResponse::BlockAck
     );
-    hardware.block_ack_completion = Some(MacHtAmpduCompletionObservation::new_model(
+    hardware.block_ack_completion[BE] = Some(MacHtAmpduCompletionObservation::new_model(
         MacTxCompletionObservation::new_model(0, 0),
         0,
         100,
@@ -1634,7 +1767,7 @@ fn quiesce_and_disable_end_after_the_published_attempt() {
         .unwrap();
     assert!(events.lifecycle.is_empty());
 
-    hardware.completion = Some(MacTxCompletionObservation::new_model(0, 0));
+    hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(0, 0));
     core.service(&mut hardware, interrupt(EVENT_TX_COMPLETE), &mut events)
         .unwrap();
     assert_eq!(events.completions[0].status, TxStatus::Success);
@@ -1667,4 +1800,474 @@ fn quiesce_without_an_attempt_ends_at_once_and_enable_resumes() {
         events.lifecycle,
         [LifecycleEvent::Quiesced, LifecycleEvent::Enabled]
     );
+}
+
+/// An attempt of `category` carrying a QoS Data MPDU to the BSS.
+fn attempt_on(
+    core: &mut Core,
+    id: u32,
+    category: WmmAccessCategory,
+) -> Esp32s31MpduAttempt<'static, 512> {
+    let mut request = attempt(core, id, &data_frame(BSSID));
+    request.access_category = category;
+    request
+}
+
+/// The hardware index of the queue an access category occupies.
+fn queue_of(category: WmmAccessCategory) -> usize {
+    usize::from(LegacyTxQueue::from_access_category(category).hardware_index())
+}
+
+fn service(core: &mut Core, hardware: &mut Hardware, wake: WifiTxWake) -> Vec<TxCompletion> {
+    let mut events = Events::default();
+    core.service(hardware, wake, &mut events).unwrap();
+    events.completions
+}
+
+fn ids(completions: &[TxCompletion]) -> Vec<u32> {
+    completions
+        .iter()
+        .map(|completion| completion.id.0)
+        .collect()
+}
+
+#[test]
+fn each_queue_holds_one_attempt_and_they_complete_in_any_order() {
+    use WmmAccessCategory::{Background, BestEffort, Video, Voice};
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+
+    for (id, category) in [(1, Voice), (2, BestEffort)] {
+        let request = attempt_on(&mut core, id, category);
+        assert_eq!(submit(&mut core, &mut hardware, request), Ok(Ok(())));
+    }
+    // An occupied queue is busy; the identity is checked across queues.
+    let busy = attempt_on(&mut core, 3, Voice);
+    assert_eq!(
+        submit(&mut core, &mut hardware, busy),
+        Ok(Err(SubmitError::Busy))
+    );
+    let duplicate = attempt_on(&mut core, 1, Video);
+    assert_eq!(
+        submit(&mut core, &mut hardware, duplicate),
+        Ok(Err(SubmitError::DuplicateId))
+    );
+    for (id, category) in [(4, Video), (5, Background)] {
+        let request = attempt_on(&mut core, id, category);
+        assert_eq!(submit(&mut core, &mut hardware, request), Ok(Ok(())));
+    }
+    // Four attempts in flight, one publication each, one per queue.
+    let mut queues: Vec<u8> = hardware.legacy.iter().map(|(queue, _)| *queue).collect();
+    queues.sort_unstable();
+    assert_eq!(queues, [0, 1, 2, 3]);
+    assert_eq!(spare_slots(&core), 0);
+    assert_eq!(core.next_deadline_micros(), Some(TIMEOUT));
+
+    // The last queue completes first; the others stay published.
+    hardware.completion[queue_of(Background)] = Some(MacTxCompletionObservation::new_model(0, 0));
+    let completions = service(&mut core, &mut hardware, interrupt(EVENT_TX_COMPLETE));
+    assert_eq!(ids(&completions), [5]);
+    assert_eq!(completions[0].status, TxStatus::Success);
+    assert_eq!(core.queues.iter().flatten().count(), 3);
+
+    // Two queues completing under one coalesced edge each report theirs.
+    hardware.completion[queue_of(Voice)] = Some(MacTxCompletionObservation::new_model(5, 0));
+    hardware.completion[queue_of(Video)] = Some(MacTxCompletionObservation::new_model(0, 0));
+    let completions = service(&mut core, &mut hardware, interrupt(EVENT_TX_COMPLETE));
+    assert_eq!(ids(&completions), [1, 4]);
+    assert_eq!(completions[0].status, TxStatus::AckTimeout);
+    assert_eq!(completions[1].status, TxStatus::Success);
+
+    // An edge no queue shows is ignored.
+    assert!(service(&mut core, &mut hardware, interrupt(EVENT_TX_COMPLETE)).is_empty());
+    assert_eq!(ids(&complete(&mut core, &mut hardware, 0)), [2]);
+
+    // No attempt was published twice, and every slot came back.
+    assert_eq!(hardware.publications(), 4);
+    assert_eq!(spare_slots(&core), SPARE);
+    let again = attempt_on(&mut core, 6, Voice);
+    assert_eq!(submit(&mut core, &mut hardware, again), Ok(Ok(())));
+}
+
+#[test]
+fn a_collision_or_timeout_on_one_queue_leaves_the_others_published() {
+    use WmmAccessCategory::{BestEffort, Video, Voice};
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    for (id, category) in [(1, Voice), (2, BestEffort), (3, Video)] {
+        let request = attempt_on(&mut core, id, category);
+        submit(&mut core, &mut hardware, request).unwrap().unwrap();
+    }
+
+    hardware.collision_pending[queue_of(BestEffort)] = true;
+    let completions = service(&mut core, &mut hardware, interrupt(EVENT_COLLISION));
+    assert_eq!(ids(&completions), [2]);
+    assert_eq!(completions[0].status, TxStatus::Collision);
+    assert!(core.queues[queue_of(Voice)].is_some());
+    assert!(core.queues[queue_of(Video)].is_some());
+
+    // A timeout forces CCA for its settle; a second queue's timeout during
+    // that settle waits for it instead of forcing CCA again.
+    hardware.timeout_pending[queue_of(Voice)] = true;
+    assert!(service(&mut core, &mut hardware, interrupt(EVENT_TX_TIMEOUT)).is_empty());
+    let settle = core.next_deadline_micros().unwrap();
+    assert_eq!(settle, 16);
+    hardware.timeout_pending[queue_of(Video)] = true;
+    assert!(service(&mut core, &mut hardware, interrupt(EVENT_TX_TIMEOUT)).is_empty());
+    assert_eq!(core.next_deadline_micros(), Some(settle));
+
+    core.tx.timer.now = settle;
+    let completions = service(&mut core, &mut hardware, WifiTxWake::Deadline);
+    assert_eq!(ids(&completions), [1]);
+    assert_eq!(completions[0].status, TxStatus::Aborted);
+    // The waiting queue's abort began as the first settle ended.
+    assert!(hardware.cca_forced);
+    let settle = core.next_deadline_micros().unwrap();
+    assert_eq!(settle, 32);
+    core.tx.timer.now = settle;
+    let completions = service(&mut core, &mut hardware, WifiTxWake::Deadline);
+    assert_eq!(ids(&completions), [3]);
+    assert_eq!(completions[0].status, TxStatus::Aborted);
+    assert!(!hardware.cca_forced);
+    assert_eq!(hardware.publications(), 3);
+    assert_eq!(spare_slots(&core), SPARE);
+}
+
+#[test]
+fn a_closed_gate_holds_every_queue_and_opening_it_publishes_them() {
+    use WmmAccessCategory::{BestEffort, Voice};
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    let gate = |open| LowerMacSetting::TxGate { open };
+    core.apply(&mut hardware, gate(false)).unwrap().unwrap();
+    for (id, category) in [(1, Voice), (2, BestEffort)] {
+        let request = attempt_on(&mut core, id, category);
+        submit(&mut core, &mut hardware, request).unwrap().unwrap();
+    }
+    let held = aggregate(&mut core, 3, WmmAccessCategory::Video, 2);
+    assert_eq!(submit_ampdu(&mut core, &mut hardware, held), Ok(Ok(())));
+    assert_eq!(hardware.publications(), 0);
+    assert_eq!(core.next_deadline_micros(), None);
+
+    core.apply(&mut hardware, gate(true)).unwrap().unwrap();
+    assert_eq!(hardware.legacy.len(), 2);
+    assert_eq!(hardware.ht.len(), 1);
+    assert_eq!(
+        core.apply(&mut hardware, gate(false)),
+        Ok(Err(SettingError::Busy))
+    );
+}
+
+fn ht_rate(mcs: u8) -> PhyRate {
+    PhyRate::Ht(
+        phy::HtRate::new(phy::HtMcs::new(mcs).unwrap(), PpduBandwidth::Mhz20, false).unwrap(),
+    )
+}
+
+/// An aggregate of `count` QoS Data MPDUs of `len` bytes to the BSS, with
+/// sequence numbers from 100.
+fn aggregate_of(
+    core: &mut Core,
+    id: u32,
+    category: WmmAccessCategory,
+    count: usize,
+    len: usize,
+) -> Esp32s31AmpduAttempt<'static, Backings, SUBFRAMES> {
+    let mut buffer = core.ampdu_buffer().expect("an idle aggregate owner");
+    for index in 0..count {
+        let mpdu = buffer.push_mpdu(len).expect("a backing");
+        mpdu[..26].copy_from_slice(&data_frame(BSSID));
+        mpdu[22..24].copy_from_slice(&((100 + index as u16) << 4).to_le_bytes());
+    }
+    TxAttempt {
+        id: TxId(id),
+        vif: STA,
+        access_category: category,
+        payload: AmpduPayload {
+            subframes: buffer,
+            tid: 0,
+            min_mpdu_start_spacing: 5,
+        },
+        rate: ht_rate(7),
+        protection: Protection::None,
+        key: KeySelector::Plaintext,
+        power: TxPower::Calibrated,
+        backoff: Backoff::Slots(9),
+        coex: CoexPriority::Normal,
+    }
+}
+
+fn aggregate(
+    core: &mut Core,
+    id: u32,
+    category: WmmAccessCategory,
+    count: usize,
+) -> Esp32s31AmpduAttempt<'static, Backings, SUBFRAMES> {
+    aggregate_of(core, id, category, count, 26)
+}
+
+/// Submit an aggregate and hand a refused one's buffer back.
+fn submit_ampdu(
+    core: &mut Core,
+    hardware: &mut Hardware,
+    attempt: Esp32s31AmpduAttempt<'static, Backings, SUBFRAMES>,
+) -> Result<Result<(), SubmitError>, LowerMacFault> {
+    Ok(match core.submit_ampdu(hardware, attempt)? {
+        Ok(()) => Ok(()),
+        Err(refused) => {
+            core.release_ampdu_buffer(refused.attempt.payload.subframes);
+            Err(refused.error)
+        }
+    })
+}
+
+fn block_ack_completion(
+    status: u8,
+    start: u16,
+    bitmap: u64,
+    received: bool,
+) -> MacHtAmpduCompletionObservation {
+    MacHtAmpduCompletionObservation::new_model(
+        MacTxCompletionObservation::new_model(status, 0),
+        0,
+        start,
+        bitmap,
+        received,
+    )
+}
+
+fn published_ampdu(core: &Core, index: usize) -> &PublishedAmpdu<'static, Backing, SUBFRAMES> {
+    match core.queues[index].as_ref().map(|attempt| &attempt.work) {
+        Some(Work::Ampdu(published)) => published,
+        _ => panic!("queue {index} holds a published aggregate"),
+    }
+}
+
+#[test]
+fn an_aggregate_is_published_once_and_reports_its_block_ack() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    let source = core.ampdu_source.unwrap();
+    assert_eq!(
+        core.ampdu_capabilities(),
+        esp32s31_ampdu_capabilities(SUBFRAMES)
+    );
+    assert_eq!(core.ampdu_capabilities().max_length, 6_490);
+    assert!(
+        !core
+            .ampdu_capabilities()
+            .formats
+            .contains_rate(PhyRate::Legacy(LegacyRate::Ofdm24M))
+    );
+
+    let request = aggregate(&mut core, 1, WmmAccessCategory::BestEffort, 3);
+    assert_eq!(source.free(), BACKINGS - 3);
+    assert_eq!(submit_ampdu(&mut core, &mut hardware, request), Ok(Ok(())));
+    assert_eq!(hardware.ht.len(), 1);
+    assert_eq!(usize::from(hardware.ht[0].0), BE);
+    assert_eq!(hardware.ht[0].1.control().protection, MacTxProtection::None);
+    let published = published_ampdu(&core, BE);
+    assert_eq!(published.owner().frame_count(), 3);
+    assert_eq!(published.owner().work().backoff_slots, 9);
+    assert_eq!(core.next_deadline_micros(), Some(TIMEOUT));
+
+    // A BlockAck arrived: the completion carries its window, and the
+    // subframes go back to their source.
+    hardware.block_ack_completion[BE] = Some(block_ack_completion(0, 100, 0b101, true));
+    let completions = service(&mut core, &mut hardware, interrupt(EVENT_TX_COMPLETE));
+    assert_eq!(
+        completions,
+        [TxCompletion {
+            id: TxId(1),
+            status: TxStatus::Success,
+            ack_rssi_dbm: None,
+            ack_snr_db: Some(0x60),
+            block_ack: Some(BlockAckReport {
+                start_sequence: SequenceNumber::new(100).unwrap(),
+                bitmap: 0b101,
+            }),
+        }]
+    );
+    assert_eq!(source.free(), BACKINGS);
+    assert_eq!(hardware.publications(), 1);
+
+    // The BlockAck result decides, not the completion status; without it
+    // the stale bitmap words are not reported.
+    for (id, status, received, expected) in [
+        (2, 5, true, TxStatus::Success),
+        (3, 5, false, TxStatus::AckTimeout),
+        (4, 0, false, TxStatus::AckTimeout),
+        (5, 2, false, TxStatus::CtsTimeout),
+    ] {
+        let request = aggregate(&mut core, id, WmmAccessCategory::BestEffort, 2);
+        submit_ampdu(&mut core, &mut hardware, request)
+            .unwrap()
+            .unwrap();
+        hardware.block_ack_completion[BE] = Some(block_ack_completion(status, 100, 0b01, received));
+        let completions = service(&mut core, &mut hardware, interrupt(EVENT_TX_COMPLETE));
+        assert_eq!(completions.len(), 1);
+        assert_eq!(completions[0].status, expected);
+        assert_eq!(completions[0].block_ack.is_some(), received);
+    }
+    // One publication per aggregate, never a retained retry.
+    assert_eq!(hardware.ht.len(), 5);
+    assert_eq!(source.free(), BACKINGS);
+}
+
+#[test]
+fn aggregates_outside_the_limits_are_refused_with_their_subframes() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    let source = core.ampdu_source.unwrap();
+    let he = PhyRate::He(
+        phy::HeRate::new(
+            phy::HeMcs::new(7).unwrap(),
+            SpatialStreams::new(1).unwrap(),
+            PpduBandwidth::Mhz20,
+            HeGiLtf::Ltf2xGi800Ns,
+            FecCoding::Ldpc,
+            false,
+        )
+        .unwrap(),
+    );
+
+    let refusals: [(
+        fn(&mut Esp32s31AmpduAttempt<'static, Backings, SUBFRAMES>),
+        SubmitError,
+    ); 4] = [
+        // HE aggregates are outside the declared formats, as are non-HT.
+        (
+            |request| request.rate = PhyRate::Legacy(LegacyRate::Ofdm24M),
+            SubmitError::Unsupported,
+        ),
+        (
+            |request| request.payload.min_mpdu_start_spacing = 8,
+            SubmitError::Unsupported,
+        ),
+        (|request| request.vif = AP, SubmitError::UnknownVif),
+        (
+            |request| request.backoff = Backoff::HardwareDraw { cw_exponent: 4 },
+            SubmitError::Unsupported,
+        ),
+    ];
+    for (mutate, expected) in refusals {
+        let mut request = aggregate(&mut core, 1, WmmAccessCategory::BestEffort, 2);
+        mutate(&mut request);
+        assert_eq!(
+            submit_ampdu(&mut core, &mut hardware, request),
+            Ok(Err(expected))
+        );
+    }
+    let mut request = aggregate(&mut core, 1, WmmAccessCategory::BestEffort, 2);
+    request.rate = he;
+    assert_eq!(
+        submit_ampdu(&mut core, &mut hardware, request),
+        Ok(Err(SubmitError::Unsupported))
+    );
+
+    // An empty aggregate, a group receiver and one longer than the declared
+    // maximum length.
+    let empty = aggregate(&mut core, 1, WmmAccessCategory::BestEffort, 0);
+    assert_eq!(
+        submit_ampdu(&mut core, &mut hardware, empty),
+        Ok(Err(SubmitError::InvalidLength))
+    );
+    let mut group = aggregate(&mut core, 1, WmmAccessCategory::BestEffort, 0);
+    group
+        .payload
+        .subframes
+        .push_mpdu(26)
+        .unwrap()
+        .copy_from_slice(&data_frame([0xff; 6]));
+    assert_eq!(
+        submit_ampdu(&mut core, &mut hardware, group),
+        Ok(Err(SubmitError::Unsupported))
+    );
+    let long = aggregate_of(&mut core, 1, WmmAccessCategory::BestEffort, 4, 2_000);
+    assert_eq!(
+        submit_ampdu(&mut core, &mut hardware, long),
+        Ok(Err(SubmitError::Unsupported))
+    );
+    let fits = aggregate_of(&mut core, 1, WmmAccessCategory::BestEffort, 3, 2_000);
+    assert_eq!(submit_ampdu(&mut core, &mut hardware, fits), Ok(Ok(())));
+    hardware.block_ack_completion[BE] = Some(block_ack_completion(0, 100, 0b111, true));
+    service(&mut core, &mut hardware, interrupt(EVENT_TX_COMPLETE));
+
+    // No more subframes than the owner's slots, nor MPDUs the backings
+    // cannot hold with their metadata, MIC and FCS.
+    let mut buffer = core.ampdu_buffer().unwrap();
+    for _ in 0..SUBFRAMES {
+        assert!(buffer.push_mpdu(26).is_some());
+    }
+    assert!(buffer.push_mpdu(26).is_none());
+    assert_eq!(buffer.subframes(), SUBFRAMES);
+    core.release_ampdu_buffer(buffer);
+    let mut buffer = core.ampdu_buffer().unwrap();
+    assert!(buffer.push_mpdu(BACKING - 20).is_some());
+    assert!(buffer.push_mpdu(BACKING - 19).is_none());
+    // Every aggregate owner can be lent, and no more.
+    let second = core.ampdu_buffer().unwrap();
+    assert!(core.ampdu_buffer().is_none());
+    core.release_ampdu_buffer(buffer);
+    core.release_ampdu_buffer(second);
+
+    // Refused and released aggregates published nothing and kept no
+    // backing.
+    assert_eq!(hardware.ht.len(), 1);
+    assert_eq!(source.free(), BACKINGS);
+}
+
+#[test]
+fn an_aggregate_shares_the_queues_with_mpdus() {
+    use WmmAccessCategory::{BestEffort, Video, Voice};
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    let source = core.ampdu_source.unwrap();
+
+    let mpdu = attempt_on(&mut core, 1, BestEffort);
+    submit(&mut core, &mut hardware, mpdu).unwrap().unwrap();
+    let busy = aggregate(&mut core, 2, BestEffort, 2);
+    assert_eq!(
+        submit_ampdu(&mut core, &mut hardware, busy),
+        Ok(Err(SubmitError::Busy))
+    );
+    for (id, category) in [(3, Voice), (4, Video)] {
+        let request = aggregate(&mut core, id, category, 2);
+        assert_eq!(submit_ampdu(&mut core, &mut hardware, request), Ok(Ok(())));
+    }
+
+    // A collision ends the voice aggregate only.
+    hardware.collision_pending[queue_of(Voice)] = true;
+    let completions = service(&mut core, &mut hardware, interrupt(EVENT_COLLISION));
+    assert_eq!(ids(&completions), [3]);
+    assert_eq!(completions[0].status, TxStatus::Collision);
+    assert_eq!(completions[0].block_ack, None);
+    assert_eq!(source.free(), BACKINGS - 2);
+
+    // A timeout ends the video aggregate after its settle; the MPDU on the
+    // best-effort queue completes meanwhile.
+    hardware.timeout_pending[queue_of(Video)] = true;
+    assert!(service(&mut core, &mut hardware, interrupt(EVENT_TX_TIMEOUT)).is_empty());
+    assert_eq!(ids(&complete(&mut core, &mut hardware, 0)), [1]);
+    core.tx.timer.now = core.next_deadline_micros().unwrap();
+    let completions = service(&mut core, &mut hardware, WifiTxWake::Deadline);
+    assert_eq!(ids(&completions), [4]);
+    assert_eq!(completions[0].status, TxStatus::Aborted);
+    assert_eq!(source.free(), BACKINGS);
+    assert_eq!(hardware.publications(), 3);
+
+    // A held aggregate is cancelled with its subframes returned.
+    core.apply(&mut hardware, LowerMacSetting::TxGate { open: false })
+        .unwrap()
+        .unwrap();
+    let held = aggregate(&mut core, 5, BestEffort, 2);
+    submit_ampdu(&mut core, &mut hardware, held)
+        .unwrap()
+        .unwrap();
+    let mut events = Events::default();
+    core.lifecycle(LifecycleCommand::Cancel(TxId(5)), &mut events)
+        .unwrap();
+    assert_eq!(events.completions[0].status, TxStatus::Aborted);
+    assert_eq!(source.free(), BACKINGS);
+    assert_eq!(hardware.publications(), 3);
 }

@@ -10,17 +10,23 @@
 //! event and is reported once as [`EventsLost`].
 //!
 //! [`Ieee80211LowerMacPort::next_event`] also runs the two waits the core
-//! cannot: the publication watchdog of the attempt in flight, which it turns
+//! cannot: the publication watchdog of the attempts in flight, which it turns
 //! into a deadline edge of the ordinary TX owner, and the PHY retune an
 //! `Enable` needs after a channel change, through [`LowerMacRetune`]. The
 //! ordinary TX owner's timer must therefore read the `embassy-time` clock
 //! (`EmbassyWifiTxTimer` in production).
 //!
 //! Besides the base port it implements the extensions the ESP32-S31 has:
-//! [`LowerMacBeaconTiming`] (the station TSF and TBTT schedule, whose events
-//! the power interrupt delivers through
-//! [`Esp32s31LowerMac::on_power_interrupt`], and the access-point TSF
+//! [`LowerMacAmpdu`] (HT aggregates, when the core was built with aggregate
+//! owners over an [`AmpduBackingSource`]), [`LowerMacBeaconTiming`] (the
+//! station TSF and TBTT schedule, whose events the power interrupt delivers
+//! through [`Esp32s31LowerMac::on_power_interrupt`], and the access-point TSF
 //! restart) and [`LowerMacMonitor`].
+//!
+//! Each of the four ordinary EDCA queues holds one attempt; completions leave
+//! the queue in whatever order the queues end, correlated by `TxId`. The MAC
+//! interrupt entry offers each edge to every published queue, and the
+//! watchdog waits for the earliest deadline of any of them.
 //!
 //! This is an additional entry point: the station and access-point roles do
 //! not drive the backend through it yet.
@@ -40,19 +46,22 @@ use embassy_time::{Instant, Timer};
 use oer_esp32s31_hal::types::MacPowerInterruptObservation;
 use oer_esp32s31_ieee80211::{
     lower_mac::{
-        ESP32S31_BEACON_TIMING_CAPABILITIES, ESP32S31_MONITOR_CAPABILITIES, Esp32s31MpduAttempt,
-        Esp32s31TxBuffer, LifecycleStart, LowerMacCore, LowerMacFault, LowerMacHardware,
-        LowerMacSink, esp32s31_lower_mac_capabilities,
+        AmpduBacking, AmpduBackingSource, ESP32S31_BEACON_TIMING_CAPABILITIES,
+        ESP32S31_MONITOR_CAPABILITIES, Esp32s31AmpduAttempt, Esp32s31AmpduBuffer,
+        Esp32s31MpduAttempt, Esp32s31TxBuffer, LifecycleStart, LowerMacCore, LowerMacFault,
+        LowerMacHardware, LowerMacSink, NoAmpdu, esp32s31_ampdu_capabilities,
+        esp32s31_lower_mac_capabilities,
     },
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
     tx::WifiTxWake,
 };
 use oer_esp32s31_ieee80211_mac::rx::NormalizedRxFrame;
 use oer_ieee80211_lower_mac::{
-    BeaconTimingCapabilities, EventsLost, Ieee80211LowerMacPort, KeyHandle, KeyInstall,
-    LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacBeaconTiming, LowerMacCapabilities,
-    LowerMacEvent, LowerMacMonitor, LowerMacSetting, MonitorCapabilities, RxMeta, SettingError,
-    SubmitResult, TbttEvent, TbttSchedule, Tsf, TxCompletion, VifId,
+    AmpduCapabilities, BeaconTimingCapabilities, EventsLost, Ieee80211LowerMacPort, KeyHandle,
+    KeyInstall, LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacAmpdu,
+    LowerMacBeaconTiming, LowerMacCapabilities, LowerMacEvent, LowerMacMonitor, LowerMacSetting,
+    MonitorCapabilities, RxMeta, SettingError, SubmitResult, TbttEvent, TbttSchedule, Tsf,
+    TxCompletion, VifId,
 };
 use oer_ieee80211_mac::channel::WifiChannel;
 use oer_time::RadioInstant;
@@ -120,14 +129,28 @@ pub struct Esp32s31LowerMacParts<
     R,
     const BUFFER_SIZE: usize,
     const TX_BUFFERS: usize,
+    S: AmpduBacking = NoAmpdu,
+    const AMPDU_SLOTS: usize = 2,
+    const AMPDU_BUFFERS: usize = 0,
 > {
-    pub core: LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS>,
+    pub core: LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
     pub hardware: H,
     pub retune: R,
 }
 
-struct Installed<'slot, P, E, T, H, const BUFFER_SIZE: usize, const TX_BUFFERS: usize> {
-    core: LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS>,
+struct Installed<
+    'slot,
+    P,
+    E,
+    T,
+    H,
+    S: AmpduBacking,
+    const BUFFER_SIZE: usize,
+    const TX_BUFFERS: usize,
+    const AMPDU_SLOTS: usize,
+    const AMPDU_BUFFERS: usize,
+> {
+    core: LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
     hardware: H,
 }
 
@@ -166,6 +189,9 @@ impl<M: RawMutex, const EVENTS: usize, const FRAME: usize> LowerMacSink
 /// `TX_BUFFERS` counts the transmit buffers the core lends, `EVENTS` bounds
 /// the events waiting for the consumer and `FRAME` the bytes of one
 /// received MPDU; a longer MPDU is lost and reported as [`EventsLost`].
+/// `S`, `AMPDU_SLOTS` and `AMPDU_BUFFERS` are the core's aggregate memory,
+/// subframes per aggregate and aggregate owners; with the default
+/// [`NoAmpdu`] the port has no aggregates and no [`LowerMacAmpdu`].
 pub struct Esp32s31LowerMac<
     'slot,
     M: RawMutex,
@@ -178,8 +204,33 @@ pub struct Esp32s31LowerMac<
     const TX_BUFFERS: usize,
     const EVENTS: usize,
     const FRAME: usize,
+    S: AmpduBacking = NoAmpdu,
+    const AMPDU_SLOTS: usize = 2,
+    const AMPDU_BUFFERS: usize = 0,
 > {
-    installed: Mutex<M, RefCell<Option<Installed<'slot, P, E, T, H, BUFFER_SIZE, TX_BUFFERS>>>>,
+    #[allow(
+        clippy::type_complexity,
+        reason = "the installed owners keep their types"
+    )]
+    installed: Mutex<
+        M,
+        RefCell<
+            Option<
+                Installed<
+                    'slot,
+                    P,
+                    E,
+                    T,
+                    H,
+                    S,
+                    BUFFER_SIZE,
+                    TX_BUFFERS,
+                    AMPDU_SLOTS,
+                    AMPDU_BUFFERS,
+                >,
+            >,
+        >,
+    >,
     retune: Mutex<M, RefCell<Option<R>>>,
     /// The channel an admitted `Enable` waits to be tuned to.
     pending_retune: Mutex<M, Cell<Option<WifiChannel>>>,
@@ -199,17 +250,37 @@ impl<
     T,
     H,
     R,
+    S,
     const BUFFER_SIZE: usize,
     const TX_BUFFERS: usize,
     const EVENTS: usize,
     const FRAME: usize,
-> Default for Esp32s31LowerMac<'slot, M, P, E, T, H, R, BUFFER_SIZE, TX_BUFFERS, EVENTS, FRAME>
+    const AMPDU_SLOTS: usize,
+    const AMPDU_BUFFERS: usize,
+> Default
+    for Esp32s31LowerMac<
+        'slot,
+        M,
+        P,
+        E,
+        T,
+        H,
+        R,
+        BUFFER_SIZE,
+        TX_BUFFERS,
+        EVENTS,
+        FRAME,
+        S,
+        AMPDU_SLOTS,
+        AMPDU_BUFFERS,
+    >
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
     H: LowerMacHardware,
     R: LowerMacRetune,
+    S: AmpduBacking,
 {
     fn default() -> Self {
         Self::new()
@@ -224,17 +295,37 @@ impl<
     T,
     H,
     R,
+    S,
     const BUFFER_SIZE: usize,
     const TX_BUFFERS: usize,
     const EVENTS: usize,
     const FRAME: usize,
-> Esp32s31LowerMac<'slot, M, P, E, T, H, R, BUFFER_SIZE, TX_BUFFERS, EVENTS, FRAME>
+    const AMPDU_SLOTS: usize,
+    const AMPDU_BUFFERS: usize,
+>
+    Esp32s31LowerMac<
+        'slot,
+        M,
+        P,
+        E,
+        T,
+        H,
+        R,
+        BUFFER_SIZE,
+        TX_BUFFERS,
+        EVENTS,
+        FRAME,
+        S,
+        AMPDU_SLOTS,
+        AMPDU_BUFFERS,
+    >
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
     H: LowerMacHardware,
     R: LowerMacRetune,
+    S: AmpduBacking,
 {
     /// An empty port, suitable for a `static`.
     pub const fn new() -> Self {
@@ -260,8 +351,35 @@ where
     )]
     pub fn install(
         &self,
-        parts: Esp32s31LowerMacParts<'slot, P, E, T, H, R, BUFFER_SIZE, TX_BUFFERS>,
-    ) -> Result<(), Esp32s31LowerMacParts<'slot, P, E, T, H, R, BUFFER_SIZE, TX_BUFFERS>> {
+        parts: Esp32s31LowerMacParts<
+            'slot,
+            P,
+            E,
+            T,
+            H,
+            R,
+            BUFFER_SIZE,
+            TX_BUFFERS,
+            S,
+            AMPDU_SLOTS,
+            AMPDU_BUFFERS,
+        >,
+    ) -> Result<
+        (),
+        Esp32s31LowerMacParts<
+            'slot,
+            P,
+            E,
+            T,
+            H,
+            R,
+            BUFFER_SIZE,
+            TX_BUFFERS,
+            S,
+            AMPDU_SLOTS,
+            AMPDU_BUFFERS,
+        >,
+    > {
         let Esp32s31LowerMacParts {
             core,
             hardware,
@@ -293,7 +411,12 @@ where
         clippy::type_complexity,
         reason = "the uninstalled owners are returned as they were installed"
     )]
-    pub fn uninstall(&self) -> Option<(LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS>, H)> {
+    pub fn uninstall(
+        &self,
+    ) -> Option<(
+        LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
+        H,
+    )> {
         let installed = self
             .installed
             .lock(|installed| installed.borrow_mut().take());
@@ -307,7 +430,17 @@ where
     fn with_core<U>(
         &self,
         entry: impl FnOnce(
-            &mut LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS>,
+            &mut LowerMacCore<
+                'slot,
+                P,
+                E,
+                T,
+                BUFFER_SIZE,
+                TX_BUFFERS,
+                S,
+                AMPDU_SLOTS,
+                AMPDU_BUFFERS,
+            >,
             &mut H,
             &mut QueueSink<'_, M, EVENTS, FRAME>,
         ) -> Result<U, LowerMacFault>,
@@ -461,18 +594,37 @@ impl<
     T,
     H,
     R,
+    S,
     const BUFFER_SIZE: usize,
     const TX_BUFFERS: usize,
     const EVENTS: usize,
     const FRAME: usize,
+    const AMPDU_SLOTS: usize,
+    const AMPDU_BUFFERS: usize,
 > Ieee80211LowerMacPort
-    for Esp32s31LowerMac<'slot, M, P, E, T, H, R, BUFFER_SIZE, TX_BUFFERS, EVENTS, FRAME>
+    for Esp32s31LowerMac<
+        'slot,
+        M,
+        P,
+        E,
+        T,
+        H,
+        R,
+        BUFFER_SIZE,
+        TX_BUFFERS,
+        EVENTS,
+        FRAME,
+        S,
+        AMPDU_SLOTS,
+        AMPDU_BUFFERS,
+    >
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
     H: LowerMacHardware,
     R: LowerMacRetune,
+    S: AmpduBacking,
 {
     type Event = Esp32s31LowerMacEvent<FRAME>;
     type Error = Esp32s31LowerMacError;
@@ -562,18 +714,37 @@ impl<
     T,
     H,
     R,
+    S,
     const BUFFER_SIZE: usize,
     const TX_BUFFERS: usize,
     const EVENTS: usize,
     const FRAME: usize,
+    const AMPDU_SLOTS: usize,
+    const AMPDU_BUFFERS: usize,
 > LowerMacBeaconTiming
-    for Esp32s31LowerMac<'_, M, P, E, T, H, R, BUFFER_SIZE, TX_BUFFERS, EVENTS, FRAME>
+    for Esp32s31LowerMac<
+        '_,
+        M,
+        P,
+        E,
+        T,
+        H,
+        R,
+        BUFFER_SIZE,
+        TX_BUFFERS,
+        EVENTS,
+        FRAME,
+        S,
+        AMPDU_SLOTS,
+        AMPDU_BUFFERS,
+    >
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
     H: LowerMacHardware,
     R: LowerMacRetune,
+    S: AmpduBacking,
 {
     fn beacon_timing_capabilities(&self) -> BeaconTimingCapabilities {
         ESP32S31_BEACON_TIMING_CAPABILITIES
@@ -614,17 +785,37 @@ impl<
     T,
     H,
     R,
+    S,
     const BUFFER_SIZE: usize,
     const TX_BUFFERS: usize,
     const EVENTS: usize,
     const FRAME: usize,
-> LowerMacMonitor for Esp32s31LowerMac<'_, M, P, E, T, H, R, BUFFER_SIZE, TX_BUFFERS, EVENTS, FRAME>
+    const AMPDU_SLOTS: usize,
+    const AMPDU_BUFFERS: usize,
+> LowerMacMonitor
+    for Esp32s31LowerMac<
+        '_,
+        M,
+        P,
+        E,
+        T,
+        H,
+        R,
+        BUFFER_SIZE,
+        TX_BUFFERS,
+        EVENTS,
+        FRAME,
+        S,
+        AMPDU_SLOTS,
+        AMPDU_BUFFERS,
+    >
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
     H: LowerMacHardware,
     R: LowerMacRetune,
+    S: AmpduBacking,
 {
     fn monitor_capabilities(&self) -> MonitorCapabilities {
         ESP32S31_MONITOR_CAPABILITIES
@@ -635,6 +826,80 @@ where
         enabled: bool,
     ) -> Result<Result<(), SettingError>, Esp32s31LowerMacError> {
         self.with_core(|core, hardware, _| Ok(core.set_monitor(hardware, enabled)))
+    }
+}
+
+impl<
+    'slot,
+    M: RawMutex,
+    P,
+    E,
+    T,
+    H,
+    R,
+    S,
+    const BUFFER_SIZE: usize,
+    const TX_BUFFERS: usize,
+    const EVENTS: usize,
+    const FRAME: usize,
+    const AMPDU_SLOTS: usize,
+    const AMPDU_BUFFERS: usize,
+> LowerMacAmpdu
+    for Esp32s31LowerMac<
+        'slot,
+        M,
+        P,
+        E,
+        T,
+        H,
+        R,
+        BUFFER_SIZE,
+        TX_BUFFERS,
+        EVENTS,
+        FRAME,
+        S,
+        AMPDU_SLOTS,
+        AMPDU_BUFFERS,
+    >
+where
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: WifiTxTimer,
+    H: LowerMacHardware,
+    R: LowerMacRetune,
+    S: AmpduBackingSource,
+{
+    type AmpduBuffer = Esp32s31AmpduBuffer<'slot, S, AMPDU_SLOTS>;
+
+    fn ampdu_capabilities(&self) -> AmpduCapabilities {
+        esp32s31_ampdu_capabilities(AMPDU_SLOTS)
+    }
+
+    /// `None` also while no backend is installed or the port is poisoned.
+    fn ampdu_buffer(&self) -> Option<Esp32s31AmpduBuffer<'slot, S, AMPDU_SLOTS>> {
+        self.with_core(|core, _, _| Ok(core.ampdu_buffer()))
+            .ok()
+            .flatten()
+    }
+
+    /// An aggregate released while no backend is installed or the port is
+    /// poisoned returns its subframes, and its aggregate owner is lost until
+    /// the radio is reset.
+    fn release_ampdu_buffer(&self, buffer: Esp32s31AmpduBuffer<'slot, S, AMPDU_SLOTS>) {
+        let _ = self.with_core(|core, _, _| {
+            core.release_ampdu_buffer(buffer);
+            Ok(())
+        });
+    }
+
+    fn submit_ampdu(
+        &self,
+        attempt: Esp32s31AmpduAttempt<'slot, S, AMPDU_SLOTS>,
+    ) -> SubmitResult<Esp32s31AmpduAttempt<'slot, S, AMPDU_SLOTS>, Esp32s31LowerMacError> {
+        let admitted = self.with_core(|core, hardware, _| core.submit_ampdu(hardware, attempt))?;
+        // A publication starts its watchdog.
+        self.wake.signal(());
+        Ok(admitted)
     }
 }
 

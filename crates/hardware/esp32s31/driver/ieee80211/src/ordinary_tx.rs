@@ -34,7 +34,10 @@ pub const TX_METADATA_SIZE: usize = 8;
 /// Hardware-appended CCMP MIC bytes accounted for by descriptor publication.
 pub const TX_CCMP_MIC_SIZE: usize = 8;
 pub const TX_FCS_SIZE: usize = 4;
-const TX_ABORT_SETTLE_US: u64 = 16;
+/// Settle interval between the forced-CCA edge of a queue's timeout abort
+/// and its detach (`SOURCE[PROMOTED_LMAC_TX]`, see
+/// `TxSlot::begin_timeout_abort`).
+pub(crate) const TX_ABORT_SETTLE_US: u64 = 16;
 /// Metadata bit set by the complete HE S-MPDU preparation leaf before DMA
 /// publication. It selects the single-MPDU container geometry while the low
 /// twenty bits retain MPDU+MIC+FCS length.
@@ -323,6 +326,60 @@ impl SingleAttempt {
 /// The largest backoff the ordinary queue's ten-bit contention-window field
 /// holds.
 pub const MAX_SINGLE_ATTEMPT_BACKOFF_SLOTS: u16 = 0x03ff;
+
+/// A single attempt published on its EDCA queue and detached from the
+/// owner, so that the owner can publish on another queue meanwhile
+/// ([`OrdinaryTxOwner::start_queued_single_attempt`]).
+///
+/// It retains the slot the hardware reads and the transaction's cookie,
+/// deadline and phase. Only [`OrdinaryTxOwner::service_queued_single_attempt`]
+/// advances it; dropping it forgets a descriptor the hardware may still
+/// own, which only a radio reset recovers.
+pub struct QueuedSingleAttempt<'slot, const BUFFER_SIZE: usize> {
+    slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
+    active: ActiveTx,
+}
+
+impl<const BUFFER_SIZE: usize> QueuedSingleAttempt<'_, BUFFER_SIZE> {
+    /// The ordinary queue the attempt is published on.
+    pub const fn queue(&self) -> LegacyTxQueue {
+        self.active.route.queue()
+    }
+
+    /// The publication deadline, or the end of the abort settle while one
+    /// runs.
+    pub const fn deadline_micros(&self) -> u64 {
+        self.active.deadline_micros
+    }
+
+    /// Whether the queue's timeout abort is settling: CCA is forced until
+    /// its detach.
+    pub const fn abort_settling(&self) -> bool {
+        matches!(self.active.phase, OrdinaryTxPhase::AbortSettling)
+    }
+
+    /// The slot the hardware reads, for observation.
+    pub fn slot(&self) -> Pin<&TxSlot<BUFFER_SIZE>> {
+        self.slot.as_ref()
+    }
+}
+
+/// How a serviced [`QueuedSingleAttempt`] stands.
+pub enum QueuedSingleAttemptProgress<'slot, const BUFFER_SIZE: usize> {
+    /// The hardware still owns the attempt.
+    Pending(QueuedSingleAttempt<'slot, BUFFER_SIZE>),
+    /// The attempt ended; its slot is idle again.
+    Complete {
+        outcome: OrdinaryTxOutcome,
+        slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
+    },
+}
+
+/// A queued attempt that was not published; its slot comes back.
+pub struct QueuedSingleAttemptRefused<'slot, const BUFFER_SIZE: usize> {
+    pub error: OrdinaryTxError,
+    pub slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
+}
 
 struct ActiveTx {
     cookie: TxCookie,
@@ -639,6 +696,185 @@ where
             OrdinaryRetryRatePolicy::Normal,
             Some(attempt),
         )
+    }
+
+    /// Publish `slot`'s encoded MPDU as one single attempt on the queue of
+    /// `plan.exchange.access_category`, then detach it from the owner.
+    ///
+    /// The publication is [`Self::start_single_attempt`]'s; the owner keeps
+    /// its own idle slot and no active transaction, so it can publish another
+    /// queued attempt on another queue while this one is in flight. The
+    /// hardware keeps a descriptor, a completion bank and timeout and
+    /// collision state per ordinary queue (`pac/src/wifi/mac/tx/queue.rs`),
+    /// so each queued attempt is serviced on its own queue. An idle owner is
+    /// required: a classic transaction and queued attempts do not mix.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the refusal hands the caller's pinned slot back by value"
+    )]
+    pub fn start_queued_single_attempt<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        mut slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
+        plan: OrdinaryTxPlan,
+        attempt: SingleAttempt,
+    ) -> Result<
+        QueuedSingleAttempt<'slot, BUFFER_SIZE>,
+        QueuedSingleAttemptRefused<'slot, BUFFER_SIZE>,
+    > {
+        if self.active.is_some() {
+            return Err(QueuedSingleAttemptRefused {
+                error: OrdinaryTxError::Busy,
+                slot,
+            });
+        }
+        core::mem::swap(&mut self.slot, &mut slot);
+        let result = self.start_single_attempt(hardware, plan, attempt);
+        // `slot` is the owner's idle slot again; hand the caller's back.
+        core::mem::swap(&mut self.slot, &mut slot);
+        match result {
+            Ok(_) => Ok(QueuedSingleAttempt {
+                slot,
+                active: self
+                    .active
+                    .take()
+                    .expect("a started single attempt is active"),
+            }),
+            Err(error) => Err(QueuedSingleAttemptRefused { error, slot }),
+        }
+    }
+
+    /// Consume one interrupt or deadline edge for a queued attempt.
+    ///
+    /// Several queues share one MAC interrupt, and its task-side events
+    /// (`EVENT_TX_COMPLETE`, `EVENT_TX_TIMEOUT`, `EVENT_COLLISION`) do not name
+    /// a queue, so every queued attempt is serviced with the same edge and
+    /// claims only its own queue's state: the completion bank, then (on a
+    /// collision edge) the collision detach, then (on a timeout edge or its
+    /// expired publication deadline) the timeout abort. An edge its queue does
+    /// not show leaves the attempt pending; unlike [`Self::service`], several
+    /// simultaneous causes are not a fault, since they may belong to different
+    /// queues. An expired deadline without the queue's timeout edge still
+    /// quarantines the descriptor.
+    ///
+    /// The timeout abort forces the MAC-wide CCA until its detach releases
+    /// it, so `may_begin_timeout_abort` must be `false` while another queue's
+    /// abort settles; the attempt then stays pending with its timeout latched
+    /// in the queue state until it is serviced again.
+    ///
+    /// On an error the attempt is dropped: the owner poisoned or quarantined
+    /// its descriptor, and only a radio reset recovers the slot.
+    pub fn service_queued_single_attempt<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        queued: QueuedSingleAttempt<'slot, BUFFER_SIZE>,
+        wake: WifiTxWake,
+        may_begin_timeout_abort: bool,
+    ) -> Result<QueuedSingleAttemptProgress<'slot, BUFFER_SIZE>, OrdinaryTxError> {
+        if self.active.is_some() {
+            return Err(OrdinaryTxError::Busy);
+        }
+        let QueuedSingleAttempt { mut slot, active } = queued;
+        core::mem::swap(&mut self.slot, &mut slot);
+        self.active = Some(active);
+        let result = self.service_shared_edge(hardware, wake, may_begin_timeout_abort);
+        core::mem::swap(&mut self.slot, &mut slot);
+        match result {
+            Ok(WifiTxProgress::Pending) => {
+                Ok(QueuedSingleAttemptProgress::Pending(QueuedSingleAttempt {
+                    slot,
+                    active: self
+                        .active
+                        .take()
+                        .expect("a pending queued attempt stays active"),
+                }))
+            }
+            Ok(WifiTxProgress::Complete) => Ok(QueuedSingleAttemptProgress::Complete {
+                outcome: self
+                    .last_outcome
+                    .take()
+                    .expect("a completed transaction records its outcome"),
+                slot,
+            }),
+            Err(error) => {
+                self.active = None;
+                Err(error)
+            }
+        }
+    }
+
+    /// [`Self::service`] for an edge several queues share.
+    fn service_shared_edge<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        wake: WifiTxWake,
+        may_begin_timeout_abort: bool,
+    ) -> Result<WifiTxProgress, OrdinaryTxError> {
+        use oer_esp32s31_ieee80211_mac::irq::{EVENT_COLLISION, EVENT_TX_TIMEOUT};
+
+        let active = self.active.take().ok_or(OrdinaryTxError::Busy)?;
+        if matches!(active.phase, OrdinaryTxPhase::AbortSettling) {
+            return self.service_abort_settle(hardware, active);
+        }
+        let events = match wake {
+            WifiTxWake::Interrupt { events } => events,
+            WifiTxWake::Deadline => 0,
+        };
+        if let Some((completion, block_ack)) = self.acknowledge_completion(hardware, &active)? {
+            self.slot
+                .as_mut()
+                .detach_completed(hardware, active.cookie)?;
+            return self.finish_completion(hardware, active, completion, block_ack);
+        }
+        if events & EVENT_COLLISION != 0
+            && self
+                .slot
+                .as_mut()
+                .abort_collision(hardware, active.cookie)?
+        {
+            return self.finish_aborted_attempt(hardware, active, false);
+        }
+        let expired = matches!(wake, WifiTxWake::Deadline)
+            && self.timer.now_micros() >= active.deadline_micros;
+        if (events & EVENT_TX_TIMEOUT != 0 || expired) && may_begin_timeout_abort {
+            if self
+                .slot
+                .as_mut()
+                .begin_timeout_abort(hardware, active.cookie)?
+            {
+                return self.start_abort_settle(active);
+            }
+            if expired {
+                return self.reset_required(active, TxResetReason::ExecutorDeadline);
+            }
+        }
+        self.active = Some(active);
+        Ok(WifiTxProgress::Pending)
+    }
+
+    /// The control frame of a single-attempt PPDU another owner publishes
+    /// (an aggregate): the caller's protection at the BSS policy's control
+    /// rate, its power codes bounded by `ceiling`, as
+    /// [`Self::start_single_attempt`] selects them for an MPDU.
+    pub fn single_attempt_control_frame(
+        &self,
+        data: TxPhyRate,
+        protection: SingleAttemptProtection,
+        ceiling: Option<i8>,
+    ) -> TxControlFrame {
+        let decision = self.select_protection(
+            Some(SingleAttempt::new(protection)),
+            TxReceiver::Individual,
+            data,
+            0,
+        );
+        self.control_frame(data, decision, ceiling)
+    }
+
+    /// The calibrated power pair of `rate_code` bounded by `ceiling`, as
+    /// [`Self::start_single_attempt`] publishes it.
+    pub fn single_attempt_power_pair(&self, rate_code: u8, ceiling: Option<i8>) -> WifiTxPowerPair {
+        capped_power(self.power.power_pair(rate_code), ceiling)
     }
 
     fn start_transaction<H: TxHardware>(

@@ -1039,17 +1039,19 @@ packages = ["oer-esp32s31-radio-runtime", "oer-espressif-coex", "oer-esp32s31-co
 id = "wifi-interfaces-and-operating-modes-lower-mac-port-a-mpdu"
 section = "wifi-interfaces-and-operating-modes"
 title = "Lower-MAC port: A-MPDU attempts"
-status = "absent"
+status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "Reason: glue not written. The ESP32-S31 backend of the portable lower-MAC port does not implement `LowerMacAmpdu`. The retained-DMA aggregate owner (`RetainedDmaAmpduTx`) serves the bounded STA/AP aggregate paths, but no port composition lends aggregate buffers, publishes one aggregate as one attempt or reports its BlockAck through the port."
+scope-and-limitations = "`LowerMacAmpdu` over the retained-DMA aggregate owner (`RetainedDmaAmpduTx`) in single-attempt mode: each lent aggregate is one owner whose subframes are `StableDmaBacking` leases of the integrator's `AmpduBackingSource`; one attempt begins, commits every subframe and publishes the aggregate once on its access category's queue, and its completion reports the BlockAck the hardware marks received, after which the leases return to their source. Retries are the caller's; the owner's retained retry is not used. HT only, up to the owner's subframe slots and 6490 octets (the vendor's lowest per-rate ceiling, HT MCS 0 long GI). Reason for the rest: glue not written. HE and Trigger-based aggregates are refused as outside the declared formats, because the port carries no recipient HE TXOP or Trigger reservation. No composition supplies an aggregate source on hardware yet and no HIL scenario drives the port."
+packages = ["oer-esp32s31-ieee80211"]
 
 [[items]]
 id = "wifi-interfaces-and-operating-modes-lower-mac-port-concurrent-queue-attempts"
 section = "wifi-interfaces-and-operating-modes"
 title = "Lower-MAC port: one attempt per EDCA queue"
-status = "absent"
+status = "implemented"
 level = "lower-primitive"
-scope-and-limitations = "Reason: glue not written. The port allows one attempt in flight per transmit queue; the ESP32-S31 backend declares one queue, because a single ordinary TX owner and its single-queue interrupt service serve every access category (each attempt still contends with its own category's EDCA parameters). Per-queue owners and a per-queue completion, timeout and collision demultiplexer are not composed."
+scope-and-limitations = "The ESP32-S31 backend declares four transmit queues, one per ordinary EDCA queue (voice, video, best effort, background), each holding one MPDU or aggregate attempt; another attempt for an occupied queue is `Busy` and completions correlate by `TxId`. The ordinary TX owner publishes each MPDU and detaches it per queue (`QueuedSingleAttempt`); every MAC interrupt edge is offered to every published queue, which claims only its own latched completion, collision or timeout state. A timeout abort forces the MAC-wide CCA for its 16-us settle, so aborts are serialized: a queue timing out meanwhile keeps its latched timeout and aborts when that settle ends. The hardware keeps the queues' descriptors, completion banks and timeout and collision state separate, and the vendor publishes them concurrently; no HIL scenario yet runs concurrent queues through the port."
+packages = ["oer-esp32s31-ieee80211"]
 
 [[items]]
 id = "wifi-interfaces-and-operating-modes-lower-mac-port-hardware-backoff-draw"

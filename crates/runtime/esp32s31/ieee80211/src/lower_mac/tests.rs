@@ -1,13 +1,15 @@
-use core::{future::ready, pin::Pin};
+use core::{cell::RefCell as TestCell, future::ready, pin::Pin};
 use std::vec::Vec;
 
 use embassy_futures::block_on;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use oer_esp32s31_hal::types::{
-    MacCcmpKeyIdentity, MacHtAmpduCompletionObservation, MacKeyInstallOutcome, MacLegacyTxProgram,
-    MacStaApReceivePlan, MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason,
-    MacTxQueueDetached, StaTbttSchedule,
+    MacCcmpKeyIdentity, MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
+    MacHeTriggerTxQueueSnapshot, MacHtAmpduCompletionObservation, MacHtTxProgram,
+    MacKeyInstallOutcome, MacLegacyTxProgram, MacStaApReceivePlan, MacTxCompletionObservation,
+    MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached, StaTbttSchedule,
 };
+use oer_esp32s31_ieee80211::lower_mac::{AmpduBacking, AmpduBackingSource, Esp32s31AmpduOwner};
 use oer_esp32s31_ieee80211::{
     lower_mac::{LowerMacConfig, StationTbttHardware, StationTsfHardware, TxGateHardware},
     ordinary_tx::{OrdinaryTxOwner, WifiTxPowerPair, WifiTxResources},
@@ -23,15 +25,27 @@ use oer_esp32s31_ieee80211_mac::{
         hardware::{RxBlockAckHardware, S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
     },
     sta_ap_registers::StaApRegisterHardware,
-    tx::{HardwareOwnedTxDma, PreparedTxDma, TxHardware, TxSlot, runtime::WifiTxRuntimePolicy},
+    tx::{
+        HardwareOwnedTxDma, PreparedTxDma, TxHardware, TxSlot,
+        ampdu::{HtAmpduHardware, HtAmpduTxStorage, RetainedAmpduDmaStorage, RetainedDmaAmpduTx},
+        runtime::WifiTxRuntimePolicy,
+    },
 };
 use oer_ieee80211_lower_mac::{
-    Backoff, Channel, ChannelWidth, CoexPriority, FailureClass, KeySelector, MacAddress, PhyRate,
-    Protection, ReceiveFilter, SubmitError, TxAttempt, TxBuffer, TxId, TxPayload, TxPower,
-    TxResponse, TxStatus, VifConfig, VifRole,
+    AmpduBuffer, AmpduPayload, Backoff, BlockAckReport, Channel, ChannelWidth, CoexPriority,
+    FailureClass, KeySelector, MacAddress, PhyFormatSet, PhyRate, Protection, ReceiveFilter,
+    SubmitError, TxAttempt, TxBuffer, TxId, TxPayload, TxPower, TxResponse, TxStatus, VifConfig,
+    VifRole,
 };
-use oer_ieee80211_mac::{phy::LegacyRate, qos::WmmAccessCategory, sequence::SequenceNumber};
+use oer_ieee80211_mac::{
+    phy::{HtMcs, HtRate, LegacyRate, PpduBandwidth},
+    qos::WmmAccessCategory,
+    sequence::SequenceNumber,
+};
 use oer_ieee80211_softmac::{MacRxEvidence, MacRxMetadata};
+use oer_memory::{
+    DmaIndexReturn, PinnedDmaTxPool, PinnedDmaTxRadioLease, ReturningStableDmaBacking,
+};
 
 use super::*;
 
@@ -44,10 +58,18 @@ const STA: VifId = VifId(0);
 #[derive(Default)]
 struct Hardware {
     legacy: Vec<MacLegacyTxProgram>,
-    completion: Option<MacTxCompletionObservation>,
+    ht: Vec<MacHtTxProgram>,
+    /// Completions by queue hardware index.
+    completion: [Option<MacTxCompletionObservation>; 4],
+    block_ack_completion: [Option<MacHtAmpduCompletionObservation>; 4],
     station_tsf: u64,
     tbtt: Option<StaTbttSchedule>,
 }
+
+/// The hardware index of the best-effort queue.
+const BE: usize = 2;
+/// The hardware index of the voice queue.
+const VO: usize = 0;
 
 impl TxHardware for Hardware {
     fn prepare_bound_legacy_tx(
@@ -62,12 +84,22 @@ impl TxHardware for Hardware {
 
     fn start_bound_legacy_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8) {}
 
-    fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionObservation> {
-        self.completion.take()
+    fn prepare_bound_ht_tx(
+        &mut self,
+        _dma: &dyn PreparedTxDma,
+        _queue: u8,
+        program: MacHtTxProgram,
+    ) -> bool {
+        self.ht.push(program);
+        true
     }
 
-    fn take_block_ack_completion(&mut self, _queue: u8) -> Option<MacHtAmpduCompletionObservation> {
-        None
+    fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {
+        self.completion[usize::from(queue)].take()
+    }
+
+    fn take_block_ack_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionObservation> {
+        self.block_ack_completion[usize::from(queue)].take()
     }
 
     fn begin_tx_timeout_abort(&mut self, _queue: u8) -> bool {
@@ -89,6 +121,23 @@ impl TxHardware for Hardware {
                 MacTxDetachOutcome::NoEvent
             }
         }
+    }
+}
+
+impl HtAmpduHardware for Hardware {
+    fn prepare_he_trigger_based_queue(
+        &mut self,
+        _policy: MacHeTbTidLimit,
+        _reservation: MacHeTbLinkReservation,
+        _tid: MacHeTid,
+        _mpdu_lengths: &[u16],
+        _queued_msdu_bytes: u32,
+    ) -> Result<MacHeTriggerTxQueueSnapshot, MacHeTbProgramError> {
+        unreachable!("the port publishes no Trigger-based aggregate")
+    }
+
+    fn clear_he_trigger_based_queue(&mut self, _reservation: MacHeTbLinkReservation) {
+        unreachable!("the port publishes no Trigger-based aggregate")
     }
 }
 
@@ -385,13 +434,10 @@ fn an_attempt_completes_through_the_interrupt_entry_and_the_queue() {
 
     // A NoAck completion is reported, not retried.
     assert_eq!(submit(&port, attempt(&port, 1, &frame)), Ok(Ok(())));
-    // The one spare slot was published; the owner's previous slot is lent
-    // next.
-    let spare = port.tx_buffer(frame.len()).unwrap();
+    // The one spare slot is published until the attempt completes.
     assert!(port.tx_buffer(frame.len()).is_none());
-    port.release_tx_buffer(spare);
     with_hardware(&port, |hardware| {
-        hardware.completion = Some(MacTxCompletionObservation::new_model(5, 0));
+        hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(5, 0));
     });
     port.on_interrupt(EVENT_TX_COMPLETE);
     let Ok(LowerMacEvent::TxCompleted(completion)) = next(&port) else {
@@ -400,6 +446,8 @@ fn an_attempt_completes_through_the_interrupt_entry_and_the_queue() {
     assert_eq!(completion.id, TxId(1));
     assert_eq!(completion.status, TxStatus::AckTimeout);
     assert_eq!(with_hardware(&port, |hardware| hardware.legacy.len()), 1);
+    let spare = port.tx_buffer(frame.len()).unwrap();
+    port.release_tx_buffer(spare);
 
     assert_eq!(port.set_tsf(STA, Tsf(7)), Ok(Ok(())));
     assert_eq!(port.tsf(STA), Ok(Ok(Tsf(7))));
@@ -542,4 +590,252 @@ fn received_frames_are_copied_and_overflow_is_reported_once() {
         );
     }
     assert!(port.events.try_receive().is_err());
+}
+
+const BACKING: usize = 256;
+const BACKINGS: usize = 4;
+
+type Backing =
+    ReturningStableDmaBacking<PinnedDmaTxRadioLease<'static, BACKING, 0, 0>, &'static FreeBackings>;
+
+#[derive(Default)]
+struct FreeBackings(TestCell<Vec<u8>>);
+
+impl DmaIndexReturn for &'static FreeBackings {
+    fn return_index(&self, index: u8) {
+        self.0.borrow_mut().push(index);
+    }
+}
+
+/// Subframe memory from a pinned DMA TX pool.
+struct Backings {
+    pool: &'static PinnedDmaTxPool<BACKING, 0, 0, BACKINGS>,
+    free: &'static FreeBackings,
+}
+
+impl AmpduBacking for Backings {
+    type Backing = Backing;
+}
+
+impl AmpduBackingSource for Backings {
+    fn backing(&self) -> Option<Backing> {
+        let index = self.free.0.borrow_mut().pop()?;
+        self.pool.claim_network(index).publish(BACKING, |_| ());
+        Some(ReturningStableDmaBacking::new(
+            self.pool.claim_radio(index),
+            self.free,
+        ))
+    }
+}
+
+type AmpduPort = Esp32s31LowerMac<
+    'static,
+    CriticalSectionRawMutex,
+    Power,
+    fn() -> u32,
+    ModelTimer,
+    Hardware,
+    Retune,
+    512,
+    4,
+    8,
+    64,
+    Backings,
+    2,
+    1,
+>;
+
+fn install_ampdu(port: &AmpduPort) -> &'static Backings {
+    let pool = PinnedDmaTxPool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(
+        PinnedDmaTxPool::new(),
+    )));
+    let free: &'static FreeBackings = std::boxed::Box::leak(std::boxed::Box::default());
+    free.0.borrow_mut().extend(0..BACKINGS as u8);
+    let backings: &'static Backings = std::boxed::Box::leak(std::boxed::Box::new(Backings {
+        pool: Pin::into_ref(pool).get_ref(),
+        free,
+    }));
+    let owner: Esp32s31AmpduOwner<'static, Backing, 2> = RetainedDmaAmpduTx::new_model(
+        Pin::static_mut(std::boxed::Box::leak(std::boxed::Box::new(
+            HtAmpduTxStorage::new(),
+        ))),
+        std::boxed::Box::leak(std::boxed::Box::new(RetainedAmpduDmaStorage::new())),
+    )
+    .unwrap();
+    let core = LowerMacCore::with_ampdu(
+        OrdinaryTxOwner::new(WifiTxResources {
+            slot: slot(),
+            policy: WifiTxRuntimePolicy::vendor_defaults(),
+            power: Power,
+            entropy: entropy as fn() -> u32,
+            timer: ModelTimer,
+        }),
+        [slot(), slot(), slot(), slot()],
+        [owner],
+        backings,
+        LowerMacConfig {
+            station_address: STATION,
+            channel: WifiChannel::mhz20(6).unwrap(),
+            publication_timeout_micros: 250_000,
+        },
+    );
+    let tuned = std::boxed::Box::leak(std::boxed::Box::new(std::sync::Mutex::new(Vec::new())));
+    assert!(
+        port.install(Esp32s31LowerMacParts {
+            core,
+            hardware: Hardware::default(),
+            retune: Retune {
+                accept: true,
+                tuned,
+            },
+        })
+        .is_ok()
+    );
+    port.apply(LowerMacSetting::Vif {
+        vif: STA,
+        config: Some(VifConfig {
+            address: STATION,
+            role: VifRole::Station,
+            bssid: Some(BSSID),
+            receive: ReceiveFilter::BSS_MEMBER,
+        }),
+    })
+    .unwrap()
+    .unwrap();
+    port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+    assert_eq!(
+        block_on(port.next_event())
+            .map(|event| event.portable() == LowerMacEvent::Lifecycle(LifecycleEvent::Enabled)),
+        Ok(true)
+    );
+    backings
+}
+
+fn next_completion(port: &AmpduPort) -> TxCompletion {
+    match block_on(port.next_event()) {
+        Ok(Esp32s31LowerMacEvent::TxCompleted(completion)) => completion,
+        _ => panic!("a completion"),
+    }
+}
+
+#[test]
+fn attempts_on_different_queues_complete_by_their_identity() {
+    let port = AmpduPort::new();
+    let backings = install_ampdu(&port);
+    assert_eq!(port.capabilities().tx_queues, 4);
+    let capabilities = port.ampdu_capabilities();
+    assert_eq!(capabilities.max_subframes, 2);
+    assert_eq!(capabilities.formats, PhyFormatSet::HT);
+
+    // An MPDU on the voice queue.
+    let mut buffer = port.tx_buffer(26).unwrap();
+    buffer.frame_mut().copy_from_slice(&data_frame());
+    let mpdu = TxAttempt {
+        id: TxId(1),
+        vif: STA,
+        access_category: WmmAccessCategory::Voice,
+        payload: TxPayload {
+            frame: buffer,
+            response: TxResponse::Ack,
+        },
+        rate: PhyRate::Legacy(LegacyRate::Ofdm12M),
+        protection: Protection::None,
+        key: KeySelector::Plaintext,
+        power: TxPower::Calibrated,
+        backoff: Backoff::Slots(3),
+        coex: CoexPriority::Normal,
+    };
+    assert!(matches!(port.submit(mpdu), Ok(Ok(()))));
+
+    // An aggregate of two MPDUs on the best-effort queue.
+    let mut aggregate = port.ampdu_buffer().unwrap();
+    assert!(port.ampdu_buffer().is_none());
+    for sequence in [100_u16, 101] {
+        let mpdu = aggregate.push_mpdu(26).unwrap();
+        mpdu.copy_from_slice(&data_frame());
+        mpdu[22..24].copy_from_slice(&(sequence << 4).to_le_bytes());
+    }
+    assert!(aggregate.push_mpdu(26).is_none());
+    let ampdu = TxAttempt {
+        id: TxId(2),
+        vif: STA,
+        access_category: WmmAccessCategory::BestEffort,
+        payload: AmpduPayload {
+            subframes: aggregate,
+            tid: 0,
+            min_mpdu_start_spacing: 0,
+        },
+        rate: PhyRate::Ht(
+            HtRate::new(HtMcs::new(7).unwrap(), PpduBandwidth::Mhz20, false).unwrap(),
+        ),
+        protection: Protection::None,
+        key: KeySelector::Plaintext,
+        power: TxPower::Calibrated,
+        backoff: Backoff::Slots(3),
+        coex: CoexPriority::Normal,
+    };
+    assert!(matches!(port.submit_ampdu(ampdu), Ok(Ok(()))));
+    assert_eq!(backings.free.0.borrow().len(), BACKINGS - 2);
+    assert_eq!(
+        with_hardware_of(&port, |hardware| (hardware.legacy.len(), hardware.ht.len())),
+        (1, 1)
+    );
+
+    // The aggregate ends first, then the MPDU.
+    with_hardware_of(&port, |hardware| {
+        hardware.block_ack_completion[BE] = Some(MacHtAmpduCompletionObservation::new_model(
+            MacTxCompletionObservation::new_model(0, 0),
+            0,
+            100,
+            0b11,
+            true,
+        ));
+    });
+    port.on_interrupt(EVENT_TX_COMPLETE);
+    let completion = next_completion(&port);
+    assert_eq!(completion.id, TxId(2));
+    assert_eq!(
+        completion.block_ack,
+        Some(BlockAckReport {
+            start_sequence: SequenceNumber::new(100).unwrap(),
+            bitmap: 0b11,
+        })
+    );
+    assert_eq!(backings.free.0.borrow().len(), BACKINGS);
+    with_hardware_of(&port, |hardware| {
+        hardware.completion[VO] = Some(MacTxCompletionObservation::new_model(0, 0));
+    });
+    port.on_interrupt(EVENT_TX_COMPLETE);
+    assert_eq!(next_completion(&port).id, TxId(1));
+
+    // The aggregate owner is lent again; a refused aggregate comes back.
+    let empty = port.ampdu_buffer().unwrap();
+    let Ok(Err(refused)) = port.submit_ampdu(TxAttempt {
+        id: TxId(3),
+        vif: STA,
+        access_category: WmmAccessCategory::BestEffort,
+        payload: AmpduPayload {
+            subframes: empty,
+            tid: 0,
+            min_mpdu_start_spacing: 0,
+        },
+        rate: PhyRate::Ht(
+            HtRate::new(HtMcs::new(7).unwrap(), PpduBandwidth::Mhz20, false).unwrap(),
+        ),
+        protection: Protection::None,
+        key: KeySelector::Plaintext,
+        power: TxPower::Calibrated,
+        backoff: Backoff::Slots(3),
+        coex: CoexPriority::Normal,
+    }) else {
+        panic!("an empty aggregate is refused");
+    };
+    assert_eq!(refused.error, SubmitError::InvalidLength);
+    port.release_ampdu_buffer(refused.attempt.payload.subframes);
+    assert!(port.ampdu_buffer().is_some());
+}
+
+fn with_hardware_of<U>(port: &AmpduPort, entry: impl FnOnce(&mut Hardware) -> U) -> U {
+    port.installed
+        .lock(|installed| entry(&mut installed.borrow_mut().as_mut().unwrap().hardware))
 }

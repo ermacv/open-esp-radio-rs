@@ -175,7 +175,11 @@ const CAPABILITIES: LowerMacCapabilities = LowerMacCapabilities {
     rx_block_ack_max_window: 64,
 };
 
-const AMPDU: AmpduCapabilities = AmpduCapabilities { max_subframes: 32 };
+const AMPDU: AmpduCapabilities = AmpduCapabilities {
+    max_subframes: 32,
+    formats: PhyFormatSet::HT.union(PhyFormatSet::HE),
+    max_length: 65_535,
+};
 
 impl Model {
     /// Deliver `frame` when an interface's filter or monitor reception
@@ -529,7 +533,10 @@ impl LowerMacAmpdu for Model {
         let subframes = &attempt.payload.subframes.0;
         let refused = match subframes.first().and_then(|first| first.get(22..24)) {
             None => Err(SubmitError::InvalidLength),
-            Some(_) if subframes.len() > usize::from(AMPDU.max_subframes) => {
+            Some(_)
+                if subframes.len() > usize::from(AMPDU.max_subframes)
+                    || !AMPDU.formats.contains_rate(attempt.rate) =>
+            {
                 Err(SubmitError::Unsupported)
             }
             Some(control) => {
@@ -905,6 +912,18 @@ fn an_empty_aggregate_is_refused() {
         panic!("an empty aggregate");
     };
     assert_eq!(refused.error, SubmitError::InvalidLength);
+
+    // A non-empty aggregate at a rate outside the declared formats.
+    let mut payload = refused.attempt.payload;
+    payload
+        .subframes
+        .push_mpdu(24)
+        .unwrap()
+        .copy_from_slice(&header(100));
+    let Ok(Err(refused)) = model.submit_ampdu(attempt(2, payload, OFDM24)) else {
+        panic!("a non-HT aggregate");
+    };
+    assert_eq!(refused.error, SubmitError::Unsupported);
     model.release_ampdu_buffer(refused.attempt.payload.subframes);
 }
 

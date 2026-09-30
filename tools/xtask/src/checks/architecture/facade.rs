@@ -145,7 +145,7 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
             for package in packages.iter().filter(|package| package.source.is_none()) {
                 if matches!(
                     classification(package)?.platform,
-                    Platform::Chip(_) | Platform::Selected
+                    Platform::Chip(_) | Platform::Selected | Platform::Family(_)
                 ) {
                     return Err(format!(
                         "portable facade profile {:?} includes {}",

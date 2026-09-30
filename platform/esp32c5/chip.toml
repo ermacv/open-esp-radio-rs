@@ -3,6 +3,8 @@
 # hil/targets/<id>, qualification/targets/<id>, target/hil/<id>.
 schema = 1
 id = "esp32c5"
+# The family whose shared code the chip uses (`platform = "family"` packages).
+family = "espressif"
 rust-target = "riscv32imac-unknown-none-elf"
 # The ESP-IDF second-stage bootloader (hil/bootloaders/esp32c5) loads an
 # esp-hal application linked with linkall.x.

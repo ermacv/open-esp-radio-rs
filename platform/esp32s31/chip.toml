@@ -3,6 +3,8 @@
 # hil/targets/<id>, qualification/targets/<id>, target/hil/<id>.
 schema = 1
 id = "esp32s31"
+# The family whose shared code the chip uses (`platform = "family"` packages).
+family = "espressif"
 rust-target = "riscv32imafc-unknown-none-elf"
 # The ROM loads platform/esp32s31/bootstrap, which stages the runtime into PSRAM.
 boot = "staged"

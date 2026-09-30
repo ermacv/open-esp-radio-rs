@@ -40,7 +40,7 @@ pub fn run(ctx: &Context) -> Result<()> {
     let shared = shared_words(ctx)?;
     eprintln!("shared MMIO words of esp32s31: {shared} reviewed");
     let packages = production_packages(ctx)?;
-    validate_production_edges(&packages)?;
+    validate_production_edges(&packages, &oer_chip_profile::families(&ctx.root)?)?;
     unsafe_policy::check(&packages)?;
     let configurations = architecture_configurations(&ctx.root, &packages, TARGET)?;
     // Clippy compiles each isolated profile and applies every crate's own

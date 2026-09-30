@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
 };
 
@@ -198,7 +198,14 @@ pub enum Platform<'a> {
     /// Built for the one chip a feature named after a chip id selects;
     /// written once for every chip (see `oer-chip-cfg`).
     Selected,
+    /// Shared by the chips of one family (`family` in `chip.toml`): code
+    /// that is vendor-specific but not chip-specific, built for every chip
+    /// of the family and usable only by that family's chip packages.
+    Family(&'a str),
 }
+
+/// The family of every chip, keyed by chip id (`chip.toml`).
+pub type Families = BTreeMap<String, String>;
 
 /// The one package through which selected packages reach a chip's PAC.
 const SELECTED_PAC: &str = "oer-pac";
@@ -348,27 +355,24 @@ pub fn classification(package: &Package) -> Result<Classification<'_>> {
     let scope = field("scope")?;
     let layer = field("layer")?;
     let chip = metadata.and_then(|value| value.get("chip"));
-    let platform = match (field("platform")?, chip) {
-        ("portable", None) => Platform::Portable,
-        ("host", None) => Platform::Host,
-        ("selected", None) => Platform::Selected,
-        ("chip", Some(chip)) => {
-            let chip = chip
-                .as_str()
-                .filter(|chip| {
-                    chip.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
-                        && chip
-                            .bytes()
-                            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
-                })
-                .ok_or_else(|| {
-                    format!(
-                        "package {} has invalid open-radio.chip identifier",
-                        package.name
-                    )
-                })?;
-            Platform::Chip(chip)
-        }
+    let family = metadata.and_then(|value| value.get("family"));
+    let identifier = |value: &'_ serde_json::Value, key: &str| {
+        value
+            .as_str()
+            .filter(|id| oer_chip_profile::valid_identifier(id))
+            .ok_or_else(|| {
+                format!(
+                    "package {} has invalid open-radio.{key} identifier",
+                    package.name
+                )
+            })
+    };
+    let platform = match (field("platform")?, chip, family) {
+        ("portable", None, None) => Platform::Portable,
+        ("host", None, None) => Platform::Host,
+        ("selected", None, None) => Platform::Selected,
+        ("chip", Some(chip), None) => Platform::Chip(identifier(chip, "chip")?),
+        ("family", None, Some(family)) => Platform::Family(identifier(family, "family")?),
         _ => {
             return Err(format!(
                 "package {} has inconsistent platform/chip classification",
@@ -426,7 +430,11 @@ fn binds_executor(layer: &str) -> bool {
 
 /// Apply declared production edges, including optional and build dependencies.
 /// Dev dependencies may compose experiments with the real production owners.
-pub fn validate_production_edges(packages: &[ProductionPackage]) -> Result<()> {
+/// `families` maps each chip to its family for chip-to-family edges.
+pub fn validate_production_edges(
+    packages: &[ProductionPackage],
+    families: &Families,
+) -> Result<()> {
     for source in packages {
         let source_class = classification(&source.package)?;
         for dependency in production_dependencies(&source.package) {
@@ -483,6 +491,11 @@ pub fn validate_production_edges(packages: &[ProductionPackage]) -> Result<()> {
                     // A chip package may use shared code, selecting its own
                     // chip.
                     (Platform::Chip(_), Platform::Selected) => true,
+                    // Family code is shared within its family only.
+                    (Platform::Family(source), Platform::Family(target)) => source == target,
+                    (Platform::Chip(chip), Platform::Family(family)) => {
+                        families.get(chip).is_some_and(|own| own == family)
+                    }
                     _ => source_class.layer == "facade",
                 }
             };
@@ -612,6 +625,32 @@ pub fn architecture_configurations(
     for item in packages {
         let target = match classification(&item.package)?.platform {
             Platform::Chip(chip) => oer_chip_profile::Profile::load(root, chip)?.rust_target,
+            // Built for the target of every chip of its family.
+            Platform::Family(family) => {
+                let targets = oer_chip_profile::Profile::all(root)?
+                    .into_iter()
+                    .filter(|chip| chip.family == family)
+                    .map(|chip| chip.rust_target)
+                    .collect::<BTreeSet<_>>();
+                if targets.is_empty() {
+                    return Err(format!(
+                        "family package {} names family `{family}`, which no chip declares",
+                        item.package.name
+                    )
+                    .into());
+                }
+                for target in targets {
+                    for features in compilation_profiles(&item.package)? {
+                        configurations.push(CargoConfiguration {
+                            manifest: item.manifest.clone(),
+                            package: item.package.name.to_string(),
+                            target: target.clone(),
+                            features,
+                        });
+                    }
+                }
+                continue;
+            }
             Platform::Portable => target.to_owned(),
             // Host packages run on the build machine: the workspace's own
             // host build covers them.

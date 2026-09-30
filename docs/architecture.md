@@ -30,8 +30,18 @@ catch-all owner for unrelated tools.
 Every Cargo package declares `package.metadata.open-radio.scope`, `layer`
 and `platform`. Scope separates production, experimental and development
 packages. Layer describes responsibility; platform is `portable`, `host`,
-`chip` or `selected`. Chip applicability requires a separate `chip` identifier, such as
-`esp32s31`; portable, host and selected classifications must not carry one.
+`chip`, `family` or `selected`. Chip applicability requires a separate `chip` identifier, such as
+`esp32s31`, and family applicability a separate `family` identifier, such as
+`espressif`; no other classification carries either.
+A `family` package holds code that is vendor-specific but not chip-specific:
+a ported vendor driver, recovered coexistence tables, a register protocol
+every chip of the vendor shares. `platform/<chip>/chip.toml` names each
+chip's `family`. The architecture check builds a family package for the Rust
+target of every chip of its family; the chips of that family may depend on
+it, and it may depend only on portable packages and packages of its own
+family. Portable, host and selected packages never depend on a family
+package, and a family package never depends on a chip package, so code shared
+by a family cannot select one of its chips.
 A `selected` package is written once for every chip and built for the one
 chip its feature named after a chip id selects: the architecture check
 builds it once per chip, with that chip's target. It reaches a chip's PAC
@@ -84,7 +94,7 @@ cycles. Neither layer can depend on the final composition.
 ## Package names
 
 Every package is named `oer-` followed by lowercase tokens in this order: an
-optional chip (`esp32s31`), the domain (`ieee80211`, `bluetooth`, `ieee802154`,
+optional chip (`esp32s31`) or family (`espressif`), the domain (`ieee80211`, `bluetooth`, `ieee802154`,
 `coex`, `radio`, `memory`, `network`, `hil`, `example`, …), an optional
 component (`mac`, `sta`, `rsn`, `runtime`, `system`, …) and, for adapters, the
 binding (`embassy`, `esp-hal`, `embassy-net-owned`). The
@@ -95,6 +105,47 @@ directory names alike; the facade module `oer::wifi` and `Wifi*` types keep the
 user-facing name. Compositions end in `-system`. The public facade
 `open-esp-radio` (library `oer`) is the only branded name. The architecture
 check enforces the prefix. The Blobray workspace names its own packages.
+
+## Radio ports
+
+A radio port is the contract between the protocol logic of one radio
+protocol and the backend that executes it: a chip, a family driver or a host
+model. Everything above a port is written once for every backend; everything
+below it is the backend's. [`LeRadioPort`](../crates/runtime/bluetooth/src/lib.rs)
+is the Bluetooth LE port.
+
+**Placement follows hardware autonomy.** Work the backend performs without
+software on the air timeline (acknowledgement turnaround, FCS or CRC,
+hardware retransmission, hardware ciphers) lies below the port. Work that
+software decides (retry policy, rate selection, contention draws, reordering,
+sequence and packet numbers, scanning, beacons, power-save policy) lies above
+it, in portable code shared by every backend. A backend that also performs
+work above the port reports that in its capabilities, and the portable owner
+delegates it instead of performing it. For IEEE 802.11, one port
+publication is one hardware transmission attempt.
+
+**Shape.** A port is a trait defined in a `contract` or `protocol` package,
+without an executor or a time driver. It has the same five parts for every
+protocol:
+
+| Part | Semantics |
+| --- | --- |
+| Submission | Synchronous admission of one request with a caller-chosen correlation identity; refusal is a value, not a fault |
+| Events | Asynchronous stream of owned events, each viewed through a borrowed portable value; loss of events is reported, never silent |
+| Capabilities | What the backend supports and what it performs autonomously, read before submission |
+| Lifecycle | Enable, disable, quiesce and cancel of submitted work, each with a terminal event |
+| Clock | The backend's radio time on the shared time contract, with a stated resolution |
+
+**Failure classes.** Every port error is one of three classes, so callers
+handle any protocol's failures alike: `Rejected` (the request was not admitted
+and nothing changed), `Recoverable` (admitted work ended without its result;
+the port remains usable) and `Poisoned` (the backend's state is unknown; only
+a reset restores the port).
+
+**Names.** `*Port` is a portable contract trait. `*Service` is a portable
+state machine that consumes ports. `*Hardware` is a chip or family register
+seam below a port. Bluetooth is `bluetooth`/`Bluetooth` in every package,
+module and type name.
 
 ## From policy to an application
 
@@ -147,9 +198,9 @@ publication and qualification do not enter the production dependency graph.
 Calls can pass through a portable port implemented by a higher composition
 without introducing a reverse Cargo dependency.
 
-Portable packages cannot depend on chip or host packages; the public facade
-is the explicit selection boundary. Chip packages can depend on portable
-packages and packages for the same chip. Host packages can depend on portable
+Portable packages cannot depend on chip, family or host packages; the public
+facade is the explicit selection boundary. Chip packages can depend on portable
+packages, packages of their own family and packages for the same chip. Host packages can depend on portable
 or host packages. Cross-chip dependencies are rejected. S31-specific firmware,
 diagnostic and register-authority checks remain separate from these general
 rules; adding a chip does not make those hardware checks applicable to it.

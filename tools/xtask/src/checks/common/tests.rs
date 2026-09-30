@@ -87,7 +87,7 @@ fn classification_discovers_production_outside_crates_and_excludes_experiments_i
     let packages = production_packages(&context).unwrap();
     assert_eq!(packages.len(), 1);
     assert_eq!(packages[0].package.name.as_str(), "policy");
-    validate_production_edges(&packages).unwrap();
+    validate_production_edges(&packages, &Families::new()).unwrap();
 }
 
 #[test]
@@ -96,7 +96,7 @@ fn optional_and_build_dependencies_cannot_hide_production_to_research_edges() {
         let repository = architecture_repository(section, "experiment");
         let context = Context::new(repository.path()).unwrap();
         let packages = production_packages(&context).unwrap();
-        let error = validate_production_edges(&packages)
+        let error = validate_production_edges(&packages, &Families::new())
             .unwrap_err()
             .to_string();
         assert!(
@@ -111,7 +111,7 @@ fn internal_packages_cannot_depend_on_the_public_facade() {
     let repository = architecture_repository("dependencies", "facade");
     let context = Context::new(repository.path()).unwrap();
     let packages = production_packages(&context).unwrap();
-    let error = validate_production_edges(&packages)
+    let error = validate_production_edges(&packages, &Families::new())
         .unwrap_err()
         .to_string();
     assert!(error.contains("depends on public facade"), "{error}");
@@ -153,15 +153,34 @@ fn set_classification(
     metadata.insert("layer".into(), layer.into());
     metadata.insert("platform".into(), platform.into());
     metadata.remove("chip");
-    if let Some(chip) = chip {
-        metadata.insert("chip".into(), chip.into());
+    metadata.remove("family");
+    // A family package names its family where a chip package names its chip.
+    let key = if platform == "family" {
+        "family"
+    } else {
+        "chip"
+    };
+    if let Some(identity) = chip {
+        metadata.insert(key.into(), identity.into());
     }
     fs::write(manifest, toml::to_string(&doc).unwrap()).unwrap();
 }
 
+/// Two chips of the `espressif` family and one chip of another.
+fn test_families() -> Families {
+    [
+        ("esp32s31", "espressif"),
+        ("esp32c5", "espressif"),
+        ("esp32x9", "other"),
+    ]
+    .into_iter()
+    .map(|(chip, family)| (chip.to_owned(), family.to_owned()))
+    .collect()
+}
+
 fn edge_result(repository: &Path) -> Result<()> {
     let context = Context::new(repository)?;
-    validate_production_edges(&production_packages(&context)?)
+    validate_production_edges(&production_packages(&context)?, &test_families())
 }
 
 #[test]
@@ -262,6 +281,50 @@ fn shared_code_reaches_a_chip_only_through_the_selected_pac() {
     edge(("selected", None), ("selected", None)).unwrap();
     edge(("chip", Some("esp32s31")), ("selected", None)).unwrap();
     assert!(edge(("portable", None), ("selected", None)).is_err());
+}
+
+#[test]
+fn family_code_is_shared_only_within_its_family() {
+    let repository = architecture_repository("dependencies", "hardware");
+    let edge = |source: (&str, Option<&str>), target: (&str, Option<&str>)| {
+        set_classification(
+            repository.path(),
+            "libraries/policy",
+            "hardware",
+            source.0,
+            source.1,
+        );
+        set_classification(
+            repository.path(),
+            "crates/target",
+            "hardware",
+            target.0,
+            target.1,
+        );
+        edge_result(repository.path())
+    };
+    let espressif = ("family", Some("espressif"));
+    for chip in ["esp32s31", "esp32c5"] {
+        edge(("chip", Some(chip)), espressif).unwrap();
+        // Family code never reaches one chip of its family.
+        assert!(edge(espressif, ("chip", Some(chip))).is_err());
+    }
+    edge(espressif, espressif).unwrap();
+    edge(espressif, ("portable", None)).unwrap();
+    for source in [
+        ("chip", Some("esp32x9")),
+        ("family", Some("other")),
+        ("portable", None),
+        ("host", None),
+        ("selected", None),
+    ] {
+        let error = edge(source, espressif).unwrap_err().to_string();
+        assert!(
+            error.contains("incompatible platform edge"),
+            "{source:?}: {error}"
+        );
+    }
+    assert!(edge(espressif, ("selected", None)).is_err());
 }
 
 #[test]
@@ -366,6 +429,8 @@ fn platform_category_and_chip_identity_must_agree() {
         ("portable", Some("esp32s31")),
         ("host", Some("esp32s31")),
         ("esp32s31", None),
+        ("family", None),
+        ("family", Some("Espressif")),
     ] {
         let repository = architecture_repository("dependencies", "contract");
         set_classification(
@@ -602,7 +667,8 @@ fn a_chip_package_compiles_for_its_own_chip_target() {
     fs::create_dir_all(&platform).unwrap();
     fs::write(
         platform.join("chip.toml"),
-        "schema = 1\nid = \"esp32x9\"\nrust-target = \"riscv32imac-unknown-none-elf\"\n\
+        "schema = 1\nid = \"esp32x9\"\nfamily = \"vendor\"\n\
+         rust-target = \"riscv32imac-unknown-none-elf\"\n\
          boot = \"esp-idf-bootloader\"\nespflash-chip = \"esp32x9\"\nrevisions = [\"rev0\"]\n\
          [properties]\nwifi-bands = [\"2g4\"]\nbluetooth = [\"le\"]\nieee802154 = false\ncores = 1\n",
     )
@@ -630,4 +696,64 @@ fn a_chip_package_compiles_for_its_own_chip_target() {
         target("target-library"),
         BTreeSet::from(["riscv32imafc-unknown-none-elf"])
     );
+}
+
+#[test]
+fn a_family_package_compiles_for_every_target_of_its_family() {
+    let repository = architecture_repository("dependencies", "contract");
+    set_classification(
+        repository.path(),
+        "libraries/policy",
+        "hardware",
+        "family",
+        Some("vendor"),
+    );
+    for (chip, family, target) in [
+        ("esp32x7", "vendor", "riscv32imafc-unknown-none-elf"),
+        ("esp32x8", "vendor", "riscv32imac-unknown-none-elf"),
+        ("esp32x9", "other", "xtensa-esp32-none-elf"),
+    ] {
+        let platform = repository.path().join("platform").join(chip);
+        fs::create_dir_all(&platform).unwrap();
+        fs::write(
+            platform.join("chip.toml"),
+            format!(
+                "schema = 1\nid = \"{chip}\"\nfamily = \"{family}\"\n\
+                 rust-target = \"{target}\"\nboot = \"esp-idf-bootloader\"\n\
+                 espflash-chip = \"{chip}\"\nrevisions = [\"rev0\"]\n\
+                 [properties]\nwifi-bands = [\"2g4\"]\nbluetooth = [\"le\"]\n\
+                 ieee802154 = false\ncores = 1\n"
+            ),
+        )
+        .unwrap();
+    }
+    let context = Context::new(repository.path()).unwrap();
+    let packages = production_packages(&context).unwrap();
+    let configurations =
+        architecture_configurations(repository.path(), &packages, "host-target").unwrap();
+    let targets = configurations
+        .iter()
+        .filter(|configuration| configuration.package == "policy")
+        .map(|configuration| configuration.target.as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        targets,
+        BTreeSet::from([
+            "riscv32imac-unknown-none-elf",
+            "riscv32imafc-unknown-none-elf"
+        ])
+    );
+    set_classification(
+        repository.path(),
+        "libraries/policy",
+        "hardware",
+        "family",
+        Some("absent"),
+    );
+    let packages = production_packages(&context).unwrap();
+    let error = architecture_configurations(repository.path(), &packages, "host-target")
+        .err()
+        .expect("a family no chip declares must fail")
+        .to_string();
+    assert!(error.contains("which no chip declares"), "{error}");
 }

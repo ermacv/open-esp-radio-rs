@@ -1,5 +1,5 @@
 //! Runs a [`Scenario`] against the production engine
-//! (`oer_ieee802154_engine::engine`) and records the same boundary
+//! (`oer_espressif_ieee802154_engine::engine`) and records the same boundary
 //! vocabulary as the compiled vendor driver.
 //!
 //! The adapter below is the only place that knows the vendor encodings: it
@@ -17,14 +17,14 @@ use oer_esp32s31_hal::{
 };
 use oer_ieee802154::FrameAddress;
 #[cfg(feature = "sw-coex")]
-use oer_ieee802154_engine::coex::Ieee802154Coexistence;
-use oer_ieee802154_engine::engine::{
+use oer_espressif_ieee802154_engine::coex::Ieee802154Coexistence;
+use oer_espressif_ieee802154_engine::engine::{
     FRAME_SIZE, Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154EnhancedAck,
     Ieee802154Environment, Ieee802154FrameInfo, Ieee802154ReceivedAck, Ieee802154RxSlot,
     Ieee802154TxError,
 };
-use oer_ieee802154_engine::pib::{AutoPendingMode, Ieee802154MultipanIndex, Ieee802154PibDefaults};
-use oer_ieee802154_engine::{
+use oer_espressif_ieee802154_engine::pib::{AutoPendingMode, Ieee802154MultipanIndex, Ieee802154PibDefaults};
+use oer_espressif_ieee802154_engine::{
     channel::Ieee802154Channel,
     coex::CoexPti,
     ll::{Ieee802154LlCommand, Ieee802154LowLevel, Ieee802154Timer},
@@ -809,7 +809,7 @@ pub fn run(scenario: &Scenario) -> Result<Vec<Record>, String> {
         buffers,
         levels,
         defaults,
-        oer_ieee802154_engine::engine::Ieee802154Interfaces::new(2).expect("two interfaces"),
+        oer_espressif_ieee802154_engine::engine::Ieee802154Interfaces::new(2).expect("two interfaces"),
     );
     // The stand's software-coexistence build uses the driver's default
     // scene levels.

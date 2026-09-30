@@ -61,7 +61,7 @@ packages. Prefixes below omit `oer-` only to keep the mapping readable.
 | `esp32s31-pac` | `hardware/esp32s31/pac/` |
 | `esp32s31-soc-esp-hal` | `adapters/esp-hal/esp32s31/soc/` |
 | `esp32s31-phy` | `hardware/esp32s31/phy/` |
-| `ieee802154-engine` | `hardware/ieee802154/engine/` |
+| `espressif-ieee802154-engine` | `hardware/espressif/ieee802154/engine/` |
 | `esp32s31-ieee80211-dma` | `hardware/esp32s31/driver/ieee80211/dma/` |
 | `esp32s31-radio-esp-hal` | `adapters/esp-hal/esp32s31/radio/` |
 | `esp32s31-executor-embassy` | `adapters/embassy/esp32s31/executor/` |

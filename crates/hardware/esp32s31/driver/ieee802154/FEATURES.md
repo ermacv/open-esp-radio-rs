@@ -46,7 +46,7 @@ Canonical section: `ieee802154-cca-and-channel-access`.
 
 Canonical section: `ieee802154-rx-tx-dataplane-and-acknowledgments`.
 The MAC engine is ported from the public ESP-IDF driver and is chip-neutral
-([`oer-ieee802154-engine`](../../../ieee802154/engine/src/lib.rs)); the
+([`oer-espressif-ieee802154-engine`](../../../espressif/ieee802154/engine/src/lib.rs)); the
 ESP32-S31 HAL implements its low-level interface. The host stand compares
 its software sequence with the compiled vendor driver.
 

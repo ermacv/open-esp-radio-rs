@@ -1,13 +1,13 @@
 //! ESP32-S31 IEEE 802.15.4 transmit-power levels.
 //!
 //! The resolution itself is chip-neutral
-//! ([`oer_ieee802154_engine::tx_power`]); the level set is the BTBB
+//! ([`oer_espressif_ieee802154_engine::tx_power`]); the level set is the BTBB
 //! provider's, recovered from the ESP32-S31 vendor library.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-use oer_ieee802154_engine::tx_power::Ieee802154TxPowerLevels;
+use oer_espressif_ieee802154_engine::tx_power::Ieee802154TxPowerLevels;
 
 /// The ESP32-S31 BTBB provider's level set,
 /// [`crate::phy::baseband::TX_POWER_LEVELS_DBM`].

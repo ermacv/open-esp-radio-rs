@@ -11,7 +11,7 @@
 //! event field, optionally raises a further event, then consumes exactly the
 //! sampled snapshot, as the production ISR does. The platform counts entries.
 
-use oer_ieee802154_engine::{
+use oer_espressif_ieee802154_engine::{
     ll::{Ieee802154LowLevel, Ieee802154Timer},
     types::{Ieee802154Event, Ieee802154EventMask, Ieee802154EventObservation},
 };

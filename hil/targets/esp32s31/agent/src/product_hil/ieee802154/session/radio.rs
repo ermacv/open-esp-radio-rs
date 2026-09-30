@@ -2,10 +2,10 @@
 //! the frames received between collections.
 
 use embassy_time::{Duration, with_timeout};
-use oer_esp32s31_ieee802154_runtime::{
+use oer_esp32s31_ieee802154_system::Ieee802154SystemRuntime;
+use oer_espressif_ieee802154_runtime::{
     Ieee802154EnhancedAckGenerator, Ieee802154OwnedFrame, Ieee802154RadioEvent,
 };
-use oer_esp32s31_ieee802154_system::Ieee802154SystemRuntime;
 use oer_hil_protocol::{
     ieee802154::IEEE802154_SESSION_RECORDED_FRAMES, ieee802154::Ieee802154AirCcaOutcome,
     ieee802154::Ieee802154AirEnergyOutcome, ieee802154::Ieee802154AirTxOutcome,
@@ -114,7 +114,7 @@ impl Session {
     /// Take one runtime event; received frames are recorded.
     pub(super) fn observe(
         &mut self,
-        event: Result<Ieee802154RadioEvent, oer_esp32s31_ieee802154_runtime::Ieee802154EventsLost>,
+        event: Result<Ieee802154RadioEvent, oer_espressif_ieee802154_runtime::Ieee802154EventsLost>,
     ) -> Option<Ieee802154RadioEvent> {
         match event {
             Ok(Ieee802154RadioEvent::Received(frame)) => {

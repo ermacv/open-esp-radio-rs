@@ -12,19 +12,19 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_time::{Duration, Timer};
 use oer_esp32s31_hal::coex::{CoexEventId, CoexPti, CoexPtiTable};
 use oer_esp32s31_hal::ieee802154::coex::{Ieee802154CoexConfig, resolve_priorities};
-use oer_ieee802154::{
-    Channel, CommandError, FrameView, Interface, MacKeys, RadioCommand, RadioState, RequestId,
-    RestingState, TxMode, TxRequest, TxStatus,
-};
-use oer_ieee802154_engine::engine::{
+use oer_espressif_ieee802154_engine::engine::{
     Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154Interfaces,
 };
-use oer_ieee802154_engine::pib::Ieee802154PibDefaults;
-use oer_ieee802154_engine::{
+use oer_espressif_ieee802154_engine::pib::Ieee802154PibDefaults;
+use oer_espressif_ieee802154_engine::{
     coex::Ieee802154Coexistence,
     ll::{Ieee802154LlCommand, model::Ieee802154LlModel},
     tx_power::Ieee802154TxPowerLevels,
     types::{Ieee802154Event, Ieee802154TxAbortReason, Ieee802154TxAbortReasonObservation},
+};
+use oer_ieee802154::{
+    Channel, CommandError, FrameView, Interface, MacKeys, RadioCommand, RadioState, RequestId,
+    RestingState, TxMode, TxRequest, TxStatus,
 };
 
 use super::{
@@ -276,7 +276,7 @@ fn the_pending_mode_reaches_the_pib_of_the_installed_radio() {
             .radio
             .engine()
             .pib()
-            .pending_mode(oer_ieee802154_engine::types::Ieee802154MultipanIndex::CONTEXT0)
+            .pending_mode(oer_espressif_ieee802154_engine::types::Ieee802154MultipanIndex::CONTEXT0)
     });
     assert_eq!(mode, oer_ieee802154::AutoPendingMode::Enhanced);
 }

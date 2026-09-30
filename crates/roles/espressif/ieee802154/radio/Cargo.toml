@@ -1,18 +1,18 @@
 [package]
-name = "oer-esp32s31-ieee802154-radio"
+name = "oer-espressif-ieee802154-radio"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Executor-free ESP32-S31 IEEE 802.15.4 radio role: the portable radio contract over the ported MAC engine"
+description = "Executor-free Espressif IEEE 802.15.4 radio role: the portable radio contract over the ported MAC engine"
 
 [dependencies]
-oer-ieee802154-engine = { path = "../../../../hardware/ieee802154/engine" }
+oer-espressif-ieee802154-engine = { path = "../../../../hardware/espressif/ieee802154/engine" }
 oer-ieee802154 = { path = "../../../../protocols/ieee802154" }
 
 [dev-dependencies]
-oer-ieee802154-engine = { path = "../../../../hardware/ieee802154/engine", features = ["model"] }
+oer-espressif-ieee802154-engine = { path = "../../../../hardware/espressif/ieee802154/engine", features = ["model"] }
 
 [lints]
 workspace = true
@@ -25,5 +25,5 @@ targets = []
 [package.metadata.open-radio]
 scope = "production"
 layer = "role"
-platform = "chip"
-chip = "esp32s31"
+platform = "family"
+family = "espressif"

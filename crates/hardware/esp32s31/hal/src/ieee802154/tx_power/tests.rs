@@ -1,5 +1,5 @@
 use super::*;
-use oer_ieee802154_engine::channel::Ieee802154Channel;
+use oer_espressif_ieee802154_engine::channel::Ieee802154Channel;
 
 fn channel() -> Ieee802154Channel {
     Ieee802154Channel::new(20).expect("standard channel")

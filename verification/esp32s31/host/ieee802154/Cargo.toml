@@ -43,7 +43,7 @@ path = "src/main.rs"
 
 [dependencies]
 oer-esp32s31-hal = { path = "../../../../crates/hardware/esp32s31/hal" }
-oer-ieee802154-engine = { path = "../../../../crates/hardware/ieee802154/engine" }
+oer-espressif-ieee802154-engine = { path = "../../../../crates/hardware/espressif/ieee802154/engine" }
 oer-ieee802154 = { path = "../../../../crates/protocols/ieee802154" }
 
 [features]

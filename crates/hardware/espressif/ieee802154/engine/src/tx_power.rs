@@ -158,7 +158,7 @@ impl Ieee802154TxPowerCode {
 /// the retained field code.
 ///
 /// ```compile_fail
-/// use oer_ieee802154_engine::{
+/// use oer_espressif_ieee802154_engine::{
 ///     channel::Ieee802154Channel, tx_power::Ieee802154ResolvedTxPower,
 /// };
 ///
@@ -167,7 +167,7 @@ impl Ieee802154TxPowerCode {
 /// ```
 ///
 /// ```compile_fail
-/// use oer_ieee802154_engine::{
+/// use oer_espressif_ieee802154_engine::{
 ///     channel::Ieee802154Channel, tx_power::Ieee802154TxPowerLevels,
 /// };
 ///

@@ -1,6 +1,6 @@
 # IEEE 802.15.4 MAC engine
 
-`oer-ieee802154-engine` is the MAC state machine and public API layer of the
+`oer-espressif-ieee802154-engine` is the MAC state machine and public API layer of the
 public ESP-IDF IEEE 802.15.4 driver (`esp_ieee802154_dev.c` and its
 helpers), ported once for every supported chip.
 
@@ -23,5 +23,5 @@ reaches, which the caller passes to
 The engine names no executor, interrupt route or chip. A runtime holds it
 with the chip's MAC owners in one critical section and calls its operation
 entries and interrupt handler. The
-[ESP32-S31 host stand](../../../../verification/esp32s31/host/ieee802154/README.md)
+[ESP32-S31 host stand](../../../../../verification/esp32s31/host/ieee802154/README.md)
 compares its accessor sequence with the compiled vendor driver.

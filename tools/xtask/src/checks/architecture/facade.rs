@@ -92,7 +92,7 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
         },
         Profile {
             features: Some("esp32s31-ieee802154"),
-            required: &["oer-ieee802154-engine", "oer-ieee802154"],
+            required: &["oer-espressif-ieee802154-engine", "oer-ieee802154"],
             forbidden: &[WIFI, BLUETOOTH],
         },
         // The composition joins the shared radio through the esp-hal radio

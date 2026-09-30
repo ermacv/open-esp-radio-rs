@@ -42,7 +42,7 @@ impl CoexEventId {
 
 /// One four-bit coexistence priority, shared with the chip-neutral
 /// IEEE 802.15.4 engine that publishes it to the MAC.
-pub use oer_ieee802154_engine::coex::CoexPti;
+pub use oer_espressif_ieee802154_engine::coex::CoexPti;
 
 /// Priority of every coexistence event.
 ///

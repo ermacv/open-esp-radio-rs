@@ -1778,7 +1778,7 @@ name = "oer-esp32s31-hal"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-pac",
- "oer-ieee802154-engine",
+ "oer-espressif-ieee802154-engine",
  "oer-ieee802154-trace",
  "oer-memory",
  "oer-radio-analog",
@@ -1816,7 +1816,6 @@ dependencies = [
  "oer-esp32s31-ieee80211-system",
  "oer-esp32s31-ieee802154-esp-hal",
  "oer-esp32s31-ieee802154-openthread",
- "oer-esp32s31-ieee802154-runtime",
  "oer-esp32s31-ieee802154-system",
  "oer-esp32s31-phy",
  "oer-esp32s31-platform-board",
@@ -1826,6 +1825,8 @@ dependencies = [
  "oer-esp32s31-radio-runtime",
  "oer-esp32s31-radio-system",
  "oer-esp32s31-soc-esp-hal",
+ "oer-espressif-ieee802154-engine",
+ "oer-espressif-ieee802154-runtime",
  "oer-example-bluetooth-gatt",
  "oer-hil-agent",
  "oer-hil-esp32s31-telemetry",
@@ -1835,7 +1836,6 @@ dependencies = [
  "oer-ieee80211-runtime",
  "oer-ieee80211-softmac",
  "oer-ieee802154",
- "oer-ieee802154-engine",
  "oer-network-interface",
  "oer-time-embassy",
  "oer-trace",
@@ -2031,32 +2031,10 @@ dependencies = [
  "embassy-sync 0.8.0",
  "heapless 0.9.3",
  "oer-esp32s31-hal",
- "oer-esp32s31-ieee802154-runtime",
+ "oer-espressif-ieee802154-engine",
+ "oer-espressif-ieee802154-runtime",
  "oer-ieee802154",
- "oer-ieee802154-engine",
  "openthread-radio",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee802154-radio"
-version = "0.1.0"
-dependencies = [
- "oer-ieee802154",
- "oer-ieee802154-engine",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee802154-runtime"
-version = "0.1.0"
-dependencies = [
- "embassy-futures",
- "embassy-sync 0.8.0",
- "embassy-time",
- "oer-esp32s31-ieee802154-radio",
- "oer-ieee802154",
- "oer-ieee802154-engine",
- "oer-ieee802154-trace",
- "oer-trace",
 ]
 
 [[package]]
@@ -2070,13 +2048,13 @@ dependencies = [
  "oer-esp32s31-coex",
  "oer-esp32s31-hal",
  "oer-esp32s31-ieee802154-esp-hal",
- "oer-esp32s31-ieee802154-runtime",
  "oer-esp32s31-phy",
  "oer-esp32s31-phy-runtime",
  "oer-esp32s31-radio-esp-hal",
  "oer-esp32s31-radio-runtime",
+ "oer-espressif-ieee802154-engine",
+ "oer-espressif-ieee802154-runtime",
  "oer-ieee802154",
- "oer-ieee802154-engine",
  "static_cell",
 ]
 
@@ -2183,6 +2161,37 @@ dependencies = [
  "critical-section",
  "esp-hal",
  "oer-soc-deadline",
+]
+
+[[package]]
+name = "oer-espressif-ieee802154-engine"
+version = "0.1.0"
+dependencies = [
+ "oer-ieee802154",
+ "oer-ieee802154-trace",
+ "oer-trace",
+]
+
+[[package]]
+name = "oer-espressif-ieee802154-radio"
+version = "0.1.0"
+dependencies = [
+ "oer-espressif-ieee802154-engine",
+ "oer-ieee802154",
+]
+
+[[package]]
+name = "oer-espressif-ieee802154-runtime"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "embassy-time",
+ "oer-espressif-ieee802154-engine",
+ "oer-espressif-ieee802154-radio",
+ "oer-ieee802154",
+ "oer-ieee802154-trace",
+ "oer-trace",
 ]
 
 [[package]]
@@ -2347,15 +2356,6 @@ name = "oer-ieee802154"
 version = "0.1.0"
 dependencies = [
  "oer-time",
-]
-
-[[package]]
-name = "oer-ieee802154-engine"
-version = "0.1.0"
-dependencies = [
- "oer-ieee802154",
- "oer-ieee802154-trace",
- "oer-trace",
 ]
 
 [[package]]

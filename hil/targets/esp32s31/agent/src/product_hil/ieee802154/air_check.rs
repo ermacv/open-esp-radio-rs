@@ -9,9 +9,9 @@
 //! target-monotonic times; the host judges them.
 
 use embassy_time::{Duration, Timer, with_timeout};
-use oer_esp32s31_ieee802154_runtime::Ieee802154RadioEvent;
 use oer_esp32s31_ieee802154_system::Ieee802154System;
 use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
+use oer_espressif_ieee802154_runtime::Ieee802154RadioEvent;
 use oer_hil_protocol::{
     ieee802154::Ieee802154AirCcaOutcome, ieee802154::Ieee802154AirCheckEvidence,
     ieee802154::Ieee802154AirCheckRequest, ieee802154::Ieee802154AirCheckStop,

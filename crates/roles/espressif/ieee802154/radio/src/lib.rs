@@ -20,24 +20,24 @@
 #[cfg(test)]
 extern crate std;
 
+use oer_espressif_ieee802154_engine::engine::{
+    FRAME_SIZE, Ieee802154Engine, Ieee802154EnhancedAck, Ieee802154Environment,
+    Ieee802154FrameInfo, Ieee802154ReceivedAck, Ieee802154RxSlot, Ieee802154State,
+    Ieee802154TxError,
+};
+use oer_espressif_ieee802154_engine::{
+    channel::Ieee802154Channel,
+    ll::Ieee802154LowLevel,
+    types::{Ieee802154CcaMode, Ieee802154MultipanIndex, Ieee802154RxStatus},
+};
 use oer_ieee802154::{
     AcceptedCommand, AppliedSecurity, AttemptFailure, CSL_IE_TEMPLATE, CcaMode, Channel,
     CommandError, Configuration, CsmaCa, ENH_ACK_PROBING_IE_CAPACITY, EnhAckProbing, FcsStatus,
     FramePending, FrameRetries, FrameType, FrameVersion, FrameView, Interface, InterfaceSetting,
     KeyIdMode, MacKeys, PendingTableHalf, PhrFrame, RadioCapabilities, RadioCommand, RadioEvent,
-    RadioFault, RadioState, RadioStateMachine, RadioInstant, ReceivedFrame, RequestId,
+    RadioFault, RadioInstant, RadioState, RadioStateMachine, ReceivedFrame, RequestId,
     RestingState, RetryStart, RxMetadata, SecurityStatus, SentAcknowledgement, TimeSync, TxMode,
     TxSecurity, TxStatus, csl_phase, generate_enhanced_ack, write_csl_ie,
-};
-use oer_ieee802154_engine::engine::{
-    FRAME_SIZE, Ieee802154Engine, Ieee802154EnhancedAck, Ieee802154Environment,
-    Ieee802154FrameInfo, Ieee802154ReceivedAck, Ieee802154RxSlot, Ieee802154State,
-    Ieee802154TxError,
-};
-use oer_ieee802154_engine::{
-    channel::Ieee802154Channel,
-    ll::Ieee802154LowLevel,
-    types::{Ieee802154CcaMode, Ieee802154MultipanIndex, Ieee802154RxStatus},
 };
 
 /// The portable capabilities the role implements over any engine.

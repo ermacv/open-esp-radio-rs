@@ -43,9 +43,9 @@ oer-network-interface = { path = "../../../crates/network/interface" }
 oer-esp32s31-ieee80211-esp-hal = { path = "../../../crates/adapters/esp-hal/esp32s31/ieee80211" }
 oer-esp32s31-hal = { path = "../../../crates/hardware/esp32s31/hal" }
 oer-esp32s31-radio-esp-hal = { path = "../../../crates/adapters/esp-hal/esp32s31/radio" }
-oer-ieee802154-engine = { path = "../../../crates/hardware/ieee802154/engine" }
+oer-espressif-ieee802154-engine = { path = "../../../crates/hardware/espressif/ieee802154/engine" }
 oer-esp32s31-ieee802154-esp-hal = { path = "../../../crates/adapters/esp-hal/esp32s31/ieee802154", features = ["esp32s31"] }
-oer-esp32s31-ieee802154-runtime = { path = "../../../crates/runtime/esp32s31/ieee802154" }
+oer-espressif-ieee802154-runtime = { path = "../../../crates/runtime/espressif/ieee802154" }
 oer-esp32s31-ieee802154-system = { path = "../../../crates/composition/esp32s31/embassy/ieee802154" }
 oer-esp32s31-ieee802154-openthread = { path = "../../../crates/adapters/openthread/esp32s31/ieee802154" }
 # The Thread image runs the repository's OpenThread fork over the client.

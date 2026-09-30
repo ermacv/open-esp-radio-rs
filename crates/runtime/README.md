@@ -1,7 +1,7 @@
 # Radio execution
 
 `esp32s31/{ieee80211,ieee802154,bluetooth}` (`oer-esp32s31-ieee80211-runtime`,
-`oer-esp32s31-ieee802154-runtime`, `oer-esp32s31-bluetooth-runtime`) contains
+`oer-espressif-ieee802154-runtime`, `oer-esp32s31-bluetooth-runtime`) contains
 concrete radio execution as executor-independent `async` code; `ieee80211` (`oer-ieee80211-runtime`) holds the
 chip-independent Wi-Fi execution primitives they share, and `bluetooth`
 (`oer-bluetooth-runtime`) the service loop that joins the in-process HCI
@@ -32,7 +32,7 @@ passes them `oer_time_embassy::EmbassyClock`, the same timebase.
 | `esp32s31/ieee80211/src/roles/station/maintenance/` | Connected-station PHY maintenance request protocol, automatic tracking control, pause timeline and terminal-failure classification; the composition owns the static request owner, the physical round trip and system reset |
 | `esp32s31/ieee80211/src/roles/esp_now/mailbox/` | Bounded ESP-NOW application RX/TX mailboxes shared by the connected station and the standalone role |
 | `esp32s31/ieee80211/src/datapath/` | Packet handoff and async composition around chip transactions; depends on no role module, and `datapath/network` owns the STA/AP network interface identities |
-| `esp32s31/ieee802154/src/` | The IEEE 802.15.4 radio role and its MAC owners under one blocking mutex, portable command admission, the interrupt entry and a bounded queue of owned portable events; overflow reports the loss |
+| `espressif/ieee802154/src/` | The IEEE 802.15.4 radio role and its MAC owners under one blocking mutex, portable command admission, the interrupt entry and a bounded queue of owned portable events; overflow reports the loss |
 | `bluetooth/src/` | The Controller service loop: publishes queued packets, takes one command when the core is ready and Host ACL data while the connection has room for it, submits radio requests one at a time, feeds outcomes back and retries refused requests after a short delay; `NoRadio` serves hosts without a radio |
 | `esp32s31/bluetooth/src/` | The Bluetooth LE radio role and its hardware under one async lock: receive-chain publication at install, request admission against a fresh controller-time sample, the scheduler driver that reports finished events and carries list transactions through their hardware waits, stop and resume around shared-PHY maintenance, a bounded queue of owned outcomes whose overflow reports the loss, the source-127 modem-timer task driver and the radio port of the Controller service loop |
 | `esp32s31/ieee80211/src/datapath/owned.rs` | The only `owned-network` code: owned-adapter RX/link bindings, single and dual owned networks and the pinned-SRAM `DatapathTxConsumer` |

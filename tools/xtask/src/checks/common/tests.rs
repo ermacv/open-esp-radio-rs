@@ -253,7 +253,10 @@ fn only_execution_layers_may_depend_on_the_time_driver() {
         let result = edge_result(repository.path());
         assert_eq!(result.is_ok(), allowed, "{layer}: {result:?}");
         if let Err(error) = result {
-            assert!(error.to_string().contains("depends on time driver"), "{error}");
+            assert!(
+                error.to_string().contains("depends on time driver"),
+                "{error}"
+            );
         }
     }
 }

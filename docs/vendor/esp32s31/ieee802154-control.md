@@ -259,9 +259,9 @@ on-air capability.
 
 ## Implementation boundary
 
-The [MAC engine](../../../crates/hardware/ieee802154/engine/src/engine.rs)
+The [MAC engine](../../../crates/hardware/espressif/ieee802154/engine/src/engine.rs)
 owns the vendor state machine, `next_operation` and its DMA buffers; the PAC
-owns register authority. The [runtime](../../../crates/runtime/esp32s31/ieee802154/src/lib.rs)
+owns register authority. The [runtime](../../../crates/runtime/espressif/ieee802154/src/lib.rs)
 serializes the engine with the MAC owners and queues its notifications, and
 the platform adapter owns source-132 routing.
 A `STOP` write is not a proof of terminal DMA quiescence. RF/BTBB readiness,

@@ -1,33 +1,33 @@
 [package]
-name = "oer-esp32s31-ieee802154-runtime"
+name = "oer-espressif-ieee802154-runtime"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Executor-independent ESP32-S31 IEEE 802.15.4 radio runtime over the ported MAC engine and embassy-time"
+description = "Executor-independent Espressif IEEE 802.15.4 radio runtime over the ported MAC engine and embassy-time"
 
 [features]
 # Host models of the hardware (`model_interrupt`, `with_model`) on host
 # targets, for tests of this runtime and the crates that drive it.
-model = ["oer-ieee802154-engine/model"]
+model = ["oer-espressif-ieee802154-engine/model"]
 # Record the engine's and the runtime's trace points into `oer-trace`.
-trace = ["oer-ieee802154-engine/trace", "oer-trace/record"]
+trace = ["oer-espressif-ieee802154-engine/trace", "oer-trace/record"]
 
 [dependencies]
 embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
-oer-ieee802154-engine = { path = "../../../hardware/ieee802154/engine" }
+oer-espressif-ieee802154-engine = { path = "../../../hardware/espressif/ieee802154/engine" }
 oer-ieee802154-trace = { path = "../../../hardware/ieee802154/trace" }
 oer-trace = { path = "../../../trace" }
-oer-esp32s31-ieee802154-radio = { path = "../../../roles/esp32s31/ieee802154/radio" }
+oer-espressif-ieee802154-radio = { path = "../../../roles/espressif/ieee802154/radio" }
 oer-ieee802154 = { path = "../../../protocols/ieee802154" }
 
 [dev-dependencies]
 embassy-time = { version = "0.5.1", features = ["generic-queue-64", "std"] }
 oer-esp32s31-hal = { path = "../../../hardware/esp32s31/hal" }
-oer-ieee802154-engine = { path = "../../../hardware/ieee802154/engine", features = ["model"] }
+oer-espressif-ieee802154-engine = { path = "../../../hardware/espressif/ieee802154/engine", features = ["model"] }
 
 [lints]
 workspace = true
@@ -40,5 +40,5 @@ targets = []
 [package.metadata.open-radio]
 scope = "production"
 layer = "runtime"
-platform = "chip"
-chip = "esp32s31"
+platform = "family"
+family = "espressif"

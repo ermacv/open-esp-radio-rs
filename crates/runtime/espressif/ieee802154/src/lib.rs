@@ -35,26 +35,26 @@ use embassy_sync::{
     signal::Signal,
 };
 use embassy_time::{Duration, Instant, Timer};
-use oer_esp32s31_ieee802154_radio::{Ieee802154Radio, Ieee802154RadioSink};
-use oer_ieee802154::{
-    AcceptedCommand, AppliedSecurity, AutoPendingMode, CommandError, Frame, Interface, MacKeys,
-    PendingTable, RadioCommand, RadioEvent, RadioFault, RadioState, RadioInstant, ReceivedFrame,
-    RequestId, RestingState, RxMetadata, TxStatus,
-};
-use oer_ieee802154_engine::engine::{Ieee802154Engine, PENDING_TABLE_SIZE};
-pub use oer_ieee802154_engine::engine::{
+use oer_espressif_ieee802154_engine::engine::{Ieee802154Engine, PENDING_TABLE_SIZE};
+pub use oer_espressif_ieee802154_engine::engine::{
     Ieee802154RxAbortStatistics, Ieee802154RxStatistics, Ieee802154TxAbortStatistics,
     Ieee802154TxRxStatistics, Ieee802154TxStatistics,
 };
-use oer_ieee802154_engine::pib::Ieee802154PibDefaults;
-use oer_ieee802154_engine::{
+use oer_espressif_ieee802154_engine::pib::Ieee802154PibDefaults;
+use oer_espressif_ieee802154_engine::{
     coex::Ieee802154Coexistence,
     ll::{Ieee802154LowLevel, Ieee802154RecentRssi},
     types::Ieee802154MultipanIndex,
 };
+use oer_espressif_ieee802154_radio::{Ieee802154Radio, Ieee802154RadioSink};
+use oer_ieee802154::{
+    AcceptedCommand, AppliedSecurity, AutoPendingMode, CommandError, Frame, Interface, MacKeys,
+    PendingTable, RadioCommand, RadioEvent, RadioFault, RadioInstant, RadioState, ReceivedFrame,
+    RequestId, RestingState, RxMetadata, TxStatus,
+};
 use oer_ieee802154_trace::{Lease, PauseRefusal};
 
-pub use oer_esp32s31_ieee802154_radio::{
+pub use oer_espressif_ieee802154_radio::{
     IEEE802154_ENH_ACK_PROBING_CAPACITY, IEEE802154_ENHANCED_ACK_IE_CAPACITY,
     IEEE802154_RADIO_CAPABILITIES, Ieee802154Csl, Ieee802154EnhancedAckGenerator,
     Ieee802154EnhancedAckIeTooLong, Ieee802154Platform,
@@ -851,7 +851,7 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
 /// that drive it; host targets only, where no MAC writes received frames.
 #[cfg(all(any(test, feature = "model"), not(target_arch = "riscv32")))]
 impl<M: RawMutex, const EVENTS: usize>
-    Ieee802154Runtime<'_, M, oer_ieee802154_engine::ll::model::Ieee802154LlModel, EVENTS>
+    Ieee802154Runtime<'_, M, oer_espressif_ieee802154_engine::ll::model::Ieee802154LlModel, EVENTS>
 {
     /// Model the MAC DMA writing `frame` into the published receive buffer
     /// and raising `events`, then run the interrupt handler.
@@ -863,7 +863,7 @@ impl<M: RawMutex, const EVENTS: usize>
     pub fn model_interrupt(
         &self,
         frame: Option<&[u8]>,
-        events: &[oer_ieee802154_engine::types::Ieee802154Event],
+        events: &[oer_espressif_ieee802154_engine::types::Ieee802154Event],
     ) {
         self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
@@ -887,7 +887,7 @@ impl<M: RawMutex, const EVENTS: usize>
     /// No radio is installed.
     pub fn with_model<T>(
         &self,
-        entry: impl FnOnce(&mut oer_ieee802154_engine::ll::model::Ieee802154LlModel) -> T,
+        entry: impl FnOnce(&mut oer_espressif_ieee802154_engine::ll::model::Ieee802154LlModel) -> T,
     ) -> Result<T, Ieee802154RuntimeError> {
         self.with_radio(|_, hardware, _| entry(hardware))
     }

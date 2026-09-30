@@ -3,13 +3,13 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use heapless::Deque;
 use oer_esp32s31_hal::ieee802154::ll::Ieee802154LowLevel;
-use oer_esp32s31_ieee802154_runtime::{
+use oer_espressif_ieee802154_runtime::{
     Ieee802154Csl, Ieee802154EnhancedAckGenerator, Ieee802154OwnedFrame, Ieee802154RadioEvent,
     Ieee802154Runtime, Ieee802154RuntimeError,
 };
 use oer_ieee802154::{
     AppliedSecurity, Channel, CommandError, Configuration, EnergyScanRequest, FrameView, Interface,
-    LinkMetrics, PendingTableHalf, RadioCommand, RadioState, RadioInstant, RequestId,
+    LinkMetrics, PendingTableHalf, RadioCommand, RadioInstant, RadioState, RequestId,
     ScheduledReceiveRequest, TimeSync, TxMode, TxRequest, TxSecurity,
 };
 use openthread_radio::{
@@ -57,7 +57,7 @@ impl OpenThreadRadioDefaults {
     pub const ESP_IDF: Self = Self {
         tx_power_dbm: oer_esp32s31_hal::ieee802154::ESP32S31_TX_POWER_LEVELS.highest_dbm(),
         cca_threshold_dbm: -75,
-        receive_sensitivity_dbm: oer_ieee802154_engine::engine::RECEIVE_SENSITIVITY_DBM,
+        receive_sensitivity_dbm: oer_espressif_ieee802154_engine::engine::RECEIVE_SENSITIVITY_DBM,
     };
 }
 
@@ -349,7 +349,7 @@ where
         let id = self.id();
         match self.runtime.submit(RadioCommand::Enable { id }) {
             Ok(_)
-            | Err(oer_esp32s31_ieee802154_runtime::Ieee802154RuntimeError::Rejected(
+            | Err(oer_espressif_ieee802154_runtime::Ieee802154RuntimeError::Rejected(
                 CommandError::AlreadyEnabled,
             )) => {}
             Err(_) => return Err(RadioErrorKind::Other),

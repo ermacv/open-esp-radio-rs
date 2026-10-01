@@ -850,6 +850,15 @@ source-document = "crates/hardware/esp32s31/driver/ieee80211/FEATURES.md"
 overview = ""
 
 [[sections]]
+id = "wifi-roaming-and-service-discovery"
+domain = "wifi"
+title = "Roaming and service discovery"
+source-document = "crates/hardware/esp32s31/driver/ieee80211/FEATURES.md"
+overview = "These software protocol compositions use ordinary Wi-Fi management/data exchanges and the supported PHY profiles. Their missing production owners are recorded independently of silicon features. Sans-IO policy consumes received frames, transmission results, time and injected randomness; services execute its actions through the lower-MAC port. Driver changes are still required where a protocol needs additional receive rules, peer keys, channel scheduling or timing operations. An absent row neither promises implementation nor establishes interoperability."
+packages = ["oer-ieee80211-lower-mac"]
+documents = ["crates/protocols/ieee80211/README.md", "docs/architecture.md"]
+
+[[sections]]
 id = "wifi-legacy-and-ht-mac-behavior"
 domain = "wifi"
 title = "Legacy and HT MAC behavior"
@@ -985,12 +994,36 @@ level = "composed-product"
 scope-and-limitations = "Standalone normalized monitor capture is implemented. Raw-DMA capture, protocol-validated capture, and monitor operation concurrent with STA/AP are not published capabilities."
 
 [[items]]
+id = "wifi-interfaces-and-operating-modes-wi-fi-direct-p2p"
+section = "wifi-interfaces-and-operating-modes"
+title = "Wi-Fi Direct / P2P"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No P2P discovery, Group Owner negotiation, invitation, provisioning or group lifecycle owner exists. The existing STA/AP roles provide underlying link mechanisms, not P2P groups. A software composition requires P2P information elements and Action exchanges, WPS provisioning, explicit group interfaces and listen/search channel scheduling; P2P power management also needs driver integration. The single radio channel context does not provide simultaneous operation on different channels. See the [P2P protocol/driver boundary](https://w1.fi/wpa_supplicant/devel/p2p.html)."
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-tdls"
+section = "wifi-interfaces-and-operating-modes"
+title = "Tunneled Direct Link Setup (TDLS)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No TDLS setup/confirm/teardown, direct-peer key lifecycle or direct STA-to-STA data owner exists. Software negotiation can use the existing infrastructure link, but the direct link requires non-DS data framing, receive/ACK rules and peer-key selection outside the current AP-bound station policy. Operation depends on peer support and the associated AP's TDLS policy; off-channel TDLS additionally requires channel scheduling."
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-wds-transparent-layer-two-bridge"
+section = "wifi-interfaces-and-operating-modes"
+title = "WDS / transparent Layer-2 bridge"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No four-address distribution link or transparent Ethernet bridge owner exists. A composition requires four-address data codecs, matching receive/ACK and CCMP header contracts, distribution-peer keys, forwarding/learning state and loop handling. Both wireless endpoints must support the selected four-address link. Concurrent STA + SoftAP supplies two roles on one channel, not a transparent bridge for downstream MAC addresses."
+
+[[items]]
 id = "wifi-interfaces-and-operating-modes-ieee-802-11s-mesh"
 section = "wifi-interfaces-and-operating-modes"
 title = "IEEE 802.11s mesh"
 status = "absent"
 level = "composed-product"
-scope-and-limitations = "No mesh station interface exists: no Mesh ID/Mesh Configuration advertisement, mesh peering (AMPE), four-address mesh data framing or HWMP path selection. Infrastructure STA and SoftAP interfaces do not form a standard mesh basic service set."
+scope-and-limitations = "No mesh station interface exists: no Mesh ID/Mesh Configuration advertisement, mesh peering (AMPE), four-address mesh data framing or HWMP path selection. Infrastructure STA and SoftAP interfaces do not form a standard mesh basic service set. Peering, path selection, airtime metrics, TTL and duplicate suppression admit a portable sans-IO composition over the ordinary Wi-Fi PHY. The driver still needs mesh VIF/receive/ACK semantics, Mesh Control data geometry, beacon/TSF integration and peer-key/CCMP contracts; secure peering also needs SAE and AMPE owners."
 
 [[items]]
 id = "wifi-interfaces-and-operating-modes-esp-wifi-mesh"
@@ -1006,7 +1039,7 @@ section = "wifi-interfaces-and-operating-modes"
 title = "NAN / Wi-Fi Aware"
 status = "absent"
 level = "composed-product"
-scope-and-limitations = "No cluster synchronization, Publish/Subscribe, Follow-up or NAN Data Path (NDP) owner exists. Reviewed [NAN TSF controls](../../../../../registers/esp32s31/model/peripherals/wifi-mac-aux-tsf-control.toml) and interface crypto controls do not create discovery/data interfaces or a NAN runtime."
+scope-and-limitations = "No cluster synchronization, Publish/Subscribe, Follow-up or NAN Data Path (NDP) owner exists. Reviewed [NAN TSF controls](../../../../../registers/esp32s31/model/peripherals/wifi-mac-aux-tsf-control.toml) and interface crypto controls do not create discovery/data interfaces or a NAN runtime. Discovery/peer policy can be portable, but synchronized discovery windows, channel admission, NAN receive rules and NDP security/data interfaces require additional driver and runtime ownership."
 documents = ["registers/esp32s31/model/peripherals/wifi-mac-aux-tsf-control.toml"]
 
 [[items]]
@@ -1113,6 +1146,46 @@ level = "lower-primitive"
 scope-and-limitations = "Reason: hardware absent. The ESP32-S31 radio and PHY are 2.4 GHz only; the portable `Channel` represents 5 GHz, and the backend's capabilities exclude the band and refuse its channels."
 
 [[items]]
+id = "wifi-roaming-and-service-discovery-radio-resource-measurement-802-11k"
+section = "wifi-roaming-and-service-discovery"
+title = "Radio Resource Measurement / Neighbor Reports (802.11k)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No Neighbor Report request/response or radio-measurement protocol owner exists. Portable Action codecs, dialog identity, deadlines and neighbor/candidate state can use the existing scan and management paths. Beacon/channel measurements need bounded scan admission and measured inputs; a connected scan must preserve the home-channel, power-save and coexistence lifetimes. The concurrent STA + AP graph currently restricts station discovery to the AP channel."
+
+[[items]]
+id = "wifi-roaming-and-service-discovery-bss-transition-management-802-11v"
+section = "wifi-roaming-and-service-discovery"
+title = "BSS Transition Management (802.11v)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No BSS Transition Query/Request/Response or candidate-transition owner exists. The software composition requires dialog/deadline state, candidate validation, station acceptance policy and coordination with scan, association, key retirement and network link state. An AP steering request is advisory; this row covers BSS Transition Management, not every 802.11v operation."
+
+[[items]]
+id = "wifi-roaming-and-service-discovery-fast-bss-transition-802-11r"
+section = "wifi-roaming-and-service-discovery"
+title = "Fast BSS Transition (802.11r)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No FT AKM selection, mobility-domain/FT element processing, PMK-R0/PMK-R1 hierarchy or FT authentication/reassociation owner exists. FT policy and cryptography can be portable over the existing management and CCMP mechanisms, but key installation and old/new association ownership must be coordinated with the driver. The station's same-AP SAE PMKSA cache is not an FT implementation; over-the-DS FT and AP key-holder integration are also absent. See [roaming protocol definitions](https://docs.espressif.com/projects/esp-idf/en/v6.0.2/esp32/api-guides/wifi-driver/security-and-roaming.html)."
+
+[[items]]
+id = "wifi-roaming-and-service-discovery-gas-anqp-802-11u"
+section = "wifi-roaming-and-service-discovery"
+title = "Generic Advertisement Service / ANQP (802.11u)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No GAS Initial/Comeback exchange, bounded response-fragment assembly or ANQP query/response owner exists. This is a software composition of Public Action exchanges with dialog tokens, comeback deadlines, payload limits and service/network records. Ordinary scan or association information elements do not implement pre-association ANQP discovery."
+
+[[items]]
+id = "wifi-roaming-and-service-discovery-passpoint"
+section = "wifi-roaming-and-service-discovery"
+title = "Passpoint / Hotspot 2.0"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No Passpoint advertisement, credential/profile selection, ANQP-based network selection or enterprise connection composition exists. The software product depends on GAS/ANQP, interworking information elements and 802.1X/EAP credential/certificate ownership. Online signup and release-specific subscription features require their own application protocols; neither an ordinary WPA2 connection nor a future GAS parser establishes Passpoint interoperability or certification."
+
+[[items]]
 id = "wifi-legacy-and-ht-mac-behavior-rts-protection"
 section = "wifi-legacy-and-ht-mac-behavior"
 title = "RTS protection"
@@ -1177,6 +1250,16 @@ level = "composed-product"
 scope-and-limitations = "STA owns WMM parsing, DSCP/VLAN classification, ACM downgrade, four per-AC EDCA queues, TID selection and BA routing. AP advertises a fixed WMM parameter set and its bounded QoS/A-MPDU path uses BE/TID-0, but it has no per-peer parameter negotiation, network classification or four-AC scheduler. U-APSD is disabled in both roles."
 
 [[items]]
+id = "wifi-legacy-and-ht-mac-behavior-access-point-four-ac-qos"
+section = "wifi-legacy-and-ht-mac-behavior"
+title = "Access-point QoS across four WMM access categories"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "The AP has no complete DSCP/UP classification, per-peer/per-TID agreement routing or scheduler across voice, video, best effort and background. Its current network TX composition is BE/TID-0 although the lower-MAC exposes four EDCA queues. Classification, queue selection and admission policy are software above those queues. Existing STA rate adaptation, bounded aggregation and the AP's optional per-peer deficit airtime scheduler are separate source-owned mechanisms, not absent features and not a four-AC AP composition."
+packages = ["oer-esp32s31-ieee80211-runtime"]
+documents = ["docs/wifi-egress.md"]
+
+[[items]]
 id = "wifi-legacy-and-ht-mac-behavior-20-40-mhz-802-11n-mcs0-mcs7"
 section = "wifi-legacy-and-ht-mac-behavior"
 title = "20/40 MHz 802.11n, MCS0-MCS7"
@@ -1214,7 +1297,7 @@ section = "wifi-security"
 title = "WPA2-Enterprise"
 status = "absent"
 level = "composed-product"
-scope-and-limitations = "There is no 802.1X/EAP supplicant/authenticator or enterprise credential owner."
+scope-and-limitations = "There is no 802.1X/EAP supplicant/authenticator or enterprise credential owner. EAP methods such as EAP-TLS can be composed in software over EAPOL and the existing WPA2/CCMP key mechanisms, but TLS/certificate validation, credentials, EAP-derived PMK binding and per-role session lifetimes are missing. An enterprise AP additionally needs controlled-port admission and authentication-server integration such as RADIUS."
 
 [[items]]
 id = "wifi-security-wpa3-personal-wpa3-enterprise"
@@ -1225,12 +1308,28 @@ level = "composed-product"
 scope-and-limitations = "The station authenticates with SAE group 19 (hunting-and-pecking and hash-to-element, anti-clogging tokens) and keys the AKM 8 four-way handshake with required protected management frames. WPA3-Personal credentials join SAE only; WPA2-Personal credentials upgrade to SAE when the access point offers it. A cached PMKSA of the same access point and SSID, kept across station restarts, replaces SAE with Open System authentication and a PMKID, and an association or handshake failure or an invalidating disconnect forgets it. There is no access point SAE, no WPA3-Enterprise and no SAE groups other than 19."
 
 [[items]]
+id = "wifi-security-wpa3-personal-access-point"
+section = "wifi-security"
+title = "WPA3-Personal access point"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No AP SAE authentication/session owner, SAE AKM four-way-handshake composition or required AP management-frame protection exists. Portable SAE group-19 cryptography and the current AP WPA2 authenticator are reusable lower mechanisms; the AP still needs per-peer SAE state, anti-clogging/resource admission, PMK binding, advertisement and teardown. The implemented station WPA3 path does not supply the AP role."
+
+[[items]]
+id = "wifi-security-wpa3-enterprise"
+section = "wifi-security"
+title = "WPA3-Enterprise"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No WPA3-Enterprise EAP/AKM and protected-management composition exists in either role. Enterprise authentication and policy are software layers, but every selected suite requires exact PMK/PTK derivation, key installation and cipher support. The 192-bit security profile additionally needs its stronger data/management cipher suites and certificate constraints; the current CCMP-128-only lower-MAC contract does not provide that profile."
+
+[[items]]
 id = "wifi-security-opportunistic-wireless-encryption-owe"
 section = "wifi-security"
 title = "Opportunistic Wireless Encryption (OWE)"
 status = "absent"
 level = "composed-product"
-scope-and-limitations = "No OWE key exchange, association selection or key lifecycle exists. Open BSS support does not provide Enhanced Open."
+scope-and-limitations = "No OWE key exchange, association selection or key lifecycle exists. The Diffie-Hellman exchange, OWE AKM derivation and association policy can be software over the existing CCMP data path; group validation, derived-PMK binding, transition-mode discovery and per-role lifecycle remain missing. Open BSS support does not provide Enhanced Open."
 
 [[items]]
 id = "wifi-security-bip-protected-management-frames"
@@ -1239,6 +1338,30 @@ title = "BIP / protected management frames"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "The station negotiates management frame protection whenever the access point is capable of it, accepting a required one, and then prefers PSK-SHA256. It keeps the IGTK across group rekeys, opens protected individually addressed robust frames with a software copy of the temporal key, verifies group-addressed ones with BIP-CMAC-128, drops other unprotected robust frames, answers SA Query Requests, confirms unprotected class 2 and 3 disconnects with the vendor SA Query procedure, and sends robust Action frames and the Deauthentication of a controlled stop CCMP-protected. BIP-GMAC and BIP-CMAC-256, beacon protection (BIGTK) and the access point role's management frame protection are absent."
+
+[[items]]
+id = "wifi-security-access-point-protected-management-frames"
+section = "wifi-security"
+title = "Access-point Protected Management Frames (802.11w / PMF)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No AP PMF negotiation, IGTK publication/rotation, robust management protection/replay policy or per-peer SA Query owner exists. Portable BIP-CMAC-128 and management CCMP mechanisms already serve the station; composing them for the AP requires peer-scoped keys, packet numbers, management RX/TX routing and teardown. Ordinary AP CCMP data encryption does not protect management frames."
+
+[[items]]
+id = "wifi-security-device-provisioning-protocol-dpp"
+section = "wifi-security"
+title = "Device Provisioning Protocol / Wi-Fi Easy Connect (DPP)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No DPP bootstrap identity, authentication, configuration exchange or credential-install owner exists. A software composition requires bootstrap/public-key ownership, DPP Public Action and GAS exchanges, cryptography, dialog deadlines and provisioning policy over the management TX/RX path. QR/URI handling belongs to the application; configured WPA2/WPA3 credentials do not establish DPP onboarding. See [DPP on ESP32-S31](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s31/api-reference/network/esp_dpp.html)."
+
+[[items]]
+id = "wifi-security-wi-fi-protected-setup-wps"
+section = "wifi-security"
+title = "Wi-Fi Protected Setup (WPS)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No WPS registrar/enrollee, WSC information-element/EAP exchange or provisioning session owner exists. Software provisioning over management/EAPOL paths requires cryptography, method-specific authorization, bounded PIN/push-button sessions and credential handling. WPS is also a missing provisioning dependency of the classic Wi-Fi Direct group-formation composition; it is separate from DPP."
 
 [[items]]
 id = "wifi-security-gcmp-tkip-wapi-and-wep"
@@ -1295,6 +1418,14 @@ title = "Connectionless power save"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No hardware wake-window/interval owner is composed for ESP-NOW or other connectionless exchanges. Standalone ESP-NOW RX remains awake; FTM itself remains fail-closed."
+
+[[items]]
+id = "wifi-tsf-beacon-monitoring-and-power-saving-u-apsd"
+section = "wifi-tsf-beacon-monitoring-and-power-saving"
+title = "Unscheduled Automatic Power Save Delivery (U-APSD)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Both current role profiles disable U-APSD. No per-AC trigger/delivery negotiation, QoS trigger, bounded service-period or EOSP completion owner exists. The software composition needs peer buffering, trigger/service-period state and QoS TX/RX integration; station wake/sleep and AP delivery must retain the physical radio and coexistence lifetimes. Legacy TIM/DTIM buffering and modem sleep are separate mechanisms."
 
 [[items]]
 id = "wifi-tsf-beacon-monitoring-and-power-saving-twt-requester"

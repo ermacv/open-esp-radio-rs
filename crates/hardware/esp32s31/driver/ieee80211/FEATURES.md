@@ -49,6 +49,14 @@ in [the port's README](../../../../protocols/ieee80211/lower-mac/README.md#imple
 
 See catalog section `wifi-legacy-and-ht-mac-behavior`.
 
+## Roaming and service discovery
+
+See catalog section `wifi-roaming-and-service-discovery` for 802.11k/v/r,
+GAS/ANQP and Passpoint. Missing software protocol compositions retain an
+`ABSENT` status and name the required MAC, key or channel operations in their
+scope. The interface, security and power sections also retain the missing
+P2P, TDLS, four-address bridge, provisioning and U-APSD compositions.
+
 ## Security
 
 See catalog section `wifi-security`.

@@ -7,6 +7,9 @@
 //! MMIO, DMA, interrupt, executor, allocator, ESP32-S31, vendor archive, or
 //! ROM ABI dependency.
 
+#[cfg(test)]
+extern crate std;
+
 pub mod ap;
 pub mod beacon;
 pub mod block_ack;
@@ -16,6 +19,7 @@ pub mod classification;
 pub mod data;
 pub mod extensions;
 pub mod qos;
+pub mod roaming;
 
 pub mod fragmentation;
 pub mod ftm;

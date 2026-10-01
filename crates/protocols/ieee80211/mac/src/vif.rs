@@ -70,14 +70,16 @@ fn classify_management(
     let Some(bssid) = address(mpdu, 16) else {
         return StaApRxRoute::Malformed;
     };
-    let group_receiver = is_group(receiver);
+    let group_receiver = crate::management::is_group_address(receiver);
     let subtype = frame_control >> 4 & 0x0f;
     let station = receiver == addresses.station
         || group_receiver
             && (transmitter == addresses.station_bssid || bssid == addresses.station_bssid);
     let access_point = receiver == addresses.access_point
         || bssid == addresses.access_point
-        || group_receiver && is_group(bssid) && subtype == PROBE_REQUEST_SUBTYPE;
+        || group_receiver
+            && crate::management::is_group_address(bssid)
+            && subtype == PROBE_REQUEST_SUBTYPE;
     select(station, access_point)
 }
 
@@ -93,7 +95,7 @@ fn classify_data(
     let Some(bssid_or_destination) = address(mpdu, 16) else {
         return StaApRxRoute::Malformed;
     };
-    let group_receiver = is_group(receiver);
+    let group_receiver = crate::management::is_group_address(receiver);
     match (frame_control & TO_DS != 0, frame_control & FROM_DS != 0) {
         (false, true) => select(
             receiver == addresses.station
@@ -129,10 +131,6 @@ fn read_u16(bytes: &[u8], offset: usize) -> Option<u16> {
 
 fn address(bytes: &[u8], offset: usize) -> Option<[u8; 6]> {
     bytes.get(offset..offset + 6)?.try_into().ok()
-}
-
-const fn is_group(address: [u8; 6]) -> bool {
-    address[0] & 1 != 0
 }
 
 #[cfg(test)]

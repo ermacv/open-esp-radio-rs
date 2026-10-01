@@ -7,8 +7,23 @@ pub const MAX_SSID_LEN: usize = 32;
 pub const MAX_SUPPORTED_RATES_LEN: usize = 24;
 
 const PROBE_REQUEST_FRAME_CONTROL: u16 = 0x0040;
-pub const BROADCAST_ADDRESS: [u8; 6] = [0xff; 6];
-const SSID_ELEMENT_ID: u8 = 0;
+/// Width of an IEEE 802 MAC address, in octets.
+pub const MAC_ADDRESS_LEN: usize = 6;
+/// Octets in transmission order, including the I/G bit in the first octet.
+pub type MacAddress = [u8; MAC_ADDRESS_LEN];
+pub const BROADCAST_ADDRESS: MacAddress = [0xff; MAC_ADDRESS_LEN];
+/// One IEEE 802.11 time unit, in microseconds.
+pub const IEEE_TIME_UNIT_MICROS: u64 = 1024;
+
+/// The IEEE I/G bit; the all-zero address is still an individual address.
+pub const fn is_group_address(address: MacAddress) -> bool {
+    const GROUP_BIT: u8 = 1;
+    address[0] & GROUP_BIT != 0
+}
+/// Information element carrying the binary SSID in management frames.
+pub const SSID_ELEMENT_ID: u8 = 0;
+/// Vendor-specific IE; its body defines the vendor OUI and subtype namespace.
+pub const VENDOR_ELEMENT_ID: u8 = 221;
 const SUPPORTED_RATES_ELEMENT_ID: u8 = 1;
 const EXTENDED_SUPPORTED_RATES_ELEMENT_ID: u8 = 50;
 const SUPPORTED_RATES_ELEMENT_CAPACITY: usize = 8;
@@ -28,9 +43,9 @@ pub enum ProbeRequestError {
 /// memory, so this type needs neither allocation nor global buffers.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProbeRequest<'a> {
-    pub destination: [u8; 6],
-    pub source: [u8; 6],
-    pub bssid: [u8; 6],
+    pub destination: MacAddress,
+    pub source: MacAddress,
+    pub bssid: MacAddress,
     pub sequence_number: SequenceNumber,
     pub ssid: &'a [u8],
     pub supported_rates: &'a [u8],

@@ -144,7 +144,7 @@ impl TwtWakeDurationUnit {
     pub const fn micros(self) -> u32 {
         match self {
             Self::Micros256 => 256,
-            Self::Tu1024 => 1_024,
+            Self::Tu1024 => crate::management::IEEE_TIME_UNIT_MICROS as u32,
         }
     }
 }

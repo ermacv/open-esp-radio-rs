@@ -8,6 +8,9 @@
 use crate::qos::{WmmAccessCategory, WmmUserPriority};
 
 pub const ETHERNET_HEADER_LEN: usize = 14;
+/// Host numeric EtherTypes, decoded from the network-order Ethernet field.
+pub const ETHER_TYPE_IPV4: u16 = 0x0800;
+pub const ETHER_TYPE_IPV6: u16 = 0x86dd;
 pub const IEEE80211_LEGACY_DATA_HEADER_LEN: usize = 24;
 pub const IEEE80211_QOS_DATA_HEADER_LEN: usize = 26;
 pub const IEEE80211_HE_CONTROL_LEN: usize = 4;

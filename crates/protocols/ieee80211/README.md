@@ -25,6 +25,7 @@ protocol that owns them:
 | `station/sequence` | Separate management/non-QoS and per-TID TX sequence owners |
 | `data/duplicate` | Association/peer-scoped receive retry history |
 | `qos` | Typed traffic intent, UP/AC and DSCP classification helpers |
+| `roaming` | k/v Neighbor Report, RRM, BTM, idle, WNM Sleep, standalone TFS, DMS, Event/Diagnostic and URI wire codecs with complete optional elements |
 | `channel` | `Channel` (2.4 GHz and 5 GHz, 20/40 MHz geometry of the global operating classes) and the 2.4 GHz `WifiChannel` the role owners configure |
 | `phy` | `PhyRate`: validated non-HT, HT and HE SU rates |
 | `extensions/wmm` | WMM AC parameters and vendor IE parsing |
@@ -63,6 +64,14 @@ contracts remain explicit sibling modules. ESP-NOW peer/protocol owners live
 in `softmac/src/extensions/espressif/esp_now/protocol`; secrets, peer generations
 and replay state live in its `security` sibling. They use lower MAC codecs.
 The MAC package must not depend back on SoftMAC peer or security policy.
+
+[`roaming`](roaming/README.md) owns sans-IO k/v dialogs, the bounded neighbor
+database, automatic candidate selection, selected power services, event history
+and diagnostic task/report coordination. Association
+generations, time, measurements, regulatory facts and terminal TX results are
+supplied values. Physical scans/transitions, management protection, security and
+queue services stay with the existing owners. ESP32-S31 runtime routing and
+capability advertisement are not connected to these protocol owners.
 
 The [RSN crate](security/rsn/README.md) separates secret ownership and
 derivation (`crypto`), packet views and MIC handling (`eapol`), wire formats

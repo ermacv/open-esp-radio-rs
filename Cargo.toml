@@ -55,6 +55,7 @@ members = [
     "crates/protocols/ieee80211/sta",
     "crates/protocols/ieee80211/trace",
     "crates/protocols/ieee80211/mac",
+    "crates/protocols/ieee80211/roaming",
     "crates/protocols/ieee80211/lower-mac",
     "crates/protocols/ieee80211/upper-mac",
     "crates/protocols/espressif/ieee80211/policy",

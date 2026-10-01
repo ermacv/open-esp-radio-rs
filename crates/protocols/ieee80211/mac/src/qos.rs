@@ -4,6 +4,8 @@
 //! parser lives in `extensions::wmm`; the transmitter still owns admission and
 //! queue selection using these values.
 
+use crate::data::{ETHER_TYPE_IPV4, ETHER_TYPE_IPV6, ETHERNET_HEADER_LEN};
+
 /// Standard WMM access-category identifier carried in ACI bits 5..6.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(u8)]
@@ -169,11 +171,8 @@ impl WmmTrafficClass {
     }
 }
 
-const ETHERNET_HEADER_LEN: usize = 14;
-const ETHER_TYPE_IPV4: u16 = 0x0800;
 const ETHER_TYPE_VLAN: u16 = 0x8100;
 const ETHER_TYPE_PROVIDER_VLAN: u16 = 0x88a8;
-const ETHER_TYPE_IPV6: u16 = 0x86dd;
 
 /// Classify an Ethernet frame from an outer 802.1D PCP or an IP DSCP.
 ///

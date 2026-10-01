@@ -3466,6 +3466,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-ieee80211-roaming"
+version = "0.1.0"
+dependencies = [
+ "oer-ieee80211-mac",
+ "oer-time",
+]
+
+[[package]]
 name = "oer-ieee80211-rsn"
 version = "0.1.0"
 dependencies = [

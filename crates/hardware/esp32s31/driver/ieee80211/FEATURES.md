@@ -52,7 +52,11 @@ See catalog section `wifi-legacy-and-ht-mac-behavior`.
 ## Roaming and service discovery
 
 See catalog section `wifi-roaming-and-service-discovery` for 802.11k/v/r,
-GAS/ANQP and Passpoint. Missing software protocol compositions retain an
+GAS/ANQP and Passpoint. The portable [k/v protocol owners](../../../../protocols/ieee80211/roaming/README.md)
+implement Neighbor Reports, practical RRM measurements, the neighbor database,
+automatic candidate selection, BTM, BSS Max Idle, WNM Sleep, standalone TFS,
+DMS, Event Reports and Diagnostic Reports. Their chip runtime integration and capability advertisement remain absent. Other missing software
+protocol compositions retain an
 `ABSENT` status and name the required MAC, key or channel operations in their
 scope. The interface, security and power sections also retain the missing
 P2P, TDLS, four-address bridge, provisioning and U-APSD compositions.

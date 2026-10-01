@@ -5,7 +5,7 @@
 
 use crate::qos::WmmAccessCategory;
 
-const VENDOR_ELEMENT_ID: u8 = 221;
+use crate::management::VENDOR_ELEMENT_ID;
 const WMM_PARAMETER_BODY_LEN: usize = 24;
 const WMM_OUI_AND_TYPE: [u8; 4] = [0x00, 0x50, 0xf2, 0x02];
 const WMM_PARAMETER_SUBTYPE: u8 = 1;

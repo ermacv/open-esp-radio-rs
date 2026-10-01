@@ -1,5 +1,14 @@
 //! Link-security selection shared by station and access-point protocol code.
 
+/// Temporal key length of the CCMP-128 data cipher, for pairwise and group keys.
+pub const CCMP_128_KEY_LEN: usize = 16;
+/// Integrity key length of the BIP-CMAC-128 group management cipher.
+pub const BIP_CMAC_128_KEY_LEN: usize = 16;
+/// Integrity packet number width shared by the IGTK KDE and management frames.
+pub const BIP_PACKET_NUMBER_LEN: usize = 6;
+/// The two alternating IGTK identifiers. GTK identifiers occupy 0 through 3.
+pub const IGTK_KEY_IDS: core::ops::RangeInclusive<u16> = 4..=5;
+
 /// Data protection of one infrastructure link: what the data path, the
 /// hardware key slots and replay admission follow.
 ///

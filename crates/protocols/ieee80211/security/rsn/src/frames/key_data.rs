@@ -50,7 +50,7 @@ impl RsnIgtk {
         packet_number: [u8; RSN_IPN_LEN],
         key: [u8; RSN_IGTK_LEN],
     ) -> Result<Self, RsnFrameError> {
-        if !(4..=5).contains(&key_id) {
+        if !oer_ieee80211_mac::security::IGTK_KEY_IDS.contains(&u16::from(key_id)) {
             return Err(RsnFrameError::InvalidKeyId);
         }
         Ok(Self {

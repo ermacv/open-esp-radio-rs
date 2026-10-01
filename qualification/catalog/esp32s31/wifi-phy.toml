@@ -854,8 +854,8 @@ id = "wifi-roaming-and-service-discovery"
 domain = "wifi"
 title = "Roaming and service discovery"
 source-document = "crates/hardware/esp32s31/driver/ieee80211/FEATURES.md"
-overview = "These software protocol compositions use ordinary Wi-Fi management/data exchanges and the supported PHY profiles. Their missing production owners are recorded independently of silicon features. Sans-IO policy consumes received frames, transmission results, time and injected randomness; services execute its actions through the lower-MAC port. Driver changes are still required where a protocol needs additional receive rules, peer keys, channel scheduling or timing operations. An absent row neither promises implementation nor establishes interoperability."
-packages = ["oer-ieee80211-lower-mac"]
+overview = "These software protocol compositions use ordinary Wi-Fi management/data exchanges and the supported PHY profiles. Their source coverage is recorded independently of silicon features. Sans-IO policy consumes received frames, transmission results, time and injected randomness; services execute its actions through the lower-MAC port. Driver changes are still required where a protocol needs additional receive rules, peer keys, channel scheduling or timing operations. Portable protocol coverage does not establish on-air interoperability."
+packages = ["oer-ieee80211-lower-mac", "oer-ieee80211-roaming"]
 documents = ["crates/protocols/ieee80211/README.md", "docs/architecture.md"]
 
 [[sections]]
@@ -1149,17 +1149,37 @@ scope-and-limitations = "Reason: hardware absent. The ESP32-S31 radio and PHY ar
 id = "wifi-roaming-and-service-discovery-radio-resource-measurement-802-11k"
 section = "wifi-roaming-and-service-discovery"
 title = "Radio Resource Measurement / Neighbor Reports (802.11k)"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "No Neighbor Report request/response or radio-measurement protocol owner exists. Portable Action codecs, dialog identity, deadlines and neighbor/candidate state can use the existing scan and management paths. Beacon/channel measurements need bounded scan admission and measured inputs; a connected scan must preserve the home-channel, power-save and coexistence lifetimes. The concurrent STA + AP graph currently restricts station discovery to the AP channel."
+scope-and-limitations = "Portable oer-ieee80211-mac codecs and oer-ieee80211-roaming owners cover Neighbor Reports, Link Measurement and Radio Measurement for Beacon, Channel Load and Noise Histogram. Complete bounded requests/reports, peer generations, tokens, control permissions, sequential/parallel groups, repetitions, reporting conditions, Beacon channel selection and report detail are owned without IO. A bounded neighbor database retains independent report/scan freshness, advertised capabilities and BSS Load. Actual measurements, TSF values, regulatory channel facts and connected-scan admission come from the caller. Other RRM measurement families and later extensions are not claimed. Chip dispatch, capability advertisement, connected-scan/home-channel/coexistence composition and on-air qualification remain absent."
+packages = ["oer-ieee80211-mac", "oer-ieee80211-roaming"]
 
 [[items]]
 id = "wifi-roaming-and-service-discovery-bss-transition-management-802-11v"
 section = "wifi-roaming-and-service-discovery"
 title = "BSS Transition Management (802.11v)"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "No BSS Transition Query/Request/Response or candidate-transition owner exists. The software composition requires dialog/deadline state, candidate validation, station acceptance policy and coordination with scan, association, key retirement and network link state. An AP steering request is advisory; this row covers BSS Transition Management, not every 802.11v operation."
+scope-and-limitations = "Portable BTM Query/Request/Response codecs and STA/AP dialog owners retain full proposals, optional termination and binary session URLs, validate candidate lifetime/exclusions and abridged lists, and emit transition readiness after acknowledged reply delivery. The neighbor database and automatic selector filter SSID, RSN policy, allowed channels and PHY support; configured RSSI/load/throughput/preference scoring, fresh-observation confirmation, hysteresis, cooldown and bounded failure backoff select a target. Beacon/TBTT timing and termination TSF mapping are injected. Actual scans, protected management, association/key/link changes and chip capability advertisement remain integration work. Other WNM services and multi-link extensions are not implied; selected power services have their own catalog entries."
+packages = ["oer-ieee80211-mac", "oer-ieee80211-roaming"]
+
+[[items]]
+id = "wifi-roaming-and-service-discovery-event-reporting-802-11v"
+section = "wifi-roaming-and-service-discovery"
+title = "Event Reports (802.11v)"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Portable Event Request/Report codecs and requester/station owners cover original Transition, RSNA, Peer-to-Peer and WNM Log reports. A network-scoped journal retains at least five records per original event type, removes terminated-link initiation and computes active connection duration. Conditions, limits, latest-request replacement, complete multi-frame snapshots, autonomous reports, bounded alert storage and frequent-transition monitoring use supplied facts/time. Both conflicting IEEE 802.11-2012 status=4 layouts are accepted; transmission requires an explicit format without a default. Destination URI delivery requires the supplied Beacon-absence interval. Vendor/later payloads are retained without claiming their procedures. Chip routing, advertisement, actual event producers, protected management, alternate transport and on-air qualification remain absent."
+packages = ["oer-ieee80211-mac", "oer-ieee80211-roaming"]
+
+[[items]]
+id = "wifi-roaming-and-service-discovery-diagnostic-reporting-802-11v"
+section = "wifi-roaming-and-service-discovery"
+title = "Diagnostic Reports (802.11v)"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Portable Diagnostic Request/Report codecs and requester/station owners coordinate manufacturer/configuration, association and IEEE 802.1X diagnostics. Complete bounded information, repeated device/antenna/radio fields, multiple profiles, expanded EAP and all credential values are retained. Explicit admission, task identities, exact requested timeouts, replacement/cancellation, complete multi-frame reports and URI routing are owned. Only a causal admitted active diagnostic preserves work across its BSS transition and explicitly rebinds on return to the requesting AP. Existing association/security owners execute active tests; there is no duplicate association/EAP implementation. Chip routing, capability advertisement, device/profile producers, active execution and an enterprise EAP backend, protected management, URI transport and on-air qualification remain absent."
+packages = ["oer-ieee80211-mac", "oer-ieee80211-roaming"]
 
 [[items]]
 id = "wifi-roaming-and-service-discovery-fast-bss-transition-802-11r"
@@ -1394,6 +1414,42 @@ title = "Legacy station power save"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Station power save is the vendor [modem-sleep manager](../../../../roles/esp32s31/ieee80211/sta/src/modem_sleep.rs): PM=1/PM=0 Null Data frames, TIM/DTIM and listen-interval wakes on the station TBTT schedule, held network frames until the station wakes. Like the vendor, it sends no PS-Poll. The minimum and maximum modem-sleep types have no HIL evidence yet, and a paired STA+AP runs no station power management."
+
+[[items]]
+id = "wifi-tsf-beacon-monitoring-and-power-saving-bss-max-idle-period-802-11v"
+section = "wifi-tsf-beacon-monitoring-and-power-saving"
+title = "BSS Max Idle Period (802.11v)"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Portable BSS Max Idle codecs and STA/AP idle leases exist in oer-ieee80211-roaming. The period uses 1000 TU; accepted STA-initiated traffic refreshes the lease, protected keep-alive policy is enforced, and keep-alive admission, acknowledgement, retries and one-shot expiry have association identities. The chip roles do not negotiate this IE or route activity/keep-alive events; backend protection, wake scheduling and AP teardown remain integration work."
+packages = ["oer-ieee80211-mac", "oer-ieee80211-roaming"]
+
+[[items]]
+id = "wifi-tsf-beacon-monitoring-and-power-saving-wnm-sleep-mode-802-11v"
+section = "wifi-tsf-beacon-monitoring-and-power-saving"
+title = "WNM Sleep Mode (802.11v)"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Portable WNM Sleep request/response and GTK/IGTK codecs, STA/AP owners and embedded TFS negotiation/filter/notification logic exist in oer-ieee80211-roaming. Sleep intervals count DTIMs and respect BSS Max Idle. Accepted transitions require explicit application of filters, queue/power policy and key services; AP responses are fully prepared before service application, and lost/expired operations require recovery when peer state may have changed. Embedded TCLAS types 0 through 5, complete optional elements, mandatory EAPOL-Key delivery and Delete-after-match queue admission are owned. Standalone TFS has its own catalog entry; later key formats are not claimed. Existing security owners must enforce replay/anti-reinstall rules; chip capability advertisement, protected management, TIM/buffering, GTK/IGTK and physical sleep/wake integration remain absent."
+packages = ["oer-ieee80211-mac", "oer-ieee80211-roaming"]
+
+[[items]]
+id = "wifi-tsf-beacon-monitoring-and-power-saving-traffic-filtering-service-802-11v"
+section = "wifi-tsf-beacon-monitoring-and-power-saving"
+title = "Standalone Traffic Filter Service / TFS (802.11v)"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Portable standalone TFS Request/Response/Notify codecs and STA/AP owners retain complete negotiations, allow zero dialog tokens, replace the entire filter set, cancel with an empty request and handle entirely denied replacements. Shared standalone/WNM Sleep classification covers TCLAS types 0 through 5, full status correlation, mandatory EAPOL-Key delivery, continuing group delivery, notification and Delete-after-match only after queue admissions. Replay resends without reinstalling filters or extending the deadline; a lost admitted STA replacement requires membership recovery. Alternatives/vendor data are retained. Chip routing, advertisement, protected management and actual notification/data queue/TIM policy integration remain absent."
+packages = ["oer-ieee80211-mac", "oer-ieee80211-roaming"]
+
+[[items]]
+id = "wifi-tsf-beacon-monitoring-and-power-saving-directed-multicast-service-802-11v"
+section = "wifi-tsf-beacon-monitoring-and-power-saving"
+title = "Directed Multicast Service (802.11v)"
+status = "partial"
+level = "composed-product"
+scope-and-limitations = "Portable DMS codecs, client/AP exchanges and a BSS-wide transactional registry exist in oer-ieee80211-roaming. Add/Change/Remove, autonomous termination, order-independent shared DMSIDs, complete QoS/vendor attributes, TCLAS types 0/1/4, recipient selection, required group-copy policy and terminal sequence duplicate handling are owned. Lost requests expose uncertainty and retain exact retry data; unavailable last-sequence evidence is explicit. QoS/resource admission and the complete associated-peer list are caller inputs. Chip negotiation, protected Action routing and individually addressed A-MSDU delivery preserving the original group subframe destination remain absent; no on-air qualification is claimed."
+packages = ["oer-ieee80211-mac", "oer-ieee80211-roaming"]
 
 [[items]]
 id = "wifi-tsf-beacon-monitoring-and-power-saving-full-modem-sleep"

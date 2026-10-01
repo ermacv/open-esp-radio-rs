@@ -22,7 +22,7 @@ pub use v2::{
 
 pub const ESP_NOW_ACTION_CATEGORY: u8 = 127;
 pub const ESP_NOW_ORGANIZATION_IDENTIFIER: [u8; 3] = [0x18, 0xfe, 0x34];
-pub const ESP_NOW_VENDOR_ELEMENT_ID: u8 = 221;
+pub const ESP_NOW_VENDOR_ELEMENT_ID: u8 = crate::management::VENDOR_ELEMENT_ID;
 pub const ESP_NOW_VENDOR_ELEMENT_TYPE: u8 = 4;
 pub const ESP_NOW_V1_VERSION: u8 = 1;
 pub const ESP_NOW_V1_MAX_PAYLOAD_LEN: usize = 250;

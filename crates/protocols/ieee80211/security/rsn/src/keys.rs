@@ -8,7 +8,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{Ptk, RsnInterface, frames::RsnGtk};
 
-pub const RSN_TK_LEN: usize = 16;
+pub const RSN_TK_LEN: usize = oer_ieee80211_mac::security::CCMP_128_KEY_LEN;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RsnKeyKind {

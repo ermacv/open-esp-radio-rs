@@ -1,5 +1,6 @@
 //! Fixed WPA2-CCMP EAPOL frame construction and GTK key-data parsing.
 
+use oer_ieee80211_mac::management::VENDOR_ELEMENT_ID;
 use oer_ieee80211_mac::security::rsn::{RSN_ELEMENT_ID, RSN_OUI};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -11,17 +12,16 @@ use crate::{
 
 pub const RSN_IE_CAPACITY: usize = 64;
 pub const RSN_ASSOC_SECURITY_IES_CAPACITY: usize = 128;
-pub const RSN_GTK_LEN: usize = 16;
+pub const RSN_GTK_LEN: usize = oer_ieee80211_mac::security::CCMP_128_KEY_LEN;
 /// BIP-CMAC-128 key length.
-pub const RSN_IGTK_LEN: usize = 16;
+pub const RSN_IGTK_LEN: usize = oer_ieee80211_mac::security::BIP_CMAC_128_KEY_LEN;
 /// IGTK packet number length.
-pub const RSN_IPN_LEN: usize = 6;
+pub const RSN_IPN_LEN: usize = oer_ieee80211_mac::security::BIP_PACKET_NUMBER_LEN;
 pub const RSN_PLAIN_KEY_DATA_CAPACITY: usize = 128;
 pub const RSN_TX_EAPOL_CAPACITY: usize = 512;
 pub const RSN_TX_ETHERNET_CAPACITY: usize = RSN_TX_EAPOL_CAPACITY + 14;
 
 const RSNXE_ELEMENT_ID: u8 = 0xf4;
-const VENDOR_ELEMENT_ID: u8 = 0xdd;
 const GTK_KDE_TYPE: u8 = 1;
 /// IGTK KDE: key id (2), IPN (6) and IGTK (16) after the OUI and type.
 const IGTK_KDE_TYPE: u8 = 9;

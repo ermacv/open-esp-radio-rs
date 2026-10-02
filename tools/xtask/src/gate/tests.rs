@@ -114,7 +114,7 @@ fn declared_inputs_select_the_packages_that_read_them() {
     );
     assert_eq!(
         selection.locks,
-        BTreeSet::from(["hil/targets/chip/Cargo.toml".to_owned()])
+        tree().workspaces.into_iter().collect::<BTreeSet<_>>()
     );
     // A workflow change tests the package whose tests read the workflows.
     let selection = run(&[".github/workflows/ci.yml"]);
@@ -140,6 +140,17 @@ fn shared_build_inputs_select_every_package_of_their_workspaces() {
     let selection = run(&["rust-toolchain.toml"]);
     assert_eq!(selection.packages.len(), 6);
     assert_eq!(selection.format.len(), 3);
+}
+
+#[test]
+fn a_package_manifest_checks_the_lock_of_every_workspace() {
+    // A root package's new dependency also changes the lock of every
+    // firmware workspace that builds it through a path dependency.
+    let selection = run(&["crates/hal/Cargo.toml"]);
+    assert_eq!(
+        selection.locks,
+        tree().workspaces.into_iter().collect::<BTreeSet<_>>()
+    );
 }
 
 #[test]

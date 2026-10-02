@@ -207,7 +207,10 @@ pub fn select(tree: &Tree, changed: &[String]) -> Selection {
                 selection.format.insert(package.workspace.clone());
             }
             if name == "Cargo.toml" {
-                selection.locks.insert(package.workspace.clone());
+                // A package's dependencies reach every workspace that builds
+                // it through a path dependency: the firmware workspaces lock
+                // the production crates too.
+                selection.locks.extend(tree.workspaces.iter().cloned());
             }
         }
         for package in &tree.packages {

@@ -73,8 +73,8 @@ of the tree, without Cargo:
 - one `cargo metadata --no-deps` per workspace adds every package that
   depends on a selected one, through any dependency kind.
 
-It then runs `check tidy` over the whole tree, `cargo fmt --check` of every
-workspace a Rust file changed in, `lock --check` of every workspace whose
+It then runs `check tidy` over the whole tree, `cargo fmt --check` of the
+selected packages of every workspace a Rust file changed in, `lock --check` of every workspace whose
 manifests or lock changed, `check docs` when Markdown or qualification files
 changed and `check capabilities` when Rust or catalogs did, and Clippy with
 `-D warnings` and the tests (with their declared feature sets, limited to 20

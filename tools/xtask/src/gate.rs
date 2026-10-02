@@ -436,13 +436,23 @@ pub fn run(
 ) -> Result<()> {
     step("tidy", || crate::checks::tidy::run(ctx))?;
     for workspace in &selection.format {
+        // Only the selected packages: formatting the whole root workspace
+        // takes 15 s, its changed packages a fraction of that.
+        let packages: Vec<&str> = selection
+            .packages
+            .iter()
+            .filter(|(owner, _)| owner == workspace)
+            .map(|(_, name)| name.as_str())
+            .collect();
         step(&format!("fmt {workspace}"), || {
-            process::run(
-                ctx.cargo()
-                    .args(["fmt", "--all", "--manifest-path"])
-                    .arg(ctx.root.join(workspace))
-                    .args(["--", "--check"]),
-            )
+            let mut command = ctx.cargo();
+            command
+                .args(["fmt", "--manifest-path"])
+                .arg(ctx.root.join(workspace));
+            for package in &packages {
+                command.args(["-p", package]);
+            }
+            process::run(command.args(["--", "--check"]))
         })?;
     }
     if !selection.locks.is_empty() {

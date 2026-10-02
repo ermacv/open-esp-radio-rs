@@ -2128,7 +2128,6 @@ name = "oer-esp32s31-radio-esp-hal"
 version = "0.1.0"
 dependencies = [
  "critical-section",
- "embassy-sync 0.8.0",
  "esp-hal",
  "oer-bluetooth-hci",
  "oer-esp32s31-bluetooth",

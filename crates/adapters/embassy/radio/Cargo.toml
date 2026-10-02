@@ -18,7 +18,6 @@ oer-ieee80211-runtime = { path = "../../../runtime/ieee80211" }
 oer-ieee80211-mac = { path = "../../../protocols/ieee80211/mac" }
 oer-radio = { path = "../../../radio", default-features = false, features = ["wifi", "test-support"] }
 oer-ieee80211-sta = { path = "../../../protocols/ieee80211/sta" }
-oer-ieee80211-rsn = { path = "../../../protocols/ieee80211/security/rsn" }
 
 [lints]
 workspace = true

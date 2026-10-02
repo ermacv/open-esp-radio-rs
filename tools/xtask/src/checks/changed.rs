@@ -1,7 +1,7 @@
 //! `cargo xtask check changed`: what this checkout changed against its
 //! merge base with a base revision, committed or not, checked by the push
-//! gate ([`crate::gate`]); with `--full`, also the heavier checks CI runs on
-//! `main` after a push.
+//! gate ([`crate::gate`]); with `--full`, also the tests of the dependents,
+//! the Markdown check and the heavier checks CI runs on every pull request.
 
 use std::{collections::BTreeSet, path::PathBuf};
 
@@ -24,7 +24,12 @@ pub fn run(ctx: &Context, base: &str, full: bool) -> Result<()> {
         selection.packages.len(),
         affected.len()
     );
-    gate::run(ctx, &tree, &selection, &affected)?;
+    let depth = if full {
+        gate::Depth::Full
+    } else {
+        gate::Depth::Fast
+    };
+    gate::run(ctx, &tree, &selection, &affected, depth)?;
     if full {
         heavy(ctx, &files, &affected)?;
     }
@@ -34,7 +39,7 @@ pub fn run(ctx: &Context, base: &str, full: bool) -> Result<()> {
         if full {
             ""
         } else {
-            "; `--full` adds what CI checks after a push"
+            "; `--full` adds what CI checks on the pull request"
         }
     );
     Ok(())

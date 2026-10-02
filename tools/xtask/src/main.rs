@@ -131,10 +131,14 @@ enum Task {
         #[command(subcommand)]
         compare: Compare,
     },
-    /// Run the fast gate on exactly the committed tree, rebase onto
-    /// origin/main, and push to main; rerun the gate only for the packages
-    /// both this push and the incoming commits affect.
-    Push,
+    /// Run the fast gate on exactly the committed tree, push this branch,
+    /// open its pull request when it has none, and let it merge itself once
+    /// CI passes. Refused on main.
+    Push {
+        /// Open the pull request as a draft and leave merging to a person.
+        #[arg(long)]
+        draft: bool,
+    },
     /// Update every workspace's Cargo.lock to its manifests after a
     /// dependency or pin change.
     Lock {
@@ -220,12 +224,14 @@ enum Worktree {
 #[derive(Subcommand)]
 enum Check {
     /// The push gate over what this checkout changed against the merge base
-    /// with BASE, committed or not: tidy, formatting, lock, docs, and Clippy
-    /// and tests of the changed packages and their dependents.
+    /// with BASE, committed or not: tidy, formatting, lock, capabilities,
+    /// Clippy of the changed packages and their dependents, and the tests of
+    /// the changed packages.
     Changed {
         #[arg(long, default_value = "origin/main")]
         base: String,
-        /// Also what CI checks after a push: workspace Clippy, API docs, HIL
+        /// Also what CI checks on the pull request: the tests of the
+        /// dependents, the Markdown check, workspace Clippy, API docs, HIL
         /// image type checks, PHY, network, register and provenance audits.
         #[arg(long)]
         full: bool,
@@ -355,7 +361,7 @@ fn log_name(command: &Task) -> Option<String> {
         Task::Check { check } => format!("check-{}", check_name(check)),
         Task::Doc => String::from("doc"),
         Task::Lock { .. } => String::from("lock"),
-        Task::Push => String::from("push"),
+        Task::Push { .. } => String::from("push"),
         _ => return None,
     };
     Some(name)
@@ -492,7 +498,7 @@ fn dispatch(ctx: &Context, command: Task) -> Result<std::process::ExitCode> {
                 ),
             }
         }
-        Task::Push => oer_xtask::push::run(&ctx),
+        Task::Push { draft } => oer_xtask::push::run(&ctx, draft),
         Task::Lock { check: false } => checks::metadata::update_locks(&ctx),
         Task::Lock { check: true } => checks::metadata::check_locks(
             &ctx,

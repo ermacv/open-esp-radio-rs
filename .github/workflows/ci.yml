@@ -11,9 +11,9 @@ permissions:
   contents: read
 
 # A branch needs only its newest commit: rapid agent pushes cancel the run
-# they supersede. On main, several sessions push every few minutes and
-# `cargo xtask push` reads main's verdicts, so a started run completes and
-# GitHub keeps only the newest push pending behind it.
+# they supersede. On main, every merged pull request is checked to the end,
+# since the session start and the gate report main's verdicts, and GitHub
+# keeps only the newest merge pending behind a started run.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -384,3 +384,35 @@ jobs:
       - name: Fetch every workspace
         run: cargo tidy fetch
       - run: cargo xtask --verbose check images
+
+  # The one check branch protection requires: every job above passed. A
+  # matrix job reports one result for all its legs.
+  ci-ok:
+    if: always()
+    needs:
+      - plan
+      - tidy
+      - fmt
+      - clippy
+      - test
+      - policy
+      - architecture
+      - hil-images
+      - examples
+      - esp32c5
+      - registers
+      - publication
+      - qualification
+      - isa-conformance
+      - images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Every job passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for result in $RESULTS; do
+            [ "$result" = success ] || exit 1
+          done

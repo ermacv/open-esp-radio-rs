@@ -11,28 +11,35 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
 
 ## Checklist
 
-1. **Iterate** with `cargo test -p <package> <test>` in the background.
-2. **Gate uncommitted work** with `cargo xtask check changed`
-   (`run_in_background: true`). It runs tidy, fmt of the selected packages,
-   `lock --check`, docs and capability checks when relevant, and Clippy plus
-   tests of the changed packages and their reverse dependents. Add `--full`
-   when CI's heavy set matters: API docs, image type-checks, PHY, network,
-   register and provenance audits.
-3. **Read failures from the summary.** It prints at most 60 lines of
+1. **Branch.** Every change lives on its own branch in its own worktree
+   (`cargo xtask worktree add`, or the session's worktree). `main` changes
+   only through pull requests.
+2. **Iterate** with `cargo test -p <package> <test>` in the background.
+3. **Gate uncommitted work** with `cargo xtask check changed`
+   (`run_in_background: true`), under a minute warm. It runs tidy, fmt of the
+   selected packages, `lock --check` and capability checks when relevant,
+   Clippy of the changed packages and their reverse dependents, and the tests
+   of the changed packages. `--full` adds what CI runs: tests of the
+   dependents, `check docs`, API docs, image type-checks, PHY, network,
+   register and provenance audits. Use it only when that set is the point.
+4. **Read failures from the summary.** It prints at most 60 lines of
    diagnostics and the log path under `target/xtask/logs/`; open that log with
    a bounded read (`tail -n 200`, Grep) rather than rerunning with `--verbose`.
-4. **Commit** scoped Conventional commits: `feat(scope): …`, `fix(esp32s31): …`.
+5. **Commit** scoped Conventional commits: `feat(scope): …`, `fix(esp32s31): …`.
    A production change needed by Blobray or verification work is its own commit.
-5. **Push** with `cargo xtask push` in the background: it gates exactly
-   `HEAD`, rebases onto `origin/main` and reruns the gate only for packages
-   both sides touched. Never `git push` to `main` directly and never chain
-   `check changed | tail && git push` (a pipeline returns its last status).
-6. **CI** runs on every branch push; `.github/workflows/ci.yml` is the full
-   checkpoint and each job is one command in [the xtask reference](../../../tools/xtask/README.md).
-   The gate prints any workflow whose newest run on `main` failed.
-7. **Red `main` first.** If `main` CI is red, fixing it comes before other
-   work: `gh run list --branch main --limit 5`, then
-   `gh run view <id> --log-failed`, reproduce the job's command locally.
+   The pull request merges by rebase, so each commit lands on `main` as is.
+6. **Push** with `cargo xtask push` in the background: it gates exactly
+   `HEAD`, pushes the branch, opens the pull request (`gh pr create --fill`)
+   and enables auto-merge. Do not wait for CI: GitHub merges the branch once
+   the required `ci-ok` check passes. `--draft` for work that needs the
+   user's review first. Never push to `main` directly.
+7. **CI** runs on every branch push; `.github/workflows/ci.yml` is the full
+   check and each job is one command in [the xtask reference](../../../tools/xtask/README.md).
+   A failed check on the pull request is fixed on the same branch and pushed
+   again with `cargo xtask push`.
+8. **Red `main` first.** The session start and the gate print a red `main`.
+   Fixing it comes before other work: `gh run view <id> --log-failed`,
+   reproduce the job's command locally, fix it on a branch.
 
 ## Other workspaces and dependencies
 

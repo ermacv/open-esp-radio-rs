@@ -23,8 +23,8 @@ The gate every change passes before it reaches `main`; see [the push gate](#the-
 
 | Command | Contract |
 | --- | --- |
-| `cargo xtask check changed [--base REV] [--full]` | The push gate over what this checkout changed against the merge base with `REV` (default `origin/main`), committed, uncommitted or untracked: see [the gate](#the-push-gate). `--full` adds what CI checks on `main` after a push: root-workspace Clippy, docs.rs-style API documentation of the affected root packages, a `cargo check` of the HIL image classes the change reaches (those whose last build read a changed file, as its `source-inputs.json` records, and every class without such a record), a link of the station example for `platform/` changes, `check phy` for production manifest changes, `check network` for manifest, lockfile or network-owner changes, `cargo registers validate` and `generate --check` for register changes, and `check provenance` of every chip with pinned vendor artifacts for code, model, vendor-doc or fact changes |
-| `cargo xtask push` | Push `HEAD` to `main` after the gate passed on exactly that tree: refuses uncommitted changes to tracked files and untracked `.rs`, `Cargo.toml` or `Cargo.lock` files, gates the files `HEAD` changed against its merge base with `origin/main`, then fetches and rebases. When the incoming commits affect none of the packages this push affects (changed packages and their dependents) it pushes at once, otherwise it reruns the gate for the packages both affect; a non-fast-forward rejection goes round again. No lock, queue or nested `cargo xtask`; `stand-install` is a separate command |
+| `cargo xtask check changed [--base REV] [--full]` | The push gate over what this checkout changed against the merge base with `REV` (default `origin/main`), committed, uncommitted or untracked: see [the gate](#the-push-gate). `--full` adds what CI checks on the pull request: the tests of every dependent package, `check docs`, root-workspace Clippy, docs.rs-style API documentation of the affected root packages, a `cargo check` of the HIL image classes the change reaches (those whose last build read a changed file, as its `source-inputs.json` records, and every class without such a record), a link of the station example for `platform/` changes, `check phy` for production manifest changes, `check network` for manifest, lockfile or network-owner changes, `cargo registers validate` and `generate --check` for register changes, and `check provenance` of every chip with pinned vendor artifacts for code, model, vendor-doc or fact changes |
+| `cargo xtask push [--draft]` | Push the current branch after the gate passed on exactly `HEAD`: refuses `main`, a detached `HEAD`, uncommitted changes to tracked files and untracked `.rs`, `Cargo.toml` or `Cargo.lock` files, gates the files `HEAD` changed against its merge base with `origin/main`, pushes the branch, opens its pull request when it has none and enables auto-merge (rebase), so GitHub merges it once the required `ci-ok` check passes. `--draft` opens a draft and enables nothing. It never waits for CI and never rebases |
 
 ## Locks, caches and worktrees
 
@@ -88,9 +88,9 @@ Pinned vendor artifacts, the evidence shards compared against them and the prove
 
 ## The push gate
 
-`cargo xtask push` and `cargo xtask check changed` run the same gate, about
-two minutes warm for a typical change. It selects through `oer-tidy`'s model
-of the tree, without Cargo:
+`cargo xtask push` and `cargo xtask check changed` run the same gate, within a
+minute warm for a typical change; CI is the full check of every pull request.
+It selects through `oer-tidy`'s model of the tree, without Cargo:
 
 - a file inside a package selects that package; a virtual workspace's
   manifest selects every package of the workspace, and `rust-toolchain.toml`,
@@ -107,15 +107,17 @@ of the tree, without Cargo:
 
 It then runs `check tidy` over the whole tree, `cargo fmt --check` of the
 selected packages of every workspace a Rust file changed in, `lock --check` of every workspace whose
-manifests or lock changed, `check docs` when Markdown or qualification files
-changed and `check capabilities` when Rust or catalogs did, and Clippy with
-`-D warnings` and the tests (with their declared feature sets, limited to 20
-minutes) of the selected host packages: every package of the root workspace,
-and host or portable packages of the others. Packages that build only for a
-chip, the HIL images, API documentation and the PHY, network, register and
-provenance audits are CI's after the push, or `check changed --full`
-locally. Both commands print any CI workflow whose newest run on `main`
-failed, or a one-line warning when `gh` cannot tell.
+manifests or lock changed and `check capabilities` when Rust or catalogs did.
+Clippy with `-D warnings` covers the selected host packages and every package
+depending on them, so a changed interface fails where it is used; the tests
+(with their declared feature sets, limited to 20 minutes) cover the selected
+host packages only. Host packages are every package of the root workspace and
+host or portable packages of the others. The tests of the dependents, `check
+docs`, packages that build only for a chip, the HIL images, API documentation
+and the PHY, network, register and provenance audits are CI's on the pull
+request, or `check changed --full` locally. Both commands print any workflow
+of `.github/workflows` whose newest run on `main` failed, or a one-line
+warning when `gh` cannot tell.
 
 ## Output
 

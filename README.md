@@ -90,11 +90,12 @@ cargo fmt --all -- --check
 cargo xtask check docs
 ```
 
-`cargo xtask push` runs the fast gate before it pushes, and `cargo xtask
-check changed` runs it over uncommitted work: formatting of every affected
-workspace, the lock check, the documentation and capability-anchor checks
-where they apply, and Clippy and tests of the changed packages and every
-package depending on them. `--full` adds what CI checks after a push. The
+`cargo xtask push` runs the fast gate, pushes the branch and opens its pull
+request, which merges once CI passes; `cargo xtask check changed` runs the
+gate over uncommitted work: formatting of every affected workspace, the lock
+and capability-anchor checks where they apply, Clippy of the changed packages
+and every package depending on them, and the tests of the changed packages.
+`--full` adds what CI checks on the pull request. The
 [tooling reference](tools/xtask/README.md) lists every check.
 
 The [CI workflow](.github/workflows/ci.yml) runs on every push to any branch:

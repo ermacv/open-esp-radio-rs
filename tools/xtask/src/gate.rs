@@ -1,6 +1,7 @@
-//! The fast gate `cargo xtask push` runs before it pushes, and that `cargo
-//! xtask check changed` runs for the developer: what a set of changed files
-//! can break, checked in about two minutes warm.
+//! The gate `cargo xtask push` runs before it pushes a branch, and that
+//! `cargo xtask check changed` runs for the developer: what a set of changed
+//! files can break, checked within a minute warm. CI is the full check of
+//! every pull request.
 //!
 //! Selection reads the tree through `oer-tidy`'s model, without Cargo:
 //!
@@ -16,11 +17,13 @@
 //!
 //! The gate then runs the integrity tier over the whole tree, `cargo fmt`
 //! of every workspace a Rust file changed in, the lock check of every
-//! workspace whose manifests changed, the Markdown and capability checks
-//! when prose, catalogs or code changed, and Clippy and the tests of the
-//! selected host packages with a time limit. Firmware, images, the PHY
-//! audit, registers, provenance and API documentation are CI's, after the
-//! push; `check changed --full` runs them locally.
+//! workspace whose manifests changed, the capability check when catalogs or
+//! code changed, Clippy of the selected host packages and their dependents,
+//! so a changed interface fails where it is used, and the tests of the
+//! selected host packages with a time limit ([`Depth::Fast`]). The tests of
+//! the dependents, the Markdown check, firmware, images, the PHY audit,
+//! registers, provenance and API documentation are CI's; `check changed
+//! --full` runs them locally ([`Depth::Full`]).
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -426,13 +429,36 @@ fn step(name: &str, work: impl FnOnce() -> Result<()>) -> Result<()> {
     result.map_err(|error| format!("{name}: {error}").into())
 }
 
-/// Runs the gate for `selection`, with Clippy and the tests of the packages
-/// of `affected` the host builds.
+/// How much of a change the gate checks.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Depth {
+    /// Clippy of the affected packages, the tests of the selected ones; the
+    /// Markdown check is CI's.
+    Fast,
+    /// Clippy and the tests of every affected package, and the Markdown check.
+    Full,
+}
+
+/// The packages whose tests the gate runs at `depth`.
+pub fn tested<'a>(
+    depth: Depth,
+    selection: &Selection,
+    affected: &'a BTreeSet<Key>,
+) -> BTreeSet<&'a Key> {
+    affected
+        .iter()
+        .filter(|key| depth == Depth::Full || selection.packages.contains(*key))
+        .collect()
+}
+
+/// Runs the gate for `selection` at `depth`, with Clippy of the packages of
+/// `affected` the host builds and the tests [`tested`] names.
 pub fn run(
     ctx: &Context,
     tree: &Tree,
     selection: &Selection,
     affected: &BTreeSet<Key>,
+    depth: Depth,
 ) -> Result<()> {
     step("tidy", || crate::checks::tidy::run(ctx))?;
     for workspace in &selection.format {
@@ -466,7 +492,10 @@ pub fn run(
         })?;
     }
     if selection.docs {
-        step("check docs", || crate::checks::docs::run(ctx))?;
+        match depth {
+            Depth::Full => step("check docs", || crate::checks::docs::run(ctx))?,
+            Depth::Fast => println!("gate: check docs left to CI"),
+        }
     }
     if let Some(anchored) = &selection.capabilities {
         let files: Vec<PathBuf> = anchored.iter().map(PathBuf::from).collect();
@@ -486,18 +515,21 @@ pub fn run(
     if left > 0 {
         println!("gate: {left} chip-only package(s) left to CI");
     }
+    let tested = tested(depth, selection, affected);
     let mut by_workspace: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-    for (workspace, name) in host {
+    for (workspace, name) in &host {
         by_workspace.entry(workspace).or_default().push(name);
     }
-    for (workspace, packages) in by_workspace {
-        let manifest = ctx.root.join(workspace);
-        let label = if packages.len() <= 4 {
+    let label = |packages: &[&str]| {
+        if packages.len() <= 4 {
             packages.join(", ")
         } else {
             format!("{} packages", packages.len())
-        };
-        step(&format!("clippy {label}"), || {
+        }
+    };
+    for (workspace, packages) in by_workspace {
+        let manifest = ctx.root.join(workspace);
+        step(&format!("clippy {}", label(&packages)), || {
             let mut command = ctx.cargo();
             command
                 .args(["clippy", "--locked", "--all-targets", "--manifest-path"])
@@ -507,7 +539,14 @@ pub fn run(
             }
             process::run(command.args(["--", "-D", "warnings"]))
         })?;
-        step(&format!("test {label}"), || {
+        let packages: Vec<&str> = packages
+            .into_iter()
+            .filter(|name| tested.contains(&(workspace.to_owned(), (*name).to_owned())))
+            .collect();
+        if packages.is_empty() {
+            continue;
+        }
+        step(&format!("test {}", label(&packages)), || {
             let mut command = ctx.cargo();
             command
                 .args(["test", "--locked", "--no-fail-fast", "--manifest-path"])

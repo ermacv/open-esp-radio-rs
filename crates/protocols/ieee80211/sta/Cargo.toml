@@ -9,7 +9,6 @@ description = "Executor- and chip-independent Wi-Fi station MLME and policy"
 
 [dependencies]
 critical-section = "1.2.0"
-oer-time = { path = "../../../time" }
 oer-trace = { path = "../../../trace" }
 oer-ieee80211-mac = { path = "../mac" }
 oer-ieee80211-rsn = { path = "../security/rsn" }

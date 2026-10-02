@@ -541,7 +541,6 @@ limitations = "Hardware publication and retirement require vendor evidence and p
 
 [[capabilities]]
 id = "async-deadlines"
-hil-reviews = ["qualification/reviews/async-deadlines-ap-absence.toml"]
 source-fact-refs = ["wifi-bounded-wait-owners"]
 title = "Bounded asynchronous and direct hardware waits"
 scope = "Protocol scheduling and long hardware waits remain bounded and asynchronous; reviewed PHY settles and readiness loops execute synchronously only inside an admitted finite direct transaction"
@@ -616,7 +615,6 @@ limitations = "The declared source boundary is exact; vendor and HIL readiness r
 
 [[capabilities]]
 id = "station-ap-loss-recovery"
-hil-reviews = ["qualification/reviews/station-ap-loss-current.toml"]
 title = "Station reconnects after controlled AP loss"
 scope = "A connected station detects beacon loss, reconnects as generation one, exchanges three fresh ICMP replies and answers a control request in the same boot"
 implementation = "complete"
@@ -649,7 +647,6 @@ limitations = "Configured HT40 WPA2 OpenWrt peer, one AP stop/restart per repeti
 
 [[capabilities]]
 id = "station-initial-ap-absence"
-hil-reviews = ["qualification/reviews/station-initial-absence-current.toml"]
 title = "Bounded station start without an AP"
 scope = "With the configured AP stopped before the first station start, the admitted station service exhausts three no-candidate attempts in generation zero without connecting and answers a control request"
 implementation = "complete"

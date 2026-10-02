@@ -1025,9 +1025,10 @@ fn bounded_peer_table_has_an_explicit_memory_ceiling() {
     // required per receiver: sharing it across clients creates artificial
     // BlockAck holes. A WPA3 station keeps its own PMK and PMKID, and the
     // storage holds the ten-entry PMKSA cache. The bounded table still uses
-    // no dynamic allocation.
+    // no dynamic allocation. Each peer's WPA2 retry keeps its two intervals
+    // as `oer_time::Duration` (8 bytes more per peer than microsecond `u32`s).
     assert!(
-        core::mem::size_of::<AccessPointPeerStorage>() <= 6_200,
+        core::mem::size_of::<AccessPointPeerStorage>() <= 6_320,
         "peer storage size {}",
         core::mem::size_of::<AccessPointPeerStorage>()
     );

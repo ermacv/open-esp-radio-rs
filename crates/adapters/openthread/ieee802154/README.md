@@ -35,20 +35,28 @@ Link Metrics subject (`Radio::set_enh_ack_probing`), and, with its
 
 ## Use
 
-Start the IEEE 802.15.4 composition, then hand its port and its live
-RSSI reader (`Ieee802154System::recent_rssi_reader`) to
+Start the IEEE 802.15.4 composition, then hand its port, its radio clock
+(`Ieee802154System::radio_clock`, the epoch of the port's `now`) and its
+live RSSI reader (`Ieee802154System::recent_rssi_reader`) to
 `OpenThreadRadio::new` with the transmit power, CCA threshold and receive
-sensitivity to report, and give the radio to the `openthread` crate. The
+sensitivity to report, and give the radio to the `openthread` crate. Poll
+the runtime's runner (`Ieee802154System::run`) beside it: the adapter is the
+port's one event consumer and only takes events. The
 figures are the composition's: `OpenThreadRadioDefaults::esp_idf` takes the
 chip's default transmit power and receive sensitivity (on the ESP32-S31,
 `IEEE802154_DEFAULT_TX_POWER_DBM` and `IEEE802154_RECEIVE_SENSITIVITY_DBM`
 of the composition) with ESP-IDF's default CCA threshold. The radio enables
-the port, installs zeroed MAC keys and an enhanced-ACK generator through
+the port through its lifecycle and takes the `Enabled` terminal event,
+installs zeroed MAC keys and an enhanced-ACK generator through
 `RadioSetting`s and serves OpenThread's operations through the port's
 commands and events. Declare `OPEN_THREAD_RADIO_CAPABILITIES`
 with `OtResources::set_radio_caps` before building the OpenThread instance:
 OpenThread's `SubMac` reads the capabilities once, when the instance is
-built, and leaves transmit security to the radio only when it saw it there. The
+built, and leaves transmit security to the radio only when it saw it there.
+When the port reports `EventsLost`, the adapter cancels an operation whose
+terminal event may be in the gap (a refusal as not running proves it ended;
+a port without cancellation is judged by its state) and reports the lost
+frames to OpenThread as one `RxFailed` reception. The
 application still supplies what the `openthread` crate asks of a platform:
 entropy, settings storage and the C library functions OpenThread links.
 

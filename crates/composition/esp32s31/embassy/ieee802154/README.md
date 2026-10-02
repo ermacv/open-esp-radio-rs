@@ -124,9 +124,13 @@ with ESP-IDF's OpenThread defaults: after an attempt without channel access
 at once, after one without acknowledgement following a random delay whose
 exponent grows from 0 to 5. Every attempt arms its transmit security again,
 as the port arms it per transmit. The backoff and
-retry timers run inside the port's `next_event`, so the
-consumer must await events while a transmission waits; the random words
-come from the hardware generator.
+retry timers run in the runtime's runner, `Ieee802154System::run` (the
+runtime's `Ieee802154Runtime::run`), which the application polls beside the
+consumer of the port's events for as long as the client runs; `next_event`
+only takes events. The random words come from the hardware generator.
+`Ieee802154System::radio_clock` is the radio clock as a function for
+synchronous callers such as OpenThread: the image's monotonic clock in
+microseconds, the one the `embassy-time` driver reads.
 
 Source matching is part of the portable contract: `Configuration` sets the
 pending mode and adds, removes or resets the sources of interface zero's

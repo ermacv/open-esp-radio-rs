@@ -713,3 +713,20 @@ fn cancel_needs_the_capability_and_an_enabled_radio() {
         })
     );
 }
+
+/// A lifecycle terminal confirms a transition the state already took; the
+/// terminal poisoned event leaves the radio disabled.
+#[test]
+fn lifecycle_terminals_keep_the_state_and_poisoning_disables() {
+    let mut machine = enabled(RadioCapabilities::NONE);
+    assert_eq!(
+        machine.observe(RadioEvent::Lifecycle(crate::LifecycleEvent::Enabled)),
+        Ok(())
+    );
+    assert_eq!(machine.state(), RadioState::Resting(RestingState::Sleeping));
+    assert_eq!(
+        machine.observe(RadioEvent::Poisoned(crate::Poisoned)),
+        Ok(())
+    );
+    assert_eq!(machine.state(), RadioState::Disabled);
+}

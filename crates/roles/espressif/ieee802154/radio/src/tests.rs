@@ -102,7 +102,9 @@ impl Ieee802154RadioSink for Sink {
             }
             RadioEvent::ClearChannelAssessmentFailed { .. } => Seen::ClearChannelAssessmentFailed,
             RadioEvent::ScheduledReceiveDone { id } => Seen::ScheduledReceiveDone(id),
-            RadioEvent::Fault { .. } => Seen::Fault,
+            RadioEvent::Fault { .. } | RadioEvent::Lifecycle(_) | RadioEvent::Poisoned(_) => {
+                Seen::Fault
+            }
         });
     }
 }

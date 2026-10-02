@@ -17,7 +17,6 @@ struct Obligation {
     scenario: String,
     checks: Vec<String>,
     minimum_repetitions: u8,
-    property_sha256: String,
     procedure_sha256: String,
     action: &'static str,
     reason: String,
@@ -45,19 +44,10 @@ impl Plan {
                     .iter()
                     .find(|r| r.scenario == decision.scenario)
                     .ok_or("HIL decision has no declared obligation")?;
-                let property = decision
-                    .property
-                    .as_ref()
-                    .ok_or("HIL decision has no property binding")?;
                 let (action, reason) = if decision.status == EvidenceStatus::Satisfied {
                     (
                         "satisfied",
                         "Existing applicable evidence satisfies this obligation.".into(),
-                    )
-                } else if decision.status == EvidenceStatus::LastKnownPass {
-                    (
-                        "last-known",
-                        "It passed on earlier sources; rerun it when qualifying a baseline.".into(),
                     )
                 } else {
                     match decision.next_work() {
@@ -76,8 +66,7 @@ impl Plan {
                     scenario: decision.scenario.clone(),
                     checks: requirement.checks.clone(),
                     minimum_repetitions: requirement.minimum_repetitions,
-                    property_sha256: property.sha256.clone(),
-                    procedure_sha256: property
+                    procedure_sha256: decision
                         .procedure_sha256
                         .clone()
                         .ok_or("HIL decision has no executable procedure binding")?,
@@ -98,7 +87,7 @@ impl Plan {
                     &o.scenario,
                     &o.checks,
                     o.minimum_repetitions,
-                    &o.property_sha256,
+                    &o.procedure_sha256,
                 )
             })
             .collect::<Vec<_>>();
@@ -107,7 +96,7 @@ impl Plan {
             Sha256::digest(serde_json::to_vec(&(&target, &map.focus, &scope))?)
         );
         Ok(Self {
-            schema: 1,
+            schema: 2,
             kind: "open-esp-radio-hil-selection",
             target,
             scope_sha256,

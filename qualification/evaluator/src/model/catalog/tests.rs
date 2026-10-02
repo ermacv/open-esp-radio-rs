@@ -181,10 +181,6 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
     let scenario_catalog = ScenarioCatalog::load(&root.path, Path::new("scenarios")).unwrap();
     let hil_index = HilEvidenceIndex::default();
     let context = EvaluationContext {
-        declarations: &canonical_documents
-            .iter()
-            .map(|d| (d.id.clone(), d.clone()))
-            .collect(),
         root: &root.path,
         evidence: &evidence,
         scenario_catalog: &scenario_catalog,
@@ -506,7 +502,6 @@ fn the_evidence_matrix_decides_readiness_of_catalog_capabilities() {
     for (name, evidence, hil_entries, clean, ready) in cases {
         let hil = HilEvidenceIndex::synthetic(&hil_entries);
         let context = EvaluationContext {
-            declarations: &declared.iter().map(|d| (d.id.clone(), d.clone())).collect(),
             root: &root.path,
             evidence: &evidence,
             scenario_catalog: &scenarios,
@@ -554,7 +549,6 @@ fn the_evidence_matrix_decides_readiness_of_catalog_capabilities() {
     let only_wifi_vendor = native_evidence(&root.path, &[wifi_root]);
     let hil = HilEvidenceIndex::synthetic(&[("base-phy", 1), ("wifi-channel", 1)]);
     let context = EvaluationContext {
-        declarations: &declared.iter().map(|d| (d.id.clone(), d.clone())).collect(),
         root: &root.path,
         evidence: &only_wifi_vendor,
         scenario_catalog: &scenarios,
@@ -600,7 +594,6 @@ fn the_evidence_matrix_decides_readiness_of_catalog_capabilities() {
 
     let only_base_vendor = native_evidence(&root.path, &[base_root]);
     let context = EvaluationContext {
-        declarations: &declared.iter().map(|d| (d.id.clone(), d.clone())).collect(),
         root: &root.path,
         evidence: &only_base_vendor,
         scenario_catalog: &scenarios,

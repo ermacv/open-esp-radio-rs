@@ -158,8 +158,6 @@ impl Shard {
             failure: self.failure.clone(),
             repetition_failures: self.repetitions.iter().map(|r| r.failure.clone()).collect(),
             run_directory: None,
-            review: None,
-            resolution: None,
             procedure_document: self.procedure.clone(),
             source_bound: true,
             stale_snapshot: false,
@@ -402,21 +400,11 @@ fn recorded_sources(
             return Ok(None);
         };
         let directory = run.join("firmware").join(image);
-        let Some(inputs) = read_optional_json::<Value>(&directory.join("source-inputs.json"))?
-        else {
+        let Some(inputs) = super::closure::SourceInputs::read(&directory)? else {
             return Ok(None);
         };
-        // An older record lists only the compiled sources, not everything
-        // the build read, so it cannot bind a shard.
-        if inputs["schema"] != super::closure::COMPLETE_INPUTS {
-            return Ok(None);
-        }
         let mut files = BTreeSet::new();
-        for file in inputs["files"]
-            .as_array()
-            .ok_or("source-inputs lists no files")?
-        {
-            let path = PathBuf::from(file.as_str().ok_or("source input is not a path")?);
+        for path in inputs.files {
             if !safe_relative(&path) {
                 return Err(format!("unsafe source input {}", path.display()).into());
             }
@@ -865,14 +853,19 @@ mod tests {
         assert!(recorded(&[], &radio).is_none());
         inputs("performance", json!(["../outside.rs"]));
         assert!(recorded_sources(&run, &[image("performance", false)], None, &radio).is_err());
-        // A record of the compiled sources only cannot bind a shard.
+        // A record of another schema is an error, not a weaker binding.
         fs::write(
             run.join("firmware/correctness/source-inputs.json"),
             serde_json::to_vec(&json!({"schema": 1, "files": ["crates/radio/src/lib.rs"]}))
                 .unwrap(),
         )
         .unwrap();
-        assert!(recorded(&[image("correctness", false)], &radio).is_none());
+        assert!(
+            recorded_sources(&run, &[image("correctness", false)], None, &radio)
+                .unwrap_err()
+                .to_string()
+                .contains("only schema 2")
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

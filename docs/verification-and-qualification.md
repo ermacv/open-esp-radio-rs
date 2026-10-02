@@ -251,11 +251,9 @@ evidence only when:
    unrelated scenario or the enclosing campaign may have failed or been interrupted);
 5. every required repetition passed;
 6. a verified snapshot fully matches the current source selection, regardless
-   of dirty state or commit identity, or legacy provenance binds a matching clean
-   commit, or an explicit
-   property-scoped applicability review binds that observation to the destination
-   build and the current reviewed owner inputs;
-7. no applicable failure of that scenario or its repetitions remains unresolved;
+   of dirty state or commit identity, or its build binds a clean commit whose
+   closure files are unchanged in the checkout;
+7. no current failure of that scenario or its repetitions remains;
 8. selected named checks satisfy their current criteria.
 
 The evaluator checks recorded measurement verdicts against their original
@@ -275,12 +273,9 @@ and the later aggregate result. Closing this evidence boundary does not declare
 fixture resources healthy after an interrupted subsequent experiment.
 
 Markdown descriptions do not enter this decision; no hand-edited `qualified`
-field exists. Applicability defaults to the verified current source composition. An
-explicit [review record](../qualification/evidence-reviews.md) can admit an old
-observation for one property after checking both builds, current owner hashes,
-and the property fingerprint. The same record can bind an individual failure's
-resolution or explain its inapplicability. Original observations and exclusions
-remain visible; a new relevant failure is not hidden by an older PASS. The
+field exists. Only observations bound to the current source composition count;
+nothing admits an observation of other inputs. Original observations and
+exclusions remain visible; a new relevant failure is not hidden by an older PASS. The
 engineering map and qualification consume the same decision.
 
 ## Normal workflow

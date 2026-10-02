@@ -3,7 +3,7 @@ use super::*;
 pub(super) use oer_hil_schema::observer as build_inputs;
 use serde_json::{Value, json};
 
-/// One prepared configuration shared by archive loading and reviews. Loading it
+/// One prepared configuration shared by archive loading and shards. Loading it
 /// only reads files; producer preparation is an explicit xtask operation.
 #[derive(Clone, Debug, Default)]
 pub(super) struct Current {
@@ -257,15 +257,6 @@ fn inputs(root: &Path, prefixes: &[PathBuf]) -> Result<BTreeMap<String, String>>
     Ok(files)
 }
 
-pub(super) fn matches(
-    root: &Path,
-    current: &Current,
-    observation: &ScenarioEvidence,
-    proof: Option<&Value>,
-) -> Result<bool> {
-    compatible(root, current, observation, proof, None)
-}
-
 /// Why an observation's observer is or is not the current observer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Compatibility {
@@ -276,29 +267,15 @@ pub(super) enum Compatibility {
     IdentityDiffers,
 }
 
-pub(super) fn compatible(
-    root: &Path,
-    current: &Current,
-    observation: &ScenarioEvidence,
-    proof: Option<&Value>,
-    configuration_review: Option<&Value>,
-) -> Result<bool> {
-    Ok(
-        assess(root, current, observation, proof, configuration_review)?
-            == Compatibility::Compatible,
-    )
-}
-
 pub(super) fn assess(
     root: &Path,
     current: &Current,
     observation: &ScenarioEvidence,
     proof: Option<&Value>,
-    configuration_review: Option<&Value>,
 ) -> Result<Compatibility> {
     // A tracked shard is current only while the observer's recorded sources
     // match the checkout, which establishes the observer's identity.
-    if observation.source_bound && proof.is_none() && configuration_review.is_none() {
+    if observation.source_bound && proof.is_none() {
         return Ok(Compatibility::Compatible);
     }
     let Some(proof) = proof.or_else(|| {
@@ -397,34 +374,7 @@ pub(super) fn assess(
     required["units"] = new_units;
     required["cargo"] = current["cargo_config"].clone();
     required["profiles"] = profile_configuration(current);
-    if actual == required {
-        return Ok(Compatibility::Compatible);
-    }
-    let mut actual_environment = actual["environment"].clone();
-    let mut required_environment = required["environment"].clone();
-    for environment in [&mut actual_environment, &mut required_environment] {
-        let Some(environment) = environment.as_object_mut() else {
-            return Ok(Compatibility::IdentityDiffers);
-        };
-        for field in ["PROFILE", "OPT_LEVEL", "DEBUG"] {
-            environment.remove(field);
-        }
-    }
-    if actual_environment != required_environment || actual["cargo"] != required["cargo"] {
-        return Ok(Compatibility::IdentityDiffers);
-    }
-    let reviewed = configuration_review.is_some_and(|review| {
-        review["build_sha256"] == proof["build_sha256"]
-            && review["required_sha256"]
-                == json!(format!(
-                    "{:x}",
-                    Sha256::digest(serde_json::to_vec(&required).unwrap())
-                ))
-            && review["reason"]
-                .as_str()
-                .is_some_and(|s| !s.trim().is_empty())
-    });
-    Ok(if reviewed {
+    Ok(if actual == required {
         Compatibility::Compatible
     } else {
         Compatibility::IdentityDiffers
@@ -450,40 +400,6 @@ fn profile_configuration(resolved: &Value) -> Value {
         name = parent;
     }
     json!(profiles)
-}
-
-/// Host build compatibility is independent of firmware image placement policy.
-pub(super) fn timing_sensitive(
-    root: &Path,
-    requirement: &HilRequirement,
-    catalog: &ScenarioCatalog,
-) -> Result<bool> {
-    if catalog
-        .checks
-        .get(&requirement.scenario)
-        .is_some_and(|checks| {
-            checks.iter().any(|(name, check)| {
-                (requirement.checks.is_empty() || requirement.checks.contains(name))
-                    && check.image_sensitive()
-            })
-        })
-    {
-        return Ok(true);
-    }
-    if !requirement.checks.is_empty() {
-        return Ok(false);
-    }
-    let Some(workload) = catalog
-        .definitions
-        .get(&requirement.scenario)
-        .and_then(build_inputs::workload)
-    else {
-        return Ok(false);
-    };
-    let registry: Value = read_json(&root.join("hil/schema/observer-inputs.json"))?;
-    registry["timing"][workload.as_str()]
-        .as_bool()
-        .ok_or_else(|| "observer timing policy missing".into())
 }
 
 #[cfg(test)]

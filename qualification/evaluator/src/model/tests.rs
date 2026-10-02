@@ -458,34 +458,6 @@ fn corrupt_unsupported_and_non_match_native_indexes_fail_closed() {
     assert!(NativeEvidence::load(root, directory, "test-radio").is_err());
 }
 
-// Called with independently sealed archived observations by the review tests.
-pub(crate) fn assert_reviewed_hil(
-    root: &Path,
-    document: CapabilityDocument,
-    index: &HilEvidenceIndex,
-    catalog: &ScenarioCatalog,
-) {
-    let declarations = BTreeMap::from([(document.id.clone(), document.clone())]);
-    let evidence = NativeEvidence { shards: vec![] };
-    let context = EvaluationContext {
-        root,
-        evidence: &evidence,
-        scenario_catalog: catalog,
-        hil_index: index,
-        declarations: &declarations,
-    };
-    let capability = evaluate_capability(document, &context).unwrap();
-    assert_eq!(capability.hil, HilProof::Qualified);
-    assert!(capability.proof_ready());
-    assert_eq!(capability.hil_decisions[0].reviews[0].status, "applied");
-    assert!(
-        capability
-            .evidence
-            .iter()
-            .any(|r| r.starts_with("hil:old/exchange"))
-    );
-}
-
 #[test]
 fn native_index_coverage_must_account_for_every_uncovered_location() {
     let fixture = fixture_root("coverage");

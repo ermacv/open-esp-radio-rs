@@ -9,8 +9,8 @@ no HIL board scenarios and no private vendor artifacts.
 | --- | --- | --- |
 | L0 pins | which vendor code is the reference | [`esp32s31/artifacts.toml`](esp32s31/artifacts.toml) |
 | L1 facts | recovered constants, tables and register facts describe the pinned code | production `SOURCE:` blocks, [`registers`](../registers/README.md) evidence, [`esp32s31/facts`](esp32s31/facts) |
-| L2 behavior | compiled production code behaves as the vendor code | [`esp32s31/probes`](esp32s31/probes/README.md), [`esp32s31/scenarios`](esp32s31/scenarios), [`esp32s31/host`](esp32s31/host/ieee802154/README.md), shards written to `esp32s31/evidence/scenarios` |
-| L3 hardware | the drivers work on the board and calibrate as the vendor firmware does | [`hil`](../hil/README.md), tracked shards in `hil/evidence/<chip>/`, [`esp32s31/hardware`](esp32s31/hardware/calibration/README.md) with [`esp32s31/hil-vendor`](esp32s31/hil-vendor/README.md) |
+| L2 behavior | compiled production code behaves as the vendor code | [`esp32s31/probes`](esp32s31/probes/README.md), [`esp32s31/scenarios`](esp32s31/scenarios), [`esp32s31/host`](esp32s31/host/ieee802154/README.md); `cargo xtask evidence` writes their shards to `esp32s31/evidence/scenarios` |
+| L3 hardware | the drivers work on the board and calibrate as the vendor firmware does | [`hil`](../hil/README.md), whose `cargo hil evidence record` writes shards to `hil/evidence/<chip>/`, [`esp32s31/hardware`](esp32s31/hardware/calibration/README.md) with [`esp32s31/hil-vendor`](esp32s31/hil-vendor/README.md) |
 | L4 readiness | a capability is qualified | [`qualification`](../qualification/README.md) |
 
 ```text
@@ -24,12 +24,13 @@ verification/
     probes/          L2: isolated workspace of compiled production entries
     scenarios/       L2: typed Blobray comparisons against the pinned binaries
     host/ieee802154/ L2: the public IEEE 802.15.4 driver compiled on the host
-    evidence/        L2 output: one generated shard per scenario; L3
-                     hardware cross-check summaries
+    evidence/        L3 hardware cross-check summaries (hardware/), and
+                     the L2 shards (scenarios/) once generated; no shard
+                     is tracked at present
     hil-vendor/      L3: vendor ESP-IDF firmware for hardware cross-checks
     hardware/        L3: vendor-versus-production cross-checks on the board
   esp32c5/           the same levels for the ESP32-C5: pins, facts, probes,
-                     scenarios, evidence and a board register probe
+                     scenarios and a board register probe
 ```
 
 **L0.** `cargo xtask vendor-fetch esp32s31` downloads and verifies every pinned

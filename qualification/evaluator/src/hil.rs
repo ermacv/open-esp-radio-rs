@@ -1,7 +1,6 @@
 //! Independent consumption of immutable HIL run bundles.
 
 mod attempt;
-mod build_record;
 mod checks;
 mod chips;
 mod closure;
@@ -10,7 +9,6 @@ mod measurement;
 mod observer;
 mod procedure;
 mod provenance;
-pub(crate) mod review;
 pub(crate) mod shard;
 mod snapshot;
 mod subject;
@@ -221,7 +219,6 @@ impl ScenarioCatalog {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct HilEvidenceIndex {
-    current_observer: observer::Current,
     scenarios: BTreeMap<String, Vec<ScenarioEvidence>>,
     summary: HilEvidenceSummary,
 }
@@ -343,8 +340,6 @@ struct ScenarioEvidence {
     failure: Option<serde_json::Value>,
     repetition_failures: Vec<Option<serde_json::Value>>,
     run_directory: Option<PathBuf>,
-    review: Option<review::ReviewLink>,
-    resolution: Option<review::ResolutionLink>,
     /// The executed scenario document of an observation recorded in a
     /// tracked shard, which has no run directory to read it from.
     procedure_document: Option<serde_json::Value>,
@@ -358,7 +353,7 @@ struct ScenarioEvidence {
 
 impl ScenarioEvidence {
     fn applicable(&self) -> bool {
-        self.exclusions.is_empty() || self.review.is_some()
+        self.exclusions.is_empty()
     }
     fn observation_id(&self, scenario: &str) -> Option<String> {
         let seal = self.completion_seal.as_ref()?;
@@ -420,7 +415,6 @@ impl HilEvidenceIndex {
     #[cfg(test)]
     pub(crate) fn synthetic(entries: &[(&str, usize)]) -> Self {
         Self {
-            current_observer: observer::Current::default(),
             scenarios: entries
                 .iter()
                 .map(|(scenario, repetitions)| {
@@ -435,8 +429,6 @@ impl HilEvidenceIndex {
                             failure: None,
                             repetition_failures: vec![None; *repetitions],
                             run_directory: None,
-                            review: None,
-                            resolution: None,
                             repetition_outcomes: vec![Outcome::Passed; *repetitions],
                             exclusions: Vec::new(),
                             repetitions: *repetitions,
@@ -515,7 +507,6 @@ impl HilEvidenceIndex {
                     evaluator_dirty: repository.dirty,
                     ..HilEvidenceSummary::default()
                 },
-                current_observer,
                 ..Self::default()
             });
         }
@@ -615,7 +606,7 @@ impl HilEvidenceIndex {
                         .is_some_and(|firmware| firmware.source == PlannedFirmwareSource::Replay);
                 let replays_firmware = artifact_replays_firmware || plan_replays_firmware;
                 // Exact snapshot bytes establish identity independently of Git
-                // bookkeeping. Reviews justify differences, never missing commits.
+                // bookkeeping.
                 let binding = provenance::current_sources(root, &run_directory, &manifest)?;
                 let mut exclusions = Vec::new();
                 if replays_firmware {
@@ -683,8 +674,6 @@ impl HilEvidenceIndex {
                             completion_seal,
                             subject,
                             run_directory: Some(run_directory.clone()),
-                            review: None,
-                            resolution: None,
                             failure: scenario.failure,
                             repetition_failures: scenario
                                 .repetitions
@@ -715,7 +704,7 @@ impl HilEvidenceIndex {
                             .exclusions
                             .push(decision::Exclusion::CurrentObserverConfigurationUnavailable);
                     } else {
-                        match observer::assess(root, &current_observer, observation, None, None)? {
+                        match observer::assess(root, &current_observer, observation, None)? {
                             observer::Compatibility::Compatible => {}
                             observer::Compatibility::GraphNotProjectable => observation
                                 .exclusions
@@ -733,11 +722,7 @@ impl HilEvidenceIndex {
             summary.current_source_producer += usize::from(current_producer);
             summary.qualifying += usize::from(qualifying);
         }
-        Ok(Self {
-            scenarios,
-            summary,
-            current_observer,
-        })
+        Ok(Self { scenarios, summary })
     }
 
     pub(crate) fn evidence_for(

@@ -124,9 +124,6 @@ impl VendorProof {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum HilProof {
     Qualified,
-    /// Every obligation passed, some only on sources that have changed
-    /// since: the last known state, reported, not a missing proof.
-    LastKnown,
     Missing,
     NotApplicable,
 }
@@ -135,7 +132,6 @@ impl HilProof {
     pub(crate) const fn label(self) -> &'static str {
         match self {
             Self::Qualified => "qualified",
-            Self::LastKnown => "last-known",
             Self::Missing => "missing",
             Self::NotApplicable => "not-applicable",
         }
@@ -421,8 +417,6 @@ pub(crate) struct CapabilityDocument {
     #[serde(default)]
     pub(crate) hil_requirements: Vec<HilRequirementDocument>,
     #[serde(default)]
-    pub(crate) hil_reviews: Vec<PathBuf>,
-    #[serde(default)]
     pub(crate) hil_not_applicable: Option<String>,
     #[serde(default)]
     pub(crate) async_not_applicable: Option<String>,
@@ -650,7 +644,6 @@ impl ValidatedProgram {
             evidence: &evidence,
             scenario_catalog: &scenario_catalog,
             hil_index: &hil_index,
-            declarations: &declarations,
         };
         let mut capabilities = BTreeMap::new();
         for capability_document in document.capabilities {
@@ -696,7 +689,6 @@ struct EvaluationContext<'a> {
     evidence: &'a NativeEvidence,
     scenario_catalog: &'a ScenarioCatalog,
     hil_index: &'a HilEvidenceIndex,
-    declarations: &'a BTreeMap<String, CapabilityDocument>,
 }
 
 fn evaluate_capability(
@@ -714,27 +706,14 @@ fn evaluate_capability(
     let dependencies = validated.dependencies;
     let mut gaps = validated.gaps;
     let hil_requirements = validated.hil_requirements.clone();
-    let (reviewed_index, reviews) = crate::hil::review::apply(
-        context.root,
-        &document,
-        context.declarations,
-        context.hil_index,
-        context.scenario_catalog,
-    )?;
     let hil_decisions = hil_requirements
         .iter()
         .map(|requirement| {
-            let mut decision = reviewed_index.decision_for(requirement, context.scenario_catalog);
-            decision.attach_reviews(
-                context.root,
-                &document,
-                context.declarations,
-                context.scenario_catalog,
-                &reviews,
-            )?;
-            Ok(decision)
+            context
+                .hil_index
+                .decision_for(requirement, context.scenario_catalog)
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<Vec<_>>();
     let hil_checks = hil_requirements
         .iter()
         .flat_map(|requirement| {
@@ -747,7 +726,9 @@ fn evaluate_capability(
                     scenario: requirement.scenario.clone(),
                     check: check.clone(),
                     minimum_repetitions: requirement.minimum_repetitions,
-                    evidence: reviewed_index.evidence_for(&selected, context.scenario_catalog),
+                    evidence: context
+                        .hil_index
+                        .evidence_for(&selected, context.scenario_catalog),
                 }
             })
         })
@@ -780,14 +761,10 @@ fn evaluate_capability(
     } else {
         let requirements = validated.hil_requirements;
         let mut complete = !requirements.is_empty() && !has_gap(&gaps, Axis::Hil);
-        let mut last_known = complete;
         for decision in &hil_decisions {
             match &decision.evidence {
                 Some(reference) => evidence.push(reference.clone()),
-                None => {
-                    complete = false;
-                    last_known &= decision.status == crate::hil::EvidenceStatus::LastKnownPass;
-                }
+                None => complete = false,
             }
             if decision.status == crate::hil::EvidenceStatus::UnresolvedFailure {
                 ensure_gap(&mut gaps, Axis::Hil, "current-hil-failure-unresolved");
@@ -795,8 +772,6 @@ fn evaluate_capability(
         }
         if complete {
             HilProof::Qualified
-        } else if last_known {
-            HilProof::LastKnown
         } else {
             ensure_gap(&mut gaps, Axis::Hil, "current-hil-evidence-missing");
             HilProof::Missing
@@ -848,7 +823,6 @@ fn validate_capability_declaration_inner(
 ) -> Result<ValidatedDeclaration> {
     let id = slug(&document.id, "capability id")?;
     source_contract::validate(&document.source_contracts, context.root)?;
-    crate::hil::review::validate(context.root, document)?;
     document
         .development
         .validate(&document.gaps, context.root)?;

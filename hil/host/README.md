@@ -49,9 +49,9 @@ The ownership map and bundle contract are in the
 
 `cargo hil` builds the observer through xtask using Cargo's actual artifact
 messages, saves its executable receipt, and atomically publishes
-`target/hil/current-observer.json`. Cargo uses `--locked`; downloads of pinned
-dependencies remain allowed. Set `CARGO_NET_OFFLINE=true` or Cargo's
-`net.offline` configuration when offline execution is required. Cancellation of
+`target/hil/current-observer.json`. Cargo uses `--locked` and, like every Cargo
+command in this repository, runs offline (`.cargo/config.toml`); `cargo xtask
+fetch` downloads what a changed lock file needs. Cancellation of
 xtask is forwarded to its owned runner process group, with up to five minutes
 for fixture cleanup and evidence sealing; this does not limit campaign runtime.
 The wrapper returns the runner's exit code (or `128 + signal` on Unix).
@@ -285,9 +285,7 @@ also runs without a DUT or private lab configuration.
 Qualification v4 independently reads the sealed bundles instead of trusting a
 handwritten HIL status. A capability is HIL-qualified only when its declared
 scenario and repetition requirement is satisfied by a completed bundle or a
-separately sealed attempt under the default current-source-composition policy or an explicit
-[property-scoped applicability review](../../qualification/evidence-reviews.md)
-with validated build and owner bindings. A verified snapshot matching the current
+separately sealed attempt bound to the current source composition. A verified snapshot matching the current
 source inputs the observation depends on is directly applicable even when dirty, provided the executed
 procedure and relevant host observer inputs also match. Its existence alone does
 not establish this match or a passing observation. Scenario IDs and achievable repetition counts are checked against the

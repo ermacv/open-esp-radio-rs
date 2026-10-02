@@ -12,19 +12,6 @@ pub(super) struct Contract {
     unit: &'static str,
     comparison: &'static str,
     threshold: u64,
-    image_sensitive: bool,
-}
-
-impl Contract {
-    pub(super) fn image_sensitive(&self) -> bool {
-        self.image_sensitive
-    }
-}
-
-/// Whole-scenario obligations include mandatory memory/timing assertions, even
-/// when those assertions have not yet been published as individually named checks.
-pub(super) fn whole_scenario_image_sensitive(document: &Value) -> bool {
-    document.get("transfer").and_then(Value::as_str) == Some("identical-image")
 }
 
 /// Station UDP whose offer flows only to the target.
@@ -50,7 +37,6 @@ pub(super) fn contracts(document: &Value) -> Result<BTreeMap<String, Contract>> 
             name.into(),
             Contract {
                 unit: "count",
-                image_sensitive: false,
                 comparison: "exactly",
                 threshold: 1,
             },
@@ -72,7 +58,6 @@ pub(super) fn contracts(document: &Value) -> Result<BTreeMap<String, Contract>> 
             "wifi.protection.rts-cts-before-data".into(),
             Contract {
                 unit: "basis-points",
-                image_sensitive: false,
                 comparison: "at-least",
                 threshold: percent * 100,
             },
@@ -85,7 +70,6 @@ pub(super) fn contracts(document: &Value) -> Result<BTreeMap<String, Contract>> 
                 name.into(),
                 Contract {
                     unit: "count",
-                    image_sensitive: false,
                     comparison: "exactly",
                     threshold: 0,
                 },
@@ -123,7 +107,6 @@ pub(super) fn contracts(document: &Value) -> Result<BTreeMap<String, Contract>> 
                 name.into(),
                 Contract {
                     unit: "bits-per-second",
-                    image_sensitive: true,
                     comparison: "at-least",
                     threshold,
                 },
@@ -135,7 +118,6 @@ pub(super) fn contracts(document: &Value) -> Result<BTreeMap<String, Contract>> 
             "udp.rx.maximum-silence".into(),
             Contract {
                 unit: "microseconds",
-                image_sensitive: true,
                 comparison: "at-most",
                 threshold: limit
                     .checked_mul(1_000)

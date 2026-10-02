@@ -364,17 +364,17 @@ struct QueueSink<'a, M: RawMutex, const EVENTS: usize> {
 
 impl<M: RawMutex, const EVENTS: usize> Ieee802154RadioSink for QueueSink<'_, M, EVENTS> {
     fn event(&mut self, event: RadioEvent<'_>) {
-        if !self.events.push(Ieee802154RadioEvent::copy(event)) {
-            if let RadioEvent::Received(frame) = event {
-                trace::emit(|| oer_ieee802154_trace::RxOutcome {
-                    // The PHR length counts the two FCS bytes the portable
-                    // frame leaves out.
-                    length: frame.frame.bytes().len() as u8 + 2,
-                    result: oer_ieee802154_trace::RxResult::Dropped(
-                        oer_ieee802154_trace::RxDrop::QueueFull,
-                    ),
-                });
-            }
+        if !self.events.push(Ieee802154RadioEvent::copy(event))
+            && let RadioEvent::Received(frame) = event
+        {
+            trace::emit(|| oer_ieee802154_trace::RxOutcome {
+                // The PHR length counts the two FCS bytes the portable
+                // frame leaves out.
+                length: frame.frame.bytes().len() as u8 + 2,
+                result: oer_ieee802154_trace::RxResult::Dropped(
+                    oer_ieee802154_trace::RxDrop::QueueFull,
+                ),
+            });
         }
     }
 }

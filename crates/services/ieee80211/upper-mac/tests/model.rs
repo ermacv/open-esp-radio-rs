@@ -211,7 +211,7 @@ fn a_frame_acknowledged_at_the_first_attempt_is_sent_once() {
     assert_eq!(submitted.len(), 1);
     assert_eq!(submitted[0].rate, OFDM54);
     assert_eq!(submitted[0].protection, Protection::None);
-    assert_eq!(submitted[0].frames, [frame.clone()]);
+    assert_eq!(submitted[0].frames, core::slice::from_ref(&frame));
     assert!(!retry_bit(&submitted[0].frames[0]));
     assert_eq!(model.buffers_lent(), 0);
 }

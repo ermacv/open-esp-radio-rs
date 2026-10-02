@@ -135,7 +135,10 @@ bytes. Capacity exhaustion fails explicitly. The workspace is a private
 temporary directory below the caller's directory, removed when the link ends.
 
 Real-link tests require both LLD (reference 22.1.8) and GNU ld (reference
-2.47 with RV32), installed on the host. Set `BLOBRAY_TEST_LLD` to override
+2.47 with RV32; `--start-lib`/`--end-lib` are new in 2.47), installed on the
+host. The nightly workflow uses the LLD the pinned Rust toolchain ships
+(`gcc-ld/ld.lld`) and builds GNU ld 2.47, since Ubuntu's LLD 18 and binutils
+2.42 fail these tests. Set `BLOBRAY_TEST_LLD` to override
 `/usr/bin/ld.lld`. `BLOBRAY_TEST_GNU_LD` selects the GNU executable; without it,
 tests use the first of `riscv-none-elf-ld`, `riscv32-unknown-elf-ld`, `riscv32-esp-elf-ld`,
 `riscv64-unknown-elf-ld`, `riscv64-elf-ld` and `riscv64-linux-gnu-ld` on `PATH`.

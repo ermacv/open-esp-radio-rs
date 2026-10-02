@@ -595,7 +595,7 @@ fn oversized_map_record_and_nondeterministic_capability_evidence_fail() {
         link_with(&f, &tool, 32 * 1024 * 1024).err().unwrap().code,
         ErrorCode::ResourceLimited
     );
-    let real = PathBuf::from("/usr/bin/ld.lld");
+    let real = linker();
     let varying = f.dir.path().join("varying-linker");
     fs::write(&varying, format!("#!/bin/sh\nif [ \"$1\" = --version ]; then exec '{}' --version; fi\necho \"$PWD\" >&2\nexec '{}' \"$@\"\n", real.display(), real.display())).unwrap();
     fs::set_permissions(&varying, fs::Permissions::from_mode(0o700)).unwrap();

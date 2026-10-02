@@ -601,3 +601,54 @@ fn source_compiled_entries_carry_no_blobray_metrics() {
     let reloaded: scenario_evidence::Index = serde_json::from_str(&text).unwrap();
     assert_eq!(reloaded, shard);
 }
+
+#[test]
+fn an_absent_evidence_directory_is_reported_and_supports_nothing() {
+    let fixture = fixture_root("absent-directories");
+    let root = &fixture.0;
+    fs::create_dir_all(root.join("verification/chip/evidence")).unwrap();
+    fs::create_dir_all(root.join("target/hil/chip")).unwrap();
+    // A checkout's runs link before its first run points nowhere.
+    std::os::unix::fs::symlink(
+        root.join("store/never-created"),
+        root.join("target/hil/chip/runs"),
+    )
+    .unwrap();
+    let absent = absent_directories(
+        root,
+        &[
+            ("vendor-evidence", Path::new("verification/chip/evidence")),
+            ("hil-evidence", Path::new("hil/evidence/chip")),
+            ("hil-runs", Path::new("target/hil/chip/runs")),
+            ("hil-evidence", Path::new("")),
+        ],
+    );
+    assert_eq!(
+        absent,
+        [
+            AbsentDirectory {
+                kind: "hil-evidence",
+                path: PathBuf::from("hil/evidence/chip"),
+            },
+            AbsentDirectory {
+                kind: "hil-runs",
+                path: PathBuf::from("target/hil/chip/runs"),
+            },
+        ]
+    );
+    assert_eq!(
+        crate::report::absent_lines(&absent),
+        [
+            "EVIDENCE-DIR\tabsent\tkind=hil-evidence\tpath=hil/evidence/chip\tshards=0",
+            "EVIDENCE-DIR\tabsent\tkind=hil-runs\tpath=target/hil/chip/runs\tbundles=0",
+        ]
+    );
+    // What an absent vendor index holds supports no obligation.
+    let evidence = NativeEvidence::load(root, Path::new("verification/gone"), "chip").unwrap();
+    assert_eq!(evidence.entries(), 0);
+    assert!(!evidence.supports(&VendorEvidenceRef {
+        suite: "suite".into(),
+        source: "source".into(),
+        symbol: "symbol".into(),
+    }));
+}

@@ -216,6 +216,7 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
             vendor_evidence_index: PathBuf::from("vendor.json"),
             hil_catalog: PathBuf::from("scenarios"),
             hil_runs: PathBuf::from("runs"),
+            absent: Vec::new(),
         },
         capabilities: evaluated,
         declarations: canonical
@@ -536,6 +537,7 @@ fn the_evidence_matrix_decides_readiness_of_catalog_capabilities() {
                 vendor_evidence_index: PathBuf::from("vendor.json"),
                 hil_catalog: PathBuf::from("scenarios"),
                 hil_runs: PathBuf::from("runs"),
+                absent: Vec::new(),
             },
             capabilities: result,
             declarations: declared.iter().map(|d| (d.id.clone(), d.clone())).collect(),
@@ -583,6 +585,7 @@ fn the_evidence_matrix_decides_readiness_of_catalog_capabilities() {
             vendor_evidence_index: PathBuf::from("vendor.json"),
             hil_catalog: PathBuf::from("scenarios"),
             hil_runs: PathBuf::from("runs"),
+            absent: Vec::new(),
         },
         capabilities: evaluated,
         declarations: declared.iter().map(|d| (d.id.clone(), d.clone())).collect(),

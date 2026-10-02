@@ -185,6 +185,25 @@ fn report(qualification: &Qualification) -> Report<'_> {
     }
 }
 
+/// One line per declared evidence directory that does not exist.
+pub(crate) fn absent_lines(absent: &[crate::model::AbsentDirectory]) -> Vec<String> {
+    absent
+        .iter()
+        .map(|directory| {
+            format!(
+                "EVIDENCE-DIR\tabsent\tkind={}\tpath={}\t{}=0",
+                directory.kind,
+                directory.path.display(),
+                if directory.kind == "hil-runs" {
+                    "bundles"
+                } else {
+                    "shards"
+                }
+            )
+        })
+        .collect()
+}
+
 pub(crate) fn print(qualification: &Qualification) {
     println!(
         "INPUT\tverification-entries={}\tverification-current-release={}\thil-directories={}\thil-bundles={}\thil-incomplete={}\thil-completed={}\thil-passing={}\thil-current-source-producer={}\thil-qualifying={}\thil-sealed-attempts={}\thil-shards={}\thil-current-shards={}\tevaluator-dirty={}",
@@ -204,6 +223,9 @@ pub(crate) fn print(qualification: &Qualification) {
         qualification.evidence_inputs.hil.current_shards,
         qualification.evidence_inputs.hil.evaluator_dirty,
     );
+    for line in absent_lines(&qualification.evidence_inputs.absent) {
+        println!("{line}");
+    }
     if let Some(problem) = &qualification
         .evidence_inputs
         .hil

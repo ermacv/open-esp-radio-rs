@@ -240,6 +240,35 @@ pub(crate) struct EvidenceInputs {
     pub(crate) vendor_evidence_index: PathBuf,
     pub(crate) hil_catalog: PathBuf,
     pub(crate) hil_runs: PathBuf,
+    /// The evidence directories the program declares that do not exist:
+    /// they hold no evidence, so every obligation they would serve stays
+    /// missing, and the report says so instead of reading them as empty.
+    pub(crate) absent: Vec<AbsentDirectory>,
+}
+
+/// A declared evidence directory that does not exist.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct AbsentDirectory {
+    /// `vendor-evidence`, `hil-evidence` or `hil-runs`.
+    pub(crate) kind: &'static str,
+    pub(crate) path: PathBuf,
+}
+
+/// Which of `declared` (kind, repository path) do not exist below `root`;
+/// an empty path declares nothing. A dangling link, such as a checkout's
+/// `target/hil/<chip>/runs` before its first run, counts as absent.
+pub(crate) fn absent_directories(
+    root: &Path,
+    declared: &[(&'static str, &Path)],
+) -> Vec<AbsentDirectory> {
+    declared
+        .iter()
+        .filter(|(_, path)| !path.as_os_str().is_empty() && !root.join(path).exists())
+        .map(|(kind, path)| AbsentDirectory {
+            kind,
+            path: path.to_path_buf(),
+        })
+        .collect()
 }
 
 impl Qualification {
@@ -672,6 +701,17 @@ impl ValidatedProgram {
             vendor_evidence_index: document.verification.evidence_index.clone(),
             hil_catalog: document.hil.catalog.clone(),
             hil_runs: document.hil.runs.clone(),
+            absent: absent_directories(
+                root,
+                &[
+                    ("vendor-evidence", &document.verification.evidence_index),
+                    (
+                        "hil-evidence",
+                        document.hil.evidence.as_deref().unwrap_or(Path::new("")),
+                    ),
+                    ("hil-runs", &document.hil.runs),
+                ],
+            ),
         };
         let declarations = document
             .capabilities

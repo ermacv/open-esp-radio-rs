@@ -44,6 +44,35 @@ if [ -n "$branch" ]; then
     fi
 fi
 
+# CI on main: each workflow of the tree whose newest finished verdict on main
+# failed. Fixing a red main comes before other work.
+if command -v gh >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+    workflows=$(sed -n 's/^name:[[:space:]]*//p' .github/workflows/*.yml 2>/dev/null | tr -d "'\"")
+    runs=$(bounded 5 gh run list --branch main --limit 30 \
+        --json workflowName,status,conclusion,createdAt,url 2>/dev/null)
+    if [ -n "$runs" ]; then
+        red=$(printf '%s' "$runs" | jq -r --arg workflows "$workflows" '
+            ($workflows | split("\n")) as $names
+            | [.[] | select(.status == "completed")
+                   | select(.conclusion == "success" or .conclusion == "failure"
+                            or .conclusion == "timed_out" or .conclusion == "startup_failure")
+                   | select(.workflowName as $n | $names | index($n))]
+            | group_by(.workflowName)
+            | map(max_by(.createdAt))
+            | map(select(.conclusion != "success"))
+            | .[] | "\(.workflowName) \(.url)"')
+        if [ -n "$red" ]; then
+            echo "$red" | while read -r name url; do
+                echo "ci: main is RED: $name failed ($url); fix it before other work"
+            done
+        else
+            echo "ci: main is green"
+        fi
+    else
+        echo "ci: state of main unknown (gh gave no answer within 5 s)"
+    fi
+fi
+
 # Free disk space of the checkout's file system.
 threshold=${OER_DISK_WARN_GIB:-20}
 free_kib=$(df -Pk "$root" 2>/dev/null | awk 'NR == 2 { print $4 }')

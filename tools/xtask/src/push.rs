@@ -1,31 +1,26 @@
-//! Push this checkout's commits to `main` only after the gate passed on
-//! exactly the tree that is pushed.
+//! Push this checkout's branch after the gate passed on exactly the tree that
+//! is pushed, and hand it to CI through its pull request.
 //!
 //! 1. The tree must be `HEAD`: an uncommitted change to a tracked file, or
 //!    an untracked Rust source or Cargo manifest or lock that a build would
 //!    read, refuses the push, since the gate would check what is not pushed.
-//! 2. The gate ([`crate::gate`]) checks the packages `HEAD`'s commits
-//!    change, and their dependents, against the merge base with
-//!    `origin/main`.
-//! 3. Fetch and rebase onto `origin/main`. When the incoming commits affect
-//!    no package the pushed commits affect, push at once; otherwise rerun
-//!    the gate for the packages both affect. A push that `main` outran in
-//!    the meantime is rejected as non-fast-forward and goes round again.
+//! 2. The branch is not `main`: `main` changes only through pull requests,
+//!    which CI checks and merges.
+//! 3. The fast gate ([`crate::gate`]) checks the packages `HEAD`'s commits
+//!    change against the merge base with `origin/main`.
+//! 4. Push the branch, open its pull request when it has none, and enable
+//!    auto-merge: GitHub rebases it onto `main` once CI passes. With
+//!    `--draft` the pull request is a draft and nothing merges it.
 //!
-//! No lock, queue or nested `cargo xtask` is involved: Git's
-//! fast-forward check is the only serialization `main` needs.
-
-use std::collections::BTreeSet;
+//! The push never waits for CI and never rebases: a branch that `main`
+//! outran merges as it is, and CI on `main` checks the result.
 
 use oer_process as process;
 
 use crate::{Context, Result, gate};
 
-/// Rounds before giving up while `main` keeps moving under the push.
-const ROUNDS: usize = 5;
-
-/// The base the push lands on.
-const MAIN: &str = "origin/main";
+/// The base pull requests merge into.
+const MAIN: &str = "main";
 
 /// Files whose untracked presence changes what a build of the tree reads.
 pub fn build_input(path: &str) -> bool {
@@ -54,33 +49,30 @@ pub fn unpushable(tracked: &[String], untracked: &[String]) -> Option<String> {
     })
 }
 
-/// The packages two changes both affect.
-pub fn overlap(ours: &BTreeSet<gate::Key>, theirs: &BTreeSet<gate::Key>) -> BTreeSet<gate::Key> {
-    ours.intersection(theirs).cloned().collect()
+/// Why `branch` cannot be pushed for review, if it cannot.
+pub fn unreviewable(branch: &str) -> Option<String> {
+    match branch {
+        "HEAD" => Some(String::from(
+            "HEAD is detached; create a branch for the change first",
+        )),
+        MAIN => Some(String::from(
+            "main changes only through pull requests; create a branch for the change first",
+        )),
+        _ => None,
+    }
 }
 
 fn git(ctx: &Context, arguments: &[&str]) -> Result<String> {
     Ok(gate::git(ctx, arguments)?.trim().to_owned())
 }
 
-fn fetch(ctx: &Context) -> Result<String> {
-    process::capture(
-        ctx.command("git")
-            .args(["fetch", "--quiet", "origin", "main"]),
-    )?;
-    git(ctx, &["rev-parse", MAIN])
+fn gh(ctx: &Context, arguments: &[&str]) -> Result<String> {
+    let output = process::capture(ctx.command("gh").args(arguments))?;
+    Ok(String::from_utf8(output.stdout)?.trim().to_owned())
 }
 
-fn changed(ctx: &Context, from: &str, to: &str) -> Result<Vec<String>> {
-    Ok(git(ctx, &["diff", "--name-only", from, to])?
-        .lines()
-        .filter(|line| !line.is_empty())
-        .map(str::to_owned)
-        .collect())
-}
-
-/// Gate, rebase, push; see the module documentation.
-pub fn run(ctx: &Context) -> Result<()> {
+/// Gate, push, open the pull request; see the module documentation.
+pub fn run(ctx: &Context, draft: bool) -> Result<()> {
     let tracked: Vec<String> = git(ctx, &["status", "--porcelain", "--untracked-files=no"])?
         .lines()
         .map(|line| line.get(3..).unwrap_or(line).to_owned())
@@ -92,93 +84,65 @@ pub fn run(ctx: &Context) -> Result<()> {
     if let Some(reason) = unpushable(&tracked, &untracked) {
         return Err(format!("push: {reason}").into());
     }
-    let mut main = fetch(ctx)?;
-    let mut base = git(ctx, &["merge-base", "HEAD", &main])?;
+    let branch = git(ctx, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    if let Some(reason) = unreviewable(&branch) {
+        return Err(format!("push: {reason}").into());
+    }
+    process::capture(
+        ctx.command("git")
+            .args(["fetch", "--quiet", "origin", MAIN]),
+    )?;
+    let base = git(ctx, &["merge-base", "HEAD", &format!("origin/{MAIN}")])?;
     let head = git(ctx, &["rev-parse", "HEAD"])?;
     if head == base {
-        println!("push: nothing to push; HEAD is in {MAIN}");
+        println!("push: nothing to push; HEAD is in origin/{MAIN}");
         return Ok(());
     }
-    let ours = changed(ctx, &base, "HEAD")?;
+    let files = gate::committed(ctx, &base)?;
     let tree = gate::Tree::load(&ctx.root)?;
-    let mut selection = gate::select(&tree, &ours);
-    gate::select_locks(ctx, &tree, &ours, &base, None, &mut selection)?;
+    let mut selection = gate::select(&tree, &files);
+    gate::select_locks(ctx, &tree, &files, &base, None, &mut selection)?;
     let affected = gate::affected(ctx, &selection)?;
     println!(
         "push: gating {} on {}: {} files, {} package(s) with dependents",
         &head[..12],
         &base[..12],
-        ours.len(),
+        files.len(),
         affected.len()
     );
-    gate::run(ctx, &tree, &selection, &affected)
+    gate::run(ctx, &tree, &selection, &affected, gate::Depth::Fast)
         .map_err(|error| format!("push: the gate failed; nothing pushed: {error}"))?;
-    for round in 1..=ROUNDS {
-        if base != main {
-            let theirs = changed(ctx, &base, &main)?;
-            if let Err(error) =
-                process::capture(ctx.command("git").args(["rebase", "--quiet", MAIN]))
-            {
-                let _ = process::capture(ctx.command("git").args(["rebase", "--abort"]));
-                return Err(format!(
-                    "push: rebase onto {MAIN} failed; resolve it by hand: {error}"
-                )
-                .into());
+    process::capture(ctx.command("git").args([
+        "push",
+        "--quiet",
+        "--set-upstream",
+        "origin",
+        &format!("HEAD:refs/heads/{branch}"),
+    ]))
+    .map_err(|error| format!("push: git push of {branch} failed: {error}"))?;
+    println!("push: pushed {} to {branch}", &head[..12]);
+    let url = match gh(
+        ctx,
+        &["pr", "view", &branch, "--json", "url", "--jq", ".url"],
+    ) {
+        Ok(url) if !url.is_empty() => url,
+        _ => {
+            let mut create = vec!["pr", "create", "--fill", "--base", MAIN, "--head", &branch];
+            if draft {
+                create.push("--draft");
             }
-            let rebased = gate::Tree::load(&ctx.root)?;
-            let mut incoming = gate::select(&rebased, &theirs);
-            gate::select_locks(ctx, &rebased, &theirs, &base, Some(&main), &mut incoming)?;
-            let incoming = gate::affected(ctx, &incoming)?;
-            let both = overlap(&affected, &incoming);
-            if both.is_empty() {
-                println!(
-                    "push: {MAIN} moved to {}; its {} changed files affect none of these packages",
-                    &main[..12],
-                    theirs.len()
-                );
-            } else {
-                println!(
-                    "push: {MAIN} moved to {}; regating the {} package(s) both changes affect",
-                    &main[..12],
-                    both.len()
-                );
-                let mut files = ours.clone();
-                files.extend(theirs);
-                let mut selection = gate::select(&rebased, &files);
-                gate::select_locks(ctx, &rebased, &files, &base, None, &mut selection)?;
-                selection.packages.retain(|key| both.contains(key));
-                gate::run(ctx, &rebased, &selection, &both).map_err(|error| {
-                    format!("push: the gate failed on {MAIN}; nothing pushed: {error}")
-                })?;
-            }
-            base = main.clone();
+            gh(ctx, &create).map_err(|error| format!("push: gh pr create failed: {error}"))?
         }
-        let head = git(ctx, &["rev-parse", "HEAD"])?;
-        match process::capture(
-            ctx.command("git")
-                .args(["push", "--quiet", "origin", "HEAD:main"]),
-        ) {
-            Ok(_) => {
-                println!("push: pushed {} to main", &head[..12]);
-                crate::ci_status::print(ctx, "push");
-                return Ok(());
-            }
-            Err(error) => {
-                println!(
-                    "push: rejected ({round}/{ROUNDS}): {}",
-                    first_line(&error.to_string())
-                );
-            }
-        }
-        main = fetch(ctx)?;
+    };
+    if draft {
+        println!("push: draft pull request {url}");
+    } else {
+        gh(ctx, &["pr", "merge", &branch, "--auto", "--rebase"])
+            .map_err(|error| format!("push: enabling auto-merge of {url} failed: {error}"))?;
+        println!("push: {url} merges into {MAIN} once CI passes");
     }
-    Err(format!("push: {MAIN} moved {ROUNDS} times during this push; run it again").into())
-}
-
-fn first_line(text: &str) -> &str {
-    text.lines()
-        .find(|line| line.contains("rejected") || line.contains("error"))
-        .unwrap_or_else(|| text.lines().next().unwrap_or(text))
+    crate::ci_status::print(ctx, "push");
+    Ok(())
 }
 
 #[cfg(test)]
@@ -208,13 +172,9 @@ mod tests {
     }
 
     #[test]
-    fn disjoint_changes_need_no_second_gate() {
-        let key = |name: &str| (String::from("Cargo.toml"), name.to_owned());
-        let ours = BTreeSet::from([key("a"), key("b")]);
-        assert!(overlap(&ours, &BTreeSet::from([key("c")])).is_empty());
-        assert_eq!(
-            overlap(&ours, &BTreeSet::from([key("b"), key("c")])),
-            BTreeSet::from([key("b")])
-        );
+    fn main_changes_only_through_pull_requests() {
+        assert!(unreviewable("main").unwrap().contains("pull requests"));
+        assert!(unreviewable("HEAD").unwrap().contains("detached"));
+        assert_eq!(unreviewable("fix-publication"), None);
     }
 }

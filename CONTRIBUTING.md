@@ -37,10 +37,11 @@ artifact. See [source policy](docs/source-policy.md).
 ## Choose checks by the changed boundary
 
 Run commands from the repository root unless the component guide says otherwise.
-Push to `main` with `cargo xtask push`: it runs the fast gate on exactly the
-committed tree and pushes only what passed. `cargo xtask check changed` runs
-the same gate over uncommitted work, and `--full` adds what CI checks after a
-push. The table lists what each boundary
+Changes reach `main` through pull requests. `cargo xtask push` runs the fast
+gate on exactly the committed tree, pushes the branch, opens its pull request
+and enables auto-merge, so the branch merges once CI passes. `cargo xtask check
+changed` runs the same gate over uncommitted work, and `--full` adds what CI
+checks on the pull request. The table lists what each boundary
 adds when you iterate on it.
 
 | Change | Checks |

@@ -551,7 +551,7 @@ fn archive_order_decides_gnu_extraction() {
 fn capabilities_not_version_numbers_decide_adapter_support() {
     use std::os::unix::fs::PermissionsExt;
     for (version, real) in [
-        ("LLD 99.7", PathBuf::from("/usr/bin/ld.lld")),
+        ("LLD 99.7", linker()),
         ("GNU ld (future) 99.7", gnu_linker().canonicalize().unwrap()),
     ] {
         let f = closed();

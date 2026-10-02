@@ -1,8 +1,8 @@
 schema = 5
 id = "udp-tx-ht40-split-task-poll-diagnostic"
 description = "Split-core HT40 saturated TX executor, A-MPDU, and block-ack diagnostic"
+role = "investigation"
 repetitions = 3
-transfer = "identical-image"
 tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "task-poll", "ampdu", "air-strict"]
 
 [wifi]

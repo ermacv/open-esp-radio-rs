@@ -21,32 +21,43 @@ Cargo package identities are independent of this directory hierarchy.
 | --- | --- |
 | `oer/` | Thin public facade; reexports protocols, chip backends and selected compositions |
 | `radio/` | `wifi/` owns public requests, affine role lifecycle and the executor-free service port |
+| `radio/port/` | The vocabulary every radio port shares (`oer-radio-port`): failure classes and `PortError`, `EventsLost` with its ordering rule, the terminal `Poisoned` event, lifecycle commands, events and refusals, correlation identities with a backend-reserved range, and the clock resolution and epoch relation |
+| `radio/coex/` | Portable radio client identity (`RadioClient`) and coexistence priority vocabulary (`CoexPriority`) every protocol and backend shares |
 | `memory/` | Audited stable-memory proofs and affine buffer/queue handoff |
 | `trace/` | Typed, reset-retained event trace and snapshot slots; drivers define the events, images place the storage |
 | `network/interface/` | Stack-neutral interface, link and error values |
-| `protocols/ieee80211/{mac,softmac,sta,ap,security/rsn}/` | Frame/protocol code, MAC contracts, role policy and security |
+| `protocols/ieee80211/{mac,softmac,sta,ap,security/rsn}/` | Sans-IO frame/protocol code, MAC contracts, role policy and security state machines, and the ports their drivers wait on |
+| `protocols/ieee80211/lower-mac/` | The [`Ieee80211LowerMacPort`](protocols/ieee80211/lower-mac/README.md) every Wi-Fi backend implements: one hardware transmission attempt per submission from a backend-lent buffer, receive events with portable `RxMeta`, interface, key, Block Ack and transmit-gate controls, the backend's parametric limits and hardware services, and extension traits for A-MPDU, beacon timing, monitor reception and on-air cancel; its `model` feature is an in-memory backend for host tests |
+| `protocols/ieee80211/upper-mac/` | Transmit policy above the lower-MAC port: MPDU retry counters and Retry bit over a `RateLadder`, A-MPDU retry selection from the BlockAck, RTS/CTS and CTS-to-self selection, and the `TxPlanner` that turns one exchange into lower-MAC attempts and statistics |
+| `protocols/espressif/ieee80211/policy/` | Espressif policy data for those algorithms, recovered from the vendor stack: rate-schedule arenas and the retry ladder, LMAC retry limits, A-MPDU lifetime, default contention, the HE TXOP byte budget and the CCMP packet-number step, and the coexistence events of a reconnecting station's connection frames |
 | `protocols/ieee80211/datapath/` | Software TX frame ownership, destination queues, airtime scheduling and physical materialization contracts |
-| `protocols/bluetooth/le/ll/` | Portable LE PDU codecs, protocol-role state and the Direct Test Mode session planner |
-| `protocols/bluetooth/le/radio/` | Portable LE radio event contract: configured roles, timed event requests and their outcomes in physical values |
+| `protocols/bluetooth/le/ll/` | Portable LE PDU codecs, protocol-role state, the software Link Layer acknowledgement (`connection::acknowledgement`) and the Direct Test Mode session planner |
+| `protocols/bluetooth/le/radio/` | Portable LE radio event contract: configured roles, timed event requests and their outcomes in physical values; the `LeRadioPort` a service loop drives, its capabilities (roles, PHYs, data payload, acknowledgement owner) and `NoRadio` |
 | `protocols/bluetooth/le/controller/` | Sans-IO LE Controller core: HCI command service, concurrent Link Layer roles (advertising, scanning, one peripheral connection with control procedures, encryption and ACL, Direct Test Mode) and the radio event arbiter |
-| `protocols/bluetooth/hci/` | `wire` holds packet views; `transport/in_process` holds queues; `controller` holds reset-scoped bootstrap state, command classification and the `le` codecs |
-| `protocols/ieee802154/` | `mac/frame` holds bounded bytes; `radio/{command,event,state,channel,capabilities}` holds portable contracts and one state machine |
+| `protocols/bluetooth/hci/` | `wire` holds packet views; `transport` holds the synchronous Controller-to-Host queue and packet validation; `controller` holds reset-scoped bootstrap state, command classification and the `le` codecs |
+| `protocols/ieee802154/` | `mac/frame` holds bounded bytes; `radio/{command,event,state,channel,capabilities}` holds portable contracts and one state machine; `port` declares the `Ieee802154RadioPort` every backend implements and the settings it applies |
+| `services/ieee80211/{sta,rsn}/` | Executor-independent drivers of the protocol state machines: station join, candidate scan, attempt and lifecycle; WPA2 handshake and key-install runners; `sta`'s `port` runs the whole station over any lower-MAC port |
+| `services/ieee80211/upper-mac/` | `EventRouter`, the one consumer of a lower-MAC port's events, dispatching completions by `TxId`, received frames, lifecycle terminals and extension events; `UpperMacTx`, which runs the transmit planner over the router, one submission per attempt, so exchanges of several access categories run concurrently |
+| `services/bluetooth/hci/transport/` | Bounded in-process HCI Host/Controller transport and the storage of one HCI epoch |
 | `hardware/esp32s31/{pac,hal,phy}/` | PAC `ownership` partitions register authority; HAL `root` and `owner` own the radio root and protocol routes; domain modules hold register operations, transactions and RF algorithms |
 | `hardware/esp32s31/driver/ieee80211/{dma,mac}/` | S31 descriptor ownership and MAC `rx/tx/rate`; `mac/tx/metadata` lowers portable traffic intent |
 | `roles/esp32s31/ieee80211/{sta,ap}/` | Executor-free chip station and access-point role composition over the MAC driver |
-| `roles/esp32s31/ieee802154/radio/` | Executor-free IEEE 802.15.4 radio role: the portable radio contract over the ported MAC engine |
+| `roles/espressif/ieee802154/radio/` | Executor-free IEEE 802.15.4 radio role: the portable radio contract over the ported MAC engine |
 | `roles/esp32s31/bluetooth/radio/` | Executor-free Bluetooth LE radio role: the portable LE radio contract over the scheduler executor and the role instance pools |
 | `hardware/ieee80211/pac/` | Chip-neutral closed Wi-Fi MAC register blocks (`pac/raw`, generated) and reviewed transactions over the layouts chips share; each chip PAC places the blocks at its own addresses |
-| `hardware/ieee802154/engine/` | Chip-neutral IEEE 802.15.4 MAC engine ported from the public ESP-IDF driver, over the `Ieee802154LowLevel` interface each chip's HAL implements |
+| `hardware/espressif/coex/` | Espressif coexistence policy recovered from esp-coex-lib: the shared event priority table and IEEE 802.15.4 levels, timer programming, clock conversion and the time-slice schedule, over the timer and clock ports each chip binds |
+| `hardware/espressif/ieee802154/engine/` | Chip-neutral IEEE 802.15.4 MAC engine ported from the public ESP-IDF driver, over the `Ieee802154LowLevel` interface each chip's HAL implements |
 | `hardware/radio/analog/` | Chip-neutral non-blocking analog register bus contract of the Espressif PHY and its polled field transactions (`phy_i2c_readReg_Mask`, `phy_i2c_writeReg_Mask`) |
 | `hardware/radio/clock/` | Chip-neutral shared modem clock reference-count planner of ESP-IDF `modem_clock.c`, over the dependency table and edge executor each chip's HAL supplies |
-| `hardware/esp32s31/driver/{bluetooth,coex}/` | Chip radio drivers; the Bluetooth root is the role-free hardware engine (clocks, PHY, IRQ, scheduler) and its `memory/` holds its lower ownership boundary; `ieee802154/` keeps only the ESP32-S31 IEEE 802.15.4 capability page |
+| `hardware/esp32s31/driver/{bluetooth,coex}/` | Chip radio drivers; the Bluetooth root is the role-free hardware engine (clocks, PHY, IRQ, scheduler) and its `memory/` holds its lower ownership boundary; `coex/` binds the Espressif coexistence policy to the radio arbiter; `ieee802154/` keeps only the ESP32-S31 IEEE 802.15.4 capability page |
 | `adapters/esp-hal/esp32s31/{soc,radio,ieee80211,ieee802154}/` | Upstream SoC access, singleton acquisition and concrete hardware bindings |
 | `adapters/embassy/radio/` | Embassy mailbox and role-epoch actor binding the `radio` service port |
+| `adapters/openthread/ieee802154/` | Portable OpenThread `Radio` over any `Ieee802154RadioPort` |
 | `adapters/embassy/esp32s31/executor/` | Scheduler-free Embassy executor and time driver |
+| `adapters/virtual/time/` | Per-instance virtual monotonic time for host tests and simulations: a `VirtualClock` its owner advances and a `SkipClock` whose waits skip to their deadline |
 | `runtime/ieee80211/` | Portable Wi-Fi execution primitives: monitor handoffs, task shutdown, station network ownership and poll boundaries |
 | `runtime/bluetooth/` | Portable service loop joining the in-process HCI transport, the LE Controller core and a radio port |
-| `runtime/esp32s31/{ieee80211,bluetooth,ieee802154}/` | Executor-independent radio execution over `embassy-time`; Wi-Fi role/datapath owners, the Bluetooth LE radio role driving scheduler list zero and the IEEE 802.15.4 acknowledged-IRQ handoff with cancellation-safe operation/DMA owners |
+| `runtime/esp32s31/{ieee80211,bluetooth,ieee802154}/` | Executor-independent radio execution over the `oer-time` ports; Wi-Fi role/datapath owners, the Bluetooth LE radio role driving scheduler list zero and the IEEE 802.15.4 acknowledged-IRQ handoff with cancellation-safe operation/DMA owners |
 | `adapters/embassy-net/owned/` | Owned-packet network adapter over the pinned Embassy/Xarxa forks |
 | `../experiments/network-engine/` | Experimental synchronous network engine; no production package depends on it, and its host tests drive the STA TX owner |
 | `composition/esp32s31/embassy/{ieee80211,bluetooth,ieee802154,radio}/` | Static resources, one-time claims, final bindings and the concrete lifecycle runners; `radio` starts the shared radio system (arbiter, PHY domain) with its periodic PHY tracking and coexistence schedule; Wi-Fi, Bluetooth and IEEE 802.15.4 start and stop as its clients, and Bluetooth adds its HCI Controller over the radio runtime |
@@ -99,12 +110,12 @@ adapter supplies storage types; integration selects dimensions and acquires
 one complete owner graph. Profile tests run on the host from that production
 module, with hardware dependencies restricted to the ESP32-S31 target.
 
-Every chip radio composition drives PHY time through the one `EmbassyPhyTime`
-of [`runtime/esp32s31/phy`](runtime/esp32s31/phy/): synchronous ROM settles of
-at most 20 us, absolute Embassy deadlines for every other wait, the
-one-megahertz timebase check and fail-stop on an unrepresentable deadline.
-Chip PHY stays executor-independent, and the executor/time ABI backend owns no
-PHY policy.
+Chip PHY waits through `oer_esp32s31_phy::executor::wait::delay`: synchronous
+ROM settles of at most 20 us, and an absolute deadline on the caller's
+`oer_time::Timer` for every other wait, which never ends when the deadline is
+unrepresentable. Every chip radio composition passes
+[`oer_time_embassy::EmbassyClock`](adapters/embassy/time/). Chip PHY stays
+executor-independent, and the executor/time ABI backend owns no PHY policy.
 
 AP `runtime/esp32s31/ieee80211/src/roles/access_point/network_tx` retains one TX owner. Its `queue`,
 `power_save`, `aggregate` and `completion` modules operate on that same arena

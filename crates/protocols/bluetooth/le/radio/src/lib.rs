@@ -16,28 +16,46 @@
 //! instead of moving it. Long-lived role state — an advertising set, a
 //! scanner, a connection — is configured once and named by a small
 //! caller-chosen identifier in later events.
+//!
+//! [`LeRadioPort`] is the port a Controller service loop drives: it states
+//! the backend's [`LeRadioCapabilities`] (roles, PHYs, data PDU payload and
+//! who runs the [`LinkAcknowledgement`]), reads the radio clock, submits
+//! requests and yields owned outcomes. [`NoRadio`] is the port of a host
+//! without a radio. Failure classes, the outcome loss marker, the terminal
+//! poisoned outcome, correlation identities and the clock relation are the
+//! shared ones of `oer-radio-port`.
 
 #[cfg(test)]
 extern crate std;
 
 mod activity;
+mod capabilities;
 mod channel;
 mod outcome;
 mod pdu;
+mod port;
 mod request;
-mod time;
 
 pub use activity::RadioActivity;
+pub use capabilities::{
+    LeConnectionCapabilities, LePhy, LePhys, LeRadioCapabilities, LinkAcknowledgement,
+};
 pub use channel::{
     AdvertisingChannel, AdvertisingChannels, ChannelError, DataChannel, TestChannel,
 };
+pub use oer_radio_coex::CoexPriority;
+pub use oer_radio_port::{
+    ClockInfo, Correlation, CorrelationIds, EventsLost, FailureClass, Poisoned, PortError,
+    RadioEpoch,
+};
+pub use oer_time::{RadioDuration, RadioInstant, RadioWindow, WindowError};
 pub use outcome::{EventResult, RadioFault, RadioOutcome, ReceivedPdu, TestReport};
 pub use pdu::{AdvertisingPdu, DataPdu, DataPduKind, PduError, TestPayloadType};
+pub use port::{LeRadioPort, Never, NoRadio};
 pub use request::{
     AcceptListChange, AcceptListDevice, AccessAddress, AdvertisingConfiguration, AdvertisingEvent,
     AdvertisingReception, AdvertisingSetId, CoexistenceLevel, ConnectionAllowances,
     ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming, ConnectionId, CrcInit,
-    EventId, RadioRequest, RadioTiming, RequestError, ScanFilterPolicy, ScanType, ScanWindow,
-    ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestTransmit, TxPower,
+    EventId, IdlePriority, RadioRequest, RadioTiming, RequestError, ScanFilterPolicy, ScanType,
+    ScanWindow, ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestTransmit, TxPower,
 };
-pub use time::{RadioDuration, RadioInstant, RadioWindow, WindowError};

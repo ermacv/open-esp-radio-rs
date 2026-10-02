@@ -8,6 +8,7 @@ pub struct ConnectedStaRxProtocolResources<
     'irq,
     M: RawMutex,
     S,
+    K,
     const DEPTH: usize,
     const CAPACITY: usize,
     const SLOTS: usize,
@@ -22,6 +23,8 @@ pub struct ConnectedStaRxProtocolResources<
     pub reorder_storage: &'pool RxReorderFrameStorage<CAPACITY, REORDER_SLOTS>,
     pub runtime: &'pool mut ConnectedReceiveStorage<'pool, CAPACITY, SLOTS, REORDER_SLOTS>,
     pub reorder_scratch: Option<&'scratch mut [u8]>,
+    /// Monotonic clock of the reorder gap deadlines.
+    pub clock: K,
     /// Optional observation-only counters used by qualification fixtures.
     #[cfg(any(feature = "diagnostics", test))]
     pub pipeline_observer: Option<&'queue dyn RxPipelineObserver>,
@@ -41,6 +44,7 @@ pub struct ConnectedStaRxProcessorResources<
     'irq,
     M: RawMutex,
     S,
+    K,
     const CAPACITY: usize,
     const SLOTS: usize,
     const REORDER_SLOTS: usize = RX_REORDER_BACKING_SLOT_COUNT,
@@ -53,6 +57,8 @@ pub struct ConnectedStaRxProcessorResources<
     pub reorder_storage: &'pool RxReorderFrameStorage<CAPACITY, REORDER_SLOTS>,
     pub runtime: &'pool mut ConnectedReceiveStorage<'pool, CAPACITY, SLOTS, REORDER_SLOTS>,
     pub reorder_scratch: Option<&'scratch mut [u8]>,
+    /// Monotonic clock of the reorder gap deadlines.
+    pub clock: K,
     #[cfg(any(feature = "diagnostics", test))]
     pub pipeline_observer: Option<&'queue dyn RxPipelineObserver>,
     #[cfg(any(feature = "diagnostics", test))]
@@ -66,7 +72,7 @@ pub struct ConnectedStaTxResources<
     M: RawMutex,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
@@ -156,7 +162,7 @@ pub struct ConnectedStaTxHandoffFailure<
     B: 'resources,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     const AGGREGATE_SLOTS: usize,
     const AGGREGATE_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,

@@ -22,7 +22,7 @@ use oer_radio_embassy::{
 
 use oer_esp32s31_hal::owner::MacInterruptSetup;
 
-use oer_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver};
+use oer_esp32s31_phy::PhyTargetObserver;
 
 use oer_esp32s31_ieee80211_runtime::roles::{
     monitor::{MonitorController, MonitorStopped, MonitorTask, MonitorTaskExit},
@@ -296,7 +296,7 @@ pub async fn drive_esp32s31_monitor_role<
 >(
     endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, M, E>,
     controller: &mut MonitorController<'runtime, M>,
-    radio: &oer_esp32s31_radio_runtime::RadioSystem<RP, RC>,
+    radio: &oer_esp32s31_radio_runtime::RadioSystem<RP, RC, D>,
     task: MonitorTask<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     channel_policy: MonitorChannelPolicy,
     observer: &mut O,
@@ -314,7 +314,7 @@ where
     M: RawMutex,
     S: MonitorSink<RxPhyInfo>,
     Reject: FnMut(EmbassyWifiStartKind) -> E,
-    D: PhyAsyncDelay,
+    D: oer_time::Timer,
     O: PhyTargetObserver,
     RC: oer_esp32s31_hal::shared_radio::PlatformClockProvider,
 {

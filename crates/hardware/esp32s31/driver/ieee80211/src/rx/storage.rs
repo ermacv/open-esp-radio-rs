@@ -10,6 +10,17 @@ pub const ESP32S31_RX_BUFFER_STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_SIZE + 4;
 /// Platform settle edge between stopped-ring publication and walker enable.
 pub const ESP32S31_RX_WALKER_ENABLE_SETTLE_US: u32 = 5;
 
+/// Wait the walker-enable settle on `timer`. A settle past the timer's range
+/// never ends, so the walker is never started early.
+pub async fn walker_enable_settle(timer: &impl oer_time::Timer) {
+    match timer.deadline_after(oer_time::Duration::from_micros(u64::from(
+        ESP32S31_RX_WALKER_ENABLE_SETTLE_US,
+    ))) {
+        Ok(deadline) => timer.wait_until(deadline).await,
+        Err(oer_time::TimeOverflow) => core::future::pending().await,
+    }
+}
+
 /// Qualified large-RX profile aliases over the executor-independent MAC arena.
 pub type ReceiveDmaBuffer<
     const BUFFER_SIZE: usize = ESP32S31_RX_BUFFER_SIZE,

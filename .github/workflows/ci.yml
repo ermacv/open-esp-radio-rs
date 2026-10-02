@@ -1,20 +1,22 @@
 name: CI
 
-# Standard Cargo checks for every push to main and every pull request.
+# Standard Cargo checks for every push to any branch. Pull requests come from
+# branches of this repository, whose pushes already run this workflow.
 on:
   push:
-    branches: [main]
-  pull_request:
+    branches: ['**']
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-# A pull request needs only its newest commit. On main, several sessions push
-# every few minutes, so cancelling would leave no run finished: a started run
-# completes, and GitHub keeps only the newest push pending behind it.
+# A branch needs only its newest commit: rapid agent pushes cancel the run
+# they supersede. On main, several sessions push every few minutes and
+# `cargo xtask push` reads main's verdicts, so a started run completes and
+# GitHub keeps only the newest push pending behind it.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   CARGO_INCREMENTAL: '0'
@@ -24,6 +26,36 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # The repository model every matrix below comes from: oer-tidy's chips
+  # and workspaces, read from the tree as text.
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      chips: ${{ steps.model.outputs.chips }}
+      registers: ${{ steps.model.outputs.registers }}
+      programs: ${{ steps.model.outputs.programs }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: model
+        run: |
+          echo "chips=$(cargo tidy chips --json)" >> "$GITHUB_OUTPUT"
+          # Register publications and qualification programs, by path.
+          echo "registers=$(ls registers/*/publication/registers.toml | jq -R . | jq -cs .)" >> "$GITHUB_OUTPUT"
+          echo "programs=$(ls qualification/targets/*/*.toml | jq -R . | jq -cs .)" >> "$GITHUB_OUTPUT"
+
+  # The fast integrity tier: seconds of text checks over the whole tree.
+  tidy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: cargo tidy check
+
   fmt:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -33,15 +65,8 @@ jobs:
           persist-credentials: false
       - name: Format every workspace
         run: |
-          # Each manifest is an independent Cargo workspace.
-          for manifest in \
-            Cargo.toml \
-            tools/blobray/Cargo.toml \
-            platform/esp32s31/Cargo.toml \
-            hil/targets/esp32s31/Cargo.toml \
-            examples/*/Cargo.toml \
-            verification/esp32s31/probes/Cargo.toml \
-            verification/esp32s31/host/ieee802154/Cargo.toml
+          # Every Cargo workspace, as oer-tidy discovers them.
+          for manifest in $(cargo tidy workspaces)
           do
             echo "::group::$manifest"
             cargo fmt --all --manifest-path "$manifest" -- --check
@@ -83,17 +108,16 @@ jobs:
       # The evaluator resolves HIL image sources with offline `cargo tree` in
       # the firmware workspaces, so their dependencies must be present.
       - name: Fetch every workspace
-        run: for manifest in $(git ls-files '*Cargo.lock' | sed 's/Cargo.lock$/Cargo.toml/'); do cargo fetch --locked --manifest-path "$manifest"; done
+        run: cargo tidy fetch
       # Report every failing test binary in one run instead of the first.
       - run: cargo test --workspace --locked --no-fail-fast
       # The GATT application's `secure` module is off by default; test it too.
       - run: cargo test --locked --no-fail-fast -p oer-example-bluetooth-gatt --all-features
-      # The HIL target core compiles its network modules against exactly one
-      # stack, so each configuration is a separate test run.
       - name: Declared test feature sets
-        run: cargo xtask check feature-sets
+        run: cargo xtask --verbose check feature-sets
 
-  # Repository policy gates: locked metadata and network dependency boundaries.
+  # Repository policy gates: locks, locked metadata and network dependency
+  # boundaries.
   policy:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -110,9 +134,10 @@ jobs:
           key: policy-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
           restore-keys: policy-${{ runner.os }}-
       - name: Fetch every workspace
-        run: for manifest in $(git ls-files '*Cargo.lock' | sed 's/Cargo.lock$/Cargo.toml/'); do cargo fetch --locked --manifest-path "$manifest"; done
-      - run: cargo xtask check metadata
-      - run: cargo xtask check network
+        run: cargo tidy fetch
+      - run: cargo xtask --verbose lock --check
+      - run: cargo xtask --verbose check metadata
+      - run: cargo xtask --verbose check network
 
   # Clippy for every production feature profile on the chip target, plus the
   # layer, facade, unsafe-code and PAC-access boundaries.
@@ -132,19 +157,22 @@ jobs:
           key: architecture-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
           restore-keys: architecture-${{ runner.os }}-
       - name: Fetch every workspace
-        run: for manifest in $(git ls-files '*Cargo.lock' | sed 's/Cargo.lock$/Cargo.toml/'); do cargo fetch --locked --manifest-path "$manifest"; done
-      - run: cargo xtask check architecture
+        run: cargo tidy fetch
+      - run: cargo xtask --verbose check architecture
       # A compile_fail doctest proves that publishing borrowed DMA memory
       # needs `unsafe`; the API exists only on the chip target.
-      - run: cargo test --doc --locked -p oer-esp32s31-soc-esp-hal --features axi-gdma-mem2mem --target riscv32imafc-unknown-none-elf
+      - name: Chip-target doctest
+        run: |
+          target=$(cargo tidy chips --json | jq -r '.[] | select(.id == "esp32s31") | .["rust-target"]')
+          cargo test --doc --locked -p oer-esp32s31-soc-esp-hal --features axi-gdma-mem2mem --target "$target"
 
-  # Network profiles that no other job compiles: the HIL runtime with each
-  # network stack, and the Wi-Fi composition with a single network feature.
-  network-profiles:
+  # The final HIL images' runtimes type-checked exactly as the image builder
+  # compiles them: target, features and the image compiler flags
+  # (`-D large-assignments`, shared generics). Every class is type-checked
+  # nightly.
+  hil-images:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    env:
-      TARGET: riscv32imafc-unknown-none-elf
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -154,20 +182,15 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            hil/targets/esp32s31/target
-          key: network-profiles-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
-          restore-keys: network-profiles-${{ runner.os }}-
-      - name: HIL runtime
-        run: |
-          cargo check --locked --manifest-path hil/targets/esp32s31/agent/Cargo.toml --target "$TARGET" \
-            --no-default-features --features "open-radio-hil,owned-network"
-      - name: Wi-Fi composition
-        run: |
-          cargo check --locked -p oer-esp32s31-ieee80211-system --target "$TARGET"
+            target
+          key: hil-images-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
+          restore-keys: hil-images-${{ runner.os }}-
+      - name: Fetch every workspace
+        run: cargo tidy fetch
+      - run: cargo xtask --verbose check firmware --class performance --class correctness --type-check
 
-  # The ESP32-S31 examples share one workspace; run Cargo from an example's
-  # directory so the workspace `.cargo/config.toml` selects the chip target. Every feature profile an
-  # example supports is checked, and host tests cover application libraries.
+  # The ESP32-S31 examples, type-checked with the image compiler flags their
+  # build uses; host tests cover application libraries.
   examples:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -175,18 +198,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - example: esp32s31/access-point
-            profiles: default
+          - example: access-point
             host-tests: true
-          - example: esp32s31/monitor
-            profiles: default
-          - example: esp32s31/station
-            profiles: default
-          - example: esp32s31/thread
-            profiles: default
-    defaults:
-      run:
-        working-directory: examples/${{ matrix.example }}
+          - example: monitor
+          - example: station
+          - example: thread
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -196,27 +212,69 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            examples/esp32s31/target
-          key: ${{ matrix.example }}-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'examples/esp32s31/Cargo.lock') }}
-          restore-keys: ${{ matrix.example }}-${{ runner.os }}-
-      - name: Check feature profiles
-        env:
-          PROFILES: ${{ matrix.profiles }}
-        run: |
-          for profile in $PROFILES; do
-            echo "::group::$profile"
-            if [ "$profile" = default ]; then
-              cargo check --release --locked
-            else
-              cargo check --release --locked --no-default-features --features "$profile"
-            fi
-            echo "::endgroup::"
-          done
+            target
+          key: example-${{ matrix.example }}-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
+          restore-keys: example-${{ matrix.example }}-${{ runner.os }}-
+      - run: cargo xtask --verbose build firmware ${{ matrix.example }} --type-check
       - name: Host tests
         if: matrix.host-tests
+        working-directory: examples/esp32s31/${{ matrix.example }}
         run: cargo test --lib --locked --target x86_64-unknown-linux-gnu
 
-  # Register models, generated SVD/PAC outputs and the compiled PHY library.
+  # The ESP32-C5 workspaces: the HIL agent with each image's features and
+  # the register probe. Cargo runs in each workspace for its target.
+  esp32c5:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            hil/targets/esp32c5/target
+            verification/esp32c5/hardware/register-probe/target
+          key: esp32c5-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
+          restore-keys: esp32c5-${{ runner.os }}-
+      - name: HIL agent
+        working-directory: hil/targets/esp32c5
+        run: |
+          for features in boot-smoke system-watchdog; do
+            cargo clippy --locked --release -p oer-esp32c5-hil-agent --no-default-features --features "$features" -- -D warnings
+          done
+      - name: Register probe
+        working-directory: verification/esp32c5/hardware/register-probe
+        run: cargo build --locked --release
+
+  # Every register publication: the model validates and the generated SVD,
+  # bindings and PAC are what it yields.
+  registers:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        manifest: ${{ fromJSON(needs.plan.outputs.registers) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: registers-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
+          restore-keys: registers-${{ runner.os }}-
+      - run: cargo registers validate --manifest ${{ matrix.manifest }}
+      - run: cargo registers generate --manifest ${{ matrix.manifest }} --check
+
+  # The compiled PHY library and the ESP32-C5 PAC and HAL on their target.
   publication:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -232,13 +290,38 @@ jobs:
             target
           key: publication-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
           restore-keys: publication-${{ runner.os }}-
-      - run: cargo fetch --locked
-      - run: cargo registers validate --manifest registers/esp32s31/publication/registers.toml
-      - run: cargo registers generate --manifest registers/esp32s31/publication/registers.toml --check
-      - run: cargo registers validate --manifest registers/esp32c5/publication/registers.toml
-      - run: cargo registers generate --manifest registers/esp32c5/publication/registers.toml --check
-      - run: cargo build --locked -p oer-esp32c5-pac -p oer-esp32c5-hal --target riscv32imac-unknown-none-elf
-      - run: cargo xtask check phy --chip esp32s31
+      - name: ESP32-C5 PAC and HAL
+        run: |
+          target=$(cargo tidy chips --json | jq -r '.[] | select(.id == "esp32c5") | .["rust-target"]')
+          cargo build --locked -p oer-esp32c5-pac -p oer-esp32c5-hal --target "$target"
+      - run: cargo xtask --verbose check phy --chip esp32s31
+
+  # Every qualification program: its catalogs and selection validate, and
+  # the evaluator assesses its committed evidence.
+  qualification:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        program: ${{ fromJSON(needs.plan.outputs.programs) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: qualification-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
+          restore-keys: qualification-${{ runner.os }}-
+      - name: Fetch every workspace
+        run: cargo tidy fetch
+      - run: cargo qualification validate --manifest ${{ matrix.program }}
+      - run: cargo qualification evaluate --manifest ${{ matrix.program }}
 
   # Blobray's RISC-V executor against the pinned RISC-V architectural tests,
   # with the Sail formal model as the reference. Needs clang and lld.
@@ -260,11 +343,9 @@ jobs:
           restore-keys: isa-conformance-${{ runner.os }}-
       - name: Install clang and lld
         run: sudo apt-get update && sudo apt-get install -y clang lld
-      - name: Fetch the xtask and Blobray workspaces
-        run: |
-          cargo fetch --locked
-          cargo fetch --locked --manifest-path tools/blobray/Cargo.toml
-      - run: cargo xtask check isa-conformance
+      - name: Fetch every workspace
+        run: cargo tidy fetch
+      - run: cargo xtask --verbose check isa-conformance
 
   # Both final HIL application images, their placement/stack audits and the
   # Blobray target audit. Needs espflash and the toolchain's LLVM tools.
@@ -298,5 +379,5 @@ jobs:
           host=$(rustc -vV | sed -n 's/^host: //p')
           echo "$(rustc --print sysroot)/lib/rustlib/$host/bin" >> "$GITHUB_PATH"
       - name: Fetch every workspace
-        run: for manifest in $(git ls-files '*Cargo.lock' | sed 's/Cargo.lock$/Cargo.toml/'); do cargo fetch --locked --manifest-path "$manifest"; done
-      - run: cargo xtask check images
+        run: cargo tidy fetch
+      - run: cargo xtask --verbose check images

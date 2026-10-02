@@ -335,7 +335,7 @@ pub(crate) struct PhyRxDcCalibrationTargetStats {
 }
 
 #[cfg(target_arch = "riscv32")]
-fn execute_minimum_target<D: crate::target_executor::PhyShortDelay>(
+fn execute_minimum_target<D: crate::executor::wait::PhyShortDelay>(
     request: PhyRxDcMinimumRequest,
     registers: &mut impl oer_esp32s31_hal::owner::SharedPhyAccess,
     budget: &mut crate::target_executor::DirectOperationBudget,
@@ -367,7 +367,7 @@ impl PhyRxDcCalibrationTransition {
         unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_direct")
     )]
     #[inline(never)]
-    pub(crate) fn execute_target_direct<D: crate::target_executor::PhyShortDelay>(
+    pub(crate) fn execute_target_direct<D: crate::executor::wait::PhyShortDelay>(
         &mut self,
         registers: &mut impl oer_esp32s31_hal::owner::SharedPhyContext,
         budget: &mut crate::target_executor::DirectOperationBudget,

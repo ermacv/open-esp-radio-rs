@@ -1,5 +1,3 @@
-use core::future::{Future, ready};
-
 use crate::rx::storage::ReceiveDmaStorage;
 
 use oer_esp32s31_ieee80211_dma::descriptor::{BIT_30, DESCRIPTOR_BYTES};
@@ -15,14 +13,6 @@ const BUFFER_SIZE: usize = 64;
 const STORAGE_SIZE: usize = 128;
 const BASE: u32 = 0x2f00_1000;
 const BUFFERS: [u32; COUNT] = [0x2f00_2000, 0x2f00_2100];
-
-struct ReadyDelay;
-
-impl RxFrontierDelay for ReadyDelay {
-    fn after_micros(_micros: u32) -> impl Future<Output = ()> {
-        ready(())
-    }
-}
 
 #[derive(Default)]
 struct Hardware {
@@ -149,8 +139,9 @@ fn completed_descriptors_are_delivered_in_ring_order_across_wrap() {
     )
     .unwrap()
     .into_halted();
-    let mut rx = ReceiveFrontier::<ReadyDelay, WRAP_COUNT, BUFFER_SIZE>::from_halted(halted);
-    block_on(rx.start_with_storage(&mut hardware, &storage)).unwrap();
+    let mut rx = ReceiveFrontier::<WRAP_COUNT, BUFFER_SIZE>::from_halted(halted);
+    block_on(rx.start_with_storage(&oer_time_virtual::SkipClock::new(), &mut hardware, &storage))
+        .unwrap();
     // First reclaim 0,1 so the next logical receive frontier begins at two.
     for index in [0, 1, 2] {
         storage.descriptors()[index].write_word0(storage.descriptors()[index].word0() | BIT_30);
@@ -218,8 +209,9 @@ fn exhausted_terminal_writeback_without_a_fresh_irq_retains_task_continuation() 
         |_| Ok(()),
     )
     .unwrap();
-    let mut rx = ReceiveFrontier::<ReadyDelay, COUNT, BUFFER_SIZE>::from_prepared(prepared);
-    block_on(rx.start_with_storage(&mut hardware, &storage)).unwrap();
+    let mut rx = ReceiveFrontier::<COUNT, BUFFER_SIZE>::from_prepared(prepared);
+    block_on(rx.start_with_storage(&oer_time_virtual::SkipClock::new(), &mut hardware, &storage))
+        .unwrap();
 
     // The walker reached the accepted terminal and stopped at NEXT=0. The
     // descriptor writeback can become visible after the RX-success edge which
@@ -244,11 +236,10 @@ fn exhausted_terminal_writeback_without_a_fresh_irq_retains_task_continuation() 
 fn owner_services_a_terminal_descriptor_and_round_trips_between_phases() {
     let storage = ReceiveDmaStorage::<COUNT, BUFFER_SIZE, STORAGE_SIZE>::new();
     let mut hardware = Hardware::default();
-    let mut rx = ReceiveFrontier::<ReadyDelay, COUNT, BUFFER_SIZE>::from_halted(halted_ring(
-        &mut hardware,
-        &storage,
-    ));
-    block_on(rx.start_with_storage(&mut hardware, &storage)).unwrap();
+    let mut rx =
+        ReceiveFrontier::<COUNT, BUFFER_SIZE>::from_halted(halted_ring(&mut hardware, &storage));
+    block_on(rx.start_with_storage(&oer_time_virtual::SkipClock::new(), &mut hardware, &storage))
+        .unwrap();
     assert_eq!(rx.phase(), RxFrontierPhase::Live);
 
     for descriptor in storage.descriptors() {
@@ -283,11 +274,10 @@ fn owner_services_a_terminal_descriptor_and_round_trips_between_phases() {
 fn pause_bounds_one_service_pass_without_retaining_a_terminal_descriptor() {
     let storage = ReceiveDmaStorage::<COUNT, BUFFER_SIZE, STORAGE_SIZE>::new();
     let mut hardware = Hardware::default();
-    let mut rx = ReceiveFrontier::<ReadyDelay, COUNT, BUFFER_SIZE>::from_halted(halted_ring(
-        &mut hardware,
-        &storage,
-    ));
-    block_on(rx.start_with_storage(&mut hardware, &storage)).unwrap();
+    let mut rx =
+        ReceiveFrontier::<COUNT, BUFFER_SIZE>::from_halted(halted_ring(&mut hardware, &storage));
+    block_on(rx.start_with_storage(&oer_time_virtual::SkipClock::new(), &mut hardware, &storage))
+        .unwrap();
     for descriptor in storage.descriptors() {
         descriptor.write_word0(descriptor.word0() | BIT_30);
     }
@@ -327,11 +317,10 @@ fn pause_bounds_one_service_pass_without_retaining_a_terminal_descriptor() {
 fn an_append_is_published_only_after_a_later_service_confirms_link_release() {
     let storage = ReceiveDmaStorage::<COUNT, BUFFER_SIZE, STORAGE_SIZE>::new();
     let mut hardware = Hardware::default();
-    let mut rx = ReceiveFrontier::<ReadyDelay, COUNT, BUFFER_SIZE>::from_halted(halted_ring(
-        &mut hardware,
-        &storage,
-    ));
-    block_on(rx.start_with_storage(&mut hardware, &storage)).unwrap();
+    let mut rx =
+        ReceiveFrontier::<COUNT, BUFFER_SIZE>::from_halted(halted_ring(&mut hardware, &storage));
+    block_on(rx.start_with_storage(&oer_time_virtual::SkipClock::new(), &mut hardware, &storage))
+        .unwrap();
     storage.descriptors()[0].write_word0(storage.descriptors()[0].word0() | BIT_30);
     hardware.release_through(0, Some(1));
 
@@ -358,21 +347,27 @@ fn an_append_is_published_only_after_a_later_service_confirms_link_release() {
 fn consuming_connected_promotion_preserves_live_frontier_or_exact_owner() {
     let storage = ReceiveDmaStorage::<COUNT, BUFFER_SIZE, STORAGE_SIZE>::new();
     let mut hardware = Hardware::default();
-    let rx = ReceiveFrontier::<ReadyDelay, COUNT, BUFFER_SIZE>::from_halted(halted_ring(
+    let rx =
+        ReceiveFrontier::<COUNT, BUFFER_SIZE>::from_halted(halted_ring(&mut hardware, &storage));
+    let live = block_on(rx.try_into_live_with_storage(
+        &oer_time_virtual::SkipClock::new(),
         &mut hardware,
         &storage,
-    ));
-    let live = block_on(rx.try_into_live_with_storage(&mut hardware, &storage))
-        .unwrap_or_else(|_| panic!("fresh halted owner must become live"));
+    ))
+    .unwrap_or_else(|_| panic!("fresh halted owner must become live"));
     assert_eq!(live.descriptor_base(), BASE);
 
     let halted = match live.try_stop(&mut hardware) {
         Ok(halted) => halted,
         Err(_) => panic!("mock walker must stop before the failure case"),
     };
-    let mut already_live = ReceiveFrontier::<ReadyDelay, COUNT, BUFFER_SIZE>::from_halted(halted);
-    block_on(already_live.start_with_storage(&mut hardware, &storage))
-        .expect("finite protocol phase starts the ring");
+    let mut already_live = ReceiveFrontier::<COUNT, BUFFER_SIZE>::from_halted(halted);
+    block_on(already_live.start_with_storage(
+        &oer_time_virtual::SkipClock::new(),
+        &mut hardware,
+        &storage,
+    ))
+    .expect("finite protocol phase starts the ring");
     storage.descriptors()[0].write_word0(storage.descriptors()[0].word0() | BIT_30);
     already_live
         .service_completed(&mut hardware, &storage, |_| RxFrontierDirective::Stop)
@@ -380,8 +375,12 @@ fn consuming_connected_promotion_preserves_live_frontier_or_exact_owner() {
     let enable_count = hardware.enable_count;
     let disable_count = hardware.disable_count;
     let reload_count = hardware.reload_count;
-    let live = block_on(already_live.try_into_live_with_storage(&mut hardware, &storage))
-        .unwrap_or_else(|_| panic!("an existing live frontier must transfer cleanly"));
+    let live = block_on(already_live.try_into_live_with_storage(
+        &oer_time_virtual::SkipClock::new(),
+        &mut hardware,
+        &storage,
+    ))
+    .unwrap_or_else(|_| panic!("an existing live frontier must transfer cleanly"));
     assert_eq!(hardware.enable_count, enable_count);
     assert_eq!(hardware.disable_count, disable_count);
     assert_eq!(hardware.reload_count, reload_count);
@@ -391,11 +390,15 @@ fn consuming_connected_promotion_preserves_live_frontier_or_exact_owner() {
         Ok(halted) => halted,
         Err(_) => panic!("mock walker must stop after the live handoff"),
     };
-    let mut vacant = ReceiveFrontier::<ReadyDelay, COUNT, BUFFER_SIZE>::from_halted(halted);
+    let mut vacant = ReceiveFrontier::<COUNT, BUFFER_SIZE>::from_halted(halted);
     let retained = vacant.take().expect("test retains the exact halted owner");
-    let failure = block_on(vacant.try_into_live_with_storage(&mut hardware, &storage))
-        .err()
-        .expect("vacant frontier must return its placeholder owner");
+    let failure = block_on(vacant.try_into_live_with_storage(
+        &oer_time_virtual::SkipClock::new(),
+        &mut hardware,
+        &storage,
+    ))
+    .err()
+    .expect("vacant frontier must return its placeholder owner");
     assert_eq!(failure.error, RxFrontierError::OwnerUnavailable);
     assert_eq!(failure.owner.phase(), RxFrontierPhase::Vacant);
     assert_eq!(retained.phase(), RxFrontierPhase::Halted);
@@ -410,4 +413,32 @@ fn block_on<F: Future>(future: F) -> F::Output {
         core::task::Poll::Ready(output) => output,
         core::task::Poll::Pending => panic!("finite RX test unexpectedly yielded"),
     }
+}
+
+#[test]
+fn the_walker_starts_only_after_its_settle_on_the_caller_timer() {
+    use core::{
+        pin::pin,
+        task::{Context, Poll, Waker},
+    };
+    use oer_time::{Duration, Instant};
+
+    let storage = ReceiveDmaStorage::<COUNT, BUFFER_SIZE, STORAGE_SIZE>::new();
+    let mut hardware = Hardware::default();
+    let mut rx =
+        ReceiveFrontier::<COUNT, BUFFER_SIZE>::from_halted(halted_ring(&mut hardware, &storage));
+    let clock: oer_time_virtual::VirtualClock =
+        oer_time_virtual::VirtualClock::starting_at(Instant::from_micros(100));
+    let mut context = Context::from_waker(Waker::noop());
+    {
+        let mut start = pin!(rx.start_with_storage(&clock, &mut hardware, &storage));
+        assert!(start.as_mut().poll(&mut context).is_pending());
+        assert_eq!(clock.next_deadline(), Some(Instant::from_micros(105)));
+        clock.advance(Duration::from_micros(4)).unwrap();
+        assert!(start.as_mut().poll(&mut context).is_pending());
+        clock.advance(Duration::from_micros(1)).unwrap();
+        assert_eq!(start.as_mut().poll(&mut context), Poll::Ready(Ok(())));
+    }
+    assert_eq!(hardware.enable_count, 1);
+    assert_eq!(rx.phase(), RxFrontierPhase::Live);
 }

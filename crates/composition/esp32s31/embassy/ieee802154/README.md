@@ -4,7 +4,7 @@
 [shared radio](../../../../runtime/esp32s31/radio/README.md) (`RadioSystem`) and tears it down again.
 It is the chip composition of the [HAL lifecycle](../../../../hardware/esp32s31/hal/src/ieee802154/role.rs),
 the [PHY client](../../../../hardware/esp32s31/phy/src/ieee802154_client.rs),
-the [runtime](../../../../runtime/esp32s31/ieee802154/src/lib.rs) and the
+the [runtime](../../../../runtime/espressif/ieee802154/src/lib.rs) and the
 [esp-hal route](../../../../adapters/esp-hal/esp32s31/ieee802154/src/lib.rs).
 
 ## Lifecycle
@@ -52,26 +52,32 @@ feature at `oer::systems::esp32s31::embassy::ieee802154`, alone:
 the `SharedRadio` and spawn its PHY tracking and coexistence schedule;
 `Ieee802154Parked::new` takes the radio's IEEE 802.15.4 partition and the
 `Ieee802154PibDefaults`, and `start` joins the shared radio with them.
-`Ieee802154MacOwners` names the runtime's owners for adapters generic over
-them. With the facade's `openthread` feature, the
-[OpenThread radio adapter](../../../../adapters/openthread/esp32s31/ieee802154/README.md)
+`Ieee802154MacOwners` names the runtime's owners.
+`IEEE802154_DEFAULT_TX_POWER_DBM` and `IEEE802154_RECEIVE_SENSITIVITY_DBM`
+are the chip figures ESP-IDF reports to an upper stack (the highest BTBB
+power level every channel starts at, and `IEEE802154_RX_SENSITIVITY`), and
+`Ieee802154CoexConfig` and `Ieee802154CoexLevel` the scene levels
+`Ieee802154System::update_coexistence` takes. With the facade's
+`openthread` feature, the
+[OpenThread radio adapter](../../../../adapters/openthread/ieee802154/README.md)
 is at `ieee802154::openthread`; the
 [Thread example](../../../../../examples/esp32s31/thread/) uses only this path.
 
 The runtime is a process singleton. After `start`, `Ieee802154System::runtime`
-accepts portable `RadioCommand`s and yields `Ieee802154RadioEvent`s. The
+is the client's `Ieee802154RadioPort`: it accepts portable `RadioCommand`s,
+yields `Ieee802154RadioEvent`s and applies `RadioSetting`s. The
 engine resolves transmit power through the recovered ESP32-S31 BTBB level set.
 Enhanced ACKs follow ESP-IDF's OpenThread port: `start` installs no
 generator, so 2015 frames are delivered without an ACK, as with the vendor's
-default generator. `Ieee802154SystemRuntime::with_enhanced_ack` installs an
-`Ieee802154EnhancedAckGenerator` and sets its header IEs. Each `start`
-begins without a generator.
+default generator. `RadioSetting::EnhancedAck` installs a generator and
+`RadioSetting::EnhancedAckHeaderIes` and `EnhancedAckProbing` set its header
+IEs and Link Metrics initiators. Each `start` begins without a generator.
 
 Transmit security follows ESP-IDF's OpenThread port, which claims
-`OT_RADIO_CAPS_TRANSMIT_SEC`: `Ieee802154SystemRuntime::with_mac_keys`
-installs the `MacKeys` (key index, previous, current and next key, frame
-counter) that `otPlatRadioSetMacKey` and `otPlatRadioSetMacFrameCounter`
-set. With keys the radio secures every attempt of a secured frame: a new
+`OT_RADIO_CAPS_TRANSMIT_SEC`: `RadioSetting::MacKeys` and
+`RadioSetting::FrameCounter` install the keys (key index, previous, current
+and next key) and the frame counter that `otPlatRadioSetMacKey` and
+`otPlatRadioSetMacFrameCounter` set, starting from zeroed keys. With keys the radio secures every attempt of a secured frame: a new
 frame counter unless the attempt retransmits the frame, the current key
 index and key, and in key identifier mode 1 the extended address as the
 nonce source; secured enhanced ACKs take their counter from the same keys.
@@ -84,7 +90,7 @@ which goes out as given. The transmit completion reports the frame counter
 and key index the radio wrote, which the port leaves in the stack's frame,
 and each received frame reports the frame-pending bit and the security of
 the acknowledgement it was sent. Security the upper layer arms with
-`set_transmit_security` takes precedence for the next transmission, and
+`RadioSetting::TransmitSecurity` takes precedence for the next transmission, and
 without keys a secured frame goes out as given. Frames in
 other key identifier modes reuse the address of the last mode 1
 transmission, as the port's shared `s_security_addr` does; unlike the port,
@@ -103,8 +109,7 @@ interface's PAN ID, addresses, enable bit, pending mode and frame-pending
 table, received frames report the interface they matched (`None` for a
 broadcast), and a transmission names its interface. As ESP-IDF's
 multi-instance OpenThread port keeps a security context per instance,
-`Ieee802154SystemRuntime::with_interface_mac_keys` holds each interface's
-keys: a transmission is secured with its interface's keys and extended
+the MAC key settings name the interface whose keys they change: a transmission is secured with its interface's keys and extended
 address, an enhanced ACK with those of the interface the acknowledged frame
 matched. Receive and sleep stay radio-wide: the port's
 `esp_ieee802154_multipan_receive` is enabling the interface and receiving,
@@ -119,9 +124,13 @@ with ESP-IDF's OpenThread defaults: after an attempt without channel access
 at once, after one without acknowledgement following a random delay whose
 exponent grows from 0 to 5. Every attempt arms its transmit security again,
 as the port arms it per transmit. The backoff and
-retry timers run inside `Ieee802154SystemRuntime::next_event`, so the
-consumer must await events while a transmission waits; the random words
-come from the hardware generator.
+retry timers run in the runtime's runner, `Ieee802154System::run` (the
+runtime's `Ieee802154Runtime::run`), which the application polls beside the
+consumer of the port's events for as long as the client runs; `next_event`
+only takes events. The random words come from the hardware generator.
+`Ieee802154System::radio_clock` is the radio clock as a function for
+synchronous callers such as OpenThread: the image's monotonic clock in
+microseconds, the one the `embassy-time` driver reads.
 
 Source matching is part of the portable contract: `Configuration` sets the
 pending mode and adds, removes or resets the sources of interface zero's
@@ -134,7 +143,7 @@ started transmissions, transmissions refused during a reception, `TX_DONE`
 and `RX_DONE` interrupts, TX coexistence breaks and the MAC's diagnostic
 counters, which every interrupt drains.
 
-Scheduled operations use the radio clock, `Ieee802154SystemRuntime::now`
+Scheduled operations use the radio clock, the port's `now`
 (ESP-HAL's microsecond clock, as `otPlatRadioGetNow` reads `esp_timer`). A
 `TxMode::Scheduled` transmission starts at its time through TIMER0 and the
 modem ETM, after a CCA when it asks for one (`esp_ieee802154_transmit_at`).
@@ -143,17 +152,21 @@ modem ETM, after a CCA when it asks for one (`esp_ieee802154_transmit_at`).
 `ScheduledReceiveDone` reports its end - at its end, with its first
 received frame as the vendor receive path ends it, or at once for a window
 that had already ended. Another operation replaces the window, after which
-the radio sleeps.
+the radio sleeps. `RadioCommand::Cancel` ends a running transmission
+(`TxStatus::Aborted`, or the outcome the MAC had already reached), energy
+scan, CCA or scheduled window with its terminal event, stopping the MAC as
+`esp_ieee802154_sleep` does and resuming receive mode when the radio was
+receiving.
 
 A CSL receiver sets its period and next sample time with
-`Ieee802154SystemRuntime::with_csl` (`otPlatRadioEnableCsl`,
+`RadioSetting::Csl` (`otPlatRadioEnableCsl`,
 `otPlatRadioUpdateCslSampleTime`). With a period, the radio answers 2015
 frames with enhanced ACKs that carry a CSL IE, writes the period and the
 phase to the next sample time into the CSL IE of every frame it sends when
 the frame's SFD goes out - the engine writes the changed bytes into the
 frame the MAC is sending, as ESP-IDF's OpenThread port edits it in place -
 and secures retransmissions with a new frame counter. The runtime lends the
-radio clock as a function (`Ieee802154SystemRuntime::clock`) for callers
+radio clock as a function (the port's `clock`) for callers
 that read it without the lock.
 
 The shared radio is a software-coexistence build, so the MAC takes part in

@@ -1,7 +1,4 @@
-use core::{
-    future::{Future, ready},
-    pin::Pin,
-};
+use core::{future::Future, pin::Pin};
 
 use oer_esp32s31_hal::types::{
     MacKeyInstallOutcome, MacLegacyRate, MacLegacyTxProgram, MacTxCompletionObservation,
@@ -134,33 +131,40 @@ impl WifiTxPowerProfile for Power {
     }
 }
 
+/// Virtual time that skips to each deadline unless a test holds the waits.
 #[derive(Default)]
 struct TestTimer {
-    now: u64,
-    settled: u64,
-    pending_wait: bool,
+    clock: oer_time_virtual::SkipClock,
+    pending_wait: core::cell::Cell<bool>,
 }
 
-impl WifiTxTimer for TestTimer {
+impl TestTimer {
     fn now_micros(&self) -> u64 {
-        self.now
+        oer_time::Clock::now(&self.clock).as_micros()
     }
 
-    fn wait_until(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_ {
+    fn set_micros(&self, micros: u64) {
+        self.clock
+            .advance_to(oer_time::Instant::from_micros(micros));
+    }
+}
+
+impl oer_time::Clock for TestTimer {
+    fn now(&self) -> oer_time::Instant {
+        self.clock.now()
+    }
+}
+
+impl oer_time::Timer for TestTimer {
+    fn wait_until(&self, deadline: oer_time::Instant) -> impl Future<Output = ()> {
         core::future::poll_fn(move |_| {
-            if self.pending_wait {
+            if self.pending_wait.get() {
                 core::task::Poll::Pending
             } else {
-                self.now = deadline_micros;
+                self.clock.advance_to(deadline);
                 core::task::Poll::Ready(())
             }
         })
-    }
-
-    fn after_micros(&mut self, micros: u64) -> impl Future<Output = ()> + '_ {
-        self.now += micros;
-        self.settled += micros;
-        ready(())
     }
 }
 
@@ -862,8 +866,7 @@ fn timeout_retains_dma_until_settle_deadline_without_waiting_or_republication() 
         Ok(WifiTxProgress::Pending)
     );
     let deadline = tx.next_deadline_micros().unwrap();
-    assert_eq!(deadline, tx.ordinary.timer.now + 16);
-    assert_eq!(tx.ordinary.timer.settled, 0);
+    assert_eq!(deadline, tx.ordinary.timer.now_micros() + 16);
     assert_eq!(tx.ordinary.slot_state(), TxSlotState::HardwareOwned);
     assert_eq!(tx.queue_state(), MacTxQueueState::Backpressured);
     assert!(tx.ordinary.buffer_mut().is_err());
@@ -872,7 +875,7 @@ fn timeout_retains_dma_until_settle_deadline_without_waiting_or_republication() 
     // An interrupt from the aborted exchange must not detach early or
     // turn the timeout into a successful completion.
     hardware.completion = Some(completion(0));
-    tx.ordinary.timer.now = deadline - 1;
+    tx.ordinary.timer.set_micros(deadline - 1);
     for wake in [
         timeout,
         WifiTxWake::Deadline,
@@ -885,7 +888,7 @@ fn timeout_retains_dma_until_settle_deadline_without_waiting_or_republication() 
     }
     assert_eq!(hardware.abort_requests, 1);
     assert_eq!(hardware.timeout_detaches, 0);
-    tx.ordinary.timer.now = deadline;
+    tx.ordinary.timer.set_micros(deadline);
     assert_eq!(
         tx.service(&mut hardware, WifiTxWake::Deadline),
         Ok(WifiTxProgress::Complete)
@@ -916,7 +919,7 @@ fn cancelling_poll_wait_keeps_abort_state_and_dma_ownership() {
     tx.start(&mut hardware, &ethernet(), data_selection(2))
         .unwrap();
     hardware.timeout = true;
-    tx.ordinary.timer.pending_wait = true;
+    tx.ordinary.timer.pending_wait.set(true);
     {
         let mut service = core::pin::pin!(tx.ordinary.service_polling(&mut hardware, 1));
         let mut context = core::task::Context::from_waker(core::task::Waker::noop());
@@ -927,7 +930,7 @@ fn cancelling_poll_wait_keeps_abort_state_and_dma_ownership() {
     assert_eq!(hardware.abort_requests, 1);
     assert_eq!(hardware.timeout_detaches, 0);
     let deadline = tx.next_deadline_micros().unwrap();
-    tx.ordinary.timer.now = deadline;
+    tx.ordinary.timer.set_micros(deadline);
     assert_eq!(
         tx.service(&mut hardware, WifiTxWake::Deadline),
         Ok(WifiTxProgress::Complete)
@@ -986,13 +989,13 @@ fn executor_deadline_quarantines_without_drop_panic() {
             .unwrap();
 
         let deadline = tx.next_deadline_micros().unwrap();
-        tx.ordinary.timer.now = deadline - 1;
+        tx.ordinary.timer.set_micros(deadline - 1);
         assert_eq!(
             tx.service(&mut hardware, WifiTxWake::Deadline),
             Ok(WifiTxProgress::Pending)
         );
         assert_eq!(hardware.abort_requests, 0);
-        tx.ordinary.timer.now = deadline;
+        tx.ordinary.timer.set_micros(deadline);
 
         assert_eq!(
             tx.service(&mut hardware, WifiTxWake::Deadline),
@@ -1029,5 +1032,54 @@ fn data_selection(publication_limit: u8) -> StaDataTxSelection {
     StaDataTxSelection {
         rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),
         publication_limit,
+    }
+}
+
+#[test]
+fn an_idle_or_reached_deadline_wait_yields_to_the_executor_once() {
+    use std::{
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        task::Wake,
+    };
+
+    struct Wakes(AtomicUsize);
+    impl Wake for Wakes {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = Hardware {
+        prepare: true,
+        ..Hardware::default()
+    };
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
+    let wakes = Arc::new(Wakes(AtomicUsize::new(0)));
+    let waker = core::task::Waker::from(wakes.clone());
+    let mut context = core::task::Context::from_waker(&waker);
+
+    // An idle owner has no deadline: the wait returns to the executor once,
+    // waking itself, so a service loop around it cannot run without yielding.
+    {
+        let mut wait = core::pin::pin!(tx.ordinary.wait_deadline());
+        assert!(wait.as_mut().poll(&mut context).is_pending());
+        assert_eq!(wakes.0.load(Ordering::Relaxed), 1);
+        assert!(wait.as_mut().poll(&mut context).is_ready());
+    }
+
+    // A deadline already reached yields once as well.
+    tx.start(&mut hardware, &ethernet(), data_selection(2))
+        .unwrap();
+    let deadline = tx.next_deadline_micros().unwrap();
+    tx.ordinary.timer.set_micros(deadline);
+    {
+        let mut wait = core::pin::pin!(tx.ordinary.wait_deadline());
+        assert!(wait.as_mut().poll(&mut context).is_pending());
+        assert_eq!(wakes.0.load(Ordering::Relaxed), 2);
+        assert!(wait.as_mut().poll(&mut context).is_ready());
     }
 }

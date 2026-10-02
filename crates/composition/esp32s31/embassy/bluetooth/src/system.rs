@@ -55,13 +55,13 @@ use oer_esp32s31_hal::{
         CommonRadioPowerError, ModemClockError, PlatformClockProvider, SharedRadioLease,
     },
 };
+use oer_esp32s31_phy::RomShortDelay;
 use oer_esp32s31_phy::{
     ConcurrentPhyTrackingError, ConcurrentRfError, NoopPhyTargetObserver,
     bluetooth_client::BluetoothPhyClientError,
     concurrent::{ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError},
     maintain_concurrent_phy,
 };
-use oer_esp32s31_phy_runtime::EmbassyPhyTime;
 use oer_esp32s31_radio_esp_hal::{
     BoundEspHalBluetoothInterruptEpoch, EspHalBluetoothInterruptDisposition,
     EspHalBluetoothInterruptRouteError, EspHalBluetoothInterruptSource,
@@ -70,6 +70,7 @@ use oer_esp32s31_radio_esp_hal::{
     EspHalBluetoothPrimaryInterruptStep, EspHalBluetoothSchedulerRunInterruptError,
     PublishedEspHalBluetoothInterruptOwners,
 };
+use oer_time_embassy::EmbassyClock;
 
 use crate::coex::BleCoexStatusChange;
 
@@ -106,6 +107,7 @@ type Storage = PublishedEspHalBluetoothInterruptOwners;
 pub type BluetoothSystemRuntime = BluetoothRuntime<
     CriticalSectionRawMutex,
     LiveBluetoothHardware<'static, Storage>,
+    EmbassyClock,
     LEGACY,
     CONNECTABLE,
     SCANNERS,
@@ -162,7 +164,7 @@ controller_memory!(NON_SCANNING_CHAIN: LeRxChainStorage<RX_PACKETS> = LeRxChainS
 
 static CELLS: ControllerEventCells = ControllerEventCells::new();
 static PUBLISHED: StaticCell<Storage> = StaticCell::new();
-static RUNTIME: BluetoothSystemRuntime = BluetoothRuntime::new();
+static RUNTIME: BluetoothSystemRuntime = BluetoothRuntime::new(EmbassyClock);
 static MODEM_TIMER_WAKE: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 static INTERRUPT_FAULT: Signal<CriticalSectionRawMutex, BluetoothInterruptFault> = Signal::new();
 static DISPATCH: Mutex<Cell<Option<Dispatch>>> = Mutex::new(Cell::new(None));
@@ -498,11 +500,15 @@ impl BluetoothSystem {
     /// cancelled future left and withdraws every Bluetooth LE status bit.
     pub async fn run<P, C: PlatformClockProvider>(
         &mut self,
-        radio: &RadioSystem<P, C>,
+        radio: &RadioSystem<P, C, EmbassyClock>,
     ) -> BluetoothRunnerFault {
         let workers = select(
             RUNTIME.run(),
-            run_modem_timer(&mut self.epoch.modem_timer, &MODEM_TIMER_WAKE),
+            run_modem_timer(
+                &mut self.epoch.modem_timer,
+                &MODEM_TIMER_WAKE,
+                &EmbassyClock,
+            ),
         );
         match select4(
             workers,
@@ -539,7 +545,7 @@ impl BluetoothSystem {
     // CAPABILITY: bluetooth-idle-powered-release
     pub async fn stop<P, C: PlatformClockProvider>(
         self,
-        radio: &RadioSystem<P, C>,
+        radio: &RadioSystem<P, C, EmbassyClock>,
     ) -> Result<BluetoothParked, BluetoothStopFailure> {
         let epoch = self.epoch;
         let (role, hardware) = match RUNTIME.uninstall().await {
@@ -565,7 +571,7 @@ impl BluetoothSystem {
             bound,
             retained,
         };
-        if let Err(error) = settle_modem_timer(&mut modem_timer).await {
+        if let Err(error) = settle_modem_timer(&mut modem_timer, &EmbassyClock).await {
             return Err(stop_fail(
                 BluetoothStopError::ModemTimer(error),
                 uninstalled(role, task, modem_timer, Some(bound), retained),
@@ -811,7 +817,7 @@ fn unwind_powered(
 )]
 // CAPABILITY: controller-initialization, bluetooth-same-storage-powered-restart
 pub async fn start<P, C: PlatformClockProvider>(
-    radio: &RadioSystem<P, C>,
+    radio: &RadioSystem<P, C, EmbassyClock>,
     parked: BluetoothParked,
     public_address: BluetoothPublicDeviceAddress,
 ) -> Result<BluetoothSystem, BluetoothStartFailure> {
@@ -878,7 +884,7 @@ pub async fn start<P, C: PlatformClockProvider>(
         ));
     }
     let (lease, platform, _) = guard.parts();
-    let (mut joined, acquired) = match controller.join_phy(lease, &mut EmbassyPhyTime) {
+    let (mut joined, acquired) = match controller.join_phy(lease, &EmbassyClock) {
         Ok(joined) => joined,
         Err(failure) => {
             let error = BluetoothStartError::PhyClient(failure.error());
@@ -889,7 +895,8 @@ pub async fn start<P, C: PlatformClockProvider>(
         let issued_at = Instant::now().as_micros();
         let tracked = match joined.quiescence(issued_at, issued_at + TRACKING_WINDOW_MICROS) {
             Ok(proof) => {
-                maintain_concurrent_phy::<P, EmbassyPhyTime, _>(
+                maintain_concurrent_phy::<P, RomShortDelay, _>(
+                    &EmbassyClock,
                     lease,
                     platform,
                     &[proof],
@@ -936,7 +943,7 @@ pub async fn start<P, C: PlatformClockProvider>(
 
 /// Move the published status from `published` to `activity`.
 fn apply_coex_status<P, C: PlatformClockProvider>(
-    guard: &mut RadioGuard<'_, P, C>,
+    guard: &mut RadioGuard<'_, P, C, EmbassyClock>,
     published: RadioActivity,
     activity: RadioActivity,
 ) {
@@ -952,7 +959,7 @@ fn apply_coex_status<P, C: PlatformClockProvider>(
 /// Publish every change of the Controller's active roles as Bluetooth LE
 /// schedule status. [`BluetoothSystem::stop`] withdraws what is left.
 async fn publish_coex_status<P, C: PlatformClockProvider>(
-    radio: &RadioSystem<P, C>,
+    radio: &RadioSystem<P, C, EmbassyClock>,
 ) -> core::convert::Infallible {
     let mut published = RadioActivity::IDLE;
     loop {
@@ -968,7 +975,7 @@ async fn publish_coex_status<P, C: PlatformClockProvider>(
 /// Follow whether another radio shares the antenna, as the vendor BLE
 /// Controller's `coex_register_ble_cb` start and stop callbacks do.
 async fn follow_coex_sharing<P, C: PlatformClockProvider>(
-    radio: &RadioSystem<P, C>,
+    radio: &RadioSystem<P, C, EmbassyClock>,
 ) -> core::convert::Infallible {
     loop {
         RUNTIME

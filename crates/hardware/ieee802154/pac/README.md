@@ -21,6 +21,6 @@ a behavior, and sharing them would need a public generic API over chip
 associated types. They move here only when a third chip with this MAC
 appears or when lease ownership or ordering logic must change in both chips.
 
-The engine's `Ieee802154LowLevel` in `oer-ieee802154-engine` remains the
+The engine's `Ieee802154LowLevel` in `oer-espressif-ieee802154-engine` remains the
 driver boundary: each chip HAL implements it over its chip PAC. This crate sits
 below the chip PACs and is not a driver interface.

@@ -51,10 +51,6 @@ impl<
         &self.delay
     }
 
-    pub fn delay_mut(&mut self) -> &mut D {
-        &mut self.delay
-    }
-
     #[cfg(any(feature = "diagnostics", test))]
     pub const fn pipeline_observer(&self) -> Option<&'pool dyn RxPipelineObserver> {
         self.pipeline_observer
@@ -261,8 +257,9 @@ impl<
         self.storage
     }
 
-    pub fn delay_mut(&mut self) -> &mut D {
-        &mut self.delay
+    /// The timer the walker settles on.
+    pub const fn delay(&self) -> &D {
+        &self.delay
     }
 
     pub fn queued_frames(&self) -> usize {
@@ -367,6 +364,11 @@ impl<
         DMA_STORAGE_SIZE,
     >
 {
+    /// The timer the walker settles on.
+    pub(crate) const fn delay(&self) -> &D {
+        &self.delay
+    }
+
     pub const fn ring(&self) -> &RxRingStopped<'storage, COUNT> {
         &self.ring
     }
@@ -400,20 +402,18 @@ impl<
         (Self, RxRingError),
     >
     where
-        D: RxDmaObservationDelay,
+        D: oer_time::Timer,
     {
         let Self {
             ring,
             storage,
             pool,
             frames,
-            mut delay,
+            delay,
             #[cfg(any(feature = "diagnostics", test))]
             pipeline_observer,
         } = self;
-        delay
-            .after_micros(ESP32S31_RX_WALKER_ENABLE_SETTLE_US)
-            .await;
+        walker_enable_settle(&delay).await;
         match ring.try_start(hardware) {
             Ok(ring) => Ok(StagedRxProducer {
                 ring_lifetime: PhantomData,
@@ -472,6 +472,11 @@ impl<
         DMA_STORAGE_SIZE,
     >
 {
+    /// The timer the walker settles on.
+    pub(crate) const fn delay(&self) -> &D {
+        &self.delay
+    }
+
     pub fn new(
         ring: RxRingLive<'storage, COUNT>,
         storage: &'static ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,

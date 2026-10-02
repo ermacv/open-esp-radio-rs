@@ -22,9 +22,7 @@ use oer_esp32s31_hal::{
     shared_radio::{PlatformClockProvider, SharedRadioLease},
 };
 
-use oer_esp32s31_phy::{
-    PhyAsyncDelay, PhyTargetObserver, concurrent::ConcurrentPhy, state::client::PhyPllTrackClock,
-};
+use oer_esp32s31_phy::{PhyShortDelay, PhyTargetObserver, concurrent::ConcurrentPhy};
 
 /// Inputs for the one common Wi-Fi PHY/MAC transition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -81,11 +79,11 @@ pub async fn start_esp32s31_radio<P, W, D, O>(
     wifi_platform: W,
     config: RadioStartConfig,
     observer: O,
-    clock: &mut impl PhyPllTrackClock,
+    timer: &impl oer_time::Timer,
 ) -> Result<WifiStopped<W>, RadioStartFailure<W>>
 where
     W: WifiMacPlatform,
-    D: PhyAsyncDelay,
+    D: PhyShortDelay,
     O: PhyTargetObserver + Clone,
 {
     let wifi = start_esp32s31_wifi::<P, W, D, O>(
@@ -96,7 +94,7 @@ where
         wifi_platform,
         config.wifi,
         observer,
-        clock,
+        timer,
     )
     .await
     .map_err(RadioStartFailure::Wifi)?;

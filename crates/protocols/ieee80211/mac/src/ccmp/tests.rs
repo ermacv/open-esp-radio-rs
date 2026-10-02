@@ -94,3 +94,53 @@ fn replay_commit_is_lane_scoped_and_two_phase() {
         Err(CcmpReplayError::InvalidTid)
     );
 }
+
+#[test]
+fn transmit_packet_numbers_advance_by_their_step_from_a_new_key() {
+    let mut ordinary = CcmpTxPacketNumber::new(CcmpPacketNumberStep::ONE);
+    assert_eq!(ordinary.last(), CcmpPacketNumber::ZERO);
+    assert_eq!(ordinary.allocate(), Ok(CcmpPacketNumber::new(1).unwrap()));
+    assert_eq!(ordinary.allocate(), Ok(CcmpPacketNumber::new(2).unwrap()));
+
+    let mut stepped = CcmpTxPacketNumber::new(CcmpPacketNumberStep::new(3).unwrap());
+    assert_eq!(
+        stepped.next_header(CcmpKeyId::new(1).unwrap()),
+        Ok(CcmpHeader::new(
+            CcmpPacketNumber::new(3).unwrap(),
+            CcmpKeyId::new(1).unwrap()
+        )
+        .encode())
+    );
+    assert_eq!(
+        stepped.next_header(CcmpKeyId::PAIRWISE),
+        Ok([6, 0, 0, 0x20, 0, 0, 0, 0])
+    );
+    assert_eq!(stepped.last(), CcmpPacketNumber::new(6).unwrap());
+    assert!(CcmpPacketNumberStep::new(0).is_none());
+}
+
+#[test]
+fn transmit_packet_numbers_stop_at_the_48_bit_limit_without_wrapping() {
+    let step = CcmpPacketNumberStep::new(3).unwrap();
+    let mut allocator = CcmpTxPacketNumber::continuing_after(
+        step,
+        CcmpPacketNumber::new(CCMP_PACKET_NUMBER_MAX - 3).unwrap(),
+    );
+    assert_eq!(
+        allocator.allocate(),
+        Ok(CcmpPacketNumber::new(CCMP_PACKET_NUMBER_MAX).unwrap())
+    );
+    assert_eq!(
+        allocator.allocate(),
+        Err(CcmpTxPacketNumberError::Exhausted)
+    );
+    assert_eq!(
+        allocator.last(),
+        CcmpPacketNumber::new(CCMP_PACKET_NUMBER_MAX).unwrap()
+    );
+    let mut near = CcmpTxPacketNumber::continuing_after(
+        step,
+        CcmpPacketNumber::new(CCMP_PACKET_NUMBER_MAX - 2).unwrap(),
+    );
+    assert_eq!(near.allocate(), Err(CcmpTxPacketNumberError::Exhausted));
+}

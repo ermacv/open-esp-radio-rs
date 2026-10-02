@@ -1,8 +1,9 @@
 pub fn configure_image_compiler(
     command: &mut std::process::Command,
     budget: &oer_memory_report::StackBudget,
+    target: &str,
 ) {
-    oer_esp32s31_firmware::compiler::configure_image_compiler(command, budget);
+    oer_esp32s31_firmware::compiler::configure_image_compiler(command, budget, target);
     command
         .env(
             "OPEN_RADIO_CPU0_STACK_MINIMUM_FREE_BYTES",

@@ -267,15 +267,14 @@ the host semantic model and vendor-comparison boundary; firmware does not lower
 each hot edge through the async action/binding/advance path. HIL rejects
 incomplete, overlapping or out-of-parent phase intervals.
 
-The Wi-Fi Embassy adapter interprets `PhyAsyncDelay` as a minimum elapsed
-duration. It captures an absolute deadline when creating the delay and checks
-it before polling the Embassy timer. An already elapsed deadline completes
-without registering an extra wake; a future deadline uses ordinary timer wake
+A PHY wait (`executor::wait::delay`) is a minimum elapsed duration. It
+captures an absolute deadline on the caller's `oer_time::Timer` when the wait
+is created; the timer contract ends a wait for an elapsed deadline without
+registering a wake, and a future deadline uses ordinary timer wake
 registration. There is no busy wait; the target's hardware edge limits and
 settling durations still apply. This is not a cooperative execution budget:
 several completed waits may permit more hardware steps in one poll. The maximum
 poll observation must therefore be considered independently of total pause time.
-Bluetooth owns its separate time binding.
 
 Diagnostic connected Wi-Fi keeps the recorder beside the parked runtime,
 outside nested PHY futures. Callbacks borrow it briefly, with no borrow across

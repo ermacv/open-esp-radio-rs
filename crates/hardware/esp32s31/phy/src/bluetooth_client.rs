@@ -18,11 +18,8 @@ use oer_esp32s31_hal::{
     shared_radio::{BtbbError, RadioClient, SharedRadioLease},
 };
 
-use crate::{
-    concurrent::{
-        ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError, acquire_client, release_client,
-    },
-    state::client::{PhyModemClient, PhyPllTrackClock},
+use crate::concurrent::{
+    ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError, acquire_client, release_client,
 };
 
 /// Bluetooth holds a client bit in the shared PHY domain and a reference on
@@ -70,7 +67,7 @@ pub enum BluetoothPhyClientError {
 pub fn join_bluetooth(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     task: &TaskOwner,
-    clock: &mut impl PhyPllTrackClock,
+    clock: &impl oer_time::Clock,
 ) -> Result<(BluetoothPhyMembership, ConcurrentAcquire), BluetoothPhyClientError> {
     let epoch = lease.registration_epoch();
     let domain = lease
@@ -88,7 +85,7 @@ pub fn join_bluetooth(
     if lease.holds_btbb(RadioClient::Bluetooth) {
         return Err(BluetoothPhyClientError::Btbb(BtbbError::AlreadyAcquired));
     }
-    let acquired = acquire_client(lease, PhyModemClient::Bluetooth, clock)
+    let acquired = acquire_client(lease, RadioClient::Bluetooth, clock)
         .map_err(BluetoothPhyClientError::Phy)?;
 
     #[allow(
@@ -106,7 +103,7 @@ pub fn join_bluetooth(
     if let Err(error) = btbb {
         // Both rejections were checked above; undo the client bit when the
         // domain still permits it.
-        let _ = release_client(lease, PhyModemClient::Bluetooth);
+        let _ = release_client(lease, RadioClient::Bluetooth);
         return Err(BluetoothPhyClientError::Btbb(error));
     }
     Ok((BluetoothPhyMembership { _private: () }, acquired))
@@ -160,7 +157,7 @@ pub fn leave_bluetooth(
             error: BluetoothPhyClientError::Btbb(BtbbError::NotAcquired),
         });
     }
-    let last = match release_client(lease, PhyModemClient::Bluetooth) {
+    let last = match release_client(lease, RadioClient::Bluetooth) {
         Ok(last) => last,
         Err(error) => {
             return Err(BluetoothPhyLeaveFailure {

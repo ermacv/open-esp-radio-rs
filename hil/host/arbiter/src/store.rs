@@ -13,23 +13,6 @@ use crate::{
     state::{STATE_SCHEMA, State},
 };
 
-/// A checkout of the previous arbiter still holds or waits for the whole
-/// stand in the schema 1 state. That state is migrated once those leases end;
-/// until then newer requests wait so the older processes keep their places.
-#[derive(Debug)]
-pub struct LegacyBusy;
-
-impl std::fmt::Display for LegacyBusy {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(
-            "a checkout without per-resource claims holds or waits for the whole stand; \
-             its leases finish first",
-        )
-    }
-}
-
-impl std::error::Error for LegacyBusy {}
-
 /// Overrides the per-user arbiter directory, for tests and separate stands.
 pub const DIRECTORY_ENV: &str = "OER_HIL_ARBITER_DIR";
 
@@ -105,27 +88,6 @@ impl Arbiter {
         self.locked(|| self.state_transaction(action))
     }
 
-    /// [`Self::transaction`], waiting while leases of a previous arbiter
-    /// version are live.
-    pub(crate) fn transaction_after_legacy<T>(
-        &self,
-        mut action: impl FnMut(&mut State) -> crate::Result<T>,
-    ) -> crate::Result<T> {
-        let mut reported = false;
-        loop {
-            match self.transaction(&mut action) {
-                Err(error) if error.is::<LegacyBusy>() => {
-                    if !reported {
-                        eprintln!("hil-arbiter: {error}");
-                        reported = true;
-                    }
-                    oer_process::sleep(std::time::Duration::from_secs(1))?;
-                }
-                result => return result,
-            }
-        }
-    }
-
     /// Run `action` under the exclusive lock of every arbiter file.
     pub(crate) fn locked<T>(&self, action: impl FnOnce() -> crate::Result<T>) -> crate::Result<T> {
         let lock = fs::OpenOptions::new()
@@ -147,22 +109,11 @@ impl Arbiter {
         let before = match fs::read(&path) {
             Ok(bytes) => {
                 let value: serde_json::Value = serde_json::from_slice(&bytes)?;
-                if value["schema"]
-                    .as_u64()
-                    .is_none_or(|schema| schema > u64::from(STATE_SCHEMA))
-                {
-                    return Err(format!(
-                        "HIL arbiter state {} has schema {}; this checkout reads schema \
-                         {STATE_SCHEMA}. Update the checkout",
-                        path.display(),
-                        value["schema"]
-                    )
-                    .into());
+                let schema = value["schema"].as_u64();
+                if schema != Some(u64::from(STATE_SCHEMA)) {
+                    return Err(crate::state::unreadable(&path, &value["schema"]).into());
                 }
-                if value["schema"] == 1 && crate::state::legacy_live(&value) {
-                    return Err(LegacyBusy.into());
-                }
-                crate::state::migrate(value)?
+                serde_json::from_value(value)?
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => State::default(),
             Err(error) => return Err(error.into()),

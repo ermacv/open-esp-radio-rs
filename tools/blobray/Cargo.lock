@@ -409,7 +409,6 @@ dependencies = [
 name = "oer-esp32c5-vendor-scenarios"
 version = "0.1.0"
 dependencies = [
- "blobray-application",
  "blobray-domain",
  "clap",
  "oer-vendor-scenario-engine",
@@ -428,19 +427,12 @@ dependencies = [
 name = "oer-esp32s31-vendor-scenarios"
 version = "0.1.0"
 dependencies = [
- "addr2line",
  "blobray-application",
- "blobray-backend-riscv",
  "blobray-domain",
  "clap",
- "gimli",
  "object",
- "oer-probe-codegen",
  "oer-vendor-scenario-engine",
  "serde",
- "serde_json",
- "sha2",
- "tempfile",
  "toml",
 ]
 
@@ -479,7 +471,6 @@ dependencies = [
  "gimli",
  "object",
  "oer-probe-codegen",
- "rv-asm",
  "serde",
  "serde_json",
  "sha2",

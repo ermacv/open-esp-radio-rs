@@ -45,7 +45,7 @@ where
         + MacRuntimeStopHardware
         + 'hardware,
     C: StaAttemptChannel<H>,
-    D: RxFrontierDelay,
+    D: oer_time::Timer + Copy,
     T: StaJoinTransmit<H> + HandshakeTransmit<H> + StaPeerTransmit + 'transmit,
     J: StaJoinObserver + Default,
 {
@@ -189,7 +189,7 @@ where
         let mut port = StaJoinPort::new(
             StaJoinRadio::new(
                 &mut *owner.hardware,
-                StaJoinRx::new(receive, owner.rx_storage),
+                StaJoinRx::new(receive, owner.rx_storage, owner.timer),
                 &mut *owner.transmit,
                 owner.channel.connection_coex(),
             ),
@@ -203,7 +203,7 @@ where
             .with_listen_interval(owner.listen_interval),
         );
         port.prepare_authentication();
-        let mut runner = StaJoinRunner::new(port, EmbassyStaJoinTimer);
+        let mut runner = StaJoinRunner::new(port, owner.timer);
         let result = match sae {
             Some(exchange) => runner
                 .authenticate_sae(exchange, owner.security.sequences.non_qos_mut())
@@ -272,7 +272,7 @@ where
         let port = StaJoinPort::new(
             StaJoinRadio::new(
                 &mut *owner.hardware,
-                StaJoinRx::new(receive, owner.rx_storage),
+                StaJoinRx::new(receive, owner.rx_storage, owner.timer),
                 &mut *owner.transmit,
                 owner.channel.connection_coex(),
             ),
@@ -285,7 +285,7 @@ where
             )
             .with_listen_interval(owner.listen_interval),
         );
-        let mut runner = StaJoinRunner::new(port, EmbassyStaJoinTimer);
+        let mut runner = StaJoinRunner::new(port, owner.timer);
         let result = runner
             .associate(
                 owner.station.station_address,
@@ -388,15 +388,14 @@ where
         let port = Wpa2HandshakePort::new(
             Wpa2HandshakeRadio::new(
                 &mut *owner.hardware,
-                Wpa2Rx::new(receive, owner.rx_storage, station),
+                Wpa2Rx::new(receive, owner.rx_storage, station, owner.timer),
                 &mut *owner.transmit,
                 owner.channel.connection_coex(),
             ),
             Wpa2HandshakeStorage::new(owner.frame),
             station,
         );
-        let mut runner =
-            RsnHandshakeRunner::new(port, EmbassyWpa2HandshakeTimer, RsnSoftwareAes::new());
+        let mut runner = RsnHandshakeRunner::new(port, owner.timer, RsnSoftwareAes::new());
         let (pmk, supplicant_nonce, sequences) =
             owner.security.wpa2_handshake_parts().ok_or_else(|| {
                 StaAttemptStepError::terminal(StaAttemptTargetError::State(

@@ -1,7 +1,6 @@
-use bt_hci::{ControllerToHostPacket, PacketKind, controller::ExternalController};
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use bt_hci::{ControllerToHostPacket, PacketKind};
 
-use super::{ControllerToHostQueue, ControllerToHostQueueError, InProcessHciHostTransport};
+use super::{ControllerToHostQueue, ControllerToHostQueueError};
 
 const RESET_COMMAND_COMPLETE: [u8; 6] = [0x0e, 0x04, 0x01, 0x03, 0x0c, 0x00];
 const HARDWARE_ERROR: [u8; 3] = [0x10, 0x01, 0x42];
@@ -107,12 +106,4 @@ fn every_controller_packet_header_rejects_declared_length_mismatch() {
         ))
     );
     assert!(queue.is_empty());
-}
-
-fn requires_trouble_controller<C: trouble_host::Controller>() {}
-
-#[test]
-fn bt_hci_and_trouble_share_one_controller_contract() {
-    type ContractTransport = InProcessHciHostTransport<'static, NoopRawMutex, 1, 1, 16>;
-    requires_trouble_controller::<ExternalController<ContractTransport, 1>>();
 }

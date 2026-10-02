@@ -12,7 +12,6 @@ use oer_esp32s31_hal::{
 
 use oer_esp32s31_phy::{
     concurrent::{ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError},
-    state::client::PhyPllTrackClock,
     wifi_client::{
         WifiPhyMembership, WifiPhySuspended, leave_suspended_wifi, leave_wifi, resume_wifi,
         set_wifi_rx, suspend_wifi,
@@ -352,7 +351,7 @@ impl WifiRuntimeContext {
     pub fn resume_rf(
         &mut self,
         lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
-        clock: &mut impl PhyPllTrackClock,
+        clock: &impl oer_time::Clock,
     ) -> Result<ConcurrentAcquire, WifiRfSleepError> {
         let suspended = match self.phy.take() {
             Some(WifiPhyClient::Suspended(suspended)) => suspended,

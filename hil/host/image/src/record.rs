@@ -3,7 +3,7 @@
 //!
 //! Build-only records are immutable build subjects without fabricated
 //! hardware observations.
-use crate::{Artifacts, Integration, Result, chip_profile, frozen::build_slots};
+use crate::{Artifacts, Result, chip_profile, frozen::build_slots};
 use oer_hil_durable::{atomic_json, sha256_file};
 use oer_hil_evidence::{
     build,
@@ -111,7 +111,16 @@ impl FirmwareRecipe for Recipe {
         network: Option<&str>,
     ) -> oer_hil_evidence::Result<String> {
         Ok(match network {
-            Some(network) => image.build_features(network.parse::<Integration>()?.feature()),
+            Some(oer_esp32s31_firmware::network::NETWORK) => {
+                image.build_features(oer_esp32s31_firmware::network::NETWORK_FEATURE)
+            }
+            Some(other) => {
+                return Err(format!(
+                    "unknown network integration `{other}` (expected {})",
+                    oer_esp32s31_firmware::network::NETWORK
+                )
+                .into());
+            }
             // An ESP-IDF application links no network integration.
             None => image.runtime_features().to_owned(),
         })

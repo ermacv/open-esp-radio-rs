@@ -1,8 +1,17 @@
 //! Split-MAC offload boundaries, service capabilities and normalized statuses.
 
-use oer_ieee80211_mac::qos::WmmAccessCategory;
+use oer_ieee80211_lower_mac::{HardwareServices, TxStatus};
+use oer_ieee80211_mac::{channel::Channel, phy::PhyRate, qos::WmmAccessCategory};
 
 use crate::interface;
+
+/// Provenance of one normalized receive value: the lower-MAC port's
+/// [`RxEvidence`](oer_ieee80211_lower_mac::RxEvidence).
+pub use oer_ieee80211_lower_mac::RxEvidence as MacRxEvidence;
+
+/// Crypto result visible for an accepted receive MPDU: the lower-MAC port's
+/// [`RxCryptoStatus`](oer_ieee80211_lower_mac::RxCryptoStatus).
+pub use oer_ieee80211_lower_mac::RxCryptoStatus as MacRxCryptoStatus;
 
 /// Owner that must perform one indivisible MAC operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -115,6 +124,51 @@ impl MacInterfaceCapabilities {
     }
 }
 
+impl MacOperationOwnership {
+    /// The operations delegated to hardware, as the lower-MAC port's
+    /// capability set reports them.
+    pub const fn hardware_services(self) -> HardwareServices {
+        let mut services = HardwareServices::NONE;
+        let owned = [
+            (self.tx_fcs_generation, HardwareServices::FCS),
+            (self.immediate_ack_response, HardwareServices::IMMEDIATE_ACK),
+            (
+                self.csma_ca_backoff_countdown,
+                HardwareServices::BACKOFF_COUNTDOWN,
+            ),
+            (self.unicast_retry_policy, HardwareServices::RETRY_POLICY),
+            (
+                self.tx_sequence_assignment,
+                HardwareServices::SEQUENCE_NUMBERS,
+            ),
+            (self.ccmp_key_selection, HardwareServices::KEY_SELECTION),
+            (self.ccmp_packet_number, HardwareServices::PACKET_NUMBERS),
+            (self.ccmp_transform, HardwareServices::CIPHER_TRANSFORM),
+            (
+                self.rx_block_ack_matching,
+                HardwareServices::RX_BLOCK_ACK_MATCHING,
+            ),
+            (self.rx_reorder, HardwareServices::RX_REORDER),
+            (
+                self.tx_block_ack_capture,
+                HardwareServices::TX_BLOCK_ACK_CAPTURE,
+            ),
+            (
+                self.tx_ampdu_retry_selection,
+                HardwareServices::AMPDU_RETRY_SELECTION,
+            ),
+        ];
+        let mut index = 0;
+        while index < owned.len() {
+            if matches!(owned[index].0, MacOperationOwner::Hardware) {
+                services = services.union(owned[index].1);
+            }
+            index += 1;
+        }
+        services
+    }
+}
+
 /// Complete portable description of one MAC service implementation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacServiceCapabilities {
@@ -128,11 +182,12 @@ pub struct MacServiceCapabilities {
 /// The encoded frame and its ownership lease are deliberately not embedded in
 /// this copyable value. A concrete MAC backend combines this policy with an
 /// owned TX lease and translates the access category and typed PHY rate into
-/// its private queue/register representation. Descriptor capacity, hardware
+/// its private queue/register representation. `Rate` is the portable
+/// [`PhyRate`] unless the backend's retry ladder needs its own rate type. Descriptor capacity, hardware
 /// key indices, coexistence priorities and DMA metadata are therefore not
 /// part of the HMAC contract.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MacTxPlan<Rate> {
+pub struct MacTxPlan<Rate = PhyRate> {
     /// Standard WMM/EDCA category selected by protocol policy.
     pub access_category: WmmAccessCategory,
     /// Initial typed PHY policy selected for this logical exchange.
@@ -158,55 +213,18 @@ pub enum MacTxQueueState {
     ResetRequired,
 }
 
-/// Provenance of one normalized receive value.
-///
-/// Missing data is explicit because deriving a value from an active BA
-/// agreement, a protected frame-control bit, or another adjacent condition
-/// is not equivalent to observing it in hardware or validating it in the
-/// protocol parser.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MacRxEvidence<T> {
-    /// The receive backend decoded this value from a documented hardware
-    /// status field.
-    HardwareObserved(T),
-    /// Portable protocol processing established this value while validating
-    /// the frame.
-    ProtocolValidated(T),
-    /// Neither layer has evidence for this value at the current boundary.
-    Unavailable,
-}
-
-impl<T> MacRxEvidence<T> {
-    pub const fn as_ref(&self) -> MacRxEvidence<&T> {
-        match self {
-            Self::HardwareObserved(value) => MacRxEvidence::HardwareObserved(value),
-            Self::ProtocolValidated(value) => MacRxEvidence::ProtocolValidated(value),
-            Self::Unavailable => MacRxEvidence::Unavailable,
-        }
-    }
-
-    pub const fn is_available(&self) -> bool {
-        !matches!(self, Self::Unavailable)
-    }
-}
-
-/// Crypto result visible for an accepted receive MPDU.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MacRxCryptoStatus {
-    Unprotected,
-    /// The payload is plaintext and its integrity check has succeeded. Key
-    /// identity and cipher negotiation remain HMAC/security state.
-    DecryptedAndIntegrityVerified,
-}
-
 /// Portable metadata carried with one received MPDU.
 ///
-/// `Rate` is a backend-selected typed PHY record, following the same rule as
-/// [`MacTxStatus`]. A backend may publish the physical fields immediately and
-/// leave semantic fields unavailable until protocol validation has run.
+/// `Rate` is the portable [`PhyRate`] unless a backend keeps its own typed
+/// PHY record for chip-side consumers, following the same rule as
+/// [`MacTxStatus`]; [`Self::map_rate`] converts it. A backend may publish the
+/// physical fields immediately and leave semantic fields unavailable until
+/// protocol validation has run.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MacRxMetadata<Rate> {
-    pub channel: MacRxEvidence<u8>,
+pub struct MacRxMetadata<Rate = PhyRate> {
+    /// The channel the frame was received on, when a backend observed it;
+    /// a backend's configured channel is not per-frame evidence.
+    pub channel: MacRxEvidence<Channel>,
     pub rate: MacRxEvidence<Rate>,
     pub rssi_dbm: MacRxEvidence<i8>,
     pub crypto: MacRxEvidence<MacRxCryptoStatus>,
@@ -244,6 +262,21 @@ impl<Rate> MacRxMetadata<Rate> {
             amsdu: MacRxEvidence::Unavailable,
         }
     }
+
+    /// The same metadata with its rate converted, keeping the rate's
+    /// provenance; a rate `convert` finds no value in becomes unavailable.
+    /// A backend's chip-typed rate becomes the portable [`PhyRate`] this way.
+    pub fn map_rate<U>(self, convert: impl FnOnce(Rate) -> Option<U>) -> MacRxMetadata<U> {
+        MacRxMetadata {
+            channel: self.channel,
+            rate: self.rate.and_then(convert),
+            rssi_dbm: self.rssi_dbm,
+            crypto: self.crypto,
+            s_mpdu: self.s_mpdu,
+            ampdu: self.ampdu,
+            amsdu: self.amsdu,
+        }
+    }
 }
 
 /// Terminal result of one logical MPDU exchange.
@@ -254,8 +287,10 @@ impl<Rate> MacRxMetadata<Rate> {
 pub enum MacTxResult {
     /// Hardware completed the exchange successfully.
     Transmitted,
-    /// Hardware returned a terminal chip-specific status after retries.
-    HardwareFailure(u8),
+    /// The terminal publication ended with this status, which the retry
+    /// policy does not retry; never [`TxStatus::Success`]. A backend keeps
+    /// its raw completion code as its own diagnostic.
+    HardwareFailure(TxStatus),
     /// Every permitted publication ended at the hardware ACK/CTS timeout edge.
     HardwareTimeout,
     /// Every permitted publication lost contention before an on-air attempt.
@@ -264,11 +299,10 @@ pub enum MacTxResult {
 
 /// Normalized terminal status returned from a backend to portable MAC policy.
 ///
-/// `Rate` remains a backend-selected typed rate.  This keeps the portable
-/// contract independent of one chip's register encoding without reducing the
-/// final rate to an untyped integer.
+/// `Rate` is the portable [`PhyRate`] unless a backend keeps its own typed
+/// rate. Either way the final rate is never reduced to an untyped integer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MacTxStatus<Rate> {
+pub struct MacTxStatus<Rate = PhyRate> {
     pub result: MacTxResult,
     /// Total hardware publications, including the initial attempt.
     pub attempts: u8,
@@ -306,7 +340,7 @@ pub enum MacAmpduTxResult {
 /// rate.  Collapsing those into one `final_rate` would lose which part of the
 /// exchange used which PHY policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MacAmpduTxStatus<Rate> {
+pub struct MacAmpduTxStatus<Rate = PhyRate> {
     pub result: MacAmpduTxResult,
     pub original_subframes: u16,
     /// Number of A-MPDU hardware publications, including the first one.
@@ -323,7 +357,7 @@ pub struct MacAmpduTxStatus<Rate> {
 /// missing HT MPDU, or every live missing MPDU once the BlockAck agreement
 /// ended.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MacIndividualRetries<Rate> {
+pub struct MacIndividualRetries<Rate = PhyRate> {
     /// MPDUs whose individual transmission was acknowledged.
     pub transmitted: u16,
     /// MPDUs whose individual transmission ended unacknowledged.

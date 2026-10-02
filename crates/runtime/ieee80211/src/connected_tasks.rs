@@ -11,8 +11,9 @@ use core::{
     sync::atomic::{AtomicU8, Ordering},
 };
 
+use embassy_futures::select::{Either, select};
 use embassy_sync::{blocking_mutex::raw::RawMutex, signal::Signal};
-use embassy_time::{Duration, with_timeout};
+use oer_time::{Duration, Timer};
 
 const IDLE: u8 = 0;
 const ACTIVE: u8 = 1;
@@ -266,22 +267,29 @@ where
     group.wait_stopped().await
 }
 
-/// Request task shutdown and observe it for at most `timeout`.
+/// Request task shutdown and observe it for at most `timeout` on `timer`.
 ///
 /// The deadline covers the complete group, not each task independently.
 /// Expiration is only a liveness observation; it never converts a still-owned
-/// task graph into a quarantined hardware frontier.
+/// task graph into a quarantined hardware frontier. A deadline past the
+/// timer's range never expires.
 pub async fn stop_connected_task_group_until<G>(
     group: &mut G,
+    timer: &impl Timer,
     timeout: Duration,
 ) -> ConnectedTaskStopAttempt<G::Stopped>
 where
     G: ConnectedTaskGroup,
 {
     group.request_stop();
-    match with_timeout(timeout, group.wait_stopped()).await {
-        Ok(stopped) => ConnectedTaskStopAttempt::Stopped(stopped),
-        Err(_) => ConnectedTaskStopAttempt::Pending { waited: timeout },
+    let expiry = async {
+        if timer.wait_for(timeout).await.is_err() {
+            core::future::pending::<()>().await;
+        }
+    };
+    match select(group.wait_stopped(), expiry).await {
+        Either::First(stopped) => ConnectedTaskStopAttempt::Stopped(stopped),
+        Either::Second(()) => ConnectedTaskStopAttempt::Pending { waited: timeout },
     }
 }
 

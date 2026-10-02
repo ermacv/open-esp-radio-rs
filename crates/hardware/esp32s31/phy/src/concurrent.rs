@@ -35,8 +35,8 @@ use crate::{
     PhyState, RegisteredPhyState,
     domain::PhyDomain,
     state::client::{
-        PhyClientAcquireError, PhyClientReleaseError, PhyClientSnapshot, PhyModemClient,
-        PhyPendingTrack, PhyPllTrackClock, PhyTrackTimeError,
+        PhyClientAcquireError, PhyClientReleaseError, PhyClientSnapshot, PhyPendingTrack,
+        PhyTrackTimeError,
     },
 };
 
@@ -109,9 +109,9 @@ pub enum ConcurrentPhyError {
     /// The tracking clock was rejected.
     Time(PhyTrackTimeError),
     /// An active client presented no quiescence proof.
-    MissingQuiescence(PhyModemClient),
+    MissingQuiescence(RadioClient),
     /// The client this operation serves is not in the domain's client set.
-    ClientAbsent(PhyModemClient),
+    ClientAbsent(RadioClient),
     /// The PHY clock is behind a proof's paired sample.
     ClockBehindProof,
     /// A proof's window has already closed.
@@ -141,18 +141,10 @@ impl MaintenanceAdmission {
     }
 }
 
-const fn radio_client(client: PhyModemClient) -> RadioClient {
-    match client {
-        PhyModemClient::Wifi => RadioClient::Wifi,
-        PhyModemClient::Bluetooth => RadioClient::Bluetooth,
-        PhyModemClient::Ieee802154 => RadioClient::Ieee802154,
-    }
-}
-
-const ALL_CLIENTS: [PhyModemClient; 3] = [
-    PhyModemClient::Wifi,
-    PhyModemClient::Bluetooth,
-    PhyModemClient::Ieee802154,
+const ALL_CLIENTS: [RadioClient; 3] = [
+    RadioClient::Wifi,
+    RadioClient::Bluetooth,
+    RadioClient::Ieee802154,
 ];
 
 /// Admit maintenance under `policy`: at once under the vendor policy, or
@@ -182,10 +174,7 @@ pub(crate) fn admit(
         if !active.contains(client) {
             continue;
         }
-        let Some(proof) = proofs
-            .iter()
-            .find(|proof| proof.client() == radio_client(client))
-        else {
+        let Some(proof) = proofs.iter().find(|proof| proof.client() == client) else {
             return Err(ConcurrentPhyError::MissingQuiescence(client));
         };
         if let QuiescentSpan::Until {
@@ -379,8 +368,8 @@ impl ConcurrentPhy {
 // CAPABILITY: phy-protocol-consumer-initial-tracking-before-client-handoff-wifi, phy-protocol-consumer-initial-tracking-before-client-handoff-bluetooth, phy-protocol-consumer-initial-tracking-before-client-handoff-ieee802154, whole-radio-exclusive-ownership-and-client-handoff-protocol-specific-phy-handoff
 pub fn acquire_client(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
-    client: PhyModemClient,
-    clock: &mut impl PhyPllTrackClock,
+    client: RadioClient,
+    clock: &impl oer_time::Clock,
 ) -> Result<ConcurrentAcquire, ConcurrentPhyError> {
     let phy = lease.attachment_mut();
     let PhyDomain {
@@ -419,7 +408,7 @@ pub fn acquire_client(
 /// The domain is unchanged.
 pub fn release_client(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
-    client: PhyModemClient,
+    client: RadioClient,
 ) -> Result<bool, ConcurrentPhyError> {
     let phy = lease.attachment_mut();
     let PhyDomain {
@@ -442,7 +431,7 @@ pub fn release_client(
     }
 }
 
-fn emit_client_change(client: PhyModemClient, acquired: bool, active: PhyClientSnapshot) {
+fn emit_client_change(client: RadioClient, acquired: bool, active: PhyClientSnapshot) {
     oer_trace::emit(&oer_phy_trace::ClientChange {
         client: crate::trace::client(client),
         acquired,
@@ -458,7 +447,7 @@ fn emit_client_change(client: PhyModemClient, acquired: bool, active: PhyClientS
 /// domain is unchanged.
 pub fn evaluate_periodic_tracking(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
-    clock: &mut impl PhyPllTrackClock,
+    clock: &impl oer_time::Clock,
 ) -> Result<bool, ConcurrentPhyError> {
     let phy = lease.attachment_mut();
     let PhyDomain {

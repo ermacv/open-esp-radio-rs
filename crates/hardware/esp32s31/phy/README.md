@@ -82,7 +82,7 @@ reset or retained-sleep wakeup replay.
 | [Analog register bus](../../radio/analog/README.md) | Field, configuration and parallel transitions of the vendor analog-I2C leaves | The transitions touch no bus; the target port and HAL drive them |
 | [Radio system](../../../runtime/esp32s31/radio/README.md) | The arbiter, the platform resources and the vendor periodic tracking timer | Tracking runs under the lease and the grant-protect brackets; it pauses no protocol |
 | [HAL stopped-MAC check](../hal/src/owner/maintenance.rs) | The stopped Wi-Fi MAC check at the final-client boundary | A CPU mutex does not stop MAC or DMA |
-| [Hardware coex control](../driver/coex/README.md) | Recovered timer requests, PTI, clock conversion and withdrawal accounting | Programmed timer identity is not an RF grant |
+| [Hardware coex control](../../espressif/coex/README.md) | Recovered timer requests, PTI, clock conversion and withdrawal accounting | Programmed timer identity is not an RF grant |
 
 ```mermaid
 flowchart TD
@@ -256,8 +256,8 @@ recovered vendor graph; bounded PBus, I2C, DC/IQ and SAR readiness reads poll
 directly. Interrupts remain enabled and the physical owner remains held until
 terminal restoration. The complete common/Wi-Fi runtime calibration graph
 runs in one caller poll without a timer suspension. Longer registration,
-tracking and lifecycle operations may still express waits through
-`PhyAsyncDelay` and `executor::wait::Kind`.
+tracking and lifecycle operations wait on the caller's `oer_time::Timer`
+through `executor::wait::delay` and its `executor::wait::Kind`.
 
 RX gain PBus completion matches the rev0 ROM command loop while retaining
 bounded attempts and typed timeout failure. Its I2C commands use direct status

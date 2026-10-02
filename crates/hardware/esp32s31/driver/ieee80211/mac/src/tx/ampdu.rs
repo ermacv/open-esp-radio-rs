@@ -202,9 +202,22 @@ impl HtAmpduTxCompletion {
     /// status-five A-MPDU branch calls `hal_mac_tx_get_blockack`, publishes the
     /// result through `ppTxqUpdateBitmap`, and then enters `ppResortTxAMPDU`.
     pub const fn acknowledges(self, sequence: SequenceNumber) -> bool {
-        (!self.tx.is_trigger_flow() || self.tx.status() == 0)
-            && self.block_ack_received
-            && self.block_ack.block_ack.acknowledges(sequence)
+        match self.valid_block_ack() {
+            Some(block_ack) => block_ack.acknowledges(sequence),
+            None => false,
+        }
+    }
+
+    /// The BlockAck the completion carries, under the validity rule of
+    /// [`Self::acknowledges`]: the hardware result bit is set, and a
+    /// Trigger-flow completion counts only with status zero. `None` when the
+    /// bitmap words are stale.
+    pub const fn valid_block_ack(self) -> Option<block_ack::TxBlockAckBitmap> {
+        if (!self.tx.is_trigger_flow() || self.tx.status() == 0) && self.block_ack_received {
+            Some(self.block_ack.block_ack)
+        } else {
+            None
+        }
     }
 }
 

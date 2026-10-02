@@ -1461,16 +1461,15 @@ impl oer_esp32s31_ieee80211::tx::WifiTxEntropy for OrdinaryTxProbeEntropy {
 
 struct OrdinaryTxProbeTimer;
 
-impl oer_esp32s31_ieee80211::tx::WifiTxTimer for OrdinaryTxProbeTimer {
-    fn now_micros(&self) -> u64 {
-        1
+/// Time that stands still; waits end at once.
+impl oer_time::Clock for OrdinaryTxProbeTimer {
+    fn now(&self) -> oer_time::Instant {
+        oer_time::Instant::from_micros(1)
     }
+}
 
-    fn wait_until(&mut self, _deadline_micros: u64) -> impl core::future::Future<Output = ()> + '_ {
-        core::future::ready(())
-    }
-
-    fn after_micros(&mut self, _micros: u64) -> impl core::future::Future<Output = ()> + '_ {
+impl oer_time::Timer for OrdinaryTxProbeTimer {
+    fn wait_until(&self, _deadline: oer_time::Instant) -> impl core::future::Future<Output = ()> {
         core::future::ready(())
     }
 }

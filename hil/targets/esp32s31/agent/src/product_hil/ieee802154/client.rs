@@ -6,11 +6,11 @@ use esp_hal::time::Instant;
 use oer_esp32s31_ieee802154_system::{Ieee802154Parked, Ieee802154System, start};
 use oer_esp32s31_phy::concurrent::MaintenancePolicy;
 use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
+use oer_espressif_ieee802154_engine::pib::Ieee802154PibDefaults;
 use oer_hil_protocol::{
     ieee802154::Ieee802154AirTxOutcome, ieee802154::Ieee802154SessionMaintenancePolicy,
 };
 use oer_ieee802154::TxStatus;
-use oer_ieee802154_engine::pib::Ieee802154PibDefaults;
 
 pub(super) fn now_micros() -> u64 {
     Instant::now().duration_since_epoch().as_micros()

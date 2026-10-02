@@ -46,9 +46,10 @@ oer-hil-execution = { path = "../execution", features = ["test-support"] }
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "hil"
 platform = "host"
+# The evaluator reads the evidence this package writes.
+inputs = ["qualification/evaluator"]
 hil = "operation"
 
 [build-dependencies]

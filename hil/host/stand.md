@@ -135,7 +135,7 @@ continues its remaining scenarios in the same run bundle after flashing its
 image again. Such a run also renews its lease itself once it has held it for
 20 minutes, a third of the hour below: at the next scenario boundary it
 releases, queues again (at once when nobody waits) and flashes its image
-again, so a long suite such as `run-all --tag qualification` never meets the
+again, so a long suite such as `run-all --role qualification` never meets the
 hour, and a scenario started after a renewal has 40 minutes. A single scenario
 and a `lease` command run to their end. Every
 lease ends at one hour: it is stopped with `SIGTERM`, which runs the ordinary
@@ -268,8 +268,8 @@ manifest refuses every flash of that image, including a run's automatic peer
 restore, which then blocks its scenarios with the reason; `firmware list`
 shows it. The
 manifest names the image as the board journal records it, the target chip and
-the chip whose `artifacts.toml` pins the one ESP-IDF revision and vendor
-archives every image builds against. Builds are reproducible
+`pins`, the chip whose `artifacts.toml` pins the ESP-IDF revision and vendor
+archives the image builds against: an ESP32-C5 image names `esp32c5`. Builds are reproducible
 (`CONFIG_APP_REPRODUCIBLE_BUILD`), so equal sources give an equal digest.
 
 ```console

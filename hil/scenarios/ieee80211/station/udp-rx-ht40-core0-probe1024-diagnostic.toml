@@ -1,7 +1,7 @@
 schema = 5
 id = "udp-rx-ht40-core0-probe1024-diagnostic"
 description = "Same-image HT40 RX with 1024-us masked continuation diagnostic"
-transfer = "identical-image"
+role = "investigation"
 tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "core0", "coarse-cycles", "masked-probe-ab", "air-strict"]
 
 [wifi]

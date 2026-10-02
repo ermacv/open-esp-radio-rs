@@ -61,7 +61,7 @@ catalog against expectations read from the pinned source.
 ## Comparing the production engine
 
 `compare` runs the same scenario through the production engine
-(`oer_ieee802154_engine::engine`) and prints `MATCH`, `DIFF` with the first
+(`oer_espressif_ieee802154_engine::engine`) and prints `MATCH`, `DIFF` with the first
 differing record, or `INCOMPLETE` with the reason. [`src/port.rs`](src/port.rs)
 renders each HAL low-level call as the vendor `ieee802154_ll_*` accessor and
 argument, and each modem ETM access as the vendor's direct register access;
@@ -85,9 +85,9 @@ pins it to the signed low byte of one `bt_bb_get_cur_rx_info` call, the
 geometry the register model publishes for the PAC read.
 
 `cargo xtask evidence --chip esp32s31 ieee802154-host` runs `compare` for every catalog
-scenario and, only when all of them MATCH, writes the stand's evidence shard
-`verification/esp32s31/evidence/scenarios/ieee802154-host.json`: one entry per
-scenario (source `esp-idf`, production `oer_ieee802154_engine::engine`), the
+scenario and, only when all of them MATCH, writes the stand's evidence shard `ieee802154-host.json` into the
+chip's evidence index `evidence/scenarios`: one entry per
+scenario (source `esp-idf`, production `oer_espressif_ieee802154_engine::engine`), the
 digests of the pinned ESP-IDF files and of the stand's path-dependency
 closure. The stand measures no vendor coverage, production observation or
 vendor state, so its entries leave those out.

@@ -27,6 +27,8 @@ use oer_esp32s31_ieee80211_mac::{
     rx::{RxDma, RxDmaBinding, RxDmaWalkerStopped, RxPhyInfo},
 };
 
+use oer_time_virtual::SkipClock;
+
 use oer_ieee80211_softmac::{
     MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameTypeMask, MonitorPublishOutcome,
     MonitorSink, WifiConfig, WifiMonitorConfig,
@@ -409,7 +411,7 @@ fn one_irq_epoch_services_durable_rx_then_returns_every_owner() {
         }
     });
 
-    let report = block_on(owner.run_until_stopped(stop))
+    let report = block_on(owner.run_until_stopped(stop, &SkipClock::new()))
         .unwrap_or_else(|_| panic!("monitor run must stop cleanly"));
     assert_eq!(report.rx_service_wakes, 1);
     assert_eq!(report.rx_interrupt_posts, 1);
@@ -468,7 +470,7 @@ fn saturation_is_counted_without_preventing_dma_recycle() {
         }
     });
 
-    let report = block_on(owner.run_until_stopped(stop))
+    let report = block_on(owner.run_until_stopped(stop, &SkipClock::new()))
         .unwrap_or_else(|_| panic!("monitor saturation must still stop cleanly"));
     assert_eq!(report.receive.completed_descriptors, 2);
     assert_eq!(report.receive.published_frames, 1);
@@ -520,7 +522,7 @@ fn bounded_filter_runs_before_the_sink_and_stop_recovers_current_last() {
         }
     });
 
-    let report = block_on(owner.run_until_stopped(stop))
+    let report = block_on(owner.run_until_stopped(stop, &SkipClock::new()))
         .unwrap_or_else(|_| panic!("filtered monitor run must stop cleanly"));
 
     assert_eq!(report.receive.completed_descriptors, 1);
@@ -548,7 +550,7 @@ fn activation_failure_quiesces_the_route_but_preserves_the_live_ring() {
         },
     );
 
-    let failure = match block_on(owner.run_until_stopped(ready(()))) {
+    let failure = match block_on(owner.run_until_stopped(ready(()), &SkipClock::new())) {
         Ok(_) => panic!("route activation must fail"),
         Err(failure) => failure,
     };
@@ -558,7 +560,7 @@ fn activation_failure_quiesces_the_route_but_preserves_the_live_ring() {
         failure.error,
         MonitorRunError::Activate(MacInterruptEpochActivateError::Route(RouteError::Activate))
     ));
-    block_on(owner.stop())
+    block_on(owner.stop(&SkipClock::new()))
         .unwrap_or_else(|_| panic!("caller can retry a transient quiesce failure"));
     assert_eq!(owner.receive_phase(), RxFrontierPhase::Live);
     assert!(!owner.interrupt_active());
@@ -578,7 +580,7 @@ fn logical_stop_does_not_call_physical_irq_quiesce() {
         },
     );
 
-    block_on(owner.run_until_stopped(ready(())))
+    block_on(owner.run_until_stopped(ready(()), &SkipClock::new()))
         .unwrap_or_else(|_| panic!("logical stop must not call route quiesce"));
     assert_eq!(owner.receive_phase(), RxFrontierPhase::Live);
     assert!(owner.interrupt_active());
@@ -597,7 +599,8 @@ fn cancelled_run_keeps_owner_available_for_explicit_shutdown() {
     );
 
     {
-        let mut run = pin!(owner.run_until_stopped(pending()));
+        let clock = SkipClock::new();
+        let mut run = pin!(owner.run_until_stopped(pending(), &clock));
         let mut context = Context::from_waker(Waker::noop());
         assert!(matches!(run.as_mut().poll(&mut context), Poll::Pending));
     }
@@ -608,7 +611,8 @@ fn cancelled_run_keeps_owner_available_for_explicit_shutdown() {
         owner.stopped_hardware_mut().map(|_| ()),
         Err(MonitorStoppedAccessError::RoleActive)
     );
-    block_on(owner.stop()).unwrap_or_else(|_| panic!("cancelled monitor must remain recoverable"));
+    block_on(owner.stop(&SkipClock::new()))
+        .unwrap_or_else(|_| panic!("cancelled monitor must remain recoverable"));
     assert_eq!(owner.receive_phase(), RxFrontierPhase::Live);
     assert!(owner.interrupt_active());
     assert!(runtime.irq.is_rx_moderation_active());
@@ -626,7 +630,8 @@ fn logical_stop_does_not_request_a_physical_walker_stop() {
         RouteBehavior::default(),
     );
     {
-        let mut run = pin!(owner.run_until_stopped(pending()));
+        let clock = SkipClock::new();
+        let mut run = pin!(owner.run_until_stopped(pending(), &clock));
         let mut context = Context::from_waker(Waker::noop());
         assert!(matches!(run.as_mut().poll(&mut context), Poll::Pending));
     }
@@ -636,7 +641,8 @@ fn logical_stop_does_not_request_a_physical_walker_stop() {
         .expect("monitor hardware owner exists")
         .disable_busy_count = 1;
 
-    block_on(owner.stop()).unwrap_or_else(|_| panic!("logical monitor stop must succeed"));
+    block_on(owner.stop(&SkipClock::new()))
+        .unwrap_or_else(|_| panic!("logical monitor stop must succeed"));
 
     assert_eq!(owner.receive_phase(), RxFrontierPhase::Live);
     assert!(owner.interrupt_active());
@@ -663,7 +669,8 @@ fn dropping_a_cancelled_live_service_retains_irq_and_dma_owners() {
             RouteBehavior::default(),
         );
         {
-            let mut run = pin!(owner.run_until_stopped(pending()));
+            let clock = SkipClock::new();
+            let mut run = pin!(owner.run_until_stopped(pending(), &clock));
             let mut context = Context::from_waker(Waker::noop());
             assert!(matches!(run.as_mut().poll(&mut context), Poll::Pending));
         }
@@ -687,7 +694,8 @@ fn busy_drop_does_not_spin_or_release_hardware_visible_owners() {
             RouteBehavior::default(),
         );
         {
-            let mut run = pin!(owner.run_until_stopped(pending()));
+            let clock = SkipClock::new();
+            let mut run = pin!(owner.run_until_stopped(pending(), &clock));
             let mut context = Context::from_waker(Waker::noop());
             assert!(matches!(run.as_mut().poll(&mut context), Poll::Pending));
         }

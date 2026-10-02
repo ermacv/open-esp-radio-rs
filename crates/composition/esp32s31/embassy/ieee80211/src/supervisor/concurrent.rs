@@ -29,6 +29,7 @@ use crate::{
 };
 
 use embassy_time::Timer;
+use oer_time_embassy::EmbassyClock;
 
 use oer_radio::wifi::{
     StationAccessPointRequest, StationRequest, StationScanChannels, StationScanPolicy,
@@ -45,10 +46,7 @@ use oer_esp32s31_ieee80211_runtime::{
         DatapathRunnerExit,
         network::{DatapathNetwork, DatapathNetworkLink},
         paired::DatapathPairRole,
-        rx::{
-            dma::{RxEpochResources, StagedRxEpoch},
-            hardware::EmbassyRxDmaObservationDelay,
-        },
+        rx::dma::{RxEpochResources, StagedRxEpoch},
         services::SingleRoleServices,
     },
     roles::{
@@ -436,7 +434,7 @@ impl ProductionWifiEpochRunner {
                     dma.storage(),
                     &RX_STAGE_POOL,
                     standalone_sender,
-                    EmbassyRxDmaObservationDelay,
+                    EmbassyClock,
                 );
                 (
                     start_esp32s31_initial_connected_epoch(hardware, receive, initial.with_rx(rx))
@@ -664,6 +662,7 @@ impl ProductionWifiEpochRunner {
                 reorder_storage: &RX_REORDER_STORAGE,
                 runtime: rx_protocol_runtime,
                 reorder_scratch: None,
+                clock: EmbassyClock,
                 #[cfg(feature = "diagnostics")]
                 pipeline_observer: diagnostics.and_then(|hooks| hooks.rx_pipeline),
                 #[cfg(feature = "diagnostics")]
@@ -897,9 +896,10 @@ impl ProductionWifiEpochRunner {
             common_rx,
             station_role,
             access_point_role,
+            EmbassyClock,
         );
         let mut paired_runner =
-            compose_sta_ap_datapath_runner(&IRQ_RUNTIME, network_runner, services);
+            compose_sta_ap_datapath_runner(&IRQ_RUNTIME, network_runner, services, EmbassyClock);
         #[cfg(feature = "diagnostics")]
         let rx_statistics_before = paired_runner
             .services()

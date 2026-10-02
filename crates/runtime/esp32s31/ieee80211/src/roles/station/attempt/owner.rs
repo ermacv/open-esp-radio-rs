@@ -19,7 +19,7 @@ pub enum StaAttemptTargetError<J, W> {
 }
 
 /// Coherent owner consumed by
-/// [`StaAttempt`](oer_esp32s31_ieee80211_sta::attempt::StaAttempt).
+/// [`StaAttempt`](oer_ieee80211_sta_service::attempt::StaAttempt).
 pub struct StaAttemptTargetOwner<
     'hardware,
     'transmit,
@@ -37,9 +37,10 @@ pub struct StaAttemptTargetOwner<
 > {
     pub(super) hardware: &'hardware mut H,
     pub(super) channel: C,
-    pub(super) receive: Option<ReceiveFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE>>,
+    pub(super) receive: Option<ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE>>,
     pub(super) rx_storage: &'storage ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     pub(super) transmit: &'transmit mut T,
+    pub(super) timer: D,
     pub(super) frame: &'scratch mut [u8],
     pub(super) station: StaAttemptStation,
     pub(super) listen_interval: oer_ieee80211_sta::request::StationListenInterval,
@@ -111,6 +112,7 @@ impl<
             receive: Some(radio.receive),
             rx_storage: radio.rx_storage,
             transmit: radio.transmit,
+            timer: radio.timer,
             frame: storage.frame,
             station,
             listen_interval,
@@ -173,6 +175,7 @@ impl<
                 self.receive.expect("attempt owner retains RX"),
                 self.rx_storage,
                 self.transmit,
+                self.timer,
             ),
             StaAttemptStorage::new(self.frame),
             self.station,

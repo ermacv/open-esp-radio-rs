@@ -15,7 +15,6 @@ oer-hil-image-class = { path = "../image-class" }
 oer-hil-execution = { path = "../execution" }
 oer-hil-protocol = { path = "../../protocol" }
 serde = { version = "1.0", features = ["derive"] }
-serialport = { version = "4.8.1", default-features = false }
 serde_json = "1.0"
 
 [dev-dependencies]
@@ -25,7 +24,6 @@ toml = "1.1"
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "hil"
 platform = "host"
 hil = "operation"

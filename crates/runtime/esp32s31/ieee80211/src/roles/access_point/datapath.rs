@@ -10,6 +10,7 @@ use crate::datapath::{
     rx::turn::FusedRxTurn,
 };
 use oer_network_interface::NetworkInterfaceId;
+use oer_time::Clock as _;
 
 use super::*;
 
@@ -155,7 +156,7 @@ impl<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     O: FnMut(AccessPointServiceStatus),
     L: FnMut(LinkState),
     B: MaterializedTxFrame,
@@ -194,7 +195,7 @@ where
     fn observe_tx_started(&mut self) {
         #[cfg(feature = "diagnostics")]
         if self.tx_pending() && self.tx_pending_since_micros.is_none() {
-            self.tx_pending_since_micros = Some(Instant::now().as_micros());
+            self.tx_pending_since_micros = Some(self.control.now().as_micros());
         }
     }
 
@@ -203,7 +204,7 @@ where
         if !self.tx_pending()
             && let Some(started) = self.tx_pending_since_micros.take()
         {
-            let elapsed = Instant::now().as_micros().saturating_sub(started);
+            let elapsed = self.control.now().as_micros().saturating_sub(started);
             self.control.observer.observation.maximum_tx_pending_micros = self
                 .control
                 .observer
@@ -219,7 +220,9 @@ where
             let Some(pending) = self.network_tx_pending.take() else {
                 return;
             };
-            let elapsed = Instant::now()
+            let elapsed = self
+                .control
+                .now()
                 .as_micros()
                 .saturating_sub(pending.started_micros);
             let elapsed = u32::try_from(elapsed).unwrap_or(u32::MAX);
@@ -320,7 +323,7 @@ where
                 ) => {
                     #[cfg(feature = "diagnostics")]
                     self.network_backpressure_since_micros
-                        .get_or_insert_with(|| Instant::now().as_micros());
+                        .get_or_insert_with(|| self.control.now().as_micros());
                     return Ok(DatapathRxProgress::NetworkBackpressured);
                 }
                 Err(RxEnqueueError::InvalidLength(error)) => {
@@ -338,7 +341,7 @@ where
 
         #[cfg(feature = "diagnostics")]
         if let Some(started) = self.network_backpressure_since_micros.take() {
-            let elapsed = Instant::now().as_micros().saturating_sub(started);
+            let elapsed = self.control.now().as_micros().saturating_sub(started);
             self.control
                 .observer
                 .observation
@@ -401,7 +404,7 @@ where
     N: SoftwareTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     H: RxDma
         + TxHardware
         + ApRuntimeHardware
@@ -454,7 +457,7 @@ where
                 // owner merely to prove that its queues are empty. AP has
                 // additional action/reorder readiness, so use the complete
                 // role predicate rather than inspecting only the staged SPSC.
-                if !self.control.rx_work_due(Instant::now().as_micros()) {
+                if !self.control.rx_work_due(self.control.now().as_micros()) {
                     if turn.dma_service_required() {
                         let progress = self
                             .control
@@ -462,7 +465,7 @@ where
                             .await
                             .map_err(AccessPointDatapathError::Control)?;
                         turn.observe_dma(progress);
-                        if self.control.rx_work_due(Instant::now().as_micros()) {
+                        if self.control.rx_work_due(self.control.now().as_micros()) {
                             continue;
                         }
                     }
@@ -477,7 +480,7 @@ where
                         AccessPointRxTxDomain::ActiveTransaction,
                         turn.remaining_protocol_frames(),
                         &mut self.security_material,
-                        Instant::now().as_micros(),
+                        self.control.now().as_micros(),
                         #[cfg(feature = "diagnostics")]
                         self.delivery_observer,
                     )
@@ -567,7 +570,7 @@ where
                 }
                 if self
                     .control
-                    .beacon_publication_due(Instant::now().as_micros() as u32)
+                    .beacon_publication_due(self.control.now().as_micros() as u32)
                 {
                     return Ok(if network_backpressured {
                         DatapathRxProgress::NetworkBackpressured
@@ -581,7 +584,7 @@ where
                 // predicate covers all of those domains, allowing the common
                 // station-style fused turn to skip empty protocol entries
                 // without weakening AP correctness.
-                if !self.control.rx_work_due(Instant::now().as_micros()) {
+                if !self.control.rx_work_due(self.control.now().as_micros()) {
                     if turn.dma_service_required() {
                         let dma_progress = self
                             .control
@@ -589,7 +592,7 @@ where
                             .await
                             .map_err(AccessPointDatapathError::Control)?;
                         turn.observe_dma(dma_progress);
-                        if self.control.rx_work_due(Instant::now().as_micros()) {
+                        if self.control.rx_work_due(self.control.now().as_micros()) {
                             continue;
                         }
                     }
@@ -601,7 +604,7 @@ where
                 }
                 let serviced_before = self.control.serviced_rx_frames();
                 #[cfg(feature = "diagnostics")]
-                let service_started = Instant::now().as_micros();
+                let service_started = self.control.now().as_micros();
                 let rx_progress = self
                     .control
                     .service_rx_protocol_bounded(
@@ -609,7 +612,7 @@ where
                         AccessPointRxTxDomain::IdleBoundary,
                         turn.remaining_protocol_frames(),
                         &mut self.security_material,
-                        Instant::now().as_micros(),
+                        self.control.now().as_micros(),
                         #[cfg(feature = "diagnostics")]
                         self.delivery_observer,
                     )
@@ -625,8 +628,11 @@ where
                 turn.observe_protocol(serviced, false);
                 #[cfg(feature = "diagnostics")]
                 {
-                    let service_elapsed =
-                        Instant::now().as_micros().saturating_sub(service_started);
+                    let service_elapsed = self
+                        .control
+                        .now()
+                        .as_micros()
+                        .saturating_sub(service_started);
                     self.control.observer.observation.maximum_rx_service_micros = self
                         .control
                         .observer
@@ -695,7 +701,7 @@ where
     }
 
     fn has_rx_work(&self) -> bool {
-        self.control.rx_work_due(Instant::now().as_micros())
+        self.control.rx_work_due(self.control.now().as_micros())
     }
 
     fn serviced_rx_frames(&self) -> u64 {
@@ -711,7 +717,7 @@ where
         _context: DatapathControlContext,
     ) -> impl Future<Output = Result<DatapathControlProgress<Self::Exit>, Self::Error>> + 'a {
         async move {
-            let now_micros = Instant::now().as_micros();
+            let now_micros = self.control.now().as_micros();
             let progress = self
                 .control
                 .service_control(self.hardware, now_micros)
@@ -760,7 +766,10 @@ where
     }
 
     fn wait_control_ready<'a>(&'a mut self) -> impl Future<Output = ()> + 'a {
-        Timer::at(Instant::from_micros(self.next_control_deadline_micros))
+        Timer::wait_until(
+            &**self.control,
+            Instant::from_micros(self.next_control_deadline_micros),
+        )
     }
 
     fn start_tx<'a, I>(
@@ -781,7 +790,7 @@ where
                 {
                     debug_assert!(self.network_tx_pending.is_none());
                     self.network_tx_pending = Some(NetworkTxPending {
-                        started_micros: Instant::now().as_micros(),
+                        started_micros: self.control.now().as_micros(),
                         attempts_before: self.control.mac_observation().data_tx.attempts,
                     });
                 }
@@ -870,7 +879,7 @@ where
             {
                 debug_assert!(self.network_tx_pending.is_none());
                 self.network_tx_pending = Some(NetworkTxPending {
-                    started_micros: Instant::now().as_micros(),
+                    started_micros: self.control.now().as_micros(),
                     attempts_before: self.control.mac_observation().data_tx.attempts,
                 });
             }

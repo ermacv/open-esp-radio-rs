@@ -35,11 +35,12 @@ use crate::diagnostics::core0_rx_cycles::{
     cycle_count,
 };
 
-impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R>
+impl<'irq, M: RawMutex, N, B, R, K> DatapathRunner<'irq, M, N, B, R, K>
 where
     N: DatapathNetwork,
     B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
     R: DatapathNetworkRxSet,
+    K: Timer,
 {
     /// Record which RX wake the loop retained when a role exits; a role exit
     /// such as beacon loss can be caused by RX starvation.
@@ -149,7 +150,7 @@ where
             #[cfg(any(feature = "diagnostics", test))]
             self.services.mark_prepared_tx_scheduler_phase(
                 PreparedTxSchedulerPhase::SchedulerLoopResumed,
-                Instant::now().as_micros(),
+                self.clock.now().as_micros(),
             );
             // Poll the caller edge before servicing control. `ready(())`
             // makes this a non-blocking ordered probe, with stop winning an
@@ -168,7 +169,7 @@ where
             #[cfg(any(feature = "diagnostics", test))]
             self.services.mark_prepared_tx_scheduler_phase(
                 PreparedTxSchedulerPhase::StopPollCompleted,
-                Instant::now().as_micros(),
+                self.clock.now().as_micros(),
             );
             if stopping {
                 #[cfg(feature = "diagnostics")]
@@ -253,7 +254,7 @@ where
             #[cfg(feature = "task-poll-telemetry")]
             core0_scheduler_cycles.first_network_queue_completed();
             let control_ready = self.control_ready_latched
-                || self.services.control_ready(Instant::now().as_micros())
+                || self.services.control_ready(self.clock.now().as_micros())
                 || (network_tx_pending && self.services.control_required_before_network_tx());
             #[cfg(feature = "task-poll-telemetry")]
             core0_scheduler_cycles.control_ready_completed();
@@ -262,7 +263,7 @@ where
                 PreparedTxSchedulerPhase::ControlReadinessChecked {
                     ready: control_ready,
                 },
-                Instant::now().as_micros(),
+                self.clock.now().as_micros(),
             );
             if control_ready {
                 self.control_ready_latched = false;
@@ -349,7 +350,7 @@ where
             // epoch without keeping this task continuously runnable. Once its
             // deadline is due it has the same priority as the software repost
             // it replaces, including the existing RX/TX fairness gate.
-            if self.recycled_rx_probe_due(Instant::now())
+            if self.recycled_rx_probe_due(self.clock.now())
                 && !(network_tx_pending && self.network_turn_owed())
             {
                 self.clear_recycled_rx_probe_deadline();
@@ -447,6 +448,7 @@ where
             let irq = self.irq;
             let rx_progress = self.rx_progress;
             let recycled_rx_probe_deadline = self.recycled_rx_probe_deadline();
+            let clock = &self.clock;
             let network_rx = &mut self.network_rx;
             let wait_rx = async move {
                 match rx_progress {
@@ -467,7 +469,7 @@ where
                         if recycled_rx_probe_deadline.is_some() =>
                     {
                         if let Some(deadline) = recycled_rx_probe_deadline {
-                            Timer::at(deadline).await;
+                            clock.wait_until(deadline).await;
                         } else {
                             irq.wait_rx().await;
                         }

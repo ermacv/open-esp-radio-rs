@@ -34,3 +34,44 @@ fn awaiting_refills_the_budget() {
         assert_eq!(budget.0, CONTINUE_BUDGET);
     });
 }
+
+/// The outcome queue reports a loss once, after the outcomes queued before
+/// it and before those after it.
+#[test]
+fn an_outcome_loss_is_reported_in_its_place() {
+    use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+    use oer_bluetooth_radio::{ConnectionId, EventsLost};
+
+    use super::OutcomeQueue;
+    use crate::BluetoothOutcome;
+
+    let queue = OutcomeQueue::<NoopRawMutex, 2>::new();
+    let acknowledged = |id| BluetoothOutcome::TransmitAcknowledged(ConnectionId::new(id));
+    for id in 0..4 {
+        queue.push(acknowledged(id));
+    }
+    queue.push(acknowledged(9));
+    assert_eq!(queue.take(), Some(Ok(acknowledged(0))));
+    assert_eq!(queue.take(), Some(Ok(acknowledged(1))));
+    assert_eq!(queue.take(), Some(Err(EventsLost)));
+    assert_eq!(queue.take(), None);
+    queue.push(acknowledged(5));
+    assert_eq!(queue.take(), Some(Ok(acknowledged(5))));
+}
+
+#[test]
+fn not_installed_is_rejected_and_a_fault_poisons() {
+    use oer_bluetooth_radio::{FailureClass, PortError, RequestError};
+
+    use super::BluetoothRuntimeError;
+
+    assert_eq!(
+        BluetoothRuntimeError::NotInstalled.class(),
+        FailureClass::Rejected
+    );
+    assert_eq!(
+        BluetoothRuntimeError::Rejected(RequestError::Busy).class(),
+        FailureClass::Rejected
+    );
+    assert!(BluetoothRuntimeError::Faulted.is_poisoned());
+}

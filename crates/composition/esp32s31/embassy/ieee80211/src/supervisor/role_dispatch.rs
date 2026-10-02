@@ -108,7 +108,6 @@ impl ProductionWifiEpochRunner {
             StationScanResources {
                 radio: self.radio,
                 phy_observer: NoopPhyTargetObserver,
-                phy_delay: EmbassyPhyTime,
                 hardware: materialized.registers,
                 receive,
                 control,
@@ -116,7 +115,7 @@ impl ProductionWifiEpochRunner {
                 frame: scan_frame,
                 scan_observer: ProductionScanObserver,
                 sequence: &mut sequence,
-                timer: EmbassyScanTimer,
+                timer: EmbassyClock,
             },
             scan_request,
         )
@@ -130,7 +129,6 @@ impl ProductionWifiEpochRunner {
             frame: _,
             sequence: _,
             phy_observer: _,
-            phy_delay: _,
             scan_observer: _,
             timer: _,
             telemetry: _,
@@ -389,7 +387,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                     };
                     let mut observer = NoopPhyTargetObserver;
                     if let Err(error) =
-                        await_stack_boundary!(task.switch_channel::<EmbassyPhyTime, _, _, _>(
+                        await_stack_boundary!(task.switch_channel::<EmbassyClock, _, _, _>(
                             self.radio,
                             channel,
                             &mut observer
@@ -420,7 +418,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                         _,
                         _,
                         _,
-                        EmbassyPhyTime,
+                        EmbassyClock,
                         _,
                         _,
                         _,

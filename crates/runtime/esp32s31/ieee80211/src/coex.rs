@@ -18,7 +18,9 @@ use crate::roles::radio_channel::apply_coex_status;
 /// `pm_on_coex_start` does.
 ///
 /// SOURCE: complete pinned `libpp.a[pm.o]::pm_on_coex_start`.
-pub async fn run_wifi_coex_start<P, C: PlatformClockProvider>(radio: &RadioSystem<P, C>) -> ! {
+pub async fn run_wifi_coex_start<P, C: PlatformClockProvider, T: oer_time::Timer>(
+    radio: &RadioSystem<P, C, T>,
+) -> ! {
     loop {
         radio.wifi_coex_started().await;
         let mut guard = radio.lock().await;

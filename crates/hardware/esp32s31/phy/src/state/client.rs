@@ -36,37 +36,16 @@ const VALID_CLIENT_BITS: u8 = WIFI_BIT | BLUETOOTH_BIT | IEEE802154_BIT;
 /// Source-reviewed default periodic PLL-tracking interval.
 pub const DEFAULT_PLL_TRACK_PERIOD_MICROS: u64 = 1_000_000;
 
-/// Monotonic microsecond clock sampled by the shared-PHY scheduler.
-///
-/// The source reads its timer at several distinct points. Accepting a port
-/// instead of one caller-supplied timestamp prevents those reads from being
-/// collapsed into an atomic snapshot at a tracking-period boundary.
-pub trait PhyPllTrackClock {
-    fn now_micros(&mut self) -> u64;
-}
+/// One typed user of the shared PHY software client set: the portable
+/// radio client.
+pub use oer_esp32s31_hal::shared_radio::RadioClient;
 
-/// Event-driven timer sharing the scheduler's monotonic microsecond epoch.
-/// Implementations park the task until the absolute deadline; they must not
-/// poll the clock in a busy loop. The owner rechecks time after the wake.
-pub trait PhyTrackingTimer: PhyPllTrackClock {
-    fn wait_until_micros(&mut self, deadline: u64) -> impl core::future::Future<Output = ()>;
-}
-
-/// One typed user of the shared PHY software client set.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PhyModemClient {
-    Wifi,
-    Bluetooth,
-    Ieee802154,
-}
-
-impl PhyModemClient {
-    const fn bit(self) -> u8 {
-        match self {
-            Self::Wifi => WIFI_BIT,
-            Self::Bluetooth => BLUETOOTH_BIT,
-            Self::Ieee802154 => IEEE802154_BIT,
-        }
+/// The bit of `client` in the reviewed software client set.
+pub(crate) const fn client_bit(client: RadioClient) -> u8 {
+    match client {
+        RadioClient::Wifi => WIFI_BIT,
+        RadioClient::Bluetooth => BLUETOOTH_BIT,
+        RadioClient::Ieee802154 => IEEE802154_BIT,
     }
 }
 
@@ -90,11 +69,11 @@ pub struct PhyClientSnapshot {
 }
 
 impl PhyClientSnapshot {
-    pub const fn contains(self, client: PhyModemClient) -> bool {
+    pub const fn contains(self, client: RadioClient) -> bool {
         match client {
-            PhyModemClient::Wifi => self.wifi,
-            PhyModemClient::Bluetooth => self.bluetooth,
-            PhyModemClient::Ieee802154 => self.ieee802154,
+            RadioClient::Wifi => self.wifi,
+            RadioClient::Bluetooth => self.bluetooth,
+            RadioClient::Ieee802154 => self.ieee802154,
         }
     }
 
@@ -259,10 +238,10 @@ impl PhyClientState {
     /// arm is an infallible model fact, not evidence of a target timer.
     pub fn acquire(
         mut self,
-        client: PhyModemClient,
-        clock: &mut impl PhyPllTrackClock,
+        client: RadioClient,
+        clock: &impl oer_time::Clock,
     ) -> Result<PhyClientAcquireOutcome, PhyClientAcquireFailure> {
-        let bit = client.bit();
+        let bit = client_bit(client);
         if self.bits & bit != 0 {
             return Err(PhyClientAcquireFailure {
                 owner: self,
@@ -311,9 +290,9 @@ impl PhyClientState {
     /// executor or rollback contract.
     pub fn release(
         mut self,
-        client: PhyModemClient,
+        client: RadioClient,
     ) -> Result<PhyClientReleaseOutcome, PhyClientReleaseFailure> {
-        let bit = client.bit();
+        let bit = client_bit(client);
         if self.bits & bit == 0 {
             return Err(PhyClientReleaseFailure {
                 owner: self,
@@ -342,7 +321,7 @@ impl PhyClientState {
     /// hardware work.
     pub fn evaluate_immediate_tracking(
         mut self,
-        clock: &mut impl PhyPllTrackClock,
+        clock: &impl oer_time::Clock,
     ) -> Result<PhyTrackEvaluation, PhyTrackEvaluationFailure> {
         let evaluation = match self.evaluate_for_bits(self.bits, clock) {
             Ok(evaluation) => evaluation,
@@ -364,7 +343,7 @@ impl PhyClientState {
     /// a request and refreshes its timestamp on every callback.
     pub fn evaluate_periodic_tracking(
         mut self,
-        clock: &mut impl PhyPllTrackClock,
+        clock: &impl oer_time::Clock,
     ) -> Result<PhyTrackEvaluation, PhyTrackEvaluationFailure> {
         let wifi_active = self.bits & WIFI_BIT != 0;
         let bluetooth_ieee802154_active = self.bits & (BLUETOOTH_BIT | IEEE802154_BIT) != 0;
@@ -386,14 +365,14 @@ impl PhyClientState {
     fn evaluate_for_bits(
         &self,
         bits: u8,
-        clock: &mut impl PhyPllTrackClock,
+        clock: &impl oer_time::Clock,
     ) -> Result<TrackEvaluation, PhyTrackTimeError> {
         let wifi_active = bits & WIFI_BIT != 0;
         let bluetooth_ieee802154_active = bits & (BLUETOOTH_BIT | IEEE802154_BIT) != 0;
 
         let mut request_due = false;
         if wifi_active {
-            let now_micros = clock.now_micros();
+            let now_micros = clock.now().as_micros();
             self.validate_timestamp(
                 PhyPllTrackClass::Wifi,
                 self.wifi_previous_micros,
@@ -404,7 +383,7 @@ impl PhyClientState {
         // Preserve the two source assignments containing `need_track_pll ||`.
         // Once Wi-Fi is due, C short-circuiting skips the BT/154 due sample.
         if bluetooth_ieee802154_active && !request_due {
-            let now_micros = clock.now_micros();
+            let now_micros = clock.now().as_micros();
             self.validate_timestamp(
                 PhyPllTrackClass::BluetoothIeee802154,
                 self.bluetooth_ieee802154_previous_micros,
@@ -422,7 +401,7 @@ impl PhyClientState {
         wifi_active: bool,
         bluetooth_ieee802154_active: bool,
         request_due: bool,
-        clock: &mut impl PhyPllTrackClock,
+        clock: &impl oer_time::Clock,
     ) -> Result<TrackEvaluation, PhyTrackTimeError> {
         if !request_due {
             return Ok(TrackEvaluation {
@@ -434,7 +413,7 @@ impl PhyClientState {
         }
 
         let wifi_refresh_micros = if wifi_active {
-            let now_micros = clock.now_micros();
+            let now_micros = clock.now().as_micros();
             self.validate_timestamp(
                 PhyPllTrackClass::Wifi,
                 self.wifi_previous_micros,
@@ -445,7 +424,7 @@ impl PhyClientState {
             None
         };
         let bluetooth_ieee802154_refresh_micros = if bluetooth_ieee802154_active {
-            let now_micros = clock.now_micros();
+            let now_micros = clock.now().as_micros();
             self.validate_timestamp(
                 PhyPllTrackClass::BluetoothIeee802154,
                 self.bluetooth_ieee802154_previous_micros,
@@ -782,7 +761,7 @@ pub enum PhyTrackTimeError {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyClientAcquireError {
-    AlreadyAcquired(PhyModemClient),
+    AlreadyAcquired(RadioClient),
     TrackingTime(PhyTrackTimeError),
 }
 
@@ -819,7 +798,7 @@ impl PhyClientAcquireFailure {
 /// Successful pure acquisition and its source-reviewed facts.
 #[must_use = "the outcome retains the unique PHY client owner"]
 pub struct PhyClientAcquireOutcome {
-    client: PhyModemClient,
+    client: RadioClient,
     was_empty: bool,
     ordering: PhyClientAcquireOrdering,
     continuation: TrackContinuation,
@@ -838,7 +817,7 @@ impl fmt::Debug for PhyClientAcquireOutcome {
 }
 
 impl PhyClientAcquireOutcome {
-    pub const fn client(&self) -> PhyModemClient {
+    pub const fn client(&self) -> RadioClient {
         self.client
     }
 
@@ -866,7 +845,7 @@ impl PhyClientAcquireOutcome {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyClientReleaseError {
-    NotAcquired(PhyModemClient),
+    NotAcquired(RadioClient),
 }
 
 /// Failed release retaining the exact unchanged owner.
@@ -903,7 +882,7 @@ impl PhyClientReleaseFailure {
 #[must_use = "the outcome retains the unique PHY client owner"]
 pub struct PhyClientReleaseOutcome {
     owner: PhyClientState,
-    client: PhyModemClient,
+    client: RadioClient,
     is_last: bool,
 }
 
@@ -918,7 +897,7 @@ impl fmt::Debug for PhyClientReleaseOutcome {
 }
 
 impl PhyClientReleaseOutcome {
-    pub const fn client(&self) -> PhyModemClient {
+    pub const fn client(&self) -> RadioClient {
         self.client
     }
 

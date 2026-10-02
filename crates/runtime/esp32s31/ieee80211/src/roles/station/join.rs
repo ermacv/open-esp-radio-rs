@@ -6,10 +6,7 @@
 //! borrow has ended.
 
 use crate::{
-    datapath::rx::{
-        dma::ReceiveDmaStorage,
-        frontier::{ReceiveFrontier, RxFrontierDelay},
-    },
+    datapath::rx::{dma::ReceiveDmaStorage, frontier::ReceiveFrontier},
     roles::station::attempt::{
         StaAttemptChannel, StaAttemptRadio, StaAttemptStorage, StaAttemptTargetError,
         StaAttemptTargetOwner, StaAttemptTargetPort,
@@ -18,7 +15,7 @@ use crate::{
 
 use oer_esp32s31_hal::shared_radio::PlatformClockProvider;
 use oer_esp32s31_ieee80211::coex::WifiCoexActivity;
-use oer_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver};
+use oer_esp32s31_phy::PhyTargetObserver;
 use oer_esp32s31_radio_runtime::RadioSystem;
 
 use crate::roles::radio_channel::RadioChannel;
@@ -34,9 +31,8 @@ use oer_esp32s31_ieee80211_mac::{
 
 use oer_esp32s31_ieee80211_sta::{
     attempt::{
-        AssociationAttemptOutcome, StaAttempt, StaAttemptObserver, StaAttemptProgress,
-        StaAttemptReport, StaAttemptSecurity, StaAttemptStage, StaAttemptStation,
-        StaInstalledSecurity,
+        AssociationAttemptOutcome, StaAttemptObserver, StaAttemptProgress, StaAttemptReport,
+        StaAttemptSecurity, StaAttemptStage, StaAttemptStation, StaInstalledSecurity,
     },
     join::{StaJoinObserver, StaJoinTransmit},
     peer::{ConnectedStaPeer, StaPeerTransmit},
@@ -44,6 +40,7 @@ use oer_esp32s31_ieee80211_sta::{
 };
 
 use oer_ieee80211_sta::station::StaFailureDisposition;
+use oer_ieee80211_sta_service::attempt::StaAttempt;
 
 /// Concrete primitive error returned by the shared join transaction.
 pub type StationJoinError<H, T> =
@@ -53,11 +50,10 @@ pub type StationJoinError<H, T> =
 pub struct StationJoinReturned<
     'storage,
     'security,
-    D,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
 > {
-    pub receive: ReceiveFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE>,
+    pub receive: ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE>,
     pub station: StaAttemptStation,
     pub security: StaAttemptSecurity<'security>,
 }
@@ -70,20 +66,19 @@ pub struct StationJoinReturned<
 pub enum StationJoinOutcome<
     'storage,
     'security,
-    D,
     E,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
 > {
     Connected {
-        returned: StationJoinReturned<'storage, 'security, D, COUNT, DMA_BUFFER_SIZE>,
+        returned: StationJoinReturned<'storage, 'security, COUNT, DMA_BUFFER_SIZE>,
         peer: ConnectedStaPeer,
         installed_security: StaInstalledSecurity,
         report: StaAttemptReport,
         progress: StaAttemptProgress,
     },
     Failed {
-        returned: StationJoinReturned<'storage, 'security, D, COUNT, DMA_BUFFER_SIZE>,
+        returned: StationJoinReturned<'storage, 'security, COUNT, DMA_BUFFER_SIZE>,
         report: StaAttemptReport,
         stage: StaAttemptStage,
         disposition: StaFailureDisposition,
@@ -109,7 +104,7 @@ pub struct StationJoinResources<
     P,
     C,
     PO,
-    D,
+    PT,
     T,
     AO,
     const COUNT: usize,
@@ -117,10 +112,11 @@ pub struct StationJoinResources<
     const DMA_STORAGE_SIZE: usize,
 > {
     pub hardware: &'hardware mut H,
-    /// The shared radio; each channel switch leases it for one transaction.
-    pub radio: &'state RadioSystem<P, C>,
+    /// The shared radio; each channel switch leases it for one transaction,
+    /// and its timer also times the RX walker settle.
+    pub radio: &'state RadioSystem<P, C, PT>,
     pub phy_observer: PO,
-    pub receive: ReceiveFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE>,
+    pub receive: ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE>,
     pub rx_storage: &'storage ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     pub transmit: &'transmit mut T,
     pub frame: &'scratch mut [u8],
@@ -146,7 +142,6 @@ pub async fn run_esp32s31_station_join<
     C,
     PO,
     PD,
-    D,
     T,
     J,
     AO,
@@ -165,14 +160,14 @@ pub async fn run_esp32s31_station_join<
         P,
         C,
         PO,
-        D,
+        PD,
         T,
         AO,
         COUNT,
         DMA_BUFFER_SIZE,
         DMA_STORAGE_SIZE,
     >,
-) -> StationJoinOutcome<'storage, 'security, D, StationJoinError<H, T>, COUNT, DMA_BUFFER_SIZE>
+) -> StationJoinOutcome<'storage, 'security, StationJoinError<H, T>, COUNT, DMA_BUFFER_SIZE>
 where
     H: RxDma
         + TxHardware
@@ -184,8 +179,7 @@ where
         + MacRuntimeStopHardware
         + 'hardware,
     PO: PhyTargetObserver,
-    PD: PhyAsyncDelay,
-    D: RxFrontierDelay,
+    PD: oer_time::Timer,
     T: StaJoinTransmit<H> + HandshakeTransmit<H> + StaPeerTransmit + 'transmit,
     J: StaJoinObserver + Default,
     AO: StaAttemptObserver,
@@ -214,7 +208,7 @@ where
         '_,
         H,
         Channel<'_, P, C, PO, PD>,
-        D,
+        &PD,
         T,
         J,
         COUNT,
@@ -227,6 +221,7 @@ where
             receive,
             rx_storage,
             transmit,
+            radio.timer(),
         ),
         StaAttemptStorage::new(frame),
         station,

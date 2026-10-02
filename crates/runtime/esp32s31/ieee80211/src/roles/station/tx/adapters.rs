@@ -5,12 +5,13 @@
 
 use super::*;
 use oer_ieee80211_mac::sequence::SequenceNumber;
+use oer_time::Clock as _;
 
 impl<
     B: MaterializedTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     const SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,
@@ -27,10 +28,6 @@ impl<
 
     fn take_network_tx_report(&mut self) -> NetworkTxPowerReport {
         core::mem::take(&mut self.network_power)
-    }
-
-    fn now_micros(&self) -> u64 {
-        self.ordinary.now_micros()
     }
 
     fn peek_qos_sequence(&self, tid: u8) -> Option<SequenceNumber> {
@@ -128,7 +125,7 @@ impl<
     ) -> Result<(), ConnectedHeControlRuntimeRejection> {
         // Recheck at the final owner: control validation and this handoff are
         // separate calls, and neither may extend an expired response window.
-        if self.ordinary.now_micros() >= request.response_deadline_micros {
+        if self.ordinary.now().as_micros() >= request.response_deadline_micros {
             return Err(ConnectedHeControlRuntimeRejection::MissedResponseWindow);
         }
         if self.he_trigger_based != Some(request.queue_policy) {
@@ -178,7 +175,7 @@ impl<
         _hardware: &mut H,
         request: HeNdpaRuntimeRequest,
     ) -> Result<(), ConnectedHeControlRuntimeRejection> {
-        if self.ordinary.now_micros() >= request.response_deadline_micros {
+        if self.ordinary.now().as_micros() >= request.response_deadline_micros {
             return Err(ConnectedHeControlRuntimeRejection::MissedResponseWindow);
         }
         if self.active() {
@@ -192,7 +189,7 @@ impl<
     B: MaterializedTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     const SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,
@@ -276,19 +273,36 @@ impl<
     }
 }
 
+/// The ordinary owner's clock, for control waits.
 impl<
     B: MaterializedTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     const SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,
-> ConnectedControlTimer
+> oer_time::Clock
     for ConnectedTx<'_, '_, B, P, E, T, SLOTS, AMPDU_BUFFER_SIZE, ORDINARY_BUFFER_SIZE>
 {
-    fn wait_until_micros(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_ {
-        self.ordinary.wait_until_micros(deadline_micros)
+    fn now(&self) -> oer_time::Instant {
+        self.ordinary.now()
+    }
+}
+
+impl<
+    B: MaterializedTxFrame,
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: oer_time::Timer,
+    const SLOTS: usize,
+    const AMPDU_BUFFER_SIZE: usize,
+    const ORDINARY_BUFFER_SIZE: usize,
+> oer_time::Timer
+    for ConnectedTx<'_, '_, B, P, E, T, SLOTS, AMPDU_BUFFER_SIZE, ORDINARY_BUFFER_SIZE>
+{
+    fn wait_until(&self, deadline: oer_time::Instant) -> impl Future<Output = ()> {
+        self.ordinary.wait_until(deadline)
     }
 }
 
@@ -311,7 +325,7 @@ where
     H: HtAmpduHardware,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     SoftwareFrame: SoftwareTxFrame,
 {
     type Error = AggregateTxError;

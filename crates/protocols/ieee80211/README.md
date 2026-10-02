@@ -25,6 +25,8 @@ protocol that owns them:
 | `station/sequence` | Separate management/non-QoS and per-TID TX sequence owners |
 | `data/duplicate` | Association/peer-scoped receive retry history |
 | `qos` | Typed traffic intent, UP/AC and DSCP classification helpers |
+| `channel` | `Channel` (2.4 GHz and 5 GHz, 20/40 MHz geometry of the global operating classes) and the 2.4 GHz `WifiChannel` the role owners configure |
+| `phy` | `PhyRate`: validated non-HT, HT and HE SU rates |
 | `extensions/wmm` | WMM AC parameters and vendor IE parsing |
 | `extensions/espressif/esp_now` | ESP-NOW v1/v2 framing and protected-envelope validation |
 | `extensions/espressif/esp_now/v2/reassembly` | Caller-owned storage for a validated v2 datagram |
@@ -42,6 +44,18 @@ advertised WMM Parameter Set neither acquires admission nor selects a
 hardware queue. AP encoders take an explicit `Advertisement`;
 `roles/esp32s31/ieee80211/ap/src/profile.rs` selects the hardware
 advertisement. The portable codec carries no implicit ESP32-S31 profile.
+
+[`lower-mac`](lower-mac/README.md) declares the radio port every Wi-Fi backend
+implements; one submission is one hardware transmission attempt. Optional
+features are its extension traits. `softmac/src/edca.rs` draws the EDCA
+backoff each attempt carries. [`upper-mac`](upper-mac/README.md) decides
+everything else above the port for a transmission: the retry ladder and
+Retry bit, A-MPDU retry selection, protection, and the planner that turns an
+exchange into attempts; `mac/src/block_ack/reorder.rs` reorders received
+Block Ack sessions and `mac/src/ccmp.rs` allocates transmit packet numbers and
+checks receive replay. Vendor limits, ladders and estimates for these
+algorithms are parameters; the Espressif ones live in
+[`oer-espressif-ieee80211-policy`](../espressif/ieee80211/policy/README.md).
 
 `softmac/src/contract` describes operation ownership, service capabilities,
 resource limits and normalized statuses. Configuration, VIF and monitor

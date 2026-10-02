@@ -21,9 +21,12 @@ trace = ["oer-trace/record"]
 oer-memory = { path = "../../../../../memory" }
 oer-esp32s31-hal = { path = "../../../hal" }
 oer-esp32s31-ieee80211-dma = { path = "../dma" }
+oer-espressif-ieee80211-policy = { path = "../../../../../protocols/espressif/ieee80211/policy" }
+oer-ieee80211-lower-mac = { path = "../../../../../protocols/ieee80211/lower-mac" }
 oer-ieee80211-mac = { path = "../../../../../protocols/ieee80211/mac" }
 oer-ieee80211-softmac = { path = "../../../../../protocols/ieee80211/softmac" }
 oer-ieee80211-trace = { path = "../../../../../protocols/ieee80211/trace" }
+oer-ieee80211-upper-mac = { path = "../../../../../protocols/ieee80211/upper-mac" }
 oer-trace = { path = "../../../../../trace" }
 pin-project = "1.1.13"
 subtle = { version = "2.6.1", default-features = false }
@@ -41,7 +44,6 @@ default-target = "riscv32imafc-unknown-none-elf"
 targets = []
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "hardware"
 platform = "chip"
 chip = "esp32s31"

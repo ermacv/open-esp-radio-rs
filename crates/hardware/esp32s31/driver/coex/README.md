@@ -1,94 +1,24 @@
-# Coexistence timer control
+# ESP32-S31 coexistence binding
 
-This crate owns the recovered timer programming sequence, clock conversion,
-event-to-timer mapping and software schedule state. The radio arbiter owns the
-event priority table: `CoexTimerHardware::pti` reads it when a request is
-programmed, and a priority change goes through the arbiter's lease. The
-arbiter lends only timers 0 through 4: timer 5 carries its PHY grant-protect
-request, so event 48 has no policy timer. The
-[radio runtime](../../../../runtime/esp32s31/radio/README.md) composes the
+This crate binds the Espressif coexistence policy of
+[`oer-espressif-coex`](../../../espressif/coex/README.md) to the ESP32-S31
+radio arbiter and re-exports that policy. The recovered timer programming
+sequence, clock conversion, event-to-timer mapping, priority table and
+time-slice schedule live in the family crate; this crate keeps what reads or
+writes S31 registers:
+
+- `CoexArbiterPorts` lends one arbiter lease's timer bank, event priorities
+  and clock to `CoexCore` as its `CoexTimerHardware` and `CoexClockHardware`
+  ports. The arbiter lends only timers 0 through 4: timer 5 carries its PHY
+  grant-protect request, so event 48 has no policy timer.
+- The clock port decodes the HAL's coexistence low-power clock observation
+  into the core's `CoexTimerClock`, with the 40 MHz crystal of every
+  supported board profile.
+- `validation` (feature `validation-probes`) runs the production core and
+  timer sequence against an isolated validation radio for the compiled
+  vendor comparison.
+
+The [radio runtime](../../../../runtime/esp32s31/radio/README.md) composes the
 core and the schedule under the arbiter lease. This crate does not implement
 RF grant notification. See [source capabilities](FEATURES.md) for those
 boundaries.
-
-## Time-slice schedule
-
-`CoexSchedule` is the recovered `coex_schm_env` of esp-coex-lib `c758e7b5`.
-Each radio publishes status bits (`set_status_bits`, `clear_status_bits`);
-the status words select one of the 107 recovered schemes of
-`coexist_scheme.o`, exactly as `coex_schm_status_change` does. The
-[vendor `coex` scenario](../../../../../verification/esp32s31/README.md#coexistence-schedule-comparison)
-compares the compiled schedule with the pinned `libcoexist.a` entries. A scheme
-divides a period into phases; a phase lasts period × interval × share
-microseconds and notifies Wi-Fi, Bluetooth or both. The schedule programs no
-priority itself: a notified radio requests its own events through
-`CoexCore`, and the hardware arbitrates by priority.
-
-The phases loop only while at least two radio groups publish status. With
-Wi-Fi scanning, connecting or keeping only a connectionless window, they loop
-on the schedule's own timer; a connected Wi-Fi stops them at the last phase
-and restarts them itself (`restart`) at its beacons. Each `CoexPhaseStep`
-tells the runtime owner how long to arm the phase timer and whom to notify.
-`CoexScheduleExecutor` turns each step into a phase-timer command with a
-generation; an expiry of an older generation lost a race with a later phase
-change and steps nothing. The radio runtime runs the timer and signals each
-notified radio. Wi-Fi and Bluetooth LE publish their status through the
-radio guard (`RadioGuard::set_coex_status_bits`); Wi-Fi reacts to its phases,
-while Bluetooth LE does not yet wait for its own.
-
-`CoexArbiterPorts` lends one arbiter lease's timer bank, event priorities and
-clock to `CoexCore` as its timer and clock ports.
-
-## Event requests
-
-`CoexCore::request_wifi` and `request_bluetooth` return a programmed timer
-identity. Latency and duration are source parameters converted into timer
-targets; they are not guaranteed RF start/end times. `CoexStatus::active_timers`
-reports requests retained by software, not current RF ownership.
-
-## Failed hardware transactions
-
-The hardware trait permits an error after a register write. Before programming
-a timer, the core records an uncertainty bit. It clears this bit only after
-configuration, both clock conversions/target writes and enable have succeeded.
-Errors from any of those steps retain the affected timer for cleanup, even if
-it never entered `active_timers`.
-
-While `uncertain_timers` is nonzero, further requests return `RecoveryRequired`
-without issuing hardware operations. Calling `enable` cannot clear this
-condition. `release` or `disable` executes the backend withdrawal transaction;
-failure retains uncertainty for a subsequent explicit recovery attempt.
-Successfully retired timers are removed from software bookkeeping.
-
-`disable` visits both successfully programmed and uncertain timers. It changes
-the core to disabled only after all required withdrawal transactions succeed.
-The Embassy adapter therefore cannot return `Stopped` after a failed shutdown;
-its owner remains available to report status and accept a recovery command.
-No automatic retry loop or synthetic RF grant is introduced.
-
-This is accounting for hardware transactions, not proof that a frame,
-descriptor walker or another protocol has stopped. The arbiter ports perform
-the reviewed register sequence; their successful return must not be promoted
-to whole-radio quiescence. Direct
-timer access outside the core requires its own ownership and cleanup contract.
-
-## Ownership boundary
-
-The core holds values and cleanup obligations, while the supplied HAL owns
-register access. Both must stay associated for their full control epoch.
-The standalone Wi-Fi PHY maintenance capability is a separate HAL boundary;
-a timer index or mailbox reply cannot be converted into that capability.
-
-Three similarly timed operations remain separate contracts. Wi-Fi
-peer-facing power save exchanges PM state with an AP and governs peer buffering.
-PHY tracking runs under the radio arbiter lease. Physical RF/baseband/clock
-close follows the last client's release and the shared PHY lifecycle. A coex
-timer request grants none of those authorities, and an immediate RF close/wake
-cycle is not connected modem sleep.
-
-IEEE 802.15.4 is not an inferred third numeric `CoexClient`. Its MAC PTI fields
-and reviewed vendor wrappers have a distinct interface. The radio arbiter
-resolves its four coexistence levels (high, middle, low, idle) from table
-events 41 through 44, and the
-[IEEE 802.15.4 system](../../../../composition/esp32s31/embassy/ieee802154/README.md)
-publishes them per operation scene.

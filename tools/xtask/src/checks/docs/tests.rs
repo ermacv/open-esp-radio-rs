@@ -59,13 +59,13 @@ fn owned_document_discovery_excludes_arbitrary_untracked_markdown() {
     let repository = tempfile::tempdir().unwrap();
     fs::write(repository.path().join("Cargo.toml"), "[workspace]\n").unwrap();
     fs::write(repository.path().join("README.md"), "# Root\n").unwrap();
-    crate::process::run(context_command(
+    oer_process::run(context_command(
         repository.path(),
         "git",
         &["init", "--quiet"],
     ))
     .unwrap();
-    crate::process::run(context_command(
+    oer_process::run(context_command(
         repository.path(),
         "git",
         &["add", "Cargo.toml", "README.md"],

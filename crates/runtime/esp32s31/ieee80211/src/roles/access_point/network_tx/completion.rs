@@ -31,7 +31,7 @@ where
     ) where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
     {
         if matches!(
             self.aggregate_phase,
@@ -48,7 +48,7 @@ where
                 .mac
                 .try_aggregate_adapter()
                 .expect("aggregate publication leaves ordinary AP TX idle");
-            ordinary.wait_until(deadline).await;
+            oer_time::Timer::wait_until(&*ordinary, oer_time::Instant::from_micros(deadline)).await;
         } else {
             control.wait_tx_deadline().await;
         }
@@ -82,7 +82,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
         H: TxHardware
             + ApRuntimeHardware
             + RxBlockAckHardware
@@ -151,7 +151,7 @@ where
             let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
                 AccessPointDatapathError::Control(AccessPointControlError::Mac(error))
             })?;
-            Ok(ordinary.now_micros())
+            Ok(oer_time::Clock::now(&*ordinary).as_micros())
         })?;
         let service_event = match action {
             AggregateServiceAction::Wait => return Ok(WifiTxProgress::Pending),
@@ -230,7 +230,9 @@ where
             })?;
             // Sample after the abort request; no wait future owns this phase.
             self.aggregate_phase = Some(AggregateServicePhase::ResetRequired);
-            self.aggregate_phase = Some(AggregateServicePhase::after_abort(ordinary.now_micros())?);
+            self.aggregate_phase = Some(AggregateServicePhase::after_abort(
+                oer_time::Clock::now(&*ordinary).as_micros(),
+            )?);
             return Ok(WifiTxProgress::Pending);
         }
 
@@ -313,7 +315,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
         H: TxHardware + oer_esp32s31_ieee80211_mac::tx::ampdu::HtAmpduHardware,
     {
         #[cfg(not(any(feature = "diagnostics", test)))]
@@ -391,8 +393,8 @@ where
                     AccessPointDatapathError::Control(AccessPointControlError::Mac(error))
                 })?;
                 self.aggregate_phase = Some(AggregateServicePhase::Published(
-                    ordinary
-                        .now_micros()
+                    oer_time::Clock::now(&*ordinary)
+                        .as_micros()
                         .saturating_add(ordinary.publication_timeout_micros()),
                 ));
                 Ok(WifiTxProgress::Pending)
@@ -438,7 +440,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
         H: TxHardware + oer_esp32s31_ieee80211_mac::tx::ampdu::HtAmpduHardware,
     {
         let (engine, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
@@ -535,7 +537,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
         H: TxHardware + oer_esp32s31_ieee80211_mac::tx::ampdu::HtAmpduHardware,
     {
         let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {

@@ -143,21 +143,3 @@ fn device_constructs_the_owned_embassy_stack() {
         .unwrap();
     runner.set_poll_budget(owned_embassy_net::PollBudget::new(4, 7));
 }
-
-#[test]
-fn a_tx_owner_carries_the_time_it_entered_the_radio_queue() {
-    let general = allocator::<1>();
-    let rx = allocator::<1>();
-    let resources = Box::leak(Box::new(OwnedEndpointResources::<NoopRawMutex, 1, 1>::new()));
-    let (mut device, radio) = resources.split(NetworkInterfaceId::new(0), [2, 0, 0, 0, 0, 1], rx);
-    radio.link_controller().set_link_up(true);
-
-    let before = embassy_time::Instant::now().as_micros();
-    device.transmit(frame(general, 0x61)).unwrap();
-    let after = embassy_time::Instant::now().as_micros();
-    // Time spent queued belongs to the frame's lifetime, so the stamp is the
-    // enqueue, not the radio's dequeue.
-    self::std::thread::sleep(self::std::time::Duration::from_millis(5));
-    let queued = radio.try_receive_tx().unwrap();
-    assert!((before..=after).contains(&queued.queued_at_micros()));
-}

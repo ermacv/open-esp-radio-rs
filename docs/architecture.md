@@ -27,11 +27,26 @@ and lockfile boundary. They need not coincide, and a logical module does not
 require a new crate. `validation` is an operation on a domain's inputs, not a
 catch-all owner for unrelated tools.
 
-Every Cargo package declares `package.metadata.open-radio.scope`, `layer`
-and `platform`. Scope separates production, experimental and development
-packages. Layer describes responsibility; platform is `portable`, `host`,
-`chip` or `selected`. Chip applicability requires a separate `chip` identifier, such as
-`esp32s31`; portable, host and selected classifications must not carry one.
+### Package classification
+
+Every Cargo package declares `package.metadata.open-radio.layer` and
+`platform`. Layer describes responsibility and implies the scope: the
+`contract`, `protocol`, `hardware`, `role`, `service`, `adapter`, `runtime`,
+`composition` and `facade` layers are production, `experiment` is
+experimental, and every other layer is development. `oer-tidy` reads the
+table, rejects unknown keys and checks every package in seconds; platform is `portable`, `host`,
+`chip`, `family` or `selected`. Chip applicability requires a separate `chip` identifier, such as
+`esp32s31`, and family applicability a separate `family` identifier, such as
+`espressif`; no other classification carries either.
+A `family` package holds code that is vendor-specific but not chip-specific:
+a ported vendor driver, recovered coexistence tables, a register protocol
+every chip of the vendor shares. `platform/<chip>/chip.toml` names each
+chip's `family`. The architecture check builds a family package for the Rust
+target of every chip of its family; the chips of that family may depend on
+it, and it may depend only on portable packages and packages of its own
+family. Portable, host and selected packages never depend on a family
+package, and a family package never depends on a chip package, so code shared
+by a family cannot select one of its chips.
 A `selected` package is written once for every chip and built for the one
 chip its feature named after a chip id selects: the architecture check
 builds it once per chip, with that chip's target. It reaches a chip's PAC
@@ -52,6 +67,8 @@ Default builds are always checked as well. The facade also requires a minimum
 build without default features. Lower compositions with mandatory choices use
 their declared profiles; an empty feature set need not form a usable system.
 
+### Layer dependencies
+
 The architecture check discovers source manifests and workspace members before
 reading classification. Missing or inconsistent classification is an error.
 Production path dependencies, including optional and build dependencies, must
@@ -69,14 +86,34 @@ the public facade. These rules are independent of directory names and chip IDs.
 | adapter, runtime | contract, protocol, hardware, role, adapter, runtime, service |
 | composition, facade | all production layers except facade |
 
+### Sans-IO protocols, executors and time
+
+Protocol logic is sans-IO. A `protocol` package is a set of state machines:
+received frames, completed operations and the current time enter as values
+(`oer_time::Instant`), and the actions to take and the next deadline leave as
+values. It may declare the asynchronous ports its drivers implement, but it
+never awaits; the architecture check rejects every `async` body and `.await`
+in a protocol package's library sources. The drivers that wait on ports and
+timers and feed the state machines are `service` packages, and a runtime or
+an adapter polls them. The same state machine therefore runs under any
+executor, in a synchronous interrupt context and against a host model with
+virtual time.
+
 Hardware owns chip resources and the wire codecs its registers carry. A role
 composes portable role protocols (station, access point, security) with that
 hardware, without an executor. A service declares executor-free ports; an
 adapter binds them to an executor, so a service never depends on an adapter.
 Only adapters, compositions and the facade may depend on an executor crate
 (`embassy-executor`); every lower layer exposes futures that any executor can
-poll. Runtimes read and wait on time through the `embassy-time` interface,
-whose single driver the final image links.
+poll. Only adapters, compositions and the facade may depend on the time
+driver interface (`embassy-time`), whose single driver the final image links,
+or on its `oer-time-embassy` binding; the rule covers dev dependencies too.
+Every lower layer, runtimes included, reads and waits on time through the
+[`oer-time`](../crates/time/src/lib.rs) `Clock` and `Timer` ports: a runtime
+takes its timer from its owner or caller, a composition passes
+`oer_time_embassy::EmbassyClock`, and runtime tests use the per-instance
+virtual clocks of `oer-time-virtual`. A radio backend's own epoch is an
+`oer_time::RadioInstant`.
 An adapter can implement a runtime interface, while a runtime can consume
 an adapter's executor-neutral contract. Cargo still rejects actual dependency
 cycles. Neither layer can depend on the final composition.
@@ -84,7 +121,7 @@ cycles. Neither layer can depend on the final composition.
 ## Package names
 
 Every package is named `oer-` followed by lowercase tokens in this order: an
-optional chip (`esp32s31`), the domain (`ieee80211`, `bluetooth`, `ieee802154`,
+optional chip (`esp32s31`) or family (`espressif`), the domain (`ieee80211`, `bluetooth`, `ieee802154`,
 `coex`, `radio`, `memory`, `network`, `hil`, `example`, …), an optional
 component (`mac`, `sta`, `rsn`, `runtime`, `system`, …) and, for adapters, the
 binding (`embassy`, `esp-hal`, `embassy-net-owned`). The
@@ -93,8 +130,120 @@ directories such as `driver/`, `security/`, `le/` or the binding directory of
 an adapter add structure without renaming. Wi-Fi is `ieee80211` in package and
 directory names alike; the facade module `oer::wifi` and `Wifi*` types keep the
 user-facing name. Compositions end in `-system`. The public facade
-`open-esp-radio` (library `oer`) is the only branded name. The architecture
-check enforces the prefix. The Blobray workspace names its own packages.
+`open-esp-radio` (library `oer`) is the only branded name.
+`oer-tidy` (`cargo xtask check tidy`) enforces the prefix. The Blobray
+workspace names its own packages.
+
+## Radio ports
+
+A radio port is the contract between the protocol logic of one radio
+protocol and the backend that executes it: a chip, a family driver or a host
+model. Everything above a port is written once for every backend; everything
+below it is the backend's. [`LeRadioPort`](../crates/protocols/bluetooth/le/radio/src/port.rs)
+is the Bluetooth LE port and
+[`Ieee802154RadioPort`](../crates/protocols/ieee802154/src/port.rs) the
+IEEE 802.15.4 port, which the Espressif runtime implements and the OpenThread
+adapter consumes, and
+[`Ieee80211LowerMacPort`](../crates/protocols/ieee80211/lower-mac/README.md)
+the Wi-Fi port, carrying the portable `Channel` and `PhyRate` values of
+`oer-ieee80211-mac`. `LeRadioPort` declares submission and its clock
+asynchronous: the ESP32-S31 backend admits every request against a fresh
+controller-time latch, a bounded wait for the hardware. What the three
+ports share (failure classes, the loss marker, the terminal poisoned
+event, the lifecycle vocabulary, correlation identities and the clock
+relation) is the contract package
+[`oer-radio-port`](../crates/radio/port/README.md).
+
+**Placement follows hardware autonomy.** Work the backend performs without
+software on the air timeline (acknowledgement turnaround, FCS or CRC,
+hardware retransmission, hardware ciphers) lies below the port. Work that
+software decides (retry policy, rate selection, contention draws, reordering,
+sequence and packet numbers, scanning, beacons, power-save policy) lies above
+it, in portable code shared by every backend. A backend that also performs
+work above the port reports that in its capabilities, and the portable owner
+delegates it instead of performing it. For IEEE 802.11, one port
+publication is one hardware transmission attempt.
+
+**Shape.** A port is a trait defined in a `contract` or `protocol` package,
+without an executor or a time driver. It has the same five parts for every
+protocol:
+
+| Part | Semantics |
+| --- | --- |
+| Submission | Immediate admission of one request with a caller-chosen correlation identity: refusal is the call's result, never a later event, and a value, not a fault. Submission is synchronous when a backend can decide without waiting; a port whose backends need a fresh hardware reading to decide may declare it asynchronous, provided the wait is bounded, depends on no other submission or event, and dropping the future admits nothing |
+| Events | Asynchronous stream of owned events, each viewed through a borrowed portable value, with exactly one consumer; loss of events is reported, never silent |
+| Capabilities | What the backend supports and what it performs autonomously, read before submission |
+| Lifecycle | Enable, disable, quiesce and cancel of submitted work, each with a terminal event |
+| Clock | The backend's radio time on the shared time contract, with a stated resolution and the relation of its epoch to monotonic time (`ClockInfo`); asynchronous under the same conditions as submission |
+
+**Correlation identities.** Each port keeps its own 32-bit identity type
+(`TxId`, `RequestId`, `EventId`), so a completion of one port cannot be
+taken for another's work; each implements `oer_radio_port::Correlation`,
+the top 256 raw values are reserved for work the backend submits itself,
+and a caller's `CorrelationIds` allocator wraps before them.
+
+**Event model.** Every port has exactly one consumer of its events. Users
+that share a port share it through a router that owns the stream and
+dispatches each event by its identity; for IEEE 802.11 that is the
+`EventRouter` of `oer-ieee80211-upper-mac-service`, which hands each
+completion to the exchange that registered its `TxId` and queues received
+frames, lifecycle terminals and extension events separately. Taking an
+event only dequeues it. Timed work a backend performs in software (the
+802.15.4 CSMA-CA backoffs and retry delays, the Wi-Fi publication watchdog
+and retune, the Bluetooth LE scheduler) runs in the backend's runner
+future (`run`), which the composition polls beside the consumer for as long
+as the port exists.
+
+**Loss and poisoning.** A backend that drops events reports one
+`EventsLost` in place of the first dropped event: events before it precede
+the gap, events after it follow it. The consumer may continue; it recovers
+work whose terminal event may be in the gap by cancelling that work by its
+identity, which either produces the terminal event or is refused as not
+running, proving that the work ended. An uninstall that discards events
+leaves the loss pending across a later install. A poisoned backend reports
+the terminal `Poisoned` event after every earlier event and again at every
+later call that takes one, and every other call returns an error of class
+`Poisoned`.
+
+**Capability model.** A port states what a backend can do in three separate
+places. A structural optional feature (an operation some backends lack
+entirely, such as aggregate transmission or TBTT reporting) is an extension
+trait over the base port: an upper layer that needs it requires that trait
+bound, and a backend without it does not implement the trait, so the missing
+feature cannot be requested. The parametric limits of what a backend has
+(bands, rates, queues, key slots, window sizes, the accepted range of a
+value) are its capabilities, read before submission; a value outside them is
+refused as unsupported, and that refusal means nothing else. Why a backend
+lacks a feature or a value (hardware absent, glue not written, vendor
+knowledge not recovered, policy decision pending) is recorded in the
+qualification catalog, not in code.
+
+**Failure classes.** Every port error is one of three classes, so callers
+handle any protocol's failures alike: `Rejected` (the request was not admitted
+and nothing changed), `Recoverable` (admitted work ended without its result;
+the port remains usable) and `Poisoned` (the backend's state is unknown; only
+a reset restores the port). A port's error type implements
+`oer_radio_port::PortError`, which names its class: a backend that is not
+installed or is paused refuses work as `Rejected`, and only a poisoned one
+as `Poisoned`.
+
+| Port | Lifecycle | Clock epoch (ESP32-S31) |
+| --- | --- | --- |
+| `Ieee80211LowerMacPort` | `lifecycle(Enable / Disable / Quiesce)` and `cancel(TxId)` | `Monotonic`: the core's clock is the image's monotonic clock |
+| `Ieee802154RadioPort` | `lifecycle(Enable / Disable)` with `RadioEvent::Lifecycle` terminals (no quiesce); `RadioCommand::Cancel` | `Monotonic`: the platform `now_micros` the time driver also reads |
+| `LeRadioPort` | None: install, quiesce and uninstall move memory and hardware owners and stay the backend's own operations; `RadioRequest::Cancel` | `Unrelated`: the extended controller clock |
+
+**Shared RF path.** Protocols that share one radio name themselves with the
+portable [`RadioClient`](../crates/radio/coex/src/lib.rs) of `oer-radio-coex`
+and express how urgently an operation needs the antenna as its
+`CoexPriority`; each protocol's own levels convert into it. The backend maps
+both onto its arbitration (event numbers, request kinds, hardware
+priorities), which stays below the port.
+
+**Names.** `*Port` is a portable contract trait. `*Service` is a portable
+state machine that consumes ports. `*Hardware` is a chip or family register
+seam below a port. Bluetooth is `bluetooth`/`Bluetooth` in every package,
+module and type name.
 
 ## From policy to an application
 
@@ -147,9 +296,9 @@ publication and qualification do not enter the production dependency graph.
 Calls can pass through a portable port implemented by a higher composition
 without introducing a reverse Cargo dependency.
 
-Portable packages cannot depend on chip or host packages; the public facade
-is the explicit selection boundary. Chip packages can depend on portable
-packages and packages for the same chip. Host packages can depend on portable
+Portable packages cannot depend on chip, family or host packages; the public
+facade is the explicit selection boundary. Chip packages can depend on portable
+packages, packages of their own family and packages for the same chip. Host packages can depend on portable
 or host packages. Cross-chip dependencies are rejected. S31-specific firmware,
 diagnostic and register-authority checks remain separate from these general
 rules; adding a chip does not make those hardware checks applicable to it.

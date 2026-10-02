@@ -132,12 +132,6 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         None
     };
     let args = args.as_slice();
-    // The runner and its image builds are the largest writers to the build
-    // disk: sweep stale caches when it runs low, and stop before it is full.
-    if let Err(error) = crate::sweep::automatically(&ctx.root) {
-        eprintln!("hil: the automatic cache sweep failed: {error}");
-    }
-    crate::sweep::ensure_space(&ctx.root)?;
     // An enqueued job runs the runner and sources fixed when it was
     // enqueued; the evidence decision below still reads its own arguments.
     let frozen = crate::hil_jobs::Frozen::inherited()?;
@@ -240,7 +234,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
                 },
                 &created,
             ) {
-                None => remember_pending(ctx, options.owner(ctx).ok(), &run_ids)?,
+                None => remember_pending(ctx, options.owner(ctx)?, &run_ids)?,
                 // A runner that created no run has said why itself.
                 Some(_) if created.is_empty() => {}
                 Some(reason) => eprintln!(
@@ -1931,7 +1925,7 @@ fn evidence_skip_reason(inputs: RunInputs, created_dirty: &[bool]) -> Option<&'s
 
 /// Note clean runs as pending evidence of this checkout: a run never writes
 /// tracked files.
-fn remember_pending(ctx: &Context, owner: Option<String>, run_ids: &[String]) -> Result<()> {
+fn remember_pending(ctx: &Context, owner: String, run_ids: &[String]) -> Result<()> {
     let store = crate::hil_store::shared_runs(HIL_TARGET)?;
     let pending = run_ids
         .iter()

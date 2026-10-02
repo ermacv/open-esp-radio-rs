@@ -232,7 +232,7 @@ fn add_lab_provenance(run: &Path, device_id: &str) {
     atomic_json(
         &run.join(path),
         &LabProvenance {
-            scope: Default::default(),
+            scope: crate::lab::ObservationScope::Network,
             schema: crate::lab::LAB_PROVENANCE_SCHEMA,
             captured_unix_millis: 150,
             definition: LabDefinition {
@@ -286,6 +286,24 @@ fn verifies_firmware_and_attachment_content() {
     assert_eq!(completion.attachments, 1);
     assert_eq!(completion.firmware_artifacts, 1);
     assert_eq!(completion.verified_run_ids, ["run-1"]);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn lab_provenance_without_a_scope_or_with_the_old_peer_key_is_rejected() {
+    let (root, run) = fixture();
+    add_lab_provenance(&run, "dut-1");
+    let path = run.join("lab-provenance.json");
+    let current: serde_json::Value = read_json(&path).unwrap();
+    let mut unscoped = current.clone();
+    unscoped.as_object_mut().unwrap().remove("scope");
+    let mut renamed = current;
+    let definition = renamed["definition"].as_object_mut().unwrap();
+    let peer = definition.remove("peer").unwrap();
+    definition.insert("ieee802154_peer".into(), peer);
+    for document in [unscoped, renamed] {
+        assert!(serde_json::from_value::<LabProvenance>(document).is_err());
+    }
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -555,6 +573,13 @@ fn a_referenced_observer_build_must_be_stored_under_its_digest() {
     let reference = observer_store::detach(&embedded, &store).unwrap();
     let mut manifest: serde_json::Value =
         serde_json::from_slice(&fs::read(run.join("manifest.json")).unwrap()).unwrap();
+    manifest["runner"]["observer"] = embedded;
+    atomic_json(&run.join("manifest.json"), &manifest).unwrap();
+    write_integrity_index(&run, "run-1").unwrap();
+    assert!(
+        verify(&root, "esp32s31", None, &TestRecipe).is_err(),
+        "a manifest embedding its observer build"
+    );
     manifest["runner"]["observer"] = reference.clone();
     atomic_json(&run.join("manifest.json"), &manifest).unwrap();
     write_integrity_index(&run, "run-1").unwrap();

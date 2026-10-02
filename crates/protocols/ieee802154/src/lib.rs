@@ -6,10 +6,11 @@
 //!
 //! This crate owns bounded MAC bytes, normalized metadata, portable radio
 //! values and a finite command/event state machine. It contains no PHR/FCS DMA
-//! image, ESP register layout, interrupt owner, allocator, executor or async
-//! trait. Platform adapters translate these contracts to their own hardware
-//! ownership model; OpenThread- and Zephyr-facing code can use them without
-//! inheriting that platform representation.
+//! image, ESP register layout, interrupt owner, allocator or executor. It
+//! declares the [`Ieee802154RadioPort`] a backend implements, but never
+//! waits on it. Platform adapters translate these contracts to their own
+//! hardware ownership model; OpenThread- and Zephyr-facing code can use them
+//! through the port without inheriting that platform representation.
 //!
 //! Start with [`RadioStateMachine`], which distinguishes accepted commands
 //! from terminal [`RadioEvent`] values while retaining bounded [`Frame`]
@@ -48,6 +49,8 @@ pub mod mac {
 /// Hardware-independent radio command/event and state contracts.
 pub mod radio;
 
+pub mod port;
+
 pub use mac::csl::{CSL_IE_ID, CSL_IE_TEMPLATE, CSL_UNIT_MICROS, csl_phase, write_csl_ie};
 pub use mac::csma::CsmaCa;
 pub use mac::enhanced_ack::{
@@ -57,12 +60,18 @@ pub use mac::frame::{Frame, FrameError, FrameView, MAX_MAC_FRAME_LEN, MIN_MAC_FR
 pub use mac::header::{AddressMode, FrameAddress, FrameType, FrameVersion, PhrFrame};
 pub use mac::link_metrics::{
     ENH_ACK_PROBING_DATA_CAPACITY, ENH_ACK_PROBING_IE_CAPACITY, EnhAckProbing, LinkMetrics,
-    ProbingData, ProbingError, link_margin,
+    ProbingData, ProbingError, ProbingInitiator, link_margin,
 };
 pub use mac::pending::{AckPending, AutoPendingMode, PendingTable, PendingTableFull, ack_pending};
 pub use mac::retransmission::{AttemptFailure, FrameRetries, RetryStart};
 pub use mac::security::{MacKeys, TransmitSecurity};
 pub use mac::time_sync::TimeSync;
+pub use oer_radio_port::{Correlation, CorrelationIds, FailureClass, RadioEpoch, backend_reserved};
+pub use port::{
+    ClockInfo, CslReceiver, EnhancedAckGeneration, EventsLost, FrameCounterUpdate,
+    Ieee802154Capabilities, Ieee802154RadioPort, LifecycleCommand, LifecycleError, LifecycleEvent,
+    Poisoned, PortError, RadioSetting, SettingError, TransmitSecurityArming,
+};
 pub use radio::capabilities::{CapabilityBitsError, RadioCapabilities};
 pub use radio::channel::{Channel, ChannelError};
 pub use radio::command::{
@@ -77,4 +86,4 @@ pub use radio::interface::Interface;
 pub use radio::state::{
     AcceptedCommand, CommandError, EventError, RadioState, RadioStateMachine, RestingState,
 };
-pub use radio::{RadioTimestamp, RequestId};
+pub use radio::{RadioInstant, RequestId};

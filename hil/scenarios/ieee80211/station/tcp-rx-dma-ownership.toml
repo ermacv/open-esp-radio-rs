@@ -1,8 +1,8 @@
 schema = 5
 id = "tcp-rx-dma-ownership"
 description = "TCP receive with physical RX DMA lease and software republish timing"
+role = "investigation"
 repetitions = 3
-transfer = "identical-image"
 tags = ["diagnostic", "tcp", "station", "memory", "air-strict"]
 
 [wifi]

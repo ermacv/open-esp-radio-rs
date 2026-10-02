@@ -15,7 +15,7 @@ use core::marker::PhantomData;
 
 use crate::datapath::rx::{
     dma::{RxEpochResources, StagedRxProducer, StoppedReceive},
-    frontier::{ReceiveFrontier, RxFrontierDelay},
+    frontier::ReceiveFrontier,
 };
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
@@ -26,14 +26,10 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 /// storage lifetime and capacity as an argument of its own. The production
 /// implementation below is the exact stopped ESP32-S31 RX owner.
 pub trait StoppedStaRx {
-    type Preconnected<D>
-    where
-        D: RxFrontierDelay;
+    type Preconnected;
     type Persistent;
 
-    fn split_for_reconnect<D>(self) -> (Self::Preconnected<D>, Self::Persistent)
-    where
-        D: RxFrontierDelay;
+    fn split_for_reconnect(self) -> (Self::Preconnected, Self::Persistent);
 }
 
 impl<
@@ -63,10 +59,7 @@ impl<
         DMA_STORAGE_SIZE,
     >
 {
-    type Preconnected<P>
-        = ReceiveFrontier<'storage, P, COUNT, DMA_BUFFER_SIZE>
-    where
-        P: RxFrontierDelay;
+    type Preconnected = ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE>;
     type Persistent = RxEpochResources<
         'storage,
         'pool,
@@ -81,10 +74,7 @@ impl<
         DMA_STORAGE_SIZE,
     >;
 
-    fn split_for_reconnect<P>(self) -> (Self::Preconnected<P>, Self::Persistent)
-    where
-        P: RxFrontierDelay,
-    {
+    fn split_for_reconnect(self) -> (Self::Preconnected, Self::Persistent) {
         let (ring, resources) = self.into_epoch_parts();
         (ReceiveFrontier::from_halted(ring), resources)
     }
@@ -119,10 +109,7 @@ impl<
         P,
     >
 {
-    type Preconnected<F>
-        = ReceiveFrontier<'storage, F, COUNT, DMA_BUFFER_SIZE>
-    where
-        F: RxFrontierDelay;
+    type Preconnected = ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE>;
     type Persistent = RxEpochResources<
         'storage,
         'pool,
@@ -137,10 +124,7 @@ impl<
         DMA_STORAGE_SIZE,
     >;
 
-    fn split_for_reconnect<F>(self) -> (Self::Preconnected<F>, Self::Persistent)
-    where
-        F: RxFrontierDelay,
-    {
+    fn split_for_reconnect(self) -> (Self::Preconnected, Self::Persistent) {
         let (ring, resources) = self
             .try_into_live_epoch_parts()
             .unwrap_or_else(|_| panic!("parked station RX retained a staging lease"));
@@ -219,16 +203,13 @@ where
     R: StoppedStaRx,
 {
     /// Consume the stopped RX service and form the next finite join epoch.
-    pub fn prepare_reconnect<D>(
+    pub fn prepare_reconnect(
         self,
     ) -> (
         N,
-        ReconnectedStaEpoch<H, R::Preconnected<D>, R::Persistent, A, C>,
-    )
-    where
-        D: RxFrontierDelay,
-    {
-        let (rx, rx_resources) = self.rx.split_for_reconnect::<D>();
+        ReconnectedStaEpoch<H, R::Preconnected, R::Persistent, A, C>,
+    ) {
+        let (rx, rx_resources) = self.rx.split_for_reconnect();
         (
             self.network,
             ReconnectedStaEpoch::new(

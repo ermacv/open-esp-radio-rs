@@ -1,7 +1,7 @@
 schema = 5
 id = "memory-copy-batch-benchmark"
 description = "CPU frame loops and single-chain blocking/async GDMA batches from SRAM/PSRAM into SRAM"
-transfer = "identical-image"
+role = "investigation"
 tags = ["diagnostic", "memory", "copy", "gdma", "batch"]
 
 [system]

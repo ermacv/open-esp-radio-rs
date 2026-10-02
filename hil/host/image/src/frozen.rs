@@ -7,8 +7,8 @@ use oer_hil_image_class::{FeatureDelta, ImageClass};
 use oer_hil_source_snapshot::FrozenSources;
 
 use crate::{
-    Artifacts, BuildPlacement, Integration, LayoutSeed, LocalOverrides, Result, build_resolved,
-    chip_build_root, chip_profile, esp_idf, seed_suffix,
+    Artifacts, BuildPlacement, LayoutSeed, LocalOverrides, Result, build_resolved, chip_build_root,
+    chip_profile, esp_idf, seed_suffix,
 };
 
 /// The base of the host's build slots for `chip` images (`<base>-<n>`).
@@ -17,12 +17,12 @@ pub fn build_slots(chip: &str) -> Result<PathBuf> {
 }
 
 /// The compile cache of `class` for a build from `frozen`.
-pub fn compile_cache(frozen: &FrozenSources, class: ImageClass, network: Integration) -> PathBuf {
+pub fn compile_cache(frozen: &FrozenSources, class: ImageClass) -> PathBuf {
     frozen.cache_base().join(format!(
         "{}-{}-{}",
         class.runtime_profile(),
         class.id(),
-        network.id()
+        oer_esp32s31_firmware::network::NETWORK
     ))
 }
 
@@ -32,13 +32,12 @@ pub fn build_for_chip(
     frozen: &FrozenSources,
     chip: &str,
     class: ImageClass,
-    network: Integration,
     layout_seed: LayoutSeed,
     features: &FeatureDelta,
 ) -> Result<Artifacts> {
     let profile = chip_profile(chip)?;
     if profile.boot == oer_chip_profile::Boot::Staged {
-        return build(frozen, class, network, layout_seed, features);
+        return build(frozen, class, layout_seed, features);
     }
     if layout_seed.is_some() {
         return Err(format!("{chip} images have no layout seeds").into());
@@ -52,10 +51,9 @@ pub fn build_for_chip(
         &frozen.repository(),
         &profile,
         class,
-        network,
         features,
         &output,
-        &compile_cache(frozen, class, network),
+        &compile_cache(frozen, class),
     )?;
     finish(frozen, &output)?;
     Ok(artifacts)
@@ -65,7 +63,6 @@ pub fn build_for_chip(
 pub fn build(
     frozen: &FrozenSources,
     class: ImageClass,
-    network: Integration,
     layout_seed: LayoutSeed,
     features: &FeatureDelta,
 ) -> Result<Artifacts> {
@@ -79,14 +76,13 @@ pub fn build(
         .join(format!(
             "{}-{}{}{}",
             class.id(),
-            network.id(),
+            oer_esp32s31_firmware::network::NETWORK,
             seed_suffix(layout_seed),
             features.suffix()
         ));
     let artifacts = build_resolved(
         &frozen.repository(),
         class,
-        network,
         LocalOverrides {
             esp_hal: esp_hal.as_deref(),
             embassy: embassy.as_deref(),
@@ -94,7 +90,7 @@ pub fn build(
         },
         BuildPlacement {
             output: Some(&output),
-            cache: &compile_cache(frozen, class, network),
+            cache: &compile_cache(frozen, class),
             layout_seed,
             features,
         },
@@ -124,7 +120,6 @@ pub fn build_for_run(
         frozen,
         session.target(),
         class,
-        build.network,
         build.layout_seed,
         &build.features,
     )

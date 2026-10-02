@@ -11,7 +11,7 @@
 //! (`ieee802154_ll_disable_coex`).
 
 use crate::coex::{CoexPtiTable, Ieee802154CoexLevel};
-pub use oer_ieee802154_engine::coex::{
+pub use oer_espressif_ieee802154_engine::coex::{
     Ieee802154CoexPriorities, Ieee802154CoexScene, Ieee802154Coexistence,
 };
 

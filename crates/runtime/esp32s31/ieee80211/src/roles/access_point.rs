@@ -18,13 +18,13 @@ use embassy_futures::yield_now;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use embassy_time::{Instant, Timer};
+use oer_time::{Instant, Timer};
 
 use oer_memory::StableDmaBacking;
 
 use oer_esp32s31_ieee80211::{
     ampdu_tx::HtAmpduTxRolePolicy,
-    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer},
+    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxResources},
     tx::{WifiTxProgress, WifiTxWake},
 };
 

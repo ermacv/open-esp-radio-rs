@@ -921,7 +921,7 @@ scope = "Compose joint Wi-Fi and Bluetooth ownership with live RF request grant 
 limits = "The radio runtime owns the recovered core and schedule; Bluetooth does not publish status, request its events or react to phases"
 source-paths = [
   "crates/runtime/esp32s31/radio/src/system.rs",
-  "crates/hardware/esp32s31/driver/coex/src/core.rs",
+  "crates/hardware/espressif/coex/src/core.rs",
 ]
 
 [capabilities.catalog-scope]

@@ -1,18 +1,19 @@
 use super::*;
 
-impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R> {
+impl<'irq, M: RawMutex, N, B, R, K> DatapathRunner<'irq, M, N, B, R, K> {
     /// Run a fallible owner transition, retaining the entire runner on either
     /// branch. The error service owns any partially transitioned resources.
     #[allow(clippy::type_complexity, clippy::result_large_err)]
     pub fn try_map_services<T, E>(
         self,
         map: impl FnOnce(B) -> Result<T, E>,
-    ) -> Result<DatapathRunner<'irq, M, N, T, R>, DatapathRunner<'irq, M, N, E, R>> {
+    ) -> Result<DatapathRunner<'irq, M, N, T, R, K>, DatapathRunner<'irq, M, N, E, R, K>> {
         // Destructure once. Building an intermediate Runner<()> and moving it
         // twice inflates target stack frames for large affine service graphs.
         let Self {
             services,
             irq,
+            clock,
             network,
             interfaces,
             network_rx,
@@ -31,6 +32,7 @@ impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R> {
             Ok(services) => Ok(DatapathRunner {
                 services,
                 irq,
+                clock,
                 network,
                 interfaces,
                 network_rx,
@@ -48,6 +50,7 @@ impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R> {
             Err(services) => Err(DatapathRunner {
                 services,
                 irq,
+                clock,
                 network,
                 interfaces,
                 network_rx,
@@ -69,6 +72,11 @@ impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R> {
         &self.services
     }
 
+    /// The monotonic clock of this owner's scheduling deadlines.
+    pub const fn clock(&self) -> &K {
+        &self.clock
+    }
+
     pub fn services_mut(&mut self) -> &mut B {
         &mut self.services
     }
@@ -80,9 +88,10 @@ impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R> {
     ///
     /// This transfers ownership only. The caller must establish the scheduler
     /// and hardware boundaries required by the service transition itself.
-    pub fn map_services<T>(self, map: impl FnOnce(B) -> T) -> DatapathRunner<'irq, M, N, T, R> {
+    pub fn map_services<T>(self, map: impl FnOnce(B) -> T) -> DatapathRunner<'irq, M, N, T, R, K> {
         DatapathRunner {
             irq: self.irq,
+            clock: self.clock,
             network: self.network,
             interfaces: self.interfaces,
             network_rx: self.network_rx,
@@ -124,7 +133,7 @@ fn charge_pair_tx_frames(served: &mut [u64; 2], slot: usize, frames: usize, peer
     served[1] -= shared;
 }
 
-impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R>
+impl<'irq, M: RawMutex, N, B, R, K> DatapathRunner<'irq, M, N, B, R, K>
 where
     N: DatapathNetwork,
     B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
@@ -136,6 +145,7 @@ where
         interface: NetworkInterfaceId,
         network_rx: R,
         services: B,
+        clock: K,
     ) -> Self {
         Self::new_with_scope(
             irq,
@@ -143,6 +153,7 @@ where
             DatapathInterfaceScope::Single(interface),
             network_rx,
             services,
+            clock,
         )
     }
 
@@ -153,9 +164,11 @@ where
         interfaces: DatapathInterfaceScope,
         network_rx: R,
         services: B,
+        clock: K,
     ) -> Self {
         Self {
             irq,
+            clock,
             network,
             interfaces,
             network_rx,
@@ -370,7 +383,7 @@ where
     }
 }
 
-impl<'irq, M: RawMutex, N, B> DatapathRunner<'irq, M, N, B, N::RxPublisher>
+impl<'irq, M: RawMutex, N, B, K> DatapathRunner<'irq, M, N, B, N::RxPublisher, K>
 where
     N: DatapathNetwork,
     B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
@@ -380,9 +393,10 @@ where
         network: N,
         interface: NetworkInterfaceId,
         services: B,
+        clock: K,
     ) -> Self {
         let network_rx = network.rx_publisher(interface);
-        Self::new_with_rx_set(irq, network, interface, network_rx, services)
+        Self::new_with_rx_set(irq, network, interface, network_rx, services, clock)
     }
 }
 

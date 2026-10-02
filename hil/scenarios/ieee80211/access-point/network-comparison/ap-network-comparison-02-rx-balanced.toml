@@ -1,8 +1,8 @@
 schema = 5
 id = "ap-network-comparison-02-rx-balanced"
 description = "Two physical stations with ESP as AP: rx-balanced"
+role = "investigation"
 repetitions = 1
-transfer = "identical-image"
 tags = ["diagnostic", "access-point", "multi-client", "ht40", "ap-network-comparison", "air-strict"]
 
 [wifi]

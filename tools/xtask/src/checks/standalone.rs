@@ -7,7 +7,8 @@ use std::{
     process::Command,
 };
 
-use crate::{Context, Result, paths, process};
+use crate::{Context, Result, paths};
+use oer_process as process;
 
 const WORKSPACE: &str = r#"
 

@@ -7,7 +7,7 @@ use oer_bluetooth_radio::{
     AdvertisingConfiguration, AdvertisingEvent, AdvertisingPdu, AdvertisingReception,
     AdvertisingSetId, CoexistenceLevel, ConnectionConfiguration, ConnectionEvent,
     ConnectionEventTiming, ConnectionId, CrcInit, DataChannel, DataPdu, DataPduKind, EventId,
-    EventResult, RadioDuration, RadioInstant, RadioOutcome, RadioRequest, RadioWindow,
+    EventResult, LePhy, RadioDuration, RadioInstant, RadioOutcome, RadioRequest, RadioWindow,
     RequestError, ScanFilterPolicy, ScanType, ScanWindow, ScannerConfiguration, ScannerId,
     TestChannel, TestPhy, TestReceive, TestReport, TxPower,
 };
@@ -60,7 +60,7 @@ impl BluetoothRadioSink for Sink {
             }
             RadioOutcome::TransmitAcknowledged(connection) => Seen::Acknowledged(connection),
             RadioOutcome::TestReport { id, report } => Seen::Test(id, report),
-            RadioOutcome::Fault(_) => Seen::Fault,
+            RadioOutcome::Fault(_) | RadioOutcome::Poisoned(_) => Seen::Fault,
         });
     }
 }
@@ -102,6 +102,7 @@ fn configure_legacy(radio: &mut Radio, sink: &mut Sink) {
                 pdu: AdvertisingPdu::new(&NONCONN).unwrap(),
                 reception: AdvertisingReception::None,
                 tx_power: TxPower::from_dbm(0),
+                phy: LePhy::Le1M,
             }),
             sink,
         )
@@ -203,6 +204,7 @@ fn reservations_are_admitted_in_time_and_apart() {
                 filter_policy: ScanFilterPolicy::AcceptAll,
                 scanner: ScannerId::new(0),
                 tx_power: TxPower::from_dbm(0),
+                phy: LePhy::Le1M,
             }),
             &mut sink,
         )
@@ -342,6 +344,7 @@ fn a_directed_set_receives_without_a_scan_response() {
                 pdu: AdvertisingPdu::new(&ADV_DIRECT_IND).unwrap(),
                 reception: AdvertisingReception::Report,
                 tx_power: TxPower::from_dbm(0),
+                phy: LePhy::Le1M,
             }),
             &mut sink,
         )
@@ -371,6 +374,7 @@ fn a_connectable_set_receives_its_requests() {
                     AdvertisingPdu::new(&SCAN_RSP).unwrap(),
                 ),
                 tx_power: TxPower::from_dbm(0),
+                phy: LePhy::Le1M,
             }),
             &mut sink,
         )
@@ -396,6 +400,7 @@ fn a_connectable_set_receives_its_requests() {
                     AdvertisingPdu::new(&SCAN_RSP).unwrap(),
                 ),
                 tx_power: TxPower::from_dbm(0),
+                phy: LePhy::Le1M,
             }),
             &mut sink,
         )
@@ -467,6 +472,7 @@ fn a_connection_reports_its_anchor_receptions_and_acknowledgement() {
                 crc_init: CrcInit([0x33, 0x22, 0x11]),
                 created_at: RadioInstant::from_micros(1_000),
                 tx_power: TxPower::from_dbm(0),
+                phy: LePhy::Le1M,
             }),
             &mut sink,
         )
@@ -752,6 +758,7 @@ fn configuration_errors_leave_the_radio_unchanged() {
                 pdu: AdvertisingPdu::new(&NONCONN).unwrap(),
                 reception: AdvertisingReception::None,
                 tx_power: TxPower::from_dbm(0),
+                phy: LePhy::Le1M,
             }),
             &mut sink,
         ),
@@ -765,6 +772,7 @@ fn configuration_errors_leave_the_radio_unchanged() {
                 pdu: AdvertisingPdu::new(&NONCONN).unwrap(),
                 reception: AdvertisingReception::None,
                 tx_power: TxPower::from_dbm(0),
+                phy: LePhy::Le1M,
             }),
             &mut sink,
         ),
@@ -795,6 +803,7 @@ fn a_power_below_the_provider_table_is_refused_before_any_instance() {
                 filter_policy: ScanFilterPolicy::AcceptAll,
                 scanner: ScannerId::new(0),
                 tx_power: TxPower::from_dbm(-25),
+                phy: LePhy::Le1M,
             }),
             &mut sink,
         ),
@@ -808,6 +817,7 @@ fn a_power_below_the_provider_table_is_refused_before_any_instance() {
                 filter_policy: ScanFilterPolicy::AcceptAll,
                 scanner: ScannerId::new(0),
                 tx_power: TxPower::from_dbm(-24),
+                phy: LePhy::Le1M,
             }),
             &mut sink,
         )

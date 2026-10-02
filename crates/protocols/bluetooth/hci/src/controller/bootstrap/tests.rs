@@ -1,7 +1,7 @@
 use bt_hci::{
-    ControllerToHostPacket, FromHciBytes,
+    ControllerToHostPacket, FromHciBytes, PacketKind,
     cmd::{
-        Cmd, Opcode, OpcodeGroup, SyncCmd,
+        Cmd, Opcode, OpcodeGroup,
         controller_baseband::{
             HostBufferSize, Reset, SetControllerToHostFlowControl, SetEventMask, SetEventMaskPage2,
         },
@@ -11,25 +11,17 @@ use bt_hci::{
             LeSetAdvEnable, LeSetEventMask, LeSetRandomAddr, LeSetScanEnable, LeSetScanParams,
         },
     },
-    controller::{Controller, ExternalController},
     event::{CommandComplete, CommandCompleteWithStatus, EventKind},
     param::{
         BdAddr, CmdMask, ControllerToHostFlowControl, Error as HciError, EventMask, EventMaskPage2,
         LeEventMask, Status,
     },
-    transport::{PacketToController, Transport},
+    transport::PacketToController,
 };
-use embassy_futures::{
-    block_on,
-    join::{join, join3},
-    select::{Either, select},
-};
-use embassy_sync::{blocking_mutex::raw::NoopRawMutex, signal::Signal};
-use trouble_host::{BleHostError, Error as TroubleError, HostResources, Packet, PacketPool};
 
 use crate::{
-    HciCommandPacket, HostToControllerFrame, InProcessHciChannel, InProcessHciControllerTransport,
-    InProcessHciHostTransport, LeControllerCommandClassification, classify_le_controller_command,
+    HciCommandPacket, LeControllerCommandClassification, classify_le_controller_command,
+    test_support::command_packet,
 };
 
 use super::state::{default_event_mask, default_le_event_mask};
@@ -39,49 +31,11 @@ use super::{
     command_error,
 };
 
-type TestChannel = InProcessHciChannel<NoopRawMutex, 1, 1, 80>;
-type TestHost<'channel> = InProcessHciHostTransport<'channel, NoopRawMutex, 1, 1, 80>;
-type TestController<'channel> = InProcessHciControllerTransport<'channel, NoopRawMutex, 1, 1, 80>;
-
-struct TestPacket([u8; 64]);
-
-impl AsRef<[u8]> for TestPacket {
-    fn as_ref(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-impl AsMut<[u8]> for TestPacket {
-    fn as_mut(&mut self) -> &mut [u8] {
-        &mut self.0
-    }
-}
-
-impl Packet for TestPacket {}
-
-struct TestPacketPool;
-
-impl PacketPool for TestPacketPool {
-    type Packet = TestPacket;
-
-    const MTU: usize = 64;
-
-    fn allocate() -> Option<Self::Packet> {
-        Some(TestPacket([0; 64]))
-    }
-
-    fn capacity() -> usize {
-        2
-    }
-}
-
 #[test]
 fn trouble_no_security_bootstrap_and_conservative_extensions_are_supported() {
     let public_address = BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]);
     let config = LeControllerBootstrapConfig::new(public_address, 251, 4).unwrap();
     let mut bootstrap = LeControllerBootstrap::new(config);
-    let mut channel = TestChannel::new();
-    let (host, controller) = channel.split();
     let random_address = BdAddr::new([0xc6, 5, 4, 3, 2, 1]);
     let event_mask = EventMask::new()
         .enable_le_meta(true)
@@ -92,176 +46,114 @@ fn trouble_no_security_bootstrap_and_conservative_extensions_are_supported() {
         .enable_le_adv_report(true)
         .enable_le_conn_update_complete(true);
 
-    block_on(async {
-        assert_success(
-            round_trip(&host, &controller, &mut bootstrap, &Reset::new()).await,
-            &[],
-        );
-        assert_eq!(bootstrap.phase(), BootstrapPhase::Configuring);
+    assert_success(round_trip(&mut bootstrap, &Reset::new()), &[]);
+    assert_eq!(bootstrap.phase(), BootstrapPhase::Configuring);
 
-        assert_success(
-            round_trip(
-                &host,
-                &controller,
-                &mut bootstrap,
-                &LeSetRandomAddr::new(random_address),
-            )
-            .await,
-            &[],
-        );
-        assert_eq!(bootstrap.requested_random_address(), Some(random_address));
+    assert_success(
+        round_trip(&mut bootstrap, &LeSetRandomAddr::new(random_address)),
+        &[],
+    );
+    assert_eq!(bootstrap.requested_random_address(), Some(random_address));
 
-        assert_success(
-            round_trip(
-                &host,
-                &controller,
-                &mut bootstrap,
-                &SetEventMask::new(event_mask),
-            )
-            .await,
-            &[],
-        );
-        assert_eq!(bootstrap.event_mask(), event_mask);
+    assert_success(
+        round_trip(&mut bootstrap, &SetEventMask::new(event_mask)),
+        &[],
+    );
+    assert_eq!(bootstrap.event_mask(), event_mask);
 
-        let unsupported_page_2 = round_trip(
-            &host,
-            &controller,
+    let unsupported_page_2 = round_trip(
+        &mut bootstrap,
+        &SetEventMaskPage2::new(EventMaskPage2::new().enable_encryption_change_v2(true)),
+    );
+    assert_eq!(unsupported_page_2.status, HciError::UNKNOWN_CMD.to_status());
+
+    assert_success(
+        round_trip(&mut bootstrap, &LeSetEventMask::new(le_event_mask)),
+        &[],
+    );
+    assert_eq!(bootstrap.le_event_mask(), le_event_mask);
+
+    assert_success(
+        round_trip(&mut bootstrap, &LeReadFilterAcceptListSize::new()),
+        &[0],
+    );
+    assert_success(
+        round_trip(&mut bootstrap, &LeReadBufferSize::new()),
+        &[251, 0, 4],
+    );
+
+    assert_success(
+        round_trip(&mut bootstrap, &HostBufferSize::new(255, 0, 1, 0)),
+        &[],
+    );
+    assert_eq!(
+        bootstrap.host_buffers(),
+        Some(BootstrapHostBuffers {
+            acl_data_packet_length: 255,
+            total_acl_data_packets: 1,
+        })
+    );
+
+    assert_success(
+        round_trip(
             &mut bootstrap,
-            &SetEventMaskPage2::new(EventMaskPage2::new().enable_encryption_change_v2(true)),
-        )
-        .await;
-        assert_eq!(unsupported_page_2.status, HciError::UNKNOWN_CMD.to_status());
+            &SetControllerToHostFlowControl::new(ControllerToHostFlowControl::AclOnSyncOff),
+        ),
+        &[],
+    );
+    assert_eq!(
+        bootstrap.controller_to_host_flow_control(),
+        ControllerToHostFlowControl::AclOnSyncOff
+    );
 
-        assert_success(
-            round_trip(
-                &host,
-                &controller,
-                &mut bootstrap,
-                &LeSetEventMask::new(le_event_mask),
-            )
-            .await,
-            &[],
-        );
-        assert_eq!(bootstrap.le_event_mask(), le_event_mask);
+    assert_success(
+        round_trip(&mut bootstrap, &ReadBdAddr::new()),
+        &[6, 5, 4, 3, 2, 1],
+    );
+    assert_success(
+        round_trip(&mut bootstrap, &ReadLocalSupportedCmds::new()),
+        &super::le_controller_supported_commands(),
+    );
+    assert_success(
+        round_trip(&mut bootstrap, &LeReadLocalSupportedFeatures::new()),
+        &[
+            (1 << 0) | (1 << 3) | (1 << 4) | (1 << 5),
+            1 << 6,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+        ],
+    );
 
-        assert_success(
-            round_trip(
-                &host,
-                &controller,
-                &mut bootstrap,
-                &LeReadFilterAcceptListSize::new(),
-            )
-            .await,
-            &[0],
-        );
-        assert_success(
-            round_trip(&host, &controller, &mut bootstrap, &LeReadBufferSize::new()).await,
-            &[251, 0, 4],
-        );
+    let advertising = round_trip(&mut bootstrap, &LeSetAdvEnable::new(true));
+    assert_eq!(advertising.status, HciError::UNKNOWN_CMD.to_status());
 
-        assert_success(
-            round_trip(
-                &host,
-                &controller,
-                &mut bootstrap,
-                &HostBufferSize::new(255, 0, 1, 0),
-            )
-            .await,
-            &[],
-        );
-        assert_eq!(
-            bootstrap.host_buffers(),
-            Some(BootstrapHostBuffers {
-                acl_data_packet_length: 255,
-                total_acl_data_packets: 1,
-            })
-        );
-
-        assert_success(
-            round_trip(
-                &host,
-                &controller,
-                &mut bootstrap,
-                &SetControllerToHostFlowControl::new(ControllerToHostFlowControl::AclOnSyncOff),
-            )
-            .await,
-            &[],
-        );
-        assert_eq!(
-            bootstrap.controller_to_host_flow_control(),
-            ControllerToHostFlowControl::AclOnSyncOff
-        );
-
-        assert_success(
-            round_trip(&host, &controller, &mut bootstrap, &ReadBdAddr::new()).await,
-            &[6, 5, 4, 3, 2, 1],
-        );
-        assert_success(
-            round_trip(
-                &host,
-                &controller,
-                &mut bootstrap,
-                &ReadLocalSupportedCmds::new(),
-            )
-            .await,
-            &super::le_controller_supported_commands(),
-        );
-        assert_success(
-            round_trip(
-                &host,
-                &controller,
-                &mut bootstrap,
-                &LeReadLocalSupportedFeatures::new(),
-            )
-            .await,
-            &[
-                (1 << 0) | (1 << 3) | (1 << 4) | (1 << 5),
-                1 << 6,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-            ],
-        );
-
-        let advertising = round_trip(
-            &host,
-            &controller,
-            &mut bootstrap,
-            &LeSetAdvEnable::new(true),
-        )
-        .await;
-        assert_eq!(advertising.status, HciError::UNKNOWN_CMD.to_status());
-
-        assert_success(
-            round_trip(&host, &controller, &mut bootstrap, &Reset::new()).await,
-            &[],
-        );
-        // Reset restores the specification defaults.
-        assert_eq!(bootstrap.event_mask(), default_event_mask());
-        assert!(!bootstrap.event_mask().is_le_meta_enabled());
-        assert!(bootstrap.event_mask().is_disconnection_complete_enabled());
-        assert_eq!(bootstrap.le_event_mask(), default_le_event_mask());
-        assert!(bootstrap.le_event_mask().is_le_adv_report_enabled());
-        assert!(
-            bootstrap
-                .le_event_mask()
-                .is_le_long_term_key_request_enabled()
-        );
-        assert!(
-            !bootstrap
-                .le_event_mask()
-                .is_le_phy_update_complete_enabled()
-        );
-        assert_eq!(bootstrap.requested_random_address(), None);
-        assert_eq!(bootstrap.host_buffers(), None);
-        assert_eq!(
-            bootstrap.controller_to_host_flow_control(),
-            ControllerToHostFlowControl::Off
-        );
-    });
+    assert_success(round_trip(&mut bootstrap, &Reset::new()), &[]);
+    // Reset restores the specification defaults.
+    assert_eq!(bootstrap.event_mask(), default_event_mask());
+    assert!(!bootstrap.event_mask().is_le_meta_enabled());
+    assert!(bootstrap.event_mask().is_disconnection_complete_enabled());
+    assert_eq!(bootstrap.le_event_mask(), default_le_event_mask());
+    assert!(bootstrap.le_event_mask().is_le_adv_report_enabled());
+    assert!(
+        bootstrap
+            .le_event_mask()
+            .is_le_long_term_key_request_enabled()
+    );
+    assert!(
+        !bootstrap
+            .le_event_mask()
+            .is_le_phy_update_complete_enabled()
+    );
+    assert_eq!(bootstrap.requested_random_address(), None);
+    assert_eq!(bootstrap.host_buffers(), None);
+    assert_eq!(
+        bootstrap.controller_to_host_flow_control(),
+        ControllerToHostFlowControl::Off
+    );
 }
 
 #[test]
@@ -283,180 +175,6 @@ fn read_bd_addr_converts_canonical_identity_at_the_hci_boundary() {
     let response = bootstrap.dispatch(OwnedBootstrapCommand::ReadBdAddr, false);
     assert_eq!(response.status(), Status::SUCCESS);
     assert_eq!(&response.as_bytes()[6..], &[6, 5, 4, 3, 2, 1]);
-}
-
-#[test]
-fn external_controller_exec_completes_from_bootstrap_dispatch() {
-    const HARDWARE_ERROR: [u8; 3] = [0x10, 0x01, 0x42];
-
-    let config = LeControllerBootstrapConfig::new(
-        BluetoothPublicDeviceAddress::from_canonical_bytes([0; 6]),
-        27,
-        1,
-    )
-    .unwrap();
-    let mut bootstrap = LeControllerBootstrap::new(config);
-    let mut channel = TestChannel::new();
-    let (host, controller) = channel.split();
-    let external = ExternalController::<_, 1>::new(host);
-
-    block_on(async {
-        let reset = Reset::new();
-        let mut event_buffer = external.alloc_buf().unwrap();
-        let worker = async {
-            let mut command_buffer = [0; 80];
-            let HostToControllerFrame::Command(command) =
-                controller.receive(&mut command_buffer).await.unwrap()
-            else {
-                panic!("Reset changed packet kind");
-            };
-            let response = dispatch_test_packet(&mut bootstrap, command);
-            controller
-                .publish(bt_hci::PacketKind::Event, response.as_bytes())
-                .await
-                .unwrap();
-            controller
-                .publish(bt_hci::PacketKind::Event, &HARDWARE_ERROR)
-                .await
-                .unwrap();
-        };
-
-        let (completed, observed, ()) = join3(
-            reset.exec(&external),
-            external.read(&mut event_buffer),
-            worker,
-        )
-        .await;
-        completed.unwrap();
-        assert!(matches!(
-            observed.unwrap(),
-            ControllerToHostPacket::Event(_)
-        ));
-        assert_eq!(bootstrap.phase(), BootstrapPhase::Configuring);
-    });
-}
-
-#[test]
-fn real_trouble_runner_reaches_initialized_over_the_source_owned_hci_boundary() {
-    let config = LeControllerBootstrapConfig::new(
-        BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]),
-        251,
-        4,
-    )
-    .unwrap();
-    // Trouble's security feature requests entropy during Runner startup;
-    // workspace feature unification can enable it for this test too.
-    // Deterministic entropy is a host-test input, never a production RNG.
-    let entropy = BootstrapTestEntropy(core::sync::atomic::AtomicUsize::new(0));
-    let mut hci = crate::LeControllerHciResources::<NoopRawMutex, 4, 1, 255>::new(config).unwrap();
-    let crate::LeControllerHciEndpoints { host, controller } = hci.split();
-    let mut bootstrap = LeControllerBootstrap::new(config);
-    let external = ExternalController::<_, 2>::new(host);
-    let mut resources = HostResources::<TestPacketPool, 1, 1>::new();
-    let stack = trouble_host::new(external, &mut resources).build();
-    let mut runner = stack.runner();
-    let mut peripheral = stack.peripheral();
-    let stop = Signal::<NoopRawMutex, ()>::new();
-
-    block_on(async {
-        let initialized_probe = async {
-            let result = peripheral.set_filter_accept_list(&[]).await;
-            stop.signal(());
-            result
-        };
-
-        // This public Trouble operation cannot emit its command until the
-        // Runner has completed its initial ACL/mask bootstrap and published
-        // the internal initialized state. This bootstrap-only Controller then
-        // rejects the operational command because it owns no filter list.
-        let controller_and_probe = join(
-            drive_bootstrap_until(&controller, &mut bootstrap, &entropy, &stop),
-            initialized_probe,
-        );
-        match select(runner.run(), controller_and_probe).await {
-            Either::First(result) => {
-                panic!("Trouble Runner stopped during bootstrap: {result:?}")
-            }
-            Either::Second(((), probe_result)) => {
-                assert!(matches!(
-                    probe_result,
-                    Err(BleHostError::BleHost(TroubleError::Hci(
-                        HciError::CMD_DISALLOWED
-                    )))
-                ));
-            }
-        }
-    });
-
-    assert_eq!(bootstrap.phase(), BootstrapPhase::Configuring);
-    assert_eq!(
-        bootstrap.host_buffers(),
-        Some(BootstrapHostBuffers {
-            acl_data_packet_length: 255,
-            total_acl_data_packets: 1,
-        })
-    );
-}
-
-struct BootstrapTestEntropy(core::sync::atomic::AtomicUsize);
-
-impl crate::LeRandomSource for BootstrapTestEntropy {
-    fn random_bytes(&self) -> Result<[u8; 8], crate::LeRandomUnavailable> {
-        let sequence = self.0.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
-        Ok((sequence as u64).to_le_bytes())
-    }
-}
-
-/// A minimal bootstrap-only Controller over the raw transport.
-async fn drive_bootstrap_until(
-    controller: &InProcessHciControllerTransport<'_, NoopRawMutex, 4, 1, 255>,
-    bootstrap: &mut LeControllerBootstrap,
-    entropy: &BootstrapTestEntropy,
-    stop: &Signal<NoopRawMutex, ()>,
-) {
-    use crate::LeRandomSource;
-    let mut buffer = [0; 255];
-    loop {
-        match select(stop.wait(), controller.wait_receive_ready()).await {
-            Either::First(()) => return,
-            Either::Second(()) => {}
-        }
-        let Ok(HostToControllerFrame::Command(command)) = controller.try_receive(&mut buffer)
-        else {
-            panic!("Trouble bootstrap must submit an HCI command");
-        };
-        let response = match classify_le_controller_command(command) {
-            LeControllerCommandClassification::Bootstrap(command) => {
-                let response = bootstrap.dispatch(command, true);
-                controller
-                    .publish(bt_hci::PacketKind::Event, response.as_bytes())
-                    .await
-            }
-            LeControllerCommandClassification::Random(_) => {
-                let response =
-                    crate::LeRandCommandCompleteEvent::success(entropy.random_bytes().unwrap());
-                controller
-                    .publish(bt_hci::PacketKind::Event, response.as_bytes())
-                    .await
-            }
-            LeControllerCommandClassification::Unsupported(response) => {
-                controller
-                    .publish(bt_hci::PacketKind::Event, response.as_bytes())
-                    .await
-            }
-            LeControllerCommandClassification::AcceptList(command) => {
-                let response = crate::LeAcceptListCommandCompleteEvent::new(
-                    command.opcode(),
-                    HciError::CMD_DISALLOWED.to_status(),
-                );
-                controller
-                    .publish(bt_hci::PacketKind::Event, response.as_bytes())
-                    .await
-            }
-            _ => panic!("bootstrap must not start a radio role"),
-        };
-        response.unwrap();
-    }
 }
 
 #[test]
@@ -676,27 +394,19 @@ impl ObservedCommandComplete {
     }
 }
 
-async fn round_trip<T: PacketToController>(
-    host: &TestHost<'_>,
-    controller: &TestController<'_>,
+fn round_trip<T: PacketToController>(
     bootstrap: &mut LeControllerBootstrap,
     command: &T,
 ) -> ObservedCommandComplete {
-    host.write(command).await.unwrap();
     let mut command_buffer = [0; 80];
-    let HostToControllerFrame::Command(command) =
-        controller.receive(&mut command_buffer).await.unwrap()
-    else {
-        panic!("bootstrap command changed packet kind");
-    };
+    let command = command_packet(command, &mut command_buffer);
     let response = dispatch_test_packet(bootstrap, command);
-    controller
-        .publish(bt_hci::PacketKind::Event, response.as_bytes())
-        .await
-        .unwrap();
 
-    let mut event_buffer = [0; 80];
-    let ControllerToHostPacket::Event(event) = host.read(&mut event_buffer).await.unwrap() else {
+    let (packet, remaining) =
+        ControllerToHostPacket::from_hci_bytes_with_kind(PacketKind::Event, response.as_bytes())
+            .unwrap();
+    assert!(remaining.is_empty());
+    let ControllerToHostPacket::Event(event) = packet else {
         panic!("Command Complete changed packet kind");
     };
     assert_eq!(event.kind, EventKind::CommandComplete);

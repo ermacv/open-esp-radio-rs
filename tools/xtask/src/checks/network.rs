@@ -5,7 +5,6 @@ use cargo_metadata::{DependencyKind, Package};
 use std::{collections::BTreeSet, path::Path};
 
 const OWNED: &str = "oer-embassy-net-owned";
-const TARGET: &str = "riscv32imafc-unknown-none-elf";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Boundary {
@@ -296,6 +295,7 @@ pub fn profiles() -> [Profile; 10] {
 }
 
 pub fn run(context: &Context) -> Result<()> {
+    let chip_target = super::target(&context.root)?;
     for profile in profiles() {
         let manifest = context.root.join(profile.manifest);
         let flags = profile
@@ -303,7 +303,7 @@ pub fn run(context: &Context) -> Result<()> {
             .iter()
             .map(|v| (*v).to_owned())
             .collect::<Vec<_>>();
-        let target = profile.boundary.product().then_some(TARGET);
+        let target = profile.boundary.product().then_some(chip_target.as_str());
         let graph = if profile.manifest.starts_with("hil/") {
             cargo::metadata(context, &manifest, &flags, target, true)?
         } else if profile.manifest.starts_with("examples/") {

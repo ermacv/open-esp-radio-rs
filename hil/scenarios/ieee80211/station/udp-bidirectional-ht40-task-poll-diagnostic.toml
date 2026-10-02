@@ -1,7 +1,7 @@
 schema = 5
 id = "udp-bidirectional-ht40-task-poll-diagnostic"
 description = "Split radio/network HT40 saturated full-duplex executor-residence diagnostic"
-transfer = "identical-image"
+role = "investigation"
 tags = ["diagnostic", "udp", "station", "full-duplex", "ht40", "split-core", "task-poll", "air-strict"]
 
 [wifi]

@@ -10,7 +10,12 @@ const LOSS: Kind = Kind::new(Domain::Ieee80211, 7);
 
 fn trace<const E: usize, const S: usize, const W: usize>() -> (&'static Retained<E, S, W>, Trace) {
     let retained: &'static Retained<E, S, W> = Box::leak(Box::new(Retained::new()));
-    (retained, Trace::new(retained))
+    (retained, Trace::new(retained, no_clock))
+}
+
+/// Records these tests write carry explicit stamps.
+fn no_clock() -> u64 {
+    0
 }
 
 fn record(trace: &Trace, step: u32) -> bool {
@@ -93,7 +98,7 @@ fn the_next_boot_holds_what_the_previous_one_left_until_restarted() {
     before.freeze(LOSS, 0);
     before.capture(STEP, 5, |words| words.push(9));
 
-    let after = Trace::new(retained);
+    let after = Trace::new(retained, no_clock);
     let previous = after.hold().previous.unwrap();
     assert_eq!(previous.entries, 2);
     assert_eq!(previous.snapshots, 1);
@@ -185,7 +190,7 @@ mod recording {
     #[test]
     fn only_enabled_channels_of_a_started_trace_are_recorded_and_decoded() {
         static RETAINED: Retained<8, 0, 0> = Retained::new();
-        static TRACE: Trace = Trace::new(&RETAINED);
+        static TRACE: Trace = Trace::new(&RETAINED, super::no_clock);
 
         let beacon = Beacon {
             sequence: 12,

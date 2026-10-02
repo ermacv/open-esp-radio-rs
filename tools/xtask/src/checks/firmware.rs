@@ -7,7 +7,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use oer_hil_image::Integration;
 use oer_hil_image_class::ImageClass;
 use oer_hil_source_snapshot::FrozenSources;
 
@@ -28,6 +27,23 @@ pub struct Outcome {
     pub class: ImageClass,
     pub elapsed: Duration,
     pub failure: Option<String>,
+}
+
+/// Every class with the runtime features its image builds with, and how to
+/// type-check one.
+pub fn list() -> String {
+    let mut text = String::new();
+    for class in ImageClass::ALL {
+        text.push_str(&format!(
+            "{:<36} {}\n",
+            class.id(),
+            class.build_features(oer_esp32s31_firmware::network::NETWORK_FEATURE)
+        ));
+    }
+    text.push_str(
+        "type-check one class: cargo xtask check firmware --class <class> --type-check\n",
+    );
+    text
 }
 
 /// The classes to take: `selected`, or every class when it is empty, in
@@ -100,7 +116,7 @@ fn last_inputs(
         schema: u32,
         files: Vec<PathBuf>,
     }
-    let name = format!("{}-{}", class.id(), Integration::OwnedXarxa.id());
+    let name = format!("{}-{}", class.id(), oer_hil_image::NETWORK);
     let newest = std::fs::read_dir(builds.join("snapshot-builds"))
         .ok()?
         .flatten()
@@ -128,7 +144,6 @@ struct Queue {
 /// of its compiled units, so a dependency is compiled once per family
 /// instead of once per class.
 pub fn run(ctx: &Context, selected: &[ImageClass], depth: Depth, jobs: usize) -> Result<()> {
-    let network = Integration::OwnedXarxa;
     // A full build compiles a snapshot of this checkout in one of the host's
     // build slots, whose paths and caches every checkout shares.
     let frozen = match depth {
@@ -192,7 +207,7 @@ pub fn run(ctx: &Context, selected: &[ImageClass], depth: Depth, jobs: usize) ->
                     let Some((index, class)) = next else {
                         break;
                     };
-                    let outcome = build_one(ctx, frozen, class, index, total, depth, network);
+                    let outcome = build_one(ctx, frozen, class, index, total, depth);
                     let family = if seeds.contains(&class) {
                         let mut state = lock();
                         let (family, others) = std::mem::take(&mut state.waiting)
@@ -209,7 +224,7 @@ pub fn run(ctx: &Context, selected: &[ImageClass], depth: Depth, jobs: usize) ->
                     for (_, member) in &family {
                         if let Err(error) = frozen
                             .ok_or_else(|| "a type check shares no units".into())
-                            .and_then(|frozen| share_units(frozen, class, *member, network))
+                            .and_then(|frozen| share_units(frozen, class, *member))
                         {
                             println!("check firmware: {} starts cold: {error}", member.id());
                         }
@@ -236,14 +251,9 @@ pub fn run(ctx: &Context, selected: &[ImageClass], depth: Depth, jobs: usize) ->
 /// reflink where the filesystem supports it. Cargo names each unit by its
 /// package, features and flags, so a copied unit is used only where it is
 /// exactly the unit the class needs; the uplifted binaries are not copied.
-fn share_units(
-    frozen: &FrozenSources,
-    seed: ImageClass,
-    class: ImageClass,
-    network: Integration,
-) -> Result<()> {
-    let from = oer_hil_image::frozen::compile_cache(frozen, seed, network);
-    let to = oer_hil_image::frozen::compile_cache(frozen, class, network);
+fn share_units(frozen: &FrozenSources, seed: ImageClass, class: ImageClass) -> Result<()> {
+    let from = oer_hil_image::frozen::compile_cache(frozen, seed);
+    let to = oer_hil_image::frozen::compile_cache(frozen, class);
     for build in ["runtime", "bootstrap"] {
         let Ok(entries) = std::fs::read_dir(from.join(build)) else {
             continue;
@@ -290,7 +300,6 @@ fn build_one(
     index: usize,
     total: usize,
     depth: Depth,
-    network: Integration,
 ) -> Outcome {
     println!(
         "check firmware: [{}/{total}] {} {}",
@@ -305,13 +314,12 @@ fn build_one(
     let result = match depth {
         Depth::Build => match frozen {
             Some(frozen) => {
-                oer_hil_image::frozen::build(frozen, class, network, None, &Default::default())
-                    .map(|_| ())
+                oer_hil_image::frozen::build(frozen, class, None, &Default::default()).map(|_| ())
             }
             None => Err("a full build needs the frozen sources".into()),
         },
 
-        Depth::TypeCheck => oer_hil_image::check(&ctx.root, class, network),
+        Depth::TypeCheck => oer_hil_image::check(&ctx.root, class),
     };
     let outcome = Outcome {
         class,
@@ -391,7 +399,7 @@ mod tests {
             let directory = builds.path().join("snapshot-builds/abc").join(format!(
                 "{}-{}",
                 class.id(),
-                Integration::OwnedXarxa.id()
+                oer_hil_image::NETWORK
             ));
             std::fs::create_dir_all(&directory).unwrap();
             std::fs::write(
@@ -443,7 +451,7 @@ mod tests {
         let old = builds.path().join("snapshot-builds/abc").join(format!(
             "{}-{}",
             wifi.id(),
-            Integration::OwnedXarxa.id()
+            oer_hil_image::NETWORK
         ));
         std::fs::write(
             old.join("source-inputs.json"),
@@ -454,13 +462,26 @@ mod tests {
         std::fs::remove_dir_all(builds.path().join("snapshot-builds/abc").join(format!(
             "{}-{}",
             bluetooth.id(),
-            Integration::OwnedXarxa.id()
+            oer_hil_image::NETWORK
         )))
         .unwrap();
         assert!(
             changed(&["docs/guide.md"]).contains(&bluetooth),
             "no record: build it"
         );
+    }
+
+    #[test]
+    fn the_listing_names_every_class_with_its_features() {
+        let listing = list();
+        for class in ImageClass::ALL {
+            let line = listing
+                .lines()
+                .find(|line| line.split_whitespace().next() == Some(class.id()))
+                .unwrap_or_else(|| panic!("{} is not listed", class.id()));
+            assert!(line.contains(class.runtime_features()), "{line}");
+        }
+        assert!(listing.contains("--type-check"));
     }
 
     #[test]

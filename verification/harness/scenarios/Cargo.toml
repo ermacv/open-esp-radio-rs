@@ -16,7 +16,6 @@ blobray-domain = { path = "../../../tools/blobray/crates/domain" }
 blobray-linker = { path = "../../../tools/blobray/crates/linker" }
 blobray-verification = { path = "../../../tools/blobray/crates/verification" }
 oer-probe-codegen = { path = "../codegen" }
-rv-asm = "=0.2.1"
 clap = { version = "=4.5.48", features = ["derive"] }
 addr2line = { version = "=0.27.1", default-features = false, features = ["std"] }
 gimli = { version = "=0.34.0", default-features = false, features = ["read", "std"] }
@@ -31,7 +30,6 @@ toml = "=1.1.4"
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "verification"
 evidence = "verdict"
 platform = "host"

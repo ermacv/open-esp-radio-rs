@@ -1,6 +1,7 @@
 schema = 5
 id = "ieee802154-thread-exchange"
 description = "OpenThread over the device's IEEE 802.15.4 client attaches as a child to a network ESP-IDF's OpenThread leads, and exchanges UDP datagrams with it in both directions"
+role = "investigation"
 tags = ["ieee802154", "arbiter-client", "on-air", "peer", "thread", "openthread", "mle-attach", "udp"]
 
 [ieee802154]

@@ -15,7 +15,7 @@ use super::{
 };
 use crate::{
     PhyState, RegisteredPhyState,
-    state::client::{PhyClientSnapshot, PhyModemClient, PhyTrackTimeError},
+    state::client::{PhyClientSnapshot, PhyTrackTimeError, RadioClient},
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,10 +63,10 @@ impl Inspection {
     ) -> Result<Self, PhyTrackTimeError> {
         let schedule = clients.tracking_schedule_at(now_micros)?;
         let active = !policy.tracking_inhibited && !clients.is_empty();
-        let wifi = active && clients.contains(PhyModemClient::Wifi);
+        let wifi = active && clients.contains(RadioClient::Wifi);
         let shared = active
-            && (clients.contains(PhyModemClient::Bluetooth)
-                || clients.contains(PhyModemClient::Ieee802154));
+            && (clients.contains(RadioClient::Bluetooth)
+                || clients.contains(RadioClient::Ieee802154));
         let calibration =
             state.calibration_tracking_parameters(policy.calibration_tracking_threshold);
         let power = state.tx_power_tracking_parameters(policy.relaxed_power_tracking_threshold);

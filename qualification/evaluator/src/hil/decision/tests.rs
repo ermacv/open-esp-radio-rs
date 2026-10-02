@@ -474,15 +474,14 @@ fn failed_old_subject_is_retained_but_does_not_block_current_composition() {
 
 #[test]
 fn ineligible_observations_remain_explained_in_the_serialized_decision() {
-    // A pass from a dirty tree stays unbound; one from another commit is the
-    // last known state.
+    // A pass from a dirty tree or from another commit is not current evidence.
     for (field, value, expected, status) in [
         ("dirty", json!(true), "producer-dirty", "missing"),
         (
             "commit",
             json!("another-commit"),
             "different-commit",
-            "last-known-pass",
+            "missing",
         ),
     ] {
         let fixture = Fixture::new();
@@ -621,7 +620,7 @@ fn completed_numeric_observation_is_reassessed_but_absence_is_not_a_failure() {
 }
 
 #[test]
-fn a_pass_on_sources_that_changed_since_is_the_last_known_state() {
+fn a_pass_on_sources_that_changed_since_is_missing_evidence() {
     let fixture = Fixture::new();
     let earlier = fixture.write_run("earlier", vec![scenario("ble-lifecycle", &["passed"])]);
     let mut manifest: Value = read_json(&earlier.join("manifest.json")).unwrap();
@@ -632,31 +631,13 @@ fn a_pass_on_sources_that_changed_since_is_the_last_known_state() {
         &requirement("ble-lifecycle", 1),
         &ScenarioCatalog::default(),
     );
-    assert_eq!(decision.status, EvidenceStatus::LastKnownPass);
-    assert!(decision.evidence.is_none(), "not current evidence");
-    assert!(
-        decision
-            .last_known
-            .as_deref()
-            .is_some_and(|reference| reference.starts_with("hil:earlier/ble-lifecycle")),
-        "{:?}",
-        decision.last_known
-    );
-    assert!(decision.next_work().is_none(), "information, not work");
-}
-
-#[test]
-fn a_failure_on_earlier_sources_is_not_a_last_known_pass() {
-    let fixture = Fixture::new();
-    let earlier = fixture.write_run("earlier", vec![scenario("ble-lifecycle", &["failed"])]);
-    let mut manifest: Value = read_json(&earlier.join("manifest.json")).unwrap();
-    manifest["repository"]["commit"] = json!("before-rewrite");
-    write(&earlier.join("manifest.json"), &manifest);
-    super::super::tests::seal(&earlier);
-    let decision = fixture.load().unwrap().decision_for(
-        &requirement("ble-lifecycle", 1),
-        &ScenarioCatalog::default(),
-    );
     assert_eq!(decision.status, EvidenceStatus::Missing);
-    assert!(decision.last_known.is_none());
+    assert!(decision.evidence.is_none(), "not current evidence");
+    assert_eq!(decision.observation_counts().excluded, 1);
+    assert!(matches!(
+        decision.next_work(),
+        Some((crate::model::WorkKind::AssessApplicability, _))
+    ));
+    let report = serde_json::to_value(&decision).unwrap();
+    assert!(report.get("last_known").is_none());
 }

@@ -16,6 +16,8 @@ use oer_esp32s31_ieee80211_runtime::roles::station::{
     StationExit, StationStartResources, StationStopReason, prepare_esp32s31_station_task,
 };
 
+use oer_time_virtual::SkipClock;
+
 use oer_ieee80211_sta::station::{StaAttemptContext, StaAttemptOutcome, StaReconnectPolicy};
 
 #[derive(Debug, Eq, PartialEq)]
@@ -23,12 +25,19 @@ struct StationOwner {
     dma_generation: u32,
 }
 
-struct ExampleRunner;
+struct ExampleRunner {
+    clock: SkipClock,
+}
 
 impl StationAttemptRunner<NoopRawMutex> for ExampleRunner {
     type Owner = StationOwner;
     type Error = ();
     type Fault = core::convert::Infallible;
+    type Timer = SkipClock;
+
+    fn timer(&self) -> &SkipClock {
+        &self.clock
+    }
 
     fn run_attempt<'a>(
         &'a mut self,
@@ -47,7 +56,9 @@ fn main() {
         StationConfiguration::new(policy),
         StationStartResources::new(StationOwner { dma_generation: 7 }),
         &control,
-        ExampleRunner,
+        ExampleRunner {
+            clock: SkipClock::new(),
+        },
     )
     .expect("fresh station control resources must accept one task");
 

@@ -16,16 +16,14 @@ validation-probes = [
 ]
 
 [dependencies]
-critical-section = "1.2.0"
-embassy-sync = "0.8.0"
 oer-bluetooth-hci = { path = "../../../../protocols/bluetooth/hci" }
 oer-esp32s31-hal = { path = "../../hal" }
 oer-esp32s31-bluetooth-memory = { path = "memory" }
 oer-esp32s31-phy = { path = "../../phy" }
+oer-time = { path = "../../../../time" }
 
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }
-embassy-futures = "0.1.2"
 oer-esp32s31-hal = { path = "../../hal", features = ["validation-probes"] }
 
 [lints]
@@ -37,7 +35,6 @@ default-target = "riscv32imafc-unknown-none-elf"
 targets = []
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "hardware"
 platform = "chip"
 chip = "esp32s31"

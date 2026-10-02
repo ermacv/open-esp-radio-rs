@@ -100,7 +100,9 @@ fn tx_plan_contains_protocol_policy_but_no_hardware_queue_encoding() {
 #[test]
 fn receive_metadata_keeps_absence_and_provenance_distinct() {
     let staged = MacRxMetadata {
-        channel: MacRxEvidence::HardwareObserved(6),
+        channel: MacRxEvidence::HardwareObserved(
+            Channel::ghz2_4(6, oer_ieee80211_mac::channel::ChannelWidth::Mhz20).unwrap(),
+        ),
         rate: MacRxEvidence::HardwareObserved(11_u8),
         rssi_dbm: MacRxEvidence::HardwareObserved(-47),
         crypto: MacRxEvidence::Unavailable,
@@ -157,4 +159,84 @@ fn ampdu_status_joins_block_ack_and_individual_retries() {
     assert_eq!(delivered.total_publication_attempts(), 5);
     assert_eq!(delivered.individual_retries.final_rate, Some(5));
     assert!(delivered.fully_delivered());
+}
+
+#[test]
+fn hardware_owned_operations_become_the_port_services() {
+    use oer_ieee80211_lower_mac::HardwareServices;
+
+    let services = CAPABILITIES.operations.hardware_services();
+    assert!(
+        services.contains(
+            HardwareServices::FCS
+                .union(HardwareServices::IMMEDIATE_ACK)
+                .union(HardwareServices::BACKOFF_COUNTDOWN)
+        )
+    );
+    assert!(!services.contains(HardwareServices::RETRY_POLICY));
+    assert!(!services.contains(HardwareServices::SEQUENCE_NUMBERS));
+    let everything = MacOperationOwnership {
+        tx_fcs_generation: MacOperationOwner::Hardware,
+        immediate_ack_response: MacOperationOwner::Hardware,
+        csma_ca_backoff_countdown: MacOperationOwner::Hardware,
+        unicast_retry_policy: MacOperationOwner::Hardware,
+        tx_sequence_assignment: MacOperationOwner::Hardware,
+        ccmp_key_selection: MacOperationOwner::Hardware,
+        ccmp_packet_number: MacOperationOwner::Hardware,
+        ccmp_transform: MacOperationOwner::Hardware,
+        rx_block_ack_matching: MacOperationOwner::Hardware,
+        rx_reorder: MacOperationOwner::Hardware,
+        tx_block_ack_capture: MacOperationOwner::Hardware,
+        tx_ampdu_retry_selection: MacOperationOwner::Hardware,
+    };
+    let nothing = MacOperationOwnership {
+        tx_fcs_generation: MacOperationOwner::Software,
+        immediate_ack_response: MacOperationOwner::Unsupported,
+        csma_ca_backoff_countdown: MacOperationOwner::Software,
+        unicast_retry_policy: MacOperationOwner::Software,
+        tx_sequence_assignment: MacOperationOwner::Software,
+        ccmp_key_selection: MacOperationOwner::Software,
+        ccmp_packet_number: MacOperationOwner::Software,
+        ccmp_transform: MacOperationOwner::Software,
+        rx_block_ack_matching: MacOperationOwner::Software,
+        rx_reorder: MacOperationOwner::Software,
+        tx_block_ack_capture: MacOperationOwner::Software,
+        tx_ampdu_retry_selection: MacOperationOwner::Software,
+    };
+    assert_eq!(nothing.hardware_services(), HardwareServices::NONE);
+    assert!(
+        everything.hardware_services().contains(
+            HardwareServices::RETRY_POLICY
+                .union(HardwareServices::RX_REORDER)
+                .union(HardwareServices::AMPDU_RETRY_SELECTION)
+                .union(HardwareServices::KEY_SELECTION)
+                .union(HardwareServices::PACKET_NUMBERS)
+                .union(HardwareServices::CIPHER_TRANSFORM)
+                .union(HardwareServices::RX_BLOCK_ACK_MATCHING)
+                .union(HardwareServices::TX_BLOCK_ACK_CAPTURE)
+        )
+    );
+}
+
+#[test]
+fn a_chip_rate_maps_to_the_portable_rate_with_its_provenance() {
+    use oer_ieee80211_mac::phy::LegacyRate;
+
+    let chip = MacRxMetadata {
+        rate: MacRxEvidence::HardwareObserved(0x0b_u8),
+        rssi_dbm: MacRxEvidence::HardwareObserved(-50),
+        ..MacRxMetadata::unavailable()
+    };
+    let decode = |code| (code == 0x0b).then_some(PhyRate::Legacy(LegacyRate::Ofdm6M));
+    let portable: MacRxMetadata = chip.map_rate(decode);
+    assert_eq!(
+        portable.rate,
+        MacRxEvidence::HardwareObserved(PhyRate::Legacy(LegacyRate::Ofdm6M))
+    );
+    assert_eq!(portable.rssi_dbm, chip.rssi_dbm);
+    let unknown = MacRxMetadata {
+        rate: MacRxEvidence::HardwareObserved(0x1f_u8),
+        ..chip
+    };
+    assert_eq!(unknown.map_rate(decode).rate, MacRxEvidence::Unavailable);
 }

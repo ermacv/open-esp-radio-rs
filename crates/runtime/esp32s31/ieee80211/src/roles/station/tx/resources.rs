@@ -15,7 +15,7 @@ where
     B: MaterializedTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     /// Cancel the arena currently selected by `self.ampdu` without changing
     /// the logical transaction stored in `self.active`.
@@ -105,7 +105,7 @@ impl<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     fn drop(&mut self) {
         if !self.ordinary.is_present() || !self.ampdu.is_present() {

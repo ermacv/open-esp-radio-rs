@@ -38,12 +38,11 @@ use oer_ieee80211_mac::qos::WmmAccessCategory;
 pub use oer_ieee80211_mac::trigger::HeResourceUnit;
 
 use crate::rate::{
-    control::dot11g_schedule_for_legacy_rate,
     low::{MacLowRateGateProbe, MacLowRateTransitionError, probe_phy_low_rate_gate},
-    schedule::{
-        RateScheduleKind, RateScheduleRef, schedule_publication_limit, schedule_rate_after_failures,
-    },
+    schedule::{RateScheduleKind, RateScheduleRef},
 };
+
+use oer_espressif_ieee80211_policy::retry_ladder;
 
 use oer_esp32s31_hal::{ieee80211::mac::WifiMacHal, owner::RadioRuntimeOwner};
 
@@ -712,8 +711,7 @@ impl LegacyRate {
     /// cross-checked against `SOURCE[PROMOTED_LMAC_TX]`
     /// `lmac.rs::select_basic_retry_rate`.
     pub fn vendor_retry_rate(self, failed_attempts: u8) -> Option<Self> {
-        let schedule = dot11g_schedule_for_legacy_rate(self.code())?;
-        Self::from_code(schedule_rate_after_failures(schedule, failed_attempts)?)
+        retry_ladder::legacy_retry_rate(self.phy_rate(), failed_attempts).map(Self::from_phy_rate)
     }
 
     /// Complete number of hardware publications admitted by this rate's
@@ -723,8 +721,7 @@ impl LegacyRate {
     /// `rcReachRetryLimit` body reads byte `0x08`, while `rcGetRate` consumes
     /// the four `(rate, count)` pairs independently.
     pub fn vendor_retry_publication_limit(self) -> Option<u8> {
-        let schedule = dot11g_schedule_for_legacy_rate(self.code())?;
-        Some(schedule_publication_limit(schedule))
+        retry_ladder::legacy_retry_publication_limit(self.phy_rate())
     }
 
     /// Return the basic protection rate selected by the vendor MAC.
@@ -1117,14 +1114,10 @@ impl HtRate {
     /// complete `rcUpdatePhyMode` mapping and therefore return `None` here
     /// instead of inventing a fallback policy.
     pub fn vendor_retry_rate(self, failed_attempts: u8) -> Option<TxPhyRate> {
-        let schedule_index = match self.guard_interval {
-            HtGuardInterval::Long800Ns => 8 - self.mcs.index(),
-            HtGuardInterval::Short400Ns if self.mcs == HtMcs::Mcs7 => 0,
-            HtGuardInterval::Short400Ns => return None,
+        let oer_ieee80211_mac::phy::PhyRate::Ht(rate) = TxPhyRate::Ht(self).phy_rate() else {
+            unreachable!("an S31 HT rate is a portable HT rate");
         };
-        let schedule = RateScheduleRef::new(RateScheduleKind::Dot11N, schedule_index)?;
-        let code = schedule_rate_after_failures(schedule, failed_attempts)?;
-        TxPhyRate::from_code(code, self.channel_width)
+        TxPhyRate::try_from(retry_ladder::ht_retry_rate(rate, failed_attempts)?).ok()
     }
 }
 
@@ -1884,33 +1877,10 @@ impl HeRate {
         if self.dcm {
             return None;
         }
-        let schedule_index = match self.guard_interval_and_ltf {
-            crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns
-            | crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns
-                if self.mcs == HeMcs::Mcs9 =>
-            {
-                0
-            }
-            crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns => 10 - self.mcs.index(),
-            crate::rx::HeGuardIntervalAndLtf::FourLtf3200Ns
-            | crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns
-            | crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns => return None,
+        let oer_ieee80211_mac::phy::PhyRate::He(rate) = TxPhyRate::He(self).phy_rate() else {
+            unreachable!("an S31 HE rate is a portable HE rate");
         };
-        let schedule = RateScheduleRef::new(RateScheduleKind::Dot11Ax, schedule_index)?;
-        let code = schedule_rate_after_failures(schedule, failed_attempts)?;
-        let selected = TxPhyRate::from_rate_control_code(
-            RateScheduleKind::Dot11Ax,
-            code,
-            HtChannelWidth::Mhz20,
-            self.guard_interval_and_ltf,
-        )?;
-        match (selected, self.fec_coding) {
-            (TxPhyRate::He(rate), HeFecCoding::Ldpc) => Some(TxPhyRate::He(Self::ldpc(
-                rate.mcs(),
-                rate.guard_interval_and_ltf(),
-            ))),
-            (selected, _) => Some(selected),
-        }
+        TxPhyRate::try_from(retry_ladder::he_retry_rate(rate, failed_attempts)?).ok()
     }
 
     pub const fn nominal_kbps(self) -> u32 {

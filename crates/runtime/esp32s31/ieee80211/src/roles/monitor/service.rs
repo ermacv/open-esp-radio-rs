@@ -30,6 +30,8 @@ use embassy_futures::{
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
+use oer_time::Timer;
+
 use oer_esp32s31_hal::types::MacInterruptMask;
 
 use oer_esp32s31_ieee80211_mac::{
@@ -405,11 +407,12 @@ where
     pub async fn run_until_stopped<F>(
         &mut self,
         stop: F,
+        timer: &impl Timer,
     ) -> Result<MonitorRunReport, MonitorRunFailure<R::Error>>
     where
         F: Future<Output = ()>,
     {
-        self.run_until_boundary(stop)
+        self.run_until_boundary(stop, timer)
             .await
             .map(|(report, ())| report)
     }
@@ -422,6 +425,7 @@ where
     pub(crate) async fn run_until_boundary<F, T>(
         &mut self,
         boundary: F,
+        timer: &impl Timer,
     ) -> Result<(MonitorRunReport, T), MonitorRunFailure<R::Error>>
     where
         F: Future<Output = T>,
@@ -478,7 +482,7 @@ where
             )
         };
         if let Err(activation) = activation {
-            let error = match self.stop().await {
+            let error = match self.stop(timer).await {
                 Ok(drain) => {
                     report.interrupt_drain = drain;
                     MonitorRunError::Activate(activation)
@@ -533,7 +537,7 @@ where
                             }
                         }
                         Err(error) => {
-                            let stop = self.stop().await.err();
+                            let stop = self.stop(timer).await.err();
                             #[cfg(any(feature = "diagnostics", test))]
                             report.record_interrupt_posts(
                                 interrupt_posts_at_start,
@@ -549,7 +553,7 @@ where
             }
         };
 
-        match self.stop().await {
+        match self.stop(timer).await {
             Ok(drain) => {
                 report.interrupt_drain = drain;
                 #[cfg(any(feature = "diagnostics", test))]
@@ -578,7 +582,10 @@ where
     /// Once MAC activity reaches zero, recycle the finite completion frontier.
     /// The next role receives the exact live ring and installed interrupt
     /// epoch, with no interval lacking either ownership frontier.
-    pub async fn stop(&mut self) -> Result<MacInterruptEpochDrain, MonitorStopError<R::Error>> {
+    pub async fn stop(
+        &mut self,
+        timer: &impl Timer,
+    ) -> Result<MacInterruptEpochDrain, MonitorStopError<R::Error>> {
         // Stop wins over injection admission. Revocation happens before IRQ
         // park/RX-walker waits, and a failed stop never republishes this
         // dwell as usable.
@@ -595,7 +602,7 @@ where
             .as_mut()
             .expect("monitor hardware owner exists")
             .request_mac_runtime_stop();
-        embassy_time::Timer::after_micros(20).await;
+        crate::time::wait_for(timer, crate::time::MAC_STOP_SETTLE).await;
         while self
             .hardware
             .as_mut()
@@ -603,7 +610,7 @@ where
             .mac_runtime_active_state()
             != 0
         {
-            embassy_time::Timer::after_micros(1).await;
+            crate::time::wait_for(timer, crate::time::MAC_STOP_POLL).await;
         }
         let interrupt_drain = if self.interrupt_active() {
             let interrupts = self

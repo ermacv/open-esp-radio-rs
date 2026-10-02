@@ -11,6 +11,5 @@ description = "Network integration value types shared by open ESP radio adapters
 workspace = true
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "contract"
 platform = "portable"

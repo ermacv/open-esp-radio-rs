@@ -31,22 +31,18 @@ impl RequestId {
     }
 }
 
-/// Microseconds in a backend-defined monotonic radio epoch.
-///
-/// The epoch is deliberately not wall-clock time. An adapter must use one
-/// stable epoch for every timestamp it publishes in a controller instance.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[repr(transparent)]
-pub struct RadioTimestamp(u64);
-
-impl RadioTimestamp {
-    /// Construct a timestamp from monotonic microseconds.
-    pub const fn from_micros(micros: u64) -> Self {
-        Self(micros)
+impl oer_radio_port::Correlation for RequestId {
+    fn from_raw(raw: u32) -> Self {
+        Self(raw)
     }
 
-    /// Return monotonic microseconds.
-    pub const fn as_micros(self) -> u64 {
+    fn raw(self) -> u32 {
         self.0
     }
 }
+
+/// Microseconds in the backend's monotonic radio epoch.
+///
+/// The epoch is deliberately not wall-clock time. An adapter must use one
+/// stable epoch for every timestamp it publishes in a controller instance.
+pub use oer_time::RadioInstant;

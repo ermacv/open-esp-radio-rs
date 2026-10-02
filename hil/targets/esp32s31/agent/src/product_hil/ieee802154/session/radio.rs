@@ -2,10 +2,8 @@
 //! the frames received between collections.
 
 use embassy_time::{Duration, with_timeout};
-use oer_esp32s31_ieee802154_runtime::{
-    Ieee802154EnhancedAckGenerator, Ieee802154OwnedFrame, Ieee802154RadioEvent,
-};
 use oer_esp32s31_ieee802154_system::Ieee802154SystemRuntime;
+use oer_espressif_ieee802154_runtime::{Ieee802154OwnedFrame, Ieee802154RadioEvent};
 use oer_hil_protocol::{
     ieee802154::IEEE802154_SESSION_RECORDED_FRAMES, ieee802154::Ieee802154AirCcaOutcome,
     ieee802154::Ieee802154AirEnergyOutcome, ieee802154::Ieee802154AirTxOutcome,
@@ -19,8 +17,9 @@ use oer_hil_protocol::{
     ieee802154::ieee802154_frame_crc32c,
 };
 use oer_ieee802154::{
-    AutoPendingMode, Channel, Configuration, EnergyScanRequest, FrameAddress, FrameView, Interface,
-    RadioCommand, RequestId, TxMode, TxRequest, TxSecurity,
+    AutoPendingMode, Channel, Configuration, EnergyScanRequest, EnhancedAckGeneration, EventsLost,
+    FrameAddress, FrameView, Ieee802154RadioPort, Interface, LifecycleCommand, LifecycleEvent,
+    RadioCommand, RadioSetting, RequestId, TxMode, TxRequest, TxSecurity,
 };
 
 use super::super::client::tx_outcome;
@@ -79,26 +78,31 @@ impl Session {
         &mut self,
         command: RadioCommand<'_>,
     ) -> Result<(), Ieee802154SessionResult> {
-        self.runtime
-            .submit(command)
-            .map(|_| ())
-            .map_err(|_| Ieee802154SessionResult::CommandRejected)
+        match self.runtime.submit(command) {
+            Ok(Ok(_)) => Ok(()),
+            _ => Err(Ieee802154SessionResult::CommandRejected),
+        }
     }
 
     /// Apply the host's identity and filter to an enabled radio, and
     /// install the enhanced-ACK generator the host asked for.
-    pub(super) fn configure(
+    pub(super) async fn configure(
         &mut self,
         config: Ieee802154SessionConfig,
     ) -> Result<(), Ieee802154SessionResult> {
-        let generator = config
+        // A generator measuring link margins from a zero noise floor, as
+        // ESP-IDF's port leaves it.
+        let generation = config
             .enhanced_ack
-            .then(Ieee802154EnhancedAckGenerator::new);
-        self.runtime
-            .with_enhanced_ack(|installed| *installed = generator)
-            .map_err(|_| Ieee802154SessionResult::StartFailed)?;
-        let id = self.id();
-        self.submit(RadioCommand::Enable { id })?;
+            .then_some(EnhancedAckGeneration { noise_floor_dbm: 0 });
+        if !matches!(
+            self.runtime.apply(RadioSetting::EnhancedAck(generation)),
+            Ok(Ok(()))
+        ) {
+            return Err(Ieee802154SessionResult::StartFailed);
+        }
+        self.lifecycle(LifecycleCommand::Enable, LifecycleEvent::Enabled)
+            .await?;
         for configuration in [
             Configuration::PanId(config.pan_id),
             Configuration::ShortAddress(config.short_address),
@@ -111,10 +115,34 @@ impl Session {
         Ok(())
     }
 
+    /// Run one lifecycle command and take its terminal event; frames
+    /// received before it are recorded.
+    pub(super) async fn lifecycle(
+        &mut self,
+        command: LifecycleCommand,
+        terminal: LifecycleEvent,
+    ) -> Result<(), Ieee802154SessionResult> {
+        let Ok(Ok(())) = self.runtime.lifecycle(command) else {
+            return Err(Ieee802154SessionResult::CommandRejected);
+        };
+        match self.terminal_event(ASSESS_TIMEOUT).await? {
+            Ieee802154RadioEvent::Lifecycle(event) if event == terminal => Ok(()),
+            _ => Err(Ieee802154SessionResult::UnexpectedEvent),
+        }
+    }
+
+    /// Leave receive mode and disable the radio before its client stops.
+    pub(super) async fn rest_disabled(&mut self) -> Result<(), Ieee802154SessionResult> {
+        let id = self.id();
+        self.submit(RadioCommand::Sleep { id })?;
+        self.lifecycle(LifecycleCommand::Disable, LifecycleEvent::Disabled)
+            .await
+    }
+
     /// Take one runtime event; received frames are recorded.
     pub(super) fn observe(
         &mut self,
-        event: Result<Ieee802154RadioEvent, oer_esp32s31_ieee802154_runtime::Ieee802154EventsLost>,
+        event: Result<Ieee802154RadioEvent, EventsLost>,
     ) -> Option<Ieee802154RadioEvent> {
         match event {
             Ok(Ieee802154RadioEvent::Received(frame)) => {

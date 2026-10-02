@@ -10,14 +10,17 @@
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use oer_bluetooth_controller::{LeController, LeControllerConfig, LeVersionInformation};
 use oer_bluetooth_hci::{
-    BluetoothPublicDeviceAddress, HciRestartError, HciRetired, HciRetirementError,
-    InProcessHciControllerTransport, InProcessHciHostTransport, LeControllerBootstrapConfig,
-    LeControllerHciEndpoints, LeControllerHciResources, LeRandomSource, LeRandomUnavailable,
+    BluetoothPublicDeviceAddress, LeControllerBootstrapConfig, LeRandomSource, LeRandomUnavailable,
+};
+use oer_bluetooth_hci_transport::{
+    HciRestartError, HciRetired, HciRetirementError, InProcessHciControllerTransport,
+    InProcessHciHostTransport, LeControllerHciEndpoints, LeControllerHciResources,
 };
 use oer_bluetooth_runtime::{ServeExit, serve};
 use oer_esp32s31_bluetooth_memory::BLUETOOTH_FILTER_ACCEPT_LIST_CAPACITY;
 use oer_esp32s31_bluetooth_runtime::BluetoothRuntimeError;
 use oer_esp32s31_soc_esp_hal::entropy::Entropy;
+use oer_time_embassy::EmbassyClock;
 use static_cell::StaticCell;
 
 use crate::system::BluetoothSystemRuntime;
@@ -110,7 +113,7 @@ impl BluetoothHciService {
     /// Cancelling it leaves the core mid-request; only [`Self::restart`]
     /// makes the core serve again, after the Host epoch was retired.
     pub async fn run(&mut self) -> ServeExit<BluetoothRuntimeError> {
-        serve(&self.transport, self.core, self.runtime).await
+        serve(&self.transport, self.core, self.runtime, &EmbassyClock).await
     }
 
     /// Wait until the Host and the service drained both directions of the

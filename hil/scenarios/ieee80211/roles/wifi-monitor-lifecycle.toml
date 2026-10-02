@@ -1,7 +1,8 @@
 schema = 5
 id = "wifi-monitor-lifecycle"
 description = "Station to monitor ownership transition and station restoration"
-tags = ["qualification", "wifi", "monitor", "lifecycle"]
+role = "investigation"
+tags = ["wifi", "monitor", "lifecycle"]
 
 [wifi]
 image = "correctness"

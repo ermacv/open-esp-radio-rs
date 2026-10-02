@@ -19,6 +19,5 @@ serde_json = "=1.0.151"
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "tool"
 platform = "host"

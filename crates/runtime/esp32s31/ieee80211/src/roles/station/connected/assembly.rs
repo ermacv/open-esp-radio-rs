@@ -22,7 +22,7 @@ use crate::{
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
+use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile};
 
 /// Complete running frontier returned by connected driver assembly.
 pub struct ConnectedDriverAssembly<R> {
@@ -43,7 +43,7 @@ pub struct ConnectedDriverAssemblyFailure<N, C, F> {
 /// Named ownership domains keep application and HIL call sites independent of
 /// a positional argument sequence while the type system still proves the
 /// exact network, IRQ, protocol and TX geometries.
-pub struct ConnectedDriverAssemblyResources<'irq, M: RawMutex, N, H, R, P, T, C, F> {
+pub struct ConnectedDriverAssemblyResources<'irq, M: RawMutex, N, H, R, P, T, C, F, K> {
     pub plan: ConnectedStaPlan,
     pub irq: &'irq crate::datapath::irq::EmbassyMacIrqRuntime<M>,
     pub network: N,
@@ -53,6 +53,8 @@ pub struct ConnectedDriverAssemblyResources<'irq, M: RawMutex, N, H, R, P, T, C,
     pub tx: T,
     pub control: C,
     pub map_services: F,
+    /// Monotonic clock of the returned runner's scheduling deadlines.
+    pub clock: K,
 }
 
 /// Compose the connected MAC graph and join it to the persistent network
@@ -77,6 +79,7 @@ pub fn assemble_esp32s31_connected_driver<
     B,
     F,
     N,
+    K,
     const RX_DEPTH: usize,
     const RX_CAPACITY: usize,
     const RX_SLOTS: usize,
@@ -104,6 +107,7 @@ pub fn assemble_esp32s31_connected_driver<
             'irq,
             M,
             S,
+            K,
             RX_DEPTH,
             RX_CAPACITY,
             RX_SLOTS,
@@ -126,9 +130,10 @@ pub fn assemble_esp32s31_connected_driver<
         >,
         ConnectedStaControlResources<'control, M, CONTROL_CAPACITY>,
         F,
+        K,
     >,
 ) -> Result<
-    ConnectedDriverAssembly<DatapathRunner<'irq, M, N, B, N::RxPublisher>>,
+    ConnectedDriverAssembly<DatapathRunner<'irq, M, N, B, N::RxPublisher, K>>,
     ConnectedDriverAssemblyFailure<
         N,
         ConnectedStaCompositionFailure<
@@ -141,6 +146,7 @@ pub fn assemble_esp32s31_connected_driver<
                 'irq,
                 M,
                 S,
+                K,
                 RX_DEPTH,
                 RX_CAPACITY,
                 RX_SLOTS,
@@ -168,7 +174,7 @@ where
     S: ConnectedRxProtocolSink<RX_CAPACITY, RX_SLOTS>,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     H: oer_esp32s31_ieee80211_mac::init::StaEspNowRxPolicyHardware,
     F: FnOnce(
         crate::datapath::services::SingleRoleServices<
@@ -182,6 +188,7 @@ where
                     'irq,
                     M,
                     S,
+                    K,
                     RX_DEPTH,
                     RX_CAPACITY,
                     RX_SLOTS,
@@ -221,6 +228,7 @@ where
         tx,
         control,
         map_services,
+        clock,
     } = resources;
     let drivers = match ConnectedStaPort::compose(plan, hardware, rx, protocol, tx, control) {
         Ok(drivers) => drivers,
@@ -239,6 +247,7 @@ where
             network,
             crate::datapath::network::STA_NETWORK_INTERFACE_ID,
             services,
+            clock,
         ),
         report: drivers.report,
     })

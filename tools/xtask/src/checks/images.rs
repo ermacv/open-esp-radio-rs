@@ -12,11 +12,8 @@ use std::{
 
 use sha2::{Digest, Sha256};
 
-use super::TARGET;
-use crate::{
-    Context, Result,
-    process::{self, owned},
-};
+use crate::{Context, Result};
+use oer_process::{self as process, owned};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum FinalImageClass {
@@ -88,7 +85,13 @@ impl FinalImageBuild {
                 format!("final {} HIL image build failed: {status}", self.class.id()).into(),
             );
         }
-        validate_final_image_report(&fs::read(&self.output)?, self.class, root, &self.start)
+        validate_final_image_report(
+            &fs::read(&self.output)?,
+            self.class,
+            &super::target(root)?,
+            root,
+            &self.start,
+        )
     }
 }
 
@@ -134,13 +137,14 @@ fn audit_final_images(
 fn validate_final_image_report(
     report: &[u8],
     class: FinalImageClass,
+    target: &str,
     root: &Path,
     start: &Path,
 ) -> Result<FinalImageArtifact> {
     let report: serde_json::Value = serde_json::from_slice(report)?;
     for (field, expected) in [
         ("image_class", class.id()),
-        ("target", TARGET),
+        ("target", target),
         ("profile", FINAL_IMAGE_PROFILE),
         ("network", FINAL_IMAGE_NETWORK),
     ] {
@@ -241,18 +245,10 @@ pub fn run(ctx: &Context) -> Result<()> {
     process::run(
         ctx.cargo()
             .env("CARGO_TARGET_DIR", ctx.root.join("target"))
-            .args([
-                "build",
-                "--quiet",
-                "--locked",
-                "--offline",
-                "-p",
-                "oer-hil-runner",
-            ]),
+            .args(["build", "--quiet", "--locked", "-p", "oer-hil-runner"]),
     )?;
     process::run(crate::blobray::cargo(ctx, "build").args([
         "--locked",
-        "--offline",
         "--profile",
         "blobray",
         "-p",

@@ -1,7 +1,6 @@
 //! Model hardware for AP runtime publication/completion tests.
-use core::future::{Future, ready};
 use oer_esp32s31_hal::types::*;
-use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxPowerPair, WifiTxPowerProfile, WifiTxTimer};
+use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxPowerPair, WifiTxPowerProfile};
 use oer_esp32s31_ieee80211_mac::{
     crypto::CcmpKeyHardware,
     rx::hardware::{RxBlockAckHardware, S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
@@ -143,26 +142,7 @@ impl WifiTxPowerProfile for Power {
     }
 }
 
-#[derive(Default)]
-pub(super) struct Timer {
-    pub(super) now: u64,
-}
-
-impl WifiTxTimer for Timer {
-    fn now_micros(&self) -> u64 {
-        self.now
-    }
-
-    fn wait_until(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_ {
-        self.now = deadline_micros;
-        ready(())
-    }
-
-    fn after_micros(&mut self, micros: u64) -> impl Future<Output = ()> + '_ {
-        self.now += micros;
-        ready(())
-    }
-}
+pub(super) type Timer = oer_time_virtual::SkipClock;
 
 impl oer_esp32s31_ieee80211_mac::ap_policy::ApRxPolicyHardware for Hardware {
     fn apply_ap_link_policy(&mut self, _: [u8; 6]) {}

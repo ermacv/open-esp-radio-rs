@@ -2,7 +2,7 @@
 
 use crate::datapath::rx::{
     dma::ReceiveDmaStorage,
-    frontier::{EmbassyRxFrontierDelay, ReceiveFrontier, RxFrontierError, RxFrontierPhase},
+    frontier::{ReceiveFrontier, RxFrontierError, RxFrontierPhase},
 };
 
 use oer_esp32s31_ieee80211_dma::rx_ring::RxSegment;
@@ -68,7 +68,7 @@ pub struct StandaloneEspNowRx<
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 > {
-    receive: ReceiveFrontier<'storage, EmbassyRxFrontierDelay, COUNT, DMA_BUFFER_SIZE>,
+    receive: ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE>,
     storage: &'storage ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     mpdu: &'storage mut [u8; DMA_BUFFER_SIZE],
     dispatcher: StandaloneEspNowRxDispatcher<PEERS>,

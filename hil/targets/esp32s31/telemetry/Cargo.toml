@@ -19,7 +19,6 @@ oer-esp32s31-ieee80211-runtime = { path = "../../../../crates/runtime/esp32s31/i
 oer-hil-protocol = { path = "../../../protocol", default-features = false, features = ["wifi"] }
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "hil"
 platform = "chip"
 chip = "esp32s31"

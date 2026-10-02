@@ -279,7 +279,7 @@ fn a_waiter_with_a_higher_balance_is_served_before_an_earlier_one() {
 }
 
 #[test]
-fn a_lease_is_charged_the_time_it_holds_and_budgets_are_refused() {
+fn a_lease_is_charged_the_time_it_holds() {
     let directory = tempfile::tempdir().unwrap();
     let arbiter = Arbiter::at(directory.path()).unwrap();
     let grant = arbiter
@@ -291,10 +291,6 @@ fn a_lease_is_charged_the_time_it_holds_and_budgets_are_refused() {
     let record = &arbiter.history().unwrap()[0];
     assert_eq!(record.outcome, LeaseOutcome::YieldedToBalance);
     assert!(record.charged_ms >= 300, "{record:?}");
-    let set = |name: &str| (name == "OER_HIL_SHORT").then(|| std::ffi::OsString::from("1"));
-    assert_eq!(retired_variable(set), Some("OER_HIL_SHORT"));
-    assert_eq!(retired_variable(|_| None), None);
-    assert!(NO_BUDGETS.contains("no budget"));
 }
 
 #[test]
@@ -458,41 +454,23 @@ fn every_lease_is_terminated_at_the_hard_limit() {
 }
 
 #[test]
-fn a_new_request_waits_for_live_leases_of_the_previous_schema() {
+fn an_older_state_schema_is_refused_without_conversion() {
     let directory = tempfile::tempdir().unwrap();
-    let (legacy, identity) = other_process();
-    let legacy_ticket = serde_json::json!({
-        "id": 1, "owner": "wifi", "work": "run", "budget_secs": 60,
-        "budget_source": {"kind": "explicit"}, "short": false,
-        "process": identity, "enqueued_unix": 1
-    });
-    std::fs::write(
-        directory.path().join("state.json"),
-        serde_json::to_vec(&serde_json::json!({
-            "schema": 1, "next_id": 2, "queue": [],
-            "holder": {"ticket": legacy_ticket, "token": "t", "granted_unix": 1, "over_budget": false},
-            "head_next": false
-        }))
-        .unwrap(),
-    )
-    .unwrap();
+    let path = directory.path().join("state.json");
+    let older = br#"{"schema":2,"next_id":2,"queue":[],"holders":[],"jumped":false}"#;
+    std::fs::write(&path, older).unwrap();
     let arbiter = Arbiter::at(directory.path()).unwrap();
-    let waiter = {
-        let arbiter = arbiter.clone();
-        std::thread::spawn(move || {
-            arbiter
-                .acquire_within(&on_board("esp32c5", request("802154", "peer")), None)
-                .is_ok()
-        })
-    };
-    std::thread::sleep(Duration::from_millis(1500));
-    let raw: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(directory.path().join("state.json")).unwrap())
-            .unwrap();
-    assert_eq!(raw["schema"], 1, "the old lease keeps its state");
-    stop(legacy);
-    assert!(waiter.join().unwrap());
-    assert_eq!(state(&arbiter).schema, crate::state::STATE_SCHEMA);
+    let error = arbiter
+        .acquire_within(&on_board("esp32c5", request("802154", "peer")), None)
+        .err()
+        .expect("an older state is refused")
+        .to_string();
+    assert!(error.contains("does not convert"), "{error}");
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        older,
+        "the state is left as it is"
+    );
 }
 
 #[test]

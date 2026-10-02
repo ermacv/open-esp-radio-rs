@@ -1,15 +1,25 @@
-//! Bounded HCI packet transport and retained packet ownership.
+//! Retained HCI packet ownership and complete packet validation.
+//!
+//! The asynchronous in-process Host/Controller transport is
+//! `oer-bluetooth-hci-transport`; this module owns its synchronous parts.
 
-mod in_process;
+use bt_hci::PacketKind;
+
 mod packet;
 mod queue;
 
-pub(crate) use in_process::InProcessHciChannel;
-pub use in_process::{
-    HciChannelError, HciEpochIdentity, HciRestartError, HciRetired, HciRetirementError,
-    InProcessHciControllerTransport, InProcessHciHostTransport, LeHostAclCreditSender,
-};
 pub use queue::{ControllerToHostQueue, ControllerToHostQueueError};
+
+/// Validate one complete Controller-to-Host packet body of `kind`.
+///
+/// Commands travel the other direction; every other packet must decode
+/// through `bt-hci` and end exactly at the length its header declares.
+pub fn validate_controller_to_host_packet(
+    kind: PacketKind,
+    bytes: &[u8],
+) -> Result<(), ControllerToHostQueueError> {
+    packet::validate_complete_packet(kind, bytes)
+}
 
 /// Maximum packet body accepted by the in-process HCI Host contract.
 ///

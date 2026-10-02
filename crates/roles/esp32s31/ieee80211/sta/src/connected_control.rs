@@ -346,8 +346,9 @@ pub struct ConnectedControlPorts<'a, H, X, R, const PEER_CAPACITY: usize> {
     pub rx_block_ack: &'a mut RxBlockAckSessions<PEER_CAPACITY>,
 }
 
-/// Shared ordinary-TX capability consumed by connected control.
-pub trait ConnectedControlTx {
+/// Shared ordinary-TX capability consumed by connected control. Its clock
+/// is the transmitter's, the image's monotonic time.
+pub trait ConnectedControlTx: oer_time::Clock {
     fn take_last_outcome(&mut self) -> Option<SingleMpduTxOutcome>;
 
     /// Whether network data TX happened since the last
@@ -361,8 +362,6 @@ pub trait ConnectedControlTx {
     fn take_network_tx_report(&mut self) -> NetworkTxPowerReport {
         NetworkTxPowerReport::default()
     }
-
-    fn now_micros(&self) -> u64;
 
     fn peek_qos_sequence(&self, tid: u8) -> Option<SequenceNumber>;
 
@@ -436,7 +435,7 @@ impl<P, E, T, const BUFFER_SIZE: usize> ConnectedControlTx
 where
     P: oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerProfile,
     E: oer_esp32s31_ieee80211::ordinary_tx::WifiTxEntropy,
-    T: oer_esp32s31_ieee80211::ordinary_tx::WifiTxTimer,
+    T: oer_time::Timer,
 {
     fn take_last_outcome(&mut self) -> Option<SingleMpduTxOutcome> {
         SingleMpduTx::take_last_outcome(self)
@@ -447,10 +446,6 @@ where
         hardware: &mut H,
     ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
         SingleMpduTx::start_beacon_probe(self, hardware).map(|_| DatapathControlProgress::TxPending)
-    }
-
-    fn now_micros(&self) -> u64 {
-        SingleMpduTx::now_micros(self)
     }
 
     fn peek_qos_sequence(&self, tid: u8) -> Option<SequenceNumber> {
@@ -1000,7 +995,7 @@ impl ConnectedControlCore {
             rx_block_ack,
         } = ports;
         if let Some(monitor) = &mut self.beacon_monitor {
-            monitor.arm(tx.now_micros())?;
+            monitor.arm(tx.now().as_micros())?;
         }
         if event.is_some() && self.in_flight.is_some() {
             return Err(ConnectedControlError::EventBeforeTxCompletion);
@@ -1067,7 +1062,7 @@ impl ConnectedControlCore {
                         .individual_twt
                         .as_mut()
                         .ok_or(ConnectedControlError::MissingIndividualTwtRequester)?
-                        .complete_transmission(transmission, success, tx.now_micros())?;
+                        .complete_transmission(transmission, success, tx.now().as_micros())?;
                     if success {
                         self.observations.individual_twt.actions_published = self
                             .observations
@@ -1107,7 +1102,7 @@ impl ConnectedControlCore {
             return Ok(progress);
         }
 
-        let now_micros = tx.now_micros();
+        let now_micros = tx.now().as_micros();
         if let Some(tid) = self.tx_block_ack.expire_next(now_micros) {
             tx.set_tx_block_ack_agreement(tid, None);
             self.observations.last_expired_tid = Some(tid);
@@ -1182,7 +1177,7 @@ impl ConnectedControlCore {
         X: ConnectedControlTx,
     {
         self.individual_twt_kick = false;
-        let now_micros = tx.now_micros();
+        let now_micros = tx.now().as_micros();
         let service = self
             .individual_twt
             .as_mut()
@@ -1235,7 +1230,7 @@ impl ConnectedControlCore {
                         .individual_twt
                         .as_mut()
                         .expect("requester produced this transmission")
-                        .complete_transmission(transmission, false, tx.now_micros())?;
+                        .complete_transmission(transmission, false, tx.now().as_micros())?;
                     self.observations.individual_twt.last_outcome =
                         Some(ConnectedIndividualTwtRuntimeOutcome::Protocol(event));
                     return Ok(Some(DatapathControlProgress::More));
@@ -1271,7 +1266,7 @@ impl ConnectedControlCore {
             let Some(random) = self.sa_query_random else {
                 return Ok(DatapathControlProgress::More);
             };
-            let Some(transaction) = self.sa_query.start(tx.now_micros(), random()) else {
+            let Some(transaction) = self.sa_query.start(tx.now().as_micros(), random()) else {
                 return Ok(DatapathControlProgress::More);
             };
             return self.start_sa_query(hardware, tx, SaQuery::Request { transaction });
@@ -1310,13 +1305,13 @@ impl ConnectedControlCore {
                 hardware.set_station_tsf(access_point_tsf_at(
                     observation.timestamp_tsf,
                     received_at,
-                    tx.now_micros(),
+                    tx.now().as_micros(),
                 ));
             }
             self.beacon_probe_attempts = 0;
             follow_beacon_protection(tx, observation.protection);
             if let Some(monitor) = &mut self.beacon_monitor {
-                monitor.observe(tx.now_micros(), observation)?;
+                monitor.observe(tx.now().as_micros(), observation)?;
                 self.trace_beacon_monitor(BeaconMonitorOp::Refreshed);
             }
             let beacon = PmBeacon {
@@ -1342,7 +1337,7 @@ impl ConnectedControlCore {
         if let ConnectedRxControlEvent::ProbeResponse = event {
             self.beacon_probe_attempts = 0;
             if let Some(monitor) = &mut self.beacon_monitor {
-                monitor.observe_reachability(tx.now_micros())?;
+                monitor.observe_reachability(tx.now().as_micros())?;
                 self.trace_beacon_monitor(BeaconMonitorOp::ProbeAnswered);
             }
             return Ok(DatapathControlProgress::More);
@@ -1514,7 +1509,7 @@ impl ConnectedControlCore {
                             requester.reject_hardware_install(
                                 flow_id,
                                 generation,
-                                tx.now_micros(),
+                                tx.now().as_micros(),
                             )?;
                             self.individual_twt_kick = true;
                             self.observations.individual_twt.hardware_rejections = self
@@ -1609,7 +1604,7 @@ impl ConnectedControlCore {
                         ConnectedHeControlRuntimeRejection::ResponseDeadlineOverflow,
                     );
                 };
-                if tx.now_micros() >= response_deadline_micros {
+                if tx.now().as_micros() >= response_deadline_micros {
                     return self.reject_he_trigger(
                         identity,
                         ConnectedHeControlRuntimeRejection::MissedResponseWindow,
@@ -1701,7 +1696,7 @@ impl ConnectedControlCore {
                         ConnectedHeControlRuntimeRejection::ResponseDeadlineOverflow,
                     );
                 };
-                if tx.now_micros() >= response_deadline_micros {
+                if tx.now().as_micros() >= response_deadline_micros {
                     return self.reject_he_ndpa(
                         identity,
                         dialog_token,
@@ -1791,7 +1786,7 @@ impl ConnectedControlCore {
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
     {
-        let now_micros = tx.now_micros();
+        let now_micros = tx.now().as_micros();
         self.beacon_monitor
             .as_mut()
             .expect("beacon probes require an enabled beacon monitor")
@@ -1956,7 +1951,9 @@ impl ConnectedControlCore {
         let sequence = tx
             .peek_qos_sequence(tid)
             .ok_or(ConnectedControlError::MissingQosSequence(tid))?;
-        let request = self.tx_block_ack.begin(tid, sequence, tx.now_micros())?;
+        let request = self
+            .tx_block_ack
+            .begin(tid, sequence, tx.now().as_micros())?;
         if let Err(error) =
             tx.start_action(hardware, &request.body, ActionTxConfig::VENDOR_MANAGEMENT)
         {
@@ -1987,9 +1984,8 @@ fn follow_beacon_protection<X: ConnectedControlTx>(tx: &mut X, beacon: StaBeacon
 }
 
 mod power;
-mod sa_query;
 
-use sa_query::{SaQueryStep, StationSaQuery};
+use oer_ieee80211_sta::sa_query::{SaQueryStep, StationSaQuery};
 
 use power::{ConnectedPower, power_clock};
 

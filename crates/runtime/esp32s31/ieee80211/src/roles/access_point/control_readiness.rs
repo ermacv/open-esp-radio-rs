@@ -29,7 +29,7 @@ impl<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     pub(super) fn rx_work_due(&self, now_micros: u64) -> bool
     where

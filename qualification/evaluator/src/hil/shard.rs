@@ -131,11 +131,28 @@ impl Snapshot {
     }
 }
 
-fn current(root: &Path, sources: &[SourceDigest]) -> bool {
-    !sources.is_empty()
-        && sources
-            .iter()
-            .all(|s| digest(root, &s.path).is_ok_and(|d| d == s.sha256))
+/// Whether every source `shard` binds still has its recorded digest. A
+/// source that no longer exists is an error, not a stale shard: the shard
+/// is recorded again or deleted.
+fn current(root: &Path, shard: &Path, sources: &[SourceDigest]) -> Result<bool> {
+    if sources.is_empty() {
+        return Ok(false);
+    }
+    for source in sources {
+        if fs::symlink_metadata(root.join(&source.path)).is_err() {
+            return Err(format!(
+                "HIL evidence shard {} binds {}, which does not exist; record the scenario \
+                 again or delete the shard",
+                shard.display(),
+                source.path.display()
+            )
+            .into());
+        }
+        if digest(root, &source.path)? != source.sha256 {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 impl Shard {
@@ -158,8 +175,6 @@ impl Shard {
             failure: self.failure.clone(),
             repetition_failures: self.repetitions.iter().map(|r| r.failure.clone()).collect(),
             run_directory: None,
-            review: None,
-            resolution: None,
             procedure_document: self.procedure.clone(),
             source_bound: true,
             stale_snapshot: false,
@@ -209,7 +224,7 @@ pub(super) fn load(root: &Path, directory: &Path, target: &str) -> Result<Vec<(S
             return Err(format!("invalid HIL evidence shard {}", path.display()).into());
         }
         shard.subject.resolve_observer(&root.join(directory))?;
-        let current = current(root, &shard.sources);
+        let current = current(root, &path, &shard.sources)?;
         shards.push((shard, current));
     }
     Ok(shards)
@@ -402,21 +417,11 @@ fn recorded_sources(
             return Ok(None);
         };
         let directory = run.join("firmware").join(image);
-        let Some(inputs) = read_optional_json::<Value>(&directory.join("source-inputs.json"))?
-        else {
+        let Some(inputs) = super::closure::SourceInputs::read(&directory)? else {
             return Ok(None);
         };
-        // An older record lists only the compiled sources, not everything
-        // the build read, so it cannot bind a shard.
-        if inputs["schema"] != super::closure::COMPLETE_INPUTS {
-            return Ok(None);
-        }
         let mut files = BTreeSet::new();
-        for file in inputs["files"]
-            .as_array()
-            .ok_or("source-inputs lists no files")?
-        {
-            let path = PathBuf::from(file.as_str().ok_or("source input is not a path")?);
+        for path in inputs.files {
             if !safe_relative(&path) {
                 return Err(format!("unsafe source input {}", path.display()).into());
             }
@@ -865,14 +870,19 @@ mod tests {
         assert!(recorded(&[], &radio).is_none());
         inputs("performance", json!(["../outside.rs"]));
         assert!(recorded_sources(&run, &[image("performance", false)], None, &radio).is_err());
-        // A record of the compiled sources only cannot bind a shard.
+        // A record of another schema is an error, not a weaker binding.
         fs::write(
             run.join("firmware/correctness/source-inputs.json"),
             serde_json::to_vec(&json!({"schema": 1, "files": ["crates/radio/src/lib.rs"]}))
                 .unwrap(),
         )
         .unwrap();
-        assert!(recorded(&[image("correctness", false)], &radio).is_none());
+        assert!(
+            recorded_sources(&run, &[image("correctness", false)], None, &radio)
+                .unwrap_err()
+                .to_string()
+                .contains("only schema 2")
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

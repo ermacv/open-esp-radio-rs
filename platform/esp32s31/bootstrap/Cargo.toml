@@ -22,7 +22,6 @@ oer-esp32s31-platform-layout = { workspace = true, features = ["build"] }
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "platform"
 platform = "chip"
 chip = "esp32s31"

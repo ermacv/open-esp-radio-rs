@@ -28,7 +28,7 @@ pub use oer_esp32s31_pac::{Ieee802154MultipanIndex, Ieee802154PowerSequence};
 /// `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`. PSRAM is outside it: a frame
 /// there makes the MAC report a DMA error, and nothing reaches the air or
 /// memory. The engine checks its frame buffers against it
-/// ([`oer_ieee802154_engine::engine::Ieee802154Engine::buffers_dma_visible`]).
+/// ([`oer_espressif_ieee802154_engine::engine::Ieee802154Engine::buffers_dma_visible`]).
 pub const IEEE802154_DMA_WINDOW: core::ops::Range<usize> = 0x2f00_0000..0x2f08_0000;
 
 #[cfg(feature = "validation-probes")]

@@ -34,7 +34,7 @@ pub trait ConnectedEpochRunnerOwner: Sized {
     fn into_connected_epoch_parts(self) -> (Self::Network, Self::Services);
 }
 
-impl<'irq, M, N, B, RX> ConnectedEpochRunnerOwner for DatapathRunner<'irq, M, N, B, RX>
+impl<'irq, M, N, B, RX, C> ConnectedEpochRunnerOwner for DatapathRunner<'irq, M, N, B, RX, C>
 where
     M: NetworkRawMutex,
     N: crate::datapath::network::DatapathNetwork,

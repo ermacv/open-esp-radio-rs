@@ -1,8 +1,8 @@
 schema = 5
 id = "diagnostic-ap-two-client-udp-tx-saturation"
 description = "Two-client AP UDP TX saturation, exact delivery and peer fairness"
+role = "investigation"
 repetitions = 1
-transfer = "identical-image"
 tags = ["diagnostic", "wifi", "access-point", "multi-client", "udp", "tx", "saturation", "air-strict"]
 
 [wifi]

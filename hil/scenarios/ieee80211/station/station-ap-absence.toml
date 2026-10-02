@@ -1,7 +1,8 @@
 schema = 5
 id = "station-ap-absence"
 description = "Station exhausts bounded retries while the configured AP is absent"
-tags = ["ap-availability", "qualification", "station", "lifecycle"]
+role = "qualification"
+tags = ["ap-availability", "station", "lifecycle"]
 
 [wifi]
 image = "correctness"

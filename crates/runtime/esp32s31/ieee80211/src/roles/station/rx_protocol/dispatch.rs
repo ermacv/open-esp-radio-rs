@@ -10,12 +10,14 @@ impl<
     'irq,
     M: RawMutex,
     S,
+    K,
     const CAPACITY: usize,
     const SLOTS: usize,
     const REORDER_SLOTS: usize,
-> ConnectedRxProcessor<'queue, 'pool, 'scratch, 'irq, M, S, CAPACITY, SLOTS, REORDER_SLOTS>
+> ConnectedRxProcessor<'queue, 'pool, 'scratch, 'irq, M, S, K, CAPACITY, SLOTS, REORDER_SLOTS>
 where
     S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
+    K: Timer,
 {
     pub(super) async fn dispatch_retained_frame(
         &mut self,

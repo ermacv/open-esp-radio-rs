@@ -4,6 +4,7 @@
 )]
 
 use super::*;
+use oer_time::Timer as _;
 
 impl<
     'slot,
@@ -20,7 +21,7 @@ where
     B: MaterializedTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     pub fn new(
         ordinary: SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
@@ -733,7 +734,9 @@ where
 
     pub async fn wait_deadline(&mut self) {
         if let Some(deadline) = self.next_deadline_micros() {
-            self.ordinary.wait_until_micros(deadline).await;
+            self.ordinary
+                .wait_until(oer_time::Instant::from_micros(deadline))
+                .await;
         }
     }
 }

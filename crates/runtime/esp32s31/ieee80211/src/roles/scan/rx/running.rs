@@ -144,15 +144,12 @@ impl<
 
     pub async fn start<H: RxDma>(&mut self, hardware: &mut H) -> Result<(), RxFrontierError>
     where
-        D: RxDmaObservationDelay,
+        D: oer_time::Timer,
     {
         if self.scan.phase() == RxFrontierPhase::Live {
             return Ok(());
         }
-        self.resources
-            .delay_mut()
-            .after_micros(ESP32S31_RX_WALKER_ENABLE_SETTLE_US)
-            .await;
+        walker_enable_settle(self.resources.delay()).await;
         self.scan.start(hardware)
     }
 

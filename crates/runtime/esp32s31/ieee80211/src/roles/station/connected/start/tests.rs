@@ -29,23 +29,11 @@ impl<'arena> ConnectedRxMaterializer<CooperativeRadioHardware<'arena>, u8> for T
 }
 
 struct TestRxFrontier;
-struct TestDelay;
-
-impl RxFrontierDelay for TestDelay {
-    async fn after_micros(_micros: u32) {}
-}
-
 impl StoppedStaRx for TestRxFrontier {
-    type Preconnected<D>
-        = u8
-    where
-        D: RxFrontierDelay;
+    type Preconnected = u8;
     type Persistent = TestRxResources;
 
-    fn split_for_reconnect<D>(self) -> (Self::Preconnected<D>, Self::Persistent)
-    where
-        D: RxFrontierDelay,
-    {
+    fn split_for_reconnect(self) -> (Self::Preconnected, Self::Persistent) {
         (
             17,
             TestRxResources {
@@ -94,7 +82,7 @@ fn connected_start_unifies_initial_and_reconnected_owner_frontiers() {
         19_u16,
         20_u32,
     );
-    let (_, reconnected) = disconnected.prepare_reconnect::<TestDelay>();
+    let (_, reconnected) = disconnected.prepare_reconnect();
     let started = block_on(start_esp32s31_reconnected_connected_epoch(reconnected))
         .unwrap_or_else(|_| panic!("reconnected owner transition must succeed"));
     assert_eq!(started.rx, (17, 18));

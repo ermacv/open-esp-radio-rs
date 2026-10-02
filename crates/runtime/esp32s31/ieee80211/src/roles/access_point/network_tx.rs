@@ -4,6 +4,7 @@
 //! aggregate publication, retry, or completion policy.
 
 use core::marker::PhantomData;
+use oer_time::Clock as _;
 
 use super::*;
 
@@ -435,7 +436,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
         H: TxHardware
             + ApRuntimeHardware
             + RxBlockAckHardware
@@ -695,7 +696,8 @@ where
                     self.exchange_started_micros = Some(started);
                 }
                 let deadline_micros = ordinary
-                    .now_micros()
+                    .now()
+                    .as_micros()
                     .saturating_add(ordinary.publication_timeout_micros());
                 self.aggregate_phase = Some(AggregateServicePhase::Published(deadline_micros));
                 #[cfg(any(feature = "diagnostics", test))]
@@ -749,7 +751,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
         H: TxHardware
             + ApRuntimeHardware
             + RxBlockAckHardware
@@ -827,7 +829,7 @@ where
         if let Some(accounting) = self.airtime.as_mut() {
             accounting.publish_standby();
         }
-        let now = ordinary.now_micros();
+        let now = ordinary.now().as_micros();
         self.aggregate_phase = Some(AggregateServicePhase::Published(
             now.saturating_add(ordinary.publication_timeout_micros()),
         ));
@@ -897,7 +899,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
     {
         let _ = network;
         self.rollback_prepared_buffered_release(control)?;

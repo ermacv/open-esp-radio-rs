@@ -10,7 +10,11 @@ use oer_hil_evidence::run::{
 use oer_hil_image_class::ImageClass;
 
 use super::{Recipe, firmware};
-use crate::{Artifacts, BootArtifacts, Integration, TARGET};
+use crate::{Artifacts, BootArtifacts};
+use oer_esp32s31_firmware::network::{NETWORK, NETWORK_FEATURE};
+
+/// The Rust target of the fixture images.
+const TARGET: &str = "riscv32imafc-unknown-none-elf";
 
 /// Owned-Xarxa correctness artifacts over the given files, with one lock
 /// standing in for both effective locks and a host-independent environment.
@@ -26,7 +30,6 @@ fn test_artifacts(
         rust_target: String::from(TARGET),
         layout_seed: None,
         features: oer_hil_image_class::FeatureDelta::default(),
-        network: Integration::OwnedXarxa,
         output: application.parent().unwrap().to_path_buf(),
         runtime_elf: runtime_elf.to_path_buf(),
         effective_embedded_lock: lock.to_path_buf(),
@@ -137,7 +140,7 @@ fn firmware_record_archives_the_exact_application() {
     );
     assert_eq!(
         provenance.parameters.runtime_features,
-        ImageClass::Correctness.build_features(Integration::OwnedXarxa.feature())
+        ImageClass::Correctness.build_features(NETWORK_FEATURE)
     );
     for name in ["embedded-lock", "bootstrap-lock"] {
         assert!(provenance.files.iter().any(|file| file.name == name));
@@ -271,12 +274,10 @@ fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
 fn provenance_records_the_network_implementation_and_its_feature() {
     let root = temporary_directory("build-selection");
     write_test_build_materials(&root);
-    let network = Integration::OwnedXarxa;
     let provenance = firmware::create_provenance(
         &root,
         (
             ImageClass::Correctness,
-            network,
             None,
             &oer_hil_image_class::FeatureDelta::default(),
             ("esp32s31", TARGET, oer_chip_profile::Boot::Staged),
@@ -288,13 +289,13 @@ fn provenance_records_the_network_implementation_and_its_feature() {
         oer_hil_evidence::build::BuildEnvironment::synthetic(),
     )
     .unwrap();
-    assert_eq!(provenance.parameters.network.as_deref(), Some(network.id()));
+    assert_eq!(provenance.parameters.network.as_deref(), Some(NETWORK));
     assert!(
         provenance
             .parameters
             .runtime_features
             .split(',')
-            .any(|feature| feature == network.feature())
+            .any(|feature| feature == NETWORK_FEATURE)
     );
     fs::remove_dir_all(root).unwrap();
 }

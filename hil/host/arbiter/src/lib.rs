@@ -41,7 +41,7 @@ pub use devices::{
     AttachedPort, Device, attached_ports, board_mac, device_label, normalize_mac, port_mac,
 };
 pub use estimate::{DEFAULT_ESTIMATE, EstimateSource, format_duration, parse_duration};
-pub use grant::{Grant, LEASE_ENV, NO_BUDGETS, OWNER_ENV, Request, default_owner};
+pub use grant::{Grant, LEASE_ENV, OWNER_ENV, Request, default_owner};
 pub use history::{GrantReason, LeaseOutcome, LeaseRecord, OwnerBalance};
 pub use maintenance::{
     Confirmation, Maintenance, QuarantineTrigger, SERVICE_POLL, STAND_SERVICE, ServiceKind,

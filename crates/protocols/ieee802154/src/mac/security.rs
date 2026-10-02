@@ -31,6 +31,12 @@ pub struct MacKeys {
 }
 
 impl MacKeys {
+    /// Zeroed keys of key index zero and frame counter zero: what an
+    /// interface without keys starts from when a key or frame counter
+    /// update reaches it, as ESP-IDF's OpenThread port starts from its
+    /// zeroed statics.
+    pub const ZEROED: Self = Self::new(0, [0; 16], [0; 16], [0; 16], 0);
+
     /// Keys of `key_id` and its neighbours, and the next frame counter.
     pub const fn new(
         key_id: u8,

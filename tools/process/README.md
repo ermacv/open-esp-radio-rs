@@ -4,9 +4,16 @@
 the HIL runner. It owns direct commands and their ordinary Unix process-group
 descendants. Callers own workload policy, arguments, evidence and resource limits.
 
-Install signal handlers once at the application boundary. SIGINT and SIGTERM
-set cancellation; new work is rejected and existing waits terminate their owned
-process group. `check_cancelled` and `sleep` integrate non-process loops.
+Install signal handlers once at the application boundary. SIGINT, SIGTERM and
+SIGHUP set cancellation; new work is rejected and existing waits terminate their
+owned process group. `check_cancelled` and `sleep` integrate non-process loops.
+
+An owner that dies without that cleanup (SIGKILL, an abort) does not leave its
+children running: the first owned spawn forks a small guardian process that
+tracks every owned process group through a close-on-exec pipe, and when the
+pipe closes with the owner it terminates the groups still registered (SIGTERM,
+then SIGKILL after a second). `run_with_timeout` bounds a command's whole
+lifetime, as the push gate does for test runs.
 
 `CommandExt` provides bounded status/output probes and owned background children.
 Captured stdout and stderr are drained concurrently. Background captures should

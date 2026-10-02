@@ -18,11 +18,19 @@ pub mod ieee80211 {
     pub mod security {
         pub use rsn;
     }
+
+    /// Executor-independent drivers of the station state machines.
+    pub mod services {
+        pub use {rsn_service as rsn, sta_service as sta};
+    }
 }
 
 #[cfg(feature = "bluetooth")]
 pub mod bluetooth {
     pub use hci;
+
+    /// The bounded in-process HCI transport between Host and Controller.
+    pub use hci_transport;
 
     pub mod le {
         pub use le_ll as ll;

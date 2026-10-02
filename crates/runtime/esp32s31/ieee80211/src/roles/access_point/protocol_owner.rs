@@ -118,6 +118,25 @@ pub struct AccessPointProtocolProcessorParked<
     state: AccessPointProtocolState<'storage, DMA_BUFFER_SIZE>,
 }
 
+/// The processor's MAC clock, the image's monotonic time.
+impl<P, E, T: oer_time::Clock, const DMA_BUFFER_SIZE: usize, const TX_BUFFER_SIZE: usize>
+    oer_time::Clock
+    for AccessPointProtocolProcessor<'_, '_, '_, P, E, T, DMA_BUFFER_SIZE, TX_BUFFER_SIZE>
+{
+    fn now(&self) -> oer_time::Instant {
+        self.mac.now()
+    }
+}
+
+impl<P, E, T: oer_time::Timer, const DMA_BUFFER_SIZE: usize, const TX_BUFFER_SIZE: usize>
+    oer_time::Timer
+    for AccessPointProtocolProcessor<'_, '_, '_, P, E, T, DMA_BUFFER_SIZE, TX_BUFFER_SIZE>
+{
+    fn wait_until(&self, deadline: oer_time::Instant) -> impl Future<Output = ()> {
+        self.mac.wait_until(deadline)
+    }
+}
+
 impl<'storage, 'beacon, 'slot, P, E, T, const DMA_BUFFER_SIZE: usize, const TX_BUFFER_SIZE: usize>
     core::ops::Deref
     for AccessPointProtocolProcessor<

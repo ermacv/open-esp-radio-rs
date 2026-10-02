@@ -1,7 +1,15 @@
 //! Owned EDCA contention state for the four ordinary TX queues.
+//!
+//! The contention window of each queue is the portable
+//! `oer_ieee80211_softmac::EdcaContention`; its cold values are the
+//! Espressif LMAC defaults of `oer_espressif_ieee80211_policy::lmac`. This
+//! module adds what the S31 queue imposes: a ten-bit slot field and the
+//! validated AIFSN, ACM and TXOP policy of each queue.
 
+use oer_espressif_ieee80211_policy::lmac;
 use oer_ieee80211_mac::extensions::wmm::{WmmAcParameters, WmmParameterSet};
 use oer_ieee80211_mac::qos::WmmAccessCategory;
+use oer_ieee80211_softmac::EdcaContention;
 
 use crate::tx::LegacyTxQueue;
 
@@ -126,32 +134,20 @@ impl EdcaContentionParameters {
         self.maximum_exponent
     }
 
+    /// The LMAC's cold contention of a queue: complete
+    /// `libpp.a[lmac.o]::{lmacInit, lmacInitAc}`, kept as the Espressif
+    /// family's policy data.
     const fn vendor_default(queue: LegacyTxQueue) -> Self {
-        // SOURCE: complete `libpp.a[lmac.o]::lmacInit` and
-        // `lmacInitAc`. The five arguments are queue, AIFSN, ECWmin, ECWmax,
-        // and TXOP. Ordinary queues are VO=(2,2,3), VI=(2,3,4),
-        // BE=(3,4,10), and BK=(7,4,10).
-        match queue {
-            LegacyTxQueue::Voice => Self {
-                aifsn: 2,
-                minimum_exponent: 2,
-                maximum_exponent: 3,
-            },
-            LegacyTxQueue::Video => Self {
-                aifsn: 2,
-                minimum_exponent: 3,
-                maximum_exponent: 4,
-            },
-            LegacyTxQueue::BestEffort => Self {
-                aifsn: 3,
-                minimum_exponent: 4,
-                maximum_exponent: 10,
-            },
-            LegacyTxQueue::Background => Self {
-                aifsn: 7,
-                minimum_exponent: 4,
-                maximum_exponent: 10,
-            },
+        let defaults = lmac::default_contention(match queue {
+            LegacyTxQueue::Voice => WmmAccessCategory::Voice,
+            LegacyTxQueue::Video => WmmAccessCategory::Video,
+            LegacyTxQueue::BestEffort => WmmAccessCategory::BestEffort,
+            LegacyTxQueue::Background => WmmAccessCategory::Background,
+        });
+        Self {
+            aifsn: defaults.aifsn,
+            minimum_exponent: defaults.ecw_min,
+            maximum_exponent: defaults.ecw_max,
         }
     }
 }
@@ -160,14 +156,17 @@ impl EdcaContentionParameters {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EdcaBackoffState {
     policy: EdcaAccessPolicy,
-    current_exponent: u8,
+    contention: EdcaContention,
 }
 
 impl EdcaBackoffState {
     pub const fn new(parameters: EdcaContentionParameters) -> Self {
         Self {
             policy: EdcaAccessPolicy::new(parameters, false, 0),
-            current_exponent: parameters.minimum_exponent,
+            contention: EdcaContention::new(
+                parameters.minimum_exponent,
+                parameters.maximum_exponent,
+            ),
         }
     }
 
@@ -180,18 +179,18 @@ impl EdcaBackoffState {
     }
 
     pub const fn current_exponent(self) -> u8 {
-        self.current_exponent
+        self.contention.cw_exponent()
     }
 
     /// Install a new parameter set while retaining a still-valid current CW.
     pub fn reconfigure(&mut self, parameters: EdcaContentionParameters) {
         // SOURCE: complete `libpp.a[lmac.o]::lmacSetAcParam`.
         // It replaces AIFSN/min/max, clamps current down to a lower new max,
-        // clamps it up to a higher new min, and otherwise retains it.
+        // clamps it up to a higher new min, and otherwise retains it: the
+        // portable `EdcaContention::reconfigure`.
         self.policy.contention = parameters;
-        self.current_exponent = self
-            .current_exponent
-            .clamp(parameters.minimum_exponent, parameters.maximum_exponent);
+        self.contention
+            .reconfigure(parameters.minimum_exponent, parameters.maximum_exponent);
     }
 
     /// Install contention, ACM and TXOP as one already validated AC policy.
@@ -205,9 +204,9 @@ impl EdcaBackoffState {
         // SOURCE: complete `libpp.a[lmac.o]::lmacTxFrame`
         // +0x10e..0x12c calls `hal_random`, masks it with
         // `(1 << current_exponent) - 1`, stores the u16 result at AC+0x06,
-        // and passes it to `hal_mac_tx_config_edca`.
-        let mask = (1_u32 << self.current_exponent) - 1;
-        (entropy & mask) as u16
+        // and passes it to `hal_mac_tx_config_edca`: the portable draw
+        // `EdcaContention::draw` over that entropy word.
+        (entropy & self.contention.cw() as u32) as u16
     }
 
     /// Advance the current CW after an attempt that will be retried.
@@ -215,9 +214,7 @@ impl EdcaBackoffState {
         // SOURCE: complete `libpp.a[lmac.o]::
         // {lmacProcessLongRetryFail,lmacProcessShortRetryFail}`. Both raise
         // AC+0x08 by one while it is below the active maximum.
-        if self.current_exponent < self.policy.contention.maximum_exponent {
-            self.current_exponent += 1;
-        }
+        self.contention.record_failure();
     }
 
     /// Reset contention after a successful frame exchange.
@@ -225,7 +222,7 @@ impl EdcaBackoffState {
         // SOURCE: complete `libpp.a[lmac.o]::
         // {lmacProcessLongFrameSuccess,lmacProcessShortFrameSuccess}`. Both
         // copy AC+0x09 (ECWmin) to AC+0x08 (current exponent).
-        self.current_exponent = self.policy.contention.minimum_exponent;
+        self.contention.reset();
     }
 
     /// Reset a terminal exchange before a new MSDU starts.
@@ -234,7 +231,7 @@ impl EdcaBackoffState {
         // `libpp.a[lmac.o]::
         // {lmacProcessLongRetryFail,lmacProcessShortRetryFail}` restore the
         // active minimum before discarding or completing the exchange.
-        self.current_exponent = self.policy.contention.minimum_exponent;
+        self.contention.reset();
     }
 }
 

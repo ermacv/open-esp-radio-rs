@@ -21,8 +21,10 @@ oer-trace = { path = "../../../trace", optional = true }
 oer-radio-analog = { path = "../../radio/analog" }
 oer-memory = { path = "../../../memory" }
 oer-esp32s31-pac = { path = "../pac" }
-oer-ieee802154-engine = { path = "../../ieee802154/engine" }
+oer-espressif-coex = { path = "../../espressif/coex" }
+oer-espressif-ieee802154-engine = { path = "../../espressif/ieee802154/engine" }
 oer-radio-clock = { path = "../../radio/clock" }
+oer-radio-coex = { path = "../../../radio/coex" }
 
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }
@@ -37,7 +39,6 @@ default-target = "riscv32imafc-unknown-none-elf"
 targets = []
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "hardware"
 platform = "chip"
 chip = "esp32s31"

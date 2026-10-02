@@ -89,15 +89,16 @@ impl TestRoot {
         }
         fs::create_dir_all(path.join("catalog")).unwrap();
         fs::create_dir_all(path.join("scenarios")).unwrap();
+        fs::create_dir_all(path.join("qualification/targets")).unwrap();
         fs::write(path.join("Cargo.toml"), "[workspace]\n").unwrap();
         fs::write(
             path.join("scenarios/wifi-channel.toml"),
-            "schema = 5\nid = \"wifi-channel\"\nrepetitions = 1\n[system]\nkind = \"boot-smoke\"\n",
+            "schema = 5\nid = \"wifi-channel\"\nrole = \"qualification\"\nrepetitions = 1\n[system]\nkind = \"boot-smoke\"\n",
         )
         .unwrap();
         fs::write(
             path.join("scenarios/base-phy.toml"),
-            "schema = 5\nid = \"base-phy\"\nrepetitions = 1\n[system]\nkind = \"boot-smoke\"\n",
+            "schema = 5\nid = \"base-phy\"\nrole = \"investigation\"\nrepetitions = 1\n[system]\nkind = \"boot-smoke\"\n",
         )
         .unwrap();
         Self { path }
@@ -181,10 +182,6 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
     let scenario_catalog = ScenarioCatalog::load(&root.path, Path::new("scenarios")).unwrap();
     let hil_index = HilEvidenceIndex::default();
     let context = EvaluationContext {
-        declarations: &canonical_documents
-            .iter()
-            .map(|d| (d.id.clone(), d.clone()))
-            .collect(),
         root: &root.path,
         evidence: &evidence,
         scenario_catalog: &scenario_catalog,
@@ -219,6 +216,7 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
             vendor_evidence_index: PathBuf::from("vendor.json"),
             hil_catalog: PathBuf::from("scenarios"),
             hil_runs: PathBuf::from("runs"),
+            absent: Vec::new(),
         },
         capabilities: evaluated,
         declarations: canonical
@@ -441,6 +439,13 @@ fn the_evidence_matrix_decides_readiness_of_catalog_capabilities() {
     .unwrap();
     let declared = catalog.capabilities;
 
+    // The requirement names base-phy, which this program makes a
+    // qualification scenario.
+    let base_phy = root.path.join("scenarios/base-phy.toml");
+    let qualified = fs::read_to_string(&base_phy)
+        .unwrap()
+        .replace("role = \"investigation\"", "role = \"qualification\"");
+    fs::write(&base_phy, qualified).unwrap();
     let scenarios = ScenarioCatalog::load(&root.path, Path::new("scenarios")).unwrap();
     let base_root = ("base-suite", "archive", "base_root");
     let wifi_root = ("wifi-suite", "archive", "wifi_root");
@@ -506,7 +511,6 @@ fn the_evidence_matrix_decides_readiness_of_catalog_capabilities() {
     for (name, evidence, hil_entries, clean, ready) in cases {
         let hil = HilEvidenceIndex::synthetic(&hil_entries);
         let context = EvaluationContext {
-            declarations: &declared.iter().map(|d| (d.id.clone(), d.clone())).collect(),
             root: &root.path,
             evidence: &evidence,
             scenario_catalog: &scenarios,
@@ -533,6 +537,7 @@ fn the_evidence_matrix_decides_readiness_of_catalog_capabilities() {
                 vendor_evidence_index: PathBuf::from("vendor.json"),
                 hil_catalog: PathBuf::from("scenarios"),
                 hil_runs: PathBuf::from("runs"),
+                absent: Vec::new(),
             },
             capabilities: result,
             declarations: declared.iter().map(|d| (d.id.clone(), d.clone())).collect(),
@@ -554,7 +559,6 @@ fn the_evidence_matrix_decides_readiness_of_catalog_capabilities() {
     let only_wifi_vendor = native_evidence(&root.path, &[wifi_root]);
     let hil = HilEvidenceIndex::synthetic(&[("base-phy", 1), ("wifi-channel", 1)]);
     let context = EvaluationContext {
-        declarations: &declared.iter().map(|d| (d.id.clone(), d.clone())).collect(),
         root: &root.path,
         evidence: &only_wifi_vendor,
         scenario_catalog: &scenarios,
@@ -581,6 +585,7 @@ fn the_evidence_matrix_decides_readiness_of_catalog_capabilities() {
             vendor_evidence_index: PathBuf::from("vendor.json"),
             hil_catalog: PathBuf::from("scenarios"),
             hil_runs: PathBuf::from("runs"),
+            absent: Vec::new(),
         },
         capabilities: evaluated,
         declarations: declared.iter().map(|d| (d.id.clone(), d.clone())).collect(),
@@ -600,7 +605,6 @@ fn the_evidence_matrix_decides_readiness_of_catalog_capabilities() {
 
     let only_base_vendor = native_evidence(&root.path, &[base_root]);
     let context = EvaluationContext {
-        declarations: &declared.iter().map(|d| (d.id.clone(), d.clone())).collect(),
         root: &root.path,
         evidence: &only_base_vendor,
         scenario_catalog: &scenarios,

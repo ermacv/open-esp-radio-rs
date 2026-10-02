@@ -15,9 +15,9 @@ use crate::{
 
 struct Clock(u64);
 
-impl PhyPllTrackClock for Clock {
-    fn now_micros(&mut self) -> u64 {
-        self.0
+impl oer_time::Clock for Clock {
+    fn now(&self) -> oer_time::Instant {
+        oer_time::Instant::from_micros(self.0)
     }
 }
 
@@ -51,7 +51,7 @@ fn bluetooth_is_client(lease: &SharedRadioLease<'_, ConcurrentPhy>) -> bool {
     lease
         .attachment()
         .client_snapshot()
-        .is_some_and(|snapshot| snapshot.contains(PhyModemClient::Bluetooth))
+        .is_some_and(|snapshot| snapshot.contains(RadioClient::Bluetooth))
 }
 
 #[test]
@@ -63,7 +63,7 @@ fn joining_an_unregistered_domain_changes_nothing() {
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
 
     assert_eq!(
-        join_bluetooth(&mut lease, &task, &mut Clock(0)).map(|(_, acquired)| acquired),
+        join_bluetooth(&mut lease, &task, &Clock(0)).map(|(_, acquired)| acquired),
         Err(BluetoothPhyClientError::Phy(
             ConcurrentPhyError::NotRegistered
         ))
@@ -80,7 +80,7 @@ fn a_stale_registration_is_rejected_before_the_client_set_changes() {
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
 
     assert_eq!(
-        join_bluetooth(&mut lease, &task, &mut Clock(0)).map(|(_, acquired)| acquired),
+        join_bluetooth(&mut lease, &task, &Clock(0)).map(|(_, acquired)| acquired),
         Err(BluetoothPhyClientError::StaleRegistration)
     );
     assert!(!bluetooth_is_client(&lease));
@@ -95,7 +95,7 @@ fn leaving_without_the_btbb_reference_keeps_the_membership_and_the_client() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
     assert_eq!(
-        acquire_client(&mut lease, PhyModemClient::Bluetooth, &mut Clock(0)),
+        acquire_client(&mut lease, RadioClient::Bluetooth, &Clock(0)),
         Ok(ConcurrentAcquire::Settled)
     );
 

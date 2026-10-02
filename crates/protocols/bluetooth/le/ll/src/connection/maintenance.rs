@@ -13,6 +13,7 @@
 //! admission invariant, not an additional Bluetooth requirement.
 //! See the [Link Layer specification](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-62/out/en/low-energy-controller/link-layer-specification.html).
 
+use super::acknowledgement::{HeaderFlags, SequenceNumber};
 use super::{
     LePeripheralConnectionEventCompleted, LePeripheralConnectionEventDelta,
     LePeripheralConnectionEventPeerActivity, LePeripheralConnectionRecurringEventProvisional,
@@ -46,7 +47,7 @@ pub(super) struct State {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum InstantAcknowledgement {
     HeaderRequired,
-    AwaitingPeerSequenceAdvance { indication_sn: bool },
+    AwaitingPeerSequenceAdvance { indication_sn: SequenceNumber },
     Confirmed,
 }
 
@@ -68,12 +69,15 @@ impl State {
     }
 
     fn observe_header(&mut self, header: u8, instant_pending: bool) {
-        self.initial_acknowledged |= header & 0x04 != 0;
+        let flags = HeaderFlags::from_octet(header);
+        // The Central's NESN moves past zero once it received the
+        // Peripheral's first PDU.
+        self.initial_acknowledged |= flags.nesn == SequenceNumber::ONE;
         self.recovery_required = false;
         if !instant_pending {
             return;
         }
-        let sn = header & 0x08 != 0;
+        let sn = flags.sn;
         self.instant_acknowledgement = match self.instant_acknowledgement {
             InstantAcknowledgement::HeaderRequired => {
                 InstantAcknowledgement::AwaitingPeerSequenceAdvance { indication_sn: sn }

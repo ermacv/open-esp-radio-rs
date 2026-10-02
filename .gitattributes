@@ -4,3 +4,14 @@ verification/*/evidence/scenarios/*.json merge=binary linguist-generated=true
 # Observer builds named by their SHA-256: one line of several megabytes that
 # `cargo xtask hil evidence` writes; a diff of one says nothing to review.
 hil/evidence/*/observers/*.json -diff linguist-generated=true
+# Register publication outputs (`cargo registers generate`): never edited by
+# hand. The raw PACs and binding indexes are derived from the SVD, which stays
+# diffable; `git diff --text` shows them when needed.
+crates/hardware/*/pac/raw/src/lib.rs linguist-generated=true -diff
+crates/hardware/*/pac/src/generated.rs linguist-generated=true
+registers/*/published/*.svd linguist-generated=true
+registers/*/published/*.bindings.toml linguist-generated=true -diff
+# Machine-written vendor fact registries: fingerprints that
+# `cargo xtask vendor-provenance` records and oer-symbol-lineage name maps.
+verification/*/facts/provenance.toml linguist-generated=true
+verification/*/facts/names/*.toml linguist-generated=true

@@ -2,7 +2,13 @@ use crate::Result;
 use oer_esp32s31_platform_layout::memory as layout;
 use oer_process::CommandExt;
 use std::{collections::BTreeMap, env, ffi::OsString, fs, path::Path, process::Command};
-pub const TARGET: &str = "riscv32imafc-unknown-none-elf";
+/// The chip these images run on.
+pub const CHIP: &str = "esp32s31";
+
+/// [`CHIP`]'s Rust target, as its `platform/<chip>/chip.toml` declares it.
+pub fn target(root: &Path) -> Result<String> {
+    Ok(oer_chip_profile::Profile::load(root, CHIP)?.rust_target)
+}
 pub const BOOTSTRAP_BIN: &str = "oer-esp32s31-platform-bootstrap";
 /// The partition table every application image is encoded against.
 pub const PARTITION_TABLE: &str = "platform/esp32s31/partitions/applications.csv";
@@ -171,11 +177,17 @@ pub fn audit_application_image(path: &Path) -> Result<()> {
 }
 
 /// Configure the common bootstrap build; callers own process execution and provenance.
-pub fn bootstrap_command(command: &mut Command, root: &Path, runtime: &Path, target_dir: &Path) {
+pub fn bootstrap_command(
+    command: &mut Command,
+    root: &Path,
+    target: &str,
+    runtime: &Path,
+    target_dir: &Path,
+) {
     command
         .args(["build", "--manifest-path"])
         .arg(root.join("platform/esp32s31/Cargo.toml"))
-        .args(["-p", BOOTSTRAP_BIN, "--release", "--target", TARGET])
+        .args(["-p", BOOTSTRAP_BIN, "--release", "--target", target])
         .env("CARGO_TARGET_DIR", target_dir)
         .env("CARGO_INCREMENTAL", "0")
         .env("PSRAM_RUNTIME_BIN", runtime);
@@ -198,7 +210,7 @@ fn encode_image(command: &mut Command, root: &Path, bootstrap: &Path, output: &P
         .args([
             "save-image",
             "--chip",
-            "esp32s31",
+            CHIP,
             "--flash-mode",
             if rom { "dio" } else { "qio" },
             "--flash-freq",

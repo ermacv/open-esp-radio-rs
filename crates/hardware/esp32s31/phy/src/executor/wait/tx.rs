@@ -100,7 +100,6 @@ impl Recorder {
                     maximum_lateness_micros: timing.maximum_lateness_micros.max(lateness),
                 };
             }
-            Event::Unsupported => self.invalid = true,
         }
     }
 

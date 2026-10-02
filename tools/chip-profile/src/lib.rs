@@ -1,8 +1,8 @@
 //! The chips this repository supports, from their tracked profiles.
 //!
 //! Every supported chip has `platform/<id>/chip.toml`, holding only what
-//! differs between chips and cannot be derived from the id: the Rust target,
-//! the boot flow, the chip name `espflash` uses, the silicon revisions and
+//! differs between chips and cannot be derived from the id: the chip family,
+//! the Rust target, the boot flow, the chip name `espflash` uses, the silicon revisions and
 //! the chip's properties (radio bands, Bluetooth modes, cores), which
 //! firmware sees as compile-time configuration through `oer-chip-cfg`.
 //! Everything else follows the id by convention (`verification/<id>`,
@@ -11,7 +11,10 @@
 //! Host tools resolve a chip through [`Profile::load`] instead of matching
 //! chip names, so an unknown chip is refused with the supported ones.
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -40,6 +43,9 @@ pub struct Profile {
     schema: u32,
     /// The chip id: lowercase, as in paths, package names and evidence.
     pub id: String,
+    /// The family whose shared code the chip uses: a `family` package
+    /// declaring this id builds for, and may be used by, every chip of it.
+    pub family: String,
     /// The Rust target triple of its firmware.
     pub rust_target: String,
     pub boot: Boot,
@@ -95,6 +101,14 @@ impl Profile {
         if profile.id != id {
             return Err(format!("{} names chip `{}`", path.display(), profile.id).into());
         }
+        if !valid_identifier(&profile.family) {
+            return Err(format!(
+                "{} names invalid family `{}`",
+                path.display(),
+                profile.family
+            )
+            .into());
+        }
         Ok(profile)
     }
 
@@ -148,6 +162,23 @@ impl Profile {
         }
         packages
     }
+}
+
+/// The family of every supported chip, keyed by chip id.
+pub fn families(root: &Path) -> Result<BTreeMap<String, String>> {
+    Ok(Profile::all(root)?
+        .into_iter()
+        .map(|profile| (profile.id, profile.family))
+        .collect())
+}
+
+/// A chip or family identifier: a lowercase ASCII letter, then lowercase
+/// letters, digits or hyphens.
+pub fn valid_identifier(id: &str) -> bool {
+    id.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
+        && id
+            .bytes()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
 }
 
 /// Ids of the chips with a profile, sorted.
@@ -226,6 +257,8 @@ mod tests {
         let root = repository();
         let chips = Profile::all(&root).unwrap();
         assert!(chips.iter().any(|chip| chip.id == "esp32s31"));
+        assert!(chips.iter().all(|chip| chip.family == "espressif"));
+        assert_eq!(families(&root).unwrap().len(), chips.len());
         let esp32c5 = Profile::load(&root, "esp32c5").unwrap();
         assert_eq!(esp32c5.boot, Boot::EspIdfBootloader);
         let flash = esp32c5.flash.unwrap();
@@ -268,5 +301,30 @@ mod tests {
         )
         .unwrap();
         assert!(Profile::load(root.path(), "esp32x9").is_err());
+    }
+
+    #[test]
+    fn a_profile_must_name_a_valid_family() {
+        let root = tempfile::tempdir().unwrap();
+        let platform = root.path().join(PLATFORM).join("esp32x9");
+        std::fs::create_dir_all(&platform).unwrap();
+        let profile = |family: &str| {
+            format!(
+                "schema = 1\nid = \"esp32x9\"\nfamily = \"{family}\"\n\
+                 rust-target = \"t\"\nboot = \"staged\"\nespflash-chip = \"x\"\n\
+                 revisions = []\n[properties]\nwifi-bands = []\nbluetooth = []\n\
+                 ieee802154 = false\ncores = 1\n"
+            )
+        };
+        std::fs::write(platform.join(PROFILE), profile("espressif")).unwrap();
+        assert_eq!(
+            Profile::load(root.path(), "esp32x9").unwrap().family,
+            "espressif"
+        );
+        std::fs::write(platform.join(PROFILE), profile("Espressif")).unwrap();
+        let error = Profile::load(root.path(), "esp32x9")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("invalid family"), "{error}");
     }
 }

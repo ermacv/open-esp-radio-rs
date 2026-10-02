@@ -21,6 +21,7 @@ pub mod cold_start;
 pub mod cooperative_hardware;
 pub mod datapath;
 pub mod esp_now;
+pub mod lower_mac;
 #[cfg(target_arch = "riscv32")]
 pub mod mac_start;
 pub mod monitor_injection;

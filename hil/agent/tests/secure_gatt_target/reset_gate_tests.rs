@@ -14,6 +14,7 @@ use gatt_application::security::{
 };
 use oer_bluetooth_controller::{LeController, LeControllerConfig};
 use oer_bluetooth_hci::*;
+use oer_bluetooth_hci_transport::*;
 use oer_hil_agent::bluetooth_gatt::secure::reset_gate::GatedController;
 use oer_hil_protocol::{bluetooth, bluetooth::BluetoothGattResetReadGate as Phase};
 use trouble_host::prelude::*;

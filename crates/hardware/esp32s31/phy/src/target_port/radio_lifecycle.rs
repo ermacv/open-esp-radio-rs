@@ -22,17 +22,22 @@ const fn preclose_i2c_failure(error: PhyTargetPortError) -> PhyRfCloseTemperatur
     PhyRfCloseTemperatureFailure::HardwareAmbiguous(error)
 }
 
-pub(super) async fn observe_temperature_with_hal<P, D: PhyAsyncDelay>(
+pub(super) async fn observe_temperature_with_hal<P, D: PhyShortDelay>(
+    timer: &impl oer_time::Timer,
     platform: &mut P,
     registers: &mut impl SharedPhyAccess,
     state: &mut PhyState,
 ) -> Result<(), PhyRfCloseTemperatureFailure> {
-    let started = D::now_micros();
+    let started = Some(timer.now().as_micros());
     let mut transition = PhyTemperatureTransition::new();
     for _ in 0..RF_OPERATION_LIMIT {
         match transition.action() {
             PhyTemperatureAction::Complete(outcome) => {
-                state.apply_observed_temperature_outcome(outcome, started, D::now_micros());
+                state.apply_observed_temperature_outcome(
+                    outcome,
+                    started,
+                    Some(timer.now().as_micros()),
+                );
                 return Ok(());
             }
             PhyTemperatureAction::Failed(_) => {
@@ -44,10 +49,10 @@ pub(super) async fn observe_temperature_with_hal<P, D: PhyAsyncDelay>(
                 let binding = PhyTemperatureExternalBinding::lower(action).map_err(|_| {
                     PhyRfCloseTemperatureFailure::Recoverable(PhyTargetPortError::UnexpectedBinding)
                 })?;
-                let completion =
-                    TargetCompleter::<D>::complete_temperature(binding, platform, registers)
-                        .await
-                        .map_err(preclose_i2c_failure)?;
+                let completion = TargetCompleter::<D, _>::new(timer)
+                    .complete_temperature(binding, platform, registers)
+                    .await
+                    .map_err(preclose_i2c_failure)?;
                 transition.advance(completion).map_err(|_| {
                     PhyRfCloseTemperatureFailure::Recoverable(PhyTargetPortError::UnexpectedBinding)
                 })?;
@@ -63,7 +68,7 @@ pub(super) async fn observe_temperature_with_hal<P, D: PhyAsyncDelay>(
 ///
 /// The first operation crosses the point of no recovery. Any returned error
 /// means the powered hardware epoch is ambiguous and must remain poisoned.
-pub(super) fn execute_rf_close_with_hal<D: PhyAsyncDelay>(
+pub(super) fn execute_rf_close_with_hal<D: PhyShortDelay>(
     registers: &mut impl SharedPhyAccess,
 ) -> Result<(), PhyTargetPortError> {
     drive_rf_close(|operation| {
@@ -76,7 +81,7 @@ pub(super) fn execute_rf_close_with_hal<D: PhyAsyncDelay>(
                 oer_esp32s31_hal::phy::frequency::set_hardware_control(registers, false);
             }
             PhyRfCloseOperation::SettleOneMicrosecond => {
-                if !D::ShortDelay::settle_micros(1) {
+                if !D::settle_micros(1) {
                     return Err(PhyTargetPortError::HardwareCapabilityUnavailable);
                 }
             }
@@ -107,7 +112,8 @@ pub(super) fn execute_rf_close_with_hal<D: PhyAsyncDelay>(
 }
 
 #[cfg(target_arch = "riscv32")]
-async fn drive_wake_i2c_configuration<D: PhyAsyncDelay>(
+async fn drive_wake_i2c_configuration<D: PhyShortDelay>(
+    timer: &impl oer_time::Timer,
     registers: &mut impl oer_esp32s31_hal::owner::SharedPhyAccess,
     operation: oer_esp32s31_hal::phy::i2c::PhyI2cConfigurationOperation,
 ) -> Result<(), PhyTargetPortError> {
@@ -123,13 +129,13 @@ async fn drive_wake_i2c_configuration<D: PhyAsyncDelay>(
                 match oer_esp32s31_hal::phy::i2c::start_configuration(&mut transaction, registers) {
                     Ok(()) => {}
                     Err(PhyI2cConfigurationError::BusyAtStart) => {
-                        D::after_micros(Kind::BusBusy, 1).await;
+                        delay::<D, _>(timer, Kind::BusBusy, 1).await;
                     }
                     Err(_) => return Err(PhyTargetPortError::UnexpectedBinding),
                 }
             }
             PhyI2cConfigurationAction::AwaitCompletionEdge => {
-                D::after_micros(Kind::Completion, 1).await;
+                delay::<D, _>(timer, Kind::Completion, 1).await;
                 match oer_esp32s31_hal::phy::i2c::observe_configuration(&mut transaction, registers)
                 {
                     Ok(PhyI2cConfigurationObservation::StillPending)
@@ -166,13 +172,13 @@ pub(crate) fn reset_wake_i2c_master(
 }
 
 #[cfg(target_arch = "riscv32")]
-fn force_wake_txrx<D: PhyAsyncDelay>(
+fn force_wake_txrx<D: PhyShortDelay>(
     registers: &mut impl oer_esp32s31_hal::owner::SharedPhyAccess,
     enabled: bool,
 ) -> Result<(), PhyTargetPortError> {
     for phase in 0..2 {
         oer_esp32s31_hal::phy::pbus::configure_force_txrx(registers, enabled, phase);
-        if !D::ShortDelay::settle_micros(1) {
+        if !D::settle_micros(1) {
             return Err(PhyTargetPortError::HardwareCapabilityUnavailable);
         }
     }
@@ -226,7 +232,7 @@ fn open_wake_i2c_power(
 }
 
 #[cfg(target_arch = "riscv32")]
-fn clear_wake_pbus<D: PhyAsyncDelay>(
+fn clear_wake_pbus<D: PhyShortDelay>(
     registers: &mut impl oer_esp32s31_hal::owner::SharedPhyContext,
 ) -> Result<(), PhyTargetPortError> {
     use crate::analog::pbus::{
@@ -250,7 +256,7 @@ fn clear_wake_pbus<D: PhyAsyncDelay>(
                 PhyPbusClearCompletion::WorkModeConfigured { settle_required }
             }
             PhyPbusClearAction::DelayMicros(micros) => {
-                if !D::ShortDelay::settle_micros(micros) {
+                if !D::settle_micros(micros) {
                     return Err(PhyTargetPortError::HardwareCapabilityUnavailable);
                 }
                 PhyPbusClearCompletion::DelayElapsed
@@ -347,7 +353,8 @@ fn restore_wake_pbus_boundaries(
 /// completion is published only after frequency control, BBPLL, force-TX/RX
 /// and baseband mode have all returned to their operational values.
 #[cfg(target_arch = "riscv32")]
-pub(super) async fn execute_rf_wake_with_hal<D: PhyAsyncDelay>(
+pub(super) async fn execute_rf_wake_with_hal<D: PhyShortDelay>(
+    timer: &impl oer_time::Timer,
     registers: &mut impl PhyInitializationAccess,
     state: &PhyState,
 ) -> Result<(), PhyTargetPortError> {
@@ -390,6 +397,7 @@ pub(super) async fn execute_rf_wake_with_hal<D: PhyAsyncDelay>(
                 }
                 PhyRfWakeOperation::ConfigureBiasRegisters => {
                     drive_wake_i2c_configuration::<D>(
+                        timer,
                         registers,
                         PhyI2cConfigurationOperation::BiasRegisters,
                     )
@@ -411,6 +419,7 @@ pub(super) async fn execute_rf_wake_with_hal<D: PhyAsyncDelay>(
                 }
                 PhyRfWakeOperation::ConfigureAdcRate => {
                     drive_wake_i2c_configuration::<D>(
+                        timer,
                         registers,
                         PhyI2cConfigurationOperation::ConfigureAdcRate(PhyAdcRate::High),
                     )
@@ -455,7 +464,7 @@ pub(super) async fn execute_rf_wake_with_hal<D: PhyAsyncDelay>(
                         registers,
                         frequency_index,
                     );
-                    if !D::ShortDelay::settle_micros(1) {
+                    if !D::settle_micros(1) {
                         return Err(PhyTargetPortError::HardwareCapabilityUnavailable);
                     }
                     oer_esp32s31_hal::phy::frequency::clear_channel_switch(registers);

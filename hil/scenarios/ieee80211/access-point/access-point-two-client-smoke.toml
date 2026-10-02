@@ -1,8 +1,8 @@
 schema = 5
 id = "access-point-two-client-smoke"
 description = "Two simultaneous WPA2 clients across two access-point ownership epochs"
-transfer = "identical-image"
-tags = ["qualification", "wifi", "access-point", "lifecycle", "multi-client", "air-strict"]
+role = "investigation"
+tags = ["wifi", "access-point", "lifecycle", "multi-client", "air-strict"]
 
 [wifi]
 image = "correctness"

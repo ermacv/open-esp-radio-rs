@@ -5,15 +5,14 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Product-level ESP32-S31 shared radio: the arbiter, the shared PHY domain and its periodic tracking for Embassy"
+description = "Product-level ESP32-S31 shared radio: the arbiter, the shared PHY domain and its periodic tracking over the oer-time contract"
 
 [dependencies]
 embassy-sync = "0.8.0"
-embassy-time = "0.5.1"
 oer-esp32s31-coex = { path = "../../../hardware/esp32s31/driver/coex" }
 oer-esp32s31-hal = { path = "../../../hardware/esp32s31/hal" }
 oer-esp32s31-phy = { path = "../../../hardware/esp32s31/phy" }
-oer-esp32s31-phy-runtime = { path = "../phy" }
+oer-time = { path = "../../../time" }
 
 [lints]
 workspace = true
@@ -24,7 +23,6 @@ default-target = "riscv32imafc-unknown-none-elf"
 targets = []
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "runtime"
 platform = "chip"
 chip = "esp32s31"

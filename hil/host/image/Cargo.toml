@@ -35,7 +35,6 @@ oer-hil-source-snapshot = { path = "../source-snapshot", features = ["test-suppo
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "hil"
 platform = "host"
 hil = "operation"

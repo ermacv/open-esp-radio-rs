@@ -1,254 +1,220 @@
-//! Push this checkout's commits to `main` only after they pass
-//! `check changed` on top of the `main` they land on.
+//! Push this checkout's commits to `main` only after the gate passed on
+//! exactly the tree that is pushed.
 //!
-//! Hand-written `cargo xtask check changed | tail && git push` chains push
-//! even when the check fails, because the pipeline's status is `tail`'s, and
-//! they check a tree that `main` may already have moved past. This command
-//! rebases onto `origin/main`, runs the check in a fresh `cargo xtask` (the
-//! rebase may have changed xtask itself), rebases and checks again while
-//! `main` keeps moving, and pushes only a revision that passed. When the
-//! pushed commits change the stand's own tooling it reinstalls `oer-stand`.
-use std::{
-    fs::{self, File, OpenOptions, TryLockError},
-    io::{Read, Seek, SeekFrom, Write},
-    path::{Path, PathBuf},
-    process::Command,
-};
+//! 1. The tree must be `HEAD`: an uncommitted change to a tracked file, or
+//!    an untracked Rust source or Cargo manifest or lock that a build would
+//!    read, refuses the push, since the gate would check what is not pushed.
+//! 2. The gate ([`crate::gate`]) checks the packages `HEAD`'s commits
+//!    change, and their dependents, against the merge base with
+//!    `origin/main`.
+//! 3. Fetch and rebase onto `origin/main`. When the incoming commits affect
+//!    no package the pushed commits affect, push at once; otherwise rerun
+//!    the gate for the packages both affect. A push that `main` outran in
+//!    the meantime is rejected as non-fast-forward and goes round again.
+//!
+//! No lock, queue or nested `cargo xtask` is involved: Git's
+//! fast-forward check is the only serialization `main` needs.
 
-use crate::{Context, Result, process};
+use std::collections::BTreeSet;
 
-/// Rechecks inside the queue before a push gives up; `main` moving there
-/// means someone pushes without the queue.
-const ATTEMPTS: usize = 3;
+use oer_process as process;
 
-/// Paths whose change makes the installed `oer-stand` stale.
-const STAND_TOOLING: &[&str] = &["tools/xtask/", "tools/process/", "hil/host/", "hil/schema/"];
+use crate::{Context, Result, gate};
 
-fn git(ctx: &Context) -> Command {
-    ctx.command("git")
+/// Rounds before giving up while `main` keeps moving under the push.
+const ROUNDS: usize = 5;
+
+/// The base the push lands on.
+const MAIN: &str = "origin/main";
+
+/// Files whose untracked presence changes what a build of the tree reads.
+pub fn build_input(path: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    name.ends_with(".rs") || name == "Cargo.toml" || name == "Cargo.lock"
 }
 
-fn text(command: &mut Command) -> Result<String> {
-    Ok(String::from_utf8(process::capture(command)?.stdout)?
-        .trim()
-        .to_owned())
-}
-
-/// Tracked files with uncommitted changes: the check would see them, the
-/// push would not carry them.
-fn uncommitted(ctx: &Context) -> Result<Vec<String>> {
-    Ok(
-        text(git(ctx).args(["status", "--porcelain", "--untracked-files=no"]))?
-            .lines()
-            .map(|line| line.get(3..).unwrap_or(line).to_owned())
-            .collect(),
-    )
-}
-
-fn origin_main(ctx: &Context) -> Result<String> {
-    process::capture(git(ctx).args(["fetch", "--quiet", "origin", "main"]))?;
-    text(git(ctx).args(["rev-parse", "origin/main"]))
-}
-
-/// Whether the pushed range changes the stand's own tooling.
-pub fn touches_stand_tooling(paths: &[&str]) -> bool {
-    paths
+/// Why the working tree is not `HEAD`, if it is not.
+pub fn unpushable(tracked: &[String], untracked: &[String]) -> Option<String> {
+    if !tracked.is_empty() {
+        return Some(format!(
+            "uncommitted changes would be checked but not pushed; commit or stash them: {}",
+            tracked.join(", ")
+        ));
+    }
+    let inputs: Vec<&str> = untracked
         .iter()
-        .any(|path| STAND_TOOLING.iter().any(|prefix| path.starts_with(prefix)))
-}
-
-/// Directory of the machine-wide push queue; overrides the user's data
-/// directory.
-pub const QUEUE_ENV: &str = "OER_PUSH_QUEUE";
-
-fn queue_path() -> Result<PathBuf> {
-    let root = match std::env::var_os(QUEUE_ENV).filter(|value| !value.is_empty()) {
-        Some(root) => PathBuf::from(root),
-        None => std::env::var_os("XDG_DATA_HOME")
-            .filter(|value| !value.is_empty())
-            .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share"))
-            })
-            .ok_or("HOME is required to locate the push queue")?
-            .join("open-esp-radio"),
-    };
-    fs::create_dir_all(&root)?;
-    Ok(root.join("push.lock"))
-}
-
-/// Exclusive right to move `main`, held from the recheck to the push. Every
-/// session on this machine pushes through it, so `main` cannot move under a
-/// check made inside it. The kernel releases it when the process exits.
-pub struct PushQueue {
-    file: File,
-}
-
-impl PushQueue {
-    /// Waits for the queue and records who holds it for the next waiter.
-    pub fn enter(path: &Path, holder: &str) -> Result<Self> {
-        let mut file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(path)?;
-        match file.try_lock() {
-            Ok(()) => {}
-            Err(TryLockError::WouldBlock) => {
-                let mut current = String::new();
-                file.read_to_string(&mut current)?;
-                println!(
-                    "push: waiting for the push queue; held by {}",
-                    current.trim()
-                );
-                file.lock()?;
-            }
-            Err(TryLockError::Error(error)) => return Err(error.into()),
-        }
-        file.set_len(0)?;
-        file.seek(SeekFrom::Start(0))?;
-        writeln!(file, "{holder}")?;
-        file.flush()?;
-        Ok(Self { file })
-    }
-}
-
-impl Drop for PushQueue {
-    fn drop(&mut self) {
-        let _ = self.file.set_len(0);
-        let _ = self.file.unlock();
-    }
-}
-
-/// A revision that passed `check changed` on top of `base`.
-struct Checked {
-    base: String,
-    head: String,
-}
-
-/// Rebase onto the current `origin/main` and check the result; `None` when
-/// nothing is left to push.
-fn rebase_and_check(ctx: &Context, branch: &str) -> Result<Option<Checked>> {
-    let base = origin_main(ctx)?;
-    if let Err(error) = process::capture(git(ctx).args(["rebase", "--quiet", "origin/main"])) {
-        let _ = process::capture(git(ctx).args(["rebase", "--abort"]));
-        return Err(
-            format!("push: rebase onto origin/main failed; resolve it by hand: {error}").into(),
-        );
-    }
-    let head = text(git(ctx).args(["rev-parse", "HEAD"]))?;
-    if head == base {
-        println!("push: nothing to push; {branch} is origin/main");
-        return Ok(None);
-    }
-    println!(
-        "push: checking {} on origin/main {}",
-        &head[..12],
-        &base[..12]
-    );
-    process::run(ctx.cargo().args(["xtask", "check", "changed"]))
-        .map_err(|error| format!("push: check changed failed; nothing pushed: {error}"))?;
-    Ok(Some(Checked { base, head }))
-}
-
-/// Rebase, check, push; see the module documentation.
-pub fn run(ctx: &Context) -> Result<()> {
-    let dirty = uncommitted(ctx)?;
-    if !dirty.is_empty() {
-        return Err(format!(
-            "push: uncommitted changes would be checked but not pushed; commit or stash them first: {}",
-            dirty.join(", ")
+        .map(String::as_str)
+        .filter(|path| build_input(path))
+        .collect();
+    (!inputs.is_empty()).then(|| {
+        format!(
+            "untracked build inputs would be checked but not pushed; add, ignore or remove them: {}",
+            inputs.join(", ")
         )
-        .into());
-    }
-    let branch = text(git(ctx).args(["rev-parse", "--abbrev-ref", "HEAD"]))?;
-    // The first check runs outside the queue, so other sessions keep pushing
-    // meanwhile; most pushes then find `main` where the check left it.
-    let Some(mut checked) = rebase_and_check(ctx, &branch)? else {
-        return Ok(());
-    };
-    let queue = PushQueue::enter(
-        &queue_path()?,
-        &format!(
-            "{} ({branch} {}), pid {}",
-            ctx.root.display(),
-            &checked.head[..12],
-            std::process::id()
-        ),
+    })
+}
+
+/// The packages two changes both affect.
+pub fn overlap(ours: &BTreeSet<gate::Key>, theirs: &BTreeSet<gate::Key>) -> BTreeSet<gate::Key> {
+    ours.intersection(theirs).cloned().collect()
+}
+
+fn git(ctx: &Context, arguments: &[&str]) -> Result<String> {
+    Ok(gate::git(ctx, arguments)?.trim().to_owned())
+}
+
+fn fetch(ctx: &Context) -> Result<String> {
+    process::capture(
+        ctx.command("git")
+            .args(["fetch", "--quiet", "origin", "main"]),
     )?;
-    for attempt in 1..=ATTEMPTS {
-        let base = origin_main(ctx)?;
-        if base == checked.base {
-            match process::capture(git(ctx).args(["push", "--quiet", "origin", "HEAD:main"])) {
-                Ok(_) => {
-                    println!("push: pushed {} to main", &checked.head[..12]);
-                    // `main` is final; the next push need not wait for the
-                    // reinstall.
-                    drop(queue);
-                    let changed =
-                        text(git(ctx).args(["diff", "--name-only", &base, &checked.head]))?;
-                    if touches_stand_tooling(&changed.lines().collect::<Vec<_>>()) {
-                        println!("push: the stand tooling changed; reinstalling oer-stand");
-                        process::run(ctx.cargo().args(["xtask", "stand-install"]))?;
-                    }
-                    return Ok(());
-                }
-                Err(error) => println!("push: rejected ({error})"),
-            }
-        } else {
-            println!(
-                "push: origin/main moved to {} during the check; checking again inside the push queue ({attempt}/{ATTEMPTS})",
-                &base[..12]
-            );
-        }
-        match rebase_and_check(ctx, &branch)? {
-            Some(next) => checked = next,
-            None => return Ok(()),
-        }
+    git(ctx, &["rev-parse", MAIN])
+}
+
+fn changed(ctx: &Context, from: &str, to: &str) -> Result<Vec<String>> {
+    Ok(git(ctx, &["diff", "--name-only", from, to])?
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(str::to_owned)
+        .collect())
+}
+
+/// Gate, rebase, push; see the module documentation.
+pub fn run(ctx: &Context) -> Result<()> {
+    let tracked: Vec<String> = git(ctx, &["status", "--porcelain", "--untracked-files=no"])?
+        .lines()
+        .map(|line| line.get(3..).unwrap_or(line).to_owned())
+        .collect();
+    let untracked: Vec<String> = git(ctx, &["ls-files", "--others", "--exclude-standard"])?
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    if let Some(reason) = unpushable(&tracked, &untracked) {
+        return Err(format!("push: {reason}").into());
     }
-    Err(format!(
-        "push: origin/main moved {ATTEMPTS} times while this push held the queue; something pushes around `cargo xtask push`"
-    )
-    .into())
+    let mut main = fetch(ctx)?;
+    let mut base = git(ctx, &["merge-base", "HEAD", &main])?;
+    let head = git(ctx, &["rev-parse", "HEAD"])?;
+    if head == base {
+        println!("push: nothing to push; HEAD is in {MAIN}");
+        return Ok(());
+    }
+    let ours = changed(ctx, &base, "HEAD")?;
+    let tree = gate::Tree::load(&ctx.root)?;
+    let mut selection = gate::select(&tree, &ours);
+    gate::select_locks(ctx, &tree, &ours, &base, None, &mut selection)?;
+    let affected = gate::affected(ctx, &selection)?;
+    println!(
+        "push: gating {} on {}: {} files, {} package(s) with dependents",
+        &head[..12],
+        &base[..12],
+        ours.len(),
+        affected.len()
+    );
+    gate::run(ctx, &tree, &selection, &affected)
+        .map_err(|error| format!("push: the gate failed; nothing pushed: {error}"))?;
+    for round in 1..=ROUNDS {
+        if base != main {
+            let theirs = changed(ctx, &base, &main)?;
+            if let Err(error) =
+                process::capture(ctx.command("git").args(["rebase", "--quiet", MAIN]))
+            {
+                let _ = process::capture(ctx.command("git").args(["rebase", "--abort"]));
+                return Err(format!(
+                    "push: rebase onto {MAIN} failed; resolve it by hand: {error}"
+                )
+                .into());
+            }
+            let rebased = gate::Tree::load(&ctx.root)?;
+            let mut incoming = gate::select(&rebased, &theirs);
+            gate::select_locks(ctx, &rebased, &theirs, &base, Some(&main), &mut incoming)?;
+            let incoming = gate::affected(ctx, &incoming)?;
+            let both = overlap(&affected, &incoming);
+            if both.is_empty() {
+                println!(
+                    "push: {MAIN} moved to {}; its {} changed files affect none of these packages",
+                    &main[..12],
+                    theirs.len()
+                );
+            } else {
+                println!(
+                    "push: {MAIN} moved to {}; regating the {} package(s) both changes affect",
+                    &main[..12],
+                    both.len()
+                );
+                let mut files = ours.clone();
+                files.extend(theirs);
+                let mut selection = gate::select(&rebased, &files);
+                gate::select_locks(ctx, &rebased, &files, &base, None, &mut selection)?;
+                selection.packages.retain(|key| both.contains(key));
+                gate::run(ctx, &rebased, &selection, &both).map_err(|error| {
+                    format!("push: the gate failed on {MAIN}; nothing pushed: {error}")
+                })?;
+            }
+            base = main.clone();
+        }
+        let head = git(ctx, &["rev-parse", "HEAD"])?;
+        match process::capture(
+            ctx.command("git")
+                .args(["push", "--quiet", "origin", "HEAD:main"]),
+        ) {
+            Ok(_) => {
+                println!("push: pushed {} to main", &head[..12]);
+                crate::ci_status::print(ctx, "push");
+                return Ok(());
+            }
+            Err(error) => {
+                println!(
+                    "push: rejected ({round}/{ROUNDS}): {}",
+                    first_line(&error.to_string())
+                );
+            }
+        }
+        main = fetch(ctx)?;
+    }
+    Err(format!("push: {MAIN} moved {ROUNDS} times during this push; run it again").into())
+}
+
+fn first_line(text: &str) -> &str {
+    text.lines()
+        .find(|line| line.contains("rejected") || line.contains("error"))
+        .unwrap_or_else(|| text.lines().next().unwrap_or(text))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn the_queue_admits_one_holder_and_names_it_to_the_next() {
-        use std::{sync::mpsc, thread, time::Duration};
-
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("push.lock");
-        let first = PushQueue::enter(&path, "first holder").unwrap();
-        assert_eq!(fs::read_to_string(&path).unwrap().trim(), "first holder");
-        let (entered, admitted) = mpsc::channel();
-        let waiter_path = path.clone();
-        let waiter = thread::spawn(move || {
-            let queue = PushQueue::enter(&waiter_path, "second holder").unwrap();
-            entered.send(()).unwrap();
-            drop(queue);
-        });
-        assert!(admitted.recv_timeout(Duration::from_millis(300)).is_err());
-        drop(first);
-        admitted.recv_timeout(Duration::from_secs(10)).unwrap();
-        waiter.join().unwrap();
-        assert_eq!(fs::read_to_string(&path).unwrap(), "");
+    fn strings(items: &[&str]) -> Vec<String> {
+        items.iter().map(|item| (*item).to_owned()).collect()
     }
 
     #[test]
-    fn only_the_stand_tooling_reinstalls_the_stand() {
-        assert!(touches_stand_tooling(&["tools/xtask/src/hil.rs"]));
-        assert!(touches_stand_tooling(&[
-            "docs/x.md",
-            "hil/host/runner/src/main.rs"
-        ]));
-        assert!(!touches_stand_tooling(&[
-            "crates/trace/src/lib.rs",
-            "hil/scenarios/a.toml"
-        ]));
+    fn only_the_committed_tree_is_pushed() {
+        assert_eq!(unpushable(&[], &strings(&["notes.txt", "docs/x.md"])), None);
+        let reason = unpushable(&strings(&["crates/a/src/lib.rs"]), &[]).unwrap();
+        assert!(reason.contains("uncommitted"), "{reason}");
+        let reason = unpushable(
+            &[],
+            &strings(&["crates/a/src/new.rs", "notes.txt", "crates/b/Cargo.toml"]),
+        )
+        .unwrap();
+        assert!(
+            reason.contains("crates/a/src/new.rs, crates/b/Cargo.toml"),
+            "{reason}"
+        );
+        assert!(!reason.contains("notes.txt"), "{reason}");
+        assert!(build_input("Cargo.lock") && !build_input("README.md"));
+    }
+
+    #[test]
+    fn disjoint_changes_need_no_second_gate() {
+        let key = |name: &str| (String::from("Cargo.toml"), name.to_owned());
+        let ours = BTreeSet::from([key("a"), key("b")]);
+        assert!(overlap(&ours, &BTreeSet::from([key("c")])).is_empty());
+        assert_eq!(
+            overlap(&ours, &BTreeSet::from([key("b"), key("c")])),
+            BTreeSet::from([key("b")])
+        );
     }
 }

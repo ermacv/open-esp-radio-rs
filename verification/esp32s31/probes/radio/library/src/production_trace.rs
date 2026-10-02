@@ -6,29 +6,62 @@
 use crate::calibration_projection::{
     CALIBRATION_WORDS, PARENT_WORDS, snapshot_calibration, snapshot_committed, snapshot_parent,
 };
-use core::future::{Future, ready};
+use core::{
+    cell::Cell,
+    future::{Future, ready},
+};
 
-struct ProductionTraceDelay;
+use oer_time::{Clock, Instant, Timer};
 
-impl oer_esp32s31_phy::target_executor::PhyAsyncDelay for ProductionTraceDelay {
-    /// Register-preserving requested-time delivery, as for RFPLL: the ROM
-    /// short delay relies on the ROM routine's actual register usage, which
-    /// an ordinary call boundary does not preserve.
-    type ShortDelay = RfpllTraceDelay;
+/// Time for the compiled-production comparison: each wait hands its
+/// requested interval to the harness `deliver` edge at once, and time then
+/// stands at the deadline. Hardware time itself is outside this software
+/// comparison.
+struct TraceTimer {
+    now: Cell<Instant>,
+    deliver: fn(u32),
+}
 
-    fn after_micros(
-        _kind: oer_esp32s31_phy::executor::wait::Kind,
-        micros: u64,
-    ) -> impl Future<Output = ()> {
-        super::ets_delay_us(micros as u32);
+impl TraceTimer {
+    /// Waits delivered through the plain harness delay edge.
+    fn production() -> Self {
+        Self {
+            now: Cell::new(Instant::EPOCH),
+            deliver: |micros| super::ets_delay_us(micros),
+        }
+    }
+
+    /// Waits delivered through the register-preserving harness delay, as for
+    /// RFPLL.
+    fn register_preserving() -> Self {
+        Self {
+            now: Cell::new(Instant::EPOCH),
+            deliver: |micros| super::open_phy_trace_preserving_delay(micros),
+        }
+    }
+}
+
+impl Clock for TraceTimer {
+    fn now(&self) -> Instant {
+        self.now.get()
+    }
+}
+
+impl Timer for TraceTimer {
+    fn wait_until(&self, deadline: Instant) -> impl Future<Output = ()> {
+        if let Some(interval) = deadline.checked_duration_since(self.now.get()) {
+            (self.deliver)(u32::try_from(interval.as_micros()).unwrap_or(u32::MAX));
+            self.now.set(deadline);
+        }
         ready(())
     }
 }
 
 /// RFPLL's explicit requested-time environment, with captured register-preserving
-/// delivery. Hardware time itself is outside this software comparison.
+/// delivery: the ROM short delay relies on the ROM routine's actual register
+/// usage, which an ordinary call boundary does not preserve.
 struct RfpllTraceDelay;
-impl oer_esp32s31_phy::target_executor::PhyShortDelay for RfpllTraceDelay {
+impl oer_esp32s31_phy::PhyShortDelay for RfpllTraceDelay {
     const MAX_MICROS: u32 = oer_esp32s31_phy::RomShortDelay::MAX_MICROS;
     fn settle_micros(micros: u32) -> bool {
         if micros == 0 || micros > Self::MAX_MICROS {
@@ -36,16 +69,6 @@ impl oer_esp32s31_phy::target_executor::PhyShortDelay for RfpllTraceDelay {
         }
         super::open_phy_trace_preserving_delay(micros);
         true
-    }
-}
-impl oer_esp32s31_phy::target_executor::PhyAsyncDelay for RfpllTraceDelay {
-    type ShortDelay = Self;
-    fn after_micros(
-        _kind: oer_esp32s31_phy::executor::wait::Kind,
-        micros: u64,
-    ) -> impl Future<Output = ()> {
-        super::open_phy_trace_preserving_delay(micros as u32);
-        ready(())
     }
 }
 
@@ -77,6 +100,7 @@ oer_probe_macros::probe! {
         match embassy_futures::block_on(oer_esp32s31_phy::target_port::rfpll::program::<
             RfpllTraceDelay,
         >(
+            &TraceTimer::register_preserving(),
             &mut phy,
             oer_esp32s31_phy::analog::rfpll::RfpllFrequencyRequest {
                 crystal_selector,
@@ -156,8 +180,8 @@ oer_probe_macros::probe! {
         let mut lease = acquire(&mut radio);
         let mut phy = lease.phy_hal();
         match embassy_futures::block_on(oer_esp32s31_phy::target_port::temperature::sample::<
-            ProductionTraceDelay,
-        >(&mut phy))
+            RfpllTraceDelay,
+        >(&TraceTimer::production(), &mut phy))
         {
             Ok(Ok(outcome)) => {
                 output[0] = u16::from(outcome.sensor_index);
@@ -259,10 +283,11 @@ fn trace_channel(
     state.set_dot11p_configuration(dot11p_enabled, dot11p_configuration);
     let mut observer = oer_esp32s31_phy::target_port::NoopPhyTargetObserver;
     embassy_futures::block_on(oer_esp32s31_phy::validation::select_channel::<
-        ProductionTraceDelay,
+        RfpllTraceDelay,
         _,
         _,
     >(
+        &TraceTimer::production(),
         &mut state,
         channel_or_frequency as u16,
         cbw as u8,
@@ -388,7 +413,7 @@ oer_probe_macros::probe! {
             &mut child,
             &mut phy,
             &core::cell::RefCell::new(&mut observer),
-            || None,
+            &TraceTimer::production(),
         ) {
             Ok(()) => {}
             Err(oer_esp32s31_phy::PhyTargetPortError::HardwareEdgeTimedOut) => return 2,
@@ -445,7 +470,7 @@ oer_probe_macros::probe! {
         };
         let mut observer = oer_esp32s31_phy::target_port::NoopPhyTargetObserver;
         let result = oer_esp32s31_phy::target_port::calibration::clear_pbus::<
-            <ProductionTraceDelay as oer_esp32s31_phy::target_executor::PhyAsyncDelay>::ShortDelay,
+            RfpllTraceDelay,
             _,
         >(child, registers, &mut observer);
         // Distinguish an actual bounded hardware timeout from a binding or
@@ -496,14 +521,14 @@ oer_probe_macros::probe! {
             enter_common_force_level(&mut parent).ok_or(1u32)?;
             let child = parent.begin_pbus_clear().map_err(|_| 1u32)?;
             let completion = calibration::clear_pbus::<
-                <ProductionTraceDelay as oer_esp32s31_phy::target_executor::PhyAsyncDelay>::ShortDelay,
+                RfpllTraceDelay,
                 _,
             >(child, registers, &mut observer)
             .map_err(|_| 2u32)?;
             parent.advance(completion).map_err(|_| 3u32)?;
             let child = parent.begin_dcode().map_err(|_| 4u32)?;
             let completion = calibration::dcode::<
-                <ProductionTraceDelay as oer_esp32s31_phy::target_executor::PhyAsyncDelay>::ShortDelay,
+                RfpllTraceDelay,
                 _,
             >(child, &mut (), registers, |_| {})
             .map_err(|error| match error {
@@ -638,13 +663,15 @@ oer_probe_macros::probe! {
         // The PHY archive is compared without the coexistence archive, so its
         // weak grant-protect hooks return without effect.
         let mut grant = oer_esp32s31_phy::WeakPhyGrantProtect;
+        let timer = TraceTimer::production();
         let mut port = oer_esp32s31_phy::TargetPhyCalibrationTrackingPort::<
             _,
             _,
             _,
-            ProductionTraceDelay,
+            RfpllTraceDelay,
             _,
-        >::new(&mut platform, &mut phy, &mut grant, &mut observer);
+            _,
+        >::new(&mut platform, &mut phy, &mut grant, &timer, &mut observer);
         let mut progress = 0;
         let status = {
             let mut child = validation::calibration_tracking(
@@ -764,11 +791,13 @@ oer_probe_macros::probe! {
         // The PHY archive is compared without the coexistence archive, so its
         // weak grant-protect hooks return without effect.
         let mut grant = oer_esp32s31_phy::WeakPhyGrantProtect;
+        let timer = TraceTimer::production();
         let mut port =
-            oer_esp32s31_phy::TargetPhyParamTrackingPort::<_, _, _, ProductionTraceDelay, _>::new(
+            oer_esp32s31_phy::TargetPhyParamTrackingPort::<_, _, _, RfpllTraceDelay, _, _>::new(
                 &mut platform,
                 &mut phy,
                 &mut grant,
+                &timer,
                 oer_esp32s31_phy::NoopPhyTargetObserver,
             );
         let run = embassy_futures::block_on(oer_esp32s31_phy::executor::run_phy_param_tracking(

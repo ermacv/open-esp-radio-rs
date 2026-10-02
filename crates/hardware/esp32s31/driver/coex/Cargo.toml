@@ -5,13 +5,17 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Allocation-free ESP32-S31 radio coexistence policy and timer ownership"
+description = "ESP32-S31 binding of the Espressif coexistence policy to the radio arbiter"
 
 [features]
-validation-probes = ["oer-esp32s31-hal/validation-probes"]
+validation-probes = [
+    "oer-esp32s31-hal/validation-probes",
+    "oer-espressif-coex/validation-probes",
+]
 
 [dependencies]
 oer-esp32s31-hal = { path = "../../hal" }
+oer-espressif-coex = { path = "../../../espressif/coex" }
 
 [lints]
 workspace = true
@@ -22,7 +26,6 @@ default-target = "riscv32imafc-unknown-none-elf"
 targets = []
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "hardware"
 platform = "chip"
 chip = "esp32s31"

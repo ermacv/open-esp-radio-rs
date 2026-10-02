@@ -90,17 +90,24 @@ cargo fmt --all -- --check
 cargo xtask check docs
 ```
 
-Before a push, `cargo xtask check changed` runs what the changed files need:
-formatting of every affected workspace, workspace Clippy, tests and API
-documentation of the changed packages, and the documentation, metadata,
-provenance and capability-anchor checks where they apply. The
+`cargo xtask push` runs the fast gate before it pushes, and `cargo xtask
+check changed` runs it over uncommitted work: formatting of every affected
+workspace, the lock check, the documentation and capability-anchor checks
+where they apply, and Clippy and tests of the changed packages and every
+package depending on them. `--full` adds what CI checks after a push. The
 [tooling reference](tools/xtask/README.md) lists every check.
 
-The [CI workflow](.github/workflows/ci.yml) runs `cargo fmt --check` for every
-workspace and `cargo clippy --workspace --all-targets -- -D warnings` and
-`cargo test --workspace` for the root workspace on every push to `main` and
-pull request; the [Documentation workflow](.github/workflows/docs.yml) checks
-the guides and API documentation.
+The [CI workflow](.github/workflows/ci.yml) runs on every push to any branch:
+`cargo fmt --check` for every workspace, `cargo clippy --workspace
+--all-targets -- -D warnings` and `cargo test --workspace` for the root
+workspace, the policy and architecture checks, type checks of the final HIL
+images and the examples with the image compiler flags, the ESP32-C5
+workspaces, every register publication and every qualification program; a
+newer push to the same branch cancels the run it supersedes, except on
+`main`. The [Documentation workflow](.github/workflows/docs.yml) checks the
+guides and API documentation, and the [Nightly workflow](.github/workflows/nightly.yml)
+builds every HIL image class and runs Blobray and each chip's vendor
+verification, provenance included.
 
 For API changes, run `cargo xtask doc`: one `cargo doc --no-deps` per
 documentation target with `RUSTDOCFLAGS=-D warnings`, as each package's

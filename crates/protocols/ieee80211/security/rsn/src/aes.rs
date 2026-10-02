@@ -1,5 +1,7 @@
 //! Allocation-free RFC 3394 AES-128 key wrap and unwrap for WPA2 key data.
 
+use core::future::Future;
+
 use ::aes::{
     Aes128,
     cipher::{BlockDecrypt, BlockEncrypt, KeyInit, generic_array::GenericArray},
@@ -70,19 +72,21 @@ impl RsnUnwrappedKeyData {
     }
 }
 
-/// Async-capable boundary for the AES operation needed by WPA2 Message 3.
+/// Async-capable boundary for the AES operation needed by WPA2 Message 3 and
+/// Group Message 1.
 ///
-/// A hardware backend may resume from an interrupt. Implementations must not
-/// retain either borrowed input after returning.
-#[allow(async_fn_in_trait)]
+/// The supplicant never awaits it: it returns a key-data unwrap request and a
+/// driver awaits this port with the request's KEK and wrapped key data. A
+/// hardware backend may resume from an interrupt. Implementations must not
+/// retain either borrowed input after the returned future completes.
 pub trait AsyncRsnKeyUnwrap {
     type Error;
 
-    async fn unwrap_key_data(
-        &mut self,
-        kek: &[u8; 16],
-        encrypted: &[u8],
-    ) -> Result<RsnUnwrappedKeyData, Self::Error>;
+    fn unwrap_key_data<'a>(
+        &'a mut self,
+        kek: &'a [u8; 16],
+        encrypted: &'a [u8],
+    ) -> impl Future<Output = Result<RsnUnwrappedKeyData, Self::Error>> + 'a;
 }
 
 /// Pure RustCrypto AES leaf with an explicit RFC 3394 input bound.
@@ -106,12 +110,12 @@ impl Default for RsnSoftwareAes {
 impl AsyncRsnKeyUnwrap for RsnSoftwareAes {
     type Error = SoftwareAesKeyUnwrapError;
 
-    async fn unwrap_key_data(
-        &mut self,
-        kek: &[u8; 16],
-        encrypted: &[u8],
-    ) -> Result<RsnUnwrappedKeyData, Self::Error> {
-        software_aes128_key_unwrap(kek, encrypted)
+    fn unwrap_key_data<'a>(
+        &'a mut self,
+        kek: &'a [u8; 16],
+        encrypted: &'a [u8],
+    ) -> impl Future<Output = Result<RsnUnwrappedKeyData, Self::Error>> + 'a {
+        core::future::ready(software_aes128_key_unwrap(kek, encrypted))
     }
 }
 

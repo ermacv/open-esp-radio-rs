@@ -11,7 +11,8 @@ use std::{
 };
 
 use super::common;
-use crate::{Context, Result, paths, process};
+use crate::{Context, Result, paths};
+use oer_process as process;
 
 mod cli;
 mod markdown;
@@ -191,7 +192,6 @@ fn qualification_binary(ctx: &Context) -> Result<PathBuf> {
     process::run(ctx.cargo().env("CARGO_TARGET_DIR", &target).args([
         "build",
         "--locked",
-        "--offline",
         "--profile",
         "qualification",
         "--package",

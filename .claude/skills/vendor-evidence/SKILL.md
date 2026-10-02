@@ -1,0 +1,47 @@
+---
+name: vendor-evidence
+description: Use when work touches vendor comparison or provenance in this repository — verification/<chip>/artifacts.toml pins, cargo xtask vendor-fetch, SOURCE( ) citations, verification/<chip>/facts/provenance.toml, check provenance, vendor-diff, vendor-provenance --accept, vendor scenarios and probes, evidence shards, or MATCH/DIFF/INCOMPLETE results.
+---
+
+# Vendor pins, provenance and comparison evidence
+
+Read first (about 3k tokens): [verification levels](../../../verification/README.md),
+[pinned vendor artifacts](../../../verification/esp32s31/README.md#pinned-vendor-artifacts)
+and the `SOURCE` rules in [recovered tables](../../../docs/source-policy.md#recovered-tables-and-coefficients).
+Scenario authors also read the
+[vendor verification path](../../../docs/verification-and-qualification.md#vendor-verification-path).
+
+## Checklist
+
+1. **Pins.** `verification/<chip>/artifacts.toml` is the only pin of each
+   vendor archive, ROM ELF and SDK firmware. Fetch with
+   `cargo xtask vendor-fetch <chip>`; never commit the artifacts, dumps or
+   `_oracles/`. Other hashes record where a fact was observed; they are not pins.
+2. **Cite.** A recovered fact names its vendor function in a
+   `SOURCE(<chip>):` block (a chip-neutral path names its chips). The cited
+   function is registered with its reviewed fingerprint in
+   `verification/<chip>/facts/provenance.toml`; grep that file by explicit
+   path, never read it whole.
+3. **After a citation change** run `cargo xtask check provenance --chip <chip>`.
+   After review, record new fingerprints with
+   `cargo xtask vendor-provenance --chip <chip> --accept NAME`.
+4. **After a pin change** run `cargo xtask vendor-diff --chip <chip> --old A --new B`,
+   make production follow the pinned behavior, then re-accept provenance.
+5. **Compare compiled production code.** A scenario runs the pinned vendor
+   function and the compiled production probe in one Blobray session and
+   fails closed: `MATCH`, `DIFF` or `INCOMPLETE`. Never compare against a
+   shadow implementation or a duplicated fixture table.
+6. **Shards.** `evidence/scenarios` shards are regenerated only by the
+   check's owner (`cargo xtask evidence --chip <chip>`), in commits of their
+   own; never edit, rebase-resolve or hand-merge them.
+7. **Commits.** A production change the comparison needs lands in its own
+   product-scoped commit, never inside a `blobray` or verification commit.
+
+## Commands (all `run_in_background: true`)
+
+```console
+cargo xtask vendor-fetch esp32s31
+cargo xtask check provenance --chip esp32s31
+cargo xtask vendor-scenario <scenario>
+cargo xtask evidence --chip esp32s31 --check --changed-since origin/main
+```

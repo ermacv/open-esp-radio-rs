@@ -1,3 +1,4 @@
+use oer_time::Clock as _;
 /// Physical ordinary-TX ownership visible to one standalone AP RX turn.
 ///
 /// The AP MAC's local `pending` bit cannot represent a live retained A-MPDU:
@@ -169,7 +170,7 @@ impl<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     pub fn new(
         receive: R,
@@ -340,7 +341,7 @@ where
             self.serviced_rx_frames = self.serviced_rx_frames.saturating_add(1);
             serviced_frames = serviced_frames.saturating_add(1);
             #[cfg(feature = "diagnostics")]
-            let protocol_started = Instant::now().as_micros();
+            let protocol_started = self.now().as_micros();
             let protocol_class = self.service_staged_rx(
                 if rx_protocol_consumer_has_hardware(tx_pending) {
                     Some(hardware)
@@ -364,10 +365,10 @@ where
             #[cfg(not(feature = "diagnostics"))]
             let _ = protocol_class;
             #[cfg(feature = "diagnostics")]
-            self.observe_rx_protocol_service(
-                protocol_class,
-                Instant::now().as_micros().saturating_sub(protocol_started),
-            );
+            {
+                let elapsed = self.now().as_micros().saturating_sub(protocol_started);
+                self.observe_rx_protocol_service(protocol_class, elapsed);
+            }
 
             if self.rx_batch_pending() {
                 crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
@@ -383,7 +384,7 @@ where
                 );
                 return Ok(DatapathRxProgress::ProbePending);
             }
-            now_micros = Instant::now().as_micros();
+            now_micros = self.now().as_micros();
             if self.service_rx_reorder_expiry(now_micros)? {
                 crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
                     serviced_frames,
@@ -414,11 +415,11 @@ where
         R: AccessPointRxProducer<H, COUNT>,
     {
         #[cfg(feature = "diagnostics")]
-        let started = Instant::now().as_micros();
+        let started = self.now().as_micros();
         let progress = self.receive.stage_completed(hardware).await?;
         #[cfg(feature = "diagnostics")]
         {
-            let elapsed = Instant::now().as_micros().saturating_sub(started);
+            let elapsed = self.now().as_micros().saturating_sub(started);
             self.observer.observation.maximum_rx_dma_service_micros = self
                 .observer
                 .observation

@@ -51,8 +51,11 @@ pub use oer_esp32s31_radio_runtime::{RadioPhyError, RadioPhyPrepared};
 /// periodic PHY tracking
 /// ([`RadioSystem::run_tracking`](oer_esp32s31_radio_runtime::RadioSystem::run_tracking)).
 #[cfg(target_arch = "riscv32")]
-pub type SharedRadio =
-    oer_esp32s31_radio_runtime::RadioSystem<EspHalRadioPlatform, EspHalRadioClocks>;
+pub type SharedRadio = oer_esp32s31_radio_runtime::RadioSystem<
+    EspHalRadioPlatform,
+    EspHalRadioClocks,
+    oer_time_embassy::EmbassyClock,
+>;
 #[cfg(target_arch = "riscv32")]
 pub use oer_esp32s31_soc_esp_hal::watchdog::{DeadlineBudget, DeadlineWatchdog};
 pub use oer_ieee80211_runtime::await_stack_boundary;

@@ -224,6 +224,3 @@ impl From<UnknownCommandCompleteEvent> for LeControllerCommandComplete {
         Self::UnknownCommand(response)
     }
 }
-
-#[cfg(test)]
-mod tests;

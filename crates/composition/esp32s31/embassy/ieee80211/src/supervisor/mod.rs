@@ -93,19 +93,13 @@ use oer_esp32s31_hal::{owner::RadioRuntimeOwner, root::WifiPartition};
 use oer_esp32s31_ieee80211_ap::{engine::ApEngine, transaction::ApMac, tx::ApTxConfig};
 
 use oer_esp32s31_ieee80211_runtime::{
-    datapath::rx::{
-        dma::ReceiveDmaStorage,
-        frontier::{EmbassyRxFrontierDelay, ReceiveFrontier},
-    },
+    datapath::rx::{dma::ReceiveDmaStorage, frontier::ReceiveFrontier},
     roles::{
         access_point::{
             AccessPointControl, AccessPointRxReorder,
             AccessPointStopped as EmbassyAccessPointStopped,
         },
-        scan::{
-            port::EmbassyScanTimer,
-            rx::{RunningScanRx, ScanFrameObserver, ScanRx},
-        },
+        scan::rx::{RunningScanRx, ScanFrameObserver, ScanRx},
         station::{
             ESP32S31_STATION_PROBE_DESCRIPTOR_CAPACITY, ESP32S31_STATION_PROBE_RATES,
             RadioOwnerRepublish, StationCommandReceiver, StationConfiguration,
@@ -127,7 +121,8 @@ use oer_esp32s31_ieee80211_runtime::{
         },
     },
 };
-use oer_esp32s31_phy_runtime::EmbassyPhyTime;
+use oer_esp32s31_phy::RomShortDelay;
+use oer_time_embassy::EmbassyClock;
 
 use oer_esp32s31_ieee80211_esp_hal::EspHalWifiPlatform;
 
@@ -237,7 +232,7 @@ pub(super) type ControlTx = ControlTransmitter<
     'static,
     PhyTxTargetPowerProfile,
     fn() -> u32,
-    oer_esp32s31_ieee80211_runtime::datapath::tx::time::EmbassyWifiTxTimer,
+    oer_time_embassy::EmbassyClock,
     TX_BUFFER_SIZE,
 >;
 pub(super) type TxStorage = StaTxEpoch<ControlTx>;
@@ -347,7 +342,7 @@ fn tx_entropy() -> u32 {
 type ProductionStationPhase = StationServicePhase<
     RadioRuntimeOwner,
     ScanRx<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE, RX_BUFFER_STORAGE_SIZE>,
-    ReceiveFrontier<'static, EmbassyRxFrontierDelay, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE>,
+    ReceiveFrontier<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE>,
     WifiNetworkResources,
     ConnectedDisconnectedEpoch,
     ConnectedReconnectedEpoch,
@@ -379,7 +374,7 @@ type ProductionStationStorage = StationStorageResources<
 type ProductionStationStoppedPhase = StationStoppedPhaseResources<
     'static,
     ScanRx<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE, RX_BUFFER_STORAGE_SIZE>,
-    ReceiveFrontier<'static, EmbassyRxFrontierDelay, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE>,
+    ReceiveFrontier<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE>,
     WifiNetworkResources,
     RunningWifiNetwork,
     ConnectedParkedRx,
@@ -1136,8 +1131,7 @@ async fn join_shared_radio(
     // The vendor `wifi_hw_start` enables coexistence right after the PHY.
     guard.enable_coex();
     let (lease, radio_platform, clocks) = guard.parts();
-    let mut clock = EmbassyPhyTime;
-    match await_stack_boundary!(start_esp32s31_radio::<_, _, EmbassyPhyTime, _>(
+    match await_stack_boundary!(start_esp32s31_radio::<_, _, RomShortDelay, _>(
         lease,
         radio_platform,
         clocks,
@@ -1145,7 +1139,7 @@ async fn join_shared_radio(
         platform,
         radio_start,
         NoopPhyTargetObserver,
-        &mut clock,
+        &EmbassyClock,
     )) {
         Ok(wifi) => Ok((phy, wifi)),
         Err(failure) => {

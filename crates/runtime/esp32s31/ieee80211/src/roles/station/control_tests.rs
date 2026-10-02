@@ -1,8 +1,6 @@
-use core::{
-    future::{Future, ready},
-    pin::Pin,
-};
+use core::pin::Pin;
 use oer_ieee80211_mac::sequence::SequenceNumber;
+use oer_time::{Clock as _, Timer as _};
 
 use crate::{
     datapath::{
@@ -46,7 +44,6 @@ use oer_esp32s31_ieee80211_sta::{
     },
     single_mpdu_tx::{
         SingleMpduTx, SingleMpduTxConfig, SingleMpduTxOutcome, WifiTxPowerPair, WifiTxPowerProfile,
-        WifiTxTimer,
     },
 };
 
@@ -68,6 +65,7 @@ use oer_ieee80211_rsn::{
     frames::{OwnedRsnIe, RsnGtk, RsnPlainKeyData, RsnTxFrame},
     supplicant::{RsnConnectedSupplicant, RsnStaSupplicant, RsnStaSupplicantAction},
 };
+use oer_ieee80211_rsn_service::supplicant::process_frame;
 
 use oer_esp32s31_ieee80211_sta::{
     connected_control::{ConnectedPowerCommand, PowerCoexSnapshot},
@@ -113,7 +111,12 @@ fn established_supplicant() -> (RsnConnectedSupplicant, Ptk) {
     )
     .unwrap();
     assert!(matches!(
-        embassy_futures::block_on(supplicant.on_frame(owned_eapol(&message1), &pmk, &mut aes,)),
+        embassy_futures::block_on(process_frame(
+            &mut supplicant,
+            owned_eapol(&message1),
+            &pmk,
+            &mut aes
+        )),
         Ok(RsnStaSupplicantAction::Transmit(_))
     ));
 
@@ -131,10 +134,13 @@ fn established_supplicant() -> (RsnConnectedSupplicant, Ptk) {
     )
     .unwrap()
     .authenticate(&peer_ptk);
-    let RsnStaSupplicantAction::InstallKeys(request) =
-        embassy_futures::block_on(supplicant.on_frame(owned_eapol(&message3), &pmk, &mut aes))
-            .unwrap()
-    else {
+    let RsnStaSupplicantAction::InstallKeys(request) = embassy_futures::block_on(process_frame(
+        &mut supplicant,
+        owned_eapol(&message3),
+        &pmk,
+        &mut aes,
+    ))
+    .unwrap() else {
         panic!("authenticated Message 3 must establish connected WPA2 state")
     };
     assert!(matches!(
@@ -459,26 +465,7 @@ impl WifiTxPowerProfile for Power {
     }
 }
 
-#[derive(Default)]
-struct Timer {
-    now: u64,
-}
-
-impl WifiTxTimer for Timer {
-    fn now_micros(&self) -> u64 {
-        self.now
-    }
-
-    fn wait_until(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_ {
-        self.now = deadline_micros;
-        ready(())
-    }
-
-    fn after_micros(&mut self, micros: u64) -> impl Future<Output = ()> + '_ {
-        self.now += micros;
-        ready(())
-    }
-}
+type Timer = oer_time_virtual::SkipClock;
 
 fn completion(status: u8) -> MacTxCompletionObservation {
     MacTxCompletionObservation::new_model(status, 0)
@@ -789,7 +776,8 @@ fn completed_wpa2_fixture(hardware: &mut Hardware) -> CompletedWpa2Fixture {
         WPA2_ANONCE,
     )
     .unwrap();
-    let RsnStaSupplicantAction::Transmit(_) = embassy_futures::block_on(supplicant.on_frame(
+    let RsnStaSupplicantAction::Transmit(_) = embassy_futures::block_on(process_frame(
+        &mut supplicant,
         owned_station_eapol(&message1),
         &pmk,
         &mut aes,
@@ -811,9 +799,12 @@ fn completed_wpa2_fixture(hardware: &mut Hardware) -> CompletedWpa2Fixture {
     )
     .unwrap()
     .authenticate(&ptk);
-    let RsnStaSupplicantAction::InstallKeys(request) = embassy_futures::block_on(
-        supplicant.on_frame(owned_station_eapol(&message3), &pmk, &mut aes),
-    )
+    let RsnStaSupplicantAction::InstallKeys(request) = embassy_futures::block_on(process_frame(
+        &mut supplicant,
+        owned_station_eapol(&message3),
+        &pmk,
+        &mut aes,
+    ))
     .unwrap() else {
         panic!("Message 3 must produce the initial key transaction")
     };
@@ -1748,7 +1739,7 @@ fn a_shared_station_leaves_the_air_at_its_slice_end_and_holds_its_frames() {
 
     // At the slice end the queues block and PM=1 goes out.
     let deadline = control.next_alarm_deadline().unwrap();
-    embassy_futures::block_on(tx.wait_until_micros(deadline));
+    embassy_futures::block_on(tx.wait_until(oer_time::Instant::from_micros(deadline)));
     assert_eq!(
         settle(
             &mut control,
@@ -2252,7 +2243,7 @@ fn an_unanswered_sa_query_ends_the_association_after_1024_ms() {
         }
     }
     assert_eq!(requests, 6);
-    assert_eq!(tx.now_micros(), 1_024_000);
+    assert_eq!(tx.now().as_micros(), 1_024_000);
 }
 
 #[test]
@@ -2314,7 +2305,7 @@ fn the_station_takes_the_access_point_tsf_at_power_start_and_from_each_beacon() 
         ..Hardware::default()
     };
     let mut tx = make_tx(slot.as_mut(), &mut hardware);
-    embassy_futures::block_on(tx.wait_until_micros(6_000));
+    embassy_futures::block_on(tx.wait_until(oer_time::Instant::from_micros(6_000)));
     let mut performed = std::vec::Vec::new();
     settle(
         &mut control,
@@ -2327,7 +2318,7 @@ fn the_station_takes_the_access_point_tsf_at_power_start_and_from_each_beacon() 
     assert_eq!(hardware.station_tsf, 1_000_000 + 5_000);
 
     // A beacon received at 10 ms and handled at 12 ms carries its own TSF.
-    embassy_futures::block_on(tx.wait_until_micros(12_000));
+    embassy_futures::block_on(tx.wait_until(oer_time::Instant::from_micros(12_000)));
     publisher.publish(ConnectedRxEvent::Beacon {
         observation: StaBeaconObservation {
             timestamp_tsf: 2_000_000,
@@ -2377,7 +2368,7 @@ fn a_beacon_queued_behind_power_inputs_takes_the_next_step() {
 
     // Under saturated traffic the TBTT and the beacon after it wait for
     // the same control step, and a new power input waits at every step.
-    embassy_futures::block_on(tx.wait_until_micros(12_000));
+    embassy_futures::block_on(tx.wait_until(oer_time::Instant::from_micros(12_000)));
     publisher.publish(ConnectedRxEvent::Beacon {
         observation: StaBeaconObservation {
             timestamp_tsf: 2_000_000,

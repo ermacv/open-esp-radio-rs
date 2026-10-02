@@ -10,9 +10,9 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_ieee80211_runtime::await_stack_boundary;
 
 use oer_ieee80211_sta::station::{
-    StaAttemptFailure, StaLifecycleExit, StaLifecycleProgress, StaLifecycleService,
-    StaReconnectPolicy,
+    StaAttemptFailure, StaLifecycleExit, StaLifecycleProgress, StaReconnectPolicy,
 };
+use oer_ieee80211_sta_service::station::StaLifecycleService;
 
 use super::{
     StationAttemptRunner, StationCommand, StationCompletion, StationControlError,

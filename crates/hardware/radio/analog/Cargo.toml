@@ -11,6 +11,5 @@ description = "Chip-neutral non-blocking analog register bus contract and field 
 workspace = true
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "hardware"
 platform = "portable"

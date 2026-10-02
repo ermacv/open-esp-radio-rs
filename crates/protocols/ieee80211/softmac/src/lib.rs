@@ -20,6 +20,7 @@
 
 pub mod configuration;
 pub mod contract;
+pub mod edca;
 pub mod extensions;
 pub use extensions::espressif::long_range::EspressifLongRangeRate;
 
@@ -28,6 +29,8 @@ pub mod monitor;
 pub mod tx_work;
 
 pub use tx_work::MacTxWork;
+
+pub use edca::{BackoffEntropy, EdcaContention, draw_backoff};
 
 pub use oer_ieee80211_mac::channel::WifiChannel;
 

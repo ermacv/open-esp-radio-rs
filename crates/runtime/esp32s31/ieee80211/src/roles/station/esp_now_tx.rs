@@ -25,7 +25,7 @@ use crate::{
         },
         station::control::{
             ConnectedControl, ConnectedControlError, ConnectedControlHardware,
-            ConnectedControlShutdown, ConnectedControlTimer, ConnectedControlTx,
+            ConnectedControlShutdown, ConnectedControlTx,
         },
     },
 };
@@ -306,7 +306,7 @@ impl<
     ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, EspNowConnectedControlError>
     where
         H: ConnectedControlHardware + TxHardware,
-        X: ConnectedControlTx + ConnectedControlTimer + EspNowConnectedTx,
+        X: ConnectedControlTx + oer_time::Timer + EspNowConnectedTx,
     {
         if self.finish_active(tx)? {
             if context.stop_pending {
@@ -366,7 +366,7 @@ impl<
             || self
                 .inner
                 .next_alarm_deadline()
-                .is_some_and(|deadline| deadline <= tx.now_micros());
+                .is_some_and(|deadline| deadline <= tx.now().as_micros());
         let inner_requires_awake =
             <ConnectedControl<'resources, M, CONTROL_CAPACITY> as DatapathControlService<
                 H,
@@ -558,7 +558,7 @@ impl<
 where
     M: RawMutex,
     H: ConnectedControlHardware + TxHardware,
-    X: ConnectedControlTx + ConnectedControlTimer + EspNowConnectedTx,
+    X: ConnectedControlTx + oer_time::Timer + EspNowConnectedTx,
 {
     type Error = EspNowConnectedControlError;
     type Exit = ConnectedDisconnectReason;

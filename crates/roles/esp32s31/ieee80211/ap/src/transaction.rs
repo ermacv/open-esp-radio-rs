@@ -17,7 +17,7 @@ use crate::{
 use oer_esp32s31_ieee80211::{
     ordinary_tx::{
         OrdinaryTxOutcome, TX_CCMP_MIC_SIZE, TX_FCS_SIZE, TX_METADATA_SIZE, WifiTxEntropy,
-        WifiTxPowerProfile, WifiTxResources, WifiTxTimer,
+        WifiTxPowerProfile, WifiTxResources,
     },
     tx::{WifiTxProgress, WifiTxWake},
 };
@@ -325,11 +325,28 @@ impl<'beacon> ApMacParked<'beacon> {
     }
 }
 
+/// The MAC's transmitter clock, the image's monotonic time.
+impl<P, E, T: oer_time::Clock, const BUFFER_SIZE: usize> oer_time::Clock
+    for ApMac<'_, '_, P, E, T, BUFFER_SIZE>
+{
+    fn now(&self) -> oer_time::Instant {
+        self.transmit.now()
+    }
+}
+
+impl<P, E, T: oer_time::Timer, const BUFFER_SIZE: usize> oer_time::Timer
+    for ApMac<'_, '_, P, E, T, BUFFER_SIZE>
+{
+    fn wait_until(&self, deadline: oer_time::Instant) -> impl core::future::Future<Output = ()> {
+        self.transmit.wait_until(deadline)
+    }
+}
+
 impl<'beacon, 'slot, P, E, T, const BUFFER_SIZE: usize> ApMac<'beacon, 'slot, P, E, T, BUFFER_SIZE>
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     /// Submitted ordinary work, read before another exchange starts.
     pub fn work(&self) -> oer_ieee80211_softmac::MacTxWork {

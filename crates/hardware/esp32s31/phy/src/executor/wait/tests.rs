@@ -49,12 +49,11 @@ fn direct_i2c_nested_i2c_and_settling_are_separate() {
 }
 
 #[test]
-fn cancellation_unsupported_and_inconsistent_deadlines_are_incomplete() {
+fn cancellation_and_inconsistent_deadlines_are_incomplete() {
     for events in [
         std::vec![Event::Started {
             requested_micros: 1
         }],
-        std::vec![Event::Unsupported],
         std::vec![Event::Completed {
             elapsed_micros: 5,
             lateness_micros: 4
@@ -125,4 +124,128 @@ fn count_overflow_invalidates_evidence_without_wrapping() {
     }
     assert!(!recorder.is_complete());
     assert_eq!(recorder.report().pll_unlocked, u16::MAX);
+}
+
+mod delays {
+    use core::{
+        cell::Cell,
+        pin::pin,
+        task::{Context, Poll, Waker},
+    };
+    use std::vec::Vec;
+
+    use oer_time::{Clock, Duration, Instant};
+    use oer_time_virtual::VirtualClock;
+
+    use super::super::{Event, Kind, PhyShortDelay, delay, delay_observed};
+
+    std::thread_local! {
+        static SETTLED: Cell<u32> = const { Cell::new(0) };
+    }
+
+    struct Short;
+
+    impl PhyShortDelay for Short {
+        const MAX_MICROS: u32 = 20;
+
+        fn settle_micros(micros: u32) -> bool {
+            SETTLED.with(|settled| settled.set(settled.get() + micros));
+            true
+        }
+    }
+
+    fn poll<F: core::future::Future>(future: core::pin::Pin<&mut F>) -> Poll<F::Output> {
+        future.poll(&mut Context::from_waker(Waker::noop()))
+    }
+
+    #[test]
+    fn a_short_settle_completes_at_once_without_the_timer() {
+        let clock: VirtualClock = VirtualClock::new();
+        SETTLED.with(|settled| settled.set(0));
+        assert_eq!(
+            poll(pin!(delay::<Short, _>(&clock, Kind::Settle, 20))),
+            Poll::Ready(())
+        );
+        assert_eq!(SETTLED.with(Cell::get), 20);
+        assert_eq!(clock.next_deadline(), None);
+    }
+
+    #[test]
+    fn backoff_and_long_settles_wait_on_the_timer_from_the_call() {
+        for (kind, micros) in [
+            (Kind::Settle, 21),
+            (Kind::Completion, 1),
+            (Kind::BusBusy, 1),
+        ] {
+            let clock: VirtualClock = VirtualClock::starting_at(Instant::from_micros(100));
+            SETTLED.with(|settled| settled.set(0));
+            let mut wait = pin!(delay::<Short, _>(&clock, kind, micros));
+            clock.advance(Duration::from_micros(micros - 1)).unwrap();
+            assert_eq!(poll(wait.as_mut()), Poll::Pending);
+            assert_eq!(
+                clock.next_deadline(),
+                Some(Instant::from_micros(100 + micros))
+            );
+            clock.advance(Duration::from_micros(1)).unwrap();
+            assert_eq!(poll(wait.as_mut()), Poll::Ready(()));
+            assert_eq!(SETTLED.with(Cell::get), 0);
+        }
+    }
+
+    #[test]
+    fn a_deadline_past_the_timer_range_never_completes() {
+        let clock: VirtualClock = VirtualClock::starting_at(Instant::from_micros(u64::MAX - 1));
+        let mut wait = pin!(delay::<Short, _>(&clock, Kind::Completion, 2));
+        assert_eq!(poll(wait.as_mut()), Poll::Pending);
+        clock.advance_to(Instant::from_micros(u64::MAX));
+        assert_eq!(poll(wait.as_mut()), Poll::Pending);
+    }
+
+    #[test]
+    fn an_observed_wait_reports_its_start_elapsed_time_and_lateness() {
+        let clock: VirtualClock = VirtualClock::starting_at(Instant::from_micros(10));
+        let mut events = Vec::new();
+        {
+            let mut wait = pin!(delay_observed::<Short, _>(
+                &clock,
+                Kind::Completion,
+                5,
+                true,
+                |event| events.push(event),
+            ));
+            assert_eq!(poll(wait.as_mut()), Poll::Pending);
+            clock.advance(Duration::from_micros(7)).unwrap();
+            assert_eq!(poll(wait.as_mut()), Poll::Ready(()));
+        }
+        assert_eq!(
+            events,
+            [
+                Event::Started {
+                    requested_micros: 5
+                },
+                Event::Completed {
+                    elapsed_micros: 7,
+                    lateness_micros: 2
+                }
+            ]
+        );
+        assert_eq!(clock.now(), Instant::from_micros(17));
+    }
+
+    #[test]
+    fn a_disabled_observation_reports_nothing() {
+        let clock: VirtualClock = VirtualClock::new();
+        let mut observed = 0;
+        assert_eq!(
+            poll(pin!(delay_observed::<Short, _>(
+                &clock,
+                Kind::Settle,
+                1,
+                false,
+                |_| observed += 1,
+            ))),
+            Poll::Ready(())
+        );
+        assert_eq!(observed, 0);
+    }
 }

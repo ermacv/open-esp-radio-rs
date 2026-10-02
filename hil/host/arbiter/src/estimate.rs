@@ -175,7 +175,7 @@ mod tests {
         let history = [
             record("run a", 400, LeaseOutcome::Released),
             record("run a", 100, LeaseOutcome::Released),
-            record("run a", 5000, LeaseOutcome::BudgetExceeded),
+            record("run a", 5000, LeaseOutcome::HardLimit),
             record("run b", 3000, LeaseOutcome::Released),
             record("run a", 131, LeaseOutcome::Released),
         ];

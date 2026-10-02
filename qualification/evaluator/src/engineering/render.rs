@@ -79,9 +79,6 @@ pub(super) fn print(map: &ProjectMap, next_only: bool, details: bool) {
                     test.source.display()
                 );
             }
-            for path in &entry.hil_reviews {
-                println!("HIL-REVIEW\t{}\t{}", entry.id, path.display());
-            }
             for requirement in &entry.hil_requirements {
                 println!(
                     "HIL-REQUIREMENT\t{}\tscenario={}\tchecks={}\trepetitions={}",
@@ -205,13 +202,6 @@ pub(super) fn markdown(map: &ProjectMap, output: &Path, root: &Path) -> Result<S
             text.push_str(&format!("- Host test: [{}]({}), filter `{}`; [source]({}). Execution is not recorded by this declaration.\n", test.manifest.display(), crate::inventory::link_to(&test.manifest, output, root)?, escape(&test.filter), crate::inventory::link_to(&test.source, output, root)?));
         }
         text.push('\n');
-        for path in &entry.hil_reviews {
-            text.push_str(&format!(
-                "- Applicability review: [{}]({})\n",
-                path.display(),
-                crate::inventory::link_to(path, output, root)?
-            ));
-        }
         for requirement in &entry.hil_requirements {
             text.push_str(&format!(
                 "- HIL: `{}`, repetitions {}, checks `{}`.\n",
@@ -251,12 +241,20 @@ pub(super) fn markdown(map: &ProjectMap, output: &Path, root: &Path) -> Result<S
         }
     }
     text.push_str("\n## Vendor evidence indexes\n\nThe typed vendor scenarios regenerate these indexes with `vendor-scenario all --index`; a production or scenario change makes them stale.\n\n");
+    // An index no scenario has written yet is a destination, not a link.
+    let mut written = 0;
     for index in &map.evidence_indexes {
-        text.push_str(&format!(
-            "- [{}]({})\n",
-            index.display(),
-            crate::inventory::link_to(index, output, root)?
-        ));
+        if root.join(index).exists() {
+            written += 1;
+            text.push_str(&format!(
+                "- [{}]({})\n",
+                index.display(),
+                crate::inventory::link_to(index, output, root)?
+            ));
+        }
+    }
+    if written == 0 {
+        text.push_str("No scenario has written an evidence index yet.\n");
     }
     Ok(text)
 }

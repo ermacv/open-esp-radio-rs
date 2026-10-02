@@ -17,8 +17,8 @@ use std::{
 use oer_chip_profile::{FlashLayout, Profile};
 
 use super::{
-    Artifacts, BootArtifacts, BuildLog, EspIdfBoot, FeatureDelta, ImageClass, Integration,
-    program_from_env, require_file,
+    Artifacts, BootArtifacts, BuildLog, EspIdfBoot, FeatureDelta, ImageClass, program_from_env,
+    require_file,
 };
 use crate::Result;
 
@@ -49,7 +49,6 @@ pub fn build(
     source: &Path,
     profile: &Profile,
     class: ImageClass,
-    network: Integration,
     features: &FeatureDelta,
     output: &Path,
     cache: &Path,
@@ -111,7 +110,6 @@ pub fn build(
     Ok(Artifacts {
         chip: profile.id.clone(),
         rust_target: profile.rust_target.clone(),
-        network,
         output: output.to_owned(),
         runtime_elf,
         effective_embedded_lock,

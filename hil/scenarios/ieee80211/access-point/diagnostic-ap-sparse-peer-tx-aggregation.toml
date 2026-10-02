@@ -1,8 +1,8 @@
 schema = 5
 id = "diagnostic-ap-sparse-peer-tx-aggregation"
 description = "Saturated AP TX plus sparse peer with aggregate and terminal radio evidence"
+role = "investigation"
 repetitions = 1
-transfer = "identical-image"
 tags = ["diagnostic", "access-point", "multi-client", "ht40", "aggregation", "air-strict"]
 
 [wifi]

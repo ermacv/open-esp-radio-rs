@@ -205,14 +205,14 @@ pub fn verify_at(
     })
 }
 
-/// A run's observer record: an embedded build hashes to its digest, and a
-/// referenced build is present in the store and hashes to its name.
+/// A run's observer record is a reference whose build is present in the
+/// store and hashes to its name.
 fn validate_observer(runs_directory: &Path, manifest: &RunManifest) -> Result<()> {
     let Some(record) = manifest.observer() else {
         return Ok(());
     };
     let directory = crate::run::observer_directory(runs_directory)?;
-    oer_hil_schema::observer_store::detach(record, &directory).map_err(|error| {
+    oer_hil_schema::observer_store::attach(record, &directory).map_err(|error| {
         format!(
             "HIL run `{}` has an invalid observer record: {error}",
             manifest.run_id

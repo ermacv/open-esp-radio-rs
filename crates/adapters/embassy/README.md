@@ -11,9 +11,9 @@ Bluetooth execution lives in the [radio runtime domain](../../runtime/README.md)
 An adapter can retain state required by its external contract.
 
 `esp32s31/executor` is the Embassy platform binding: executor wake-up and
-timer-queue ABI. It has no radio policy or PHY initialization. The concrete
-PHY time binding is the [PHY runtime](../../runtime/esp32s31/phy/), while chip
-PHY remains executor-independent.
+timer-queue ABI. It has no radio policy or PHY initialization. Image time is
+[`time`](time/)'s `EmbassyClock`, which chip PHY and the runtimes take as an
+`oer_time::Timer`; chip PHY remains executor-independent.
 
 Final memory profiles, static claims, IRQ binding and whole-radio lifecycles
 belong to [integration](../../composition/esp32s31/embassy/). Portable Wi-Fi

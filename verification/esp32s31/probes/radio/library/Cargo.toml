@@ -24,6 +24,7 @@ oer-esp32s31-ieee80211-runtime.workspace = true
 oer-ieee80211-mac.workspace = true
 oer-ieee80211-softmac.workspace = true
 oer-esp32s31-radio-esp-hal.workspace = true
+oer-time = { path = "../../../../../crates/time" }
 
 [lib]
 crate-type = ["rlib", "staticlib"]
@@ -32,7 +33,6 @@ crate-type = ["rlib", "staticlib"]
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "verification"
 evidence = "verdict"
 platform = "chip"

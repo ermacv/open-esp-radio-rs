@@ -22,7 +22,7 @@ use oer_esp32s31_ieee80211_sta::connected::management_protection::StationManagem
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
+use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile};
 
 use oer_esp32s31_ieee80211_mac::{
     crypto::{
@@ -220,7 +220,7 @@ where
     M: RawMutex,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     type Resources = WifiTxResources<'slot, P, E, T, ORDINARY_BUFFER_SIZE>;
     type Aggregate = AggregateTxResources<

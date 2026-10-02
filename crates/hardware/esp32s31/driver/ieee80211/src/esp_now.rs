@@ -15,7 +15,7 @@ use crate::{
         OrdinaryTxError, OrdinaryTxInterface, OrdinaryTxOwner, OrdinaryTxPlan, TX_FCS_SIZE,
         TX_METADATA_SIZE,
     },
-    tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxProgress, WifiTxTimer},
+    tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxProgress},
 };
 
 use oer_esp32s31_ieee80211_mac::{
@@ -334,7 +334,7 @@ pub fn start_esp_now_v1_encrypted<P, E, T, const BUFFER_SIZE: usize>(
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     if prepared.home_channel() != active_channel {
         return Err(EspNowCryptoError::ChannelMismatch {
@@ -369,7 +369,7 @@ where
     H: TxHardware,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     if prepared.transmit_channel() != active_channel {
         return Err(EspNowTxError::ChannelMismatch {
@@ -420,7 +420,7 @@ where
     H: TxHardware,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     if prepared.transmit_channel() != active_channel {
         return Err(EspNowTxError::ChannelMismatch {
@@ -540,7 +540,7 @@ where
     H: TxHardware,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     let publication_limit = if broadcast {
         1

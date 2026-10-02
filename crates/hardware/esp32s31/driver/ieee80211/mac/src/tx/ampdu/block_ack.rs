@@ -5,6 +5,7 @@
 //! vendor STA TID policy, the S31 three-register completion snapshot and the
 //! fixed hardware-slot batch. It still owns no DMA address or register access.
 
+use oer_ieee80211_lower_mac::BlockAckReport;
 pub use oer_ieee80211_mac::block_ack::{
     ADDBA_ACTION_BODY_LEN, ADDBA_REQUEST_ACTION, ADDBA_RESPONSE_ACTION, AddbaRequest,
     BLOCK_ACK_CATEGORY, BlockAckAction, DELBA_ACTION, OperationalTxBlockAck, TxBlockAckAlarm,
@@ -16,7 +17,6 @@ use oer_ieee80211_mac::sequence::SequenceNumber;
 /// Strict S31 TX window recovered from the fixed vendor queue geometry.
 pub const TX_BLOCK_ACK_MAX_WINDOW: u16 = 32;
 pub const TX_AMPDU_SLOT_CAPACITY: usize = TX_BLOCK_ACK_MAX_WINDOW as usize;
-const BLOCK_ACK_BITMAP_BITS: u16 = 64;
 
 /// Shared vendor Dialog Token owner for all S31 STA TX agreements.
 ///
@@ -355,12 +355,14 @@ impl TxBlockAckBitmap {
     /// is admitted; a sequence beyond either side of the 64-entry BA window
     /// remains unacknowledged so a stale result cannot release new traffic.
     pub const fn acknowledges(self, sequence: SequenceNumber) -> bool {
-        let distance = self.starting_sequence.forward_distance(sequence);
-        if distance < BLOCK_ACK_BITMAP_BITS {
-            self.bitmap & (1_u64 << distance) != 0
-        } else {
-            let predecessor_distance = sequence.forward_distance(self.starting_sequence);
-            predecessor_distance <= BLOCK_ACK_BITMAP_BITS
+        self.report().acknowledges(sequence)
+    }
+
+    /// The portable BlockAck of the lower-MAC port.
+    pub const fn report(self) -> BlockAckReport {
+        BlockAckReport {
+            start_sequence: self.starting_sequence,
+            bitmap: self.bitmap,
         }
     }
 }

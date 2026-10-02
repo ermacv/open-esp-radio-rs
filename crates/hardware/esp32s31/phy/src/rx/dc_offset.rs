@@ -268,7 +268,7 @@ impl PhyRxDcMinimumTargetTransaction {
 
     #[inline]
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn execute_target<D: crate::target_executor::PhyShortDelay>(
+    pub(crate) fn execute_target<D: crate::executor::wait::PhyShortDelay>(
         self,
         maximum_operations: u32,
         registers: &mut impl oer_esp32s31_hal::owner::SharedPhyAccess,

@@ -1,7 +1,7 @@
 //! The ESP32-S31 implementation of the chip-neutral MAC low-level interface.
 //!
 //! [`Ieee802154MacOwners`] implements
-//! [`oer_ieee802154_engine::ll::Ieee802154LowLevel`] over the ESP32-S31 PAC:
+//! [`oer_espressif_ieee802154_engine::ll::Ieee802154LowLevel`] over the ESP32-S31 PAC:
 //! each method is one accessor of the pinned public LL, and the functions
 //! below convert between the engine's semantic values and the PAC's
 //! register-level types. The accessor order is the engine's; nothing here
@@ -24,11 +24,11 @@ use oer_esp32s31_pac::{
     Ieee802154TxAbortReasonObservation as PacTxAbortReasonObservation,
     Ieee802154TxPowerCode as PacTxPowerCode,
 };
-pub use oer_ieee802154_engine::ll::{
+pub use oer_espressif_ieee802154_engine::ll::{
     Ieee802154LlCommand, Ieee802154LowLevel, Ieee802154RecentRssi, Ieee802154Timer,
     event_end_process, mac_init_registers, sec_clear, set_txrx_pti, timer_fire_at,
 };
-use oer_ieee802154_engine::{
+use oer_espressif_ieee802154_engine::{
     channel::Ieee802154Channel,
     coex::CoexPti,
     ll::COEX_DISABLED_PTI,

@@ -1,8 +1,8 @@
 schema = 5
 id = "diagnostic-ap-rx45-tx40-task-poll"
 description = "Temporary AP 45 Mbit/s uplink and 40 Mbit/s downlink Core0 task-poll diagnostic"
+role = "investigation"
 repetitions = 1
-transfer = "identical-image"
 tags = ["diagnostic", "wifi", "access-point", "ht40", "bidirectional", "task-poll", "air-strict"]
 
 [wifi]

@@ -280,3 +280,13 @@ fn run_all_takes_repeated_exclusions() {
     };
     assert_eq!(exclude, ["a", "b"]);
 }
+
+#[test]
+fn run_all_selects_by_role() {
+    let cli = Cli::try_parse_from(["cargo-hil", "run-all", "--role", "qualification"]).unwrap();
+    let CliCommand::RunAll { role, .. } = cli.command else {
+        panic!("expected run-all");
+    };
+    assert_eq!(role.as_deref(), Some("qualification"));
+    assert!(Cli::try_parse_from(["cargo-hil", "run-all", "--role", "triage"]).is_err());
+}

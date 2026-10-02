@@ -553,7 +553,7 @@ pub fn run(ctx: &Context, chip: &str, output: Option<PathBuf>) -> Result<()> {
     fs::create_dir_all(&directory)?;
     let inputs = inputs(ctx, chip)?;
     let (registers, regions) = model(ctx, chip)?;
-    crate::process::run(crate::blobray::cargo(ctx, "build").args([
+    oer_process::run(crate::blobray::cargo(ctx, "build").args([
         "--profile",
         "blobray",
         "-p",

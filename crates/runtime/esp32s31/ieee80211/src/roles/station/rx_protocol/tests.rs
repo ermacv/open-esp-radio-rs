@@ -48,7 +48,15 @@ fn protocol_rejects_an_unconfigured_static_dispatcher_arena() {
     let mut ethernet = [0_u8; 64];
     let runtime = Box::leak(Box::new(ConnectedReceiveStorage::new()));
 
-    let _ = ConnectedReceiveProtocol::new(receiver, &irq, Sink, &mut mpdu, &mut ethernet, runtime);
+    let _ = ConnectedReceiveProtocol::new(
+        receiver,
+        &irq,
+        Sink,
+        &mut mpdu,
+        &mut ethernet,
+        runtime,
+        oer_time_virtual::SkipClock::new(),
+    );
 }
 
 #[test]
@@ -61,8 +69,15 @@ fn stopped_protocol_cannot_dispatch_with_a_parked_dispatcher() {
     let mut ethernet = [0_u8; 64];
     let runtime = Box::leak(Box::new(ConnectedReceiveStorage::new()));
     runtime.try_reconfigure_dispatcher(open_config()).unwrap();
-    let mut protocol =
-        ConnectedReceiveProtocol::new(receiver, &irq, Sink, &mut mpdu, &mut ethernet, runtime);
+    let mut protocol = ConnectedReceiveProtocol::new(
+        receiver,
+        &irq,
+        Sink,
+        &mut mpdu,
+        &mut ethernet,
+        runtime,
+        oer_time_virtual::SkipClock::new(),
+    );
 
     protocol.shutdown_discard();
     embassy_futures::block_on(protocol.service_bounded(1));
@@ -77,8 +92,15 @@ fn empty_standalone_queue_can_be_replaced_without_rebuilding_station_protocol() 
     let mut ethernet = [0_u8; 64];
     let runtime = Box::leak(Box::new(ConnectedReceiveStorage::new()));
     runtime.try_reconfigure_dispatcher(open_config()).unwrap();
-    let protocol =
-        ConnectedReceiveProtocol::new(receiver, &irq, Sink, &mut mpdu, &mut ethernet, runtime);
+    let protocol = ConnectedReceiveProtocol::new(
+        receiver,
+        &irq,
+        Sink,
+        &mut mpdu,
+        &mut ethernet,
+        runtime,
+        oer_time_virtual::SkipClock::new(),
+    );
 
     let processor = protocol
         .try_into_processor()
@@ -102,8 +124,15 @@ fn paired_processor_returns_the_same_stopped_protocol_owner() {
     let runtime = Box::leak(Box::new(ConnectedReceiveStorage::new()));
     runtime.try_reconfigure_dispatcher(open_config()).unwrap();
     let runtime_ptr = runtime as *mut _;
-    let protocol =
-        ConnectedReceiveProtocol::new(receiver, &irq, Sink, &mut mpdu, &mut ethernet, runtime);
+    let protocol = ConnectedReceiveProtocol::new(
+        receiver,
+        &irq,
+        Sink,
+        &mut mpdu,
+        &mut ethernet,
+        runtime,
+        oer_time_virtual::SkipClock::new(),
+    );
 
     let processor = protocol
         .try_into_processor()
@@ -124,8 +153,15 @@ fn direct_and_async_reorder_paths_share_one_first_frame_marker() {
     let mut ethernet = [0_u8; 64];
     let runtime = Box::leak(Box::new(ConnectedReceiveStorage::new()));
     runtime.try_reconfigure_dispatcher(open_config()).unwrap();
-    let protocol =
-        ConnectedReceiveProtocol::new(receiver, &irq, Sink, &mut mpdu, &mut ethernet, runtime);
+    let protocol = ConnectedReceiveProtocol::new(
+        receiver,
+        &irq,
+        Sink,
+        &mut mpdu,
+        &mut ethernet,
+        runtime,
+        oer_time_virtual::SkipClock::new(),
+    );
     let mut processor = protocol
         .try_into_processor()
         .unwrap_or_else(|_| panic!("an empty standalone queue must detach"));
@@ -152,8 +188,15 @@ fn stop_edge_returns_an_empty_reusable_protocol_epoch() {
     let runtime_size = core::mem::size_of_val(&*runtime);
     let mpdu_ptr = mpdu.as_mut_ptr();
     let ethernet_ptr = ethernet.as_mut_ptr();
-    let protocol =
-        ConnectedReceiveProtocol::new(receiver, &irq, Sink, &mut mpdu, &mut ethernet, runtime);
+    let protocol = ConnectedReceiveProtocol::new(
+        receiver,
+        &irq,
+        Sink,
+        &mut mpdu,
+        &mut ethernet,
+        runtime,
+        oer_time_virtual::SkipClock::new(),
+    );
     assert!(
         core::mem::size_of_val(&protocol) < runtime_size,
         "the movable protocol handle must not absorb its static reorder arena"
@@ -185,8 +228,15 @@ fn stopped_protocol_arena_starts_a_second_epoch_without_reinitialization() {
     let runtime_ptr = runtime as *mut _;
     let scratch_ptrs = (mpdu.as_mut_ptr(), ethernet.as_mut_ptr());
 
-    let first =
-        ConnectedReceiveProtocol::new(receiver, &irq, Sink, &mut mpdu, &mut ethernet, runtime);
+    let first = ConnectedReceiveProtocol::new(
+        receiver,
+        &irq,
+        Sink,
+        &mut mpdu,
+        &mut ethernet,
+        runtime,
+        oer_time_virtual::SkipClock::new(),
+    );
     let stopped = first.into_stopped();
     let (mpdu, ethernet, runtime) = stopped.into_parts();
     assert!(!runtime.dispatcher_configured());
@@ -195,7 +245,15 @@ fn stopped_protocol_arena_starts_a_second_epoch_without_reinitialization() {
 
     drop(sender);
     let (_sender, receiver) = queue.split();
-    let second = ConnectedReceiveProtocol::new(receiver, &irq, Sink, mpdu, ethernet, runtime);
+    let second = ConnectedReceiveProtocol::new(
+        receiver,
+        &irq,
+        Sink,
+        mpdu,
+        ethernet,
+        runtime,
+        oer_time_virtual::SkipClock::new(),
+    );
     let stopped = second.into_stopped();
     let (mpdu, ethernet, runtime) = stopped.into_parts();
 

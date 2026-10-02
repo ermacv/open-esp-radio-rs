@@ -22,6 +22,5 @@ oer-ieee80211-softmac = { path = "../../crates/protocols/ieee80211/softmac" }
 workspace = true
 
 [package.metadata.open-radio]
-scope = "experimental"
 layer = "experiment"
 platform = "portable"

@@ -35,7 +35,6 @@ postcard-schema = { version = "0.2.5", features = ["derive"] }
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "hil"
 platform = "host"
 hil = "observation"

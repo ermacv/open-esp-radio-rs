@@ -19,8 +19,6 @@ pub mod esp_now_tx;
 mod join;
 #[cfg(any(target_arch = "riscv32", test))]
 mod join_port;
-#[cfg(target_arch = "riscv32")]
-mod join_time;
 mod lifecycle;
 pub mod network;
 pub mod power;
@@ -36,8 +34,6 @@ pub mod tx;
 pub mod tx_epoch;
 #[cfg(target_arch = "riscv32")]
 mod wpa2_port;
-#[cfg(target_arch = "riscv32")]
-mod wpa2_time;
 
 #[cfg(target_arch = "riscv32")]
 pub use join::{

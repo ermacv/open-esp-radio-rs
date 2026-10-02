@@ -48,6 +48,7 @@ fn one_deadline_returns_the_exact_task_owner() {
     };
     let outcome = block_on(stop_connected_task_group_until(
         &mut group,
+        &oer_time_virtual::SkipClock::new(),
         Duration::from_millis(1),
     ));
     let ConnectedTaskStopAttempt::Stopped(owner) = outcome else {
@@ -91,7 +92,8 @@ fn missed_group_deadline_remains_a_pending_stop() {
     };
     let outcome = block_on(stop_connected_task_group_until(
         &mut group,
-        Duration::from_ticks(0),
+        &oer_time_virtual::SkipClock::new(),
+        Duration::ZERO,
     ));
     assert!(group.stop_requested);
     assert!(outcome.is_pending());

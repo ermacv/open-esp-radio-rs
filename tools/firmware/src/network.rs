@@ -6,61 +6,15 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
-    str::FromStr,
 };
 
-/// The network implementation a firmware links. Owned Xarxa/Embassy is the
-/// only one: the maintained owner-transfer forks declared in the manifests.
-/// The type remains so that artifacts keep recording which stack they carry.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum Integration {
-    #[default]
-    OwnedXarxa,
-}
-impl Integration {
-    pub const fn id(self) -> &'static str {
-        match self {
-            Self::OwnedXarxa => "owned-xarxa",
-        }
-    }
-    pub const fn feature(self) -> &'static str {
-        match self {
-            Self::OwnedXarxa => "owned-network",
-        }
-    }
+/// The network implementation every firmware links: owned Xarxa/Embassy,
+/// the maintained owner-transfer forks the manifests declare. HIL image
+/// records name it.
+pub const NETWORK: &str = "owned-xarxa";
 
-    /// Resolve the example's selection; the Cargo feature and `--network`
-    /// can name only the owned stack.
-    pub fn for_example(explicit: Option<Self>, features: &[String]) -> Result<Self> {
-        for feature in features {
-            if feature.ends_with("-network") && feature != Self::OwnedXarxa.feature() {
-                return Err(format!(
-                    "network feature `{feature}` was removed; owned-network is the only network implementation"
-                )
-                .into());
-            }
-        }
-        Ok(explicit.unwrap_or_default())
-    }
-
-    /// No source override: the owned stack's pins live in the manifests.
-    pub fn configure(self, _command: &mut Command, _root: &Path) {}
-}
-impl FromStr for Integration {
-    type Err = String;
-    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
-        match value {
-            "owned-xarxa" => Ok(Self::OwnedXarxa),
-            "upstream-xarxa" | "upstream" | "patched-xarxa" | "udp-backpressure"
-            | "upstream-smoltcp" => Err(format!(
-                "network integration `{value}` was removed; owned-xarxa is the only network implementation"
-            )),
-            _ => Err(format!(
-                "unknown network integration `{value}` (expected owned-xarxa)"
-            )),
-        }
-    }
-}
+/// The Cargo feature that selects [`NETWORK`] in a firmware.
+pub const NETWORK_FEATURE: &str = "owned-network";
 
 /// A private copy of one workspace's committed `Cargo.lock` for one build.
 ///
@@ -125,7 +79,7 @@ impl BuildLock {
     }
 
     /// Check that the build resolved exactly the committed pins.
-    pub fn validate(&self, _root: &Path, _integration: Integration) -> Result<()> {
+    pub fn validate(&self) -> Result<()> {
         validate_identities(
             identities(&fs::read(&self.committed)?)?,
             identities(&fs::read(&self.path)?)?,

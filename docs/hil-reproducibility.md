@@ -59,11 +59,10 @@ can contain clean-commit or tracked-patch provenance; incomplete source records
 remain diagnostic inputs.
 
 A verified snapshot matching the current sources in every file the observation
-depends on ([which files](../qualification/evidence-reviews.md)) is direct
+depends on ([which files](../qualification/README.md#evidence-ownership)) is direct
 qualification evidence, subject to the scenario's remaining requirements.
-Dirty state and commit identity do not override that content match.
-Differences between observed and current inputs need an explicit
-[property/build applicability review](../qualification/evidence-reviews.md).
+Dirty state and commit identity do not override that content match. An
+observation of different inputs is not evidence for the current ones.
 Archiving source bytes establishes provenance, not a passing experiment.
 
 Run-bundle reproducibility is `unverified`: retaining exact firmware enables

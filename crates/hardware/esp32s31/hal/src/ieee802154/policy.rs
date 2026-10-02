@@ -98,7 +98,7 @@ impl Ieee802154AckTimeout {
     }
 }
 
-pub use oer_ieee802154_engine::types::Ieee802154CcaMode;
+pub use oer_espressif_ieee802154_engine::types::Ieee802154CcaMode;
 
 /// The PAC mode of a chip-neutral CCA mode.
 pub(crate) const fn cca_mode_into_pac(mode: Ieee802154CcaMode) -> PacCcaMode {

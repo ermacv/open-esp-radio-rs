@@ -9,20 +9,20 @@
 use crate::roles::scan::{
     port::{
         ScanPhyPort, ScanPort, ScanPortError, ScanRadio, ScanReceivePort, ScanStation, ScanStorage,
-        ScanTelemetry, ScanTimer,
+        ScanTelemetry,
     },
     rx::ScanFrameObserver,
 };
 
 use oer_esp32s31_hal::shared_radio::PlatformClockProvider;
-use oer_esp32s31_phy::{ConcurrentWifiChannelError, PhyAsyncDelay, PhyTargetObserver};
+use oer_esp32s31_phy::{ConcurrentWifiChannelError, PhyTargetObserver};
 use oer_esp32s31_radio_runtime::RadioSystem;
 
 use crate::roles::radio_channel::RadioChannel;
 
 use oer_esp32s31_ieee80211::coex::WifiCoexActivity;
 
-use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
+use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile};
 
 use oer_esp32s31_ieee80211_mac::{
     init::{MacRuntimeStopHardware, MacSnifferHardware},
@@ -32,9 +32,11 @@ use oer_esp32s31_ieee80211_mac::{
 use oer_esp32s31_ieee80211_sta::{
     attempt::{StaAttemptSecurity, StaIdentity},
     control_tx::{ControlTransmitter, ControlTxError},
-    scan::{StaScanBackend, StaScanConfig, StaScanError},
+    scan::{StaScanConfig, StaScanError},
     scan_tx::{RunningScanTx, ScanTxSummary},
 };
+
+use oer_ieee80211_sta_service::scan::StaScanBackend;
 
 use oer_ieee80211_mac::{
     scan::{ScanRecord, ScanTable},
@@ -44,9 +46,10 @@ use oer_ieee80211_mac::{
 
 use oer_ieee80211_sta::{
     request::{StationDiscovery, WifiSsid},
-    scan::{StaCandidateScanExit, StaCandidateScanService, StaScanPlanError, StaScanProgress},
+    scan::{StaCandidateScanExit, StaScanPlanError, StaScanProgress},
     station::{StaAttemptFailure, StaAttemptOutcome, StaFailureDisposition, StaLifecycleStage},
 };
+use oer_ieee80211_sta_service::scan::StaCandidateScanService;
 
 use super::composer::StationInitialScanExit;
 
@@ -192,9 +195,8 @@ pub struct StationScanResources<
     const TX_BUFFER_SIZE: usize,
 > {
     /// The shared radio; each channel switch leases it for one transaction.
-    pub radio: &'radio RadioSystem<P, C>,
+    pub radio: &'radio RadioSystem<P, C, D>,
     pub phy_observer: Q,
-    pub phy_delay: D,
     pub hardware: H,
     pub receive: R,
     pub control: ControlTransmitter<'slot, X, E, T, TX_BUFFER_SIZE>,
@@ -217,7 +219,6 @@ pub struct StationScanReturned<
     'sequence,
     'slot,
     P,
-    D,
     H,
     R,
     X,
@@ -232,7 +233,6 @@ pub struct StationScanReturned<
     pub receive: R,
     pub control: ControlTransmitter<'slot, X, E, T, TX_BUFFER_SIZE>,
     pub phy_observer: P,
-    pub phy_delay: D,
     pub scan_observer: O,
     pub timer: W,
     pub table: &'storage mut ScanTable<RECORDS>,
@@ -455,7 +455,6 @@ pub async fn run_esp32s31_station_scan<
         'sequence,
         'slot,
         Q,
-        D,
         H,
         R,
         X,
@@ -472,21 +471,20 @@ pub async fn run_esp32s31_station_scan<
 >
 where
     Q: PhyTargetObserver,
-    D: PhyAsyncDelay,
+    D: oer_time::Timer,
     H: TxHardware + MacSnifferHardware + MacRuntimeStopHardware,
     R: ScanReceivePort<H>,
     X: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     O: ScanFrameObserver,
-    W: ScanTimer,
+    W: oer_time::Timer,
     C: PlatformClockProvider,
     RadioChannel<'radio, P, C, Q, D>: ScanPhyPort<H, Error = ConcurrentWifiChannelError>,
 {
     let StationScanResources {
         radio,
         phy_observer,
-        phy_delay,
         hardware,
         receive,
         control,
@@ -568,7 +566,6 @@ where
             receive: parts.rx,
             control,
             phy_observer,
-            phy_delay,
             scan_observer: parts.observer,
             timer: parts.timer,
             table: parts.table,

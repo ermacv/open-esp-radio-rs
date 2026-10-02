@@ -27,7 +27,6 @@ tempfile = "3"
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "hil"
 platform = "host"
 hil = "observation"

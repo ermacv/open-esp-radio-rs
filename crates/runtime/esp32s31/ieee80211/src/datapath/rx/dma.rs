@@ -18,11 +18,9 @@ use core::{future::Future, marker::PhantomData};
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use embassy_time::Instant;
-
 pub use oer_esp32s31_ieee80211::rx::storage::{
     ESP32S31_RX_BUFFER_SIZE, ESP32S31_RX_BUFFER_STORAGE_SIZE, ESP32S31_RX_DESCRIPTOR_COUNT,
-    ESP32S31_RX_WALKER_ENABLE_SETTLE_US, ReceiveDmaBuffer, ReceiveDmaStorage,
+    ESP32S31_RX_WALKER_ENABLE_SETTLE_US, ReceiveDmaBuffer, ReceiveDmaStorage, walker_enable_settle,
 };
 
 use oer_esp32s31_ieee80211_mac::rx::{
@@ -43,7 +41,6 @@ use crate::diagnostics::rx_pipeline::{RxPipelineObservation, RxStageDiscard};
 use crate::datapath::{
     DatapathRxProgress, DatapathRxWorkCounters,
     rx::{
-        hardware::RxDmaObservationDelay,
         routed::{StaApStagedRxFrame, StaApStagedRxSender},
         staging::{StagedRxFrame, StagedRxReceiver, StagedRxSender, StagedRxTrySendError},
     },
@@ -200,12 +197,8 @@ impl<
 
     fn try_send(
         &self,
-        mut frame: StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
+        frame: StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
     ) -> Result<(), StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>> {
-        // Timestamp the first executor-visible handoff, before either the
-        // standalone or same-channel routing queue can delay protocol parsing.
-        // Retried publication preserves this first sample in the affine frame.
-        frame.mark_runtime_received_at_micros(Instant::now().as_micros());
         match self {
             Self::Standalone(frames) => frames.try_send(frame).map_err(|error| match error {
                 StagedRxTrySendError(frame) => frame,
@@ -349,21 +342,39 @@ pub use epoch::StagedRxEpoch;
 #[cfg(test)]
 mod tests;
 
+/// The staged publisher as the RX transaction sees it: each frame is
+/// timestamped on `clock` at its first executor-visible handoff.
+pub(crate) struct ClockedRxPublisher<
+    'a,
+    'pool,
+    'queue,
+    M: RawMutex,
+    D,
+    const QUEUE_DEPTH: usize,
+    const STAGE_CAPACITY: usize,
+    const STAGE_SLOTS: usize,
+> {
+    pub(crate) frames:
+        &'a StagedRxPublisher<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
+    pub(crate) clock: &'a D,
+}
+
 impl<
     'pool,
     'queue,
     M: RawMutex,
+    D: oer_time::Clock,
     const QUEUE_DEPTH: usize,
     const STAGE_CAPACITY: usize,
     const STAGE_SLOTS: usize,
 > oer_esp32s31_ieee80211::rx::transaction::Publisher<'pool, STAGE_CAPACITY, STAGE_SLOTS>
-    for StagedRxPublisher<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>
+    for ClockedRxPublisher<'_, 'pool, 'queue, M, D, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>
 {
     const DEPTH: usize = QUEUE_DEPTH;
 
     #[inline(always)]
     fn free_capacity(&self) -> usize {
-        Self::free_capacity(self)
+        self.frames.free_capacity()
     }
     #[inline(always)]
     fn preview(
@@ -371,20 +382,24 @@ impl<
         unit: Esp32s31RxCompletedUnit,
         bytes: [u8; 24],
     ) -> Esp32s31RxCompletedUnitPreview {
-        Self::preview(self, unit, bytes)
+        self.frames.preview(unit, bytes)
     }
     #[inline(always)]
     fn unclassified_preview(
         &self,
         unit: Esp32s31RxCompletedUnit,
     ) -> Esp32s31RxCompletedUnitPreview {
-        Self::unclassified_preview(self, unit)
+        self.frames.unclassified_preview(unit)
     }
     #[inline(always)]
     fn try_send(
         &self,
-        frame: StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
+        mut frame: StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
     ) -> Result<(), StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>> {
-        Self::try_send(self, frame)
+        // Timestamp the first executor-visible handoff, before either the
+        // standalone or same-channel routing queue can delay protocol parsing.
+        // Retried publication preserves this first sample in the affine frame.
+        frame.mark_runtime_received_at_micros(self.clock.now().as_micros());
+        self.frames.try_send(frame)
     }
 }

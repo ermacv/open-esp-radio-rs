@@ -19,8 +19,8 @@ mod payload;
 pub mod stack;
 #[cfg(feature = "image")]
 pub use image::{
-    BOOTSTRAP_BIN, PARTITION_TABLE, TARGET, audit_application_image, audit_runtime,
-    bootstrap_command, save_image_command, save_rom_image_command,
+    BOOTSTRAP_BIN, CHIP, PARTITION_TABLE, audit_application_image, audit_runtime,
+    bootstrap_command, save_image_command, save_rom_image_command, target,
 };
 #[cfg(feature = "image")]
 pub use payload::pack_runtime;

@@ -11,7 +11,7 @@ use crate::{
 };
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
-use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
+use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile};
 
 use oer_esp32s31_ieee80211_mac::tx::{TxCompletion, TxHardware};
 
@@ -133,7 +133,7 @@ impl<'slot, P, E, T, const BUFFER_SIZE: usize> RunningScanTx<'slot, P, E, T, BUF
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     pub const fn new(control: ControlTransmitter<'slot, P, E, T, BUFFER_SIZE>) -> Self {
         Self {

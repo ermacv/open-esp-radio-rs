@@ -76,7 +76,7 @@ fn a_full_list_answers_memory_capacity_exceeded_and_other_refusals_hardware_fail
     );
     assert_eq!(
         harness
-            .change_list(ADD, &RANDOM_DEVICE, Err(RequestError::Unavailable))
+            .change_list(ADD, &RANDOM_DEVICE, Err(RequestError::Busy))
             .1,
         Some(HARDWARE_FAILURE)
     );

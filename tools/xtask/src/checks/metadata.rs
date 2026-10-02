@@ -1,26 +1,20 @@
-use crate::{Context, Result, cargo, paths};
+use crate::{Context, Result, cargo};
 use std::{collections::BTreeSet, fs};
 
 mod lints;
 mod pins;
 
-/// Every Cargo workspace of the repository, by its root manifest.
-fn workspaces(context: &Context) -> Result<BTreeSet<std::path::PathBuf>> {
-    let manifests = paths::source_manifests(context)?;
-    if manifests.is_empty() {
-        return Err("no source Cargo manifests found".into());
-    }
-    let mut workspaces = BTreeSet::new();
-    for manifest in manifests {
-        let workspace = cargo::workspace_manifest(context, &manifest)?;
-        if !workspace.starts_with(&context.root) {
-            return Err(format!(
-                "Cargo workspace escaped repository: {}",
-                workspace.display()
-            )
-            .into());
-        }
-        workspaces.insert(workspace);
+/// Every Cargo workspace of the repository, by its root manifest, as
+/// `oer-tidy` discovers them from the manifests as text.
+pub fn workspaces(context: &Context) -> Result<BTreeSet<std::path::PathBuf>> {
+    let repo = oer_tidy::repo::Repo::from_git(&context.root)?;
+    let workspaces: BTreeSet<_> =
+        oer_tidy::workspaces::discover(&oer_tidy::manifest::Manifests::load(&repo)?)
+            .into_iter()
+            .map(|manifest| context.root.join(manifest))
+            .collect();
+    if workspaces.is_empty() {
+        return Err("no Cargo workspace found".into());
     }
     Ok(workspaces)
 }
@@ -31,11 +25,12 @@ pub fn update_locks(context: &Context) -> Result<()> {
     for manifest in workspaces(context)? {
         let lock = manifest.with_file_name("Cargo.lock");
         let before = fs::read_to_string(&lock).ok();
-        crate::process::capture(
+        oer_process::capture(
             context
                 .cargo()
                 .args(["metadata", "--format-version", "1"])
-                .args(ONLINE)
+                // The one Cargo call of the repository that may go online.
+                .args(["--config", "net.offline=false"])
                 .arg("--manifest-path")
                 .arg(&manifest),
         )?;
@@ -49,39 +44,43 @@ pub fn update_locks(context: &Context) -> Result<()> {
     Ok(())
 }
 
-/// Lets one Cargo command use the network although the repository's
-/// configuration keeps Cargo offline.
-pub const ONLINE: [&str; 2] = ["--config", "net.offline=false"];
-
-/// Downloads whatever each workspace's lock file names and the local cache
-/// lacks. A workspace whose dependencies are all present costs one offline
-/// `cargo fetch` of a fraction of a second; only a missing one goes online.
-pub fn fetch(context: &Context) -> Result<()> {
-    for manifest in workspaces(context)? {
-        let offline = context
-            .cargo()
-            .args(["fetch", "--locked", "--quiet", "--manifest-path"])
-            .arg(&manifest)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()?;
-        if offline.success() {
-            continue;
-        }
-        println!(
-            "fetching the dependencies of {}",
-            manifest.strip_prefix(&context.root)?.display()
-        );
-        crate::process::run(
+/// Fails, naming every one, when a workspace's lock no longer matches its
+/// manifests (`cargo xtask lock --check`). Offline: a dependency missing
+/// from the local cache is reported as such, and `cargo tidy fetch`
+/// downloads it.
+pub fn check_locks(context: &Context, manifests: &[std::path::PathBuf]) -> Result<()> {
+    let mut stale = Vec::new();
+    for manifest in manifests {
+        let result = oer_process::capture(
             context
                 .cargo()
-                .args(["fetch", "--locked"])
-                .args(ONLINE)
+                .args(["metadata", "--format-version", "1", "--locked"])
                 .arg("--manifest-path")
-                .arg(&manifest),
-        )?;
+                .arg(manifest),
+        );
+        if let Err(error) = result {
+            let reason = error
+                .to_string()
+                .lines()
+                .rev()
+                .find(|line| line.starts_with("error"))
+                .unwrap_or("cargo metadata --locked failed")
+                .to_owned();
+            stale.push(format!(
+                "{}: {reason}",
+                manifest.strip_prefix(&context.root)?.display()
+            ));
+        }
     }
-    Ok(())
+    if stale.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "{} workspace lock(s) do not match their manifests; `cargo xtask lock` updates them:\n{}",
+        stale.len(),
+        stale.join("\n")
+    )
+    .into())
 }
 
 pub fn run(context: &Context) -> Result<usize> {

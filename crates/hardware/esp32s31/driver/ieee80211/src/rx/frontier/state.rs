@@ -1,5 +1,3 @@
-use core::marker::PhantomData;
-
 use oer_esp32s31_ieee80211_mac::rx::{
     RxObservedMask, RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxRingTopologySnapshot,
 };
@@ -40,9 +38,8 @@ pub enum RxFrontierError {
 
 /// Complete owner return when a finite frontier cannot be promoted into the
 /// connected live ring.
-pub struct RxFrontierIntoLiveFailure<'storage, D, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
-{
-    pub owner: ReceiveFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE>,
+pub struct RxFrontierIntoLiveFailure<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize> {
+    pub owner: ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE>,
     pub error: RxFrontierError,
 }
 
@@ -103,7 +100,6 @@ impl From<RxRingError> for RxFrontierError {
 }
 
 /// Unique RX-ring owner shared by all finite role phases.
-pub struct ReceiveFrontier<'storage, D, const COUNT: usize, const DMA_BUFFER_SIZE: usize> {
+pub struct ReceiveFrontier<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize> {
     pub(super) state: RxFrontierState<'storage, COUNT>,
-    pub(super) _delay: PhantomData<fn() -> D>,
 }

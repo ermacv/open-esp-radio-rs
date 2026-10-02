@@ -1,12 +1,20 @@
 //! The radio role and its hardware behind one async lock.
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::{
+    cell::Cell,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use embassy_futures::select::select;
-use embassy_sync::{blocking_mutex::raw::RawMutex, channel::Channel, mutex::Mutex, signal::Signal};
-use embassy_time::{Duration, Timer};
+use embassy_sync::{
+    blocking_mutex::{Mutex as BlockingMutex, raw::RawMutex},
+    channel::Channel,
+    mutex::Mutex,
+    signal::Signal,
+};
 use oer_bluetooth_radio::{
-    RadioActivity, RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError,
+    EventsLost, FailureClass, LeRadioCapabilities, PortError, RadioActivity, RadioInstant,
+    RadioOutcome, RadioRequest, RadioTiming, RequestError,
 };
 use oer_esp32s31_bluetooth::{
     ControllerTimeSample,
@@ -27,6 +35,7 @@ use oer_esp32s31_hal::{
     },
     shared_radio::ClientQuiescence,
 };
+use oer_time::{Duration, Timer};
 
 use crate::{
     BluetoothOutcome,
@@ -69,6 +78,18 @@ pub enum BluetoothRuntimeError {
     Faulted,
 }
 
+impl PortError for BluetoothRuntimeError {
+    fn class(&self) -> FailureClass {
+        match self {
+            // Not installed is a state an install ends.
+            Self::NotInstalled | Self::Rejected(_) => FailureClass::Rejected,
+            // The latch may take the next sample.
+            Self::Time(_) => FailureClass::Recoverable,
+            Self::Faulted => FailureClass::Poisoned,
+        }
+    }
+}
+
 /// Why the runtime stopped driving the radio.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothRuntimeFault<E> {
@@ -96,11 +117,6 @@ pub enum BluetoothInstallError {
     /// No controller-time sample could be taken.
     Time(BluetoothTimeError),
 }
-
-/// The bounded outcome queue overflowed and dropped the outcomes it could not
-/// hold.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothOutcomesLost;
 
 type Radio<
     const LEGACY: usize,
@@ -168,21 +184,62 @@ enum Pass {
     Idle,
 }
 
-/// The sink of one locked entry: outcomes go to the queue.
+/// The bounded outcome queue: overflow is reported in its order, a loss
+/// marker taking the place of the first dropped outcome.
+struct OutcomeQueue<M: RawMutex, const EVENTS: usize> {
+    entries: Channel<M, Result<BluetoothOutcome, EventsLost>, EVENTS>,
+    /// An outcome was dropped and its marker is not queued yet.
+    lost: BlockingMutex<M, Cell<bool>>,
+}
+
+impl<M: RawMutex, const EVENTS: usize> OutcomeQueue<M, EVENTS> {
+    const fn new() -> Self {
+        Self {
+            entries: Channel::new(),
+            lost: BlockingMutex::new(Cell::new(false)),
+        }
+    }
+
+    fn push(&self, outcome: BluetoothOutcome) {
+        self.lost.lock(|lost| {
+            if lost.get() {
+                if self.entries.try_send(Err(EventsLost)).is_err() {
+                    return;
+                }
+                lost.set(false);
+            }
+            if self.entries.try_send(Ok(outcome)).is_err() {
+                lost.set(true);
+            }
+        });
+    }
+
+    fn take(&self) -> Option<Result<BluetoothOutcome, EventsLost>> {
+        self.lost.lock(|lost| match self.entries.try_receive() {
+            Ok(entry) => Some(entry),
+            Err(_) if lost.replace(false) => Some(Err(EventsLost)),
+            Err(_) => None,
+        })
+    }
+}
+
+/// The sink of one locked entry: outcomes go to the queue, and a fault
+/// poisons the runtime.
 struct QueueSink<'a, M: RawMutex, const EVENTS: usize> {
-    outcomes: &'a Channel<M, BluetoothOutcome, EVENTS>,
-    lost: &'a AtomicBool,
+    outcomes: &'a OutcomeQueue<M, EVENTS>,
+    poisoned: &'a AtomicBool,
+    changed: &'a Signal<M, ()>,
 }
 
 impl<M: RawMutex, const EVENTS: usize> BluetoothRadioSink for QueueSink<'_, M, EVENTS> {
     fn outcome(&mut self, outcome: RadioOutcome<'_>) {
-        if self
-            .outcomes
-            .try_send(BluetoothOutcome::copy(outcome))
-            .is_err()
-        {
-            self.lost.store(true, Ordering::Release);
+        let copied = BluetoothOutcome::copy(outcome);
+        // A copy that could not hold its PDU is a fault as well.
+        if let BluetoothOutcome::Fault(_) = copied {
+            self.poisoned.store(true, Ordering::Release);
+            self.changed.signal(());
         }
+        self.outcomes.push(copied);
     }
 }
 
@@ -190,10 +247,17 @@ impl<M: RawMutex, const EVENTS: usize> BluetoothRadioSink for QueueSink<'_, M, E
 ///
 /// [`Self::run`] drives the scheduler: it reports completions, inserts
 /// admitted events and carries list transactions through their hardware
-/// waits. [`Self::request`] admits one portable request with a fresh
-/// controller-time sample. `EVENTS` bounds the outcomes waiting for the
-/// consumer; overflow drops the newest outcome and reports
-/// [`BluetoothOutcomesLost`] once.
+/// waits; it is the runner the composition polls beside the consumer of
+/// [`Self::next_outcome`], which only takes outcomes. [`Self::request`]
+/// admits one portable request with a fresh controller-time sample.
+/// `EVENTS` bounds the outcomes waiting for the consumer, a loss marker
+/// included; overflow drops the newest outcome and reports [`EventsLost`]
+/// once in its place.
+///
+/// A hardware fault of the radio or the runner poisons the runtime: the
+/// queued outcomes, the fault's cause among them, are still reported, then
+/// [`BluetoothOutcome::Poisoned`] at every call, and requests fail as
+/// [`BluetoothRuntimeError::Faulted`] until a new install.
 #[allow(
     clippy::type_complexity,
     reason = "the role's pool capacities stay visible in the runtime type"
@@ -201,6 +265,7 @@ impl<M: RawMutex, const EVENTS: usize> BluetoothRadioSink for QueueSink<'_, M, E
 pub struct BluetoothRuntime<
     M: RawMutex,
     H: BluetoothRadioHardware,
+    T,
     const LEGACY: usize,
     const CONNECTABLE: usize,
     const SCANNERS: usize,
@@ -225,17 +290,23 @@ pub struct BluetoothRuntime<
             >,
         >,
     >,
-    outcomes: Channel<M, BluetoothOutcome, EVENTS>,
-    lost: AtomicBool,
+    outcomes: OutcomeQueue<M, EVENTS>,
+    /// The radio or the runner faulted; a new install clears it.
+    poisoned: AtomicBool,
+    /// Raised when the consumer must look again without a new outcome.
+    changed: Signal<M, ()>,
     work: Signal<M, ()>,
     activity: Signal<M, RadioActivity>,
     /// Whether another radio shares the antenna.
     shared: AtomicBool,
+    /// The image's monotonic time the runner's rechecks wait on.
+    timer: T,
 }
 
 impl<
     M: RawMutex,
     H: BluetoothRadioHardware,
+    T: Timer + Default,
     const LEGACY: usize,
     const CONNECTABLE: usize,
     const SCANNERS: usize,
@@ -248,6 +319,7 @@ impl<
     for BluetoothRuntime<
         M,
         H,
+        T,
         LEGACY,
         CONNECTABLE,
         SCANNERS,
@@ -259,13 +331,14 @@ impl<
     >
 {
     fn default() -> Self {
-        Self::new()
+        Self::new(T::default())
     }
 }
 
 impl<
     M: RawMutex,
     H: BluetoothRadioHardware,
+    T: Timer,
     const LEGACY: usize,
     const CONNECTABLE: usize,
     const SCANNERS: usize,
@@ -278,6 +351,7 @@ impl<
     BluetoothRuntime<
         M,
         H,
+        T,
         LEGACY,
         CONNECTABLE,
         SCANNERS,
@@ -288,12 +362,15 @@ impl<
         EVENTS,
     >
 {
-    /// An empty runtime, suitable for a `static`.
-    pub const fn new() -> Self {
+    /// An empty runtime whose waits are on `timer`, suitable for a
+    /// `static`.
+    pub const fn new(timer: T) -> Self {
         Self {
+            timer,
             installed: Mutex::new(None),
-            outcomes: Channel::new(),
-            lost: AtomicBool::new(false),
+            outcomes: OutcomeQueue::new(),
+            poisoned: AtomicBool::new(false),
+            changed: Signal::new(),
             work: Signal::new(),
             activity: Signal::new(),
             shared: AtomicBool::new(false),
@@ -349,7 +426,7 @@ impl<
             return Err((BluetoothInstallError::RxChains(error), memory, hardware));
         }
         hardware.publish_device_table(memory.device_table.publication());
-        let sample = match sample_time(&mut hardware).await {
+        let sample = match sample_time(&self.timer, &mut hardware).await {
             Ok(sample) => sample,
             Err(error) => return Err((BluetoothInstallError::Time(error), memory, hardware)),
         };
@@ -369,6 +446,7 @@ impl<
             faulted: false,
         });
         drop(installed);
+        self.poisoned.store(false, Ordering::Release);
         self.work.signal(());
         Ok(())
     }
@@ -384,10 +462,11 @@ impl<
         let installed = installed
             .as_mut()
             .ok_or(BluetoothRuntimeError::NotInstalled)?;
-        if installed.faulted {
+        // A faulted radio is poisoned, not a refusal of this request.
+        if installed.faulted || installed.radio.is_faulted() {
             return Err(BluetoothRuntimeError::Faulted);
         }
-        let sample = sample_time(&mut installed.hardware)
+        let sample = sample_time(&self.timer, &mut installed.hardware)
             .await
             .map_err(BluetoothRuntimeError::Time)?;
         installed.radio.observe_time(&sample);
@@ -421,14 +500,20 @@ impl<
         let installed = installed
             .as_mut()
             .ok_or(BluetoothRuntimeError::NotInstalled)?;
-        if installed.faulted {
+        if installed.faulted || installed.radio.is_faulted() {
             return Err(BluetoothRuntimeError::Faulted);
         }
-        let sample = sample_time(&mut installed.hardware)
+        let sample = sample_time(&self.timer, &mut installed.hardware)
             .await
             .map_err(BluetoothRuntimeError::Time)?;
         installed.radio.observe_time(&sample);
         Ok((installed.radio.now(), installed.radio.timing()))
+    }
+
+    /// What the radio serves: its roles on LE 1M, Direct Test Mode and
+    /// connections whose acknowledgement the hardware runs.
+    pub const fn capabilities(&self) -> LeRadioCapabilities {
+        Radio::<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>::CAPABILITIES
     }
 
     /// The platform's scheduler interrupt published a wake for the worker.
@@ -436,16 +521,33 @@ impl<
         self.work.signal(());
     }
 
-    /// Wait for the next outcome.
+    /// Take the next outcome: the queued ones in their order, then the
+    /// terminal [`BluetoothOutcome::Poisoned`] of a poisoned runtime.
     ///
     /// # Errors
     ///
-    /// Reports once that the queue overflowed before the outcomes after it.
-    pub async fn next_outcome(&self) -> Result<BluetoothOutcome, BluetoothOutcomesLost> {
-        if self.lost.swap(false, Ordering::AcqRel) {
-            return Err(BluetoothOutcomesLost);
+    /// Reports once, in place of the first dropped outcome, that the queue
+    /// overflowed.
+    pub async fn next_outcome(&self) -> Result<BluetoothOutcome, EventsLost> {
+        loop {
+            if let Some(outcome) = self.outcomes.take() {
+                return outcome;
+            }
+            if self.poisoned.load(Ordering::Acquire) {
+                return Ok(BluetoothOutcome::Poisoned);
+            }
+            select(
+                self.outcomes.entries.ready_to_receive(),
+                self.changed.wait(),
+            )
+            .await;
         }
-        Ok(self.outcomes.receive().await)
+    }
+
+    /// Poison the runtime after a fault of the runner.
+    fn poison(&self) {
+        self.poisoned.store(true, Ordering::Release);
+        self.changed.signal(());
     }
 
     /// Follow whether another radio shares the antenna. The installed radio
@@ -496,7 +598,7 @@ impl<
                     return BluetoothRuntimeFault::NotInstalled;
                 };
                 if !installed.faulted
-                    && let Ok(sample) = sample_time(&mut installed.hardware).await
+                    && let Ok(sample) = sample_time(&self.timer, &mut installed.hardware).await
                 {
                     installed.radio.observe_time(&sample);
                 }
@@ -508,12 +610,14 @@ impl<
                         Ok(()) => Pass::Continue,
                         Err(fault) => {
                             installed.fault();
+                            self.poison();
                             return fault;
                         }
                     },
                     Ok(pass) => pass,
                     Err(fault) => {
                         installed.fault();
+                        self.poison();
                         return fault;
                     }
                 }
@@ -522,11 +626,11 @@ impl<
                 Pass::Stop | Pass::Continue => budget.spend().await,
                 Pass::Recheck => {
                     budget.refill();
-                    select(self.work.wait(), Timer::after(HARDWARE_RECHECK)).await;
+                    select(self.work.wait(), wait_for(&self.timer, HARDWARE_RECHECK)).await;
                 }
                 Pass::Idle => {
                     budget.refill();
-                    select(self.work.wait(), Timer::after(TIME_REFRESH)).await;
+                    select(self.work.wait(), wait_for(&self.timer, TIME_REFRESH)).await;
                 }
             }
         }
@@ -543,10 +647,10 @@ impl<
     /// # Errors
     ///
     /// No radio is installed, or a hardware fault stopped the runtime.
-    pub async fn quiesce<T>(
+    pub async fn quiesce<R>(
         &self,
-        maintenance: impl FnOnce(ClientQuiescence<'_>) -> T,
-    ) -> Result<T, BluetoothRuntimeFault<H::StartError>> {
+        maintenance: impl FnOnce(ClientQuiescence<'_>) -> R,
+    ) -> Result<R, BluetoothRuntimeFault<H::StartError>> {
         let mut installed = self.installed.lock().await;
         let installed = installed
             .as_mut()
@@ -554,6 +658,7 @@ impl<
         let result = self.quiesce_installed(installed, maintenance).await;
         if result.is_err() {
             installed.fault();
+            self.poison();
         }
         self.work.signal(());
         result
@@ -591,6 +696,7 @@ impl<
         let installed = slot.as_mut().ok_or(BluetoothRuntimeFault::NotInstalled)?;
         if let Err(fault) = self.stop_scheduler(installed).await {
             installed.fault();
+            self.poison();
             return Err(fault);
         }
         // The hardware leaves with its PHY routed as initialization left it.
@@ -599,10 +705,13 @@ impl<
         // flight; the task owner retires only once it completed.
         loop {
             match installed.hardware.drain_time() {
-                Ok(ControllerTimeEventStep::Waiting) => Timer::after(HARDWARE_RECHECK).await,
+                Ok(ControllerTimeEventStep::Waiting) => {
+                    wait_for(&self.timer, HARDWARE_RECHECK).await
+                }
                 Ok(_) => break,
                 Err(error) => {
                     installed.fault();
+                    self.poison();
                     return Err(BluetoothRuntimeFault::Time(BluetoothTimeError::Event(
                         error,
                     )));
@@ -617,7 +726,7 @@ impl<
         Ok((radio, hardware))
     }
 
-    async fn quiesce_installed<T>(
+    async fn quiesce_installed<R>(
         &self,
         installed: &mut Installed<
             H,
@@ -629,8 +738,8 @@ impl<
             RX_PACKETS,
             ITEMS,
         >,
-        maintenance: impl FnOnce(ClientQuiescence<'_>) -> T,
-    ) -> Result<T, BluetoothRuntimeFault<H::StartError>> {
+        maintenance: impl FnOnce(ClientQuiescence<'_>) -> R,
+    ) -> Result<R, BluetoothRuntimeFault<H::StartError>> {
         self.stop_scheduler(installed).await?;
         let result = maintenance(
             installed
@@ -640,7 +749,7 @@ impl<
         );
         // The radio stays stopped, and the runtime faulted, without a sample
         // to judge which events have passed.
-        let sample = sample_time(&mut installed.hardware)
+        let sample = sample_time(&self.timer, &mut installed.hardware)
             .await
             .map_err(BluetoothRuntimeFault::Time)?;
         installed
@@ -667,7 +776,7 @@ impl<
     ) -> Result<(), BluetoothRuntimeFault<H::StartError>> {
         while installed.awaiting.is_some() {
             if let Pass::Recheck = self.pass(installed)? {
-                Timer::after(HARDWARE_RECHECK).await;
+                wait_for(&self.timer, HARDWARE_RECHECK).await;
             }
         }
         let mut stop = BluetoothSchedulerStop::default();
@@ -676,7 +785,7 @@ impl<
                 Ok(BluetoothSchedulerStopStep::Stopped(stopped)) => break stopped,
                 Ok(BluetoothSchedulerStopStep::Pending(pending)) => {
                     stop = pending;
-                    Timer::after(HARDWARE_RECHECK).await;
+                    wait_for(&self.timer, HARDWARE_RECHECK).await;
                 }
                 Err(error) => return Err(BluetoothRuntimeFault::StopSequence(error)),
             }
@@ -698,7 +807,8 @@ impl<
     fn sink(&self) -> QueueSink<'_, M, EVENTS> {
         QueueSink {
             outcomes: &self.outcomes,
-            lost: &self.lost,
+            poisoned: &self.poisoned,
+            changed: &self.changed,
         }
     }
 
@@ -869,7 +979,16 @@ impl ContinueBudget {
     }
 }
 
+/// Wait for `duration` on `timer`; a deadline past the timer's range never
+/// ends.
+pub(crate) async fn wait_for(timer: &impl Timer, duration: Duration) {
+    if timer.wait_for(duration).await.is_err() {
+        core::future::pending::<()>().await;
+    }
+}
+
 async fn sample_time(
+    timer: &impl Timer,
     hardware: &mut impl BluetoothRadioHardware,
 ) -> Result<ControllerTimeSample, BluetoothTimeError> {
     let request = match hardware.request_time() {
@@ -878,7 +997,7 @@ async fn sample_time(
             while let ControllerTimeEventStep::Waiting =
                 hardware.drain_time().map_err(BluetoothTimeError::Event)?
             {
-                Timer::after(HARDWARE_RECHECK).await;
+                wait_for(timer, HARDWARE_RECHECK).await;
             }
             hardware
                 .request_time()
@@ -892,7 +1011,7 @@ async fn sample_time(
             .map_err(BluetoothTimeError::Event)?
         {
             ControllerTimeEventStep::Sample { sample, .. } => return Ok(sample),
-            ControllerTimeEventStep::Waiting => Timer::after(HARDWARE_RECHECK).await,
+            ControllerTimeEventStep::Waiting => wait_for(timer, HARDWARE_RECHECK).await,
             ControllerTimeEventStep::Idle | ControllerTimeEventStep::OrphanDrained => {
                 return Err(BluetoothTimeError::Lost);
             }

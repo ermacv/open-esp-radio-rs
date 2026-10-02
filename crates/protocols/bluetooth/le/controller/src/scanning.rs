@@ -23,7 +23,7 @@ use oer_bluetooth_ll::{
     },
 };
 use oer_bluetooth_radio::{
-    AdvertisingChannel, EventId, RadioDuration, RadioInstant, RadioOutcome, RadioRequest,
+    AdvertisingChannel, EventId, LePhy, RadioDuration, RadioInstant, RadioOutcome, RadioRequest,
     RadioTiming, RadioWindow, ScanFilterPolicy, ScanType, ScanWindow, ScannerConfiguration,
     ScannerId, TxPower,
 };
@@ -135,6 +135,7 @@ impl Scanner {
                     scan_type: self.scan_type,
                     filter_policy: self.filter_policy,
                     tx_power: TxPower::from_dbm(0),
+                    phy: LePhy::Le1M,
                 }))
             }
             Phase::Cancelling { sent: sent @ false } => {

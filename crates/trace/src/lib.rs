@@ -10,12 +10,13 @@
 //! identified by a bare number.
 //!
 //! The image places one [`Retained`] in memory that survives the resets it
-//! cares about and builds one [`Trace`] over it:
+//! cares about and builds one [`Trace`] over it, with the function that reads
+//! the image's monotonic time in microseconds:
 //!
 //! ```ignore
 //! #[unsafe(link_section = ".rtc_fast.persistent")]
 //! static RETAINED: oer_trace::Retained<512, 2, 1024> = oer_trace::Retained::new();
-//! static TRACE: oer_trace::Trace = oer_trace::Trace::new(&RETAINED);
+//! static TRACE: oer_trace::Trace = oer_trace::Trace::new(&RETAINED, now_micros);
 //!
 //! let boot = oer_trace::install(&TRACE); // holds what the previous boot left
 //! // ... drain `boot.previous` if it matters ...
@@ -127,7 +128,7 @@ pub fn emit<E: Event>(event: &E) {
 #[inline(always)]
 fn record(kind: Kind, words: [u32; 2]) {
     if let Some(trace) = installed()
-        && trace.record(kind, words, now_us())
+        && trace.record(kind, words, trace.now_us())
     {
         disable();
     }
@@ -155,17 +156,10 @@ pub fn freeze(trigger: Kind, post: u32) {
 pub fn capture(point: Kind, fill: impl FnOnce(&mut SnapshotWriter<'_>)) {
     #[cfg(feature = "record")]
     if let Some(trace) = installed() {
-        trace.capture(point, now_us(), fill);
+        trace.capture(point, trace.now_us(), fill);
     }
     #[cfg(not(feature = "record"))]
     let _ = (point, fill);
-}
-
-#[cfg(feature = "record")]
-#[inline(always)]
-fn now_us() -> u32 {
-    // Wraps every 71 minutes; the host unwraps along the sequence order.
-    embassy_time::Instant::now().as_micros() as u32
 }
 
 #[cfg(test)]

@@ -1,0 +1,27 @@
+[package]
+name = "oer-ieee80211-lower-mac"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Portable IEEE 802.11 lower-MAC radio port: one hardware transmission attempt, receive events and controls"
+readme = "README.md"
+
+[features]
+# The in-memory backend of `model`, for host tests of packages that drive the
+# port.
+model = []
+
+[dependencies]
+oer-ieee80211-mac = { path = "../mac" }
+oer-radio-coex = { path = "../../../radio/coex" }
+oer-radio-port = { path = "../../../radio/port" }
+oer-time = { path = "../../../time" }
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+layer = "protocol"
+platform = "portable"

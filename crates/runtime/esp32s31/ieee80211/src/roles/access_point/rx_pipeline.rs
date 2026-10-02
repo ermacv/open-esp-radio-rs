@@ -22,7 +22,6 @@ use crate::datapath::{
     rx::{
         dma::{ReceiveDmaStorage, StagedRxEpoch},
         frontier::RxFrontierSchedulerSnapshot,
-        hardware::RxDmaObservationDelay,
         staging::{StagedRxFrame, StagedRxQueue, StagedRxReceiver},
     },
 };
@@ -182,7 +181,7 @@ impl<
         DMA_STORAGE_SIZE,
     >
 where
-    D: RxDmaObservationDelay,
+    D: oer_time::Timer,
 {
     pub fn from_halted(
         ring: RxRingHalted<'storage, COUNT>,
@@ -426,7 +425,7 @@ impl<
         DMA_STORAGE_SIZE,
     >
 where
-    D: RxDmaObservationDelay,
+    D: oer_time::Timer,
 {
     fn serviced_descriptors(&self) -> u64 {
         self.inner.serviced_descriptors()
@@ -473,7 +472,7 @@ impl<
         DMA_STORAGE_SIZE,
     >
 where
-    D: RxDmaObservationDelay,
+    D: oer_time::Timer,
 {
     async fn start(&mut self, hardware: &mut H) -> Result<(), RxStageTransactionError> {
         self.inner.start(hardware).await

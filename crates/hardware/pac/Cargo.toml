@@ -28,7 +28,6 @@ targets = []
 features = ["esp32s31"]
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "hardware"
 platform = "selected"
 test-feature-sets = ["esp32s31", "esp32c5"]

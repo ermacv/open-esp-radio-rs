@@ -1,6 +1,6 @@
 //! Caller-owned command values; frame bytes are borrowed only for admission.
 
-use super::{RadioTimestamp, RequestId, channel::Channel, interface::Interface};
+use super::{RadioInstant, RequestId, channel::Channel, interface::Interface};
 use crate::mac::frame::FrameView;
 use crate::mac::header::FrameAddress;
 use crate::mac::pending::AutoPendingMode;
@@ -8,17 +8,11 @@ use crate::mac::time_sync::TimeSync;
 
 /// Portable Host-to-radio operation.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+///
+/// Enabling and disabling the radio are the port's lifecycle commands
+/// ([`Ieee802154RadioPort::lifecycle`](crate::Ieee802154RadioPort::lifecycle)),
+/// not submissions.
 pub enum RadioCommand<'frame> {
-    /// Acquire the radio and enter sleep.
-    Enable {
-        /// Caller-owned correlation identifier.
-        id: RequestId,
-    },
-    /// Release an enabled, non-busy radio.
-    Disable {
-        /// Caller-owned correlation identifier.
-        id: RequestId,
-    },
     /// Leave receive mode and enter sleep.
     Sleep {
         /// Caller-owned correlation identifier.
@@ -53,18 +47,37 @@ pub enum RadioCommand<'frame> {
     },
     /// Sleep, then receive in a window that opens at a monotonic radio time.
     ScheduledReceive(ScheduledReceiveRequest),
+    /// End the running transmission, energy scan, clear-channel assessment
+    /// or scheduled receive window `target` before its own end
+    /// ([`RadioCapabilities::CANCEL`](crate::RadioCapabilities::CANCEL)).
+    ///
+    /// Admission leaves the state unchanged; the backend stops the
+    /// operation and reports its terminal event, after which the radio
+    /// rests as the operation would have left it: a transmission ends with
+    /// [`TxStatus::Aborted`](crate::TxStatus::Aborted) (or with the outcome
+    /// the hardware had already reached), an energy scan with
+    /// [`RadioEvent::EnergyScanFailed`](crate::RadioEvent::EnergyScanFailed),
+    /// an assessment with
+    /// [`RadioEvent::ClearChannelAssessmentFailed`](crate::RadioEvent::ClearChannelAssessmentFailed)
+    /// and a window with
+    /// [`RadioEvent::ScheduledReceiveDone`](crate::RadioEvent::ScheduledReceiveDone).
+    Cancel {
+        /// Caller-owned correlation identifier of the cancellation.
+        id: RequestId,
+        /// The operation to end.
+        target: RequestId,
+    },
 }
 
 impl RadioCommand<'_> {
     /// Return the caller-owned correlation identifier.
     pub const fn id(self) -> RequestId {
         match self {
-            Self::Enable { id }
-            | Self::Disable { id }
-            | Self::Sleep { id }
+            Self::Sleep { id }
             | Self::Receive { id, .. }
             | Self::Configure { id, .. }
-            | Self::ClearChannelAssessment { id, .. } => id,
+            | Self::ClearChannelAssessment { id, .. }
+            | Self::Cancel { id, .. } => id,
             Self::Transmit(request) => request.id,
             Self::EnergyScan(request) => request.id,
             Self::ScheduledReceive(request) => request.id,
@@ -74,8 +87,6 @@ impl RadioCommand<'_> {
     /// Return the finite operation kind without retaining frame bytes.
     pub const fn kind(self) -> CommandKind {
         match self {
-            Self::Enable { .. } => CommandKind::Enable,
-            Self::Disable { .. } => CommandKind::Disable,
             Self::Sleep { .. } => CommandKind::Sleep,
             Self::Receive { .. } => CommandKind::Receive,
             Self::Configure { .. } => CommandKind::Configure,
@@ -83,6 +94,7 @@ impl RadioCommand<'_> {
             Self::EnergyScan(_) => CommandKind::EnergyScan,
             Self::ClearChannelAssessment { .. } => CommandKind::ClearChannelAssessment,
             Self::ScheduledReceive(_) => CommandKind::ScheduledReceive,
+            Self::Cancel { .. } => CommandKind::Cancel,
         }
     }
 }
@@ -90,10 +102,6 @@ impl RadioCommand<'_> {
 /// Frame-free command discriminator suitable for bounded mailboxes and logs.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CommandKind {
-    /// Enable operation.
-    Enable,
-    /// Disable operation.
-    Disable,
     /// Sleep operation.
     Sleep,
     /// Receive operation.
@@ -108,6 +116,8 @@ pub enum CommandKind {
     ClearChannelAssessment,
     /// Scheduled receive window.
     ScheduledReceive,
+    /// Cancellation of a running operation.
+    Cancel,
 }
 
 /// How one transmit request should acquire the channel.
@@ -126,7 +136,7 @@ pub enum TxMode {
     /// optionally after one clear-channel assessment that ends at that time.
     Scheduled {
         /// Requested start time.
-        at: RadioTimestamp,
+        at: RadioInstant,
         /// Assess the channel first (ESP-IDF `esp_ieee802154_transmit_at`
         /// with `cca`, as OpenThread's `mCsmaCaEnabled` asks).
         cca: bool,
@@ -196,7 +206,7 @@ pub struct ScheduledReceiveRequest {
     /// Receive channel.
     pub channel: Channel,
     /// Time the receiver is on, in the radio's monotonic epoch.
-    pub start: RadioTimestamp,
+    pub start: RadioInstant,
     /// Window length in microseconds; zero leaves the window open.
     pub duration_us: u32,
 }

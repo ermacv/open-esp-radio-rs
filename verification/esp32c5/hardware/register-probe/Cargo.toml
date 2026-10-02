@@ -42,7 +42,6 @@ disallowed_methods = "deny"
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "verification"
 evidence = "verdict"
 platform = "chip"

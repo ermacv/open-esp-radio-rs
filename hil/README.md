@@ -97,7 +97,6 @@ previously published scenario seals remain usable.
 
 Qualification independently checks the selected program, source/build binding,
 completion seals and repetition requirements. A verified snapshot matching the
-complete current inputs supplies direct evidence, including dirty inputs. Property-scoped
-[engineering reviews](../qualification/evidence-reviews.md) can establish
-applicability to another build. History pages and Markdown
+complete current inputs supplies direct evidence, including dirty inputs; nothing
+admits an observation of other inputs. History pages and Markdown
 remain navigation and presentation, never proof input.

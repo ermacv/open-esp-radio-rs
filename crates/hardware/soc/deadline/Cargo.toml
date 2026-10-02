@@ -11,6 +11,5 @@ description = "Chip-neutral finite system-deadline controller that a chip adapte
 workspace = true
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "hardware"
 platform = "portable"

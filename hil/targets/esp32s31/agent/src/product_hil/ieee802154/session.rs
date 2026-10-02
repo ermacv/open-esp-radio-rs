@@ -32,7 +32,7 @@ use crate::console::publish_event_reliably;
 use radio::{Received, Session};
 use serve::{Served, serve_session};
 
-type Radio = RadioSystem<EspHalRadioPlatform, EspHalRadioClocks>;
+type Radio = RadioSystem<EspHalRadioPlatform, EspHalRadioClocks, oer_time_embassy::EmbassyClock>;
 
 /// Stop the session's client and start it again, as the air check does
 /// between cycles: the stop leaves the shared PHY and closes RF after the
@@ -45,10 +45,7 @@ async fn restart(
     config: Ieee802154SessionConfig,
 ) -> (Ieee802154SessionRestartEvidence, Option<Ieee802154System>) {
     let mut evidence = Ieee802154SessionRestartEvidence::default();
-    let id = session.id();
-    let _ = session.submit(RadioCommand::Sleep { id });
-    let id = session.id();
-    let _ = session.submit(RadioCommand::Disable { id });
+    let _ = session.rest_disabled().await;
     let stopped = {
         let stopped = core::pin::pin!(client.stop(system));
         stopped.await
@@ -67,7 +64,7 @@ async fn restart(
         return (evidence, None);
     };
     session.runtime = system.runtime();
-    evidence.result = match session.configure(config) {
+    evidence.result = match session.configure(config).await {
         Ok(()) => {
             let id = session.id();
             let channel = session.channel;
@@ -129,7 +126,7 @@ pub(in crate::product_hil) async fn run_session(
     client
         .set_maintenance_policy(config.maintenance_policy)
         .await;
-    let started = match session.configure(config) {
+    let started = match session.configure(config).await {
         Ok(()) => Ieee802154SessionResult::Done,
         Err(result) => result,
     };
@@ -157,6 +154,8 @@ pub(in crate::product_hil) async fn run_session(
         }
     };
     let counts = Cell::new(Ieee802154SessionMaintenanceCounts::default());
+    // The runtime's runner progresses backoffs beside the served commands.
+    let runtime = session.runtime;
     let serving = async {
         loop {
             let served = {
@@ -167,7 +166,10 @@ pub(in crate::product_hil) async fn run_session(
                     config,
                     &counts
                 ));
-                served.await
+                match embassy_futures::select::select(served, runtime.run()).await {
+                    embassy_futures::select::Either::First(served) => served,
+                    embassy_futures::select::Either::Second(never) => match never {},
+                }
             };
             match served {
                 Served::Stop(stop_request) => {
@@ -205,10 +207,7 @@ pub(in crate::product_hil) async fn run_session(
         coexistence.disable_failed = true;
     }
 
-    let id = session.id();
-    let _ = session.submit(RadioCommand::Sleep { id });
-    let id = session.id();
-    let _ = session.submit(RadioCommand::Disable { id });
+    let _ = session.rest_disabled().await;
     let stopped = {
         let stopped = core::pin::pin!(client.stop(system));
         stopped.await

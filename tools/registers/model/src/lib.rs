@@ -44,6 +44,7 @@ pub use pac_bindings::{generate_pac_binding_index, validate_pac_crate_name};
 pub use partition_image::PartitionRegister;
 pub use register_evidence::{
     RegisterEvidenceCatalog, RegisterEvidenceRange, RegisterEvidenceSet, RegisterEvidenceSource,
+    SourceKind,
 };
 pub use register_lints::RegisterLintPack;
 pub use shared::{

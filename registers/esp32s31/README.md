@@ -37,6 +37,11 @@ no private artifacts. It explicitly selects the shared lint pack and source evid
 without selecting the investigation's executable reconstructions or authenticating
 private vendor artifacts.
 
+Evidence sources that describe a board observation in prose
+(`evidence/hil-open.toml`, `evidence/hil-vendor.toml`) declare
+`kind = "unattested-hil-observation"`: they stay cited until each is
+replaced by an attestation bound to a sealed HIL run.
+
 The [vendor investigation](../../verification/esp32s31/README.md)
 selects those additional inputs explicitly and authenticates artifact-specific
 facts in its caller-provided run context. Sharing a publication scope does not

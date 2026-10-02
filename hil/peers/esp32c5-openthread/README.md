@@ -13,8 +13,9 @@ the image it needs, and the runner restores that image before it runs.
 
 ## Build and flash
 
-The application builds against the ESP-IDF revision pinned for the chip
-catalog, without the OpenThread CLI, the ESP-IDF console or the lwIP glue:
+The application builds against the ESP-IDF revision and ESP32-C5 archives pinned in
+[`verification/esp32c5/artifacts.toml`](../../../verification/esp32c5/artifacts.toml),
+without the OpenThread CLI, the ESP-IDF console or the lwIP glue:
 
 ```console
 cargo hil firmware flash openthread-peer --board esp32c5

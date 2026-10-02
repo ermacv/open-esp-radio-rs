@@ -11,7 +11,7 @@ use core::future::Future;
 use crate::{
     datapath::rx::{
         dma::{RxEpochResources, StagedRxProducer},
-        frontier::{ReceiveFrontier, RxFrontierDelay, RxFrontierError},
+        frontier::{ReceiveFrontier, RxFrontierError},
     },
     roles::station::epoch::{ReconnectedStaEpoch, ReconnectedStaEpochParts},
 };
@@ -116,7 +116,6 @@ impl<
     'storage,
     'pool,
     'queue,
-    PD,
     D,
     M: RawMutex,
     const QUEUE_DEPTH: usize,
@@ -128,7 +127,7 @@ impl<
 >
     ConnectedRxMaterializer<
         CooperativeRadioHardware<'arena>,
-        ReceiveFrontier<'storage, PD, COUNT, DMA_BUFFER_SIZE>,
+        ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE>,
     >
     for RxEpochResources<
         'storage,
@@ -144,7 +143,7 @@ impl<
         DMA_STORAGE_SIZE,
     >
 where
-    PD: RxFrontierDelay,
+    D: oer_time::Timer,
 {
     type Connected = StagedRxProducer<
         'storage,
@@ -163,18 +162,21 @@ where
 
     async fn materialize(
         self,
-        receive: ReceiveFrontier<'storage, PD, COUNT, DMA_BUFFER_SIZE>,
+        receive: ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE>,
         hardware: &mut CooperativeRadioHardware<'arena>,
     ) -> Result<
         Self::Connected,
         (
-            ReceiveFrontier<'storage, PD, COUNT, DMA_BUFFER_SIZE>,
+            ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE>,
             Self,
             Self::Error,
         ),
     > {
         let storage = self.storage();
-        match receive.try_into_live_with_storage(hardware, storage).await {
+        match receive
+            .try_into_live_with_storage(self.delay(), hardware, storage)
+            .await
+        {
             Ok(ring) => Ok(self.with_live_ring(ring)),
             Err(failure) => Err((failure.owner, self, failure.error)),
         }

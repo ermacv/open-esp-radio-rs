@@ -11,19 +11,12 @@ description = "Typed, reset-retained event trace and snapshot slots for open ESP
 default = []
 # Record events. Without it `emit`, `freeze` and `capture` compile to nothing,
 # while the event types stay available to host decoders.
-record = ["dep:embassy-time"]
-
-[dependencies]
-embassy-time = { version = "0.5.1", optional = true }
-
-[dev-dependencies]
-embassy-time = { version = "0.5.1", features = ["generic-queue-64", "std"] }
+record = []
 
 [lints]
 workspace = true
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "contract"
 platform = "portable"
 

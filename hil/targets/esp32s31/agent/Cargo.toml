@@ -86,7 +86,6 @@ open-radio-hil = [
     "dep:oer-esp32s31-ieee80211-system",
     "dep:oer-esp32s31-radio-system",
     "dep:oer-esp32s31-phy",
-    "dep:oer-esp32s31-ieee80211-esp-hal",
     "dep:oer-hil-protocol",
     "dep:oer-hil-agent",
     "dep:oer-hil-image-keys",
@@ -219,7 +218,7 @@ ieee802154-route-probe = [
     "dep:oer-esp32s31-hal",
     "dep:oer-esp32s31-radio-esp-hal",
     "dep:oer-esp32s31-ieee802154-esp-hal",
-    "dep:oer-ieee802154-engine",
+    "dep:oer-espressif-ieee802154-engine",
     "oer-esp32s31-hal/validation-probes",
 ]
 # The composed IEEE 802.15.4 client on the shared radio arbiter: the
@@ -229,8 +228,8 @@ ieee802154-radio = [
     "dep:oer-esp32s31-hal",
     "dep:oer-esp32s31-phy",
     "dep:oer-esp32s31-radio-esp-hal",
-    "dep:oer-ieee802154-engine",
-    "dep:oer-esp32s31-ieee802154-runtime",
+    "dep:oer-espressif-ieee802154-engine",
+    "dep:oer-espressif-ieee802154-runtime",
     "dep:oer-esp32s31-ieee802154-system",
     "dep:oer-esp32s31-radio-runtime",
     "dep:oer-ieee802154",
@@ -238,13 +237,13 @@ ieee802154-radio = [
 # Record the IEEE 802.15.4 engine and runtime trace points and the MAC power
 # sequence at each transmission start.
 ieee802154-trace = [
-    "oer-esp32s31-ieee802154-runtime?/trace",
+    "oer-espressif-ieee802154-runtime?/trace",
     "oer-esp32s31-hal?/ieee802154-trace",
 ]
 # OpenThread over the composed client: host-driven Thread sessions.
 ieee802154-thread = [
     "ieee802154-radio",
-    "dep:oer-esp32s31-ieee802154-openthread",
+    "dep:oer-ieee802154-openthread",
     "dep:openthread",
     "dep:tinyrlibc",
 ]
@@ -277,14 +276,13 @@ gatt-application = { package = "oer-example-bluetooth-gatt", path = "../../../..
 oer-bluetooth-controller = { path = "../../../../crates/protocols/bluetooth/le/controller", optional = true }
 oer-bluetooth-hci = { path = "../../../../crates/protocols/bluetooth/hci", optional = true }
 trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", rev = "a6af435ba1539cead0afce04718ad8a089bcc4b9", optional = true, default-features = false, features = ["default-packet-pool", "gatt", "peripheral"] }
-oer-esp32s31-bluetooth = { workspace = true, optional = true }
 oer-esp32s31-bluetooth-system = { workspace = true, optional = true }
 oer-esp32s31-radio-esp-hal = { workspace = true, features = ["esp32s31"], optional = true }
-oer-ieee802154-engine = { workspace = true, optional = true }
+oer-espressif-ieee802154-engine = { workspace = true, optional = true }
 oer-esp32s31-ieee802154-esp-hal = { workspace = true, optional = true }
-oer-esp32s31-ieee802154-runtime = { workspace = true, optional = true }
+oer-espressif-ieee802154-runtime = { workspace = true, optional = true }
 oer-esp32s31-ieee802154-system = { workspace = true, optional = true }
-oer-esp32s31-ieee802154-openthread = { workspace = true, optional = true }
+oer-ieee802154-openthread = { workspace = true, optional = true }
 openthread = { workspace = true, optional = true }
 tinyrlibc = { workspace = true, optional = true }
 oer-esp32s31-radio-runtime = { workspace = true, optional = true }
@@ -293,13 +291,12 @@ oer-esp32s31-soc-esp-hal.workspace = true
 # Recording is on in every image; only freeze triggers record unless a
 # domain feature adds its trace points.
 oer-trace = { path = "../../../../crates/trace", features = ["record"] }
+oer-time-embassy = { path = "../../../../crates/adapters/embassy/time" }
 oer-esp32s31-executor-embassy.workspace = true
-oer-esp32s31-ieee80211-esp-hal = { workspace = true, features = ["esp32s31"], optional = true }
 oer-hil-protocol = { workspace = true, optional = true, features = ["async-io"] }
 oer-hil-agent = { path = "../../../agent", optional = true, default-features = false }
 oer-hil-image-keys = { workspace = true, optional = true }
 oer-hil-trace.workspace = true
-oer-esp32s31-platform-board = { path = "../../../../platform/esp32s31/board" }
 oer-esp32s31-platform-runtime = { path = "../../../../platform/esp32s31/runtime" }
 oer-hil-esp32s31-telemetry = { workspace = true, optional = true }
 oer-ieee80211-runtime = { workspace = true, optional = true }
@@ -313,7 +310,6 @@ workspace = true
 oer-esp32s31-platform-layout = { path = "../../../../platform/esp32s31/layout", features = ["build"] }
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "hil"
 platform = "chip"
 chip = "esp32s31"

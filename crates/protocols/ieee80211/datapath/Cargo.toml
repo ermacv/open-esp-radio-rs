@@ -21,6 +21,5 @@ workspace = true
 oer-ieee80211-softmac = { path = "../softmac" }
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "protocol"
 platform = "portable"

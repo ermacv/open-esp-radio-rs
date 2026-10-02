@@ -33,15 +33,33 @@ pub use maintenance::{
 pub use oer_esp32s31_hal::{ieee802154::ll::Ieee802154MacOwners, root::RadioHardware};
 #[cfg(target_arch = "riscv32")]
 pub use oer_esp32s31_radio_esp_hal::{EspHalRadioClocks, EspHalRadioPlatform};
-pub use oer_ieee802154_engine::pib::Ieee802154PibDefaults;
+pub use oer_espressif_ieee802154_engine::pib::Ieee802154PibDefaults;
+// The coexistence levels a Thread role change maps its priority to
+// (`Ieee802154System::update_coexistence`).
+pub use oer_esp32s31_hal::{coex::Ieee802154CoexLevel, ieee802154::coex::Ieee802154CoexConfig};
+
+/// The transmit power in dBm ESP-IDF's `ieee802154_pib_init` gives every
+/// channel on the ESP32-S31: the highest level of its BTBB transmit power
+/// table (`esp_ieee802154_get_txpower`), which an upper stack reports as the
+/// radio's default.
+pub const IEEE802154_DEFAULT_TX_POWER_DBM: i8 =
+    oer_esp32s31_hal::ieee802154::ESP32S31_TX_POWER_LEVELS.highest_dbm();
+
+/// The receive sensitivity in dBm of the ESP32-S31 (`IEEE802154_RX_SENSITIVITY`
+/// of its `ieee802154_ll.h`, `esp_ieee802154_get_receive_sensitivity`).
+pub const IEEE802154_RECEIVE_SENSITIVITY_DBM: i8 =
+    oer_espressif_ieee802154_engine::engine::RECEIVE_SENSITIVITY_DBM;
 
 /// The shared ESP32-S31 radio IEEE 802.15.4 joins: the arbiter with the
 /// esp-hal platform and clock sources. The application creates it once and
 /// runs its periodic PHY tracking
 /// ([`RadioSystem::run_tracking`](oer_esp32s31_radio_runtime::RadioSystem::run_tracking)).
 #[cfg(target_arch = "riscv32")]
-pub type SharedRadio =
-    oer_esp32s31_radio_runtime::RadioSystem<EspHalRadioPlatform, EspHalRadioClocks>;
+pub type SharedRadio = oer_esp32s31_radio_runtime::RadioSystem<
+    EspHalRadioPlatform,
+    EspHalRadioClocks,
+    oer_time_embassy::EmbassyClock,
+>;
 
 #[cfg(target_arch = "riscv32")]
 pub use system::{

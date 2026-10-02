@@ -33,6 +33,5 @@ toml = "=1.1.4"
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "tool"
 platform = "host"

@@ -121,3 +121,46 @@ fn the_probing_ie_carries_the_thread_oui_and_the_data() {
     assert_eq!(data.write_ie(&mut ie[..7]), 0);
     assert_eq!(ProbingData::default().write_ie(&mut ie), 0);
 }
+
+/// A replaced table holds exactly the new initiators, the first listed
+/// matching first, and keeps the noise floor.
+#[test]
+fn replacing_the_initiators_keeps_the_newest_first() {
+    let lqi = LinkMetrics {
+        lqi: true,
+        ..LinkMetrics::NONE
+    };
+    let rssi = LinkMetrics {
+        rssi: true,
+        ..LinkMetrics::NONE
+    };
+    let extended = [8, 7, 6, 5, 4, 3, 2, 1];
+    let mut probing = EnhAckProbing::<4>::new(-97);
+    // Short 2 was added after short 1, for the same device.
+    probing.replace(&[
+        ProbingInitiator {
+            short_address: 2,
+            extended_address: extended,
+            metrics: rssi,
+        },
+        ProbingInitiator {
+            short_address: 1,
+            extended_address: extended,
+            metrics: lqi,
+        },
+    ]);
+    assert_eq!(
+        probing.metrics(FrameAddress::Extended(extended)),
+        Some(rssi)
+    );
+    assert_eq!(probing.metrics(FrameAddress::Short([1, 0])), Some(lqi));
+
+    probing.replace(&[ProbingInitiator {
+        short_address: 1,
+        extended_address: extended,
+        metrics: lqi,
+    }]);
+    assert_eq!(probing.metrics(FrameAddress::Short([2, 0])), None);
+    assert_eq!(probing.metrics(FrameAddress::Extended(extended)), Some(lqi));
+    assert_eq!(probing.noise_floor(), -97);
+}

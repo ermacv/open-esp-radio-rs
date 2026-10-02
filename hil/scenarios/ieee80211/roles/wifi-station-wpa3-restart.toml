@@ -1,7 +1,8 @@
 schema = 5
 id = "wifi-station-wpa3-restart"
 description = "HT40 STA against a WPA3-Personal (SAE-only) access point: SAE authentication with protected management frames, UDP before and after one station stop and cold restart"
-tags = ["qualification", "wifi", "lifecycle", "security"]
+role = "investigation"
+tags = ["wifi", "lifecycle", "security"]
 
 [wifi]
 image = "correctness"

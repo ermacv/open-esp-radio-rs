@@ -1,17 +1,23 @@
-//! Compiler configuration shared by every image build.
+//! Compiler configuration shared by every image build: the single owner of
+//! the ESP32-S31 image compiler flags. No `.cargo/config.toml` carries Rust
+//! flags for an image; `cargo xtask build firmware`, the HIL image builder
+//! and their type checks all apply [`configure_image_compiler`].
+//!
+//! `RUSTC_BOOTSTRAP=1` is set here, on the image's Cargo command only, and
+//! exists for the unstable `-Z` flags alone (`emit-stack-sizes`,
+//! `move-size-limit`, `share-generics`) on the exact stable toolchain that
+//! `rust-toolchain.toml` pins.
 
 use std::{env, process::Command};
 
 use oer_memory_report::StackBudget;
 
-use crate::TARGET;
-
 /// Configure `command`, a Cargo build of an image, with the compiler flags
 /// every image shares.
-pub fn configure_image_compiler(command: &mut Command, budget: &StackBudget) {
-    // The pinned project toolchain supports these flags, but they remain
-    // unstable. Image construction enables them; the stack-size ELF section
-    // is consumed by a safe host-side parser.
+pub fn configure_image_compiler(command: &mut Command, budget: &StackBudget, target: &str) {
+    // The pinned stable toolchain supports these flags, but they remain
+    // unstable: RUSTC_BOOTSTRAP enables them for this command alone. The
+    // stack-size ELF section is consumed by a safe host-side parser.
     command.env("RUSTC_BOOTSTRAP", "1").env(
         "RUSTFLAGS",
         image_rustflags(env::var("RUSTFLAGS").ok(), budget.max_move_bytes),
@@ -19,15 +25,15 @@ pub fn configure_image_compiler(command: &mut Command, budget: &StackBudget) {
     // C and C++ that build scripts compile for the image (through the `cc`
     // and `cmake` crates) emit the same `.stack_sizes` section, so the audit
     // measures their frames as well.
-    for variable in c_flag_variables() {
+    for variable in c_flag_variables(target) {
         let flags = with_stack_sizes(env::var(&variable).ok());
         command.env(variable, flags);
     }
 }
 
 /// The per-target C and C++ flag variables the `cc` and `cmake` crates read.
-fn c_flag_variables() -> [String; 2] {
-    let target = TARGET.replace('-', "_");
+fn c_flag_variables(target: &str) -> [String; 2] {
+    let target = target.replace('-', "_");
     [format!("CFLAGS_{target}"), format!("CXXFLAGS_{target}")]
 }
 
@@ -70,7 +76,7 @@ mod tests {
     #[test]
     fn c_builds_emit_frame_sizes_for_the_image_target() {
         assert_eq!(
-            c_flag_variables(),
+            c_flag_variables("riscv32imafc-unknown-none-elf"),
             [
                 "CFLAGS_riscv32imafc_unknown_none_elf".to_owned(),
                 "CXXFLAGS_riscv32imafc_unknown_none_elf".to_owned(),

@@ -32,11 +32,8 @@ use oer_esp32s31_hal::{
     shared_radio::{BtbbError, RadioClient, SharedRadioLease},
 };
 
-use crate::{
-    concurrent::{
-        ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError, acquire_client, release_client,
-    },
-    state::client::{PhyModemClient, PhyPllTrackClock},
+use crate::concurrent::{
+    ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError, acquire_client, release_client,
 };
 
 /// IEEE 802.15.4 holds a client bit in the shared PHY domain and a reference
@@ -88,7 +85,7 @@ pub enum Ieee802154PhyClientError {
 pub fn join_ieee802154(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     clocked: &Ieee802154Clocked,
-    clock: &mut impl PhyPllTrackClock,
+    clock: &impl oer_time::Clock,
 ) -> Result<(Ieee802154PhyMembership, ConcurrentAcquire), Ieee802154PhyClientError> {
     let epoch = lease.registration_epoch();
     let domain = lease
@@ -106,7 +103,7 @@ pub fn join_ieee802154(
     if lease.holds_btbb(RadioClient::Ieee802154) {
         return Err(Ieee802154PhyClientError::Btbb(BtbbError::AlreadyAcquired));
     }
-    let acquired = acquire_client(lease, PhyModemClient::Ieee802154, clock)
+    let acquired = acquire_client(lease, RadioClient::Ieee802154, clock)
         .map_err(Ieee802154PhyClientError::Phy)?;
 
     #[allow(
@@ -124,7 +121,7 @@ pub fn join_ieee802154(
     if let Err(error) = btbb {
         // Both rejections were checked above; undo the client bit when the
         // domain still permits it.
-        let _ = release_client(lease, PhyModemClient::Ieee802154);
+        let _ = release_client(lease, RadioClient::Ieee802154);
         return Err(Ieee802154PhyClientError::Btbb(error));
     }
     Ok((Ieee802154PhyMembership { _private: () }, acquired))
@@ -178,7 +175,7 @@ pub fn leave_ieee802154(
             error: Ieee802154PhyClientError::Btbb(BtbbError::NotAcquired),
         });
     }
-    let last = match release_client(lease, PhyModemClient::Ieee802154) {
+    let last = match release_client(lease, RadioClient::Ieee802154) {
         Ok(last) => last,
         Err(error) => {
             return Err(Ieee802154PhyLeaveFailure {

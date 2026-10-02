@@ -592,19 +592,11 @@ impl BeamformingReportRate {
     }
 }
 
-/// Recovered PHY-family discriminator stored in a rate-control record.
-///
-/// The numeric values are still part of the temporary vendor ABI.  Keeping
-/// the family separate from the callback address prevents safe policy from
-/// manufacturing or following a C function pointer.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum RateIndexMap {
-    Dot11B,
-    Dot11G,
-    Dot11N,
-    Dot11Ax,
-    Lora,
-}
+/// Recovered PHY-family discriminator stored in a rate-control record, and
+/// its rate-code callbacks: the Espressif family's policy data.
+pub(crate) use oer_espressif_ieee80211_policy::rate_schedule::RateIndexMap;
+#[cfg(test)]
+use oer_espressif_ieee80211_policy::rate_schedule::rate_to_schedule_index;
 
 /// Protocol-level PHY family used to create one associated STA rate context.
 ///
@@ -1390,78 +1382,6 @@ pub(crate) fn select_phy_mode(input: PhyModeSelectionInput) -> PhyModeSelection 
         schedule_count,
         index_map,
         ampdu_limit_rate,
-    }
-}
-
-/// Pure rate-code callback policy stored temporarily at record offset 0x78.
-pub(crate) const fn rate_to_schedule_index(map: RateIndexMap, rate: u8) -> u8 {
-    match map {
-        RateIndexMap::Dot11B => {
-            const MAP: [u8; 43] = [
-                3, 2, 1, 0, 0xff, 2, 1, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 5, 4,
-            ];
-            if rate <= 42 { MAP[rate as usize] } else { 0xff }
-        }
-        RateIndexMap::Dot11G => {
-            // SOURCE: `libpp.a[trc.o]` `.rodata` switch table of
-            // `rc11GRate2SchedIdx`, including the long-range codes 0x29 and
-            // 0x2a that select 802.11g records 12 and 11.
-            const MAP: [u8; 43] = [
-                10, 9, 8, 0xff, 0xff, 9, 8, 0xff, 1, 3, 5, 7, 0, 2, 4, 6, 0xff, 0xff, 0xff, 0xff,
-                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 12, 11,
-            ];
-            if rate <= 42 { MAP[rate as usize] } else { 0xff }
-        }
-        RateIndexMap::Dot11N => match rate {
-            0 => 11,
-            1 => 10,
-            2 => 9,
-            3 | 4 => 24_u8.wrapping_sub(rate),
-            5 => 10,
-            6 => 9,
-            0x21 => 0,
-            0x29 => 13,
-            0x2a => 12,
-            _ => 24_u8.wrapping_sub(rate),
-        },
-        RateIndexMap::Dot11Ax => match rate {
-            0 => 13,
-            1 => 12,
-            2 => 11,
-            3 | 4 => 26_u8.wrapping_sub(rate),
-            5 => 12,
-            6 => 11,
-            0x17 => 3,
-            0x19 => 1,
-            0x22 => 2,
-            0x23 => 0,
-            0x29 => 15,
-            0x2a => 14,
-            _ => 26_u8.wrapping_sub(rate),
-        },
-        RateIndexMap::Lora => match rate {
-            0x29 => 1,
-            0x2a => 0,
-            _ => 0xff,
-        },
-    }
-}
-
-/// Locate the complete vendor 802.11g retry record for a legacy rate code.
-///
-/// SOURCE: `libpp.a[trc.o]` callback table used by
-/// `rcUpdatePhyMode`, recovered above as the `RateIndexMap::Dot11G` branch;
-/// the pointed-to record bytes come from `libpp.a` rate-schedule
-/// arenas in [`crate::rate::schedule`].
-pub(crate) const fn dot11g_schedule_for_legacy_rate(rate: u8) -> Option<RateScheduleRef> {
-    let index = rate_to_schedule_index(RateIndexMap::Dot11G, rate);
-    if index == 0xff {
-        None
-    } else {
-        RateScheduleRef::new(RateScheduleKind::Dot11G, index)
     }
 }
 

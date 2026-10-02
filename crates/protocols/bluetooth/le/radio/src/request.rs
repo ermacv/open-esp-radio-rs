@@ -1,7 +1,9 @@
 //! Caller requests and long-lived role configuration.
 
+use oer_radio_coex::CoexPriority;
+
 use crate::{
-    AdvertisingChannels, AdvertisingPdu, DataChannel, DataPdu, RadioDuration, RadioInstant,
+    AdvertisingChannels, AdvertisingPdu, DataChannel, DataPdu, LePhy, RadioDuration, RadioInstant,
     RadioWindow, TestChannel, TestPayloadType, channel::AdvertisingChannel,
 };
 
@@ -9,6 +11,16 @@ use crate::{
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct EventId(u32);
+
+impl oer_radio_port::Correlation for EventId {
+    fn from_raw(raw: u32) -> Self {
+        Self(raw)
+    }
+
+    fn raw(self) -> u32 {
+        self.0
+    }
+}
 
 impl EventId {
     /// Preserve one caller-owned identifier.
@@ -103,6 +115,8 @@ pub struct AdvertisingConfiguration<'pdu> {
     pub reception: AdvertisingReception<'pdu>,
     /// Transmit power.
     pub tx_power: TxPower,
+    /// PHY of the advertising PDUs and their responses.
+    pub phy: LePhy,
 }
 
 /// How urgently one event needs the shared antenna.
@@ -120,6 +134,47 @@ pub enum CoexistenceLevel {
     Elevated,
     /// The highest priority of the role.
     Critical,
+}
+
+impl CoexistenceLevel {
+    /// The portable priority of this level: `Baseline` is the ordinary
+    /// [`CoexPriority::Normal`].
+    pub const fn priority(self) -> CoexPriority {
+        match self {
+            Self::Baseline => CoexPriority::Normal,
+            Self::Elevated => CoexPriority::Elevated,
+            Self::Critical => CoexPriority::Critical,
+        }
+    }
+
+    /// The level of a portable priority, or `None` for
+    /// [`CoexPriority::Idle`]: an event always runs an operation.
+    pub const fn from_priority(priority: CoexPriority) -> Option<Self> {
+        match priority {
+            CoexPriority::Idle => None,
+            CoexPriority::Normal => Some(Self::Baseline),
+            CoexPriority::Elevated => Some(Self::Elevated),
+            CoexPriority::Critical => Some(Self::Critical),
+        }
+    }
+}
+
+impl From<CoexistenceLevel> for CoexPriority {
+    fn from(level: CoexistenceLevel) -> Self {
+        level.priority()
+    }
+}
+
+/// [`CoexPriority::Idle`], which no Bluetooth LE event requests.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IdlePriority;
+
+impl TryFrom<CoexPriority> for CoexistenceLevel {
+    type Error = IdlePriority;
+
+    fn try_from(priority: CoexPriority) -> Result<Self, Self::Error> {
+        Self::from_priority(priority).ok_or(IdlePriority)
+    }
 }
 
 /// One advertising event of a configured set.
@@ -165,6 +220,8 @@ pub struct ScannerConfiguration {
     pub filter_policy: ScanFilterPolicy,
     /// Transmit power retained by the scanner profile.
     pub tx_power: TxPower,
+    /// PHY listened on.
+    pub phy: LePhy,
 }
 
 /// Which advertisers a scanner receives from.
@@ -234,6 +291,8 @@ pub struct ConnectionConfiguration {
     pub created_at: RadioInstant,
     /// Transmit power.
     pub tx_power: TxPower,
+    /// PHY of the connection in both directions.
+    pub phy: LePhy,
 }
 
 /// How long the peripheral listens for the central in one event.
@@ -455,8 +514,6 @@ pub enum RequestError {
     Unsupported,
     /// No event with this identifier is scheduled.
     UnknownEvent,
-    /// The backend is stopped or faulted.
-    Unavailable,
     /// The filter accept list has no free entry.
     ListFull,
     /// The filter accept list does not hold the device to remove.
@@ -465,10 +522,35 @@ pub enum RequestError {
 
 #[cfg(test)]
 mod tests {
-    use super::{AdvertisingEvent, AdvertisingSetId, ConnectionAllowances, EventId, RadioTiming};
+    use super::{
+        AdvertisingEvent, AdvertisingSetId, CoexPriority, CoexistenceLevel, ConnectionAllowances,
+        EventId, IdlePriority, RadioTiming,
+    };
     use crate::{
         AdvertisingChannel, AdvertisingChannels, RadioDuration, RadioInstant, RadioWindow,
     };
+
+    /// Every level keeps its order as a portable priority and returns from
+    /// it; the idle priority has no event level.
+    #[test]
+    fn coexistence_levels_round_trip_through_portable_priorities() {
+        let levels = [
+            CoexistenceLevel::Baseline,
+            CoexistenceLevel::Elevated,
+            CoexistenceLevel::Critical,
+        ];
+        let priorities = levels.map(CoexPriority::from);
+        assert!(priorities.windows(2).all(|pair| pair[0] < pair[1]));
+        assert_eq!(priorities.map(CoexistenceLevel::try_from), levels.map(Ok));
+        assert_eq!(
+            CoexistenceLevel::try_from(CoexPriority::Idle),
+            Err(IdlePriority)
+        );
+        assert_eq!(
+            CoexPriority::from(CoexistenceLevel::default()),
+            CoexPriority::default()
+        );
+    }
 
     #[test]
     fn advertising_channels_follow_one_spacing_apart() {

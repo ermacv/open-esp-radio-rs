@@ -1,8 +1,8 @@
 schema = 5
 id = "udp-tx-emission-736-no-checksum-diagnostic"
 description = "Fixed-rate 736-byte UDP TX checksum-omission emission-cost diagnostic"
+role = "investigation"
 repetitions = 2
-transfer = "identical-image"
 tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "core0", "coarse-cycles", "tx-emission-sweep", "air-strict"]
 
 [wifi]

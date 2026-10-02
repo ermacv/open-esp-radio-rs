@@ -107,7 +107,7 @@ pub fn run(
     // before queueing.
     let (bootloader, bootloader_sha256) = crate::firmware_catalog::bootloader(ctx, &chip)?;
     let application = output.join("application.bin");
-    crate::process::run(
+    oer_process::run(
         Command::new(espflash())
             .args(["save-image", "--chip", &chip])
             .arg(&elf)
@@ -118,7 +118,7 @@ pub fn run(
     // application merged.
     let merged = output.join("merged.bin");
     if cli.via == Via::Jtag {
-        crate::process::run(
+        oer_process::run(
             Command::new(espflash())
                 .args(["save-image", "--chip", &chip, "--merge", "--bootloader"])
                 .arg(&bootloader)
@@ -143,7 +143,7 @@ pub fn run(
     // lines, so the capture starts at the boot the programming ends with.
     let quiet = match cli.via {
         Via::Usb => {
-            crate::process::run(
+            oer_process::run(
                 Command::new(espflash())
                     .args([
                         "flash",

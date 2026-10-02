@@ -203,6 +203,11 @@ impl RsnKeyConfirmationKey {
 }
 
 impl RsnKeyEncryptionKey {
+    /// A zeroizing copy of a KEK handed to a key-data unwrap request.
+    pub(crate) const fn copy_from(kek: &[u8; RSN_KEK_LEN]) -> Self {
+        Self(*kek)
+    }
+
     pub(crate) const fn as_bytes(&self) -> &[u8; RSN_KEK_LEN] {
         &self.0
     }

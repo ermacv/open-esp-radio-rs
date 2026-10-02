@@ -65,7 +65,7 @@ fn occupied_network_pool_retains_staging_owner_until_credit_return() {
     let pool = RxStagePool::<1, CAPACITY>::new();
     let queue = StagedRxQueue::<NoopRawMutex, 1, CAPACITY, 1>::new();
     let (sender, receiver) = queue.split();
-    let mut producer = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
+    let mut producer = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender)
         .with_stage_admission_policy(UnreservedRxStageAdmission);
     embassy_futures::block_on(producer.service(&mut hardware)).unwrap();
 
@@ -85,8 +85,15 @@ fn occupied_network_pool_retains_staging_owner_until_credit_return() {
     let mut ethernet = [0; CAPACITY];
     let runtime = Box::leak(Box::new(ConnectedReceiveStorage::new()));
     configure_dispatcher(runtime);
-    let mut protocol =
-        ConnectedReceiveProtocol::new(receiver, &irq, sink, &mut mpdu, &mut ethernet, runtime);
+    let mut protocol = ConnectedReceiveProtocol::new(
+        receiver,
+        &irq,
+        sink,
+        &mut mpdu,
+        &mut ethernet,
+        runtime,
+        oer_time_virtual::SkipClock::new(),
+    );
     let wake = Arc::new(WakeCounter::default());
     let waker = Waker::from(Arc::clone(&wake));
     let mut context = Context::from_waker(&waker);

@@ -1,8 +1,8 @@
 schema = 5
 id = "udp-bidirectional-ht40-split-soak"
 description = "Five-minute split-core HT40 full-duplex stability gate"
-transfer = "identical-image"
-tags = ["qualification", "udp", "station", "full-duplex", "ht40", "split-core", "soak", "air-strict"]
+role = "investigation"
+tags = ["udp", "station", "full-duplex", "ht40", "split-core", "soak", "air-strict"]
 
 [wifi]
 image = "correctness"

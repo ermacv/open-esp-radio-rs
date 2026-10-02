@@ -16,11 +16,9 @@ use embassy_futures::{
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use esp_hal::{efuse, rng::Trng};
-use oer_esp32s31_hal::ieee802154::ll::Ieee802154MacOwners;
-use oer_esp32s31_ieee802154_openthread::{
-    OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults,
+use oer_esp32s31_ieee802154_system::{
+    IEEE802154_DEFAULT_TX_POWER_DBM, IEEE802154_RECEIVE_SENSITIVITY_DBM, Ieee802154SystemRuntime,
 };
-use oer_esp32s31_ieee802154_system::IEEE802154_EVENT_CAPACITY;
 use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
 use oer_hil_protocol::{
     ieee802154::IEEE802154_THREAD_RECORDED_DATAGRAMS, ieee802154::Ieee802154SessionResult,
@@ -29,7 +27,10 @@ use oer_hil_protocol::{
     ieee802154::Ieee802154ThreadSendRequest, ieee802154::Ieee802154ThreadStartRequest,
     ieee802154::Ieee802154ThreadState,
 };
-use oer_ieee802154::{RadioCommand, RequestId};
+use oer_ieee802154::{Ieee802154RadioPort, LifecycleCommand, RadioCommand, RequestId};
+use oer_ieee802154_openthread::{
+    OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults,
+};
 use openthread::{
     DeviceRole, OpenThread, OtResources, OtUdpResources, SimpleRamSettings, UdpSocket,
 };
@@ -37,6 +38,11 @@ use static_cell::{ConstStaticCell, StaticCell};
 use tinyrlibc as _;
 
 use super::client::Client;
+
+/// The image's own sleep after the stack stopped: the last consumer
+/// identity below the backend-reserved range (`0xFFFF_FF00..`), which the
+/// OpenThread radio, counting up from one, does not reach in a session.
+const STOP_SLEEP: RequestId = RequestId::new(0xFFFF_FEFF);
 use crate::console::{
     Ieee802154ThreadCommand, publish_event_reliably, receive_ieee802154_thread_command,
 };
@@ -46,14 +52,7 @@ const RX_QUEUE: usize = 8;
 const UDP_SOCKETS: usize = 1;
 const UDP_BUFFER: usize = 1280;
 
-type ThreadRadio = OpenThreadRadio<
-    'static,
-    'static,
-    CriticalSectionRawMutex,
-    Ieee802154MacOwners,
-    IEEE802154_EVENT_CAPACITY,
-    RX_QUEUE,
->;
+type ThreadRadio = OpenThreadRadio<'static, Ieee802154SystemRuntime, RX_QUEUE>;
 
 static TRNG: StaticCell<Trng> = StaticCell::new();
 static OT_RESOURCES: StaticCell<OtResources> = StaticCell::new();
@@ -281,8 +280,12 @@ pub(in crate::product_hil) async fn run_thread(
 
     let radio: ThreadRadio = OpenThreadRadio::new(
         system.runtime(),
+        system.radio_clock(),
         system.recent_rssi_reader(),
-        OpenThreadRadioDefaults::ESP_IDF,
+        OpenThreadRadioDefaults::esp_idf(
+            IEEE802154_DEFAULT_TX_POWER_DBM,
+            IEEE802154_RECEIVE_SENSITIVITY_DBM,
+        ),
     );
     let tracking_stop = Signal::<CriticalSectionRawMutex, ()>::new();
     let tracking = async {
@@ -296,9 +299,12 @@ pub(in crate::product_hil) async fn run_thread(
     let session = async {
         // The stack's radio, alarm and tasklet loops share one large future.
         let running = core::pin::pin!(ot.run(radio));
+        // The runtime's runner progresses backoffs beside OpenThread.
+        let runner = core::pin::pin!(system.run());
         let served = core::pin::pin!(serve(&ot, &socket));
-        let stop_request = match select(running, served).await {
-            Either::First(never) => match never {},
+        let stop_request = match select(select(running, runner), served).await {
+            Either::First(Either::First(never)) => match never {},
+            Either::First(Either::Second(never)) => match never {},
             Either::Second(stop_request) => stop_request,
         };
         tracking_stop.signal(());
@@ -308,13 +314,12 @@ pub(in crate::product_hil) async fn run_thread(
 
     let _ = ot.enable_thread(false);
     let _ = ot.enable_ipv6(false);
+    // The stack has stopped: the image leaves receive mode and disables
+    // the radio itself before the client stops. Their terminal events are
+    // not read; the stop discards the runtime with its queue.
     let runtime = system.runtime();
-    let _ = runtime.submit(RadioCommand::Sleep {
-        id: RequestId::new(u32::MAX - 1),
-    });
-    let _ = runtime.submit(RadioCommand::Disable {
-        id: RequestId::new(u32::MAX),
-    });
+    let _ = runtime.submit(RadioCommand::Sleep { id: STOP_SLEEP });
+    let _ = runtime.lifecycle(LifecycleCommand::Disable);
     let stopped = {
         let stopped = core::pin::pin!(client.stop(system));
         stopped.await

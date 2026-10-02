@@ -684,13 +684,6 @@ impl MacInterruptSetup {
     }
 }
 
-/// Executor-neutral source of asynchronous deadlines.
-pub trait AsyncDelay {
-    type Error;
-
-    fn delay_micros(&mut self, micros: u32) -> impl Future<Output = Result<(), Self::Error>> + '_;
-}
-
 /// Executor-neutral interrupt/event edge.
 pub trait AsyncEvent {
     type Event;

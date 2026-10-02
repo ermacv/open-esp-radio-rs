@@ -19,6 +19,8 @@ changes.
 | `qualification/targets/` | Programs that select required capabilities and evidence policy for an evaluation target |
 | Owner-specific ignored output directories | Generated API docs, run reports, measurements and verification output |
 | `docs/book.toml` and `docs/SUMMARY.md` | mdBook configuration and guide order; documents elsewhere remain with their owners |
+| Root and directory `CLAUDE.md` | Agent rules and navigation: always-relevant rules at the root; a directory's layout, local rules and commands; links to the owner documents instead of restating them |
+| `.claude/` | Claude Code task skills (checklists that link to owner sections), shared permissions and the hooks that enforce agent rules |
 
 The documentation tree follows code ownership. A subsystem's detailed contract
 has one canonical location; other documents link to it. Root navigation does
@@ -175,7 +177,7 @@ the commit being built; links inside the book are unchanged.
 `target/doc/` for host packages, `target/riscv32imafc-unknown-none-elf/doc/` for
 chip packages and the Wi-Fi composition workspace's own target directory.
 
-Pushes and pull requests run the workflow's checks and package one site: the
+Every push runs the workflow's checks and packages one site: the
 book at the root and API documentation under `api/host/`, `api/esp32s31/` and
 `api/esp32s31-wifi/`. A manual run from `main` deploys it to the
 [Pages address](https://ermacv.github.io/open-esp-radio-rs/) with the official

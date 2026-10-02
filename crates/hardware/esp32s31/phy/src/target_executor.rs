@@ -1,11 +1,12 @@
 //! ESP32-S31 target executors for finite PHY hardware edges.
 //!
 //! The recovered PHY transitions describe what must happen, while this module
-//! owns the common polling contract for the target.  Executor-specific time is
-//! injected through [`PhyAsyncDelay`], so neither Embassy nor an RTOS becomes a
-//! dependency of the PHY crate.
+//! owns the common polling contract for the target. Time is the caller's
+//! [`oer_time::Timer`], so neither Embassy nor an RTOS becomes a dependency of
+//! the PHY crate; short settles are a [`PhyShortDelay`].
 
-use crate::executor::wait::Kind;
+use crate::executor::wait::{Kind, PhyShortDelay, delay};
+use oer_time::Timer;
 
 use core::future::Future;
 
@@ -166,21 +167,6 @@ pub(crate) fn reset_clock_generator_direct(
     Ok(())
 }
 
-/// Blocking clock used inside one already-admitted PHY hardware transaction.
-///
-/// Short analog settles are part of the transaction itself. They must not arm
-/// an executor timer or return `Pending`: the radio cannot do useful work in
-/// the interval and the vendor implementation uses the same blocking model.
-pub trait PhyShortDelay {
-    /// Largest minimum settle that the backend can complete synchronously.
-    const MAX_MICROS: u32;
-
-    /// Complete a short minimum settle without constructing a future.
-    /// False means that the requested interval is outside the implementation's
-    /// proven blocking range.
-    fn settle_micros(micros: u32) -> bool;
-}
-
 /// Finite allowance shared by nested work in one direct PHY transaction.
 ///
 /// The budget counts typed hardware operations reported by a completed child;
@@ -207,40 +193,6 @@ impl DirectOperationBudget {
         };
         self.remaining = remaining;
         true
-    }
-}
-
-/// Executor-independent delay for scheduling and long hardware waits.
-///
-/// The async half remains at orchestration boundaries. Hot RX/TX calibration
-/// code depends on [`PhyShortDelay`] directly and does not poll this future.
-pub trait PhyAsyncDelay {
-    /// Blocking clock used by hot hardware transactions owned by this target.
-    type ShortDelay: PhyShortDelay;
-
-    /// Monotonic clock shared with the tracking scheduler, when available.
-    /// None preserves explicit unknown sample age for untimed backends.
-    fn now_micros() -> Option<u64> {
-        None
-    }
-
-    /// Minimum delay selected by the caller. A settle represents an explicit
-    /// hardware interval and may finish synchronously. Bus/completion backoff
-    /// is executor policy, not evidence of a vendor-required sampling delay.
-    fn after_micros(kind: Kind, micros: u64) -> impl Future<Output = ()>;
-
-    /// Optional measurement against the timer's own deadline. Unsupported
-    /// backends say so explicitly; they still execute their original delay.
-    fn after_micros_observed(
-        kind: Kind,
-        micros: u64,
-        enabled: bool,
-        mut observe: impl FnMut(crate::executor::wait::Event),
-    ) -> impl Future<Output = ()> {
-        if enabled {
-            observe(crate::executor::wait::Event::Unsupported);
-        }
-        Self::after_micros(kind, micros)
     }
 }
 
@@ -272,7 +224,8 @@ pub enum PhyTargetPortError {
 /// deadline produces a typed transition completion rather than an executor
 /// error. Applications must not reinterpret a write action or select another
 /// polling bound at this boundary.
-pub async fn complete_final_i2c<D: PhyAsyncDelay>(
+pub async fn complete_final_i2c<D: PhyShortDelay>(
+    timer: &impl Timer,
     mut binding: PhyRegisterFinalI2cBinding,
     registers: &mut impl SharedPhyAccess,
 ) -> Result<PhyRegisterCompletion, PhyTargetPortError> {
@@ -280,11 +233,11 @@ pub async fn complete_final_i2c<D: PhyAsyncDelay>(
         match binding.action() {
             PhyColdI2cAction::StartRead { .. } => match binding.start_target(registers) {
                 Ok(()) => {}
-                Err(PhyColdI2cError::BusyAtStart) => D::after_micros(Kind::BusBusy, 1).await,
+                Err(PhyColdI2cError::BusyAtStart) => delay::<D, _>(timer, Kind::BusBusy, 1).await,
                 Err(_) => return Err(PhyTargetPortError::UnexpectedBinding),
             },
             PhyColdI2cAction::AwaitReadCompletionEdge { .. } => {
-                D::after_micros(Kind::Completion, 1).await;
+                delay::<D, _>(timer, Kind::Completion, 1).await;
                 match binding
                     .observe_target_edge(registers)
                     .map_err(|_| PhyTargetPortError::UnexpectedBinding)?
@@ -418,7 +371,8 @@ pub(crate) fn complete_rfpll_i2c_direct(
 
 macro_rules! define_pbus_executor {
     ($function:ident, $binding:ty, $completion:ty) => {
-        pub async fn $function<D: PhyAsyncDelay>(
+        pub async fn $function<D: PhyShortDelay>(
+            timer: &impl Timer,
             mut binding: $binding,
             registers: &mut impl SharedPhyAccess,
         ) -> Result<$completion, PhyTargetPortError> {
@@ -428,13 +382,13 @@ macro_rules! define_pbus_executor {
                     started = true;
                     break;
                 }
-                D::after_micros(Kind::BusBusy, 1).await;
+                delay::<D, _>(timer, Kind::BusBusy, 1).await;
             }
             if !started {
                 return Err(PhyTargetPortError::HardwareEdgeTimedOut);
             }
             for _ in 0..HARDWARE_EDGE_LIMIT {
-                D::after_micros(Kind::Completion, 1).await;
+                delay::<D, _>(timer, Kind::Completion, 1).await;
                 match binding
                     .observe_target_edge(registers)
                     .map_err(|_| PhyTargetPortError::UnexpectedBinding)?
@@ -547,7 +501,8 @@ define_i2c_executor!(
     PhyTxPowerI2cBinding,
     PhyTxPowerCompletion
 );
-pub async fn complete_bluetooth_i2c<D: PhyAsyncDelay>(
+pub async fn complete_bluetooth_i2c<D: PhyShortDelay>(
+    timer: &impl Timer,
     mut binding: PhyBluetoothI2cBinding,
     registers: &mut impl SharedPhyAccess,
 ) -> Result<PhyBluetoothTxPowerCompletion, PhyTargetPortError> {
@@ -555,11 +510,11 @@ pub async fn complete_bluetooth_i2c<D: PhyAsyncDelay>(
         match binding.action() {
             PhyBluetoothI2cAction::StartCommand => match binding.start_target(registers) {
                 Ok(()) => {}
-                Err(PhyColdI2cError::BusyAtStart) => D::after_micros(Kind::BusBusy, 1).await,
+                Err(PhyColdI2cError::BusyAtStart) => delay::<D, _>(timer, Kind::BusBusy, 1).await,
                 Err(_) => return Err(PhyTargetPortError::HardwareInvariant),
             },
             PhyBluetoothI2cAction::AwaitCompletionEdge => {
-                D::after_micros(Kind::Completion, 1).await;
+                delay::<D, _>(timer, Kind::Completion, 1).await;
                 match binding
                     .observe_target_edge(registers)
                     .map_err(|_| PhyTargetPortError::HardwareInvariant)?
@@ -577,7 +532,8 @@ pub async fn complete_bluetooth_i2c<D: PhyAsyncDelay>(
     Err(PhyTargetPortError::HardwareEdgeTimedOut)
 }
 
-pub async fn complete_i2c_configuration<D: PhyAsyncDelay>(
+pub async fn complete_i2c_configuration<D: PhyShortDelay>(
+    timer: &impl Timer,
     mut binding: PhyColdI2cConfigurationBinding,
     registers: &mut impl SharedPhyAccess,
 ) -> Result<crate::analog::i2c::PhyRfInitPrefixCompletion, PhyTargetPortError> {
@@ -586,12 +542,14 @@ pub async fn complete_i2c_configuration<D: PhyAsyncDelay>(
             oer_esp32s31_hal::phy::i2c::PhyI2cConfigurationAction::StartCommand => {
                 match binding.start_target(registers) {
                     Ok(()) => {}
-                    Err(PhyColdI2cError::BusyAtStart) => D::after_micros(Kind::BusBusy, 1).await,
+                    Err(PhyColdI2cError::BusyAtStart) => {
+                        delay::<D, _>(timer, Kind::BusBusy, 1).await
+                    }
                     Err(_) => return Err(PhyTargetPortError::HardwareInvariant),
                 }
             }
             oer_esp32s31_hal::phy::i2c::PhyI2cConfigurationAction::AwaitCompletionEdge => {
-                D::after_micros(Kind::Completion, 1).await;
+                delay::<D, _>(timer, Kind::Completion, 1).await;
                 match binding
                     .observe_target_edge(registers)
                     .map_err(|_| PhyTargetPortError::HardwareInvariant)?

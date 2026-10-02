@@ -9,7 +9,7 @@
 use core::cell::RefCell;
 
 use oer_esp32s31_hal::{
-    coex::CoexPolicyTimer,
+    coex::{CoexPolicyTimer, timer_clock},
     shared_radio::SharedRadioLease,
     types::{
         CoexTimerClientValue, CoexTimerClockDividerMinusOne, CoexTimerClockSource,
@@ -19,7 +19,7 @@ use oer_esp32s31_hal::{
 
 use crate::{
     CoexClient, CoexClockHardware, CoexClockSelector, CoexError, CoexEventId, CoexPti,
-    CoexTimerClock, CoexTimerHardware, CoexTimerIndex, hal::timer_clock,
+    CoexTimerClock, CoexTimerHardware, CoexTimerIndex,
 };
 
 const fn bank_timer(index: CoexTimerIndex) -> CoexPolicyTimer {

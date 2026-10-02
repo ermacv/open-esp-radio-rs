@@ -13,7 +13,7 @@ use core::future::{Future, pending, ready};
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use embassy_time::{Duration, Instant, Timer};
+use oer_time::{Duration, Instant, Timer};
 
 use oer_esp32s31_ieee80211_mac::rx::{
     RxPhyInfo,
@@ -410,14 +410,25 @@ pub struct ConnectedReceiveProtocol<
     'irq,
     M: RawMutex,
     S,
+    K,
     const DEPTH: usize,
     const CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
     const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
     const REORDER_SLOTS: usize = RX_REORDER_BACKING_SLOT_COUNT,
 > {
     frames: StagedRxReceiver<'queue, 'pool, M, DEPTH, CAPACITY, SLOTS>,
-    processor:
-        ConnectedRxProcessor<'queue, 'pool, 'scratch, 'irq, M, S, CAPACITY, SLOTS, REORDER_SLOTS>,
+    processor: ConnectedRxProcessor<
+        'queue,
+        'pool,
+        'scratch,
+        'irq,
+        M,
+        S,
+        K,
+        CAPACITY,
+        SLOTS,
+        REORDER_SLOTS,
+    >,
 }
 
 /// Queue-independent connected-station RX protocol processor.
@@ -434,11 +445,14 @@ pub struct ConnectedRxProcessor<
     'irq,
     M: RawMutex,
     S,
+    K,
     const CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
     const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
     const REORDER_SLOTS: usize = RX_REORDER_BACKING_SLOT_COUNT,
 > {
     irq: &'irq EmbassyMacIrqRuntime<M>,
+    /// Monotonic clock of the reorder gap deadlines.
+    clock: K,
     sink: S,
     mpdu: &'scratch mut [u8],
     ethernet: &'scratch mut [u8],

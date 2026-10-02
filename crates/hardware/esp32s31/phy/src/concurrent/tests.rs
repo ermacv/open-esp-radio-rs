@@ -12,9 +12,9 @@ use crate::{
 
 struct Clock(u64);
 
-impl PhyPllTrackClock for Clock {
-    fn now_micros(&mut self) -> u64 {
-        self.0
+impl oer_time::Clock for Clock {
+    fn now(&self) -> oer_time::Instant {
+        oer_time::Instant::from_micros(self.0)
     }
 }
 
@@ -69,31 +69,28 @@ fn clients_share_one_domain_and_leave_it_one_by_one() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
     assert_eq!(
-        acquire_client(&mut lease, PhyModemClient::Wifi, &mut Clock(0)),
+        acquire_client(&mut lease, RadioClient::Wifi, &Clock(0)),
         Ok(ConcurrentAcquire::Settled)
     );
     assert_eq!(
-        acquire_client(&mut lease, PhyModemClient::Bluetooth, &mut Clock(0)),
+        acquire_client(&mut lease, RadioClient::Bluetooth, &Clock(0)),
         Ok(ConcurrentAcquire::Settled)
     );
     let snapshot = lease
         .attachment()
         .client_snapshot()
         .unwrap_or_else(|| panic!("a registered domain has a client set"));
-    assert!(snapshot.contains(PhyModemClient::Wifi));
-    assert!(snapshot.contains(PhyModemClient::Bluetooth));
+    assert!(snapshot.contains(RadioClient::Wifi));
+    assert!(snapshot.contains(RadioClient::Bluetooth));
     assert!(matches!(
-        acquire_client(&mut lease, PhyModemClient::Wifi, &mut Clock(0)),
+        acquire_client(&mut lease, RadioClient::Wifi, &Clock(0)),
         Err(ConcurrentPhyError::Acquire(_))
     ));
 
-    assert_eq!(release_client(&mut lease, PhyModemClient::Wifi), Ok(false));
-    assert_eq!(
-        release_client(&mut lease, PhyModemClient::Bluetooth),
-        Ok(true)
-    );
+    assert_eq!(release_client(&mut lease, RadioClient::Wifi), Ok(false));
+    assert_eq!(release_client(&mut lease, RadioClient::Bluetooth), Ok(true));
     assert!(matches!(
-        release_client(&mut lease, PhyModemClient::Bluetooth),
+        release_client(&mut lease, RadioClient::Bluetooth),
         Err(ConcurrentPhyError::Release(_))
     ));
 }
@@ -106,11 +103,11 @@ fn an_unregistered_domain_rejects_every_client_operation() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a fresh arbiter grants its lease"));
     assert_eq!(
-        acquire_client(&mut lease, PhyModemClient::Wifi, &mut Clock(0)),
+        acquire_client(&mut lease, RadioClient::Wifi, &Clock(0)),
         Err(ConcurrentPhyError::NotRegistered)
     );
     assert_eq!(
-        evaluate_periodic_tracking(&mut lease, &mut Clock(0)),
+        evaluate_periodic_tracking(&mut lease, &Clock(0)),
         Err(ConcurrentPhyError::NotRegistered)
     );
     assert_eq!(
@@ -126,7 +123,7 @@ fn due_tracking_blocks_clients_until_maintenance_is_admitted() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
     assert_eq!(
-        acquire_client(&mut lease, PhyModemClient::Wifi, &mut Clock(0)),
+        acquire_client(&mut lease, RadioClient::Wifi, &Clock(0)),
         Ok(ConcurrentAcquire::Settled)
     );
     assert_eq!(
@@ -135,12 +132,12 @@ fn due_tracking_blocks_clients_until_maintenance_is_admitted() {
     );
     // One period later the periodic callback requests tracking.
     assert_eq!(
-        evaluate_periodic_tracking(&mut lease, &mut Clock(DEFAULT_PLL_TRACK_PERIOD_MICROS)),
+        evaluate_periodic_tracking(&mut lease, &Clock(DEFAULT_PLL_TRACK_PERIOD_MICROS)),
         Ok(true)
     );
     assert!(lease.attachment().tracking_pending());
     assert_eq!(
-        acquire_client(&mut lease, PhyModemClient::Bluetooth, &mut Clock(0)),
+        acquire_client(&mut lease, RadioClient::Bluetooth, &Clock(0)),
         Err(ConcurrentPhyError::TrackingPending)
     );
     // The vendor policy admits pending tracking with the client running.
@@ -158,7 +155,7 @@ fn due_tracking_blocks_clients_until_maintenance_is_admitted() {
         .set_maintenance_policy(MaintenancePolicy::Quiesced);
     assert_eq!(
         admit_maintenance(&lease, &[], 5),
-        Err(ConcurrentPhyError::MissingQuiescence(PhyModemClient::Wifi))
+        Err(ConcurrentPhyError::MissingQuiescence(RadioClient::Wifi))
     );
     assert_eq!(
         admit_maintenance(&lease, &[until(RadioClient::Wifi, 1, 100)], 5)
@@ -174,7 +171,7 @@ fn the_vendor_policy_ignores_proofs_and_still_needs_pending_tracking() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
     assert_eq!(
-        acquire_client(&mut lease, PhyModemClient::Ieee802154, &mut Clock(0)),
+        acquire_client(&mut lease, RadioClient::Ieee802154, &Clock(0)),
         Ok(ConcurrentAcquire::Settled)
     );
     // Nothing is due: the vendor policy does not invent maintenance.
@@ -183,7 +180,7 @@ fn the_vendor_policy_ignores_proofs_and_still_needs_pending_tracking() {
         Err(ConcurrentPhyError::NoTrackingPending)
     );
     assert_eq!(
-        evaluate_periodic_tracking(&mut lease, &mut Clock(DEFAULT_PLL_TRACK_PERIOD_MICROS)),
+        evaluate_periodic_tracking(&mut lease, &Clock(DEFAULT_PLL_TRACK_PERIOD_MICROS)),
         Ok(true)
     );
     // A closed proof window does not matter under the vendor policy.
@@ -197,9 +194,9 @@ fn the_vendor_policy_ignores_proofs_and_still_needs_pending_tracking() {
 #[test]
 fn admission_takes_the_earliest_window_and_ignores_inactive_clients() {
     let mut clients = PhyClientState::without_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS);
-    for client in [PhyModemClient::Wifi, PhyModemClient::Bluetooth] {
+    for client in [RadioClient::Wifi, RadioClient::Bluetooth] {
         clients = clients
-            .acquire(client, &mut Clock(0))
+            .acquire(client, &Clock(0))
             .unwrap_or_else(|_| panic!("acquisition"))
             .into_owner()
             .unwrap_or_else(|_| panic!("no tracking at time zero"));
@@ -230,7 +227,7 @@ fn admission_takes_the_earliest_window_and_ignores_inactive_clients() {
     assert_eq!(
         admit(active, &[until(RadioClient::Wifi, 1, 100)], 10),
         Err(ConcurrentPhyError::MissingQuiescence(
-            PhyModemClient::Bluetooth
+            RadioClient::Bluetooth
         ))
     );
     assert_eq!(
@@ -263,11 +260,11 @@ fn a_closed_domain_admits_no_client_until_rf_wakes() {
         Some(true)
     );
     assert_eq!(
-        acquire_client(&mut lease, PhyModemClient::Ieee802154, &mut Clock(0)),
+        acquire_client(&mut lease, RadioClient::Ieee802154, &Clock(0)),
         Err(ConcurrentPhyError::RfClosed)
     );
     assert_eq!(
-        evaluate_periodic_tracking(&mut lease, &mut Clock(0)),
+        evaluate_periodic_tracking(&mut lease, &Clock(0)),
         Err(ConcurrentPhyError::RfClosed)
     );
     assert_eq!(
@@ -294,7 +291,7 @@ fn rf_closes_only_after_the_last_client_left() {
         Err(ConcurrentPhyError::RfOpen)
     ));
     assert_eq!(
-        acquire_client(&mut lease, PhyModemClient::Bluetooth, &mut Clock(0)),
+        acquire_client(&mut lease, RadioClient::Bluetooth, &Clock(0)),
         Ok(ConcurrentAcquire::Settled)
     );
     assert!(matches!(
@@ -302,10 +299,7 @@ fn rf_closes_only_after_the_last_client_left() {
         Err(ConcurrentPhyError::ClientsActive)
     ));
     // The rejected close leaves the client in the open domain.
-    assert_eq!(
-        release_client(&mut lease, PhyModemClient::Bluetooth),
-        Ok(true)
-    );
+    assert_eq!(release_client(&mut lease, RadioClient::Bluetooth), Ok(true));
     assert!(lease.attachment_mut().idle_domain().is_ok());
 }
 

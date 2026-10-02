@@ -171,13 +171,9 @@ impl Closure {
             if !image.is_dir() {
                 continue;
             }
-            let Ok(inputs) = fs::read_to_string(image.join("source-inputs.json")) else {
+            let Some(inputs) = SourceInputs::read(&image)? else {
                 return Ok(None);
             };
-            let inputs: SourceInputs = serde_json::from_str(&inputs)?;
-            if inputs.schema != COMPLETE_INPUTS {
-                return Ok(None);
-            }
             files.extend(inputs.files);
             images += 1;
         }
@@ -244,15 +240,40 @@ impl Closure {
     }
 }
 
-/// The `source-inputs.json` schema that lists every file an image build
-/// read; the earlier schema listed only the compiled sources.
-pub(super) const COMPLETE_INPUTS: u32 = 2;
+/// The `source-inputs.json` schema: every repository file an image build read.
+const SOURCE_INPUTS_SCHEMA: u32 = 2;
 
 /// The `source-inputs.json` an image build writes beside its artifacts.
 #[derive(Deserialize)]
-struct SourceInputs {
+#[serde(deny_unknown_fields)]
+pub(super) struct SourceInputs {
     schema: u32,
-    files: Vec<PathBuf>,
+    pub(super) files: Vec<PathBuf>,
+}
+
+impl SourceInputs {
+    /// The record in the image directory `image`. `None` when the image has
+    /// none (a replay or an image built outside this repository's builder);
+    /// a record of another schema is an error, never a weaker binding.
+    pub(super) fn read(image: &Path) -> Result<Option<Self>> {
+        let path = image.join("source-inputs.json");
+        let bytes = match fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        let inputs: Self = serde_json::from_slice(&bytes)
+            .map_err(|error| format!("{}: {error}", path.display()))?;
+        if inputs.schema != SOURCE_INPUTS_SCHEMA {
+            return Err(format!(
+                "{} has schema {}; only schema {SOURCE_INPUTS_SCHEMA} is read",
+                path.display(),
+                inputs.schema
+            )
+            .into());
+        }
+        Ok(Some(inputs))
+    }
 }
 
 /// The catalog files, below `hil/scenarios`, of the scenarios named

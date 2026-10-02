@@ -106,7 +106,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
     {
         if self.prepared_buffered_release.is_some() || self.active_buffered_release.is_some() {
             return Ok(false);
@@ -212,7 +212,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
     {
         let Some(prepared) = self.prepared_buffered_release.take() else {
             return Ok(());
@@ -269,7 +269,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
     {
         let Some(active) = self.active_buffered_release.take() else {
             return Ok(());
@@ -303,7 +303,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
         H: TxHardware,
     {
         let prepared = self
@@ -380,7 +380,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
     {
         if let Some(advertised_frames) = control.take_pending_dtim_group_frames() {
             if self.dtim_group_release_remaining != 0
@@ -455,7 +455,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
     {
         let Some(prepared) = self.prepared_group_release.take() else {
             self.dtim_group_release_remaining = 0;
@@ -496,7 +496,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
     {
         let Some(active) = self.active_group_release.take() else {
             return Ok(());
@@ -551,7 +551,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
         H: TxHardware,
     {
         let prepared = self
@@ -623,7 +623,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
     {
         if self.active_group_release.is_some() {
             return Err(AccessPointDatapathError::Control(
@@ -657,7 +657,7 @@ where
     N: SoftwareTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     fn refresh_power_save_demand(
         &mut self,

@@ -14,7 +14,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{Context, Result, process};
+use crate::{Context, Result};
+use oer_process as process;
 
 fn home() -> Result<PathBuf> {
     std::env::var_os("HOME")
@@ -133,7 +134,6 @@ fn build_inputs(ctx: &Context, source: &Path) -> Result<Vec<String>> {
         "--format-version",
         "1",
         "--locked",
-        "--offline",
     ]))?;
     let metadata: serde_json::Value = serde_json::from_slice(&output.stdout)?;
     let mut inputs = path_package_closure(&metadata, "oer-xtask", source)?;

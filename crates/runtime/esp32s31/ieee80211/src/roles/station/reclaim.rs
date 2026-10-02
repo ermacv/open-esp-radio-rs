@@ -12,7 +12,7 @@ use crate::{
         irq::InterruptEpoch,
         rx::{
             dma::{ReceiveDmaStorage, RxEpochResources, StagedRxProducer},
-            frontier::{ReceiveFrontier, RxFrontierDelay},
+            frontier::ReceiveFrontier,
         },
     },
     roles::{
@@ -130,7 +130,6 @@ type RebindableStationPhase<
     'storage,
     'pool,
     'queue,
-    PD,
     RD,
     M,
     ND,
@@ -148,7 +147,7 @@ type RebindableStationPhase<
 > = StationStoppedPhaseResources<
     'arena,
     ScanRx<'storage, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
-    ReceiveFrontier<'storage, PD, COUNT, DMA_BUFFER_SIZE>,
+    ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE>,
     StationNetworkResources<ND, NR, NS>,
     RunningStationNetwork<NS, NR>,
     P,
@@ -545,7 +544,6 @@ pub fn try_rebind_esp32s31_station_phase<
     'storage,
     'pool,
     'queue,
-    PD,
     RD,
     M,
     ND,
@@ -567,7 +565,6 @@ pub fn try_rebind_esp32s31_station_phase<
         'storage,
         'pool,
         'queue,
-        PD,
         RD,
         M,
         ND,
@@ -592,7 +589,6 @@ pub fn try_rebind_esp32s31_station_phase<
         'storage,
         'pool,
         'queue,
-        PD,
         RD,
         M,
         ND,
@@ -614,7 +610,6 @@ pub fn try_rebind_esp32s31_station_phase<
             'storage,
             'pool,
             'queue,
-            PD,
             RD,
             M,
             ND,
@@ -633,7 +628,6 @@ pub fn try_rebind_esp32s31_station_phase<
     >,
 >
 where
-    PD: RxFrontierDelay,
     M: RawMutex,
     F: FnOnce(
         StagedRxProducer<

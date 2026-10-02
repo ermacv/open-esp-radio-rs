@@ -1,7 +1,7 @@
 schema = 5
 id = "udp-rx-ht40-core0-probe512-small-frame-diagnostic"
 description = "HT40 RX 64-byte packet-rate stress for the 512-us masked continuation diagnostic"
-transfer = "identical-image"
+role = "investigation"
 tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "core0", "coarse-cycles", "masked-probe-ab", "small-frame", "air-strict"]
 
 [wifi]

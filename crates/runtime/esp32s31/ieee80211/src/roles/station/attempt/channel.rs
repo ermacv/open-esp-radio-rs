@@ -29,7 +29,7 @@ impl<'radio, P, C, O, D> StaAttemptChannel<RadioRuntimeOwner> for RadioChannel<'
 where
     C: PlatformClockProvider,
     O: PhyTargetObserver,
-    D: PhyAsyncDelay,
+    D: oer_time::Timer,
 {
     fn switch_channel<'a>(
         &'a mut self,
@@ -44,7 +44,7 @@ where
         RadioChannel::publish_coex_activity(self, activity)
     }
 
-    type Coex = RadioConnectionCoex<'radio, P, C>;
+    type Coex = RadioConnectionCoex<'radio, P, C, D>;
 
     fn connection_coex(&self) -> Self::Coex {
         RadioChannel::connection_coex(self)
@@ -56,7 +56,7 @@ impl<'arena, 'radio, P, C, O, D> StaAttemptChannel<CooperativeRadioHardware<'are
 where
     C: PlatformClockProvider,
     O: PhyTargetObserver,
-    D: PhyAsyncDelay,
+    D: oer_time::Timer,
 {
     async fn switch_channel<'a>(
         &'a mut self,
@@ -73,7 +73,7 @@ where
         RadioChannel::publish_coex_activity(self, activity)
     }
 
-    type Coex = RadioConnectionCoex<'radio, P, C>;
+    type Coex = RadioConnectionCoex<'radio, P, C, D>;
 
     fn connection_coex(&self) -> Self::Coex {
         RadioChannel::connection_coex(self)

@@ -9,7 +9,8 @@ description = "Ownership boundaries of the ESP32-C5 radio over its closed PAC"
 
 [dependencies]
 oer-esp32c5-pac = { path = "../pac" }
-oer-ieee802154-engine = { path = "../../ieee802154/engine" }
+oer-espressif-coex = { path = "../../espressif/coex" }
+oer-espressif-ieee802154-engine = { path = "../../espressif/ieee802154/engine" }
 oer-radio-analog = { path = "../../radio/analog" }
 oer-radio-clock = { path = "../../radio/clock" }
 
@@ -22,7 +23,6 @@ default-target = "riscv32imac-unknown-none-elf"
 targets = []
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "hardware"
 platform = "chip"
 chip = "esp32c5"

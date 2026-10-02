@@ -4,7 +4,7 @@
 use oer_esp32s31_hal::{owner::RadioRuntimeOwner, shared_radio::SharedRadioLease};
 #[cfg(target_arch = "riscv32")]
 use oer_esp32s31_phy::{
-    ConcurrentWifiChannelError, PhyAsyncDelay, PhyTargetObserver, concurrent::ConcurrentPhy,
+    ConcurrentWifiChannelError, PhyShortDelay, PhyTargetObserver, concurrent::ConcurrentPhy,
     switch_concurrent_wifi_channel,
 };
 
@@ -40,7 +40,8 @@ pub const fn lower_wifi_channel(channel: WifiChannel) -> PhyChannel {
 /// The shared PHY domain is retuned under the arbiter lease; `platform` is
 /// the radio system's PHY platform token.
 #[cfg(target_arch = "riscv32")]
-pub async fn switch_esp32s31_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObserver>(
+pub async fn switch_esp32s31_wifi_channel<D: PhyShortDelay, P, O: PhyTargetObserver>(
+    timer: &impl oer_time::Timer,
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     platform: &mut P,
     radio: &mut RadioRuntimeOwner,
@@ -50,6 +51,7 @@ pub async fn switch_esp32s31_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObser
     let channel = lower_wifi_channel(channel);
     let (mut hardware, phy) = radio.channel_hal_with_attachment(platform, lease);
     switch_concurrent_wifi_channel::<D, _, _>(
+        timer,
         phy,
         channel.channel_or_frequency,
         channel.cbw,

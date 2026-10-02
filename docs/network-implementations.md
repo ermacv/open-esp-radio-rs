@@ -14,7 +14,6 @@ the default of the product library, the examples and every HIL image.
 | --- | --- |
 | Product Cargo feature | `owned-network` (default of `oer-esp32s31-ieee80211-system`) |
 | Facade feature | `owned-xarxa` |
-| Firmware and HIL selector | `--network owned-xarxa` (the default and only value) |
 | Adapter | `oer-embassy-net-owned` |
 
 | Crate | Source |

@@ -1,8 +1,8 @@
 schema = 5
 id = "udp-tx-ht40-no-udp-checksum-diagnostic"
 description = "Split-core HT40 saturated TX software UDP checksum-cost diagnostic"
+role = "investigation"
 repetitions = 3
-transfer = "identical-image"
 tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "core0", "coarse-cycles", "checksum", "checksum-ab", "air-strict"]
 
 [wifi]

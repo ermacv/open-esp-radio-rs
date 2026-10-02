@@ -17,7 +17,10 @@ scope = "Finite station attempts and reconnect generations, exact returned role 
 limits = "These owners implement the selected functional AP-loss and no-candidate paths; their presence does not prove every IRQ fault, physical teardown or timeout path"
 source-paths = [
   "crates/protocols/ieee80211/sta/src/station.rs",
+  "crates/services/ieee80211/sta/src/station.rs",
   "crates/protocols/ieee80211/sta/src/link_monitor.rs",
+  "crates/protocols/ieee80211/sta/src/attempt.rs",
+  "crates/services/ieee80211/sta/src/attempt.rs",
   "crates/roles/esp32s31/ieee80211/sta/src/attempt.rs",
   "crates/runtime/esp32s31/ieee80211/src/roles/station/lifecycle.rs",
   "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/role_dispatch.rs",
@@ -397,7 +400,6 @@ limitations = "The declared source boundary is exact; vendor and HIL readiness r
 
 [[capabilities]]
 id = "interrupt-recovery"
-hil-reviews = ["qualification/reviews/interrupt-recovery-ap-loss.toml"]
 source-fact-refs = ["wifi-interrupt-epoch-owners"]
 title = "Interrupt acknowledgement and recovery ordering"
 scope = "Finite CPU route epoch hard MAC acknowledgement priority dispatch and Embassy wake coalescing"
@@ -480,13 +482,13 @@ id = "station-wpa2-protocol-policy"
 composition = "production"
 scope = "Four-way handshake, replay admission, key-installation protocol transitions and response deadlines"
 limits = "Protocol correctness uses host tests and protected-traffic HIL; physical key publication and retirement remain required through station-hardware-crypto"
-source-paths = ["crates/protocols/ieee80211/security/rsn/src/supplicant.rs", "crates/protocols/ieee80211/security/rsn/src/runner.rs"]
+source-paths = ["crates/protocols/ieee80211/security/rsn/src/supplicant.rs", "crates/protocols/ieee80211/security/rsn/src/runner.rs", "crates/services/ieee80211/rsn/src/runner.rs"]
 
 [capabilities.development]
 knowledge = ["crates/protocols/ieee80211/security/rsn/src/supplicant.rs"]
 host-tests = [
   { manifest = "crates/protocols/ieee80211/security/rsn/Cargo.toml", filter = "supplicant::tests", source = "crates/protocols/ieee80211/security/rsn/src/supplicant/tests.rs" },
-  { manifest = "crates/protocols/ieee80211/security/rsn/Cargo.toml", filter = "runner::tests", source = "crates/protocols/ieee80211/security/rsn/src/runner/tests.rs" },
+  { manifest = "crates/services/ieee80211/rsn/Cargo.toml", filter = "runner::tests", source = "crates/services/ieee80211/rsn/src/runner/tests.rs" },
 ]
 [capabilities.catalog-scope]
 chip = "esp32s31"
@@ -523,7 +525,7 @@ limits = "Requires the hardware slot, crypto enable and invalidation contract. W
 source-paths = ["crates/hardware/esp32s31/driver/ieee80211/mac/src/crypto.rs"]
 
 [capabilities.development]
-knowledge = ["crates/hardware/esp32s31/driver/ieee80211/mac/src/crypto.rs"]
+knowledge = ["crates/hardware/esp32s31/driver/ieee80211/mac/src/crypto.rs", "crates/protocols/ieee80211/mac/src/ccmp.rs", "crates/protocols/espressif/ieee80211/policy/src/ccmp.rs"]
 host-tests = [{ manifest = "crates/hardware/esp32s31/driver/ieee80211/mac/Cargo.toml", filter = "crypto::tests", source = "crates/hardware/esp32s31/driver/ieee80211/mac/src/crypto/tests.rs" }]
 
 [capabilities.catalog-scope]
@@ -538,7 +540,6 @@ limitations = "Hardware publication and retirement require vendor evidence and p
 
 [[capabilities]]
 id = "async-deadlines"
-hil-reviews = ["qualification/reviews/async-deadlines-ap-absence.toml"]
 source-fact-refs = ["wifi-bounded-wait-owners"]
 title = "Bounded asynchronous and direct hardware waits"
 scope = "Protocol scheduling and long hardware waits remain bounded and asynchronous; reviewed PHY settles and readiness loops execute synchronously only inside an admitted finite direct transaction"
@@ -613,7 +614,6 @@ limitations = "The declared source boundary is exact; vendor and HIL readiness r
 
 [[capabilities]]
 id = "station-ap-loss-recovery"
-hil-reviews = ["qualification/reviews/station-ap-loss-current.toml"]
 title = "Station reconnects after controlled AP loss"
 scope = "A connected station detects beacon loss, reconnects as generation one, exchanges three fresh ICMP replies and answers a control request in the same boot"
 implementation = "complete"
@@ -626,10 +626,11 @@ hil-requirements = [
 ]
 
 [capabilities.development]
-knowledge = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station/execution.rs", "crates/runtime/esp32s31/ieee80211/src/roles/station/lifecycle.rs", "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/protection.rs", "registers/esp32s31/model/peripherals/wifi-mac-tx-queue-control.toml"]
+knowledge = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station/execution.rs", "crates/runtime/esp32s31/ieee80211/src/roles/station/lifecycle.rs", "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/protection.rs", "crates/protocols/ieee80211/upper-mac/src/protection.rs", "registers/esp32s31/model/peripherals/wifi-mac-tx-queue-control.toml"]
 host-tests = [
   { manifest = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml", filter = "late_epoch_wakes_cannot_prevent_restarting_the_permanent_worker", source = "crates/composition/esp32s31/embassy/ieee80211/tests/connected_worker.rs" },
   { manifest = "crates/protocols/ieee80211/sta/Cargo.toml", filter = "station::tests", source = "crates/protocols/ieee80211/sta/src/station/tests.rs" },
+  { manifest = "crates/services/ieee80211/sta/Cargo.toml", filter = "station::tests", source = "crates/services/ieee80211/sta/src/station/tests.rs" },
   { manifest = "crates/runtime/esp32s31/ieee80211/Cargo.toml", filter = "roles::station::tests", source = "crates/runtime/esp32s31/ieee80211/src/roles/station/tests.rs" },
 ]
 
@@ -645,7 +646,6 @@ limitations = "Configured HT40 WPA2 OpenWrt peer, one AP stop/restart per repeti
 
 [[capabilities]]
 id = "station-initial-ap-absence"
-hil-reviews = ["qualification/reviews/station-initial-absence-current.toml"]
 title = "Bounded station start without an AP"
 scope = "With the configured AP stopped before the first station start, the admitted station service exhausts three no-candidate attempts in generation zero without connecting and answers a control request"
 implementation = "complete"
@@ -662,6 +662,7 @@ knowledge = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/stati
 host-tests = [
   { manifest = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml", filter = "late_epoch_wakes_cannot_prevent_restarting_the_permanent_worker", source = "crates/composition/esp32s31/embassy/ieee80211/tests/connected_worker.rs" },
   { manifest = "crates/protocols/ieee80211/sta/Cargo.toml", filter = "station::tests", source = "crates/protocols/ieee80211/sta/src/station/tests.rs" },
+  { manifest = "crates/services/ieee80211/sta/Cargo.toml", filter = "station::tests", source = "crates/services/ieee80211/sta/src/station/tests.rs" },
   { manifest = "crates/runtime/esp32s31/ieee80211/Cargo.toml", filter = "roles::station::tests", source = "crates/runtime/esp32s31/ieee80211/src/roles/station/tests.rs" },
 ]
 
@@ -847,6 +848,14 @@ source-document = "crates/hardware/esp32s31/driver/ieee80211/FEATURES.md"
 overview = ""
 
 [[sections]]
+id = "wifi-roaming-and-service-discovery"
+domain = "wifi"
+title = "Roaming and service discovery"
+source-document = "crates/hardware/esp32s31/driver/ieee80211/FEATURES.md"
+overview = "These protocols are compositions of management and data exchanges over the supported PHY profiles. Each row states why it is absent and names the missing owners and the MAC, key, channel or timing operations the composition needs. An absent row neither promises implementation nor establishes interoperability."
+documents = ["crates/protocols/ieee80211/README.md", "docs/architecture.md"]
+
+[[sections]]
 id = "wifi-legacy-and-ht-mac-behavior"
 domain = "wifi"
 title = "Legacy and HT MAC behavior"
@@ -894,7 +903,7 @@ domain = "phy"
 title = "Shared PHY inventory contract"
 source-document = "crates/hardware/esp32s31/phy/FEATURES.md"
 overview = "See the [whole-radio capability map](../driver/FEATURES.md) for shared ownership,\nclock/power lifecycle and cross-protocol composition limits.\n\nThis document covers RF, analog, calibration and shared-PHY ownership below\nprotocol MAC/LL. Protocol modulation/rate support belongs to the\n[Wi-Fi](../driver/ieee80211/FEATURES.md), [Bluetooth](../driver/bluetooth/FEATURES.md) and\n[IEEE 802.15.4](../driver/ieee802154/FEATURES.md) inventories. CSI capture, CTE IQ\nsample delivery and protocol antenna-selection policy remain there.\n[Coexistence](../driver/coex/FEATURES.md) owns shared-RF arbitration coverage.\n\n`IMPLEMENTED` means the exact PHY primitive has a complete source-owned\nimplementation for the stated scope. It does not imply that every protocol\ncomposes that primitive or that RF performance has been qualified.\n\nStatus definitions:\n\n- `IMPLEMENTED`: The named bounded algorithm/transition and its stated execution boundary are source-owned.\n- `PARTIAL`: A subset or lower mechanism exists without the complete named lifecycle/composition.\n- `FAIL-CLOSED`: A typed boundary deliberately prevents the stated activation or reuse.\n- `ABSENT`: No complete source owner implements the named operation.\n\nPrimitive rows describe the retained S31 calibration graphs and supported\ninputs, not arbitrary RF configurations. Most graphs use explicit actions,\nidentity-bound completions and finite deadlines. The\n[target port](src/target_port.rs) and [target executor](src/target_executor.rs)\ncomplete MMIO, analog-I2C, PBus, measurement and delay edges; a pure transition\ncompletion is not an observation of RF quality or even proof of PLL lock."
-packages = ["oer-esp32s31-bluetooth", "oer-esp32s31-coex", "oer-ieee802154-engine", "oer-esp32s31-phy", "oer-esp32s31-ieee80211"]
+packages = ["oer-esp32s31-bluetooth", "oer-esp32s31-coex", "oer-espressif-ieee802154-engine", "oer-esp32s31-phy", "oer-esp32s31-ieee80211"]
 documents = ["crates/hardware/esp32s31/driver/FEATURES.md"]
 
 [[sections]]
@@ -982,12 +991,36 @@ level = "composed-product"
 scope-and-limitations = "Standalone normalized monitor capture is implemented. Raw-DMA capture, protocol-validated capture, and monitor operation concurrent with STA/AP are not published capabilities."
 
 [[items]]
+id = "wifi-interfaces-and-operating-modes-wi-fi-direct-p2p"
+section = "wifi-interfaces-and-operating-modes"
+title = "Wi-Fi Direct / P2P"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Reason: software composition not written; driver operations missing. No P2P discovery, Group Owner negotiation, invitation, provisioning or group lifecycle owner exists. The existing STA/AP roles provide link mechanisms, not P2P groups. Missing: P2P information elements and Action exchanges, WPS provisioning, explicit group interfaces, listen/search channel scheduling and P2P power management. The single radio channel context does not provide simultaneous operation on different channels. See the [P2P protocol/driver boundary](https://w1.fi/wpa_supplicant/devel/p2p.html)."
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-tdls"
+section = "wifi-interfaces-and-operating-modes"
+title = "Tunneled Direct Link Setup (TDLS)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Reason: software composition not written; driver operations missing. No TDLS setup/confirm/teardown, direct-peer key lifecycle or direct STA-to-STA data owner exists. Missing: non-DS data framing, receive/ACK rules and peer-key selection outside the AP-bound station policy, and channel scheduling for off-channel TDLS. Operation also depends on peer support and the associated AP's TDLS policy."
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-wds-transparent-layer-two-bridge"
+section = "wifi-interfaces-and-operating-modes"
+title = "WDS / transparent Layer-2 bridge"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Reason: software composition not written; driver operations missing. No four-address distribution link or transparent Ethernet bridge owner exists. Missing: four-address data codecs, matching receive/ACK and CCMP header contracts, distribution-peer keys, forwarding/learning state and loop handling. Both wireless endpoints must support the selected four-address link. Concurrent STA + SoftAP supplies two roles on one channel, not a transparent bridge for downstream MAC addresses."
+
+[[items]]
 id = "wifi-interfaces-and-operating-modes-ieee-802-11s-mesh"
 section = "wifi-interfaces-and-operating-modes"
 title = "IEEE 802.11s mesh"
 status = "absent"
 level = "composed-product"
-scope-and-limitations = "No mesh station interface exists: no Mesh ID/Mesh Configuration advertisement, mesh peering (AMPE), four-address mesh data framing or HWMP path selection. Infrastructure STA and SoftAP interfaces do not form a standard mesh basic service set."
+scope-and-limitations = "Reason: software composition not written; driver operations missing. No mesh station interface exists: no Mesh ID/Mesh Configuration advertisement, mesh peering (AMPE), four-address mesh data framing or HWMP path selection. Infrastructure STA and SoftAP interfaces do not form a standard mesh basic service set. Missing besides the peering, path-selection, airtime-metric, TTL and duplicate-suppression owners: mesh VIF/receive/ACK semantics, Mesh Control data geometry, beacon/TSF integration, peer-key/CCMP contracts, and SAE and AMPE owners for secure peering."
 
 [[items]]
 id = "wifi-interfaces-and-operating-modes-esp-wifi-mesh"
@@ -1003,7 +1036,7 @@ section = "wifi-interfaces-and-operating-modes"
 title = "NAN / Wi-Fi Aware"
 status = "absent"
 level = "composed-product"
-scope-and-limitations = "No cluster synchronization, Publish/Subscribe, Follow-up or NAN Data Path (NDP) owner exists. Reviewed [NAN TSF controls](../../../../../registers/esp32s31/model/peripherals/wifi-mac-aux-tsf-control.toml) and interface crypto controls do not create discovery/data interfaces or a NAN runtime."
+scope-and-limitations = "Reason: software composition not written; driver operations missing. No cluster synchronization, Publish/Subscribe, Follow-up or NAN Data Path (NDP) owner exists. Reviewed [NAN TSF controls](../../../../../registers/esp32s31/model/peripherals/wifi-mac-aux-tsf-control.toml) and interface crypto controls do not create discovery/data interfaces or a NAN runtime. Missing besides discovery/peer policy: synchronized discovery windows, channel admission, NAN receive rules and NDP security/data interfaces."
 documents = ["registers/esp32s31/model/peripherals/wifi-mac-aux-tsf-control.toml"]
 
 [[items]]
@@ -1029,8 +1062,125 @@ section = "wifi-interfaces-and-operating-modes"
 title = "Wi-Fi / Bluetooth (Classic/LE) / IEEE 802.15.4 coexistence"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The [coexistence core](../coex/src/lib.rs) and schedule run in the [radio runtime](../../../../runtime/esp32s31/radio/src/system.rs) on the arbiter's timer bank. Wi-Fi publishes its status, schedule interval and channel, shortens shared scan dwells, and a connected station follows the phases through the vendor [power manager](../../../../roles/esp32s31/ieee80211/sta/src/modem_sleep.rs): slice requests, TBTT phase restart, PM=1 and blocked TX queues at the slice end, RF sleep and the Bluetooth preemption end. After an association lost while another radio shares the air, the vendor [reconnect policy](../../../../runtime/esp32s31/ieee80211/src/roles/radio_channel.rs) lengthens the connecting interval, requests event 45 for Probe Requests and event 46 for Authentication, Association and EAPOL frames, which then carry event 46's priority and a priority count of 4000. A paired STA+AP runs no station power management, and no HIL scenario yet runs Wi-Fi beside an active Bluetooth or IEEE 802.15.4 peer."
-packages = ["oer-esp32s31-radio-runtime", "oer-esp32s31-coex", "oer-esp32s31-ieee80211-sta", "oer-esp32s31-ieee80211-runtime"]
+scope-and-limitations = "The [coexistence core](../coex/src/lib.rs) and schedule run in the [radio runtime](../../../../runtime/esp32s31/radio/src/system.rs) on the arbiter's timer bank. Wi-Fi publishes its status, schedule interval and channel, shortens shared scan dwells, and a connected station follows the phases through the vendor [power manager](../../../../protocols/ieee80211/sta/src/modem_sleep.rs): slice requests, TBTT phase restart, PM=1 and blocked TX queues at the slice end, RF sleep and the Bluetooth preemption end. After an association lost while another radio shares the air, the vendor [reconnect policy](../../../../runtime/esp32s31/ieee80211/src/roles/radio_channel.rs) lengthens the connecting interval, requests event 45 for Probe Requests and event 46 for Authentication, Association and EAPOL frames, which then carry event 46's priority and a priority count of 4000. A paired STA+AP runs no station power management, and no HIL scenario yet runs Wi-Fi beside an active Bluetooth or IEEE 802.15.4 peer."
+packages = ["oer-esp32s31-radio-runtime", "oer-espressif-coex", "oer-esp32s31-coex", "oer-esp32s31-ieee80211-sta", "oer-esp32s31-ieee80211-runtime"]
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-lower-mac-port-a-mpdu"
+section = "wifi-interfaces-and-operating-modes"
+title = "Lower-MAC port: A-MPDU attempts"
+status = "partial"
+level = "lower-primitive"
+scope-and-limitations = "`LowerMacAmpdu` over the retained-DMA aggregate owner (`RetainedDmaAmpduTx`) in single-attempt mode: each lent aggregate is one owner whose subframes are `StableDmaBacking` leases of the integrator's `AmpduBackingSource`; one attempt begins, commits every subframe and publishes the aggregate once on its access category's queue, and its completion reports the BlockAck the hardware marks received, after which the leases return to their source. Retries are the caller's; the owner's retained retry is not used. HT only, up to the owner's subframe slots and 6490 octets (the vendor's lowest per-rate ceiling, HT MCS 0 long GI). Reason for the rest: glue not written. HE and Trigger-based aggregates are refused as outside the declared formats, because the port carries no recipient HE TXOP or Trigger reservation. No composition supplies an aggregate source on hardware yet and no HIL scenario drives the port."
+packages = ["oer-esp32s31-ieee80211"]
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-lower-mac-port-concurrent-queue-attempts"
+section = "wifi-interfaces-and-operating-modes"
+title = "Lower-MAC port: one attempt per EDCA queue"
+status = "implemented"
+level = "lower-primitive"
+scope-and-limitations = "The ESP32-S31 backend declares four transmit queues, one per ordinary EDCA queue (voice, video, best effort, background), each holding one MPDU or aggregate attempt; another attempt for an occupied queue is `Busy` and completions correlate by `TxId`. The ordinary TX owner publishes each MPDU and detaches it per queue (`QueuedSingleAttempt`); every MAC interrupt edge is offered to every published queue, which claims only its own latched completion, collision or timeout state. A timeout abort forces the MAC-wide CCA for its 16-us settle, so aborts are serialized: a queue timing out meanwhile keeps its latched timeout and aborts when that settle ends. The hardware keeps the queues' descriptors, completion banks and timeout and collision state separate, and the vendor publishes them concurrently; no HIL scenario yet runs concurrent queues through the port."
+packages = ["oer-esp32s31-ieee80211"]
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-lower-mac-port-hardware-backoff-draw"
+section = "wifi-interfaces-and-operating-modes"
+title = "Lower-MAC port: hardware backoff draw"
+status = "absent"
+level = "lower-primitive"
+scope-and-limitations = "Reason: hardware absent. The ordinary queue counts down the ten-bit contention-window value software publishes; the vendor draws it in software (`lmacTxFrame` masks `hal_random`). The backend accepts `Backoff::Slots` up to 1023 and refuses `Backoff::HardwareDraw`."
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-lower-mac-port-access-point-tbtt"
+section = "wifi-interfaces-and-operating-modes"
+title = "Lower-MAC port: access-point TBTT schedule"
+status = "absent"
+level = "lower-primitive"
+scope-and-limitations = "Reason: vendor knowledge not recovered. `LowerMacBeaconTiming` programs and reports the station TBTT schedule only; no reviewed access-point TBTT register transaction or power-interrupt cause exists in the PAC/HAL, so the backend's beacon-timing capabilities exclude the access-point role from TBTT."
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-lower-mac-port-access-point-tsf"
+section = "wifi-interfaces-and-operating-modes"
+title = "Lower-MAC port: access-point TSF read and arbitrary set"
+status = "fail-closed"
+level = "lower-primitive"
+scope-and-limitations = "Reason: vendor knowledge not recovered. The reviewed access-point TSF seam only resets and starts or stops the timer, so `LowerMacBeaconTiming` restarts the access-point TSF from zero and refuses reading it or setting another value as outside its limits. The station TSF is read and set."
+packages = ["oer-esp32s31-ieee80211"]
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-lower-mac-port-on-air-cancel"
+section = "wifi-interfaces-and-operating-modes"
+title = "Lower-MAC port: cancel of a published attempt"
+status = "absent"
+level = "lower-primitive"
+scope-and-limitations = "Reason: vendor knowledge not recovered. The recovered queue abort runs only after the queue's hardware timeout edge (forced CCA, 16-us settle, detach); no software-initiated abort of a live ordinary queue is recovered. The backend does not implement `LowerMacCancelPublished`; the base `Cancel` ends a held attempt as aborted and a published one with its own completion."
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-lower-mac-port-individual-no-ack"
+section = "wifi-interfaces-and-operating-modes"
+title = "Lower-MAC port: individually addressed frames without acknowledgement"
+status = "fail-closed"
+level = "lower-primitive"
+scope-and-limitations = "Reason: vendor knowledge not recovered. Only the legacy publication program carries the response field (PLCP format zero), so a unicast frame is sent without soliciting an ACK at non-HT rates only, and HT and HE requests are refused as outside the limits. On-air behaviour of the legacy case has no HIL evidence yet."
+packages = ["oer-esp32s31-ieee80211"]
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-lower-mac-port-coexistence-levels"
+section = "wifi-interfaces-and-operating-modes"
+title = "Lower-MAC port: coexistence priority levels"
+status = "fail-closed"
+level = "lower-primitive"
+scope-and-limitations = "Reason: policy decision pending. An attempt at `CoexPriority::Normal` carries the static per-access-category priority of vendor data encapsulation (events 10-13 through `coex_pti_tab`). Which arbitration events the Idle, Elevated and Critical levels select is undecided, so those levels are refused as outside the limits rather than mapped by invention."
+packages = ["oer-esp32s31-ieee80211"]
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-lower-mac-port-5-ghz"
+section = "wifi-interfaces-and-operating-modes"
+title = "Lower-MAC port: 5 GHz channels"
+status = "absent"
+level = "lower-primitive"
+scope-and-limitations = "Reason: hardware absent. The ESP32-S31 radio and PHY are 2.4 GHz only; the portable `Channel` represents 5 GHz, and the backend's capabilities exclude the band and refuse its channels."
+
+[[items]]
+id = "wifi-roaming-and-service-discovery-radio-resource-measurement-802-11k"
+section = "wifi-roaming-and-service-discovery"
+title = "Radio Resource Measurement / Neighbor Reports (802.11k)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Reason: software composition not written. No Neighbor Report request/response or radio-measurement protocol owner exists. Missing: Action codecs, dialog identity, deadlines, neighbor/candidate state, and bounded scan admission with measured inputs for beacon/channel measurements; a connected scan must preserve the home-channel, power-save and coexistence lifetimes. The concurrent STA + AP graph restricts station discovery to the AP channel."
+
+[[items]]
+id = "wifi-roaming-and-service-discovery-bss-transition-management-802-11v"
+section = "wifi-roaming-and-service-discovery"
+title = "BSS Transition Management (802.11v)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Reason: software composition not written. No BSS Transition Query/Request/Response or candidate-transition owner exists. Missing: dialog/deadline state, candidate validation, station acceptance policy and coordination with scan, association, key retirement and network link state. An AP steering request is advisory; this row covers BSS Transition Management, not every 802.11v operation."
+
+[[items]]
+id = "wifi-roaming-and-service-discovery-fast-bss-transition-802-11r"
+section = "wifi-roaming-and-service-discovery"
+title = "Fast BSS Transition (802.11r)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Reason: software composition not written; key and association coordination missing. No FT AKM selection, mobility-domain/FT element processing, PMK-R0/PMK-R1 hierarchy or FT authentication/reassociation owner exists, and key installation and old/new association ownership are not coordinated for a transition. The station's same-AP SAE PMKSA cache is not an FT implementation; over-the-DS FT and AP key-holder integration are also absent. See [roaming protocol definitions](https://docs.espressif.com/projects/esp-idf/en/v6.0.2/esp32/api-guides/wifi-driver/security-and-roaming.html)."
+
+[[items]]
+id = "wifi-roaming-and-service-discovery-gas-anqp-802-11u"
+section = "wifi-roaming-and-service-discovery"
+title = "Generic Advertisement Service / ANQP (802.11u)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Reason: software composition not written. No GAS Initial/Comeback exchange, bounded response-fragment assembly or ANQP query/response owner exists. Missing: Public Action exchanges with dialog tokens, comeback deadlines, payload limits and service/network records. Ordinary scan or association information elements do not implement pre-association ANQP discovery."
+
+[[items]]
+id = "wifi-roaming-and-service-discovery-passpoint"
+section = "wifi-roaming-and-service-discovery"
+title = "Passpoint / Hotspot 2.0"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Reason: software composition not written; depends on absent GAS/ANQP and 802.1X/EAP owners. No Passpoint advertisement, credential/profile selection, ANQP-based network selection or enterprise connection composition exists. Online signup and release-specific subscription features require their own application protocols; neither an ordinary WPA2 connection nor a GAS parser establishes Passpoint interoperability or certification."
 
 [[items]]
 id = "wifi-legacy-and-ht-mac-behavior-rts-protection"
@@ -1097,6 +1247,16 @@ level = "composed-product"
 scope-and-limitations = "STA owns WMM parsing, DSCP/VLAN classification, ACM downgrade, four per-AC EDCA queues, TID selection and BA routing. AP advertises a fixed WMM parameter set and its bounded QoS/A-MPDU path uses BE/TID-0, but it has no per-peer parameter negotiation, network classification or four-AC scheduler. U-APSD is disabled in both roles."
 
 [[items]]
+id = "wifi-legacy-and-ht-mac-behavior-access-point-four-ac-qos"
+section = "wifi-legacy-and-ht-mac-behavior"
+title = "Access-point QoS across four WMM access categories"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Reason: software composition not written. The AP has no complete DSCP/UP classification, per-peer/per-TID agreement routing or scheduler across voice, video, best effort and background; its network TX composition is BE/TID-0 although the lower-MAC exposes four EDCA queues. Existing STA rate adaptation, bounded aggregation and the AP's optional per-peer deficit airtime scheduler are separate source-owned mechanisms, not a four-AC AP composition."
+packages = ["oer-esp32s31-ieee80211-runtime"]
+documents = ["docs/wifi-egress.md"]
+
+[[items]]
 id = "wifi-legacy-and-ht-mac-behavior-20-40-mhz-802-11n-mcs0-mcs7"
 section = "wifi-legacy-and-ht-mac-behavior"
 title = "20/40 MHz 802.11n, MCS0-MCS7"
@@ -1134,7 +1294,7 @@ section = "wifi-security"
 title = "WPA2-Enterprise"
 status = "absent"
 level = "composed-product"
-scope-and-limitations = "There is no 802.1X/EAP supplicant/authenticator or enterprise credential owner."
+scope-and-limitations = "Reason: software composition not written. There is no 802.1X/EAP supplicant/authenticator or enterprise credential owner. Missing: EAP methods such as EAP-TLS over EAPOL, TLS/certificate validation, credentials, EAP-derived PMK binding and per-role session lifetimes; an enterprise AP additionally needs controlled-port admission and authentication-server integration such as RADIUS."
 
 [[items]]
 id = "wifi-security-wpa3-personal-wpa3-enterprise"
@@ -1145,12 +1305,28 @@ level = "composed-product"
 scope-and-limitations = "The station authenticates with SAE group 19 (hunting-and-pecking and hash-to-element, anti-clogging tokens) and keys the AKM 8 four-way handshake with required protected management frames. WPA3-Personal credentials join SAE only; WPA2-Personal credentials upgrade to SAE when the access point offers it. A cached PMKSA of the same access point and SSID, kept across station restarts, replaces SAE with Open System authentication and a PMKID, and an association or handshake failure or an invalidating disconnect forgets it. There is no access point SAE, no WPA3-Enterprise and no SAE groups other than 19."
 
 [[items]]
+id = "wifi-security-wpa3-personal-access-point"
+section = "wifi-security"
+title = "WPA3-Personal access point"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Reason: software composition not written. No AP SAE authentication/session owner, SAE AKM four-way-handshake composition or required AP management-frame protection exists. Missing: per-peer SAE state, anti-clogging/resource admission, PMK binding, advertisement and teardown. The SAE group-19 cryptography and the AP WPA2 authenticator exist as lower mechanisms; the implemented station WPA3 path does not supply the AP role."
+
+[[items]]
+id = "wifi-security-wpa3-enterprise"
+section = "wifi-security"
+title = "WPA3-Enterprise"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Reason: software composition not written; cipher suites missing. No WPA3-Enterprise EAP/AKM and protected-management composition exists in either role. Every selected suite requires exact PMK/PTK derivation, key installation and cipher support; the 192-bit security profile additionally needs stronger data/management cipher suites and certificate constraints, which the CCMP-128-only lower-MAC contract does not provide."
+
+[[items]]
 id = "wifi-security-opportunistic-wireless-encryption-owe"
 section = "wifi-security"
 title = "Opportunistic Wireless Encryption (OWE)"
 status = "absent"
 level = "composed-product"
-scope-and-limitations = "No OWE key exchange, association selection or key lifecycle exists. Open BSS support does not provide Enhanced Open."
+scope-and-limitations = "Reason: software composition not written. No OWE key exchange, association selection or key lifecycle exists. Missing: the Diffie-Hellman exchange, OWE AKM derivation, group validation, derived-PMK binding, transition-mode discovery and per-role lifecycle. Open BSS support does not provide Enhanced Open."
 
 [[items]]
 id = "wifi-security-bip-protected-management-frames"
@@ -1159,6 +1335,30 @@ title = "BIP / protected management frames"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "The station negotiates management frame protection whenever the access point is capable of it, accepting a required one, and then prefers PSK-SHA256. It keeps the IGTK across group rekeys, opens protected individually addressed robust frames with a software copy of the temporal key, verifies group-addressed ones with BIP-CMAC-128, drops other unprotected robust frames, answers SA Query Requests, confirms unprotected class 2 and 3 disconnects with the vendor SA Query procedure, and sends robust Action frames and the Deauthentication of a controlled stop CCMP-protected. BIP-GMAC and BIP-CMAC-256, beacon protection (BIGTK) and the access point role's management frame protection are absent."
+
+[[items]]
+id = "wifi-security-access-point-protected-management-frames"
+section = "wifi-security"
+title = "Access-point Protected Management Frames (802.11w / PMF)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Reason: software composition not written. No AP PMF negotiation, IGTK publication/rotation, robust management protection/replay policy or per-peer SA Query owner exists. Missing: peer-scoped keys, packet numbers, management RX/TX routing and teardown for the AP; the BIP-CMAC-128 and management CCMP mechanisms serve only the station. Ordinary AP CCMP data encryption does not protect management frames."
+
+[[items]]
+id = "wifi-security-device-provisioning-protocol-dpp"
+section = "wifi-security"
+title = "Device Provisioning Protocol / Wi-Fi Easy Connect (DPP)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Reason: software composition not written. No DPP bootstrap identity, authentication, configuration exchange or credential-install owner exists. Missing: bootstrap/public-key ownership, DPP Public Action and GAS exchanges, cryptography, dialog deadlines and provisioning policy over the management TX/RX path. QR/URI handling belongs to the application; configured WPA2/WPA3 credentials do not establish DPP onboarding. See [DPP on ESP32-S31](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s31/api-reference/network/esp_dpp.html)."
+
+[[items]]
+id = "wifi-security-wi-fi-protected-setup-wps"
+section = "wifi-security"
+title = "Wi-Fi Protected Setup (WPS)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Reason: software composition not written. No WPS registrar/enrollee, WSC information-element/EAP exchange or provisioning session owner exists. Missing: cryptography, method-specific authorization, bounded PIN/push-button sessions and credential handling over the management/EAPOL paths. WPS is also a missing provisioning dependency of classic Wi-Fi Direct group formation; it is separate from DPP."
 
 [[items]]
 id = "wifi-security-gcmp-tkip-wapi-and-wep"
@@ -1190,7 +1390,7 @@ section = "wifi-tsf-beacon-monitoring-and-power-saving"
 title = "Legacy station power save"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "Station power save is the vendor [modem-sleep manager](../../../../roles/esp32s31/ieee80211/sta/src/modem_sleep.rs): PM=1/PM=0 Null Data frames, TIM/DTIM and listen-interval wakes on the station TBTT schedule, held network frames until the station wakes. Like the vendor, it sends no PS-Poll. The minimum and maximum modem-sleep types have no HIL evidence yet, and a paired STA+AP runs no station power management."
+scope-and-limitations = "Station power save is the vendor [modem-sleep manager](../../../../protocols/ieee80211/sta/src/modem_sleep.rs): PM=1/PM=0 Null Data frames, TIM/DTIM and listen-interval wakes on the station TBTT schedule, held network frames until the station wakes. Like the vendor, it sends no PS-Poll. The minimum and maximum modem-sleep types have no HIL evidence yet, and a paired STA+AP runs no station power management."
 
 [[items]]
 id = "wifi-tsf-beacon-monitoring-and-power-saving-full-modem-sleep"
@@ -1215,6 +1415,14 @@ title = "Connectionless power save"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No hardware wake-window/interval owner is composed for ESP-NOW or other connectionless exchanges. Standalone ESP-NOW RX remains awake; FTM itself remains fail-closed."
+
+[[items]]
+id = "wifi-tsf-beacon-monitoring-and-power-saving-u-apsd"
+section = "wifi-tsf-beacon-monitoring-and-power-saving"
+title = "Unscheduled Automatic Power Save Delivery (U-APSD)"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Reason: software composition not written. Both role profiles disable U-APSD. No per-AC trigger/delivery negotiation, QoS trigger, bounded service-period or EOSP completion owner exists. Missing: peer buffering, trigger/service-period state and QoS TX/RX integration that retain the physical radio and coexistence lifetimes. Legacy TIM/DTIM buffering and modem sleep are separate mechanisms."
 
 [[items]]
 id = "wifi-tsf-beacon-monitoring-and-power-saving-twt-requester"

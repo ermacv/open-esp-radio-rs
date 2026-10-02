@@ -2,6 +2,7 @@ use core::{
     sync::atomic::{AtomicU8, Ordering},
     task::{Context, Waker},
 };
+use oer_time::{Clock as _, Timer as _};
 
 use crate::datapath::{
     PinnedTxFrame, PinnedTxPool, PinnedTxResources,
@@ -1499,14 +1500,14 @@ fn aggregate_abort_retains_frames_until_deadline_and_quarantines_failed_detach()
         let timeout = WifiTxWake::Interrupt {
             events: EVENT_TX_TIMEOUT,
         };
-        let abort_started = tx.ordinary.now_micros();
+        let abort_started = tx.ordinary.now().as_micros();
         assert_eq!(
             tx.service(&mut hardware, timeout),
             Ok(WifiTxProgress::Pending)
         );
         let deadline = tx.next_deadline_micros().unwrap();
         assert_eq!(deadline, abort_started + AMPDU_ABORT_SETTLE_US);
-        assert_eq!(tx.ordinary.now_micros(), abort_started);
+        assert_eq!(tx.ordinary.now().as_micros(), abort_started);
         assert_eq!(tx.active_network_frame_count(), 2);
         assert_eq!(network.tx_consumer().promotion_capacity(), 1);
         tx = match tx.try_into_parts() {
@@ -1514,7 +1515,10 @@ fn aggregate_abort_retains_frames_until_deadline_and_quarantines_failed_detach()
             Ok(_) => panic!("settling DMA owner must not be handed off"),
         };
         hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
-        embassy_futures::block_on(tx.ordinary.wait_until_micros(deadline - 1));
+        embassy_futures::block_on(
+            tx.ordinary
+                .wait_until(oer_time::Instant::from_micros(deadline - 1)),
+        );
         for wake in [
             timeout,
             WifiTxWake::Deadline,
@@ -1529,7 +1533,7 @@ fn aggregate_abort_retains_frames_until_deadline_and_quarantines_failed_detach()
         assert_eq!(hardware.abort_requests, 1);
         assert_eq!(hardware.timeout_detaches, 0);
         embassy_futures::block_on(tx.wait_deadline());
-        assert_eq!(tx.ordinary.now_micros(), deadline);
+        assert_eq!(tx.ordinary.now().as_micros(), deadline);
         let result = tx.service(&mut hardware, WifiTxWake::Deadline);
         assert_eq!(hardware.timeout_detaches, 1);
         assert_eq!(hardware.ht_publications, 1);

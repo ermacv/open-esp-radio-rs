@@ -9,19 +9,17 @@ use core::{future::Future, marker::PhantomData};
 use crate::{
     datapath::rx::{
         dma::ReceiveDmaStorage,
-        frontier::{ReceiveFrontier, RxFrontierDelay, RxFrontierError},
+        frontier::{ReceiveFrontier, RxFrontierError},
     },
     roles::station::{
         join_port::{StaJoinPort, StaJoinRadio, StaJoinRx, StaJoinStation, StaJoinStorage},
-        join_time::EmbassyStaJoinTimer,
         wpa2_port::Wpa2Rx,
-        wpa2_time::EmbassyWpa2HandshakeTimer,
     },
 };
 
 use oer_esp32s31_hal::owner::RadioRuntimeOwner;
 
-use oer_esp32s31_phy::{ConcurrentWifiChannelError, PhyAsyncDelay, PhyTargetObserver};
+use oer_esp32s31_phy::{ConcurrentWifiChannelError, PhyTargetObserver};
 
 use oer_esp32s31_ieee80211::{
     coex::WifiCoexActivity, cooperative_hardware::CooperativeRadioHardware,
@@ -61,16 +59,17 @@ use oer_ieee80211_mac::{
 };
 
 use oer_ieee80211_sta::{
-    join::{StaAuthenticationSuccess, StaJoinError, StaJoinRunner, sae::StaSaeAuthentication},
+    join::{StaAuthenticationSuccess, StaJoinError, sae::StaSaeAuthentication},
     station::StaFailureDisposition,
 };
+use oer_ieee80211_sta_service::join::StaJoinRunner;
 
 use oer_ieee80211_rsn::{
     aes::{RsnSoftwareAes, SoftwareAesKeyUnwrapError},
-    runner::{
-        RsnEstablished, RsnHandshakeConfig, RsnHandshakeError, RsnHandshakeRunner,
-        RsnKeyInstallError, RsnKeyInstallRunner, RsnPendingKeyInstall,
-    },
+    runner::{RsnHandshakeConfig, RsnHandshakeError, RsnKeyInstallError},
+};
+use oer_ieee80211_rsn_service::runner::{
+    RsnEstablished, RsnHandshakeRunner, RsnKeyInstallRunner, RsnPendingKeyInstall,
 };
 
 mod channel;

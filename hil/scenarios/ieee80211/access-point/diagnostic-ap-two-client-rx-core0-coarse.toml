@@ -1,8 +1,8 @@
 schema = 5
 id = "diagnostic-ap-two-client-rx-core0-coarse"
 description = "Two-station AP RX with coarse execution phase accounting"
+role = "investigation"
 repetitions = 1
-transfer = "identical-image"
 tags = ["diagnostic", "access-point", "multi-client", "ht40", "owned-ap-localization", "air-strict"]
 
 [wifi]

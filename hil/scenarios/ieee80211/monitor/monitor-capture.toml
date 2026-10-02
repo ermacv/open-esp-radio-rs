@@ -1,7 +1,8 @@
 schema = 5
 id = "monitor-capture"
 description = "Finite typed monitor capture exported as PCAPNG"
-tags = ["qualification", "wifi", "monitor"]
+role = "investigation"
+tags = ["wifi", "monitor"]
 
 [wifi]
 image = "correctness"

@@ -2,6 +2,9 @@
 
 use core::pin::Pin;
 
+#[cfg(not(target_pointer_width = "32"))]
+use oer_ieee80211_upper_mac::ampdu::set_retry_bit;
+
 use super::{
     HtAmpduLength, HtAmpduTxError, HtAmpduTxStorage, TX_AMPDU_METADATA_SIZE, TxCookie, TxSlotState,
 };
@@ -195,7 +198,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             if location.buffer_address == storage.buffers[location.index].0.as_ptr().addr()
                 && location.capacity <= storage.buffers[location.index].0.len()
             {
-                storage.buffers[location.index].0[TX_AMPDU_METADATA_SIZE + 1] |= 0x08;
+                set_retry_bit(&mut storage.buffers[location.index].0[TX_AMPDU_METADATA_SIZE..]);
             }
         }
     }

@@ -57,12 +57,39 @@ fn cancellation_during_unprivileged_build_never_reaches_sudo_apply() {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    // SAFETY: the child performs only setsid before exec and becomes the sole
-    // leader of a private process group owned by this test.
+    // The installer refuses to run as root, and rightly: sudo is only for its
+    // final apply. Run as root (a container), the test would see that refusal
+    // instead of the build it cancels. A user namespace mapping this process's
+    // root to an unprivileged operator id keeps the files reachable while the
+    // installer sees a non-root operator.
+    let unprivileged = unsafe { libc::geteuid() } == 0;
+    // SAFETY: before exec the child calls only setsid, unshare, open, write
+    // and close on its own /proc files, all async-signal-safe; it becomes the
+    // sole leader of a private process group owned by this test.
     unsafe {
-        command.pre_exec(|| {
+        command.pre_exec(move || {
             if libc::setsid() < 0 {
                 return Err(std::io::Error::last_os_error());
+            }
+            if unprivileged {
+                if libc::unshare(libc::CLONE_NEWUSER) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                for (path, contents) in [
+                    (c"/proc/self/setgroups", &b"deny"[..]),
+                    (c"/proc/self/uid_map", &b"1000 0 1"[..]),
+                    (c"/proc/self/gid_map", &b"1000 0 1"[..]),
+                ] {
+                    let file = libc::open(path.as_ptr(), libc::O_WRONLY);
+                    if file < 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    let written = libc::write(file, contents.as_ptr().cast(), contents.len());
+                    libc::close(file);
+                    if written != contents.len() as isize {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                }
             }
             Ok(())
         });

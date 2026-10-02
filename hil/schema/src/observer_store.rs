@@ -9,8 +9,9 @@
 //! own integrity check; a missing file or one whose bytes do not hash to its
 //! name is an error, never an absent identity.
 //!
-//! A record of [`EMBEDDED`] schema still carries its build inline: runs
-//! sealed before the store existed keep that form.
+//! The runner produces its record in the [`EMBEDDED`] form, with the build
+//! inline, and [`detach`]es it before writing; a stored record is always a
+//! reference, and [`attach`] reads only references.
 use std::{
     collections::BTreeSet,
     fs,
@@ -24,7 +25,8 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>
 
 /// The directory, beside runs or shards, holding the builds.
 pub const DIRECTORY: &str = "observers";
-/// A record that embeds its build.
+/// A record that embeds its build: the producer's form before [`detach`]
+/// and the reader's after [`attach`], never a stored one.
 pub const EMBEDDED: u64 = 1;
 /// A record that refers to its build by digest.
 pub const REFERENCED: u64 = 2;
@@ -118,11 +120,14 @@ pub fn detach(record: &Value, directory: &Path) -> Result<Value> {
     }
 }
 
-/// `record` with its build inline, loading a referenced build from
-/// `directory`. The result has the [`EMBEDDED`] form.
+/// The stored reference `record` with its build inline, loaded from
+/// `directory`. The result has the [`EMBEDDED`] form; a stored record that
+/// embeds its build is rejected.
 pub fn attach(record: &Value, directory: &Path) -> Result<Value> {
     match record["schema"].as_u64() {
-        Some(EMBEDDED) => Ok(record.clone()),
+        Some(EMBEDDED) => {
+            Err("a stored observer record embeds its build; only references are read".into())
+        }
         Some(REFERENCED) => {
             let sha256 = build_digest(record).ok_or("observer reference names no build")?;
             Ok(json!({
@@ -191,6 +196,10 @@ mod tests {
         assert!(reference.get("build").is_none());
         assert_eq!(attach(&reference, directory.path()).unwrap(), record);
         assert_eq!(detach(&reference, directory.path()).unwrap(), reference);
+        assert!(
+            attach(&record, directory.path()).is_err(),
+            "a stored record never embeds its build"
+        );
     }
 
     #[test]

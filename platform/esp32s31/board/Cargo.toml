@@ -14,7 +14,6 @@ esp-hal = { workspace = true, features = ["esp32s31", "unstable"] }
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "platform"
 platform = "chip"
 chip = "esp32s31"

@@ -1,19 +1,19 @@
 name: Documentation
 
-# Pushes and pull requests check the guides and API documentation. A manual
-# run from main also publishes them to GitHub Pages.
+# Every push checks the guides and API documentation. A manual run from main
+# also publishes them to GitHub Pages.
 on:
   push:
-    branches: [main]
-  pull_request:
+    branches: ['**']
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# A branch needs only its newest commit; main's runs complete.
 concurrency:
   group: docs-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'push' && github.ref != 'refs/heads/main' }}
 
 env:
   CARGO_INCREMENTAL: '0'
@@ -50,11 +50,11 @@ jobs:
         run: |
           cargo fetch --locked
       - name: API documentation and doctests
-        run: cargo xtask doc
+        run: cargo xtask --verbose doc
       - name: Markdown links and qualification catalogs
-        run: cargo xtask check docs
+        run: cargo xtask --verbose check docs
       - name: Capability anchors in code
-        run: cargo xtask check capabilities
+        run: cargo xtask --verbose check capabilities
       - name: Install mdBook
         run: |
           mdbook --version | grep -q "v$MDBOOK_VERSION" || cargo install --locked mdbook --version "$MDBOOK_VERSION"

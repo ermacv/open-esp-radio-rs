@@ -20,7 +20,7 @@ type ProductionAccessPointControl = AccessPointControl<
     ProductionAccessPointRxConsumer,
     PhyTxTargetPowerProfile,
     fn() -> u32,
-    oer_esp32s31_ieee80211_runtime::datapath::tx::time::EmbassyWifiTxTimer,
+    oer_time_embassy::EmbassyClock,
     RX_DESCRIPTOR_COUNT,
     RX_BUFFER_SIZE,
     RX_BUFFER_STORAGE_SIZE,
@@ -30,7 +30,7 @@ type ProductionWifiTxResources = WifiTxResources<
     'static,
     PhyTxTargetPowerProfile,
     fn() -> u32,
-    oer_esp32s31_ieee80211_runtime::datapath::tx::time::EmbassyWifiTxTimer,
+    oer_time_embassy::EmbassyClock,
     TX_BUFFER_SIZE,
 >;
 type ProductionAccessPointStopped = EmbassyAccessPointStopped<
@@ -39,7 +39,7 @@ type ProductionAccessPointStopped = EmbassyAccessPointStopped<
     'static,
     PhyTxTargetPowerProfile,
     fn() -> u32,
-    oer_esp32s31_ieee80211_runtime::datapath::tx::time::EmbassyWifiTxTimer,
+    oer_time_embassy::EmbassyClock,
     ProductionAccessPointRxProducer,
     ProductionAccessPointRxConsumer,
     RX_DESCRIPTOR_COUNT,
@@ -200,7 +200,7 @@ impl ProductionWifiEpochRunner {
         if requested_channel != current_channel {
             diagnostics_event!("open-radio: AP prepare channel switch begin");
             let lowered_channel = lower_wifi_channel(requested_channel);
-            let mut channel = ScanPhy::<_, EmbassyPhyTime>::new(NoopPhyTargetObserver);
+            let mut channel = ScanPhy::new(NoopPhyTargetObserver, EmbassyClock);
             let selected = {
                 let mut guard = self.radio.lock().await;
                 let (lease, platform, _) = guard.parts();
@@ -826,6 +826,7 @@ impl ProductionWifiEpochRunner {
                             (u64::from(self.trng.random()) << 32) | u64::from(self.trng.random());
                         (nonce, replay)
                     },
+                    oer_time_embassy::EmbassyClock,
                 )
             )
         };

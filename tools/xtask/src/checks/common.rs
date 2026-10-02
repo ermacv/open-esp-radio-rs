@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
 };
 
@@ -32,7 +32,7 @@ pub struct CargoConfiguration {
 impl CargoConfiguration {
     pub fn apply(&self, command: &mut Command) {
         command
-            .args(["--locked", "--offline", "--manifest-path"])
+            .args(["--locked", "--manifest-path"])
             .arg(&self.manifest)
             .args(["--package", &self.package, "--target", &self.target])
             .args(&self.features);
@@ -59,31 +59,6 @@ pub fn package_for_manifest<'a>(metadata: &'a Metadata, manifest: &Path) -> Resu
         .into());
     }
     Ok(package)
-}
-
-/// Every package is `oer-<tokens>`; the public facade alone is `open-esp-radio`.
-pub fn validate_package_name(name: &str, layer: &str) -> Result<()> {
-    let valid = if layer == "facade" {
-        name == "open-esp-radio"
-    } else {
-        name.strip_prefix("oer-").is_some_and(|tokens| {
-            !tokens.is_empty()
-                && tokens.split('-').all(|token| {
-                    !token.is_empty()
-                        && token
-                            .bytes()
-                            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
-                })
-        })
-    };
-    if valid {
-        Ok(())
-    } else {
-        Err(format!(
-            "package {name} does not follow the `oer-<tokens>` naming rule (docs/architecture.md)"
-        )
-        .into())
-    }
 }
 
 pub fn production_packages(ctx: &Context) -> Result<Vec<ProductionPackage>> {
@@ -117,10 +92,29 @@ pub fn production_packages(ctx: &Context) -> Result<Vec<ProductionPackage>> {
         let package = if member {
             package_for_manifest(&workspace, &manifest)?.clone()
         } else {
+            // Resolve another workspace's package only when its manifest
+            // classifies it as production: one Cargo call per package.
+            let section = &document["package"];
+            let table = section.get("metadata").and_then(|m| m.get("open-radio"));
+            let class = oer_tidy::classification::classify(
+                section
+                    .get("name")
+                    .and_then(toml::Value::as_str)
+                    .unwrap_or(""),
+                &|key| {
+                    table
+                        .and_then(|t| t.get(key))
+                        .and_then(toml::Value::as_str)
+                        .map(str::to_owned)
+                },
+            )?;
+            if class.scope != Scope::Production {
+                continue;
+            }
             package_for_manifest(&cargo::metadata_no_deps(ctx, &manifest)?, &manifest)?.clone()
         };
         let class = classification(&package)?;
-        if class.scope != "production" {
+        if class.scope != Scope::Production {
             continue;
         }
         packages.push(ProductionPackage {
@@ -138,19 +132,12 @@ pub fn production_packages(ctx: &Context) -> Result<Vec<ProductionPackage>> {
 /// Discover classified source packages across the root and independent Cargo
 /// workspaces. Workspace membership also retains ignored source members.
 pub fn source_packages(ctx: &Context) -> Result<Vec<SourcePackage>> {
-    let source_manifests = paths::source_manifests(ctx)?
-        .into_iter()
-        .map(|manifest| manifest.canonicalize())
-        .collect::<std::result::Result<BTreeSet<_>, _>>()?;
-    let mut workspace_manifests = BTreeSet::new();
-    for manifest in &source_manifests {
-        workspace_manifests.insert(cargo::workspace_manifest(ctx, manifest)?);
-    }
-    let root_workspace = cargo::metadata_no_deps(ctx, &ctx.root.join("Cargo.toml"))?;
-    for package in &root_workspace.packages {
-        if root_workspace.workspace_members.contains(&package.id) {
-            workspace_manifests.insert(ctx.root.join("Cargo.toml").canonicalize()?);
-        }
+    // Every workspace as `oer-tidy` discovers it, and the root one, whose
+    // membership also retains ignored source members.
+    let repo = oer_tidy::repo::Repo::from_git(&ctx.root)?;
+    let mut workspace_manifests = BTreeSet::from([ctx.root.join("Cargo.toml")]);
+    for manifest in oer_tidy::workspaces::discover(&oer_tidy::manifest::Manifests::load(&repo)?) {
+        workspace_manifests.insert(ctx.root.join(manifest));
     }
 
     let mut packages = std::collections::BTreeMap::new();
@@ -190,231 +177,24 @@ pub fn source_packages(ctx: &Context) -> Result<Vec<SourcePackage>> {
     Ok(packages.into_values().collect())
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Platform<'a> {
-    Portable,
-    Host,
-    Chip(&'a str),
-    /// Built for the one chip a feature named after a chip id selects;
-    /// written once for every chip (see `oer-chip-cfg`).
-    Selected,
-}
+pub use oer_tidy::classification::{Classification, Evidence, Platform, Scope};
+
+/// The family of every chip, keyed by chip id (`chip.toml`).
+pub type Families = BTreeMap<String, String>;
 
 /// The one package through which selected packages reach a chip's PAC.
 const SELECTED_PAC: &str = "oer-pac";
 
-pub struct Classification<'a> {
-    pub scope: &'a str,
-    pub layer: &'a str,
-    pub platform: Platform<'a>,
-    /// The role of a verification package in the evidence shards.
-    pub evidence: Option<Evidence>,
-    /// The role of a HIL package in a run's observation.
-    pub hil: Option<Hil>,
-}
-
-/// What a verification package's code does for the evidence shards: decide
-/// a verdict or a recorded set, whose sources a shard records, or only
-/// render a report, whose sources a shard never records.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Evidence {
-    Verdict,
-    Report,
-}
-
-/// The layer whose packages declare an [`Evidence`] role.
-const EVIDENCE_LAYER: &str = "verification";
-
-/// The evidence role `value` declares for a package of `layer`: required
-/// in the verification layer and forbidden elsewhere.
-pub fn evidence_role(name: &str, layer: &str, value: Option<&str>) -> Result<Option<Evidence>> {
-    match (layer == EVIDENCE_LAYER, value) {
-        (true, Some("verdict")) => Ok(Some(Evidence::Verdict)),
-        (true, Some("report")) => Ok(Some(Evidence::Report)),
-        (true, _) => Err(format!(
-            "package {name} of the verification layer needs open-radio.evidence = \"verdict\" or \"report\""
-        )
-        .into()),
-        (false, None) => Ok(None),
-        (false, Some(_)) => Err(format!(
-            "package {name} outside the verification layer declares open-radio.evidence"
-        )
-        .into()),
-    }
-}
-
-/// Whether a package with evidence role `source` may depend on one with
-/// role `target`: a verdict never depends on a report, so report code can
-/// neither decide a verdict nor enter a shard's sources.
-pub fn evidence_edge_allowed(source: Option<Evidence>, target: Option<Evidence>) -> bool {
-    !(source == Some(Evidence::Verdict) && target == Some(Evidence::Report))
-}
-
-/// Apply [`evidence_edge_allowed`] to every path dependency of `packages`.
-pub fn validate_evidence_edges(packages: &[SourcePackage]) -> Result<()> {
-    for source in packages {
-        let source_role = classification(&source.package)?.evidence;
-        for dependency in &source.package.dependencies {
-            let Some(path) = &dependency.path else {
-                continue;
-            };
-            let manifest = path.join("Cargo.toml").as_std_path().canonicalize()?;
-            let Some(target) = packages.iter().find(|item| item.manifest == manifest) else {
-                continue;
-            };
-            if !evidence_edge_allowed(source_role, classification(&target.package)?.evidence) {
-                return Err(format!(
-                    "verdict package {} depends on report package {}",
-                    source.package.name, dependency.name
-                )
-                .into());
-            }
-        }
-    }
-    Ok(())
-}
-
-/// What a HIL package's code does for a run: observe the device under test
-/// (protocol, scenarios, the link, fixtures, target firmware, evidence), or
-/// operate the stand (arbitration, boards, image builds, recovery) or reach
-/// code that does. An image build reaches a run's evidence only through the
-/// build inputs the run records.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Hil {
-    Observation,
-    Operation,
-}
-
-/// The layer whose packages declare a [`Hil`] role.
-const HIL_LAYER: &str = "hil";
-
-/// The HIL role `value` declares for a package of `layer`: required in the
-/// HIL layer and forbidden elsewhere.
-pub fn hil_role(name: &str, layer: &str, value: Option<&str>) -> Result<Option<Hil>> {
-    match (layer == HIL_LAYER, value) {
-        (true, Some("observation")) => Ok(Some(Hil::Observation)),
-        (true, Some("operation")) => Ok(Some(Hil::Operation)),
-        (true, _) => Err(format!(
-            "package {name} of the hil layer needs open-radio.hil = \"observation\" or \"operation\""
-        )
-        .into()),
-        (false, None) => Ok(None),
-        (false, Some(_)) => {
-            Err(format!("package {name} outside the hil layer declares open-radio.hil").into())
-        }
-    }
-}
-
-/// Whether a package with HIL role `source` may depend on one with role
-/// `target`: observation never depends on operation, so stand code can
-/// neither change what a run observes nor enter its evidence.
-pub fn hil_edge_allowed(source: Option<Hil>, target: Option<Hil>) -> bool {
-    !(source == Some(Hil::Observation) && target == Some(Hil::Operation))
-}
-
-/// Apply [`hil_edge_allowed`] to every path dependency of `packages`.
-pub fn validate_hil_edges(packages: &[SourcePackage]) -> Result<()> {
-    for source in packages {
-        let source_role = classification(&source.package)?.hil;
-        for dependency in &source.package.dependencies {
-            let Some(path) = &dependency.path else {
-                continue;
-            };
-            let manifest = path.join("Cargo.toml").as_std_path().canonicalize()?;
-            let Some(target) = packages.iter().find(|item| item.manifest == manifest) else {
-                continue;
-            };
-            if !hil_edge_allowed(source_role, classification(&target.package)?.hil) {
-                return Err(format!(
-                    "observation package {} depends on stand operation package {}",
-                    source.package.name, dependency.name
-                )
-                .into());
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Classification is required for every source package, regardless of its path.
-pub fn classification(package: &Package) -> Result<Classification<'_>> {
+/// The classification `oer-tidy` reads from the package's
+/// `[package.metadata.open-radio]` table.
+pub fn classification(package: &Package) -> Result<Classification> {
     let metadata = package.metadata.get("open-radio");
-    let field = |name| {
+    Ok(oer_tidy::classification::classify(&package.name, &|key| {
         metadata
-            .and_then(|value| value.get(name))
+            .and_then(|value| value.get(key))
             .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| format!("package {} lacks open-radio.{name}", package.name))
-    };
-    let scope = field("scope")?;
-    let layer = field("layer")?;
-    let chip = metadata.and_then(|value| value.get("chip"));
-    let platform = match (field("platform")?, chip) {
-        ("portable", None) => Platform::Portable,
-        ("host", None) => Platform::Host,
-        ("selected", None) => Platform::Selected,
-        ("chip", Some(chip)) => {
-            let chip = chip
-                .as_str()
-                .filter(|chip| {
-                    chip.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
-                        && chip
-                            .bytes()
-                            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
-                })
-                .ok_or_else(|| {
-                    format!(
-                        "package {} has invalid open-radio.chip identifier",
-                        package.name
-                    )
-                })?;
-            Platform::Chip(chip)
-        }
-        _ => {
-            return Err(format!(
-                "package {} has inconsistent platform/chip classification",
-                package.name
-            )
-            .into());
-        }
-    };
-    let evidence = evidence_role(
-        &package.name,
-        layer,
-        metadata
-            .and_then(|value| value.get("evidence"))
-            .and_then(serde_json::Value::as_str),
-    )?;
-    let hil = hil_role(
-        &package.name,
-        layer,
-        metadata
-            .and_then(|value| value.get("hil"))
-            .and_then(serde_json::Value::as_str),
-    )?;
-    let class = Classification {
-        scope,
-        layer,
-        platform,
-        evidence,
-        hil,
-    };
-    let expected_scope = match class.layer {
-        "contract" | "protocol" | "hardware" | "role" | "adapter" | "runtime" | "service"
-        | "composition" | "facade" => "production",
-        "experiment" => "experimental",
-        "tool" | "hil" | "qualification" | "verification" | "application" | "platform" => {
-            "development"
-        }
-        _ => return Err(format!("package {} has unknown architecture layer", package.name).into()),
-    };
-    if class.scope != expected_scope {
-        return Err(format!(
-            "package {} has inconsistent architecture classification",
-            package.name
-        )
-        .into());
-    }
-    Ok(class)
+            .map(str::to_owned)
+    })?)
 }
 
 /// Executor crates. Lower layers expose futures that any executor may poll.
@@ -424,13 +204,40 @@ fn binds_executor(layer: &str) -> bool {
     matches!(layer, "adapter" | "composition" | "facade")
 }
 
+/// Crates that read or wait on the image's one time driver: the driver
+/// interface and its `oer-time` binding. Lower layers, runtimes included,
+/// take time through the `oer-time` clock and timer ports; their tests use
+/// virtual time, so the rule covers dev dependencies too.
+const TIME_DRIVERS: &[&str] = &["embassy-time", "oer-time-embassy"];
+
+fn binds_time_driver(layer: &str) -> bool {
+    matches!(layer, "adapter" | "composition" | "facade")
+}
+
 /// Apply declared production edges, including optional and build dependencies.
 /// Dev dependencies may compose experiments with the real production owners.
-pub fn validate_production_edges(packages: &[ProductionPackage]) -> Result<()> {
+/// `families` maps each chip to its family for chip-to-family edges.
+pub fn validate_production_edges(
+    packages: &[ProductionPackage],
+    families: &Families,
+) -> Result<()> {
     for source in packages {
         let source_class = classification(&source.package)?;
+        if !binds_time_driver(&source_class.layer)
+            && let Some(dependency) = source
+                .package
+                .dependencies
+                .iter()
+                .find(|dependency| TIME_DRIVERS.contains(&dependency.name.as_str()))
+        {
+            return Err(format!(
+                "{} package {} depends on time driver {}; only adapters, compositions and the facade bind it, and lower layers take time through oer-time",
+                source_class.layer, source.package.name, dependency.name
+            )
+            .into());
+        }
         for dependency in production_dependencies(&source.package) {
-            if EXECUTORS.contains(&dependency.name.as_str()) && !binds_executor(source_class.layer)
+            if EXECUTORS.contains(&dependency.name.as_str()) && !binds_executor(&source_class.layer)
             {
                 return Err(format!(
                     "{} package {} depends on executor {}; only adapters and compositions bind an executor",
@@ -459,7 +266,7 @@ pub fn validate_production_edges(packages: &[ProductionPackage]) -> Result<()> {
                 )
                 .into());
             }
-            if !layer_allows(source_class.layer, target_class.layer) {
+            if !layer_allows(&source_class.layer, &target_class.layer) {
                 return Err(format!(
                     "forbidden architecture edge {} -> {}: {} depends on {}",
                     source_class.layer, target_class.layer, source.package.name, dependency.name
@@ -470,7 +277,7 @@ pub fn validate_production_edges(packages: &[ProductionPackage]) -> Result<()> {
                 // A build script runs on the host.
                 matches!(target_class.platform, Platform::Host | Platform::Portable)
             } else {
-                match (source_class.platform, target_class.platform) {
+                match (&source_class.platform, &target_class.platform) {
                     (_, Platform::Portable) => true,
                     (Platform::Chip(source), Platform::Chip(target)) => source == target,
                     (Platform::Host, Platform::Host) => true,
@@ -483,6 +290,11 @@ pub fn validate_production_edges(packages: &[ProductionPackage]) -> Result<()> {
                     // A chip package may use shared code, selecting its own
                     // chip.
                     (Platform::Chip(_), Platform::Selected) => true,
+                    // Family code is shared within its family only.
+                    (Platform::Family(source), Platform::Family(target)) => source == target,
+                    (Platform::Chip(chip), Platform::Family(family)) => {
+                        families.get(chip).is_some_and(|own| own == family)
+                    }
                     _ => source_class.layer == "facade",
                 }
             };
@@ -611,7 +423,33 @@ pub fn architecture_configurations(
     let mut configurations = Vec::new();
     for item in packages {
         let target = match classification(&item.package)?.platform {
-            Platform::Chip(chip) => oer_chip_profile::Profile::load(root, chip)?.rust_target,
+            Platform::Chip(chip) => oer_chip_profile::Profile::load(root, &chip)?.rust_target,
+            // Built for the target of every chip of its family.
+            Platform::Family(family) => {
+                let targets = oer_chip_profile::Profile::all(root)?
+                    .into_iter()
+                    .filter(|chip| chip.family == *family)
+                    .map(|chip| chip.rust_target)
+                    .collect::<BTreeSet<_>>();
+                if targets.is_empty() {
+                    return Err(format!(
+                        "family package {} names family `{family}`, which no chip declares",
+                        item.package.name
+                    )
+                    .into());
+                }
+                for target in targets {
+                    for features in compilation_profiles(&item.package)? {
+                        configurations.push(CargoConfiguration {
+                            manifest: item.manifest.clone(),
+                            package: item.package.name.to_string(),
+                            target: target.clone(),
+                            features,
+                        });
+                    }
+                }
+                continue;
+            }
             Platform::Portable => target.to_owned(),
             // Host packages run on the build machine: the workspace's own
             // host build covers them.

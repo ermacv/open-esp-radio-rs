@@ -1,6 +1,7 @@
 schema = 5
 id = "diagnostic-udp-tx-ht40-beacon-loss-observed"
 description = "Saturated HT40 UDP station TX beside a light RX flow on the station-exit image observed on air to see the access point's beacons around the loss"
+role = "investigation"
 repetitions = 1
 tags = ["diagnostic", "udp", "station", "bidirectional", "ht40", "split-core", "beacon-loss", "air-strict"]
 

@@ -47,7 +47,6 @@ static_cell = { workspace = true, optional = true }
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "hil"
 platform = "chip"
 chip = "esp32c5"

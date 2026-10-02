@@ -42,7 +42,7 @@ const STANDS: &[Stand] = &[Stand {
     scenario: "ieee802154-host",
     manifest: "verification/esp32s31/host/ieee802154/Cargo.toml",
     source: "esp-idf",
-    production: "oer_ieee802154_engine::engine",
+    production: "oer_espressif_ieee802154_engine::engine",
 }];
 
 /// Shared schema sources every shard depends on.
@@ -260,14 +260,14 @@ fn render_untriaged(locations: &BTreeSet<scenario_evidence::Location>, all: bool
 
 /// Repository files that differ between `revision` and the worktree.
 fn changed_files(ctx: &Context, revision: &str) -> Result<Vec<PathBuf>> {
-    let output = crate::process::capture(ctx.command("git").args([
+    let output = oer_process::capture(ctx.command("git").args([
         "diff",
         "--name-only",
         "-z",
         revision,
         "--",
     ]))?;
-    let untracked = crate::process::capture(ctx.command("git").args([
+    let untracked = oer_process::capture(ctx.command("git").args([
         "ls-files",
         "--others",
         "--exclude-standard",
@@ -577,7 +577,7 @@ const STAND_CLOSURE: &str =
 fn local_closure(ctx: &Context, manifest: &str) -> Result<Vec<PathBuf>> {
     let metadata = cargo_metadata::MetadataCommand::new()
         .manifest_path(ctx.root.join(manifest))
-        .other_options(["--offline".to_owned(), "--locked".to_owned()])
+        .other_options(["--locked".to_owned()])
         .exec()?;
     let resolve = metadata.resolve.as_ref().ok_or("cargo metadata resolve")?;
     let root = resolve.root.as_ref().ok_or("cargo metadata root")?;

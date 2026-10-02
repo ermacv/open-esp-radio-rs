@@ -4,9 +4,12 @@ use oer_bluetooth_radio::{
     ConnectionId, EventId, EventResult, RadioFault, RadioInstant, RadioOutcome, ReceivedPdu,
     TestReport,
 };
+use oer_esp32s31_bluetooth_memory::BLUETOOTH_LE_RX_PAYLOAD_CAPACITY;
 
-/// The longest Link Layer PDU: a two-byte header and a 251-byte payload.
-pub const MAX_PDU_BYTES: usize = 2 + 251;
+/// The longest Link Layer PDU: a two-byte header and the longest payload
+/// one receive allocation holds, which covers 251 octets of data and an
+/// encrypted PDU's MIC.
+pub const MAX_PDU_BYTES: usize = 2 + BLUETOOTH_LE_RX_PAYLOAD_CAPACITY;
 
 /// A received PDU copied out of its receive chain.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -82,6 +85,8 @@ pub enum BluetoothOutcome {
     },
     /// The backend faulted.
     Fault(RadioFault),
+    /// The terminal outcome of a poisoned runtime.
+    Poisoned,
 }
 
 impl BluetoothOutcome {
@@ -100,6 +105,7 @@ impl BluetoothOutcome {
             }
             RadioOutcome::TestReport { id, report } => Self::TestReport { id, report },
             RadioOutcome::Fault(fault) => Self::Fault(fault),
+            RadioOutcome::Poisoned(_) => Self::Poisoned,
         }
     }
 
@@ -122,6 +128,7 @@ impl BluetoothOutcome {
                 report: *report,
             },
             Self::Fault(fault) => RadioOutcome::Fault(*fault),
+            Self::Poisoned => RadioOutcome::Poisoned(oer_bluetooth_radio::Poisoned),
         }
     }
 }

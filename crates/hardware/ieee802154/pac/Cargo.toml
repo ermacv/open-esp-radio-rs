@@ -15,6 +15,5 @@ validation-probes = []
 workspace = true
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "hardware"
 platform = "portable"

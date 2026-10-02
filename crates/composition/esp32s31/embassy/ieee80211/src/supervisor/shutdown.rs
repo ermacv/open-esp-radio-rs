@@ -79,7 +79,6 @@ impl ShutdownFrontier {
 pub(super) async fn quiesce_for_shutdown(
     stopped: ProductionSupervisorStopped,
 ) -> Result<ShutdownFrontier, Failure> {
-    let mut clock = EmbassyPhyTime;
     let (wifi, mut physical, station, access_point, monitor) = stopped.into_parts();
     let tx_idle = match &physical.tx {
         ProductionOrdinaryTxResources::Uninitialized(_) => true,
@@ -109,8 +108,11 @@ pub(super) async fn quiesce_for_shutdown(
             mut registers,
             mut interrupts,
         } => {
-            if let Err(error) = await_stack_boundary!(stop_mac(&mut registers, &mut clock, 100_000))
-            {
+            if let Err(error) = await_stack_boundary!(stop_mac(
+                &mut registers,
+                &EmbassyClock,
+                oer_time::Duration::from_millis(100),
+            )) {
                 return Err(Failure::radio(
                     ProductionWifiOwner::Live {
                         owner,

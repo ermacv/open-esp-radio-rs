@@ -2,15 +2,17 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_bluetooth_radio::{
-    RadioActivity, RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError,
+    ClockInfo, EventsLost, LeRadioCapabilities, LeRadioPort, RadioActivity, RadioEpoch,
+    RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError,
 };
-use oer_bluetooth_runtime::{LeRadioPort, OutcomesLost};
+use oer_time::Timer;
 
 use crate::{BluetoothOutcome, BluetoothRadioHardware, BluetoothRuntime, BluetoothRuntimeError};
 
 impl<
     M: RawMutex,
     H: BluetoothRadioHardware,
+    T: Timer,
     const LEGACY: usize,
     const CONNECTABLE: usize,
     const SCANNERS: usize,
@@ -23,6 +25,7 @@ impl<
     for BluetoothRuntime<
         M,
         H,
+        T,
         LEGACY,
         CONNECTABLE,
         SCANNERS,
@@ -37,11 +40,25 @@ impl<
     /// Never [`BluetoothRuntimeError::Rejected`]: a refusal is an answer.
     type Error = BluetoothRuntimeError;
 
+    fn capabilities(&self) -> LeRadioCapabilities {
+        BluetoothRuntime::capabilities(self)
+    }
+
+    /// The radio time is the controller clock, extended from the 32-bit
+    /// controller-time latch the radio samples; the runtime keeps no
+    /// measured relation between it and the image's monotonic clock.
+    fn clock_info(&self) -> ClockInfo {
+        ClockInfo {
+            resolution: ClockInfo::MONOTONIC_MICROS.resolution,
+            epoch: RadioEpoch::Unrelated,
+        }
+    }
+
     async fn clock(&self) -> Result<(RadioInstant, RadioTiming), BluetoothRuntimeError> {
         BluetoothRuntime::clock(self).await
     }
 
-    async fn request(
+    async fn submit(
         &self,
         request: RadioRequest<'_>,
     ) -> Result<Result<(), RequestError>, BluetoothRuntimeError> {
@@ -52,17 +69,15 @@ impl<
         }
     }
 
-    async fn next_outcome(&self) -> Result<BluetoothOutcome, OutcomesLost> {
-        BluetoothRuntime::next_outcome(self)
-            .await
-            .map_err(|_| OutcomesLost)
+    async fn next_outcome(&self) -> Result<BluetoothOutcome, EventsLost> {
+        BluetoothRuntime::next_outcome(self).await
     }
 
     fn view(outcome: &BluetoothOutcome) -> RadioOutcome<'_> {
         outcome.portable()
     }
 
-    async fn activity(&self, activity: RadioActivity) -> Result<(), BluetoothRuntimeError> {
+    fn activity(&self, activity: RadioActivity) -> Result<(), BluetoothRuntimeError> {
         self.publish_activity(activity);
         Ok(())
     }

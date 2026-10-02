@@ -204,7 +204,7 @@ impl<O: ConnectedRxSink, const CAPACITY: usize, const SLOTS: usize>
     }
 }
 
-impl<'pool, M, O, const CAPACITY: usize, const SLOTS: usize, const REORDER_SLOTS: usize>
+impl<'pool, M, O, K, const CAPACITY: usize, const SLOTS: usize, const REORDER_SLOTS: usize>
     StaApStationRxRole<'pool, CAPACITY, SLOTS>
     for ConnectedRxProcessor<
         '_,
@@ -213,6 +213,7 @@ impl<'pool, M, O, const CAPACITY: usize, const SLOTS: usize, const REORDER_SLOTS
         '_,
         M,
         StaApStationRxSink<'_, O>,
+        K,
         CAPACITY,
         SLOTS,
         REORDER_SLOTS,
@@ -220,6 +221,7 @@ impl<'pool, M, O, const CAPACITY: usize, const SLOTS: usize, const REORDER_SLOTS
 where
     M: embassy_sync::blocking_mutex::raw::RawMutex,
     O: ConnectedRxSink,
+    K: oer_time::Timer,
 {
     type Dispatch = Option<ConnectedRxDispatch>;
     type Error = StaApStationRxError;

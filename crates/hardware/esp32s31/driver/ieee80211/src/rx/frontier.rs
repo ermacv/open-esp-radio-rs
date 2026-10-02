@@ -15,7 +15,5 @@ pub use state::{
     RxFrontierServiceProgress,
 };
 
-pub use super::time::RxFrontierDelay;
-
 #[cfg(test)]
 mod tests;

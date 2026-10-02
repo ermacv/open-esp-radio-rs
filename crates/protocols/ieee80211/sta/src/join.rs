@@ -1,28 +1,24 @@
 //! Executor-independent infrastructure-STA Authentication and Association.
 //!
 //! Wire parsing and response values live in `oer-ieee80211-mac`. This
-//! module owns Authentication/Association state, retry policy and the ordering
-//! and absolute deadlines of finite hardware transactions, receiving time
-//! through an explicit port.
+//! module owns Authentication/Association state and retry policy as state
+//! machines, and declares [`StaJoinBackend`], the port of finite hardware
+//! transactions that the `StaJoinRunner` of `oer-ieee80211-sta-service`
+//! orders against absolute deadlines.
 //! A chip backend owns PAC/DMA access and reports each completed descriptor
 //! through [`StaJoinRxObserver`]; no vendor context, callback table, NVS,
 //! logger, semaphore or allocator is part of this boundary.
 
 use core::future::Future;
 
-use oer_ieee80211_mac::security::LinkProtection;
 use oer_ieee80211_mac::sequence::SequenceNumber;
-use oer_ieee80211_mac::station::{AssociationResponse, StaSequenceCounter};
+use oer_ieee80211_mac::station::AssociationResponse;
 
-use self::association::{
-    StaAssociationAttempt, StaAssociationEvent, StaAssociationFailure, StaAssociationRuntime,
-    StaAssociationRuntimeError,
-};
+use self::association::{StaAssociationAttempt, StaAssociationFailure, StaAssociationRuntimeError};
 use self::authentication::{
-    StaAuthenticationAttempt, StaAuthenticationEvent, StaAuthenticationFailure,
-    StaAuthenticationRuntime, StaAuthenticationRuntimeError,
+    StaAuthenticationAttempt, StaAuthenticationFailure, StaAuthenticationRuntimeError,
 };
-use self::sae::{StaSaeAuthentication, StaSaeEvent, StaSaeFailure, StaSaePmk, StaSaeTransmission};
+use self::sae::{StaSaeFailure, StaSaeTransmission};
 
 pub mod association;
 pub mod authentication;
@@ -38,8 +34,6 @@ mod test_support;
 /// association branch `.L356`, both arm their software timer with immediate
 /// `0x3e8`.
 pub const STA_RESPONSE_TIMEOUT_MS: u32 = 1_000;
-
-const MICROS_PER_MILLISECOND: u64 = 1_000;
 
 /// Whether a finite RX drain should continue after one completed descriptor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -58,7 +52,8 @@ pub trait StaJoinRxObserver {
     fn observe_completed(&mut self, management_frame: Option<&[u8]>) -> StaJoinRxDirective;
 }
 
-/// Finite PAC/DMA operations required by [`StaJoinRunner`].
+/// Finite PAC/DMA operations required by the `StaJoinRunner` of
+/// `oer-ieee80211-sta-service`.
 ///
 /// `start_receive` must either publish a live ring or leave no live hardware
 /// ownership on error. `service_receive` drains only the currently completed
@@ -99,12 +94,6 @@ pub trait StaJoinBackend {
         O: StaJoinRxObserver + 'a;
 }
 
-/// Monotonic clock used by the join runner.
-pub trait StaJoinTimer {
-    fn now_micros(&self) -> u64;
-    fn wait_until_micros(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_;
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaAuthenticationSuccess {
     pub attempt: u16,
@@ -136,368 +125,3 @@ pub enum StaJoinError<E> {
     InvalidAssociationEvent,
     SaeFailed(StaSaeFailure),
 }
-
-struct AuthenticationObserver<'runtime> {
-    runtime: &'runtime mut StaAuthenticationRuntime,
-    terminal: Option<Result<StaAuthenticationEvent, StaAuthenticationRuntimeError>>,
-}
-
-impl StaJoinRxObserver for AuthenticationObserver<'_> {
-    fn observe_completed(&mut self, management_frame: Option<&[u8]>) -> StaJoinRxDirective {
-        if let Err(error) = self.runtime.observe_received_frame() {
-            self.terminal = Some(Err(error));
-            return StaJoinRxDirective::Stop;
-        }
-        let Some(frame) = management_frame else {
-            return StaJoinRxDirective::Continue;
-        };
-        match self.runtime.observe_management_frame(frame) {
-            Ok(StaAuthenticationEvent::Irrelevant) => StaJoinRxDirective::Continue,
-            terminal => {
-                self.terminal = Some(terminal);
-                StaJoinRxDirective::Stop
-            }
-        }
-    }
-}
-
-struct SaeObserver<'exchange> {
-    exchange: &'exchange mut StaSaeAuthentication,
-    event: Option<StaSaeEvent>,
-}
-
-impl StaJoinRxObserver for SaeObserver<'_> {
-    fn observe_completed(&mut self, management_frame: Option<&[u8]>) -> StaJoinRxDirective {
-        let Some(frame) = management_frame else {
-            return StaJoinRxDirective::Continue;
-        };
-        match self.exchange.observe_management_frame(frame) {
-            StaSaeEvent::Irrelevant => StaJoinRxDirective::Continue,
-            event => {
-                self.event = Some(event);
-                StaJoinRxDirective::Stop
-            }
-        }
-    }
-}
-
-struct AssociationObserver<'runtime> {
-    runtime: &'runtime mut StaAssociationRuntime,
-    terminal: Option<Result<StaAssociationEvent, StaAssociationRuntimeError>>,
-}
-
-impl StaJoinRxObserver for AssociationObserver<'_> {
-    fn observe_completed(&mut self, management_frame: Option<&[u8]>) -> StaJoinRxDirective {
-        if let Err(error) = self.runtime.observe_received_frame() {
-            self.terminal = Some(Err(error));
-            return StaJoinRxDirective::Stop;
-        }
-        let Some(frame) = management_frame else {
-            return StaJoinRxDirective::Continue;
-        };
-        match self.runtime.observe_management_frame(frame) {
-            Ok(StaAssociationEvent::Irrelevant) => StaJoinRxDirective::Continue,
-            terminal => {
-                self.terminal = Some(terminal);
-                StaJoinRxDirective::Stop
-            }
-        }
-    }
-}
-
-/// Unique transaction runner for one pre-connected station exchange.
-// CAPABILITY: authentication-association
-pub struct StaJoinRunner<B, T> {
-    backend: B,
-    timer: T,
-}
-
-impl<B, T> StaJoinRunner<B, T>
-where
-    B: StaJoinBackend,
-    T: StaJoinTimer,
-{
-    pub const fn new(backend: B, timer: T) -> Self {
-        Self { backend, timer }
-    }
-
-    pub const fn backend(&self) -> &B {
-        &self.backend
-    }
-
-    pub fn backend_mut(&mut self) -> &mut B {
-        &mut self.backend
-    }
-
-    pub fn into_parts(self) -> (B, T) {
-        (self.backend, self.timer)
-    }
-
-    async fn stop_receive(&mut self) -> Result<(), StaJoinError<B::Error>> {
-        self.backend
-            .stop_receive()
-            .await
-            .map_err(StaJoinError::Backend)
-    }
-
-    async fn wait_boundary(
-        &mut self,
-        started_micros: u64,
-        elapsed_ms: u32,
-    ) -> Result<(), StaJoinError<B::Error>> {
-        let offset = u64::from(elapsed_ms)
-            .checked_mul(MICROS_PER_MILLISECOND)
-            .ok_or(StaJoinError::ClockOverflow)?;
-        let deadline = started_micros
-            .checked_add(offset)
-            .ok_or(StaJoinError::ClockOverflow)?;
-        self.timer.wait_until_micros(deadline).await;
-        Ok(())
-    }
-
-    /// Run one SAE Authentication exchange and return its PMK.
-    ///
-    /// RX is drained at every millisecond boundary; a frame the exchange
-    /// answers (the Confirm after the peer's Commit, or the Commit repeated
-    /// with an anti-clogging token) is sent before the next boundary.
-    pub async fn authenticate_sae(
-        &mut self,
-        mut exchange: StaSaeAuthentication,
-        sequence: &mut StaSequenceCounter,
-    ) -> Result<StaSaePmk, StaJoinError<B::Error>> {
-        self.backend
-            .start_receive()
-            .await
-            .map_err(StaJoinError::Backend)?;
-        let commit = exchange.commit();
-        if let Err(error) = self
-            .backend
-            .transmit_sae_authentication(sequence.take(), &commit)
-            .await
-        {
-            self.stop_receive().await?;
-            return Err(StaJoinError::Backend(error));
-        }
-        let started_micros = self.timer.now_micros();
-        let mut elapsed_ms = 0_u32;
-        loop {
-            elapsed_ms = elapsed_ms
-                .checked_add(1)
-                .ok_or(StaJoinError::ClockOverflow)?;
-            self.wait_boundary(started_micros, elapsed_ms).await?;
-            let mut observer = SaeObserver {
-                exchange: &mut exchange,
-                event: None,
-            };
-            if let Err(error) = self.backend.service_receive(&mut observer).await {
-                self.stop_receive().await?;
-                return Err(StaJoinError::Backend(error));
-            }
-            let event = match observer.event {
-                Some(event) => event,
-                None => exchange.finish_millisecond(),
-            };
-            match event {
-                StaSaeEvent::Irrelevant => {}
-                StaSaeEvent::Transmit(transmission) => {
-                    if let Err(error) = self
-                        .backend
-                        .transmit_sae_authentication(sequence.take(), &transmission)
-                        .await
-                    {
-                        self.stop_receive().await?;
-                        return Err(StaJoinError::Backend(error));
-                    }
-                }
-                StaSaeEvent::Authenticated(pmk) => {
-                    self.stop_receive().await?;
-                    return Ok(pmk);
-                }
-                StaSaeEvent::Failed(failure) => {
-                    self.stop_receive().await?;
-                    return Err(StaJoinError::SaeFailed(failure));
-                }
-            }
-        }
-    }
-
-    /// Run bounded Open Authentication.
-    ///
-    /// The exact one-second deadline is measured from completion of each TX
-    /// publication. RX is drained at every millisecond boundary, including
-    /// the final boundary, before timeout is declared. This makes an RX event
-    /// simultaneous with the deadline win deterministically.
-    pub async fn authenticate(
-        &mut self,
-        local: [u8; 6],
-        bssid: [u8; 6],
-        sequence: &mut StaSequenceCounter,
-    ) -> Result<StaAuthenticationSuccess, StaJoinError<B::Error>> {
-        let mut runtime = StaAuthenticationRuntime::new(local, bssid);
-        loop {
-            let attempt = runtime
-                .begin_attempt(sequence)
-                .map_err(StaJoinError::AuthenticationRuntime)?;
-            self.backend
-                .start_receive()
-                .await
-                .map_err(StaJoinError::Backend)?;
-            if let Err(error) = self.backend.transmit_open_authentication(attempt).await {
-                self.stop_receive().await?;
-                return Err(StaJoinError::Backend(error));
-            }
-            let started_micros = self.timer.now_micros();
-            let mut terminal = None;
-            for elapsed_ms in 1..=attempt.response_timeout_ms {
-                self.wait_boundary(started_micros, elapsed_ms).await?;
-                let mut observer = AuthenticationObserver {
-                    runtime: &mut runtime,
-                    terminal: None,
-                };
-                if let Err(error) = self.backend.service_receive(&mut observer).await {
-                    self.stop_receive().await?;
-                    return Err(StaJoinError::Backend(error));
-                }
-                if observer.terminal.is_some() {
-                    terminal = observer.terminal;
-                    break;
-                }
-            }
-            self.stop_receive().await?;
-            let event = match terminal {
-                Some(Ok(event)) => event,
-                Some(Err(error)) => return Err(StaJoinError::AuthenticationRuntime(error)),
-                None => runtime
-                    .response_timed_out()
-                    .map_err(StaJoinError::AuthenticationRuntime)?,
-            };
-            match event {
-                StaAuthenticationEvent::Authenticated {
-                    attempt,
-                    total_received_frames,
-                } => {
-                    return Ok(StaAuthenticationSuccess {
-                        attempt,
-                        total_received_frames,
-                    });
-                }
-                StaAuthenticationEvent::Retry { .. } => {}
-                StaAuthenticationEvent::Failed {
-                    attempts,
-                    failure,
-                    total_received_frames,
-                } => {
-                    return Err(StaJoinError::AuthenticationFailed {
-                        attempts,
-                        failure,
-                        total_received_frames,
-                    });
-                }
-                StaAuthenticationEvent::Irrelevant => {
-                    return Err(StaJoinError::InvalidAuthenticationEvent);
-                }
-            }
-        }
-    }
-
-    /// Run one Association epoch and leave RX live only on success.
-    ///
-    /// Every tick ends at an absolute deadline, avoiding cumulative
-    /// drift from RX parsing or TX publication. The final RX drain occurs at
-    /// exactly 1,000 ms before the protocol timeout transition.
-    pub async fn associate(
-        &mut self,
-        local: [u8; 6],
-        bssid: [u8; 6],
-        security: LinkProtection,
-        sequence: &mut StaSequenceCounter,
-    ) -> Result<StaAssociationSuccess, StaJoinError<B::Error>> {
-        let mut runtime = StaAssociationRuntime::new(local, bssid, security);
-        self.backend
-            .start_receive()
-            .await
-            .map_err(StaJoinError::Backend)?;
-        let mut started_micros = None;
-
-        loop {
-            let attempt = runtime
-                .begin_tick(sequence)
-                .map_err(StaJoinError::AssociationRuntime)?;
-            if let Some(attempt) = attempt
-                && let Err(error) = self.backend.transmit_association(attempt).await
-            {
-                self.stop_receive().await?;
-                return Err(StaJoinError::Backend(error));
-            }
-            let started_micros = *started_micros.get_or_insert_with(|| self.timer.now_micros());
-            let boundary_ms = runtime
-                .ticks()
-                .checked_add(1)
-                .ok_or(StaJoinError::ClockOverflow)?;
-            self.wait_boundary(started_micros, boundary_ms).await?;
-
-            let mut observer = AssociationObserver {
-                runtime: &mut runtime,
-                terminal: None,
-            };
-            if let Err(error) = self.backend.service_receive(&mut observer).await {
-                self.stop_receive().await?;
-                return Err(StaJoinError::Backend(error));
-            }
-            match observer.terminal {
-                Some(Ok(StaAssociationEvent::Associated {
-                    response,
-                    total_received_frames,
-                })) => {
-                    return Ok(StaAssociationSuccess {
-                        response,
-                        total_received_frames,
-                    });
-                }
-                Some(Ok(StaAssociationEvent::Failed {
-                    failure,
-                    total_received_frames,
-                })) => {
-                    self.stop_receive().await?;
-                    return Err(StaJoinError::AssociationFailed {
-                        failure,
-                        total_received_frames,
-                    });
-                }
-                Some(Ok(StaAssociationEvent::Irrelevant)) => {
-                    self.stop_receive().await?;
-                    return Err(StaJoinError::InvalidAssociationEvent);
-                }
-                Some(Err(error)) => {
-                    self.stop_receive().await?;
-                    return Err(StaJoinError::AssociationRuntime(error));
-                }
-                None => {}
-            }
-
-            match runtime
-                .finish_tick()
-                .map_err(StaJoinError::AssociationRuntime)?
-            {
-                StaAssociationEvent::Irrelevant => {}
-                StaAssociationEvent::Failed {
-                    failure,
-                    total_received_frames,
-                } => {
-                    self.stop_receive().await?;
-                    return Err(StaJoinError::AssociationFailed {
-                        failure,
-                        total_received_frames,
-                    });
-                }
-                StaAssociationEvent::Associated { .. } => {
-                    self.stop_receive().await?;
-                    return Err(StaJoinError::InvalidAssociationEvent);
-                }
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests;

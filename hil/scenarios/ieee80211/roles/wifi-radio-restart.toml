@@ -1,8 +1,9 @@
 schema = 5
 id = "wifi-radio-restart"
 description = "Connected HT40/WPA2 STA to stopped link and cold cache-backed RF restart, with fresh bidirectional session-identified UDP recovery before and after each cycle"
+role = "qualification"
 repetitions = 3
-tags = ["qualification", "wifi", "lifecycle", "phy"]
+tags = ["wifi", "lifecycle", "phy"]
 
 [wifi]
 image = "correctness"

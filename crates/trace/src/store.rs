@@ -174,11 +174,20 @@ pub struct Trace {
     /// Entries still recorded after a freeze; [`RUNNING_WINDOW`] before one.
     remaining: AtomicU32,
     snapshot_sequence: AtomicU32,
+    /// The image's monotonic time in microseconds, which stamps records.
+    #[cfg_attr(
+        not(feature = "record"),
+        expect(dead_code, reason = "only a recording image stamps records")
+    )]
+    clock: fn() -> u64,
 }
 
 impl Trace {
+    /// A trace over `retained` whose records `clock` stamps with the image's
+    /// monotonic time in microseconds.
     pub const fn new<const ENTRIES: usize, const SLOTS: usize, const WORDS: usize>(
         retained: &'static Retained<ENTRIES, SLOTS, WORDS>,
+        clock: fn() -> u64,
     ) -> Self {
         Self {
             header: &retained.header,
@@ -190,7 +199,17 @@ impl Trace {
             sequence: AtomicU32::new(0),
             remaining: AtomicU32::new(RUNNING_WINDOW),
             snapshot_sequence: AtomicU32::new(0),
+            clock,
         }
+    }
+
+    /// The record timestamp now: the low 32 bits of the clock's
+    /// microseconds, which wrap every 71 minutes; the host unwraps them along
+    /// the sequence order.
+    #[cfg(feature = "record")]
+    #[inline(always)]
+    pub(crate) fn now_us(&self) -> u32 {
+        (self.clock)() as u32
     }
 
     pub fn geometry(&self) -> Geometry {

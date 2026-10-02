@@ -1,12 +1,15 @@
 //! Resolve facade consumers independently of workspace feature unification.
 
-use crate::{Context, Result, cargo, process};
+use crate::{Context, Result, cargo};
+use oer_process as process;
 
-use super::super::{TARGET, common::*};
+use super::super::common::*;
 
 const MANIFEST: &str = "crates/oer/Cargo.toml";
 const WIFI: &[&str] = &[
     "oer-ieee80211-sta",
+    "oer-ieee80211-sta-service",
+    "oer-ieee80211-rsn-service",
     "oer-ieee80211-ap",
     "oer-ieee80211-softmac",
     "oer-esp32s31-ieee80211-mac",
@@ -26,6 +29,7 @@ const BACKENDS: &[&str] = &[
 ];
 const BLUETOOTH: &[&str] = &[
     "oer-bluetooth-hci",
+    "oer-bluetooth-hci-transport",
     "oer-bluetooth-ll",
     "oer-esp32s31-bluetooth",
 ];
@@ -40,6 +44,7 @@ struct Profile {
 
 pub(super) fn check(ctx: &Context) -> Result<()> {
     let manifest = ctx.root.join(MANIFEST);
+    let target = super::super::target(&ctx.root)?;
     for profile in [
         Profile {
             features: Some(""),
@@ -92,7 +97,7 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
         },
         Profile {
             features: Some("esp32s31-ieee802154"),
-            required: &["oer-ieee802154-engine", "oer-ieee802154"],
+            required: &["oer-espressif-ieee802154-engine", "oer-ieee802154"],
             forbidden: &[WIFI, BLUETOOTH],
         },
         // The composition joins the shared radio through the esp-hal radio
@@ -101,7 +106,7 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
             features: Some("openthread"),
             required: &[
                 "oer-esp32s31-ieee802154-system",
-                "oer-esp32s31-ieee802154-openthread",
+                "oer-ieee802154-openthread",
             ],
             forbidden: &[WIFI],
         },
@@ -115,7 +120,7 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
                 features.into(),
             ],
         };
-        let graph = cargo::isolated_graph(ctx, &manifest, &flags, Some(TARGET))?;
+        let graph = cargo::isolated_graph(ctx, &manifest, &flags, Some(&target))?;
         if matches!(profile.features, Some("bluetooth" | "esp32s31-bluetooth")) {
             super::reject_wifi_in_bluetooth(&graph, &manifest)?;
         }
@@ -145,7 +150,7 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
             for package in packages.iter().filter(|package| package.source.is_none()) {
                 if matches!(
                     classification(package)?.platform,
-                    Platform::Chip(_) | Platform::Selected
+                    Platform::Chip(_) | Platform::Selected | Platform::Family(_)
                 ) {
                     return Err(format!(
                         "portable facade profile {:?} includes {}",
@@ -160,7 +165,6 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
                 .args([
                     "test",
                     "--quiet",
-                    "--offline",
                     "--locked",
                     "--package",
                     "open-esp-radio",

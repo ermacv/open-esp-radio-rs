@@ -18,6 +18,5 @@ tx-psram-dma-probe = []
 workspace = true
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "contract"
 platform = "portable"

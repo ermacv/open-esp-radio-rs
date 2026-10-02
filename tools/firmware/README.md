@@ -17,6 +17,17 @@ selection requires exactly one USB serial device; `cargo xtask build firmware
 --flash` first picks the only attached board the HIL arbiter registers as the
 chip.
 
+Its `compiler` module is the single owner of the image compiler flags:
+`-Z emit-stack-sizes`, `-Z move-size-limit` with `-D large-assignments`,
+`-Z share-generics=y` and the C/C++ `-fstack-size-section`. No
+`.cargo/config.toml` of the repository carries Rust flags (Cargo reads those
+from the directory it runs in, not from the manifest's, so image builds from
+the repository root would never see them). It sets `RUSTC_BOOTSTRAP=1` on the
+image's Cargo command alone, only for those `-Z` flags on the exact stable
+toolchain `rust-toolchain.toml` pins. Images build without frame pointers;
+`esp-backtrace` then reports a panic's message and location without a
+frame-pointer walk.
+
 The stage-two header, checksum and address map come from the
 [platform layout](../../platform/esp32s31/layout/README.md), which application
 build scripts also use to configure the linker.

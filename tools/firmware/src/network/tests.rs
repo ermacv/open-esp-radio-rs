@@ -1,40 +1,5 @@
 use super::*;
 
-#[test]
-fn owned_xarxa_is_the_only_integration_and_removed_names_are_rejected() {
-    assert_eq!(Integration::default(), Integration::OwnedXarxa);
-    assert_eq!(
-        "owned-xarxa".parse::<Integration>().unwrap(),
-        Integration::OwnedXarxa
-    );
-    for removed in [
-        "upstream-xarxa",
-        "upstream",
-        "patched-xarxa",
-        "udp-backpressure",
-        "upstream-smoltcp",
-    ] {
-        let error = removed.parse::<Integration>().unwrap_err();
-        assert!(error.contains("was removed"), "{error}");
-    }
-    assert!("auto".parse::<Integration>().is_err());
-}
-
-#[test]
-fn example_selection_accepts_only_the_owned_network_feature() {
-    assert_eq!(
-        Integration::for_example(None, &[]).unwrap(),
-        Integration::OwnedXarxa
-    );
-    assert_eq!(
-        Integration::for_example(None, &["owned-network".into()]).unwrap(),
-        Integration::OwnedXarxa
-    );
-    for removed in ["upstream-network", "embassy-network"] {
-        assert!(Integration::for_example(None, &[removed.into()]).is_err());
-    }
-}
-
 fn workspace_fixture() -> (tempfile::TempDir, PathBuf) {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path();
@@ -110,7 +75,7 @@ fn validation_rejects_any_change_to_the_committed_pins() {
         |other: &str| format!("version = 4\n[[package]]\nname = 'other'\nversion = '{other}'\n");
     fs::write(workspace.join("Cargo.lock"), catalog("1.0.0")).unwrap();
     let lock = BuildLock::prepare(&workspace, &root.join("output")).unwrap();
-    lock.validate(root, Integration::OwnedXarxa).unwrap();
+    lock.validate().unwrap();
     fs::write(lock.path(), catalog("2.0.0")).unwrap();
-    assert!(lock.validate(root, Integration::OwnedXarxa).is_err());
+    assert!(lock.validate().is_err());
 }

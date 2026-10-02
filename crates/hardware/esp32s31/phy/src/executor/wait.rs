@@ -1,4 +1,15 @@
-//! Hardware wait reasons and scoped runtime calibration delay evidence.
+//! Hardware wait reasons, the PHY's waits on the image's monotonic time and
+//! scoped runtime calibration delay evidence.
+//!
+//! A PHY wait is either a short minimum settle, which completes inside the
+//! exclusive hardware transaction through a [`PhyShortDelay`], or a wait on
+//! the caller's [`oer_time::Timer`]: scheduling backoff, long settles and
+//! readiness retries. [`delay`] chooses between them; [`delay_observed`] also
+//! reports the wait against the same start and deadline.
+
+use core::{future::Future, pin::pin, task::Poll};
+
+use oer_time::{Duration, Timer};
 
 pub mod tx;
 
@@ -32,7 +43,6 @@ pub enum Event {
         elapsed_micros: u64,
         lateness_micros: u64,
     },
-    Unsupported,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -132,7 +142,6 @@ impl Recorder {
                     maximum_lateness_micros: timing.maximum_lateness_micros.max(lateness),
                 };
             }
-            Event::Unsupported => self.invalid = true,
         }
     }
 
@@ -153,6 +162,96 @@ impl Recorder {
     }
     pub(crate) fn is_complete(&self) -> bool {
         !self.invalid && self.active.is_none()
+    }
+}
+
+/// Blocking settle used inside one already-admitted PHY hardware transaction.
+///
+/// Short analog settles are part of the transaction itself. They must not arm
+/// an executor timer or return `Pending`: the radio cannot do useful work in
+/// the interval and the vendor implementation uses the same blocking model.
+pub trait PhyShortDelay {
+    /// Largest minimum settle that the backend can complete synchronously.
+    const MAX_MICROS: u32;
+
+    /// Complete a short minimum settle without constructing a future.
+    /// False means that the requested interval is outside the implementation's
+    /// proven blocking range.
+    fn settle_micros(micros: u32) -> bool;
+}
+
+/// Whether a wait of `kind` and `micros` is a short settle `S` completes
+/// synchronously. Readiness retries keep their timer cadence at any size.
+const fn synchronous_settle<S: PhyShortDelay>(kind: Kind, micros: u64) -> bool {
+    matches!(kind, Kind::Settle) && micros != 0 && micros <= S::MAX_MICROS as u64
+}
+
+/// Wait at least `micros` for `kind`.
+///
+/// A short settle completes at its first poll through `S`; every other wait
+/// ends on `timer` at the deadline taken when this is called, so the time
+/// before the first poll counts. A deadline past the timer's range is never
+/// reached: the wait fail-stops instead of ending early.
+pub fn delay<S: PhyShortDelay, T: Timer + ?Sized>(
+    timer: &T,
+    kind: Kind,
+    micros: u64,
+) -> impl Future<Output = ()> + '_ {
+    let deadline = (!synchronous_settle::<S>(kind, micros))
+        .then(|| timer.now().checked_add(Duration::from_micros(micros)));
+    async move {
+        match deadline {
+            None => {
+                let micros = u32::try_from(micros).expect("a short settle fits u32");
+                assert!(
+                    S::settle_micros(micros),
+                    "a short settle is within its bound"
+                );
+            }
+            Some(Some(deadline)) => timer.wait_until(deadline).await,
+            Some(None) => core::future::pending().await,
+        }
+    }
+}
+
+/// [`delay`], reporting the wait to `observe` when `enabled`: its start at
+/// the first poll and, on completion, the time elapsed since this was called
+/// and the lateness past `micros`, measured on `timer`. The completion is
+/// observed after the wait ends, so observer work cannot shorten it.
+pub fn delay_observed<'t, S: PhyShortDelay, T: Timer + ?Sized>(
+    timer: &'t T,
+    kind: Kind,
+    micros: u64,
+    enabled: bool,
+    mut observe: impl FnMut(Event) + 't,
+) -> impl Future<Output = ()> + 't {
+    let start = timer.now();
+    async move {
+        let mut wait = pin!(delay::<S, T>(timer, kind, micros));
+        let mut started = false;
+        core::future::poll_fn(|context| {
+            let result = wait.as_mut().poll(context);
+            if enabled {
+                if !started {
+                    observe(Event::Started {
+                        requested_micros: micros,
+                    });
+                    started = true;
+                }
+                if result.is_ready() {
+                    let elapsed_micros = timer.now().saturating_duration_since(start).as_micros();
+                    observe(Event::Completed {
+                        elapsed_micros,
+                        lateness_micros: elapsed_micros.saturating_sub(micros),
+                    });
+                }
+            }
+            match result {
+                Poll::Ready(()) => Poll::Ready(()),
+                Poll::Pending => Poll::Pending,
+            }
+        })
+        .await;
     }
 }
 

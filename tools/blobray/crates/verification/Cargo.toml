@@ -15,6 +15,5 @@ blobray-domain = { path = "../domain" }
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "tool"
 platform = "host"

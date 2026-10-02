@@ -6,11 +6,12 @@ use crate::diagnostics::core0_rx_performance::{
 
 use crate::diagnostics::profile::RxRunnerProfile;
 
-impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R>
+impl<'irq, M: RawMutex, N, B, R, K> DatapathRunner<'irq, M, N, B, R, K>
 where
     N: DatapathNetwork,
     B: DatapathServices<N::TxFrame, N::PhysicalTxFrame>,
     R: DatapathNetworkRxSet,
+    K: Timer,
 {
     pub(super) async fn service_rx(&mut self) -> Result<(), B::Error> {
         let mut core0_cycles = RxRunnerProfile::begin();
@@ -139,7 +140,13 @@ where
             None
         };
         if let Some(delay) = delay {
-            self.recycled_rx_probe_deadline = Some(Instant::now() + delay);
+            // An unrepresentable deadline is never due.
+            self.recycled_rx_probe_deadline = Some(
+                self.clock
+                    .now()
+                    .checked_add(delay)
+                    .unwrap_or(Instant::from_micros(u64::MAX)),
+            );
             return true;
         }
         false
@@ -166,11 +173,11 @@ where
         let rx_blocked = prepared
             && (self.services.has_rx_work()
                 || self.irq.rx_signaled()
-                || self.recycled_rx_probe_due(Instant::now()));
+                || self.recycled_rx_probe_due(self.clock.now()));
         #[cfg(any(feature = "diagnostics", test))]
         self.services.mark_prepared_tx_scheduler_phase(
             PreparedTxSchedulerPhase::PreparedReadinessChecked,
-            Instant::now().as_micros(),
+            self.clock.now().as_micros(),
         );
         if !prepared || rx_blocked {
             return Ok(None);
@@ -195,7 +202,7 @@ where
         #[cfg(any(feature = "diagnostics", test))]
         self.services.mark_prepared_tx_scheduler_phase(
             PreparedTxSchedulerPhase::PreparedBatchChecked,
-            Instant::now().as_micros(),
+            self.clock.now().as_micros(),
         );
         Ok(Some((interface, admitted)))
     }
@@ -230,7 +237,7 @@ where
         #[cfg(any(feature = "diagnostics", test))]
         self.services.mark_prepared_tx_scheduler_phase(
             PreparedTxSchedulerPhase::PreparedEntry,
-            Instant::now().as_micros(),
+            self.clock.now().as_micros(),
         );
         self.account_tx_frames(admitted);
         self.account_pair_tx_frames(interface, admitted);
@@ -390,6 +397,7 @@ where
             let active_tx_interface = self.active_tx_interface;
             let competing_tx_pending =
                 active_tx_interface.is_some_and(|interface| self.competing_tx_pending(interface));
+            let clock = &self.clock;
             let network_rx = &mut self.network_rx;
             let wait_rx = async move {
                 if !service_rx_during_tx {
@@ -408,7 +416,7 @@ where
                             if recycled_rx_probe_deadline.is_some() =>
                         {
                             if let Some(deadline) = recycled_rx_probe_deadline {
-                                Timer::at(deadline).await;
+                                clock.wait_until(deadline).await;
                             } else {
                                 irq.wait_rx().await;
                             }
@@ -520,7 +528,7 @@ where
             if progress == WifiTxProgress::Complete {
                 self.services.mark_prepared_tx_scheduler_phase(
                     PreparedTxSchedulerPhase::ActiveServiceReturned,
-                    Instant::now().as_micros(),
+                    self.clock.now().as_micros(),
                 );
             }
         }

@@ -12,6 +12,7 @@ description = "Fail-closed qualification evaluator for the open radio driver"
 oer-chip-profile = { path = "../../tools/chip-profile" }
 oer-command-tree = { path = "../../tools/command-tree" }
 oer-hil-schema = { path = "../../hil/schema" }
+oer-tidy = { path = "../../tools/tidy" }
 serde = { version = "=1.0.229", features = ["derive", "rc"] }
 serde_json = "=1.0.151"
 sha2 = "=0.10.9"
@@ -27,6 +28,8 @@ tempfile = "=3.27.0"
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "qualification"
 platform = "host"
+# The tests read every catalog, program and review, and resolve image
+# sources with `cargo tree` over the HIL targets' manifests.
+inputs = ["qualification", "hil/targets/**/Cargo.toml"]

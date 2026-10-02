@@ -1,5 +1,4 @@
+# The HIL agent's target. Its build script adds the esp-hal linker script;
+# no Rust flags live here.
 [build]
 target = "riscv32imac-unknown-none-elf"
-
-[target.riscv32imac-unknown-none-elf]
-rustflags = ["-C", "link-arg=-Tlinkall.x", "-C", "force-frame-pointers"]

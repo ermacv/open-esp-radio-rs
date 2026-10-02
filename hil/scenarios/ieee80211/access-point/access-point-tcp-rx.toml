@@ -1,8 +1,8 @@
 schema = 5
 id = "access-point-tcp-rx"
 description = "Two AP ownership epochs with exact inbound TCP delivery"
-transfer = "identical-image"
-tags = ["qualification", "wifi", "access-point", "network", "tcp", "rx", "air-strict"]
+role = "investigation"
+tags = ["wifi", "access-point", "network", "tcp", "rx", "air-strict"]
 
 [wifi]
 image = "correctness"

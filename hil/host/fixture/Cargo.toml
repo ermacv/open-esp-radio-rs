@@ -33,7 +33,6 @@ oer-esp32s31-ieee80211-ap = { path = "../../../crates/roles/esp32s31/ieee80211/a
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "hil"
 platform = "host"
 hil = "observation"

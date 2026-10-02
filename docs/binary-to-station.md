@@ -131,7 +131,7 @@ it does not generate this radio PAC. See the
 | PAC → HAL | Restricted register authority → ordered hardware operation and terminal outcome | Sequence, wait bounds, delay and recovery requirements | [HAL source](../crates/hardware/esp32s31/hal/src/lib.rs); host behavior checks and applicable hardware evidence |
 | Reviewed data + HAL → PHY | Tables, coefficients and hardware operations → channel/calibration algorithms | Source profile, representation, applicability and algorithm boundary | [PHY comparison](phy/README.md) and [source policy](source-policy.md) |
 | HAL + PHY → chip driver | Hardware capabilities → MAC/DMA/IRQ transitions with retained owners | Acquisition, publication, completion and failure ownership | [Driver architecture](../crates/README.md); memory/ownership regressions and compiled probes |
-| Protocol + driver → runtime | Portable requests and concrete ports → scheduled radio operations | Deadlines, cancellation, wakeups and owner return | [Runtime](../crates/runtime/README.md) and [portable scan tests](../crates/protocols/ieee80211/sta/src/scan/tests.rs) |
+| Protocol + driver → runtime | Portable requests and concrete ports → scheduled radio operations | Deadlines, cancellation, wakeups and owner return | [Runtime](../crates/runtime/README.md) and [portable scan tests](../crates/services/ieee80211/sta/src/scan/tests.rs) |
 | Runtime → application | Composed hardware lifetime → role/control and packet interfaces | Board storage, credentials, stack and socket policy | [Station example](../examples/esp32s31/station/README.md); selected target build and HIL |
 | Observations → qualification | Compiled comparisons and sealed device runs → assessment of selected requirements | Scope, freshness and accepted observation methods | [Evidence contract](verification-and-qualification.md) and [qualification](../qualification/README.md) |
 
@@ -160,7 +160,7 @@ flowchart TD
 ```
 
 This is a call/authority view of one operation. The portable
-[`scan` policy](../crates/protocols/ieee80211/sta/src/scan.rs) traverses the
+[`scan` service](../crates/services/ieee80211/sta/src/scan.rs) traverses the
 caller-selected channel plan through a backend port. It does not tune a radio.
 The [runtime binding](../crates/runtime/esp32s31/ieee80211/src/roles/scan/target.rs)
 connects `ScanPhyPort` to the chip's

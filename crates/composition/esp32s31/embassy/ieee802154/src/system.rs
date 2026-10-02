@@ -21,9 +21,7 @@ use oer_esp32s31_ieee802154_esp_hal::{
     BoundEspHalIeee802154InterruptRoute, EspHalIeee802154InterruptRouteError, bind, now_micros,
     random,
 };
-use oer_esp32s31_ieee802154_runtime::{
-    Ieee802154Platform, Ieee802154Runtime, Ieee802154RuntimeError, Ieee802154RuntimeParts,
-};
+use oer_esp32s31_phy::RomShortDelay;
 use oer_esp32s31_phy::{
     ConcurrentPhyTrackingError, ConcurrentRfError, ConcurrentTrackingTick, NoopPhyTargetObserver,
     concurrent::{
@@ -35,14 +33,18 @@ use oer_esp32s31_phy::{
         RegisteredIeee802154OperationalRoute, leave_ieee802154,
     },
     maintain_concurrent_phy,
-    state::client::PhyModemClient,
+    state::client::RadioClient,
 };
-use oer_esp32s31_phy_runtime::EmbassyPhyTime;
 use oer_esp32s31_radio_runtime::{Ieee802154JoinError, RadioGuard, RadioPhyError, RadioSystem};
-use oer_ieee802154_engine::{
+use oer_espressif_ieee802154_engine::{
     engine::{Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154Interfaces},
     pib::Ieee802154PibDefaults,
 };
+use oer_espressif_ieee802154_runtime::{
+    Ieee802154Platform, Ieee802154Runtime, Ieee802154RuntimeError, Ieee802154RuntimeParts,
+};
+use oer_ieee802154::Ieee802154RadioPort;
+use oer_time_embassy::EmbassyClock;
 use static_cell::ConstStaticCell;
 
 use crate::maintenance::{
@@ -57,10 +59,11 @@ pub type Ieee802154SystemRuntime = Ieee802154Runtime<
     'static,
     CriticalSectionRawMutex,
     Ieee802154MacOwners,
+    EmbassyClock,
     IEEE802154_EVENT_CAPACITY,
 >;
 
-static RUNTIME: Ieee802154SystemRuntime = Ieee802154Runtime::new();
+static RUNTIME: Ieee802154SystemRuntime = Ieee802154Runtime::new(EmbassyClock);
 
 /// Window a clocked client grants shared PHY tracking at bring-up. The
 /// clocked owner starts no MAC operation while the proof lives, so the bound
@@ -304,7 +307,7 @@ fn unwind_powered(
 )]
 // CAPABILITY: ieee802154-phy-and-rf-2-4-ghz-o-qpsk-250-kbit-s, ieee802154-security-power-and-coexistence-powered-lifecycle
 pub async fn start<P, C: PlatformClockProvider>(
-    radio: &RadioSystem<P, C>,
+    radio: &RadioSystem<P, C, EmbassyClock>,
     parked: Ieee802154Parked,
     defaults: Ieee802154PibDefaults,
 ) -> Result<Ieee802154System, Ieee802154StartFailure> {
@@ -378,7 +381,8 @@ pub async fn start<P, C: PlatformClockProvider>(
         let issued_at = Instant::now().as_micros();
         let tracked = match clocked.quiescence(issued_at, issued_at + TRACKING_WINDOW_MICROS) {
             Ok(proof) => {
-                maintain_concurrent_phy::<P, EmbassyPhyTime, _>(
+                maintain_concurrent_phy::<P, RomShortDelay, _>(
+                    &EmbassyClock,
                     lease,
                     platform,
                     &[proof],
@@ -518,17 +522,33 @@ fn coexistence(
 }
 
 impl Ieee802154System {
-    /// The runtime that accepts commands and yields events.
+    /// The runtime that accepts commands and yields events: the client's
+    /// [`Ieee802154RadioPort`].
     pub fn runtime(&self) -> &'static Ieee802154SystemRuntime {
         &RUNTIME
     }
 
-    /// The live RSSI read of [`Ieee802154SystemRuntime::recent_rssi`] as a
+    /// The live RSSI read of [`Ieee802154RadioPort::recent_rssi`] as a
     /// function, for synchronous callers that hold no system, such as
     /// OpenThread's `otPlatRadioGetRssi`. It reads `None` while no radio is
     /// installed.
     pub fn recent_rssi_reader(&self) -> fn() -> Option<i8> {
         || RUNTIME.recent_rssi().ok()
+    }
+
+    /// The radio clock the runtime was installed with, the epoch of
+    /// [`Ieee802154RadioPort::now`], as a function for synchronous callers
+    /// such as OpenThread's `otPlatRadioGetNow`. It is the image's
+    /// monotonic clock in microseconds, the one `embassy-time` reads.
+    pub fn radio_clock(&self) -> fn() -> u64 {
+        now_micros
+    }
+
+    /// The runtime's runner: CSMA-CA backoffs and retry delays. Poll it
+    /// beside the consumer of the runtime's events for as long as the
+    /// client runs; it never ends.
+    pub async fn run(&self) -> core::convert::Infallible {
+        RUNTIME.run().await
     }
 
     /// Read the arbiter's coexistence table again and publish the scene
@@ -542,7 +562,7 @@ impl Ieee802154System {
     /// The runtime holds no radio.
     pub async fn update_coexistence<P, C: PlatformClockProvider>(
         &mut self,
-        radio: &RadioSystem<P, C>,
+        radio: &RadioSystem<P, C, EmbassyClock>,
         config: Ieee802154CoexConfig,
     ) -> Result<(), Ieee802154RuntimeError> {
         let mut guard = radio.lock().await;
@@ -559,7 +579,7 @@ impl Ieee802154System {
     /// Wi-Fi composition does. Nothing happens when it already takes part.
     pub async fn enable_wifi_coexistence<P, C: PlatformClockProvider>(
         &mut self,
-        radio: &RadioSystem<P, C>,
+        radio: &RadioSystem<P, C, EmbassyClock>,
     ) {
         if self.wifi_coexistence {
             return;
@@ -580,7 +600,7 @@ impl Ieee802154System {
     /// coexistence and the core keeps the timer as uncertain.
     pub async fn disable_wifi_coexistence<P, C: PlatformClockProvider>(
         &mut self,
-        radio: &RadioSystem<P, C>,
+        radio: &RadioSystem<P, C, EmbassyClock>,
     ) -> Result<(), CoexError> {
         if !self.wifi_coexistence {
             return Ok(());
@@ -619,7 +639,7 @@ impl Ieee802154System {
     /// after it started, or the route could not be bound again.
     pub async fn maintain_phy<P, C: PlatformClockProvider>(
         &mut self,
-        radio: &RadioSystem<P, C>,
+        radio: &RadioSystem<P, C, EmbassyClock>,
     ) -> Result<Ieee802154PhyMaintenance, Ieee802154MaintenanceError> {
         let mut guard = radio.lock().await;
         if guard.lease().attachment().maintenance_policy() == MaintenancePolicy::Vendor {
@@ -645,13 +665,13 @@ impl Ieee802154System {
         }
         let lease = guard.lease();
         let due = lease.attachment().tracking_pending()
-            || evaluate_periodic_tracking(lease, &mut EmbassyPhyTime)
+            || evaluate_periodic_tracking(lease, &EmbassyClock)
                 .map_err(Ieee802154MaintenanceError::Phy)?;
         if !due {
             return Ok(Ieee802154PhyMaintenance::NotDue);
         }
         let others = lease.attachment().client_snapshot().is_some_and(|clients| {
-            clients.contains(PhyModemClient::Wifi) || clients.contains(PhyModemClient::Bluetooth)
+            clients.contains(RadioClient::Wifi) || clients.contains(RadioClient::Bluetooth)
         });
         if others {
             return Ok(Ieee802154PhyMaintenance::AwaitingOtherClients);
@@ -665,7 +685,7 @@ impl Ieee802154System {
     /// proof, track within it, then resume and bind the route again.
     async fn track_quiescent<P, C: PlatformClockProvider>(
         &mut self,
-        guard: &mut RadioGuard<'_, P, C>,
+        guard: &mut RadioGuard<'_, P, C, EmbassyClock>,
     ) -> Result<Ieee802154PhyMaintenance, Ieee802154MaintenanceError> {
         let (lease, platform, _) = guard.parts();
         let mut paused = match RUNTIME.pause() {
@@ -687,7 +707,8 @@ impl Ieee802154System {
             .quiescence(issued_at, issued_at + TRACKING_WINDOW_MICROS)
         {
             Ok(proof) => {
-                maintain_concurrent_phy::<P, EmbassyPhyTime, _>(
+                maintain_concurrent_phy::<P, RomShortDelay, _>(
+                    &EmbassyClock,
                     lease,
                     platform,
                     &[proof],
@@ -735,7 +756,7 @@ impl Ieee802154System {
     /// A maintenance attempt failed; tracking stops being attempted.
     pub async fn maintain_phy_until<P, C: PlatformClockProvider>(
         &mut self,
-        radio: &RadioSystem<P, C>,
+        radio: &RadioSystem<P, C, EmbassyClock>,
         stop: impl Future<Output = ()>,
         mut observe: impl FnMut(Ieee802154PhyMaintenance),
     ) -> Result<(), Ieee802154MaintenanceError> {
@@ -771,7 +792,7 @@ impl Ieee802154System {
     )]
     pub async fn stop<P, C: PlatformClockProvider>(
         self,
-        radio: &RadioSystem<P, C>,
+        radio: &RadioSystem<P, C, EmbassyClock>,
     ) -> Result<Ieee802154Parked, Ieee802154StopFailure> {
         let Self {
             route,

@@ -1,6 +1,11 @@
 //! Canonical executable scenario values. Producers digest and evaluators
 //! compare scenarios in this form, so both fill the same schema-5 defaults.
 //!
+//! The typed scenario families own the defaults. The defaults document is
+//! generated from them by the runner's catalog test (set
+//! `OER_HIL_BLESS_SCENARIO_DEFAULTS=1` to regenerate it), which fails while
+//! the committed document differs; it is never edited by hand.
+//!
 //! The defaults document mirrors the scenario tree. A `$kind` entry maps a
 //! table's `kind` discriminator to the defaults of that variant, and a key
 //! prefixed with `?` names an optional table whose defaults apply only when
@@ -10,8 +15,9 @@ use serde_json::{Map, Value};
 
 /// Remove presentation-only fields, drop nulls and fill schema-5 defaults.
 ///
-/// Whether the current firmware can run a scenario is not part of its
-/// procedure: marking it unsupported keeps its recorded evidence comparable.
+/// Whether the current firmware can run a scenario, and whether a program
+/// references it, are not part of its procedure: marking it unsupported or
+/// changing its role keeps its recorded evidence comparable.
 pub fn normalize(document: &Value) -> Value {
     let defaults: Value = serde_json::from_str(include_str!("../scenario-v5-defaults.json"))
         .expect("compiled scenario defaults must be valid JSON");
@@ -20,8 +26,8 @@ pub fn normalize(document: &Value) -> Value {
     fill(&mut value, &defaults);
     if let Some(object) = value.as_object_mut() {
         object.remove("description");
+        object.remove("role");
         object.remove("tags");
-        object.remove("transfer");
         object.remove("unsupported");
     }
     value
@@ -99,13 +105,9 @@ mod tests {
         assert_eq!(workload["criteria"]["exact_delivery"], false);
         assert!(workload.get("maintenance").is_none());
         assert_eq!(normalized["wifi"]["datapath"]["l1_cache_counters"], false);
-        let mut experiment = control.clone();
-        experiment["wifi"]["workload"]["maintenance"] = json!({"operation": "calibration"});
-        let normalized = normalize(&experiment);
-        assert_eq!(
-            normalized["wifi"]["workload"]["maintenance"]["require_post_maintenance_echo"],
-            false
-        );
+        // A document of another family holds no Wi-Fi defaults.
+        let system = normalize(&json!({"system": {"kind": "boot-smoke"}}));
+        assert!(system.get("wifi").is_none());
         let access_point = normalize(&json!({"wifi": {"workload": {"kind": "access-point",
             "clients": {"kind": "openwrt"}, "traffic": {"kind": "icmp"}}}}));
         let workload = &access_point["wifi"]["workload"];

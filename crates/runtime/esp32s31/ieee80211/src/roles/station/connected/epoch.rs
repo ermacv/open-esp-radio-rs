@@ -224,8 +224,8 @@ pub fn complete_esp32s31_connected_datapath_exit<E, M: RawMutex>(
 /// `DatapathRunner` observes the stop future only at a transaction-safe boundary.
 /// A simultaneous peer disconnect is then coalesced with any still-pending
 /// application command before ownership is handed back to the outer lifecycle.
-pub async fn run_esp32s31_connected_station_epoch<'irq, RM, CM, N, B, RX>(
-    runner: &mut DatapathRunner<'irq, RM, N, B, RX>,
+pub async fn run_esp32s31_connected_station_epoch<'irq, RM, CM, N, B, RX, C>(
+    runner: &mut DatapathRunner<'irq, RM, N, B, RX, C>,
     control: &mut StationCommandReceiver<'_, CM>,
 ) -> ConnectedStationExit<B::Error>
 where
@@ -234,6 +234,7 @@ where
     N: crate::datapath::network::DatapathNetwork,
     RX: crate::datapath::network::DatapathNetworkRxSet,
     B: DatapathServices<N::TxFrame, N::PhysicalTxFrame, Exit = ConnectedDisconnectReason>,
+    C: oer_time::Timer,
 {
     let requested_command = core::cell::Cell::new(None);
     let station_stop = async {

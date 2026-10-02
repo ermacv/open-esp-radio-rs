@@ -97,3 +97,96 @@ fn a_transmitter_reproduces_the_independent_mic_and_advances_its_ipn() {
     assert_eq!(receiver.verify(&next), Ok(()));
     assert_eq!(transmitter.protect(&mut next[..30], 26), None);
 }
+
+fn outgoing_frame() -> [u8; 26 + MANAGEMENT_MIC_ELEMENT_LEN] {
+    let mut frame = [0; 26 + MANAGEMENT_MIC_ELEMENT_LEN];
+    frame[..26].copy_from_slice(&deauthentication(MIC, 9)[..26]);
+    frame
+}
+
+#[test]
+fn the_last_ipn_is_usable_but_exhaustion_never_wraps_or_changes_storage() {
+    let mut ipn = [0xff; RSN_IPN_LEN];
+    ipn[0] -= 1;
+    let key = RsnIgtk::new(4, ipn, [0x77; RSN_IGTK_LEN]).unwrap();
+    let mut transmitter = BipTransmitter::new(&key);
+    let mut receiver = BipReceiver::new(&key);
+    let mut last = outgoing_frame();
+    assert_eq!(transmitter.try_protect(&mut last, 26), Ok(last.len()));
+    assert_eq!(receiver.verify(&last), Ok(()));
+
+    let untouched = outgoing_frame();
+    for _ in 0..2 {
+        let mut rejected = untouched;
+        assert_eq!(
+            transmitter.try_protect(&mut rejected, 26),
+            Err(BipTransmitError::PacketNumberExhausted)
+        );
+        assert_eq!(rejected, untouched);
+    }
+    // Reinstalling the same IGTK cannot make its counter available again.
+    transmitter.rekey(&key);
+    let mut rejected = untouched;
+    assert_eq!(transmitter.protect(&mut rejected, 26), None);
+    assert_eq!(rejected, untouched);
+}
+
+#[test]
+fn a_transmitter_reinstallation_keeps_the_frontier_and_a_fresh_key_can_rotate() {
+    let original = RsnIgtk::new(4, [8, 0, 0, 0, 0, 0], [0x77; RSN_IGTK_LEN]).unwrap();
+    let mut transmitter = BipTransmitter::new(&original);
+    let mut receiver = BipReceiver::new(&original);
+    let mut first = outgoing_frame();
+    transmitter.try_protect(&mut first, 26).unwrap();
+    receiver.verify(&first).unwrap();
+
+    transmitter.rekey(&original);
+    let mut next = outgoing_frame();
+    transmitter.try_protect(&mut next, 26).unwrap();
+    receiver.verify(&next).unwrap();
+
+    // An install-time frontier ahead of local transmissions also wins.
+    let advanced = RsnIgtk::new(4, [20, 0, 0, 0, 0, 0], [0x77; RSN_IGTK_LEN]).unwrap();
+    transmitter.rekey(&advanced);
+    receiver.rekey(&advanced);
+    let mut ahead = outgoing_frame();
+    transmitter.try_protect(&mut ahead, 26).unwrap();
+    receiver.verify(&ahead).unwrap();
+
+    let fresh = RsnIgtk::new(5, [0; RSN_IPN_LEN], [0x11; RSN_IGTK_LEN]).unwrap();
+    transmitter.rekey(&fresh);
+    receiver.rekey(&fresh);
+    let mut rotated = outgoing_frame();
+    transmitter.try_protect(&mut rotated, 26).unwrap();
+    receiver.verify(&rotated).unwrap();
+}
+
+#[test]
+fn storage_errors_do_not_consume_an_ipn_and_a_maximum_kde_starts_exhausted() {
+    let key = RsnIgtk::new(4, [8, 0, 0, 0, 0, 0], [0x77; RSN_IGTK_LEN]).unwrap();
+    let mut transmitter = BipTransmitter::new(&key);
+    let mut frame = outgoing_frame();
+    let original = frame;
+    assert_eq!(
+        transmitter.try_protect(&mut frame, usize::MAX),
+        Err(BipTransmitError::InvalidLength)
+    );
+    assert_eq!(
+        transmitter.try_protect(&mut frame, MANAGEMENT_HEADER_LEN - 1),
+        Err(BipTransmitError::InvalidLength)
+    );
+    assert_eq!(
+        transmitter.try_protect(&mut frame[..26], 26),
+        Err(BipTransmitError::OutputTooSmall)
+    );
+    assert_eq!(frame, original);
+    transmitter.try_protect(&mut frame, 26).unwrap();
+    assert_eq!(&frame[..], &deauthentication(MIC, 9));
+
+    let exhausted = RsnIgtk::new(4, [0xff; RSN_IPN_LEN], [0x11; RSN_IGTK_LEN]).unwrap();
+    let mut transmitter = BipTransmitter::new(&exhausted);
+    assert_eq!(
+        transmitter.try_protect(&mut frame, 26),
+        Err(BipTransmitError::PacketNumberExhausted)
+    );
+}

@@ -10,6 +10,8 @@
 
 use aes::Aes128;
 use cmac::{Cmac, Mac};
+use oer_ieee80211_mac::management::MANAGEMENT_HEADER_LEN;
+use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::frames::{RSN_IGTK_LEN, RSN_IPN_LEN, RsnIgtk};
@@ -24,7 +26,8 @@ const BIP_MIC_LEN: usize = 8;
 /// Frame Control flags BIP leaves out of its additional authentication data:
 /// Retry, Power Management and More Data.
 const AAD_MASKED_FLAGS: u8 = 0x08 | 0x10 | 0x20;
-const MANAGEMENT_HEADER_LEN: usize = 24;
+/// Largest IPN representable by the six-octet Management MIC element.
+const BIP_PACKET_NUMBER_MAX: u64 = (1_u64 << (8 * RSN_IPN_LEN)) - 1;
 
 /// Why a group-addressed management frame failed BIP.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -39,6 +42,17 @@ pub enum BipError {
     Replay,
     /// The MIC does not verify.
     InvalidMic,
+}
+
+/// Why an outgoing group-addressed management frame cannot be protected.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BipTransmitError {
+    /// The supplied length lacks a management header or exceeds storage.
+    InvalidLength,
+    /// Storage has no room for the closing Management MIC element.
+    OutputTooSmall,
+    /// This IGTK has exhausted its 48-bit IPN space and must be replaced.
+    PacketNumberExhausted,
 }
 
 /// The receive state of one IGTK: its key and the last accepted IPN.
@@ -70,7 +84,7 @@ impl BipReceiver {
     /// key never reopens packet numbers already accepted.
     pub fn rekey(&mut self, igtk: &RsnIgtk) {
         let delivered = packet_number(igtk.packet_number());
-        if igtk.key_id() == self.key_id && *igtk.key() == self.key {
+        if igtk.key_id() == self.key_id && bool::from(igtk.key().ct_eq(&self.key)) {
             self.last_packet_number = self.last_packet_number.max(delivered);
         } else {
             *self = Self::new(igtk);
@@ -114,7 +128,11 @@ impl BipReceiver {
     }
 }
 
-/// The transmit state of one IGTK: its key and the next IPN.
+/// The unique transmit state of one IGTK: its key and the next IPN.
+///
+/// Reinstallation uses [`Self::rekey`], rather than constructing another
+/// transmitter for a key that has already emitted frames. Retransmission
+/// reuses the encoded frame without calling protection again.
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct BipTransmitter {
     key_id: u8,
@@ -134,14 +152,49 @@ impl BipTransmitter {
         }
     }
 
+    /// Install an IGTK. Redelivery of the current key and identifier keeps
+    /// the higher IPN frontier, including exhaustion. A different key starts
+    /// after its delivered IPN; the caller must supply fresh key material,
+    /// rather than reinstalling a retired key.
+    pub fn rekey(&mut self, igtk: &RsnIgtk) {
+        if igtk.key_id() == self.key_id && bool::from(igtk.key().ct_eq(&self.key)) {
+            self.next_packet_number = self
+                .next_packet_number
+                .max(packet_number(igtk.packet_number()) + 1);
+        } else {
+            *self = Self::new(igtk);
+        }
+    }
+
     /// Protect one group-addressed robust management frame in place: `frame`
     /// holds the header and body, and `MANAGEMENT_MIC_ELEMENT_LEN` spare
     /// octets after them receive the Management MIC element. Returns the
-    /// protected frame's length, or `None` when the spare octets are missing.
+    /// protected frame's length, or `None` for an invalid length, missing
+    /// spare octets or an exhausted IPN. See [`Self::try_protect`] for the
+    /// reason. Failure changes neither the frame nor the IPN.
     pub fn protect(&mut self, frame: &mut [u8], length: usize) -> Option<usize> {
-        let protected = length.checked_add(MANAGEMENT_MIC_ELEMENT_LEN)?;
-        if length < MANAGEMENT_HEADER_LEN || frame.len() < protected {
-            return None;
+        self.try_protect(frame, length).ok()
+    }
+
+    /// Protect a caller-admitted group-addressed robust management frame,
+    /// distinguishing storage failure from the need to rotate the IGTK.
+    /// The caller validates subtype, group destination and BSS identity.
+    pub fn try_protect(
+        &mut self,
+        frame: &mut [u8],
+        length: usize,
+    ) -> Result<usize, BipTransmitError> {
+        if length < MANAGEMENT_HEADER_LEN || length > frame.len() {
+            return Err(BipTransmitError::InvalidLength);
+        }
+        let protected = length
+            .checked_add(MANAGEMENT_MIC_ELEMENT_LEN)
+            .ok_or(BipTransmitError::OutputTooSmall)?;
+        if frame.len() < protected {
+            return Err(BipTransmitError::OutputTooSmall);
+        }
+        if self.next_packet_number > BIP_PACKET_NUMBER_MAX {
+            return Err(BipTransmitError::PacketNumberExhausted);
         }
         let ipn = self.next_packet_number.to_le_bytes();
         self.next_packet_number += 1;
@@ -158,7 +211,7 @@ impl BipTransmitter {
         mac.update(&frame[MANAGEMENT_HEADER_LEN..protected]);
         let tag = mac.finalize().into_bytes();
         frame[protected - BIP_MIC_LEN..protected].copy_from_slice(&tag[..BIP_MIC_LEN]);
-        Some(protected)
+        Ok(protected)
     }
 }
 

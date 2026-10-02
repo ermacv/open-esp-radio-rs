@@ -3,5 +3,5 @@
 # reference peer for the device under test's OpenThread radio.
 image = "openthread-peer"
 chip = "esp32c5"
-# The one ESP-IDF pin every catalog image builds against.
-pins = "esp32s31"
+# The ESP32-C5 pins: the same ESP-IDF revision with the ESP32-C5 archives.
+pins = "esp32c5"

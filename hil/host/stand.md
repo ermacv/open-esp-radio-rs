@@ -268,8 +268,8 @@ manifest refuses every flash of that image, including a run's automatic peer
 restore, which then blocks its scenarios with the reason; `firmware list`
 shows it. The
 manifest names the image as the board journal records it, the target chip and
-the chip whose `artifacts.toml` pins the one ESP-IDF revision and vendor
-archives every image builds against. Builds are reproducible
+`pins`, the chip whose `artifacts.toml` pins the ESP-IDF revision and vendor
+archives the image builds against: an ESP32-C5 image names `esp32c5`. Builds are reproducible
 (`CONFIG_APP_REPRODUCIBLE_BUILD`), so equal sources give an equal digest.
 
 ```console

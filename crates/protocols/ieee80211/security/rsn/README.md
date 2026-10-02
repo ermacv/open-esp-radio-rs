@@ -31,6 +31,23 @@ validated Association element; the supplicant takes it from its own
 Association element. Both reject EAPOL-Key frames whose descriptor version
 differs from that suite.
 
+`ManagementCcmpTransmitter` protects a caller-owned management frame in place
+and borrows the existing MAC `CcmpTxPacketNumber` owner for its key. Keeping
+that allocator across key redelivery prevents nonce reuse; retransmission
+reuses the encoded frame. Its receiver shares the same CCM implementation,
+validates the canonical CCMP header and commits replay only after MIC
+verification. Both check CCM's two-octet body length before changing storage.
+The caller admits the ordinary 24-octet management header, individual
+destination, peer/BSS identity and robust subtype. Failed receive buffers
+must be discarded because MIC failure can leave unauthenticated plaintext.
+
+`BipTransmitter::try_protect` distinguishes insufficient storage from IGTK
+IPN exhaustion. A repeated IGTK install uses `rekey`, preserving the highest
+frontier; a new transmitter must not be constructed for a key that has
+already emitted frames. Group-key distribution, peer admission and SA Query
+scheduling belong to their protocol/service owners, rather than these
+cryptographic primitives.
+
 The ordinary RSN suites are PSK (`00-0F-AC:2`), PSK-SHA256 (`00-0F-AC:6`) and
 SAE (`00-0F-AC:8`). The MAC package names them and the negotiated
 association (`oer_ieee80211_mac::security::AssociationSecurity`); this crate

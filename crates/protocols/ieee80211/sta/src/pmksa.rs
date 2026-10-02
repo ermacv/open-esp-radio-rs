@@ -15,6 +15,9 @@
 //! `pmksa_cache_add`) and `src/rsn_supp/wpa.c` (`wpa_set_bss`, which uses an
 //! entry only for the same BSSID, SSID and AKM and flushes it otherwise).
 
+use core::cell::RefCell;
+
+use oer_ieee80211_mac::scan::ScanRecord;
 use oer_ieee80211_rsn::Pmk;
 
 /// Entries the vendor's PMKSA cache holds.
@@ -120,6 +123,55 @@ impl StaPmksaCache {
 }
 
 impl Default for StaPmksaCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The station's PMKSA cache, shared by every station epoch of one Wi-Fi
+/// owner as the vendor supplicant's `gWpaSm.pmksa` outlives its
+/// associations: a stopped and restarted station still resumes a cached SAE
+/// association.
+pub struct StaSharedPmksa(critical_section::Mutex<RefCell<StaPmksaCache>>);
+
+impl StaSharedPmksa {
+    pub const fn new() -> Self {
+        Self(critical_section::Mutex::new(RefCell::new(
+            StaPmksaCache::new(),
+        )))
+    }
+
+    /// The PMK and PMKID of the cached association with `access_point`.
+    pub fn resume(&self, access_point: &ScanRecord) -> Option<(Pmk, [u8; STA_PMKID_LEN])> {
+        critical_section::with(|cs| {
+            self.0
+                .borrow_ref_mut(cs)
+                .resume(access_point.bssid, access_point.ssid_bytes())
+                .map(|entry| (entry.pmk().duplicate(), entry.pmkid()))
+        })
+    }
+
+    /// Cache the association an SAE authentication with `access_point`
+    /// derived.
+    pub fn insert(&self, access_point: &ScanRecord, pmk: &Pmk, pmkid: [u8; STA_PMKID_LEN]) {
+        let Some(entry) = StaPmksa::new(
+            access_point.bssid,
+            access_point.ssid_bytes(),
+            pmk.duplicate(),
+            pmkid,
+        ) else {
+            return;
+        };
+        critical_section::with(|cs| self.0.borrow_ref_mut(cs).insert(entry));
+    }
+
+    /// Forget the association with `bssid`.
+    pub fn remove(&self, bssid: [u8; 6]) {
+        critical_section::with(|cs| self.0.borrow_ref_mut(cs).remove(bssid));
+    }
+}
+
+impl Default for StaSharedPmksa {
     fn default() -> Self {
         Self::new()
     }

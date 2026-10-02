@@ -19,7 +19,7 @@ pub enum StaAttemptTargetError<J, W> {
 }
 
 /// Coherent owner consumed by
-/// [`StaAttempt`](oer_esp32s31_ieee80211_sta::attempt::StaAttempt).
+/// [`StaAttempt`](oer_ieee80211_sta_service::attempt::StaAttempt).
 pub struct StaAttemptTargetOwner<
     'hardware,
     'transmit,

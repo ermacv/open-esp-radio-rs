@@ -1,9 +1,9 @@
 //! Concrete scan-port composition for cold and quiesced connected STA epochs.
 //!
 //! The chip-independent lifecycle service owns plan progress and retry policy;
-//! [`StaScanBackend`](oer_esp32s31_ieee80211_sta::scan::StaScanBackend)
+//! [`StaScanBackend`](oer_ieee80211_sta_service::scan::StaScanBackend)
 //! owns the
-//! mandatory ESP32-S31 transaction order. This module binds that transaction
+//! mandatory channel-visit transaction order. This module binds that transaction
 //! to the returned PHY, cooperative register owner, RX ring and control-TX
 //! descriptor without importing board fixtures, credentials or diagnostics.
 

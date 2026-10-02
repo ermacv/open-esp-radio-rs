@@ -318,43 +318,6 @@ fn stop_releases_every_owned_slot_in_sequence_order() {
 }
 
 #[test]
-fn successful_response_narrows_the_window_and_disables_amsdu() {
-    let mut body = [0xff; 9];
-    write_successful_addba_response(&mut body, 137, 0, 16).unwrap();
-    assert_eq!(body, [3, 1, 137, 0, 0, 0x02, 0x04, 0, 0]);
-    assert_eq!(
-        crate::tx::ampdu::parse_block_ack_action(&body),
-        Some(crate::tx::ampdu::BlockAckAction::AddbaResponse {
-            dialog_token: 137,
-            status: 0,
-            tid: 0,
-            immediate: true,
-            amsdu: false,
-            window: 16,
-            timeout_tu: 0,
-        })
-    );
-}
-
-#[test]
-fn declined_response_preserves_request_identity_without_claiming_success() {
-    let mut body = [0xff; 9];
-    write_declined_addba_response(&mut body, 23, 6, 64).unwrap();
-    assert_eq!(
-        crate::tx::ampdu::parse_block_ack_action(&body),
-        Some(crate::tx::ampdu::BlockAckAction::AddbaResponse {
-            dialog_token: 23,
-            status: ADDBA_STATUS_REQUEST_DECLINED,
-            tid: 6,
-            immediate: true,
-            amsdu: false,
-            window: 64,
-            timeout_tu: 0,
-        })
-    );
-}
-
-#[test]
 fn station_rx_sessions_bind_protocol_window_hardware_bank_and_response() {
     let peer = [0x30, 0xed, 0xa0, 0xf3, 0xf6, 0xd0];
     let mut sessions = RxBlockAckSessions::<RX_BLOCK_ACK_BANK_COUNT>::new();

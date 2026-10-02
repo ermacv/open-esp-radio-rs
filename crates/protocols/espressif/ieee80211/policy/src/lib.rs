@@ -19,12 +19,15 @@
 //!   and the default EDCA contention;
 //! - [`he_txop`]: the HE TXOP duration byte budget, as a portable
 //!   `HeTxopRtsBudget`;
-//! - [`ccmp`]: the transmit packet-number step.
+//! - [`ccmp`]: the transmit packet-number step;
+//! - [`connection_coex`]: the coexistence events and priorities of the
+//!   station's connection frames under the reconnect policy.
 //!
 //! Where an algorithm is inseparable from the vendor bytes it walks (the
 //! schedule walk and the retry ladder), it lives here beside them.
 
 pub mod ccmp;
+pub mod connection_coex;
 pub mod he_txop;
 pub mod lmac;
 pub mod rate_code;

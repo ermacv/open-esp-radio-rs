@@ -108,6 +108,17 @@ Limits, rate ladders and duration estimates in which implementations differ
 are parameters of those algorithms; the Espressif values recovered from the
 vendor stack are the family package `oer-espressif-ieee80211-policy`.
 
+## Users of the port
+
+| User | What it drives over the port |
+| --- | --- |
+| `oer-ieee80211-upper-mac-service` (`UpperMacTx`) | One frame exchange as a sequence of attempts of the transmit planner |
+| `oer-ieee80211-sta-service` (`port`) | The whole station: scan, Open System and SAE joins, the WPA2 handshake with `install_key`, the connected data plane with receive Block Ack agreements, SA Query and disconnection, and power save over `LowerMacBeaconTiming` and `TxGate`; `LowerMacMonitor` only for a scan whose station filters lack `OTHER_BSS_MANAGEMENT` |
+
+A user owns `next_event` in one task: the port has a single event
+consumer, and `UpperMacTx` hands every event that is not its exchange's
+completion back to its caller.
+
 ## Implementers
 
 | Backend | Base port | `LowerMacAmpdu` | `LowerMacBeaconTiming` | `LowerMacMonitor` | `LowerMacCancelPublished` |
@@ -121,8 +132,10 @@ that they need no chip types. `LowerMacModel` keeps every admitted attempt in
 flight until the test ends it (`complete`, `complete_with`), or ends each
 attempt as soon as it is published with the outcomes queued by `respond`
 (success, a given `BlockAckReport`, or a failure status); `submitted` records
-what every admitted attempt carried. Packages that drive the port test
-against it, as `oer-ieee80211-upper-mac-service` does.
+what every admitted attempt carried; `queued_events`, `gate_open`,
+`vif_config`, `channel` and `monitoring` read its state. Packages that drive
+the port test against it, as `oer-ieee80211-upper-mac-service` and
+`oer-ieee80211-sta-service` do.
 
 The ESP32-S31 MAC converts its chip values in
 [`mac/src/portable.rs`](../../../hardware/esp32s31/driver/ieee80211/mac/src/portable.rs):
@@ -141,8 +154,8 @@ implements the port in two layers:
   owned-event queue, the MAC, power and receive interrupt entries, the
   publication watchdog and the PHY retune of `Enable`.
 
-The station and access-point roles do not use the port yet. Its operations
-map onto the S31 seams as follows:
+The ESP32-S31 station and access-point roles do not use the port yet. Its
+operations map onto the S31 seams as follows:
 
 | Port operation | ESP32-S31 implementation |
 | --- | --- |

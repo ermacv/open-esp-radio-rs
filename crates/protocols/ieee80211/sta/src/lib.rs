@@ -14,11 +14,14 @@
 #[cfg(test)]
 extern crate std;
 
+pub mod attempt;
 pub mod ftm;
 pub mod join;
 pub mod link_monitor;
+pub mod modem_sleep;
 pub mod pmksa;
 pub mod request;
+pub mod sa_query;
 pub mod scan;
 pub mod station;
 pub mod twt;

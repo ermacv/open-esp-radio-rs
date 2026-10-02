@@ -34,9 +34,8 @@ use oer_esp32s31_ieee80211_mac::{
 
 use oer_esp32s31_ieee80211_sta::{
     attempt::{
-        AssociationAttemptOutcome, StaAttempt, StaAttemptObserver, StaAttemptProgress,
-        StaAttemptReport, StaAttemptSecurity, StaAttemptStage, StaAttemptStation,
-        StaInstalledSecurity,
+        AssociationAttemptOutcome, StaAttemptObserver, StaAttemptProgress, StaAttemptReport,
+        StaAttemptSecurity, StaAttemptStage, StaAttemptStation, StaInstalledSecurity,
     },
     join::{StaJoinObserver, StaJoinTransmit},
     peer::{ConnectedStaPeer, StaPeerTransmit},
@@ -44,6 +43,7 @@ use oer_esp32s31_ieee80211_sta::{
 };
 
 use oer_ieee80211_sta::station::StaFailureDisposition;
+use oer_ieee80211_sta_service::attempt::StaAttempt;
 
 /// Concrete primitive error returned by the shared join transaction.
 pub type StationJoinError<H, T> =

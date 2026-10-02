@@ -19,6 +19,8 @@ source-paths = [
   "crates/protocols/ieee80211/sta/src/station.rs",
   "crates/services/ieee80211/sta/src/station.rs",
   "crates/protocols/ieee80211/sta/src/link_monitor.rs",
+  "crates/protocols/ieee80211/sta/src/attempt.rs",
+  "crates/services/ieee80211/sta/src/attempt.rs",
   "crates/roles/esp32s31/ieee80211/sta/src/attempt.rs",
   "crates/runtime/esp32s31/ieee80211/src/roles/station/lifecycle.rs",
   "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/role_dispatch.rs",
@@ -1065,7 +1067,7 @@ section = "wifi-interfaces-and-operating-modes"
 title = "Wi-Fi / Bluetooth (Classic/LE) / IEEE 802.15.4 coexistence"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The [coexistence core](../coex/src/lib.rs) and schedule run in the [radio runtime](../../../../runtime/esp32s31/radio/src/system.rs) on the arbiter's timer bank. Wi-Fi publishes its status, schedule interval and channel, shortens shared scan dwells, and a connected station follows the phases through the vendor [power manager](../../../../roles/esp32s31/ieee80211/sta/src/modem_sleep.rs): slice requests, TBTT phase restart, PM=1 and blocked TX queues at the slice end, RF sleep and the Bluetooth preemption end. After an association lost while another radio shares the air, the vendor [reconnect policy](../../../../runtime/esp32s31/ieee80211/src/roles/radio_channel.rs) lengthens the connecting interval, requests event 45 for Probe Requests and event 46 for Authentication, Association and EAPOL frames, which then carry event 46's priority and a priority count of 4000. A paired STA+AP runs no station power management, and no HIL scenario yet runs Wi-Fi beside an active Bluetooth or IEEE 802.15.4 peer."
+scope-and-limitations = "The [coexistence core](../coex/src/lib.rs) and schedule run in the [radio runtime](../../../../runtime/esp32s31/radio/src/system.rs) on the arbiter's timer bank. Wi-Fi publishes its status, schedule interval and channel, shortens shared scan dwells, and a connected station follows the phases through the vendor [power manager](../../../../protocols/ieee80211/sta/src/modem_sleep.rs): slice requests, TBTT phase restart, PM=1 and blocked TX queues at the slice end, RF sleep and the Bluetooth preemption end. After an association lost while another radio shares the air, the vendor [reconnect policy](../../../../runtime/esp32s31/ieee80211/src/roles/radio_channel.rs) lengthens the connecting interval, requests event 45 for Probe Requests and event 46 for Authentication, Association and EAPOL frames, which then carry event 46's priority and a priority count of 4000. A paired STA+AP runs no station power management, and no HIL scenario yet runs Wi-Fi beside an active Bluetooth or IEEE 802.15.4 peer."
 packages = ["oer-esp32s31-radio-runtime", "oer-espressif-coex", "oer-esp32s31-coex", "oer-esp32s31-ieee80211-sta", "oer-esp32s31-ieee80211-runtime"]
 
 [[items]]
@@ -1393,7 +1395,7 @@ section = "wifi-tsf-beacon-monitoring-and-power-saving"
 title = "Legacy station power save"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "Station power save is the vendor [modem-sleep manager](../../../../roles/esp32s31/ieee80211/sta/src/modem_sleep.rs): PM=1/PM=0 Null Data frames, TIM/DTIM and listen-interval wakes on the station TBTT schedule, held network frames until the station wakes. Like the vendor, it sends no PS-Poll. The minimum and maximum modem-sleep types have no HIL evidence yet, and a paired STA+AP runs no station power management."
+scope-and-limitations = "Station power save is the vendor [modem-sleep manager](../../../../protocols/ieee80211/sta/src/modem_sleep.rs): PM=1/PM=0 Null Data frames, TIM/DTIM and listen-interval wakes on the station TBTT schedule, held network frames until the station wakes. Like the vendor, it sends no PS-Poll. The minimum and maximum modem-sleep types have no HIL evidence yet, and a paired STA+AP runs no station power management."
 
 [[items]]
 id = "wifi-tsf-beacon-monitoring-and-power-saving-full-modem-sleep"

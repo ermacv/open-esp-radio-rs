@@ -8,7 +8,8 @@ use oer_esp32s31_ieee80211_sta::connection_coex::{
 };
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
-use oer_esp32s31_ieee80211_sta::scan::{StaScanBackend, StaScanConfig};
+use oer_esp32s31_ieee80211_sta::scan::StaScanConfig;
+use oer_ieee80211_sta_service::scan::StaScanBackend;
 
 use oer_ieee80211_mac::scan::ScanObservation;
 

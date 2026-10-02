@@ -228,7 +228,7 @@ section = "coex-coexistence-policy-and-scheduler"
 title = "TBTT-anchored periods"
 status = "implemented"
 level = "composed-product"
-scope-and-limitations = "The station's [modem-sleep engine](../../../../roles/esp32s31/ieee80211/sta/src/modem_sleep.rs) follows `pm_coex_tbtt_process`: at each TBTT it sets the schedule interval from the beacon interval, restarts the phases and requests the beacon window, and `pm_set_next_tbtt` and `pm_handle_tbtt_interval` keep the TBTT interval at the schedule's overall period in step with the DTIM. The station TSF follows the access point's TSF from the join beacon and each beacon, as `ic_update_sta_tsf` does, so the TBTT fires on the access point's schedule."
+scope-and-limitations = "The station's [modem-sleep engine](../../../../protocols/ieee80211/sta/src/modem_sleep.rs) follows `pm_coex_tbtt_process`: at each TBTT it sets the schedule interval from the beacon interval, restarts the phases and requests the beacon window, and `pm_set_next_tbtt` and `pm_handle_tbtt_interval` keep the TBTT interval at the schedule's overall period in step with the DTIM. The station TSF follows the access point's TSF from the join beacon and each beacon, as `ic_update_sta_tsf` does, so the TBTT fires on the access point's schedule."
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-wifi-bt-ble-time-slices"

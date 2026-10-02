@@ -1987,9 +1987,8 @@ fn follow_beacon_protection<X: ConnectedControlTx>(tx: &mut X, beacon: StaBeacon
 }
 
 mod power;
-mod sa_query;
 
-use sa_query::{SaQueryStep, StationSaQuery};
+use oer_ieee80211_sta::sa_query::{SaQueryStep, StationSaQuery};
 
 use power::{ConnectedPower, power_clock};
 

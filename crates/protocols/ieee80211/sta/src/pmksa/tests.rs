@@ -54,3 +54,20 @@ fn removing_forgets_one_access_point() {
 fn an_overlong_ssid_is_not_an_association() {
     assert!(StaPmksa::new([2; 6], &[b'a'; 33], Pmk::from_bytes([0; 32]), [0; 16]).is_none());
 }
+
+#[test]
+fn the_shared_pmksa_resumes_an_sae_association_until_it_is_forgotten() {
+    static PMKSA: StaSharedPmksa = StaSharedPmksa::new();
+    let mut access_point = oer_ieee80211_mac::scan::ScanRecord {
+        bssid: [2, 1, 2, 3, 4, 5],
+        ..oer_ieee80211_mac::scan::ScanRecord::EMPTY
+    };
+    access_point.ssid[..3].copy_from_slice(b"lab");
+    access_point.ssid_len = 3;
+    assert!(PMKSA.resume(&access_point).is_none());
+    PMKSA.insert(&access_point, &Pmk::from_bytes([7; 32]), [9; STA_PMKID_LEN]);
+    let (_, pmkid) = PMKSA.resume(&access_point).unwrap();
+    assert_eq!(pmkid, [9; STA_PMKID_LEN]);
+    PMKSA.remove(access_point.bssid);
+    assert!(PMKSA.resume(&access_point).is_none());
+}

@@ -28,7 +28,8 @@ first encoding, so its sequence number and CCMP packet number repeat. A
 refusal, a missing buffer, lost events or a poisoned port end the exchange
 with an `UpperMacTxError`; a refused attempt's buffer goes back to the port.
 
-The station and access-point roles do not use the driver yet. Its tests run
+The portable station of `oer-ieee80211-sta-service` (`port`) sends every
+frame through it; the ESP32-S31 roles do not use it yet. Its tests run
 it over `oer-ieee80211-lower-mac`'s host model (the `model` feature):
 delivery at the first attempt, ACK timeouts walking the rate ladder with the
 Retry bit up to the retry limit, a CTS timeout, a partial BlockAck resending

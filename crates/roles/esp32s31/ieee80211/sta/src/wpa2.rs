@@ -251,12 +251,7 @@ where
     }
 }
 
-/// Whether Message 4 is sent before or after enabling pairwise protection.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Wpa2Message4Protection {
-    Unprotected,
-    PairwiseCcmp,
-}
+pub use oer_ieee80211_sta::attempt::Wpa2Message4Protection;
 
 /// Installed hardware authorities returned to the connected data path.
 pub struct InstalledWpa2Keys {

@@ -332,6 +332,32 @@ impl LowerMacModel {
         self.state.borrow().in_flight.len()
     }
 
+    /// Events queued and not yet taken, so a test can deliver frames
+    /// without overflowing the queue.
+    pub fn queued_events(&self) -> usize {
+        self.state.borrow().events.len()
+    }
+
+    /// Whether the transmit gate is open.
+    pub fn gate_open(&self) -> bool {
+        !self.state.borrow().gate_closed
+    }
+
+    /// The configuration of an interface.
+    pub fn vif_config(&self, vif: VifId) -> Option<VifConfig> {
+        self.state.borrow().vif(vif)
+    }
+
+    /// The channel the model is tuned to.
+    pub fn channel(&self) -> Option<Channel> {
+        self.state.borrow().channel
+    }
+
+    /// Whether monitor reception runs.
+    pub fn monitoring(&self) -> bool {
+        self.state.borrow().monitor
+    }
+
     fn admit<P>(
         &self,
         attempt: &TxAttempt<P>,

@@ -32,9 +32,11 @@ use oer_esp32s31_ieee80211_mac::{
 use oer_esp32s31_ieee80211_sta::{
     attempt::{StaAttemptSecurity, StaIdentity},
     control_tx::{ControlTransmitter, ControlTxError},
-    scan::{StaScanBackend, StaScanConfig, StaScanError},
+    scan::{StaScanConfig, StaScanError},
     scan_tx::{RunningScanTx, ScanTxSummary},
 };
+
+use oer_ieee80211_sta_service::scan::StaScanBackend;
 
 use oer_ieee80211_mac::{
     scan::{ScanRecord, ScanTable},

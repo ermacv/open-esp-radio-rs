@@ -15,17 +15,20 @@ Module map:
 - `control_tx`, `scan_tx`, `single_mpdu_tx`: bounded management/data TX
   transactions and their entropy, power, time and completion ports;
 - `tx_epoch`: unique pre-connected control-TX ownership state;
-- `scan`: cold/running scan ordering and mandatory RX cleanup contract;
+- `scan`: the portable scan values and `StaScanPort`, re-exported; the
+  channel-visit transaction is `oer-ieee80211-sta-service`'s `StaScanBackend`;
 - `join`: executor-independent RX, TX and observation contracts for the
   ESP32-S31 Authentication/Association adapter;
-- `attempt`: complete selected-candidate to connected-entry transaction;
+- `attempt`: the chip parts of an attempt (selected channel, installed key
+  slots, phase reports); the attempt values are `oer_ieee80211_sta::attempt`
+  and the transaction is `oer-ieee80211-sta-service`'s `StaAttempt`;
 - `wpa2`: chip handshake and atomic hardware-key publication ports;
 - `connected`, `connected_rx`, `connected_control`: association-scoped data,
   security, receive admission and control ownership;
 - `profile`: local capability advertisement and channel lowering;
-- `modem_sleep`: the station's power-save manager and its TBTT, TIM and
-  coexistence decisions;
-- `connection_coex`: the coexistence status the station publishes;
+- `modem_sleep`, `connection_coex`: re-exports of the power manager of
+  `oer-ieee80211-sta` and of the reconnect coexistence requests of
+  `oer-espressif-ieee80211-policy`;
 - `standalone_esp_now_rx`: ESP-NOW reception while no station is connected;
 - `ftm`, `hardware/beacon_monitor`: bounded hardware admission frontiers whose
   physical activation limitations are stated in [FEATURES.md](../../../../hardware/esp32s31/driver/ieee80211/FEATURES.md).

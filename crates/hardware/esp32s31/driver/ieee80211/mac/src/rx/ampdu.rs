@@ -162,12 +162,10 @@ pub type RxAmpduMpdu = RxReorderMpdu;
 /// whose `InvalidBank` names an agreement outside the eight hardware banks.
 pub type RxAmpduError = RxReorderError;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RxAddbaResponseError {
-    InvalidBodyLength(usize),
-    InvalidTid(u8),
-    InvalidWindow(u16),
-}
+pub use oer_ieee80211_mac::block_ack::{
+    ADDBA_STATUS_REQUEST_DECLINED, RxAddbaResponseError, write_declined_addba_response,
+    write_successful_addba_response,
+};
 
 pub const RX_BLOCK_ACK_BANK_COUNT: usize = 8;
 
@@ -851,66 +849,6 @@ impl<const SLOT_CAPACITY: usize> Default for RxBlockAckReorderBanks<SLOT_CAPACIT
 const fn next_rx_block_ack_generation(current: u32) -> u32 {
     let next = current.wrapping_add(1);
     if next == 0 { 1 } else { next }
-}
-
-/// Write one successful immediate BlockAck response into an owned action body.
-///
-/// A-MSDU is deliberately not advertised by the initial strict RX path.
-pub fn write_successful_addba_response(
-    body: &mut [u8],
-    dialog_token: u8,
-    tid: u8,
-    window: u16,
-) -> Result<(), RxAddbaResponseError> {
-    if body.len() != 9 {
-        return Err(RxAddbaResponseError::InvalidBodyLength(body.len()));
-    }
-    if tid > 15 {
-        return Err(RxAddbaResponseError::InvalidTid(tid));
-    }
-    if window == 0 || window > 0x03ff {
-        return Err(RxAddbaResponseError::InvalidWindow(window));
-    }
-    body.fill(0);
-    body[0] = crate::tx::ampdu::BLOCK_ACK_CATEGORY;
-    body[1] = crate::tx::ampdu::ADDBA_RESPONSE_ACTION;
-    body[2] = dialog_token;
-    let parameters = 1_u16 << 1 | u16::from(tid) << 2 | window << 6;
-    body[5..7].copy_from_slice(&parameters.to_le_bytes());
-    Ok(())
-}
-
-/// IEEE 802.11 status 37: the recipient cannot accept this agreement.
-pub const ADDBA_STATUS_REQUEST_DECLINED: u16 = 37;
-
-/// Write a finite rejection for a syntactically parsed ADDBA request.
-///
-/// The request fields remain evidence in the response, but status owns the
-/// semantic outcome. No software session or hardware bank may accompany this
-/// body.
-pub fn write_declined_addba_response(
-    body: &mut [u8],
-    dialog_token: u8,
-    tid: u8,
-    requested_window: u16,
-) -> Result<(), RxAddbaResponseError> {
-    if body.len() != 9 {
-        return Err(RxAddbaResponseError::InvalidBodyLength(body.len()));
-    }
-    if tid > 15 {
-        return Err(RxAddbaResponseError::InvalidTid(tid));
-    }
-    if requested_window > 0x03ff {
-        return Err(RxAddbaResponseError::InvalidWindow(requested_window));
-    }
-    body.fill(0);
-    body[0] = crate::tx::ampdu::BLOCK_ACK_CATEGORY;
-    body[1] = crate::tx::ampdu::ADDBA_RESPONSE_ACTION;
-    body[2] = dialog_token;
-    body[3..5].copy_from_slice(&ADDBA_STATUS_REQUEST_DECLINED.to_le_bytes());
-    let parameters = 1_u16 << 1 | u16::from(tid) << 2 | requested_window << 6;
-    body[5..7].copy_from_slice(&parameters.to_le_bytes());
-    Ok(())
 }
 
 /// The MPDUs one reorder operation releases, bound to the S31 window

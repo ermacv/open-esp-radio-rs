@@ -155,7 +155,7 @@ reason = "the complete same-channel transaction retains the sole RX producer, TX
 
 [[reviewed_frames]]
 function_contains = "::attempt::StaAttempt<"
-source_ends_with = ["crates/roles/esp32s31/ieee80211/sta/src/attempt.rs", "oer-esp32s31-ieee80211-sta-0.1.0/src/attempt.rs"]
+source_ends_with = ["crates/services/ieee80211/sta/src/attempt.rs", "oer-ieee80211-sta-service-0.1.0/src/attempt.rs"]
 max_bytes = 11264
 reason = "shared initial/reconnect attempt future retains the exact phase owner and one active WPA2 operation"
 

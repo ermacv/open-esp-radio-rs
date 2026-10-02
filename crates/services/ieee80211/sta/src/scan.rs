@@ -134,5 +134,9 @@ where
     }
 }
 
+pub mod transaction;
+
+pub use transaction::StaScanBackend;
+
 #[cfg(test)]
 mod tests;

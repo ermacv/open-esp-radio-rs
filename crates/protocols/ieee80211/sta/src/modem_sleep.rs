@@ -1,4 +1,4 @@
-//! Vendor station power management for one associated ESP32-S31 station.
+//! Vendor station power management for one associated station.
 //!
 //! This is the connected-station part of the vendor power manager
 //! (`libpp.a[pm.o]`, `pm_coex.o`) as an executor-independent state machine.
@@ -93,9 +93,9 @@ pub enum SleepType {
     MaxModem,
 }
 
-impl From<oer_ieee80211_sta::request::StationPowerMode> for SleepType {
-    fn from(mode: oer_ieee80211_sta::request::StationPowerMode) -> Self {
-        use oer_ieee80211_sta::request::StationPowerMode;
+impl From<crate::request::StationPowerMode> for SleepType {
+    fn from(mode: crate::request::StationPowerMode) -> Self {
+        use crate::request::StationPowerMode;
         match mode {
             StationPowerMode::None => Self::None,
             StationPowerMode::MinModem => Self::MinModem,

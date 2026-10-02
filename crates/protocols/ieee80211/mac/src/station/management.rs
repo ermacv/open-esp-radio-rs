@@ -81,7 +81,7 @@ impl StaManagementSubtype {
 ///
 /// `SOURCE[PROMOTED_RX_AMPDU]`: reviewed promoted ADDBA response builder,
 /// where the same header was constructed around
-/// `rx_ampdu::write_successful_addba_response`; the frame-control subtypes
+/// `block_ack::write_successful_addba_response`; the frame-control subtypes
 /// are the IEEE 802.11 management subtypes also parsed by `libnet80211.a`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaManagementFrame<'a> {

@@ -1,4 +1,4 @@
-//! The station's SA Query procedure.
+//! The station's SA Query procedure (IEEE 802.11-2020 11.13).
 //!
 //! Under management frame protection an unprotected Deauthentication or
 //! Disassociation for a class 2 or 3 frame may be forged. The station then
@@ -40,7 +40,7 @@ struct ActiveSaQuery {
 
 /// What the procedure asks of its owner at one instant.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum SaQueryStep {
+pub enum SaQueryStep {
     Idle,
     /// Send one SA Query Request with this transaction identifier.
     Request([u8; 2]),
@@ -50,24 +50,24 @@ pub(super) enum SaQueryStep {
 
 /// The SA Query procedure of one association.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(super) struct StationSaQuery {
+pub struct StationSaQuery {
     active: Option<ActiveSaQuery>,
 }
 
 impl StationSaQuery {
-    pub(super) const fn new() -> Self {
+    pub const fn new() -> Self {
         Self { active: None }
     }
 
-    #[cfg(test)]
-    const fn is_active(&self) -> bool {
+    /// Whether a procedure runs.
+    pub const fn is_active(&self) -> bool {
         self.active.is_some()
     }
 
     /// Start the procedure for one unprotected disconnect and return the
     /// first Request's transaction identifier. A disconnect during a running
     /// procedure is ignored, as the vendor ignores it.
-    pub(super) fn start(&mut self, now_micros: u64, random: u32) -> Option<[u8; 2]> {
+    pub fn start(&mut self, now_micros: u64, random: u32) -> Option<[u8; 2]> {
         if self.active.is_some() {
             return None;
         }
@@ -83,7 +83,7 @@ impl StationSaQuery {
 
     /// Match one protected SA Query Response. A Response to a Request of the
     /// running procedure ends it.
-    pub(super) fn response(&mut self, transaction: [u8; 2]) -> bool {
+    pub fn response(&mut self, transaction: [u8; 2]) -> bool {
         let Some(active) = self.active else {
             return false;
         };
@@ -99,17 +99,17 @@ impl StationSaQuery {
 
     /// Whether the procedure's timeout passed. The timeout ends the
     /// association even while frames may not leave.
-    pub(super) fn timed_out(&self, now_micros: u64) -> bool {
+    pub fn timed_out(&self, now_micros: u64) -> bool {
         self.active
             .is_some_and(|active| now_micros >= active.timeout_micros)
     }
 
-    pub(super) fn timeout_micros(&self) -> Option<u64> {
+    pub fn timeout_micros(&self) -> Option<u64> {
         self.active.map(|active| active.timeout_micros)
     }
 
     /// Advance the procedure to `now_micros`.
-    pub(super) fn step(&mut self, now_micros: u64) -> SaQueryStep {
+    pub fn step(&mut self, now_micros: u64) -> SaQueryStep {
         let Some(active) = self.active.as_mut() else {
             return SaQueryStep::Idle;
         };
@@ -133,7 +133,7 @@ impl StationSaQuery {
     }
 
     /// The instant the procedure next needs its owner.
-    pub(super) fn deadline_micros(&self) -> Option<u64> {
+    pub fn deadline_micros(&self) -> Option<u64> {
         self.active
             .map(|active| active.next_retry_micros.min(active.timeout_micros))
     }

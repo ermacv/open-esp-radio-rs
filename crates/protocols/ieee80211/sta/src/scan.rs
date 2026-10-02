@@ -1,7 +1,11 @@
 //! Allocation-free candidate-scan values and port.
 //!
 //! The `StaCandidateScanService` of `oer-ieee80211-sta-service` drives the
-//! [`StaCandidateScanBackend`] port through one finite channel plan.
+//! [`StaCandidateScanBackend`] port through one finite channel plan. Its
+//! `StaScanBackend` implements that port with one fixed channel-visit
+//! transaction over the primitive [`StaScanPort`] declared here: switch,
+//! start receiving, the optional active probe, a bounded dwell, stop and
+//! prepare the next channel.
 
 use core::future::Future;
 
@@ -69,6 +73,114 @@ pub trait StaCandidateScanBackend {
         &mut self,
         owner: Self::Owner,
     ) -> StaScanSelectionOutcome<Self::Owner, Self::Candidate, Self::Error>;
+}
+
+/// Result of the optional active-probe edge.
+///
+/// Probe failure is deliberately not necessarily a scan failure. A concrete
+/// port must close any failed TX publication before returning
+/// [`PassiveFallback`](Self::PassiveFallback); the bounded receive dwell then
+/// continues as a passive scan.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ActiveProbeOutcome {
+    Transmitted,
+    PassiveFallback,
+}
+
+/// Exact mandatory transaction edge which failed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaScanError<E> {
+    Begin(E),
+    ChannelSwitch(E),
+    ReceiveStart(E),
+    ActiveProbe(E),
+    ReceiveObserve(E),
+    DwellWait(E),
+    ReceiveStop(E),
+    PrepareNextRing(E),
+    CandidateSelection(E),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaScanConfigError {
+    ZeroDwellTicks,
+}
+
+/// Bounded executor-neutral policy for one channel visit.
+///
+/// A tick has no duration at this layer. The integration port maps it to its
+/// clock and executor, so the transaction is also usable by a non-Embassy
+/// runtime.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaScanConfig {
+    dwell_ticks: u16,
+}
+
+impl StaScanConfig {
+    pub const fn new(dwell_ticks: u16) -> Result<Self, StaScanConfigError> {
+        if dwell_ticks == 0 {
+            Err(StaScanConfigError::ZeroDwellTicks)
+        } else {
+            Ok(Self { dwell_ticks })
+        }
+    }
+
+    pub const fn dwell_ticks(self) -> u16 {
+        self.dwell_ticks
+    }
+}
+
+/// Primitive operations retained by a concrete cold or running scan owner.
+///
+/// `start_receive` must either establish a live RX epoch or leave the walker
+/// stopped on error. `observe_receive` performs one finite drain/recycle pass;
+/// it must not wait. `stop_receive` must confirm that DMA released descriptor
+/// ownership before returning success. `prepare_next_ring` runs only after
+/// that confirmation and must leave a stopped ring ready for the next channel.
+pub trait StaScanPort {
+    type Channel: Copy;
+    type Candidate;
+    type Error;
+
+    fn begin_scan(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_;
+
+    /// Switch to the channel and return how many dwell ticks to spend on
+    /// it. The port may shorten or lengthen `requested_dwell_ticks`, as the
+    /// vendor scan does while another radio shares the air.
+    fn switch_channel(
+        &mut self,
+        context: StaScanChannelContext<Self::Channel>,
+        requested_dwell_ticks: u16,
+    ) -> impl Future<Output = Result<u16, Self::Error>> + '_;
+
+    fn start_receive(
+        &mut self,
+        context: StaScanChannelContext<Self::Channel>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + '_;
+
+    fn transmit_active_probe(
+        &mut self,
+        context: StaScanChannelContext<Self::Channel>,
+    ) -> impl Future<Output = Result<ActiveProbeOutcome, Self::Error>> + '_;
+
+    fn observe_receive(
+        &mut self,
+        context: StaScanChannelContext<Self::Channel>,
+    ) -> Result<(), Self::Error>;
+
+    fn wait_dwell_tick(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_;
+
+    fn stop_receive(
+        &mut self,
+        context: StaScanChannelContext<Self::Channel>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + '_;
+
+    fn prepare_next_ring(
+        &mut self,
+        context: StaScanChannelContext<Self::Channel>,
+    ) -> Result<(), Self::Error>;
+
+    fn select_candidate(&mut self) -> Result<Option<Self::Candidate>, Self::Error>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

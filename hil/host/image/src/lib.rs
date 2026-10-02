@@ -333,11 +333,10 @@ pub fn check(root: &Path, class: oer_hil_image_class::ImageClass) -> Result<()> 
         &root.join("hil/targets/esp32s31/Cargo.toml"),
         |command| lock.configure(command),
     )?;
-    let status = command.status()?;
-    if !status.success() {
-        return Err(format!("the {} runtime does not type-check", class.id()).into());
-    }
-    Ok(())
+    // Through the shared runner, so a caller's output policy (xtask logs
+    // child output by default) applies to the type check too.
+    oer_process::run(&mut command)
+        .map_err(|error| format!("the {} runtime does not type-check: {error}", class.id()).into())
 }
 
 /// Names the host build root instead of the user's cache directory.

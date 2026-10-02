@@ -33,10 +33,9 @@
 //! `lmacProcessAllTxTimeout`). The core therefore holds one publication slot
 //! per queue: an attempt occupies the queue of its access category, and a
 //! second attempt for an occupied queue is `Busy`. The ordinary TX owner
-//! publishes each MPDU and detaches it as a
-//! [`QueuedSingleAttempt`](crate::ordinary_tx::QueuedSingleAttempt), and each
-//! aggregate keeps its own aggregate owner, so up to four attempts are in
-//! flight.
+//! publishes each MPDU and detaches it as a [`QueuedSingleAttempt`], and
+//! each aggregate keeps its own aggregate owner, so up to four attempts are
+//! in flight.
 //!
 //! The MAC interrupt's task events do not name a queue, so one
 //! [`LowerMacCore::service`] call offers the same edge to every published

@@ -8,11 +8,11 @@
 //! lies above that port and is decided here, once for every backend:
 //!
 //! - [`retry`]: the retry counters, limits and Retry bit of one MPDU, and the
-//!   [`RateLadder`](retry::RateLadder) its attempts walk;
+//!   [`RateLadder`] its attempts walk;
 //! - [`ampdu`]: which subframes of an A-MPDU the next attempt resends after
 //!   a BlockAck, with their Retry bit, and when the aggregate ends;
 //! - [`protection`]: RTS/CTS or CTS-to-self before each PPDU;
-//! - [`tx`]: the [`TxPlanner`](tx::TxPlanner), which combines them with the
+//! - [`tx`]: the [`TxPlanner`], which combines them with the
 //!   EDCA backoff draw of `oer-ieee80211-softmac` into one attempt at a time
 //!   and turns each completion into the next attempt or the exchange's
 //!   statistics.

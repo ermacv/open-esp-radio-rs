@@ -121,8 +121,10 @@ impl<X: PortStationEnv> RsnHandshakeBackend for PortHandshake<'_, '_, X> {
     async fn service_receive(&mut self) -> Result<RsnRxProgress, Self::Error> {
         let mut completed = 0_u32;
         while let Some(input) = self.link.try_input().await {
-            let PortInput::Frame(frame) = input else {
-                continue;
+            let frame = match input {
+                PortInput::Frame(frame) => frame,
+                PortInput::Poisoned => return Err(PortLinkError::Poisoned),
+                PortInput::Tbtt(_) | PortInput::EventsLost => continue,
             };
             completed = completed.saturating_add(1);
             if let Some(eapol) = eapol_payload(frame.bytes(), self.bssid)

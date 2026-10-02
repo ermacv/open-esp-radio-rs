@@ -1728,10 +1728,7 @@ fn a_closed_gate_blocks_the_queues_and_holds_the_attempt_until_it_opens() {
     let request = attempt(&mut core, 2, &frame);
     submit(&mut core, &mut hardware, request).unwrap().unwrap();
     let mut events = Events::default();
-    assert_eq!(
-        core.lifecycle(LifecycleCommand::Cancel(TxId(2)), &mut events),
-        Ok(LifecycleStart::Admitted)
-    );
+    assert_eq!(core.cancel(TxId(2), &mut events), Ok(()));
     assert_eq!(events.completions[0].status, TxStatus::Aborted);
     assert_eq!(hardware.publications(), 1);
     assert_eq!(spare_slots(&core), SPARE);
@@ -1756,12 +1753,11 @@ fn quiesce_and_disable_end_after_the_published_attempt() {
     );
     // A published attempt cannot be withdrawn: the cancel is admitted and
     // the attempt ends with its own completion.
-    core.lifecycle(LifecycleCommand::Cancel(TxId(1)), &mut events)
-        .unwrap();
+    core.cancel(TxId(1), &mut events).unwrap();
     assert!(events.completions.is_empty());
     assert_eq!(
-        core.lifecycle(LifecycleCommand::Cancel(TxId(9)), &mut events),
-        Err(LifecycleError::UnknownAttempt)
+        core.cancel(TxId(9), &mut events),
+        Err(CancelError::NotRunning)
     );
     core.lifecycle(LifecycleCommand::Disable, &mut events)
         .unwrap();
@@ -2265,8 +2261,7 @@ fn an_aggregate_shares_the_queues_with_mpdus() {
         .unwrap()
         .unwrap();
     let mut events = Events::default();
-    core.lifecycle(LifecycleCommand::Cancel(TxId(5)), &mut events)
-        .unwrap();
+    core.cancel(TxId(5), &mut events).unwrap();
     assert_eq!(events.completions[0].status, TxStatus::Aborted);
     assert_eq!(source.free(), BACKINGS);
     assert_eq!(hardware.publications(), 3);

@@ -5,16 +5,30 @@
 //! blocking mutex over a caller-chosen raw mutex, as the IEEE 802.15.4
 //! runtime does. The MAC interrupt handler ([`Esp32s31LowerMac::on_interrupt`]),
 //! the receive producer ([`Esp32s31LowerMac::on_received`]) and every port
-//! call run inside that lock; events leave it as owned values through a
-//! bounded queue that any executor may await. Overflow drops the newest
-//! event and is reported once as [`EventsLost`].
+//! call run inside that lock; events leave it as owned values through
+//! bounded queues that any executor may await.
 //!
-//! [`Ieee80211LowerMacPort::next_event`] also runs the two waits the core
-//! cannot: the publication watchdog of the attempts in flight, which it turns
-//! into a deadline edge of the ordinary TX owner, and the PHY retune an
-//! `Enable` needs after a channel change, through [`LowerMacRetune`]. The
-//! ordinary TX owner's timer must therefore read the `embassy-time` clock
-//! (`EmbassyWifiTxTimer` in production).
+//! Each kind of event has its own queue. Attempt completions and lifecycle
+//! terminals cannot overflow: the port refuses an attempt (`Busy`) or a
+//! lifecycle command (`LifecycleError::Busy`) while its queue could not hold
+//! the terminal event it would owe. TBTT events and received frames have
+//! queues of their own; an overflow of either is reported as [`EventsLost`]
+//! in that queue's order, and a received MPDU longer than `FRAME` is
+//! reported as [`LowerMacEvent::RxTooLong`], not as a loss. Completions are
+//! taken first, then lifecycle terminals, TBTTs and received frames; the
+//! loss ordering rule holds within each queue. A fault poisons the port:
+//! the queued events are still reported, then [`LowerMacEvent::Poisoned`]
+//! at every call.
+//!
+//! [`Ieee80211LowerMacPort::next_event`] only takes events. The two waits
+//! the core cannot run itself are in [`Esp32s31LowerMac::run`], the runner
+//! the composition polls for as long as the port exists: the publication
+//! watchdog of the attempts in flight, which it turns into a deadline edge
+//! of the ordinary TX owner, and the PHY retune an `Enable` needs after a
+//! channel change, through [`LowerMacRetune`]. The ordinary TX owner's timer
+//! must therefore read the `embassy-time` clock (`EmbassyWifiTxTimer` in
+//! production), which is why the port's radio clock is the image's
+//! monotonic clock ([`RadioEpoch::Monotonic`]).
 //!
 //! Besides the base port it implements the extensions the ESP32-S31 has:
 //! [`LowerMacAmpdu`] (HT aggregates, when the core was built with aggregate
@@ -33,10 +47,10 @@
 
 use core::{
     cell::{Cell, RefCell},
-    sync::atomic::{AtomicBool, Ordering},
+    convert::Infallible,
 };
 
-use embassy_futures::select::{Either3, select3};
+use embassy_futures::select::{Either, select, select4};
 use embassy_sync::{
     blocking_mutex::{Mutex, raw::RawMutex},
     channel::Channel,
@@ -57,14 +71,26 @@ use oer_esp32s31_ieee80211::{
 };
 use oer_esp32s31_ieee80211_mac::rx::NormalizedRxFrame;
 use oer_ieee80211_lower_mac::{
-    AmpduCapabilities, BeaconTimingCapabilities, EventsLost, Ieee80211LowerMacPort, KeyHandle,
-    KeyInstall, LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacAmpdu,
-    LowerMacBeaconTiming, LowerMacCapabilities, LowerMacEvent, LowerMacMonitor, LowerMacSetting,
-    MonitorCapabilities, RxMeta, SettingError, SubmitResult, TbttEvent, TbttSchedule, Tsf,
-    TxCompletion, VifId,
+    AmpduCapabilities, BeaconTimingCapabilities, CancelError, ClockInfo, EventsLost, FailureClass,
+    Ieee80211LowerMacPort, KeyHandle, KeyInstall, LifecycleCommand, LifecycleError, LifecycleEvent,
+    LowerMacAmpdu, LowerMacBeaconTiming, LowerMacCapabilities, LowerMacEvent, LowerMacMonitor,
+    LowerMacSetting, MonitorCapabilities, Poisoned, PortError, RadioEpoch, Refused, RxMeta,
+    SettingError, SubmitError, SubmitResult, TbttEvent, TbttSchedule, Tsf, TxCompletion, TxId,
+    VifId,
 };
 use oer_ieee80211_mac::channel::WifiChannel;
 use oer_time::RadioInstant;
+
+/// Attempt completions the port owes at most: admitted attempts whose
+/// completion the consumer has not taken yet.
+pub const COMPLETION_CAPACITY: usize = 8;
+/// Lifecycle terminals the port owes at most.
+pub const LIFECYCLE_CAPACITY: usize = 4;
+/// TBTT events waiting for the consumer, a loss marker included.
+pub const TBTT_CAPACITY: usize = 2;
+
+const COMPLETION_SLOTS: usize = COMPLETION_CAPACITY + 1;
+const LIFECYCLE_SLOTS: usize = LIFECYCLE_CAPACITY + 1;
 
 /// The PHY retune of an `Enable` after a channel change.
 ///
@@ -85,10 +111,16 @@ pub enum Esp32s31LowerMacEvent<const FRAME: usize> {
         length: usize,
         meta: RxMeta,
     },
+    /// A received MPDU longer than `FRAME` was dropped.
+    RxTooLong {
+        length: usize,
+    },
     TxCompleted(TxCompletion),
     Lifecycle(LifecycleEvent),
     /// A station TBTT, viewed through [`LowerMacBeaconTiming::tbtt`].
     Tbtt(TbttEvent),
+    /// The terminal event of a poisoned port.
+    Poisoned,
 }
 
 impl<const FRAME: usize> Esp32s31LowerMacEvent<FRAME> {
@@ -103,9 +135,11 @@ impl<const FRAME: usize> Esp32s31LowerMacEvent<FRAME> {
                 frame: &frame[..*length],
                 meta: *meta,
             },
+            Self::RxTooLong { length } => LowerMacEvent::RxTooLong { length: *length },
             Self::TxCompleted(completion) => LowerMacEvent::TxCompleted(*completion),
             Self::Lifecycle(event) => LowerMacEvent::Lifecycle(*event),
             Self::Tbtt(_) => LowerMacEvent::Extension,
+            Self::Poisoned => LowerMacEvent::Poisoned(Poisoned),
         }
     }
 }
@@ -113,10 +147,152 @@ impl<const FRAME: usize> Esp32s31LowerMacEvent<FRAME> {
 /// Why the port cannot serve.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31LowerMacError {
-    /// No backend is installed.
+    /// No backend is installed: a [`FailureClass::Rejected`] state that an
+    /// install ends.
     NotInstalled,
     /// The backend's state is unknown; only a radio reset restores it.
     Poisoned(LowerMacFault),
+}
+
+impl PortError for Esp32s31LowerMacError {
+    fn class(&self) -> FailureClass {
+        match self {
+            Self::NotInstalled => FailureClass::Rejected,
+            Self::Poisoned(_) => FailureClass::Poisoned,
+        }
+    }
+}
+
+/// A bounded queue whose overflow is reported in its order: a loss marker
+/// takes the place of the first dropped entry.
+struct EventQueue<M: RawMutex, T, const N: usize> {
+    entries: Channel<M, Result<T, EventsLost>, N>,
+    /// An entry was dropped and its marker is not queued yet.
+    lost: Mutex<M, Cell<bool>>,
+}
+
+impl<M: RawMutex, T, const N: usize> EventQueue<M, T, N> {
+    const fn new() -> Self {
+        Self {
+            entries: Channel::new(),
+            lost: Mutex::new(Cell::new(false)),
+        }
+    }
+
+    /// Queue `entry` behind a pending loss marker; drop it and remember the
+    /// loss when there is no room.
+    fn push(&self, entry: T) {
+        self.lost.lock(|lost| {
+            if lost.get() {
+                if self.entries.try_send(Err(EventsLost)).is_err() {
+                    return;
+                }
+                lost.set(false);
+            }
+            if self.entries.try_send(Ok(entry)).is_err() {
+                lost.set(true);
+            }
+        });
+    }
+
+    /// The next entry, or the loss marker after the last entry.
+    fn take(&self) -> Option<Result<T, EventsLost>> {
+        self.lost.lock(|lost| match self.entries.try_receive() {
+            Ok(entry) => Some(entry),
+            Err(_) if lost.replace(false) => Some(Err(EventsLost)),
+            Err(_) => None,
+        })
+    }
+
+    /// Discard every entry. A discarded event, a pending marker or `owed`
+    /// entries that will never arrive leave one loss for the consumer.
+    fn discard(&self, owed: bool) {
+        self.lost.lock(|lost| {
+            let mut discarded = owed || lost.get();
+            while let Ok(_entry) = self.entries.try_receive() {
+                discarded = true;
+            }
+            lost.set(discarded);
+        });
+    }
+}
+
+/// The queues of the port, one per kind of event.
+struct Queues<M: RawMutex, const EVENTS: usize, const FRAME: usize> {
+    completions: EventQueue<M, TxCompletion, COMPLETION_SLOTS>,
+    lifecycle: EventQueue<M, LifecycleEvent, LIFECYCLE_SLOTS>,
+    tbtt: EventQueue<M, TbttEvent, TBTT_CAPACITY>,
+    received: EventQueue<M, Esp32s31LowerMacEvent<FRAME>, EVENTS>,
+    /// Completions owed: admitted attempts whose completion was not taken.
+    owed_completions: Mutex<M, Cell<usize>>,
+    /// Lifecycle terminals owed.
+    owed_lifecycle: Mutex<M, Cell<usize>>,
+    /// Raised when the consumer must look again without a new entry: a
+    /// poisoning, or a loss an uninstall recorded.
+    changed: Signal<M, ()>,
+}
+
+impl<M: RawMutex, const EVENTS: usize, const FRAME: usize> Queues<M, EVENTS, FRAME> {
+    const fn new() -> Self {
+        Self {
+            completions: EventQueue::new(),
+            lifecycle: EventQueue::new(),
+            tbtt: EventQueue::new(),
+            received: EventQueue::new(),
+            owed_completions: Mutex::new(Cell::new(0)),
+            owed_lifecycle: Mutex::new(Cell::new(0)),
+            changed: Signal::new(),
+        }
+    }
+
+    /// The next queued event: completions, lifecycle terminals, TBTTs,
+    /// then received frames.
+    fn take(&self) -> Option<Result<Esp32s31LowerMacEvent<FRAME>, EventsLost>> {
+        if let Some(entry) = self.completions.take() {
+            if entry.is_ok() {
+                self.owed_completions
+                    .lock(|owed| owed.set(owed.get().saturating_sub(1)));
+            }
+            return Some(entry.map(Esp32s31LowerMacEvent::TxCompleted));
+        }
+        if let Some(entry) = self.lifecycle.take() {
+            if entry.is_ok() {
+                self.owed_lifecycle
+                    .lock(|owed| owed.set(owed.get().saturating_sub(1)));
+            }
+            return Some(entry.map(Esp32s31LowerMacEvent::Lifecycle));
+        }
+        if let Some(entry) = self.tbtt.take() {
+            return Some(entry.map(Esp32s31LowerMacEvent::Tbtt));
+        }
+        self.received.take()
+    }
+
+    /// Wait until a queue may have an entry or [`Self::changed`] rose.
+    async fn wait(&self) {
+        select4(
+            self.completions.entries.ready_to_receive(),
+            self.lifecycle.entries.ready_to_receive(),
+            select(
+                self.tbtt.entries.ready_to_receive(),
+                self.received.entries.ready_to_receive(),
+            ),
+            self.changed.wait(),
+        )
+        .await;
+    }
+
+    /// Discard every queued event on uninstall; terminal events the
+    /// uninstalled core still owed are lost as well, and every loss stays
+    /// pending for the consumer.
+    fn discard(&self) {
+        let owed = |owed: &Mutex<M, Cell<usize>>| owed.lock(|owed| owed.replace(0)) > 0;
+        self.completions.discard(owed(&self.owed_completions));
+        self.lifecycle.discard(owed(&self.owed_lifecycle));
+        self.tbtt.discard(false);
+        self.received.discard(false);
+        self.changed.signal(());
+    }
 }
 
 /// The core, its register owner and the retune of `Enable`.
@@ -154,41 +330,33 @@ struct Installed<
     hardware: H,
 }
 
-/// The sink of one locked entry: events go to the queue.
+/// The sink of one locked entry: events go to their queues.
 struct QueueSink<'a, M: RawMutex, const EVENTS: usize, const FRAME: usize> {
-    events: &'a Channel<M, Esp32s31LowerMacEvent<FRAME>, EVENTS>,
-    lost: &'a AtomicBool,
-}
-
-impl<M: RawMutex, const EVENTS: usize, const FRAME: usize> QueueSink<'_, M, EVENTS, FRAME> {
-    fn push(&mut self, event: Esp32s31LowerMacEvent<FRAME>) {
-        if self.events.try_send(event).is_err() {
-            self.lost.store(true, Ordering::Release);
-        }
-    }
+    queues: &'a Queues<M, EVENTS, FRAME>,
 }
 
 impl<M: RawMutex, const EVENTS: usize, const FRAME: usize> LowerMacSink
     for QueueSink<'_, M, EVENTS, FRAME>
 {
     fn tx_completed(&mut self, completion: TxCompletion) {
-        self.push(Esp32s31LowerMacEvent::TxCompleted(completion));
+        self.queues.completions.push(completion);
     }
 
     fn lifecycle(&mut self, event: LifecycleEvent) {
-        self.push(Esp32s31LowerMacEvent::Lifecycle(event));
+        self.queues.lifecycle.push(event);
     }
 
     fn tbtt(&mut self, event: TbttEvent) {
-        self.push(Esp32s31LowerMacEvent::Tbtt(event));
+        self.queues.tbtt.push(event);
     }
 }
 
 /// The ESP32-S31 lower MAC behind the portable port.
 ///
 /// `TX_BUFFERS` counts the transmit buffers the core lends, `EVENTS` bounds
-/// the events waiting for the consumer and `FRAME` the bytes of one
-/// received MPDU; a longer MPDU is lost and reported as [`EventsLost`].
+/// the received frames waiting for the consumer (a loss marker included)
+/// and `FRAME` the bytes of one received MPDU; a longer MPDU is reported as
+/// [`LowerMacEvent::RxTooLong`].
 /// `S`, `AMPDU_SLOTS` and `AMPDU_BUFFERS` are the core's aggregate memory,
 /// subframes per aggregate and aggregate owners; with the default
 /// [`NoAmpdu`] the port has no aggregates and no [`LowerMacAmpdu`].
@@ -235,10 +403,9 @@ pub struct Esp32s31LowerMac<
     /// The channel an admitted `Enable` waits to be tuned to.
     pending_retune: Mutex<M, Cell<Option<WifiChannel>>>,
     fault: Mutex<M, Cell<Option<LowerMacFault>>>,
-    events: Channel<M, Esp32s31LowerMacEvent<FRAME>, EVENTS>,
-    lost: AtomicBool,
-    /// Raised when a deadline or a retune may have started, so an awaiting
-    /// consumer rearms.
+    queues: Queues<M, EVENTS, FRAME>,
+    /// Raised when a deadline, a retune, an install or a fault may have
+    /// started, so the runner rearms.
     wake: Signal<M, ()>,
 }
 
@@ -334,13 +501,13 @@ where
             retune: Mutex::new(RefCell::new(None)),
             pending_retune: Mutex::new(Cell::new(None)),
             fault: Mutex::new(Cell::new(None)),
-            events: Channel::new(),
-            lost: AtomicBool::new(false),
+            queues: Queues::new(),
             wake: Signal::new(),
         }
     }
 
-    /// Install a disabled core with its register owner and retune.
+    /// Install a disabled core with its register owner and retune. A loss
+    /// an earlier uninstall recorded stays pending.
     ///
     /// # Errors
     ///
@@ -402,11 +569,14 @@ where
         }
         self.retune.lock(|slot| *slot.borrow_mut() = Some(retune));
         self.fault.lock(|fault| fault.set(None));
+        self.wake.signal(());
         Ok(())
     }
 
     /// Take the core and its register owner back and discard queued events.
-    /// The retune stays while an `Enable` awaits it.
+    /// The discarded events, and the terminal events the core still owed,
+    /// are reported as [`EventsLost`] to the consumer, also across a later
+    /// install. The retune stays while an `Enable` awaits it.
     #[allow(
         clippy::type_complexity,
         reason = "the uninstalled owners are returned as they were installed"
@@ -420,8 +590,7 @@ where
         let installed = self
             .installed
             .lock(|installed| installed.borrow_mut().take());
-        while self.events.try_receive().is_ok() {}
-        self.lost.store(false, Ordering::Release);
+        self.queues.discard();
         self.pending_retune.lock(|pending| pending.set(None));
         installed.map(|installed| (installed.core, installed.hardware))
     }
@@ -454,16 +623,23 @@ where
                 .as_mut()
                 .ok_or(Esp32s31LowerMacError::NotInstalled)?;
             let mut sink = QueueSink {
-                events: &self.events,
-                lost: &self.lost,
+                queues: &self.queues,
             };
             entry(&mut installed.core, &mut installed.hardware, &mut sink)
                 .map_err(Esp32s31LowerMacError::Poisoned)
         });
         if let Err(Esp32s31LowerMacError::Poisoned(fault)) = result {
             self.fault.lock(|poisoned| poisoned.set(Some(fault)));
+            // The consumer learns of it after the queued events; the runner
+            // parks.
+            self.queues.changed.signal(());
+            self.wake.signal(());
         }
         result
+    }
+
+    fn poisoned(&self) -> bool {
+        self.fault.lock(Cell::get).is_some()
     }
 
     /// The MAC interrupt handler's TX edges: completion, hardware timeout
@@ -487,35 +663,50 @@ where
         }
     }
 
-    /// One MPDU of the receive producer, copied into the queue while the
-    /// port receives and a receive rule or monitor reception admits it.
+    /// One MPDU of the receive producer, copied into the receive queue while
+    /// the port receives and a receive rule or monitor reception admits it.
+    /// An MPDU longer than `FRAME` is reported as
+    /// [`LowerMacEvent::RxTooLong`].
     pub fn on_received(&self, frame: &NormalizedRxFrame<'_>) {
         let _ = self.with_core(|core, _, sink| {
             if let Some((bytes, meta)) = core.received(frame) {
                 let mut owned = [0; FRAME];
-                match owned.get_mut(..bytes.len()) {
+                let event = match owned.get_mut(..bytes.len()) {
                     Some(prefix) => {
                         prefix.copy_from_slice(bytes);
-                        sink.push(Esp32s31LowerMacEvent::Received {
+                        Esp32s31LowerMacEvent::Received {
                             frame: owned,
                             length: bytes.len(),
                             meta,
-                        });
+                        }
                     }
-                    None => sink.lost.store(true, Ordering::Release),
-                }
+                    None => Esp32s31LowerMacEvent::RxTooLong {
+                        length: bytes.len(),
+                    },
+                };
+                sink.queues.received.push(event);
             }
             Ok(())
         });
     }
 
-    /// Wait for the next event, running the publication watchdog and the
-    /// retune of an `Enable` meanwhile. Cancelling the wait keeps both for
-    /// the next call.
-    async fn wait_event(&self) -> Result<Esp32s31LowerMacEvent<FRAME>, EventsLost> {
+    /// The port's runner: the publication watchdog of the attempts in
+    /// flight and the PHY retune of an admitted `Enable`.
+    ///
+    /// Poll it for as long as the port exists, beside the consumer of
+    /// [`Ieee80211LowerMacPort::next_event`]; it never ends. Dropping it
+    /// keeps both for the next runner. While the port is poisoned it only
+    /// waits for an install, so an expired deadline of the poisoned core is
+    /// never serviced again; a deadline the core kept after servicing it
+    /// waits for the next wake instead of being serviced again at once.
+    pub async fn run(&self) -> Infallible {
+        // The deadline serviced last, which the core may keep until an
+        // interrupt edge moves it.
+        let mut serviced = None;
         loop {
-            if self.lost.swap(false, Ordering::AcqRel) {
-                return Err(EventsLost);
+            if self.poisoned() {
+                self.wake.wait().await;
+                continue;
             }
             if let Some(channel) = self.pending_retune.lock(Cell::take) {
                 let mut guard = RetuneGuard {
@@ -545,23 +736,38 @@ where
                         .as_ref()
                         .map(|installed| installed.core.next_deadline_micros())
                 })
-                .flatten();
+                .flatten()
+                .filter(|deadline| Some(*deadline) != serviced);
             let watchdog = async {
                 match deadline {
                     Some(deadline) => Timer::at(Instant::from_micros(deadline)).await,
                     None => core::future::pending().await,
                 }
             };
-            match select3(self.events.receive(), watchdog, self.wake.wait()).await {
-                Either3::First(event) => return Ok(event),
-                Either3::Second(()) => {
+            match select(watchdog, self.wake.wait()).await {
+                Either::First(()) => {
+                    serviced = deadline;
                     let _ = self.with_core(|core, hardware, sink| {
                         core.service(hardware, WifiTxWake::Deadline, sink)
                     });
                 }
-                // A deadline or a retune started; rearm.
-                Either3::Third(()) => {}
+                // A deadline, a retune, an install or a fault; rearm.
+                Either::Second(()) => serviced = None,
             }
+        }
+    }
+
+    /// Take the next event: the queued ones in their order, then the
+    /// terminal [`Esp32s31LowerMacEvent::Poisoned`] of a poisoned port.
+    async fn wait_event(&self) -> Result<Esp32s31LowerMacEvent<FRAME>, EventsLost> {
+        loop {
+            if let Some(event) = self.queues.take() {
+                return event;
+            }
+            if self.poisoned() {
+                return Ok(Esp32s31LowerMacEvent::Poisoned);
+            }
+            self.queues.wait().await;
         }
     }
 }
@@ -584,6 +790,28 @@ impl<M: RawMutex, R> Drop for RetuneGuard<'_, M, R> {
             self.pending.lock(|pending| pending.set(Some(self.channel)));
         }
     }
+}
+
+/// Admit `attempt` through `admit` only while the completion queue has room
+/// for its completion, and count the completion it then owes.
+fn owe_completion<M: RawMutex, A, const EVENTS: usize, const FRAME: usize>(
+    queues: &Queues<M, EVENTS, FRAME>,
+    attempt: A,
+    admit: impl FnOnce(A) -> Result<Result<(), Refused<A>>, LowerMacFault>,
+) -> Result<Result<(), Refused<A>>, LowerMacFault> {
+    queues.owed_completions.lock(|owed| {
+        if owed.get() == COMPLETION_CAPACITY {
+            return Ok(Err(Refused {
+                error: SubmitError::Busy,
+                attempt,
+            }));
+        }
+        let admitted = admit(attempt)?;
+        if admitted.is_ok() {
+            owed.set(owed.get() + 1);
+        }
+        Ok(admitted)
+    })
 }
 
 impl<
@@ -638,11 +866,21 @@ where
         esp32s31_lower_mac_capabilities(BUFFER_SIZE)
     }
 
-    /// `None` also while no backend is installed or the port is poisoned.
-    fn tx_buffer(&self, len: usize) -> Option<Esp32s31TxBuffer<'slot, BUFFER_SIZE>> {
+    /// The core's clock is the ordinary TX owner's `WifiTxTimer`, which
+    /// reads the `embassy-time` clock in production (`EmbassyWifiTxTimer`,
+    /// `datapath/tx/time.rs`): the image's monotonic clock in microseconds.
+    fn clock_info(&self) -> ClockInfo {
+        ClockInfo {
+            resolution: oer_time::Duration::from_micros(1),
+            epoch: RadioEpoch::Monotonic,
+        }
+    }
+
+    fn tx_buffer(
+        &self,
+        len: usize,
+    ) -> Result<Option<Esp32s31TxBuffer<'slot, BUFFER_SIZE>>, Esp32s31LowerMacError> {
         self.with_core(|core, _, _| Ok(core.tx_buffer(len)))
-            .ok()
-            .flatten()
     }
 
     /// A buffer released while no backend is installed or the port is
@@ -658,7 +896,10 @@ where
         &self,
         attempt: Esp32s31MpduAttempt<'slot, BUFFER_SIZE>,
     ) -> SubmitResult<Esp32s31MpduAttempt<'slot, BUFFER_SIZE>, Esp32s31LowerMacError> {
-        let admitted = self.with_core(|core, hardware, _| core.submit(hardware, attempt))?;
+        let queues = &self.queues;
+        let admitted = self.with_core(|core, hardware, _| {
+            owe_completion(queues, attempt, |attempt| core.submit(hardware, attempt))
+        })?;
         // A publication starts its watchdog.
         self.wake.signal(());
         Ok(admitted)
@@ -689,7 +930,20 @@ where
         &self,
         command: LifecycleCommand,
     ) -> Result<Result<(), LifecycleError>, Esp32s31LowerMacError> {
-        let started = self.with_core(|core, _, sink| Ok(core.lifecycle(command, sink)))?;
+        let queues = &self.queues;
+        let started = self.with_core(|core, _, sink| {
+            Ok(queues.owed_lifecycle.lock(|owed| {
+                // Admit only a command whose terminal event has room.
+                if owed.get() == LIFECYCLE_CAPACITY {
+                    return Err(LifecycleError::Busy);
+                }
+                let started = core.lifecycle(command, sink);
+                if started.is_ok() {
+                    owed.set(owed.get() + 1);
+                }
+                started
+            }))
+        })?;
         match started {
             Ok(LifecycleStart::Admitted) => Ok(Ok(())),
             Ok(LifecycleStart::Retune(channel)) => {
@@ -700,6 +954,10 @@ where
             }
             Err(error) => Ok(Err(error)),
         }
+    }
+
+    fn cancel(&self, id: TxId) -> Result<Result<(), CancelError>, Esp32s31LowerMacError> {
+        self.with_core(|core, _, sink| Ok(core.cancel(id, sink)))
     }
 
     fn now(&self) -> Result<RadioInstant, Esp32s31LowerMacError> {
@@ -875,11 +1133,10 @@ where
         esp32s31_ampdu_capabilities(AMPDU_SLOTS)
     }
 
-    /// `None` also while no backend is installed or the port is poisoned.
-    fn ampdu_buffer(&self) -> Option<Esp32s31AmpduBuffer<'slot, S, AMPDU_SLOTS>> {
+    fn ampdu_buffer(
+        &self,
+    ) -> Result<Option<Esp32s31AmpduBuffer<'slot, S, AMPDU_SLOTS>>, Esp32s31LowerMacError> {
         self.with_core(|core, _, _| Ok(core.ampdu_buffer()))
-            .ok()
-            .flatten()
     }
 
     /// An aggregate released while no backend is installed or the port is
@@ -896,7 +1153,12 @@ where
         &self,
         attempt: Esp32s31AmpduAttempt<'slot, S, AMPDU_SLOTS>,
     ) -> SubmitResult<Esp32s31AmpduAttempt<'slot, S, AMPDU_SLOTS>, Esp32s31LowerMacError> {
-        let admitted = self.with_core(|core, hardware, _| core.submit_ampdu(hardware, attempt))?;
+        let queues = &self.queues;
+        let admitted = self.with_core(|core, hardware, _| {
+            owe_completion(queues, attempt, |attempt| {
+                core.submit_ampdu(hardware, attempt)
+            })
+        })?;
         // A publication starts its watchdog.
         self.wake.signal(());
         Ok(admitted)

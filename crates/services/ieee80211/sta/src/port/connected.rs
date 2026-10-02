@@ -453,7 +453,10 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
                 }
                 return Ok(None);
             }
+            // Frames in the gap are gone; a waiting exchange recovers its
+            // own completion through the router.
             PortInput::EventsLost => return Ok(None),
+            PortInput::Poisoned => return Err(PortLinkError::Poisoned),
         };
         let bytes = frame.bytes();
         if wire::address2(bytes) != Some(self.config.bssid) {

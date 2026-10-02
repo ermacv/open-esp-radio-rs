@@ -2,8 +2,6 @@
 
 use oer_ieee80211_mac::{channel::Channel, sequence::SequenceNumber};
 
-use crate::{failure::FailureClass, tx::TxId};
-
 /// A 48-bit IEEE MAC address in transmission order.
 pub type MacAddress = [u8; 6];
 
@@ -279,51 +277,4 @@ pub enum SettingError {
     Busy,
     /// A value lies outside the limits the backend's capabilities declare.
     Unsupported,
-}
-
-/// Lifecycle commands; each ends with a terminal event.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum LifecycleCommand {
-    /// Start receiving and admitting attempts; ends with
-    /// [`LifecycleEvent::Enabled`], or [`LifecycleEvent::Failed`].
-    Enable,
-    /// Stop admitting attempts, abort those in flight and stop receiving;
-    /// ends with [`LifecycleEvent::Disabled`] after the completion of every
-    /// admitted attempt.
-    Disable,
-    /// Stop admitting attempts and let those in flight complete; ends with
-    /// [`LifecycleEvent::Quiesced`] after the last completion. Enable
-    /// resumes admission.
-    Quiesce,
-    /// End one admitted attempt. The terminal event is the attempt's own
-    /// completion: [`TxStatus::Aborted`](crate::TxStatus::Aborted) for an
-    /// attempt the backend has not yet published, and for a published one
-    /// whatever it ends with, which may be its natural completion. Ending a
-    /// published attempt on the air is
-    /// [`LowerMacCancelPublished`](crate::LowerMacCancelPublished).
-    Cancel(TxId),
-}
-
-/// Terminal events of lifecycle commands.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum LifecycleEvent {
-    Enabled,
-    Disabled,
-    Quiesced,
-    /// An admitted command failed. A `Recoverable` failure leaves the port
-    /// in the state it was in before the command; a `Poisoned` one leaves
-    /// it unusable until a reset.
-    Failed {
-        command: LifecycleCommand,
-        class: FailureClass,
-    },
-}
-
-/// Why the backend refused a lifecycle command; nothing changed.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum LifecycleError {
-    /// The port is already in the requested state.
-    AlreadyInState,
-    /// No admitted attempt has this identity.
-    UnknownAttempt,
 }

@@ -100,12 +100,13 @@ use oer_esp32s31_ieee80211_mac::{
 };
 use oer_ieee80211_lower_mac::{
     AmpduBuffer, AmpduCapabilities, Backoff, BandSet, BeaconTimingCapabilities, BlockAckReport,
-    Channel, Cipher, CoexPriority, CoexPrioritySet, KeyHandle, KeyInstall, KeyScope, KeySelector,
-    LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacCapabilities, LowerMacSetting,
-    MacAddress, MonitorCapabilities, MpduAttempt, PhyFormatSet, PhyRate, Protection, RateSupport,
-    ReceiveFilter, Refused, RxBlockAckAgreement, RxMeta, SettingError, SubmitError, TbttEvent,
-    TbttSchedule, Tsf, TxBuffer, TxCompletion, TxFault, TxId, TxPayload, TxPower, TxResponse,
-    TxStatus, VifConfig, VifId, VifRole, VifRoleSet, WidthSet,
+    CancelError, Channel, Cipher, CoexPriority, CoexPrioritySet, FailureClass, KeyHandle,
+    KeyInstall, KeyScope, KeySelector, LifecycleCommand, LifecycleError, LifecycleEvent,
+    LowerMacCapabilities, LowerMacSetting, MacAddress, MonitorCapabilities, MpduAttempt,
+    PhyFormatSet, PhyRate, Protection, RateSupport, ReceiveFilter, Refused, RxBlockAckAgreement,
+    RxMeta, SettingError, SubmitError, TbttEvent, TbttSchedule, Tsf, TxBuffer, TxCompletion,
+    TxFault, TxId, TxPayload, TxPower, TxResponse, TxStatus, VifConfig, VifId, VifRole, VifRoleSet,
+    WidthSet,
 };
 use oer_ieee80211_mac::{
     channel::{Band, WifiChannel},
@@ -1091,10 +1092,8 @@ where
                     sink.lifecycle(LifecycleEvent::Enabled);
                     Ok(LifecycleStart::Admitted)
                 }
-                PortState::Enabling
-                | PortState::Enabled
-                | PortState::Quiescing
-                | PortState::Disabling => Err(LifecycleError::AlreadyInState),
+                PortState::Enabling | PortState::Enabled => Err(LifecycleError::AlreadyInState),
+                PortState::Quiescing | PortState::Disabling => Err(LifecycleError::Busy),
             },
             LifecycleCommand::Quiesce => match self.state {
                 PortState::Enabled => {
@@ -1102,11 +1101,10 @@ where
                     self.settle(sink);
                     Ok(LifecycleStart::Admitted)
                 }
-                PortState::Disabled
-                | PortState::Enabling
-                | PortState::Quiescing
-                | PortState::Quiesced
-                | PortState::Disabling => Err(LifecycleError::AlreadyInState),
+                PortState::Quiescing | PortState::Quiesced => Err(LifecycleError::AlreadyInState),
+                PortState::Disabled | PortState::Enabling | PortState::Disabling => {
+                    Err(LifecycleError::InvalidState)
+                }
             },
             LifecycleCommand::Disable => match self.state {
                 PortState::Enabled | PortState::Quiescing | PortState::Quiesced => {
@@ -1118,25 +1116,27 @@ where
                     self.settle(sink);
                     Ok(LifecycleStart::Admitted)
                 }
-                PortState::Disabled | PortState::Enabling | PortState::Disabling => {
-                    Err(LifecycleError::AlreadyInState)
-                }
+                PortState::Disabled | PortState::Disabling => Err(LifecycleError::AlreadyInState),
+                PortState::Enabling => Err(LifecycleError::Busy),
             },
-            LifecycleCommand::Cancel(id) => {
-                let Some(index) = self
-                    .queues
-                    .iter()
-                    .position(|attempt| attempt.as_ref().is_some_and(|attempt| attempt.id == id))
-                else {
-                    return Err(LifecycleError::UnknownAttempt);
-                };
-                // A published descriptor has no software abort on the S31:
-                // it ends with its own completion.
-                self.abort_held(index, sink);
-                self.settle(sink);
-                Ok(LifecycleStart::Admitted)
-            }
         }
+    }
+
+    /// End one admitted attempt: a held one at once as
+    /// [`TxStatus::Aborted`], a published one with its own completion.
+    pub fn cancel<K: LowerMacSink>(&mut self, id: TxId, sink: &mut K) -> Result<(), CancelError> {
+        let Some(index) = self
+            .queues
+            .iter()
+            .position(|attempt| attempt.as_ref().is_some_and(|attempt| attempt.id == id))
+        else {
+            return Err(CancelError::NotRunning);
+        };
+        // A published descriptor has no software abort on the S31: it ends
+        // with its own completion.
+        self.abort_held(index, sink);
+        self.settle(sink);
+        Ok(())
     }
 
     /// End a queue's held attempt with [`TxStatus::Aborted`]: it never
@@ -1177,7 +1177,7 @@ where
             self.state = PortState::Disabled;
             sink.lifecycle(LifecycleEvent::Failed {
                 command: LifecycleCommand::Enable,
-                class: oer_ieee80211_lower_mac::FailureClass::Recoverable,
+                class: FailureClass::Recoverable,
             });
             return;
         }

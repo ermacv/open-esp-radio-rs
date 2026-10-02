@@ -28,7 +28,7 @@ submission per attempt.
 
 | Item | Port it implements | Over the lower-MAC port |
 | --- | --- | --- |
-| `PortLink` | The single consumer of the port | Owns `next_event` and the `UpperMacTx` driver; events an exchange hands aside (received frames, TBTTs) wait in a bounded backlog that the next read returns first |
+| `PortLink` | The station's client of the port's `PortRouter` | Reads the router's receive, extension (TBTT) and lifecycle queues and transmits through `UpperMacTx` over the router; a loss is a `PortInput::EventsLost` input, the terminal poisoned event ends every phase with `PortLinkError::Poisoned` |
 | `PortScan` | `StaScanPort` | `LowerMacSetting::Channel` (a backend that retunes only while disabled answers `Busy` and is disabled, tuned and enabled again), the station filter `OTHER_BSS_MANAGEMENT` (or `LowerMacMonitor` through `with_monitor` when the filters lack it), a Probe Request per channel, beacons and Probe Responses into a `ScanTable` |
 | `PortJoin` | `StaJoinBackend` | Open System and SAE Authentication and Association Requests; receive is the station filter `BSS_MEMBER` with the access point's BSSID |
 | `PortHandshake`, `PortKeyInstall` | `RsnHandshakeBackend`, `RsnKeyInstallBackend` | EAPOL in data MPDUs; the pairwise and group CCMP-128 keys through `install_key` (`PortKeys`), removed again on a failed install; Message 4 in the clear or under the pairwise key |
@@ -45,9 +45,17 @@ Espressif step is a value of
 [`oer-espressif-ieee80211-policy`](../../../protocols/espressif/ieee80211/policy/README.md),
 which this crate does not depend on.
 
-All of one station runs in one task that owns its `PortLink`: phases take
-their inputs from it in turn, so no two consumers compete for the port's
-events and every completion reaches the exchange that waits for it.
+The port's one event consumer is its `PortRouter`, the `EventRouter` of
+`oer-ieee80211-upper-mac-service`, which the composition polls
+(`EventRouter::run`) beside the station and the backend's runner. All of
+one station runs in one task that owns its `PortLink`; the router hands
+every completion to the exchange that registered its identity and queues
+received frames (up to `PORT_BACKLOG`) and TBTTs until a phase reads them.
+After a loss, an exchange whose completion may be in the gap cancels its
+attempt and either receives the completion or ends with
+`UpperMacTxError::CompletionLost`; a lifecycle command whose terminal may be
+in the gap ends with `PortLinkError::LifecycleLost`. Received frames in the
+gap are gone and the connection goes on.
 
 The station reads a protected MPDU the backend reports as
 `DecryptedAndIntegrityVerified` with its CCMP header kept and without the

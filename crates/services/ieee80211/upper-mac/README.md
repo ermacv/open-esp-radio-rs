@@ -6,11 +6,29 @@ over any [lower-MAC port](../../../protocols/ieee80211/lower-mac/README.md).
 It is the only part of the transmit path that waits, and it waits only on
 the port, so it runs under any executor and against the host model.
 
-`UpperMacTx::new(port, vif, planner, first_id)` binds one interface.
-`send_mpdu(frame, key, request, ladder, entropy, other_event)` and, for a
-port with the `LowerMacAmpdu` extension,
+The port has exactly one event consumer: `EventRouter::new(port, first_id)`
+is that consumer, and its `run()` future, which the composition polls beside
+the backend's runner, takes every event and dispatches it:
+
+- a completion goes to the exchange that registered its `TxId`
+  (`register(id)` before the submission, `completion(id)`), so exchanges on
+  different access categories run concurrently over one port;
+- received frames and `RxTooLong` reports go to a bounded receive queue
+  (`received()`), lifecycle terminals to `lifecycle()` and extension events
+  such as TBTTs to `extension()`, each reporting its own `EventsLost` in
+  place of the first entry it dropped;
+- `EventsLost` from the port marks every exchange still waiting; the
+  exchange cancels its attempt by its identity and either receives the
+  completion or, when the cancel is refused as not running, learns from
+  `resolve(id)` whether the completion still came or was lost in the gap;
+- the terminal `Poisoned` event ends `run()` and every wait.
+
+`UpperMacTx::new(&router, vif, planner)` binds one interface; the router
+allocates attempt identities outside the backend-reserved range.
+`send_mpdu(frame, key, request, ladder, entropy)` and, for a port with the
+`LowerMacAmpdu` extension,
 `send_ampdu(AmpduFrames { subframes, key, min_mpdu_start_spacing }, request,
-ladder, entropy, other_event)` run one exchange to its `TxReport`:
+ladder, entropy)` run one exchange to its `TxReport`:
 
 1. the planner plans an attempt (`TxAttemptPlan`);
 2. the driver copies the caller's encoded MPDU, the selected subframes of
@@ -18,15 +36,15 @@ ladder, entropy, other_event)` run one exchange to its `TxReport`:
    addresses into a buffer the port lends, sets the Retry bit where the
    plan says so, and submits one `TxAttempt` with the plan's rate,
    protection, backoff, power and coexistence level;
-3. it awaits the port's events until the attempt's completion arrives,
-   handing every other event to `other_event`;
+3. it awaits the attempt's completion from the router;
 4. it feeds the completion and the port's radio time to the planner and
    repeats with the next plan until the exchange ends.
 
 The caller's frames are read-only: a retransmission is a fresh copy of the
 first encoding, so its sequence number and CCMP packet number repeat. A
-refusal, a missing buffer, lost events or a poisoned port end the exchange
-with an `UpperMacTxError`; a refused attempt's buffer goes back to the port.
+refusal, a missing buffer or router slot, a completion lost in a gap, a
+poisoned port or a port error end the exchange with an `UpperMacTxError`; a
+refused attempt's buffer goes back to the port.
 
 The portable station of `oer-ieee80211-sta-service` (`port`) sends every
 frame through it; the ESP32-S31 roles do not use it yet. Its tests run
@@ -34,5 +52,8 @@ it over `oer-ieee80211-lower-mac`'s host model (the `model` feature):
 delivery at the first attempt, ACK timeouts walking the rate ladder with the
 Retry bit up to the retry limit, a CTS timeout, a partial BlockAck resending
 only the missing subframes, a single missing subframe sent alone, the
-contention window over a seeded entropy source, and packet numbers across
-retries.
+contention window over a seeded entropy source, packet numbers across
+retries, two concurrent exchanges on different access categories with
+received frames between their completions, a loss recovered by cancelling
+the attempt in flight, a completion lost in the gap, and a poisoned port
+ending every exchange.

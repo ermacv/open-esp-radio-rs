@@ -16,21 +16,32 @@ unless the backend reports them in its `HardwareServices`.
 
 | Part | Items |
 | --- | --- |
-| Submission | `tx_buffer(len)` lends a `TxBuffer`; the caller encodes the MPDU into it and submits `TxAttempt<TxPayload<TxBuffer>>`: caller `TxId`, `VifId`, `WmmAccessCategory`, the buffer with its `TxResponse`, `PhyRate`, `Protection` (none, RTS/CTS, CTS-to-self), `KeySelector`, `TxPower`, `Backoff` and the attempt's `CoexPriority`. A refusal is `Refused { error: SubmitError, attempt }`: nothing is sent and the attempt comes back with its buffer. An unsubmitted buffer goes back through `release_tx_buffer` |
-| Events | `next_event` yields owned events viewed as `LowerMacEvent`: `Received { frame, RxMeta }`, `TxCompleted(TxCompletion)` with `TxStatus`, ACK RSSI and SNR and the `BlockAckReport` (starting sequence, bitmap) of a BlockAckReq or A-MPDU, lifecycle terminals, and `Extension` for an event an extension trait views. Overflow is reported once as `EventsLost` |
+| Submission | `tx_buffer(len)` lends a `TxBuffer` (`Ok(None)` when none is free, `Err` when the port cannot serve); the caller encodes the MPDU into it and submits `TxAttempt<TxPayload<TxBuffer>>`: caller `TxId`, `VifId`, `WmmAccessCategory`, the buffer with its `TxResponse`, `PhyRate`, `Protection` (none, RTS/CTS, CTS-to-self), `KeySelector`, `TxPower`, `Backoff` and the attempt's `CoexPriority`. A refusal is `Refused { error: SubmitError, attempt }`: nothing is sent and the attempt comes back with its buffer. An unsubmitted buffer goes back through `release_tx_buffer` |
+| Events | `next_event` yields owned events viewed as `LowerMacEvent`: `Received { frame, RxMeta }`, `TxCompleted(TxCompletion)` with `TxStatus`, ACK RSSI and SNR and the `BlockAckReport` (starting sequence, bitmap) of a BlockAckReq or A-MPDU, lifecycle terminals, `RxTooLong { length }` for a received MPDU longer than the backend's receive buffer, `Extension` for an event an extension trait views, and the terminal `Poisoned`. A loss is reported once as `EventsLost`, in place of the first dropped event |
 | Controls | `apply(LowerMacSetting)`: `Channel`, interface configuration (`VifConfig`: address, `VifRole`, BSSID, `ReceiveFilter`), key removal, receive Block Ack agreements and the global `TxGate`. `install_key` returns the `KeyHandle` attempts select |
 | Capabilities | `LowerMacCapabilities`, the parametric limits: bands, widths, rates, `HardwareServices`, interfaces, transmit queues, longest MPDU, largest backoff, lowest power ceiling, coexistence levels, the PPDU formats of unicast no-ACK frames, each role's receive rules, key slots and receive Block Ack limits |
-| Lifecycle | `Enable`, `Disable`, `Quiesce` and `Cancel(TxId)`, each with a terminal event; a failed command ends with `LifecycleEvent::Failed { command, class: FailureClass }` |
-| Clock | `now()` is the `oer_time::RadioInstant` of receive timestamps |
+| Lifecycle | `lifecycle(Enable / Disable / Quiesce)`, each with a terminal `LifecycleEvent`, and `cancel(TxId)`, whose terminal event is the attempt's completion; a failed command ends with `LifecycleEvent::Failed { command, class: FailureClass }` |
+| Clock | `now()` is the `oer_time::RadioInstant` of receive timestamps; `clock_info()` states its resolution and `RadioEpoch` |
 
-Every call but `next_event` is synchronous. Failures are `Rejected` (the inner
-`Err` of a call), `Recoverable` (`TxStatus::Aborted`, `TxStatus::Fault` or a
-`Recoverable` lifecycle failure) or `Poisoned` (`Err(Self::Error)`).
-`FailureClass` lives in this package until a second port reports lifecycle
-failures as events and a shared contract package takes it over.
+Every call but `next_event` is synchronous. The failure classes, `EventsLost`,
+`Poisoned`, the lifecycle vocabulary, `CancelError`, the `Correlation` trait
+`TxId` implements and `ClockInfo` are the shared ones of
+[`oer-radio-port`](../../../radio/port/README.md), re-exported here.
+Failures are `Rejected` (the inner `Err` of a call, or a `PortError` of that
+class, such as a backend that is not installed), `Recoverable`
+(`TxStatus::Aborted`, `TxStatus::Fault` or a `Recoverable` lifecycle
+failure) or `Poisoned` (`LowerMacEvent::Poisoned` after every earlier event,
+and an error of that class from every later call).
 
 Rules a caller relies on:
 
+- **Events.** The port has exactly one consumer of `next_event`. Several
+  exchanges share it through `oer-ieee80211-upper-mac-service`'s
+  `EventRouter`. Taking an event only dequeues it; a backend's timed work
+  runs in its own runner, which the composition polls beside the consumer.
+- **Loss.** After `EventsLost`, an attempt whose completion has not arrived
+  is recovered by `cancel(id)`: an admitted cancel produces its completion,
+  a refusal as `CancelError::NotRunning` proves that it ended.
 - **Queues.** Each of `tx_queues` transmit queues holds one attempt in flight;
   another attempt for the same queue is `Busy`. With four queues, queue `n`
   serves the access category of ACI `n`; with one, every category shares it
@@ -49,7 +60,7 @@ Rules a caller relies on:
   slice. A backend may refuse to close it while an attempt is published,
   because that attempt could end in a hardware timeout. Per-peer power-save
   buffering is software above the port.
-- **Cancel.** `Cancel(TxId)` guarantees the attempt's terminal event:
+- **Cancel.** `cancel(TxId)` guarantees the attempt's terminal event:
   `Aborted` for an attempt not yet published, and for a published one
   whatever it ends with, which may be its natural completion. Ending a
   published attempt on the air is `LowerMacCancelPublished`.
@@ -115,9 +126,9 @@ vendor stack are the family package `oer-espressif-ieee80211-policy`.
 | `oer-ieee80211-upper-mac-service` (`UpperMacTx`) | One frame exchange as a sequence of attempts of the transmit planner |
 | `oer-ieee80211-sta-service` (`port`) | The whole station: scan, Open System and SAE joins, the WPA2 handshake with `install_key`, the connected data plane with receive Block Ack agreements, SA Query and disconnection, and power save over `LowerMacBeaconTiming` and `TxGate`; `LowerMacMonitor` only for a scan whose station filters lack `OTHER_BSS_MANAGEMENT` |
 
-A user owns `next_event` in one task: the port has a single event
-consumer, and `UpperMacTx` hands every event that is not its exchange's
-completion back to its caller.
+The port has a single event consumer: `oer-ieee80211-upper-mac-service`'s
+`EventRouter`, which every `UpperMacTx` and the station's `PortLink` read
+from.
 
 ## Implementers
 
@@ -150,9 +161,13 @@ implements the port in two layers:
 - [`Esp32s31LowerMac`](../../../runtime/esp32s31/ieee80211/src/lower_mac.rs)
   in `oer-esp32s31-ieee80211-runtime` implements `Ieee80211LowerMacPort`,
   `LowerMacAmpdu` (for a core built with aggregate owners),
-  `LowerMacBeaconTiming` and `LowerMacMonitor` over the core: a bounded
-  owned-event queue, the MAC, power and receive interrupt entries, the
-  publication watchdog and the PHY retune of `Enable`.
+  `LowerMacBeaconTiming` and `LowerMacMonitor` over the core: one bounded
+  queue per kind of event (completions and lifecycle terminals that cannot
+  overflow, because the port refuses work whose terminal event would not
+  fit; TBTTs; received frames with their own loss report), the MAC, power
+  and receive interrupt entries, and the runner `Esp32s31LowerMac::run` with
+  the publication watchdog and the PHY retune of `Enable`. A poisoned port
+  parks its runner until a new install.
 
 The ESP32-S31 station and access-point roles do not use the port yet. Its
 operations map onto the S31 seams as follows:
@@ -180,7 +195,7 @@ operations map onto the S31 seams as follows:
 | `HardwareServices` | The hardware-owned operations of `ESP32S31_MAC_SERVICE_CAPABILITIES` in `mac/src/capabilities.rs` |
 
 A published attempt cannot be withdrawn: the S31 abort path needs the
-queue's hardware timeout edge, so `Cancel` ends a held attempt as `Aborted`
+queue's hardware timeout edge, so `cancel` ends a held attempt as `Aborted`
 and a published one with its own completion. What the ESP32-S31 lacks and
 why (HE and Trigger-based A-MPDU, the access-point TBTT schedule, the
 access-point TSF read and arbitrary set, on-air cancel, unicast no-ACK at HT

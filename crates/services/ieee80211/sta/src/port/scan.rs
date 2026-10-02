@@ -157,7 +157,7 @@ impl<X: PortStationEnv, const N: usize> StaScanPort for PortScan<'_, '_, X, N> {
         _context: StaScanChannelContext<Channel>,
     ) -> Result<(), Self::Error> {
         self.tick_deadline = None;
-        self.link.discard_backlog();
+        self.link.discard_backlog().await;
         if self.monitoring {
             self.set_monitor(true)
         } else {
@@ -228,8 +228,10 @@ impl<X: PortStationEnv, const N: usize> StaScanPort for PortScan<'_, '_, X, N> {
         let deadline = start.checked_add(self.tick).unwrap_or(start);
         self.tick_deadline = Some(deadline);
         while let Some(input) = self.link.next_input(self.timer, deadline).await {
-            if let PortInput::Frame(frame) = input {
-                self.observe(&frame);
+            match input {
+                PortInput::Frame(frame) => self.observe(&frame),
+                PortInput::Poisoned => return Err(PortLinkError::Poisoned),
+                PortInput::Tbtt(_) | PortInput::EventsLost => {}
             }
         }
         Ok(())

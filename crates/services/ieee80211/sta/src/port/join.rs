@@ -156,8 +156,10 @@ impl<X: PortStationEnv> StaJoinBackend for PortJoin<'_, '_, X> {
         O: StaJoinRxObserver + 'b,
     {
         while let Some(input) = self.link.try_input().await {
-            let PortInput::Frame(frame) = input else {
-                continue;
+            let frame = match input {
+                PortInput::Frame(frame) => frame,
+                PortInput::Poisoned => return Err(PortLinkError::Poisoned),
+                PortInput::Tbtt(_) | PortInput::EventsLost => continue,
             };
             let bytes = frame.bytes();
             let management = wire::is_management(bytes).then_some(bytes);

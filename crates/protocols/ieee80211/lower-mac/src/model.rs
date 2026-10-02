@@ -10,6 +10,8 @@
 //! soon as it is published, so a driver that awaits
 //! [`Ieee80211LowerMacPort::next_event`] runs without the test in between.
 //! [`LowerMacModel::submitted`] records what each admitted attempt carried.
+//! [`LowerMacModel::poison`] makes the backend's state unknown: the port
+//! reports its terminal event and refuses every later call.
 //!
 //! Built for the crate's own tests and, with the `model` feature, for the
 //! tests of packages that drive the port.
@@ -90,6 +92,8 @@ pub enum ModelEvent {
     Tx(TxCompletion),
     Tbtt(TbttEvent),
     Lifecycle(LifecycleEvent),
+    /// The terminal event of a poisoned model.
+    Poisoned,
 }
 
 /// A buffer of the model's bounded pool.
@@ -183,8 +187,12 @@ struct State {
     in_flight: Vec<InFlight>,
     buffers_lent: usize,
     ampdu_lent: usize,
-    events: VecDeque<ModelEvent>,
-    lost: bool,
+    /// Events in order, with a loss marker in place of the first event a
+    /// full queue dropped.
+    events: VecDeque<Result<ModelEvent, EventsLost>>,
+    /// Events the queue holds, loss markers apart.
+    queued: usize,
+    poisoned: bool,
     now: u64,
     responses: VecDeque<ModelOutcome>,
     submitted: Vec<SubmittedAttempt>,
@@ -192,11 +200,20 @@ struct State {
 
 impl State {
     fn push(&mut self, event: ModelEvent) {
-        if self.events.len() == MODEL_EVENT_CAPACITY {
-            self.lost = true;
-        } else {
-            self.events.push_back(event);
+        if self.queued < MODEL_EVENT_CAPACITY {
+            self.queued += 1;
+            self.events.push_back(Ok(event));
+        } else if !matches!(self.events.back(), Some(Err(EventsLost))) {
+            self.events.push_back(Err(EventsLost));
         }
+    }
+
+    fn pop(&mut self) -> Option<Result<ModelEvent, EventsLost>> {
+        let event = self.events.pop_front()?;
+        if event.is_ok() {
+            self.queued -= 1;
+        }
+        Some(event)
     }
 
     fn vif(&self, vif: VifId) -> Option<VifConfig> {
@@ -249,13 +266,36 @@ pub struct LowerMacModel {
     state: RefCell<State>,
 }
 
-/// The model never poisons.
+/// The model was poisoned with [`LowerMacModel::poison`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ModelPoisoned {}
+pub struct ModelPoisoned;
+
+impl PortError for ModelPoisoned {
+    fn class(&self) -> FailureClass {
+        FailureClass::Poisoned
+    }
+}
 
 impl LowerMacModel {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Make the backend's state unknown: the events queued so far are still
+    /// reported, then the terminal [`LowerMacEvent::Poisoned`] at every
+    /// [`Ieee80211LowerMacPort::next_event`], and every other call fails.
+    pub fn poison(&self) {
+        self.state.borrow_mut().poisoned = true;
+    }
+
+    /// Fail with [`ModelPoisoned`] once poisoned.
+    fn serving(&self) -> Result<core::cell::RefMut<'_, State>, ModelPoisoned> {
+        let state = self.state.borrow_mut();
+        if state.poisoned {
+            Err(ModelPoisoned)
+        } else {
+            Ok(state)
+        }
     }
 
     /// Deliver `frame` when an interface's filter or monitor reception
@@ -440,12 +480,9 @@ impl Future for NextModelEvent<'_> {
 
     fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
         let mut state = self.0.state.borrow_mut();
-        if state.lost {
-            state.lost = false;
-            return Poll::Ready(Err(EventsLost));
-        }
-        match state.events.pop_front() {
-            Some(event) => Poll::Ready(Ok(event)),
+        match state.pop() {
+            Some(event) => Poll::Ready(event),
+            None if state.poisoned => Poll::Ready(Ok(ModelEvent::Poisoned)),
             None => Poll::Pending,
         }
     }
@@ -462,6 +499,7 @@ impl Ieee80211LowerMacPort for LowerMacModel {
             ModelEvent::Tx(completion) => LowerMacEvent::TxCompleted(*completion),
             ModelEvent::Tbtt(_) => LowerMacEvent::Extension,
             ModelEvent::Lifecycle(event) => LowerMacEvent::Lifecycle(*event),
+            ModelEvent::Poisoned => LowerMacEvent::Poisoned(Poisoned),
         }
     }
 
@@ -469,15 +507,23 @@ impl Ieee80211LowerMacPort for LowerMacModel {
         MODEL_CAPABILITIES
     }
 
-    fn tx_buffer(&self, len: usize) -> Option<ModelBuffer> {
-        let mut state = self.state.borrow_mut();
+    /// The model's clock is a counter of its own readings.
+    fn clock_info(&self) -> ClockInfo {
+        ClockInfo {
+            resolution: oer_time::Duration::from_micros(1),
+            epoch: RadioEpoch::Unrelated,
+        }
+    }
+
+    fn tx_buffer(&self, len: usize) -> Result<Option<ModelBuffer>, ModelPoisoned> {
+        let mut state = self.serving()?;
         if len > usize::from(MODEL_CAPABILITIES.max_mpdu_length)
             || state.buffers_lent == MODEL_TX_BUFFERS
         {
-            return None;
+            return Ok(None);
         }
         state.buffers_lent += 1;
-        Some(ModelBuffer(vec![0; len]))
+        Ok(Some(ModelBuffer(vec![0; len])))
     }
 
     fn release_tx_buffer(&self, _buffer: ModelBuffer) {
@@ -488,6 +534,7 @@ impl Ieee80211LowerMacPort for LowerMacModel {
         &self,
         attempt: MpduAttempt<ModelBuffer>,
     ) -> SubmitResult<MpduAttempt<ModelBuffer>, ModelPoisoned> {
+        drop(self.serving()?);
         let frame = &attempt.payload.frame.0;
         let individual = frame.get(4).is_some_and(|byte| byte & 1 == 0);
         let refused = if frame.len() < 10 {
@@ -510,7 +557,7 @@ impl Ieee80211LowerMacPort for LowerMacModel {
     }
 
     fn apply(&self, setting: LowerMacSetting) -> Result<Result<(), SettingError>, ModelPoisoned> {
-        let mut state = self.state.borrow_mut();
+        let mut state = self.serving()?;
         Ok(match setting {
             LowerMacSetting::Channel(channel) if MODEL_CAPABILITIES.supports_channel(channel) => {
                 state.channel = Some(channel);
@@ -596,7 +643,7 @@ impl Ieee80211LowerMacPort for LowerMacModel {
         &self,
         key: KeyInstall<'_>,
     ) -> Result<Result<KeyHandle, SettingError>, ModelPoisoned> {
-        let mut state = self.state.borrow_mut();
+        let mut state = self.serving()?;
         if state.vif(key.vif).is_none() {
             return Ok(Err(SettingError::UnknownVif));
         }
@@ -614,7 +661,7 @@ impl Ieee80211LowerMacPort for LowerMacModel {
         &self,
         command: LifecycleCommand,
     ) -> Result<Result<(), LifecycleError>, ModelPoisoned> {
-        let mut state = self.state.borrow_mut();
+        let mut state = self.serving()?;
         Ok(match command {
             LifecycleCommand::Enable if state.enabled => Err(LifecycleError::AlreadyInState),
             LifecycleCommand::Enable if state.channel.is_none() => {
@@ -648,22 +695,26 @@ impl Ieee80211LowerMacPort for LowerMacModel {
                 ));
                 Ok(())
             }
-            LifecycleCommand::Cancel(id) => {
-                match state.in_flight.iter().position(|attempt| attempt.id == id) {
-                    // A published attempt ends with its own completion.
-                    Some(index) if state.in_flight[index].phase == Phase::Published => Ok(()),
-                    Some(index) => {
-                        state.finish(index, ModelOutcome::Fail(TxStatus::Aborted));
-                        Ok(())
-                    }
-                    None => Err(LifecycleError::UnknownAttempt),
-                }
-            }
         })
     }
 
+    fn cancel(&self, id: TxId) -> Result<Result<(), CancelError>, ModelPoisoned> {
+        let mut state = self.serving()?;
+        Ok(
+            match state.in_flight.iter().position(|attempt| attempt.id == id) {
+                // A published attempt ends with its own completion.
+                Some(index) if state.in_flight[index].phase == Phase::Published => Ok(()),
+                Some(index) => {
+                    state.finish(index, ModelOutcome::Fail(TxStatus::Aborted));
+                    Ok(())
+                }
+                None => Err(CancelError::NotRunning),
+            },
+        )
+    }
+
     fn now(&self) -> Result<RadioInstant, ModelPoisoned> {
-        let mut state = self.state.borrow_mut();
+        let mut state = self.serving()?;
         state.now += 1;
         Ok(RadioInstant::from_micros(state.now))
     }
@@ -676,13 +727,13 @@ impl LowerMacAmpdu for LowerMacModel {
         MODEL_AMPDU
     }
 
-    fn ampdu_buffer(&self) -> Option<ModelAmpdu> {
-        let mut state = self.state.borrow_mut();
+    fn ampdu_buffer(&self) -> Result<Option<ModelAmpdu>, ModelPoisoned> {
+        let mut state = self.serving()?;
         if state.ampdu_lent == MODEL_AMPDU_BUFFERS {
-            return None;
+            return Ok(None);
         }
         state.ampdu_lent += 1;
-        Some(ModelAmpdu::default())
+        Ok(Some(ModelAmpdu::default()))
     }
 
     fn release_ampdu_buffer(&self, _buffer: ModelAmpdu) {
@@ -693,6 +744,7 @@ impl LowerMacAmpdu for LowerMacModel {
         &self,
         attempt: AmpduAttempt<ModelAmpdu>,
     ) -> SubmitResult<AmpduAttempt<ModelAmpdu>, ModelPoisoned> {
+        drop(self.serving()?);
         let subframes = &attempt.payload.subframes.0;
         let refused = match subframes.first().and_then(|first| first.get(22..24)) {
             None => Err(SubmitError::InvalidLength),
@@ -743,7 +795,7 @@ impl LowerMacBeaconTiming for LowerMacModel {
     }
 
     fn tsf(&self, vif: VifId) -> Result<Result<Tsf, SettingError>, ModelPoisoned> {
-        let state = self.state.borrow();
+        let state = self.serving()?;
         Ok(match state.vif(vif) {
             Some(_) => Ok(state.tsf[usize::from(vif.0)]),
             None => Err(SettingError::UnknownVif),
@@ -751,7 +803,7 @@ impl LowerMacBeaconTiming for LowerMacModel {
     }
 
     fn set_tsf(&self, vif: VifId, tsf: Tsf) -> Result<Result<(), SettingError>, ModelPoisoned> {
-        let mut state = self.state.borrow_mut();
+        let mut state = self.serving()?;
         Ok(match state.vif(vif) {
             Some(_) => {
                 state.tsf[usize::from(vif.0)] = tsf;
@@ -767,7 +819,7 @@ impl LowerMacBeaconTiming for LowerMacModel {
         _schedule: Option<TbttSchedule>,
     ) -> Result<Result<(), SettingError>, ModelPoisoned> {
         let capabilities = self.beacon_timing_capabilities();
-        Ok(match self.state.borrow().vif(vif) {
+        Ok(match self.serving()?.vif(vif) {
             Some(config) if capabilities.tbtt.contains(config.role) => Ok(()),
             Some(_) => Err(SettingError::Unsupported),
             None => Err(SettingError::UnknownVif),
@@ -790,21 +842,21 @@ impl LowerMacMonitor for LowerMacModel {
     }
 
     fn set_monitor(&self, enabled: bool) -> Result<Result<(), SettingError>, ModelPoisoned> {
-        self.state.borrow_mut().monitor = enabled;
+        self.serving()?.monitor = enabled;
         Ok(Ok(()))
     }
 }
 
 impl LowerMacCancelPublished for LowerMacModel {
-    fn cancel_published(&self, id: TxId) -> Result<Result<(), LifecycleError>, ModelPoisoned> {
-        let mut state = self.state.borrow_mut();
+    fn cancel_published(&self, id: TxId) -> Result<Result<(), CancelError>, ModelPoisoned> {
+        let mut state = self.serving()?;
         Ok(
             match state.in_flight.iter().position(|attempt| attempt.id == id) {
                 Some(index) => {
                     state.finish(index, ModelOutcome::Fail(TxStatus::Aborted));
                     Ok(())
                 }
-                None => Err(LifecycleError::UnknownAttempt),
+                None => Err(CancelError::NotRunning),
             },
         )
     }

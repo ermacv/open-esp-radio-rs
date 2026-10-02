@@ -1,4 +1,5 @@
-//! The one owner of the lower-MAC port's events and transmissions.
+//! The station's client of the lower-MAC port's event router, and its
+//! transmit driver.
 
 use core::{
     future::{Future, poll_fn},
@@ -22,7 +23,17 @@ use oer_ieee80211_softmac::BackoffEntropy;
 use oer_ieee80211_upper_mac::{
     HeTxopRtsBudget, MpduRequest, RateLadder, TxBody, TxPlanner, TxReceiver, TxReport, TxRequest,
 };
+pub use oer_ieee80211_upper_mac_service::EventRouter;
 use oer_ieee80211_upper_mac_service::{UpperMacTx, UpperMacTxError};
+
+/// Exchanges of the station that wait for a completion at once.
+pub const PORT_EXCHANGES: usize = 2;
+
+/// The event router of a station's port: the one consumer of the port's
+/// events, which the composition polls ([`EventRouter::run`]) beside the
+/// station and the backend's runner.
+pub type PortRouter<'p, X> =
+    EventRouter<'p, <X as PortStationEnv>::Port, PORT_EXCHANGES, PORT_BACKLOG>;
 use oer_time::{Instant, Timer};
 
 /// The types one station over the port is built from.
@@ -66,7 +77,7 @@ pub struct PortStationConfig {
 
 /// Octets of one received MPDU the station keeps.
 pub const PORT_FRAME_CAPACITY: usize = 2_352;
-/// Inputs the station keeps while it waits for its own transmission.
+/// Received frames the router keeps for the station.
 pub const PORT_BACKLOG: usize = 4;
 
 const FCS_LEN: u32 = 4;
@@ -108,56 +119,18 @@ pub enum PortInput {
     /// A TBTT of the station's interface, reported through
     /// [`LowerMacBeaconTiming`].
     Tbtt(TbttEvent),
-    /// The port lost events.
+    /// The port lost events: received frames or TBTTs in the gap are gone.
+    /// The station goes on; an exchange recovers its own completion.
     EventsLost,
-}
-
-/// Inputs that arrived while the station waited for a completion.
-struct Backlog {
-    entries: [Option<PortInput>; PORT_BACKLOG],
-    head: usize,
-    len: usize,
-}
-
-impl Backlog {
-    const fn new() -> Self {
-        Self {
-            entries: [const { None }; PORT_BACKLOG],
-            head: 0,
-            len: 0,
-        }
-    }
-
-    fn push(&mut self, input: PortInput, counters: &mut PortLinkCounters) {
-        if self.len == PORT_BACKLOG {
-            counters.backlog_overflows = counters.backlog_overflows.saturating_add(1);
-            return;
-        }
-        self.entries[(self.head + self.len) % PORT_BACKLOG] = Some(input);
-        self.len += 1;
-    }
-
-    fn pop(&mut self) -> Option<PortInput> {
-        if self.len == 0 {
-            return None;
-        }
-        let input = self.entries[self.head].take();
-        self.head = (self.head + 1) % PORT_BACKLOG;
-        self.len -= 1;
-        input
-    }
-
-    fn clear(&mut self) {
-        while self.pop().is_some() {}
-    }
+    /// The port reported its terminal poisoned event: the station stops.
+    Poisoned,
 }
 
 /// What the station dropped at the port boundary.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct PortLinkCounters {
-    /// Inputs that arrived during a transmission while the backlog was full.
-    pub backlog_overflows: u32,
-    /// Received MPDUs longer than [`PORT_FRAME_CAPACITY`].
+    /// Received MPDUs longer than [`PORT_FRAME_CAPACITY`] or the backend's
+    /// receive buffer.
     pub oversized_frames: u32,
     /// Reports of lost port events.
     pub events_lost: u32,
@@ -176,6 +149,11 @@ pub enum PortLinkError<E> {
     Lifecycle(LifecycleError),
     /// A lifecycle command failed.
     LifecycleFailed(FailureClass),
+    /// The port lost events while a lifecycle command ran, its terminal
+    /// event possibly among them.
+    LifecycleLost,
+    /// The port reported its terminal poisoned event.
+    Poisoned,
     /// A frame did not encode.
     Frame(StationFrameError),
     /// An Association Request did not encode.
@@ -217,55 +195,46 @@ impl<P: LowerMacBeaconTiming> BeaconTimingOps<P> {
     }
 }
 
-/// Poll `future` once: its output, or `None` while it is pending.
-pub(crate) async fn poll_once<F: Future>(future: F) -> Option<F::Output> {
-    let mut future = pin!(future);
-    poll_fn(|context| {
-        Poll::Ready(match future.as_mut().poll(context) {
-            Poll::Ready(output) => Some(output),
-            Poll::Pending => None,
-        })
-    })
-    .await
-}
-
-/// The station's single consumer of the port.
+/// The station's client of the port.
 ///
-/// The link is the one owner of [`Ieee80211LowerMacPort::next_event`] and
-/// of the [`UpperMacTx`] exchange driver: every phase runs in the task that
-/// owns it and takes inputs from it in turn. While an exchange waits for its
-/// completion, the received frames and TBTTs it hands aside are kept in a
-/// bounded backlog, which the next input read returns first, in arrival
-/// order.
+/// The port's one event consumer is its [`PortRouter`]; the link reads the
+/// router's queues and transmits through an [`UpperMacTx`] over it, so the
+/// station never competes with the router for the port's events. Received
+/// frames wait in the router's receive queue (a TBTT in its extension
+/// queue) while an exchange waits for its completion. Every phase runs in
+/// the task that owns the link; the composition polls [`EventRouter::run`]
+/// beside it.
+///
+/// A loss the router reports is a [`PortInput::EventsLost`]; an exchange
+/// whose completion fell into the gap cancels its attempt, as the router
+/// contract states. The terminal poisoned event ends every operation with
+/// [`PortLinkError::Poisoned`] or [`PortInput::Poisoned`].
 pub struct PortLink<'p, X: PortStationEnv> {
-    port: &'p X::Port,
-    tx: UpperMacTx<'p, X::Port, X::Budget>,
+    router: &'p PortRouter<'p, X>,
+    tx: UpperMacTx<'p, 'p, X::Port, X::Budget, PORT_EXCHANGES, PORT_BACKLOG>,
     ladder: X::Ladder,
     entropy: X::Entropy,
     config: PortStationConfig,
-    backlog: Backlog,
     beacon_timing: Option<BeaconTimingOps<X::Port>>,
     counters: PortLinkCounters,
 }
 
 impl<'p, X: PortStationEnv> PortLink<'p, X> {
-    /// A link of `config.vif` over `port` whose attempt identities start at
-    /// `first_tx_id`.
+    /// A link of `config.vif` over the port of `router`, which allocates
+    /// the attempt identities.
     pub fn new(
-        port: &'p X::Port,
+        router: &'p PortRouter<'p, X>,
         planner: TxPlanner<X::Budget>,
         ladder: X::Ladder,
         entropy: X::Entropy,
         config: PortStationConfig,
-        first_tx_id: u32,
     ) -> Self {
         Self {
-            port,
-            tx: UpperMacTx::new(port, config.vif, planner, first_tx_id),
+            router,
+            tx: UpperMacTx::new(router, config.vif, planner),
             ladder,
             entropy,
             config,
-            backlog: Backlog::new(),
             beacon_timing: None,
             counters: PortLinkCounters::default(),
         }
@@ -281,8 +250,12 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         self
     }
 
-    pub const fn port(&self) -> &'p X::Port {
-        self.port
+    pub fn port(&self) -> &'p X::Port {
+        self.router.port()
+    }
+
+    pub const fn router(&self) -> &'p PortRouter<'p, X> {
+        self.router
     }
 
     pub const fn config(&self) -> &PortStationConfig {
@@ -297,7 +270,9 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         self.beacon_timing
     }
 
-    pub fn tx_mut(&mut self) -> &mut UpperMacTx<'p, X::Port, X::Budget> {
+    pub fn tx_mut(
+        &mut self,
+    ) -> &mut UpperMacTx<'p, 'p, X::Port, X::Budget, PORT_EXCHANGES, PORT_BACKLOG> {
         &mut self.tx
     }
 
@@ -340,33 +315,23 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
             tx,
             ladder,
             entropy,
-            backlog,
-            beacon_timing,
-            counters,
             ..
         } = self;
-        let tbtt = beacon_timing.map(|ops| ops.tbtt);
-        tx.send_mpdu(frame, key, request, ladder, entropy, |event| {
-            if let Some(input) = classify::<X::Port>(event, tbtt, counters) {
-                backlog.push(input, counters);
-            }
-        })
-        .await
-        .map_err(PortLinkError::Tx)
+        match tx.send_mpdu(frame, key, request, ladder, entropy).await {
+            Ok(report) => Ok(report),
+            Err(UpperMacTxError::Poisoned) => Err(PortLinkError::Poisoned),
+            Err(error) => Err(PortLinkError::Tx(error)),
+        }
     }
 
-    /// The next input that is already there: the backlog first, then the
-    /// port's ready events. It never waits.
+    /// The next input the router already holds: a TBTT first, then a
+    /// received frame. It never waits.
     pub async fn try_input(&mut self) -> Option<PortInput> {
-        if let Some(input) = self.backlog.pop() {
-            return Some(input);
-        }
-        loop {
-            let event = poll_once(self.port.next_event()).await?;
-            if let Some(input) = self.input(event) {
-                return Some(input);
-            }
-        }
+        poll_fn(|context| match self.poll_input(context) {
+            Poll::Ready(input) => Poll::Ready(input),
+            Poll::Pending => Poll::Ready(None),
+        })
+        .await
     }
 
     /// The next input, or `None` once `deadline` passed with none ready.
@@ -375,57 +340,90 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         timer: &T,
         deadline: Instant,
     ) -> Option<PortInput> {
-        if let Some(input) = self.backlog.pop() {
-            return Some(input);
-        }
-        let port = self.port;
         let mut wait = pin!(timer.wait_until(deadline));
-        loop {
-            let event = {
-                let mut next = pin!(port.next_event());
-                poll_fn(|context| {
-                    if let Poll::Ready(event) = next.as_mut().poll(context) {
-                        return Poll::Ready(Some(event));
-                    }
-                    if wait.as_mut().poll(context).is_ready() {
-                        return Poll::Ready(None);
-                    }
-                    Poll::Pending
-                })
-                .await
-            }?;
-            if let Some(input) = self.input(event) {
-                return Some(input);
+        poll_fn(|context| {
+            if let Poll::Ready(input) = self.poll_input(context) {
+                return Poll::Ready(input);
             }
+            if wait.as_mut().poll(context).is_ready() {
+                return Poll::Ready(None);
+            }
+            Poll::Pending
+        })
+        .await
+    }
+
+    /// Poll the router's extension and receive queues once; `Ready(None)`
+    /// never occurs, a poisoned port is [`PortInput::Poisoned`].
+    fn poll_input(&mut self, context: &mut core::task::Context<'_>) -> Poll<Option<PortInput>> {
+        loop {
+            let router = self.router;
+            let tbtt = self.beacon_timing.map(|ops| ops.tbtt);
+            if let Some(view) = tbtt {
+                match pin!(router.extension()).poll(context) {
+                    Poll::Ready(Some(Ok(event))) => {
+                        if let Some(tbtt) = view(&event) {
+                            return Poll::Ready(Some(PortInput::Tbtt(tbtt)));
+                        }
+                        continue;
+                    }
+                    Poll::Ready(Some(Err(EventsLost))) => {
+                        return Poll::Ready(Some(self.lost()));
+                    }
+                    Poll::Ready(None) => return Poll::Ready(Some(PortInput::Poisoned)),
+                    Poll::Pending => {}
+                }
+            }
+            return match pin!(router.received()).poll(context) {
+                Poll::Ready(Some(Ok(event))) => match self.frame(&event) {
+                    Some(input) => Poll::Ready(Some(input)),
+                    None => continue,
+                },
+                Poll::Ready(Some(Err(EventsLost))) => Poll::Ready(Some(self.lost())),
+                Poll::Ready(None) => Poll::Ready(Some(PortInput::Poisoned)),
+                Poll::Pending => Poll::Pending,
+            };
         }
     }
 
-    /// Drop every kept input, as a new phase that must not see an earlier
-    /// phase's frames does.
-    pub fn discard_backlog(&mut self) {
-        self.backlog.clear();
+    fn lost(&mut self) -> PortInput {
+        self.counters.events_lost = self.counters.events_lost.saturating_add(1);
+        PortInput::EventsLost
     }
 
-    fn input(
-        &mut self,
-        event: Result<<X::Port as Ieee80211LowerMacPort>::Event, EventsLost>,
-    ) -> Option<PortInput> {
-        match event {
-            Err(EventsLost) => {
-                self.counters.events_lost = self.counters.events_lost.saturating_add(1);
-                Some(PortInput::EventsLost)
+    /// The station's copy of a received frame; `None` for one it cannot
+    /// hold.
+    fn frame(&mut self, event: &<X::Port as Ieee80211LowerMacPort>::Event) -> Option<PortInput> {
+        match <X::Port as Ieee80211LowerMacPort>::view(event) {
+            LowerMacEvent::Received { frame, meta } => match PortFrame::copy(frame, meta) {
+                Some(frame) => Some(PortInput::Frame(frame)),
+                None => {
+                    self.counters.oversized_frames =
+                        self.counters.oversized_frames.saturating_add(1);
+                    None
+                }
+            },
+            LowerMacEvent::RxTooLong { .. } => {
+                self.counters.oversized_frames = self.counters.oversized_frames.saturating_add(1);
+                None
             }
-            Ok(event) => classify::<X::Port>(
-                &event,
-                self.beacon_timing.map(|ops| ops.tbtt),
-                &mut self.counters,
-            ),
+            _ => None,
+        }
+    }
+
+    /// Drop every input the router already holds, as a new phase that must
+    /// not see an earlier phase's frames does.
+    pub async fn discard_backlog(&mut self) {
+        while let Some(input) = self.try_input().await {
+            if let PortInput::Poisoned = input {
+                return;
+            }
         }
     }
 
     /// Apply one setting.
     pub fn apply(&self, setting: LowerMacSetting) -> Result<(), PortLinkError<PortError<X>>> {
-        self.port
+        self.port()
             .apply(setting)
             .map_err(PortLinkError::Port)?
             .map_err(PortLinkError::Setting)
@@ -462,52 +460,28 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         }
     }
 
-    /// Run one lifecycle command to its terminal event.
+    /// Run one lifecycle command to its terminal event, which the router
+    /// queues for the link.
     pub async fn lifecycle(
         &mut self,
         command: LifecycleCommand,
     ) -> Result<(), PortLinkError<PortError<X>>> {
-        self.port
+        self.port()
             .lifecycle(command)
             .map_err(PortLinkError::Port)?
             .map_err(PortLinkError::Lifecycle)?;
-        loop {
-            let Ok(event) = self.port.next_event().await else {
+        match self.router.lifecycle().await {
+            Some(Ok(LifecycleEvent::Failed { class, .. })) => {
+                Err(PortLinkError::LifecycleFailed(class))
+            }
+            Some(Ok(_)) => Ok(()),
+            // A lifecycle command has no identity to cancel: its terminal
+            // may be in the gap.
+            Some(Err(EventsLost)) => {
                 self.counters.events_lost = self.counters.events_lost.saturating_add(1);
-                continue;
-            };
-            match <X::Port as Ieee80211LowerMacPort>::view(&event) {
-                LowerMacEvent::Lifecycle(LifecycleEvent::Failed { class, .. }) => {
-                    return Err(PortLinkError::LifecycleFailed(class));
-                }
-                LowerMacEvent::Lifecycle(_) => return Ok(()),
-                _ => {
-                    let tbtt = self.beacon_timing.map(|ops| ops.tbtt);
-                    if let Some(input) = classify::<X::Port>(&event, tbtt, &mut self.counters) {
-                        self.backlog.push(input, &mut self.counters);
-                    }
-                }
+                Err(PortLinkError::LifecycleLost)
             }
+            None => Err(PortLinkError::Poisoned),
         }
-    }
-}
-
-/// The station's view of one port event; `None` for an event it does not
-/// consume here (a completion of no running exchange, a lifecycle event).
-fn classify<P: Ieee80211LowerMacPort>(
-    event: &P::Event,
-    tbtt: Option<fn(&P::Event) -> Option<TbttEvent>>,
-    counters: &mut PortLinkCounters,
-) -> Option<PortInput> {
-    match P::view(event) {
-        LowerMacEvent::Received { frame, meta } => match PortFrame::copy(frame, meta) {
-            Some(frame) => Some(PortInput::Frame(frame)),
-            None => {
-                counters.oversized_frames = counters.oversized_frames.saturating_add(1);
-                None
-            }
-        },
-        LowerMacEvent::Extension => tbtt.and_then(|view| view(event)).map(PortInput::Tbtt),
-        LowerMacEvent::TxCompleted(_) | LowerMacEvent::Lifecycle(_) => None,
     }
 }

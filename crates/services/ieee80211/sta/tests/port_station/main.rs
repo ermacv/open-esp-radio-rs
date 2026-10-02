@@ -49,9 +49,9 @@ use oer_ieee80211_sta::{
 };
 use oer_ieee80211_sta_service::{
     port::{
-        PortDisconnect, PortLink, PortProbe, PortScan, PortScanTarget, PortSend, PortStation,
-        PortStationApplication, PortStationConfig, PortStationEnv, PortStationLifecycle,
-        PortStationProfile,
+        EventRouter, PortDisconnect, PortLink, PortLinkError, PortProbe, PortRouter, PortScan,
+        PortScanTarget, PortSend, PortStation, PortStationApplication, PortStationConfig,
+        PortStationEnv, PortStationLifecycle, PortStationProfile,
     },
     scan::{StaCandidateScanService, StaScanBackend},
     station::StaLifecycleService,
@@ -59,6 +59,7 @@ use oer_ieee80211_sta_service::{
 use oer_ieee80211_upper_mac::{
     AmpduRetryPolicy, FixedRate, ProtectEveryHeTxop, ProtectionPolicy, RetryLimits, TxPlanner,
 };
+use oer_ieee80211_upper_mac_service::UpperMacTxError;
 use oer_time::{Clock, Duration, Instant, Timer};
 
 use scripted_ap::{AP, AP_CHANNEL, ApSecurity, PASSPHRASE, RATES, SNONCE, SSID, STA, ScriptedAp};
@@ -174,9 +175,10 @@ fn sae_random() -> u32 {
     x
 }
 
-/// The model, tuned and enabled, and the virtual clock.
+/// The model, tuned and enabled, its event router and the virtual clock.
 struct World {
-    model: LowerMacModel,
+    model: &'static LowerMacModel,
+    router: &'static PortRouter<'static, Env<'static>>,
     timer: VirtualTimer,
 }
 
@@ -190,8 +192,10 @@ impl World {
         model.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
         // Every published attempt succeeds at once.
         model.respond(core::iter::repeat_n(ModelOutcome::Success, 100_000));
+        let model: &'static LowerMacModel = Box::leak(Box::new(model));
         Self {
             model,
+            router: Box::leak(Box::new(EventRouter::new(model, 1))),
             timer: VirtualTimer {
                 now: Cell::new(1_000),
                 wanted: Cell::new(None),
@@ -199,9 +203,9 @@ impl World {
         }
     }
 
-    fn link(&self) -> PortLink<'_, Env<'_>> {
+    fn link(&self) -> PortLink<'static, Env<'_>> {
         PortLink::new(
-            &self.model,
+            self.router,
             TxPlanner::new(
                 [EdcaContention::new(4, 10); 4],
                 RetryLimits::IEEE_DEFAULT,
@@ -225,7 +229,6 @@ impl World {
                 coex: CoexPriority::Normal,
                 retry_limit: 7,
             },
-            1,
         )
     }
 
@@ -244,15 +247,33 @@ impl World {
     /// advances to the earliest deadline anyone waits for.
     fn drive<F: Future>(&self, ap: &mut ScriptedAp, future: F) -> F::Output {
         let mut future = pin!(future);
+        // The port's one event consumer, beside the station.
+        let mut routing = pin!(self.router.run());
         let mut context = Context::from_waker(Waker::noop());
+        let mut quiet = false;
         for _ in 0..1_000_000 {
             self.timer.wanted.set(None);
             if let Poll::Ready(output) = future.as_mut().poll(&mut context) {
                 return output;
             }
-            if ap.step(&self.model, self.timer.now.get()) {
+            if routing.as_mut().poll(&mut context).is_ready() {
+                // The router ended on the terminal poisoned event; the
+                // station learns of it at its next poll.
+                routing.set(self.router.run());
                 continue;
             }
+            if ap.step(&self.model, self.timer.now.get()) {
+                quiet = false;
+                continue;
+            }
+            // The router may have answered a wait the station registered
+            // after its poll (an idle port it waits to observe): poll once
+            // more before moving time.
+            if !quiet {
+                quiet = true;
+                continue;
+            }
+            quiet = false;
             let wanted = self.timer.wanted.get();
             let next = match (wanted, ap.next_beacon_micros) {
                 (Some(a), Some(b)) => a.min(b),
@@ -821,12 +842,14 @@ fn the_lifecycle_rejoins_the_same_access_point_after_a_deauthentication_body() {
     let exit = {
         let future = service.run(world.station(open()));
         let mut future = pin!(future);
+        let mut routing = pin!(world.router.run());
         let mut context = Context::from_waker(Waker::noop());
         loop {
             world.timer.wanted.set(None);
             if let Poll::Ready(exit) = future.as_mut().poll(&mut context) {
                 break exit;
             }
+            assert!(routing.as_mut().poll(&mut context).is_pending());
             // The access point ends the first association once it is up.
             if !sent_deauthentication && connections.get() == 1 {
                 let deauthentication = ap.deauthentication(1);
@@ -856,4 +879,118 @@ fn the_lifecycle_rejoins_the_same_access_point_after_a_deauthentication_body() {
     assert_eq!(ap.probe_requests.len(), 3);
     assert_eq!(ap.associations, 2);
     assert!(ap.deauthenticated);
+}
+
+/// Route every earlier event and drop what the station has not read, then
+/// deliver `frames` to the model at once, past its event queue.
+fn burst<'a>(
+    world: &'a World,
+    ap: &mut ScriptedAp,
+    station: &mut PortStation<'a, Env<'a>>,
+    frames: Vec<Vec<u8>>,
+) {
+    let mut routing = pin!(world.router.run());
+    assert!(
+        routing
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    assert_eq!(world.model.queued_events(), 0);
+    world.drive(ap, station.link_mut().discard_backlog());
+    for frame in frames {
+        world.model.receive(&frame, scripted_ap::meta(false));
+    }
+}
+
+#[test]
+fn a_receive_loss_is_skipped_and_the_connection_goes_on() {
+    on_large_stack(a_receive_loss_is_skipped_and_the_connection_goes_on_body);
+}
+
+fn a_receive_loss_is_skipped_and_the_connection_goes_on_body() {
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    let mut station = connect(&world, &mut ap, world.station(open()));
+    // Six frames at once: the model's queue holds four, then a loss.
+    let frames = (0..6)
+        .map(|index| ap.data(None, None, false, IPV4, &[b'a' + index; 16], PEER))
+        .collect();
+    burst(&world, &mut ap, &mut station, frames);
+    let mut delivered = Vec::new();
+    for _ in 0..20 {
+        assert_eq!(
+            world.run_for(&mut ap, &mut station, 5, &mut delivered),
+            None
+        );
+    }
+    // The four frames before the gap are delivered; the two in it are gone.
+    assert_eq!(delivered.len(), 4);
+    assert!(station.link().counters().events_lost >= 1);
+
+    // The station goes on receiving and sending after the gap.
+    let frame = ap.data(None, None, false, IPV4, b"after", PEER);
+    ap.queue(frame);
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 5, &mut delivered),
+        None
+    );
+    assert_eq!(&delivered.last().unwrap()[14..], b"after");
+    assert!(matches!(
+        world.drive(&mut ap, station.send(&ethernet(PEER, IPV4, b"up"), 0)),
+        Ok(PortSend::Sent(_))
+    ));
+}
+
+#[test]
+fn a_completion_lost_in_a_gap_fails_the_send_and_the_next_one_goes_out() {
+    on_large_stack(a_completion_lost_in_a_gap_fails_the_send_and_the_next_one_goes_out_body);
+}
+
+fn a_completion_lost_in_a_gap_fails_the_send_and_the_next_one_goes_out_body() {
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    let mut station = connect(&world, &mut ap, world.station(open()));
+    // The model's queue is full when the data frame's completion arrives:
+    // the completion falls into the gap. The station cancels its attempt,
+    // which already ended, and the exchange ends without a report.
+    let frames = (0..5)
+        .map(|index| ap.data(None, None, false, IPV4, &[b'a' + index], PEER))
+        .collect();
+    burst(&world, &mut ap, &mut station, frames);
+    let sent = world.drive(&mut ap, station.send(&ethernet(PEER, IPV4, b"lost"), 0));
+    assert!(
+        matches!(
+            sent,
+            Err(PortLinkError::Tx(UpperMacTxError::CompletionLost { .. }))
+        ),
+        "the completion in the gap is reported lost"
+    );
+    let sent = world.drive(&mut ap, station.send(&ethernet(PEER, IPV4, b"next"), 0));
+    assert!(matches!(sent, Ok(PortSend::Sent(_))));
+}
+
+#[test]
+fn a_poisoned_port_ends_the_connection_and_every_send() {
+    on_large_stack(a_poisoned_port_ends_the_connection_and_every_send_body);
+}
+
+fn a_poisoned_port_ends_the_connection_and_every_send_body() {
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    let mut station = connect(&world, &mut ap, world.station(open()));
+    world.model.poison();
+    let deadline = world
+        .timer
+        .now()
+        .checked_add(Duration::from_millis(5))
+        .unwrap();
+    let ran = world.drive(&mut ap, station.run_until(deadline, &mut |_| {}));
+    assert!(matches!(ran, Err(PortLinkError::Poisoned)));
+    assert!(world.router.poisoned());
+    let sent = world.drive(&mut ap, station.send(&ethernet(PEER, IPV4, b"late"), 0));
+    let Err(PortLinkError::Tx(UpperMacTxError::Port(error))) = sent else {
+        panic!("a send fails on the poisoned port");
+    };
+    assert!(oer_ieee80211_lower_mac::PortError::is_poisoned(&error));
 }

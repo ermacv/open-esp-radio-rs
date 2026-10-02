@@ -9,7 +9,7 @@
 //!
 //! | Item | Implements | Over the port |
 //! | --- | --- | --- |
-//! | [`PortLink`] | The single consumer of the port's events and its transmit driver | `next_event`, `submit` through `UpperMacTx`, `apply`, `lifecycle` |
+//! | [`PortLink`] | The station's client of the port's [`PortRouter`] and its transmit driver | The router's receive, extension and lifecycle queues, `submit` through `UpperMacTx`, `apply`, `lifecycle`, `cancel` after a loss |
 //! | [`PortScan`] | `StaScanPort`, run by `StaScanBackend` and `StaCandidateScanService` | `Channel`, the `OTHER_BSS_MANAGEMENT` filter or `LowerMacMonitor`, Probe Requests |
 //! | [`PortJoin`] | `StaJoinBackend`, run by `StaJoinRunner` | Open System and SAE Authentication, Association, the `BSS_MEMBER` filter |
 //! | [`PortHandshake`], [`PortKeyInstall`] | `RsnHandshakeBackend`, `RsnKeyInstallBackend` | EAPOL frames, `install_key` of the pairwise and group keys |
@@ -18,9 +18,14 @@
 //! | [`PortStation`], [`PortAttemptPort`] | `StaAttemptPort`, run by `StaAttempt` | All of the above, in order |
 //! | [`PortStationLifecycle`] | `StaLifecycleBackend`, run by `StaLifecycleService` | Attempts, the connection, backoff |
 //!
-//! The station consumes the port from one task: [`PortLink`] owns
-//! `next_event` and the transmit driver, and every phase takes its inputs
-//! from it in turn, so no two consumers compete for the port's events.
+//! The port's one event consumer is its [`PortRouter`]
+//! (`oer-ieee80211-upper-mac-service`'s `EventRouter`), which the
+//! composition polls beside the station; the station runs in one task and
+//! [`PortLink`] reads the router's queues and transmits through it, so no
+//! two consumers compete for the port's events. A loss is an
+//! [`PortInput::EventsLost`] input, and an exchange whose completion was in
+//! the gap cancels its attempt; the terminal poisoned event ends every phase
+//! with [`PortLinkError::Poisoned`].
 
 mod connected;
 mod join;
@@ -37,8 +42,9 @@ pub use connected::{
 };
 pub use join::{PortAssociation, PortJoin};
 pub use link::{
-    BeaconTimingOps, PORT_BACKLOG, PORT_FRAME_CAPACITY, PortError, PortFrame, PortInput, PortLink,
-    PortLinkCounters, PortLinkError, PortStationConfig, PortStationEnv,
+    BeaconTimingOps, EventRouter, PORT_BACKLOG, PORT_EXCHANGES, PORT_FRAME_CAPACITY, PortError,
+    PortFrame, PortInput, PortLink, PortLinkCounters, PortLinkError, PortRouter, PortStationConfig,
+    PortStationEnv,
 };
 pub use power::PortPowerSave;
 pub use rsn::{PortHandshake, PortKeyInstall, PortKeys};

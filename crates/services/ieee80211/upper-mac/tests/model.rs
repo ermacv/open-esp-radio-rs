@@ -3,7 +3,7 @@
 //! submitted and reported.
 
 use core::{
-    future::Future,
+    future::{Future, poll_fn},
     pin::pin,
     task::{Context, Poll, Waker},
 };
@@ -14,6 +14,7 @@ use oer_ieee80211_lower_mac::{
     TxResponse, TxStatus, VifConfig, VifId, VifRole,
     model::{LowerMacModel, ModelOutcome},
 };
+use oer_ieee80211_lower_mac::{LowerMacEvent, RxMeta};
 use oer_ieee80211_mac::{
     ccmp::{CcmpHeader, CcmpKeyId, CcmpPacketNumberStep, CcmpTxPacketNumber},
     phy::{LegacyRate, PhyRate},
@@ -26,7 +27,7 @@ use oer_ieee80211_upper_mac::{
     ProtectionPolicy, RateLadder, RetryLimits, RtsLengthThreshold, TxBody, TxPlanner, TxReceiver,
     TxReport, TxRequest,
 };
-use oer_ieee80211_upper_mac_service::{AmpduFrames, UpperMacTx, UpperMacTxError};
+use oer_ieee80211_upper_mac_service::{AmpduFrames, EventRouter, UpperMacTx, UpperMacTxError};
 use oer_time::RadioInstant;
 
 const STATION: VifId = VifId(0);
@@ -108,9 +109,32 @@ const LIMITS: RetryLimits = RetryLimits {
     ack_failure: AckFailureAccounting::Short,
 };
 
-fn driver(model: &LowerMacModel) -> UpperMacTx<'_, LowerMacModel, ProtectEveryHeTxop> {
+/// The router of a test: four waiting exchanges, four received frames.
+type Router<'m> = EventRouter<'m, LowerMacModel, 4, 4>;
+
+type Driver<'r, 'm> = UpperMacTx<'r, 'm, LowerMacModel, ProtectEveryHeTxop, 4, 4>;
+
+/// Run `exchange` while the router takes the port's events, as a
+/// composition polls the router beside its exchanges.
+async fn exchange<T>(router: &Router<'_>, exchange: impl Future<Output = T>) -> T {
+    let mut exchange = pin!(exchange);
+    let mut routing = pin!(router.run());
+    poll_fn(|context| {
+        if let Poll::Ready(output) = exchange.as_mut().poll(context) {
+            return Poll::Ready(output);
+        }
+        assert!(
+            routing.as_mut().poll(context).is_pending(),
+            "the model was poisoned"
+        );
+        Poll::Pending
+    })
+    .await
+}
+
+fn driver<'r, 'm>(router: &'r Router<'m>) -> Driver<'r, 'm> {
     UpperMacTx::new(
-        model,
+        router,
         STATION,
         TxPlanner::new(
             [EdcaContention::new(4, 7); 4],
@@ -124,7 +148,6 @@ fn driver(model: &LowerMacModel) -> UpperMacTx<'_, LowerMacModel, ProtectEveryHe
             ProtectionPolicy::new(Some(RtsLengthThreshold::new(500))),
             ProtectEveryHeTxop,
         ),
-        100,
     )
 }
 
@@ -160,21 +183,22 @@ fn retry_bit(frame: &[u8]) -> bool {
     frame[1] & 0x08 != 0
 }
 
-fn ignore<E>(_: &E) {}
-
 #[test]
 fn a_frame_acknowledged_at_the_first_attempt_is_sent_once() {
     let model = enabled_station();
-    let mut tx = driver(&model);
+    let router = Router::new(&model, 100);
+    let mut tx = driver(&router);
     let frame = qos_data(7, [3, 0, 0, 0x20, 0, 0, 0, 0], 40);
     model.respond([ModelOutcome::Success]);
-    let report = run(tx.send_mpdu(
-        &frame,
-        KeySelector::Plaintext,
-        mpdu_request(&frame, 4),
-        &Ladder,
-        &mut Seeded(1),
-        ignore,
+    let report = run(exchange(
+        &router,
+        tx.send_mpdu(
+            &frame,
+            KeySelector::Plaintext,
+            mpdu_request(&frame, 4),
+            &Ladder,
+            &mut Seeded(1),
+        ),
     ))
     .unwrap();
     let TxReport::Mpdu(status) = report else {
@@ -195,16 +219,19 @@ fn a_frame_acknowledged_at_the_first_attempt_is_sent_once() {
 #[test]
 fn a_missing_ack_retries_down_the_ladder_with_the_retry_bit_until_the_limit() {
     let model = enabled_station();
-    let mut tx = driver(&model);
+    let router = Router::new(&model, 100);
+    let mut tx = driver(&router);
     let frame = qos_data(8, [6, 0, 0, 0x20, 0, 0, 0, 0], 40);
     model.respond([ModelOutcome::Fail(TxStatus::AckTimeout); 3]);
-    let report = run(tx.send_mpdu(
-        &frame,
-        KeySelector::Plaintext,
-        mpdu_request(&frame, 3),
-        &Ladder,
-        &mut Seeded(1),
-        ignore,
+    let report = run(exchange(
+        &router,
+        tx.send_mpdu(
+            &frame,
+            KeySelector::Plaintext,
+            mpdu_request(&frame, 3),
+            &Ladder,
+            &mut Seeded(1),
+        ),
     ))
     .unwrap();
     let TxReport::Mpdu(status) = report else {
@@ -230,20 +257,23 @@ fn a_missing_ack_retries_down_the_ladder_with_the_retry_bit_until_the_limit() {
 #[test]
 fn a_cts_timeout_resends_under_the_same_protection_without_the_retry_bit() {
     let model = enabled_station();
-    let mut tx = driver(&model);
+    let router = Router::new(&model, 100);
+    let mut tx = driver(&router);
     // Longer than the 500-octet RTS threshold.
     let frame = qos_data(9, [9, 0, 0, 0x20, 0, 0, 0, 0], 600);
     model.respond([
         ModelOutcome::Fail(TxStatus::CtsTimeout),
         ModelOutcome::Success,
     ]);
-    let report = run(tx.send_mpdu(
-        &frame,
-        KeySelector::Plaintext,
-        mpdu_request(&frame, 4),
-        &Ladder,
-        &mut Seeded(1),
-        ignore,
+    let report = run(exchange(
+        &router,
+        tx.send_mpdu(
+            &frame,
+            KeySelector::Plaintext,
+            mpdu_request(&frame, 4),
+            &Ladder,
+            &mut Seeded(1),
+        ),
     ))
     .unwrap();
     let TxReport::Mpdu(status) = report else {
@@ -291,7 +321,8 @@ fn ampdu_request(frames: &[Vec<u8>], first_sequence: u16) -> TxRequest {
 #[test]
 fn a_partial_block_ack_resends_only_the_unacknowledged_subframes() {
     let model = enabled_station();
-    let mut tx = driver(&model);
+    let router = Router::new(&model, 100);
+    let mut tx = driver(&router);
     let frames: Vec<Vec<u8>> = (0..4)
         .map(|index| {
             qos_data(
@@ -310,16 +341,18 @@ fn a_partial_block_ack_resends_only_the_unacknowledged_subframes() {
         }),
         ModelOutcome::Success,
     ]);
-    let report = run(tx.send_ampdu(
-        AmpduFrames {
-            subframes: &slices,
-            key: KeySelector::Plaintext,
-            min_mpdu_start_spacing: 0,
-        },
-        ampdu_request(&frames, 200),
-        &Ladder,
-        &mut Seeded(1),
-        ignore,
+    let report = run(exchange(
+        &router,
+        tx.send_ampdu(
+            AmpduFrames {
+                subframes: &slices,
+                key: KeySelector::Plaintext,
+                min_mpdu_start_spacing: 0,
+            },
+            ampdu_request(&frames, 200),
+            &Ladder,
+            &mut Seeded(1),
+        ),
     ))
     .unwrap();
     let TxReport::Ampdu(status) = report else {
@@ -347,7 +380,8 @@ fn a_partial_block_ack_resends_only_the_unacknowledged_subframes() {
 #[test]
 fn one_unacknowledged_subframe_is_resent_alone() {
     let model = enabled_station();
-    let mut tx = driver(&model);
+    let router = Router::new(&model, 100);
+    let mut tx = driver(&router);
     let frames: Vec<Vec<u8>> = (0..3)
         .map(|index| qos_data(10 + index, [0; 8], 30))
         .collect();
@@ -359,16 +393,18 @@ fn one_unacknowledged_subframe_is_resent_alone() {
         }),
         ModelOutcome::Success,
     ]);
-    let report = run(tx.send_ampdu(
-        AmpduFrames {
-            subframes: &slices,
-            key: KeySelector::Plaintext,
-            min_mpdu_start_spacing: 0,
-        },
-        ampdu_request(&frames, 10),
-        &Ladder,
-        &mut Seeded(1),
-        ignore,
+    let report = run(exchange(
+        &router,
+        tx.send_ampdu(
+            AmpduFrames {
+                subframes: &slices,
+                key: KeySelector::Plaintext,
+                min_mpdu_start_spacing: 0,
+            },
+            ampdu_request(&frames, 10),
+            &Ladder,
+            &mut Seeded(1),
+        ),
     ))
     .unwrap();
     let TxReport::Ampdu(status) = report else {
@@ -392,7 +428,8 @@ fn slots(backoff: Backoff) -> u16 {
 #[test]
 fn the_contention_window_doubles_on_failures_and_resets_after_the_frame() {
     let model = enabled_station();
-    let mut tx = driver(&model);
+    let router = Router::new(&model, 100);
+    let mut tx = driver(&router);
     let frame = qos_data(1, [0; 8], 40);
     let seed = Seeded(0x1234_5678);
     let mut entropy = seed.clone();
@@ -403,13 +440,15 @@ fn the_contention_window_doubles_on_failures_and_resets_after_the_frame() {
         ModelOutcome::Success,
     ]);
     for _ in 0..2 {
-        run(tx.send_mpdu(
-            &frame,
-            KeySelector::Plaintext,
-            mpdu_request(&frame, 4),
-            &Ladder,
-            &mut entropy,
-            ignore,
+        run(exchange(
+            &router,
+            tx.send_mpdu(
+                &frame,
+                KeySelector::Plaintext,
+                mpdu_request(&frame, 4),
+                &Ladder,
+                &mut entropy,
+            ),
         ))
         .unwrap();
     }
@@ -438,7 +477,8 @@ fn the_contention_window_doubles_on_failures_and_resets_after_the_frame() {
 #[test]
 fn a_retry_repeats_its_packet_number_and_the_next_frame_takes_a_higher_one() {
     let model = enabled_station();
-    let mut tx = driver(&model);
+    let router = Router::new(&model, 100);
+    let mut tx = driver(&router);
     let mut packet_numbers = CcmpTxPacketNumber::new(CcmpPacketNumberStep::ONE);
     let first = qos_data(
         20,
@@ -456,13 +496,15 @@ fn a_retry_repeats_its_packet_number_and_the_next_frame_takes_a_higher_one() {
         ModelOutcome::Success,
     ]);
     for frame in [&first, &second] {
-        run(tx.send_mpdu(
-            frame,
-            KeySelector::Plaintext,
-            mpdu_request(frame, 4),
-            &Ladder,
-            &mut Seeded(7),
-            ignore,
+        run(exchange(
+            &router,
+            tx.send_mpdu(
+                frame,
+                KeySelector::Plaintext,
+                mpdu_request(frame, 4),
+                &Ladder,
+                &mut Seeded(7),
+            ),
         ))
         .unwrap();
     }
@@ -489,15 +531,18 @@ fn a_retry_repeats_its_packet_number_and_the_next_frame_takes_a_higher_one() {
 #[test]
 fn a_refused_attempt_releases_its_buffer_and_reports_the_refusal() {
     let model = LowerMacModel::new();
-    let mut tx = driver(&model);
+    let router = Router::new(&model, 100);
+    let mut tx = driver(&router);
     let frame = qos_data(1, [0; 8], 40);
-    let result = run(tx.send_mpdu(
-        &frame,
-        KeySelector::Plaintext,
-        mpdu_request(&frame, 4),
-        &Ladder,
-        &mut Seeded(1),
-        ignore,
+    let result = run(exchange(
+        &router,
+        tx.send_mpdu(
+            &frame,
+            KeySelector::Plaintext,
+            mpdu_request(&frame, 4),
+            &Ladder,
+            &mut Seeded(1),
+        ),
     ));
     assert_eq!(
         result,
@@ -506,4 +551,228 @@ fn a_refused_attempt_releases_its_buffer_and_reports_the_refusal() {
         ))
     );
     assert_eq!(model.buffers_lent(), 0);
+}
+
+/// A data frame from the peer to the station, admitted by its filter.
+fn received_frame() -> [u8; 24] {
+    let mut frame = [0_u8; 24];
+    frame[0] = 0x08;
+    frame[1] = 0x02;
+    frame[4..10].copy_from_slice(&ADDRESS);
+    frame[10..16].copy_from_slice(&PEER);
+    frame[16..22].copy_from_slice(&PEER);
+    frame
+}
+
+fn receive(model: &LowerMacModel) {
+    model.receive(
+        &received_frame(),
+        RxMeta::unavailable(Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap()),
+    );
+}
+
+fn request_on(frame: &[u8], access_category: WmmAccessCategory) -> TxRequest {
+    TxRequest {
+        access_category,
+        ..mpdu_request(frame, 4)
+    }
+}
+
+fn queue(access_category: WmmAccessCategory) -> u8 {
+    oer_ieee80211_lower_mac::model::MODEL_CAPABILITIES.tx_queue(access_category)
+}
+
+/// Poll `future` once without an executor.
+fn poll_once<F: Future>(future: core::pin::Pin<&mut F>) -> Poll<F::Output> {
+    future.poll(&mut Context::from_waker(Waker::noop()))
+}
+
+#[test]
+fn concurrent_exchanges_on_two_access_categories_keep_their_own_completions() {
+    let model = enabled_station();
+    let router = Router::new(&model, 100);
+    let mut best_effort = driver(&router);
+    let mut voice = driver(&router);
+    let be_frame = qos_data(30, [1, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let vo_frame = qos_data(31, [2, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let mut entropy_1 = Seeded(1);
+    let mut be = pin!(best_effort.send_mpdu(
+        &be_frame,
+        KeySelector::Plaintext,
+        request_on(&be_frame, WmmAccessCategory::BestEffort),
+        &Ladder,
+        &mut entropy_1,
+    ));
+    let mut entropy_2 = Seeded(2);
+    let mut vo = pin!(voice.send_mpdu(
+        &vo_frame,
+        KeySelector::Plaintext,
+        request_on(&vo_frame, WmmAccessCategory::Voice),
+        &Ladder,
+        &mut entropy_2,
+    ));
+    let mut routing = pin!(router.run());
+    let mut received = 0;
+    macro_rules! step {
+        ($be:expr, $vo:expr) => {{
+            let be = poll_once($be.as_mut());
+            let vo = poll_once($vo.as_mut());
+            assert!(poll_once(routing.as_mut()).is_pending());
+            (be, vo)
+        }};
+    }
+
+    // Both attempts are in flight on their own queues.
+    assert!(matches!(step!(be, vo), (Poll::Pending, Poll::Pending)));
+    assert_eq!(model.in_flight(), 2);
+
+    // Received frames and the voice completion arrive while best effort
+    // still waits: neither exchange takes the other's completion.
+    receive(&model);
+    model.complete(queue(WmmAccessCategory::Voice), TxStatus::AckTimeout);
+    receive(&model);
+    assert!(matches!(step!(be, vo), (Poll::Pending, Poll::Pending)));
+    // The voice exchange retries after its failed attempt; best effort
+    // still waits for its own completion.
+    assert!(matches!(step!(be, vo), (Poll::Pending, Poll::Pending)));
+    assert_eq!(model.in_flight(), 2);
+    model.complete(queue(WmmAccessCategory::BestEffort), TxStatus::Success);
+    model.complete(queue(WmmAccessCategory::Voice), TxStatus::Success);
+    assert!(matches!(step!(be, vo), (Poll::Pending, Poll::Pending)));
+    let Poll::Ready(be_report) = poll_once(be.as_mut()) else {
+        panic!("best effort completes");
+    };
+    let Poll::Ready(vo_report) = poll_once(vo.as_mut()) else {
+        panic!("voice completes");
+    };
+    let (Ok(TxReport::Mpdu(be_status)), Ok(TxReport::Mpdu(vo_status))) = (be_report, vo_report)
+    else {
+        panic!("two MPDU reports");
+    };
+    assert_eq!(
+        (be_status.result, be_status.attempts),
+        (MacTxResult::Transmitted, 1)
+    );
+    assert_eq!(
+        (vo_status.result, vo_status.attempts),
+        (MacTxResult::Transmitted, 2)
+    );
+    assert_eq!(router.unclaimed_completions(), 0);
+
+    // The received frames waited in the router's receive queue.
+    for _ in 0..2 {
+        let Poll::Ready(Some(Ok(event))) = poll_once(pin!(router.received())) else {
+            panic!("a received frame");
+        };
+        assert!(matches!(
+            LowerMacModel::view(&event),
+            LowerMacEvent::Received { .. }
+        ));
+        received += 1;
+    }
+    assert_eq!(received, 2);
+    assert!(poll_once(pin!(router.received())).is_pending());
+}
+
+#[test]
+fn a_loss_is_recovered_by_cancelling_the_attempt_in_flight() {
+    let model = enabled_station();
+    let router = Router::new(&model, 100);
+    let mut tx = driver(&router);
+    let frame = qos_data(40, [5, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let mut entropy_3 = Seeded(1);
+    let mut send = pin!(tx.send_mpdu(
+        &frame,
+        KeySelector::Plaintext,
+        mpdu_request(&frame, 4),
+        &Ladder,
+        &mut entropy_3,
+    ));
+    let mut routing = pin!(router.run());
+    assert!(poll_once(send.as_mut()).is_pending());
+    // A receive burst overflows the port's queue while the attempt flies.
+    for _ in 0..6 {
+        receive(&model);
+    }
+    assert!(poll_once(routing.as_mut()).is_pending());
+    // The exchange learns of the loss and cancels its published attempt,
+    // which ends with its own completion.
+    assert!(poll_once(send.as_mut()).is_pending());
+    model.complete(0, TxStatus::Success);
+    assert!(poll_once(routing.as_mut()).is_pending());
+    let Poll::Ready(Ok(TxReport::Mpdu(status))) = poll_once(send.as_mut()) else {
+        panic!("the exchange recovers its completion");
+    };
+    assert_eq!(status.result, MacTxResult::Transmitted);
+    // The receive queue reports its own loss after the frames it kept.
+    let mut frames = 0;
+    loop {
+        match poll_once(pin!(router.received())) {
+            Poll::Ready(Some(Ok(_))) => frames += 1,
+            Poll::Ready(Some(Err(_))) => break,
+            other => panic!("unexpected {other:?}", other = other.is_pending()),
+        }
+    }
+    assert_eq!(frames, 4);
+}
+
+#[test]
+fn a_completion_lost_in_the_gap_ends_the_exchange_without_a_report() {
+    let model = enabled_station();
+    let router = Router::new(&model, 100);
+    let mut tx = driver(&router);
+    let frame = qos_data(41, [6, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let mut entropy_4 = Seeded(1);
+    let mut send = pin!(tx.send_mpdu(
+        &frame,
+        KeySelector::Plaintext,
+        mpdu_request(&frame, 4),
+        &Ladder,
+        &mut entropy_4,
+    ));
+    let mut routing = pin!(router.run());
+    assert!(poll_once(send.as_mut()).is_pending());
+    for _ in 0..6 {
+        receive(&model);
+    }
+    // The completion falls into the gap.
+    model.complete(0, TxStatus::Success);
+    let result = run(poll_fn(|context| {
+        if let Poll::Ready(result) = send.as_mut().poll(context) {
+            return Poll::Ready(result);
+        }
+        assert!(routing.as_mut().poll(context).is_pending());
+        Poll::Pending
+    }));
+    assert_eq!(
+        result,
+        Err(UpperMacTxError::CompletionLost {
+            attempt: oer_ieee80211_lower_mac::TxId(100)
+        })
+    );
+}
+
+#[test]
+fn a_poisoned_port_ends_every_exchange() {
+    let model = enabled_station();
+    let router = Router::new(&model, 100);
+    let mut tx = driver(&router);
+    let frame = qos_data(42, [7, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let mut entropy_5 = Seeded(1);
+    let mut send = pin!(tx.send_mpdu(
+        &frame,
+        KeySelector::Plaintext,
+        mpdu_request(&frame, 4),
+        &Ladder,
+        &mut entropy_5,
+    ));
+    let mut routing = pin!(router.run());
+    assert!(poll_once(send.as_mut()).is_pending());
+    model.poison();
+    assert!(poll_once(routing.as_mut()).is_ready());
+    assert!(router.poisoned());
+    assert_eq!(
+        poll_once(send.as_mut()),
+        Poll::Ready(Err(UpperMacTxError::Poisoned))
+    );
 }

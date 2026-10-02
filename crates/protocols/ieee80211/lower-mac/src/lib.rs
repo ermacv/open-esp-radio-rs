@@ -20,6 +20,10 @@
 //! refused as `Unsupported`; why a backend lacks a feature is recorded in
 //! its qualification catalog.
 //!
+//! Failure classes, event loss and poisoning, the lifecycle vocabulary,
+//! correlation identities and the clock relation are the shared ones of
+//! `oer-radio-port`, re-exported here.
+//!
 //! The PHY and channel values the port carries ([`Channel`], [`PhyRate`])
 //! are the portable ones of `oer-ieee80211-mac`. This package only declares
 //! the port and its values; it never waits on it.
@@ -27,7 +31,6 @@
 pub mod capabilities;
 pub mod control;
 pub mod extensions;
-pub mod failure;
 pub mod port;
 pub mod rx;
 pub mod tx;
@@ -41,17 +44,19 @@ pub use capabilities::{
     WidthSet,
 };
 pub use control::{
-    Cipher, KeyHandle, KeyInstall, KeyScope, LifecycleCommand, LifecycleError, LifecycleEvent,
-    LowerMacSetting, MacAddress, ReceiveFilter, RxBlockAckAgreement, SettingError, VifConfig,
-    VifId, VifRole, VifRoleSet,
+    Cipher, KeyHandle, KeyInstall, KeyScope, LowerMacSetting, MacAddress, ReceiveFilter,
+    RxBlockAckAgreement, SettingError, VifConfig, VifId, VifRole, VifRoleSet,
 };
 pub use extensions::{
     AmpduAttempt, AmpduBuffer, AmpduCapabilities, AmpduPayload, BeaconTimingCapabilities,
     LowerMacAmpdu, LowerMacBeaconTiming, LowerMacCancelPublished, LowerMacMonitor,
     MonitorCapabilities, TbttEvent, TbttSchedule, Tsf,
 };
-pub use failure::FailureClass;
-pub use port::{EventsLost, Ieee80211LowerMacPort, LowerMacEvent, MpduAttempt, SubmitResult};
+pub use oer_radio_port::{
+    CancelError, ClockInfo, Correlation, CorrelationIds, EventsLost, FailureClass,
+    LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned, PortError, RadioEpoch,
+};
+pub use port::{Ieee80211LowerMacPort, LowerMacEvent, MpduAttempt, SubmitResult};
 pub use rx::{RxCryptoStatus, RxEvidence, RxMeta};
 pub use tx::{
     Backoff, BlockAckReport, KeySelector, Protection, Refused, SubmitError, TxAttempt, TxBuffer,

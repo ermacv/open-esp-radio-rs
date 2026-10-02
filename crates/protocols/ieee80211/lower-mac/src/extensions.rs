@@ -7,9 +7,11 @@
 //! at all. Each extension states its own parametric limits. Why a backend
 //! lacks a feature is recorded in its qualification catalog, not in code.
 
+use oer_radio_port::CancelError;
+
 use crate::{
     capabilities::PhyFormatSet,
-    control::{LifecycleError, SettingError, VifId, VifRoleSet},
+    control::{SettingError, VifId, VifRoleSet},
     port::{Ieee80211LowerMacPort, SubmitResult},
     tx::TxId,
 };
@@ -69,8 +71,8 @@ pub trait LowerMacAmpdu: Ieee80211LowerMacPort {
 
     fn ampdu_capabilities(&self) -> AmpduCapabilities;
 
-    /// Lend an aggregate buffer; `None` when every one is in use.
-    fn ampdu_buffer(&self) -> Option<Self::AmpduBuffer>;
+    /// Lend an aggregate buffer; `Ok(None)` when every one is in use.
+    fn ampdu_buffer(&self) -> Result<Option<Self::AmpduBuffer>, Self::Error>;
 
     /// Take back an aggregate buffer the caller will not submit.
     fn release_ampdu_buffer(&self, buffer: Self::AmpduBuffer);
@@ -175,5 +177,5 @@ pub trait LowerMacCancelPublished: Ieee80211LowerMacPort {
     /// Its terminal event is its completion,
     /// [`TxStatus::Aborted`](crate::TxStatus::Aborted) unless it had already
     /// completed; the medium may have carried part of it.
-    fn cancel_published(&self, id: TxId) -> Result<Result<(), LifecycleError>, Self::Error>;
+    fn cancel_published(&self, id: TxId) -> Result<Result<(), CancelError>, Self::Error>;
 }

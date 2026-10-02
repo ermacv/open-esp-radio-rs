@@ -24,6 +24,16 @@ use crate::control::{KeyHandle, VifId};
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct TxId(pub u32);
 
+impl oer_radio_port::Correlation for TxId {
+    fn from_raw(raw: u32) -> Self {
+        Self(raw)
+    }
+
+    fn raw(self) -> u32 {
+        self.0
+    }
+}
+
 /// Memory for one encoded MPDU, lent by the backend.
 ///
 /// The buffer holds exactly the length it was requested with. The caller

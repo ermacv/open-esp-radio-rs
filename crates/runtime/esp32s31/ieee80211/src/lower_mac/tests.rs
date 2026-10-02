@@ -33,9 +33,9 @@ use oer_esp32s31_ieee80211_mac::{
 };
 use oer_ieee80211_lower_mac::{
     AmpduBuffer, AmpduPayload, Backoff, BlockAckReport, Channel, ChannelWidth, CoexPriority,
-    FailureClass, KeySelector, MacAddress, PhyFormatSet, PhyRate, Protection, ReceiveFilter,
-    SubmitError, TxAttempt, TxBuffer, TxId, TxPayload, TxPower, TxResponse, TxStatus, VifConfig,
-    VifRole,
+    FailureClass, KeySelector, MacAddress, PhyFormatSet, PhyRate, PortError, Protection,
+    ReceiveFilter, SubmitError, TxAttempt, TxBuffer, TxId, TxPayload, TxPower, TxResponse,
+    TxStatus, VifConfig, VifRole,
 };
 use oer_ieee80211_mac::{
     phy::{HtMcs, HtRate, LegacyRate, PpduBandwidth},
@@ -321,6 +321,19 @@ fn slot() -> Pin<&'static mut TxSlot<512>> {
 }
 
 fn install(port: &Port, accept_retune: bool) -> &'static std::sync::Mutex<Vec<WifiChannel>> {
+    install_core(port, accept_retune, 250_000)
+}
+
+/// Install with an already expired publication watchdog.
+fn install_with_timeout(port: &Port, publication_timeout_micros: u64) {
+    install_core(port, true, publication_timeout_micros);
+}
+
+fn install_core(
+    port: &Port,
+    accept_retune: bool,
+    publication_timeout_micros: u64,
+) -> &'static std::sync::Mutex<Vec<WifiChannel>> {
     let tuned = std::boxed::Box::leak(std::boxed::Box::new(std::sync::Mutex::new(Vec::new())));
     let core = LowerMacCore::new(
         OrdinaryTxOwner::new(WifiTxResources {
@@ -334,7 +347,7 @@ fn install(port: &Port, accept_retune: bool) -> &'static std::sync::Mutex<Vec<Wi
         LowerMacConfig {
             station_address: STATION,
             channel: WifiChannel::mhz20(6).unwrap(),
-            publication_timeout_micros: 250_000,
+            publication_timeout_micros,
         },
     );
     assert!(
@@ -362,9 +375,21 @@ fn install(port: &Port, accept_retune: bool) -> &'static std::sync::Mutex<Vec<Wi
     tuned
 }
 
+/// Take the next event while polling the port's runner beside it, as a
+/// composition does.
+fn take<P: Ieee80211LowerMacPort>(
+    port: &P,
+    run: impl Future<Output = Infallible>,
+) -> Result<P::Event, EventsLost> {
+    match block_on(embassy_futures::select::select(port.next_event(), run)) {
+        embassy_futures::select::Either::First(event) => event,
+        embassy_futures::select::Either::Second(never) => match never {},
+    }
+}
+
 fn next_owned(port: &Port) -> Result<&'static Esp32s31LowerMacEvent<64>, EventsLost> {
     // Views borrow the owned event; tests compare leaked copies.
-    block_on(port.next_event()).map(|event| &*std::boxed::Box::leak(std::boxed::Box::new(event)))
+    take(port, port.run()).map(|event| &*std::boxed::Box::leak(std::boxed::Box::new(event)))
 }
 
 fn next(port: &Port) -> Result<LowerMacEvent<'static>, EventsLost> {
@@ -380,7 +405,11 @@ fn data_frame() -> [u8; 26] {
 }
 
 fn attempt(port: &Port, id: u32, frame: &[u8]) -> Esp32s31MpduAttempt<'static, 512> {
-    let mut buffer = port.tx_buffer(frame.len()).expect("a spare slot");
+    let mut buffer = port
+        .tx_buffer(frame.len())
+        .ok()
+        .flatten()
+        .expect("a spare slot");
     buffer.frame_mut().copy_from_slice(frame);
     TxAttempt {
         id: TxId(id),
@@ -435,7 +464,7 @@ fn an_attempt_completes_through_the_interrupt_entry_and_the_queue() {
     // A NoAck completion is reported, not retried.
     assert_eq!(submit(&port, attempt(&port, 1, &frame)), Ok(Ok(())));
     // The one spare slot is published until the attempt completes.
-    assert!(port.tx_buffer(frame.len()).is_none());
+    assert!(matches!(port.tx_buffer(frame.len()), Ok(None)));
     with_hardware(&port, |hardware| {
         hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(5, 0));
     });
@@ -446,7 +475,7 @@ fn an_attempt_completes_through_the_interrupt_entry_and_the_queue() {
     assert_eq!(completion.id, TxId(1));
     assert_eq!(completion.status, TxStatus::AckTimeout);
     assert_eq!(with_hardware(&port, |hardware| hardware.legacy.len()), 1);
-    let spare = port.tx_buffer(frame.len()).unwrap();
+    let spare = port.tx_buffer(frame.len()).unwrap().unwrap();
     port.release_tx_buffer(spare);
 
     assert_eq!(port.set_tsf(STA, Tsf(7)), Ok(Ok(())));
@@ -455,7 +484,7 @@ fn an_attempt_completes_through_the_interrupt_entry_and_the_queue() {
 }
 
 #[test]
-fn enable_after_a_channel_change_retunes_in_next_event() {
+fn enable_after_a_channel_change_retunes_in_the_runner() {
     let port = Port::new();
     let tuned = install(&port, true);
 
@@ -512,7 +541,7 @@ fn station_tbtts_arrive_through_the_power_interrupt() {
     );
     // Without a schedule the edge reports nothing.
     port.on_power_interrupt(tbtt);
-    assert!(port.events.try_receive().is_err());
+    assert!(port.queues.take().is_none());
 
     let schedule = TbttSchedule {
         beacon_interval_tu: 100,
@@ -570,15 +599,19 @@ fn received_frames_are_copied_and_overflow_is_reported_once() {
         logical_length: mpdu.len(),
     };
     let mpdu: &'static [u8] = std::boxed::Box::leak(std::boxed::Box::new(mpdu));
-    let long: &'static [u8] = std::boxed::Box::leak(std::boxed::Box::new([0_u8; 65]));
+    // A frame to the station as well, one byte longer than `FRAME`.
+    let mut long = [0_u8; 65];
+    long[..mpdu.len()].copy_from_slice(mpdu);
+    let long: &'static [u8] = std::boxed::Box::leak(std::boxed::Box::new(long));
 
-    // Two fit the queue, the third is lost; a frame longer than `FRAME` is
-    // lost as well.
+    // A frame longer than `FRAME` is reported as such, not as a loss.
+    port.on_received(&received(long));
+    assert_eq!(next(&port), Ok(LowerMacEvent::RxTooLong { length: 65 }));
+
+    // Two fit the queue, the third is lost and reported after them.
     for _ in 0..3 {
         port.on_received(&received(mpdu));
     }
-    port.on_received(&received(long));
-    assert_eq!(next(&port), Err(EventsLost));
     for _ in 0..2 {
         let Ok(LowerMacEvent::Received { frame, meta }) = next(&port) else {
             panic!("a received frame");
@@ -589,7 +622,148 @@ fn received_frames_are_copied_and_overflow_is_reported_once() {
             Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap()
         );
     }
-    assert!(port.events.try_receive().is_err());
+    assert_eq!(next(&port), Err(EventsLost));
+    assert!(port.queues.take().is_none());
+}
+
+#[test]
+fn a_receive_overflow_does_not_drop_completions() {
+    let port = Port::new();
+    install(&port, true);
+    port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+    assert_eq!(
+        next(&port),
+        Ok(LowerMacEvent::Lifecycle(LifecycleEvent::Enabled))
+    );
+    let mut mpdu = data_frame();
+    mpdu[4..10].copy_from_slice(&STATION);
+    mpdu[10..16].copy_from_slice(&BSSID);
+    let mpdu: &'static [u8] = std::boxed::Box::leak(std::boxed::Box::new(mpdu));
+    assert_eq!(submit(&port, attempt(&port, 7, &data_frame())), Ok(Ok(())));
+    for _ in 0..5 {
+        port.on_received(&NormalizedRxFrame {
+            mpdu,
+            metadata: MacRxMetadata {
+                channel: MacRxEvidence::Unavailable,
+                rate: MacRxEvidence::<RxPhyInfo>::Unavailable,
+                rssi_dbm: MacRxEvidence::HardwareObserved(-50),
+                crypto: MacRxEvidence::Unavailable,
+                s_mpdu: MacRxEvidence::Unavailable,
+                ampdu: MacRxEvidence::Unavailable,
+                amsdu: MacRxEvidence::Unavailable,
+            },
+            logical_length: mpdu.len(),
+        });
+    }
+    with_hardware(&port, |hardware| {
+        hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(0, 0));
+    });
+    port.on_interrupt(EVENT_TX_COMPLETE);
+    // The completion has its own queue and is taken first.
+    let Ok(LowerMacEvent::TxCompleted(completion)) = next(&port) else {
+        panic!("the completion survives the receive burst");
+    };
+    assert_eq!(completion.id, TxId(7));
+}
+
+/// Poison the port through the locked entry, as a core fault does.
+fn poison(port: &Port) {
+    assert!(matches!(
+        port.with_core(|_, _, _| Err::<(), _>(LowerMacFault::RxBlockAckReadback)),
+        Err(Esp32s31LowerMacError::Poisoned(_))
+    ));
+}
+
+#[test]
+fn a_poisoned_port_reports_queued_events_then_its_terminal_event() {
+    let port = Port::new();
+    assert_eq!(
+        port.lifecycle(LifecycleCommand::Enable)
+            .unwrap_err()
+            .class(),
+        FailureClass::Rejected
+    );
+    install(&port, true);
+    port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+    poison(&port);
+    // The terminal event of the command admitted before the fault first.
+    assert_eq!(
+        next(&port),
+        Ok(LowerMacEvent::Lifecycle(LifecycleEvent::Enabled))
+    );
+    for _ in 0..2 {
+        assert_eq!(next(&port), Ok(LowerMacEvent::Poisoned(Poisoned)));
+    }
+    let error = port.tx_buffer(26).unwrap_err();
+    assert_eq!(error.class(), FailureClass::Poisoned);
+    assert!(port.cancel(TxId(1)).unwrap_err().is_poisoned());
+}
+
+/// The runner of a poisoned port with an expired publication deadline
+/// waits instead of servicing the deadline again and again.
+#[test]
+fn the_runner_of_a_poisoned_port_does_not_spin_on_an_expired_deadline() {
+    let (done, finished) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let port: &'static Port = std::boxed::Box::leak(std::boxed::Box::new(Port::new()));
+        install_with_timeout(port, 0);
+        port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+        let _ = next(port);
+        assert_eq!(submit(port, attempt(port, 1, &data_frame())), Ok(Ok(())));
+        poison(port);
+        let mut run = core::pin::pin!(port.run());
+        let pending = (0..3).all(|_| {
+            run.as_mut()
+                .poll(&mut core::task::Context::from_waker(
+                    core::task::Waker::noop(),
+                ))
+                .is_pending()
+        });
+        let _ = done.send(pending);
+    });
+    assert_eq!(
+        finished.recv_timeout(std::time::Duration::from_secs(10)),
+        Ok(true)
+    );
+}
+
+/// A deadline the core keeps after servicing it (its clock has not reached
+/// it) waits for the next wake instead of being serviced at once again.
+#[test]
+fn the_runner_services_a_kept_deadline_once_per_wake() {
+    let (done, finished) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let port: &'static Port = std::boxed::Box::leak(std::boxed::Box::new(Port::new()));
+        install_with_timeout(port, 0);
+        port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+        let _ = next(port);
+        assert_eq!(submit(port, attempt(port, 1, &data_frame())), Ok(Ok(())));
+        let mut run = core::pin::pin!(port.run());
+        let pending = (0..3).all(|_| {
+            run.as_mut()
+                .poll(&mut core::task::Context::from_waker(
+                    core::task::Waker::noop(),
+                ))
+                .is_pending()
+        });
+        let _ = done.send(pending);
+    });
+    assert_eq!(
+        finished.recv_timeout(std::time::Duration::from_secs(10)),
+        Ok(true)
+    );
+}
+
+#[test]
+fn uninstall_keeps_the_loss_of_discarded_and_owed_events() {
+    let port = Port::new();
+    install(&port, true);
+    port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+    assert!(port.uninstall().is_some());
+    install(&port, true);
+    // The Enabled terminal was discarded: the consumer learns of the gap.
+    assert_eq!(next(&port), Err(EventsLost));
+    assert!(port.queues.take().is_none());
 }
 
 const BACKING: usize = 256;
@@ -704,7 +878,7 @@ fn install_ampdu(port: &AmpduPort) -> &'static Backings {
     .unwrap();
     port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
     assert_eq!(
-        block_on(port.next_event())
+        take(port, port.run())
             .map(|event| event.portable() == LowerMacEvent::Lifecycle(LifecycleEvent::Enabled)),
         Ok(true)
     );
@@ -712,7 +886,7 @@ fn install_ampdu(port: &AmpduPort) -> &'static Backings {
 }
 
 fn next_completion(port: &AmpduPort) -> TxCompletion {
-    match block_on(port.next_event()) {
+    match take(port, port.run()) {
         Ok(Esp32s31LowerMacEvent::TxCompleted(completion)) => completion,
         _ => panic!("a completion"),
     }
@@ -728,7 +902,7 @@ fn attempts_on_different_queues_complete_by_their_identity() {
     assert_eq!(capabilities.formats, PhyFormatSet::HT);
 
     // An MPDU on the voice queue.
-    let mut buffer = port.tx_buffer(26).unwrap();
+    let mut buffer = port.tx_buffer(26).unwrap().unwrap();
     buffer.frame_mut().copy_from_slice(&data_frame());
     let mpdu = TxAttempt {
         id: TxId(1),
@@ -748,8 +922,8 @@ fn attempts_on_different_queues_complete_by_their_identity() {
     assert!(matches!(port.submit(mpdu), Ok(Ok(()))));
 
     // An aggregate of two MPDUs on the best-effort queue.
-    let mut aggregate = port.ampdu_buffer().unwrap();
-    assert!(port.ampdu_buffer().is_none());
+    let mut aggregate = port.ampdu_buffer().unwrap().unwrap();
+    assert!(matches!(port.ampdu_buffer(), Ok(None)));
     for sequence in [100_u16, 101] {
         let mpdu = aggregate.push_mpdu(26).unwrap();
         mpdu.copy_from_slice(&data_frame());
@@ -809,7 +983,7 @@ fn attempts_on_different_queues_complete_by_their_identity() {
     assert_eq!(next_completion(&port).id, TxId(1));
 
     // The aggregate owner is lent again; a refused aggregate comes back.
-    let empty = port.ampdu_buffer().unwrap();
+    let empty = port.ampdu_buffer().unwrap().unwrap();
     let Ok(Err(refused)) = port.submit_ampdu(TxAttempt {
         id: TxId(3),
         vif: STA,
@@ -832,7 +1006,7 @@ fn attempts_on_different_queues_complete_by_their_identity() {
     };
     assert_eq!(refused.error, SubmitError::InvalidLength);
     port.release_ampdu_buffer(refused.attempt.payload.subframes);
-    assert!(port.ampdu_buffer().is_some());
+    assert!(matches!(port.ampdu_buffer(), Ok(Some(_))));
 }
 
 fn with_hardware_of<U>(port: &AmpduPort, entry: impl FnOnce(&mut Hardware) -> U) -> U {

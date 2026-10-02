@@ -5,9 +5,19 @@
 //!
 //! [`UpperMacTx`] runs one frame exchange of `oer-ieee80211-upper-mac`'s
 //! [`TxPlanner`] over any [`Ieee80211LowerMacPort`]: it encodes each planned
-//! attempt into a port buffer, submits it, awaits its completion among the
-//! port's events, feeds the completion to the planner and repeats until the
-//! planner reports the exchange's end. One attempt is one submission.
+//! attempt into a port buffer, submits it, awaits its completion from the
+//! port's [`EventRouter`], feeds the completion to the planner and repeats
+//! until the planner reports the exchange's end. One attempt is one
+//! submission.
+//!
+//! The [`EventRouter`] is the port's one event consumer: it hands each
+//! completion to the exchange whose identity it carries, so several
+//! [`UpperMacTx`] (one per access category) run their exchanges
+//! concurrently over one port, and received frames, lifecycle terminals and
+//! extension events go to queues of their own. When the port lost events
+//! before an attempt's completion arrived, the exchange cancels the attempt
+//! by its identity and either gets its completion or learns that it ended
+//! in the gap.
 //! Aggregates need the [`LowerMacAmpdu`] extension, which
 //! [`UpperMacTx::send_ampdu`] requires as a bound.
 //!
@@ -15,15 +25,17 @@
 //! FCS, and the driver copies them into a fresh buffer for every attempt,
 //! setting the Retry bit where the plan says so; a retransmission therefore
 //! repeats the first encoding's sequence number and CCMP packet number.
-//! Events that are not the exchange's completion go to the caller's
-//! handler. The driver waits only on the port; it never reads another clock
+//! The driver waits only on the router; it never reads another clock
 //! (the planner ages aggregates on the port's radio clock) and runs under any
 //! executor.
 
+pub mod router;
+
+pub use router::{Awaited, EventRouter, Registration, RouterFull};
+
 use oer_ieee80211_lower_mac::{
-    AmpduBuffer, AmpduPayload, EventsLost, Ieee80211LowerMacPort, KeySelector, LowerMacAmpdu,
-    LowerMacEvent, Refused, SubmitError, TxAttempt, TxBuffer, TxCompletion, TxId, TxPayload,
-    TxResponse, VifId,
+    AmpduBuffer, AmpduPayload, CancelError, Ieee80211LowerMacPort, KeySelector, LowerMacAmpdu,
+    Refused, SubmitError, TxAttempt, TxBuffer, TxCompletion, TxId, TxPayload, TxResponse, VifId,
 };
 use oer_ieee80211_mac::block_ack::encode_block_ack_request;
 use oer_ieee80211_softmac::BackoffEntropy;
@@ -45,10 +57,14 @@ pub enum UpperMacTxError<E> {
     NoBuffer,
     /// The port refused an attempt; nothing was sent.
     Refused(SubmitError),
-    /// The port lost events, the attempt's completion possibly among them;
-    /// the attempt may still be in flight.
-    EventsLost { attempt: TxId },
-    /// The port is poisoned.
+    /// Every completion slot of the router is registered.
+    RouterFull,
+    /// The port lost the attempt's completion: the attempt ended, its
+    /// outcome is unknown, and the exchange ends without a report.
+    CompletionLost { attempt: TxId },
+    /// The port reported its terminal poisoned event.
+    Poisoned,
+    /// The port cannot serve.
     Port(E),
 }
 
@@ -62,27 +78,32 @@ pub struct AmpduFrames<'f> {
     pub min_mpdu_start_spacing: u8,
 }
 
-/// The transmit driver of one interface over a lower-MAC port.
-pub struct UpperMacTx<'p, P, B> {
+/// The transmit driver of one interface over a lower-MAC port, sharing the
+/// port's [`EventRouter`] with other drivers.
+pub struct UpperMacTx<'r, 'p, P: Ieee80211LowerMacPort, B, const WAITERS: usize, const RX: usize> {
+    router: &'r EventRouter<'p, P, WAITERS, RX>,
     port: &'p P,
     vif: VifId,
     planner: TxPlanner<B>,
-    next_id: u32,
 }
 
-impl<'p, P, B> UpperMacTx<'p, P, B>
+impl<'r, 'p, P, B, const WAITERS: usize, const RX: usize> UpperMacTx<'r, 'p, P, B, WAITERS, RX>
 where
     P: Ieee80211LowerMacPort,
     B: HeTxopRtsBudget,
 {
-    /// A driver of `vif`'s transmissions through `port`, whose attempt
-    /// identities start at `first_id`.
-    pub const fn new(port: &'p P, vif: VifId, planner: TxPlanner<B>, first_id: u32) -> Self {
+    /// A driver of `vif`'s transmissions through the port of `router`,
+    /// whose attempt identities the router allocates.
+    pub const fn new(
+        router: &'r EventRouter<'p, P, WAITERS, RX>,
+        vif: VifId,
+        planner: TxPlanner<B>,
+    ) -> Self {
         Self {
-            port,
+            router,
+            port: router.port(),
             vif,
             planner,
-            next_id: first_id,
         }
     }
 
@@ -103,7 +124,6 @@ where
         request: TxRequest,
         ladder: &impl RateLadder,
         entropy: &mut impl BackoffEntropy,
-        mut other_event: impl FnMut(&P::Event),
     ) -> Result<TxReport, UpperMacTxError<P::Error>> {
         if !matches!(request.body, TxBody::Mpdu(_)) {
             return Err(UpperMacTxError::InvalidFrames);
@@ -113,8 +133,8 @@ where
             .begin(request, ladder, entropy)
             .map_err(UpperMacTxError::Plan)?;
         loop {
-            let id = self.submit_single(&exchange, &plan, &[frame], key)?;
-            let completion = self.completion(id, &mut other_event).await?;
+            let registration = self.submit_single(&exchange, &plan, &[frame], key)?;
+            let completion = self.completion(&registration).await?;
             match self.step(&mut exchange, &completion, ladder, entropy)? {
                 TxStep::Attempt(next) => plan = next,
                 TxStep::Done(report) => return Ok(report),
@@ -136,12 +156,6 @@ where
             .complete(exchange, completion, now, ladder, entropy))
     }
 
-    fn take_id(&mut self) -> TxId {
-        let id = TxId(self.next_id);
-        self.next_id = self.next_id.wrapping_add(1);
-        id
-    }
-
     /// Submit an attempt that carries one MPDU: the request's MPDU, one
     /// subframe of it, or a BlockAckReq for it.
     fn submit_single(
@@ -150,7 +164,7 @@ where
         plan: &TxAttemptPlan,
         frames: &[&[u8]],
         key: KeySelector,
-    ) -> Result<TxId, UpperMacTxError<P::Error>> {
+    ) -> Result<Registration<'r, 'p, P, WAITERS, RX>, UpperMacTxError<P::Error>> {
         let request = exchange.request();
         let request_frame: [u8; oer_ieee80211_mac::block_ack::BLOCK_ACK_REQUEST_LEN];
         let (bytes, set_retry, response, key): (&[u8], bool, TxResponse, KeySelector) =
@@ -196,13 +210,18 @@ where
         let mut buffer = self
             .port
             .tx_buffer(bytes.len())
+            .map_err(UpperMacTxError::Port)?
             .ok_or(UpperMacTxError::NoBuffer)?;
         buffer.frame_mut().copy_from_slice(bytes);
         if set_retry && !set_retry_bit(buffer.frame_mut()) {
             self.port.release_tx_buffer(buffer);
             return Err(UpperMacTxError::InvalidFrames);
         }
-        let id = self.take_id();
+        let Ok(registration) = self.router.register(self.router.next_id()) else {
+            self.port.release_tx_buffer(buffer);
+            return Err(UpperMacTxError::RouterFull);
+        };
+        let id = registration.id();
         let attempt = self.attempt(
             id,
             plan,
@@ -213,7 +232,7 @@ where
             key,
         );
         match self.port.submit(attempt).map_err(UpperMacTxError::Port)? {
-            Ok(()) => Ok(id),
+            Ok(()) => Ok(registration),
             Err(Refused { error, attempt }) => {
                 self.port.release_tx_buffer(attempt.payload.frame);
                 Err(UpperMacTxError::Refused(error))
@@ -242,30 +261,35 @@ where
         }
     }
 
-    /// Await the completion of attempt `id`, handing every other event to
-    /// the caller.
+    /// Await the completion of a registered attempt from the router. After
+    /// a loss, cancel the attempt: an admitted cancel produces its
+    /// completion; a refusal proves it ended, and the router resolves
+    /// whether its completion is still queued or was lost.
     async fn completion(
         &self,
-        id: TxId,
-        other_event: &mut impl FnMut(&P::Event),
+        registration: &Registration<'r, 'p, P, WAITERS, RX>,
     ) -> Result<TxCompletion, UpperMacTxError<P::Error>> {
+        let id = registration.id();
         loop {
-            let event = self
-                .port
-                .next_event()
-                .await
-                .map_err(|EventsLost| UpperMacTxError::EventsLost { attempt: id })?;
-            match P::view(&event) {
-                LowerMacEvent::TxCompleted(completion) if completion.id == id => {
-                    return Ok(completion);
-                }
-                _ => other_event(&event),
+            match self.router.completion(id).await {
+                Awaited::Completed(completion) => return Ok(completion),
+                Awaited::Poisoned => return Err(UpperMacTxError::Poisoned),
+                Awaited::Lost => match self.port.cancel(id).map_err(UpperMacTxError::Port)? {
+                    Ok(()) => {}
+                    Err(CancelError::NotRunning) => {
+                        return self
+                            .router
+                            .resolve(id)
+                            .await
+                            .ok_or(UpperMacTxError::CompletionLost { attempt: id });
+                    }
+                },
             }
         }
     }
 }
 
-impl<'p, P, B> UpperMacTx<'p, P, B>
+impl<'r, 'p, P, B, const WAITERS: usize, const RX: usize> UpperMacTx<'r, 'p, P, B, WAITERS, RX>
 where
     P: LowerMacAmpdu,
     B: HeTxopRtsBudget,
@@ -278,7 +302,6 @@ where
         request: TxRequest,
         ladder: &impl RateLadder,
         entropy: &mut impl BackoffEntropy,
-        mut other_event: impl FnMut(&P::Event),
     ) -> Result<TxReport, UpperMacTxError<P::Error>> {
         let TxBody::Ampdu(ampdu) = request.body else {
             return Err(UpperMacTxError::InvalidFrames);
@@ -291,14 +314,14 @@ where
             .begin(request, ladder, entropy)
             .map_err(UpperMacTxError::Plan)?;
         loop {
-            let id = match plan.content {
+            let registration = match plan.content {
                 AttemptContent::Ampdu {
                     subframes: selected,
                     retry,
                 } => self.submit_aggregate(&plan, &frames, selected, retry, ampdu.tid)?,
                 _ => self.submit_single(&exchange, &plan, frames.subframes, frames.key)?,
             };
-            let completion = self.completion(id, &mut other_event).await?;
+            let completion = self.completion(&registration).await?;
             match self.step(&mut exchange, &completion, ladder, entropy)? {
                 TxStep::Attempt(next) => plan = next,
                 TxStep::Done(report) => return Ok(report),
@@ -313,8 +336,12 @@ where
         selected: u64,
         retry: u64,
         tid: u8,
-    ) -> Result<TxId, UpperMacTxError<P::Error>> {
-        let mut buffer = self.port.ampdu_buffer().ok_or(UpperMacTxError::NoBuffer)?;
+    ) -> Result<Registration<'r, 'p, P, WAITERS, RX>, UpperMacTxError<P::Error>> {
+        let mut buffer = self
+            .port
+            .ampdu_buffer()
+            .map_err(UpperMacTxError::Port)?
+            .ok_or(UpperMacTxError::NoBuffer)?;
         let mut remaining = selected;
         while remaining != 0 {
             let index = remaining.trailing_zeros() as usize;
@@ -333,7 +360,11 @@ where
                 return Err(UpperMacTxError::InvalidFrames);
             }
         }
-        let id = self.take_id();
+        let Ok(registration) = self.router.register(self.router.next_id()) else {
+            self.port.release_ampdu_buffer(buffer);
+            return Err(UpperMacTxError::RouterFull);
+        };
+        let id = registration.id();
         let attempt = self.attempt(
             id,
             plan,
@@ -349,7 +380,7 @@ where
             .submit_ampdu(attempt)
             .map_err(UpperMacTxError::Port)?
         {
-            Ok(()) => Ok(id),
+            Ok(()) => Ok(registration),
             Err(Refused { error, attempt }) => {
                 self.port.release_ampdu_buffer(attempt.payload.subframes);
                 Err(UpperMacTxError::Refused(error))

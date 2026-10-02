@@ -13,7 +13,11 @@
 //!    `--draft` the pull request is a draft and nothing merges it.
 //!
 //! The push never waits for CI and never rebases: a branch that `main`
-//! outran merges as it is, and CI on `main` checks the result.
+//! outran merges as it is, and CI on `main` checks the result. A branch the
+//! developer rebased replaces its remote copy with `--force-with-lease`
+//! bound to the copy this push saw ([`Update::Rewrite`]), so a commit pushed
+//! there by anyone else in the meantime refuses the push instead of being
+//! lost.
 
 use oer_process as process;
 
@@ -59,6 +63,27 @@ pub fn unreviewable(branch: &str) -> Option<String> {
             "main changes only through pull requests; create a branch for the change first",
         )),
         _ => None,
+    }
+}
+
+/// How a push updates the branch's remote copy.
+#[derive(Debug, Eq, PartialEq)]
+pub enum Update {
+    /// The branch has no remote copy yet, or `HEAD` descends from it.
+    FastForward,
+    /// `HEAD` rewrote the branch, a rebase: replace the remote copy only
+    /// while it is still `seen`.
+    Rewrite { seen: String },
+}
+
+/// The update for a branch whose remote copy is `remote`, when `HEAD`
+/// `descends` from it or not.
+pub fn update(remote: Option<&str>, descends: bool) -> Update {
+    match remote {
+        Some(seen) if !descends => Update::Rewrite {
+            seen: seen.to_owned(),
+        },
+        _ => Update::FastForward,
     }
 }
 
@@ -112,21 +137,51 @@ pub fn run(ctx: &Context, draft: bool) -> Result<()> {
     );
     gate::run(ctx, &tree, &selection, &affected, gate::Depth::Fast)
         .map_err(|error| format!("push: the gate failed; nothing pushed: {error}"))?;
-    process::capture(ctx.command("git").args([
-        "push",
-        "--quiet",
-        "--set-upstream",
-        "origin",
-        &format!("HEAD:refs/heads/{branch}"),
-    ]))
-    .map_err(|error| format!("push: git push of {branch} failed: {error}"))?;
-    println!("push: pushed {} to {branch}", &head[..12]);
-    let url = match gh(
+    let reference = format!("refs/heads/{branch}");
+    let remote = git(ctx, &["ls-remote", "origin", &reference])?
+        .split_whitespace()
+        .next()
+        .map(str::to_owned);
+    let descends = match &remote {
+        Some(seen) => {
+            process::capture(
+                ctx.command("git")
+                    .args(["fetch", "--quiet", "origin", &reference]),
+            )?;
+            process::capture(
+                ctx.command("git")
+                    .args(["merge-base", "--is-ancestor", seen, "HEAD"]),
+            )
+            .is_ok()
+        }
+        None => true,
+    };
+    let update = update(remote.as_deref(), descends);
+    let mut command = ctx.command("git");
+    command.args(["push", "--quiet", "--set-upstream"]);
+    if let Update::Rewrite { seen } = &update {
+        command.arg(format!("--force-with-lease={reference}:{seen}"));
+    }
+    process::capture(command.args(["origin", &format!("HEAD:{reference}")]))
+        .map_err(|error| format!("push: git push of {branch} failed: {error}"))?;
+    match &update {
+        Update::FastForward => println!("push: pushed {} to {branch}", &head[..12]),
+        Update::Rewrite { seen } => println!(
+            "push: rewrote {branch} from {} to {}",
+            &seen[..seen.len().min(12)],
+            &head[..12]
+        ),
+    }
+    let existing = gh(
         ctx,
         &["pr", "view", &branch, "--json", "url", "--jq", ".url"],
-    ) {
-        Ok(url) if !url.is_empty() => url,
-        _ => {
+    )
+    .ok()
+    .filter(|url| !url.is_empty());
+    let opened = existing.is_none();
+    let url = match existing {
+        Some(url) => url,
+        None => {
             let mut create = vec![
                 "pr",
                 "create",
@@ -143,7 +198,11 @@ pub fn run(ctx: &Context, draft: bool) -> Result<()> {
         }
     };
     if draft {
-        println!("push: draft pull request {url}");
+        if opened {
+            println!("push: opened draft pull request {url}");
+        } else {
+            println!("push: updated pull request {url}; auto-merge left as it was");
+        }
     } else {
         gh(ctx, &["pr", "merge", &branch, "--auto", "--rebase"])
             .map_err(|error| format!("push: enabling auto-merge of {url} failed: {error}"))?;
@@ -177,6 +236,18 @@ mod tests {
         );
         assert!(!reason.contains("notes.txt"), "{reason}");
         assert!(build_input("Cargo.lock") && !build_input("README.md"));
+    }
+
+    #[test]
+    fn only_a_rebased_branch_is_rewritten_and_only_from_what_was_seen() {
+        assert_eq!(update(None, true), Update::FastForward);
+        assert_eq!(update(Some("abc"), true), Update::FastForward);
+        assert_eq!(
+            update(Some("abc"), false),
+            Update::Rewrite {
+                seen: String::from("abc")
+            }
+        );
     }
 
     #[test]

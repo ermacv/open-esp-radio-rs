@@ -33,7 +33,9 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    commit (`gh pr create --fill-first`)
    and enables auto-merge. Do not wait for CI: GitHub merges the branch once
    the required `ci-ok` check passes. `--draft` for work that needs the
-   user's review first. Never push to `main` directly.
+   user's review first. To resolve a conflict with `main`, rebase the
+   branch and push again: `push` rewrites only its own branch, with
+   `--force-with-lease`. Never push to `main` directly.
 7. **CI** runs on every branch push; `.github/workflows/ci.yml` is the full
    check and each step is one command in [the xtask reference](../../../tools/xtask/README.md).
    A failed check on the pull request is fixed on the same branch and pushed

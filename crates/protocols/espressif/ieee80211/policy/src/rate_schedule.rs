@@ -229,7 +229,7 @@ pub fn schedule_state(schedule: RateScheduleRef) -> RateScheduleRecordState {
 /// Return the complete ordinary-MPDU publication budget carried by one
 /// vendor rate record.
 ///
-/// SOURCE: complete `libpp.a[trc.o]::rcReachRetryLimit`. Outside the mesh
+/// SOURCE(esp32s31): complete `libpp.a[trc.o]::rcReachRetryLimit`. Outside the mesh
 /// special case it compares the MPDU retry counter with record byte `0x08`;
 /// this is independent of byte `0x01`, which `rcTxUpdatePer` consumes as its
 /// PER/rate-control threshold.
@@ -244,9 +244,9 @@ pub fn schedule_publication_limit(schedule: RateScheduleRef) -> u8 {
 /// `failed_attempts < cumulative_count`. Returning `None` means that the
 /// record's complete retry budget has been consumed.
 ///
-/// SOURCE: complete pinned `libpp.a[trc.o]::rcGetRate` (`0xf6` bytes),
+/// SOURCE(esp32s31): complete pinned `libpp.a[trc.o]::rcGetRate` (`0xf6` bytes),
 /// especially the bounded four-iteration loop at offsets `0xa8..0xf4`;
-/// cross-checked against `SOURCE[PROMOTED_LMAC_TX]`. After the loop the
+/// cross-checked against `SOURCE(esp32s31)[PROMOTED_LMAC_TX]`. After the loop the
 /// pinned body replaces a selected code of `0x24` or above with `0x10` when
 /// descriptor byte `+0x32` bit zero marks an HT-Control MPDU (set only by
 /// `ieee80211_encap_esfbuf_htc`). No record this driver selects through the
@@ -293,7 +293,7 @@ pub const fn rate_to_schedule_index(map: RateIndexMap, rate: u8) -> u8 {
             if rate <= 42 { MAP[rate as usize] } else { 0xff }
         }
         RateIndexMap::Dot11G => {
-            // SOURCE: `libpp.a[trc.o]` `.rodata` switch table of
+            // SOURCE(esp32s31): `libpp.a[trc.o]` `.rodata` switch table of
             // `rc11GRate2SchedIdx`, including the long-range codes 0x29 and
             // 0x2a that select 802.11g records 12 and 11.
             const MAP: [u8; 43] = [
@@ -340,7 +340,7 @@ pub const fn rate_to_schedule_index(map: RateIndexMap, rate: u8) -> u8 {
 
 /// Locate the complete vendor 802.11g retry record for a legacy rate code.
 ///
-/// SOURCE: `libpp.a[trc.o]` callback table used by `rcUpdatePhyMode`, the
+/// SOURCE(esp32s31): `libpp.a[trc.o]` callback table used by `rcUpdatePhyMode`, the
 /// [`RateIndexMap::Dot11G`] branch of [`rate_to_schedule_index`]; the
 /// pointed-to record bytes come from the arenas above.
 pub const fn dot11g_schedule_for_legacy_rate(rate: u8) -> Option<RateScheduleRef> {

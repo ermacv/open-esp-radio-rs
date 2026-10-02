@@ -14,7 +14,7 @@
 //! retry after ten Requests also ends the association; with these timers the
 //! timeout comes first.
 //!
-//! SOURCE: complete pinned `libnet80211.a[ieee80211_sta.o]::
+//! SOURCE(esp32s31): complete pinned `libnet80211.a[ieee80211_sta.o]::
 //! sta_try_sa_query_process`, `sta_sa_query_process_timeout`,
 //! `sta_try_sa_query`, `sta_sa_query_timeout` and
 //! `libnet80211.a[ieee80211.o]::ieee80211_recv_sa_query_resp`.

@@ -7,7 +7,7 @@
 //! EAPOL frame requests event 46 and carries that event's priority with a
 //! priority count of 4000 instead of its ordinary one.
 //!
-//! SOURCE: complete pinned `libpp.a[pp.o]::pp_coex_tx_request`, which
+//! SOURCE(esp32s31): complete pinned `libpp.a[pp.o]::pp_coex_tx_request`, which
 //! `ppProcessTxQ` calls before `lmacTxFrame`; `libpp.a[pm_coex.o]::
 //! pm_coex_reconnect_policy` and `pm_coex_set_reconnect_policy`;
 //! `libpp.a[hal_mac.o]::mac_tx_set_pti`, which publishes the unsigned

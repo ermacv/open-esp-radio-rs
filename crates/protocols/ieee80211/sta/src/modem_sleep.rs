@@ -195,7 +195,7 @@ pub enum PmAction {
     /// Publish the beacon-window event's priority as the beacon receive
     /// priority (`true`), or priority zero (`false`).
     ///
-    /// SOURCE: complete pinned `libpp.a[pm_coex.o]::
+    /// SOURCE(esp32s31): complete pinned `libpp.a[pm_coex.o]::
     /// pm_coex_update_rx_beacon_pti` passes `coex_pti_get(0)`, or zero, as
     /// both arguments of `hal_set_rx_beacon_pti`. It selects event 1 only
     /// under the hardware beacon monitor, which this model leaves out.
@@ -454,7 +454,7 @@ pub struct ModemSleep {
 impl ModemSleep {
     /// Stopped power management with the vendor attach defaults.
     ///
-    /// SOURCE: `pm_attach`.
+    /// SOURCE(esp32s31): `pm_attach`.
     pub const fn new(sleep_type: SleepType) -> Self {
         Self {
             sleep_type,

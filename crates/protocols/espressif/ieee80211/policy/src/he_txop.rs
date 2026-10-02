@@ -7,7 +7,7 @@ use oer_ieee80211_upper_mac::{HePacketPadding, HeTxopDurationRtsThreshold, HeTxo
 /// The nominal packet padding code the vendor stores from the peer's HE
 /// Capabilities.
 ///
-/// SOURCE: complete `libnet80211.a[ieee80211_he.o]::ieee80211_parse_hecap`
+/// SOURCE(esp32s31): complete `libnet80211.a[ieee80211_he.o]::ieee80211_parse_hecap`
 /// stores this code at node offset `0x354`; complete
 /// `libpp.a[if_hwctrl.o]::ic_set_he_rts_threshold_bytes_tab` subtracts 8 µs
 /// for code one, 16 µs for code two and nothing for any other code.
@@ -21,7 +21,7 @@ pub const fn packet_padding_from_code(code: u8) -> HePacketPadding {
 
 /// The largest HE SU APEP length whose TXOP stays below the threshold.
 ///
-/// SOURCE: complete `libpp.a[if_hwctrl.o]::ic_set_he_rts_threshold_bytes_tab`
+/// SOURCE(esp32s31): complete `libpp.a[if_hwctrl.o]::ic_set_he_rts_threshold_bytes_tab`
 /// and its `.data` tables in `libpp.a[hal_mac_ctl.o]` (`he_preamble_su`,
 /// `he_time_per_sym`, `he_data_bits_per_sym`), plus complete
 /// `libpp.a[pp_he.o]::get_estimated_batime`. The vendor evaluates, in single

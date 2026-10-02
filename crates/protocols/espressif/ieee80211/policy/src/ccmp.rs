@@ -5,7 +5,7 @@ use oer_ieee80211_mac::ccmp::CcmpPacketNumberStep;
 /// How far the Espressif `net80211` stack advances a key's transmit packet
 /// number per MPDU.
 ///
-/// SOURCE: the reviewed ESP32-S31 CCMP owner (`oer-esp32s31-ieee80211-mac`,
+/// SOURCE(esp32s31): the reviewed ESP32-S31 CCMP owner (`oer-esp32s31-ieee80211-mac`,
 /// `crypto.rs`) records that the pinned `libnet80211.a` implementation
 /// advances by three, so a newly installed key emits PN 3 first; the vendor
 /// encapsulation is `libnet80211.a[ieee80211_crypto_ccmp.o]::ccmp_encap`

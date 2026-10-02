@@ -27,6 +27,7 @@ use network::{Iface, Resources as NetworkResources, Runner as NetworkRunner};
 #[cfg(feature = "station-exit-evidence")]
 use oer::wifi::StaLifecycleStage;
 
+use oer::ieee80211::mac::channel::Channel as MacChannel;
 use oer::wifi::{
     AccessPointClientLimit, AccessPointRequest, AccessPointSecurity, MacRxEvidence,
     MonitorCapturePolicy, MonitorRequest, Pmk, Preference, StaReconnectPolicy,
@@ -918,21 +919,30 @@ struct ExportedMonitorFrame {
     generation_mismatch: bool,
     channel_mismatch: bool,
     channel_unavailable: bool,
-    last_observed_channel: u8,
+    last_observed_channel: Option<MacChannel>,
 }
 
 async fn export_monitor_frame(
     request_id: u32,
     generation: u32,
     frame_sequence: u32,
-    requested_channel: u8,
+    requested_channel: MacChannel,
     frame: &ReceivedMonitorFrame,
 ) -> ExportedMonitorFrame {
     let channel = protocol_observed(frame.metadata().rx.channel);
     let (channel_mismatch, channel_unavailable, last_observed_channel) = match channel {
-        Some(observed) => (observed.value != requested_channel, false, observed.value),
-        None => (false, true, 0),
+        Some(observed) => (
+            observed.value != requested_channel,
+            false,
+            Some(observed.value),
+        ),
+        None => (false, true, None),
     };
+    // The HIL protocol carries the primary channel number.
+    let channel = channel.map(|observed| WifiMonitorObserved {
+        source: observed.source,
+        value: observed.value.number(),
+    });
     let rssi_dbm = protocol_observed(frame.metadata().rx.rssi_dbm);
     let rate = protocol_rate(frame.metadata().rx.rate);
     let captured_length = u16::try_from(frame.captured_length())
@@ -977,10 +987,10 @@ async fn run_finite_monitor_capture(
     request_id: u32,
     request: WifiMonitorCaptureRequest,
 ) -> WifiControl {
-    let mut monitor_request = MonitorRequest::new(
-        WifiChannel::mhz20(request.channel).expect("console validates the monitor channel"),
-        WifiMonitorConfig::normalized(),
-    );
+    let requested_channel =
+        WifiChannel::mhz20(request.channel).expect("console validates the monitor channel");
+    let mut monitor_request =
+        MonitorRequest::new(requested_channel, WifiMonitorConfig::normalized());
     if let Some(snapshot_length) = NonZeroU16::new(request.snapshot_length) {
         monitor_request =
             monitor_request.with_capture_policy(MonitorCapturePolicy::truncate_at(snapshot_length));
@@ -1009,7 +1019,7 @@ async fn run_finite_monitor_capture(
     let mut generation_mismatches = 0_u32;
     let mut channel_mismatches = 0_u32;
     let mut channel_unavailable = 0_u32;
-    let mut last_observed_channel = 0_u8;
+    let mut last_observed_channel = None;
     loop {
         match select(deadline.as_mut(), monitor_frames.receive()).await {
             Either::First(()) => break,
@@ -1018,7 +1028,7 @@ async fn run_finite_monitor_capture(
                     request_id,
                     generation,
                     captured_frames,
-                    request.channel,
+                    MacChannel::from(requested_channel),
                     &frame,
                 )
                 .await;
@@ -1030,8 +1040,8 @@ async fn run_finite_monitor_capture(
                     channel_mismatches.saturating_add(u32::from(observation.channel_mismatch));
                 channel_unavailable =
                     channel_unavailable.saturating_add(u32::from(observation.channel_unavailable));
-                if !observation.channel_unavailable {
-                    last_observed_channel = observation.last_observed_channel;
+                if let Some(observed) = observation.last_observed_channel {
+                    last_observed_channel = Some(observed);
                 }
             }
         }
@@ -1054,7 +1064,7 @@ async fn run_finite_monitor_capture(
             generation_mismatches,
             channel_mismatches,
             channel_unavailable,
-            last_observed_channel,
+            last_observed_channel: last_observed_channel.map_or(0, MacChannel::number),
             published_frames: statistics.published_frames,
             full_drops: statistics.full_drops,
             oversized_drops: statistics.oversized_drops,
@@ -2054,14 +2064,14 @@ enum ProductWifiRole<P> {
     },
     Monitor {
         owner: oer::wifi::WifiMonitor<P>,
-        channel: u8,
+        channel: MacChannel,
         started_at_micros: u64,
         captured_frames: u32,
         captured_bytes: u64,
         generation_mismatches: u32,
         channel_mismatches: u32,
         channel_unavailable: u32,
-        last_observed_channel: u8,
+        last_observed_channel: Option<MacChannel>,
     },
 }
 
@@ -2519,11 +2529,10 @@ async fn wifi_role_task(
                     request_id,
                     request,
                 } => {
-                    let mut monitor_request = MonitorRequest::new(
-                        WifiChannel::mhz20(request.channel)
-                            .expect("console validates the monitor channel"),
-                        WifiMonitorConfig::normalized(),
-                    );
+                    let requested_channel = WifiChannel::mhz20(request.channel)
+                        .expect("console validates the monitor channel");
+                    let mut monitor_request =
+                        MonitorRequest::new(requested_channel, WifiMonitorConfig::normalized());
                     if let Some(snapshot_length) = NonZeroU16::new(request.snapshot_length) {
                         monitor_request = monitor_request.with_capture_policy(
                             MonitorCapturePolicy::truncate_at(snapshot_length),
@@ -2547,14 +2556,14 @@ async fn wifi_role_task(
                     .await;
                     ProductWifiRole::Monitor {
                         owner: monitor,
-                        channel: request.channel,
+                        channel: MacChannel::from(requested_channel),
                         started_at_micros: Instant::now().as_micros(),
                         captured_frames: 0,
                         captured_bytes: 0,
                         generation_mismatches: 0,
                         channel_mismatches: 0,
                         channel_unavailable: 0,
-                        last_observed_channel: 0,
+                        last_observed_channel: None,
                     }
                 }
                 WifiControlRequest::CaptureMonitor {
@@ -2594,7 +2603,7 @@ async fn wifi_role_task(
                             match frame.metadata().rx.channel {
                                 MacRxEvidence::HardwareObserved(observed)
                                 | MacRxEvidence::ProtocolValidated(observed) => {
-                                    last_observed_channel = observed;
+                                    last_observed_channel = Some(observed);
                                     if observed != channel {
                                         channel_mismatches = channel_mismatches.saturating_add(1);
                                     }
@@ -2620,13 +2629,13 @@ async fn wifi_role_task(
                         elapsed_micros: Instant::now()
                             .as_micros()
                             .saturating_sub(started_at_micros),
-                        channel,
+                        channel: channel.number(),
                         captured_frames,
                         captured_bytes,
                         generation_mismatches,
                         channel_mismatches,
                         channel_unavailable,
-                        last_observed_channel,
+                        last_observed_channel: last_observed_channel.map_or(0, MacChannel::number),
                         published_frames: statistics.published_frames,
                         full_drops: statistics.full_drops,
                         oversized_drops: statistics.oversized_drops,

@@ -112,11 +112,14 @@ jobs:
           key: blobray-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'tools/blobray/Cargo.lock') }}
           restore-keys: blobray-${{ runner.os }}-
       # The linker adapter's tests link real RV32 images with both linkers:
-      # LLD at /usr/bin/ld.lld and a GNU ld with the elf32lriscv emulation
-      # that accepts --start-lib/--end-lib, new in binutils 2.47 (ld/NEWS).
-      # Ubuntu ships 2.42, so the pinned release is built once and cached.
-      - name: Install LLD
-        run: sudo apt-get update && sudo apt-get install -y lld
+      # LLD, the one the pinned Rust toolchain ships (Ubuntu's LLD 18 fails
+      # them), and a GNU ld with the elf32lriscv emulation that accepts
+      # --start-lib/--end-lib, new in binutils 2.47 (ld/NEWS). Ubuntu ships
+      # 2.42, so the pinned release is built once and cached.
+      - name: Use the toolchain's LLD
+        run: |
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          echo "BLOBRAY_TEST_LLD=$(rustc --print sysroot)/lib/rustlib/$host/bin/gcc-ld/ld.lld" >> "$GITHUB_ENV"
       - id: binutils
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:

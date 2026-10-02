@@ -34,7 +34,7 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    the required `ci-ok` check passes. `--draft` for work that needs the
    user's review first. Never push to `main` directly.
 7. **CI** runs on every branch push; `.github/workflows/ci.yml` is the full
-   check and each job is one command in [the xtask reference](../../../tools/xtask/README.md).
+   check and each step is one command in [the xtask reference](../../../tools/xtask/README.md).
    A failed check on the pull request is fixed on the same branch and pushed
    again with `cargo xtask push`.
 8. **Red `main` first.** The session start and the gate print a red `main`.

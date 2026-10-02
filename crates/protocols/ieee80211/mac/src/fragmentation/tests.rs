@@ -1,6 +1,11 @@
 extern crate std;
 
 use super::*;
+use oer_time::{Duration, Instant};
+
+fn at(micros: u64) -> Instant {
+    Instant::from_micros(micros)
+}
 use crate::sequence::seq;
 
 const STA: [u8; 6] = [2, 0, 0, 0, 0, 1];
@@ -73,11 +78,11 @@ fn station_fragments_reassemble_one_exact_ethernet_view() {
         false,
         &second_payload,
     );
-    let mut state = OpenDataDefragmenter::<2, 32>::new(100);
+    let mut state = OpenDataDefragmenter::<2, 32>::new(Duration::from_micros(100));
     assert_eq!(
         state.ingest(
             parsed(DataInterfaceRole::Station, &first, first_payload.len()),
-            1,
+            at(1),
             |_| ()
         ),
         Ok(OpenDataDefragmentation::Buffered {
@@ -88,7 +93,7 @@ fn station_fragments_reassemble_one_exact_ethernet_view() {
     let outcome = state
         .ingest(
             parsed(DataInterfaceRole::Station, &second, second_payload.len()),
-            2,
+            at(2),
             |data| {
                 let frame = data.ethernet_frame();
                 (
@@ -139,20 +144,24 @@ fn changed_address_cannot_splice_an_active_sequence() {
         false,
         &last_payload,
     );
-    let mut state = OpenDataDefragmenter::<1, 16>::new(100);
+    let mut state = OpenDataDefragmenter::<1, 16>::new(Duration::from_micros(100));
     state
         .ingest(
             parsed(DataInterfaceRole::Station, &first, first_payload.len()),
-            1,
+            at(1),
             |_| (),
         )
         .unwrap();
     assert_eq!(
-        state.ingest(parsed(DataInterfaceRole::Station, &changed, 1), 2, |_| ()),
+        state.ingest(
+            parsed(DataInterfaceRole::Station, &changed, 1),
+            at(2),
+            |_| ()
+        ),
         Err(OpenDataFragmentError::IdentityMismatch)
     );
     assert!(matches!(
-        state.ingest(parsed(DataInterfaceRole::Station, &last, 1), 3, |_| ()),
+        state.ingest(parsed(DataInterfaceRole::Station, &last, 1), at(3), |_| ()),
         Ok(OpenDataDefragmentation::Complete { .. })
     ));
 }
@@ -165,24 +174,24 @@ fn retry_out_of_order_timeout_and_oldest_eviction_are_bounded() {
     let third = fragment(DataInterfaceRole::Station, 1, 2, false, false, &[2]);
     let other = fragment(DataInterfaceRole::Station, 2, 0, true, false, &payload);
     let newest = fragment(DataInterfaceRole::Station, 3, 0, true, false, &payload);
-    let mut state = OpenDataDefragmenter::<2, 32>::new(10);
+    let mut state = OpenDataDefragmenter::<2, 32>::new(Duration::from_micros(10));
     state
         .ingest(
             parsed(DataInterfaceRole::Station, &first, payload.len()),
-            1,
+            at(1),
             |_| (),
         )
         .unwrap();
     assert_eq!(
         state.ingest(
             parsed(DataInterfaceRole::Station, &retry, payload.len()),
-            2,
+            at(2),
             |_| ()
         ),
         Ok(OpenDataDefragmentation::Duplicate { expired: 0 })
     );
     assert_eq!(
-        state.ingest(parsed(DataInterfaceRole::Station, &third, 1), 3, |_| ()),
+        state.ingest(parsed(DataInterfaceRole::Station, &third, 1), at(3), |_| ()),
         Err(OpenDataFragmentError::OutOfOrder {
             expected: 1,
             observed: 2,
@@ -191,14 +200,14 @@ fn retry_out_of_order_timeout_and_oldest_eviction_are_bounded() {
     state
         .ingest(
             parsed(DataInterfaceRole::Station, &other, payload.len()),
-            4,
+            at(4),
             |_| (),
         )
         .unwrap();
     let outcome = state
         .ingest(
             parsed(DataInterfaceRole::Station, &newest, payload.len()),
-            5,
+            at(5),
             |_| (),
         )
         .unwrap();
@@ -213,7 +222,7 @@ fn retry_out_of_order_timeout_and_oldest_eviction_are_bounded() {
     assert!(matches!(
         state.ingest(
             parsed(DataInterfaceRole::Station, &expired, payload.len()),
-            20,
+            at(20),
             |_| ()
         ),
         Ok(OpenDataDefragmentation::Buffered { expired: 2, .. })
@@ -263,18 +272,18 @@ fn protected_amsdu_overflow_and_lifecycle_edges_fail_closed() {
 
     let first = fragment(DataInterfaceRole::AccessPoint, 3, 0, true, false, &payload);
     let second = fragment(DataInterfaceRole::AccessPoint, 3, 1, false, false, &[2, 3]);
-    let mut state = OpenDataDefragmenter::<1, 10>::new(100);
+    let mut state = OpenDataDefragmenter::<1, 10>::new(Duration::from_micros(100));
     state
         .ingest(
             parsed(DataInterfaceRole::AccessPoint, &first, payload.len()),
-            1,
+            at(1),
             |_| (),
         )
         .unwrap();
     assert_eq!(
         state.ingest(
             parsed(DataInterfaceRole::AccessPoint, &second, 2),
-            2,
+            at(2),
             |_| ()
         ),
         Err(OpenDataFragmentError::ReassembledTooLarge { capacity: 10 })
@@ -284,7 +293,7 @@ fn protected_amsdu_overflow_and_lifecycle_edges_fail_closed() {
     state
         .ingest(
             parsed(DataInterfaceRole::AccessPoint, &first, payload.len()),
-            3,
+            at(3),
             |_| (),
         )
         .unwrap();
@@ -304,18 +313,18 @@ fn fresh_ordinary_wrap_replaces_stale_fragment_completion_identity() {
         &first_payload,
     );
     let final_fragment = fragment(DataInterfaceRole::Station, 7, 1, false, false, &[2]);
-    let mut state = OpenDataDefragmenter::<1, 32>::new(100);
+    let mut state = OpenDataDefragmenter::<1, 32>::new(Duration::from_micros(100));
     state
         .ingest(
             parsed(DataInterfaceRole::Station, &first, first_payload.len()),
-            1,
+            at(1),
             |_| (),
         )
         .unwrap();
     assert!(matches!(
         state.ingest(
             parsed(DataInterfaceRole::Station, &final_fragment, 1),
-            2,
+            at(2),
             |_| (),
         ),
         Ok(OpenDataDefragmentation::Complete { .. })
@@ -331,11 +340,11 @@ fn fresh_ordinary_wrap_replaces_stale_fragment_completion_identity() {
     let ordinary_identity =
         parse_open_data_identity(DataInterfaceRole::Station, &ordinary[..25]).unwrap();
     assert_eq!(
-        state.admit_unfragmented(ordinary_identity, false, Some(3)),
+        state.admit_unfragmented(ordinary_identity, false, Some(at(3))),
         Ok(OpenDataUnfragmentedAdmission::Admitted { expired: 0 })
     );
     assert_eq!(
-        state.admit_unfragmented(ordinary_identity, true, Some(4)),
+        state.admit_unfragmented(ordinary_identity, true, Some(at(4))),
         Ok(OpenDataUnfragmentedAdmission::Admitted { expired: 0 })
     );
 }
@@ -345,11 +354,11 @@ fn clock_wrap_expires_retained_bytes_before_sequence_reuse() {
     let payload = [0xaa, 0xaa, 3, 0, 0, 0, 0x08, 0x00, 1];
     let first = fragment(DataInterfaceRole::Station, 9, 0, true, false, &payload);
     let final_fragment = fragment(DataInterfaceRole::Station, 9, 1, false, false, &[2]);
-    let mut state = OpenDataDefragmenter::<1, 32>::new(100);
+    let mut state = OpenDataDefragmenter::<1, 32>::new(Duration::from_micros(100));
     state
         .ingest(
             parsed(DataInterfaceRole::Station, &first, payload.len()),
-            u64::MAX - 1,
+            at(u64::MAX - 1),
             |_| (),
         )
         .unwrap();
@@ -357,7 +366,7 @@ fn clock_wrap_expires_retained_bytes_before_sequence_reuse() {
     assert_eq!(
         state.ingest(
             parsed(DataInterfaceRole::Station, &final_fragment, 1),
-            1,
+            at(1),
             |_| (),
         ),
         Err(OpenDataFragmentError::Orphan { fragment_number: 1 })

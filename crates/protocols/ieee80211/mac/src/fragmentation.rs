@@ -49,7 +49,7 @@ pub const OPEN_DATA_REASSEMBLY_CAPACITY: usize = 1_500 + LLC_SNAP_HEADER_LEN;
 /// This is deliberately not presented as an ESP32-S31 hardware value. It is
 /// a finite host-owned eviction policy used only when a runtime clock sample
 /// accompanies the received fragment.
-pub const OPEN_DATA_FRAGMENT_TIMEOUT_MICROS: u64 = 1_000_000;
+pub const OPEN_DATA_FRAGMENT_TIMEOUT: oer_time::Duration = oer_time::Duration::from_secs(1);
 
 /// Cryptographic class bound to one complete fragment identity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

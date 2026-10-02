@@ -106,8 +106,10 @@ It selects through `oer-tidy`'s model of the tree, without Cargo:
   depends on a selected one, through any dependency kind.
 
 It then runs `check tidy` over the whole tree, `cargo fmt --check` of the
-selected packages of every workspace a Rust file changed in, `lock --check` of every workspace whose
-manifests or lock changed and `check capabilities` when Rust or catalogs did.
+selected packages of every workspace a Rust file changed in, `lock --check` of every
+workspace when a package manifest changed (a firmware workspace locks the
+production crates it builds through path dependencies) or of the workspace
+whose own manifest or lock changed, and `check capabilities` when Rust or catalogs did.
 Clippy with `-D warnings` covers the selected host packages and every package
 depending on them, so a changed interface fails where it is used; the tests
 (with their declared feature sets, limited to 20 minutes) cover the selected

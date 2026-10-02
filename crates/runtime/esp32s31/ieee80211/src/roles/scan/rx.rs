@@ -11,11 +11,8 @@
 #![forbid(unsafe_code)]
 
 use crate::datapath::rx::{
-    dma::{
-        ESP32S31_RX_WALKER_ENABLE_SETTLE_US, ReceiveDmaStorage, RxEpochResources, StagedRxProducer,
-    },
-    frontier::{EmbassyRxFrontierDelay, ReceiveFrontier, RxFrontierError, RxFrontierPhase},
-    hardware::RxDmaObservationDelay,
+    dma::{ReceiveDmaStorage, RxEpochResources, StagedRxProducer, walker_enable_settle},
+    frontier::{ReceiveFrontier, RxFrontierError, RxFrontierPhase},
 };
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
@@ -95,7 +92,7 @@ pub struct ScanRx<
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 > {
-    receive: ReceiveFrontier<'storage, EmbassyRxFrontierDelay, COUNT, DMA_BUFFER_SIZE>,
+    receive: ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE>,
     storage: &'storage ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
 }
 

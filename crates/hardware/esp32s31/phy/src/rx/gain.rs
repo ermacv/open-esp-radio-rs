@@ -834,7 +834,7 @@ impl PhyRxGainInitTransition {
         unsafe(link_section = ".hot.text.open_radio_phy_rx_gain_direct")
     )]
     #[inline(never)]
-    pub(crate) fn execute_publish_target_direct<D: crate::target_executor::PhyShortDelay>(
+    pub(crate) fn execute_publish_target_direct<D: crate::executor::wait::PhyShortDelay>(
         &mut self,
         registers: &mut impl oer_esp32s31_hal::owner::SharedPhyContext,
     ) -> Result<bool, crate::target_executor::PhyTargetPortError> {

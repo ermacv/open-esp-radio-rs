@@ -3,7 +3,7 @@ use core::{
     future::Future,
     task::{Context, Poll, Waker},
 };
-use oer_esp32s31_phy::state::client::PhyPllTrackClock;
+
 struct Hardware {
     reads: usize,
     ready_after: usize,
@@ -22,23 +22,37 @@ impl MacRuntimeStopHardware for Hardware {
         panic!("stop must never resume MAC");
     }
 }
+/// Time that moves to each deadline waited for, recording the waits, or
+/// parks every wait.
 struct Timer {
-    now: u64,
-    waits: std::vec::Vec<u64>,
+    now: core::cell::Cell<u64>,
+    waits: core::cell::RefCell<std::vec::Vec<u64>>,
     park: bool,
 }
-impl PhyPllTrackClock for Timer {
-    fn now_micros(&mut self) -> u64 {
-        self.now
+impl Timer {
+    fn new(now: u64, park: bool) -> Self {
+        Self {
+            now: core::cell::Cell::new(now),
+            waits: core::cell::RefCell::new(std::vec::Vec::new()),
+            park,
+        }
+    }
+    fn waits(&self) -> std::vec::Vec<u64> {
+        self.waits.borrow().clone()
     }
 }
-impl PhyTrackingTimer for Timer {
-    async fn wait_until_micros(&mut self, deadline: u64) {
-        self.waits.push(deadline);
+impl oer_time::Clock for Timer {
+    fn now(&self) -> oer_time::Instant {
+        oer_time::Instant::from_micros(self.now.get())
+    }
+}
+impl oer_time::Timer for Timer {
+    async fn wait_until(&self, deadline: oer_time::Instant) {
+        self.waits.borrow_mut().push(deadline.as_micros());
         if self.park {
             core::future::pending::<()>().await;
         }
-        self.now = deadline;
+        self.now.set(deadline.as_micros());
     }
 }
 fn run(future: impl Future<Output = Result<(), StopError>>) -> Result<(), StopError> {
@@ -57,13 +71,16 @@ fn stopped_readback_needs_no_delay_and_never_resumes() {
         ready_after: 0,
         requested: false,
     };
-    let mut timer = Timer {
-        now: 0,
-        waits: std::vec::Vec::new(),
-        park: false,
-    };
-    assert_eq!(run(stop_mac(&mut hw, &mut timer, 100)), Ok(()));
-    assert!(timer.waits.is_empty());
+    let timer = Timer::new(0, false);
+    assert_eq!(
+        run(stop_mac(
+            &mut hw,
+            &timer,
+            oer_time::Duration::from_micros(100)
+        )),
+        Ok(())
+    );
+    assert!(timer.waits().is_empty());
 }
 #[test]
 fn active_mac_parks_until_readback_or_explicit_timeout() {
@@ -76,13 +93,16 @@ fn active_mac_parks_until_readback_or_explicit_timeout() {
             ready_after,
             requested: false,
         };
-        let mut timer = Timer {
-            now: 0,
-            waits: std::vec::Vec::new(),
-            park: false,
-        };
-        assert_eq!(run(stop_mac(&mut hw, &mut timer, 40)), expected);
-        assert_eq!(timer.waits, [20, 40]);
+        let timer = Timer::new(0, false);
+        assert_eq!(
+            run(stop_mac(
+                &mut hw,
+                &timer,
+                oer_time::Duration::from_micros(40)
+            )),
+            expected
+        );
+        assert_eq!(timer.waits(), [20, 40]);
     }
 }
 #[test]
@@ -92,19 +112,19 @@ fn pending_timer_does_not_repoll_mmio_and_cancellation_retains_borrowed_owner() 
         ready_after: 99,
         requested: false,
     };
-    let mut timer = Timer {
-        now: 0,
-        waits: std::vec::Vec::new(),
-        park: true,
-    };
+    let timer = Timer::new(0, true);
     {
-        let mut future = core::pin::pin!(stop_mac(&mut hw, &mut timer, 40));
+        let mut future = core::pin::pin!(stop_mac(
+            &mut hw,
+            &timer,
+            oer_time::Duration::from_micros(40)
+        ));
         let mut cx = Context::from_waker(Waker::noop());
         assert!(future.as_mut().poll(&mut cx).is_pending());
         assert!(future.as_mut().poll(&mut cx).is_pending());
     }
     assert_eq!(hw.reads, 1);
-    assert_eq!(timer.waits, [20]);
+    assert_eq!(timer.waits(), [20]);
     assert!(hw.requested);
 }
 
@@ -115,13 +135,13 @@ fn unrepresentable_deadline_does_not_start_hardware_stop() {
         ready_after: 99,
         requested: false,
     };
-    let mut timer = Timer {
-        now: u64::MAX,
-        waits: std::vec::Vec::new(),
-        park: false,
-    };
+    let timer = Timer::new(u64::MAX, false);
     assert_eq!(
-        run(stop_mac(&mut hw, &mut timer, 1)),
+        run(stop_mac(
+            &mut hw,
+            &timer,
+            oer_time::Duration::from_micros(1)
+        )),
         Err(StopError::DeadlineOverflow)
     );
     assert!(!hw.requested);

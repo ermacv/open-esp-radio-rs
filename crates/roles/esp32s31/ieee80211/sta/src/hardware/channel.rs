@@ -1,13 +1,11 @@
 //! Wi-Fi channel transactions used by ESP32-S31 station scan and reconnect.
 
-use core::marker::PhantomData;
-
 use oer_esp32s31_hal::{
     ieee80211::arena::RadioAccess, owner::RadioRuntimeOwner, shared_radio::SharedRadioLease,
 };
 
 use oer_esp32s31_phy::{
-    ConcurrentWifiChannelError, PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError,
+    ConcurrentWifiChannelError, PhyTargetObserver, PhyTargetPortError, RomShortDelay,
     concurrent::ConcurrentPhy, select_concurrent_wifi_channel, switch_concurrent_wifi_channel,
 };
 
@@ -16,22 +14,20 @@ use oer_esp32s31_phy::{
 /// The arbiter lease is taken per transaction, as the vendor `phy_lock`
 /// scope is, so another radio client can use the shared domain between the
 /// channels of one scan. The caller passes the lease and the PHY platform
-/// token it grants.
-pub struct ScanPhy<O, D> {
+/// token it grants. The transactions wait on the image's monotonic `timer`
+/// and complete short settles through the ROM delay.
+pub struct ScanPhy<O, T> {
     observer: O,
-    _delay: PhantomData<fn() -> D>,
+    timer: T,
 }
 
-impl<O, D> ScanPhy<O, D>
+impl<O, T> ScanPhy<O, T>
 where
     O: PhyTargetObserver,
-    D: PhyAsyncDelay,
+    T: oer_time::Timer,
 {
-    pub const fn new(observer: O) -> Self {
-        Self {
-            observer,
-            _delay: PhantomData,
-        }
+    pub const fn new(observer: O, timer: T) -> Self {
+        Self { observer, timer }
     }
 
     /// Retune the shared domain while the caller still owns a cold, stopped
@@ -45,7 +41,8 @@ where
         radio: &mut RadioRuntimeOwner,
     ) -> Result<(), ConcurrentWifiChannelError> {
         let (mut hardware, phy) = radio.channel_hal_with_attachment(platform, lease);
-        select_concurrent_wifi_channel::<D, _, _>(
+        select_concurrent_wifi_channel::<RomShortDelay, _, _>(
+            &self.timer,
             phy,
             channel_or_frequency,
             cbw,
@@ -67,7 +64,8 @@ where
         radio: &mut RadioRuntimeOwner,
     ) -> Result<(), ConcurrentWifiChannelError> {
         let (mut hardware, phy) = radio.channel_hal_with_attachment(platform, lease);
-        switch_concurrent_wifi_channel::<D, _, _>(
+        switch_concurrent_wifi_channel::<RomShortDelay, _, _>(
+            &self.timer,
             phy,
             channel_or_frequency,
             cbw,
@@ -94,7 +92,8 @@ where
                     PhyTargetPortError::HardwareCapabilityUnavailable,
                 )
             })?;
-        switch_concurrent_wifi_channel::<D, _, _>(
+        switch_concurrent_wifi_channel::<RomShortDelay, _, _>(
+            &self.timer,
             phy,
             channel_or_frequency,
             cbw,
@@ -104,9 +103,9 @@ where
         .await
     }
 
-    /// Return the observer after the scan transaction has stopped RX and
-    /// selected its candidate.
-    pub fn into_observer(self) -> O {
-        self.observer
+    /// Return the observer and the timer after the scan transaction has
+    /// stopped RX and selected its candidate.
+    pub fn into_parts(self) -> (O, T) {
+        (self.observer, self.timer)
     }
 }

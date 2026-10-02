@@ -1034,3 +1034,52 @@ fn data_selection(publication_limit: u8) -> StaDataTxSelection {
         publication_limit,
     }
 }
+
+#[test]
+fn an_idle_or_reached_deadline_wait_yields_to_the_executor_once() {
+    use std::{
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        task::Wake,
+    };
+
+    struct Wakes(AtomicUsize);
+    impl Wake for Wakes {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = Hardware {
+        prepare: true,
+        ..Hardware::default()
+    };
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
+    let wakes = Arc::new(Wakes(AtomicUsize::new(0)));
+    let waker = core::task::Waker::from(wakes.clone());
+    let mut context = core::task::Context::from_waker(&waker);
+
+    // An idle owner has no deadline: the wait returns to the executor once,
+    // waking itself, so a service loop around it cannot run without yielding.
+    {
+        let mut wait = core::pin::pin!(tx.ordinary.wait_deadline());
+        assert!(wait.as_mut().poll(&mut context).is_pending());
+        assert_eq!(wakes.0.load(Ordering::Relaxed), 1);
+        assert!(wait.as_mut().poll(&mut context).is_ready());
+    }
+
+    // A deadline already reached yields once as well.
+    tx.start(&mut hardware, &ethernet(), data_selection(2))
+        .unwrap();
+    let deadline = tx.next_deadline_micros().unwrap();
+    tx.ordinary.timer.set_micros(deadline);
+    {
+        let mut wait = core::pin::pin!(tx.ordinary.wait_deadline());
+        assert!(wait.as_mut().poll(&mut context).is_pending());
+        assert_eq!(wakes.0.load(Ordering::Relaxed), 2);
+        assert!(wait.as_mut().poll(&mut context).is_ready());
+    }
+}

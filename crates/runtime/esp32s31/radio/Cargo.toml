@@ -13,7 +13,7 @@ embassy-time = "0.5.1"
 oer-esp32s31-coex = { path = "../../../hardware/esp32s31/driver/coex" }
 oer-esp32s31-hal = { path = "../../../hardware/esp32s31/hal" }
 oer-esp32s31-phy = { path = "../../../hardware/esp32s31/phy" }
-oer-esp32s31-phy-runtime = { path = "../phy" }
+oer-time-embassy = { path = "../../../adapters/embassy/time" }
 
 [lints]
 workspace = true

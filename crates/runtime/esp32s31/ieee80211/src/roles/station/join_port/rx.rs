@@ -1,8 +1,6 @@
 use crate::datapath::rx::{
     dma::ReceiveDmaStorage,
-    frontier::{
-        ReceiveFrontier, RxFrontierDelay, RxFrontierDirective, RxFrontierError, RxFrontierPhase,
-    },
+    frontier::{ReceiveFrontier, RxFrontierDirective, RxFrontierError, RxFrontierPhase},
 };
 
 use oer_esp32s31_ieee80211_mac::{
@@ -22,21 +20,28 @@ pub struct StaJoinRx<
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 > {
-    owner: ReceiveFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE>,
+    owner: ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE>,
     storage: &'storage ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    /// The timer the walker settles on when the ring restarts.
+    timer: D,
 }
 
 impl<'storage, D, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORAGE_SIZE: usize>
     StaJoinRx<'storage, D, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 {
     pub const fn new(
-        owner: ReceiveFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE>,
+        owner: ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE>,
         storage: &'storage ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        timer: D,
     ) -> Self {
-        Self { owner, storage }
+        Self {
+            owner,
+            storage,
+            timer,
+        }
     }
 
-    pub fn into_owner(self) -> ReceiveFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE> {
+    pub fn into_owner(self) -> ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE> {
         self.owner
     }
 }
@@ -50,7 +55,7 @@ impl<
     const DMA_STORAGE_SIZE: usize,
 > StaJoinReceive<H> for StaJoinRx<'storage, D, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 where
-    D: RxFrontierDelay,
+    D: oer_time::Timer,
     H: RxDma + MacRuntimeStopHardware,
 {
     type Error = RxFrontierError;
@@ -59,7 +64,9 @@ where
         let started = if self.owner.phase() == RxFrontierPhase::Live {
             Ok(())
         } else {
-            self.owner.start_with_storage(hardware, self.storage).await
+            self.owner
+                .start_with_storage(&self.timer, hardware, self.storage)
+                .await
         };
         if started.is_ok() {
             hardware.resume_mac_runtime();

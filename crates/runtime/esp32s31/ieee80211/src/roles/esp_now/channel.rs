@@ -1,8 +1,6 @@
 //! Exclusive channel owner for bounded standalone ESP-NOW excursions.
 
 use core::future::Future;
-#[cfg(target_arch = "riscv32")]
-use core::marker::PhantomData;
 
 use oer_ieee80211_mac::channel::WifiChannel;
 
@@ -30,13 +28,13 @@ pub trait StandaloneEspNowChannelControl<H> {
 /// It borrows the role-neutral runtime context for the channel observation and
 /// leases the shared radio for exactly one retune. It is intentionally supplied
 /// only to the opt-in off-channel run method; connected ESP-NOW has no path to
-/// construct or consume it.
+/// construct or consume it. Its retunes wait on `timer`.
 #[cfg(target_arch = "riscv32")]
 pub struct StandaloneEspNowPhyChannelControl<'context, 'observer, P, C, D, O> {
     context: &'context mut oer_esp32s31_ieee80211::runtime::WifiRuntimeContext,
     radio: &'context oer_esp32s31_radio_runtime::RadioSystem<P, C>,
     observer: &'observer mut O,
-    _delay: PhantomData<D>,
+    timer: D,
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -47,12 +45,13 @@ impl<'context, 'observer, P, C, D, O>
         context: &'context mut oer_esp32s31_ieee80211::runtime::WifiRuntimeContext,
         radio: &'context oer_esp32s31_radio_runtime::RadioSystem<P, C>,
         observer: &'observer mut O,
+        timer: D,
     ) -> Self {
         Self {
             context,
             radio,
             observer,
-            _delay: PhantomData,
+            timer,
         }
     }
 
@@ -66,7 +65,7 @@ impl<P, C, D, O> StandaloneEspNowChannelControl<oer_esp32s31_hal::owner::RadioRu
     for StandaloneEspNowPhyChannelControl<'_, '_, P, C, D, O>
 where
     C: oer_esp32s31_hal::shared_radio::PlatformClockProvider,
-    D: oer_esp32s31_phy::PhyAsyncDelay,
+    D: oer_time::Timer,
     O: oer_esp32s31_phy::PhyTargetObserver,
 {
     type Error = oer_esp32s31_phy::ConcurrentWifiChannelError;
@@ -82,7 +81,8 @@ where
     ) -> Result<(), Self::Error> {
         let mut guard = self.radio.lock().await;
         let (lease, platform, _) = guard.parts();
-        oer_esp32s31_ieee80211::switch_esp32s31_wifi_channel::<D, _, _>(
+        oer_esp32s31_ieee80211::switch_esp32s31_wifi_channel::<oer_esp32s31_phy::RomShortDelay, _, _>(
+            &self.timer,
             lease,
             platform,
             hardware,

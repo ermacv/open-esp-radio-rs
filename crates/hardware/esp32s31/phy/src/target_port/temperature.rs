@@ -13,12 +13,14 @@ use crate::{
         PhyTemperatureAction, PhyTemperatureExternalBinding, PhyTemperatureFailure,
         PhyTemperatureOutcome, PhyTemperatureTransition,
     },
-    target_executor::{PhyAsyncDelay, PhyTargetPortError, complete_temperature_i2c},
+    executor::wait::{PhyShortDelay, delay},
+    target_executor::{PhyTargetPortError, complete_temperature_i2c},
 };
 
 /// Run one complete temperature transition. The outer error is an executor
 /// failure; the inner one is the transition's own fail-closed outcome.
-pub async fn sample<D: PhyAsyncDelay>(
+pub async fn sample<D: PhyShortDelay>(
+    timer: &impl oer_time::Timer,
     registers: &mut impl SharedPhyAccess,
 ) -> Result<Result<PhyTemperatureOutcome, PhyTemperatureFailure>, PhyTargetPortError> {
     let mut transition = PhyTemperatureTransition::new();
@@ -34,7 +36,7 @@ pub async fn sample<D: PhyAsyncDelay>(
         {
             PhyTemperatureExternalBinding::I2c(binding) => {
                 complete_temperature_i2c(binding, registers, |kind, micros| {
-                    D::after_micros(kind, micros)
+                    delay::<D, _>(timer, kind, micros)
                 })
                 .await?
             }

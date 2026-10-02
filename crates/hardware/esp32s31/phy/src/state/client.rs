@@ -36,22 +36,6 @@ const VALID_CLIENT_BITS: u8 = WIFI_BIT | BLUETOOTH_BIT | IEEE802154_BIT;
 /// Source-reviewed default periodic PLL-tracking interval.
 pub const DEFAULT_PLL_TRACK_PERIOD_MICROS: u64 = 1_000_000;
 
-/// Monotonic microsecond clock sampled by the shared-PHY scheduler.
-///
-/// The source reads its timer at several distinct points. Accepting a port
-/// instead of one caller-supplied timestamp prevents those reads from being
-/// collapsed into an atomic snapshot at a tracking-period boundary.
-pub trait PhyPllTrackClock {
-    fn now_micros(&mut self) -> u64;
-}
-
-/// Event-driven timer sharing the scheduler's monotonic microsecond epoch.
-/// Implementations park the task until the absolute deadline; they must not
-/// poll the clock in a busy loop. The owner rechecks time after the wake.
-pub trait PhyTrackingTimer: PhyPllTrackClock {
-    fn wait_until_micros(&mut self, deadline: u64) -> impl core::future::Future<Output = ()>;
-}
-
 /// One typed user of the shared PHY software client set: the portable
 /// radio client.
 pub use oer_esp32s31_hal::shared_radio::RadioClient;
@@ -255,7 +239,7 @@ impl PhyClientState {
     pub fn acquire(
         mut self,
         client: RadioClient,
-        clock: &mut impl PhyPllTrackClock,
+        clock: &impl oer_time::Clock,
     ) -> Result<PhyClientAcquireOutcome, PhyClientAcquireFailure> {
         let bit = client_bit(client);
         if self.bits & bit != 0 {
@@ -337,7 +321,7 @@ impl PhyClientState {
     /// hardware work.
     pub fn evaluate_immediate_tracking(
         mut self,
-        clock: &mut impl PhyPllTrackClock,
+        clock: &impl oer_time::Clock,
     ) -> Result<PhyTrackEvaluation, PhyTrackEvaluationFailure> {
         let evaluation = match self.evaluate_for_bits(self.bits, clock) {
             Ok(evaluation) => evaluation,
@@ -359,7 +343,7 @@ impl PhyClientState {
     /// a request and refreshes its timestamp on every callback.
     pub fn evaluate_periodic_tracking(
         mut self,
-        clock: &mut impl PhyPllTrackClock,
+        clock: &impl oer_time::Clock,
     ) -> Result<PhyTrackEvaluation, PhyTrackEvaluationFailure> {
         let wifi_active = self.bits & WIFI_BIT != 0;
         let bluetooth_ieee802154_active = self.bits & (BLUETOOTH_BIT | IEEE802154_BIT) != 0;
@@ -381,14 +365,14 @@ impl PhyClientState {
     fn evaluate_for_bits(
         &self,
         bits: u8,
-        clock: &mut impl PhyPllTrackClock,
+        clock: &impl oer_time::Clock,
     ) -> Result<TrackEvaluation, PhyTrackTimeError> {
         let wifi_active = bits & WIFI_BIT != 0;
         let bluetooth_ieee802154_active = bits & (BLUETOOTH_BIT | IEEE802154_BIT) != 0;
 
         let mut request_due = false;
         if wifi_active {
-            let now_micros = clock.now_micros();
+            let now_micros = clock.now().as_micros();
             self.validate_timestamp(
                 PhyPllTrackClass::Wifi,
                 self.wifi_previous_micros,
@@ -399,7 +383,7 @@ impl PhyClientState {
         // Preserve the two source assignments containing `need_track_pll ||`.
         // Once Wi-Fi is due, C short-circuiting skips the BT/154 due sample.
         if bluetooth_ieee802154_active && !request_due {
-            let now_micros = clock.now_micros();
+            let now_micros = clock.now().as_micros();
             self.validate_timestamp(
                 PhyPllTrackClass::BluetoothIeee802154,
                 self.bluetooth_ieee802154_previous_micros,
@@ -417,7 +401,7 @@ impl PhyClientState {
         wifi_active: bool,
         bluetooth_ieee802154_active: bool,
         request_due: bool,
-        clock: &mut impl PhyPllTrackClock,
+        clock: &impl oer_time::Clock,
     ) -> Result<TrackEvaluation, PhyTrackTimeError> {
         if !request_due {
             return Ok(TrackEvaluation {
@@ -429,7 +413,7 @@ impl PhyClientState {
         }
 
         let wifi_refresh_micros = if wifi_active {
-            let now_micros = clock.now_micros();
+            let now_micros = clock.now().as_micros();
             self.validate_timestamp(
                 PhyPllTrackClass::Wifi,
                 self.wifi_previous_micros,
@@ -440,7 +424,7 @@ impl PhyClientState {
             None
         };
         let bluetooth_ieee802154_refresh_micros = if bluetooth_ieee802154_active {
-            let now_micros = clock.now_micros();
+            let now_micros = clock.now().as_micros();
             self.validate_timestamp(
                 PhyPllTrackClass::BluetoothIeee802154,
                 self.bluetooth_ieee802154_previous_micros,

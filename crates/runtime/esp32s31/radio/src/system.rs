@@ -22,6 +22,7 @@ use oer_esp32s31_hal::{
     root::{ConcurrentPartitions, RadioHardware},
     shared_radio::{PlatformClockProvider, SharedRadio, SharedRadioLease},
 };
+use oer_esp32s31_phy::RomShortDelay;
 use oer_esp32s31_phy::{
     ConcurrentPhyRegisterFailure, ConcurrentPhyRegistration, ConcurrentPhyTrackingError,
     ConcurrentRfError, ConcurrentTrackingTick, NoopPhyTargetObserver, PhyCalibrationCache,
@@ -38,7 +39,7 @@ use oer_esp32s31_phy::{
         WifiPhyLeaveFailure, WifiPhyMembership, WifiPhySuspended, resume_wifi, suspend_wifi,
     },
 };
-use oer_esp32s31_phy_runtime::EmbassyPhyTime;
+use oer_time_embassy::EmbassyClock;
 
 use crate::lease::{LeaseReleaseNotice, LeaseWaiters};
 
@@ -651,7 +652,7 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
         } = &mut *self.resources;
         let lease = &mut self.lease;
         if lease.attachment().rf_closed() {
-            return wake_concurrent_rf::<EmbassyPhyTime>(lease, clocks)
+            return wake_concurrent_rf::<RomShortDelay>(&EmbassyClock, lease, clocks)
                 .await
                 .map(|()| RadioPhyPrepared::Woken)
                 .map_err(RadioPhyError::Wake);
@@ -663,7 +664,8 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
             Some(cache) => PhyRegisterConfig::new(identity).with_calibration_cache(cache),
             None => PhyRegisterConfig::new(identity),
         };
-        match register_concurrent_phy::<P, EmbassyPhyTime, _>(
+        match register_concurrent_phy::<P, RomShortDelay, _>(
+            &EmbassyClock,
             lease,
             platform,
             clocks,
@@ -715,7 +717,7 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
         if !idle {
             return Ok(false);
         }
-        close_concurrent_rf::<P, EmbassyPhyTime>(lease, platform)
+        close_concurrent_rf::<P, RomShortDelay>(&EmbassyClock, lease, platform)
             .await
             .map(|()| true)
     }
@@ -742,8 +744,7 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
     ) -> Result<(Ieee802154PhyMembership, ConcurrentAcquire), Ieee802154JoinError> {
         // The client needs RF open, not the registration report.
         let _prepared = self.prepare_phy().await.map_err(Ieee802154JoinError::Phy)?;
-        join_ieee802154(self.lease(), clocked, &mut EmbassyPhyTime)
-            .map_err(Ieee802154JoinError::Client)
+        join_ieee802154(self.lease(), clocked, &EmbassyClock).map_err(Ieee802154JoinError::Client)
     }
 
     /// Leave the shared PHY, as the vendor `esp_ieee802154_disable` does
@@ -789,10 +790,10 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
     /// Once tracking starts, drive this future to a terminal result.
     pub async fn track(&mut self) -> Result<ConcurrentTrackingTick, ConcurrentPhyTrackingError> {
         let (lease, platform, _) = self.parts();
-        track_concurrent_phy::<P, EmbassyPhyTime, _>(
+        track_concurrent_phy::<P, RomShortDelay, _>(
             lease,
             platform,
-            &mut EmbassyPhyTime,
+            &EmbassyClock,
             NoopPhyTargetObserver,
         )
         .await
@@ -1096,7 +1097,7 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
                 suspended,
             });
         }
-        resume_wifi(self.lease(), clocks, suspended, &mut EmbassyPhyTime).map_err(|failure| {
+        resume_wifi(self.lease(), clocks, suspended, &EmbassyClock).map_err(|failure| {
             WifiWakeFailure {
                 error: WifiWakeError::Client(failure.error()),
                 suspended: failure.into_suspended(),

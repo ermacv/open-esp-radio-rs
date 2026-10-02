@@ -35,7 +35,7 @@ impl<
     >
 where
     H: RxDma,
-    D: RxDmaObservationDelay,
+    D: oer_time::Timer,
     P: Esp32s31RxStageAdmissionPolicy,
 {
     type Error = RxStageTransactionError;

@@ -11,10 +11,7 @@ use crate::datapath::{
     DatapathRxProgress, DatapathRxServiceContext, DatapathRxWorkCounters,
     network::DatapathNetworkRx,
     paired::{DatapathPairRole, DatapathPairedRxProgress, DatapathPairedRxService},
-    rx::{
-        dma::StagedRxEpoch, hardware::RxDmaObservationDelay, staging::StagedRxFrame,
-        turn::FusedRxTurn,
-    },
+    rx::{dma::StagedRxEpoch, staging::StagedRxFrame, turn::FusedRxTurn},
 };
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
@@ -270,14 +267,14 @@ impl<
 
     pub async fn start<H: RxDma>(&mut self, hardware: &mut H) -> Result<(), RxStageTransactionError>
     where
-        D: RxDmaObservationDelay,
+        D: oer_time::Timer,
     {
         self.dma.start(hardware).await
     }
 
     pub fn stop<H: RxDma>(&mut self, hardware: &mut H) -> Result<(), RxStageTransactionError>
     where
-        D: RxDmaObservationDelay,
+        D: oer_time::Timer,
     {
         self.dma.stop(hardware)
     }
@@ -344,7 +341,7 @@ impl<
     >
 where
     M: RawMutex,
-    D: RxDmaObservationDelay,
+    D: oer_time::Timer,
     H: RxDma,
     Station: StaApStationRxRole<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
     AccessPoint: StaApAccessPointRxRole<'pool, H, PhysicalTx, STAGE_CAPACITY, STAGE_SLOTS>,

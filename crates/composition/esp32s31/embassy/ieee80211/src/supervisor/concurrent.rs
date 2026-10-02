@@ -29,6 +29,7 @@ use crate::{
 };
 
 use embassy_time::Timer;
+use oer_time_embassy::EmbassyClock;
 
 use oer_radio::wifi::{
     StationAccessPointRequest, StationRequest, StationScanChannels, StationScanPolicy,
@@ -45,10 +46,7 @@ use oer_esp32s31_ieee80211_runtime::{
         DatapathRunnerExit,
         network::{DatapathNetwork, DatapathNetworkLink},
         paired::DatapathPairRole,
-        rx::{
-            dma::{RxEpochResources, StagedRxEpoch},
-            hardware::EmbassyRxDmaObservationDelay,
-        },
+        rx::dma::{RxEpochResources, StagedRxEpoch},
         services::SingleRoleServices,
     },
     roles::{
@@ -436,7 +434,7 @@ impl ProductionWifiEpochRunner {
                     dma.storage(),
                     &RX_STAGE_POOL,
                     standalone_sender,
-                    EmbassyRxDmaObservationDelay,
+                    EmbassyClock,
                 );
                 (
                     start_esp32s31_initial_connected_epoch(hardware, receive, initial.with_rx(rx))

@@ -13,7 +13,7 @@ use super::{
     CHANNEL_READY_SAMPLE_LIMIT, PhyTargetObserver, PhyTargetPortError, RF_OPERATION_LIMIT,
 };
 use crate::{
-    target_executor::{PhyAsyncDelay, PhyShortDelay},
+    executor::wait::PhyShortDelay,
     tracking::calibration::{
         PhyCalibrationChannelTransition, PhyCalibrationDcodeTransition,
         PhyCalibrationPbusClearTransition, PhyCalibrationRxGainTransition,
@@ -177,14 +177,14 @@ fn complete_dcode_direct<D: PhyShortDelay>(
 }
 
 /// Run RX-DC calibration and publish both gain banks using the same admitted owner.
-pub fn rx_gain<D: PhyAsyncDelay, P>(
+pub fn rx_gain<D: PhyShortDelay, P>(
     mut child: PhyCalibrationRxGainTransition,
     platform: &mut P,
     registers: &mut impl SharedPhyContext,
     observe: impl FnMut(crate::tracking::observation::Operation, crate::tracking::observation::Event),
     summarize: impl FnMut(crate::tracking::observation::RxGainExecution),
 ) -> Result<PhyCalibrationTrackingCompletion, PhyTargetPortError> {
-    rx_gain_init::<D::ShortDelay, _>(
+    rx_gain_init::<D, _>(
         child.transition_mut(),
         platform,
         registers,
@@ -693,23 +693,23 @@ pub fn tx_dc_pwdet_init<D: PhyShortDelay, O: PhyTargetObserver>(
     child: &mut crate::tx::dc_power_detector::PhyTxDcPwdetTransition,
     registers: &mut impl SharedPhyContext,
     observer: &core::cell::RefCell<&mut O>,
-    mut now_micros: impl FnMut() -> Option<u64>,
+    clock: &impl oer_time::Clock,
 ) -> Result<(), PhyTargetPortError> {
     child.execute_target_direct(
         registers,
-        |scope, micros| tx_settle::<D, O>(observer, &mut now_micros, scope, micros),
+        |scope, micros| tx_settle::<D, O>(observer, clock, scope, micros),
         |ready| observer.borrow_mut().tx_sar_ready(ready),
     )
 }
 
 fn tx_settle<D: PhyShortDelay, O: PhyTargetObserver>(
     observer: &core::cell::RefCell<&mut O>,
-    now_micros: &mut impl FnMut() -> Option<u64>,
+    clock: &impl oer_time::Clock,
     scope: crate::executor::wait::tx::Scope,
     micros: u32,
 ) -> Result<(), PhyTargetPortError> {
     use crate::executor::wait::{Event, Kind};
-    let started = O::OBSERVE_DELAYS.then(&mut *now_micros).flatten();
+    let started = O::OBSERVE_DELAYS.then(|| clock.now());
     if O::OBSERVE_DELAYS {
         observer.borrow_mut().tx_wait(
             scope,
@@ -720,18 +720,18 @@ fn tx_settle<D: PhyShortDelay, O: PhyTargetObserver>(
         );
     }
     let result = short_settle::<D>(micros);
-    if O::OBSERVE_DELAYS {
-        let event = match (result.is_ok(), started, now_micros()) {
-            (true, Some(started), Some(completed)) if completed >= started => {
-                let elapsed_micros = completed - started;
-                Event::Completed {
-                    elapsed_micros,
-                    lateness_micros: elapsed_micros.saturating_sub(u64::from(micros)),
-                }
-            }
-            _ => Event::Unsupported,
-        };
-        observer.borrow_mut().tx_wait(scope, Kind::Settle, event);
+    // A failed settle reports no completion, which leaves the evidence
+    // incomplete.
+    if let (Ok(()), Some(started)) = (&result, started) {
+        let elapsed_micros = clock.now().saturating_duration_since(started).as_micros();
+        observer.borrow_mut().tx_wait(
+            scope,
+            Kind::Settle,
+            Event::Completed {
+                elapsed_micros,
+                lateness_micros: elapsed_micros.saturating_sub(u64::from(micros)),
+            },
+        );
     }
     result
 }

@@ -54,6 +54,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `adapters/embassy/radio/` | Embassy mailbox and role-epoch actor binding the `radio` service port |
 | `adapters/openthread/ieee802154/` | Portable OpenThread `Radio` over any `Ieee802154RadioPort` |
 | `adapters/embassy/esp32s31/executor/` | Scheduler-free Embassy executor and time driver |
+| `adapters/virtual/time/` | Per-instance virtual monotonic time for host tests and simulations: a `VirtualClock` its owner advances and a `SkipClock` whose waits skip to their deadline |
 | `runtime/ieee80211/` | Portable Wi-Fi execution primitives: monitor handoffs, task shutdown, station network ownership and poll boundaries |
 | `runtime/bluetooth/` | Portable service loop joining the in-process HCI transport, the LE Controller core and a radio port |
 | `runtime/esp32s31/{ieee80211,bluetooth,ieee802154}/` | Executor-independent radio execution over `embassy-time`; Wi-Fi role/datapath owners, the Bluetooth LE radio role driving scheduler list zero and the IEEE 802.15.4 acknowledged-IRQ handoff with cancellation-safe operation/DMA owners |
@@ -109,12 +110,12 @@ adapter supplies storage types; integration selects dimensions and acquires
 one complete owner graph. Profile tests run on the host from that production
 module, with hardware dependencies restricted to the ESP32-S31 target.
 
-Every chip radio composition drives PHY time through the one `EmbassyPhyTime`
-of [`runtime/esp32s31/phy`](runtime/esp32s31/phy/): synchronous ROM settles of
-at most 20 us, absolute Embassy deadlines for every other wait, the
-one-megahertz timebase check and fail-stop on an unrepresentable deadline.
-Chip PHY stays executor-independent, and the executor/time ABI backend owns no
-PHY policy.
+Chip PHY waits through `oer_esp32s31_phy::executor::wait::delay`: synchronous
+ROM settles of at most 20 us, and an absolute deadline on the caller's
+`oer_time::Timer` for every other wait, which never ends when the deadline is
+unrepresentable. Every chip radio composition passes
+[`oer_time_embassy::EmbassyClock`](adapters/embassy/time/). Chip PHY stays
+executor-independent, and the executor/time ABI backend owns no PHY policy.
 
 AP `runtime/esp32s31/ieee80211/src/roles/access_point/network_tx` retains one TX owner. Its `queue`,
 `power_save`, `aggregate` and `completion` modules operate on that same arena

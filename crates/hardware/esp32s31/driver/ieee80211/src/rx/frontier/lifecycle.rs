@@ -1,6 +1,4 @@
-use core::marker::PhantomData;
-
-use crate::rx::storage::{ESP32S31_RX_WALKER_ENABLE_SETTLE_US, ReceiveDmaStorage};
+use crate::rx::storage::{ReceiveDmaStorage, walker_enable_settle};
 
 use oer_esp32s31_ieee80211_mac::rx::{
     RxDescriptorSnapshot, RxDma, RxDmaBufferAddresses, RxRingError, RxRingHalted, RxRingLive,
@@ -8,15 +6,13 @@ use oer_esp32s31_ieee80211_mac::rx::{
 };
 
 use super::{
-    ReceiveFrontier, RxFrontierContinuation, RxFrontierDelay, RxFrontierDirective, RxFrontierError,
+    ReceiveFrontier, RxFrontierContinuation, RxFrontierDirective, RxFrontierError,
     RxFrontierIntoLiveFailure, RxFrontierPhase, RxFrontierProgress, RxFrontierSchedulerSnapshot,
     RxFrontierServiceProgress, state::RxFrontierState,
 };
 
-impl<'storage, D, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
-    ReceiveFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE>
-where
-    D: RxFrontierDelay,
+impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
+    ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE>
 {
     #[cfg(not(target_pointer_width = "32"))]
     pub fn prepare_initial<M: RxDma, const DMA_STORAGE_SIZE: usize>(
@@ -51,14 +47,12 @@ where
     pub const fn from_halted(ring: RxRingHalted<'storage, COUNT>) -> Self {
         Self {
             state: RxFrontierState::Halted(ring),
-            _delay: PhantomData,
         }
     }
 
     pub const fn from_prepared(ring: RxRingStopped<'storage, COUNT>) -> Self {
         Self {
             state: RxFrontierState::Prepared(ring),
-            _delay: PhantomData,
         }
     }
 
@@ -66,7 +60,6 @@ where
     pub const fn from_live(ring: RxRingLive<'storage, COUNT>) -> Self {
         Self {
             state: RxFrontierState::Live(ring),
-            _delay: PhantomData,
         }
     }
 
@@ -139,10 +132,7 @@ where
         if matches!(state, RxFrontierState::Vacant) {
             return Err(RxFrontierError::OwnerUnavailable);
         }
-        Ok(Self {
-            state,
-            _delay: PhantomData,
-        })
+        Ok(Self { state })
     }
 
     /// Prepare a halted frontier if needed, wait the qualified walker settle
@@ -154,6 +144,7 @@ where
     #[cfg(not(target_pointer_width = "32"))]
     pub async fn start<M, F>(
         &mut self,
+        timer: &impl oer_time::Timer,
         hardware: &mut M,
         prepare_buffer: F,
     ) -> Result<(), RxFrontierError>
@@ -181,7 +172,7 @@ where
                 return Err(RxFrontierError::OwnerUnavailable);
             }
         };
-        D::after_micros(ESP32S31_RX_WALKER_ENABLE_SETTLE_US).await;
+        walker_enable_settle(timer).await;
         match prepared.try_start(hardware) {
             Ok(live) => {
                 self.state = RxFrontierState::Live(live);
@@ -197,6 +188,7 @@ where
     /// Start RX using the production DMA storage bound to this ring.
     pub async fn start_with_storage<M, const DMA_STORAGE_SIZE: usize>(
         &mut self,
+        timer: &impl oer_time::Timer,
         hardware: &mut M,
         storage: &'storage ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     ) -> Result<(), RxFrontierError>
@@ -221,7 +213,7 @@ where
                 return Err(RxFrontierError::OwnerUnavailable);
             }
         };
-        D::after_micros(ESP32S31_RX_WALKER_ENABLE_SETTLE_US).await;
+        walker_enable_settle(timer).await;
         match prepared.try_start(hardware) {
             Ok(live) => {
                 self.state = RxFrontierState::Live(live);
@@ -463,10 +455,7 @@ where
         match self.state {
             RxFrontierState::Halted(ring) => Ok(ring),
             RxFrontierState::Prepared(ring) => Ok(ring.into_halted()),
-            state => Err(Self {
-                state,
-                _delay: PhantomData,
-            }),
+            state => Err(Self { state }),
         }
     }
 
@@ -491,11 +480,12 @@ where
     #[allow(clippy::result_large_err)]
     pub async fn try_into_live_with_storage<M, const DMA_STORAGE_SIZE: usize>(
         mut self,
+        timer: &impl oer_time::Timer,
         hardware: &mut M,
         storage: &'storage ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     ) -> Result<
         RxRingLive<'storage, COUNT>,
-        RxFrontierIntoLiveFailure<'storage, D, COUNT, DMA_BUFFER_SIZE>,
+        RxFrontierIntoLiveFailure<'storage, COUNT, DMA_BUFFER_SIZE>,
     >
     where
         M: RxDma,
@@ -506,7 +496,7 @@ where
                 Err(error) => Err(RxFrontierIntoLiveFailure { owner: self, error }),
             };
         }
-        if let Err(error) = self.start_with_storage(hardware, storage).await {
+        if let Err(error) = self.start_with_storage(timer, hardware, storage).await {
             return Err(RxFrontierIntoLiveFailure { owner: self, error });
         }
         match self.take_live() {

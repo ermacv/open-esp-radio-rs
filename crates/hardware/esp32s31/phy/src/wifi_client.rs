@@ -22,7 +22,7 @@ use crate::{
     concurrent::{
         ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError, acquire_client, release_client,
     },
-    state::client::{PhyPllTrackClock, RadioClient},
+    state::client::RadioClient,
 };
 
 /// Wi-Fi holds a client bit in the shared PHY domain.
@@ -57,7 +57,7 @@ impl fmt::Debug for WifiPhyMembership {
 pub fn join_wifi(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     clocked: &WifiClocked,
-    clock: &mut impl PhyPllTrackClock,
+    clock: &impl oer_time::Clock,
 ) -> Result<(WifiPhyMembership, ConcurrentAcquire), ConcurrentPhyError> {
     let _ = clocked;
     let acquired = acquire_client(lease, RadioClient::Wifi, clock)?;
@@ -212,7 +212,7 @@ pub fn resume_wifi(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     clocks: &WifiClocksOn,
     suspended: WifiPhySuspended,
-    clock: &mut impl PhyPllTrackClock,
+    clock: &impl oer_time::Clock,
 ) -> Result<(WifiPhyMembership, ConcurrentAcquire), WifiPhySuspendedFailure> {
     let _ = clocks;
     match acquire_client(lease, RadioClient::Wifi, clock) {

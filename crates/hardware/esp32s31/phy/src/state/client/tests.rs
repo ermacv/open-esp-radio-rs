@@ -8,32 +8,35 @@ const CLIENTS: [RadioClient; 3] = [
 
 struct FixedClock(u64);
 
-impl PhyPllTrackClock for FixedClock {
-    fn now_micros(&mut self) -> u64 {
-        self.0
+impl oer_time::Clock for FixedClock {
+    fn now(&self) -> oer_time::Instant {
+        oer_time::Instant::from_micros(self.0)
     }
 }
 
 struct ScriptedClock<const COUNT: usize> {
     samples: [u64; COUNT],
-    next: usize,
+    next: core::cell::Cell<usize>,
 }
 
 impl<const COUNT: usize> ScriptedClock<COUNT> {
     const fn new(samples: [u64; COUNT]) -> Self {
-        Self { samples, next: 0 }
+        Self {
+            samples,
+            next: core::cell::Cell::new(0),
+        }
     }
 
-    const fn samples_consumed(&self) -> usize {
-        self.next
+    fn samples_consumed(&self) -> usize {
+        self.next.get()
     }
 }
 
-impl<const COUNT: usize> PhyPllTrackClock for ScriptedClock<COUNT> {
-    fn now_micros(&mut self) -> u64 {
-        let sample = self.samples[self.next];
-        self.next += 1;
-        sample
+impl<const COUNT: usize> oer_time::Clock for ScriptedClock<COUNT> {
+    fn now(&self) -> oer_time::Instant {
+        let next = self.next.get();
+        self.next.set(next + 1);
+        oer_time::Instant::from_micros(self.samples[next])
     }
 }
 
@@ -61,21 +64,21 @@ impl PhyClientStateTestExt for PhyClientState {
         client: RadioClient,
         now_micros: u64,
     ) -> Result<PhyClientAcquireOutcome, PhyClientAcquireFailure> {
-        self.acquire(client, &mut FixedClock(now_micros))
+        self.acquire(client, &FixedClock(now_micros))
     }
 
     fn evaluate_immediate_at(
         self,
         now_micros: u64,
     ) -> Result<PhyTrackEvaluation, PhyTrackEvaluationFailure> {
-        self.evaluate_immediate_tracking(&mut FixedClock(now_micros))
+        self.evaluate_immediate_tracking(&FixedClock(now_micros))
     }
 
     fn evaluate_periodic_at(
         self,
         now_micros: u64,
     ) -> Result<PhyTrackEvaluation, PhyTrackEvaluationFailure> {
-        self.evaluate_periodic_tracking(&mut FixedClock(now_micros))
+        self.evaluate_periodic_tracking(&FixedClock(now_micros))
     }
 }
 
@@ -271,12 +274,12 @@ fn one_due_class_refreshes_and_requests_all_active_classes() {
 #[test]
 fn immediate_tracking_preserves_short_circuit_and_refresh_sample_order() {
     let state = state_for_mask(WIFI_BIT | IEEE802154_BIT, 0);
-    let mut wifi_due = ScriptedClock::new([
+    let wifi_due = ScriptedClock::new([
         DEFAULT_PLL_TRACK_PERIOD_MICROS + 1,
         DEFAULT_PLL_TRACK_PERIOD_MICROS + 2,
         DEFAULT_PLL_TRACK_PERIOD_MICROS + 3,
     ]);
-    let evaluation = state.evaluate_immediate_tracking(&mut wifi_due).unwrap();
+    let evaluation = state.evaluate_immediate_tracking(&wifi_due).unwrap();
 
     assert_eq!(wifi_due.samples_consumed(), 3);
     let request = evaluation.request().unwrap();
@@ -293,14 +296,14 @@ fn immediate_tracking_preserves_short_circuit_and_refresh_sample_order() {
     );
 
     let state = state_for_mask(WIFI_BIT | IEEE802154_BIT, 0);
-    let mut bluetooth_ieee_due = ScriptedClock::new([
+    let bluetooth_ieee_due = ScriptedClock::new([
         DEFAULT_PLL_TRACK_PERIOD_MICROS,
         DEFAULT_PLL_TRACK_PERIOD_MICROS + 1,
         DEFAULT_PLL_TRACK_PERIOD_MICROS + 2,
         DEFAULT_PLL_TRACK_PERIOD_MICROS + 3,
     ]);
     let evaluation = state
-        .evaluate_immediate_tracking(&mut bluetooth_ieee_due)
+        .evaluate_immediate_tracking(&bluetooth_ieee_due)
         .unwrap();
 
     assert_eq!(bluetooth_ieee_due.samples_consumed(), 4);
@@ -334,8 +337,8 @@ fn periodic_callback_requests_active_classes_without_due_check() {
 #[test]
 fn periodic_tracking_samples_each_active_class_once_without_due_samples() {
     let state = state_for_mask(WIFI_BIT | IEEE802154_BIT, 0);
-    let mut clock = ScriptedClock::new([17, 23]);
-    let evaluation = state.evaluate_periodic_tracking(&mut clock).unwrap();
+    let clock = ScriptedClock::new([17, 23]);
+    let evaluation = state.evaluate_periodic_tracking(&clock).unwrap();
 
     assert_eq!(clock.samples_consumed(), 2);
     let snapshot = evaluation.owner().snapshot();

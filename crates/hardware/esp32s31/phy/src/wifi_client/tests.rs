@@ -14,9 +14,9 @@ use crate::{
 
 struct Clock(u64);
 
-impl PhyPllTrackClock for Clock {
-    fn now_micros(&mut self) -> u64 {
-        self.0
+impl oer_time::Clock for Clock {
+    fn now(&self) -> oer_time::Instant {
+        oer_time::Instant::from_micros(self.0)
     }
 }
 
@@ -44,7 +44,7 @@ fn wifi_joins_and_leaves_the_shared_domain_as_its_last_client() {
     let mut lease = radio
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
-    let (membership, acquired) = join_wifi(&mut lease, &clocked, &mut Clock(0))
+    let (membership, acquired) = join_wifi(&mut lease, &clocked, &Clock(0))
         .unwrap_or_else(|error| panic!("join failed: {error:?}"));
     assert_eq!(acquired, ConcurrentAcquire::Settled);
     assert!(
@@ -55,7 +55,7 @@ fn wifi_joins_and_leaves_the_shared_domain_as_its_last_client() {
     );
     // A second membership would double the client bit.
     assert!(matches!(
-        join_wifi(&mut lease, &clocked, &mut Clock(0)),
+        join_wifi(&mut lease, &clocked, &Clock(0)),
         Err(ConcurrentPhyError::Acquire(_))
     ));
     assert_eq!(
@@ -72,7 +72,7 @@ fn an_unregistered_domain_admits_no_wifi_client() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
     assert!(matches!(
-        join_wifi(&mut lease, &clocked, &mut Clock(0)),
+        join_wifi(&mut lease, &clocked, &Clock(0)),
         Err(ConcurrentPhyError::NotRegistered)
     ));
 }
@@ -83,7 +83,7 @@ fn a_suspended_wifi_leaves_the_domain_and_resumes_as_a_client() {
     let mut lease = radio
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
-    let (membership, _) = join_wifi(&mut lease, &clocked, &mut Clock(0))
+    let (membership, _) = join_wifi(&mut lease, &clocked, &Clock(0))
         .unwrap_or_else(|error| panic!("join failed: {error:?}"));
     let (suspended, last) = suspend_wifi(&mut lease, clocked.clocks_on(), membership)
         .unwrap_or_else(|failure| panic!("suspend failed: {failure:?}"));
@@ -94,9 +94,8 @@ fn a_suspended_wifi_leaves_the_domain_and_resumes_as_a_client() {
             .client_snapshot()
             .is_some_and(|clients| !clients.contains(RadioClient::Wifi))
     );
-    let (membership, acquired) =
-        resume_wifi(&mut lease, clocked.clocks_on(), suspended, &mut Clock(0))
-            .unwrap_or_else(|failure| panic!("resume failed: {failure:?}"));
+    let (membership, acquired) = resume_wifi(&mut lease, clocked.clocks_on(), suspended, &Clock(0))
+        .unwrap_or_else(|failure| panic!("resume failed: {failure:?}"));
     assert_eq!(acquired, ConcurrentAcquire::Settled);
     assert!(
         lease
@@ -115,14 +114,14 @@ fn a_rejected_resume_returns_the_suspended_client() {
     let mut lease = radio
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
-    let (membership, _) = join_wifi(&mut lease, &clocked, &mut Clock(0))
+    let (membership, _) = join_wifi(&mut lease, &clocked, &Clock(0))
         .unwrap_or_else(|error| panic!("join failed: {error:?}"));
     let (suspended, _) = suspend_wifi(&mut lease, clocked.clocks_on(), membership)
         .unwrap_or_else(|failure| panic!("suspend failed: {failure:?}"));
     // Another membership holds the client bit, so the resume is rejected.
-    let (other, _) = join_wifi(&mut lease, &clocked, &mut Clock(0))
+    let (other, _) = join_wifi(&mut lease, &clocked, &Clock(0))
         .unwrap_or_else(|error| panic!("join failed: {error:?}"));
-    let failure = resume_wifi(&mut lease, clocked.clocks_on(), suspended, &mut Clock(0))
+    let failure = resume_wifi(&mut lease, clocked.clocks_on(), suspended, &Clock(0))
         .err()
         .unwrap_or_else(|| panic!("a held client bit rejects the resume"));
     assert!(matches!(failure.error(), ConcurrentPhyError::Acquire(_)));

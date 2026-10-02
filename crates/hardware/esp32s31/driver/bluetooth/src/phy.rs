@@ -14,7 +14,6 @@ use oer_esp32s31_phy::{
         leave_bluetooth,
     },
     concurrent::{ConcurrentAcquire, ConcurrentPhy},
-    state::client::PhyPllTrackClock,
 };
 
 use crate::{low_power::ControllerLowPowerHardwareInitialized, resources::TaskResources};
@@ -68,7 +67,7 @@ impl<'cells, const MODEM_TIMER_CAPACITY: usize>
     pub fn join_phy(
         self,
         lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
-        clock: &mut impl PhyPllTrackClock,
+        clock: &impl oer_time::Clock,
     ) -> Result<
         (
             ControllerPhyJoined<'cells, MODEM_TIMER_CAPACITY>,

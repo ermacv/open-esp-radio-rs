@@ -45,7 +45,7 @@ fn separates_wait_causes_and_existing_sar_samples() {
 }
 
 #[test]
-fn incomplete_unsupported_mismatched_or_impossible_intervals_fail_closed() {
+fn incomplete_mismatched_or_impossible_intervals_fail_closed() {
     let start = Event::Started {
         requested_micros: 1,
     };
@@ -55,7 +55,6 @@ fn incomplete_unsupported_mismatched_or_impossible_intervals_fail_closed() {
     };
     for events in [
         vec![(Scope::Tone, Kind::Settle, start)],
-        vec![(Scope::Tone, Kind::Settle, Event::Unsupported)],
         vec![(Scope::Tone, Kind::Settle, end)],
         vec![
             (Scope::Tone, Kind::Settle, start),

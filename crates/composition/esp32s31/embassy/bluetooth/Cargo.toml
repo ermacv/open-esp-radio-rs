@@ -9,6 +9,7 @@ description = "ESP32-S31 Bluetooth LE composition: static memory, powered epoch,
 
 [dependencies]
 oer-bluetooth-radio = { path = "../../../../protocols/bluetooth/le/radio" }
+oer-time-embassy = { path = "../../../../adapters/embassy/time" }
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 critical-section = "1.2.0"
@@ -26,7 +27,6 @@ oer-esp32s31-bluetooth-runtime = { path = "../../../../runtime/esp32s31/bluetoot
 oer-esp32s31-coex = { path = "../../../../hardware/esp32s31/driver/coex" }
 oer-esp32s31-hal = { path = "../../../../hardware/esp32s31/hal" }
 oer-esp32s31-phy = { path = "../../../../hardware/esp32s31/phy" }
-oer-esp32s31-phy-runtime = { path = "../../../../runtime/esp32s31/phy" }
 oer-esp32s31-soc-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/soc", features = ["esp32s31"] }
 oer-esp32s31-radio-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/radio", features = ["esp32s31"] }
 oer-esp32s31-radio-runtime = { path = "../../../../runtime/esp32s31/radio" }

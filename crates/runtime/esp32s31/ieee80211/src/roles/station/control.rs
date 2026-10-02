@@ -728,7 +728,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
             );
         }
         #[cfg(feature = "diagnostics")]
-        self.observe_spin(&progress, tx.now_micros());
+        self.observe_spin(&progress, oer_time::Clock::now(&*tx).as_micros());
         progress
     }
 

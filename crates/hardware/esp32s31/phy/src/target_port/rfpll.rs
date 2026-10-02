@@ -19,9 +19,8 @@ use crate::{
             RfpllFrequencyI2cBinding,
         },
     },
-    target_executor::{
-        PhyAsyncDelay, PhyShortDelay, PhyTargetPortError, complete_rfpll_i2c_direct,
-    },
+    executor::wait::PhyShortDelay,
+    target_executor::{PhyTargetPortError, complete_rfpll_i2c_direct},
     tracking::rfpll::{
         self,
         search::{Action, Completion, Status},
@@ -37,7 +36,7 @@ fn i2c(
     complete_rfpll_i2c_direct(binding, registers)
 }
 
-fn complete<D: PhyAsyncDelay>(
+fn complete<D: PhyShortDelay>(
     registers: &mut impl SharedPhyAccess,
     action: Action,
 ) -> Result<Completion, PhyTargetPortError> {
@@ -97,7 +96,7 @@ fn complete<D: PhyAsyncDelay>(
             Ok(Completion::CapWritten(requested))
         }
         Action::DelayMicros(micros) => {
-            if !D::ShortDelay::settle_micros(micros) {
+            if !D::settle_micros(micros) {
                 return Err(PhyTargetPortError::HardwareCapabilityUnavailable);
             }
             Ok(Completion::DelayElapsed(micros))
@@ -129,7 +128,7 @@ fn complete<D: PhyAsyncDelay>(
 /// A hardware failure leaves that borrow with the caller for fault containment;
 /// this entry does not imply that normal RF operation may resume.
 #[cfg(any(test, feature = "validation-probes"))]
-pub async fn search<D: PhyAsyncDelay>(
+pub async fn search<D: PhyShortDelay>(
     registers: &mut impl SharedPhyAccess,
 ) -> Result<rfpll::search::Outcome, PhyTargetPortError> {
     let mut search = rfpll::search::Search::new();
@@ -147,7 +146,7 @@ pub async fn search<D: PhyAsyncDelay>(
 /// Search, update every frequency-memory entry when the measured delta is
 /// nonzero, and restore the current channel index before returning success.
 #[cfg(any(test, feature = "validation-probes"))]
-pub async fn correct<D: PhyAsyncDelay>(
+pub async fn correct<D: PhyShortDelay>(
     registers: &mut impl SharedPhyAccess,
     current_channel: u16,
 ) -> Result<rfpll::Outcome, PhyTargetPortError> {
@@ -177,7 +176,7 @@ pub async fn correct<D: PhyAsyncDelay>(
 /// disable bit; the existing typed baseband-mode accessor implements the new
 /// operations without duplicating the physical register's identity.
 #[cfg(any(test, feature = "validation-probes"))]
-pub async fn maintain<D: PhyAsyncDelay>(
+pub async fn maintain<D: PhyShortDelay>(
     registers: &mut impl SharedPhyAccess,
     current_channel: u16,
 ) -> Result<rfpll::Outcome, PhyTargetPortError> {
@@ -196,7 +195,7 @@ pub async fn maintain<D: PhyAsyncDelay>(
         .ok_or(PhyTargetPortError::UnexpectedBinding)
 }
 
-fn complete_correction<D: PhyAsyncDelay>(
+fn complete_correction<D: PhyShortDelay>(
     registers: &mut impl SharedPhyAccess,
     action: rfpll::Action,
 ) -> Result<rfpll::Completion, PhyTargetPortError> {
@@ -213,7 +212,7 @@ fn complete_correction<D: PhyAsyncDelay>(
     }
 }
 
-pub(super) async fn complete_thermal<D: PhyAsyncDelay>(
+pub(super) async fn complete_thermal<D: PhyShortDelay>(
     registers: &mut impl SharedPhyAccess,
     grant: &mut impl super::PhyGrantProtectPort,
     action: rfpll::thermal::Action,
@@ -230,7 +229,7 @@ pub(super) async fn complete_thermal<D: PhyAsyncDelay>(
             Completion::SoftwareControlSelected
         }
         Action::Settle => {
-            if !D::ShortDelay::settle_micros(2) {
+            if !D::settle_micros(2) {
                 return Err(PhyTargetPortError::HardwareCapabilityUnavailable);
             }
             Completion::Settled
@@ -254,7 +253,7 @@ pub(super) async fn complete_thermal<D: PhyAsyncDelay>(
 /// all waits. Success is available only after restoration (or a hardware-free
 /// skip). Error or cancellation requires the caller to contain the failed epoch.
 #[cfg(any(test, feature = "validation-probes"))]
-pub async fn track<D: PhyAsyncDelay>(
+pub async fn track<D: PhyShortDelay>(
     registers: &mut impl SharedPhyAccess,
     request: rfpll::thermal::Request,
 ) -> Result<rfpll::thermal::Outcome, PhyTargetPortError> {
@@ -277,7 +276,8 @@ pub async fn track<D: PhyAsyncDelay>(
 /// through the production target executor. The outer error is an executor
 /// failure; the inner one is the transition's own fail-closed outcome.
 #[cfg(any(test, feature = "validation-probes"))]
-pub async fn program<D: PhyAsyncDelay>(
+pub async fn program<D: PhyShortDelay>(
+    timer: &impl oer_time::Timer,
     registers: &mut impl SharedPhyAccess,
     request: crate::analog::rfpll::RfpllFrequencyRequest,
 ) -> Result<
@@ -298,8 +298,9 @@ pub async fn program<D: PhyAsyncDelay>(
         }
         let binding = RfpllFrequencyExternalBinding::lower(action)
             .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-        let completion =
-            super::TargetCompleter::<D>::complete_rfpll(binding, &mut (), registers).await?;
+        let completion = super::TargetCompleter::<D, _>::new(timer)
+            .complete_rfpll(binding, &mut (), registers)
+            .await?;
         transition
             .advance(completion)
             .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;

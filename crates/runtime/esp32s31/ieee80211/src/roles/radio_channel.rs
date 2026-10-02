@@ -16,7 +16,7 @@ use oer_esp32s31_ieee80211::coex::{WifiCoexActivity, WifiCoexChannel, shared_sca
 use oer_esp32s31_ieee80211_sta::connection_coex::{
     ConnectionFrame, ConnectionFrameCoex, ReconnectFramePriority,
 };
-use oer_esp32s31_phy::{ConcurrentWifiChannelError, PhyAsyncDelay, PhyTargetObserver};
+use oer_esp32s31_phy::{ConcurrentWifiChannelError, PhyTargetObserver};
 use oer_esp32s31_radio_runtime::{CoexWifiChannel, RadioGuard, RadioSystem};
 
 use oer_esp32s31_ieee80211_sta::hardware::channel::ScanPhy;
@@ -31,12 +31,13 @@ impl<'radio, P, C, O, D> RadioChannel<'radio, P, C, O, D>
 where
     C: PlatformClockProvider,
     O: PhyTargetObserver,
-    D: PhyAsyncDelay,
+    D: oer_time::Timer,
 {
-    pub const fn new(radio: &'radio RadioSystem<P, C>, observer: O) -> Self {
+    /// A channel authority whose retunes wait on `timer`.
+    pub const fn new(radio: &'radio RadioSystem<P, C>, observer: O, timer: D) -> Self {
         Self {
             radio,
-            phy: ScanPhy::new(observer),
+            phy: ScanPhy::new(observer, timer),
         }
     }
 
@@ -118,9 +119,9 @@ where
         RadioConnectionCoex { radio: self.radio }
     }
 
-    /// Return the observer once the role no longer retunes.
-    pub fn into_observer(self) -> O {
-        self.phy.into_observer()
+    /// Return the observer and the timer once the role no longer retunes.
+    pub fn into_parts(self) -> (O, D) {
+        self.phy.into_parts()
     }
 }
 

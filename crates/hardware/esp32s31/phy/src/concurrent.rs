@@ -36,7 +36,7 @@ use crate::{
     domain::PhyDomain,
     state::client::{
         PhyClientAcquireError, PhyClientReleaseError, PhyClientSnapshot, PhyPendingTrack,
-        PhyPllTrackClock, PhyTrackTimeError,
+        PhyTrackTimeError,
     },
 };
 
@@ -369,7 +369,7 @@ impl ConcurrentPhy {
 pub fn acquire_client(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     client: RadioClient,
-    clock: &mut impl PhyPllTrackClock,
+    clock: &impl oer_time::Clock,
 ) -> Result<ConcurrentAcquire, ConcurrentPhyError> {
     let phy = lease.attachment_mut();
     let PhyDomain {
@@ -447,7 +447,7 @@ fn emit_client_change(client: RadioClient, acquired: bool, active: PhyClientSnap
 /// domain is unchanged.
 pub fn evaluate_periodic_tracking(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
-    clock: &mut impl PhyPllTrackClock,
+    clock: &impl oer_time::Clock,
 ) -> Result<bool, ConcurrentPhyError> {
     let phy = lease.attachment_mut();
     let PhyDomain {

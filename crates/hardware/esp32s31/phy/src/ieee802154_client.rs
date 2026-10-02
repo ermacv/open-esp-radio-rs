@@ -32,11 +32,8 @@ use oer_esp32s31_hal::{
     shared_radio::{BtbbError, RadioClient, SharedRadioLease},
 };
 
-use crate::{
-    concurrent::{
-        ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError, acquire_client, release_client,
-    },
-    state::client::PhyPllTrackClock,
+use crate::concurrent::{
+    ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError, acquire_client, release_client,
 };
 
 /// IEEE 802.15.4 holds a client bit in the shared PHY domain and a reference
@@ -88,7 +85,7 @@ pub enum Ieee802154PhyClientError {
 pub fn join_ieee802154(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     clocked: &Ieee802154Clocked,
-    clock: &mut impl PhyPllTrackClock,
+    clock: &impl oer_time::Clock,
 ) -> Result<(Ieee802154PhyMembership, ConcurrentAcquire), Ieee802154PhyClientError> {
     let epoch = lease.registration_epoch();
     let domain = lease

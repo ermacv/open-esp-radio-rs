@@ -48,11 +48,11 @@ runtime retains their affine owners across borrowed waits, returns the same
 resources on rejection and preserves terminal owners when quiescence is not
 proven. A composed owner alone does not establish hardware qualification.
 
-The PHY time leaves are adapters inside the execution packages. The Wi-Fi
-binding supplies a direct `embassy-time` delay; the checked `EmbassyPhyTime`
-binding also validates the timebase and rejects deadline overflow. The two
-bindings have distinct time contracts. The platform
-executor/time ABI remains in [adapters](../adapters/embassy/README.md).
+Runtimes wait and read time through the `oer-time` contract: the PHY's
+scheduling waits, the RX walker settle, scan dwell ticks and transmit
+deadlines take an `oer_time::Timer` value, which compositions bind to
+`oer_time_embassy::EmbassyClock` and host tests to `oer-time-virtual`. The
+platform executor/time ABI remains in [adapters](../adapters/embassy/README.md).
 
 The [integration layer](../composition/esp32s31/embassy/) chooses memory budgets,
 claims static resources and owns protocol lifecycle composition within the

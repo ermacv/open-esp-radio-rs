@@ -95,7 +95,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         'security,
         ProductionStationRuntime<'state>,
         RadioRuntimeOwner,
-        ReceiveFrontier<'static, EmbassyRxFrontierDelay, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE>,
+        ReceiveFrontier<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE>,
         WifiNetworkResources,
         ProductionStationOwner<'state, 'security>,
         StaAttemptStage,
@@ -113,7 +113,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             StationScanResources {
                 radio: self.radio,
                 phy_observer: NoopPhyTargetObserver,
-                phy_delay: EmbassyPhyTime,
+                phy_timer: EmbassyClock,
                 hardware,
                 receive,
                 control,
@@ -121,7 +121,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 frame,
                 scan_observer: ProductionScanObserver,
                 sequence: security.sequences.non_qos_mut(),
-                timer: EmbassyScanTimer,
+                timer: EmbassyClock,
             },
             scan_request,
         )
@@ -135,7 +135,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             frame: _,
             sequence: _,
             phy_observer: _,
-            phy_delay: _,
+            phy_timer: _,
             scan_observer: _,
             timer: _,
             telemetry: _,
@@ -300,7 +300,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             StationScanResources {
                 radio: self.radio,
                 phy_observer: NoopPhyTargetObserver,
-                phy_delay: EmbassyPhyTime,
+                phy_timer: EmbassyClock,
                 hardware,
                 receive: match rx {
                     ConnectedParkedRx::Live(rx) => RunningScanRx::from_parked(rx)
@@ -312,7 +312,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 frame,
                 scan_observer: ProductionScanObserver,
                 sequence: security.sequences.non_qos_mut(),
-                timer: EmbassyScanTimer,
+                timer: EmbassyClock,
             },
             scan_request,
         )
@@ -346,7 +346,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             frame: _,
             sequence: _,
             phy_observer: _,
-            phy_delay: _,
+            phy_timer: _,
             scan_observer: _,
             timer: _,
             telemetry: _,
@@ -369,7 +369,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             security,
             scan_result,
             |disconnected| {
-                let (network, epoch) = disconnected.prepare_reconnect::<EmbassyRxFrontierDelay>();
+                let (network, epoch) = disconnected.prepare_reconnect();
                 (WifiNetworkResources::Running(network), epoch)
             },
             |runtime, disconnected, station, security| {
@@ -394,7 +394,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             'security,
             ProductionStationRuntime<'state>,
             RadioRuntimeOwner,
-            ReceiveFrontier<'static, EmbassyRxFrontierDelay, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE>,
+            ReceiveFrontier<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE>,
             WifiNetworkResources,
         >,
         context: StaAttemptContext,
@@ -423,8 +423,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             _,
             _,
             _,
-            EmbassyPhyTime,
-            _,
+            EmbassyClock,
             _,
             (),
             _,
@@ -435,6 +434,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             hardware: &mut hardware,
             radio: self.radio,
             phy_observer: NoopPhyTargetObserver,
+            timer: EmbassyClock,
             receive,
             rx_storage: dma.storage(),
             transmit: tx_storage
@@ -566,8 +566,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             _,
             _,
             _,
-            EmbassyPhyTime,
-            _,
+            EmbassyClock,
             _,
             (),
             _,
@@ -578,6 +577,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             hardware,
             radio: self.radio,
             phy_observer: NoopPhyTargetObserver,
+            timer: EmbassyClock,
             receive,
             rx_storage: dma.storage(),
             transmit: tx_storage
@@ -697,8 +697,7 @@ impl<'state, 'security> StationEnginePort<'security, CriticalSectionRawMutex>
     type InitialHardware = RadioRuntimeOwner;
     type InitialScanRx =
         ScanRx<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE, RX_BUFFER_STORAGE_SIZE>;
-    type RxFrontier =
-        ReceiveFrontier<'static, EmbassyRxFrontierDelay, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE>;
+    type RxFrontier = ReceiveFrontier<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE>;
     type Network = WifiNetworkResources;
     type Disconnected = ConnectedDisconnectedEpoch;
     type Reconnected = ConnectedReconnectedEpoch;

@@ -39,7 +39,6 @@ members = [
     "crates/runtime/espressif/ieee802154",
     "crates/adapters/embassy/esp32s31/executor",
     "crates/runtime/esp32s31/ieee80211",
-    "crates/runtime/esp32s31/phy",
     "crates/runtime/esp32s31/radio",
     "crates/adapters/esp-hal/esp32s31/radio",
     "crates/adapters/esp-hal/esp32s31/ieee802154",

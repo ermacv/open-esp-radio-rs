@@ -28,6 +28,7 @@ use crate::resources::profile::{
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
 use embassy_time::Timer;
+use oer_time_embassy::EmbassyClock;
 
 use oer_esp32s31_hal::{ieee80211::arena::RadioOwnerArena, owner::RadioRuntimeOwner};
 
@@ -52,8 +53,7 @@ use oer_esp32s31_ieee80211_runtime::{
         network::DatapathNetwork,
         rx::{
             dma::{RxEpochResources, StagedRxProducer, StoppedReceive},
-            frontier::{EmbassyRxFrontierDelay, ReceiveFrontier, RxFrontierDelay, RxFrontierError},
-            hardware::EmbassyRxDmaObservationDelay,
+            frontier::{ReceiveFrontier, RxFrontierError},
             reorder::{
                 RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandResources, RxReorderFrameStorage,
             },
@@ -172,7 +172,7 @@ type ConnectedStoppedRx = StoppedReceive<
     'static,
     'static,
     'static,
-    EmbassyRxDmaObservationDelay,
+    EmbassyClock,
     CriticalSectionRawMutex,
     RX_STAGE_SLOT_COUNT,
     RX_DESCRIPTOR_COUNT,
@@ -185,7 +185,7 @@ type ConnectedRx<R> = StagedRxProducer<
     'static,
     'static,
     'static,
-    EmbassyRxDmaObservationDelay,
+    EmbassyClock,
     CriticalSectionRawMutex,
     RX_STAGE_SLOT_COUNT,
     RX_DESCRIPTOR_COUNT,
@@ -204,7 +204,7 @@ pub(super) type ProductionAccessPointRxProducer =
         'static,
         'static,
         'static,
-        EmbassyRxDmaObservationDelay,
+        EmbassyClock,
         CriticalSectionRawMutex,
         RX_STAGE_SLOT_COUNT,
         RX_DESCRIPTOR_COUNT,
@@ -259,7 +259,7 @@ pub(super) fn access_point_rx_pipeline(
                 storage,
                 &RX_STAGE_POOL,
                 &STAGED_RX_QUEUE,
-                EmbassyRxDmaObservationDelay,
+                EmbassyClock,
                 observer,
             ),
             ProductionRxRing::Live(ring) => oer_esp32s31_ieee80211_runtime::roles::access_point::AccessPointReceiveProducer::from_live_with_pipeline_observer(
@@ -267,7 +267,7 @@ pub(super) fn access_point_rx_pipeline(
                 storage,
                 &RX_STAGE_POOL,
                 &STAGED_RX_QUEUE,
-                EmbassyRxDmaObservationDelay,
+                EmbassyClock,
                 observer,
             ),
         };
@@ -279,7 +279,7 @@ pub(super) fn access_point_rx_pipeline(
                 storage,
                 &RX_STAGE_POOL,
                 &STAGED_RX_QUEUE,
-                EmbassyRxDmaObservationDelay,
+                EmbassyClock,
             )
         }
         ProductionRxRing::Live(ring) => {
@@ -288,7 +288,7 @@ pub(super) fn access_point_rx_pipeline(
                 storage,
                 &RX_STAGE_POOL,
                 &STAGED_RX_QUEUE,
-                EmbassyRxDmaObservationDelay,
+                EmbassyClock,
             )
         }
     }
@@ -402,16 +402,10 @@ impl ConnectedParkedRx {
 }
 
 impl StoppedStaRx for ConnectedParkedRx {
-    type Preconnected<D>
-        = ReceiveFrontier<'static, D, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE>
-    where
-        D: RxFrontierDelay;
+    type Preconnected = ReceiveFrontier<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE>;
     type Persistent = ConnectedRxEpochResources;
 
-    fn split_for_reconnect<D>(self) -> (Self::Preconnected<D>, Self::Persistent)
-    where
-        D: RxFrontierDelay,
-    {
+    fn split_for_reconnect(self) -> (Self::Preconnected, Self::Persistent) {
         match self {
             Self::Live(rx) => {
                 let (ring, resources) = rx
@@ -430,7 +424,7 @@ pub(super) type ConnectedRxEpochResources = RxEpochResources<
     'static,
     'static,
     'static,
-    EmbassyRxDmaObservationDelay,
+    EmbassyClock,
     CriticalSectionRawMutex,
     RX_STAGE_SLOT_COUNT,
     RX_DESCRIPTOR_COUNT,
@@ -546,7 +540,7 @@ static CONNECTED_DRIVER_TEARDOWN_FAULT: StaticCell<ConnectedDriverTeardownFailur
     StaticCell::new();
 pub type ConnectedReconnectedEpoch = ReconnectedStaEpoch<
     ConnectedHardware,
-    ReceiveFrontier<'static, EmbassyRxFrontierDelay, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE>,
+    ReceiveFrontier<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE>,
     ConnectedRxEpochResources,
     RadioAmpduStorage,
     &'static ControlResources,
@@ -657,11 +651,10 @@ static STA_AP_STATION_RX_BATCH: ConstStaticCell<[u8; STA_AP_STATION_RX_BATCH_CAP
 /// Hardware frontier accepted by one connected epoch.
 pub type ConnectedStationEpoch = ConnectedEpochResources<
     RadioRuntimeOwner,
-    ReceiveFrontier<'static, EmbassyRxFrontierDelay, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE>,
+    ReceiveFrontier<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE>,
     ConnectedReconnectedEpoch,
 >;
-type ConnectedRxFrontier =
-    ReceiveFrontier<'static, EmbassyRxFrontierDelay, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE>;
+type ConnectedRxFrontier = ReceiveFrontier<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE>;
 type InitialConnectedResources = InitialConnectedEpochResources<
     'static,
     ConnectedRxEpochResources,
@@ -1439,12 +1432,8 @@ pub(crate) async fn run_connected<'state, 'security>(
                     );
                 }
             };
-            let rx = RxEpochResources::new(
-                dma.storage(),
-                &RX_STAGE_POOL,
-                staged_sender,
-                EmbassyRxDmaObservationDelay,
-            );
+            let rx =
+                RxEpochResources::new(dma.storage(), &RX_STAGE_POOL, staged_sender, EmbassyClock);
             (
                 start_esp32s31_initial_connected_epoch(hardware, receive, initial.with_rx(rx))
                     .await,
@@ -1900,7 +1889,7 @@ pub(crate) async fn run_connected<'state, 'security>(
 
     let mut radio_runner = Some(radio_runner);
     let mut role = role;
-    let mut station_rf = StationRf::new(&mut role);
+    let mut station_rf = StationRf::new(&mut role, EmbassyClock);
     let (result, requested_command) = await_stack_boundary!(execution::run(
         connected_datapath,
         station_control,

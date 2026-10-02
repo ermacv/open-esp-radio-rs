@@ -9,13 +9,13 @@
 use crate::roles::scan::{
     port::{
         ScanPhyPort, ScanPort, ScanPortError, ScanRadio, ScanReceivePort, ScanStation, ScanStorage,
-        ScanTelemetry, ScanTimer,
+        ScanTelemetry,
     },
     rx::ScanFrameObserver,
 };
 
 use oer_esp32s31_hal::shared_radio::PlatformClockProvider;
-use oer_esp32s31_phy::{ConcurrentWifiChannelError, PhyAsyncDelay, PhyTargetObserver};
+use oer_esp32s31_phy::{ConcurrentWifiChannelError, PhyTargetObserver};
 use oer_esp32s31_radio_runtime::RadioSystem;
 
 use crate::roles::radio_channel::RadioChannel;
@@ -197,7 +197,7 @@ pub struct StationScanResources<
     /// The shared radio; each channel switch leases it for one transaction.
     pub radio: &'radio RadioSystem<P, C>,
     pub phy_observer: Q,
-    pub phy_delay: D,
+    pub phy_timer: D,
     pub hardware: H,
     pub receive: R,
     pub control: ControlTransmitter<'slot, X, E, T, TX_BUFFER_SIZE>,
@@ -235,7 +235,7 @@ pub struct StationScanReturned<
     pub receive: R,
     pub control: ControlTransmitter<'slot, X, E, T, TX_BUFFER_SIZE>,
     pub phy_observer: P,
-    pub phy_delay: D,
+    pub phy_timer: D,
     pub scan_observer: O,
     pub timer: W,
     pub table: &'storage mut ScanTable<RECORDS>,
@@ -475,21 +475,21 @@ pub async fn run_esp32s31_station_scan<
 >
 where
     Q: PhyTargetObserver,
-    D: PhyAsyncDelay,
+    D: oer_time::Timer,
     H: TxHardware + MacSnifferHardware + MacRuntimeStopHardware,
     R: ScanReceivePort<H>,
     X: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: oer_time::Timer,
     O: ScanFrameObserver,
-    W: ScanTimer,
+    W: oer_time::Timer,
     C: PlatformClockProvider,
     RadioChannel<'radio, P, C, Q, D>: ScanPhyPort<H, Error = ConcurrentWifiChannelError>,
 {
     let StationScanResources {
         radio,
         phy_observer,
-        phy_delay,
+        phy_timer,
         hardware,
         receive,
         control,
@@ -517,7 +517,7 @@ where
     .with_candidate_selection(request.select_candidate);
     let owner = ScanPort::new(
         ScanRadio::new(
-            RadioChannel::<_, _, _, D>::new(radio, phy_observer),
+            RadioChannel::<_, _, _, D>::new(radio, phy_observer, phy_timer),
             hardware,
             receive,
             RunningScanTx::new(control),
@@ -563,7 +563,7 @@ where
         .phy
         .publish_coex_activity(WifiCoexActivity::Idle)
         .await;
-    let phy_observer = parts.phy.into_observer();
+    let (phy_observer, phy_timer) = parts.phy.into_parts();
     let (control, transmit) = parts.tx.into_parts();
     StationScanOutcome {
         returned: StationScanReturned {
@@ -571,7 +571,7 @@ where
             receive: parts.rx,
             control,
             phy_observer,
-            phy_delay,
+            phy_timer,
             scan_observer: parts.observer,
             timer: parts.timer,
             table: parts.table,

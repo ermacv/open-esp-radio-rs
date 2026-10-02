@@ -9,6 +9,14 @@ use oer_esp32s31_ieee80211_mac::init::{
 };
 
 use super::*;
+
+/// One scan dwell tick.
+const SCAN_DWELL_TICK: oer_time::Duration = oer_time::Duration::from_millis(1);
+/// The wait after a MAC stop request before its first activity readback.
+const MAC_STOP_SETTLE: oer_time::Duration = oer_time::Duration::from_micros(20);
+/// The interval between two MAC activity readbacks.
+const MAC_STOP_POLL: oer_time::Duration = oer_time::Duration::from_micros(1);
+
 impl<'resources, 'sequence, 'ssid, 'rates, P, H, R, T, W, O, const RECORDS: usize> StaScanPort
     for ScanPort<'resources, 'sequence, 'ssid, 'rates, P, H, R, T, W, O, RECORDS>
 where
@@ -16,7 +24,7 @@ where
     H: MacSnifferHardware + MacRuntimeStopHardware,
     R: ScanReceivePort<H>,
     T: ScanTransmitPort<H>,
-    W: ScanTimer,
+    W: oer_time::Timer,
     O: ScanFrameObserver,
 {
     type Channel = u8;
@@ -107,7 +115,7 @@ where
 
     fn wait_dwell_tick(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
         async {
-            self.timer.wait_dwell_tick().await;
+            crate::time::wait_for(&self.timer, SCAN_DWELL_TICK).await;
             Ok(())
         }
     }
@@ -119,9 +127,9 @@ where
         async move {
             deactivate_promiscuous_receive(&mut self.radio.hardware);
             self.radio.hardware.request_mac_runtime_stop();
-            Timer::after_micros(20).await;
+            crate::time::wait_for(&self.timer, MAC_STOP_SETTLE).await;
             while self.radio.hardware.mac_runtime_active_state() != 0 {
-                Timer::after_micros(1).await;
+                crate::time::wait_for(&self.timer, MAC_STOP_POLL).await;
             }
             loop {
                 let progress = self.observe_scan_rx(context.channel)?;

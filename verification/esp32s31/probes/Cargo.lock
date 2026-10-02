@@ -1006,6 +1006,7 @@ dependencies = [
  "oer-esp32s31-bluetooth-memory",
  "oer-esp32s31-hal",
  "oer-esp32s31-phy",
+ "oer-time",
 ]
 
 [[package]]
@@ -1179,15 +1180,8 @@ dependencies = [
  "oer-esp32s31-hal",
  "oer-phy-trace",
  "oer-radio-analog",
+ "oer-time",
  "oer-trace",
-]
-
-[[package]]
-name = "oer-esp32s31-phy-runtime"
-version = "0.1.0"
-dependencies = [
- "embassy-time",
- "oer-esp32s31-phy",
 ]
 
 [[package]]
@@ -1276,7 +1270,7 @@ dependencies = [
  "oer-esp32s31-coex",
  "oer-esp32s31-hal",
  "oer-esp32s31-phy",
- "oer-esp32s31-phy-runtime",
+ "oer-time-embassy",
 ]
 
 [[package]]

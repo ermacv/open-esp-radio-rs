@@ -21,6 +21,7 @@ use oer_esp32s31_ieee802154_esp_hal::{
     BoundEspHalIeee802154InterruptRoute, EspHalIeee802154InterruptRouteError, bind, now_micros,
     random,
 };
+use oer_esp32s31_phy::RomShortDelay;
 use oer_esp32s31_phy::{
     ConcurrentPhyTrackingError, ConcurrentRfError, ConcurrentTrackingTick, NoopPhyTargetObserver,
     concurrent::{
@@ -34,7 +35,6 @@ use oer_esp32s31_phy::{
     maintain_concurrent_phy,
     state::client::RadioClient,
 };
-use oer_esp32s31_phy_runtime::EmbassyPhyTime;
 use oer_esp32s31_radio_runtime::{Ieee802154JoinError, RadioGuard, RadioPhyError, RadioSystem};
 use oer_espressif_ieee802154_engine::{
     engine::{Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154Interfaces},
@@ -44,6 +44,7 @@ use oer_espressif_ieee802154_runtime::{
     Ieee802154Platform, Ieee802154Runtime, Ieee802154RuntimeError, Ieee802154RuntimeParts,
 };
 use oer_ieee802154::Ieee802154RadioPort;
+use oer_time_embassy::EmbassyClock;
 use static_cell::ConstStaticCell;
 
 use crate::maintenance::{
@@ -379,7 +380,8 @@ pub async fn start<P, C: PlatformClockProvider>(
         let issued_at = Instant::now().as_micros();
         let tracked = match clocked.quiescence(issued_at, issued_at + TRACKING_WINDOW_MICROS) {
             Ok(proof) => {
-                maintain_concurrent_phy::<P, EmbassyPhyTime, _>(
+                maintain_concurrent_phy::<P, RomShortDelay, _>(
+                    &EmbassyClock,
                     lease,
                     platform,
                     &[proof],
@@ -662,7 +664,7 @@ impl Ieee802154System {
         }
         let lease = guard.lease();
         let due = lease.attachment().tracking_pending()
-            || evaluate_periodic_tracking(lease, &mut EmbassyPhyTime)
+            || evaluate_periodic_tracking(lease, &EmbassyClock)
                 .map_err(Ieee802154MaintenanceError::Phy)?;
         if !due {
             return Ok(Ieee802154PhyMaintenance::NotDue);
@@ -704,7 +706,8 @@ impl Ieee802154System {
             .quiescence(issued_at, issued_at + TRACKING_WINDOW_MICROS)
         {
             Ok(proof) => {
-                maintain_concurrent_phy::<P, EmbassyPhyTime, _>(
+                maintain_concurrent_phy::<P, RomShortDelay, _>(
+                    &EmbassyClock,
                     lease,
                     platform,
                     &[proof],

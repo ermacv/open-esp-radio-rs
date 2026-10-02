@@ -23,10 +23,12 @@ trace = ["oer-trace/record"]
 [dependencies]
 oer-radio-analog = { path = "../../radio/analog" }
 oer-phy-trace = { path = "../../radio/trace" }
+oer-time = { path = "../../../time" }
 oer-trace = { path = "../../../trace" }
 oer-esp32s31-hal = { path = "../hal" }
 
 [dev-dependencies]
+oer-time-virtual = { path = "../../../adapters/virtual/time" }
 pin-project-lite = "0.2.17"
 oer-esp32s31-hal = { path = "../hal", features = ["validation-probes"] }
 

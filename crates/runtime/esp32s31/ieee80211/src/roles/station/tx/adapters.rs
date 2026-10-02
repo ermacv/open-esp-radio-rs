@@ -5,6 +5,7 @@
 
 use super::*;
 use oer_ieee80211_mac::sequence::SequenceNumber;
+use oer_time::Clock as _;
 
 impl<
     B: MaterializedTxFrame,
@@ -27,10 +28,6 @@ impl<
 
     fn take_network_tx_report(&mut self) -> NetworkTxPowerReport {
         core::mem::take(&mut self.network_power)
-    }
-
-    fn now_micros(&self) -> u64 {
-        self.ordinary.now_micros()
     }
 
     fn peek_qos_sequence(&self, tid: u8) -> Option<SequenceNumber> {
@@ -128,7 +125,7 @@ impl<
     ) -> Result<(), ConnectedHeControlRuntimeRejection> {
         // Recheck at the final owner: control validation and this handoff are
         // separate calls, and neither may extend an expired response window.
-        if self.ordinary.now_micros() >= request.response_deadline_micros {
+        if self.ordinary.now().as_micros() >= request.response_deadline_micros {
             return Err(ConnectedHeControlRuntimeRejection::MissedResponseWindow);
         }
         if self.he_trigger_based != Some(request.queue_policy) {
@@ -178,7 +175,7 @@ impl<
         _hardware: &mut H,
         request: HeNdpaRuntimeRequest,
     ) -> Result<(), ConnectedHeControlRuntimeRejection> {
-        if self.ordinary.now_micros() >= request.response_deadline_micros {
+        if self.ordinary.now().as_micros() >= request.response_deadline_micros {
             return Err(ConnectedHeControlRuntimeRejection::MissedResponseWindow);
         }
         if self.active() {

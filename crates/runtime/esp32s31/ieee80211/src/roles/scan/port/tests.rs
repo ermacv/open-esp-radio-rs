@@ -178,13 +178,28 @@ impl ScanTransmitPort<Hardware> for Transmit {
     }
 }
 
+/// Time that skips to each deadline, counting the one-millisecond dwell
+/// ticks waited for.
 #[derive(Default)]
-struct DwellTimer(u32);
+struct DwellTimer {
+    clock: oer_time_virtual::SkipClock,
+    ticks: core::cell::Cell<u32>,
+}
 
-impl ScanTimer for DwellTimer {
-    fn wait_dwell_tick(&mut self) -> impl Future<Output = ()> + '_ {
-        self.0 += 1;
-        ready(())
+impl oer_time::Clock for DwellTimer {
+    fn now(&self) -> oer_time::Instant {
+        oer_time::Clock::now(&self.clock)
+    }
+}
+
+impl oer_time::Timer for DwellTimer {
+    fn wait_until(&self, deadline: oer_time::Instant) -> impl Future<Output = ()> {
+        if deadline.checked_duration_since(oer_time::Clock::now(&self.clock))
+            == Some(oer_time::Duration::from_millis(1))
+        {
+            self.ticks.set(self.ticks.get() + 1);
+        }
+        self.clock.wait_until(deadline)
     }
 }
 
@@ -249,7 +264,7 @@ fn concrete_port_returns_every_owner_after_selected_candidate() {
     assert_eq!(parts.phy.0, 11);
     assert_eq!(parts.rx.0, 22);
     assert_eq!(parts.tx.0, 33);
-    assert_eq!(parts.timer.0, 2);
+    assert_eq!(parts.timer.ticks.get(), 2);
     assert_eq!(parts.observer.0, 2);
     assert_eq!(
         parts.telemetry,

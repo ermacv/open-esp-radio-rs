@@ -128,7 +128,7 @@ impl<
         DMA_STORAGE_SIZE,
     >
 where
-    D: RxDmaObservationDelay,
+    D: oer_time::Timer,
 {
     pub fn from_halted(
         ring: RxRingHalted<'storage, COUNT>,

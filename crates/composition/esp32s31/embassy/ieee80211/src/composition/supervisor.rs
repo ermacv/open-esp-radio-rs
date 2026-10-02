@@ -22,7 +22,7 @@ use oer_radio_embassy::{
 
 use oer_esp32s31_hal::owner::MacInterruptSetup;
 
-use oer_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver};
+use oer_esp32s31_phy::PhyTargetObserver;
 
 use oer_esp32s31_ieee80211_runtime::roles::{
     monitor::{MonitorController, MonitorStopped, MonitorTask, MonitorTaskExit},
@@ -278,6 +278,10 @@ where
 /// owner and a task which still retains a quarantined live frontier. A pending
 /// application stop may be acknowledged only for the former.
 #[allow(clippy::type_complexity)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the supervisor endpoint, monitor controller, shared radio, its timer, task, channel policy, PHY observer and rejection policy are independent borrows"
+)]
 pub async fn drive_esp32s31_monitor_role<
     'runtime,
     P,
@@ -297,6 +301,7 @@ pub async fn drive_esp32s31_monitor_role<
     endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, M, E>,
     controller: &mut MonitorController<'runtime, M>,
     radio: &oer_esp32s31_radio_runtime::RadioSystem<RP, RC>,
+    timer: &D,
     task: MonitorTask<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     channel_policy: MonitorChannelPolicy,
     observer: &mut O,
@@ -314,11 +319,12 @@ where
     M: RawMutex,
     S: MonitorSink<RxPhyInfo>,
     Reject: FnMut(EmbassyWifiStartKind) -> E,
-    D: PhyAsyncDelay,
+    D: oer_time::Timer,
     O: PhyTargetObserver,
     RC: oer_esp32s31_hal::shared_radio::PlatformClockProvider,
 {
-    let role = task.run_channel_policy_to_exit::<D, O, RP, RC>(radio, channel_policy, observer);
+    let role =
+        task.run_channel_policy_to_exit::<D, O, RP, RC>(radio, timer, channel_policy, observer);
     let mut role = core::pin::pin!(role);
     let mut control = MonitorActiveRoleControl { inner: controller };
     await_stack_boundary!(drive_embassy_wifi_active_role_pinned(

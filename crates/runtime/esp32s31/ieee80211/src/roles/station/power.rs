@@ -212,9 +212,7 @@ mod agent {
     use embassy_sync::blocking_mutex::raw::RawMutex;
 
     use oer_esp32s31_ieee80211::runtime::{WifiRfSleepError, WifiRoleOwner};
-    use oer_esp32s31_phy::{
-        ConcurrentRfError, concurrent::ConcurrentAcquire, state::client::PhyPllTrackClock,
-    };
+    use oer_esp32s31_phy::{ConcurrentRfError, concurrent::ConcurrentAcquire};
 
     use super::{PowerCoexSource, StationPowerFailure, StationPowerLink, StationRfPowerError};
     use crate::datapath::irq::EmbassyPowerIrqRuntime;
@@ -226,14 +224,16 @@ mod agent {
         }
     }
 
-    /// The station's RF, through its role's PHY client.
-    pub struct StationRf<'role, W> {
+    /// The station's RF, through its role's PHY client. `clock` is the
+    /// image's monotonic time the PHY domain's tracking decision reads.
+    pub struct StationRf<'role, W, K> {
         role: &'role mut WifiRoleOwner<W>,
+        clock: K,
     }
 
-    impl<'role, W> StationRf<'role, W> {
-        pub fn new(role: &'role mut WifiRoleOwner<W>) -> Self {
-            Self { role }
+    impl<'role, W, K> StationRf<'role, W, K> {
+        pub fn new(role: &'role mut WifiRoleOwner<W>, clock: K) -> Self {
+            Self { role, clock }
         }
 
         /// Whether the RF sleeps.
@@ -242,16 +242,9 @@ mod agent {
         }
     }
 
-    /// The monotonic clock the PHY domain's tracking decision reads.
-    struct TrackClock;
-
-    impl PhyPllTrackClock for TrackClock {
-        fn now_micros(&mut self) -> u64 {
-            embassy_time::Instant::now().as_micros()
-        }
-    }
-
-    impl<W, P, C: PlatformClockProvider> StationRfPower<P, C> for StationRf<'_, W> {
+    impl<W, P, C: PlatformClockProvider, K: oer_time::Clock> StationRfPower<P, C>
+        for StationRf<'_, W, K>
+    {
         async fn sleep(
             &mut self,
             radio: &mut RadioGuard<'_, P, C>,
@@ -284,7 +277,7 @@ mod agent {
             let acquired = self
                 .role
                 .context_mut()
-                .resume_rf(radio.lease(), &mut TrackClock)
+                .resume_rf(radio.lease(), &self.clock)
                 .map_err(rf_error)?;
             if acquired == ConcurrentAcquire::TrackingDue {
                 radio

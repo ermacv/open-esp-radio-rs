@@ -133,6 +133,7 @@ impl PhyDomainRegisterFailure {
 /// A fresh registration epoch begins on `registers` before the first edge;
 /// the returned epoch is the one the completed state must describe.
 pub(super) async fn execute_registration<P, R, D, O>(
+    timer: &impl oer_time::Timer,
     transition: &mut PhyRegisterTransition,
     platform: &mut P,
     registers: &mut R,
@@ -144,11 +145,12 @@ pub(super) async fn execute_registration<P, R, D, O>(
 )
 where
     R: PhyInitializationAccess,
-    D: PhyAsyncDelay,
+    D: PhyShortDelay,
     O: PhyTargetObserver,
 {
     let epoch = registers.begin_registration_epoch();
-    let mut port = TargetPhyRegisterPort::<_, _, D, _>::new(platform, registers, observer);
+    let mut port =
+        TargetPhyRegisterPort::<_, _, D, _, _>::new(platform, registers, timer, observer);
     let result = run_phy_register(transition, &mut port).await;
     (
         result,
@@ -175,6 +177,7 @@ impl PhyDomain {
         reason = "fail-stop error retains the allocation-free PHY transition"
     )]
     pub async fn register<P, R, D, O>(
+        timer: &impl oer_time::Timer,
         platform: &mut P,
         registers: &mut R,
         config: PhyRegisterConfig,
@@ -182,13 +185,18 @@ impl PhyDomain {
     ) -> Result<PhyDomainRegistered, PhyDomainRegisterFailure>
     where
         R: PhyInitializationAccess,
-        D: PhyAsyncDelay,
+        D: PhyShortDelay,
         O: PhyTargetObserver,
     {
         let mut transition = config.into_transition();
-        let (result, counters, witness) =
-            execute_registration::<P, R, D, O>(&mut transition, platform, registers, observer)
-                .await;
+        let (result, counters, witness) = execute_registration::<P, R, D, O>(
+            timer,
+            &mut transition,
+            platform,
+            registers,
+            observer,
+        )
+        .await;
         let outcome = match result {
             Ok(outcome) => outcome,
             Err(error) => {

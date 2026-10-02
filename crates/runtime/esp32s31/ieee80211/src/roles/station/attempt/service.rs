@@ -45,7 +45,7 @@ where
         + MacRuntimeStopHardware
         + 'hardware,
     C: StaAttemptChannel<H>,
-    D: RxFrontierDelay,
+    D: oer_time::Timer + Copy,
     T: StaJoinTransmit<H> + HandshakeTransmit<H> + StaPeerTransmit + 'transmit,
     J: StaJoinObserver + Default,
 {
@@ -189,7 +189,7 @@ where
         let mut port = StaJoinPort::new(
             StaJoinRadio::new(
                 &mut *owner.hardware,
-                StaJoinRx::new(receive, owner.rx_storage),
+                StaJoinRx::new(receive, owner.rx_storage, owner.timer),
                 &mut *owner.transmit,
                 owner.channel.connection_coex(),
             ),
@@ -272,7 +272,7 @@ where
         let port = StaJoinPort::new(
             StaJoinRadio::new(
                 &mut *owner.hardware,
-                StaJoinRx::new(receive, owner.rx_storage),
+                StaJoinRx::new(receive, owner.rx_storage, owner.timer),
                 &mut *owner.transmit,
                 owner.channel.connection_coex(),
             ),
@@ -388,7 +388,7 @@ where
         let port = Wpa2HandshakePort::new(
             Wpa2HandshakeRadio::new(
                 &mut *owner.hardware,
-                Wpa2Rx::new(receive, owner.rx_storage, station),
+                Wpa2Rx::new(receive, owner.rx_storage, station, owner.timer),
                 &mut *owner.transmit,
                 owner.channel.connection_coex(),
             ),

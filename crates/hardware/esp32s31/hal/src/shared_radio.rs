@@ -431,8 +431,8 @@ pub enum QuiescentSpan {
     Stopped,
     /// The shared PHY must be released by `release_by_micros`.
     ///
-    /// Both instants are in the PHY monotonic clock (`PhyAsyncDelay::now_micros`,
-    /// microseconds). `issued_at_micros` is the PHY-clock half of the paired
+    /// Both instants are on the image's monotonic time (the PHY timer's
+    /// `oer_time::Clock`, microseconds). `issued_at_micros` is the PHY-clock half of the paired
     /// sample the issuer used to translate its own schedule; the translation
     /// and its error bound are the issuer's obligation. `release_by_micros` is
     /// the last instant the shared PHY may still be held, after the issuer

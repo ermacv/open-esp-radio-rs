@@ -15,10 +15,10 @@ oer-esp32s31-hal = { path = "../../../../hardware/esp32s31/hal" }
 oer-espressif-ieee802154-engine = { path = "../../../../hardware/espressif/ieee802154/engine" }
 oer-espressif-ieee802154-runtime = { path = "../../../../runtime/espressif/ieee802154" }
 oer-esp32s31-phy = { path = "../../../../hardware/esp32s31/phy" }
-oer-esp32s31-phy-runtime = { path = "../../../../runtime/esp32s31/phy" }
 oer-esp32s31-radio-runtime = { path = "../../../../runtime/esp32s31/radio" }
 oer-esp32s31-coex = { path = "../../../../hardware/esp32s31/driver/coex" }
 oer-ieee802154 = { path = "../../../../protocols/ieee802154" }
+oer-time-embassy = { path = "../../../../adapters/embassy/time" }
 static_cell = "2.1.1"
 
 # Hardware composition is target-only.

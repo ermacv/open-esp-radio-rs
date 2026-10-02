@@ -366,7 +366,7 @@ impl<
             || self
                 .inner
                 .next_alarm_deadline()
-                .is_some_and(|deadline| deadline <= tx.now_micros());
+                .is_some_and(|deadline| deadline <= tx.now().as_micros());
         let inner_requires_awake =
             <ConnectedControl<'resources, M, CONTROL_CAPACITY> as DatapathControlService<
                 H,

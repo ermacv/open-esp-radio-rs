@@ -108,7 +108,7 @@ fn admitted_data_frame_is_published_in_its_dma_buffer_and_others_are_copied() {
     let pool = RxStagePool::<STAGED, CAPACITY>::new();
     let queue = StagedRxQueue::<NoopRawMutex, STAGED, CAPACITY, STAGED>::new();
     let (sender, receiver) = queue.split();
-    let mut producer = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
+    let mut producer = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender)
         .with_stage_admission_policy(UnreservedRxStageAdmission);
     embassy_futures::block_on(producer.service(&mut hardware)).unwrap();
     assert_eq!(pool.claimed_slots(), STAGED as u32);

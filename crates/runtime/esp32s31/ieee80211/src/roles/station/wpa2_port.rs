@@ -6,7 +6,7 @@
 
 use crate::datapath::rx::{
     dma::ReceiveDmaStorage,
-    frontier::{ReceiveFrontier, RxFrontierDelay, RxFrontierDirective, RxFrontierError},
+    frontier::{ReceiveFrontier, RxFrontierDirective, RxFrontierError},
 };
 
 use oer_esp32s31_ieee80211_mac::rx::{RxDma, RxIngressConfig, extract_data};
@@ -23,27 +23,31 @@ pub struct Wpa2Rx<
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 > {
-    owner: ReceiveFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE>,
+    owner: ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE>,
     storage: &'storage ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     station: Wpa2Station,
+    /// The timer the walker settles on when the ring restarts.
+    timer: D,
 }
 
 impl<'storage, D, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORAGE_SIZE: usize>
     Wpa2Rx<'storage, D, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 {
     pub const fn new(
-        owner: ReceiveFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE>,
+        owner: ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE>,
         storage: &'storage ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         station: Wpa2Station,
+        timer: D,
     ) -> Self {
         Self {
             owner,
             storage,
             station,
+            timer,
         }
     }
 
-    pub fn into_owner(self) -> ReceiveFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE> {
+    pub fn into_owner(self) -> ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE> {
         self.owner
     }
 }
@@ -57,7 +61,7 @@ impl<
     const DMA_STORAGE_SIZE: usize,
 > Wpa2Receive<H> for Wpa2Rx<'storage, D, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 where
-    D: RxFrontierDelay,
+    D: oer_time::Timer,
     H: RxDma,
 {
     type Error = RxFrontierError;
@@ -101,7 +105,9 @@ where
         if self.owner.phase() == crate::datapath::rx::frontier::RxFrontierPhase::Live {
             Ok(())
         } else {
-            self.owner.start_with_storage(hardware, self.storage).await
+            self.owner
+                .start_with_storage(&self.timer, hardware, self.storage)
+                .await
         }
     }
 

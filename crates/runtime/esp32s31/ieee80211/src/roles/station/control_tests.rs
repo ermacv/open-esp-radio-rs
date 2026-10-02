@@ -1,6 +1,6 @@
 use core::pin::Pin;
 use oer_ieee80211_mac::sequence::SequenceNumber;
-use oer_time::Timer as _;
+use oer_time::{Clock as _, Timer as _};
 
 use crate::{
     datapath::{
@@ -2243,7 +2243,7 @@ fn an_unanswered_sa_query_ends_the_association_after_1024_ms() {
         }
     }
     assert_eq!(requests, 6);
-    assert_eq!(tx.now_micros(), 1_024_000);
+    assert_eq!(tx.now().as_micros(), 1_024_000);
 }
 
 #[test]

@@ -1,5 +1,6 @@
 use super::*;
 use oer_ieee80211_mac::sequence::SequenceNumber;
+use oer_time::Clock as _;
 
 use crate::diagnostics::core0_rx_performance::{
     CORE0_PERFORMANCE, Core0PerformanceSample, Core0TxPhase,
@@ -157,14 +158,14 @@ where
         }
 
         #[cfg(any(feature = "diagnostics", test))]
-        let preparation_started = self.observer.map(|_| self.ordinary.now_micros());
+        let preparation_started = self.observer.map(|_| self.ordinary.now().as_micros());
         let prepared = self.prepare_aggregate(first, network, traffic)?;
         #[cfg(any(feature = "diagnostics", test))]
         self.observe_prepared(&prepared);
         #[cfg(any(feature = "diagnostics", test))]
         if let (Some(observer), Some(started)) = (self.observer, preparation_started) {
             observer.observe(AggregateTxObservation::PreparationCompleted {
-                micros: self.ordinary.now_micros().wrapping_sub(started),
+                micros: self.ordinary.now().as_micros().wrapping_sub(started),
             });
         }
         self.activate_prepared(prepared)?;
@@ -368,7 +369,7 @@ where
                 retain_single_mpdu: matches!(self.config.rate, TxPhyRate::He(_))
                     || self.block_ack_amsdu(traffic.tid()),
             },
-            self.ordinary.now_micros(),
+            self.ordinary.now().as_micros(),
         )?;
         let prepared = AggregatePrepared {
             traffic,
@@ -440,7 +441,7 @@ where
                 retain_single_mpdu: matches!(self.config.rate, TxPhyRate::He(_))
                     || self.block_ack_amsdu(traffic.tid()),
             },
-            self.ordinary.now_micros(),
+            self.ordinary.now().as_micros(),
         )?;
         Ok(prepared)
     }
@@ -646,7 +647,7 @@ where
         }
 
         #[cfg(any(feature = "diagnostics", test))]
-        let started = self.observer.map(|_| self.ordinary.now_micros());
+        let started = self.observer.map(|_| self.ordinary.now().as_micros());
         assert!(
             self.ampdu.swap_active_standby(),
             "standby presence checked before preparation"
@@ -660,7 +661,7 @@ where
             None => self.prepare_aggregate(first, network, traffic),
         };
         #[cfg(any(feature = "diagnostics", test))]
-        let elapsed = started.map(|started| self.ordinary.now_micros().wrapping_sub(started));
+        let elapsed = started.map(|started| self.ordinary.now().as_micros().wrapping_sub(started));
         if result.is_err() && self.cookie.is_some() {
             self.cancel_current_reservation();
         }
@@ -1105,7 +1106,7 @@ where
         hardware: &mut H,
         active: &mut AggregateActive<SLOTS>,
     ) -> Result<(), AggregateTxError> {
-        let publication_started = self.ordinary.now_micros();
+        let publication_started = self.ordinary.now().as_micros();
         let deadline = publication_started
             .checked_add(self.config.completion_timeout_us)
             .ok_or(AggregateTxError::DeadlineOverflow)?;
@@ -1125,7 +1126,7 @@ where
         }
         #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
-            let publication_finished = self.ordinary.now_micros();
+            let publication_finished = self.ordinary.now().as_micros();
             if active.first_publication_micros.is_none() {
                 active.first_publication_micros = Some(publication_started);
             }

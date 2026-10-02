@@ -1,5 +1,5 @@
 use core::{
-    future::{Future, ready},
+    future::Future,
     pin::pin,
     task::{Context, Poll},
 };
@@ -515,13 +515,7 @@ fn scan_rx_retains_its_typed_phase_across_enable_failure_and_logical_park() {
 fn running_scan_rx_returns_the_exact_connected_epoch_resources() {
     const STAGE_SLOTS: usize = 1;
     const STAGE_CAPACITY: usize = 64;
-    struct TestDelay;
-
-    impl RxDmaObservationDelay for TestDelay {
-        fn after_micros(&mut self, _micros: u32) -> impl Future<Output = ()> + '_ {
-            ready(())
-        }
-    }
+    type TestDelay = oer_time_virtual::SkipClock;
 
     let storage = Box::leak(Box::new(ReceiveDmaStorage::<
         RX_TEST_COUNT,
@@ -545,7 +539,7 @@ fn running_scan_rx_returns_the_exact_connected_epoch_resources() {
     let pool = RxStagePool::<STAGE_SLOTS, STAGE_CAPACITY>::new();
     let queue = StagedRxQueue::<NoopRawMutex, STAGE_SLOTS, STAGE_CAPACITY, STAGE_SLOTS>::new();
     let (sender, _receiver) = queue.split();
-    let connected = StagedRxProducer::new(ring, storage, &pool, TestDelay, sender);
+    let connected = StagedRxProducer::new(ring, storage, &pool, TestDelay::new(), sender);
     let storage_address = connected.storage() as *const _;
 
     let mut running = RunningScanRx::from_parked(connected)
@@ -582,13 +576,7 @@ fn running_scan_rx_returns_the_exact_connected_epoch_resources() {
 fn running_scan_rx_restarts_the_exact_halted_connected_epoch_resources() {
     const STAGE_SLOTS: usize = 1;
     const STAGE_CAPACITY: usize = 64;
-    struct TestDelay;
-
-    impl RxDmaObservationDelay for TestDelay {
-        fn after_micros(&mut self, _micros: u32) -> impl Future<Output = ()> + '_ {
-            ready(())
-        }
-    }
+    type TestDelay = oer_time_virtual::SkipClock;
 
     let storage = Box::leak(Box::new(ReceiveDmaStorage::<
         RX_TEST_COUNT,
@@ -612,7 +600,7 @@ fn running_scan_rx_restarts_the_exact_halted_connected_epoch_resources() {
     let pool = RxStagePool::<STAGE_SLOTS, STAGE_CAPACITY>::new();
     let queue = StagedRxQueue::<NoopRawMutex, STAGE_SLOTS, STAGE_CAPACITY, STAGE_SLOTS>::new();
     let (sender, _receiver) = queue.split();
-    let connected = StagedRxProducer::new(ring, storage, &pool, TestDelay, sender);
+    let connected = StagedRxProducer::new(ring, storage, &pool, TestDelay::new(), sender);
     let stopped = connected
         .try_stop(&mut hardware)
         .unwrap_or_else(|_| panic!("connected RX ring must stop"));

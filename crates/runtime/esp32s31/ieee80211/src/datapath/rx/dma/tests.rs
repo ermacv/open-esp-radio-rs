@@ -130,7 +130,7 @@ fn one_physical_producer_routes_one_ordered_lease_into_station_processor() {
         ring,
         storage,
         &pool,
-        NoDelay,
+        NoDelay::new(),
         sender,
         RxIngressConfig {
             ring_entry_limit: 1,
@@ -465,7 +465,7 @@ fn paired_datapath_rx_uses_one_dma_epoch_and_two_narrow_role_capabilities() {
             station_bssid: UPLINK,
             access_point: AP,
         },
-        NoDelay,
+        NoDelay::new(),
     );
     let mut service = crate::roles::concurrent::StaApRxService::new(epoch, consumer);
     embassy_futures::block_on(service.start(&mut hardware)).unwrap();
@@ -791,13 +791,8 @@ impl RxDma for MockRxDma {
     fn fence(&mut self) {}
 }
 
-struct NoDelay;
-
-impl RxDmaObservationDelay for NoDelay {
-    fn after_micros(&mut self, _micros: u32) -> impl Future<Output = ()> + '_ {
-        ready(())
-    }
-}
+/// Time that skips to every deadline, so a walker settle ends at once.
+type NoDelay = oer_time_virtual::SkipClock;
 
 #[derive(Default)]
 struct Observer(u32);
@@ -887,7 +882,7 @@ fn connected_rx_turn_recycles_protocol_credits_before_the_next_dma_probe() {
     let mut ethernet = [0; ESP32S31_RX_BUFFER_SIZE];
     let protocol_runtime = Box::leak(Box::new(ConnectedReceiveStorage::new()));
     configure_dispatcher(protocol_runtime);
-    let dma = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
+    let dma = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender)
         .with_stage_admission_policy(&admission);
     let protocol = ConnectedReceiveProtocol::new(
         receiver,
@@ -985,7 +980,7 @@ fn connected_rx_stop_confirms_walker_off_and_preserves_static_resources() {
     let queue =
         StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, ESP32S31_RX_BUFFER_SIZE, STAGED_DEPTH>::new();
     let (sender, _receiver) = queue.split();
-    let service = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender);
+    let service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender);
     assert!(hardware.walker);
 
     let stopped = match service.try_stop(&mut hardware) {
@@ -1075,7 +1070,7 @@ fn logical_role_handoff_preserves_one_continuous_live_walker_epoch() {
     let queue =
         StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, ESP32S31_RX_BUFFER_SIZE, STAGED_DEPTH>::new();
     let (sender, receiver) = queue.split();
-    let first = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender);
+    let first = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender);
 
     let (ring, resources) = first
         .try_into_live_epoch_parts()
@@ -1130,7 +1125,7 @@ fn logical_role_handoff_recycles_released_prefix_before_discarding_old_completio
     let pool = RxStagePool::<STAGED_DEPTH, STAGE_CAPACITY>::new();
     let queue = StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, STAGE_CAPACITY, STAGED_DEPTH>::new();
     let (sender, receiver) = queue.split();
-    let mut first = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender);
+    let mut first = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender);
     assert_eq!(
         embassy_futures::block_on(first.service(&mut hardware)),
         Ok(DatapathRxProgress::StageCapacityBlocked),
@@ -1193,7 +1188,7 @@ fn exhausted_cursor_keeps_service_live_until_terminal_writeback_arrives() {
     let pool = RxStagePool::<COUNT, STAGE_CAPACITY>::new();
     let queue = StagedRxQueue::<NoopRawMutex, COUNT, STAGE_CAPACITY, COUNT>::new();
     let (sender, receiver) = queue.split();
-    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender);
+    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender);
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
@@ -1262,7 +1257,7 @@ fn finite_service_discards_a_descriptor_chain_without_copying_it() {
     let pool = RxStagePool::<STAGED_DEPTH, STAGE_CAPACITY>::new();
     let queue = StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, STAGE_CAPACITY, STAGED_DEPTH>::new();
     let (sender, receiver) = queue.split();
-    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
+    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender)
         .with_pipeline_observer(&observer)
         .with_stage_admission_policy(UnreservedRxStageAdmission);
 
@@ -1319,7 +1314,7 @@ fn frozen_last_reclaims_chained_and_empty_discards_through_its_frontier() {
     let pool = RxStagePool::<COUNT, STAGE_CAPACITY>::new();
     let queue = StagedRxQueue::<NoopRawMutex, COUNT, STAGE_CAPACITY, COUNT>::new();
     let (sender, receiver) = queue.split();
-    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
+    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender)
         .with_pipeline_observer(&observer);
 
     assert_eq!(
@@ -1393,7 +1388,7 @@ fn production_ring_reclaims_before_a_32_slot_stage_pool_saturates() {
     let observer = RecordingRxObserver::default();
     let queue = StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, STAGE_CAPACITY, STAGED_DEPTH>::new();
     let (sender, receiver) = queue.split();
-    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
+    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender)
         .with_pipeline_observer(&observer);
 
     assert_eq!(
@@ -1474,7 +1469,7 @@ fn saturated_bulk_rx_discards_upper_copy_and_recycles_without_consuming_critical
         VENDOR_LARGE_RX_SLOT_COUNT,
     >::new();
     let (sender, receiver) = queue.split();
-    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
+    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender)
         .with_pipeline_observer(&observer);
 
     assert_eq!(
@@ -1572,7 +1567,7 @@ fn burst_returns_to_consumer_before_treating_newly_filled_stage_as_overload() {
         VENDOR_LARGE_RX_SLOT_COUNT,
     >::new();
     let (sender, receiver) = queue.split();
-    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
+    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender)
         .with_pipeline_observer(&observer);
 
     // A responsive consumer has not had a scheduling opportunity yet.
@@ -1641,7 +1636,7 @@ fn critical_frame_consumes_the_reserved_final_staging_credit() {
     let observer = RecordingRxObserver::default();
     let queue = StagedRxQueue::<NoopRawMutex, COUNT, ESP32S31_RX_BUFFER_SIZE, COUNT>::new();
     let (sender, _receiver) = queue.split();
-    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
+    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender)
         .with_pipeline_observer(&observer);
 
     assert_eq!(
@@ -1755,7 +1750,7 @@ fn exercise_negotiated_rx_block_ack(in_order: bool) {
     let mut reorder_scratch = [0; STAGE_CAPACITY];
     let protocol_runtime = Box::leak(Box::new(ConnectedReceiveStorage::new()));
     configure_dispatcher(protocol_runtime);
-    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender);
+    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender);
     let mut protocol = ConnectedReceiveProtocol::new(
         receiver,
         &irq,
@@ -1848,7 +1843,7 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
     let observer = RecordingRxObserver::default();
     let queue = StagedRxQueue::<NoopRawMutex, STAGED_DEPTH>::new();
     let (sender, receiver) = queue.split();
-    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
+    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender)
         .with_pipeline_observer(&observer)
         .with_stage_admission_policy(UnreservedRxStageAdmission);
 
@@ -1930,7 +1925,7 @@ fn one_shot_admission_discards_before_staging_then_observes_same_live_ring() {
     let admission = OneShotNarrowAdmission::default();
     let queue = StagedRxQueue::<NoopRawMutex, STAGED_DEPTH>::new();
     let (sender, receiver) = queue.split();
-    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
+    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender)
         .with_stage_admission_policy(&admission);
 
     storage.descriptors()[0]
@@ -2003,7 +1998,7 @@ fn finite_service_accepts_a_unit_within_a_wider_negotiated_stage() {
     let pool = RxStagePool::<VENDOR_LARGE_RX_SLOT_COUNT, WIDE_STAGE_CAPACITY>::new();
     let queue = StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, WIDE_STAGE_CAPACITY>::new();
     let (sender, receiver) = queue.split();
-    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
+    let mut service = StagedRxProducer::new(ring, storage, &pool, NoDelay::new(), sender)
         .with_stage_admission_policy(UnreservedRxStageAdmission);
 
     assert_eq!(

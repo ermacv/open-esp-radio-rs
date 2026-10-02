@@ -22,7 +22,7 @@ use embassy_time::Instant;
 
 pub use oer_esp32s31_ieee80211::rx::storage::{
     ESP32S31_RX_BUFFER_SIZE, ESP32S31_RX_BUFFER_STORAGE_SIZE, ESP32S31_RX_DESCRIPTOR_COUNT,
-    ESP32S31_RX_WALKER_ENABLE_SETTLE_US, ReceiveDmaBuffer, ReceiveDmaStorage,
+    ESP32S31_RX_WALKER_ENABLE_SETTLE_US, ReceiveDmaBuffer, ReceiveDmaStorage, walker_enable_settle,
 };
 
 use oer_esp32s31_ieee80211_mac::rx::{
@@ -43,7 +43,6 @@ use crate::diagnostics::rx_pipeline::{RxPipelineObservation, RxStageDiscard};
 use crate::datapath::{
     DatapathRxProgress, DatapathRxWorkCounters,
     rx::{
-        hardware::RxDmaObservationDelay,
         routed::{StaApStagedRxFrame, StaApStagedRxSender},
         staging::{StagedRxFrame, StagedRxReceiver, StagedRxSender, StagedRxTrySendError},
     },

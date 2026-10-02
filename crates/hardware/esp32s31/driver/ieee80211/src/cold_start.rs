@@ -19,11 +19,10 @@ use oer_esp32s31_hal::{
 };
 
 use oer_esp32s31_phy::{
-    ConcurrentPhyTrackingError, ConcurrentWifiChannelError, PhyAsyncDelay, PhyTargetObserver,
+    ConcurrentPhyTrackingError, ConcurrentWifiChannelError, PhyShortDelay, PhyTargetObserver,
     PhyTxTargetPowerProfile,
     concurrent::{ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError},
     maintain_concurrent_phy, select_concurrent_wifi_channel,
-    state::client::PhyPllTrackClock,
     tracking::PhyParamTrackingOutcome,
     wifi_client::{WifiPhyMembership, join_wifi, set_wifi_rx},
 };
@@ -161,10 +160,10 @@ pub async fn start_esp32s31_wifi<P, W, D, O>(
     wifi_platform: W,
     config: WifiColdStartConfig,
     mut observer: O,
-    clock: &mut impl PhyPllTrackClock,
+    timer: &impl oer_time::Timer,
 ) -> Result<WifiColdStart<W>, WifiColdStartFailure<W>>
 where
-    D: PhyAsyncDelay,
+    D: PhyShortDelay,
     O: PhyTargetObserver + Clone,
 {
     let powered = match WifiCold::from_partition(partition).power_up(lease, clocks) {
@@ -200,7 +199,7 @@ where
             },
         });
     }
-    let (membership, acquired) = match join_wifi(lease, &clocked, clock) {
+    let (membership, acquired) = match join_wifi(lease, &clocked, timer) {
         Ok(joined) => joined,
         Err(error) => {
             return Err(WifiColdStartFailure {
@@ -213,7 +212,9 @@ where
         }
     };
     let initial_tracking = if acquired == ConcurrentAcquire::TrackingDue {
-        match maintain_concurrent_phy::<P, D, _>(lease, platform, &[], observer.clone()).await {
+        match maintain_concurrent_phy::<P, D, _>(timer, lease, platform, &[], observer.clone())
+            .await
+        {
             Ok(outcome) => Some(outcome),
             Err(error) => {
                 return Err(WifiColdStartFailure {
@@ -235,6 +236,7 @@ where
     let selected = {
         let (mut channel, phy) = clocked.channel_hal_with_attachment(platform, lease);
         select_concurrent_wifi_channel::<D, _, _>(
+            timer,
             phy,
             initial_channel.channel_or_frequency,
             initial_channel.cbw,

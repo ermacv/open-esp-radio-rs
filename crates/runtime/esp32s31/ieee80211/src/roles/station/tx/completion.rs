@@ -1,4 +1,5 @@
 use super::*;
+use oer_time::Clock as _;
 
 impl<
     'slot,
@@ -30,7 +31,7 @@ where
             && let Some(observer) = self.observer
         {
             observer.observe(AggregateTxObservation::InterruptServiceStarted {
-                at_micros: self.ordinary.now_micros(),
+                at_micros: self.ordinary.now().as_micros(),
             });
         }
         let active = mem::replace(&mut self.active, ConnectedTxActive::Idle);
@@ -158,7 +159,7 @@ where
         hardware: &mut H,
         active: AggregateActive<SLOTS>,
     ) -> Result<WifiTxProgress, AggregateTxError> {
-        if self.ordinary.now_micros() < active.deadline_micros {
+        if self.ordinary.now().as_micros() < active.deadline_micros {
             self.active = ConnectedTxActive::AbortSettling(active);
             return Ok(WifiTxProgress::Pending);
         }
@@ -181,7 +182,7 @@ where
         #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
             observer.observe(AggregateTxObservation::HardwareTimeout);
-            self.observe_terminal_exchange(observer, &active, self.ordinary.now_micros());
+            self.observe_terminal_exchange(observer, &active, self.ordinary.now().as_micros());
         }
         Ok(WifiTxProgress::Complete)
     }
@@ -194,7 +195,7 @@ where
     ) -> Result<WifiTxProgress, AggregateTxError> {
         #[cfg(feature = "tx-wait-probe")]
         if let Some(observer) = self.observer {
-            let now = self.ordinary.now_micros();
+            let now = self.ordinary.now().as_micros();
             if let Some((elapsed_micros, timer_lateness_micros)) = active.wait_probe.sample(now) {
                 let queue = active.traffic.queue().hardware_index();
                 observer.observe_wait_probe(crate::diagnostics::aggregate_tx::TxWaitSample {
@@ -224,7 +225,7 @@ where
             hardware,
             cookie,
             &mut active.retry,
-            self.ordinary.now_micros(),
+            self.ordinary.now().as_micros(),
             block_ack_operational,
         )? {
             let completion = observed.completion;
@@ -239,7 +240,7 @@ where
             // this typed boundary and remain diagnostic-only.
             let acknowledged = current_subframes.saturating_sub(decision.missing());
             let observation = self.rate_control.observe_ampdu_block_ack(
-                self.ordinary.now_micros() as u32,
+                self.ordinary.now().as_micros() as u32,
                 u16::from(current_subframes),
                 u16::from(acknowledged),
             );
@@ -271,7 +272,7 @@ where
             AggregateTxServiceEvent::HardwareTimeout | AggregateTxServiceEvent::ExecutorDeadline
         ) {
             if service_event == AggregateTxServiceEvent::ExecutorDeadline
-                && self.ordinary.now_micros() < active.deadline_micros
+                && self.ordinary.now().as_micros() < active.deadline_micros
             {
                 self.active = ConnectedTxActive::Aggregate(active);
                 return Ok(WifiTxProgress::Pending);
@@ -292,7 +293,8 @@ where
             }
             let Some(deadline_micros) = self
                 .ordinary
-                .now_micros()
+                .now()
+                .as_micros()
                 .checked_add(AMPDU_ABORT_SETTLE_US)
             else {
                 self.ampdu.active_mut().require_reset(cookie)?;
@@ -322,7 +324,7 @@ where
             #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
                 observer.observe(AggregateTxObservation::Collision);
-                self.observe_terminal_exchange(observer, &active, self.ordinary.now_micros());
+                self.observe_terminal_exchange(observer, &active, self.ordinary.now().as_micros());
             }
             return Ok(WifiTxProgress::Complete);
         }
@@ -403,7 +405,7 @@ where
                     acknowledged: active.retry.acknowledged(),
                     individual_retry: true,
                 });
-                self.observe_terminal_exchange(observer, &active, self.ordinary.now_micros());
+                self.observe_terminal_exchange(observer, &active, self.ordinary.now().as_micros());
             }
             let status = MacAmpduTxStatus {
                 // Delivered only once every missing MPDU was transmitted.
@@ -444,7 +446,7 @@ where
                 acknowledged: active.retry.acknowledged(),
                 individual_retry: false,
             });
-            self.observe_terminal_exchange(observer, &active, self.ordinary.now_micros());
+            self.observe_terminal_exchange(observer, &active, self.ordinary.now().as_micros());
         }
         Ok(WifiTxProgress::Complete)
     }
@@ -497,7 +499,7 @@ where
             self.block_ack_generation(active.traffic.tid()) == Some(active.block_ack_generation);
         let decision = active.retry.observe_block_ack_request(
             block_ack,
-            self.ordinary.now_micros(),
+            self.ordinary.now().as_micros(),
             block_ack_operational,
         );
         self.apply_retry_decision(hardware, active, decision)

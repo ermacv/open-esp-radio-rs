@@ -12,7 +12,7 @@
 
 use crate::datapath::rx::{
     dma::ReceiveDmaStorage,
-    frontier::{EmbassyRxFrontierDelay, ReceiveFrontier, RxFrontierError, RxFrontierPhase},
+    frontier::{ReceiveFrontier, RxFrontierError, RxFrontierPhase},
 };
 
 use oer_esp32s31_ieee80211_mac::rx::{
@@ -57,7 +57,7 @@ pub struct MonitorRx<
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 > {
-    receive: ReceiveFrontier<'storage, EmbassyRxFrontierDelay, COUNT, DMA_BUFFER_SIZE>,
+    receive: ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE>,
     storage: &'storage ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     channel_context: ChannelContextId,
     filter: MonitorFilter,

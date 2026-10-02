@@ -9,7 +9,7 @@ use core::{future::Future, marker::PhantomData};
 use crate::{
     datapath::rx::{
         dma::ReceiveDmaStorage,
-        frontier::{ReceiveFrontier, RxFrontierDelay, RxFrontierError},
+        frontier::{ReceiveFrontier, RxFrontierError},
     },
     roles::station::{
         join_port::{StaJoinPort, StaJoinRadio, StaJoinRx, StaJoinStation, StaJoinStorage},
@@ -21,7 +21,7 @@ use oer_esp32s31_hal::owner::RadioRuntimeOwner;
 
 use oer_time_embassy::EmbassyClock;
 
-use oer_esp32s31_phy::{ConcurrentWifiChannelError, PhyAsyncDelay, PhyTargetObserver};
+use oer_esp32s31_phy::{ConcurrentWifiChannelError, PhyTargetObserver};
 
 use oer_esp32s31_ieee80211::{
     coex::WifiCoexActivity, cooperative_hardware::CooperativeRadioHardware,

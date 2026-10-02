@@ -28,7 +28,7 @@ impl<
         DMA_STORAGE_SIZE,
     >
 where
-    D: RxDmaObservationDelay,
+    D: oer_time::Timer,
     H: RxDma,
 {
     type Error = RxFrontierError;

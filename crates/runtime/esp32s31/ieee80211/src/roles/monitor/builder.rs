@@ -27,7 +27,7 @@ use embassy_time::Timer;
 use oer_esp32s31_hal::{owner::RadioRuntimeOwner, types::MacInterruptEnableState};
 
 use oer_esp32s31_hal::shared_radio::PlatformClockProvider;
-use oer_esp32s31_phy::{ConcurrentWifiChannelError, PhyAsyncDelay, PhyTargetObserver};
+use oer_esp32s31_phy::{ConcurrentWifiChannelError, PhyTargetObserver};
 use oer_esp32s31_radio_runtime::RadioSystem;
 
 use oer_esp32s31_ieee80211::{
@@ -361,11 +361,12 @@ where
     pub async fn switch_channel<D, O, RP, RC>(
         &mut self,
         radio: &RadioSystem<RP, RC>,
+        timer: &D,
         channel: WifiChannel,
         observer: &mut O,
     ) -> Result<(), MonitorChannelSwitchError>
     where
-        D: PhyAsyncDelay,
+        D: oer_time::Timer,
         O: PhyTargetObserver,
         RC: PlatformClockProvider,
     {
@@ -382,9 +383,10 @@ where
             .map_err(MonitorChannelSwitchError::Active)?;
         let mut guard = radio.lock().await;
         let (lease, platform, _) = guard.parts();
-        let switched =
-            switch_esp32s31_wifi_channel::<D, _, _>(lease, platform, registers, channel, observer)
-                .await;
+        let switched = switch_esp32s31_wifi_channel::<oer_esp32s31_phy::RomShortDelay, _, _>(
+            timer, lease, platform, registers, channel, observer,
+        )
+        .await;
         drop(guard);
         if let Err(error) = switched {
             self.quarantined = true;
@@ -741,11 +743,12 @@ where
     async fn run_hopping<D, O, RP, RC>(
         &mut self,
         radio: &RadioSystem<RP, RC>,
+        timer: &D,
         sequence: MonitorChannelSequence,
         observer: &mut O,
     ) -> Result<MonitorRunReport, MonitorRunFailure<R::Error>>
     where
-        D: PhyAsyncDelay,
+        D: oer_time::Timer,
         O: PhyTargetObserver,
         RC: PlatformClockProvider,
     {
@@ -814,7 +817,7 @@ where
             let next_channel = channels[channel_index];
             if let Err(error) = self
                 .owner
-                .switch_channel::<D, O, RP, RC>(radio, next_channel, observer)
+                .switch_channel::<D, O, RP, RC>(radio, timer, next_channel, observer)
                 .await
             {
                 self.owner.quarantined = true;
@@ -901,6 +904,7 @@ where
     pub async fn run_channel_policy_to_exit<D, O, RP, RC>(
         mut self,
         radio: &RadioSystem<RP, RC>,
+        timer: &D,
         policy: MonitorChannelPolicy,
         observer: &mut O,
     ) -> MonitorTaskExit<
@@ -909,7 +913,7 @@ where
         R::Error,
     >
     where
-        D: PhyAsyncDelay,
+        D: oer_time::Timer,
         O: PhyTargetObserver,
         RC: PlatformClockProvider,
     {
@@ -922,7 +926,7 @@ where
             }
             MonitorChannelPolicy::Fixed(_) => self.run().await,
             MonitorChannelPolicy::Hopping(sequence) => {
-                self.run_hopping::<D, O, RP, RC>(radio, sequence, observer)
+                self.run_hopping::<D, O, RP, RC>(radio, timer, sequence, observer)
                     .await
             }
         };
@@ -961,16 +965,17 @@ where
     pub async fn switch_channel<D, O, RP, RC>(
         &mut self,
         radio: &RadioSystem<RP, RC>,
+        timer: &D,
         channel: WifiChannel,
         observer: &mut O,
     ) -> Result<(), MonitorChannelSwitchError>
     where
-        D: PhyAsyncDelay,
+        D: oer_time::Timer,
         O: PhyTargetObserver,
         RC: PlatformClockProvider,
     {
         self.owner
-            .switch_channel::<D, O, RP, RC>(radio, channel, observer)
+            .switch_channel::<D, O, RP, RC>(radio, timer, channel, observer)
             .await
     }
 }

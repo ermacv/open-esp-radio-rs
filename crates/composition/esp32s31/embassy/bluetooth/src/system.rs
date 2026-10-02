@@ -55,13 +55,13 @@ use oer_esp32s31_hal::{
         CommonRadioPowerError, ModemClockError, PlatformClockProvider, SharedRadioLease,
     },
 };
+use oer_esp32s31_phy::RomShortDelay;
 use oer_esp32s31_phy::{
     ConcurrentPhyTrackingError, ConcurrentRfError, NoopPhyTargetObserver,
     bluetooth_client::BluetoothPhyClientError,
     concurrent::{ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError},
     maintain_concurrent_phy,
 };
-use oer_esp32s31_phy_runtime::EmbassyPhyTime;
 use oer_esp32s31_radio_esp_hal::{
     BoundEspHalBluetoothInterruptEpoch, EspHalBluetoothInterruptDisposition,
     EspHalBluetoothInterruptRouteError, EspHalBluetoothInterruptSource,
@@ -70,6 +70,7 @@ use oer_esp32s31_radio_esp_hal::{
     EspHalBluetoothPrimaryInterruptStep, EspHalBluetoothSchedulerRunInterruptError,
     PublishedEspHalBluetoothInterruptOwners,
 };
+use oer_time_embassy::EmbassyClock;
 
 use crate::coex::BleCoexStatusChange;
 
@@ -878,7 +879,7 @@ pub async fn start<P, C: PlatformClockProvider>(
         ));
     }
     let (lease, platform, _) = guard.parts();
-    let (mut joined, acquired) = match controller.join_phy(lease, &mut EmbassyPhyTime) {
+    let (mut joined, acquired) = match controller.join_phy(lease, &EmbassyClock) {
         Ok(joined) => joined,
         Err(failure) => {
             let error = BluetoothStartError::PhyClient(failure.error());
@@ -889,7 +890,8 @@ pub async fn start<P, C: PlatformClockProvider>(
         let issued_at = Instant::now().as_micros();
         let tracked = match joined.quiescence(issued_at, issued_at + TRACKING_WINDOW_MICROS) {
             Ok(proof) => {
-                maintain_concurrent_phy::<P, EmbassyPhyTime, _>(
+                maintain_concurrent_phy::<P, RomShortDelay, _>(
+                    &EmbassyClock,
                     lease,
                     platform,
                     &[proof],

@@ -6,6 +6,5 @@
 
 pub mod frontier;
 pub mod storage;
-pub mod time;
 
 pub mod transaction;

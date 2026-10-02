@@ -1,11 +1,9 @@
 //! Bounded physical MAC stop before RX ownership is withdrawn at shutdown.
 use oer_esp32s31_ieee80211_mac::init::MacRuntimeStopHardware;
-use oer_esp32s31_phy::state::client::PhyTrackingTimer;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StopError {
     DeadlineOverflow,
-    ClockReversed,
     TimedOut { active_state: u8 },
 }
 
@@ -13,22 +11,17 @@ pub enum StopError {
 /// borrow leaves the hardware owner with the caller and never proves it idle.
 /// RX must remain published until this function succeeds.
 // CAPABILITY: wifi-bounded-wait-owners
-pub async fn stop_mac<H: MacRuntimeStopHardware, T: PhyTrackingTimer>(
+pub async fn stop_mac<H: MacRuntimeStopHardware, T: oer_time::Timer>(
     hardware: &mut H,
-    timer: &mut T,
-    timeout_micros: u64,
+    timer: &T,
+    timeout: oer_time::Duration,
 ) -> Result<(), StopError> {
-    let mut previous = timer.now_micros();
-    let deadline = previous
-        .checked_add(timeout_micros)
-        .ok_or(StopError::DeadlineOverflow)?;
+    let deadline = timer
+        .deadline_after(timeout)
+        .map_err(|oer_time::TimeOverflow| StopError::DeadlineOverflow)?;
     hardware.request_mac_runtime_stop();
     loop {
-        let now = timer.now_micros();
-        if now < previous {
-            return Err(StopError::ClockReversed);
-        }
-        previous = now;
+        let now = timer.now();
         let active_state = hardware.mac_runtime_active_state();
         if active_state == 0 {
             return Ok(());
@@ -38,9 +31,15 @@ pub async fn stop_mac<H: MacRuntimeStopHardware, T: PhyTrackingTimer>(
         }
         // MAC idle has no dedicated completion IRQ. This is a bounded,
         // timer-driven observation interval, never an assumed completion delay.
-        let next = now.saturating_add(20).min(deadline);
-        timer.wait_until_micros(next).await;
+        let next = now
+            .checked_add(STOP_POLL_INTERVAL)
+            .map_or(deadline, |next| next.min(deadline));
+        timer.wait_until(next).await;
     }
 }
+
+/// The interval between two activity readbacks of [`stop_mac`].
+const STOP_POLL_INTERVAL: oer_time::Duration = oer_time::Duration::from_micros(20);
+
 #[cfg(test)]
 mod tests;

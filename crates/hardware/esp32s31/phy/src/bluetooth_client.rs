@@ -18,11 +18,8 @@ use oer_esp32s31_hal::{
     shared_radio::{BtbbError, RadioClient, SharedRadioLease},
 };
 
-use crate::{
-    concurrent::{
-        ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError, acquire_client, release_client,
-    },
-    state::client::PhyPllTrackClock,
+use crate::concurrent::{
+    ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError, acquire_client, release_client,
 };
 
 /// Bluetooth holds a client bit in the shared PHY domain and a reference on
@@ -70,7 +67,7 @@ pub enum BluetoothPhyClientError {
 pub fn join_bluetooth(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     task: &TaskOwner,
-    clock: &mut impl PhyPllTrackClock,
+    clock: &impl oer_time::Clock,
 ) -> Result<(BluetoothPhyMembership, ConcurrentAcquire), BluetoothPhyClientError> {
     let epoch = lease.registration_epoch();
     let domain = lease

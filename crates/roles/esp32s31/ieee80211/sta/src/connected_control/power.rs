@@ -390,7 +390,7 @@ impl ConnectedControlCore {
             Some(PowerInput::Phase(phase))
         } else if let Some(end) = power.preemption {
             Some(PowerInput::Preemption(end))
-        } else if let Some(index) = power.expired_timer(tx.now_micros()) {
+        } else if let Some(index) = power.expired_timer(tx.now().as_micros()) {
             Some(PowerInput::Timer(index))
         } else if power.engine.is_started() && tx.has_network_tx_report() {
             Some(PowerInput::NetworkTxReport)
@@ -568,7 +568,7 @@ impl ConnectedControlCore {
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
     {
-        let now_micros = tx.now_micros();
+        let now_micros = tx.now().as_micros();
         for action in actions.iter() {
             match action {
                 PmAction::SendNull { power_save } => {
@@ -692,6 +692,6 @@ fn trace_power_input(input: PowerInput, control_event_waiting: bool) {
 
 pub(super) fn power_clock<X: ConnectedControlTx>(tx: &X) -> PmClock {
     PmClock {
-        now_micros: tx.now_micros(),
+        now_micros: tx.now().as_micros(),
     }
 }

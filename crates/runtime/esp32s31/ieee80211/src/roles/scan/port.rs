@@ -11,13 +11,11 @@ use core::future::Future;
 use oer_esp32s31_ieee80211_sta::connection_coex::ConnectionFrameCoex;
 
 use crate::{
-    datapath::rx::{frontier::RxFrontierError, hardware::RxDmaObservationDelay},
+    datapath::rx::frontier::RxFrontierError,
     roles::scan::rx::{RunningScanRx, ScanFrameObserver, ScanObservationContext, ScanRxProgress},
 };
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
-
-use embassy_time::Timer;
 
 use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile};
 
@@ -94,21 +92,6 @@ pub trait ScanTransmitPort<H> {
         request: ScanProbeRequest<'a>,
         coex: &'a mut C,
     ) -> impl Future<Output = Result<ScanProbeReport, Self::Error>> + 'a;
-}
-
-/// Executor clock edge for one scan dwell tick.
-pub trait ScanTimer {
-    fn wait_dwell_tick(&mut self) -> impl Future<Output = ()> + '_;
-}
-
-/// Production one-millisecond Embassy dwell tick.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct EmbassyScanTimer;
-
-impl ScanTimer for EmbassyScanTimer {
-    fn wait_dwell_tick(&mut self) -> impl Future<Output = ()> + '_ {
-        Timer::after_millis(1)
-    }
 }
 
 /// Driver resources returned by one completely quiesced connected epoch.

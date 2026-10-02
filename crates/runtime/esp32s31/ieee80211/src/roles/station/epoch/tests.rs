@@ -1,25 +1,13 @@
 use super::*;
 
-struct TestDelay;
-
-impl RxFrontierDelay for TestDelay {
-    async fn after_micros(_micros: u32) {}
-}
-
 struct StoppedRx(u8);
 
 impl StoppedStaRx for StoppedRx {
-    type Preconnected<D>
-        = (u8, PhantomData<D>)
-    where
-        D: RxFrontierDelay;
+    type Preconnected = (u8,);
     type Persistent = u16;
 
-    fn split_for_reconnect<D>(self) -> (Self::Preconnected<D>, Self::Persistent)
-    where
-        D: RxFrontierDelay,
-    {
-        ((self.0, PhantomData), u16::from(self.0) + 100)
+    fn split_for_reconnect(self) -> (Self::Preconnected, Self::Persistent) {
+        ((self.0,), u16::from(self.0) + 100)
     }
 }
 
@@ -34,7 +22,7 @@ fn running_scan_round_trip_and_reconnect_preserve_every_owner() {
     assert_eq!(disconnected.hardware(), &"hardware");
     assert_eq!(disconnected.rx().0, 7);
 
-    let (network, reconnected) = disconnected.prepare_reconnect::<TestDelay>();
+    let (network, reconnected) = disconnected.prepare_reconnect();
     assert_eq!(network, "network");
     let parts = reconnected.into_parts();
     assert_eq!(parts.hardware, "hardware");

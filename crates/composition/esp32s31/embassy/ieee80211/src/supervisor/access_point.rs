@@ -200,7 +200,7 @@ impl ProductionWifiEpochRunner {
         if requested_channel != current_channel {
             diagnostics_event!("open-radio: AP prepare channel switch begin");
             let lowered_channel = lower_wifi_channel(requested_channel);
-            let mut channel = ScanPhy::<_, EmbassyPhyTime>::new(NoopPhyTargetObserver);
+            let mut channel = ScanPhy::new(NoopPhyTargetObserver, EmbassyClock);
             let selected = {
                 let mut guard = self.radio.lock().await;
                 let (lease, platform, _) = guard.parts();

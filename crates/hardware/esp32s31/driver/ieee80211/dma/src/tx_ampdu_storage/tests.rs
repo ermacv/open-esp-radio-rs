@@ -718,6 +718,38 @@ fn free_retained_owner_returns_its_dma_arena() {
 }
 
 #[test]
+fn returned_retention_arena_can_build_a_new_chain_without_old_counts() {
+    let drops = Rc::new(Cell::new(0));
+    let mut owner = retained_owner();
+    for released in 1..=2 {
+        owner.begin().unwrap();
+        let backing = owner.push_backing(TestBacking::new(drops.clone())).unwrap();
+        let address = owner
+            .reserved_backing_mut(&backing)
+            .unwrap()
+            .bytes
+            .as_ptr()
+            .addr();
+        owner
+            .commit_backing_descriptor(&backing, address, 64, 32)
+            .unwrap();
+        owner.publish_retained_chain(1).unwrap().commit(|_| {});
+        owner.mark_completed().unwrap();
+        owner
+            .mark_detached(MacTxQueueDetached::new_model(DESCRIPTOR_BASE))
+            .unwrap();
+        owner.release_detached().unwrap();
+        assert_eq!(owner.held_backing_count(), 0);
+        assert_eq!(drops.get(), released);
+        let (dma, retention) = match owner.try_into_parts() {
+            Ok(parts) => parts,
+            Err(_) => panic!("released owner must return both arenas"),
+        };
+        owner = RetainedAmpduDma::new(dma, retention);
+    }
+}
+
+#[test]
 fn retained_owner_is_a_small_handle_over_the_external_lease_arena() {
     assert!(
         core::mem::size_of::<RetainedAmpduDma<'static, TestBacking, 2, 0>>()

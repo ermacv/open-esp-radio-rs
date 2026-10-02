@@ -159,3 +159,51 @@ fn dependents_follow_every_edge_transitively() {
         BTreeSet::from(["d".into()])
     );
 }
+
+#[test]
+fn a_lock_change_selects_the_members_whose_resolution_changed() {
+    let old = r#"
+[[package]]
+name = "a"
+version = "0.1.0"
+dependencies = ["serde"]
+
+[[package]]
+name = "b"
+version = "0.1.0"
+dependencies = ["log", "a"]
+
+[[package]]
+name = "c"
+version = "0.1.0"
+
+[[package]]
+name = "serde"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "log"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+"#;
+    assert!(lock_dependents(old, old).is_empty());
+    let bumped = old.replace("version = \"0.4.0\"", "version = \"0.4.1\"");
+    assert_eq!(
+        lock_dependents(old, &bumped),
+        BTreeSet::from(["b".to_owned()])
+    );
+    let bumped = old.replace("version = \"1.0.0\"", "version = \"1.0.1\"");
+    assert_eq!(
+        lock_dependents(old, &bumped),
+        BTreeSet::from(["a".to_owned(), "b".to_owned()])
+    );
+    let added = old.replace(
+        "name = \"c\"\nversion = \"0.1.0\"\n",
+        "name = \"c\"\nversion = \"0.1.0\"\ndependencies = [\"log\"]\n",
+    );
+    assert_eq!(
+        lock_dependents(old, &added),
+        BTreeSet::from(["c".to_owned()])
+    );
+}

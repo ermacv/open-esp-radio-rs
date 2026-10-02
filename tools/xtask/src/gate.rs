@@ -230,6 +230,126 @@ fn prefix(directory: &str) -> String {
     }
 }
 
+/// One `[[package]]` entry of a lock file: its identity and dependencies.
+type LockEntry = (String, String, Option<String>, Vec<String>);
+
+fn lock_entries(text: &str) -> Vec<LockEntry> {
+    let Ok(lock) = text.parse::<toml::Table>() else {
+        return Vec::new();
+    };
+    lock.get("package")
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            let field = |key: &str| {
+                entry
+                    .get(key)
+                    .and_then(toml::Value::as_str)
+                    .map(str::to_owned)
+            };
+            Some((
+                field("name")?,
+                field("version")?,
+                field("source"),
+                entry
+                    .get("dependencies")
+                    .and_then(toml::Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(toml::Value::as_str)
+                    .map(str::to_owned)
+                    .collect(),
+            ))
+        })
+        .collect()
+}
+
+/// The workspace members of the lock `new` whose resolved dependencies
+/// differ from the lock `old`: every package that reaches, through the
+/// lock's dependency lists, an entry that is new or changed (a different
+/// version, source or dependency list). Members are the entries without a
+/// source.
+pub fn lock_dependents(old: &str, new: &str) -> BTreeSet<String> {
+    let old: BTreeSet<LockEntry> = lock_entries(old).into_iter().collect();
+    let new = lock_entries(new);
+    // A dependency is named `name`, `name version` or `name version (source)`.
+    let names = |dependency: &str| -> (String, Option<String>) {
+        let mut words = dependency.split(' ');
+        (
+            words.next().unwrap_or_default().to_owned(),
+            words.next().map(str::to_owned),
+        )
+    };
+    let mut changed: BTreeSet<(String, String)> = new
+        .iter()
+        .filter(|entry| !old.contains(*entry))
+        .map(|(name, version, _, _)| (name.clone(), version.clone()))
+        .collect();
+    loop {
+        let before = changed.len();
+        for (name, version, _, dependencies) in &new {
+            if changed.contains(&(name.clone(), version.clone())) {
+                continue;
+            }
+            let reaches = dependencies.iter().any(|dependency| {
+                let (dependency, pinned) = names(dependency);
+                changed.iter().any(|(name, version)| {
+                    *name == dependency && pinned.as_ref().is_none_or(|pinned| pinned == version)
+                })
+            });
+            if reaches {
+                changed.insert((name.clone(), version.clone()));
+            }
+        }
+        if changed.len() == before {
+            break;
+        }
+    }
+    new.iter()
+        .filter(|(name, version, source, _)| {
+            source.is_none() && changed.contains(&(name.clone(), version.clone()))
+        })
+        .map(|(name, ..)| name.clone())
+        .collect()
+}
+
+/// Selects the members whose resolved dependencies a lock change among
+/// `changed` alters, comparing each lock at `base` with the lock at `to`,
+/// or in the working tree when `to` is `None`.
+pub fn select_locks(
+    ctx: &Context,
+    tree: &Tree,
+    changed: &[String],
+    base: &str,
+    to: Option<&str>,
+    selection: &mut Selection,
+) -> Result<()> {
+    for lock in changed
+        .iter()
+        .filter(|path| path.rsplit('/').next() == Some("Cargo.lock"))
+    {
+        let workspace = format!("{}Cargo.toml", lock.trim_end_matches("Cargo.lock"));
+        let at =
+            |revision: &str| git(ctx, &["show", &format!("{revision}:{lock}")]).unwrap_or_default();
+        let old = at(base);
+        let new = match to {
+            Some(revision) => at(revision),
+            None => std::fs::read_to_string(ctx.root.join(lock)).unwrap_or_default(),
+        };
+        for name in lock_dependents(&old, &new) {
+            if tree
+                .packages
+                .iter()
+                .any(|package| package.workspace == workspace && package.name == name)
+            {
+                selection.packages.insert((workspace.clone(), name));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// The path dependencies of every member of one workspace, by name.
 pub type Edges = BTreeMap<String, BTreeSet<String>>;
 
@@ -406,10 +526,14 @@ pub fn run(
     Ok(())
 }
 
-/// The files `HEAD` changed against its merge base with `base`.
-pub fn committed(ctx: &Context, base: &str) -> Result<Vec<String>> {
-    let merge_base = git(ctx, &["merge-base", "HEAD", base])?;
-    lines(ctx, &["diff", "--name-only", merge_base.trim(), "HEAD"])
+/// The merge base of `HEAD` and `base`.
+pub fn merge_base(ctx: &Context, base: &str) -> Result<String> {
+    Ok(git(ctx, &["merge-base", "HEAD", base])?.trim().to_owned())
+}
+
+/// The files `HEAD` changed against `merge_base`.
+pub fn committed(ctx: &Context, merge_base: &str) -> Result<Vec<String>> {
+    lines(ctx, &["diff", "--name-only", merge_base, "HEAD"])
 }
 
 /// The files of the working tree that differ from `HEAD`: modified, staged

@@ -101,7 +101,8 @@ pub fn run(ctx: &Context) -> Result<()> {
     }
     let ours = changed(ctx, &base, "HEAD")?;
     let tree = gate::Tree::load(&ctx.root)?;
-    let selection = gate::select(&tree, &ours);
+    let mut selection = gate::select(&tree, &ours);
+    gate::select_locks(ctx, &tree, &ours, &base, None, &mut selection)?;
     let affected = gate::affected(ctx, &selection)?;
     println!(
         "push: gating {} on {}: {} files, {} package(s) with dependents",
@@ -125,7 +126,9 @@ pub fn run(ctx: &Context) -> Result<()> {
                 .into());
             }
             let rebased = gate::Tree::load(&ctx.root)?;
-            let incoming = gate::affected(ctx, &gate::select(&rebased, &theirs))?;
+            let mut incoming = gate::select(&rebased, &theirs);
+            gate::select_locks(ctx, &rebased, &theirs, &base, Some(&main), &mut incoming)?;
+            let incoming = gate::affected(ctx, &incoming)?;
             let both = overlap(&affected, &incoming);
             if both.is_empty() {
                 println!(
@@ -142,6 +145,7 @@ pub fn run(ctx: &Context) -> Result<()> {
                 let mut files = ours.clone();
                 files.extend(theirs);
                 let mut selection = gate::select(&rebased, &files);
+                gate::select_locks(ctx, &rebased, &files, &base, None, &mut selection)?;
                 selection.packages.retain(|key| both.contains(key));
                 gate::run(ctx, &rebased, &selection, &both).map_err(|error| {
                     format!("push: the gate failed on {MAIN}; nothing pushed: {error}")

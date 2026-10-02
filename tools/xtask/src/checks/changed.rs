@@ -10,11 +10,13 @@ use oer_process as process;
 use crate::{Context, Result, doc, gate};
 
 pub fn run(ctx: &Context, base: &str, full: bool) -> Result<()> {
-    let mut files: BTreeSet<String> = gate::committed(ctx, base)?.into_iter().collect();
+    let merge_base = gate::merge_base(ctx, base)?;
+    let mut files: BTreeSet<String> = gate::committed(ctx, &merge_base)?.into_iter().collect();
     files.extend(gate::uncommitted(ctx)?);
     let files: Vec<String> = files.into_iter().collect();
     let tree = gate::Tree::load(&ctx.root)?;
-    let selection = gate::select(&tree, &files);
+    let mut selection = gate::select(&tree, &files);
+    gate::select_locks(ctx, &tree, &files, &merge_base, None, &mut selection)?;
     let affected = gate::affected(ctx, &selection)?;
     println!(
         "check changed: {} files against {base}; {} package(s) changed, {} with dependents",

@@ -3,9 +3,8 @@
 //!
 //! Incremental session data of every feature set ever built and per-image
 //! HIL build caches accumulate in a checkout's `target/` until the disk
-//! fills. Only caches Cargo recreates are removed, only in this checkout and
-//! in the host's shared HIL snapshot builds, never run bundles, evidence or
-//! archives, never a directory whose Cargo build lock is held and never what
+//! fills. Only caches Cargo recreates are removed, only in this checkout,
+//! never run bundles, evidence or archives, never a directory whose Cargo build lock is held and never what
 //! a queued HIL job was fixed with. Another checkout's `target/` is its
 //! owner's to sweep.
 use std::{
@@ -167,38 +166,6 @@ pub fn candidates(root: &Path, policy: Policy, now: SystemTime) -> Vec<Candidate
     found
 }
 
-/// The host build root's snapshot builds that no build used for longer than
-/// `policy` allows.
-pub fn host_candidates(policy: Policy, now: SystemTime) -> Vec<Candidate> {
-    let Ok(root) = oer_hil_image::host_build_root() else {
-        return Vec::new();
-    };
-    let mut found = Vec::new();
-    // Source snapshots are kept: a queued job can wait for days on the one
-    // it was frozen with.
-    let mut groups = Vec::new();
-    for chip in fs::read_dir(&root).into_iter().flatten().flatten() {
-        groups.push((
-            chip.path().join("snapshot-builds"),
-            policy.image_caches,
-            "snapshot build unused",
-        ));
-    }
-    for (group, limit, reason) in groups {
-        for entry in fs::read_dir(&group).into_iter().flatten().flatten() {
-            let path = entry.path();
-            if path.is_dir() && age(&path, now).is_some_and(|age| age > limit) {
-                found.push(Candidate {
-                    path,
-                    reason: reason.into(),
-                });
-            }
-        }
-    }
-    found.sort_by(|a, b| a.path.cmp(&b.path));
-    found
-}
-
 fn size(path: &Path) -> u64 {
     let Ok(metadata) = fs::symlink_metadata(path) else {
         return 0;
@@ -215,37 +182,13 @@ fn size(path: &Path) -> u64 {
     }
 }
 
-/// List, or with `apply` remove, the caches of the checkout at `root` and
-/// the host's unused snapshot builds; returns the bytes that were (or would
-/// be) freed.
+/// List, or with `apply` remove, the caches of the checkout at `root`;
+/// returns the bytes that were (or would be) freed.
 pub fn run(root: &Path, policy: Policy, apply: bool) -> Result<u64> {
-    let now = SystemTime::now();
-    let held = held_by_jobs()?;
-    let total = {
-        let found = unheld(candidates(root, policy, now), &held);
-        let mut bytes = 0;
-        for candidate in &found {
-            let length = size(&candidate.path);
-            bytes += length;
-            if apply {
-                if let Err(error) = fs::remove_dir_all(&candidate.path) {
-                    eprintln!("sweep: cannot remove {}: {error}", candidate.path.display());
-                    continue;
-                }
-            } else if found.len() <= 20 {
-                println!("  {} ({})", candidate.path.display(), candidate.reason);
-            }
-        }
-        println!(
-            "{} {}: {} caches, {:.1} GiB",
-            if apply { "removed" } else { "would remove" },
-            root.display(),
-            found.len(),
-            bytes as f64 / (1u64 << 30) as f64
-        );
-        bytes
-    };
-    let found = unheld(host_candidates(policy, now), &held);
+    let found = unheld(
+        candidates(root, policy, SystemTime::now()),
+        &held_by_jobs()?,
+    );
     let mut bytes = 0;
     for candidate in &found {
         bytes += size(&candidate.path);
@@ -258,16 +201,13 @@ pub fn run(root: &Path, policy: Policy, apply: bool) -> Result<u64> {
         }
     }
     println!(
-        "{} the host build root: {} entries, {:.1} GiB",
-        if apply {
-            "removed from"
-        } else {
-            "would remove from"
-        },
+        "{} {}: {} caches, {:.1} GiB",
+        if apply { "removed" } else { "would remove" },
+        root.display(),
         found.len(),
         bytes as f64 / (1u64 << 30) as f64
     );
-    Ok(total + bytes)
+    Ok(bytes)
 }
 
 #[cfg(test)]

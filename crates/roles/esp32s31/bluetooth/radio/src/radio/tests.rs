@@ -60,7 +60,7 @@ impl BluetoothRadioSink for Sink {
             }
             RadioOutcome::TransmitAcknowledged(connection) => Seen::Acknowledged(connection),
             RadioOutcome::TestReport { id, report } => Seen::Test(id, report),
-            RadioOutcome::Fault(_) => Seen::Fault,
+            RadioOutcome::Fault(_) | RadioOutcome::Poisoned(_) => Seen::Fault,
         });
     }
 }

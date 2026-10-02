@@ -21,7 +21,9 @@
 //! the backend's [`LeRadioCapabilities`] (roles, PHYs, data PDU payload and
 //! who runs the [`LinkAcknowledgement`]), reads the radio clock, submits
 //! requests and yields owned outcomes. [`NoRadio`] is the port of a host
-//! without a radio.
+//! without a radio. Failure classes, the outcome loss marker, the terminal
+//! poisoned outcome, correlation identities and the clock relation are the
+//! shared ones of `oer-radio-port`.
 
 #[cfg(test)]
 extern crate std;
@@ -42,10 +44,14 @@ pub use channel::{
     AdvertisingChannel, AdvertisingChannels, ChannelError, DataChannel, TestChannel,
 };
 pub use oer_radio_coex::CoexPriority;
+pub use oer_radio_port::{
+    ClockInfo, Correlation, CorrelationIds, EventsLost, FailureClass, Poisoned, PortError,
+    RadioEpoch,
+};
 pub use oer_time::{RadioDuration, RadioInstant, RadioWindow, WindowError};
 pub use outcome::{EventResult, RadioFault, RadioOutcome, ReceivedPdu, TestReport};
 pub use pdu::{AdvertisingPdu, DataPdu, DataPduKind, PduError, TestPayloadType};
-pub use port::{LeRadioPort, Never, NoRadio, OutcomesLost};
+pub use port::{LeRadioPort, Never, NoRadio};
 pub use request::{
     AcceptListChange, AcceptListDevice, AccessAddress, AdvertisingConfiguration, AdvertisingEvent,
     AdvertisingReception, AdvertisingSetId, CoexistenceLevel, ConnectionAllowances,

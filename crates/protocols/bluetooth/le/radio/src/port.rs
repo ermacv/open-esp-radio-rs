@@ -2,15 +2,12 @@
 
 use core::future::{Future, pending, ready};
 
+use oer_radio_port::{ClockInfo, EventsLost, FailureClass, PortError, RadioEpoch};
+
 use crate::{
     ConnectionAllowances, LeRadioCapabilities, RadioActivity, RadioDuration, RadioInstant,
     RadioOutcome, RadioRequest, RadioTiming, RequestError,
 };
-
-/// The radio queue overflowed and dropped outcomes; the roles can no longer
-/// account their events.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct OutcomesLost;
 
 /// A Bluetooth LE radio backend as a Controller service loop drives it.
 ///
@@ -18,13 +15,39 @@ pub struct OutcomesLost;
 /// [`RadioRequest`] at a time, takes owned outcomes from
 /// [`Self::next_outcome`] and reads each through [`Self::view`].
 ///
-/// Failures come in three classes:
+/// Failures come in the three classes of every radio port
+/// ([`FailureClass`]):
 ///
-/// - `Ok(Err(RequestError))` from [`Self::submit`]: the backend refused the
-///   request and nothing changed; the caller may try again later.
-/// - `Err(Self::Error)`: the port cannot serve any more; the service ends.
-/// - [`OutcomesLost`] from [`Self::next_outcome`]: outcomes were dropped, so
-///   the roles cannot account their events; the service ends.
+/// - `Rejected`: `Ok(Err(RequestError))` from [`Self::submit`], or an error
+///   of that class (no radio installed); nothing changed. A refusal as
+///   [`RequestError::Unsupported`] is final for that request; other
+///   refusals may succeed later.
+/// - `Recoverable`: admitted work ended without its result (an event that
+///   ended [`EventResult::NotExecuted`](crate::EventResult::NotExecuted), a
+///   time sample the backend could not take).
+/// - `Poisoned`: the backend's state is unknown. It reports
+///   [`RadioOutcome::Fault`] with the cause and then the terminal
+///   [`RadioOutcome::Poisoned`] at every [`Self::next_outcome`], and every
+///   other call returns an error of that class; only a reset restores it.
+///
+/// [`EventsLost`] from [`Self::next_outcome`] takes the place of the first
+/// dropped outcome. The Controller's roles account every event by its end,
+/// so a service loop that cannot recover them ends there.
+///
+/// # Events
+///
+/// The port has exactly one consumer of its outcomes. Taking an outcome
+/// only dequeues it; the backend's scheduler work runs in its own runner
+/// (the ESP32-S31 `BluetoothRuntime::run`), which the composition polls
+/// beside the consumer.
+///
+/// # Lifecycle
+///
+/// The port has no lifecycle commands: a backend is enabled by installing
+/// it with its memory and hardware owners and disabled by uninstalling it,
+/// and a maintenance pause hands a quiescence proof to a closure. Those
+/// owner transfers are not portable values, so they stay the backend's
+/// own operations (the ESP32-S31 `install`, `quiesce` and `uninstall`).
 ///
 /// Submission and the clock are asynchronous because a backend may have to
 /// wait for hardware to admit a request: the ESP32-S31 takes a fresh
@@ -40,11 +63,15 @@ pub struct OutcomesLost;
 pub trait LeRadioPort {
     /// One owned outcome.
     type Outcome;
-    /// Why the port cannot serve at all.
-    type Error;
+    /// Why the port cannot serve; its class says whether it will again.
+    type Error: PortError;
 
     /// What the backend serves. It does not change while the port exists.
     fn capabilities(&self) -> LeRadioCapabilities;
+
+    /// The resolution of the radio time [`Self::clock`] reads and how its
+    /// epoch relates to the image's monotonic time.
+    fn clock_info(&self) -> ClockInfo;
 
     /// A fresh radio time and the radio's admission timing.
     fn clock(&self) -> impl Future<Output = Result<(RadioInstant, RadioTiming), Self::Error>> + '_;
@@ -56,8 +83,10 @@ pub trait LeRadioPort {
         request: RadioRequest<'_>,
     ) -> impl Future<Output = Result<Result<(), RequestError>, Self::Error>>;
 
-    /// The next outcome. Dropping the future loses no outcome.
-    fn next_outcome(&self) -> impl Future<Output = Result<Self::Outcome, OutcomesLost>> + '_;
+    /// The next outcome. Taking it only dequeues it; dropping the future
+    /// loses no outcome. A queue overflow is reported as [`EventsLost`] in
+    /// place of the first dropped outcome.
+    fn next_outcome(&self) -> impl Future<Output = Result<Self::Outcome, EventsLost>> + '_;
 
     /// The portable view of an owned outcome.
     fn view(outcome: &Self::Outcome) -> RadioOutcome<'_>;
@@ -68,14 +97,22 @@ pub trait LeRadioPort {
     fn activity(&self, activity: RadioActivity) -> Result<(), Self::Error>;
 }
 
-/// A port without a radio: time stands still and every request is refused
-/// as unavailable. Radio commands then complete with a failure status.
+/// A port without a radio: time stands still and every request lies
+/// outside its empty capabilities, so it is refused as
+/// [`RequestError::Unsupported`]. Radio commands then complete with a
+/// failure status.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NoRadio;
 
 /// [`NoRadio`] never fails and never produces an outcome.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Never {}
+
+impl PortError for Never {
+    fn class(&self) -> FailureClass {
+        match *self {}
+    }
+}
 
 const ZERO: RadioDuration = RadioDuration::from_micros(0);
 
@@ -85,6 +122,13 @@ impl LeRadioPort for NoRadio {
 
     fn capabilities(&self) -> LeRadioCapabilities {
         LeRadioCapabilities::NONE
+    }
+
+    fn clock_info(&self) -> ClockInfo {
+        ClockInfo {
+            resolution: oer_time::Duration::from_micros(1),
+            epoch: RadioEpoch::Unrelated,
+        }
     }
 
     fn clock(&self) -> impl Future<Output = Result<(RadioInstant, RadioTiming), Never>> + '_ {
@@ -111,10 +155,10 @@ impl LeRadioPort for NoRadio {
         &self,
         _: RadioRequest<'_>,
     ) -> impl Future<Output = Result<Result<(), RequestError>, Never>> {
-        ready(Ok(Err(RequestError::Unavailable)))
+        ready(Ok(Err(RequestError::Unsupported)))
     }
 
-    fn next_outcome(&self) -> impl Future<Output = Result<Never, OutcomesLost>> + '_ {
+    fn next_outcome(&self) -> impl Future<Output = Result<Never, EventsLost>> + '_ {
         pending()
     }
 

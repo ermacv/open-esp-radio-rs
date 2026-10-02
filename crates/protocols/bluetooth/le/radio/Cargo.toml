@@ -9,6 +9,7 @@ description = "Allocation-free hardware-independent Bluetooth LE radio event con
 
 [dependencies]
 oer-radio-coex = { path = "../../../../radio/coex" }
+oer-radio-port = { path = "../../../../radio/port" }
 oer-time = { path = "../../../../time" }
 
 [lints]

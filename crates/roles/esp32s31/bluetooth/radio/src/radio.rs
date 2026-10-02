@@ -485,14 +485,23 @@ impl<
         memory
     }
 
-    /// Admit one request.
+    /// Whether a fault stopped the radio: it reported
+    /// [`RadioOutcome::Fault`] and schedules nothing until a Controller
+    /// reset. The runtime refuses requests to a faulted radio as poisoned
+    /// before it asks [`Self::request`].
+    pub const fn is_faulted(&self) -> bool {
+        self.faulted
+    }
+
+    /// Admit one request. A faulted radio ([`Self::is_faulted`]) admits
+    /// nothing and answers `Busy`; its port reports it as poisoned.
     pub fn request(
         &mut self,
         request: RadioRequest<'_>,
         sink: &mut impl BluetoothRadioSink,
     ) -> Result<(), RequestError> {
         if self.faulted {
-            return Err(RequestError::Unavailable);
+            return Err(RequestError::Busy);
         }
         if !Self::CAPABILITIES.supports(&request) {
             return Err(RequestError::Unsupported);

@@ -61,8 +61,8 @@ pub use modem_timer::{ModemTimerFault, run_modem_timer, settle_modem_timer};
 pub use outcome::{BluetoothOutcome, BluetoothReceivedPdu, MAX_PDU_BYTES};
 #[cfg(any(target_arch = "riscv32", test))]
 pub use runtime::{
-    BluetoothInstallError, BluetoothOutcomesLost, BluetoothRuntime, BluetoothRuntimeError,
-    BluetoothRuntimeFault, BluetoothTimeError, HARDWARE_RECHECK, TIME_REFRESH,
+    BluetoothInstallError, BluetoothRuntime, BluetoothRuntimeError, BluetoothRuntimeFault,
+    BluetoothTimeError, HARDWARE_RECHECK, TIME_REFRESH,
 };
 
 #[cfg(test)]

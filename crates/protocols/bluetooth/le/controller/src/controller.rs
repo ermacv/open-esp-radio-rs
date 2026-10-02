@@ -1102,6 +1102,11 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
             self.fault.get_or_insert(fault);
             return;
         }
+        // The service loop ends on the port's terminal outcome; the roles
+        // have nothing to account.
+        if let RadioOutcome::Poisoned(_) = outcome {
+            return;
+        }
         self.dtm.outcome(outcome);
         self.peripheral.outcome(outcome, self.random);
         self.advertiser.outcome(outcome);

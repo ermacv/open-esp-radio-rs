@@ -2,8 +2,8 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_bluetooth_radio::{
-    LeRadioCapabilities, LeRadioPort, OutcomesLost, RadioActivity, RadioInstant, RadioOutcome,
-    RadioRequest, RadioTiming, RequestError,
+    ClockInfo, EventsLost, LeRadioCapabilities, LeRadioPort, RadioActivity, RadioEpoch,
+    RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError,
 };
 
 use crate::{BluetoothOutcome, BluetoothRadioHardware, BluetoothRuntime, BluetoothRuntimeError};
@@ -41,6 +41,16 @@ impl<
         BluetoothRuntime::capabilities(self)
     }
 
+    /// The radio time is the controller clock, extended from the 32-bit
+    /// controller-time latch the radio samples; the runtime keeps no
+    /// measured relation between it and the image's monotonic clock.
+    fn clock_info(&self) -> ClockInfo {
+        ClockInfo {
+            resolution: ClockInfo::MONOTONIC_MICROS.resolution,
+            epoch: RadioEpoch::Unrelated,
+        }
+    }
+
     async fn clock(&self) -> Result<(RadioInstant, RadioTiming), BluetoothRuntimeError> {
         BluetoothRuntime::clock(self).await
     }
@@ -56,10 +66,8 @@ impl<
         }
     }
 
-    async fn next_outcome(&self) -> Result<BluetoothOutcome, OutcomesLost> {
-        BluetoothRuntime::next_outcome(self)
-            .await
-            .map_err(|_| OutcomesLost)
+    async fn next_outcome(&self) -> Result<BluetoothOutcome, EventsLost> {
+        BluetoothRuntime::next_outcome(self).await
     }
 
     fn view(outcome: &BluetoothOutcome) -> RadioOutcome<'_> {

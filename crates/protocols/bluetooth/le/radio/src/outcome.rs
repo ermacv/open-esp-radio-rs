@@ -1,5 +1,7 @@
 //! Backend observations.
 
+use oer_radio_port::Poisoned;
+
 use crate::{ConnectionId, EventId, RadioInstant};
 
 /// One PDU received during an event.
@@ -41,7 +43,9 @@ pub enum TestReport {
     Failed,
 }
 
-/// A backend fault. The backend stops scheduling until it is restarted.
+/// The cause of a backend fault. The backend stops scheduling until it is
+/// restarted: [`RadioOutcome::Fault`] is followed by the terminal
+/// [`RadioOutcome::Poisoned`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RadioFault {
     /// Hardware reported a result the backend cannot interpret.
@@ -78,6 +82,9 @@ pub enum RadioOutcome<'pdu> {
         /// The result.
         report: TestReport,
     },
-    /// The backend faulted.
+    /// The backend faulted, for this cause; [`Self::Poisoned`] follows.
     Fault(RadioFault),
+    /// The backend's state is unknown: the terminal outcome of a poisoned
+    /// port, reported after every earlier outcome and at every later call.
+    Poisoned(Poisoned),
 }

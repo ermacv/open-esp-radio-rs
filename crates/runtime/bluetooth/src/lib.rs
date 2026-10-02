@@ -10,14 +10,21 @@
 //! queued packets, takes the next Host command when the core is ready for
 //! one, submits the core's radio requests one at a time and feeds every
 //! radio outcome back. A refused request is retried after
-//! [`REFUSED_RETRY_DELAY`] or the next outcome or command. Whenever the
+//! [`REFUSED_RETRY_DELAY`] or the next outcome or command; a request
+//! refused as [`RequestError::Unsupported`] lies outside the radio's
+//! capabilities and is never retried on a timer: the loop asks the core
+//! again only after an outcome, a command or Host data changed its plan. Whenever the
 //! core's [`RadioActivity`] changes, the loop reports it to the port before
 //! doing anything else.
 //!
 //! The loop owns no memory of its own beyond one command buffer and spawns
-//! nothing; the caller polls it on a task of its choice. It ends when the
-//! transport closes or fails, or when the radio port fails, faults or loses
-//! outcomes. Host ACL data enters the core while it has room for a packet;
+//! nothing; the caller polls it on a task of its choice, beside the radio
+//! backend's own runner. It is the port's one outcome consumer. It ends
+//! when the transport closes or fails, when the radio port fails or
+//! reports a fault and its terminal poisoned outcome, or when the port
+//! loses outcomes: the core's roles account every event by its end and
+//! cannot recover one lost in the gap, so the service ends there through
+//! the shared [`EventsLost`]. Host ACL data enters the core while it has room for a packet;
 //! until then commands pass queued data.
 
 #[cfg(test)]
@@ -29,7 +36,9 @@ use embassy_time::{Duration, Instant, Timer};
 use oer_bluetooth_controller::LeController;
 use oer_bluetooth_hci::HostToControllerFrame;
 use oer_bluetooth_hci_transport::{HciChannelError, InProcessHciControllerTransport};
-use oer_bluetooth_radio::{LeRadioPort, OutcomesLost, RadioActivity, RadioFault};
+use oer_bluetooth_radio::{
+    EventsLost, LeRadioPort, RadioActivity, RadioFault, RadioOutcome, RequestError,
+};
 
 /// Delay before asking the core again after the radio refused a request.
 pub const REFUSED_RETRY_DELAY: Duration = Duration::from_millis(1);
@@ -45,8 +54,10 @@ pub enum ServeExit<E> {
     Radio(E),
     /// The radio reported a fault.
     Fault(RadioFault),
+    /// The radio reported its terminal poisoned outcome.
+    Poisoned,
     /// The radio dropped outcomes.
-    OutcomesLost,
+    EventsLost(EventsLost),
 }
 
 /// Serve the Host through `transport` with `core` over `radio` until the
@@ -69,6 +80,9 @@ where
 {
     let mut buffer = [0; PACKET];
     let mut retry_at: Option<Instant> = None;
+    // The last request was refused as unsupported: ask again only after
+    // new input.
+    let mut unsupported = false;
     let mut reported = RadioActivity::IDLE;
     loop {
         // Report a change of the active roles first.
@@ -94,7 +108,7 @@ where
         }
 
         // Submit the next radio request.
-        if core.wants_radio() && retry_at.is_none_or(|at| Instant::now() >= at) {
+        if core.wants_radio() && !unsupported && retry_at.is_none_or(|at| Instant::now() >= at) {
             retry_at = None;
             let (now, timing) = match radio.clock().await {
                 Ok(clock) => clock,
@@ -105,8 +119,10 @@ where
                     Ok(result) => result,
                     Err(error) => return ServeExit::Radio(error),
                 };
-                if result.is_err() {
-                    retry_at = Some(Instant::now() + REFUSED_RETRY_DELAY);
+                match result {
+                    Ok(()) => {}
+                    Err(RequestError::Unsupported) => unsupported = true,
+                    Err(_) => retry_at = Some(Instant::now() + REFUSED_RETRY_DELAY),
                 }
                 core.request_done(result);
                 continue;
@@ -121,10 +137,12 @@ where
                 Ok(HostToControllerFrame::Command(command)) => {
                     core.command(command)
                         .expect("the core is ready for a command");
+                    unsupported = false;
                     continue;
                 }
                 Ok(HostToControllerFrame::Acl(packet)) => {
                     core.acl(packet);
+                    unsupported = false;
                     continue;
                 }
                 // LE carries no synchronous or isochronous data here.
@@ -139,7 +157,7 @@ where
         let command_ready = core.is_command_ready();
         let acl_ready = core.is_acl_ready();
         let publishing = core.front().is_some();
-        let retry = retry_at.filter(|_| core.wants_radio());
+        let retry = retry_at.filter(|_| core.wants_radio() && !unsupported);
         let event = select4(
             radio.next_outcome(),
             async {
@@ -166,10 +184,15 @@ where
         .await;
         match event {
             Either4::First(Ok(outcome)) => {
+                let view = P::view(&outcome);
+                if let RadioOutcome::Poisoned(_) = view {
+                    return ServeExit::Poisoned;
+                }
                 retry_at = None;
-                core.outcome(P::view(&outcome));
+                unsupported = false;
+                core.outcome(view);
             }
-            Either4::First(Err(OutcomesLost)) => return ServeExit::OutcomesLost,
+            Either4::First(Err(lost)) => return ServeExit::EventsLost(lost),
             Either4::Second(()) | Either4::Third(()) => {}
             Either4::Fourth(()) => retry_at = None,
         }

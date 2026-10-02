@@ -85,6 +85,8 @@ pub enum BluetoothOutcome {
     },
     /// The backend faulted.
     Fault(RadioFault),
+    /// The terminal outcome of a poisoned runtime.
+    Poisoned,
 }
 
 impl BluetoothOutcome {
@@ -103,6 +105,7 @@ impl BluetoothOutcome {
             }
             RadioOutcome::TestReport { id, report } => Self::TestReport { id, report },
             RadioOutcome::Fault(fault) => Self::Fault(fault),
+            RadioOutcome::Poisoned(_) => Self::Poisoned,
         }
     }
 
@@ -125,6 +128,7 @@ impl BluetoothOutcome {
                 report: *report,
             },
             Self::Fault(fault) => RadioOutcome::Fault(*fault),
+            Self::Poisoned => RadioOutcome::Poisoned(oer_bluetooth_radio::Poisoned),
         }
     }
 }

@@ -423,7 +423,7 @@ fn a_refused_configuration_completes_enable_with_hardware_failure() {
     let parameters = nonconnectable_parameters();
     harness.command(SET_ADV_PARAMS, &parameters);
     harness.send(SET_ADV_ENABLE, &[1]);
-    harness.step_with(Err(RequestError::Unavailable));
+    harness.step_with(Err(RequestError::NoInstance));
     assert_eq!(harness.status_of(SET_ADV_ENABLE), Some(HARDWARE_FAILURE));
     assert!(!harness.core.wants_radio());
 }

@@ -12,6 +12,16 @@ use crate::{
 #[repr(transparent)]
 pub struct EventId(u32);
 
+impl oer_radio_port::Correlation for EventId {
+    fn from_raw(raw: u32) -> Self {
+        Self(raw)
+    }
+
+    fn raw(self) -> u32 {
+        self.0
+    }
+}
+
 impl EventId {
     /// Preserve one caller-owned identifier.
     pub const fn new(value: u32) -> Self {
@@ -504,8 +514,6 @@ pub enum RequestError {
     Unsupported,
     /// No event with this identifier is scheduled.
     UnknownEvent,
-    /// The backend is stopped or faulted.
-    Unavailable,
     /// The filter accept list has no free entry.
     ListFull,
     /// The filter accept list does not hold the device to remove.

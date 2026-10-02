@@ -34,7 +34,7 @@
 //! per queue: an attempt occupies the queue of its access category, and a
 //! second attempt for an occupied queue is `Busy`. The ordinary TX owner
 //! publishes each MPDU and detaches it as a
-//! [`QueuedSingleAttempt`](crate::ordinary_tx::QueuedSingleAttempt), and each
+//! [`QueuedSingleAttempt`], and each
 //! aggregate keeps its own aggregate owner, so up to four attempts are in
 //! flight.
 //!

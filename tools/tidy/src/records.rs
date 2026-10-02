@@ -1,17 +1,16 @@
 //! Repository paths named by tracked qualification and evidence records.
 //!
 //! The keys mirror the record schemas of the qualification evaluator
-//! (`qualification/evaluator/src/model*`, `hil/review`, `hil/shard.rs`) and
+//! (`qualification/evaluator/src/model*`, `hil/shard.rs`) and
 //! the vendor evidence schema (`verification/schema/scenario-evidence.rs`):
 //!
 //! - program manifests (`qualification/targets/**.toml`): `catalogs`, and
 //!   `[hil] catalog`;
 //! - catalogs (`qualification/catalog/**.toml`): `imports`,
-//!   `[validation] hil-catalog`, capability `vendor-anchors` and
-//!   `hil-reviews`, `source-document`, `documents`, `source-paths`,
+//!   `[validation] hil-catalog`, capability `vendor-anchors`,
+//!   `source-document`, `documents`, `source-paths`,
 //!   `[development] knowledge` and host-test `manifest`/`source`; every
 //!   `packages` entry names a package of the repository;
-//! - HIL reviews (`qualification/reviews/*.toml`): `[[inputs]] path`;
 //! - evidence shards (`verification/*/evidence/**.json` and each directory a
 //!   program names as its vendor `evidence-index` or HIL `evidence`):
 //!   `sources[].path`.
@@ -33,7 +32,6 @@ const PATH_KEYS: &[&str] = &[
     "imports",
     "hil-catalog",
     "vendor-anchors",
-    "hil-reviews",
     "source-document",
     "documents",
     "source-paths",
@@ -45,7 +43,6 @@ const SCOPED_PATH_KEYS: &[(&str, &str)] = &[
     ("hil", "catalog"),
     ("host-tests", "manifest"),
     ("host-tests", "source"),
-    ("inputs", "path"),
 ];
 
 /// Output directory keys a program names, holding evidence shards.
@@ -102,13 +99,9 @@ impl Walk<'_> {
 
 fn is_record(file: &str) -> bool {
     file.ends_with(".toml")
-        && [
-            "qualification/targets/",
-            "qualification/catalog/",
-            "qualification/reviews/",
-        ]
-        .iter()
-        .any(|prefix| file.starts_with(prefix))
+        && ["qualification/targets/", "qualification/catalog/"]
+            .iter()
+            .any(|prefix| file.starts_with(prefix))
 }
 
 /// Every repository path a record names exists.
@@ -212,25 +205,17 @@ mod tests {
 
     #[test]
     fn missing_record_paths_and_unknown_packages_fail() {
-        let found = run(&[
-            (
-                "qualification/catalog/c.toml",
-                "imports = [\"qualification/catalog/gone.toml\"]\n[[capabilities]]\nhil-reviews = [\"qualification/reviews/r.toml\"]\npackages = [\"oer-gone\"]\n[capabilities.development]\nhost-tests = [{ manifest = \"x/Cargo.toml\", filter = \"f\", source = \"x/src/lib.rs\" }]\n",
-            ),
-            (
-                "qualification/reviews/r2.toml",
-                "[source]\nid = \"abc\"\n[[inputs]]\npath = \"crates/deleted.rs\"\nsha256 = \"00\"\n",
-            ),
-        ]);
+        let found = run(&[(
+            "qualification/catalog/c.toml",
+            "imports = [\"qualification/catalog/gone.toml\"]\n[[capabilities]]\npackages = [\"oer-gone\"]\n[capabilities.development]\nhost-tests = [{ manifest = \"x/Cargo.toml\", filter = \"f\", source = \"x/src/lib.rs\" }]\n",
+        )]);
         assert_eq!(
             found,
             [
-                "qualification/catalog/c.toml: `hil-reviews` names missing qualification/reviews/r.toml",
                 "qualification/catalog/c.toml: `imports` names missing qualification/catalog/gone.toml",
                 "qualification/catalog/c.toml: `manifest` names missing x/Cargo.toml",
                 "qualification/catalog/c.toml: `packages` names unknown package oer-gone",
                 "qualification/catalog/c.toml: `source` names missing x/src/lib.rs",
-                "qualification/reviews/r2.toml: `path` names missing crates/deleted.rs",
             ]
         );
     }

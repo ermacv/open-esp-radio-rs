@@ -6,6 +6,7 @@ use super::{
     CcmpPacketNumber, DataFragmentProtection, OpenDataFragment, OpenDataFragmentError,
     OpenDataFragmentIdentity,
 };
+use oer_time::{Duration, Instant};
 
 const RFC1042_LLC_SNAP_PREFIX: [u8; 6] = [0xaa, 0xaa, 0x03, 0, 0, 0];
 
@@ -68,7 +69,7 @@ pub struct OpenDataFragmentAdmission<'owner, 'frame, const CONTEXTS: usize, cons
     owner: &'owner mut OpenDataDefragmenter<CONTEXTS, CAPACITY>,
     fragment: OpenDataFragment<'frame>,
     admission_epoch: u64,
-    now_micros: u64,
+    now: Instant,
     expired: u8,
 }
 
@@ -84,7 +85,7 @@ impl<'frame, const CONTEXTS: usize, const CAPACITY: usize>
         self.owner.ingest_admitted(
             self.fragment,
             self.admission_epoch,
-            self.now_micros,
+            self.now,
             self.expired,
             complete,
         )
@@ -97,7 +98,7 @@ struct ReassemblySlot<const CAPACITY: usize> {
     completed: bool,
     expected_fragment: u8,
     final_fragment: u8,
-    started_at_micros: u64,
+    started_at: Instant,
     length: usize,
     fragment_offsets: [usize; 16],
     fragment_lengths: [usize; 16],
@@ -113,7 +114,7 @@ impl<const CAPACITY: usize> ReassemblySlot<CAPACITY> {
             completed: false,
             expected_fragment: 0,
             final_fragment: 0,
-            started_at_micros: 0,
+            started_at: Instant::EPOCH,
             length: 0,
             fragment_offsets: [0; 16],
             fragment_lengths: [0; 16],
@@ -128,7 +129,7 @@ impl<const CAPACITY: usize> ReassemblySlot<CAPACITY> {
         self.completed = false;
         self.expected_fragment = 0;
         self.final_fragment = 0;
-        self.started_at_micros = 0;
+        self.started_at = Instant::EPOCH;
         self.length = 0;
         self.fragment_offsets.fill(0);
         self.fragment_lengths.fill(0);
@@ -187,14 +188,14 @@ impl<const CAPACITY: usize> ReassemblySlot<CAPACITY> {
 /// users without one fail closed rather than creating immortal retained data.
 pub struct OpenDataDefragmenter<const CONTEXTS: usize, const CAPACITY: usize> {
     slots: [ReassemblySlot<CAPACITY>; CONTEXTS],
-    timeout_micros: u64,
+    timeout: Duration,
 }
 
 impl<const CONTEXTS: usize, const CAPACITY: usize> OpenDataDefragmenter<CONTEXTS, CAPACITY> {
-    pub const fn new(timeout_micros: u64) -> Self {
+    pub const fn new(timeout: Duration) -> Self {
         Self {
             slots: [const { ReassemblySlot::new() }; CONTEXTS],
-            timeout_micros,
+            timeout,
         }
     }
 
@@ -242,9 +243,9 @@ impl<const CONTEXTS: usize, const CAPACITY: usize> OpenDataDefragmenter<CONTEXTS
         &mut self,
         identity: OpenDataFragmentIdentity,
         retry: bool,
-        now_micros: Option<u64>,
+        now: Option<Instant>,
     ) -> Result<OpenDataUnfragmentedAdmission, OpenDataFragmentError> {
-        self.admit_unfragmented_in_epoch(identity, 0, retry, now_micros)
+        self.admit_unfragmented_in_epoch(identity, 0, retry, now)
     }
 
     /// Fence an ordinary Open MPDU in the caller's association epoch.
@@ -253,7 +254,7 @@ impl<const CONTEXTS: usize, const CAPACITY: usize> OpenDataDefragmenter<CONTEXTS
         identity: OpenDataFragmentIdentity,
         admission_epoch: u64,
         retry: bool,
-        now_micros: Option<u64>,
+        now: Option<Instant>,
     ) -> Result<OpenDataUnfragmentedAdmission, OpenDataFragmentError> {
         let relevant_active = self.slots.iter().any(|slot| {
             slot.is_active()
@@ -268,8 +269,8 @@ impl<const CONTEXTS: usize, const CAPACITY: usize> OpenDataDefragmenter<CONTEXTS
                         .identity
                         .is_some_and(|entry| entry.same_sequence_space(identity))
             });
-        let expired = match now_micros {
-            Some(now_micros) => self.expire(now_micros),
+        let expired = match now {
+            Some(now) => self.expire(now),
             None if relevant_active || relevant_completed => {
                 return Err(OpenDataFragmentError::ClockUnavailable);
             }
@@ -345,10 +346,10 @@ impl<const CONTEXTS: usize, const CAPACITY: usize> OpenDataDefragmenter<CONTEXTS
     pub fn ingest<R>(
         &mut self,
         fragment: OpenDataFragment<'_>,
-        now_micros: u64,
+        now: Instant,
         complete: impl FnOnce(OpenReassembledData<'_>) -> R,
     ) -> Result<OpenDataDefragmentation<R>, OpenDataFragmentError> {
-        self.ingest_in_epoch(fragment, 0, now_micros, complete)
+        self.ingest_in_epoch(fragment, 0, now, complete)
     }
 
     /// Ingest within an external association/key admission epoch.
@@ -361,10 +362,10 @@ impl<const CONTEXTS: usize, const CAPACITY: usize> OpenDataDefragmenter<CONTEXTS
         &mut self,
         fragment: OpenDataFragment<'_>,
         admission_epoch: u64,
-        now_micros: u64,
+        now: Instant,
         complete: impl FnOnce(OpenReassembledData<'_>) -> R,
     ) -> Result<OpenDataDefragmentation<R>, OpenDataFragmentError> {
-        match self.preflight_in_epoch(fragment, admission_epoch, now_micros)? {
+        match self.preflight_in_epoch(fragment, admission_epoch, now)? {
             OpenDataFragmentPreflight::Duplicate { expired } => {
                 Ok(OpenDataDefragmentation::Duplicate { expired })
             }
@@ -378,13 +379,13 @@ impl<const CONTEXTS: usize, const CAPACITY: usize> OpenDataDefragmenter<CONTEXTS
         &'owner mut self,
         fragment: OpenDataFragment<'frame>,
         admission_epoch: u64,
-        now_micros: u64,
+        now: Instant,
     ) -> Result<OpenDataFragmentPreflight<'owner, 'frame, CONTEXTS, CAPACITY>, OpenDataFragmentError>
     {
         if CONTEXTS == 0 {
             return Err(OpenDataFragmentError::NoReassemblyContexts);
         }
-        let expired = self.expire(now_micros);
+        let expired = self.expire(now);
         let identity = fragment.identity;
 
         if fragment.retry {
@@ -463,7 +464,7 @@ impl<const CONTEXTS: usize, const CAPACITY: usize> OpenDataDefragmenter<CONTEXTS
                 owner: self,
                 fragment,
                 admission_epoch,
-                now_micros,
+                now,
                 expired,
             },
         ))
@@ -473,7 +474,7 @@ impl<const CONTEXTS: usize, const CAPACITY: usize> OpenDataDefragmenter<CONTEXTS
         &mut self,
         fragment: OpenDataFragment<'_>,
         admission_epoch: u64,
-        now_micros: u64,
+        now: Instant,
         expired: u8,
         complete: impl FnOnce(OpenReassembledData<'_>) -> R,
     ) -> Result<OpenDataDefragmentation<R>, OpenDataFragmentError> {
@@ -515,7 +516,7 @@ impl<const CONTEXTS: usize, const CAPACITY: usize> OpenDataDefragmenter<CONTEXTS
             });
             slot.completed = true;
             slot.final_fragment = fragment.fragment_number;
-            slot.started_at_micros = now_micros;
+            slot.started_at = now;
             return Ok(OpenDataDefragmentation::Complete { expired, value });
         }
 
@@ -536,7 +537,7 @@ impl<const CONTEXTS: usize, const CAPACITY: usize> OpenDataDefragmenter<CONTEXTS
             .iter()
             .enumerate()
             .filter(|(_, slot)| slot.completed)
-            .min_by_key(|(index, slot)| (slot.started_at_micros, *index))
+            .min_by_key(|(index, slot)| (slot.started_at, *index))
             .map(|(index, _)| index)
         {
             self.slots[index].clear();
@@ -546,7 +547,7 @@ impl<const CONTEXTS: usize, const CAPACITY: usize> OpenDataDefragmenter<CONTEXTS
                 .slots
                 .iter()
                 .enumerate()
-                .min_by_key(|(index, slot)| (slot.started_at_micros, *index))
+                .min_by_key(|(index, slot)| (slot.started_at, *index))
                 .map(|(index, _)| index)
                 .expect("nonzero context count has an oldest slot");
             let evicted = self.slots[index].identity;
@@ -567,7 +568,7 @@ impl<const CONTEXTS: usize, const CAPACITY: usize> OpenDataDefragmenter<CONTEXTS
         slot.identity = Some(identity);
         slot.admission_epoch = admission_epoch;
         slot.expected_fragment = 1;
-        slot.started_at_micros = now_micros;
+        slot.started_at = now;
         if let Err(error) = append_fragment(slot, fragment) {
             slot.clear();
             return Err(error);
@@ -575,12 +576,10 @@ impl<const CONTEXTS: usize, const CAPACITY: usize> OpenDataDefragmenter<CONTEXTS
         Ok(OpenDataDefragmentation::Buffered { expired, evicted })
     }
 
-    fn expire(&mut self, now_micros: u64) -> u8 {
+    fn expire(&mut self, now: Instant) -> u8 {
         let mut expired = 0_u8;
         for slot in &mut self.slots {
-            if slot.identity.is_some()
-                && timestamp_expired(now_micros, slot.started_at_micros, self.timeout_micros)
-            {
+            if slot.identity.is_some() && timestamp_expired(now, slot.started_at, self.timeout) {
                 expired = expired.saturating_add(u8::from(slot.is_active()));
                 slot.clear();
             }
@@ -617,6 +616,7 @@ fn append_fragment<const CAPACITY: usize>(
     Ok(())
 }
 
-const fn timestamp_expired(now: u64, then: u64, timeout: u64) -> bool {
+const fn timestamp_expired(now: Instant, then: Instant, timeout: Duration) -> bool {
+    let (now, then, timeout) = (now.as_micros(), then.as_micros(), timeout.as_micros());
     timeout == 0 || now < then || now - then >= timeout
 }

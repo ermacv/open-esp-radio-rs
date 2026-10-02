@@ -24,7 +24,7 @@ use oer_ieee80211_mac::{
     ccmp::{CcmpHeader, CcmpKeyId, CcmpReplayError, CcmpReplayLane},
     data::{DataDecapError, DataInterfaceRole, EthernetFrameParts, RxDuplicateFilter},
     fragmentation::{
-        OPEN_DATA_FRAGMENT_TIMEOUT_MICROS, OPEN_DATA_REASSEMBLY_CAPACITY, OpenDataDefragmentation,
+        OPEN_DATA_FRAGMENT_TIMEOUT, OPEN_DATA_REASSEMBLY_CAPACITY, OpenDataDefragmentation,
         OpenDataDefragmenter, OpenDataFragmentError, OpenDataFragmentPreflight,
         OpenDataUnfragmentedAdmission, parse_ccmp_data_identity, parse_open_data_identity,
     },
@@ -365,7 +365,7 @@ impl ApRxDispatcher {
         Self {
             config,
             duplicates: [const { None }; AP_MAX_CLIENTS],
-            fragments: OpenDataDefragmenter::new(OPEN_DATA_FRAGMENT_TIMEOUT_MICROS),
+            fragments: OpenDataDefragmenter::new(OPEN_DATA_FRAGMENT_TIMEOUT),
             fragment_admission_active: false,
         }
     }
@@ -707,7 +707,7 @@ impl ApRxDispatcher {
                         identity,
                         owner.fragmentation_epoch(),
                         retry,
-                        now_micros,
+                        now_micros.map(oer_time::Instant::from_micros),
                     ) {
                         Ok(OpenDataUnfragmentedAdmission::Admitted { .. }) => {}
                         Ok(OpenDataUnfragmentedAdmission::Duplicate { .. }) => {
@@ -767,7 +767,7 @@ impl ApRxDispatcher {
                 identity,
                 duplicate_owner.fragmentation_epoch(),
                 retry,
-                now_micros,
+                now_micros.map(oer_time::Instant::from_micros),
             ) {
                 Ok(OpenDataUnfragmentedAdmission::Admitted { .. }) => {}
                 Ok(OpenDataUnfragmentedAdmission::Duplicate { .. }) => {
@@ -879,7 +879,7 @@ impl ApRxDispatcher {
         match self.fragments.ingest_in_epoch(
             view.fragment,
             duplicate_owner.fragmentation_epoch(),
-            now_micros,
+            oer_time::Instant::from_micros(now_micros),
             |data| {
                 sink.publish(ApRxEvent {
                     frame: data.ethernet_frame(),
@@ -988,10 +988,11 @@ impl ApRxDispatcher {
         let raw = view.raw;
         let metadata = view.metadata;
         let epoch = owner.fragmentation_epoch();
-        let admission = match self
-            .fragments
-            .preflight_in_epoch(fragment, epoch, now_micros)
-        {
+        let admission = match self.fragments.preflight_in_epoch(
+            fragment,
+            epoch,
+            oer_time::Instant::from_micros(now_micros),
+        ) {
             Ok(OpenDataFragmentPreflight::Duplicate { .. }) => {
                 return ApRxDispatch::Duplicate;
             }

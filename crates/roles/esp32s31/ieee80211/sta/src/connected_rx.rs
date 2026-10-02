@@ -25,7 +25,7 @@ use oer_ieee80211_mac::{
         EspNowWireVersion, esp_now_wire_version,
     },
     fragmentation::{
-        OPEN_DATA_FRAGMENT_TIMEOUT_MICROS, OPEN_DATA_REASSEMBLY_CAPACITY, OpenDataDefragmentation,
+        OPEN_DATA_FRAGMENT_TIMEOUT, OPEN_DATA_REASSEMBLY_CAPACITY, OpenDataDefragmentation,
         OpenDataDefragmenter, OpenDataFragmentError, OpenDataFragmentPreflight,
         OpenDataUnfragmentedAdmission, parse_ccmp_data_identity, parse_open_data_identity,
     },
@@ -1438,7 +1438,7 @@ impl ConnectedRxDispatcher {
             shared_ccmp_replay: StaCcmpRxReplayRxEndpoint::vacant(),
             owned_ccmp_replay: None,
             esp_now: None,
-            fragments: OpenDataDefragmenter::new(OPEN_DATA_FRAGMENT_TIMEOUT_MICROS),
+            fragments: OpenDataDefragmenter::new(OPEN_DATA_FRAGMENT_TIMEOUT),
             fragment_admission_active: false,
         }
     }
@@ -2163,7 +2163,7 @@ impl ConnectedRxDispatcher {
                 match self.fragments.admit_unfragmented(
                     identity,
                     view.retry,
-                    runtime_received_at_micros,
+                    runtime_received_at_micros.map(oer_time::Instant::from_micros),
                 ) {
                     Ok(OpenDataUnfragmentedAdmission::Admitted { .. }) => {}
                     Ok(OpenDataUnfragmentedAdmission::Duplicate { .. }) => {
@@ -2205,7 +2205,7 @@ impl ConnectedRxDispatcher {
                 match self.fragments.admit_unfragmented(
                     fragment_identity,
                     view.retry,
-                    runtime_received_at_micros,
+                    runtime_received_at_micros.map(oer_time::Instant::from_micros),
                 ) {
                     Ok(OpenDataUnfragmentedAdmission::Admitted { .. }) => {}
                     Ok(OpenDataUnfragmentedAdmission::Duplicate { .. }) => {
@@ -2344,7 +2344,7 @@ impl ConnectedRxDispatcher {
             match self.fragments.admit_unfragmented(
                 identity,
                 view.retry,
-                runtime_received_at_micros,
+                runtime_received_at_micros.map(oer_time::Instant::from_micros),
             ) {
                 Ok(OpenDataUnfragmentedAdmission::Admitted { .. }) => {}
                 Ok(OpenDataUnfragmentedAdmission::Duplicate { .. }) => {
@@ -2492,17 +2492,21 @@ impl ConnectedRxDispatcher {
         let raw = view.raw;
         let metadata = view.metadata;
         self.fragment_admission_active = true;
-        match self.fragments.ingest(view.fragment, now_micros, |data| {
-            if sink.wants_power_save_data() {
-                sink.publish(ConnectedRxEvent::PowerSaveData(power_save_data));
-            }
-            sink.publish(ConnectedRxEvent::Ethernet {
-                frame: data.ethernet_frame(),
-                raw,
-                amsdu: false,
-                metadata,
-            });
-        }) {
+        match self.fragments.ingest(
+            view.fragment,
+            oer_time::Instant::from_micros(now_micros),
+            |data| {
+                if sink.wants_power_save_data() {
+                    sink.publish(ConnectedRxEvent::PowerSaveData(power_save_data));
+                }
+                sink.publish(ConnectedRxEvent::Ethernet {
+                    frame: data.ethernet_frame(),
+                    raw,
+                    amsdu: false,
+                    metadata,
+                });
+            },
+        ) {
             Ok(OpenDataDefragmentation::Buffered { expired, evicted }) => {
                 ConnectedRxDispatch::FragmentBuffered {
                     expired,
@@ -2581,7 +2585,11 @@ impl ConnectedRxDispatcher {
             &mut self.shared_ccmp_replay,
             &mut self.owned_ccmp_replay,
         );
-        let admission = match fragments.preflight_in_epoch(fragment, 0, now_micros) {
+        let admission = match fragments.preflight_in_epoch(
+            fragment,
+            0,
+            oer_time::Instant::from_micros(now_micros),
+        ) {
             Ok(OpenDataFragmentPreflight::Duplicate { .. }) => {
                 return ConnectedRxDispatch::Duplicate;
             }

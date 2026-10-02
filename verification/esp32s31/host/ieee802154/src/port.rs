@@ -15,7 +15,6 @@ use oer_esp32s31_hal::{
     coex::{CoexPtiTable, Ieee802154CoexLevel},
     ieee802154::coex::{Ieee802154CoexConfig, resolve_priorities},
 };
-use oer_ieee802154::FrameAddress;
 #[cfg(feature = "sw-coex")]
 use oer_espressif_ieee802154_engine::coex::Ieee802154Coexistence;
 use oer_espressif_ieee802154_engine::engine::{
@@ -23,7 +22,9 @@ use oer_espressif_ieee802154_engine::engine::{
     Ieee802154Environment, Ieee802154FrameInfo, Ieee802154ReceivedAck, Ieee802154RxSlot,
     Ieee802154TxError,
 };
-use oer_espressif_ieee802154_engine::pib::{AutoPendingMode, Ieee802154MultipanIndex, Ieee802154PibDefaults};
+use oer_espressif_ieee802154_engine::pib::{
+    AutoPendingMode, Ieee802154MultipanIndex, Ieee802154PibDefaults,
+};
 use oer_espressif_ieee802154_engine::{
     channel::Ieee802154Channel,
     coex::CoexPti,
@@ -37,6 +38,7 @@ use oer_espressif_ieee802154_engine::{
         Ieee802154TxAbortEnableSet, Ieee802154TxAbortReason, Ieee802154TxAbortReasonObservation,
     },
 };
+use oer_ieee802154::FrameAddress;
 
 use crate::{
     record::{Argument, LlModel, Record},
@@ -809,7 +811,8 @@ pub fn run(scenario: &Scenario) -> Result<Vec<Record>, String> {
         buffers,
         levels,
         defaults,
-        oer_espressif_ieee802154_engine::engine::Ieee802154Interfaces::new(2).expect("two interfaces"),
+        oer_espressif_ieee802154_engine::engine::Ieee802154Interfaces::new(2)
+            .expect("two interfaces"),
     );
     // The stand's software-coexistence build uses the driver's default
     // scene levels.

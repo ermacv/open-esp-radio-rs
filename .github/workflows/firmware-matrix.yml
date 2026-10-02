@@ -57,10 +57,12 @@ jobs:
           echo "$(rustc --print sysroot)/lib/rustlib/$host/bin" >> "$GITHUB_PATH"
       - name: Fetch every workspace
         run: for manifest in $(git ls-files '*Cargo.lock' | sed 's/Cargo.lock$/Cargo.toml/'); do cargo fetch --locked --manifest-path "$manifest"; done
+      # The log lives outside the checkout: the image builder's source
+      # snapshot refuses untracked files in the tree.
       - name: Build and audit every image class
         run: |
           set -o pipefail
-          cargo xtask check firmware --all 2>&1 | tee firmware-matrix.log
+          cargo xtask check firmware --all 2>&1 | tee "$RUNNER_TEMP/firmware-matrix.log"
       - name: Summarize the classes
         if: always()
         run: |
@@ -68,6 +70,6 @@ jobs:
             echo '## Firmware classes'
             echo
             echo '```'
-            grep -E '^(PASS|FAIL) ' firmware-matrix.log || echo 'no class result was printed'
+            grep -E '^(PASS|FAIL) ' "$RUNNER_TEMP/firmware-matrix.log" || echo 'no class result was printed'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

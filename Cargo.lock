@@ -2581,6 +2581,7 @@ version = "0.1.0"
 dependencies = [
  "espflash",
  "fs2",
+ "oer-chip-profile",
  "oer-esp32s31-platform-layout",
  "oer-memory-report",
  "oer-process",

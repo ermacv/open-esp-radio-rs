@@ -16,7 +16,6 @@ use oer_process::CommandExt as _;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-pub use oer_esp32s31_firmware::network::Integration;
 use oer_hil_image_class::{FeatureDelta, ImageClass};
 
 pub mod esp_idf;
@@ -31,8 +30,10 @@ pub const REPOSITORY_DIRECTORY: &str = "hil/host/image";
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-pub const TARGET: &str = "riscv32imafc-unknown-none-elf";
 const RUNTIME_BIN: &str = "oer-esp32s31-hil-agent";
+/// The network implementation every image links, as records name it.
+pub use oer_esp32s31_firmware::network::NETWORK;
+use oer_esp32s31_firmware::network::NETWORK_FEATURE;
 use oer_esp32s31_firmware::{BOOTSTRAP_BIN, audit_application_image, pack_runtime};
 
 /// Version of the `image build`/`image flash` artifact report on stdout.
@@ -86,8 +87,8 @@ pub fn artifact_report(
     let report = ArtifactReport {
         schema: ARTIFACT_REPORT_SCHEMA,
         image_class: class.id(),
-        target: TARGET,
-        network: artifacts.network.id(),
+        target: &artifacts.rust_target,
+        network: NETWORK,
         profile: class.runtime_profile(),
         runtime_elf: artifacts.runtime_elf.display().to_string(),
         runtime_bin: staged.map(|(runtime_bin, ..)| runtime_bin.display().to_string()),
@@ -132,7 +133,6 @@ pub struct Artifacts {
     /// The chip the image runs on and its Rust target triple.
     pub chip: String,
     pub rust_target: String,
-    pub network: Integration,
     pub output: PathBuf,
     pub runtime_elf: PathBuf,
     pub effective_embedded_lock: PathBuf,
@@ -230,7 +230,6 @@ pub type LayoutSeed = Option<NonZeroU32>;
 /// How a run builds its images from the current sources.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CurrentBuild {
-    pub network: Integration,
     pub layout_seed: LayoutSeed,
     /// Runtime features added to or removed from each class's own; empty
     /// outside an experiment.
@@ -243,17 +242,15 @@ pub const LAYOUT_SEED_ENV: &str = oer_esp32s31_platform_layout::build::LAYOUT_SE
 pub fn build(
     root: &Path,
     class: oer_hil_image_class::ImageClass,
-    network: Integration,
     layout_seed: LayoutSeed,
     features: &FeatureDelta,
 ) -> Result<Artifacts> {
-    build_selected(root, class, network, layout_seed, features)
+    build_selected(root, class, layout_seed, features)
 }
 
 fn build_selected(
     root: &Path,
     class: oer_hil_image_class::ImageClass,
-    network: Integration,
     layout_seed: LayoutSeed,
     features: &FeatureDelta,
 ) -> Result<Artifacts> {
@@ -263,7 +260,6 @@ fn build_selected(
     build_resolved(
         root,
         class,
-        network,
         LocalOverrides {
             esp_hal: local_esp_hal.as_deref(),
             embassy: local_embassy.as_deref(),
@@ -271,7 +267,7 @@ fn build_selected(
         },
         BuildPlacement {
             output: None,
-            cache: &shared_compile_cache(root, class, network),
+            cache: &shared_compile_cache(root, class),
             layout_seed,
             features,
         },
@@ -301,12 +297,9 @@ pub(crate) struct BuildPlacement<'a> {
 /// code generation, in the class's shared compile cache. A pre-push check:
 /// lints that need monomorphization (`large_assignments`) and the link-time
 /// placement and stack audits still need `cargo hil image build`.
-pub fn check(
-    root: &Path,
-    class: oer_hil_image_class::ImageClass,
-    network: Integration,
-) -> Result<()> {
-    let cache = shared_compile_cache(root, class, network);
+pub fn check(root: &Path, class: oer_hil_image_class::ImageClass) -> Result<()> {
+    let cache = shared_compile_cache(root, class);
+    let target = oer_esp32s31_firmware::target(root)?;
     let lock = oer_esp32s31_firmware::network::BuildLock::prepare(
         &root.join("hil/targets/esp32s31"),
         &cache.join("check-lock"),
@@ -324,18 +317,17 @@ pub fn check(
             RUNTIME_BIN,
             "--release",
             "--target",
-            TARGET,
+            &target,
             "--locked",
         ])
         .args([
             "--no-default-features",
             "--features",
-            &class.build_features(network.feature()),
+            &class.build_features(NETWORK_FEATURE),
         ])
         .env("CARGO_TARGET_DIR", cache.join("runtime"));
     lock.configure(&mut command);
-    network.configure(&mut command, root);
-    crate::stack::configure_image_compiler(&mut command, &stack_budget);
+    crate::stack::configure_image_compiler(&mut command, &stack_budget, &target);
     ensure_fetched(
         root,
         &root.join("hil/targets/esp32s31/Cargo.toml"),
@@ -458,16 +450,12 @@ fn compile_cache_base(root: &Path, overridden: Option<std::ffi::OsString>) -> Pa
         )
 }
 
-pub fn shared_compile_cache(
-    root: &Path,
-    class: oer_hil_image_class::ImageClass,
-    network: Integration,
-) -> PathBuf {
+pub fn shared_compile_cache(root: &Path, class: oer_hil_image_class::ImageClass) -> PathBuf {
     compile_cache_base(root, std::env::var_os(BUILD_CACHE_ENV)).join(format!(
         "{}-{}-{}",
         class.runtime_profile(),
         class.id(),
-        network.id()
+        NETWORK
     ))
 }
 
@@ -507,7 +495,6 @@ struct LocalOverrides<'a> {
 fn build_resolved(
     root: &Path,
     class: oer_hil_image_class::ImageClass,
-    network: Integration,
     local: LocalOverrides<'_>,
     placement: BuildPlacement<'_>,
 ) -> Result<Artifacts> {
@@ -518,6 +505,7 @@ fn build_resolved(
     } = local;
     ensure_no_old_application_dependency(root)?;
     let manifest = root.join("hil/targets/esp32s31/Cargo.toml");
+    let target = oer_esp32s31_firmware::target(root)?;
     let BuildPlacement {
         output: output_override,
         cache,
@@ -530,7 +518,7 @@ fn build_resolved(
                 "{}-{}-{}{}{}",
                 class.runtime_profile(),
                 class.id(),
-                network.id(),
+                NETWORK,
                 seed_suffix(layout_seed),
                 features.suffix()
             ))
@@ -555,7 +543,7 @@ fn build_resolved(
     let overridden = local_esp_hal.is_some() || local_embassy.is_some() || local_xarxa.is_some();
 
     let compiled_runtime_elf = runtime_target
-        .join(TARGET)
+        .join(&target)
         .join("release")
         .join(RUNTIME_BIN);
     // Artifacts are copied out of the compile cache, which a later build of
@@ -563,7 +551,7 @@ fn build_resolved(
     let runtime_elf = output.join("runtime.elf");
     let runtime_bin = output.join("runtime.bin");
     let compiled_bootstrap_elf = bootstrap_target
-        .join(TARGET)
+        .join(&target)
         .join("release")
         .join(BOOTSTRAP_BIN);
     let bootstrap_elf = output.join("bootstrap.elf");
@@ -571,7 +559,7 @@ fn build_resolved(
     let effective_bootstrap_lock = output.join("bootstrap-Cargo.lock");
     let application_image = output.join("application.bin");
 
-    let runtime_features = features.apply(&class.build_features(network.feature()));
+    let runtime_features = features.apply(&class.build_features(NETWORK_FEATURE));
     let stack_policy_path = root.join("hil/targets/esp32s31/stack.toml");
     let stack_budget = oer_memory_report::StackBudget::load(&stack_policy_path)?;
     let mut runtime = cargo_command();
@@ -580,7 +568,7 @@ fn build_resolved(
         .arg("build")
         .arg("--manifest-path")
         .arg(&manifest)
-        .args(["-p", RUNTIME_BIN, "--release", "--target", TARGET])
+        .args(["-p", RUNTIME_BIN, "--release", "--target", &target])
         .args(["--no-default-features", "--features", &runtime_features])
         .env("CARGO_TARGET_DIR", &runtime_target)
         .env("CARGO_INCREMENTAL", "0");
@@ -593,11 +581,10 @@ fn build_resolved(
         runtime.arg("--locked");
     }
     runtime_lock.configure(&mut runtime);
-    network.configure(&mut runtime, root);
     add_local_esp_hal_patches(&mut runtime, local_esp_hal);
     add_local_embassy_patches(&mut runtime, local_embassy);
     add_local_xarxa_patches(&mut runtime, local_xarxa);
-    crate::stack::configure_image_compiler(&mut runtime, &stack_budget);
+    crate::stack::configure_image_compiler(&mut runtime, &stack_budget, &target);
     if !overridden {
         ensure_fetched(root, &manifest, |command| runtime_lock.configure(command))?;
     }
@@ -609,7 +596,7 @@ fn build_resolved(
     // Local overrides deliberately resolve path packages; only a network
     // selection has a fixed expected pin change.
     if !overridden {
-        runtime_lock.validate(root, network)?;
+        runtime_lock.validate()?;
     }
 
     let stack_report = crate::stack::analyze_elf_stack(&runtime_elf, &stack_budget)?;
@@ -644,6 +631,7 @@ fn build_resolved(
     oer_esp32s31_firmware::bootstrap_command(
         &mut bootstrap,
         root,
+        &target,
         &absolute(&embedded_runtime)?,
         &bootstrap_target,
     );
@@ -652,7 +640,7 @@ fn build_resolved(
     }
     bootstrap_lock.configure(&mut bootstrap);
     add_bootstrap_patches(&mut bootstrap, local_esp_hal);
-    crate::stack::configure_image_compiler(&mut bootstrap, &stack_budget);
+    crate::stack::configure_image_compiler(&mut bootstrap, &stack_budget, &target);
     if local_esp_hal.is_none() {
         ensure_fetched(
             root,
@@ -691,9 +679,9 @@ fn build_resolved(
     let compiled = source_inputs::collect(
         root,
         &[
-            (&runtime_target.join(TARGET).join("release"), RUNTIME_BIN),
+            (&runtime_target.join(&target).join("release"), RUNTIME_BIN),
             (
-                &bootstrap_target.join(TARGET).join("release"),
+                &bootstrap_target.join(&target).join("release"),
                 BOOTSTRAP_BIN,
             ),
         ],
@@ -718,9 +706,8 @@ fn build_resolved(
     eprintln!("stack_frame_audit=PASS");
     eprintln!("autonomous_source_graph=PASS");
     Ok(Artifacts {
-        chip: String::from("esp32s31"),
-        rust_target: String::from(TARGET),
-        network,
+        chip: String::from(oer_esp32s31_firmware::CHIP),
+        rust_target: target,
         output,
         runtime_elf,
         effective_embedded_lock,

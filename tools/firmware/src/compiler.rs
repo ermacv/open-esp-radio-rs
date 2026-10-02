@@ -12,11 +12,9 @@ use std::{env, process::Command};
 
 use oer_memory_report::StackBudget;
 
-use crate::TARGET;
-
 /// Configure `command`, a Cargo build of an image, with the compiler flags
 /// every image shares.
-pub fn configure_image_compiler(command: &mut Command, budget: &StackBudget) {
+pub fn configure_image_compiler(command: &mut Command, budget: &StackBudget, target: &str) {
     // The pinned stable toolchain supports these flags, but they remain
     // unstable: RUSTC_BOOTSTRAP enables them for this command alone. The
     // stack-size ELF section is consumed by a safe host-side parser.
@@ -27,15 +25,15 @@ pub fn configure_image_compiler(command: &mut Command, budget: &StackBudget) {
     // C and C++ that build scripts compile for the image (through the `cc`
     // and `cmake` crates) emit the same `.stack_sizes` section, so the audit
     // measures their frames as well.
-    for variable in c_flag_variables() {
+    for variable in c_flag_variables(target) {
         let flags = with_stack_sizes(env::var(&variable).ok());
         command.env(variable, flags);
     }
 }
 
 /// The per-target C and C++ flag variables the `cc` and `cmake` crates read.
-fn c_flag_variables() -> [String; 2] {
-    let target = TARGET.replace('-', "_");
+fn c_flag_variables(target: &str) -> [String; 2] {
+    let target = target.replace('-', "_");
     [format!("CFLAGS_{target}"), format!("CXXFLAGS_{target}")]
 }
 
@@ -78,7 +76,7 @@ mod tests {
     #[test]
     fn c_builds_emit_frame_sizes_for_the_image_target() {
         assert_eq!(
-            c_flag_variables(),
+            c_flag_variables("riscv32imafc-unknown-none-elf"),
             [
                 "CFLAGS_riscv32imafc_unknown_none_elf".to_owned(),
                 "CXXFLAGS_riscv32imafc_unknown_none_elf".to_owned(),

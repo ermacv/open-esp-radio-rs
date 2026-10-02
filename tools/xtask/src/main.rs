@@ -152,8 +152,8 @@ enum Task {
     /// runs the operational HIL stand commands without building this tree.
     StandInstall,
     /// List, or with --apply remove, this checkout's rebuildable build caches
-    /// unused for a while (incremental data, HIL image caches) and the host's
-    /// unused HIL snapshot builds; running builds are skipped.
+    /// unused for a while (incremental data, HIL image caches); running
+    /// builds are skipped.
     Sweep {
         #[arg(long)]
         apply: bool,
@@ -305,6 +305,10 @@ enum Build {
         features: Vec<String>,
         #[arg(long)]
         no_default_features: bool,
+        /// Only `cargo check` the runtime with the image's target, features
+        /// and compiler flags: no image, audit or flash.
+        #[arg(long, conflicts_with = "flash")]
+        type_check: bool,
     },
     VendorProbes {
         #[arg(long)]
@@ -546,11 +550,22 @@ fn dispatch(ctx: &Context, command: Task) -> Result<std::process::ExitCode> {
             build:
                 Build::Firmware {
                     example,
+                    features,
+                    no_default_features,
+                    type_check: true,
+                    ..
+                },
+        } => oer_xtask::firmware::type_check(&ctx, &example, &features, no_default_features),
+        Task::Build {
+            build:
+                Build::Firmware {
+                    example,
                     flash,
                     port,
                     monitor,
                     features,
                     no_default_features,
+                    type_check: false,
                 },
         } => {
             let output =

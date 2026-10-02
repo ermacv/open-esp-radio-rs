@@ -5,29 +5,114 @@ mod workspace;
 pub use workspace::FirmwareBuild;
 
 use crate::{Context, Result};
-use oer_esp32s31_firmware::{BOOTSTRAP_BIN, TARGET};
+use oer_esp32s31_firmware::BOOTSTRAP_BIN;
 use oer_process as process;
 use std::{env, fs, path::Path};
 
-pub fn build(
-    ctx: &Context,
-    example: &str,
-    features: &[String],
-    no_default_features: bool,
-) -> Result<FirmwareBuild> {
-    let directory = ctx.root.join("examples/esp32s31").join(example);
-    let manifest = directory.join("Cargo.toml");
-    let contents = fs::read_to_string(&manifest)?;
-    let data: toml::Table = toml::from_str(&contents)?;
+/// The example's package (binary) name and manifest.
+fn example(ctx: &Context, example: &str) -> Result<(String, std::path::PathBuf)> {
+    let manifest = ctx
+        .root
+        .join("examples/esp32s31")
+        .join(example)
+        .join("Cargo.toml");
+    let data: toml::Table = toml::from_str(&fs::read_to_string(&manifest)?)?;
     let binary = data
         .get("package")
         .and_then(|p| p.get("name"))
         .and_then(toml::Value::as_str)
-        .ok_or("example has no package name")?;
+        .ok_or("example has no package name")?
+        .to_owned();
+    Ok((binary, manifest))
+}
+
+/// The Cargo `subcommand` (`build` or `check`) of an example's runtime with
+/// the image compiler configuration every image build applies.
+#[allow(clippy::too_many_arguments)]
+fn runtime_command(
+    ctx: &Context,
+    subcommand: &str,
+    (binary, manifest): (&str, &Path),
+    target: &str,
+    cache: &Path,
+    lock: &oer_esp32s31_firmware::network::BuildLock,
+    (features, no_default_features): (&[String], bool),
+    budget: &oer_memory_report::StackBudget,
+) -> std::process::Command {
+    let mut command = ctx.cargo();
+    command
+        .args([
+            subcommand,
+            "--release",
+            "--locked",
+            "--target",
+            target,
+            "--manifest-path",
+        ])
+        .arg(manifest)
+        .args(["--bin", binary])
+        .env("CARGO_TARGET_DIR", cache)
+        .env("CARGO_INCREMENTAL", "0");
+    lock.configure(&mut command);
+    if no_default_features {
+        command.arg("--no-default-features");
+    }
+    if !features.is_empty() {
+        command.arg("--features").arg(features.join(","));
+    }
+    oer_esp32s31_firmware::compiler::configure_image_compiler(&mut command, budget, target);
+    command
+}
+
+/// Type-check an example's runtime exactly as its image build compiles it
+/// (target, features and image compiler flags), without code generation.
+pub fn type_check(
+    ctx: &Context,
+    name: &str,
+    features: &[String],
+    no_default_features: bool,
+) -> Result<()> {
+    let (binary, manifest) = example(ctx, name)?;
+    let target = oer_esp32s31_firmware::target(&ctx.root)?;
+    let budget =
+        oer_memory_report::StackBudget::load(&ctx.root.join("platform/esp32s31/stack.toml"))?;
+    let cache = ctx
+        .root
+        .join("target/firmware")
+        .join(format!("esp32s31-{name}"))
+        .join("check");
+    let lock = oer_esp32s31_firmware::network::BuildLock::prepare(
+        &ctx.root.join("examples/esp32s31"),
+        &cache.join("lock"),
+    )?;
+    process::run(&mut runtime_command(
+        ctx,
+        "check",
+        (&binary, &manifest),
+        &target,
+        &cache.join("runtime"),
+        &lock,
+        (features, no_default_features),
+        &budget,
+    ))?;
+    lock.validate()?;
+    println!("{name}: the runtime type-checks with the image flags");
+    Ok(())
+}
+
+pub fn build(
+    ctx: &Context,
+    example_name: &str,
+    features: &[String],
+    no_default_features: bool,
+) -> Result<FirmwareBuild> {
+    let (binary, manifest) = example(ctx, example_name)?;
+    let binary = binary.as_str();
+    let target = oer_esp32s31_firmware::target(&ctx.root)?;
     let directory_output = ctx
         .root
         .join("target/firmware")
-        .join(format!("esp32s31-{example}"));
+        .join(format!("esp32s31-{example_name}"));
     let workspace = workspace::Workspace::acquire(&directory_output)?;
     let output = workspace.output();
     let budget =
@@ -39,26 +124,20 @@ pub fn build(
         &ctx.root.join("examples/esp32s31"),
         &workspace.cache().join("lock"),
     )?;
-    let mut command = ctx.cargo();
-    command
-        .args(["build", "--release", "--target", TARGET, "--manifest-path"])
-        .arg(&manifest)
-        .args(["--bin", binary])
-        .env("CARGO_TARGET_DIR", &runtime_target)
-        .env("CARGO_INCREMENTAL", "0");
-    command.arg("--locked");
-    runtime_lock.configure(&mut command);
-    if no_default_features {
-        command.arg("--no-default-features");
-    }
-    if !features.is_empty() {
-        command.arg("--features").arg(features.join(","));
-    }
-    oer_esp32s31_firmware::compiler::configure_image_compiler(&mut command, &budget);
+    let mut command = runtime_command(
+        ctx,
+        "build",
+        (binary, &manifest),
+        &target,
+        &runtime_target,
+        &runtime_lock,
+        (features, no_default_features),
+        &budget,
+    );
     process::run(&mut command)?;
-    runtime_lock.validate(&ctx.root, Default::default())?;
+    runtime_lock.validate()?;
     let runtime = workspace.snapshot(
-        &runtime_target.join(TARGET).join("release").join(binary),
+        &runtime_target.join(&target).join("release").join(binary),
         "runtime.elf",
     )?;
     audit_stack(&runtime, &output.join("runtime-stack.txt"), &budget)?;
@@ -76,13 +155,19 @@ pub fn build(
     )?;
     let bootstrap_target = workspace.cache().join("bootstrap");
     let mut command = ctx.cargo();
-    oer_esp32s31_firmware::bootstrap_command(&mut command, &ctx.root, &packed, &bootstrap_target);
+    oer_esp32s31_firmware::bootstrap_command(
+        &mut command,
+        &ctx.root,
+        &target,
+        &packed,
+        &bootstrap_target,
+    );
     command.arg("--locked");
-    oer_esp32s31_firmware::compiler::configure_image_compiler(&mut command, &budget);
+    oer_esp32s31_firmware::compiler::configure_image_compiler(&mut command, &budget, &target);
     process::run(&mut command)?;
     let bootstrap = workspace.snapshot(
         &bootstrap_target
-            .join(TARGET)
+            .join(&target)
             .join("release")
             .join(BOOTSTRAP_BIN),
         "bootstrap.elf",

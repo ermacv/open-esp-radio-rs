@@ -1,7 +1,6 @@
 use std::{cell::RefCell, ffi::OsString, fs, path::PathBuf};
 
 use super::*;
-use oer_hil_image::Integration;
 
 fn write(path: &Path, bytes: &[u8]) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -31,7 +30,6 @@ fn build_inputs(root: &Path) -> Artifacts {
     Artifacts {
         features: oer_hil_image_class::FeatureDelta::default(),
         layout_seed: None,
-        network: Integration::OwnedXarxa,
         output: root.join("build"),
         runtime_elf: root.join("build/runtime.elf"),
 
@@ -42,7 +40,7 @@ fn build_inputs(root: &Path) -> Artifacts {
             effective_bootstrap_lock: root.join("platform/esp32s31/Cargo.lock"),
         },
         chip: String::from("esp32s31"),
-        rust_target: String::from(oer_hil_image::TARGET),
+        rust_target: String::from("riscv32imafc-unknown-none-elf"),
         application_image: root.join("build/application.bin"),
         source_inputs: None,
         environment: oer_hil_evidence::build::BuildEnvironment::synthetic(),
@@ -128,7 +126,6 @@ fn current_build_has_the_canonical_firmware_plan_identity() {
     assert!(matches!(
         RunFirmware::BuildCurrent(oer_hil_image::CurrentBuild {
             features: oer_hil_image_class::FeatureDelta::default(),
-            network: Integration::OwnedXarxa,
             layout_seed: None,
         })
         .plan(),

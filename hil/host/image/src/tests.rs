@@ -78,11 +78,6 @@ fn the_radio_less_classes_need_no_driver_observation() {
 }
 
 #[test]
-fn qualified_profile_name_is_stable() {
-    assert_eq!(TARGET, "riscv32imafc-unknown-none-elf");
-}
-
-#[test]
 fn image_classes_are_stable_and_do_not_use_workload_environment() {
     assert_eq!(oer_hil_image_class::ImageClass::ALL.len(), 24);
     assert_eq!(

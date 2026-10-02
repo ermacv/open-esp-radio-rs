@@ -1,6 +1,7 @@
 //! Shared firmware publication for observations and build-only records.
 use super::Recipe;
-use crate::{Artifacts, BootArtifacts, Integration, LayoutSeed, Result};
+use crate::{Artifacts, BootArtifacts, LayoutSeed, Result};
+use oer_esp32s31_firmware::network::NETWORK;
 use oer_hil_durable::atomic_json;
 use oer_hil_evidence::{
     build::{self, BuildSubject, BuildSubjectRole},
@@ -29,7 +30,6 @@ pub(super) fn archive(
 ) -> Result<(FirmwareArtifact, PathBuf)> {
     let selection = (
         image,
-        artifacts.network,
         artifacts.layout_seed,
         &artifacts.features,
         (
@@ -182,7 +182,6 @@ pub(super) fn create_provenance(
     root: &Path,
     selection: (
         ImageClass,
-        Integration,
         LayoutSeed,
         &oer_hil_image_class::FeatureDelta,
         // The chip, its Rust target and how it boots.
@@ -194,7 +193,7 @@ pub(super) fn create_provenance(
     effective_locks: Vec<build::BuildFileMaterial>,
     environment: build::BuildEnvironment,
 ) -> Result<build::BuildProvenance> {
-    let (image, network, layout_seed, features, (chip, rust_target, boot)) = selection;
+    let (image, layout_seed, features, (chip, rust_target, boot)) = selection;
     let files = match boot {
         oer_chip_profile::Boot::Staged => vec![
             ("workspace-lock", String::from("Cargo.lock")),
@@ -239,12 +238,12 @@ pub(super) fn create_provenance(
         parameters: build::BuildParameters {
             image,
             // An ESP-IDF application has no network integration.
-            network: (boot == oer_chip_profile::Boot::Staged).then(|| network.id().to_owned()),
+            network: (boot == oer_chip_profile::Boot::Staged).then(|| NETWORK.to_owned()),
             runtime_profile: image.runtime_profile().to_owned(),
             target: rust_target.to_owned(),
             runtime_features: features.apply(&Recipe.runtime_features(
                 image,
-                (boot == oer_chip_profile::Boot::Staged).then(|| network.id()),
+                (boot == oer_chip_profile::Boot::Staged).then_some(NETWORK),
             )?),
             layout_seed,
             features: features.clone(),

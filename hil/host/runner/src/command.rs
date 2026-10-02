@@ -82,7 +82,7 @@ pub(crate) fn run() -> Result<()> {
             let plan = oer_hil_scenario::campaign::Plan::create_for_checks(
                 &catalog,
                 &selected,
-                image::Integration::default().id(),
+                image::NETWORK,
                 &proofs,
             )?;
             emit_json(&plan, true)
@@ -145,7 +145,6 @@ pub(crate) fn run() -> Result<()> {
                             let artifacts = image::frozen::build(
                                 frozen,
                                 class,
-                                image::Integration::default(),
                                 layout_seed,
                                 &oer_hil_image_class::FeatureDelta::default(),
                             )?;
@@ -157,7 +156,6 @@ pub(crate) fn run() -> Result<()> {
                         _ => image::build(
                             &root,
                             class,
-                            image::Integration::default(),
                             layout_seed,
                             &oer_hil_image_class::FeatureDelta::default(),
                         )?,
@@ -263,7 +261,6 @@ pub(crate) fn run() -> Result<()> {
                         &frozen,
                         &chip,
                         class,
-                        image::Integration::default(),
                         layout_seed,
                         &features.clone().unwrap_or_default(),
                     )?;
@@ -283,7 +280,6 @@ pub(crate) fn run() -> Result<()> {
                     )?))
                 }
                 None => RunFirmware::BuildCurrent(oer_hil_image::CurrentBuild {
-                    network: image::Integration::default(),
                     layout_seed,
                     features: features.clone().unwrap_or_default(),
                 }),
@@ -346,7 +342,6 @@ pub(crate) fn run() -> Result<()> {
                 &selected,
                 orchestration::selection_description(&tag),
                 oer_hil_image::CurrentBuild {
-                    network: image::Integration::default(),
                     layout_seed,
                     features: oer_hil_image_class::FeatureDelta::default(),
                 },

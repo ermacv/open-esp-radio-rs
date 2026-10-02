@@ -1,17 +1,5 @@
 use super::*;
 
-#[test]
-fn owned_xarxa_is_the_only_integration() {
-    assert_eq!(Integration::default(), Integration::OwnedXarxa);
-    assert_eq!(
-        "owned-xarxa".parse::<Integration>().unwrap(),
-        Integration::OwnedXarxa
-    );
-    for other in ["upstream-xarxa", "auto", ""] {
-        assert!(other.parse::<Integration>().is_err(), "{other}");
-    }
-}
-
 fn workspace_fixture() -> (tempfile::TempDir, PathBuf) {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path();
@@ -87,7 +75,7 @@ fn validation_rejects_any_change_to_the_committed_pins() {
         |other: &str| format!("version = 4\n[[package]]\nname = 'other'\nversion = '{other}'\n");
     fs::write(workspace.join("Cargo.lock"), catalog("1.0.0")).unwrap();
     let lock = BuildLock::prepare(&workspace, &root.join("output")).unwrap();
-    lock.validate(root, Integration::OwnedXarxa).unwrap();
+    lock.validate().unwrap();
     fs::write(lock.path(), catalog("2.0.0")).unwrap();
-    assert!(lock.validate(root, Integration::OwnedXarxa).is_err());
+    assert!(lock.validate().is_err());
 }

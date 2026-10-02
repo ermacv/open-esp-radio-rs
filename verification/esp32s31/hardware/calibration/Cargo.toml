@@ -15,7 +15,6 @@ oer-esp32s31-hil-calibration-artifact = { path = "../../../../hil/targets/esp32s
 oer-esp32s31-phy = { path = "../../../../crates/hardware/esp32s31/phy", features = ["validation-probes"] }
 oer-esp32s31-hil-board = { path = "../../../../hil/host/board/esp32s31" }
 oer-hil-board = { path = "../../../../hil/host/board" }
-oer-hil-execution = { path = "../../../../hil/host/execution" }
 oer-hil-scenario = { path = "../../../../hil/host/scenario" }
 oer-hil-protocol = { path = "../../../../hil/protocol" }
 clap = { version = "4.5", features = ["derive"] }

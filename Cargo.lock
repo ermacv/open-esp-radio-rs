@@ -2869,7 +2869,6 @@ dependencies = [
  "oer-esp32s31-hil-calibration-artifact",
  "oer-esp32s31-phy",
  "oer-hil-board",
- "oer-hil-execution",
  "oer-hil-link",
  "oer-hil-protocol",
  "oer-hil-scenario",

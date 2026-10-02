@@ -24,6 +24,16 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # The fast integrity tier: seconds of text checks over the whole tree.
+  tidy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: cargo run --quiet --locked -p oer-tidy -- check
+
   fmt:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -33,15 +43,9 @@ jobs:
           persist-credentials: false
       - name: Format every workspace
         run: |
-          # Each manifest is an independent Cargo workspace.
-          for manifest in \
-            Cargo.toml \
-            tools/blobray/Cargo.toml \
-            platform/esp32s31/Cargo.toml \
-            hil/targets/esp32s31/Cargo.toml \
-            examples/*/Cargo.toml \
-            verification/esp32s31/probes/Cargo.toml \
-            verification/esp32s31/host/ieee802154/Cargo.toml
+          # Every Cargo workspace, as oer-tidy discovers them.
+          manifests=$(cargo run --quiet --locked -p oer-tidy -- workspaces)
+          for manifest in $manifests
           do
             echo "::group::$manifest"
             cargo fmt --all --manifest-path "$manifest" -- --check

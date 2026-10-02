@@ -75,6 +75,7 @@ directory. Do not place production behavior in verification probes.
 ## Build, Test, and Development Commands
 
 ```console
+cargo xtask check tidy
 cargo check --workspace
 cargo test --workspace
 cargo fmt --all -- --check
@@ -107,6 +108,10 @@ owning code with a `// CAPABILITY: <id>` comment above that item (see
 entry's status in step when the code changes. If `main` CI turns red after a
 push, fixing it comes before other work.
 
+`cargo xtask check tidy` is the fast integrity tier: in seconds it fails on
+Rust files no crate root reaches, record paths that do not exist, anchors
+outside compiled code, packages outside a workspace and dependencies no source
+names; reviewed exceptions live in `tools/tidy/allowlist.toml`.
 Use `cargo xtask check docs` for Markdown/catalog changes and `cargo xtask doc`
 for API changes: it runs `cargo doc --no-deps` with `RUSTDOCFLAGS=-D warnings`
 for every package's `[package.metadata.docs.rs]` target and features, plus

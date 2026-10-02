@@ -3794,6 +3794,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-tidy"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
 name = "oer-time"
 version = "0.1.0"
 

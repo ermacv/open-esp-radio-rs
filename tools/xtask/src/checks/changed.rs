@@ -294,6 +294,8 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
     }
     // Checks that take seconds run before Clippy, the tests and the
     // firmware, so a stale citation or document fails the push at once.
+    // The integrity tier covers the whole tree whatever changed.
+    super::tidy::run(ctx)?;
     if plan.docs {
         super::docs::run(ctx)?;
     }

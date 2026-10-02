@@ -11,6 +11,7 @@ members = [
     "tools/command-tree",
     "tools/firmware",
     "tools/symbol-lineage",
+    "tools/tidy",
     "verification/esp32s31/hardware/calibration",
     "platform/esp32s31/layout",
     "hil/image-keys",
@@ -164,6 +165,11 @@ debug = "line-tables-only"
 # HIL source snapshots hash every input file several times per build; an
 # unoptimized SHA-256 dominates a current-source run.
 [profile.dev.package.sha2]
+opt-level = 3
+
+# The integrity tier lexes every Rust file of the tree; optimized, it runs in
+# about a second instead of five.
+[profile.dev.package.oer-tidy]
 opt-level = 3
 
 [profile.blobray]

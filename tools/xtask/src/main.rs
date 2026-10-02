@@ -234,6 +234,9 @@ enum Check {
     Network,
     /// Check local Markdown links and the static qualification catalogs.
     Docs,
+    /// Run the fast integrity checks of `oer-tidy`: orphan sources, record
+    /// paths, anchor placement, workspaces and unused dependencies.
+    Tidy,
     /// Check the `// CAPABILITY: <id>` anchors in code against every catalog
     /// entry, and list the entries anchored in the given changed files.
     Capabilities {
@@ -456,6 +459,7 @@ fn run() -> Result<std::process::ExitCode> {
             Check::Architecture => checks::architecture::run(&ctx),
             Check::Network => checks::network::run(&ctx),
             Check::Docs => checks::docs::run(&ctx),
+            Check::Tidy => checks::tidy::run(&ctx),
             Check::Capabilities { changed } => checks::docs::capabilities(&ctx, &changed),
             Check::Phy { chip } => checks::phy::run(&ctx, &chip),
             Check::Images => checks::images::run(&ctx),
@@ -538,5 +542,16 @@ mod tests {
             Task::Check { check: Check::Docs }
         ));
         assert!(Cli::try_parse_from(["xtask", "check", "docs", "--full"]).is_err());
+    }
+
+    #[test]
+    fn the_integrity_tier_is_a_check_without_options() {
+        assert!(matches!(
+            Cli::try_parse_from(["xtask", "check", "tidy"])
+                .unwrap()
+                .command,
+            Task::Check { check: Check::Tidy }
+        ));
+        assert!(Cli::try_parse_from(["xtask", "check", "tidy", "--base", "x"]).is_err());
     }
 }

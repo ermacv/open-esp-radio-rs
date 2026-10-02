@@ -1,0 +1,127 @@
+# Reviewed exceptions of `cargo xtask check tidy`. Every entry states why the
+# check cannot see what it excuses; an entry that no longer applies fails the
+# check.
+
+# Rust files rustc compiles directly by path, outside every crate root.
+
+[[uncompiled]]
+path = "tools/firmware/tests/fixtures/image_tool.rs"
+reason = "the image tests compile this stand-in image tool with rustc"
+
+[[uncompiled]]
+path = "tools/process/tests/fixtures/process_tree.rs"
+reason = "the process tests compile this child-process tree with rustc"
+
+[[uncompiled]]
+path = "tools/xtask/tests/fixtures/malformed_cargo.rs"
+reason = "the network check tests compile this failing cargo stand-in with rustc"
+
+# Dependencies a package declares only to select features of a crate its
+# dependency graph already uses, and so never names.
+
+[[unused-dependency]]
+manifest = "crates/adapters/embassy-net/owned/Cargo.toml"
+dependency = "critical-section"
+reason = "test builds select critical-section's std implementation for the crates that take critical sections"
+
+[[unused-dependency]]
+manifest = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml"
+dependency = "critical-section"
+reason = "test builds select critical-section's std implementation for the crates that take critical sections"
+
+[[unused-dependency]]
+manifest = "crates/hardware/esp32s31/driver/bluetooth/Cargo.toml"
+dependency = "critical-section"
+reason = "test builds select critical-section's std implementation for the crates that take critical sections"
+
+[[unused-dependency]]
+manifest = "crates/hardware/esp32s31/hal/Cargo.toml"
+dependency = "critical-section"
+reason = "test builds select critical-section's std implementation for the crates that take critical sections"
+
+[[unused-dependency]]
+manifest = "crates/runtime/bluetooth/Cargo.toml"
+dependency = "critical-section"
+reason = "test builds select critical-section's std implementation for the crates that take critical sections"
+
+[[unused-dependency]]
+manifest = "crates/runtime/esp32s31/bluetooth/Cargo.toml"
+dependency = "critical-section"
+reason = "test builds select critical-section's std implementation for the crates that take critical sections"
+
+[[unused-dependency]]
+manifest = "crates/runtime/esp32s31/ieee80211/Cargo.toml"
+dependency = "critical-section"
+reason = "test builds select critical-section's std implementation for the crates that take critical sections"
+
+[[unused-dependency]]
+manifest = "crates/runtime/ieee80211/Cargo.toml"
+dependency = "critical-section"
+reason = "test builds select critical-section's std implementation for the crates that take critical sections"
+
+[[unused-dependency]]
+manifest = "crates/services/bluetooth/hci/transport/Cargo.toml"
+dependency = "critical-section"
+reason = "test builds select critical-section's std implementation for the crates that take critical sections"
+
+[[unused-dependency]]
+manifest = "crates/services/ieee80211/sta/Cargo.toml"
+dependency = "critical-section"
+reason = "test builds select critical-section's std implementation for the crates that take critical sections"
+
+[[unused-dependency]]
+manifest = "examples/bluetooth-gatt/Cargo.toml"
+dependency = "critical-section"
+reason = "test builds select critical-section's std implementation for the crates that take critical sections"
+
+[[unused-dependency]]
+manifest = "examples/esp32s31/access-point/Cargo.toml"
+dependency = "critical-section"
+reason = "test builds select critical-section's std implementation for the crates that take critical sections"
+
+[[unused-dependency]]
+manifest = "hil/agent/Cargo.toml"
+dependency = "critical-section"
+reason = "test builds select critical-section's std implementation for the crates that take critical sections"
+
+[[unused-dependency]]
+manifest = "crates/adapters/openthread/ieee802154/Cargo.toml"
+dependency = "embassy-time"
+reason = "test builds select embassy-time's std driver and generic timer queue for the crates that wait on time"
+
+[[unused-dependency]]
+manifest = "examples/bluetooth-gatt/Cargo.toml"
+dependency = "embassy-time"
+reason = "test builds select embassy-time's std driver and generic timer queue for the crates that wait on time"
+
+[[unused-dependency]]
+manifest = "hil/agent/Cargo.toml"
+dependency = "embassy-time"
+reason = "test builds select embassy-time's std driver and generic timer queue for the crates that wait on time"
+
+[[unused-dependency]]
+manifest = "verification/esp32s31/probes/bluetooth/library/Cargo.toml"
+dependency = "oer-esp32s31-phy"
+reason = "enables the PHY's validation-probes feature for the Bluetooth driver the probe compiles"
+
+[[unused-dependency]]
+manifest = "hil/targets/esp32s31/agent/Cargo.toml"
+dependency = "xarxa-owned"
+reason = "the owned-network feature selects the workspace's xarxa features for the owned stack adapter"
+
+# Dependencies another crate's macro expands to paths in.
+
+[[unused-dependency]]
+manifest = "hil/host/fixture/Cargo.toml"
+dependency = "bt-hci-transport"
+reason = "bt_hci::cmd! in the open-radio-bluetooth fixture expands to paths in bt_hci_transport"
+
+[[unused-dependency]]
+manifest = "hil/host/fixture/Cargo.toml"
+dependency = "embedded-io"
+reason = "bt_hci::cmd! in the open-radio-bluetooth fixture expands to paths in embedded_io"
+
+[[unused-dependency]]
+manifest = "hil/host/fixture/Cargo.toml"
+dependency = "embedded-io-async"
+reason = "bt_hci::cmd! in the open-radio-bluetooth fixture expands to paths in embedded_io_async"

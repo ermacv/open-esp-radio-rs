@@ -12,7 +12,10 @@ impl<'storage> ApEngine<'storage> {
         now_micros: u64,
         output: &mut [u8],
     ) -> Result<Option<(usize, TxBlockAckAlarm)>, ApEngineError> {
-        let Some(request) = self.service.begin_tx_block_ack(peer, now_micros)? else {
+        let Some(request) = self
+            .service
+            .begin_tx_block_ack(peer, oer_time::Instant::from_micros(now_micros))?
+        else {
             return Ok(None);
         };
         let sequence = self.service.next_management_sequence();

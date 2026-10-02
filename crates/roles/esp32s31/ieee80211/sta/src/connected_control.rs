@@ -850,7 +850,10 @@ impl ConnectedControlCore {
       /// Return the first owned control deadline without allocating executor state.
       #[inline(never)]
       pub fn next_alarm_deadline(&self) -> Option<u64> {
-          let block_ack = self.tx_block_ack.earliest_alarm_deadline();
+          let block_ack = self
+              .tx_block_ack
+              .earliest_alarm_deadline()
+              .map(oer_time::Instant::as_micros);
           let power = self.power.next_deadline();
           // Link and TWT deadlines lead to frames, which wait for the slice.
           if self.power.blocks_tx() {
@@ -1103,7 +1106,10 @@ impl ConnectedControlCore {
         }
 
         let now_micros = tx.now().as_micros();
-        if let Some(tid) = self.tx_block_ack.expire_next(now_micros) {
+        if let Some(tid) = self
+            .tx_block_ack
+            .expire_next(oer_time::Instant::from_micros(now_micros))
+        {
             tx.set_tx_block_ack_agreement(tid, None);
             self.observations.last_expired_tid = Some(tid);
             if let Some(index) = STA_TX_BLOCK_ACK_TIDS
@@ -1951,9 +1957,7 @@ impl ConnectedControlCore {
         let sequence = tx
             .peek_qos_sequence(tid)
             .ok_or(ConnectedControlError::MissingQosSequence(tid))?;
-        let request = self
-            .tx_block_ack
-            .begin(tid, sequence, tx.now().as_micros())?;
+        let request = self.tx_block_ack.begin(tid, sequence, tx.now())?;
         if let Err(error) =
             tx.start_action(hardware, &request.body, ActionTxConfig::VENDOR_MANAGEMENT)
         {

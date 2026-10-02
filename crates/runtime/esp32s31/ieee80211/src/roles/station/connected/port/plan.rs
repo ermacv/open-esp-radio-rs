@@ -40,7 +40,7 @@ pub struct ConnectedStaTxPolicy {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ConnectedStaBlockAckPolicy {
     pub tx_block_ack_window: u16,
-    pub tx_block_ack_negotiation_timeout_us: u32,
+    pub tx_block_ack_negotiation_timeout: oer_time::Duration,
     pub tx_block_ack_negotiation_attempt_limit: u8,
     pub tid0_amsdu: bool,
     pub rx_block_ack_maximum_window: u16,
@@ -467,7 +467,7 @@ impl ConnectedStaPort {
         }
         if let Err(error) = StaTxBlockAckSessions::new(
             config.block_ack.tx_block_ack_window,
-            config.block_ack.tx_block_ack_negotiation_timeout_us,
+            config.block_ack.tx_block_ack_negotiation_timeout,
             config.block_ack.tid0_amsdu,
         ) {
             return Err(ConnectedStaPrepareFailure {

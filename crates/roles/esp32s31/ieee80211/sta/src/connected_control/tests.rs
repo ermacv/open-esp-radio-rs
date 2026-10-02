@@ -4,7 +4,7 @@ fn core() -> ConnectedControlCore {
     ConnectedControlCore::new(
         [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
         true,
-        StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
+        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
     )
 }
 
@@ -25,7 +25,11 @@ fn deadline_is_computed_without_an_executor_timer() {
     assert_eq!(core.next_alarm_deadline(), None);
 
     core.tx_block_ack
-        .begin(7, SequenceNumber::new(23).unwrap(), 50)
+        .begin(
+            7,
+            SequenceNumber::new(23).unwrap(),
+            oer_time::Instant::from_micros(50),
+        )
         .unwrap();
     assert_eq!(core.next_alarm_deadline(), Some(100_050));
 }

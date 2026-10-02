@@ -312,7 +312,10 @@ impl<'beacon> ApMacParked<'beacon> {
             .next_peer_deadline()
             .into_iter()
             .chain(self.engine.next_wpa2_retry_deadline())
-            .chain(self.block_ack_alarm.map(|(_, alarm)| alarm.deadline_us))
+            .chain(
+                self.block_ack_alarm
+                    .map(|(_, alarm)| alarm.deadline.as_micros()),
+            )
             .min()
     }
 
@@ -633,14 +636,15 @@ where
     }
 
     pub fn next_tx_block_ack_deadline(&self) -> Option<u64> {
-        self.block_ack_alarm.map(|(_, alarm)| alarm.deadline_us)
+        self.block_ack_alarm
+            .map(|(_, alarm)| alarm.deadline.as_micros())
     }
 
     pub fn expire_tx_block_ack(&mut self, now_micros: u64) -> Result<bool, ApMacError> {
         let Some((peer, alarm)) = self.block_ack_alarm else {
             return Ok(false);
         };
-        if now_micros < alarm.deadline_us {
+        if now_micros < alarm.deadline.as_micros() {
             return Ok(false);
         }
         self.block_ack_alarm = None;

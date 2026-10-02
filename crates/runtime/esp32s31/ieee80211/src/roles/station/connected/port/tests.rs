@@ -112,7 +112,7 @@ fn config() -> ConnectedStaConfig {
         },
         block_ack: ConnectedStaBlockAckPolicy {
             tx_block_ack_window: 32,
-            tx_block_ack_negotiation_timeout_us: 500_000,
+            tx_block_ack_negotiation_timeout: oer_time::Duration::from_micros(500_000),
             tx_block_ack_negotiation_attempt_limit: 3,
             tid0_amsdu: false,
             rx_block_ack_maximum_window: 32,

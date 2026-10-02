@@ -1356,15 +1356,28 @@ fn basic_ht_assembly_rejects_he_bar_ampdu_and_bad_lengths_before_mutation() {
 
 #[test]
 fn station_sessions_own_vendor_tid_order_response_routing_and_alarms() {
-    let mut sessions = StaTxBlockAckSessions::new(32, 100_000, true).unwrap();
+    let mut sessions =
+        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap();
     let tid0 = sessions
-        .begin(0, SequenceNumber::new(0x100).unwrap(), 0)
+        .begin(
+            0,
+            SequenceNumber::new(0x100).unwrap(),
+            oer_time::Instant::from_micros(0),
+        )
         .unwrap();
     let tid7 = sessions
-        .begin(7, SequenceNumber::new(0x200).unwrap(), 0)
+        .begin(
+            7,
+            SequenceNumber::new(0x200).unwrap(),
+            oer_time::Instant::from_micros(0),
+        )
         .unwrap();
     let tid5 = sessions
-        .begin(5, SequenceNumber::new(0x300).unwrap(), 0)
+        .begin(
+            5,
+            SequenceNumber::new(0x300).unwrap(),
+            oer_time::Instant::from_micros(0),
+        )
         .unwrap();
     assert_eq!(
         [tid0.dialog_token, tid7.dialog_token, tid5.dialog_token],
@@ -1402,17 +1415,31 @@ fn station_sessions_own_vendor_tid_order_response_routing_and_alarms() {
         ))
     );
     assert_eq!(sessions.alarm(7), None);
-    assert_eq!(sessions.expire_next(100_000), Some(0));
-    assert_eq!(sessions.expire_next(100_000), Some(5));
-    assert_eq!(sessions.expire_next(100_000), None);
+    assert_eq!(
+        sessions.expire_next(oer_time::Instant::from_micros(100_000)),
+        Some(0)
+    );
+    assert_eq!(
+        sessions.expire_next(oer_time::Instant::from_micros(100_000)),
+        Some(5)
+    );
+    assert_eq!(
+        sessions.expire_next(oer_time::Instant::from_micros(100_000)),
+        None
+    );
     assert!(sessions.operational(7).is_some());
 }
 
 #[test]
 fn parsed_response_can_cross_the_staged_rx_ownership_boundary() {
-    let mut sessions = StaTxBlockAckSessions::new(32, 100_000, true).unwrap();
+    let mut sessions =
+        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap();
     let request = sessions
-        .begin(0, SequenceNumber::new(0x123).unwrap(), 0)
+        .begin(
+            0,
+            SequenceNumber::new(0x123).unwrap(),
+            oer_time::Instant::from_micros(0),
+        )
         .unwrap();
 
     assert_eq!(
@@ -1443,9 +1470,14 @@ fn parsed_response_can_cross_the_staged_rx_ownership_boundary() {
 
 #[test]
 fn station_sessions_reject_unowned_tid_and_classify_stale_dialog_token() {
-    let mut sessions = StaTxBlockAckSessions::new(32, 100_000, false).unwrap();
+    let mut sessions =
+        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), false).unwrap();
     assert_eq!(
-        sessions.begin(3, SequenceNumber::new(0).unwrap(), 0),
+        sessions.begin(
+            3,
+            SequenceNumber::new(0).unwrap(),
+            oer_time::Instant::from_micros(0)
+        ),
         Err(StaTxBlockAckSessionsError::UnsupportedTid(3))
     );
     assert_eq!(

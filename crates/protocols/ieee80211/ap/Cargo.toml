@@ -10,6 +10,7 @@ description = "Executor- and chip-independent single-peer Wi-Fi access-point MLM
 [dependencies]
 oer-ieee80211-mac = { path = "../mac" }
 oer-ieee80211-rsn = { path = "../security/rsn" }
+oer-time = { path = "../../../time" }
 
 [lints]
 workspace = true

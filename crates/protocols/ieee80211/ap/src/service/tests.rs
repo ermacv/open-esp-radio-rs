@@ -1063,7 +1063,10 @@ fn tx_block_ack_is_owned_by_the_exact_authorized_ht_peer() {
         .unwrap();
     service.checked_peer_mut(OTHER).unwrap().phase = ApPeerPhase::Authorized;
 
-    let request = service.begin_tx_block_ack(PEER, 100).unwrap().unwrap();
+    let request = service
+        .begin_tx_block_ack(PEER, oer_time::Instant::from_micros(100))
+        .unwrap()
+        .unwrap();
     assert_eq!(
         u16::from_le_bytes([request.body[3], request.body[4]]) & 1,
         1,
@@ -1071,8 +1074,18 @@ fn tx_block_ack_is_owned_by_the_exact_authorized_ht_peer() {
     );
     assert_eq!(service.operational_tx_block_ack_window(PEER), None);
     assert!(!service.has_operational_tx_block_ack());
-    assert!(service.begin_tx_block_ack(PEER, 101).unwrap().is_none());
-    assert!(service.begin_tx_block_ack(OTHER, 101).unwrap().is_none());
+    assert!(
+        service
+            .begin_tx_block_ack(PEER, oer_time::Instant::from_micros(101))
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        service
+            .begin_tx_block_ack(OTHER, oer_time::Instant::from_micros(101))
+            .unwrap()
+            .is_none()
+    );
     let response = BlockAckAction::AddbaResponse {
         dialog_token: request.dialog_token,
         status: 0,
@@ -1150,7 +1163,10 @@ fn tx_block_ack_is_owned_by_the_exact_authorized_ht_peer() {
     assert_eq!(service.operational_tx_block_ack_window(PEER), None);
     assert!(!service.has_operational_tx_block_ack());
 
-    let request = service.begin_tx_block_ack(PEER, 200).unwrap().unwrap();
+    let request = service
+        .begin_tx_block_ack(PEER, oer_time::Instant::from_micros(200))
+        .unwrap()
+        .unwrap();
     let response = BlockAckAction::AddbaResponse {
         dialog_token: request.dialog_token,
         status: 0,
@@ -1188,7 +1204,10 @@ fn addba_response_after_the_negotiation_timeout_is_dropped_as_stale() {
         .unwrap();
     service.checked_peer_mut(PEER).unwrap().phase = ApPeerPhase::Authorized;
 
-    let request = service.begin_tx_block_ack(PEER, 100).unwrap().unwrap();
+    let request = service
+        .begin_tx_block_ack(PEER, oer_time::Instant::from_micros(100))
+        .unwrap()
+        .unwrap();
     assert_eq!(service.on_tx_block_ack_alarm(PEER, request.alarm), Ok(true));
     let late = BlockAckAction::AddbaResponse {
         dialog_token: request.dialog_token,
@@ -1203,7 +1222,10 @@ fn addba_response_after_the_negotiation_timeout_is_dropped_as_stale() {
     assert_eq!(service.operational_tx_block_ack_window(PEER), None);
 
     // The late response must not complete a newer negotiation either.
-    let retry = service.begin_tx_block_ack(PEER, 200).unwrap().unwrap();
+    let retry = service
+        .begin_tx_block_ack(PEER, oer_time::Instant::from_micros(200))
+        .unwrap()
+        .unwrap();
     assert_ne!(retry.dialog_token, request.dialog_token);
     assert_eq!(service.on_tx_block_ack_action(PEER, late), Ok(None));
     assert_eq!(service.operational_tx_block_ack_window(PEER), None);

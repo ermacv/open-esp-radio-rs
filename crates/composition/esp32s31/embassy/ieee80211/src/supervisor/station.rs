@@ -1285,7 +1285,7 @@ pub(super) const fn connected_config(power: StationPowerMode) -> ConnectedStaCon
             // publish. The peer may negotiate this downward; the aggregate
             // owner then enforces that returned window for every publication.
             tx_block_ack_window: TX_AMPDU_FRAME_COUNT as u16,
-            tx_block_ack_negotiation_timeout_us: 500_000,
+            tx_block_ack_negotiation_timeout: oer_time::Duration::from_micros(500_000),
             tx_block_ack_negotiation_attempt_limit: 3,
             // Each pinned network lease is one MPDU. A-MSDU requires a jumbo
             // backing allocation and is not advertised by this 1,648-byte

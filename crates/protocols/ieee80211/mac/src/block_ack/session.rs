@@ -5,6 +5,7 @@ use super::frame::{
     parse_block_ack_action,
 };
 use crate::sequence::SequenceNumber;
+use oer_time::{Duration, Instant};
 
 const BLOCK_ACK_WINDOW_FIELD_MAX: u16 = 0x03ff;
 
@@ -30,7 +31,8 @@ pub struct TxBlockAckConfig {
     pub tid: u8,
     pub window: u16,
     pub timeout_tu: u16,
-    pub negotiation_timeout_us: u32,
+    /// How long a negotiation waits for the peer's ADDBA response.
+    pub negotiation_timeout: Duration,
     pub amsdu: bool,
 }
 
@@ -42,7 +44,7 @@ impl TxBlockAckConfig {
         if self.window == 0 || self.window > BLOCK_ACK_WINDOW_FIELD_MAX {
             return Err(TxBlockAckError::InvalidWindow(self.window));
         }
-        if self.negotiation_timeout_us == 0 {
+        if self.negotiation_timeout.as_micros() == 0 {
             return Err(TxBlockAckError::ZeroTimeout);
         }
         Ok(self)
@@ -52,7 +54,8 @@ impl TxBlockAckConfig {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TxBlockAckAlarm {
     pub generation: u32,
-    pub deadline_us: u64,
+    /// When the outstanding negotiation times out.
+    pub deadline: Instant,
 }
 
 /// One BlockAck action Dialog Token supplied by a protocol owner.
@@ -138,11 +141,11 @@ impl TxBlockAckSession {
     pub fn begin(
         &mut self,
         starting_sequence: SequenceNumber,
-        now_us: u64,
+        now: Instant,
     ) -> Result<AddbaRequest, TxBlockAckError> {
         let dialog_token = TxBlockAckDialogToken(self.next_dialog_token);
         self.next_dialog_token = next_dialog_token(dialog_token.value());
-        self.begin_with_dialog_token(starting_sequence, now_us, dialog_token)
+        self.begin_with_dialog_token(starting_sequence, now, dialog_token)
     }
 
     /// Start negotiation with a token supplied by a shared multi-TID owner.
@@ -153,11 +156,11 @@ impl TxBlockAckSession {
     pub fn begin_with_dialog_token(
         &mut self,
         starting_sequence: SequenceNumber,
-        now_us: u64,
+        now: Instant,
         dialog_token: TxBlockAckDialogToken,
     ) -> Result<AddbaRequest, TxBlockAckError> {
-        let deadline_us = now_us
-            .checked_add(u64::from(self.config.negotiation_timeout_us))
+        let deadline = now
+            .checked_add(self.config.negotiation_timeout)
             .ok_or(TxBlockAckError::DeadlineOverflow)?;
         self.generation = next_generation(self.generation);
         let dialog_token = dialog_token.value();
@@ -179,7 +182,7 @@ impl TxBlockAckSession {
 
         let alarm = TxBlockAckAlarm {
             generation: self.generation,
-            deadline_us,
+            deadline,
         };
         Ok(AddbaRequest {
             generation: self.generation,

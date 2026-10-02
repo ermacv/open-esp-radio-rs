@@ -1690,7 +1690,6 @@ name = "oer-esp32s31-example-monitor"
 version = "0.1.0"
 dependencies = [
  "embassy-executor",
- "embassy-futures",
  "esp-backtrace",
  "esp-hal",
  "esp-println",
@@ -1723,12 +1722,9 @@ name = "oer-esp32s31-example-thread"
 version = "0.1.0"
 dependencies = [
  "embassy-executor",
- "embassy-futures",
- "embassy-sync 0.8.0",
  "esp-backtrace",
  "esp-hal",
  "esp-println",
- "heapless 0.9.3",
  "log",
  "oer-esp32s31-executor-embassy",
  "oer-esp32s31-platform-layout",

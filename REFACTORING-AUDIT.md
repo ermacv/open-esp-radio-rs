@@ -156,3 +156,25 @@ Confirmed correct:
    name/classification agreement, chip facts in family code.
 10. Simulation platform: a medium model implementing the three ports and the
     arbiter, with a facade `sim` feature.
+11. Evidence and check integrity. Evidence bound to raw file walks let an
+    uncompiled file become a reviewed input and kept 46 HIL shards whose
+    sources were deleted; a missing referent read as "not current" instead of
+    failing, and `check docs` built the whole HIL runner to list flag names.
+    - Phase 0 (done): stale reviews and evidence shards removed.
+    - Phase 1 (done): `oer-tidy` fail-closed tier — reachable sources,
+      existing record paths, anchors and citations only in reachable code,
+      derived workspace list, unused dependencies — run first by
+      `check changed` and in CI.
+    - Phase 2: HIL evidence binds to the firmware image digest, observer
+      digest and commit in the in-toto test-result shape, with its source set
+      taken from the build's dep-info; reviews store fingerprints at review
+      time and fail as suspect on any change or loss; one evidence schema
+      crate; content-addressed observer receipts; program evaluation and
+      `evidence --check` run in CI and `check changed`.
+    - Phase 3: a static command tree so `check docs` builds no HIL runner;
+      xtask split into a thin dispatcher and separately built tools so HIL
+      edits do not rebuild it; `cargo-hakari` feature unification in every
+      workspace; fewer target directories and profiles; shared CI caches,
+      nextest and sccache for the dependency layer. Targets: tidy under 10 s,
+      warm `check docs` under 15 s. The Markdown checker stays in-house and
+      lightweight.

@@ -15,6 +15,9 @@
 //! `components/wpa_supplicant/esp_supplicant/src/esp_wpa3.c`.
 
 use oer_ieee80211_mac::security::SaePwe;
+use oer_time::{Duration, Instant};
+
+use crate::time::deadline_after;
 use oer_ieee80211_mac::station::{
     SAE_COMMIT_TRANSACTION, SAE_CONFIRM_TRANSACTION, StaDisconnect, parse_sae_authentication,
     parse_sta_disconnect,
@@ -25,9 +28,9 @@ use oer_ieee80211_rsn::sae::{
 };
 
 /// Authentication timer of the commit exchange.
-pub const STA_SAE_COMMIT_TIMEOUT_MS: u32 = 4_000;
+pub const STA_SAE_COMMIT_TIMEOUT: Duration = Duration::from_secs(4);
 /// Authentication timer rearmed after the station sent its Confirm.
-pub const STA_SAE_CONFIRM_TIMEOUT_MS: u32 = 2_000;
+pub const STA_SAE_CONFIRM_TIMEOUT: Duration = Duration::from_secs(2);
 /// The longest anti-clogging token the station repeats.
 pub const STA_SAE_TOKEN_CAPACITY: usize = 64;
 /// The longest SAE body the station sends: a commit with a token container.
@@ -107,7 +110,9 @@ pub struct StaSaeAuthentication {
     token: [u8; STA_SAE_TOKEN_CAPACITY],
     token_length: usize,
     phase: StaSaePhase,
-    elapsed_ms: u32,
+    /// When the authentication timer of the current phase expires; `None`
+    /// until [`Self::start`] after the commit left.
+    deadline: Option<Instant>,
 }
 
 impl StaSaeAuthentication {
@@ -122,7 +127,20 @@ impl StaSaeAuthentication {
             token: [0; STA_SAE_TOKEN_CAPACITY],
             token_length: 0,
             phase: StaSaePhase::Committed,
-            elapsed_ms: 0,
+            deadline: None,
+        }
+    }
+
+    /// Arm the commit timer once the station's commit left at `now`.
+    pub fn start(&mut self, now: Instant) {
+        self.deadline = Some(deadline_after(now, STA_SAE_COMMIT_TIMEOUT));
+    }
+
+    /// When the authentication timer expires, while the exchange runs.
+    pub fn next_deadline(&self) -> Option<Instant> {
+        match self.phase {
+            StaSaePhase::Terminal => None,
+            _ => self.deadline,
         }
     }
 
@@ -156,8 +174,9 @@ impl StaSaeAuthentication {
         }
     }
 
-    /// Classify one management frame from the access point.
-    pub fn observe_management_frame(&mut self, frame: &[u8]) -> StaSaeEvent {
+    /// Classify one management frame from the access point, received at
+    /// `now`.
+    pub fn observe_management_frame(&mut self, frame: &[u8], now: Instant) -> StaSaeEvent {
         if matches!(self.phase, StaSaePhase::Terminal) {
             return StaSaeEvent::Irrelevant;
         }
@@ -169,7 +188,7 @@ impl StaSaeAuthentication {
         };
         match (frame.transaction, &self.phase) {
             (SAE_COMMIT_TRANSACTION, StaSaePhase::Committed) => {
-                self.receive_commit(frame.status_code, frame.body)
+                self.receive_commit(frame.status_code, frame.body, now)
             }
             (SAE_CONFIRM_TRANSACTION, StaSaePhase::Confirmed(_)) => {
                 self.receive_confirm(frame.status_code, frame.body)
@@ -180,7 +199,7 @@ impl StaSaeAuthentication {
         }
     }
 
-    fn receive_commit(&mut self, status_code: u16, body: &[u8]) -> StaSaeEvent {
+    fn receive_commit(&mut self, status_code: u16, body: &[u8], now: Instant) -> StaSaeEvent {
         if status_code == STATUS_ANTI_CLOGGING_TOKEN_REQUIRED {
             let token = match anti_clogging_token(body, self.hash_to_element()) {
                 Ok(token) => token,
@@ -216,7 +235,7 @@ impl StaSaeAuthentication {
         let mut body = [0; STA_SAE_BODY_CAPACITY];
         body[..SAE_CONFIRM_LEN].copy_from_slice(&confirm);
         self.phase = StaSaePhase::Confirmed(keys);
-        self.elapsed_ms = 0;
+        self.deadline = Some(deadline_after(now, STA_SAE_CONFIRM_TIMEOUT));
         StaSaeEvent::Transmit(StaSaeTransmission {
             transaction: SAE_CONFIRM_TRANSACTION,
             status_code: STATUS_SUCCESS,
@@ -245,18 +264,11 @@ impl StaSaeAuthentication {
         }
     }
 
-    /// Complete one millisecond of the authentication timer.
-    pub fn finish_millisecond(&mut self) -> StaSaeEvent {
-        let timeout = match self.phase {
-            StaSaePhase::Committed => STA_SAE_COMMIT_TIMEOUT_MS,
-            StaSaePhase::Confirmed(_) => STA_SAE_CONFIRM_TIMEOUT_MS,
-            StaSaePhase::Terminal => return StaSaeEvent::Irrelevant,
-        };
-        self.elapsed_ms += 1;
-        if self.elapsed_ms >= timeout {
-            self.fail(StaSaeFailure::Timeout)
-        } else {
-            StaSaeEvent::Irrelevant
+    /// Expire the authentication timer when `now` reached its deadline.
+    pub fn on_deadline(&mut self, now: Instant) -> StaSaeEvent {
+        match self.next_deadline() {
+            Some(deadline) if now >= deadline => self.fail(StaSaeFailure::Timeout),
+            _ => StaSaeEvent::Irrelevant,
         }
     }
 

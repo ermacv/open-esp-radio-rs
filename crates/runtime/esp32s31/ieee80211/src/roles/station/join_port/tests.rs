@@ -240,14 +240,14 @@ fn port_orders_driver_edges_and_keeps_diagnostics_external() {
         port.transmit_open_authentication(StaAuthenticationAttempt {
             ordinal: 1,
             sequence_number: SequenceNumber::new(7).unwrap(),
-            response_timeout_ms: 1_000,
+            response_timeout: oer_time::Duration::from_secs(1),
         })
         .await
         .unwrap();
         port.transmit_association(StaAssociationAttempt {
             ordinal: 1,
             sequence_number: SequenceNumber::new(8).unwrap(),
-            elapsed_ms: 0,
+            offset: oer_time::Duration::ZERO,
         })
         .await
         .unwrap();

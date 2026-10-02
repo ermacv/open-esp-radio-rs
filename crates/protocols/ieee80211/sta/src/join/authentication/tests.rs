@@ -14,7 +14,7 @@ fn authentication_runtime_owns_attempt_sequence_deadline_and_timeout_limit() {
             attempt.sequence_number,
             SequenceNumber::new(0x0ffd).unwrap().wrapping_add(ordinal)
         );
-        assert_eq!(attempt.response_timeout_ms, STA_RESPONSE_TIMEOUT_MS);
+        assert_eq!(attempt.response_timeout, STA_RESPONSE_TIMEOUT);
         runtime.observe_received_frame().unwrap();
         let event = runtime.response_timed_out().unwrap();
         if ordinal < STA_AUTHENTICATION_ATTEMPT_LIMIT {

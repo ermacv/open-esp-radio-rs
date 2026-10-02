@@ -13,6 +13,7 @@ pub use oer_ieee80211_mac::block_ack::{
     TxBlockAckSession, parse_block_ack_action,
 };
 use oer_ieee80211_mac::sequence::SequenceNumber;
+use oer_time::{Duration, Instant};
 
 /// Strict S31 TX window recovered from the fixed vendor queue geometry.
 pub const TX_BLOCK_ACK_MAX_WINDOW: u16 = 32;
@@ -95,7 +96,7 @@ pub struct StaTxBlockAckSessions {
 impl StaTxBlockAckSessions {
     pub const fn new(
         window: u16,
-        negotiation_timeout_us: u32,
+        negotiation_timeout: Duration,
         tid0_amsdu: bool,
     ) -> Result<Self, TxBlockAckError> {
         if window == 0 || window > TX_BLOCK_ACK_MAX_WINDOW {
@@ -105,7 +106,7 @@ impl StaTxBlockAckSessions {
             tid: 0,
             window,
             timeout_tu: 0,
-            negotiation_timeout_us,
+            negotiation_timeout,
             amsdu: tid0_amsdu,
         }) {
             Ok(session) => session,
@@ -115,7 +116,7 @@ impl StaTxBlockAckSessions {
             tid: 7,
             window,
             timeout_tu: 0,
-            negotiation_timeout_us,
+            negotiation_timeout,
             amsdu: false,
         }) {
             Ok(session) => session,
@@ -125,7 +126,7 @@ impl StaTxBlockAckSessions {
             tid: 5,
             window,
             timeout_tu: 0,
-            negotiation_timeout_us,
+            negotiation_timeout,
             amsdu: false,
         }) {
             Ok(session) => session,
@@ -146,13 +147,13 @@ impl StaTxBlockAckSessions {
         &mut self,
         tid: u8,
         starting_sequence: SequenceNumber,
-        now_us: u64,
+        now: Instant,
     ) -> Result<AddbaRequest, StaTxBlockAckSessionsError> {
         let index =
             sta_tx_block_ack_index(tid).ok_or(StaTxBlockAckSessionsError::UnsupportedTid(tid))?;
         let dialog_token = self.dialog_tokens.take();
         let request = self.sessions[index]
-            .begin_with_dialog_token(starting_sequence, now_us, dialog_token)
+            .begin_with_dialog_token(starting_sequence, now, dialog_token)
             .map_err(|error| StaTxBlockAckSessionsError::Session { tid, error })?;
         self.alarms[index] = Some(request.alarm);
         Ok(request)
@@ -212,12 +213,12 @@ impl StaTxBlockAckSessions {
 
     /// Consume at most one due alarm. Repeated calls drain simultaneous
     /// expirations without placing an unbounded loop inside the state owner.
-    pub fn expire_next(&mut self, now_us: u64) -> Option<u8> {
+    pub fn expire_next(&mut self, now: Instant) -> Option<u8> {
         for (index, tid) in STA_TX_BLOCK_ACK_TIDS.into_iter().enumerate() {
             let Some(alarm) = self.alarms[index] else {
                 continue;
             };
-            if now_us < alarm.deadline_us {
+            if now < alarm.deadline {
                 continue;
             }
             self.alarms[index] = None;
@@ -258,14 +259,16 @@ impl StaTxBlockAckSessions {
     /// the three physical alarm slots directly instead of rebuilding the
     /// public TID-to-slot mapping on each query.
     #[inline(always)]
-    pub const fn earliest_alarm_deadline(&self) -> Option<u64> {
-        let mut earliest = None;
+    pub const fn earliest_alarm_deadline(&self) -> Option<Instant> {
+        let mut earliest: Option<Instant> = None;
         let mut index = 0;
         while index < self.alarms.len() {
             if let Some(alarm) = self.alarms[index] {
                 earliest = match earliest {
-                    Some(deadline) if deadline <= alarm.deadline_us => Some(deadline),
-                    _ => Some(alarm.deadline_us),
+                    Some(deadline) if deadline.as_micros() <= alarm.deadline.as_micros() => {
+                        Some(deadline)
+                    }
+                    _ => Some(alarm.deadline),
                 };
             }
             index += 1;

@@ -18,6 +18,7 @@ validation-probes = ["oer-esp32s31-hal/validation-probes"]
 trace = ["oer-trace/record"]
 
 [dependencies]
+oer-time = { path = "../../../../../time" }
 oer-memory = { path = "../../../../../memory" }
 oer-esp32s31-hal = { path = "../../../hal" }
 oer-esp32s31-ieee80211-dma = { path = "../dma" }

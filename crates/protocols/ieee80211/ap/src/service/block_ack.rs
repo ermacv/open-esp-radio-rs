@@ -9,7 +9,7 @@ impl<'peers> AccessPointService<'peers> {
     pub fn begin_tx_block_ack(
         &mut self,
         peer: [u8; 6],
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<Option<AddbaRequest>, ApServiceError> {
         if self.link_protection() == LinkProtection::Open {
             return Ok(None);
@@ -24,9 +24,7 @@ impl<'peers> AccessPointService<'peers> {
         if peer.tx_block_ack.operational().is_some() || peer.tx_block_ack.is_awaiting() {
             return Ok(None);
         }
-        Ok(Some(
-            peer.tx_block_ack.begin(starting_sequence, now_micros)?,
-        ))
+        Ok(Some(peer.tx_block_ack.begin(starting_sequence, now)?))
     }
 
     pub fn on_tx_block_ack_action(

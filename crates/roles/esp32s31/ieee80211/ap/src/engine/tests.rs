@@ -496,7 +496,7 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
 
     let request = engine
         .service
-        .begin_tx_block_ack(peer, 100)
+        .begin_tx_block_ack(peer, oer_time::Instant::from_micros(100))
         .unwrap()
         .unwrap();
     engine
@@ -595,7 +595,7 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
     assert!(!engine.tx_block_ack_holds(first_agreement));
     let request = engine
         .service
-        .begin_tx_block_ack(peer, 200)
+        .begin_tx_block_ack(peer, oer_time::Instant::from_micros(200))
         .unwrap()
         .unwrap();
     engine

@@ -69,7 +69,8 @@ pub const AP_TX_BLOCK_ACK_TID: u8 = 0;
 /// duplex fairness must be provided by the common MAC transaction scheduler,
 /// not by weakening the AP's negotiated BlockAck capability.
 pub const AP_TX_BLOCK_ACK_WINDOW: u16 = 32;
-pub const AP_TX_BLOCK_ACK_NEGOTIATION_TIMEOUT_MICROS: u32 = 100_000;
+pub const AP_TX_BLOCK_ACK_NEGOTIATION_TIMEOUT: oer_time::Duration =
+    oer_time::Duration::from_millis(100);
 
 /// Validated inactivity policy for an associated SoftAP peer.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -555,7 +556,7 @@ const fn new_ap_tx_block_ack() -> TxBlockAckSession {
         tid: AP_TX_BLOCK_ACK_TID,
         window: AP_TX_BLOCK_ACK_WINDOW,
         timeout_tu: 0,
-        negotiation_timeout_us: AP_TX_BLOCK_ACK_NEGOTIATION_TIMEOUT_MICROS,
+        negotiation_timeout: AP_TX_BLOCK_ACK_NEGOTIATION_TIMEOUT,
         // Baseline 3,839-byte A-MSDU construction and AP RX decapsulation are
         // both source-owned. The operational agreement still keeps this bit
         // false unless the peer echoes support in its ADDBA response.

@@ -64,9 +64,6 @@ pub enum Platform {
     Host,
     /// One chip, by id.
     Chip(String),
-    /// Built for the one chip a feature named after a chip id selects;
-    /// written once for every chip (see `oer-chip-cfg`).
-    Selected,
     /// Shared by the chips of one family (`family` in `chip.toml`).
     Family(String),
 }
@@ -139,7 +136,6 @@ pub fn classify(
     ) {
         ("portable", None, None) => Platform::Portable,
         ("host", None, None) => Platform::Host,
-        ("selected", None, None) => Platform::Selected,
         ("chip", Some(chip), None) => Platform::Chip(chip),
         ("family", None, Some(family)) => Platform::Family(family),
         _ => {
@@ -435,6 +431,9 @@ mod tests {
                 ("platform", "family"),
                 ("chip", "esp32s31"),
             ],
+            // Code shared by chips is a family package or a register
+            // library, never one selected per chip by a feature.
+            &[("layer", "hardware"), ("platform", "selected")],
         ] {
             assert!(classified(invalid).is_err(), "{invalid:?}");
         }

@@ -182,9 +182,6 @@ pub use oer_tidy::classification::{Classification, Evidence, Platform, Scope};
 /// The family of every chip, keyed by chip id (`chip.toml`).
 pub type Families = BTreeMap<String, String>;
 
-/// The one package through which selected packages reach a chip's PAC.
-const SELECTED_PAC: &str = "oer-pac";
-
 /// The classification `oer-tidy` reads from the package's
 /// `[package.metadata.open-radio]` table.
 pub fn classification(package: &Package) -> Result<Classification> {
@@ -281,15 +278,6 @@ pub fn validate_production_edges(
                     (_, Platform::Portable) => true,
                     (Platform::Chip(source), Platform::Chip(target)) => source == target,
                     (Platform::Host, Platform::Host) => true,
-                    // Code written once for every chip reaches a chip's
-                    // PAC only through `oer-pac`.
-                    (Platform::Selected, Platform::Selected) => true,
-                    (Platform::Selected, Platform::Chip(_)) => {
-                        source.package.name.as_str() == SELECTED_PAC
-                    }
-                    // A chip package may use shared code, selecting its own
-                    // chip.
-                    (Platform::Chip(_), Platform::Selected) => true,
                     // Family code is shared within its family only.
                     (Platform::Family(source), Platform::Family(target)) => source == target,
                     (Platform::Chip(chip), Platform::Family(family)) => {
@@ -454,23 +442,6 @@ pub fn architecture_configurations(
             // Host packages run on the build machine: the workspace's own
             // host build covers them.
             Platform::Host => continue,
-            // Written once for every chip: built once for each, with that
-            // chip's feature and target.
-            Platform::Selected => {
-                for chip in oer_chip_profile::Profile::all(root)? {
-                    configurations.push(CargoConfiguration {
-                        manifest: item.manifest.clone(),
-                        package: item.package.name.to_string(),
-                        target: chip.rust_target,
-                        features: vec![
-                            String::from("--no-default-features"),
-                            String::from("--features"),
-                            chip.id,
-                        ],
-                    });
-                }
-                continue;
-            }
         };
         for features in compilation_profiles(&item.package)? {
             configurations.push(CargoConfiguration {

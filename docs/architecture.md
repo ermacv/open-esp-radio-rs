@@ -35,7 +35,7 @@ Every Cargo package declares `package.metadata.open-radio.layer` and
 `composition` and `facade` layers are production, `experiment` is
 experimental, and every other layer is development. `oer-tidy` reads the
 table, rejects unknown keys and checks every package in seconds; platform is `portable`, `host`,
-`chip`, `family` or `selected`. Chip applicability requires a separate `chip` identifier, such as
+`chip` or `family`. Chip applicability requires a separate `chip` identifier, such as
 `esp32s31`, and family applicability a separate `family` identifier, such as
 `espressif`; no other classification carries either.
 A `family` package holds code that is vendor-specific but not chip-specific:
@@ -44,19 +44,12 @@ every chip of the vendor shares. `platform/<chip>/chip.toml` names each
 chip's `family`. The architecture check builds a family package for the Rust
 target of every chip of its family; the chips of that family may depend on
 it, and it may depend only on portable packages and packages of its own
-family. Portable, host and selected packages never depend on a family
+family. Portable and host packages never depend on a family
 package, and a family package never depends on a chip package, so code shared
 by a family cannot select one of its chips.
-A `selected` package is written once for every chip and built for the one
-chip its feature named after a chip id selects: the architecture check
-builds it once per chip, with that chip's target. It reaches a chip's PAC
-only through `oer-pac`, which re-exports the selected chip's PAC; a chip
-package may use it, a portable one may not. What chips have — Wi-Fi bands,
-Bluetooth modes, IEEE 802.15.4, core count — is the `[properties]` table of
-`platform/<chip>/chip.toml`; a selected package's build script calls
-`oer_chip_cfg::emit()` and sees them as `cfg`s (`oer_wifi_band_5g`,
-`oer_bluetooth_br_edr`, …, all declared to `rustc-check-cfg`) and constants.
-Differences of address or register layout belong in the register model,
+What chips have — Wi-Fi bands, Bluetooth modes, IEEE 802.15.4, core count —
+is the `[properties]` table of `platform/<chip>/chip.toml`, read by host
+tools through `oer-chip-profile`. Differences of address or register layout belong in the register model,
 not in properties. A build dependency, which runs on the build machine,
 must be a host or portable package. The identifier
 starts with a lowercase ASCII letter and contains lowercase letters, digits or

@@ -294,38 +294,6 @@ fn portable_to_chip_rejection_does_not_depend_on_the_chip_name() {
 }
 
 #[test]
-fn shared_code_reaches_a_chip_only_through_the_selected_pac() {
-    let repository = architecture_repository("dependencies", "hardware");
-    let edge = |source: (&str, Option<&str>), target: (&str, Option<&str>)| {
-        set_classification(
-            repository.path(),
-            "libraries/policy",
-            "hardware",
-            source.0,
-            source.1,
-        );
-        set_classification(
-            repository.path(),
-            "crates/target",
-            "hardware",
-            target.0,
-            target.1,
-        );
-        edge_result(repository.path())
-    };
-    // Only `oer-pac` may reach a chip package from shared code.
-    assert!(
-        edge(("selected", None), ("chip", Some("esp32c5")))
-            .unwrap_err()
-            .to_string()
-            .contains("incompatible platform edge")
-    );
-    edge(("selected", None), ("selected", None)).unwrap();
-    edge(("chip", Some("esp32s31")), ("selected", None)).unwrap();
-    assert!(edge(("portable", None), ("selected", None)).is_err());
-}
-
-#[test]
 fn family_code_is_shared_only_within_its_family() {
     let repository = architecture_repository("dependencies", "hardware");
     let edge = |source: (&str, Option<&str>), target: (&str, Option<&str>)| {
@@ -358,7 +326,6 @@ fn family_code_is_shared_only_within_its_family() {
         ("family", Some("other")),
         ("portable", None),
         ("host", None),
-        ("selected", None),
     ] {
         let error = edge(source, espressif).unwrap_err().to_string();
         assert!(
@@ -366,7 +333,6 @@ fn family_code_is_shared_only_within_its_family() {
             "{source:?}: {error}"
         );
     }
-    assert!(edge(espressif, ("selected", None)).is_err());
 }
 
 #[test]

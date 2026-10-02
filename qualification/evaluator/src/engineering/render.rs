@@ -251,12 +251,20 @@ pub(super) fn markdown(map: &ProjectMap, output: &Path, root: &Path) -> Result<S
         }
     }
     text.push_str("\n## Vendor evidence indexes\n\nThe typed vendor scenarios regenerate these indexes with `vendor-scenario all --index`; a production or scenario change makes them stale.\n\n");
+    // An index no scenario has written yet is a destination, not a link.
+    let mut written = 0;
     for index in &map.evidence_indexes {
-        text.push_str(&format!(
-            "- [{}]({})\n",
-            index.display(),
-            crate::inventory::link_to(index, output, root)?
-        ));
+        if root.join(index).exists() {
+            written += 1;
+            text.push_str(&format!(
+                "- [{}]({})\n",
+                index.display(),
+                crate::inventory::link_to(index, output, root)?
+            ));
+        }
+    }
+    if written == 0 {
+        text.push_str("No scenario has written an evidence index yet.\n");
     }
     Ok(text)
 }

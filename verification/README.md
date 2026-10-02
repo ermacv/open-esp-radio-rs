@@ -9,7 +9,7 @@ no HIL board scenarios and no private vendor artifacts.
 | --- | --- | --- |
 | L0 pins | which vendor code is the reference | [`esp32s31/artifacts.toml`](esp32s31/artifacts.toml) |
 | L1 facts | recovered constants, tables and register facts describe the pinned code | production `SOURCE:` blocks, [`registers`](../registers/README.md) evidence, [`esp32s31/facts`](esp32s31/facts) |
-| L2 behavior | compiled production code behaves as the vendor code | [`esp32s31/probes`](esp32s31/probes/README.md), [`esp32s31/scenarios`](esp32s31/scenarios), [`esp32s31/host`](esp32s31/host/ieee802154/README.md), shards in [`esp32s31/evidence/scenarios`](esp32s31/evidence/scenarios) |
+| L2 behavior | compiled production code behaves as the vendor code | [`esp32s31/probes`](esp32s31/probes/README.md), [`esp32s31/scenarios`](esp32s31/scenarios), [`esp32s31/host`](esp32s31/host/ieee802154/README.md), shards written to `esp32s31/evidence/scenarios` |
 | L3 hardware | the drivers work on the board and calibrate as the vendor firmware does | [`hil`](../hil/README.md), tracked shards in `hil/evidence/<chip>/`, [`esp32s31/hardware`](esp32s31/hardware/calibration/README.md) with [`esp32s31/hil-vendor`](esp32s31/hil-vendor/README.md) |
 | L4 readiness | a capability is qualified | [`qualification`](../qualification/README.md) |
 

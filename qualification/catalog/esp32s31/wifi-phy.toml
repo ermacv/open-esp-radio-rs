@@ -400,7 +400,6 @@ limitations = "The declared source boundary is exact; vendor and HIL readiness r
 
 [[capabilities]]
 id = "interrupt-recovery"
-hil-reviews = ["qualification/reviews/interrupt-recovery-ap-loss.toml"]
 source-fact-refs = ["wifi-interrupt-epoch-owners"]
 title = "Interrupt acknowledgement and recovery ordering"
 scope = "Finite CPU route epoch hard MAC acknowledgement priority dispatch and Embassy wake coalescing"

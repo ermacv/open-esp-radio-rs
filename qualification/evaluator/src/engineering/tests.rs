@@ -218,3 +218,30 @@ fn inventory_markdown_links_resolve_against_their_original_owner() {
     assert!(text.contains("[contract](../../docs/contract.md)"));
     assert!(!text.contains("[contract](contract.md)"));
 }
+
+#[test]
+fn only_written_evidence_indexes_are_linked() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("evidence/written")).unwrap();
+    let mut map = ProjectMap::from_catalog(&CatalogView::default(), None).unwrap();
+    map.evidence_indexes = BTreeSet::from([
+        PathBuf::from("evidence/written"),
+        PathBuf::from("evidence/unwritten"),
+    ]);
+    let text = map
+        .markdown(&root.path().join("target/map"), root.path())
+        .unwrap();
+    assert!(
+        text.contains("- [evidence/written](../../evidence/written)"),
+        "{text}"
+    );
+    assert!(!text.contains("evidence/unwritten"), "{text}");
+    map.evidence_indexes = BTreeSet::from([PathBuf::from("evidence/unwritten")]);
+    let text = map
+        .markdown(&root.path().join("target/map"), root.path())
+        .unwrap();
+    assert!(
+        text.contains("No scenario has written an evidence index yet."),
+        "{text}"
+    );
+}

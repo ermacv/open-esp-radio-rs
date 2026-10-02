@@ -37,6 +37,5 @@ workspace = true
 tempfile = "=3.27.0"
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "tool"
 platform = "host"

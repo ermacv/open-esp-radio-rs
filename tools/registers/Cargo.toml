@@ -33,6 +33,5 @@ cargo_metadata = "=0.23.1"
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "tool"
 platform = "host"

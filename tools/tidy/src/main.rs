@@ -1,6 +1,7 @@
 //! `oer-tidy [check] [--root DIR]` runs every integrity check and fails on
-//! any problem; `oer-tidy workspaces [--root DIR]` prints the manifest of
-//! every Cargo workspace, one per line.
+//! any problem; `oer-tidy workspaces [--json]` prints the manifest of every
+//! Cargo workspace and `oer-tidy chips [--json]` every chip profile, one per
+//! line or as a JSON array for CI matrices.
 
 use std::{
     path::{Path, PathBuf},
@@ -8,9 +9,9 @@ use std::{
     time::Instant,
 };
 
-use oer_tidy::{Result, manifest::Manifests, repo::Repo, workspaces};
+use oer_tidy::{Result, chips::Chips, manifest::Manifests, repo::Repo, workspaces};
 
-const USAGE: &str = "usage: oer-tidy [check | workspaces] [--root DIR]";
+const USAGE: &str = "usage: oer-tidy [check | workspaces | chips] [--json] [--root DIR]";
 
 fn main() -> ExitCode {
     match run() {
@@ -35,13 +36,15 @@ fn root(argument: Option<PathBuf>) -> PathBuf {
 fn run() -> Result<ExitCode> {
     let mut command = None;
     let mut root_argument = None;
+    let mut json = false;
     let mut arguments = std::env::args().skip(1);
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
             "--root" => {
                 root_argument = Some(PathBuf::from(arguments.next().ok_or(USAGE)?));
             }
-            "check" | "workspaces" if command.is_none() => command = Some(argument),
+            "check" | "workspaces" | "chips" if command.is_none() => command = Some(argument),
+            "--json" => json = true,
             "-h" | "--help" => {
                 println!("{USAGE}");
                 return Ok(ExitCode::SUCCESS);
@@ -51,11 +54,42 @@ fn run() -> Result<ExitCode> {
     }
     let started = Instant::now();
     let repo = Repo::from_git(&root(root_argument))?;
-    if command.as_deref() == Some("workspaces") {
-        for manifest in workspaces::discover(&Manifests::load(&repo)?) {
-            println!("{manifest}");
+    match command.as_deref() {
+        Some("workspaces") => {
+            let manifests = workspaces::discover(&Manifests::load(&repo)?);
+            if json {
+                println!("{}", serde_json::Value::from(manifests));
+            } else {
+                for manifest in manifests {
+                    println!("{manifest}");
+                }
+            }
+            return Ok(ExitCode::SUCCESS);
         }
-        return Ok(ExitCode::SUCCESS);
+        Some("chips") => {
+            let chips = Chips::load(&repo)?;
+            if json {
+                let chips: Vec<serde_json::Value> = chips
+                    .profiles()
+                    .iter()
+                    .map(|chip| {
+                        serde_json::json!({
+                            "id": chip.id,
+                            "family": chip.family,
+                            "rust-target": chip.rust_target,
+                        })
+                    })
+                    .collect();
+                println!("{}", serde_json::Value::from(chips));
+            } else {
+                for id in chips.ids() {
+                    println!("{id}");
+                }
+            }
+            return Ok(ExitCode::SUCCESS);
+        }
+        _ if json => return Err(USAGE.to_owned()),
+        _ => {}
     }
     let outcomes = oer_tidy::run(&repo)?;
     let mut failed = false;

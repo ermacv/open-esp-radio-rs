@@ -39,6 +39,8 @@ pub struct Package {
     pub dependencies: Vec<Dependency>,
     /// Dependency keys that `[features]` forward features to (`key/feature`).
     pub feature_forwarded: Vec<String>,
+    /// The `[package.metadata.open-radio]` table, when declared.
+    pub open_radio: Option<Table>,
 }
 
 /// One `[workspace]` declaration.
@@ -305,6 +307,11 @@ fn package(repo: &Repo, manifest: &str, directory: &str, table: &Table) -> Resul
         missing_roots,
         dependencies,
         feature_forwarded,
+        open_radio: section
+            .get("metadata")
+            .and_then(|metadata| metadata.get("open-radio"))
+            .and_then(Value::as_table)
+            .cloned(),
     })
 }
 

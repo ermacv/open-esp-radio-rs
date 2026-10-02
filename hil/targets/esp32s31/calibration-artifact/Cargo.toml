@@ -15,7 +15,6 @@ serde.workspace = true
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "hil"
 platform = "chip"
 chip = "esp32s31"

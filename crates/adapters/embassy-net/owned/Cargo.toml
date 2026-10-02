@@ -22,6 +22,5 @@ owned-embassy-net = { package = "embassy-net", git = "https://github.com/ermacv/
 workspace = true
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "adapter"
 platform = "portable"

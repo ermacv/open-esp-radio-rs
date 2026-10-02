@@ -24,7 +24,6 @@ tinyrlibc = { version = "0.5", default-features = false, features = ["utoa", "st
 oer-esp32s31-platform-layout = { path = "../../../platform/esp32s31/layout", features = ["build"] }
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "application"
 platform = "chip"
 chip = "esp32s31"

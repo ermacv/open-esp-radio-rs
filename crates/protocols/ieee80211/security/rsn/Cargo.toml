@@ -24,6 +24,5 @@ zeroize = { version = "1.9.0", default-features = false, features = ["derive"] }
 workspace = true
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "protocol"
 platform = "portable"

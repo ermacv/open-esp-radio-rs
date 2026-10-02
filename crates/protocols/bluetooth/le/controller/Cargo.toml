@@ -22,6 +22,5 @@ diagnostic-mic-fault = []
 workspace = true
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "protocol"
 platform = "portable"

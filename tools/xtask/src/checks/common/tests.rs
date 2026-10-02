@@ -15,7 +15,7 @@ fn ignored_production_workspace_member_remains_in_compiled_audit_inventory() {
         fs::create_dir_all(directory.join("src")).unwrap();
         fs::write(
             directory.join("Cargo.toml"),
-            format!("[package]\nname = '{name}'\nversion = '0.1.0'\nedition = '2024'\n[package.metadata.open-radio]\nscope = 'production'\nlayer = 'contract'\nplatform = 'portable'\n"),
+            format!("[package]\nname = '{name}'\nversion = '0.1.0'\nedition = '2024'\n[package.metadata.open-radio]\nlayer = 'contract'\nplatform = 'portable'\n"),
         )
         .unwrap();
         fs::write(directory.join("src/lib.rs"), "").unwrap();
@@ -47,18 +47,9 @@ fn architecture_repository(dependency_section: &str, target_layer: &str) -> temp
         "[workspace]\nresolver = '3'\nmembers = ['libraries/policy', 'crates/target']\n",
     )
     .unwrap();
-    for (path, name, scope, layer) in [
-        ("libraries/policy", "policy", "production", "service"),
-        (
-            "crates/target",
-            "target-library",
-            if target_layer == "experiment" {
-                "experimental"
-            } else {
-                "production"
-            },
-            target_layer,
-        ),
+    for (path, name, layer) in [
+        ("libraries/policy", "policy", "service"),
+        ("crates/target", "target-library", target_layer),
     ] {
         let directory = repository.path().join(path);
         fs::create_dir_all(directory.join("src")).unwrap();
@@ -72,7 +63,7 @@ fn architecture_repository(dependency_section: &str, target_layer: &str) -> temp
             String::new()
         };
         fs::write(directory.join("Cargo.toml"), format!(
-            "[package]\nname = '{name}'\nversion = '0.1.0'\nedition = '2024'\n[package.metadata.open-radio]\nscope = '{scope}'\nlayer = '{layer}'\nplatform = 'portable'\n{edge}"
+            "[package]\nname = '{name}'\nversion = '0.1.0'\nedition = '2024'\n[package.metadata.open-radio]\nlayer = '{layer}'\nplatform = 'portable'\n{edge}"
         )).unwrap();
     }
     let context = Context::new(repository.path()).unwrap();
@@ -135,7 +126,7 @@ fn unclassified_package_cannot_disappear_from_architecture_checks() {
         .err()
         .expect("missing classification must fail")
         .to_string();
-    assert!(error.contains("lacks open-radio.scope"), "{error}");
+    assert!(error.contains("lacks open-radio.layer"), "{error}");
 }
 
 fn set_classification(
@@ -598,7 +589,7 @@ fn source_package_discovery_covers_independent_and_ignored_workspace_members() {
         fs::write(
             repository.path().join(directory).join("Cargo.toml"),
             format!(
-                "[package]\nname='{name}'\nversion='0.0.0'\nedition='2024'\n[package.metadata.open-radio]\nscope='production'\nlayer='contract'\nplatform='portable'\n{}",
+                "[package]\nname='{name}'\nversion='0.0.0'\nedition='2024'\n[package.metadata.open-radio]\nlayer='contract'\nplatform='portable'\n{}",
                 if directory == "island" { "[workspace]\n" } else { "" }
             ),
         )
@@ -630,78 +621,6 @@ fn source_package_discovery_covers_independent_and_ignored_workspace_members() {
             .collect::<BTreeSet<_>>(),
         BTreeSet::from(["island-package", "new-package"])
     );
-}
-
-#[test]
-fn package_names_share_one_prefix_and_only_the_facade_is_branded() {
-    for (name, layer) in [
-        ("oer-ieee80211-sta", "protocol"),
-        ("oer-esp32s31-ieee80211-embassy-net-upstream", "adapter"),
-        ("oer-hil-runner", "hil"),
-        ("open-esp-radio", "facade"),
-    ] {
-        validate_package_name(name, layer).unwrap();
-    }
-    for (name, layer) in [
-        ("open-esp-radio-hil-runner", "hil"),
-        ("open-esp-radio-register-model", "tool"),
-        ("oer-Wifi", "protocol"),
-        ("oer--mac", "protocol"),
-        ("oer-", "protocol"),
-        ("oer-radio", "facade"),
-    ] {
-        assert!(validate_package_name(name, layer).is_err(), "{name}");
-    }
-}
-
-#[test]
-fn only_verification_packages_declare_an_evidence_role() {
-    assert_eq!(
-        evidence_role("v", "verification", Some("verdict")).unwrap(),
-        Some(Evidence::Verdict)
-    );
-    assert_eq!(
-        evidence_role("r", "verification", Some("report")).unwrap(),
-        Some(Evidence::Report)
-    );
-    assert!(evidence_role("v", "verification", None).is_err());
-    assert!(evidence_role("v", "verification", Some("other")).is_err());
-    assert_eq!(evidence_role("t", "tool", None).unwrap(), None);
-    assert!(evidence_role("t", "tool", Some("verdict")).is_err());
-}
-
-#[test]
-fn a_verdict_never_depends_on_a_report() {
-    let (verdict, report) = (Some(Evidence::Verdict), Some(Evidence::Report));
-    assert!(!evidence_edge_allowed(verdict, report));
-    assert!(evidence_edge_allowed(report, verdict));
-    assert!(evidence_edge_allowed(verdict, verdict));
-    assert!(evidence_edge_allowed(None, report));
-}
-
-#[test]
-fn only_hil_packages_declare_a_hil_role() {
-    assert_eq!(
-        hil_role("o", "hil", Some("observation")).unwrap(),
-        Some(Hil::Observation)
-    );
-    assert_eq!(
-        hil_role("s", "hil", Some("operation")).unwrap(),
-        Some(Hil::Operation)
-    );
-    assert!(hil_role("o", "hil", None).is_err());
-    assert!(hil_role("o", "hil", Some("other")).is_err());
-    assert_eq!(hil_role("t", "tool", None).unwrap(), None);
-    assert!(hil_role("t", "tool", Some("observation")).is_err());
-}
-
-#[test]
-fn observation_never_depends_on_stand_operation() {
-    let (observation, operation) = (Some(Hil::Observation), Some(Hil::Operation));
-    assert!(!hil_edge_allowed(observation, operation));
-    assert!(hil_edge_allowed(operation, observation));
-    assert!(hil_edge_allowed(observation, observation));
-    assert!(hil_edge_allowed(None, operation));
 }
 
 #[test]

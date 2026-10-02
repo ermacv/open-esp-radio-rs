@@ -27,9 +27,12 @@ and lockfile boundary. They need not coincide, and a logical module does not
 require a new crate. `validation` is an operation on a domain's inputs, not a
 catch-all owner for unrelated tools.
 
-Every Cargo package declares `package.metadata.open-radio.scope`, `layer`
-and `platform`. Scope separates production, experimental and development
-packages. Layer describes responsibility; platform is `portable`, `host`,
+Every Cargo package declares `package.metadata.open-radio.layer` and
+`platform`. Layer describes responsibility and implies the scope: the
+`contract`, `protocol`, `hardware`, `role`, `service`, `adapter`, `runtime`,
+`composition` and `facade` layers are production, `experiment` is
+experimental, and every other layer is development. `oer-tidy` reads the
+table, rejects unknown keys and checks every package in seconds; platform is `portable`, `host`,
 `chip`, `family` or `selected`. Chip applicability requires a separate `chip` identifier, such as
 `esp32s31`, and family applicability a separate `family` identifier, such as
 `espressif`; no other classification carries either.
@@ -121,8 +124,9 @@ directories such as `driver/`, `security/`, `le/` or the binding directory of
 an adapter add structure without renaming. Wi-Fi is `ieee80211` in package and
 directory names alike; the facade module `oer::wifi` and `Wifi*` types keep the
 user-facing name. Compositions end in `-system`. The public facade
-`open-esp-radio` (library `oer`) is the only branded name. The architecture
-check enforces the prefix. The Blobray workspace names its own packages.
+`open-esp-radio` (library `oer`) is the only branded name.
+`oer-tidy` (`cargo xtask check tidy`) enforces the prefix. The Blobray
+workspace names its own packages.
 
 ## Radio ports
 

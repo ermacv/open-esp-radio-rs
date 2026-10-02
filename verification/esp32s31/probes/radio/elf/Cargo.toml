@@ -15,7 +15,6 @@ oer-esp32s31-probe-radio = { path = "../library" }
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "verification"
 evidence = "verdict"
 platform = "chip"

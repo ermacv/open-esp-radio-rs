@@ -23,7 +23,6 @@ oer-phy-trace = { path = "../../crates/hardware/radio/trace", optional = true }
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "hil"
 platform = "portable"
 hil = "observation"

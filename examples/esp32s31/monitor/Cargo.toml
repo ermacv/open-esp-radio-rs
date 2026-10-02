@@ -20,7 +20,6 @@ static_cell = "2.1.1"
 oer-esp32s31-platform-layout = { path = "../../../platform/esp32s31/layout", features = ["build"] }
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "application"
 platform = "chip"
 chip = "esp32s31"

@@ -18,6 +18,5 @@ embassy-time = { version = "0.5.1", features = ["generic-queue-64", "std"] }
 workspace = true
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "adapter"
 platform = "portable"

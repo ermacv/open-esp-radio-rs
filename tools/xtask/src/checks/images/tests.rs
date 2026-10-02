@@ -1,4 +1,7 @@
 use super::*;
+
+/// The image target a fixture report names.
+const TARGET: &str = "riscv32imafc-unknown-none-elf";
 use serde_json::json;
 use std::{
     io::{BufRead, BufReader},
@@ -51,7 +54,7 @@ fn checked(
     root: &Path,
     start: &Path,
 ) -> Result<FinalImageArtifact> {
-    validate_final_image_report(&serde_json::to_vec(report)?, class, root, start)
+    validate_final_image_report(&serde_json::to_vec(report)?, class, TARGET, root, start)
 }
 
 #[test]
@@ -141,7 +144,7 @@ fn wrong_class_missing_files_and_stale_artifacts_fail_closed() {
     let root = temporary.path();
     let start = root.join("performance.start");
     let mut report = fixture_report(root, FinalImageClass::Performance, &start);
-    assert!(validate_final_image_report(b"", FinalImageClass::Performance, root, &start).is_err());
+    assert!(validate_final_image_report(b"", FinalImageClass::Performance, TARGET, root, &start).is_err());
     report["image_class"] = json!("correctness");
     assert!(checked(&report, FinalImageClass::Performance, root, &start).is_err());
     report["image_class"] = json!("performance");

@@ -28,7 +28,6 @@ toml = "1.1"
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "verification"
 evidence = "verdict"
 platform = "host"

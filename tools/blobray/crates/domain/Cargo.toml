@@ -17,6 +17,5 @@ thiserror = "=2.0.19"
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "tool"
 platform = "host"

@@ -20,7 +20,6 @@ workspace = true
 features = ["build"]
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "platform"
 platform = "chip"
 chip = "esp32s31"

@@ -50,7 +50,6 @@ oer-bluetooth-hci-transport = { path = "../../crates/services/bluetooth/hci/tran
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "hil"
 platform = "portable"
 hil = "observation"

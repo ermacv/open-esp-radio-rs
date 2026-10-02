@@ -27,6 +27,5 @@ oer-ieee80211-lower-mac = { path = "../../../protocols/ieee80211/lower-mac", fea
 workspace = true
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "service"
 platform = "portable"

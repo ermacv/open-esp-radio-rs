@@ -19,6 +19,5 @@ unsafe_op_in_unsafe_fn = "allow"
 disallowed_methods = "deny"
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "hardware"
 platform = "portable"

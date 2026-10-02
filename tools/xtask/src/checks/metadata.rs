@@ -1,26 +1,20 @@
-use crate::{Context, Result, cargo, paths};
+use crate::{Context, Result, cargo};
 use std::{collections::BTreeSet, fs};
 
 mod lints;
 mod pins;
 
-/// Every Cargo workspace of the repository, by its root manifest.
-fn workspaces(context: &Context) -> Result<BTreeSet<std::path::PathBuf>> {
-    let manifests = paths::source_manifests(context)?;
-    if manifests.is_empty() {
-        return Err("no source Cargo manifests found".into());
-    }
-    let mut workspaces = BTreeSet::new();
-    for manifest in manifests {
-        let workspace = cargo::workspace_manifest(context, &manifest)?;
-        if !workspace.starts_with(&context.root) {
-            return Err(format!(
-                "Cargo workspace escaped repository: {}",
-                workspace.display()
-            )
-            .into());
-        }
-        workspaces.insert(workspace);
+/// Every Cargo workspace of the repository, by its root manifest, as
+/// `oer-tidy` discovers them from the manifests as text.
+pub fn workspaces(context: &Context) -> Result<BTreeSet<std::path::PathBuf>> {
+    let repo = oer_tidy::repo::Repo::from_git(&context.root)?;
+    let workspaces: BTreeSet<_> =
+        oer_tidy::workspaces::discover(&oer_tidy::manifest::Manifests::load(&repo)?)
+            .into_iter()
+            .map(|manifest| context.root.join(manifest))
+            .collect();
+    if workspaces.is_empty() {
+        return Err("no Cargo workspace found".into());
     }
     Ok(workspaces)
 }

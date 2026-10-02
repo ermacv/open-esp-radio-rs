@@ -47,6 +47,5 @@ workspace = true
 features = ["secure"]
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "application"
 platform = "portable"

@@ -20,6 +20,5 @@ oer-ieee80211-mac = { path = "../../../protocols/ieee80211/mac" }
 workspace = true
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "service"
 platform = "portable"

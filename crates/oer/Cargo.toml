@@ -35,7 +35,6 @@ openthread = ["embassy-ieee802154", "dep:ieee802154-openthread"]
 owned-xarxa = ["esp32s31-wifi", "dep:radio-embassy", "dep:radio-system", "dep:wifi-composition", "wifi-composition/owned-network"]
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "facade"
 platform = "portable"
 supported-feature-profiles = [

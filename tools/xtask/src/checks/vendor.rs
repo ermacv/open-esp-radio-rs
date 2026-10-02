@@ -11,8 +11,6 @@ struct Probe {
     role: &'static str,
     package: &'static str,
     target_directory: &'static str,
-    /// The chip's instruction-set target.
-    target: &'static str,
 }
 
 const PROBES: [Probe; 4] = [
@@ -21,28 +19,24 @@ const PROBES: [Probe; 4] = [
         role: "rust-artifact",
         package: "oer-esp32s31-probe-radio-elf",
         target_directory: "target/verification/esp32s31-probes",
-        target: "riscv32imafc-unknown-none-elf",
     },
     Probe {
         chip: "esp32s31",
         role: "rust-artifact:wifi-registers",
         package: "oer-esp32s31-probe-register-elf",
         target_directory: "target/verification/esp32s31-register-probes",
-        target: "riscv32imafc-unknown-none-elf",
     },
     Probe {
         chip: "esp32s31",
         role: "rust-artifact:bluetooth",
         package: "oer-esp32s31-probe-bluetooth-elf",
         target_directory: "target/verification/esp32s31-bluetooth-probes",
-        target: "riscv32imafc-unknown-none-elf",
     },
     Probe {
         chip: "esp32c5",
         role: "rust-artifact",
         package: "oer-esp32c5-probe-radio-elf",
         target_directory: "target/verification/esp32c5-probes",
-        target: "riscv32imac-unknown-none-elf",
     },
 ];
 
@@ -60,9 +54,14 @@ pub fn elf(context: &Context, package: &str) -> Result<std::path::PathBuf> {
     Ok(context
         .root
         .join(probe.target_directory)
-        .join(probe.target)
+        .join(target(context, probe.chip)?)
         .join("release")
         .join(probe.package))
+}
+
+/// The Rust target of `chip`'s firmware, from its `chip.toml`.
+fn target(context: &Context, chip: &str) -> Result<String> {
+    Ok(oer_chip_profile::Profile::load(&context.root, chip)?.rust_target)
 }
 
 pub fn run(context: &Context, chip: &str, list_roles: bool) -> Result<()> {
@@ -98,7 +97,7 @@ pub fn run(context: &Context, chip: &str, list_roles: bool) -> Result<()> {
                 .find(|probe| probe.package == package)
                 .ok_or("unknown probe package")?;
             let elf = std::path::Path::new(directory)
-                .join(probe.target)
+                .join(target(context, probe.chip)?)
                 .join("release")
                 .join(package);
             let catalog = oer_probe_codegen::validate_elf(&std::fs::read(&elf)?, package)?;
@@ -124,10 +123,11 @@ fn build(
 ) -> Result<()> {
     // Validate before any invocation; stop at the first failed artifact.
     let jobs = parse_jobs(jobs)?;
+    let target = target(context, chip)?;
     for probe in probes(chip) {
         eprintln!("Building {chip} {} comparison probe", probe.role);
         crate::phase::timed(&format!("build {chip} {} probe", probe.role), || {
-            execute(&mut command(context, probe, jobs))
+            execute(&mut command(context, probe, &target, jobs))
         })?;
     }
     Ok(())
@@ -149,7 +149,12 @@ fn parse_jobs(value: Option<&OsStr>) -> Result<Option<NonZeroUsize>> {
     })?))
 }
 
-fn command(context: &Context, probe: &Probe, jobs: Option<NonZeroUsize>) -> Command {
+fn command(
+    context: &Context,
+    probe: &Probe,
+    target: &str,
+    jobs: Option<NonZeroUsize>,
+) -> Command {
     let mut command = context.cargo();
     command
         .args(["build", "--manifest-path"])
@@ -164,7 +169,7 @@ fn command(context: &Context, probe: &Probe, jobs: Option<NonZeroUsize>) -> Comm
             "--package",
             probe.package,
             "--target",
-            probe.target,
+            target,
             "--release",
             "--locked",
         ])

@@ -9,11 +9,20 @@
 //!   names exists;
 //! - [`workspaces`]: every package belongs to a discovered workspace, and
 //!   every workspace has its lock file;
-//! - [`dependencies`]: every declared dependency is named by its package.
+//! - [`dependencies`]: every declared dependency is named by its package;
+//! - [`classification`]: every package declares a known layer and platform,
+//!   names an existing chip or family, follows the name rule, and keeps the
+//!   evidence and HIL role edges.
+//!
+//! The same model answers what other tooling would otherwise rediscover:
+//! [`workspaces`] lists every Cargo workspace and [`chips`] every chip
+//! profile, for `oer-xtask` and CI alike.
 //!
 //! Each check returns its problems; an empty report is a pass.
 
 pub mod allowlist;
+pub mod chips;
+pub mod classification;
 pub mod dependencies;
 pub mod manifest;
 pub mod reachability;
@@ -80,6 +89,7 @@ pub struct Outcome {
 /// Runs every check.
 pub fn run(repo: &Repo) -> Result<Vec<Outcome>> {
     let context = Context::load(repo)?;
+    let chips = chips::Chips::load(repo)?;
     Ok(vec![
         Outcome {
             check: "orphan sources",
@@ -100,6 +110,10 @@ pub fn run(repo: &Repo) -> Result<Vec<Outcome>> {
         Outcome {
             check: "unused dependencies",
             problems: dependencies::check(&context)?,
+        },
+        Outcome {
+            check: "classification",
+            problems: classification::check(&context, &chips),
         },
     ])
 }

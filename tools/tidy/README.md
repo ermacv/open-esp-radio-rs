@@ -7,10 +7,20 @@ paths.
 
 ```console
 cargo xtask check tidy
-cargo run -p oer-tidy -- workspaces
+cargo run -q -p oer-tidy -- workspaces [--json]
+cargo run -q -p oer-tidy -- chips [--json]
 ```
 
-`check changed` always runs it, and CI runs it as an early job of its own.
+`check changed` and the push gate always run it, and CI runs it as an early
+job of its own.
+
+It is also the repository's one model of its own structure. `workspaces`
+lists every Cargo workspace and `chips` every chip profile
+(`platform/<chip>/chip.toml`, read through `oer-chip-profile`), one per line
+or as a JSON array; `oer-xtask` (fetch, lock, metadata, the push gate) uses
+the same library, and CI builds its job matrices from the JSON. Package
+classification is read by [`classification`](src/classification.rs) alone:
+`oer-xtask` classifies the packages it audits through it.
 
 | Check | Contract |
 | --- | --- |
@@ -18,6 +28,7 @@ cargo run -p oer-tidy -- workspaces
 | Anchors and citations | `// CAPABILITY:` anchors and vendor `SOURCE` citations appear only in reachable files, since qualification and the provenance check trust them as statements about compiled code |
 | Record paths | Every repository path a qualification program, catalog or HIL review names exists, every `packages` entry names a package, and every evidence shard below `verification/<chip>/evidence/` or a program's evidence directory records only existing sources. Output directories a program names (`evidence-index`, `[hil] evidence`, `runs`) need not exist |
 | Workspaces | Every package belongs to a workspace as Cargo finds it, every listed member exists, and every workspace root has its `Cargo.lock` and every lock file a root. `workspaces` prints the discovered list, which CI formats |
+| Classification | Every package declares `[package.metadata.open-radio]` with known keys only, a known `layer` (which implies the scope: production, experimental or development) and a consistent `platform`; a `chip` names a chip with a profile and a `family` the family of some chip; every package outside the Blobray workspace is `oer-<tokens>` and only the facade is `open-esp-radio`; verification packages declare an `evidence` role and HIL packages a `hil` role, no verdict package depends on a report package and no observation package on a stand operation package |
 | Unused dependencies | Every declared dependency is named by its package: as an identifier, in a string or doc comment of a reachable file, in an `include_str!` document, or as the target of a `dependency/feature` forward. Plain comments do not count |
 
 [`allowlist.toml`](allowlist.toml) holds the reviewed exceptions, each with a

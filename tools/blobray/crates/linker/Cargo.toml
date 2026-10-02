@@ -22,6 +22,5 @@ object = { version = "=0.39.1", default-features = false, features = ["elf", "re
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "tool"
 platform = "host"

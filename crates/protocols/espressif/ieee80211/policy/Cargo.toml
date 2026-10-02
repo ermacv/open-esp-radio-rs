@@ -17,7 +17,6 @@ oer-ieee80211-upper-mac = { path = "../../../ieee80211/upper-mac" }
 workspace = true
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "protocol"
 platform = "family"
 family = "espressif"

@@ -24,7 +24,6 @@ oer-trace = { path = "../../../../trace" }
 workspace = true
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "hardware"
 platform = "family"
 family = "espressif"

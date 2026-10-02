@@ -24,6 +24,5 @@ oer-time-virtual = { path = "../../../adapters/virtual/time" }
 workspace = true
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "adapter"
 platform = "portable"

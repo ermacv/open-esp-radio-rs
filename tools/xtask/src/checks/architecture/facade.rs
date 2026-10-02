@@ -2,7 +2,7 @@
 
 use crate::{Context, Result, cargo, process};
 
-use super::super::{TARGET, common::*};
+use super::super::common::*;
 
 const MANIFEST: &str = "crates/oer/Cargo.toml";
 const WIFI: &[&str] = &[
@@ -43,6 +43,7 @@ struct Profile {
 
 pub(super) fn check(ctx: &Context) -> Result<()> {
     let manifest = ctx.root.join(MANIFEST);
+    let target = super::super::target(&ctx.root)?;
     for profile in [
         Profile {
             features: Some(""),
@@ -118,7 +119,7 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
                 features.into(),
             ],
         };
-        let graph = cargo::isolated_graph(ctx, &manifest, &flags, Some(TARGET))?;
+        let graph = cargo::isolated_graph(ctx, &manifest, &flags, Some(&target))?;
         if matches!(profile.features, Some("bluetooth" | "esp32s31-bluetooth")) {
             super::reject_wifi_in_bluetooth(&graph, &manifest)?;
         }

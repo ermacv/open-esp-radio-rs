@@ -15,7 +15,6 @@ esp-hal = { workspace = true, features = ["esp32s31", "rt", "unstable"] }
 oer-esp32s31-platform-board = { path = "../board" }
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "platform"
 platform = "chip"
 chip = "esp32s31"

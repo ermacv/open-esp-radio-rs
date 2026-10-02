@@ -34,7 +34,6 @@ embassy-time = { version = "0.5.1", features = ["std"] }
 critical-section = { version = "1.2.0", features = ["std"] }
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "application"
 platform = "chip"
 chip = "esp32s31"

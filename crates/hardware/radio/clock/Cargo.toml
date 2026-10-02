@@ -11,6 +11,5 @@ description = "Chip-neutral shared modem clock reference-count planner ported fr
 workspace = true
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "hardware"
 platform = "portable"

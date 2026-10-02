@@ -31,6 +31,5 @@ oer-ieee80211-rsn = { path = "../protocols/ieee80211/security/rsn", optional = t
 workspace = true
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "service"
 platform = "portable"

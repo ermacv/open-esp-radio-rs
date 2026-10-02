@@ -41,7 +41,6 @@ oer-hil-scenario = { path = "../scenario", features = ["test-support"] }
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "hil"
 platform = "host"
 hil = "operation"

@@ -3801,6 +3801,7 @@ dependencies = [
 name = "oer-tidy"
 version = "0.1.0"
 dependencies = [
+ "oer-chip-profile",
  "serde_json",
  "tempfile",
  "toml",
@@ -3855,6 +3856,7 @@ dependencies = [
  "oer-probe-codegen",
  "oer-process",
  "oer-register-model",
+ "oer-tidy",
  "pulldown-cmark",
  "roxmltree",
  "rustc-demangle",

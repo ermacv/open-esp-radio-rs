@@ -15,6 +15,5 @@ oer-time = { path = "../../time" }
 workspace = true
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "contract"
 platform = "portable"

@@ -1,6 +1,19 @@
 use super::*;
 use std::collections::BTreeSet;
 
+/// A temporary repository with the real chip profiles.
+fn repository() -> tempfile::TempDir {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(directory.path().join("Cargo.toml"), "[workspace]\n").unwrap();
+    let real = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../platform");
+    for chip in ["esp32s31", "esp32c5"] {
+        let profile = directory.path().join("platform").join(chip);
+        std::fs::create_dir_all(&profile).unwrap();
+        std::fs::copy(real.join(chip).join("chip.toml"), profile.join("chip.toml")).unwrap();
+    }
+    directory
+}
+
 #[test]
 fn build_job_override_is_optional_and_rejects_nonpositive_or_nondecimal_values() {
     assert_eq!(parse_jobs(None).unwrap(), None);
@@ -28,8 +41,7 @@ fn build_job_override_is_optional_and_rejects_nonpositive_or_nondecimal_values()
 
 #[test]
 fn every_declared_role_builds_a_distinct_locked_embedded_package_and_target_directory() {
-    let directory = tempfile::tempdir().unwrap();
-    std::fs::write(directory.path().join("Cargo.toml"), "[workspace]\n").unwrap();
+    let directory = repository();
     let context = Context::new(directory.path()).unwrap();
     let mut roles = BTreeSet::new();
     let mut packages = BTreeSet::new();
@@ -41,7 +53,8 @@ fn every_declared_role_builds_a_distinct_locked_embedded_package_and_target_dire
         }
         assert!(packages.insert(probe.package));
         assert!(outputs.insert(probe.target_directory));
-        let command = command(&context, probe, None);
+        let target = target(&context, probe.chip).unwrap();
+        let command = command(&context, probe, &target, None);
         let arguments: Vec<_> = command.get_args().collect();
         assert!(
             arguments
@@ -51,7 +64,7 @@ fn every_declared_role_builds_a_distinct_locked_embedded_package_and_target_dire
         assert!(
             arguments
                 .windows(2)
-                .any(|pair| pair == ["--target", probe.target])
+                .any(|pair| pair == ["--target", target.as_str()])
         );
         assert!(arguments.contains(&OsStr::new("--locked")));
         assert!(arguments.contains(&OsStr::new("--release")));
@@ -71,7 +84,7 @@ fn every_declared_role_builds_a_distinct_locked_embedded_package_and_target_dire
             "rust-artifact:bluetooth"
         ])
     );
-    let command = command(&context, &PROBES[0], NonZeroUsize::new(3));
+    let command = command(&context, &PROBES[0], "t", NonZeroUsize::new(3));
     assert!(
         command
             .get_args()
@@ -83,8 +96,7 @@ fn every_declared_role_builds_a_distinct_locked_embedded_package_and_target_dire
 
 #[test]
 fn role_listing_does_not_require_cargo_or_build_outputs() {
-    let directory = tempfile::tempdir().unwrap();
-    std::fs::write(directory.path().join("Cargo.toml"), "[workspace]\n").unwrap();
+    let directory = repository();
     let mut context = Context::new(directory.path()).unwrap();
     context.cargo = directory
         .path()
@@ -97,8 +109,7 @@ fn role_listing_does_not_require_cargo_or_build_outputs() {
 
 #[test]
 fn builder_rejects_invalid_jobs_before_execution_and_stops_at_failed_artifact() {
-    let directory = tempfile::tempdir().unwrap();
-    std::fs::write(directory.path().join("Cargo.toml"), "[workspace]\n").unwrap();
+    let directory = repository();
     let context = Context::new(directory.path()).unwrap();
     let mut calls = 0;
     assert!(
@@ -121,8 +132,7 @@ fn builder_rejects_invalid_jobs_before_execution_and_stops_at_failed_artifact() 
 
 #[test]
 fn every_requested_artifact_receives_the_explicit_job_override() {
-    let directory = tempfile::tempdir().unwrap();
-    std::fs::write(directory.path().join("Cargo.toml"), "[workspace]\n").unwrap();
+    let directory = repository();
     let context = Context::new(directory.path()).unwrap();
     let mut calls = 0;
     build(&context, "esp32s31", Some(OsStr::new("4")), |command| {
@@ -138,8 +148,7 @@ fn every_requested_artifact_receives_the_explicit_job_override() {
 
 #[test]
 fn each_chip_builds_its_own_workspace_for_its_instruction_set() {
-    let directory = tempfile::tempdir().unwrap();
-    std::fs::write(directory.path().join("Cargo.toml"), "[workspace]\n").unwrap();
+    let directory = repository();
     let context = Context::new(directory.path()).unwrap();
     let mut seen = Vec::new();
     build(&context, "esp32c5", None, |command| {

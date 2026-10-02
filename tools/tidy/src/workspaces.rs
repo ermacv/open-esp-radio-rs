@@ -15,8 +15,8 @@ use crate::{
 
 /// Where a package belongs.
 enum Membership<'a> {
-    /// A member of the workspace above it.
-    Member,
+    /// A member of the workspace whose directory this is.
+    Member(&'a str),
     /// Its own workspace root, explicit or implicit.
     Root,
     /// A workspace above it neither lists nor excludes it.
@@ -107,7 +107,7 @@ fn membership<'a>(
         .get(root)
         .is_some_and(|set| set.contains(&package.directory))
     {
-        Membership::Member
+        Membership::Member(root)
     } else {
         Membership::Unclaimed(root)
     }
@@ -127,6 +127,29 @@ pub fn discover(manifests: &Manifests) -> Vec<String> {
         }
     }
     roots.into_iter().collect()
+}
+
+/// The workspace root manifest of every claimed package, keyed by the
+/// package's manifest path.
+pub fn owners(manifests: &Manifests) -> BTreeMap<String, String> {
+    let members = members(manifests);
+    let mut owners = BTreeMap::new();
+    for package in &manifests.packages {
+        let owner = match membership(manifests, &members, package) {
+            Membership::Root => package.manifest.clone(),
+            Membership::Member(root) => manifests
+                .workspaces
+                .iter()
+                .find(|workspace| workspace.directory == root)
+                .map_or_else(
+                    || format!("{root}/Cargo.toml"),
+                    |workspace| workspace.manifest.clone(),
+                ),
+            Membership::Unclaimed(_) => continue,
+        };
+        owners.insert(package.manifest.clone(), owner);
+    }
+    owners
 }
 
 /// Every package belongs to a workspace, every listed member exists, and
@@ -218,6 +241,12 @@ mod tests {
             ["Cargo.toml", "firmware/Cargo.toml", "island/Cargo.toml"]
         );
         assert!(problems(FILES, check).is_empty());
+        let owners = owners(&manifests);
+        assert_eq!(owners["crates/a/Cargo.toml"], "Cargo.toml");
+        assert_eq!(owners["shared/b/Cargo.toml"], "Cargo.toml");
+        assert_eq!(owners["firmware/app/Cargo.toml"], "firmware/Cargo.toml");
+        assert_eq!(owners["island/Cargo.toml"], "island/Cargo.toml");
+        assert_eq!(owners["firmware/shared/Cargo.toml"], "Cargo.toml");
     }
 
     #[test]

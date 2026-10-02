@@ -13,6 +13,5 @@ description = "Allocation-free IEEE 802.11 protocol types and state machines"
 workspace = true
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "protocol"
 platform = "portable"

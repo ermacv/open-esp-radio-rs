@@ -21,6 +21,5 @@ critical-section = { version = "1.2.0", features = ["std"] }
 workspace = true
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "protocol"
 platform = "portable"

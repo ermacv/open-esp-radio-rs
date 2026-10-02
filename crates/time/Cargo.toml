@@ -13,6 +13,5 @@ description = "Chip-neutral monotonic time, clock and timer contract for open ES
 workspace = true
 
 [package.metadata.open-radio]
-scope = "production"
 layer = "contract"
 platform = "portable"

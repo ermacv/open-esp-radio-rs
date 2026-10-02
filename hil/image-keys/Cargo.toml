@@ -16,7 +16,6 @@ oer-hil-protocol = { path = "../protocol", default-features = false }
 workspace = true
 
 [package.metadata.open-radio]
-scope = "development"
 layer = "hil"
 platform = "portable"
 hil = "observation"

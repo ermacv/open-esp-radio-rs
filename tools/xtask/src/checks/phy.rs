@@ -5,7 +5,7 @@ use std::{collections::BTreeSet, io::Cursor, path::PathBuf};
 
 use cargo_metadata::Message;
 
-use super::{TARGET, artifacts, common};
+use super::{artifacts, common};
 use crate::{Context, Result, cargo, process};
 
 const PHY: &str = "crates/hardware/esp32s31/phy/Cargo.toml";
@@ -74,6 +74,7 @@ fn phy_artifact(messages: &[u8]) -> Result<PathBuf> {
 }
 
 fn phy(ctx: &Context) -> Result<PathBuf> {
+    let target = super::target(&ctx.root)?;
     let output = process::capture(ctx.cargo().args([
         "build",
         "--locked",
@@ -83,13 +84,13 @@ fn phy(ctx: &Context) -> Result<PathBuf> {
         "--lib",
         "--release",
         "--target",
-        TARGET,
+        &target,
         "--message-format=json-render-diagnostics",
     ]))?;
     let artifact = phy_artifact(&output.stdout)?;
     artifacts::audit_phy(ctx, &artifact)?;
     let manifest = ctx.root.join(PHY);
-    let graph = cargo::metadata(ctx, &manifest, &[], Some(TARGET), true)?;
+    let graph = cargo::metadata(ctx, &manifest, &[], Some(&target), true)?;
     for package in common::closure(&graph, &graph.root(&manifest)?)? {
         if !PHY_PACKAGES.contains(&package.name.as_str()) {
             return Err(format!(

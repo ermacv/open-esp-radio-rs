@@ -916,7 +916,7 @@ where
             || self
                 .control()
                 .next_alarm_deadline()
-                .is_some_and(|deadline| deadline <= now_micros)
+                .is_some_and(|deadline| deadline.as_micros() <= now_micros)
     }
 
     fn station_required_before_stop(&self) -> bool {

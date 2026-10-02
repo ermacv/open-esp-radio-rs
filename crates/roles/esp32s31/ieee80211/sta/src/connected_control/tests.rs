@@ -31,7 +31,10 @@ fn deadline_is_computed_without_an_executor_timer() {
             oer_time::Instant::from_micros(50),
         )
         .unwrap();
-    assert_eq!(core.next_alarm_deadline(), Some(100_050));
+    assert_eq!(
+        core.next_alarm_deadline(),
+        Some(oer_time::Instant::from_micros(100_050))
+    );
 }
 
 #[test]
@@ -49,8 +52,17 @@ fn connected_ftm_request_is_consumed_at_hardware_frontier() {
         0,
     )
     .unwrap();
-    let config = FtmRequesterConfig::new(parameters, 1_000, 100, 10_000, 1).unwrap();
-    let frontier = core().evaluate_ftm_request_frontier(config, 50).unwrap();
+    let config = FtmRequesterConfig::new(
+        parameters,
+        oer_time::Duration::from_micros(1_000),
+        oer_time::Duration::from_micros(100),
+        oer_time::Duration::from_micros(10_000),
+        1,
+    )
+    .unwrap();
+    let frontier = core()
+        .evaluate_ftm_request_frontier(config, oer_time::Instant::from_micros(50))
+        .unwrap();
     assert_eq!(frontier.peer, [0x20, 0x21, 0x22, 0x23, 0x24, 0x25]);
     assert_eq!(frontier.attempt, 1);
     assert_eq!(

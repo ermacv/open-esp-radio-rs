@@ -11,6 +11,7 @@ use oer_ieee80211_mac::ftm::{
     FtmRequestParameters, FtmResponseParameters, FtmResponseStatus, FtmTimestampPs, FtmToaError,
     FtmTodError, encode_initial_request,
 };
+use oer_time::{Duration, Instant};
 
 const FTM_TIMESTAMP_MASK: u64 = (1_u64 << 48) - 1;
 const FTM_TIMESTAMP_HALF_RANGE: u64 = 1_u64 << 47;
@@ -36,30 +37,30 @@ pub enum FtmRequesterConfigError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FtmRequesterConfig {
     parameters: FtmRequestParameters,
-    response_timeout_micros: u32,
-    retry_interval_micros: u32,
-    session_timeout_micros: u32,
+    response_timeout: Duration,
+    retry_interval: Duration,
+    session_timeout: Duration,
     request_attempt_limit: u8,
 }
 
 impl FtmRequesterConfig {
     pub const fn new(
         parameters: FtmRequestParameters,
-        response_timeout_micros: u32,
-        retry_interval_micros: u32,
-        session_timeout_micros: u32,
+        response_timeout: Duration,
+        retry_interval: Duration,
+        session_timeout: Duration,
         request_attempt_limit: u8,
     ) -> Result<Self, FtmRequesterConfigError> {
-        if response_timeout_micros == 0 {
+        if response_timeout.as_micros() == 0 {
             return Err(FtmRequesterConfigError::ZeroResponseTimeout);
         }
-        if retry_interval_micros == 0 {
+        if retry_interval.as_micros() == 0 {
             return Err(FtmRequesterConfigError::ZeroRetryInterval);
         }
-        if session_timeout_micros == 0 {
+        if session_timeout.as_micros() == 0 {
             return Err(FtmRequesterConfigError::ZeroSessionTimeout);
         }
-        if session_timeout_micros < response_timeout_micros {
+        if session_timeout.as_micros() < response_timeout.as_micros() {
             return Err(FtmRequesterConfigError::SessionShorterThanResponse);
         }
         if request_attempt_limit == 0 {
@@ -88,9 +89,9 @@ impl FtmRequesterConfig {
         }
         Ok(Self {
             parameters,
-            response_timeout_micros,
-            retry_interval_micros,
-            session_timeout_micros,
+            response_timeout,
+            retry_interval,
+            session_timeout,
             request_attempt_limit,
         })
     }
@@ -113,16 +114,16 @@ impl FtmRequesterConfig {
         self.parameters.ftms_per_burst() - 1
     }
 
-    pub const fn response_timeout_micros(self) -> u32 {
-        self.response_timeout_micros
+    pub const fn response_timeout(self) -> Duration {
+        self.response_timeout
     }
 
-    pub const fn retry_interval_micros(self) -> u32 {
-        self.retry_interval_micros
+    pub const fn retry_interval(self) -> Duration {
+        self.retry_interval
     }
 
-    pub const fn session_timeout_micros(self) -> u32 {
-        self.session_timeout_micros
+    pub const fn session_timeout(self) -> Duration {
+        self.session_timeout
     }
 
     pub const fn request_attempt_limit(self) -> u8 {
@@ -330,11 +331,11 @@ impl FtmRequestTransmission {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FtmRequesterEvent {
     RequestPublished {
-        response_deadline_micros: u64,
-        session_deadline_micros: u64,
+        response_deadline: Instant,
+        session_deadline: Instant,
     },
     RequestRetryScheduled {
-        retry_at_micros: u64,
+        retry_at: Instant,
     },
     Failed(FtmSessionFailure),
 }
@@ -377,7 +378,7 @@ pub enum FtmMeasurementDisposition {
 enum FtmRequesterPhase {
     Idle,
     RequestQueued {
-        ready_at_micros: u64,
+        ready_at: Instant,
         attempts_remaining: u8,
     },
     RequestTransmitting {
@@ -386,11 +387,11 @@ enum FtmRequesterPhase {
     },
     AwaitingInitial {
         attempts_remaining: u8,
-        response_deadline_micros: u64,
-        session_deadline_micros: u64,
+        response_deadline: Instant,
+        session_deadline: Instant,
     },
     Measuring {
-        session_deadline_micros: u64,
+        session_deadline: Instant,
         negotiated: FtmResponseParameters,
     },
     Complete {
@@ -480,7 +481,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         }
     }
 
-    pub fn start(&mut self, peer: [u8; 6], now_micros: u64) -> Result<u32, FtmRequesterError> {
+    pub fn start(&mut self, peer: [u8; 6], now: Instant) -> Result<u32, FtmRequesterError> {
         if !self.is_idle() {
             return Err(FtmRequesterError::Busy);
         }
@@ -502,67 +503,62 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         self.samples.fill(None);
         self.sample_count = 0;
         self.phase = FtmRequesterPhase::RequestQueued {
-            ready_at_micros: now_micros,
+            ready_at: now,
             attempts_remaining: self.config.request_attempt_limit,
         };
         Ok(self.session_generation)
     }
 
-    pub const fn next_deadline_micros(&self) -> Option<u64> {
+    pub const fn next_deadline(&self) -> Option<Instant> {
         match self.phase {
-            FtmRequesterPhase::RequestQueued {
-                ready_at_micros, ..
-            } => Some(ready_at_micros),
+            FtmRequesterPhase::RequestQueued { ready_at, .. } => Some(ready_at),
             FtmRequesterPhase::AwaitingInitial {
-                response_deadline_micros,
-                ..
-            } => Some(response_deadline_micros),
+                response_deadline, ..
+            } => Some(response_deadline),
             FtmRequesterPhase::Measuring {
-                session_deadline_micros,
-                ..
-            } => Some(session_deadline_micros),
+                session_deadline, ..
+            } => Some(session_deadline),
             _ => None,
         }
     }
 
-    pub fn service(&mut self, now_micros: u64) -> Result<FtmRequesterService, FtmRequesterError> {
+    pub fn service(&mut self, now: Instant) -> Result<FtmRequesterService, FtmRequesterError> {
         match self.phase {
             FtmRequesterPhase::AwaitingInitial {
                 attempts_remaining,
-                response_deadline_micros,
+                response_deadline,
                 ..
-            } if now_micros >= response_deadline_micros => {
+            } if now >= response_deadline => {
                 if attempts_remaining == 0 {
                     return Ok(self.fail(FtmSessionFailure::InitialResponseTimedOut));
                 }
-                let retry_at_micros = now_micros
-                    .checked_add(u64::from(self.config.retry_interval_micros))
+                let retry_at = now
+                    .checked_add(self.config.retry_interval)
                     .ok_or(FtmRequesterError::DeadlineOverflow)?;
                 self.phase = FtmRequesterPhase::RequestQueued {
-                    ready_at_micros: retry_at_micros,
+                    ready_at: retry_at,
                     attempts_remaining,
                 };
                 return Ok(FtmRequesterService::Event(
-                    FtmRequesterEvent::RequestRetryScheduled { retry_at_micros },
+                    FtmRequesterEvent::RequestRetryScheduled { retry_at },
                 ));
             }
             FtmRequesterPhase::Measuring {
-                session_deadline_micros,
-                ..
-            } if now_micros >= session_deadline_micros => {
+                session_deadline, ..
+            } if now >= session_deadline => {
                 return Ok(self.fail(FtmSessionFailure::SessionTimedOut));
             }
             _ => {}
         }
 
         let FtmRequesterPhase::RequestQueued {
-            ready_at_micros,
+            ready_at,
             attempts_remaining,
         } = self.phase
         else {
             return Ok(FtmRequesterService::Idle);
         };
-        if now_micros < ready_at_micros {
+        if now < ready_at {
             return Ok(FtmRequesterService::Idle);
         }
         self.transmission_generation = self
@@ -591,24 +587,24 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         &mut self,
         transmission: FtmRequestTransmission,
         acknowledged: bool,
-        now_micros: u64,
+        now: Instant,
     ) -> Result<FtmRequesterEvent, FtmRequesterError> {
         let attempts_remaining = self.validate_exact_pending_transmission(&transmission)?;
         if acknowledged {
-            let response_deadline_micros = now_micros
-                .checked_add(u64::from(self.config.response_timeout_micros))
+            let response_deadline = now
+                .checked_add(self.config.response_timeout)
                 .ok_or(FtmRequesterError::DeadlineOverflow)?;
-            let session_deadline_micros = now_micros
-                .checked_add(u64::from(self.config.session_timeout_micros))
+            let session_deadline = now
+                .checked_add(self.config.session_timeout)
                 .ok_or(FtmRequesterError::DeadlineOverflow)?;
             self.phase = FtmRequesterPhase::AwaitingInitial {
                 attempts_remaining,
-                response_deadline_micros,
-                session_deadline_micros,
+                response_deadline,
+                session_deadline,
             };
             Ok(FtmRequesterEvent::RequestPublished {
-                response_deadline_micros,
-                session_deadline_micros,
+                response_deadline,
+                session_deadline,
             })
         } else if attempts_remaining == 0 {
             self.phase = FtmRequesterPhase::Failed(FtmSessionFailure::RequestTxFailed);
@@ -616,14 +612,14 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
                 FtmSessionFailure::RequestTxFailed,
             ))
         } else {
-            let retry_at_micros = now_micros
-                .checked_add(u64::from(self.config.retry_interval_micros))
+            let retry_at = now
+                .checked_add(self.config.retry_interval)
                 .ok_or(FtmRequesterError::DeadlineOverflow)?;
             self.phase = FtmRequesterPhase::RequestQueued {
-                ready_at_micros: retry_at_micros,
+                ready_at: retry_at,
                 attempts_remaining,
             };
-            Ok(FtmRequesterEvent::RequestRetryScheduled { retry_at_micros })
+            Ok(FtmRequesterEvent::RequestRetryScheduled { retry_at })
         }
     }
 
@@ -668,20 +664,18 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         peer: [u8; 6],
         measurement: FtmMeasurement<'_>,
         local_timing: Option<FtmLocalExchangeTiming>,
-        now_micros: u64,
+        now: Instant,
     ) -> Result<FtmMeasurementDisposition, FtmRequesterError> {
         if peer != self.peer {
             return Ok(FtmMeasurementDisposition::ForeignPeer);
         }
-        let session_deadline_micros = match self.phase {
+        let session_deadline = match self.phase {
             FtmRequesterPhase::AwaitingInitial {
-                session_deadline_micros,
-                ..
+                session_deadline, ..
             }
             | FtmRequesterPhase::Measuring {
-                session_deadline_micros,
-                ..
-            } => session_deadline_micros,
+                session_deadline, ..
+            } => session_deadline,
             FtmRequesterPhase::Idle => return Err(FtmRequesterError::NoActiveSession),
             FtmRequesterPhase::Complete { .. } | FtmRequesterPhase::Failed(_) => {
                 return Ok(FtmMeasurementDisposition::Stale);
@@ -691,7 +685,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
                 return Ok(FtmMeasurementDisposition::Stale);
             }
         };
-        if now_micros >= session_deadline_micros {
+        if now >= session_deadline {
             self.phase = FtmRequesterPhase::Failed(FtmSessionFailure::SessionTimedOut);
             return Ok(FtmMeasurementDisposition::Failed(
                 FtmSessionFailure::SessionTimedOut,
@@ -714,7 +708,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         }
 
         if matches!(self.phase, FtmRequesterPhase::AwaitingInitial { .. }) {
-            return self.accept_initial(measurement, local_timing, session_deadline_micros);
+            return self.accept_initial(measurement, local_timing, session_deadline);
         }
         self.accept_follow_up(measurement, local_timing)
     }
@@ -723,7 +717,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
         &mut self,
         measurement: FtmMeasurement<'_>,
         local_timing: Option<FtmLocalExchangeTiming>,
-        session_deadline_micros: u64,
+        session_deadline: Instant,
     ) -> Result<FtmMeasurementDisposition, FtmRequesterError> {
         if measurement.fields.follow_up_dialog_token != 0 {
             return Ok(FtmMeasurementDisposition::Stale);
@@ -781,7 +775,7 @@ impl<const MAX_SAMPLES: usize> FtmRequester<MAX_SAMPLES> {
             information_elements,
         });
         self.phase = FtmRequesterPhase::Measuring {
-            session_deadline_micros,
+            session_deadline,
             negotiated,
         };
         Ok(FtmMeasurementDisposition::InitialAccepted {

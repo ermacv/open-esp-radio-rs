@@ -23,7 +23,14 @@ fn request_parameters(count: u8) -> FtmRequestParameters {
 }
 
 fn config(count: u8, attempts: u8) -> FtmRequesterConfig {
-    FtmRequesterConfig::new(request_parameters(count), 1_000, 100, 10_000, attempts).unwrap()
+    FtmRequesterConfig::new(
+        request_parameters(count),
+        oer_time::Duration::from_micros(1_000),
+        oer_time::Duration::from_micros(100),
+        oer_time::Duration::from_micros(10_000),
+        attempts,
+    )
+    .unwrap()
 }
 
 fn response(count: u8) -> FtmResponseParameters {
@@ -102,13 +109,18 @@ fn follow_up_body(
 }
 
 fn start_published<const N: usize>(requester: &mut FtmRequester<N>, peer: [u8; 6]) {
-    requester.start(peer, 10).unwrap();
-    let FtmRequesterService::Transmit(transmission) = requester.service(10).unwrap() else {
+    requester
+        .start(peer, oer_time::Instant::from_micros(10))
+        .unwrap();
+    let FtmRequesterService::Transmit(transmission) = requester
+        .service(oer_time::Instant::from_micros(10))
+        .unwrap()
+    else {
         panic!("request must be ready")
     };
     assert_eq!(transmission.body()[..3], [4, 32, 1]);
     requester
-        .complete_transmission(transmission, true, 20)
+        .complete_transmission(transmission, true, oer_time::Instant::from_micros(20))
         .unwrap();
 }
 
@@ -126,7 +138,13 @@ fn config_rejects_unbounded_or_scheduled_profiles() {
     )
     .unwrap();
     assert_eq!(
-        FtmRequesterConfig::new(multiple, 1, 1, 1, 1),
+        FtmRequesterConfig::new(
+            multiple,
+            oer_time::Duration::from_micros(1),
+            oer_time::Duration::from_micros(1),
+            oer_time::Duration::from_micros(1),
+            1
+        ),
         Err(FtmRequesterConfigError::MultipleBurstsUnsupported)
     );
     let unbounded = FtmRequestParameters::new(
@@ -141,7 +159,13 @@ fn config_rejects_unbounded_or_scheduled_profiles() {
     )
     .unwrap();
     assert_eq!(
-        FtmRequesterConfig::new(unbounded, 1, 1, 1, 1),
+        FtmRequesterConfig::new(
+            unbounded,
+            oer_time::Duration::from_micros(1),
+            oer_time::Duration::from_micros(1),
+            oer_time::Duration::from_micros(1),
+            1
+        ),
         Err(FtmRequesterConfigError::NoMeasurementCountPreferenceUnsupported)
     );
 }
@@ -149,18 +173,29 @@ fn config_rejects_unbounded_or_scheduled_profiles() {
 #[test]
 fn request_retries_have_affine_transmission_identity() {
     let mut requester = FtmRequester::<2>::new(config(2, 2));
-    requester.start([1; 6], 0).unwrap();
-    let FtmRequesterService::Transmit(first) = requester.service(0).unwrap() else {
+    requester
+        .start([1; 6], oer_time::Instant::from_micros(0))
+        .unwrap();
+    let FtmRequesterService::Transmit(first) = requester
+        .service(oer_time::Instant::from_micros(0))
+        .unwrap()
+    else {
         panic!()
     };
     assert_eq!(
-        requester.complete_transmission(first, false, 10),
+        requester.complete_transmission(first, false, oer_time::Instant::from_micros(10)),
         Ok(FtmRequesterEvent::RequestRetryScheduled {
-            retry_at_micros: 110
+            retry_at: oer_time::Instant::from_micros(110)
         })
     );
-    assert_eq!(requester.service(109), Ok(FtmRequesterService::Idle));
-    let FtmRequesterService::Transmit(second) = requester.service(110).unwrap() else {
+    assert_eq!(
+        requester.service(oer_time::Instant::from_micros(109)),
+        Ok(FtmRequesterService::Idle)
+    );
+    let FtmRequesterService::Transmit(second) = requester
+        .service(oer_time::Instant::from_micros(110))
+        .unwrap()
+    else {
         panic!()
     };
     assert_ne!(
@@ -168,37 +203,60 @@ fn request_retries_have_affine_transmission_identity() {
         second.transmission_generation()
     );
     assert_eq!(
-        requester.complete_transmission(first, true, 111),
+        requester.complete_transmission(first, true, oer_time::Instant::from_micros(111)),
         Err(FtmRequesterError::StaleTransmission)
     );
-    requester.complete_transmission(second, true, 111).unwrap();
-    assert_eq!(requester.next_deadline_micros(), Some(1_111));
+    requester
+        .complete_transmission(second, true, oer_time::Instant::from_micros(111))
+        .unwrap();
+    assert_eq!(
+        requester.next_deadline(),
+        Some(oer_time::Instant::from_micros(1_111))
+    );
 }
 
 #[test]
 fn mutated_body_cannot_complete_or_reject_the_exact_pending_transmission() {
     let mut completion = FtmRequester::<1>::new(config(2, 1));
-    completion.start([1; 6], 0).unwrap();
-    let FtmRequesterService::Transmit(valid_completion) = completion.service(0).unwrap() else {
+    completion
+        .start([1; 6], oer_time::Instant::from_micros(0))
+        .unwrap();
+    let FtmRequesterService::Transmit(valid_completion) = completion
+        .service(oer_time::Instant::from_micros(0))
+        .unwrap()
+    else {
         panic!()
     };
     let mut mutated_completion = valid_completion;
     mutated_completion.body[2] = 0;
     assert_eq!(
-        completion.complete_transmission(mutated_completion, true, 10),
+        completion.complete_transmission(
+            mutated_completion,
+            true,
+            oer_time::Instant::from_micros(10)
+        ),
         Err(FtmRequesterError::StaleTransmission)
     );
     assert_eq!(
-        completion.complete_transmission(valid_completion, true, 10),
+        completion.complete_transmission(
+            valid_completion,
+            true,
+            oer_time::Instant::from_micros(10)
+        ),
         Ok(FtmRequesterEvent::RequestPublished {
-            response_deadline_micros: 1_010,
-            session_deadline_micros: 10_010,
+            response_deadline: oer_time::Instant::from_micros(1_010),
+            session_deadline: oer_time::Instant::from_micros(10_010),
         })
     );
 
     let mut admission = FtmRequester::<1>::new(config(2, 1));
-    admission.start([2; 6], 20).unwrap();
-    let FtmRequesterService::Transmit(valid_admission) = admission.service(20).unwrap() else {
+    admission
+        .start([2; 6], oer_time::Instant::from_micros(20))
+        .unwrap();
+    let FtmRequesterService::Transmit(valid_admission) = admission
+        .service(oer_time::Instant::from_micros(20))
+        .unwrap()
+    else {
         panic!()
     };
     let mut mutated_admission = valid_admission;
@@ -227,7 +285,7 @@ fn three_ftm_frames_deliver_two_owned_samples_without_claiming_distance() {
             peer,
             FtmMeasurement::decode_body(&initial).unwrap(),
             Some(FtmLocalExchangeTiming::new(1, ps(1_100), ps(1_200)).unwrap()),
-            30,
+            oer_time::Instant::from_micros(30),
         ),
         Ok(FtmMeasurementDisposition::InitialAccepted {
             dialog_token: 1,
@@ -242,7 +300,7 @@ fn three_ftm_frames_deliver_two_owned_samples_without_claiming_distance() {
             peer,
             FtmMeasurement::decode_body(&follow_up).unwrap(),
             Some(FtmLocalExchangeTiming::new(2, ps(1_500), ps(1_600)).unwrap()),
-            40,
+            oer_time::Instant::from_micros(40),
         ),
         Ok(FtmMeasurementDisposition::SampleAccepted {
             dialog_token: 1,
@@ -255,7 +313,7 @@ fn three_ftm_frames_deliver_two_owned_samples_without_claiming_distance() {
             peer,
             FtmMeasurement::decode_body(&terminal).unwrap(),
             None,
-            50,
+            oer_time::Instant::from_micros(50),
         ),
         Ok(FtmMeasurementDisposition::Complete { samples: 2 })
     );
@@ -293,7 +351,7 @@ fn ftm_retransmission_deduplicates_follow_up_but_owns_new_token() {
             peer,
             FtmMeasurement::decode_body(&initial).unwrap(),
             Some(FtmLocalExchangeTiming::new(1, ps(100), ps(120)).unwrap()),
-            30,
+            oer_time::Instant::from_micros(30),
         )
         .unwrap();
     let measured = follow_up_body(2, 1, 80, 160);
@@ -302,7 +360,7 @@ fn ftm_retransmission_deduplicates_follow_up_but_owns_new_token() {
             peer,
             FtmMeasurement::decode_body(&measured).unwrap(),
             Some(FtmLocalExchangeTiming::new(2, ps(200), ps(220)).unwrap()),
-            40,
+            oer_time::Instant::from_micros(40),
         )
         .unwrap();
     let retry = follow_up_body(3, 1, 80, 160);
@@ -311,7 +369,7 @@ fn ftm_retransmission_deduplicates_follow_up_but_owns_new_token() {
             peer,
             FtmMeasurement::decode_body(&retry).unwrap(),
             Some(FtmLocalExchangeTiming::new(3, ps(300), ps(320)).unwrap()),
-            50,
+            oer_time::Instant::from_micros(50),
         ),
         Ok(FtmMeasurementDisposition::DuplicateSample { dialog_token: 1 })
     );
@@ -321,7 +379,7 @@ fn ftm_retransmission_deduplicates_follow_up_but_owns_new_token() {
             peer,
             FtmMeasurement::decode_body(&terminal).unwrap(),
             None,
-            60,
+            oer_time::Instant::from_micros(60),
         )
         .unwrap();
     let result = requester.take_result().unwrap();
@@ -341,7 +399,7 @@ fn abandoned_retransmission_token_cannot_be_reused() {
             peer,
             FtmMeasurement::decode_body(&initial).unwrap(),
             Some(FtmLocalExchangeTiming::new(1, ps(100), ps(120)).unwrap()),
-            30,
+            oer_time::Instant::from_micros(30),
         )
         .unwrap();
     let measured = follow_up_body(2, 1, 80, 160);
@@ -350,7 +408,7 @@ fn abandoned_retransmission_token_cannot_be_reused() {
             peer,
             FtmMeasurement::decode_body(&measured).unwrap(),
             Some(FtmLocalExchangeTiming::new(2, ps(200), ps(220)).unwrap()),
-            40,
+            oer_time::Instant::from_micros(40),
         )
         .unwrap();
     let retry = follow_up_body(3, 1, 80, 160);
@@ -359,7 +417,7 @@ fn abandoned_retransmission_token_cannot_be_reused() {
             peer,
             FtmMeasurement::decode_body(&retry).unwrap(),
             Some(FtmLocalExchangeTiming::new(3, ps(300), ps(320)).unwrap()),
-            50,
+            oer_time::Instant::from_micros(50),
         )
         .unwrap();
     let reused = follow_up_body(2, 3, 280, 360);
@@ -368,7 +426,7 @@ fn abandoned_retransmission_token_cannot_be_reused() {
             peer,
             FtmMeasurement::decode_body(&reused).unwrap(),
             Some(FtmLocalExchangeTiming::new(2, ps(400), ps(420)).unwrap()),
-            60,
+            oer_time::Instant::from_micros(60),
         ),
         Err(FtmRequesterError::DialogTokenReused)
     );
@@ -381,15 +439,18 @@ fn abandoned_retransmission_token_cannot_be_reused() {
 #[test]
 fn capacity_and_hardware_admission_fail_before_publication() {
     let mut too_small = FtmRequester::<1>::new(config(2, 1));
-    assert_eq!(too_small.start([1; 6], 0), Ok(1));
+    assert_eq!(
+        too_small.start([1; 6], oer_time::Instant::from_micros(0)),
+        Ok(1)
+    );
     assert!(matches!(
-        too_small.service(0),
+        too_small.service(oer_time::Instant::from_micros(0)),
         Ok(FtmRequesterService::Transmit(_))
     ));
 
     let mut too_small = FtmRequester::<1>::new(config(3, 1));
     assert_eq!(
-        too_small.start([1; 6], 0),
+        too_small.start([1; 6], oer_time::Instant::from_micros(0)),
         Err(FtmRequesterError::CapacityTooSmall {
             required_samples: 2,
             capacity: 1,
@@ -397,8 +458,13 @@ fn capacity_and_hardware_admission_fail_before_publication() {
     );
 
     let mut requester = FtmRequester::<2>::new(config(3, 1));
-    requester.start([1; 6], 0).unwrap();
-    let FtmRequesterService::Transmit(transmission) = requester.service(0).unwrap() else {
+    requester
+        .start([1; 6], oer_time::Instant::from_micros(0))
+        .unwrap();
+    let FtmRequesterService::Transmit(transmission) = requester
+        .service(oer_time::Instant::from_micros(0))
+        .unwrap()
+    else {
         panic!()
     };
     assert_eq!(
@@ -424,7 +490,7 @@ fn one_ftm_frame_is_a_terminal_initial_with_zero_samples() {
             peer,
             FtmMeasurement::decode_body(&terminal_initial).unwrap(),
             None,
-            30,
+            oer_time::Instant::from_micros(30),
         ),
         Ok(FtmMeasurementDisposition::Complete { samples: 0 })
     );
@@ -440,7 +506,7 @@ fn one_ftm_frame_is_a_terminal_initial_with_zero_samples() {
             peer,
             FtmMeasurement::decode_body(&invalid).unwrap(),
             Some(FtmLocalExchangeTiming::new(1, ps(100), ps(120)).unwrap()),
-            30,
+            oer_time::Instant::from_micros(30),
         ),
         Err(FtmRequesterError::TooManyMeasurements)
     );
@@ -458,7 +524,7 @@ fn initial_retransmission_replaces_timing_and_tokens_wrap_consecutively() {
             peer,
             FtmMeasurement::decode_body(&initial).unwrap(),
             Some(FtmLocalExchangeTiming::new(254, ps(100), ps(120)).unwrap()),
-            30,
+            oer_time::Instant::from_micros(30),
         )
         .unwrap();
 
@@ -468,7 +534,7 @@ fn initial_retransmission_replaces_timing_and_tokens_wrap_consecutively() {
             peer,
             FtmMeasurement::decode_body(&retransmission).unwrap(),
             Some(FtmLocalExchangeTiming::new(255, ps(200), ps(220)).unwrap()),
-            40,
+            oer_time::Instant::from_micros(40),
         ),
         Ok(FtmMeasurementDisposition::InitialRetransmissionAccepted {
             abandoned_dialog_token: 254,
@@ -482,7 +548,7 @@ fn initial_retransmission_replaces_timing_and_tokens_wrap_consecutively() {
             peer,
             FtmMeasurement::decode_body(&follow_up).unwrap(),
             Some(FtmLocalExchangeTiming::new(1, ps(300), ps(320)).unwrap()),
-            50,
+            oer_time::Instant::from_micros(50),
         ),
         Ok(FtmMeasurementDisposition::SampleAccepted {
             dialog_token: 255,
@@ -495,7 +561,7 @@ fn initial_retransmission_replaces_timing_and_tokens_wrap_consecutively() {
             peer,
             FtmMeasurement::decode_body(&terminal).unwrap(),
             None,
-            60,
+            oer_time::Instant::from_micros(60),
         )
         .unwrap();
     let result = requester.take_result().unwrap();
@@ -515,7 +581,7 @@ fn nonconsecutive_dialog_token_fails_before_sample_mutation() {
             peer,
             FtmMeasurement::decode_body(&initial).unwrap(),
             Some(FtmLocalExchangeTiming::new(1, ps(100), ps(120)).unwrap()),
-            30,
+            oer_time::Instant::from_micros(30),
         )
         .unwrap();
     let skipped = follow_up_body(3, 1, 80, 160);
@@ -524,7 +590,7 @@ fn nonconsecutive_dialog_token_fails_before_sample_mutation() {
             peer,
             FtmMeasurement::decode_body(&skipped).unwrap(),
             Some(FtmLocalExchangeTiming::new(3, ps(200), ps(220)).unwrap()),
-            40,
+            oer_time::Instant::from_micros(40),
         ),
         Err(FtmRequesterError::DialogTokenOutOfSequence {
             expected: 2,
@@ -549,7 +615,7 @@ fn initial_retransmission_must_preserve_the_negotiated_body() {
             peer,
             FtmMeasurement::decode_body(&initial).unwrap(),
             Some(FtmLocalExchangeTiming::new(1, ps(100), ps(120)).unwrap()),
-            30,
+            oer_time::Instant::from_micros(30),
         )
         .unwrap();
 
@@ -559,7 +625,7 @@ fn initial_retransmission_must_preserve_the_negotiated_body() {
             peer,
             FtmMeasurement::decode_body(&changed).unwrap(),
             Some(FtmLocalExchangeTiming::new(2, ps(200), ps(220)).unwrap()),
-            40,
+            oer_time::Instant::from_micros(40),
         ),
         Err(FtmRequesterError::InitialRetransmissionMismatch)
     );

@@ -17,7 +17,7 @@ use core::future::Future;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use oer_time::{Instant, Timer};
+use oer_time::Timer;
 
 pub use oer_esp32s31_ieee80211_mac::rx::ampdu::{RxReorderCommand, RxReorderCommandError};
 
@@ -334,9 +334,9 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
     pub fn evaluate_ftm_request_frontier(
         &self,
         config: FtmRequesterConfig,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<ConnectedFtmRequestFrontier, ConnectedControlError> {
-        self.core.evaluate_ftm_request_frontier(config, now_micros)
+        self.core.evaluate_ftm_request_frontier(config, now)
     }
 
     /// Report the reviewed FTM source frontier without touching MMIO.
@@ -347,19 +347,19 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
     pub fn queue_individual_twt_setup(
         &mut self,
         proposal: IndividualTwtProposal,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<(), ConnectedControlError> {
-        self.core.queue_individual_twt_setup(proposal, now_micros)
+        self.core.queue_individual_twt_setup(proposal, now)
     }
 
     pub fn queue_individual_twt_teardown<H: ConnectedControlHardware>(
         &mut self,
         hardware: &mut H,
         flow_id: IndividualTwtFlowId,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<(), ConnectedControlError> {
         self.core
-            .queue_individual_twt_teardown(hardware, flow_id, now_micros)
+            .queue_individual_twt_teardown(hardware, flow_id, now)
     }
 
     pub fn with_he_trigger_based(
@@ -568,7 +568,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
 
     /// Earliest role-local control deadline. Reading it does not require the
     /// ordinary/A-MPDU publication capability.
-    pub fn next_alarm_deadline(&self) -> Option<u64> {
+    pub fn next_alarm_deadline(&self) -> Option<oer_time::Instant> {
         self.core.next_alarm_deadline()
     }
 
@@ -585,7 +585,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         let receiver = &self.receiver;
         wait_control_input(receiver, power, async move {
             match deadline {
-                Some(deadline) => timer.wait_until(Instant::from_micros(deadline)).await,
+                Some(deadline) => timer.wait_until(deadline).await,
                 None => core::future::pending().await,
             }
         })
@@ -605,7 +605,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         let receiver = &self.receiver;
         wait_control_input(receiver, power, async move {
             match deadline {
-                Some(deadline) => Timer::wait_until(&*tx, Instant::from_micros(deadline)).await,
+                Some(deadline) => Timer::wait_until(&*tx, deadline).await,
                 None => core::future::pending().await,
             }
         })
@@ -910,7 +910,7 @@ where
             || (self.core.power_management().is_started() && tx.has_network_tx_report())
             || self
                 .next_alarm_deadline()
-                .is_some_and(|deadline| deadline <= now_micros)
+                .is_some_and(|deadline| deadline.as_micros() <= now_micros)
     }
 
     fn required_before_network_tx(&self) -> bool {

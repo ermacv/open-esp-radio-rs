@@ -1312,7 +1312,7 @@ pub(super) const fn connected_config(power: StationPowerMode) -> ConnectedStaCon
             // timeout in seconds from each beacon, and its expiry in
             // `cnx_beacon_timeout_process` probes the access point before
             // disconnecting.
-            beacon_timeout_micros: 6_000_000,
+            beacon_timeout: oer_time::Duration::from_secs(6),
         },
     }
 }

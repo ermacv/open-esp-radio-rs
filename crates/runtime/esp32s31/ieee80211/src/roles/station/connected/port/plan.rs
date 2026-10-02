@@ -55,7 +55,7 @@ pub struct ConnectedStaRxPolicy {
     pub beacon_miss_limit: u8,
     /// How long the link may go without a beacon before the station probes
     /// the access point.
-    pub beacon_timeout_micros: u64,
+    pub beacon_timeout: oer_time::Duration,
 }
 
 /// Configuration failure detected before any connected owner moves.
@@ -486,7 +486,7 @@ impl ConnectedStaPort {
         let beacon_loss = match StaBeaconLossConfig::new(
             peer.link.beacon_interval_tu,
             config.receive.beacon_miss_limit,
-            config.receive.beacon_timeout_micros,
+            config.receive.beacon_timeout,
         ) {
             Ok(beacon_loss) => beacon_loss,
             Err(error) => {

@@ -19,10 +19,14 @@
 //! `sta_try_sa_query`, `sta_sa_query_timeout` and
 //! `libnet80211.a[ieee80211.o]::ieee80211_recv_sa_query_resp`.
 
+use oer_time::{Duration, Instant};
+
+use crate::time::deadline_after;
+
 /// Period of the vendor's retry timer.
-const RETRY_INTERVAL_MICROS: u64 = 200_000;
+const RETRY_INTERVAL: Duration = Duration::from_millis(200);
 /// The vendor's one-shot procedure timeout.
-const TIMEOUT_MICROS: u64 = 1_024_000;
+const TIMEOUT: Duration = Duration::from_millis(1_024);
 /// Requests after which the next retry ends the association.
 const REQUEST_LIMIT: u16 = 10;
 /// Modulus the vendor reduces its random first transaction identifier by.
@@ -34,8 +38,8 @@ struct ActiveSaQuery {
     transaction: u16,
     /// Requests sent in this procedure.
     requests: u16,
-    next_retry_micros: u64,
-    timeout_micros: u64,
+    next_retry: Instant,
+    timeout: Instant,
 }
 
 /// What the procedure asks of its owner at one instant.
@@ -67,7 +71,7 @@ impl StationSaQuery {
     /// Start the procedure for one unprotected disconnect and return the
     /// first Request's transaction identifier. A disconnect during a running
     /// procedure is ignored, as the vendor ignores it.
-    pub fn start(&mut self, now_micros: u64, random: u32) -> Option<[u8; 2]> {
+    pub fn start(&mut self, now: Instant, random: u32) -> Option<[u8; 2]> {
         if self.active.is_some() {
             return None;
         }
@@ -75,8 +79,8 @@ impl StationSaQuery {
         self.active = Some(ActiveSaQuery {
             transaction,
             requests: 1,
-            next_retry_micros: now_micros.saturating_add(RETRY_INTERVAL_MICROS),
-            timeout_micros: now_micros.saturating_add(TIMEOUT_MICROS),
+            next_retry: deadline_after(now, RETRY_INTERVAL),
+            timeout: deadline_after(now, TIMEOUT),
         });
         Some(transaction.to_le_bytes())
     }
@@ -99,43 +103,41 @@ impl StationSaQuery {
 
     /// Whether the procedure's timeout passed. The timeout ends the
     /// association even while frames may not leave.
-    pub fn timed_out(&self, now_micros: u64) -> bool {
-        self.active
-            .is_some_and(|active| now_micros >= active.timeout_micros)
+    pub fn timed_out(&self, now: Instant) -> bool {
+        self.active.is_some_and(|active| now >= active.timeout)
     }
 
-    pub fn timeout_micros(&self) -> Option<u64> {
-        self.active.map(|active| active.timeout_micros)
+    /// When the procedure ends the association unless the peer answers.
+    pub fn timeout(&self) -> Option<Instant> {
+        self.active.map(|active| active.timeout)
     }
 
-    /// Advance the procedure to `now_micros`.
-    pub fn step(&mut self, now_micros: u64) -> SaQueryStep {
+    /// Advance the procedure to `now`.
+    pub fn step(&mut self, now: Instant) -> SaQueryStep {
         let Some(active) = self.active.as_mut() else {
             return SaQueryStep::Idle;
         };
-        if now_micros >= active.timeout_micros {
+        if now >= active.timeout {
             self.active = None;
             return SaQueryStep::TimedOut;
         }
-        if now_micros < active.next_retry_micros {
+        if now < active.next_retry {
             return SaQueryStep::Idle;
         }
         if active.requests == REQUEST_LIMIT {
             self.active = None;
             return SaQueryStep::TimedOut;
         }
-        active.next_retry_micros = active
-            .next_retry_micros
-            .saturating_add(RETRY_INTERVAL_MICROS);
+        active.next_retry = deadline_after(active.next_retry, RETRY_INTERVAL);
         active.transaction = active.transaction.wrapping_add(1);
         active.requests += 1;
         SaQueryStep::Request(active.transaction.to_le_bytes())
     }
 
     /// The instant the procedure next needs its owner.
-    pub fn deadline_micros(&self) -> Option<u64> {
+    pub fn next_deadline(&self) -> Option<Instant> {
         self.active
-            .map(|active| active.next_retry_micros.min(active.timeout_micros))
+            .map(|active| active.next_retry.min(active.timeout))
     }
 }
 

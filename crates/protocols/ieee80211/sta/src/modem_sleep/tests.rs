@@ -15,8 +15,10 @@ fn shared() -> CoexView {
     }
 }
 
-fn clock(now_micros: u64) -> PmClock {
-    PmClock { now_micros }
+fn clock(now: u64) -> PmClock {
+    PmClock {
+        now: oer_time::Instant::from_micros(now),
+    }
 }
 
 fn beacon(timestamp_tsf: u64, tim: Option<PmTim>) -> PmBeacon {
@@ -112,7 +114,7 @@ fn a_wifi_phase_requests_the_slice_and_its_end_arms_the_slice_timer() {
     assert!(actions.contains(&PmAction::UnblockTx));
     assert!(actions.contains(&PmAction::Arm {
         timer: PmTimer::SliceEnd,
-        after_micros: slice - u64::from(SLEEP_DELAY_MICROS),
+        after: oer_time::Duration::from_micros(slice - u64::from(SLEEP_DELAY_MICROS)),
     }));
     assert!(pm.in_slice());
 }
@@ -157,7 +159,7 @@ fn an_acknowledged_power_save_null_leads_to_rf_sleep_after_the_sleep_delay() {
         run(|actions| pm.null_done(true, true, clock(2_000), coex, PmTraffic::IDLE, actions));
     assert!(actions.contains(&PmAction::Arm {
         timer: PmTimer::SleepDelay,
-        after_micros: u64::from(SLEEP_DELAY_MICROS),
+        after: oer_time::Duration::from_micros(u64::from(SLEEP_DELAY_MICROS)),
     }));
     let actions = run(|actions| pm.sleep_delay_timer(clock(7_000), coex, PmTraffic::IDLE, actions));
     assert_eq!(
@@ -258,7 +260,7 @@ fn a_preemption_shortens_the_beacon_window_until_it_ends() {
     }));
     assert!(actions.contains(&PmAction::Arm {
         timer: PmTimer::Preemption,
-        after_micros: 50_000 - 2_000 - 10_000,
+        after: oer_time::Duration::from_micros(50_000 - 2_000 - 10_000),
     }));
     let actions =
         run(|actions| pm.preemption_end(None, clock(60_000), coex, PmTraffic::IDLE, actions));

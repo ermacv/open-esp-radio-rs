@@ -200,7 +200,7 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
 
     /// The earliest instant the connection needs its owner without input.
     pub(crate) fn next_deadline(&self) -> Option<Instant> {
-        let sa_query = self.sa_query.deadline_micros().map(Instant::from_micros);
+        let sa_query = self.sa_query.next_deadline();
         let power = self.power.as_ref().and_then(PortPowerSave::next_deadline);
         match (sa_query, power) {
             (Some(a), Some(b)) => Some(a.min(b)),
@@ -410,7 +410,7 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
     ) -> Result<Option<PortDisconnect>, PortLinkError<PortError<X>>> {
-        let now = context.timer.now().as_micros();
+        let now = context.timer.now();
         match self.sa_query.step(now) {
             SaQueryStep::Idle => {}
             SaQueryStep::Request(transaction) => {
@@ -511,7 +511,7 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
                 if self.config.management_protection && !protected {
                     // An unprotected disconnect may be forged: ask the access
                     // point whether the association holds.
-                    let now = context.timer.now().as_micros();
+                    let now = context.timer.now();
                     if let Some(transaction) =
                         self.sa_query.start(now, (self.config.sa_query_random)())
                     {

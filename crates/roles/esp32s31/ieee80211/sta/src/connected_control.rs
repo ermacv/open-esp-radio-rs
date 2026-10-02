@@ -68,18 +68,12 @@ use oer_ieee80211_sta::{
 // so a single ASAP burst can return at most 30 complete exchanges.
 const CONNECTED_FTM_FRONTIER_SAMPLE_CAPACITY: usize = 30;
 
-const fn earliest_deadline(left: Option<u64>, right: Option<u64>) -> Option<u64> {
-    match (left, right) {
-        (Some(left), Some(right)) => Some(if left < right { left } else { right }),
-        (Some(deadline), None) | (None, Some(deadline)) => Some(deadline),
-        (None, None) => None,
-    }
-}
+use oer_ieee80211_sta::time::earliest as earliest_deadline;
 
 // Complete `libnet80211.a[ieee80211_sta.o]::send_ap_probe` rearms
 // `mgd_probe_send_timeout` for 500 ms. Its timeout process retries a bounded
 // five times before returning to the disconnect path.
-const BEACON_PROBE_INTERVAL_MICROS: u64 = 500_000;
+const BEACON_PROBE_INTERVAL: oer_time::Duration = oer_time::Duration::from_millis(500);
 const BEACON_PROBE_ATTEMPT_LIMIT: u8 = 5;
 
 /// Protocol reason which ended one connected station epoch.
@@ -699,11 +693,11 @@ impl ConnectedControlCore {
     pub fn evaluate_ftm_request_frontier(
         &self,
         config: FtmRequesterConfig,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<ConnectedFtmRequestFrontier, ConnectedControlError> {
         let mut requester = FtmRequester::<CONNECTED_FTM_FRONTIER_SAMPLE_CAPACITY>::new(config);
-        let session_generation = requester.start(self.peer, now_micros)?;
-        let FtmRequesterService::Transmit(transmission) = requester.service(now_micros)? else {
+        let session_generation = requester.start(self.peer, now)?;
+        let FtmRequesterService::Transmit(transmission) = requester.service(now)? else {
             unreachable!("a newly queued FTM request is immediately serviceable")
         };
         let hardware_error = station_ftm_request_frontier(&transmission);
@@ -721,12 +715,12 @@ impl ConnectedControlCore {
     pub fn queue_individual_twt_setup(
         &mut self,
         proposal: IndividualTwtProposal,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<(), ConnectedControlError> {
         self.individual_twt
             .as_mut()
             .ok_or(ConnectedControlError::MissingIndividualTwtRequester)?
-            .queue_setup(proposal, now_micros)?;
+            .queue_setup(proposal, now)?;
         self.individual_twt_kick = true;
         Ok(())
     }
@@ -736,7 +730,7 @@ impl ConnectedControlCore {
         &mut self,
         hardware: &mut H,
         flow_id: IndividualTwtFlowId,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<(), ConnectedControlError> {
         let requester = self
             .individual_twt
@@ -745,7 +739,7 @@ impl ConnectedControlCore {
         if let Some(agreement) = requester.agreement(flow_id) {
             hardware.remove_station_individual_twt(&agreement)?;
         }
-        requester.queue_teardown(flow_id, now_micros)?;
+        requester.queue_teardown(flow_id, now)?;
         self.individual_twt_kick = true;
         Ok(())
     }
@@ -849,30 +843,27 @@ impl ConnectedControlCore {
     oer_esp32s31_ieee80211_dma::place_rx_hot_path! {
       /// Return the first owned control deadline without allocating executor state.
       #[inline(never)]
-      pub fn next_alarm_deadline(&self) -> Option<u64> {
-          let block_ack = self
-              .tx_block_ack
-              .earliest_alarm_deadline()
-              .map(oer_time::Instant::as_micros);
+      pub fn next_alarm_deadline(&self) -> Option<oer_time::Instant> {
+          let block_ack = self.tx_block_ack.earliest_alarm_deadline();
           let power = self.power.next_deadline();
           // Link and TWT deadlines lead to frames, which wait for the slice.
           if self.power.blocks_tx() {
               return earliest_deadline(
                   earliest_deadline(block_ack, power),
-                  self.sa_query.timeout_micros(),
+                  self.sa_query.timeout(),
               );
           }
           let link = self
               .beacon_monitor
               .as_ref()
-              .and_then(StaBeaconMonitor::deadline_micros);
+              .and_then(StaBeaconMonitor::deadline);
           let individual_twt = self
               .individual_twt
               .as_ref()
-              .and_then(IndividualTwtRequester::next_deadline_micros);
+              .and_then(IndividualTwtRequester::next_deadline);
           earliest_deadline(
               earliest_deadline(earliest_deadline(block_ack, link), individual_twt),
-              earliest_deadline(power, self.sa_query.deadline_micros()),
+              earliest_deadline(power, self.sa_query.next_deadline()),
           )
       }
     }
@@ -998,7 +989,7 @@ impl ConnectedControlCore {
             rx_block_ack,
         } = ports;
         if let Some(monitor) = &mut self.beacon_monitor {
-            monitor.arm(tx.now().as_micros())?;
+            monitor.arm(tx.now())?;
         }
         if event.is_some() && self.in_flight.is_some() {
             return Err(ConnectedControlError::EventBeforeTxCompletion);
@@ -1065,7 +1056,7 @@ impl ConnectedControlCore {
                         .individual_twt
                         .as_mut()
                         .ok_or(ConnectedControlError::MissingIndividualTwtRequester)?
-                        .complete_transmission(transmission, success, tx.now().as_micros())?;
+                        .complete_transmission(transmission, success, tx.now())?;
                     if success {
                         self.observations.individual_twt.actions_published = self
                             .observations
@@ -1105,11 +1096,8 @@ impl ConnectedControlCore {
             return Ok(progress);
         }
 
-        let now_micros = tx.now().as_micros();
-        if let Some(tid) = self
-            .tx_block_ack
-            .expire_next(oer_time::Instant::from_micros(now_micros))
-        {
+        let now = tx.now();
+        if let Some(tid) = self.tx_block_ack.expire_next(now) {
             tx.set_tx_block_ack_agreement(tid, None);
             self.observations.last_expired_tid = Some(tid);
             if let Some(index) = STA_TX_BLOCK_ACK_TIDS
@@ -1122,7 +1110,7 @@ impl ConnectedControlCore {
             return Ok(DatapathControlProgress::More);
         }
         // The SA Query timeout runs whether or not frames may leave.
-        if self.sa_query.timed_out(now_micros) {
+        if self.sa_query.timed_out(now) {
             return Ok(DatapathControlProgress::Exit(
                 ConnectedDisconnectReason::SaQueryTimeout,
             ));
@@ -1132,7 +1120,7 @@ impl ConnectedControlCore {
         if self.power.blocks_tx() {
             return Ok(DatapathControlProgress::Idle);
         }
-        match self.sa_query.step(now_micros) {
+        match self.sa_query.step(now) {
             SaQueryStep::Idle => {}
             SaQueryStep::Request(transaction) => {
                 return self.start_sa_query(hardware, tx, SaQuery::Request { transaction });
@@ -1151,7 +1139,7 @@ impl ConnectedControlCore {
         if self
             .beacon_monitor
             .as_ref()
-            .is_some_and(|monitor| monitor.expired(now_micros))
+            .is_some_and(|monitor| monitor.expired(now))
         {
             if self.beacon_probe_attempts < BEACON_PROBE_ATTEMPT_LIMIT {
                 return self.start_beacon_probe(hardware, tx);
@@ -1183,12 +1171,12 @@ impl ConnectedControlCore {
         X: ConnectedControlTx,
     {
         self.individual_twt_kick = false;
-        let now_micros = tx.now().as_micros();
+        let now = tx.now();
         let service = self
             .individual_twt
             .as_mut()
             .ok_or(ConnectedControlError::MissingIndividualTwtRequester)?
-            .service(now_micros)?;
+            .service(now)?;
         match service {
             IndividualTwtService::Idle => Ok(None),
             IndividualTwtService::Event(event) => {
@@ -1236,7 +1224,7 @@ impl ConnectedControlCore {
                         .individual_twt
                         .as_mut()
                         .expect("requester produced this transmission")
-                        .complete_transmission(transmission, false, tx.now().as_micros())?;
+                        .complete_transmission(transmission, false, tx.now())?;
                     self.observations.individual_twt.last_outcome =
                         Some(ConnectedIndividualTwtRuntimeOutcome::Protocol(event));
                     return Ok(Some(DatapathControlProgress::More));
@@ -1272,7 +1260,7 @@ impl ConnectedControlCore {
             let Some(random) = self.sa_query_random else {
                 return Ok(DatapathControlProgress::More);
             };
-            let Some(transaction) = self.sa_query.start(tx.now().as_micros(), random()) else {
+            let Some(transaction) = self.sa_query.start(tx.now(), random()) else {
                 return Ok(DatapathControlProgress::More);
             };
             return self.start_sa_query(hardware, tx, SaQuery::Request { transaction });
@@ -1317,7 +1305,7 @@ impl ConnectedControlCore {
             self.beacon_probe_attempts = 0;
             follow_beacon_protection(tx, observation.protection);
             if let Some(monitor) = &mut self.beacon_monitor {
-                monitor.observe(tx.now().as_micros(), observation)?;
+                monitor.observe(tx.now(), observation)?;
                 self.trace_beacon_monitor(BeaconMonitorOp::Refreshed);
             }
             let beacon = PmBeacon {
@@ -1343,7 +1331,7 @@ impl ConnectedControlCore {
         if let ConnectedRxControlEvent::ProbeResponse = event {
             self.beacon_probe_attempts = 0;
             if let Some(monitor) = &mut self.beacon_monitor {
-                monitor.observe_reachability(tx.now().as_micros())?;
+                monitor.observe_reachability(tx.now())?;
                 self.trace_beacon_monitor(BeaconMonitorOp::ProbeAnswered);
             }
             return Ok(DatapathControlProgress::More);
@@ -1512,11 +1500,7 @@ impl ConnectedControlCore {
                             );
                         }
                         Err(error) => {
-                            requester.reject_hardware_install(
-                                flow_id,
-                                generation,
-                                tx.now().as_micros(),
-                            )?;
+                            requester.reject_hardware_install(flow_id, generation, tx.now())?;
                             self.individual_twt_kick = true;
                             self.observations.individual_twt.hardware_rejections = self
                                 .observations
@@ -1792,11 +1776,10 @@ impl ConnectedControlCore {
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
     {
-        let now_micros = tx.now().as_micros();
         self.beacon_monitor
             .as_mut()
             .expect("beacon probes require an enabled beacon monitor")
-            .wait_for_reachability(now_micros, BEACON_PROBE_INTERVAL_MICROS)?;
+            .wait_for_reachability(tx.now(), BEACON_PROBE_INTERVAL)?;
         self.trace_beacon_monitor(BeaconMonitorOp::ProbeStarted);
         let progress = tx.start_beacon_probe(hardware)?;
         self.beacon_probe_attempts += 1;
@@ -1808,8 +1791,8 @@ impl ConnectedControlCore {
         let deadline = self
             .beacon_monitor
             .as_ref()
-            .and_then(StaBeaconMonitor::deadline_micros)
-            .unwrap_or(0);
+            .and_then(StaBeaconMonitor::deadline)
+            .map_or(0, oer_time::Instant::as_micros);
         oer_trace::emit(&BeaconMonitorTrace {
             op,
             deadline_micros_low: deadline as u32,

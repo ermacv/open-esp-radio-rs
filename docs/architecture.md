@@ -27,6 +27,8 @@ and lockfile boundary. They need not coincide, and a logical module does not
 require a new crate. `validation` is an operation on a domain's inputs, not a
 catch-all owner for unrelated tools.
 
+### Package classification
+
 Every Cargo package declares `package.metadata.open-radio.layer` and
 `platform`. Layer describes responsibility and implies the scope: the
 `contract`, `protocol`, `hardware`, `role`, `service`, `adapter`, `runtime`,
@@ -65,6 +67,8 @@ Default builds are always checked as well. The facade also requires a minimum
 build without default features. Lower compositions with mandatory choices use
 their declared profiles; an empty feature set need not form a usable system.
 
+### Layer dependencies
+
 The architecture check discovers source manifests and workspace members before
 reading classification. Missing or inconsistent classification is an error.
 Production path dependencies, including optional and build dependencies, must
@@ -81,6 +85,8 @@ the public facade. These rules are independent of directory names and chip IDs.
 | service | contract, protocol, service |
 | adapter, runtime | contract, protocol, hardware, role, adapter, runtime, service |
 | composition, facade | all production layers except facade |
+
+### Sans-IO protocols, executors and time
 
 Protocol logic is sans-IO. A `protocol` package is a set of state machines:
 received frames, completed operations and the current time enter as values

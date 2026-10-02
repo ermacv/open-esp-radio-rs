@@ -133,6 +133,8 @@ capability itself. Resolution adds the selected declarations and their
 catalog-owned dependency closure to the program before the schema-4 evaluator
 runs.
 
+### Imports and required sets
+
 Catalogs declare shared inputs with `imports = ["qualification/catalog/…"]`.
 Paths are relative to the repository root. Imports resolve transitively; a shared
 catalog is loaded once even when also explicitly selected. Missing inputs,
@@ -153,6 +155,8 @@ carry the existing source contracts. Its required `catalog-scope` identifies
 the chip, role, PHY, security set, composition, native/lower/composed level,
 activation boundary and limitations. This metadata is validated and rendered,
 but it is not a readiness axis.
+
+### Catalog owners
 
 The ESP32-S31 [Wi-Fi/PHY catalog](catalog/esp32s31/wifi-phy.toml) owns all 14
 Wi-Fi STA qualification declarations and the wider Wi-Fi/shared-PHY source
@@ -185,6 +189,8 @@ timing, security, power, coexistence and Host-only source inventory. Its
 `ieee802154-registered-timing-entry` and
 `ieee802154-mac-operation-subset` facts expose implemented lower operations
 without promoting their incomplete RF-ready and public-dataplane parents.
+
+### Check and render catalogs
 
 Static catalog validation checks every declaration, dependency graph, source
 contract, disposition mapping, HIL scenario reference and inventory path
@@ -261,6 +267,8 @@ coexistence. Each new scope retains explicit incomplete axes until its own
 production composition and evidence exist. The chip's
 [feature inventory](../crates/hardware/esp32s31/driver/bluetooth/FEATURES.md#qualification-scope-mapping)
 maps these requirements to current source boundaries.
+
+### Validate, evaluate and gate a program
 
 Validate each program from the repository root:
 
@@ -423,7 +431,7 @@ entry of any catalog. The rules follow the declared source status:
 
 | Declared state | Anchors required |
 | --- | --- |
-| `implemented`, `partial`, `fail-closed` | At least one in a package whose `open-radio` scope is `production` |
+| `implemented`, `partial`, `fail-closed` | At least one in a package of a production layer |
 | `diagnostic` | At least one, in any package |
 | `host-only` | Optional: the entry belongs to an upper protocol stack, not the radio |
 | `absent` | None |
@@ -458,6 +466,8 @@ maps both into the declared capability graph.
 Capability dependencies describe readiness, not instructions to re-execute
 every prerequisite scenario.
 
+### HIL requirements and scenario roles
+
 A HIL requirement names a scenario of the program's HIL catalog, and the
 programs decide each scenario's [role](../hil/scenarios/README.md#roles):
 validating a program fails while a scenario declared `qualification` is
@@ -466,6 +476,8 @@ referenced by no program of `qualification/targets`. A requirement on an
 satisfied: its decision is marked `investigation`, it derives the HIL gap
 `requirement-names-investigation-scenario`, and its next work is to re-home
 it to a qualification scenario on a product image.
+
+### Named checks
 
 HIL requirements may select named `checks` in addition to the scenario and
 minimum repetitions. The scenario owns thresholds; requirements reference
@@ -480,6 +492,8 @@ cannot be combined to satisfy it. JSON `hil_checks` exposes individual evidence
 references or `null`; those diagnostic rows do not replace the conjunction.
 The console exposes the same detail as `HIL-CHECK` rows. Absence means no
 eligible proof, not necessarily that the check has never been executed.
+
+### HIL decisions and source currency
 
 JSON `hil_decisions` explains each complete obligation: its applicability policy,
 completion boundary, status, selected evidence, and every observed scenario's
@@ -529,6 +543,8 @@ regardless of dirty state or commit identity. Nothing admits an observation
 whose closure differs from the checkout; original outcomes and exclusions
 remain visible, and a commit change or another PASS does not establish that a
 failure was resolved.
+
+### Run bundles and tracked HIL evidence
 
 A run bundle stays in ignored output, in the run store every checkout of the
 user shares (see [find and compare runs](../hil/host/runs.md#find-and-compare-runs)),
@@ -588,6 +604,8 @@ evidence pending` lists what is not recorded yet. `--hil-target` selects the
 programs naming that HIL target, which must agree on their run and evidence
 directories. Commit the shards. `INPUT` reports `hil-shards` and `hil-current-shards`.
 
+### Bundle validation and attempt seals
+
 The HIL runner writes bundles below `target/hil/<target>/runs/<run-id>/`.
 Qualification independently checks `integrity.json`, every indexed file hash,
 manifest/suite identity, current source applicability,
@@ -615,6 +633,8 @@ invalid attempt.
 in `hil_decisions` includes its completion seal's path and digest. The same
 attempt is indexed once, not again when the enclosing run completes. Fixture
 recovery and applicability to another build are separate from this completion.
+
+### Evidence reports and absent directories
 
 Use a JSON report for CI and downstream presentation:
 

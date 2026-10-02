@@ -9,6 +9,7 @@ impl<
     'irq,
     M: RawMutex,
     S,
+    K,
     const DEPTH: usize,
     const CAPACITY: usize,
     const SLOTS: usize,
@@ -21,6 +22,7 @@ impl<
         'irq,
         M,
         S,
+        K,
         DEPTH,
         CAPACITY,
         SLOTS,
@@ -28,6 +30,7 @@ impl<
     >
 where
     S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
+    K: Timer,
 {
     /// Whether this owner can make protocol progress without a fresh MAC IRQ.
     pub fn has_ready_work(&self) -> bool {
@@ -40,7 +43,7 @@ where
             || self
                 .processor
                 .next_gap_deadline()
-                .is_some_and(|(_, deadline)| deadline <= Instant::now())
+                .is_some_and(|(_, deadline)| deadline <= self.processor.clock.now())
     }
 
     /// Wait only for the next finite reorder deadline.
@@ -54,9 +57,10 @@ where
             .processor
             .next_gap_deadline()
             .map(|(_, deadline)| deadline);
+        let clock = &self.processor.clock;
         async move {
             match deadline {
-                Some(deadline) => Timer::at(deadline).await,
+                Some(deadline) => clock.wait_until(deadline).await,
                 None => pending().await,
             }
         }
@@ -102,7 +106,7 @@ where
                 }
 
                 if let Some((bank, deadline)) = self.processor.next_gap_deadline()
-                    && deadline <= Instant::now()
+                    && deadline <= self.processor.clock.now()
                 {
                     actions = actions.saturating_add(1);
                     let _ = self.processor.expire_reorder_gap(bank).await;

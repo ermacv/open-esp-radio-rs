@@ -50,6 +50,8 @@ impl ScanFrameObserver for NoopScanFrameObserver {
 
 pub struct ScanObservationContext<'a, O, const RECORDS: usize> {
     channel: u8,
+    /// When this synchronous observation drain began.
+    observed_at: oer_time::Instant,
     frame: &'a mut [u8],
     table: &'a mut ScanTable<RECORDS>,
     observer: &'a mut O,
@@ -58,12 +60,14 @@ pub struct ScanObservationContext<'a, O, const RECORDS: usize> {
 impl<'a, O, const RECORDS: usize> ScanObservationContext<'a, O, RECORDS> {
     pub fn new(
         channel: u8,
+        observed_at: oer_time::Instant,
         frame: &'a mut [u8],
         table: &'a mut ScanTable<RECORDS>,
         observer: &'a mut O,
     ) -> Self {
         Self {
             channel,
+            observed_at,
             frame,
             table,
             observer,
@@ -74,12 +78,9 @@ impl<'a, O, const RECORDS: usize> ScanObservationContext<'a, O, RECORDS> {
     where
         O: ScanFrameObserver,
     {
-        let outcome = self.table.observe_management(
-            frame,
-            self.channel,
-            rssi,
-            embassy_time::Instant::now().as_micros(),
-        );
+        let outcome =
+            self.table
+                .observe_management(frame, self.channel, rssi, self.observed_at.as_micros());
         self.observer.observe(frame, rssi, outcome);
         outcome
     }
@@ -196,7 +197,7 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
                             frame,
                             context.channel,
                             rssi,
-                            embassy_time::Instant::now().as_micros(),
+                            context.observed_at.as_micros(),
                         );
                         context.observer.observe(frame, rssi, outcome);
                         match outcome {

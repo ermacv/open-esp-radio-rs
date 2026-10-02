@@ -662,6 +662,7 @@ impl ProductionWifiEpochRunner {
                 reorder_storage: &RX_REORDER_STORAGE,
                 runtime: rx_protocol_runtime,
                 reorder_scratch: None,
+                clock: EmbassyClock,
                 #[cfg(feature = "diagnostics")]
                 pipeline_observer: diagnostics.and_then(|hooks| hooks.rx_pipeline),
                 #[cfg(feature = "diagnostics")]
@@ -895,9 +896,10 @@ impl ProductionWifiEpochRunner {
             common_rx,
             station_role,
             access_point_role,
+            EmbassyClock,
         );
         let mut paired_runner =
-            compose_sta_ap_datapath_runner(&IRQ_RUNTIME, network_runner, services);
+            compose_sta_ap_datapath_runner(&IRQ_RUNTIME, network_runner, services, EmbassyClock);
         #[cfg(feature = "diagnostics")]
         let rx_statistics_before = paired_runner
             .services()

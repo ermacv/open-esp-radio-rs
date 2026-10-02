@@ -364,6 +364,11 @@ impl<
         DMA_STORAGE_SIZE,
     >
 {
+    /// The timer the walker settles on.
+    pub(crate) const fn delay(&self) -> &D {
+        &self.delay
+    }
+
     pub const fn ring(&self) -> &RxRingStopped<'storage, COUNT> {
         &self.ring
     }
@@ -467,6 +472,11 @@ impl<
         DMA_STORAGE_SIZE,
     >
 {
+    /// The timer the walker settles on.
+    pub(crate) const fn delay(&self) -> &D {
+        &self.delay
+    }
+
     pub fn new(
         ring: RxRingLive<'storage, COUNT>,
         storage: &'static ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,

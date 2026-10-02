@@ -16,8 +16,8 @@
 //! port; installation, pause and resume, coexistence, statistics and the
 //! frame-pending table stay inherent.
 //!
-//! CSMA-CA backoffs and the delays before retries run on `embassy-time` in
-//! [`Ieee802154Runtime::run`], the runner the composition polls for as long
+//! CSMA-CA backoffs and the delays before retries run on the runtime's
+//! [`oer_time::Timer`] in [`Ieee802154Runtime::run`], the runner the composition polls for as long
 //! as the radio is installed, as ESP-IDF's OpenThread `SubMac` runs them on
 //! its tasklet timer; [`Ieee802154RadioPort::next_event`] only takes
 //! events. Overflow of the bounded event queue is reported as
@@ -45,7 +45,6 @@ use embassy_sync::{
     channel::Channel,
     signal::Signal,
 };
-use embassy_time::{Duration, Instant, Timer};
 use oer_espressif_ieee802154_engine::engine::{Ieee802154Engine, PENDING_TABLE_SIZE};
 pub use oer_espressif_ieee802154_engine::engine::{
     Ieee802154RxAbortStatistics, Ieee802154RxStatistics, Ieee802154TxAbortStatistics,
@@ -68,6 +67,7 @@ use oer_ieee802154::{
     ReceivedFrame, RequestId, RestingState, RxMetadata, SettingError, TxStatus,
 };
 use oer_ieee802154_trace::{Lease, PauseRefusal};
+use oer_time::{Duration, Instant, Timer};
 
 pub use oer_espressif_ieee802154_radio::{
     IEEE802154_ENH_ACK_PROBING_CAPACITY, IEEE802154_ENHANCED_ACK_IE_CAPACITY,
@@ -383,9 +383,10 @@ impl<M: RawMutex, const EVENTS: usize> Ieee802154RadioSink for QueueSink<'_, M, 
 ///
 /// `EVENTS` bounds the events waiting for the consumer, a loss marker
 /// included. Overflow drops the newest event and reports [`EventsLost`] once
-/// in its place.
+/// in its place. `T` is the image's monotonic time the delays wait on.
 // CAPABILITY: ieee802154-mac-operation-subset
-pub struct Ieee802154Runtime<'storage, M: RawMutex, H, const EVENTS: usize> {
+pub struct Ieee802154Runtime<'storage, M: RawMutex, H, T, const EVENTS: usize> {
+    timer: T,
     installed: Mutex<M, RefCell<Option<Installed<'storage, H>>>>,
     events: EventQueue<M, EVENTS>,
     /// When the running backoff or retry delay ends.
@@ -394,20 +395,22 @@ pub struct Ieee802154Runtime<'storage, M: RawMutex, H, const EVENTS: usize> {
     backoff_started: Signal<M, ()>,
 }
 
-impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize> Default
-    for Ieee802154Runtime<'storage, M, H, EVENTS>
+impl<'storage, M: RawMutex, H: Ieee802154LowLevel, T: Timer + Default, const EVENTS: usize> Default
+    for Ieee802154Runtime<'storage, M, H, T, EVENTS>
 {
     fn default() -> Self {
-        Self::new()
+        Self::new(T::default())
     }
 }
 
-impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
-    Ieee802154Runtime<'storage, M, H, EVENTS>
+impl<'storage, M: RawMutex, H: Ieee802154LowLevel, T: Timer, const EVENTS: usize>
+    Ieee802154Runtime<'storage, M, H, T, EVENTS>
 {
-    /// An empty runtime, suitable for a `static`.
-    pub const fn new() -> Self {
+    /// An empty runtime whose delays wait on `timer`, suitable for a
+    /// `static`.
+    pub const fn new(timer: T) -> Self {
         Self {
+            timer,
             installed: Mutex::new(RefCell::new(None)),
             events: EventQueue::new(),
             backoff_until: Mutex::new(Cell::new(None)),
@@ -419,7 +422,11 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
     /// due.
     fn start_backoff(&self, backoff_micros: Option<u32>) {
         if let Some(micros) = backoff_micros {
-            let until = Instant::now() + Duration::from_micros(u64::from(micros));
+            // A delay past the timer's range never ends.
+            let until = self
+                .timer
+                .deadline_after(Duration::from_micros(u64::from(micros)))
+                .unwrap_or(Instant::from_micros(u64::MAX));
             self.backoff_until.lock(|backoff| backoff.set(Some(until)));
             self.backoff_started.signal(());
         }
@@ -622,10 +629,10 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         })
     }
 
-    fn with_radio<T>(
+    fn with_radio<R>(
         &self,
-        entry: impl FnOnce(&mut Ieee802154Radio<'storage>, &mut H, &mut QueueSink<'_, M, EVENTS>) -> T,
-    ) -> Result<T, Ieee802154RuntimeError> {
+        entry: impl FnOnce(&mut Ieee802154Radio<'storage>, &mut H, &mut QueueSink<'_, M, EVENTS>) -> R,
+    ) -> Result<R, Ieee802154RuntimeError> {
         self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
             let installed = installed
@@ -719,7 +726,7 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
             let until = self.backoff_until.lock(Cell::get);
             let backoff = async {
                 match until {
-                    Some(until) => Timer::at(until).await,
+                    Some(until) => self.timer.wait_until(until).await,
                     None => core::future::pending().await,
                 }
             };
@@ -758,10 +765,10 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
     /// # Errors
     ///
     /// No radio is installed.
-    pub fn with_pending_table<T>(
+    pub fn with_pending_table<R>(
         &self,
-        change: impl FnOnce(&mut PendingTable<PENDING_TABLE_SIZE>) -> T,
-    ) -> Result<T, Ieee802154RuntimeError> {
+        change: impl FnOnce(&mut PendingTable<PENDING_TABLE_SIZE>) -> R,
+    ) -> Result<R, Ieee802154RuntimeError> {
         self.with_radio(|radio, _, _| change(radio.engine().pending_table()))
     }
 
@@ -870,8 +877,8 @@ fn apply_setting<L: Ieee802154LowLevel + ?Sized>(
     Ok(())
 }
 
-impl<M: RawMutex, H, const EVENTS: usize> Ieee802154RadioPort
-    for Ieee802154Runtime<'_, M, H, EVENTS>
+impl<M: RawMutex, H, T: Timer, const EVENTS: usize> Ieee802154RadioPort
+    for Ieee802154Runtime<'_, M, H, T, EVENTS>
 where
     H: Ieee802154LowLevel + Ieee802154RecentRssi,
 {
@@ -984,8 +991,14 @@ where
 /// Host models of the hardware for tests of this runtime and the crates
 /// that drive it; host targets only, where no MAC writes received frames.
 #[cfg(all(any(test, feature = "model"), not(target_arch = "riscv32")))]
-impl<M: RawMutex, const EVENTS: usize>
-    Ieee802154Runtime<'_, M, oer_espressif_ieee802154_engine::ll::model::Ieee802154LlModel, EVENTS>
+impl<M: RawMutex, T: Timer, const EVENTS: usize>
+    Ieee802154Runtime<
+        '_,
+        M,
+        oer_espressif_ieee802154_engine::ll::model::Ieee802154LlModel,
+        T,
+        EVENTS,
+    >
 {
     /// Model the MAC DMA writing `frame` into the published receive buffer
     /// and raising `events`, then run the interrupt handler.
@@ -1019,10 +1032,10 @@ impl<M: RawMutex, const EVENTS: usize>
     /// # Errors
     ///
     /// No radio is installed.
-    pub fn with_model<T>(
+    pub fn with_model<R>(
         &self,
-        entry: impl FnOnce(&mut oer_espressif_ieee802154_engine::ll::model::Ieee802154LlModel) -> T,
-    ) -> Result<T, Ieee802154RuntimeError> {
+        entry: impl FnOnce(&mut oer_espressif_ieee802154_engine::ll::model::Ieee802154LlModel) -> R,
+    ) -> Result<R, Ieee802154RuntimeError> {
         self.with_radio(|_, hardware, _| entry(hardware))
     }
 }

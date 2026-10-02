@@ -17,7 +17,7 @@ use core::future::Future;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use embassy_time::{Instant, Timer};
+use oer_time::{Instant, Timer};
 
 pub use oer_esp32s31_ieee80211_mac::rx::ampdu::{RxReorderCommand, RxReorderCommandError};
 
@@ -573,10 +573,10 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
     }
 
     /// Paired-runtime wait which deliberately owns no physical TX resource.
-    /// Embassy time is the production clock (`oer_time_embassy::EmbassyClock`), so
+    /// `timer` reads the same monotonic time as the station's transmitter, so
     /// this preserves the standalone deadline epoch without lending DMA to a
     /// sleeping station role.
-    pub async fn wait_ready_without_tx(&mut self) {
+    pub async fn wait_ready_without_tx(&mut self, timer: &impl Timer) {
         if self.has_immediate_work() {
             return;
         }
@@ -585,7 +585,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         let receiver = &self.receiver;
         wait_control_input(receiver, power, async move {
             match deadline {
-                Some(deadline) => Timer::at(Instant::from_micros(deadline)).await,
+                Some(deadline) => timer.wait_until(Instant::from_micros(deadline)).await,
                 None => core::future::pending().await,
             }
         })
@@ -605,10 +605,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         let receiver = &self.receiver;
         wait_control_input(receiver, power, async move {
             match deadline {
-                Some(deadline) => {
-                    oer_time::Timer::wait_until(&*tx, oer_time::Instant::from_micros(deadline))
-                        .await
-                }
+                Some(deadline) => Timer::wait_until(&*tx, Instant::from_micros(deadline)).await,
                 None => core::future::pending().await,
             }
         })

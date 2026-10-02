@@ -5,12 +5,14 @@ use oer_bluetooth_radio::{
     ClockInfo, EventsLost, LeRadioCapabilities, LeRadioPort, RadioActivity, RadioEpoch,
     RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError,
 };
+use oer_time::Timer;
 
 use crate::{BluetoothOutcome, BluetoothRadioHardware, BluetoothRuntime, BluetoothRuntimeError};
 
 impl<
     M: RawMutex,
     H: BluetoothRadioHardware,
+    T: Timer,
     const LEGACY: usize,
     const CONNECTABLE: usize,
     const SCANNERS: usize,
@@ -23,6 +25,7 @@ impl<
     for BluetoothRuntime<
         M,
         H,
+        T,
         LEGACY,
         CONNECTABLE,
         SCANNERS,

@@ -7,10 +7,11 @@ impl<
     'irq,
     M: RawMutex,
     S,
+    K,
     const CAPACITY: usize,
     const SLOTS: usize,
     const REORDER_SLOTS: usize,
-> ConnectedRxProcessor<'queue, 'pool, 'scratch, 'irq, M, S, CAPACITY, SLOTS, REORDER_SLOTS>
+> ConnectedRxProcessor<'queue, 'pool, 'scratch, 'irq, M, S, K, CAPACITY, SLOTS, REORDER_SLOTS>
 where
     S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
 {
@@ -20,6 +21,7 @@ where
         mpdu: &'scratch mut [u8],
         ethernet: &'scratch mut [u8],
         runtime: &'pool mut ConnectedReceiveStorage<'pool, CAPACITY, SLOTS, REORDER_SLOTS>,
+        clock: K,
     ) -> Self {
         assert!(
             runtime.dispatcher_configured(),
@@ -48,6 +50,7 @@ where
         );
         Self {
             irq,
+            clock,
             sink,
             mpdu,
             ethernet,
@@ -217,7 +220,7 @@ where
     }
 }
 
-impl<'queue, 'pool, 'scratch, 'irq, M: RawMutex, S, const CAPACITY: usize, const SLOTS: usize>
+impl<'queue, 'pool, 'scratch, 'irq, M: RawMutex, S, K, const CAPACITY: usize, const SLOTS: usize>
     ConnectedRxProcessor<
         'queue,
         'pool,
@@ -225,6 +228,7 @@ impl<'queue, 'pool, 'scratch, 'irq, M: RawMutex, S, const CAPACITY: usize, const
         'irq,
         M,
         S,
+        K,
         CAPACITY,
         SLOTS,
         RX_REORDER_BACKING_SLOT_COUNT,
@@ -243,8 +247,9 @@ where
             SLOTS,
             RX_REORDER_BACKING_SLOT_COUNT,
         >,
+        clock: K,
     ) -> Self {
-        Self::new_with_reorder_slots(irq, sink, mpdu, ethernet, runtime)
+        Self::new_with_reorder_slots(irq, sink, mpdu, ethernet, runtime, clock)
     }
 }
 
@@ -255,6 +260,7 @@ impl<
     'irq,
     M: RawMutex,
     S,
+    K,
     const DEPTH: usize,
     const CAPACITY: usize,
     const SLOTS: usize,
@@ -267,6 +273,7 @@ impl<
         'irq,
         M,
         S,
+        K,
         DEPTH,
         CAPACITY,
         SLOTS,
@@ -282,11 +289,12 @@ where
         mpdu: &'scratch mut [u8],
         ethernet: &'scratch mut [u8],
         runtime: &'pool mut ConnectedReceiveStorage<'pool, CAPACITY, SLOTS, REORDER_SLOTS>,
+        clock: K,
     ) -> Self {
         Self {
             frames,
             processor: ConnectedRxProcessor::new_with_reorder_slots(
-                irq, sink, mpdu, ethernet, runtime,
+                irq, sink, mpdu, ethernet, runtime, clock,
             ),
         }
     }
@@ -356,7 +364,18 @@ where
     pub fn try_into_processor(
         self,
     ) -> Result<
-        ConnectedRxProcessor<'queue, 'pool, 'scratch, 'irq, M, S, CAPACITY, SLOTS, REORDER_SLOTS>,
+        ConnectedRxProcessor<
+            'queue,
+            'pool,
+            'scratch,
+            'irq,
+            M,
+            S,
+            K,
+            CAPACITY,
+            SLOTS,
+            REORDER_SLOTS,
+        >,
         Self,
     > {
         if !self.frames.is_empty() {
@@ -379,6 +398,7 @@ where
             'irq,
             M,
             S,
+            K,
             CAPACITY,
             SLOTS,
             REORDER_SLOTS,
@@ -443,6 +463,7 @@ impl<
     'irq,
     M: RawMutex,
     S,
+    K,
     const DEPTH: usize,
     const CAPACITY: usize,
     const SLOTS: usize,
@@ -454,6 +475,7 @@ impl<
         'irq,
         M,
         S,
+        K,
         DEPTH,
         CAPACITY,
         SLOTS,
@@ -474,7 +496,8 @@ where
             SLOTS,
             RX_REORDER_BACKING_SLOT_COUNT,
         >,
+        clock: K,
     ) -> Self {
-        Self::new_with_reorder_slots(frames, irq, sink, mpdu, ethernet, runtime)
+        Self::new_with_reorder_slots(frames, irq, sink, mpdu, ethernet, runtime, clock)
     }
 }

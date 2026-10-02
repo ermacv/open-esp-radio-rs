@@ -42,7 +42,7 @@ where
         Ok(dwell_millis)
     }
 
-    type Coex = RadioConnectionCoex<'radio, P, C>;
+    type Coex = RadioConnectionCoex<'radio, P, C, D>;
 
     fn connection_coex(&self) -> Self::Coex {
         RadioChannel::connection_coex(self)
@@ -68,7 +68,7 @@ where
         Ok(dwell_millis)
     }
 
-    type Coex = RadioConnectionCoex<'radio, P, C>;
+    type Coex = RadioConnectionCoex<'radio, P, C, D>;
 
     fn connection_coex(&self) -> Self::Coex {
         RadioChannel::connection_coex(self)

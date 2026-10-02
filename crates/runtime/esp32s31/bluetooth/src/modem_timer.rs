@@ -7,13 +7,13 @@
 //! and is discarded.
 
 use embassy_sync::{blocking_mutex::raw::RawMutex, signal::Signal};
-use embassy_time::Timer;
 use oer_esp32s31_bluetooth::modem_timer::{
     ControllerModemTimerBegin, ControllerModemTimerReadinessClass, ControllerModemTimerRearm,
     ControllerModemTimerStep, ControllerModemTimerTask, ModemLpTimerSoftwareOwnerStorage,
 };
+use oer_time::Timer;
 
-use crate::HARDWARE_RECHECK;
+use crate::{HARDWARE_RECHECK, runtime::wait_for};
 
 /// Why the timer task stopped.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -35,6 +35,7 @@ pub async fn run_modem_timer<
 >(
     task: &mut ControllerModemTimerTask<'_, S, CAPACITY>,
     wake: &Signal<M, ()>,
+    timer: &impl Timer,
 ) -> ModemTimerFault<S::TakeError, S::RestoreError> {
     loop {
         match task.readiness().class() {
@@ -49,7 +50,7 @@ pub async fn run_modem_timer<
             }
             ControllerModemTimerReadinessClass::Step => {
                 if let ControllerModemTimerStep::Recheck = task.step() {
-                    Timer::after(HARDWARE_RECHECK).await;
+                    wait_for(timer, HARDWARE_RECHECK).await;
                 }
             }
             ControllerModemTimerReadinessClass::EventCapacity => {
@@ -76,6 +77,7 @@ pub async fn run_modem_timer<
 /// Stable storage refused the owner.
 pub async fn settle_modem_timer<S: ModemLpTimerSoftwareOwnerStorage, const CAPACITY: usize>(
     task: &mut ControllerModemTimerTask<'_, S, CAPACITY>,
+    timer: &impl Timer,
 ) -> Result<(), ModemTimerFault<S::TakeError, S::RestoreError>> {
     loop {
         match task.readiness().class() {
@@ -89,7 +91,7 @@ pub async fn settle_modem_timer<S: ModemLpTimerSoftwareOwnerStorage, const CAPAC
             }
             ControllerModemTimerReadinessClass::Step => {
                 if let ControllerModemTimerStep::Recheck = task.step() {
-                    Timer::after(HARDWARE_RECHECK).await;
+                    wait_for(timer, HARDWARE_RECHECK).await;
                 }
             }
             ControllerModemTimerReadinessClass::EventCapacity => {

@@ -161,6 +161,7 @@ fn one_physical_producer_routes_one_ordered_lease_into_station_processor() {
         &mut mpdu,
         &mut ethernet,
         runtime,
+        oer_time_virtual::SkipClock::new(),
     );
     let turn =
         embassy_futures::block_on(receiver.service_next(
@@ -364,6 +365,7 @@ impl<'pool, H, PhysicalTx, const CAPACITY: usize, const SLOTS: usize>
         &mut self,
         _physical_tx: &mut PhysicalTx,
         _network: &mut dyn DatapathNetworkRx,
+        _now: oer_time::Instant,
     ) -> Result<DatapathRxProgress, Self::Error> {
         self.publish_pending_calls += 1;
         Ok(DatapathRxProgress::Drained)
@@ -374,6 +376,7 @@ impl<'pool, H, PhysicalTx, const CAPACITY: usize, const SLOTS: usize>
         _hardware: &mut H,
         _physical_tx: &mut PhysicalTx,
         frame: StagedRxFrame<'pool, CAPACITY, SLOTS>,
+        _now: oer_time::Instant,
     ) -> Result<
         crate::roles::concurrent::RoutedRxDisposition<StagedRxFrame<'pool, CAPACITY, SLOTS>>,
         Self::Error,
@@ -387,6 +390,7 @@ impl<'pool, H, PhysicalTx, const CAPACITY: usize, const SLOTS: usize>
     fn service_access_point_rx_during_tx(
         &mut self,
         frame: StagedRxFrame<'pool, CAPACITY, SLOTS>,
+        _now: oer_time::Instant,
     ) -> Result<
         crate::roles::concurrent::RoutedRxDisposition<StagedRxFrame<'pool, CAPACITY, SLOTS>>,
         Self::Error,
@@ -396,7 +400,7 @@ impl<'pool, H, PhysicalTx, const CAPACITY: usize, const SLOTS: usize>
         Ok(crate::roles::concurrent::RoutedRxDisposition::Processed)
     }
 
-    fn has_pending_rx(&self) -> bool {
+    fn has_pending_rx(&self, _now: oer_time::Instant) -> bool {
         false
     }
 
@@ -891,6 +895,7 @@ fn connected_rx_turn_recycles_protocol_credits_before_the_next_dma_probe() {
         &mut mpdu,
         &mut ethernet,
         protocol_runtime,
+        oer_time_virtual::SkipClock::new(),
     );
     let mut service = ConnectedStaRxService::new(dma, protocol);
     let mut network_rx = PairedNetworkRx::default();
@@ -1758,6 +1763,7 @@ fn exercise_negotiated_rx_block_ack(in_order: bool) {
         &mut mpdu,
         &mut ethernet,
         protocol_runtime,
+        oer_time_virtual::SkipClock::new(),
     )
     .with_rx_reorder_commands(reorder_receiver)
     .with_rx_reorder_storage(&reorder_storage)

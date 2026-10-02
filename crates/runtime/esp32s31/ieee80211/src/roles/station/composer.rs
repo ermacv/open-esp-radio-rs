@@ -432,6 +432,10 @@ pub trait StationEnginePort<'security, M: RawMutex> {
     /// Exact non-reusable owner returned when a phase cannot prove the normal
     /// station frontier reusable. This is data, not a request to reset.
     type Fault;
+    /// The image's monotonic clock, on which station backoff waits.
+    type Timer: oer_time::Timer;
+
+    fn timer(&self) -> &Self::Timer;
 
     fn run_initial_scan<'a>(
         &'a mut self,
@@ -656,6 +660,11 @@ where
     type Owner = StationEngineOwner<'security, M, P>;
     type Error = P::Error;
     type Fault = P::Fault;
+    type Timer = P::Timer;
+
+    fn timer(&self) -> &P::Timer {
+        self.port.timer()
+    }
 
     fn run_attempt<'a>(
         &'a mut self,

@@ -9,3 +9,8 @@ pub(crate) async fn wait_for(timer: &impl Timer, duration: Duration) {
         core::future::pending::<()>().await;
     }
 }
+
+/// The wait after a MAC stop request before its first activity readback.
+pub(crate) const MAC_STOP_SETTLE: Duration = Duration::from_micros(20);
+/// The interval between two MAC activity readbacks.
+pub(crate) const MAC_STOP_POLL: Duration = Duration::from_micros(1);

@@ -100,6 +100,7 @@ fn exercise_stop(active: bool, fail_completion: bool) {
             fail_completion,
             stops: 0,
         },
+        oer_time_virtual::SkipClock::new(),
     );
     runner.prepared_tx_interface = Some(interface);
     if active {
@@ -187,6 +188,7 @@ fn control_exchange_waits_for_each_terminal_event_without_admitting_prepared_dat
             fail_completion: false,
             stops: 0,
         },
+        oer_time_virtual::SkipClock::new(),
     );
     runner.prepared_tx_interface = Some(interface);
 
@@ -363,6 +365,7 @@ fn partial_successors_publish_without_waiting_but_yield_to_ready_control() {
             control_after_successor: 1,
             control_pending: false,
         },
+        oer_time_virtual::SkipClock::new(),
     );
     let mut cx = Context::from_waker(Waker::noop());
     {
@@ -429,6 +432,7 @@ fn saturated_successors_yield_to_a_received_frame_within_one_transaction() {
             control_after_successor: u8::MAX,
             control_pending: false,
         },
+        oer_time_virtual::SkipClock::new(),
     );
     let mut cx = Context::from_waker(Waker::noop());
     let received = |log: &[ChainEvent]| log.contains(&ChainEvent::Rx);
@@ -552,7 +556,13 @@ fn control_that_never_consumes_its_input_cannot_starve_a_sibling_task() {
     let pool = PinnedTxPool::<64, 16, 8, 1>::pin_static(Box::leak(Box::new(PinnedTxPool::new())));
     let network = owned::OwnedDatapathNetwork::new(owned, resources.split(pool));
     let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
-    let mut runner = DatapathRunner::new(&irq, network, interface, SpinningControl { steps: 0 });
+    let mut runner = DatapathRunner::new(
+        &irq,
+        network,
+        interface,
+        SpinningControl { steps: 0 },
+        oer_time_virtual::SkipClock::new(),
+    );
     let sibling_ran = core::cell::Cell::new(false);
     let mut cx = Context::from_waker(Waker::noop());
     {
@@ -672,6 +682,7 @@ fn a_frame_queued_while_the_station_dozes_wakes_control_once() {
             offered: false,
             control_steps: &control_steps,
         },
+        oer_time_virtual::SkipClock::new(),
     );
     let mut cx = Context::from_waker(Waker::noop());
     {

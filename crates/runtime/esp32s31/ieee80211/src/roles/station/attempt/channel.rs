@@ -44,7 +44,7 @@ where
         RadioChannel::publish_coex_activity(self, activity)
     }
 
-    type Coex = RadioConnectionCoex<'radio, P, C>;
+    type Coex = RadioConnectionCoex<'radio, P, C, D>;
 
     fn connection_coex(&self) -> Self::Coex {
         RadioChannel::connection_coex(self)
@@ -73,7 +73,7 @@ where
         RadioChannel::publish_coex_activity(self, activity)
     }
 
-    type Coex = RadioConnectionCoex<'radio, P, C>;
+    type Coex = RadioConnectionCoex<'radio, P, C, D>;
 
     fn connection_coex(&self) -> Self::Coex {
         RadioChannel::connection_coex(self)

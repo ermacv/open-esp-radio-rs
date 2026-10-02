@@ -22,7 +22,7 @@ use embassy_futures::select::{Either, select};
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use embassy_time::Timer;
+use oer_time::{Duration, Timer};
 
 use oer_esp32s31_hal::{owner::RadioRuntimeOwner, types::MacInterruptEnableState};
 
@@ -346,8 +346,12 @@ where
     pub async fn run_controlled(
         &mut self,
         control: &mut MonitorCommandReceiver<'_, M>,
+        timer: &impl Timer,
     ) -> Result<MonitorRunReport, MonitorRunFailure<R::Error>> {
-        let result = self.service.run_until_stopped(control.wait_stop()).await;
+        let result = self
+            .service
+            .run_until_stopped(control.wait_stop(), timer)
+            .await;
         control.complete(if self.service.is_quiescent() {
             MonitorCompletion::Stopped
         } else {
@@ -360,8 +364,7 @@ where
     /// leasing the shared radio for this one transaction.
     pub async fn switch_channel<D, O, RP, RC>(
         &mut self,
-        radio: &RadioSystem<RP, RC>,
-        timer: &D,
+        radio: &RadioSystem<RP, RC, D>,
         channel: WifiChannel,
         observer: &mut O,
     ) -> Result<(), MonitorChannelSwitchError>
@@ -384,7 +387,12 @@ where
         let mut guard = radio.lock().await;
         let (lease, platform, _) = guard.parts();
         let switched = switch_esp32s31_wifi_channel::<oer_esp32s31_phy::RomShortDelay, _, _>(
-            timer, lease, platform, registers, channel, observer,
+            radio.timer(),
+            lease,
+            platform,
+            registers,
+            channel,
+            observer,
         )
         .await;
         drop(guard);
@@ -742,8 +750,7 @@ where
 
     async fn run_hopping<D, O, RP, RC>(
         &mut self,
-        radio: &RadioSystem<RP, RC>,
-        timer: &D,
+        radio: &RadioSystem<RP, RC, D>,
         sequence: MonitorChannelSequence,
         observer: &mut O,
     ) -> Result<MonitorRunReport, MonitorRunFailure<R::Error>>
@@ -772,10 +779,16 @@ where
                 let control = &mut self.control;
                 owner
                     .service
-                    .run_until_boundary(select(
-                        control.wait_stop(),
-                        Timer::after_millis(u64::from(sequence.dwell_millis())),
-                    ))
+                    .run_until_boundary(
+                        select(
+                            control.wait_stop(),
+                            crate::time::wait_for(
+                                radio.timer(),
+                                Duration::from_millis(u32::from(sequence.dwell_millis())),
+                            ),
+                        ),
+                        radio.timer(),
+                    )
                     .await
             };
             let (epoch, boundary) = match epoch {
@@ -817,7 +830,7 @@ where
             let next_channel = channels[channel_index];
             if let Err(error) = self
                 .owner
-                .switch_channel::<D, O, RP, RC>(radio, timer, next_channel, observer)
+                .switch_channel::<D, O, RP, RC>(radio, next_channel, observer)
                 .await
             {
                 self.owner.quarantined = true;
@@ -873,8 +886,11 @@ where
 
     /// Run the finite role epoch. The task-side command receiver is private,
     /// so only the paired controller can request the terminal edge.
-    pub async fn run(&mut self) -> Result<MonitorRunReport, MonitorRunFailure<R::Error>> {
-        self.owner.run_controlled(&mut self.control).await
+    pub async fn run(
+        &mut self,
+        timer: &impl Timer,
+    ) -> Result<MonitorRunReport, MonitorRunFailure<R::Error>> {
+        self.owner.run_controlled(&mut self.control, timer).await
     }
 
     /// Run and consume one complete role epoch for a supervisor task wrapper.
@@ -886,12 +902,13 @@ where
     #[allow(clippy::type_complexity)]
     pub async fn run_to_exit(
         mut self,
+        timer: &impl Timer,
     ) -> MonitorTaskExit<
         MonitorStopped<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         Self,
         R::Error,
     > {
-        let result = self.run().await;
+        let result = self.run(timer).await;
         match self.try_into_stopped() {
             Ok(stopped) => MonitorTaskExit::Stopped { stopped, result },
             Err(task) => MonitorTaskExit::Faulted { task, result },
@@ -903,8 +920,7 @@ where
     #[allow(clippy::type_complexity)]
     pub async fn run_channel_policy_to_exit<D, O, RP, RC>(
         mut self,
-        radio: &RadioSystem<RP, RC>,
-        timer: &D,
+        radio: &RadioSystem<RP, RC, D>,
         policy: MonitorChannelPolicy,
         observer: &mut O,
     ) -> MonitorTaskExit<
@@ -924,9 +940,9 @@ where
             {
                 Err(self.policy_mismatch(channel))
             }
-            MonitorChannelPolicy::Fixed(_) => self.run().await,
+            MonitorChannelPolicy::Fixed(_) => self.run(radio.timer()).await,
             MonitorChannelPolicy::Hopping(sequence) => {
-                self.run_hopping::<D, O, RP, RC>(radio, timer, sequence, observer)
+                self.run_hopping::<D, O, RP, RC>(radio, sequence, observer)
                     .await
             }
         };
@@ -964,8 +980,7 @@ where
     /// Retune only while the contained IRQ/DMA service is stopped.
     pub async fn switch_channel<D, O, RP, RC>(
         &mut self,
-        radio: &RadioSystem<RP, RC>,
-        timer: &D,
+        radio: &RadioSystem<RP, RC, D>,
         channel: WifiChannel,
         observer: &mut O,
     ) -> Result<(), MonitorChannelSwitchError>
@@ -975,7 +990,7 @@ where
         RC: PlatformClockProvider,
     {
         self.owner
-            .switch_channel::<D, O, RP, RC>(radio, timer, channel, observer)
+            .switch_channel::<D, O, RP, RC>(radio, channel, observer)
             .await
     }
 }

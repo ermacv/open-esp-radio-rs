@@ -32,13 +32,13 @@ extern crate std;
 
 use embassy_futures::select::{Either4, select4};
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use embassy_time::{Duration, Instant, Timer};
 use oer_bluetooth_controller::LeController;
 use oer_bluetooth_hci::HostToControllerFrame;
 use oer_bluetooth_hci_transport::{HciChannelError, InProcessHciControllerTransport};
 use oer_bluetooth_radio::{
     EventsLost, LeRadioPort, RadioActivity, RadioFault, RadioOutcome, RequestError,
 };
+use oer_time::{Duration, Instant, Timer};
 
 /// Delay before asking the core again after the radio refused a request.
 pub const REFUSED_RETRY_DELAY: Duration = Duration::from_millis(1);
@@ -61,7 +61,8 @@ pub enum ServeExit<E> {
 }
 
 /// Serve the Host through `transport` with `core` over `radio` until the
-/// transport or the radio ends the service.
+/// transport or the radio ends the service. Retries after a refusal wait on
+/// `timer`.
 pub async fn serve<
     M,
     P,
@@ -73,6 +74,7 @@ pub async fn serve<
     transport: &InProcessHciControllerTransport<'_, M, H2C, C2H, PACKET>,
     core: &mut LeController<'_, OUTPUT>,
     radio: &P,
+    timer: &impl Timer,
 ) -> ServeExit<P::Error>
 where
     M: RawMutex,
@@ -108,7 +110,7 @@ where
         }
 
         // Submit the next radio request.
-        if core.wants_radio() && !unsupported && retry_at.is_none_or(|at| Instant::now() >= at) {
+        if core.wants_radio() && !unsupported && retry_at.is_none_or(|at| timer.now() >= at) {
             retry_at = None;
             let (now, timing) = match radio.clock().await {
                 Ok(clock) => clock,
@@ -122,13 +124,13 @@ where
                 match result {
                     Ok(()) => {}
                     Err(RequestError::Unsupported) => unsupported = true,
-                    Err(_) => retry_at = Some(Instant::now() + REFUSED_RETRY_DELAY),
+                    Err(_) => retry_at = Some(retry_after_refusal(timer)),
                 }
                 core.request_done(result);
                 continue;
             }
             // Nothing could be placed now; ask again shortly.
-            retry_at = Some(Instant::now() + REFUSED_RETRY_DELAY);
+            retry_at = Some(retry_after_refusal(timer));
         }
 
         // Take the next command, or ACL data while the connection takes it.
@@ -176,7 +178,7 @@ where
             },
             async {
                 match retry {
-                    Some(at) => Timer::at(at).await,
+                    Some(at) => timer.wait_until(at).await,
                     None => core::future::pending::<()>().await,
                 }
             },
@@ -197,6 +199,14 @@ where
             Either4::Fourth(()) => retry_at = None,
         }
     }
+}
+
+/// When to ask the core again after a refusal; the end of time when the
+/// delay would leave the timer's range.
+fn retry_after_refusal(timer: &impl Timer) -> Instant {
+    timer
+        .deadline_after(REFUSED_RETRY_DELAY)
+        .unwrap_or(Instant::from_micros(u64::MAX))
 }
 
 #[cfg(test)]

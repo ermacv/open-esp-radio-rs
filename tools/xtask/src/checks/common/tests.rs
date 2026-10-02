@@ -221,42 +221,52 @@ fn only_adapters_and_compositions_may_depend_on_an_executor() {
 }
 
 #[test]
-fn only_execution_layers_may_depend_on_the_time_driver() {
+fn only_adapters_compositions_and_the_facade_may_depend_on_the_time_driver() {
     for (layer, allowed) in [
         ("contract", false),
         ("protocol", false),
         ("hardware", false),
         ("role", false),
         ("service", false),
-        ("runtime", true),
+        ("runtime", false),
         ("adapter", true),
         ("composition", true),
+        ("facade", true),
     ] {
-        let repository = architecture_repository("dev-dependencies", "contract");
-        set_classification(
-            repository.path(),
-            "libraries/policy",
-            layer,
-            "portable",
-            None,
-        );
-        let manifest = repository.path().join("libraries/policy/Cargo.toml");
-        let mut doc: toml::Value = toml::from_str(&fs::read_to_string(&manifest).unwrap()).unwrap();
-        doc.as_table_mut()
-            .unwrap()
-            .entry("dependencies")
-            .or_insert_with(|| toml::Value::Table(Default::default()))
-            .as_table_mut()
-            .unwrap()
-            .insert("embassy-time".into(), "0.5".into());
-        fs::write(manifest, toml::to_string(&doc).unwrap()).unwrap();
-        let result = edge_result(repository.path());
-        assert_eq!(result.is_ok(), allowed, "{layer}: {result:?}");
-        if let Err(error) = result {
-            assert!(
-                error.to_string().contains("depends on time driver"),
-                "{error}"
-            );
+        for section in ["dependencies", "dev-dependencies"] {
+            for driver in ["embassy-time", "oer-time-embassy"] {
+                let repository = architecture_repository("dev-dependencies", "contract");
+                set_classification(
+                    repository.path(),
+                    "libraries/policy",
+                    layer,
+                    "portable",
+                    None,
+                );
+                let manifest = repository.path().join("libraries/policy/Cargo.toml");
+                let mut doc: toml::Value =
+                    toml::from_str(&fs::read_to_string(&manifest).unwrap()).unwrap();
+                doc.as_table_mut()
+                    .unwrap()
+                    .entry(section)
+                    .or_insert_with(|| toml::Value::Table(Default::default()))
+                    .as_table_mut()
+                    .unwrap()
+                    .insert(driver.into(), "0.5".into());
+                fs::write(manifest, toml::to_string(&doc).unwrap()).unwrap();
+                let result = edge_result(repository.path());
+                assert_eq!(
+                    result.is_ok(),
+                    allowed,
+                    "{layer} {section} {driver}: {result:?}"
+                );
+                if let Err(error) = result {
+                    assert!(
+                        error.to_string().contains("depends on time driver"),
+                        "{error}"
+                    );
+                }
+            }
         }
     }
 }

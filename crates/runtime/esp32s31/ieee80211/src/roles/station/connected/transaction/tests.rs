@@ -9,6 +9,8 @@ use embassy_futures::block_on;
 
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
+use oer_time_virtual::SkipClock;
+
 use std::{cell::Cell, rc::Rc};
 
 use super::*;
@@ -70,6 +72,7 @@ struct TestRunner {
     network: u32,
     services: u16,
     admission_closed: Rc<Cell<bool>>,
+    clock: SkipClock,
 }
 
 impl ConnectedEpochRunnerOwner for TestRunner {
@@ -83,6 +86,11 @@ impl ConnectedEpochRunnerOwner for TestRunner {
 
 impl ConnectedStationRunner<NoopRawMutex> for TestRunner {
     type Error = u8;
+    type Clock = SkipClock;
+
+    fn clock(&self) -> &SkipClock {
+        &self.clock
+    }
 
     fn run_station_epoch<'a>(
         &'a mut self,
@@ -137,6 +145,8 @@ fn transaction_classifies_the_live_exit_before_revealing_parked_owners() {
             network: 29,
             services: 31,
             admission_closed: admission_closed.clone(),
+
+            clock: SkipClock::new(),
         },
         &mut receiver,
         &mut observer,
@@ -192,6 +202,8 @@ fn logical_park_does_not_call_physical_route_quiesce() {
             network: 29,
             services: 31,
             admission_closed: admission_closed.clone(),
+
+            clock: SkipClock::new(),
         },
         &mut receiver,
         &mut observer,

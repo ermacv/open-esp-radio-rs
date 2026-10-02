@@ -1,4 +1,6 @@
 use core::num::NonZeroU16;
+use oer_time_virtual::SkipClock;
+
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use crate::roles::station::StationControlResources;
@@ -34,7 +36,9 @@ enum FakeError {
     RefreshContract,
 }
 
-struct FakePort;
+struct FakePort {
+    clock: SkipClock,
+}
 
 #[derive(Default)]
 struct FakeObserver {
@@ -53,6 +57,11 @@ impl<'security> StationEnginePort<'security, NoopRawMutex> for FakePort {
     type Connected = ();
     type Error = FakeError;
     type Fault = core::convert::Infallible;
+    type Timer = SkipClock;
+
+    fn timer(&self) -> &SkipClock {
+        &self.clock
+    }
 
     fn run_initial_scan<'a>(
         &'a mut self,
@@ -196,6 +205,7 @@ impl<'security> StationEngineObserver<'security, NoopRawMutex, FakePort> for Fak
 struct ScanTransitionPort {
     initial_joined: bool,
     reconnected: bool,
+    clock: SkipClock,
 }
 
 impl<'security> StationEnginePort<'security, NoopRawMutex> for ScanTransitionPort {
@@ -209,6 +219,11 @@ impl<'security> StationEnginePort<'security, NoopRawMutex> for ScanTransitionPor
     type Connected = ();
     type Error = FakeError;
     type Fault = core::convert::Infallible;
+    type Timer = SkipClock;
+
+    fn timer(&self) -> &SkipClock {
+        &self.clock
+    }
 
     fn run_initial_scan<'a>(
         &'a mut self,
@@ -468,7 +483,13 @@ fn common_engine_rejects_running_scan_without_refresh_before_port_entry() {
     );
     let control = StationControlResources::<NoopRawMutex>::new();
     let (_controller, mut receiver) = control.split().expect("fresh control domain splits");
-    let mut runner = StationEngine::with_observer(FakePort, discovery(), FakeObserver::default());
+    let mut runner = StationEngine::with_observer(
+        FakePort {
+            clock: SkipClock::new(),
+        },
+        discovery(),
+        FakeObserver::default(),
+    );
     let outcome = block_on(runner.run_attempt(
         owner,
         StaAttemptContext {

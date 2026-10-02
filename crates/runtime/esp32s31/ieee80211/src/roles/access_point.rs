@@ -18,7 +18,7 @@ use embassy_futures::yield_now;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use embassy_time::{Instant, Timer};
+use oer_time::{Instant, Timer};
 
 use oer_memory::StableDmaBacking;
 

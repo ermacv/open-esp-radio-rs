@@ -3,10 +3,11 @@ use oer_esp32s31_hal::root::{ConcurrentPartitions, RadioHardware};
 use oer_esp32s31_phy::PhyCalibrationCache;
 use oer_esp32s31_radio_esp_hal::{EspHalRadioClocks, EspHalRadioPlatform};
 use oer_esp32s31_radio_runtime::RadioSystem;
+use oer_time_embassy::EmbassyClock;
 use static_cell::StaticCell;
 
 /// The shared ESP32-S31 radio every protocol composition joins.
-pub type SharedRadio = RadioSystem<EspHalRadioPlatform, EspHalRadioClocks>;
+pub type SharedRadio = RadioSystem<EspHalRadioPlatform, EspHalRadioClocks, EmbassyClock>;
 
 static RADIO: StaticCell<SharedRadio> = StaticCell::new();
 
@@ -107,8 +108,13 @@ pub fn start(
 ) -> Result<(&'static SharedRadio, ConcurrentPartitions), RadioStartError> {
     let hardware = RadioHardware::take().ok_or(RadioStartError::AlreadyStarted)?;
     let identity = platform.phy_calibration_identity();
-    let (radio, partitions) =
-        SharedRadio::new(hardware, platform, EspHalRadioClocks::new(), identity);
+    let (radio, partitions) = SharedRadio::new(
+        hardware,
+        platform,
+        EspHalRadioClocks::new(),
+        identity,
+        EmbassyClock,
+    );
     let radio = match options.calibration {
         Some(cache) => radio.with_calibration_cache(cache),
         None => radio,

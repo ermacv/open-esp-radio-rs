@@ -75,7 +75,12 @@ fn run_bootstrap(fail: bool, bonds: bool) {
         .unwrap();
     let mut runner = stack.runner();
     // Bootstrap never needs the radio.
-    let controller_task = serve(&controller, &mut core, &NoRadio);
+    let controller_task = serve(
+        &controller,
+        &mut core,
+        &NoRadio,
+        &oer_time_embassy::EmbassyClock,
+    );
     // Public commands wait for Host initialization. Keep polling afterwards too:
     // the Host still executes post-initialization commands after opening that
     // gate. A single completion would miss a late startup failure.

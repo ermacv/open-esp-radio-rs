@@ -15,16 +15,18 @@ A runtime exposes futures and never spawns, names or requires an executor; any
 executor that polls them is valid, and the architecture check rejects executor
 dependencies below adapters and compositions. The portable primitives are
 `embassy-sync` (bounded mailboxes and signals over a caller-chosen raw mutex)
-and `embassy-futures` (select/join). Time is the `embassy-time` interface:
-`Instant` and `Timer` read and wait on one global monotonic timebase supplied
-through `embassy-time-driver`. The final image links exactly one driver — the
-ESP32-S31 [platform timer queue](../adapters/embassy/esp32s31/executor/) on the
-chip, the `std` driver in host tests. A runtime never installs a driver and does
-not assume which executor wakes its timers. The portable drivers below the
-runtime (the `service` packages under [`services/`](../services/), such as the
-station join, scan and lifecycle drivers and the WPA2 handshake runners) take
-time as an [`oer-time`](../time/src/lib.rs) `Timer` port; a runtime passes them
-`oer_time_embassy::EmbassyClock`, the same timebase, and polls them. The
+and `embassy-futures` (select/join). Time is the [`oer-time`](../time/src/lib.rs)
+contract: a runtime reads and waits on time only through an `oer_time::Clock`
+or `Timer` value that it owns or receives from its caller, never through
+`embassy-time`, which the architecture check confines to adapters,
+compositions and the facade, dev dependencies included. Compositions pass
+`oer_time_embassy::EmbassyClock`, which reads the one monotonic timebase the
+final image links; runtime tests pass the per-instance `VirtualClock` or
+`SkipClock` of `oer-time-virtual`. A runtime does not assume which executor
+wakes its timers. The portable drivers below the runtime (the `service`
+packages under [`services/`](../services/), such as the station join, scan and
+lifecycle drivers and the WPA2 handshake runners) take the same `Timer` port
+from the runtime, which polls them. The
 protocol state machines they drive never wait.
 
 | Module | Responsibility |
@@ -41,18 +43,18 @@ protocol state machines they drive never wait.
 | `esp32s31/bluetooth/src/` | The Bluetooth LE radio role and its hardware under one async lock: receive-chain publication at install, request admission against a fresh controller-time sample, the scheduler driver that reports finished events and carries list transactions through their hardware waits, stop and resume around shared-PHY maintenance, a bounded queue of owned outcomes whose overflow reports the loss, the source-127 modem-timer task driver and the radio port of the Controller service loop, which states LE 1M roles and hardware Link Layer acknowledgement |
 | `esp32s31/ieee80211/src/datapath/owned.rs` | The only `owned-network` code: owned-adapter RX/link bindings, single and dual owned networks and the pinned-SRAM `DatapathTxConsumer` |
 | `esp32s31/ieee80211/src/diagnostics/` | Optional execution observation |
-| `esp32s31/phy/` | The one `embassy-time` implementation of the PHY delay, tracking clock and tracking timer used by every radio composition |
 
 Hardware transactions and finite chip state remain below these packages. A
 runtime retains their affine owners across borrowed waits, returns the same
 resources on rejection and preserves terminal owners when quiescence is not
 proven. A composed owner alone does not establish hardware qualification.
 
-Runtimes wait and read time through the `oer-time` contract: the PHY's
-scheduling waits, the RX walker settle, scan dwell ticks and transmit
-deadlines take an `oer_time::Timer` value, which compositions bind to
-`oer_time_embassy::EmbassyClock` and host tests to `oer-time-virtual`. The
-platform executor/time ABI remains in [adapters](../adapters/embassy/README.md).
+Owned timers follow the owner graph: the shared `RadioSystem` carries the
+timer of every PHY wait it leases, the DATAPATH runner and the paired control
+arbiter carry the clock of their scheduling deadlines, the connected RX
+protocol the clock of its reorder gaps, and ordinary TX owners the clock of
+their transmit deadlines. The platform executor/time ABI remains in
+[adapters](../adapters/embassy/README.md).
 
 The [integration layer](../composition/esp32s31/embassy/) chooses memory budgets,
 claims static resources and owns protocol lifecycle composition within the

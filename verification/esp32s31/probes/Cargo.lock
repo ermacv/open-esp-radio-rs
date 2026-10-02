@@ -991,7 +991,6 @@ name = "oer-embassy-net-owned"
 version = "0.1.0"
 dependencies = [
  "embassy-sync 0.8.0",
- "embassy-time",
  "oer-ieee80211-datapath",
  "oer-memory",
  "oer-network-interface",
@@ -1105,7 +1104,6 @@ version = "0.1.0"
 dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
- "embassy-time",
  "oer-embassy-net-owned",
  "oer-esp32s31-coex",
  "oer-esp32s31-hal",
@@ -1129,7 +1127,6 @@ dependencies = [
  "oer-memory",
  "oer-network-interface",
  "oer-time",
- "oer-time-embassy",
  "oer-trace",
 ]
 
@@ -1266,11 +1263,10 @@ name = "oer-esp32s31-radio-runtime"
 version = "0.1.0"
 dependencies = [
  "embassy-sync 0.8.0",
- "embassy-time",
  "oer-esp32s31-coex",
  "oer-esp32s31-hal",
  "oer-esp32s31-phy",
- "oer-time-embassy",
+ "oer-time",
 ]
 
 [[package]]
@@ -1371,10 +1367,11 @@ dependencies = [
 name = "oer-ieee80211-runtime"
 version = "0.1.0"
 dependencies = [
+ "embassy-futures",
  "embassy-sync 0.8.0",
- "embassy-time",
  "oer-ieee80211-softmac",
  "oer-memory",
+ "oer-time",
 ]
 
 [[package]]
@@ -1515,14 +1512,6 @@ dependencies = [
 [[package]]
 name = "oer-time"
 version = "0.1.0"
-
-[[package]]
-name = "oer-time-embassy"
-version = "0.1.0"
-dependencies = [
- "embassy-time",
- "oer-time",
-]
 
 [[package]]
 name = "oer-trace"

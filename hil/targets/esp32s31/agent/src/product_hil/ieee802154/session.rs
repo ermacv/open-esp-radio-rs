@@ -32,7 +32,7 @@ use crate::console::publish_event_reliably;
 use radio::{Received, Session};
 use serve::{Served, serve_session};
 
-type Radio = RadioSystem<EspHalRadioPlatform, EspHalRadioClocks>;
+type Radio = RadioSystem<EspHalRadioPlatform, EspHalRadioClocks, oer_time_embassy::EmbassyClock>;
 
 /// Stop the session's client and start it again, as the air check does
 /// between cycles: the stop leaves the shared PHY and closes RF after the

@@ -29,7 +29,9 @@ use crate::frames::{
 
 mod model;
 
-type Runtime = Ieee802154Runtime<'static, NoopRawMutex, Ieee802154LlModel, 16>;
+use oer_time_virtual::SkipClock;
+
+type Runtime = Ieee802154Runtime<'static, NoopRawMutex, Ieee802154LlModel, SkipClock, 16>;
 type Thread = OpenThreadRadio<'static, Runtime, 4>;
 
 static LEVELS: [i8; 3] = [-24, 0, 21];
@@ -76,7 +78,7 @@ fn live_rssi() -> Option<i8> {
 
 /// An installed runtime, and the OpenThread radio over it.
 fn radio() -> (&'static Runtime, Thread) {
-    let runtime: &'static Runtime = Box::leak(Box::new(Runtime::new()));
+    let runtime: &'static Runtime = Box::leak(Box::new(Runtime::new(SkipClock::new())));
     let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
     let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
     let parts = Ieee802154RuntimeParts {

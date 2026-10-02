@@ -142,7 +142,7 @@ where
         let probe_failure_before = self.mac.first_probe_failure();
         let (progress, action) = self
             .mac
-            .service_tx(hardware, wake, Instant::now().as_micros())?;
+            .service_tx(hardware, wake, self.now().as_micros())?;
         #[cfg(feature = "diagnostics")]
         if progress == WifiTxProgress::Complete {
             let failures = self.mac.observation().tx_failures;
@@ -151,7 +151,7 @@ where
             if failures_before == Default::default() && failures != failures_before {
                 log::warn!(
                     "open-radio: AP first TX failure kind={pending_kind:?} at_us={} failures={failures:?}",
-                    Instant::now().as_micros(),
+                    self.now().as_micros(),
                 );
             }
         }

@@ -923,8 +923,11 @@ where
         self.control().leave_pending()
     }
 
-    fn wait_station_control_ready(&mut self) -> impl Future<Output = ()> + '_ {
-        self.control_mut().wait_ready_without_tx()
+    fn wait_station_control_ready<'a>(
+        &'a mut self,
+        timer: &'a impl oer_time::Timer,
+    ) -> impl Future<Output = ()> + 'a {
+        self.control_mut().wait_ready_without_tx(timer)
     }
 }
 

@@ -3,6 +3,8 @@
     reason = "station test doubles implement the production borrowed Future contracts"
 )]
 
+use oer_time_virtual::SkipClock;
+
 use core::{
     future::{Future, pending, ready},
     task::{Context, Poll, Waker},
@@ -27,14 +29,22 @@ use super::{
 
 struct Backend {
     fail: bool,
+    clock: SkipClock,
 }
 
-struct PendingBackend;
+struct PendingBackend {
+    clock: SkipClock,
+}
 
 impl StationAttemptRunner<NoopRawMutex> for PendingBackend {
     type Owner = u32;
     type Error = u8;
     type Fault = core::convert::Infallible;
+    type Timer = SkipClock;
+
+    fn timer(&self) -> &SkipClock {
+        &self.clock
+    }
 
     fn run_attempt<'a>(
         &'a mut self,
@@ -53,6 +63,11 @@ impl StationAttemptRunner<NoopRawMutex> for Backend {
     type Owner = u32;
     type Error = u8;
     type Fault = core::convert::Infallible;
+    type Timer = SkipClock;
+
+    fn timer(&self) -> &SkipClock {
+        &self.clock
+    }
 
     fn run_attempt<'a>(
         &'a mut self,
@@ -164,7 +179,10 @@ fn controller_stop_returns_the_exact_owner_and_reason() {
         StationConfiguration::new(policy(2)),
         StationStartResources::new(41),
         &control,
-        Backend { fail: false },
+        Backend {
+            fail: false,
+            clock: SkipClock::new(),
+        },
     )
     .unwrap();
     let (completion, exit) = block_on(join(controller.stop(), runner.run()));
@@ -191,7 +209,10 @@ fn retry_exhaustion_preserves_failure_and_owner() {
         StationConfiguration::new(policy(1)),
         StationStartResources::new(77),
         &control,
-        Backend { fail: true },
+        Backend {
+            fail: true,
+            clock: SkipClock::new(),
+        },
     )
     .unwrap();
     let exit = block_on(runner.run());
@@ -222,7 +243,9 @@ fn cancelled_station_task_reports_fault_instead_of_claiming_quiescence() {
         StationConfiguration::new(policy(1)),
         StationStartResources::new(99),
         &control,
-        PendingBackend,
+        PendingBackend {
+            clock: SkipClock::new(),
+        },
     )
     .unwrap();
     let mut run = std::boxed::Box::pin(task.run());
@@ -245,7 +268,10 @@ fn clean_station_completion_allows_a_later_epoch() {
         StationConfiguration::new(policy(1)),
         StationStartResources::new(17),
         &control,
-        Backend { fail: false },
+        Backend {
+            fail: false,
+            clock: SkipClock::new(),
+        },
     )
     .unwrap();
     let (completion, _) = block_on(join(controller.stop(), task.run()));
@@ -262,7 +288,10 @@ fn later_epoch_waits_for_both_previous_control_endpoints_to_drop() {
         StationConfiguration::new(policy(1)),
         StationStartResources::new(23),
         &control,
-        Backend { fail: false },
+        Backend {
+            fail: false,
+            clock: SkipClock::new(),
+        },
     )
     .unwrap();
 
@@ -282,7 +311,10 @@ fn failed_task_prepare_returns_owner_policy_and_runner() {
         config,
         StationStartResources::new(29),
         &control,
-        Backend { fail: true },
+        Backend {
+            fail: true,
+            clock: SkipClock::new(),
+        },
     ) {
         Ok(_) => panic!("an occupied command domain must reject another station task"),
         Err(failure) => failure,

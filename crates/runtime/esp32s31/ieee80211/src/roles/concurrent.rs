@@ -65,14 +65,14 @@ pub type StaApPhysicalTx<Ordinary, Aggregate> =
 
 /// Complete paired DATAPATH services graph before it is joined to the permanent
 /// dual-interface network runner.
-pub type StaApDatapathServices<H, PhysicalTx, Rx, Station, AccessPoint> =
+pub type StaApDatapathServices<H, PhysicalTx, Rx, Station, AccessPoint, T> =
     crate::datapath::paired::ConcurrentRoleServices<
         H,
         PhysicalTx,
         Rx,
         Station,
         AccessPoint,
-        StaApControlArbiter,
+        StaApControlArbiter<T>,
     >;
 
 /// Compose the only supported station-plus-SoftAP role ordering.
@@ -81,13 +81,14 @@ pub type StaApDatapathServices<H, PhysicalTx, Rx, Station, AccessPoint> =
 /// an unrelated control scheduler. Construction does not start either role;
 /// the production supervisor validates hardware and enters the paired
 /// lifecycle with this owner graph.
-pub fn compose_sta_ap_datapath_services<H, PhysicalTx, Rx, Station, AccessPoint>(
+pub fn compose_sta_ap_datapath_services<H, PhysicalTx, Rx, Station, AccessPoint, T>(
     hardware: H,
     physical_tx: PhysicalTx,
     rx: Rx,
     station: Station,
     access_point: AccessPoint,
-) -> StaApDatapathServices<H, PhysicalTx, Rx, Station, AccessPoint> {
+    timer: T,
+) -> StaApDatapathServices<H, PhysicalTx, Rx, Station, AccessPoint, T> {
     crate::datapath::paired::ConcurrentRoleServices::new(
         STA_NETWORK_INTERFACE_ID,
         AP_NETWORK_INTERFACE_ID,
@@ -96,7 +97,7 @@ pub fn compose_sta_ap_datapath_services<H, PhysicalTx, Rx, Station, AccessPoint>
         rx,
         station,
         access_point,
-        StaApControlArbiter::new(),
+        StaApControlArbiter::new(timer),
     )
 }
 
@@ -105,7 +106,7 @@ pub fn compose_sta_ap_datapath_services<H, PhysicalTx, Rx, Station, AccessPoint>
 /// The two network publishers are derived here from the permanent network
 /// owner. Callers cannot attach an AP protocol role to the STA endpoint (or
 /// vice versa), and there is no single-interface fallback in this graph.
-pub type StaApDatapathRunner<'irq, M, N, Services> = DatapathRunner<
+pub type StaApDatapathRunner<'irq, M, N, Services, C> = DatapathRunner<
     'irq,
     M,
     N,
@@ -114,6 +115,7 @@ pub type StaApDatapathRunner<'irq, M, N, Services> = DatapathRunner<
         <N as DatapathNetwork>::RxPublisher,
         <N as DatapathNetwork>::RxPublisher,
     >,
+    C,
 >;
 
 /// Bind a complete paired services graph to the one permanent tagged network
@@ -122,11 +124,12 @@ pub type StaApDatapathRunner<'irq, M, N, Services> = DatapathRunner<
 /// This is the production composition boundary. Building a service set alone
 /// does not start RX/TX or expose network endpoints; those become live only
 /// while the production supervisor runs the returned paired owner.
-pub fn compose_sta_ap_datapath_runner<'irq, M, N, Services>(
+pub fn compose_sta_ap_datapath_runner<'irq, M, N, Services, C>(
     irq: &'irq EmbassyMacIrqRuntime<M>,
     network: N,
     services: Services,
-) -> StaApDatapathRunner<'irq, M, N, Services>
+    clock: C,
+) -> StaApDatapathRunner<'irq, M, N, Services, C>
 where
     M: RawMutex,
     N: DatapathNetwork,
@@ -145,6 +148,7 @@ where
         DatapathInterfaceScope::pair(STA_NETWORK_INTERFACE_ID, AP_NETWORK_INTERFACE_ID),
         endpoints,
         services,
+        clock,
     )
 }
 

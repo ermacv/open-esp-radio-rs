@@ -148,6 +148,7 @@ type ConnectedRxProtocol = ConnectedReceiveProtocol<
     'static,
     CriticalSectionRawMutex,
     ConnectedRxSink,
+    EmbassyClock,
     RX_STAGE_SLOT_COUNT,
     RX_STAGE_CAPACITY,
     RX_STAGE_SLOT_COUNT,
@@ -466,8 +467,14 @@ type ConnectedDatapathError = <ConnectedDriverServices as DatapathServices<
     ConnectedSoftwareTxFrame,
     ConnectedPhysicalTxFrame,
 >>::Error;
-type ConnectedDatapathRunner<B = ConnectedDriverServices> =
-    DatapathRunner<'static, CriticalSectionRawMutex, NetworkRunner, B, NetworkRxPublisher>;
+type ConnectedDatapathRunner<B = ConnectedDriverServices> = DatapathRunner<
+    'static,
+    CriticalSectionRawMutex,
+    NetworkRunner,
+    B,
+    NetworkRxPublisher,
+    EmbassyClock,
+>;
 
 type ConnectedServicesMapper = fn(ConnectedDriverServices) -> ConnectedDriverServices;
 type ConnectedProtocolAssemblyResources = ConnectedStaRxProtocolResources<
@@ -477,6 +484,7 @@ type ConnectedProtocolAssemblyResources = ConnectedStaRxProtocolResources<
     'static,
     CriticalSectionRawMutex,
     ConnectedRxSink,
+    EmbassyClock,
     RX_STAGE_SLOT_COUNT,
     RX_STAGE_CAPACITY,
     RX_STAGE_SLOT_COUNT,
@@ -1734,6 +1742,7 @@ pub(crate) async fn run_connected<'state, 'security>(
             reorder_storage: &RX_REORDER_STORAGE,
             runtime: rx_protocol_runtime,
             reorder_scratch: None,
+            clock: EmbassyClock,
             #[cfg(feature = "diagnostics")]
             pipeline_observer: diagnostics.and_then(|hooks| hooks.rx_pipeline),
             #[cfg(feature = "diagnostics")]
@@ -1791,6 +1800,7 @@ pub(crate) async fn run_connected<'state, 'security>(
         network_runner,
         oer_esp32s31_ieee80211_runtime::datapath::network::STA_NETWORK_INTERFACE_ID,
         drivers.services,
+        EmbassyClock,
     );
     if let StaAttemptSecurityMaterial::Personal { connected, .. } = &mut material {
         let ConnectedStaGroupSecurity::Wpa2PersonalRekey {
@@ -1889,7 +1899,7 @@ pub(crate) async fn run_connected<'state, 'security>(
 
     let mut radio_runner = Some(radio_runner);
     let mut role = role;
-    let mut station_rf = StationRf::new(&mut role, EmbassyClock);
+    let mut station_rf = StationRf::new(&mut role);
     let (result, requested_command) = await_stack_boundary!(execution::run(
         connected_datapath,
         station_control,

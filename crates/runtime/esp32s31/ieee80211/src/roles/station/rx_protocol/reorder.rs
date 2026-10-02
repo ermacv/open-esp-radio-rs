@@ -14,12 +14,14 @@ impl<
     'irq,
     M: RawMutex,
     S,
+    K,
     const CAPACITY: usize,
     const SLOTS: usize,
     const REORDER_SLOTS: usize,
-> ConnectedRxProcessor<'queue, 'pool, 'scratch, 'irq, M, S, CAPACITY, SLOTS, REORDER_SLOTS>
+> ConnectedRxProcessor<'queue, 'pool, 'scratch, 'irq, M, S, K, CAPACITY, SLOTS, REORDER_SLOTS>
 where
     S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
+    K: Timer,
 {
     /// Try the run-to-completion path for the common in-order protected QoS
     /// frame.
@@ -484,7 +486,11 @@ where
             .is_some_and(|reorder| reorder.occupied() != 0)
         {
             self.runtime.gap_deadlines[tid].get_or_insert_with(|| {
-                Instant::now() + Duration::from_micros(RX_REORDER_GAP_TIMEOUT_MICROS)
+                // An unrepresentable deadline is never reached.
+                self.clock
+                    .now()
+                    .checked_add(Duration::from_micros(RX_REORDER_GAP_TIMEOUT_MICROS))
+                    .unwrap_or(Instant::from_micros(u64::MAX))
             });
         } else {
             self.runtime.gap_deadlines[tid] = None;

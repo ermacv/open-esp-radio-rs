@@ -11,7 +11,7 @@ use embassy_futures::select::{Either, select};
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use embassy_time::Timer;
+use oer_time::Duration;
 
 use oer_ieee80211_runtime::await_stack_boundary;
 
@@ -57,6 +57,11 @@ pub trait StationAttemptRunner<M: RawMutex> {
     fn command_deferred(&mut self, _command: StationCommand, _accepted: bool) {}
 
     fn backoff_started(&mut self, _delay_millis: u32, _reason: StaBackoffReason) {}
+
+    /// The clock reconnect backoff waits on.
+    type Timer: oer_time::Timer;
+
+    fn timer(&self) -> &Self::Timer;
 }
 
 pub(super) struct StationLifecycleBackend<'control, M: RawMutex, R: StationAttemptRunner<M>> {
@@ -122,7 +127,7 @@ where
         async move {
             self.runner.backoff_started(delay_millis, reason);
             match select(
-                Timer::after_millis(u64::from(delay_millis)),
+                crate::time::wait_for(self.runner.timer(), Duration::from_millis(delay_millis)),
                 self.control.wait(),
             )
             .await

@@ -5,13 +5,11 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Executor-independent ESP32-S31 Wi-Fi radio execution over embassy-time"
+description = "Executor-independent ESP32-S31 Wi-Fi radio execution over oer-time"
 
 [dependencies]
-oer-time-embassy = { path = "../../../adapters/embassy/time" }
 embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
-embassy-time = "0.5.1"
 oer-embassy-net-owned = { path = "../../../adapters/embassy-net/owned", optional = true }
 oer-memory = { path = "../../../memory" }
 oer-network-interface = { path = "../../../network/interface" }
@@ -41,7 +39,6 @@ log = { version = "0.4", optional = true }
 
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }
-embassy-time = { version = "0.5.1", features = ["generic-queue-64", "std"] }
 oer-esp32s31-hal = { path = "../../../hardware/esp32s31/hal", features = ["validation-probes"] }
 oer-esp32s31-ieee80211-ap = { path = "../../../roles/esp32s31/ieee80211/ap", features = ["diagnostics"] }
 oer-time-virtual = { path = "../../../adapters/virtual/time" }

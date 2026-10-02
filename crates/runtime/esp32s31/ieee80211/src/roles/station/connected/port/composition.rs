@@ -11,6 +11,7 @@ impl ConnectedStaPort {
         'irq,
         M,
         S,
+        K,
         const DEPTH: usize,
         const CAPACITY: usize,
         const SLOTS: usize,
@@ -24,6 +25,7 @@ impl ConnectedStaPort {
             'irq,
             M,
             S,
+            K,
             DEPTH,
             CAPACITY,
             SLOTS,
@@ -36,6 +38,7 @@ impl ConnectedStaPort {
         'irq,
         M,
         S,
+        K,
         DEPTH,
         CAPACITY,
         SLOTS,
@@ -55,6 +58,7 @@ impl ConnectedStaPort {
             reorder_storage,
             runtime,
             reorder_scratch,
+            clock,
             #[cfg(any(feature = "diagnostics", test))]
             pipeline_observer,
             #[cfg(any(feature = "diagnostics", test))]
@@ -71,6 +75,7 @@ impl ConnectedStaPort {
                 reorder_storage,
                 runtime,
                 reorder_scratch,
+                clock,
                 #[cfg(any(feature = "diagnostics", test))]
                 pipeline_observer,
                 #[cfg(any(feature = "diagnostics", test))]
@@ -92,6 +97,7 @@ impl ConnectedStaPort {
         'irq,
         M,
         S,
+        K,
         const CAPACITY: usize,
         const SLOTS: usize,
         const REORDER_SLOTS: usize,
@@ -104,11 +110,12 @@ impl ConnectedStaPort {
             'irq,
             M,
             S,
+            K,
             CAPACITY,
             SLOTS,
             REORDER_SLOTS,
         >,
-    ) -> ConnectedRxProcessor<'queue, 'pool, 'scratch, 'irq, M, S, CAPACITY, SLOTS, REORDER_SLOTS>
+    ) -> ConnectedRxProcessor<'queue, 'pool, 'scratch, 'irq, M, S, K, CAPACITY, SLOTS, REORDER_SLOTS>
     where
         M: RawMutex,
         S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
@@ -136,6 +143,7 @@ impl ConnectedStaPort {
             resources.mpdu,
             resources.ethernet,
             resources.runtime,
+            resources.clock,
         )
         .with_rx_reorder_commands(resources.reorder_commands)
         .with_rx_reorder_storage(resources.reorder_storage);
@@ -146,6 +154,7 @@ impl ConnectedStaPort {
             resources.mpdu,
             resources.ethernet,
             resources.runtime,
+            resources.clock,
         )
         .with_rx_reorder_commands(resources.reorder_commands)
         .with_rx_reorder_storage(resources.reorder_storage);
@@ -371,6 +380,7 @@ impl ConnectedStaPort {
         'control,
         M,
         S,
+        K,
         P,
         E,
         T,
@@ -399,6 +409,7 @@ impl ConnectedStaPort {
             'irq,
             M,
             S,
+            K,
             RX_DEPTH,
             RX_CAPACITY,
             RX_SLOTS,
@@ -450,6 +461,7 @@ impl ConnectedStaPort {
                 'irq,
                 M,
                 S,
+                K,
                 RX_DEPTH,
                 RX_CAPACITY,
                 RX_SLOTS,
@@ -466,6 +478,7 @@ impl ConnectedStaPort {
                 'irq,
                 M,
                 S,
+                K,
                 RX_DEPTH,
                 RX_CAPACITY,
                 RX_SLOTS,

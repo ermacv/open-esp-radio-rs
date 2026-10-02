@@ -96,11 +96,14 @@ hardware, without an executor. A service declares executor-free ports; an
 adapter binds them to an executor, so a service never depends on an adapter.
 Only adapters, compositions and the facade may depend on an executor crate
 (`embassy-executor`); every lower layer exposes futures that any executor can
-poll. Only adapters, runtimes, compositions and the facade may depend on the
-time driver interface (`embassy-time`), whose single driver the final image
-links. Every lower layer reads and waits on time through the
-[`oer-time`](../crates/time/src/lib.rs) `Clock` and `Timer` ports, which
-`oer-time-embassy` binds to that driver; a radio backend's own epoch is an
+poll. Only adapters, compositions and the facade may depend on the time
+driver interface (`embassy-time`), whose single driver the final image links,
+or on its `oer-time-embassy` binding; the rule covers dev dependencies too.
+Every lower layer, runtimes included, reads and waits on time through the
+[`oer-time`](../crates/time/src/lib.rs) `Clock` and `Timer` ports: a runtime
+takes its timer from its owner or caller, a composition passes
+`oer_time_embassy::EmbassyClock`, and runtime tests use the per-instance
+virtual clocks of `oer-time-virtual`. A radio backend's own epoch is an
 `oer_time::RadioInstant`.
 An adapter can implement a runtime interface, while a runtime can consume
 an adapter's executor-neutral contract. Cargo still rejects actual dependency
@@ -216,7 +219,7 @@ as `Poisoned`.
 
 | Port | Lifecycle | Clock epoch (ESP32-S31) |
 | --- | --- | --- |
-| `Ieee80211LowerMacPort` | `lifecycle(Enable / Disable / Quiesce)` and `cancel(TxId)` | `Monotonic`: the core's clock is the `embassy-time` clock |
+| `Ieee80211LowerMacPort` | `lifecycle(Enable / Disable / Quiesce)` and `cancel(TxId)` | `Monotonic`: the core's clock is the image's monotonic clock |
 | `Ieee802154RadioPort` | `lifecycle(Enable / Disable)` with `RadioEvent::Lifecycle` terminals (no quiesce); `RadioCommand::Cancel` | `Monotonic`: the platform `now_micros` the time driver also reads |
 | `LeRadioPort` | None: install, quiesce and uninstall move memory and hardware owners and stay the backend's own operations; `RadioRequest::Cancel` | `Unrelated`: the extended controller clock |
 

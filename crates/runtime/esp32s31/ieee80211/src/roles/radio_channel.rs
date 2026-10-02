@@ -22,9 +22,10 @@ use oer_esp32s31_radio_runtime::{CoexWifiChannel, RadioGuard, RadioSystem};
 use oer_esp32s31_ieee80211_sta::hardware::channel::ScanPhy;
 
 /// A Wi-Fi role's channel authority on the shared radio.
+/// `D` is the shared radio's timer, which the retunes wait on.
 pub struct RadioChannel<'radio, P, C, O, D> {
-    radio: &'radio RadioSystem<P, C>,
-    phy: ScanPhy<O, D>,
+    radio: &'radio RadioSystem<P, C, D>,
+    phy: ScanPhy<O, &'radio D>,
 }
 
 impl<'radio, P, C, O, D> RadioChannel<'radio, P, C, O, D>
@@ -33,11 +34,10 @@ where
     O: PhyTargetObserver,
     D: oer_time::Timer,
 {
-    /// A channel authority whose retunes wait on `timer`.
-    pub const fn new(radio: &'radio RadioSystem<P, C>, observer: O, timer: D) -> Self {
+    pub const fn new(radio: &'radio RadioSystem<P, C, D>, observer: O) -> Self {
         Self {
             radio,
-            phy: ScanPhy::new(observer, timer),
+            phy: ScanPhy::new(observer, radio.timer()),
         }
     }
 
@@ -115,21 +115,21 @@ where
     }
 
     /// The per-frame coexistence requests of this Wi-Fi's connection frames.
-    pub const fn connection_coex(&self) -> RadioConnectionCoex<'radio, P, C> {
+    pub const fn connection_coex(&self) -> RadioConnectionCoex<'radio, P, C, D> {
         RadioConnectionCoex { radio: self.radio }
     }
 
-    /// Return the observer and the timer once the role no longer retunes.
-    pub fn into_parts(self) -> (O, D) {
-        self.phy.into_parts()
+    /// Return the observer once the role no longer retunes.
+    pub fn into_observer(self) -> O {
+        self.phy.into_observer()
     }
 }
 
 /// Record a completed retune for coexistence. Only a channel the PHY
 /// accepted reaches this point, so an unrepresentable request is a caller
 /// defect and records nothing.
-fn record_coex_channel<P, C: PlatformClockProvider>(
-    guard: &mut RadioGuard<'_, P, C>,
+fn record_coex_channel<P, C: PlatformClockProvider, T: oer_time::Timer>(
+    guard: &mut RadioGuard<'_, P, C, T>,
     channel_or_frequency: u16,
     cbw: u8,
 ) {
@@ -143,8 +143,8 @@ fn record_coex_channel<P, C: PlatformClockProvider>(
 
 /// Publish one Wi-Fi activity under an already-held arbiter lease, and
 /// restart the phases when its caller in the vendor library does.
-pub(crate) fn publish_coex_activity<P, C: PlatformClockProvider>(
-    guard: &mut RadioGuard<'_, P, C>,
+pub(crate) fn publish_coex_activity<P, C: PlatformClockProvider, T: oer_time::Timer>(
+    guard: &mut RadioGuard<'_, P, C, T>,
     activity: WifiCoexActivity,
 ) {
     let restart = apply_coex_status(guard, activity);
@@ -156,8 +156,8 @@ pub(crate) fn publish_coex_activity<P, C: PlatformClockProvider>(
 /// Replace Wi-Fi's status and set the schedule interval, as the vendor
 /// `pm_on_coex_schm_status_config` does, and report whether its callers
 /// restart the phases after it.
-pub(crate) fn apply_coex_status<P, C: PlatformClockProvider>(
-    guard: &mut RadioGuard<'_, P, C>,
+pub(crate) fn apply_coex_status<P, C: PlatformClockProvider, T: oer_time::Timer>(
+    guard: &mut RadioGuard<'_, P, C, T>,
     activity: WifiCoexActivity,
 ) -> bool {
     let update = activity.status_update();
@@ -196,7 +196,10 @@ impl WifiReconnectPolicy {
 
     /// A station lost its association: turn the policy on while another
     /// radio shares the air.
-    pub async fn association_lost<P, C: PlatformClockProvider>(&self, radio: &RadioSystem<P, C>) {
+    pub async fn association_lost<P, C: PlatformClockProvider, T: oer_time::Timer>(
+        &self,
+        radio: &RadioSystem<P, C, T>,
+    ) {
         if radio.lock().await.coex_active_for(CoexStatusType::Wifi) {
             self.active.store(true, Ordering::Release);
         }
@@ -209,19 +212,21 @@ impl WifiReconnectPolicy {
 }
 
 /// The per-frame coexistence requests of Wi-Fi's connection frames.
-pub struct RadioConnectionCoex<'radio, P, C> {
-    radio: &'radio RadioSystem<P, C>,
+pub struct RadioConnectionCoex<'radio, P, C, T> {
+    radio: &'radio RadioSystem<P, C, T>,
 }
 
-impl<P, C> Clone for RadioConnectionCoex<'_, P, C> {
+impl<P, C, T> Clone for RadioConnectionCoex<'_, P, C, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<P, C> Copy for RadioConnectionCoex<'_, P, C> {}
+impl<P, C, T> Copy for RadioConnectionCoex<'_, P, C, T> {}
 
-impl<P, C: PlatformClockProvider> ConnectionFrameCoex for RadioConnectionCoex<'_, P, C> {
+impl<P, C: PlatformClockProvider, T: oer_time::Timer> ConnectionFrameCoex
+    for RadioConnectionCoex<'_, P, C, T>
+{
     /// `pp_coex_tx_request` for one connection frame. The vendor also
     /// requests event 45 for every Probe Request on the 5 GHz band, which
     /// this 2.4 GHz radio has no channel of. A rejected request changes

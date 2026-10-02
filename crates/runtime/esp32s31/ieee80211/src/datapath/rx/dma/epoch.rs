@@ -478,6 +478,21 @@ where
         }
     }
 
+    /// Read the epoch's clock, which also times the protocol consumers
+    /// serviced beside it. Only a start cancelled mid-transition leaves the
+    /// epoch without one.
+    pub fn now(&self) -> Result<oer_time::Instant, RxStageTransactionError>
+    where
+        D: oer_time::Clock,
+    {
+        match &self.state {
+            StagedRxEpochState::Stopped(owner) => Ok(owner.delay().now()),
+            StagedRxEpochState::Prepared(owner) => Ok(owner.delay().now()),
+            StagedRxEpochState::Live(owner) => Ok(owner.delay().now()),
+            StagedRxEpochState::Vacant => Err(RxStageTransactionError::Ring(RxRingError::Busy)),
+        }
+    }
+
     pub fn serviced_descriptors(&self) -> u64 {
         match &self.state {
             StagedRxEpochState::Live(owner) => owner.serviced_descriptors(),

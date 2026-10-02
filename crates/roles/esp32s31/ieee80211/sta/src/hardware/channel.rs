@@ -103,9 +103,9 @@ where
         .await
     }
 
-    /// Return the observer and the timer after the scan transaction has
-    /// stopped RX and selected its candidate.
-    pub fn into_parts(self) -> (O, T) {
-        (self.observer, self.timer)
+    /// Return the observer after the scan transaction has stopped RX and
+    /// selected its candidate.
+    pub fn into_observer(self) -> O {
+        self.observer
     }
 }

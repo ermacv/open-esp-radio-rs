@@ -431,12 +431,14 @@ fn binds_executor(layer: &str) -> bool {
     matches!(layer, "adapter" | "composition" | "facade")
 }
 
-/// Crates that read or wait on the image's one time driver. Lower layers
-/// take time through the `oer-time` clock and timer ports.
-const TIME_DRIVERS: &[&str] = &["embassy-time"];
+/// Crates that read or wait on the image's one time driver: the driver
+/// interface and its `oer-time` binding. Lower layers, runtimes included,
+/// take time through the `oer-time` clock and timer ports; their tests use
+/// virtual time, so the rule covers dev dependencies too.
+const TIME_DRIVERS: &[&str] = &["embassy-time", "oer-time-embassy"];
 
 fn binds_time_driver(layer: &str) -> bool {
-    matches!(layer, "adapter" | "runtime" | "composition" | "facade")
+    matches!(layer, "adapter" | "composition" | "facade")
 }
 
 /// Apply declared production edges, including optional and build dependencies.
@@ -448,20 +450,24 @@ pub fn validate_production_edges(
 ) -> Result<()> {
     for source in packages {
         let source_class = classification(&source.package)?;
+        if !binds_time_driver(source_class.layer)
+            && let Some(dependency) = source
+                .package
+                .dependencies
+                .iter()
+                .find(|dependency| TIME_DRIVERS.contains(&dependency.name.as_str()))
+        {
+            return Err(format!(
+                "{} package {} depends on time driver {}; only adapters, compositions and the facade bind it, and lower layers take time through oer-time",
+                source_class.layer, source.package.name, dependency.name
+            )
+            .into());
+        }
         for dependency in production_dependencies(&source.package) {
             if EXECUTORS.contains(&dependency.name.as_str()) && !binds_executor(source_class.layer)
             {
                 return Err(format!(
                     "{} package {} depends on executor {}; only adapters and compositions bind an executor",
-                    source_class.layer, source.package.name, dependency.name
-                )
-                .into());
-            }
-            if TIME_DRIVERS.contains(&dependency.name.as_str())
-                && !binds_time_driver(source_class.layer)
-            {
-                return Err(format!(
-                    "{} package {} depends on time driver {}; lower layers take time through oer-time",
                     source_class.layer, source.package.name, dependency.name
                 )
                 .into());

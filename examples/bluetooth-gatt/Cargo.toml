@@ -33,6 +33,7 @@ oer-bluetooth-hci = { path = "../../crates/protocols/bluetooth/hci" }
 oer-bluetooth-hci-transport = { path = "../../crates/services/bluetooth/hci/transport" }
 oer-bluetooth-radio = { path = "../../crates/protocols/bluetooth/le/radio" }
 oer-bluetooth-runtime = { path = "../../crates/runtime/bluetooth" }
+oer-time-embassy = { path = "../../crates/adapters/embassy/time" }
 embassy-futures = "0.1.2"
 critical-section = { version = "1.2.0", features = ["std"] }
 # Trouble links against the embassy-time driver; host tests use the std one.

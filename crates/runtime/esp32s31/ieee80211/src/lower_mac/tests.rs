@@ -444,7 +444,7 @@ fn with_hardware<U>(port: &Port, entry: impl FnOnce(&mut Hardware) -> U) -> U {
 
 #[test]
 fn an_attempt_completes_through_the_interrupt_entry_and_the_queue() {
-    let port = Port::new();
+    let port = Port::new(ModelTimer);
     install(&port, true);
     let frame = data_frame();
 
@@ -483,7 +483,7 @@ fn an_attempt_completes_through_the_interrupt_entry_and_the_queue() {
 
 #[test]
 fn enable_after_a_channel_change_retunes_in_the_runner() {
-    let port = Port::new();
+    let port = Port::new(ModelTimer);
     let tuned = install(&port, true);
 
     assert_eq!(
@@ -507,7 +507,7 @@ fn enable_after_a_channel_change_retunes_in_the_runner() {
 
 #[test]
 fn a_refused_retune_fails_enable_recoverably() {
-    let port = Port::new();
+    let port = Port::new(ModelTimer);
     install(&port, false);
     port.apply(LowerMacSetting::Channel(
         Channel::ghz2_4(1, ChannelWidth::Mhz20).unwrap(),
@@ -532,7 +532,7 @@ fn a_refused_retune_fails_enable_recoverably() {
 
 #[test]
 fn station_tbtts_arrive_through_the_power_interrupt() {
-    let port = Port::new();
+    let port = Port::new(ModelTimer);
     install(&port, true);
     let tbtt = oer_esp32s31_hal::types::MacPowerInterruptObservation::from_semantic_events(
         false, false, false, false, true, false,
@@ -572,7 +572,7 @@ fn station_tbtts_arrive_through_the_power_interrupt() {
 
 #[test]
 fn received_frames_are_copied_and_overflow_is_reported_once() {
-    let port = Port::new();
+    let port = Port::new(ModelTimer);
     install(&port, true);
     port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
     assert_eq!(
@@ -626,7 +626,7 @@ fn received_frames_are_copied_and_overflow_is_reported_once() {
 
 #[test]
 fn a_receive_overflow_does_not_drop_completions() {
-    let port = Port::new();
+    let port = Port::new(ModelTimer);
     install(&port, true);
     port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
     assert_eq!(
@@ -674,7 +674,7 @@ fn poison(port: &Port) {
 
 #[test]
 fn a_poisoned_port_reports_queued_events_then_its_terminal_event() {
-    let port = Port::new();
+    let port = Port::new(ModelTimer);
     assert_eq!(
         port.lifecycle(LifecycleCommand::Enable)
             .unwrap_err()
@@ -703,7 +703,8 @@ fn a_poisoned_port_reports_queued_events_then_its_terminal_event() {
 fn the_runner_of_a_poisoned_port_does_not_spin_on_an_expired_deadline() {
     let (done, finished) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let port: &'static Port = std::boxed::Box::leak(std::boxed::Box::new(Port::new()));
+        let port: &'static Port =
+            std::boxed::Box::leak(std::boxed::Box::new(Port::new(ModelTimer)));
         install_with_timeout(port, 0);
         port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
         let _ = next(port);
@@ -731,7 +732,8 @@ fn the_runner_of_a_poisoned_port_does_not_spin_on_an_expired_deadline() {
 fn the_runner_services_a_kept_deadline_once_per_wake() {
     let (done, finished) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let port: &'static Port = std::boxed::Box::leak(std::boxed::Box::new(Port::new()));
+        let port: &'static Port =
+            std::boxed::Box::leak(std::boxed::Box::new(Port::new(ModelTimer)));
         install_with_timeout(port, 0);
         port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
         let _ = next(port);
@@ -754,7 +756,7 @@ fn the_runner_services_a_kept_deadline_once_per_wake() {
 
 #[test]
 fn uninstall_keeps_the_loss_of_discarded_and_owed_events() {
-    let port = Port::new();
+    let port = Port::new(ModelTimer);
     install(&port, true);
     port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
     assert!(port.uninstall().is_some());
@@ -892,7 +894,7 @@ fn next_completion(port: &AmpduPort) -> TxCompletion {
 
 #[test]
 fn attempts_on_different_queues_complete_by_their_identity() {
-    let port = AmpduPort::new();
+    let port = AmpduPort::new(ModelTimer);
     let backings = install_ampdu(&port);
     assert_eq!(port.capabilities().tx_queues, 4);
     let capabilities = port.ampdu_capabilities();

@@ -325,6 +325,23 @@ impl<'beacon> ApMacParked<'beacon> {
     }
 }
 
+/// The MAC's transmitter clock, the image's monotonic time.
+impl<P, E, T: oer_time::Clock, const BUFFER_SIZE: usize> oer_time::Clock
+    for ApMac<'_, '_, P, E, T, BUFFER_SIZE>
+{
+    fn now(&self) -> oer_time::Instant {
+        self.transmit.now()
+    }
+}
+
+impl<P, E, T: oer_time::Timer, const BUFFER_SIZE: usize> oer_time::Timer
+    for ApMac<'_, '_, P, E, T, BUFFER_SIZE>
+{
+    fn wait_until(&self, deadline: oer_time::Instant) -> impl core::future::Future<Output = ()> {
+        self.transmit.wait_until(deadline)
+    }
+}
+
 impl<'beacon, 'slot, P, E, T, const BUFFER_SIZE: usize> ApMac<'beacon, 'slot, P, E, T, BUFFER_SIZE>
 where
     P: WifiTxPowerProfile,

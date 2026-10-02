@@ -1,5 +1,7 @@
 use core::{convert::Infallible, future::pending};
 
+use oer_time_virtual::SkipClock;
+
 use super::*;
 
 struct Station {
@@ -24,7 +26,10 @@ impl StaApStationControlRole<(), ()> for Station {
         }
     }
 
-    fn wait_station_control_ready(&mut self) -> impl Future<Output = ()> + '_ {
+    fn wait_station_control_ready<'a>(
+        &'a mut self,
+        _timer: &'a impl Timer,
+    ) -> impl Future<Output = ()> + 'a {
         pending()
     }
 
@@ -90,7 +95,7 @@ fn service_with_retained(
     retained: Option<DatapathPairRole>,
 ) -> DatapathPairedControlProgress<StaApControlExit<u8>> {
     embassy_futures::block_on(DatapathPairedControlService::service(
-        &mut StaApControlArbiter::new(),
+        &mut StaApControlArbiter::new(SkipClock::new()),
         &mut (),
         &mut (),
         station,
@@ -212,6 +217,7 @@ fn retained_access_point_tx_excludes_station_control() {
 #[test]
 fn absolute_access_point_deadline_is_an_o1_readiness_edge() {
     let arbiter = StaApControlArbiter {
+        timer: SkipClock::new(),
         next_access_point_deadline_micros: 10_000,
     };
     let station = Station {

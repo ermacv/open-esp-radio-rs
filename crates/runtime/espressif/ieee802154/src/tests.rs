@@ -4,12 +4,8 @@
 
 use std::boxed::Box;
 
-use embassy_futures::{
-    block_on,
-    select::{Either, select},
-};
+use embassy_futures::block_on;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use embassy_time::{Duration, Timer};
 use oer_esp32s31_hal::coex::{CoexEventId, CoexPti, CoexPtiTable};
 use oer_esp32s31_hal::ieee802154::coex::{Ieee802154CoexConfig, resolve_priorities};
 use oer_espressif_ieee802154_engine::engine::{
@@ -28,6 +24,8 @@ use oer_ieee802154::{
     PortError, RadioCapabilities, RadioCommand, RadioSetting, RadioState, RequestId, RestingState,
     SettingError, TxMode, TxRequest, TxStatus,
 };
+use oer_time::Duration;
+use oer_time_virtual::VirtualClock;
 
 use super::{
     IEEE802154_RADIO_CAPABILITIES, Ieee802154Platform, Ieee802154RadioEvent, Ieee802154Runtime,
@@ -59,7 +57,16 @@ fn channel(number: u8) -> Channel {
 }
 
 type Runtime<const EVENTS: usize> =
-    Ieee802154Runtime<'static, NoopRawMutex, Ieee802154LlModel, EVENTS>;
+    Ieee802154Runtime<'static, NoopRawMutex, Ieee802154LlModel, VirtualClock, EVENTS>;
+
+/// Poll `future` once, as an executor does after a wake.
+fn poll_once<F: core::future::Future>(
+    future: core::pin::Pin<&mut F>,
+) -> core::task::Poll<F::Output> {
+    future.poll(&mut core::task::Context::from_waker(
+        core::task::Waker::noop(),
+    ))
+}
 
 fn parts() -> Ieee802154RuntimeParts<'static, Ieee802154LlModel> {
     let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
@@ -71,7 +78,7 @@ fn parts() -> Ieee802154RuntimeParts<'static, Ieee802154LlModel> {
 }
 
 fn enabled<const EVENTS: usize>() -> Runtime<EVENTS> {
-    let runtime = Runtime::new();
+    let runtime = Runtime::new(VirtualClock::new());
     assert!(
         runtime
             .install(parts(), PLATFORM, Ieee802154PibDefaults::default())
@@ -90,7 +97,7 @@ fn enabled<const EVENTS: usize>() -> Runtime<EVENTS> {
 
 #[test]
 fn install_admits_commands_only_after_enable() {
-    let runtime = Runtime::<4>::new();
+    let runtime = Runtime::<4>::new(VirtualClock::new());
     assert_eq!(
         runtime.submit(RadioCommand::Sleep {
             id: RequestId::new(1)
@@ -239,7 +246,7 @@ fn uninstall_returns_the_parts_and_discards_events() {
 /// radio has no quiesce.
 #[test]
 fn lifecycle_commands_end_with_terminal_events() {
-    let runtime = Runtime::<4>::new();
+    let runtime = Runtime::<4>::new(VirtualClock::new());
     assert!(
         runtime
             .install(parts(), PLATFORM, Ieee802154PibDefaults::default())
@@ -285,7 +292,7 @@ fn uninstall_returns_the_coexistence_ptis_to_the_foundation_image() {
             Ieee802154CoexConfig::VENDOR,
             &CoexPtiTable::VENDOR,
         )));
-    let runtime = Runtime::<4>::new();
+    let runtime = Runtime::<4>::new(VirtualClock::new());
     assert!(
         runtime
             .install(parts, PLATFORM, Ieee802154PibDefaults::default())
@@ -330,7 +337,7 @@ fn uninstall_returns_the_coexistence_ptis_to_the_foundation_image() {
 
 #[test]
 fn the_pending_mode_reaches_the_pib_of_the_installed_radio() {
-    let runtime = Runtime::<4>::new();
+    let runtime = Runtime::<4>::new(VirtualClock::new());
     assert_eq!(
         runtime.set_pending_mode(oer_ieee802154::AutoPendingMode::Enable),
         Err(Ieee802154RuntimeError::NotInstalled)
@@ -409,7 +416,7 @@ fn a_sleeping_radio_resumes_asleep() {
 fn a_running_operation_or_a_missing_radio_refuses_the_pause() {
     use super::Ieee802154PauseError;
     assert_eq!(
-        Runtime::<4>::new().pause().err(),
+        Runtime::<4>::new(VirtualClock::new()).pause().err(),
         Some(Ieee802154PauseError::NotInstalled)
     );
     let runtime = enabled::<4>();
@@ -447,7 +454,7 @@ fn resuming_over_an_installed_radio_returns_the_paused_one() {
 #[test]
 fn an_installed_enhanced_ack_generator_answers_2015_frames() {
     let generation = RadioSetting::EnhancedAck(Some(EnhancedAckGeneration { noise_floor_dbm: 0 }));
-    let runtime = Runtime::<4>::new();
+    let runtime = Runtime::<4>::new(VirtualClock::new());
     assert_eq!(
         runtime.apply(generation),
         Err(Ieee802154RuntimeError::NotInstalled)
@@ -505,22 +512,17 @@ fn the_runner_runs_csma_ca_backoffs() {
     };
     assert_ne!(command(), Some(Ieee802154LlCommand::CcaTxStart));
     // Taking events only dequeues them.
-    assert!(matches!(
-        block_on(select(
-            runtime.next_event(),
-            Timer::after(Duration::from_millis(10)),
-        )),
-        Either::Second(())
-    ));
+    assert!(poll_once(core::pin::pin!(runtime.next_event())).is_pending());
     assert_ne!(command(), Some(Ieee802154LlCommand::CcaTxStart));
-    // The backoff (21 % 8 unit periods, 1.6 ms) ends within the wait.
-    let wait = || {
-        block_on(select(
-            runtime.run(),
-            Timer::after(Duration::from_millis(50)),
-        ))
-    };
-    assert!(matches!(wait(), Either::Second(())));
+    // The backoff (21 % 8 unit periods, 1.6 ms) ends only once its time has
+    // passed.
+    let mut run = core::pin::pin!(runtime.run());
+    assert!(poll_once(run.as_mut()).is_pending());
+    runtime.timer.advance(Duration::from_micros(1_599)).unwrap();
+    assert!(poll_once(run.as_mut()).is_pending());
+    assert_ne!(command(), Some(Ieee802154LlCommand::CcaTxStart));
+    runtime.timer.advance(Duration::from_micros(1)).unwrap();
+    assert!(poll_once(run.as_mut()).is_pending());
     assert_eq!(command(), Some(Ieee802154LlCommand::CcaTxStart));
 
     runtime.installed.lock(|installed| {
@@ -529,7 +531,9 @@ fn the_runner_runs_csma_ca_backoffs() {
     });
     runtime.model_interrupt(None, &[Ieee802154Event::TxAbort]);
     assert_ne!(command(), Some(Ieee802154LlCommand::CcaTxStart));
-    assert!(matches!(wait(), Either::Second(())));
+    assert!(poll_once(run.as_mut()).is_pending());
+    runtime.timer.advance(Duration::from_millis(50)).unwrap();
+    assert!(poll_once(run.as_mut()).is_pending());
     assert_eq!(command(), Some(Ieee802154LlCommand::CcaTxStart));
 
     runtime.model_interrupt(None, &[Ieee802154Event::TxDone]);
@@ -588,11 +592,10 @@ fn the_runner_runs_retry_delays() {
     assert_eq!(take_command(), Some(Ieee802154LlCommand::TxStart));
     no_ack();
     assert_ne!(take_command(), Some(Ieee802154LlCommand::TxStart));
-    let waited = block_on(select(
-        runtime.run(),
-        Timer::after(Duration::from_millis(50)),
-    ));
-    assert!(matches!(waited, Either::Second(())));
+    let mut run = core::pin::pin!(runtime.run());
+    assert!(poll_once(run.as_mut()).is_pending());
+    runtime.timer.advance(Duration::from_millis(50)).unwrap();
+    assert!(poll_once(run.as_mut()).is_pending());
     assert_eq!(take_command(), Some(Ieee802154LlCommand::TxStart));
     no_ack();
     assert_eq!(
@@ -611,7 +614,7 @@ fn the_runner_runs_retry_delays() {
 /// clock.
 #[test]
 fn the_clock_and_csl_state_belong_to_the_installed_radio() {
-    let runtime = Runtime::<4>::new();
+    let runtime = Runtime::<4>::new(VirtualClock::new());
     assert_eq!(runtime.now(), Err(Ieee802154RuntimeError::NotInstalled));
     assert_eq!(
         runtime.clock_info().epoch,
@@ -639,7 +642,7 @@ fn the_clock_and_csl_state_belong_to_the_installed_radio() {
 /// while a radio is installed.
 #[test]
 fn recent_rssi_reads_the_hardware_live() {
-    let runtime = Runtime::<4>::new();
+    let runtime = Runtime::<4>::new(VirtualClock::new());
     assert_eq!(
         runtime.recent_rssi(),
         Err(Ieee802154RuntimeError::NotInstalled)
@@ -719,7 +722,7 @@ fn interface_keys_belong_to_the_interfaces_of_the_installed_radio() {
         ),
         hardware: Ieee802154LlModel::default(),
     };
-    let runtime = Runtime::<4>::new();
+    let runtime = Runtime::<4>::new(VirtualClock::new());
     assert!(
         runtime
             .install(parts, PLATFORM, Ieee802154PibDefaults::default())
@@ -798,7 +801,7 @@ fn the_lease_and_a_dropped_frame_are_traced() {
     runtime
         .resume(paused)
         .unwrap_or_else(|_| panic!("the runtime is empty"));
-    assert!(Runtime::<1>::new().pause().is_err());
+    assert!(Runtime::<1>::new(VirtualClock::new()).pause().is_err());
     let paused = enabled::<1>().pause().unwrap();
     assert!(runtime.resume(paused).is_err());
     assert_eq!(
@@ -837,7 +840,7 @@ fn the_lease_and_a_dropped_frame_are_traced() {
 /// and after installation.
 #[test]
 fn the_port_reports_the_role_capabilities() {
-    let runtime = Runtime::<4>::new();
+    let runtime = Runtime::<4>::new(VirtualClock::new());
     assert_eq!(
         runtime.capabilities().operations,
         IEEE802154_RADIO_CAPABILITIES

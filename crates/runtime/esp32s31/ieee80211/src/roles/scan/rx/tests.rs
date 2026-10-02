@@ -266,7 +266,13 @@ fn scan_rx_hands_the_exact_live_ring_to_the_next_role() {
     let mut table = ScanTable::<4>::new();
     let mut frame = [0_u8; 64];
     let mut observer = FrameObserver::default();
-    let mut context = ScanObservationContext::new(6, &mut frame, &mut table, &mut observer);
+    let mut context = ScanObservationContext::new(
+        6,
+        oer_time::Instant::from_micros(0),
+        &mut frame,
+        &mut table,
+        &mut observer,
+    );
     let progress = rx.observe_management(&mut hardware, &mut context).unwrap();
     let release = rx.observe_management(&mut hardware, &mut context).unwrap();
 

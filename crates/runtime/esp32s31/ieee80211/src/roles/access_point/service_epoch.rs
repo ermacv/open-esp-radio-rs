@@ -78,6 +78,7 @@ where
         F,
         N,
         NR,
+        K,
         const FRAME_CAPACITY: usize,
         const HEADROOM: usize,
         const TRAILER: usize,
@@ -108,8 +109,11 @@ where
         control: impl FnOnce() -> F,
         mut status_observer: impl FnMut(AccessPointServiceStatus),
         security_material: N,
+        // Monotonic clock of the datapath runner's scheduling deadlines.
+        clock: K,
     ) -> Result<AccessPointRunObservation, AccessPointRunError<IR::Error>>
     where
+        K: oer_time::Timer,
         IR: MacInterruptRoute,
         NM: RawMutex,
         NR: crate::datapath::network::DatapathNetwork<
@@ -153,9 +157,9 @@ where
             oer_esp32s31_ieee80211_mac::init::MacRuntimeStopHardware::request_mac_runtime_stop(
                 hardware,
             );
-            embassy_time::Timer::after_micros(20).await;
+            crate::time::wait_for(&**self, crate::time::MAC_STOP_SETTLE).await;
             while oer_esp32s31_ieee80211_mac::init::MacRuntimeStopHardware::mac_runtime_active_state(hardware) != 0 {
-                embassy_time::Timer::after_micros(1).await;
+                crate::time::wait_for(&**self, crate::time::MAC_STOP_POLL).await;
             }
             loop {
                 match self.stop(hardware) {
@@ -171,7 +175,8 @@ where
             return Err(AccessPointRunError::InterruptActivate(error));
         }
         interrupts.mac_runtime().notify_rx_handoff();
-        self.publish_beacon(hardware, Instant::now().as_micros())
+        let now_micros = self.now().as_micros();
+        self.publish_beacon(hardware, now_micros)
             .map_err(AccessPointRunError::Control)?;
         #[cfg(feature = "diagnostics")]
         log_access_point_queue_zero("after-first-beacon", hardware);
@@ -203,6 +208,8 @@ where
                 #[cfg(any(feature = "diagnostics", test))] aggregate_tx_observer,
             ),
         };
+        #[cfg(feature = "diagnostics")]
+        let services_started_micros = self.now().as_micros();
         let services = AccessPointDatapathServices {
             control: self,
             hardware,
@@ -225,7 +232,7 @@ where
             #[cfg(feature = "diagnostics")]
             network_backpressure_since_micros: None,
             #[cfg(feature = "diagnostics")]
-            tx_pending_since_micros: Some(Instant::now().as_micros()),
+            tx_pending_since_micros: Some(services_started_micros),
             #[cfg(feature = "diagnostics")]
             network_tx_pending: None,
             next_control_deadline_micros: 0,
@@ -235,6 +242,7 @@ where
             network,
             crate::datapath::network::AP_NETWORK_INTERFACE_ID,
             services,
+            clock,
         );
         let exit = await_stack_boundary!(runner.run_until(control())).map_err(|error| match error {
             AccessPointDatapathError::Control(error) => {
@@ -266,12 +274,12 @@ where
         oer_esp32s31_ieee80211_mac::ap_policy::disable_ap_receive_policy(
             services.hardware,
         );
-        embassy_time::Timer::after_micros(20).await;
+        crate::time::wait_for(&**services.control, crate::time::MAC_STOP_SETTLE).await;
         while oer_esp32s31_ieee80211_mac::init::MacRuntimeStopHardware::mac_runtime_active_state(
             services.hardware,
         ) != 0
         {
-            embassy_time::Timer::after_micros(1).await;
+            crate::time::wait_for(&**services.control, crate::time::MAC_STOP_POLL).await;
         }
         services.clear_block_ack_observation();
         drop(services);

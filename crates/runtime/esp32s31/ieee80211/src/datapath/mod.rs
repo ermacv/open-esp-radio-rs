@@ -16,13 +16,13 @@ use embassy_futures::{
     yield_now,
 };
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use embassy_time::{Duration, Instant, Timer};
 pub use oer_esp32s31_ieee80211::datapath::{
     DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathRxWorkCounters,
     DatapathStopProgress,
 };
 pub use oer_esp32s31_ieee80211::tx::{WifiTxProgress, WifiTxWake};
 use oer_network_interface::{LinkState, NetworkInterfaceId};
+use oer_time::{Duration, Instant, Timer};
 
 pub mod irq;
 pub mod network;
@@ -508,8 +508,10 @@ where {
 }
 
 /// Single Embassy owner for RX DMA, control, network TX and MAC IRQ order.
-pub struct DatapathRunner<'irq, M: RawMutex, N, B, R> {
+pub struct DatapathRunner<'irq, M: RawMutex, N, B, R, K> {
     irq: &'irq EmbassyMacIrqRuntime<M>,
+    /// Monotonic clock of every scheduling deadline this owner keeps.
+    clock: K,
     network: N,
     interfaces: DatapathInterfaceScope,
     network_rx: R,

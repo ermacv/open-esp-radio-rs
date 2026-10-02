@@ -826,6 +826,7 @@ impl ProductionWifiEpochRunner {
                             (u64::from(self.trng.random()) << 32) | u64::from(self.trng.random());
                         (nonce, replay)
                     },
+                    oer_time_embassy::EmbassyClock,
                 )
             )
         };

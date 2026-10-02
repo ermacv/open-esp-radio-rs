@@ -59,10 +59,11 @@ pub type Ieee802154SystemRuntime = Ieee802154Runtime<
     'static,
     CriticalSectionRawMutex,
     Ieee802154MacOwners,
+    EmbassyClock,
     IEEE802154_EVENT_CAPACITY,
 >;
 
-static RUNTIME: Ieee802154SystemRuntime = Ieee802154Runtime::new();
+static RUNTIME: Ieee802154SystemRuntime = Ieee802154Runtime::new(EmbassyClock);
 
 /// Window a clocked client grants shared PHY tracking at bring-up. The
 /// clocked owner starts no MAC operation while the proof lives, so the bound
@@ -306,7 +307,7 @@ fn unwind_powered(
 )]
 // CAPABILITY: ieee802154-phy-and-rf-2-4-ghz-o-qpsk-250-kbit-s, ieee802154-security-power-and-coexistence-powered-lifecycle
 pub async fn start<P, C: PlatformClockProvider>(
-    radio: &RadioSystem<P, C>,
+    radio: &RadioSystem<P, C, EmbassyClock>,
     parked: Ieee802154Parked,
     defaults: Ieee802154PibDefaults,
 ) -> Result<Ieee802154System, Ieee802154StartFailure> {
@@ -561,7 +562,7 @@ impl Ieee802154System {
     /// The runtime holds no radio.
     pub async fn update_coexistence<P, C: PlatformClockProvider>(
         &mut self,
-        radio: &RadioSystem<P, C>,
+        radio: &RadioSystem<P, C, EmbassyClock>,
         config: Ieee802154CoexConfig,
     ) -> Result<(), Ieee802154RuntimeError> {
         let mut guard = radio.lock().await;
@@ -578,7 +579,7 @@ impl Ieee802154System {
     /// Wi-Fi composition does. Nothing happens when it already takes part.
     pub async fn enable_wifi_coexistence<P, C: PlatformClockProvider>(
         &mut self,
-        radio: &RadioSystem<P, C>,
+        radio: &RadioSystem<P, C, EmbassyClock>,
     ) {
         if self.wifi_coexistence {
             return;
@@ -599,7 +600,7 @@ impl Ieee802154System {
     /// coexistence and the core keeps the timer as uncertain.
     pub async fn disable_wifi_coexistence<P, C: PlatformClockProvider>(
         &mut self,
-        radio: &RadioSystem<P, C>,
+        radio: &RadioSystem<P, C, EmbassyClock>,
     ) -> Result<(), CoexError> {
         if !self.wifi_coexistence {
             return Ok(());
@@ -638,7 +639,7 @@ impl Ieee802154System {
     /// after it started, or the route could not be bound again.
     pub async fn maintain_phy<P, C: PlatformClockProvider>(
         &mut self,
-        radio: &RadioSystem<P, C>,
+        radio: &RadioSystem<P, C, EmbassyClock>,
     ) -> Result<Ieee802154PhyMaintenance, Ieee802154MaintenanceError> {
         let mut guard = radio.lock().await;
         if guard.lease().attachment().maintenance_policy() == MaintenancePolicy::Vendor {
@@ -684,7 +685,7 @@ impl Ieee802154System {
     /// proof, track within it, then resume and bind the route again.
     async fn track_quiescent<P, C: PlatformClockProvider>(
         &mut self,
-        guard: &mut RadioGuard<'_, P, C>,
+        guard: &mut RadioGuard<'_, P, C, EmbassyClock>,
     ) -> Result<Ieee802154PhyMaintenance, Ieee802154MaintenanceError> {
         let (lease, platform, _) = guard.parts();
         let mut paused = match RUNTIME.pause() {
@@ -755,7 +756,7 @@ impl Ieee802154System {
     /// A maintenance attempt failed; tracking stops being attempted.
     pub async fn maintain_phy_until<P, C: PlatformClockProvider>(
         &mut self,
-        radio: &RadioSystem<P, C>,
+        radio: &RadioSystem<P, C, EmbassyClock>,
         stop: impl Future<Output = ()>,
         mut observe: impl FnMut(Ieee802154PhyMaintenance),
     ) -> Result<(), Ieee802154MaintenanceError> {
@@ -791,7 +792,7 @@ impl Ieee802154System {
     )]
     pub async fn stop<P, C: PlatformClockProvider>(
         self,
-        radio: &RadioSystem<P, C>,
+        radio: &RadioSystem<P, C, EmbassyClock>,
     ) -> Result<Ieee802154Parked, Ieee802154StopFailure> {
         let Self {
             route,

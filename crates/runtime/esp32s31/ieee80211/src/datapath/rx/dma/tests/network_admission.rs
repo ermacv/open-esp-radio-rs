@@ -85,8 +85,15 @@ fn occupied_network_pool_retains_staging_owner_until_credit_return() {
     let mut ethernet = [0; CAPACITY];
     let runtime = Box::leak(Box::new(ConnectedReceiveStorage::new()));
     configure_dispatcher(runtime);
-    let mut protocol =
-        ConnectedReceiveProtocol::new(receiver, &irq, sink, &mut mpdu, &mut ethernet, runtime);
+    let mut protocol = ConnectedReceiveProtocol::new(
+        receiver,
+        &irq,
+        sink,
+        &mut mpdu,
+        &mut ethernet,
+        runtime,
+        oer_time_virtual::SkipClock::new(),
+    );
     let wake = Arc::new(WakeCounter::default());
     let waker = Waker::from(Arc::clone(&wake));
     let mut context = Context::from_waker(&waker);

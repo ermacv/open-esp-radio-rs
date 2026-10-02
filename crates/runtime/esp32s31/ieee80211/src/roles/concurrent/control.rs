@@ -17,7 +17,7 @@ use crate::datapath::{
 
 use embassy_futures::select::{Either, select};
 
-use embassy_time::{Instant, Timer};
+use oer_time::{Instant, Timer};
 
 pub trait StaApStationControlRole<H, PhysicalTx> {
     type Error: 'static;
@@ -40,7 +40,10 @@ pub trait StaApStationControlRole<H, PhysicalTx> {
     /// Wait for role-local work without borrowing the shared physical TX.
     /// Holding that owner across a sleep would prevent the AP beacon timer
     /// from beginning its own finite transaction.
-    fn wait_station_control_ready(&mut self) -> impl Future<Output = ()> + '_;
+    fn wait_station_control_ready<'a>(
+        &'a mut self,
+        timer: &'a impl Timer,
+    ) -> impl Future<Output = ()> + 'a;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -92,13 +95,15 @@ pub enum StaApControlExit<StationExit> {
 /// control work. At all other idle boundaries the station gets one finite
 /// step followed by one AP step. The arbiter never inspects protocol internals
 /// and reports the exact role for every resulting hardware TX transaction.
-pub struct StaApControlArbiter {
+pub struct StaApControlArbiter<T> {
+    timer: T,
     next_access_point_deadline_micros: u64,
 }
 
-impl StaApControlArbiter {
-    pub const fn new() -> Self {
+impl<T> StaApControlArbiter<T> {
+    pub const fn new(timer: T) -> Self {
         Self {
+            timer,
             next_access_point_deadline_micros: 0,
         }
     }
@@ -116,15 +121,10 @@ impl StaApControlArbiter {
     }
 }
 
-impl Default for StaApControlArbiter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<H, PhysicalTx, Station, AccessPoint>
-    DatapathPairedControlService<H, PhysicalTx, Station, AccessPoint> for StaApControlArbiter
+impl<H, PhysicalTx, Station, AccessPoint, T>
+    DatapathPairedControlService<H, PhysicalTx, Station, AccessPoint> for StaApControlArbiter<T>
 where
+    T: Timer,
     Station: StaApStationControlRole<H, PhysicalTx>,
     AccessPoint: StaApAccessPointControlRole<H, PhysicalTx>,
 {
@@ -160,7 +160,7 @@ where
                     )),
                 };
             }
-            let now = Instant::now().as_micros();
+            let now = self.timer.now().as_micros();
             if retained_tx == Some(DatapathPairRole::Second) {
                 let progress = access_point
                     .service_access_point_control(hardware, physical_tx, now, true)
@@ -216,7 +216,7 @@ where
                 }
             }
 
-            let now = Instant::now().as_micros();
+            let now = self.timer.now().as_micros();
             let progress = access_point
                 .service_access_point_control(hardware, physical_tx, now, false)
                 .map_err(StaApControlError::AccessPoint)?;
@@ -258,8 +258,9 @@ where
     ) -> impl Future<Output = ()> + 'a {
         async move {
             match select(
-                station.wait_station_control_ready(),
-                Timer::at(Instant::from_micros(self.next_access_point_deadline_micros)),
+                station.wait_station_control_ready(&self.timer),
+                self.timer
+                    .wait_until(Instant::from_micros(self.next_access_point_deadline_micros)),
             )
             .await
             {

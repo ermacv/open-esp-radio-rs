@@ -23,6 +23,8 @@ use oer_esp32s31_ieee80211_mac::rx::{
 
 use oer_ieee80211_mac::vif::StaApRxRoute;
 
+use oer_time::Instant;
+
 use super::{RoutedRxDisposition, StaApRxConsumer, StaApRxTurn};
 
 /// Protocol leases consumed between physical-TX completion checks.
@@ -77,6 +79,7 @@ pub trait StaApAccessPointRxRole<
         &mut self,
         physical_tx: &mut PhysicalTx,
         network: &mut dyn DatapathNetworkRx,
+        now: Instant,
     ) -> Result<DatapathRxProgress, Self::Error>;
 
     fn service_access_point_rx(
@@ -84,6 +87,7 @@ pub trait StaApAccessPointRxRole<
         hardware: &mut H,
         physical_tx: &mut PhysicalTx,
         frame: StagedRxFrame<'pool, CAPACITY, SLOTS>,
+        now: Instant,
     ) -> Result<RoutedRxDisposition<StagedRxFrame<'pool, CAPACITY, SLOTS>>, Self::Error>;
 
     /// Consume protected AP data without borrowing the physical TX or MMIO
@@ -92,9 +96,10 @@ pub trait StaApAccessPointRxRole<
     fn service_access_point_rx_during_tx(
         &mut self,
         frame: StagedRxFrame<'pool, CAPACITY, SLOTS>,
+        now: Instant,
     ) -> Result<RoutedRxDisposition<StagedRxFrame<'pool, CAPACITY, SLOTS>>, Self::Error>;
 
-    fn has_pending_rx(&self) -> bool;
+    fn has_pending_rx(&self, now: Instant) -> bool;
 
     /// True only while this AP role owns a hardware TX transaction created by
     /// its RX protocol step.
@@ -361,14 +366,15 @@ where
         async move {
             let mut fused = FusedRxTurn::from_context(context, STAGE_SLOTS);
             loop {
+                let now = self.dma.now().map_err(StaApRxServiceError::Dma)?;
                 let network_backpressured = station.has_pending_rx()
                     && station
                         .publish_pending_rx(station_network)
                         .map_err(StaApRxServiceError::Station)?
                         == DatapathRxProgress::NetworkBackpressured
-                    || access_point.has_pending_rx()
+                    || access_point.has_pending_rx(now)
                         && access_point
-                            .publish_pending_rx(physical_tx, access_point_network)
+                            .publish_pending_rx(physical_tx, access_point_network, now)
                             .map_err(StaApRxServiceError::AccessPoint)?
                             == DatapathRxProgress::NetworkBackpressured;
                 if network_backpressured {
@@ -410,11 +416,14 @@ where
                     return Ok(fused.finish(false).into());
                 }
 
+                let now = self.dma.now().map_err(StaApRxServiceError::Dma)?;
                 let turn = self
                     .protocol
                     .service_next(
                         |frame| station.service_station_rx(frame, station_network),
-                        |frame| access_point.service_access_point_rx(hardware, physical_tx, frame),
+                        |frame| {
+                            access_point.service_access_point_rx(hardware, physical_tx, frame, now)
+                        },
                     )
                     .await
                     .map_err(StaApRxServiceError::AccessPoint)?;
@@ -482,14 +491,15 @@ where
         async move {
             let mut fused = FusedRxTurn::new(ACTIVE_TX_PROTOCOL_QUANTUM_FRAMES);
             loop {
+                let now = self.dma.now().map_err(StaApRxServiceError::Dma)?;
                 let network_backpressured = station.has_pending_rx()
                     && station
                         .publish_pending_rx(station_network)
                         .map_err(StaApRxServiceError::Station)?
                         == DatapathRxProgress::NetworkBackpressured
-                    || access_point.has_pending_rx()
+                    || access_point.has_pending_rx(now)
                         && access_point
-                            .publish_pending_rx(physical_tx, access_point_network)
+                            .publish_pending_rx(physical_tx, access_point_network, now)
                             .map_err(StaApRxServiceError::AccessPoint)?
                             == DatapathRxProgress::NetworkBackpressured;
                 if network_backpressured {
@@ -531,11 +541,12 @@ where
                     return Ok(fused.finish(false));
                 }
 
+                let now = self.dma.now().map_err(StaApRxServiceError::Dma)?;
                 let turn = self
                     .protocol
                     .service_next(
                         |frame| station.service_station_rx(frame, station_network),
-                        |frame| access_point.service_access_point_rx_during_tx(frame),
+                        |frame| access_point.service_access_point_rx_during_tx(frame, now),
                     )
                     .await
                     .map_err(StaApRxServiceError::AccessPoint)?;
@@ -574,7 +585,13 @@ where
     fn has_work(&self, station: &Station, access_point: &AccessPoint) -> bool {
         self.protocol.queued_frames() != 0
             || station.has_pending_rx()
-            || access_point.has_pending_rx()
+            // A cancelled epoch transition has no clock; report work so the
+            // next service turn surfaces the DMA error.
+            || self
+                .dma
+                .now()
+                .ok()
+                .is_none_or(|now| access_point.has_pending_rx(now))
     }
 
     fn serviced_frames(&self) -> u64 {

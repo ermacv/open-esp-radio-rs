@@ -9,7 +9,6 @@ use embassy_sync::{
     signal::Signal,
 };
 
-use embassy_time::{Instant, Timer};
 use oer_esp32s31_coex::{
     CoexArbiterPorts, CoexClientRequest, CoexCore, CoexError, CoexEventId, CoexExpiry, CoexPhase,
     CoexPhaseChange, CoexPhaseTimer, CoexPti, CoexPtiTable, CoexSchedule, CoexScheduleExecutor,
@@ -39,7 +38,7 @@ use oer_esp32s31_phy::{
         WifiPhyLeaveFailure, WifiPhyMembership, WifiPhySuspended, resume_wifi, suspend_wifi,
     },
 };
-use oer_time_embassy::EmbassyClock;
+use oer_time::{Duration, Instant, Timer};
 
 use crate::lease::{LeaseReleaseNotice, LeaseWaiters};
 
@@ -203,7 +202,7 @@ impl CoexSignals {
 /// The shared radio: the arbiter with its PHY domain and the platform
 /// resources, taken together through [`Self::lock`].
 // CAPABILITY: coex-protocol-integration-and-lifetime-wifi-ble-coexistence, whole-radio-active-operation-power-saving-and-shutdown-protocol-active-operation
-pub struct RadioSystem<P, C> {
+pub struct RadioSystem<P, C, T> {
     radio: SharedRadio<ConcurrentPhy>,
     /// The tasks waiting for the arbiter lease; every guard wakes them after
     /// its lease is released.
@@ -212,17 +211,20 @@ pub struct RadioSystem<P, C> {
     resources: Mutex<CriticalSectionRawMutex, RadioResources<P, C>>,
     identity: PhyCalibrationIdentity,
     coex: CoexSignals,
+    /// The image's monotonic time the PHY, tracking and coexistence wait on.
+    timer: T,
 }
 
 /// The arbiter lease together with the platform resources.
 ///
 /// Dropping it releases both. Hold it only for one radio transaction.
-pub struct RadioGuard<'radio, P, C> {
+pub struct RadioGuard<'radio, P, C, T> {
     // Declared first so it drops before the lease that protects it.
     resources: MutexGuard<'radio, CriticalSectionRawMutex, RadioResources<P, C>>,
     lease: SharedRadioLease<'radio, ConcurrentPhy>,
     identity: PhyCalibrationIdentity,
     coex: &'radio CoexSignals,
+    timer: &'radio T,
     // Declared after the lease so the waiters wake once it is released.
     _released: LeaseReleaseNotice<'radio, CriticalSectionRawMutex, LEASE_WAITERS>,
 }
@@ -313,16 +315,18 @@ pub enum WifiWakeError {
     Client(ConcurrentPhyError),
 }
 
-impl<P, C: PlatformClockProvider> RadioSystem<P, C> {
+impl<P, C: PlatformClockProvider, T: Timer> RadioSystem<P, C, T> {
     /// Split the radio for concurrent clients.
     ///
     /// `identity` registers the shared PHY domain when its first client
-    /// joins. The partitions go to the protocol compositions.
+    /// joins. The partitions go to the protocol compositions. The PHY,
+    /// its tracking and the coexistence schedule wait on `timer`.
     pub fn new(
         hardware: RadioHardware,
         platform: P,
         clocks: C,
         identity: PhyCalibrationIdentity,
+        timer: T,
     ) -> (Self, ConcurrentPartitions) {
         let (radio, partitions) = hardware.into_concurrent(ConcurrentPhy::new());
         (
@@ -340,9 +344,15 @@ impl<P, C: PlatformClockProvider> RadioSystem<P, C> {
                 }),
                 identity,
                 coex: CoexSignals::new(),
+                timer,
             },
             partitions,
         )
+    }
+
+    /// The timer the radio's waits use.
+    pub const fn timer(&self) -> &T {
+        &self.timer
     }
 
     /// Supply a retained calibration cache for the first registration, which
@@ -362,7 +372,7 @@ impl<P, C: PlatformClockProvider> RadioSystem<P, C> {
     /// The wait sleeps until a holder's guard is dropped: the guard releases
     /// its lease, then wakes every waiting task, which race for the lease
     /// again. Dropping the future while it waits takes nothing.
-    pub async fn lock(&self) -> RadioGuard<'_, P, C> {
+    pub async fn lock(&self) -> RadioGuard<'_, P, C, T> {
         // Bound before the lease so that, should this future be dropped
         // with the lease taken, the lease is released before the waiters
         // wake. A drop while waiting wakes them spuriously, which is harmless.
@@ -375,6 +385,7 @@ impl<P, C: PlatformClockProvider> RadioSystem<P, C> {
             lease,
             identity: self.identity,
             coex: &self.coex,
+            timer: &self.timer,
             _released: released,
         }
     }
@@ -453,12 +464,15 @@ impl<P, C: PlatformClockProvider> RadioSystem<P, C> {
     ) -> Result<(), ConcurrentPhyTrackingError> {
         let mut stop = core::pin::pin!(stop);
         loop {
-            let mut period = Timer::after_micros(DEFAULT_PLL_TRACK_PERIOD_MICROS);
+            let mut period = core::pin::pin!(wait_for(
+                &self.timer,
+                Duration::from_micros(DEFAULT_PLL_TRACK_PERIOD_MICROS),
+            ));
             let stopped = core::future::poll_fn(|context| {
                 if stop.as_mut().poll(context).is_ready() {
                     return Poll::Ready(true);
                 }
-                if core::pin::Pin::new(&mut period).poll(context).is_ready() {
+                if period.as_mut().poll(context).is_ready() {
                     return Poll::Ready(false);
                 }
                 Poll::Pending
@@ -555,10 +569,19 @@ impl<P, C: PlatformClockProvider> RadioSystem<P, C> {
                 CoexPhaseTimer::Disarm => None,
                 CoexPhaseTimer::Arm { generation, .. } => Some(generation),
             };
-            let mut expiry = match timer {
-                CoexPhaseTimer::Arm { micros, .. } => Some(Timer::after_micros(u64::from(micros))),
+            let armed = match timer {
+                CoexPhaseTimer::Arm { micros, .. } => {
+                    Some(Duration::from_micros(u64::from(micros)))
+                }
                 CoexPhaseTimer::Disarm => None,
             };
+            let clock = &self.timer;
+            let mut expiry = core::pin::pin!(async move {
+                match armed {
+                    Some(duration) => wait_for(clock, duration).await,
+                    None => core::future::pending().await,
+                }
+            });
             let mut command = core::pin::pin!(self.coex.timer.wait());
             let event = core::future::poll_fn(|context| {
                 if stop.as_mut().poll(context).is_ready() {
@@ -567,9 +590,7 @@ impl<P, C: PlatformClockProvider> RadioSystem<P, C> {
                 if let Poll::Ready(next) = command.as_mut().poll(context) {
                     return Poll::Ready(CoexTimerEvent::Command(next));
                 }
-                if let Some(expiry) = expiry.as_mut()
-                    && core::pin::Pin::new(expiry).poll(context).is_ready()
-                {
+                if expiry.as_mut().poll(context).is_ready() {
                     return Poll::Ready(CoexTimerEvent::Expired);
                 }
                 Poll::Pending
@@ -598,7 +619,7 @@ enum CoexTimerEvent {
     Expired,
 }
 
-impl<P, C> Drop for RadioGuard<'_, P, C> {
+impl<P, C, T> Drop for RadioGuard<'_, P, C, T> {
     fn drop(&mut self) {
         let schedule = self.resources.schedule.schedule();
         self.coex.wifi_view.set(WifiCoexView {
@@ -613,7 +634,12 @@ impl<P, C> Drop for RadioGuard<'_, P, C> {
     }
 }
 
-impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
+impl<'radio, P, C: PlatformClockProvider, T: Timer> RadioGuard<'radio, P, C, T> {
+    /// The radio's timer.
+    pub const fn timer(&self) -> &'radio T {
+        self.timer
+    }
+
     /// The arbiter lease.
     pub fn lease(&mut self) -> &mut SharedRadioLease<'radio, ConcurrentPhy> {
         &mut self.lease
@@ -644,6 +670,7 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
     /// Once polled, drive this future to a terminal result.
     pub async fn prepare_phy(&mut self) -> Result<RadioPhyPrepared, RadioPhyError> {
         let identity = self.identity;
+        let timer = self.timer;
         let RadioResources {
             platform,
             clocks,
@@ -652,7 +679,7 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
         } = &mut *self.resources;
         let lease = &mut self.lease;
         if lease.attachment().rf_closed() {
-            return wake_concurrent_rf::<RomShortDelay>(&EmbassyClock, lease, clocks)
+            return wake_concurrent_rf::<RomShortDelay>(timer, lease, clocks)
                 .await
                 .map(|()| RadioPhyPrepared::Woken)
                 .map_err(RadioPhyError::Wake);
@@ -665,7 +692,7 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
             None => PhyRegisterConfig::new(identity),
         };
         match register_concurrent_phy::<P, RomShortDelay, _>(
-            &EmbassyClock,
+            timer,
             lease,
             platform,
             clocks,
@@ -708,6 +735,7 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
     ///
     /// Once polled, drive this future to a terminal result.
     pub async fn close_phy_if_idle(&mut self) -> Result<bool, ConcurrentRfError> {
+        let timer = self.timer;
         let (lease, platform, _) = self.parts();
         let idle = !lease.attachment().rf_closed()
             && lease
@@ -717,7 +745,7 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
         if !idle {
             return Ok(false);
         }
-        close_concurrent_rf::<P, RomShortDelay>(&EmbassyClock, lease, platform)
+        close_concurrent_rf::<P, RomShortDelay>(timer, lease, platform)
             .await
             .map(|()| true)
     }
@@ -744,7 +772,7 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
     ) -> Result<(Ieee802154PhyMembership, ConcurrentAcquire), Ieee802154JoinError> {
         // The client needs RF open, not the registration report.
         let _prepared = self.prepare_phy().await.map_err(Ieee802154JoinError::Phy)?;
-        join_ieee802154(self.lease(), clocked, &EmbassyClock).map_err(Ieee802154JoinError::Client)
+        join_ieee802154(&mut self.lease, clocked, self.timer).map_err(Ieee802154JoinError::Client)
     }
 
     /// Leave the shared PHY, as the vendor `esp_ieee802154_disable` does
@@ -789,14 +817,10 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
     ///
     /// Once tracking starts, drive this future to a terminal result.
     pub async fn track(&mut self) -> Result<ConcurrentTrackingTick, ConcurrentPhyTrackingError> {
+        let timer = self.timer;
         let (lease, platform, _) = self.parts();
-        track_concurrent_phy::<P, RomShortDelay, _>(
-            lease,
-            platform,
-            &EmbassyClock,
-            NoopPhyTargetObserver,
-        )
-        .await
+        track_concurrent_phy::<P, RomShortDelay, _>(lease, platform, timer, NoopPhyTargetObserver)
+            .await
     }
 
     /// Enable coexistence for one radio, as `coex_enable` does. Each radio
@@ -940,8 +964,11 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
     /// wakes Wi-Fi's preemption-end wait.
     pub fn end_bluetooth_preemption(&mut self, remaining_micros: Option<u32>) {
         let end = match remaining_micros {
+            // An end past the timer's range is the end of time.
             Some(micros) => CoexPreemptionEnd::At(
-                Instant::now() + embassy_time::Duration::from_micros(u64::from(micros)),
+                self.timer
+                    .deadline_after(Duration::from_micros(u64::from(micros)))
+                    .unwrap_or(Instant::from_micros(u64::MAX)),
             ),
             None => CoexPreemptionEnd::Unknown,
         };
@@ -1097,11 +1124,19 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
                 suspended,
             });
         }
-        resume_wifi(self.lease(), clocks, suspended, &EmbassyClock).map_err(|failure| {
+        resume_wifi(&mut self.lease, clocks, suspended, self.timer).map_err(|failure| {
             WifiWakeFailure {
                 error: WifiWakeError::Client(failure.error()),
                 suspended: failure.into_suspended(),
             }
         })
+    }
+}
+
+/// Wait for `duration` on `timer`; a deadline past the timer's range is
+/// never reached.
+async fn wait_for(timer: &impl Timer, duration: Duration) {
+    if timer.wait_for(duration).await.is_err() {
+        core::future::pending::<()>().await;
     }
 }

@@ -1347,7 +1347,9 @@ where
             >,
         >,
         network: &mut dyn DatapathNetworkRx,
+        now: Instant,
     ) -> Result<DatapathRxProgress, Self::Error> {
+        let now_micros = now.as_micros();
         loop {
             let record = if let Some(active) = self.protocol.active() {
                 active.processor.rx_batch_record()
@@ -1362,7 +1364,6 @@ where
                 StaApAccessPointPairedRxError::Role(StaApAccessPointRxError::Control(error))
             })?;
             let Some(record) = record else {
-                let now_micros = Instant::now().as_micros();
                 let reorder_work_due = self.protocol.active().map_or_else(
                     || {
                         self.protocol
@@ -1494,7 +1495,7 @@ where
                 ) => {
                     #[cfg(feature = "diagnostics")]
                     self.network_backpressure_since_micros
-                        .get_or_insert_with(|| Instant::now().as_micros());
+                        .get_or_insert(now_micros);
                     return Ok(DatapathRxProgress::NetworkBackpressured);
                 }
                 Err(RxEnqueueError::InvalidLength(error)) => {
@@ -1514,7 +1515,7 @@ where
 
         #[cfg(feature = "diagnostics")]
         if let Some(started) = self.network_backpressure_since_micros.take() {
-            let elapsed = Instant::now().as_micros().saturating_sub(started);
+            let elapsed = now_micros.saturating_sub(started);
             let report = if let Some(active) = self.protocol.active_mut() {
                 &mut active.processor.observer.observation
             } else {
@@ -1546,6 +1547,7 @@ where
             >,
         >,
         frame: StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
+        now: Instant,
     ) -> Result<
         crate::roles::concurrent::RoutedRxDisposition<
             StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
@@ -1561,7 +1563,7 @@ where
                 .processor
                 .service_routed_rx_while_parked(
                     frame,
-                    Instant::now().as_micros(),
+                    now.as_micros(),
                     #[cfg(feature = "diagnostics")]
                     self.delivery_observer,
                 )
@@ -1596,7 +1598,7 @@ where
                 hardware,
                 frame,
                 &mut self.security_material,
-                Instant::now().as_micros(),
+                now.as_micros(),
                 #[cfg(feature = "diagnostics")]
                 self.delivery_observer,
             )
@@ -1634,6 +1636,7 @@ where
     fn service_access_point_rx_during_tx(
         &mut self,
         frame: StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
+        now: Instant,
     ) -> Result<
         crate::roles::concurrent::RoutedRxDisposition<
             StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
@@ -1653,7 +1656,7 @@ where
             .service_routed_rx_during_tx::<H, _, _>(
                 frame,
                 &mut self.security_material,
-                Instant::now().as_micros(),
+                now.as_micros(),
                 #[cfg(feature = "diagnostics")]
                 self.delivery_observer,
             )
@@ -1668,8 +1671,8 @@ where
         result
     }
 
-    fn has_pending_rx(&self) -> bool {
-        let now_micros = Instant::now().as_micros();
+    fn has_pending_rx(&self, now: Instant) -> bool {
+        let now_micros = now.as_micros();
         self.protocol.active().map_or_else(
             || {
                 let processor = &self

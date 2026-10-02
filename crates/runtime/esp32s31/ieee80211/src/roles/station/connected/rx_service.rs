@@ -117,6 +117,7 @@ impl<
     H,
     R,
     S,
+    K,
     const DEPTH: usize,
     const CAPACITY: usize,
     const SLOTS: usize,
@@ -131,6 +132,7 @@ impl<
             'irq,
             M,
             S,
+            K,
             DEPTH,
             CAPACITY,
             SLOTS,
@@ -141,6 +143,7 @@ where
     M: RawMutex,
     R: ConnectedStaRxPark<H>,
     S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
+    K: oer_time::Timer,
 {
     type Parked = ConnectedStaRxParked<
         R::Parked,
@@ -180,6 +183,7 @@ impl<
     H,
     R,
     S,
+    K,
     const DEPTH: usize,
     const CAPACITY: usize,
     const SLOTS: usize,
@@ -194,6 +198,7 @@ impl<
             'irq,
             M,
             S,
+            K,
             DEPTH,
             CAPACITY,
             SLOTS,
@@ -204,6 +209,7 @@ where
     M: RawMutex,
     R: DatapathRxService<H>,
     S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
+    K: oer_time::Timer,
 {
     type Error = R::Error;
 

@@ -112,12 +112,10 @@ pub struct StationJoinResources<
     const DMA_STORAGE_SIZE: usize,
 > {
     pub hardware: &'hardware mut H,
-    /// The shared radio; each channel switch leases it for one transaction.
-    pub radio: &'state RadioSystem<P, C>,
+    /// The shared radio; each channel switch leases it for one transaction,
+    /// and its timer also times the RX walker settle.
+    pub radio: &'state RadioSystem<P, C, PT>,
     pub phy_observer: PO,
-    /// The image's monotonic time: the channel switches and the RX walker
-    /// settle wait on it.
-    pub timer: PT,
     pub receive: ReceiveFrontier<'storage, COUNT, DMA_BUFFER_SIZE>,
     pub rx_storage: &'storage ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     pub transmit: &'transmit mut T,
@@ -181,7 +179,7 @@ where
         + MacRuntimeStopHardware
         + 'hardware,
     PO: PhyTargetObserver,
-    PD: oer_time::Timer + Copy,
+    PD: oer_time::Timer,
     T: StaJoinTransmit<H> + HandshakeTransmit<H> + StaPeerTransmit + 'transmit,
     J: StaJoinObserver + Default,
     AO: StaAttemptObserver,
@@ -192,7 +190,6 @@ where
         hardware,
         radio,
         phy_observer,
-        timer,
         receive,
         rx_storage,
         transmit,
@@ -211,7 +208,7 @@ where
         '_,
         H,
         Channel<'_, P, C, PO, PD>,
-        PD,
+        &PD,
         T,
         J,
         COUNT,
@@ -220,11 +217,11 @@ where
     >::new(
         StaAttemptRadio::new(
             hardware,
-            RadioChannel::<P, C, PO, PD>::new(radio, phy_observer, timer),
+            RadioChannel::<P, C, PO, PD>::new(radio, phy_observer),
             receive,
             rx_storage,
             transmit,
-            timer,
+            radio.timer(),
         ),
         StaAttemptStorage::new(frame),
         station,
@@ -243,7 +240,7 @@ where
             // A failed attempt returns the station to the vendor `init`
             // state, which publishes an idle Wi-Fi.
             channel.publish_coex_activity(WifiCoexActivity::Idle).await;
-            let _ = channel.into_parts();
+            let _ = channel.into_observer();
             StationJoinOutcome::Failed {
                 returned: StationJoinReturned {
                     receive,
@@ -273,7 +270,7 @@ where
             let StaAttemptRadio {
                 channel, receive, ..
             } = radio;
-            let _ = channel.into_parts();
+            let _ = channel.into_observer();
             StationJoinOutcome::Connected {
                 returned: StationJoinReturned {
                     receive,

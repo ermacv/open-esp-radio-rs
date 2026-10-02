@@ -1673,11 +1673,11 @@ version = "0.1.0"
 dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
- "embassy-time",
  "oer-bluetooth-controller",
  "oer-bluetooth-hci",
  "oer-bluetooth-hci-transport",
  "oer-bluetooth-radio",
+ "oer-time",
 ]
 
 [[package]]
@@ -1685,7 +1685,6 @@ name = "oer-embassy-net-owned"
 version = "0.1.0"
 dependencies = [
  "embassy-sync 0.8.0",
- "embassy-time",
  "oer-ieee80211-datapath",
  "oer-memory",
  "oer-network-interface",
@@ -1728,12 +1727,12 @@ version = "0.1.0"
 dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
- "embassy-time",
  "oer-bluetooth-radio",
  "oer-esp32s31-bluetooth",
  "oer-esp32s31-bluetooth-memory",
  "oer-esp32s31-bluetooth-radio",
  "oer-esp32s31-hal",
+ "oer-time",
 ]
 
 [[package]]
@@ -1946,7 +1945,6 @@ version = "0.1.0"
 dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
- "embassy-time",
  "log",
  "oer-embassy-net-owned",
  "oer-esp32s31-coex",
@@ -1971,7 +1969,6 @@ dependencies = [
  "oer-memory",
  "oer-network-interface",
  "oer-time",
- "oer-time-embassy",
  "oer-trace",
  "riscv",
 ]
@@ -2135,11 +2132,10 @@ name = "oer-esp32s31-radio-runtime"
 version = "0.1.0"
 dependencies = [
  "embassy-sync 0.8.0",
- "embassy-time",
  "oer-esp32s31-coex",
  "oer-esp32s31-hal",
  "oer-esp32s31-phy",
- "oer-time-embassy",
+ "oer-time",
 ]
 
 [[package]]
@@ -2151,6 +2147,7 @@ dependencies = [
  "oer-esp32s31-phy",
  "oer-esp32s31-radio-esp-hal",
  "oer-esp32s31-radio-runtime",
+ "oer-time-embassy",
  "static_cell",
 ]
 
@@ -2204,11 +2201,11 @@ version = "0.1.0"
 dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
- "embassy-time",
  "oer-espressif-ieee802154-engine",
  "oer-espressif-ieee802154-radio",
  "oer-ieee802154",
  "oer-ieee802154-trace",
+ "oer-time",
  "oer-trace",
 ]
 
@@ -2355,10 +2352,11 @@ dependencies = [
 name = "oer-ieee80211-runtime"
 version = "0.1.0"
 dependencies = [
+ "embassy-futures",
  "embassy-sync 0.8.0",
- "embassy-time",
  "oer-ieee80211-softmac",
  "oer-memory",
+ "oer-time",
 ]
 
 [[package]]

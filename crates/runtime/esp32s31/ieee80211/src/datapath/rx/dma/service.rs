@@ -59,7 +59,10 @@ where
             &mut self.ring,
             self.storage,
             self.pool,
-            &self.frames,
+            &ClockedRxPublisher {
+                frames: &self.frames,
+                clock: &self.delay,
+            },
             &self.admission,
             oer_esp32s31_ieee80211::rx::transaction::Counters {
                 descriptors: &mut self.serviced_descriptors,

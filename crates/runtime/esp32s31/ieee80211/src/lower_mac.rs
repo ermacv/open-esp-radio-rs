@@ -26,8 +26,8 @@
 //! watchdog of the attempts in flight, which it turns into a deadline edge
 //! of the ordinary TX owner, and the PHY retune an `Enable` needs after a
 //! channel change, through [`LowerMacRetune`]. The ordinary TX owner's timer
-//! must therefore read the image's monotonic clock
-//! (`oer_time_embassy::EmbassyClock` in production), which is why the port's radio clock is the image's
+//! and the port's own timer must therefore read the image's monotonic clock,
+//! which is why the port's radio clock is the image's
 //! monotonic clock ([`RadioEpoch::Monotonic`]).
 //!
 //! Besides the base port it implements the extensions the ESP32-S31 has:
@@ -56,7 +56,6 @@ use embassy_sync::{
     channel::Channel,
     signal::Signal,
 };
-use embassy_time::{Instant, Timer};
 use oer_esp32s31_hal::types::MacPowerInterruptObservation;
 use oer_esp32s31_ieee80211::{
     lower_mac::{
@@ -79,6 +78,7 @@ use oer_ieee80211_lower_mac::{
     VifId,
 };
 use oer_ieee80211_mac::channel::WifiChannel;
+use oer_time::Instant;
 use oer_time::RadioInstant;
 
 /// Attempt completions the port owes at most: admitted attempts whose
@@ -407,6 +407,9 @@ pub struct Esp32s31LowerMac<
     /// Raised when a deadline, a retune, an install or a fault may have
     /// started, so the runner rearms.
     wake: Signal<M, ()>,
+    /// The image's monotonic time the runner's watchdog waits on; the same
+    /// time the installed core's transmit owner reads.
+    timer: T,
 }
 
 impl<
@@ -448,9 +451,10 @@ where
     H: LowerMacHardware,
     R: LowerMacRetune,
     S: AmpduBacking,
+    T: Default,
 {
     fn default() -> Self {
-        Self::new()
+        Self::new(T::default())
     }
 }
 
@@ -494,9 +498,11 @@ where
     R: LowerMacRetune,
     S: AmpduBacking,
 {
-    /// An empty port, suitable for a `static`.
-    pub const fn new() -> Self {
+    /// An empty port whose runner waits on `timer`, suitable for a
+    /// `static`.
+    pub const fn new(timer: T) -> Self {
         Self {
+            timer,
             installed: Mutex::new(RefCell::new(None)),
             retune: Mutex::new(RefCell::new(None)),
             pending_retune: Mutex::new(Cell::new(None)),
@@ -740,7 +746,7 @@ where
                 .filter(|deadline| Some(*deadline) != serviced);
             let watchdog = async {
                 match deadline {
-                    Some(deadline) => Timer::at(Instant::from_micros(deadline)).await,
+                    Some(deadline) => self.timer.wait_until(Instant::from_micros(deadline)).await,
                     None => core::future::pending().await,
                 }
             };
@@ -867,9 +873,7 @@ where
     }
 
     /// The core's clock is the ordinary TX owner's [`oer_time::Timer`], which
-    /// reads the `embassy-time` clock in production
-    /// (`oer_time_embassy::EmbassyClock`): the image's monotonic clock in
-    /// microseconds.
+    /// the composition binds to the image's monotonic clock in microseconds.
     fn clock_info(&self) -> ClockInfo {
         ClockInfo {
             resolution: oer_time::Duration::from_micros(1),

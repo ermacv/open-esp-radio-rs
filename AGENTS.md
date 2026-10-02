@@ -43,8 +43,9 @@ This Rust 2024 workspace separates shipping code from evidence and tooling:
   may compose production owners, and no production package depends on it.
   Concrete Wi-Fi and Bluetooth
   radio execution lives in `crates/runtime/esp32s31/` as executor-independent
-  async code over `embassy-time`; the Embassy executor/time platform backend
-  remains in `crates/adapters/`.
+  async code over the `oer-time` clock and timer ports. `embassy-time` is
+  allowed only in adapter, composition and facade packages; the Embassy
+  executor/time platform backend remains in `crates/adapters/`.
   Every package declares `package.metadata.open-radio` scope, layer and
   platform (`portable`, `host` or `chip`), with a separate `chip` identifier
   when platform is `chip`. Architecture checks enforce the dependency graph

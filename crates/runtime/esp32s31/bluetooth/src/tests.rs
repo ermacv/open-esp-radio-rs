@@ -1,12 +1,11 @@
 use core::cell::RefCell;
-use std::{rc::Rc, vec, vec::Vec};
+use std::{boxed::Box, rc::Rc, vec, vec::Vec};
 
 use embassy_futures::{
     block_on,
     select::{Either, select},
 };
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use embassy_time::Timer;
 use oer_bluetooth_radio::{
     AcceptListChange, AcceptListDevice, AdvertisingChannel, AdvertisingChannels,
     AdvertisingConfiguration, AdvertisingEvent, AdvertisingPdu, AdvertisingReception,
@@ -41,6 +40,8 @@ use oer_esp32s31_hal::bluetooth::{
     BluetoothSchedulerStopped,
 };
 use oer_esp32s31_hal::shared_radio::{QuiescentSpan, RadioClient};
+use oer_time::Clock as _;
+use oer_time_virtual::VirtualClock;
 
 use crate::{
     BluetoothInstallError, BluetoothOutcome, BluetoothRadioHardware, BluetoothRuntime,
@@ -245,7 +246,38 @@ impl BluetoothRadioHardware for Model {
     }
 }
 
-type Runtime = BluetoothRuntime<NoopRawMutex, Model, 1, 1, 1, 1, 2, 3, 8, 4>;
+type Runtime = BluetoothRuntime<NoopRawMutex, Model, &'static VirtualClock, 1, 1, 1, 1, 2, 3, 8, 4>;
+
+std::thread_local! {
+    /// The virtual time of the test running on this thread.
+    static CLOCK: &'static VirtualClock = Box::leak(Box::new(VirtualClock::new()));
+}
+
+fn clock() -> &'static VirtualClock {
+    CLOCK.with(|clock| *clock)
+}
+
+/// Run the runtime for one millisecond of virtual time: poll it, moving
+/// time to each deadline it waits for within the millisecond.
+fn run_for_a_millisecond(runtime: &Runtime) {
+    let end = clock()
+        .now()
+        .checked_add(oer_time::Duration::from_millis(1))
+        .unwrap();
+    let mut run = core::pin::pin!(runtime.run());
+    let mut context = core::task::Context::from_waker(core::task::Waker::noop());
+    for _ in 0..1_000 {
+        assert!(
+            run.as_mut().poll(&mut context).is_pending(),
+            "the runtime keeps running"
+        );
+        match clock().next_deadline() {
+            Some(deadline) if deadline <= end => clock().advance_to(deadline),
+            _ => {}
+        }
+    }
+    clock().advance_to(end);
+}
 
 const NONCONN: [u8; 8] = [0x02, 6, 1, 2, 3, 4, 5, 6];
 
@@ -271,7 +303,7 @@ fn advertise(id: u32, anchor: u64) -> RadioRequest<'static> {
 }
 
 fn installed(model: &Model) -> Runtime {
-    let runtime = Runtime::new();
+    let runtime = Runtime::new(clock());
     block_on(runtime.install(model_memory(), model.clone()))
         .unwrap_or_else(|_| panic!("the first install succeeds"));
     runtime
@@ -289,7 +321,8 @@ fn install_publishes_the_chains_once() {
 
     let refusing = Model::default();
     refusing.0.borrow_mut().refuse_chains = true;
-    let Err((error, _, _)) = block_on(Runtime::new().install(model_memory(), refusing)) else {
+    let Err((error, _, _)) = block_on(Runtime::new(clock()).install(model_memory(), refusing))
+    else {
         panic!("a refused chain publication fails the install")
     };
     assert_eq!(
@@ -429,7 +462,7 @@ fn a_refused_request_reports_the_radio_error() {
         );
     });
     assert_eq!(
-        block_on(Runtime::new().request(configure())),
+        block_on(Runtime::new(clock()).request(configure())),
         Err(BluetoothRuntimeError::NotInstalled)
     );
 }
@@ -459,11 +492,7 @@ fn a_listed_event_restarts_after_maintenance() {
     });
     // The event starts but has not run when maintenance stops the scheduler.
     model.0.borrow_mut().defer_execution = true;
-    block_on(async {
-        let Either::Second(()) = select(runtime.run(), Timer::after_millis(1)).await else {
-            panic!("the runtime keeps running")
-        };
-    });
+    run_for_a_millisecond(&runtime);
     assert_eq!(model.0.borrow().started.len(), 1);
     model.0.borrow_mut().defer_execution = false;
     block_on(runtime.quiesce(|_| ())).unwrap();
@@ -532,7 +561,7 @@ fn as_a_radio_port_a_refusal_answers_and_a_missing_radio_ends_service() {
             Ok(Err(RequestError::TooLate))
         );
     });
-    let empty = Runtime::new();
+    let empty = Runtime::new(clock());
     assert_eq!(
         block_on(LeRadioPort::submit(&empty, configure())),
         Err(BluetoothRuntimeError::NotInstalled)
@@ -593,11 +622,7 @@ fn uninstall_stops_the_scheduler_and_a_reset_radio_installs_again() {
     });
     // The event is listed and running when the epoch ends.
     model.0.borrow_mut().defer_execution = true;
-    block_on(async {
-        let Either::Second(()) = select(runtime.run(), Timer::after_millis(1)).await else {
-            panic!("the runtime keeps running")
-        };
-    });
+    run_for_a_millisecond(&runtime);
     let (radio, hardware) = block_on(runtime.uninstall()).unwrap();
     assert_eq!(model.0.borrow().stops, 1);
     assert!(matches!(
@@ -640,11 +665,7 @@ fn routes(model: &Model) -> (usize, usize) {
 
 /// Run the runtime until it is idle for a moment.
 fn settle(runtime: &Runtime) {
-    block_on(async {
-        let Either::Second(()) = select(runtime.run(), Timer::after_millis(1)).await else {
-            panic!("the runtime keeps running")
-        };
-    });
+    run_for_a_millisecond(runtime);
 }
 
 #[test]

@@ -60,6 +60,11 @@ pub trait ConnectedStationRunner<M: RawMutex>: ConnectedEpochRunnerOwner {
     /// IRQ and DMA ownership remain live until the last accepted RX/TX work
     /// reaches the idle frontier.
     fn station_rx_frontend_quiescent(&mut self) -> bool;
+
+    /// The clock the drain waits run on.
+    type Clock: oer_time::Timer;
+
+    fn clock(&self) -> &Self::Clock;
 }
 
 /// Service graph operation required at the connected RX ingress frontier.
@@ -82,8 +87,9 @@ where
     }
 }
 
-impl<'irq, RM, CM, N, B, RX> ConnectedStationRunner<CM> for DatapathRunner<'irq, RM, N, B, RX>
+impl<'irq, RM, CM, N, B, RX, C> ConnectedStationRunner<CM> for DatapathRunner<'irq, RM, N, B, RX, C>
 where
+    C: oer_time::Timer,
     RM: RawMutex,
     CM: RawMutex,
     N: crate::datapath::network::DatapathNetwork,
@@ -95,6 +101,11 @@ where
     RX: crate::datapath::network::DatapathNetworkRxSet,
 {
     type Error = B::Error;
+    type Clock = C;
+
+    fn clock(&self) -> &C {
+        DatapathRunner::clock(self)
+    }
 
     fn run_station_epoch<'a>(
         &'a mut self,
@@ -338,9 +349,9 @@ where
     // live, but this logical role handoff deliberately does not assert the
     // channel-stop request: that request is legal only inside the paired
     // stop/retune/restart transaction owned by a real channel switch.
-    embassy_time::Timer::after_micros(20).await;
+    crate::time::wait_for(runner.clock(), crate::time::MAC_STOP_SETTLE).await;
     while !runner.station_rx_frontend_quiescent() {
-        embassy_time::Timer::after_micros(1).await;
+        crate::time::wait_for(runner.clock(), crate::time::MAC_STOP_POLL).await;
     }
     match quiesce_esp32s31_connected_epoch(interrupt, platform, runner) {
         Ok(quiesced) => Ok(ConnectedEpochStopped { exit, quiesced }),

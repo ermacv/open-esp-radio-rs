@@ -12,10 +12,6 @@ use super::*;
 
 /// One scan dwell tick.
 const SCAN_DWELL_TICK: oer_time::Duration = oer_time::Duration::from_millis(1);
-/// The wait after a MAC stop request before its first activity readback.
-const MAC_STOP_SETTLE: oer_time::Duration = oer_time::Duration::from_micros(20);
-/// The interval between two MAC activity readbacks.
-const MAC_STOP_POLL: oer_time::Duration = oer_time::Duration::from_micros(1);
 
 impl<'resources, 'sequence, 'ssid, 'rates, P, H, R, T, W, O, const RECORDS: usize> StaScanPort
     for ScanPort<'resources, 'sequence, 'ssid, 'rates, P, H, R, T, W, O, RECORDS>
@@ -127,9 +123,9 @@ where
         async move {
             deactivate_promiscuous_receive(&mut self.radio.hardware);
             self.radio.hardware.request_mac_runtime_stop();
-            crate::time::wait_for(&self.timer, MAC_STOP_SETTLE).await;
+            crate::time::wait_for(&self.timer, crate::time::MAC_STOP_SETTLE).await;
             while self.radio.hardware.mac_runtime_active_state() != 0 {
-                crate::time::wait_for(&self.timer, MAC_STOP_POLL).await;
+                crate::time::wait_for(&self.timer, crate::time::MAC_STOP_POLL).await;
             }
             loop {
                 let progress = self.observe_scan_rx(context.channel)?;

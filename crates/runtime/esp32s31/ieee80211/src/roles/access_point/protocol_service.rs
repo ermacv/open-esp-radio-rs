@@ -879,7 +879,7 @@ where
         #[cfg(feature = "diagnostics")]
         self.sample_rx_block_ack_hardware(hardware);
         #[cfg(feature = "diagnostics")]
-        let protocol_started = Instant::now().as_micros();
+        let protocol_started = self.now().as_micros();
         let protocol_class = self.service_staged_rx(
             rx_protocol_consumer_has_hardware(tx_pending).then_some(hardware),
             frame,
@@ -895,7 +895,7 @@ where
         #[cfg(feature = "diagnostics")]
         self.observe_rx_protocol_service(
             protocol_class,
-            Instant::now().as_micros().saturating_sub(protocol_started),
+            self.now().as_micros().saturating_sub(protocol_started),
         );
         Ok(crate::roles::concurrent::RoutedRxDisposition::Processed)
     }
@@ -1004,7 +1004,7 @@ where
 
         self.serviced_rx_frames = self.serviced_rx_frames.saturating_add(1);
         #[cfg(feature = "diagnostics")]
-        let protocol_started = Instant::now().as_micros();
+        let protocol_started = self.now().as_micros();
         let protocol_class = self.service_staged_rx::<H, _, _>(
             None,
             frame,
@@ -1018,7 +1018,7 @@ where
         #[cfg(feature = "diagnostics")]
         self.observe_rx_protocol_service(
             protocol_class,
-            Instant::now().as_micros().saturating_sub(protocol_started),
+            self.now().as_micros().saturating_sub(protocol_started),
         );
         Ok(crate::roles::concurrent::RoutedRxDisposition::Processed)
     }

@@ -195,9 +195,8 @@ pub struct StationScanResources<
     const TX_BUFFER_SIZE: usize,
 > {
     /// The shared radio; each channel switch leases it for one transaction.
-    pub radio: &'radio RadioSystem<P, C>,
+    pub radio: &'radio RadioSystem<P, C, D>,
     pub phy_observer: Q,
-    pub phy_timer: D,
     pub hardware: H,
     pub receive: R,
     pub control: ControlTransmitter<'slot, X, E, T, TX_BUFFER_SIZE>,
@@ -220,7 +219,6 @@ pub struct StationScanReturned<
     'sequence,
     'slot,
     P,
-    D,
     H,
     R,
     X,
@@ -235,7 +233,6 @@ pub struct StationScanReturned<
     pub receive: R,
     pub control: ControlTransmitter<'slot, X, E, T, TX_BUFFER_SIZE>,
     pub phy_observer: P,
-    pub phy_timer: D,
     pub scan_observer: O,
     pub timer: W,
     pub table: &'storage mut ScanTable<RECORDS>,
@@ -458,7 +455,6 @@ pub async fn run_esp32s31_station_scan<
         'sequence,
         'slot,
         Q,
-        D,
         H,
         R,
         X,
@@ -489,7 +485,6 @@ where
     let StationScanResources {
         radio,
         phy_observer,
-        phy_timer,
         hardware,
         receive,
         control,
@@ -517,7 +512,7 @@ where
     .with_candidate_selection(request.select_candidate);
     let owner = ScanPort::new(
         ScanRadio::new(
-            RadioChannel::<_, _, _, D>::new(radio, phy_observer, phy_timer),
+            RadioChannel::<_, _, _, D>::new(radio, phy_observer),
             hardware,
             receive,
             RunningScanTx::new(control),
@@ -563,7 +558,7 @@ where
         .phy
         .publish_coex_activity(WifiCoexActivity::Idle)
         .await;
-    let (phy_observer, phy_timer) = parts.phy.into_parts();
+    let phy_observer = parts.phy.into_observer();
     let (control, transmit) = parts.tx.into_parts();
     StationScanOutcome {
         returned: StationScanReturned {
@@ -571,7 +566,6 @@ where
             receive: parts.rx,
             control,
             phy_observer,
-            phy_timer,
             scan_observer: parts.observer,
             timer: parts.timer,
             table: parts.table,

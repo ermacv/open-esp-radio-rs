@@ -19,8 +19,6 @@ use crate::{
 
 use oer_esp32s31_hal::owner::RadioRuntimeOwner;
 
-use oer_time_embassy::EmbassyClock;
-
 use oer_esp32s31_phy::{ConcurrentWifiChannelError, PhyTargetObserver};
 
 use oer_esp32s31_ieee80211::{

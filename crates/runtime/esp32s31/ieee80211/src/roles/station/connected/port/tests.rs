@@ -272,6 +272,7 @@ fn port_binds_rx_and_control_to_one_validated_peer_plan() {
             reorder_storage: &reorder_storage,
             runtime: protocol_runtime,
             reorder_scratch: None,
+            clock: oer_time_virtual::SkipClock::new(),
             pipeline_observer: None,
             reorder_observer: None,
         },

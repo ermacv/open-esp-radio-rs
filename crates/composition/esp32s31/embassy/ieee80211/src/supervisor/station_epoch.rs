@@ -113,7 +113,6 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             StationScanResources {
                 radio: self.radio,
                 phy_observer: NoopPhyTargetObserver,
-                phy_timer: EmbassyClock,
                 hardware,
                 receive,
                 control,
@@ -135,7 +134,6 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             frame: _,
             sequence: _,
             phy_observer: _,
-            phy_timer: _,
             scan_observer: _,
             timer: _,
             telemetry: _,
@@ -300,7 +298,6 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             StationScanResources {
                 radio: self.radio,
                 phy_observer: NoopPhyTargetObserver,
-                phy_timer: EmbassyClock,
                 hardware,
                 receive: match rx {
                     ConnectedParkedRx::Live(rx) => RunningScanRx::from_parked(rx)
@@ -346,7 +343,6 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             frame: _,
             sequence: _,
             phy_observer: _,
-            phy_timer: _,
             scan_observer: _,
             timer: _,
             telemetry: _,
@@ -434,7 +430,6 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             hardware: &mut hardware,
             radio: self.radio,
             phy_observer: NoopPhyTargetObserver,
-            timer: EmbassyClock,
             receive,
             rx_storage: dma.storage(),
             transmit: tx_storage
@@ -577,7 +572,6 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             hardware,
             radio: self.radio,
             phy_observer: NoopPhyTargetObserver,
-            timer: EmbassyClock,
             receive,
             rx_storage: dma.storage(),
             transmit: tx_storage
@@ -704,6 +698,11 @@ impl<'state, 'security> StationEnginePort<'security, CriticalSectionRawMutex>
     type Connected = ProductionConnectedPhase;
     type Error = StaAttemptStage;
     type Fault = ProductionStationFault<'state, 'security>;
+    type Timer = oer_time_embassy::EmbassyClock;
+
+    fn timer(&self) -> &Self::Timer {
+        &oer_time_embassy::EmbassyClock
+    }
 
     fn run_initial_scan<'a>(
         &'a mut self,

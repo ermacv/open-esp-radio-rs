@@ -224,16 +224,14 @@ mod agent {
         }
     }
 
-    /// The station's RF, through its role's PHY client. `clock` is the
-    /// image's monotonic time the PHY domain's tracking decision reads.
-    pub struct StationRf<'role, W, K> {
+    /// The station's RF, through its role's PHY client.
+    pub struct StationRf<'role, W> {
         role: &'role mut WifiRoleOwner<W>,
-        clock: K,
     }
 
-    impl<'role, W, K> StationRf<'role, W, K> {
-        pub fn new(role: &'role mut WifiRoleOwner<W>, clock: K) -> Self {
-            Self { role, clock }
+    impl<'role, W> StationRf<'role, W> {
+        pub fn new(role: &'role mut WifiRoleOwner<W>) -> Self {
+            Self { role }
         }
 
         /// Whether the RF sleeps.
@@ -242,12 +240,12 @@ mod agent {
         }
     }
 
-    impl<W, P, C: PlatformClockProvider, K: oer_time::Clock> StationRfPower<P, C>
-        for StationRf<'_, W, K>
+    impl<W, P, C: PlatformClockProvider, T: oer_time::Timer> StationRfPower<P, C, T>
+        for StationRf<'_, W>
     {
         async fn sleep(
             &mut self,
-            radio: &mut RadioGuard<'_, P, C>,
+            radio: &mut RadioGuard<'_, P, C, T>,
         ) -> Result<(), StationRfPowerError> {
             let last = self
                 .role
@@ -266,7 +264,7 @@ mod agent {
 
         async fn wake(
             &mut self,
-            radio: &mut RadioGuard<'_, P, C>,
+            radio: &mut RadioGuard<'_, P, C, T>,
         ) -> Result<(), StationRfPowerError> {
             // As `RadioGuard::resume_wifi`, the wake keeps no new
             // calibration cache of its own.
@@ -274,10 +272,11 @@ mod agent {
                 .prepare_phy()
                 .await
                 .map_err(|_| StationRfPowerError::Prepare)?;
+            let timer = radio.timer();
             let acquired = self
                 .role
                 .context_mut()
-                .resume_rf(radio.lease(), &self.clock)
+                .resume_rf(radio.lease(), timer)
                 .map_err(rf_error)?;
             if acquired == ConcurrentAcquire::TrackingDue {
                 radio
@@ -297,17 +296,17 @@ mod agent {
     }
 
     /// The owner of the station's RF membership, driven by the agent.
-    pub trait StationRfPower<P, C: PlatformClockProvider> {
+    pub trait StationRfPower<P, C: PlatformClockProvider, T: oer_time::Timer> {
         /// Put the station's RF to sleep, keeping its registration.
         fn sleep<'a>(
             &'a mut self,
-            radio: &'a mut RadioGuard<'_, P, C>,
+            radio: &'a mut RadioGuard<'_, P, C, T>,
         ) -> impl Future<Output = Result<(), StationRfPowerError>> + 'a;
 
         /// Wake the station's RF.
         fn wake<'a>(
             &'a mut self,
-            radio: &'a mut RadioGuard<'_, P, C>,
+            radio: &'a mut RadioGuard<'_, P, C, T>,
         ) -> impl Future<Output = Result<(), StationRfPowerError>> + 'a;
     }
 
@@ -344,9 +343,9 @@ mod agent {
     /// dropping it between commands is safe, as the datapath's shutdown stops
     /// power management through the control core first.
     // CAPABILITY: coex-protocol-integration-and-lifetime-coexistence-power-management
-    pub async fn run_station_power_agent<M, IM, P, C, R>(
+    pub async fn run_station_power_agent<M, IM, P, C, T, R>(
         link: &StationPowerLink<M>,
-        radio: &RadioSystem<P, C>,
+        radio: &RadioSystem<P, C, T>,
         power_irq: &EmbassyPowerIrqRuntime<IM>,
         rf: &mut R,
     ) -> StationPowerFailure
@@ -354,7 +353,8 @@ mod agent {
         M: RawMutex,
         IM: RawMutex,
         C: PlatformClockProvider,
-        R: StationRfPower<P, C>,
+        T: oer_time::Timer,
+        R: StationRfPower<P, C, T>,
     {
         loop {
             let event = select3(
@@ -401,15 +401,16 @@ mod agent {
 
     /// Perform the commands control sent before the association stopped:
     /// the stop's air releases and RF wake.
-    pub async fn finish_station_power<M, P, C, R>(
+    pub async fn finish_station_power<M, P, C, T, R>(
         link: &StationPowerLink<M>,
-        radio: &RadioSystem<P, C>,
+        radio: &RadioSystem<P, C, T>,
         rf: &mut R,
     ) -> Result<(), StationPowerFailure>
     where
         M: RawMutex,
         C: PlatformClockProvider,
-        R: StationRfPower<P, C>,
+        T: oer_time::Timer,
+        R: StationRfPower<P, C, T>,
     {
         while let Ok(command) = link.commands.try_receive() {
             let mut guard = radio.lock().await;
@@ -419,14 +420,15 @@ mod agent {
         Ok(())
     }
 
-    async fn perform<P, C, R>(
-        radio: &mut RadioGuard<'_, P, C>,
+    async fn perform<P, C, T, R>(
+        radio: &mut RadioGuard<'_, P, C, T>,
         rf: &mut R,
         command: ConnectedPowerCommand,
     ) -> Result<(), StationPowerFailure>
     where
         C: PlatformClockProvider,
-        R: StationRfPower<P, C>,
+        T: oer_time::Timer,
+        R: StationRfPower<P, C, T>,
     {
         match command {
             // The vendor core programs only events with a policy timer; for

@@ -520,7 +520,17 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
         "observer.rs":sha256_file(&root.join("observer.rs")).unwrap(),
         "hil/host/runner/src/main.rs":sha256_file(&root.join("hil/host/runner/src/main.rs")).unwrap(),
     },"compiler":configuration["compiler"],"environment":configuration["environment"],"resolved":resolved});
-    manifest["runner"] = json!({"observer":{"schema":1,"executable_sha256":"aa".repeat(32),"build_sha256":format!("{:x}",Sha256::digest(serde_json::to_vec(&build).unwrap())),"build":build}});
+    // The run's observer build is stored beside the directory of runs.
+    let embedded = json!({"schema":1,"executable_sha256":"aa".repeat(32),"build_sha256":format!("{:x}",Sha256::digest(serde_json::to_vec(&build).unwrap())),"build":build});
+    let store = fs::canonicalize(run)
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_owned();
+    manifest["runner"] =
+        json!({"observer": oer_hil_schema::observer_store::detach(&embedded, &store).unwrap()});
 
     manifest["firmware"] = json!([{
         "build_id": "ab".repeat(32),
@@ -706,11 +716,11 @@ fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
     fs::remove_dir_all(root).unwrap();
 }
 
-/// A run whose manifest names its observer build by digest, as runs do since
-/// the build moved into the store, evaluates exactly like one embedding it;
-/// a missing build or one that does not hash to its name fails closed.
+/// A run's manifest names its observer build by digest: a manifest that
+/// embeds the build, a missing build or one that does not hash to its name
+/// fails closed.
 #[test]
-fn a_referenced_observer_build_evaluates_like_an_embedded_one() {
+fn a_referenced_observer_build_is_the_only_stored_form() {
     use oer_hil_schema::observer_store;
     let root = std::env::temp_dir().join(format!(
         "open-radio-qualification-hil-observer-{}",
@@ -772,11 +782,20 @@ fn a_referenced_observer_build_evaluates_like_an_embedded_one() {
             format!("{:?} {evidence:?}", index.summary())
         })
     };
-    let embedded = evaluate().unwrap();
-    assert!(embedded.contains("Some("), "the embedded run qualifies");
+    let referenced = evaluate().unwrap();
+    assert!(referenced.contains("Some("), "the referenced run qualifies");
 
     let mut manifest: serde_json::Value = read_json(&run.join("manifest.json")).unwrap();
-    let reference = observer_store::detach(&manifest["runner"]["observer"], &root).unwrap();
+    let reference = manifest["runner"]["observer"].clone();
+    manifest["runner"]["observer"] =
+        observer_store::attach(&reference, &root).expect("the stored build");
+    fs::write(
+        run.join("manifest.json"),
+        serde_json::to_vec(&manifest).unwrap(),
+    )
+    .unwrap();
+    seal(&run);
+    assert!(evaluate().is_err(), "a manifest embedding its build");
     manifest["runner"]["observer"] = reference.clone();
     fs::write(
         run.join("manifest.json"),
@@ -795,7 +814,7 @@ fn a_referenced_observer_build_evaluates_like_an_embedded_one() {
     fs::remove_file(&build).unwrap();
     assert!(evaluate().is_err(), "a missing build");
     fs::write(&build, stored).unwrap();
-    assert_eq!(evaluate().unwrap(), embedded);
+    assert_eq!(evaluate().unwrap(), referenced);
     fs::remove_dir_all(root).unwrap();
 }
 

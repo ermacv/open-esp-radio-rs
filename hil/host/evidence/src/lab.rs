@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::Result;
 
-pub const LAB_PROVENANCE_SCHEMA: u16 = 1;
+pub const LAB_PROVENANCE_SCHEMA: u16 = 2;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -19,16 +19,13 @@ pub struct LabProvenance {
     pub definition: LabDefinition,
     pub host: HostObservation,
     pub fixture: FixtureObservation,
-    /// Older bundles always collected network observations.
-    #[serde(default)]
     pub scope: ObservationScope,
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ObservationScope {
     System,
-    #[default]
     Network,
 }
 
@@ -37,11 +34,8 @@ pub enum ObservationScope {
 pub struct LabDefinition {
     pub cell_id: String,
     pub device_id: String,
-    #[serde(default)]
     pub bluetooth_adapter: Option<String>,
-    /// Stable identity of the reference peer board; the key predates peers
-    /// of other radio families.
-    #[serde(default, rename = "ieee802154_peer")]
+    /// Stable identity of the reference peer board.
     pub peer: Option<String>,
     pub station_ipv4: StationIpv4Definition,
     pub access_point: AccessPointDefinition,

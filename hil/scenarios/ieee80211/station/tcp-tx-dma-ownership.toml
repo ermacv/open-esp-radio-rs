@@ -1,8 +1,8 @@
 schema = 5
 id = "tcp-tx-dma-ownership"
 description = "TCP transmit with receive-side DMA lease timing for peer traffic"
+role = "investigation"
 repetitions = 3
-transfer = "identical-image"
 tags = ["diagnostic", "tcp", "station", "memory", "air-strict"]
 
 [wifi]

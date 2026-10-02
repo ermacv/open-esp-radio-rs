@@ -115,7 +115,7 @@ pub(crate) enum CliCommand {
     },
     /// Execute catalog scenarios, flashing once per selected image class.
     /// The whole catalog runs only with an explicit `--all`.
-    #[command(group(clap::ArgGroup::new("selection").required(true).args(["tag", "all"])))]
+    #[command(group(clap::ArgGroup::new("selection").required(true).args(["tag", "role", "all"])))]
     RunAll {
         /// Explicit nonignored untracked source file; repeat for each included file.
         #[arg(long = "source-include", value_name = "FILE")]
@@ -132,6 +132,10 @@ pub(crate) enum CliCommand {
         /// Select only scenarios carrying this tag. May be repeated.
         #[arg(long)]
         tag: Vec<String>,
+        /// Select only scenarios of this role: `qualification` runs every
+        /// scenario a qualification program references.
+        #[arg(long, value_parser = ["qualification", "investigation"])]
+        role: Option<String>,
         /// Run every catalog scenario: the whole default suite.
         #[arg(long)]
         all: bool,
@@ -154,6 +158,10 @@ pub(crate) struct Selection {
     /// Require every supplied tag. May be repeated.
     #[arg(long)]
     pub(crate) tag: Vec<String>,
+    /// Require this role: `qualification` selects the scenarios a
+    /// qualification program references, `investigation` every other one.
+    #[arg(long, conflicts_with = "scenario", value_parser = ["qualification", "investigation"])]
+    pub(crate) role: Option<String>,
     /// Chip whose device under test the selection is for; default: the only
     /// chip whose HIL agent builds every image the selection uses.
     #[arg(long, value_name = "CHIP")]
@@ -174,6 +182,12 @@ impl Selection {
             .all()
             .iter()
             .filter(|entry| self.tag.iter().all(|tag| entry.header.tags.contains(tag)))
+            .filter(|entry| {
+                self.role.as_deref().is_none_or(|role| {
+                    serde_json::to_value(entry.header.role).ok().as_ref()
+                        == Some(&serde_json::Value::from(role))
+                })
+            })
             .partition(|entry| entry.header.unsupported.is_none());
         for scenario in unsupported {
             eprintln!(
@@ -183,7 +197,7 @@ impl Selection {
             );
         }
         if selected.is_empty() {
-            return Err("no HIL scenarios match the requested tags".into());
+            return Err("no HIL scenarios match the requested tags and role".into());
         }
         Ok(selected)
     }

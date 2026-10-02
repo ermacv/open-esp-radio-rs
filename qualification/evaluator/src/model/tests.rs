@@ -456,34 +456,16 @@ fn corrupt_unsupported_and_non_match_native_indexes_fail_closed() {
     write(&valid);
     fs::write(root.join(directory).join("notes.txt"), "").unwrap();
     assert!(NativeEvidence::load(root, directory, "test-radio").is_err());
-}
-
-// Called with independently sealed archived observations by the review tests.
-pub(crate) fn assert_reviewed_hil(
-    root: &Path,
-    document: CapabilityDocument,
-    index: &HilEvidenceIndex,
-    catalog: &ScenarioCatalog,
-) {
-    let declarations = BTreeMap::from([(document.id.clone(), document.clone())]);
-    let evidence = NativeEvidence { shards: vec![] };
-    let context = EvaluationContext {
-        root,
-        evidence: &evidence,
-        scenario_catalog: catalog,
-        hil_index: index,
-        declarations: &declarations,
+    fs::remove_file(root.join(directory).join("notes.txt")).unwrap();
+    // A shard binding a source that no longer exists fails closed.
+    let mut missing = valid.clone();
+    missing.sources[0].path = PathBuf::from("deleted/source");
+    write(&missing);
+    let Err(error) = NativeEvidence::load(root, directory, "test-radio") else {
+        panic!("a missing bound source was accepted");
     };
-    let capability = evaluate_capability(document, &context).unwrap();
-    assert_eq!(capability.hil, HilProof::Qualified);
-    assert!(capability.proof_ready());
-    assert_eq!(capability.hil_decisions[0].reviews[0].status, "applied");
-    assert!(
-        capability
-            .evidence
-            .iter()
-            .any(|r| r.starts_with("hil:old/exchange"))
-    );
+    let error = error.to_string();
+    assert!(error.contains("does not exist"), "{error}");
 }
 
 #[test]

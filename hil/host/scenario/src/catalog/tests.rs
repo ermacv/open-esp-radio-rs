@@ -124,31 +124,43 @@ fn a_scenario_names_no_chip() {
 }
 
 #[test]
-fn only_a_diagnostic_scenario_selects_the_station_exit_image() {
-    let scenario = |tags: &str| {
+fn a_diagnostic_image_serves_only_an_investigation_scenario() {
+    let scenario = |image: &str, role: &str, tags: &str| {
         crate::Scenario::<TestFamily>::from_toml(
             &format!(
-                "schema = 5\nid = \"exit\"\ndescription = \"exit\"\ntags = [{tags}]\n\n\
-                 [wifi]\nimage = \"diagnostic-station-exit\"\n"
+                "schema = 5\nid = \"exit\"\ndescription = \"exit\"\nrole = \"{role}\"\n\
+                 tags = [{tags}]\n\n[wifi]\nimage = \"{image}\"\n"
             ),
             std::path::Path::new("exit.toml"),
         )
     };
-    assert!(scenario("\"diagnostic\"").is_ok());
-    for refused in [
-        "",
-        "\"diagnostic\", \"qualification\"",
-        "\"diagnostic\", \"performance\"",
-    ] {
-        assert!(scenario(refused).is_err(), "tags [{refused}]");
+    for image in ["diagnostic-station-exit", "diagnostic-ieee802154-radio"] {
+        assert!(scenario(image, "investigation", "").is_ok(), "{image}");
+        assert!(scenario(image, "qualification", "").is_err(), "{image}");
+        assert!(
+            scenario(image, "investigation", "\"performance\"").is_err(),
+            "{image}"
+        );
     }
+    assert!(scenario("correctness", "qualification", "").is_ok());
+    assert!(scenario("correctness", "investigation", "").is_ok());
+    assert!(
+        scenario("correctness", "triage", "").is_err(),
+        "an unknown role"
+    );
 }
 
 #[test]
 fn a_profile_needs_a_sampling_image_a_period_in_range_and_a_diagnostic_scenario() {
     let document = |image: &str, tags: &str, period: u32| {
+        let role = if tags.contains("qualification") {
+            "qualification"
+        } else {
+            "investigation"
+        };
+        let tags = tags.replace("\"qualification\"", "");
         format!(
-            "schema = 5\nid = \"profiled\"\ndescription = \"profiled\"\ntags = [{tags}]\n\
+            "schema = 5\nid = \"profiled\"\ndescription = \"profiled\"\nrole = \"{role}\"\ntags = [{tags}]\n\
              [profile]\nharts = \"both\"\nperiod-us = {period}\n\
              [wifi]\nimage = \"{image}\"\nworkload = {{ kind = \"x\" }}\n"
         )

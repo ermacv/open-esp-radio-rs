@@ -1,8 +1,8 @@
 schema = 5
 id = "timebase"
 description = "Alarm and monotonic-clock agreement before radio initialization"
-transfer = "identical-image"
-tags = ["qualification", "timebase"]
+role = "investigation"
+tags = ["timebase"]
 
 [system]
 kind = "timebase"

@@ -126,13 +126,13 @@ fn a_joint_coexistence_table_is_one_family() {
     let tree = Tree::new();
     tree.write(
         "coexistence/joint.toml",
-        "schema = 5\nid = \"joint\"\ndescription = \"joint\"\n\n[coexistence]\nphy = \"ht20\"\nduration_seconds = 12\n",
+        "schema = 5\nid = \"joint\"\ndescription = \"joint\"\nrole = \"investigation\"\n\n[coexistence]\nphy = \"ht20\"\nduration_seconds = 12\n",
     );
     let catalog = ScenarioCatalog::load(&tree.0, Path::new("catalog")).unwrap();
     assert!(catalog.repetitions.contains_key("joint"));
     tree.write(
         "coexistence/both.toml",
-        "schema = 5\nid = \"both\"\ndescription = \"both\"\n\n[coexistence]\nphy = \"ht20\"\n\n[system]\nkind = \"boot-smoke\"\n",
+        "schema = 5\nid = \"both\"\ndescription = \"both\"\nrole = \"investigation\"\n\n[coexistence]\nphy = \"ht20\"\n\n[system]\nkind = \"boot-smoke\"\n",
     );
     assert!(ScenarioCatalog::load(&tree.0, Path::new("catalog")).is_err());
 }
@@ -142,7 +142,9 @@ fn an_unsupported_scenario_stays_an_open_gap_with_its_reason() {
     let tree = Tree::new();
     tree.write(
         "alpha-system.toml",
-        &ALPHA.replacen("\n[", "\nunsupported = \"no image serves it\"\n[", 1),
+        &ALPHA
+            .replacen("\n[", "\nunsupported = \"no image serves it\"\n[", 1)
+            .replace("role = \"investigation\"", "role = \"qualification\""),
     );
     let catalog = ScenarioCatalog::load(&tree.0, Path::new("catalog")).unwrap();
     assert_eq!(
@@ -161,4 +163,39 @@ fn an_unsupported_scenario_stays_an_open_gap_with_its_reason() {
     let (kind, reason) = decision.next_work().unwrap();
     assert_eq!(kind, crate::model::WorkKind::Implement);
     assert!(reason.contains("no image serves it"));
+}
+
+#[test]
+fn programs_decide_scenario_roles_and_an_investigation_scenario_never_qualifies() {
+    let tree = Tree::new();
+    tree.write("alpha-system.toml", ALPHA);
+    tree.write(
+        "beta-system.toml",
+        &BETA.replace("role = \"investigation\"", "role = \"qualification\""),
+    );
+    let catalog = ScenarioCatalog::load(&tree.0, Path::new("catalog")).unwrap();
+    let error = catalog.check_roles(&BTreeSet::new()).unwrap_err();
+    assert!(error.to_string().contains("beta-system"), "{error}");
+    catalog
+        .check_roles(&BTreeSet::from([String::from("beta-system")]))
+        .unwrap();
+    let index = HilEvidenceIndex::synthetic(&[("alpha-system", 1)]);
+    let decision = index.decision_for(
+        &HilRequirement {
+            scenario: "alpha-system".into(),
+            checks: Vec::new(),
+            minimum_repetitions: 1,
+        },
+        &catalog,
+    );
+    assert!(decision.investigation);
+    assert_eq!(
+        decision.status,
+        EvidenceStatus::Missing,
+        "a pass never counts"
+    );
+    assert!(decision.evidence.is_none());
+    let (kind, reason) = decision.next_work().unwrap();
+    assert_eq!(kind, crate::model::WorkKind::Implement);
+    assert!(reason.contains("investigation scenario"), "{reason}");
 }

@@ -1,8 +1,8 @@
 schema = 5
 id = "access-point-two-client-session-smoke"
 description = "Bound-socket readiness, bidirectional sessions and evidence across two AP epochs"
+role = "investigation"
 repetitions = 1
-transfer = "identical-image"
 tags = ["diagnostic", "access-point", "multi-client", "session-smoke", "air-strict"]
 
 [wifi]

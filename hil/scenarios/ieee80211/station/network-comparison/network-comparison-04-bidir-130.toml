@@ -1,8 +1,8 @@
 schema = 5
 id = "network-comparison-04-bidir-130"
 description = "Four-stack HT40 comparison: bidir-130"
+role = "investigation"
 repetitions = 1
-transfer = "identical-image"
 tags = ["diagnostic", "station", "ht40", "network-comparison", "network-comparison-bidirectional", "air-strict"]
 
 [wifi]

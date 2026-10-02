@@ -245,22 +245,12 @@ pub(crate) fn print(qualification: &Qualification) {
         }
         for decision in &capability.hil_decisions {
             println!(
-                "HIL-OBLIGATION\t{}\tscenario={}\tstatus={}\tevidence={}\tlast-known={}",
+                "HIL-OBLIGATION\t{}\tscenario={}\tstatus={}\tevidence={}",
                 capability.id,
                 decision.scenario,
                 decision.status.label(),
-                decision.evidence.as_deref().unwrap_or("none"),
-                decision.last_known.as_deref().unwrap_or("none")
+                decision.evidence.as_deref().unwrap_or("none")
             );
-        }
-        for decision in &capability.hil_decisions {
-            for review in &decision.reviews {
-                println!(
-                    "HIL-REVIEW\t{}\t{}",
-                    capability.id,
-                    serde_json::to_string(review).expect("serializable review decision")
-                );
-            }
         }
         for check in &capability.hil_checks {
             println!(

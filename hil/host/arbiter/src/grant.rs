@@ -26,11 +26,6 @@ use crate::{
 pub const LEASE_ENV: &str = "OER_HIL_LEASE";
 /// Who asks for the stand; defaults to the checkout directory name.
 pub const OWNER_ENV: &str = "OER_HIL_OWNER";
-/// Variables of lease budgets, which balances replaced; setting one fails.
-const RETIRED_ENV: [&str; 2] = ["OER_HIL_BUDGET", "OER_HIL_SHORT"];
-/// Why budgets are refused.
-pub const NO_BUDGETS: &str =
-    "the stand charges the time a lease holds; there is no budget or short lease to request";
 
 /// Time a terminated holder has to clean up before it is killed.
 pub(crate) const SHUTDOWN_GRACE: Duration = Duration::from_secs(300);
@@ -84,9 +79,6 @@ pub struct Request {
 impl Request {
     /// A request by the owner the environment names.
     pub fn from_environment(work: impl Into<String>) -> crate::Result<Self> {
-        if let Some(variable) = retired_variable(|name| std::env::var_os(name)) {
-            return Err(format!("{variable} is set, but {NO_BUDGETS}").into());
-        }
         Ok(Self {
             owner: owner_from_environment()?,
             work: work.into(),
@@ -94,13 +86,6 @@ impl Request {
             claims: Vec::new(),
         })
     }
-}
-
-/// The retired budget variable `lookup` finds set, if any.
-fn retired_variable(lookup: impl Fn(&str) -> Option<std::ffi::OsString>) -> Option<&'static str> {
-    RETIRED_ENV
-        .into_iter()
-        .find(|variable| lookup(variable).is_some_and(|value| !value.is_empty()))
 }
 
 /// Ownership of the stand. A nested grant belongs to an enclosing lease and
@@ -225,7 +210,7 @@ impl Arbiter {
             eprintln!("hil-arbiter: back in service");
         }
         let (estimate, _) = estimate::estimate(&request.work, &request.scenarios, &self.history()?);
-        let id = self.transaction_after_legacy(|state| {
+        let id = self.transaction(|state| {
             let id = state.next_id;
             state.next_id += 1;
             state.queue.push(Ticket {
@@ -345,7 +330,7 @@ impl Arbiter {
         token: Option<String>,
         claims: &[Claim],
     ) -> crate::Result<Option<Grant>> {
-        let enclosing = self.transaction_after_legacy(|state| {
+        let enclosing = self.transaction(|state| {
             Ok(state
                 .holders
                 .iter()

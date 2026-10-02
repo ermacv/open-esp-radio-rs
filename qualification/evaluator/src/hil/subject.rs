@@ -57,37 +57,40 @@ fn observer_reference<S: serde::Serializer>(
 }
 
 /// One shared copy of each distinct observer proof, with its build inline.
-/// An embedded build is hashed once per digest it claims. A referenced build
-/// must be present and hash to its name, else loading fails; it is read again
-/// only when its file changed since it was verified.
+/// A stored record names its build by digest; the build must be present in
+/// `store` and hash to its name, else loading fails. It is read again only
+/// when its file changed since it was verified. A record embedding its build
+/// is not read.
 fn shared_observer(
     record: &serde_json::Value,
     store: &Path,
 ) -> Result<std::sync::Arc<serde_json::Value>> {
-    use oer_hil_schema::observer_store::{self, EMBEDDED};
+    use oer_hil_schema::observer_store::{self, REFERENCED};
     use std::{
         collections::HashMap,
         sync::{Arc, Mutex, OnceLock},
     };
     type File = (PathBuf, u64, std::time::SystemTime);
-    type Key = (Option<File>, String, String);
+    type Key = (File, String, String);
     static PROOFS: OnceLock<Mutex<HashMap<Key, Arc<serde_json::Value>>>> = OnceLock::new();
+    if record["schema"] != REFERENCED {
+        return Err(format!(
+            "HIL observer proof has schema {}; only references (schema {REFERENCED}) are read",
+            record["schema"]
+        )
+        .into());
+    }
     let digest = observer_store::build_digest(record).unwrap_or_default();
-    let file = if record["schema"] == EMBEDDED {
-        None
-    } else {
-        let path = observer_store::path(store, digest)
-            .map_err(|error| format!("HIL observer proof: {error}"))?;
-        let metadata = fs::metadata(&path).map_err(|error| {
-            format!(
-                "HIL observer proof: build {} is missing: {error}",
-                path.display()
-            )
-        })?;
-        Some((path, metadata.len(), metadata.modified()?))
-    };
+    let path = observer_store::path(store, digest)
+        .map_err(|error| format!("HIL observer proof: {error}"))?;
+    let metadata = fs::metadata(&path).map_err(|error| {
+        format!(
+            "HIL observer proof: build {} is missing: {error}",
+            path.display()
+        )
+    })?;
     let key = (
-        file,
+        (path, metadata.len(), metadata.modified()?),
         digest.to_owned(),
         record["executable_sha256"].to_string(),
     );
@@ -97,27 +100,17 @@ fn shared_observer(
         .map_err(|_| "observer proof cache poisoned")?
         .get(&key)
     {
-        // An embedded record claiming a cached digest shares it only when
-        // its build is the one cached.
-        if record["schema"] != EMBEDDED || shared["build"] == record["build"] {
-            return Ok(shared.clone());
-        }
+        return Ok(shared.clone());
     }
     let proof = Arc::new(
         observer_store::attach(record, store)
             .map_err(|error| format!("HIL observer proof: {error}"))?,
     );
-    // An embedded build whose bytes do not hash to its claim is kept apart;
-    // the observer review reports its identity as differing.
-    if Some(observer_store::digest(&serde_json::to_vec(&proof["build"])?).as_str())
-        == observer_store::build_digest(&proof)
-    {
-        PROOFS
-            .get_or_init(Default::default)
-            .lock()
-            .map_err(|_| "observer proof cache poisoned")?
-            .insert(key, proof.clone());
-    }
+    PROOFS
+        .get_or_init(Default::default)
+        .lock()
+        .map_err(|_| "observer proof cache poisoned")?
+        .insert(key, proof.clone());
     Ok(proof)
 }
 

@@ -70,14 +70,12 @@ validation; closure mode never drops a dependency to make a product ready.
 By default, HIL qualification requires build provenance for every firmware artifact. The
 primary source must match the complete current source selection, and the recorded
 workspace lockfile must match its pinned composition. A verified complete snapshot
-match is sufficient regardless of dirty state or commit identity; legacy
+match is sufficient regardless of dirty state or commit identity;
 commit-only records still require a matching clean commit. Local source overrides
 qualify only when clean, reconstructable and at the locked revisions of every
 package they replace. Missing provenance, dirty or unpinned overrides, and
 firmware replay remain diagnostic evidence without establishing qualification.
 
-Explicit [property-scoped applicability reviews](../evidence-reviews.md) can admit
-previously excluded observations for a selected destination build after checking
-owner inputs and build/property identities. They also encode individual failure
-dispositions. This opt-in path is shared by qualification and the engineering
-map; it preserves original observations and never reruns hardware automatically.
+Excluded observations stay excluded: no record admits them for another build or
+resolves their failures. Qualification and the engineering map share the same
+decisions, preserve original observations and never rerun hardware.

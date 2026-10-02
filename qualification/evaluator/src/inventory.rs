@@ -724,7 +724,7 @@ mod tests {
             fs::create_dir_all(path.join("scenarios")).unwrap();
             fs::write(
                 path.join("scenarios/static.toml"),
-                "schema = 5\nid = \"static\"\nrepetitions = 1\n[system]\nkind = \"boot-smoke\"\n",
+                "schema = 5\nid = \"static\"\nrole = \"investigation\"\nrepetitions = 1\n[system]\nkind = \"boot-smoke\"\n",
             )
             .unwrap();
             fs::write(path.join("FEATURES.md"), "# Features\n\n## ownership\n").unwrap();

@@ -1,8 +1,8 @@
 schema = 5
 id = "udp-rx-ht40-ceiling-task-poll"
 description = "The HT40 UDP host-to-station ceiling workload on the task-poll image: task-poll residence for A/B comparison, throughput not comparable to the production ceiling"
+role = "investigation"
 repetitions = 3
-transfer = "identical-image"
 tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "task-poll", "air-strict"]
 
 [wifi]

@@ -1,7 +1,7 @@
 schema = 5
 id = "udp-rx-ht40-task-poll-no-rx-checksum-diagnostic"
 description = "Split-core HT40 saturated RX checksum-cost diagnostic"
-transfer = "identical-image"
+role = "investigation"
 tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "task-poll", "checksum", "checksum-ab", "air-strict"]
 
 [wifi]

@@ -1,7 +1,7 @@
 schema = 5
 id = "diagnostic-udp-rx-ht40-single-core-task-residence"
 description = "Task residence of the HT40 saturated RX path with the radio, RX protocol and IP stack on CPU0 alone"
-transfer = "identical-image"
+role = "investigation"
 tags = ["diagnostic", "udp", "station", "rx", "ht40", "single-core", "task-poll", "rx-residence-saturated", "air-strict"]
 
 [wifi]

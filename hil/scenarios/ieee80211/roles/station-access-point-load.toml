@@ -1,6 +1,7 @@
 schema = 5
 id = "station-access-point-load"
 description = "Simultaneous same-channel STA+AP UDP bidirectional load with per-interface fairness, beacon timing, and RX hardware health"
+role = "investigation"
 tags = ["wifi", "sta-ap", "udp", "fairness", "beacon", "psram-stack", "air-strict"]
 
 [wifi]

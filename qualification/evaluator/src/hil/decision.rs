@@ -2,7 +2,7 @@
 //!
 //! The supported boundary is a complete scenario repetition set. Named checks
 //! refine that obligation; they do not yet certify independently closed phases.
-//! Cross-image transfer requires a property policy and is not inferred here.
+//! Only current observations count; cross-image transfer is never inferred.
 
 use super::*;
 use serde::Serialize;
@@ -63,10 +63,6 @@ impl Exclusion {
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum EvidenceStatus {
     Satisfied,
-    /// No current observation, but one passed on sources that have changed
-    /// since: information about the last known state, not a gap to close
-    /// before the next baseline.
-    LastKnownPass,
     Missing,
     UnresolvedFailure,
 }
@@ -75,7 +71,6 @@ impl EvidenceStatus {
     pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Satisfied => "satisfied",
-            Self::LastKnownPass => "last-known-pass",
             Self::Missing => "missing",
             Self::UnresolvedFailure => "unresolved-failure",
         }
@@ -105,8 +100,6 @@ struct ObservationDecision {
     failure: Option<serde_json::Value>,
     repetition_failures: Vec<Option<serde_json::Value>>,
     applicable: bool,
-    review: Option<review::ReviewLink>,
-    resolution: Option<review::ResolutionLink>,
 }
 
 /// Diagnostics are derived, never stored back into the immutable observation.
@@ -119,47 +112,21 @@ pub(crate) struct EvidenceDecision {
     completion_boundary: &'static str,
     pub(crate) status: EvidenceStatus,
     pub(crate) evidence: Option<String>,
-    /// The newest observation that passed on sources that have changed
-    /// since, when no current one does.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) last_known: Option<String>,
+    /// The SHA-256 of the scenario's current normalized document, when the
+    /// catalog defines it.
+    pub(crate) procedure_sha256: Option<String>,
     observations: Vec<ObservationDecision>,
-    pub(crate) reviews: Vec<review::ReviewDecision>,
-    pub(crate) property: Option<review::PropertyBinding>,
     /// Why the current firmware cannot run the scenario, as its catalog
     /// document declares; the obligation stays open until it can.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) unsupported: Option<String>,
+    /// The requirement names an investigation scenario: no observation of
+    /// it satisfies a qualification program.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) investigation: bool,
 }
 
 impl EvidenceDecision {
-    pub(crate) fn attach_reviews(
-        &mut self,
-        root: &Path,
-        document: &crate::model::CapabilityDocument,
-        declarations: &BTreeMap<String, crate::model::CapabilityDocument>,
-        catalog: &ScenarioCatalog,
-        reviews: &[review::ReviewDecision],
-    ) -> Result<()> {
-        self.property = Some(review::property(
-            document,
-            declarations,
-            &HilRequirement {
-                scenario: self.scenario.clone(),
-                checks: self.checks.clone(),
-                minimum_repetitions: self.minimum_repetitions,
-            },
-            catalog,
-            root,
-        )?);
-        self.reviews = reviews
-            .iter()
-            .filter(|r| r.scenario == self.scenario)
-            .cloned()
-            .collect();
-        Ok(())
-    }
-
     /// Original completed observations, including excluded historical inputs.
     pub(crate) fn observation_counts(&self) -> ObservationCounts {
         ObservationCounts {
@@ -183,10 +150,10 @@ impl EvidenceDecision {
     /// Guidance only: never changes evidence eligibility or resolves a failure.
     pub(crate) fn next_work(&self) -> Option<(crate::model::WorkKind, Cow<'_, str>)> {
         use crate::model::WorkKind;
-        if self.reviews.iter().any(|r| r.status != "applied") {
+        if self.investigation {
             return Some((
-                WorkKind::AssessApplicability,
-                "An explicit applicability review no longer binds this property/build; inspect its review status before editing it or choosing a rerun.".into(),
+                WorkKind::Implement,
+                "The requirement names an investigation scenario, which cannot satisfy a qualification program; re-home it to a qualification scenario on a product image.".into(),
             ));
         }
         if let (EvidenceStatus::Missing, Some(reason)) = (self.status, &self.unsupported) {
@@ -202,12 +169,10 @@ impl EvidenceDecision {
     fn observed_work(&self) -> Option<(crate::model::WorkKind, &'static str)> {
         use crate::model::WorkKind;
         match self.status {
-            // The last known state is information; rerunning it belongs to
-            // qualifying a baseline, not to the next piece of work.
-            EvidenceStatus::Satisfied | EvidenceStatus::LastKnownPass => None,
+            EvidenceStatus::Satisfied => None,
             EvidenceStatus::UnresolvedFailure => Some((
                 WorkKind::InvestigateFailure,
-                "An applicable failure remains unresolved; another PASS does not close it.",
+                "A current failure remains; another PASS does not close it.",
             )),
             EvidenceStatus::Missing
                 if self.observations.iter().any(|o| !o.exclusions.is_empty()) =>
@@ -256,17 +221,22 @@ impl HilEvidenceIndex {
             completion_boundary: "scenario-repetition-set",
             status: EvidenceStatus::Missing,
             evidence: None,
-            last_known: None,
+            procedure_sha256: catalog
+                .definitions
+                .get(&requirement.scenario)
+                .map(|document| {
+                    format!(
+                        "{:x}",
+                        Sha256::digest(procedure::normalize(document).to_string().as_bytes())
+                    )
+                }),
             observations: Vec::new(),
-            reviews: Vec::new(),
-            property: None,
             unsupported: catalog
                 .unsupported(&requirement.scenario)
                 .map(str::to_owned),
+            investigation: catalog.investigation(&requirement.scenario),
         };
         let mut candidates = Vec::new();
-        // Complete passes excluded only because the tree moved since.
-        let mut earlier = Vec::new();
         for observation in self
             .scenarios
             .get(&requirement.scenario)
@@ -312,29 +282,19 @@ impl HilEvidenceIndex {
                 gaps.push(ObligationGap::CurrentCriteriaNotMet);
             }
             if applicable {
-                if (observation.outcome == Outcome::Failed
+                if observation.outcome == Outcome::Failed
                     || observation.repetition_outcomes.contains(&Outcome::Failed)
-                    || (observation.outcome == Outcome::Passed && criteria_failed))
-                    && observation.resolution.is_none()
+                    || (observation.outcome == Outcome::Passed && criteria_failed)
                 {
-                    // A later PASS alone cannot explain a failure; only an
-                    // explicit, validated disposition can resolve it.
+                    // A later PASS cannot explain a current failure.
                     decision.status = EvidenceStatus::UnresolvedFailure;
                 }
                 if gaps.is_empty() {
                     candidates.push(observation);
                 }
-            } else if gaps.is_empty()
-                && procedure_matches
-                && !exclusions.is_empty()
-                && exclusions.iter().all(Exclusion::is_tree_binding)
-            {
-                earlier.push(observation);
             }
             decision.observations.push(ObservationDecision {
                 applicable,
-                review: observation.review.clone(),
-                resolution: observation.resolution.clone(),
                 observation_id: observation.observation_id(&requirement.scenario),
                 completion_seal: observation.completion_seal.clone(),
                 subject: observation.subject.clone(),
@@ -349,6 +309,7 @@ impl HilEvidenceIndex {
             });
         }
         if decision.status != EvidenceStatus::UnresolvedFailure
+            && !decision.investigation
             && let Some(observation) = candidates
                 .into_iter()
                 .max_by_key(|entry| (entry.started_unix_millis, &entry.run_id))
@@ -365,32 +326,8 @@ impl HilEvidenceIndex {
             if !requirement.checks.is_empty() {
                 reference.push_str(&format!(":checks={}", requirement.checks.join(",")));
             }
-            if let Some(review) = &observation.review {
-                reference.push_str(&review.evidence_reference());
-            }
             decision.status = EvidenceStatus::Satisfied;
             decision.evidence = Some(reference);
-        }
-        if decision.status == EvidenceStatus::Missing
-            && let Some(observation) = earlier
-                .into_iter()
-                .max_by_key(|entry| (entry.started_unix_millis, &entry.run_id))
-        {
-            decision.status = EvidenceStatus::LastKnownPass;
-            decision.last_known = Some(format!(
-                "hil:{}/{}:repetitions={}:started-unix-millis={}",
-                observation.run_id,
-                requirement.scenario,
-                observation.repetitions,
-                observation.started_unix_millis
-            ));
-        }
-        if decision
-            .observations
-            .iter()
-            .any(|o| o.review.is_some() || o.resolution.is_some())
-        {
-            decision.applicability_policy = "reviewed-property";
         }
         decision
     }

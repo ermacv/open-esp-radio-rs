@@ -1,8 +1,8 @@
 schema = 5
 id = "diagnostic-ap-probe-load"
 description = "AP UDP progress under single, fixed-MAC and rotating-MAC probe request load"
+role = "investigation"
 repetitions = 1
-transfer = "identical-image"
 tags = ["diagnostic", "access-point", "multi-client", "ht40", "aggregation", "air-strict"]
 
 [wifi]

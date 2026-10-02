@@ -68,8 +68,8 @@ Host selectors are navigation, not recorded test passes. HIL observations retain
 exclusion reasons and completion boundaries from the existing evaluator.
 
 Next work distinguishes research, implementation, host coverage, experiments,
-measurement methods, applicability review, incomplete attempts and unresolved
-failures. Declarations-only mode asks to inspect evidence before deciding to
+measurement methods, inspection of excluded observations, incomplete attempts
+and current failures. Declarations-only mode asks to inspect evidence before deciding to
 repeat an experiment. Existing gaps may carry a reviewed work classification;
 unclassified HIL gaps require review rather than interpretation of their names.
 Actions are deterministic candidates with reasons, not a priority ranking or an
@@ -339,11 +339,10 @@ unselected ones; the evaluator report describes only the resolved product set.
 
 `cargo qualification plan --manifest <program> [--capability <id>]` emits a
 read-only JSON selection from the same HIL decisions as `status` and `gate`.
-Each obligation explains `satisfied`, `last-known`, `run`, `review` or
-`investigate` and binds
-its property scope. It performs no build, test or hardware action; run the
-scenarios it names with `cargo hil run`.
-Unknown impact requests review rather than silently inheriting success. A focused
+Each obligation explains `satisfied`, `run`, `review` (inspect excluded
+observations), `investigate` (a current failure) or `unsupported`, and binds the
+digest of the scenario's current normalized document. It performs no build,
+test or hardware action; run the scenarios it names with `cargo hil run`. A focused
 capability plan includes only its own obligations; prerequisite capabilities
 remain context, not additional execution requests.
 
@@ -361,9 +360,8 @@ Every capability has five independent axes:
   anchor remains;
 - `hil` is derived from sealed schema-2 HIL run bundles and the tracked HIL
   evidence shards recorded from them. Every required scenario
-  must pass with enough repetitions in an independently sealed attempt or run,
-  bound to the current source inputs or admitted by an explicit property/build
-  applicability review;
+  must pass with enough repetitions in an independently sealed attempt or run
+  bound to the current source inputs;
 - `async` is the reviewed declaration `bounded`, `incomplete`, or explicitly
   `not-applicable` with a reason. Consistency with gaps is checked; the
   evaluator does not infer executor behavior from source names.
@@ -460,6 +458,15 @@ maps both into the declared capability graph.
 Capability dependencies describe readiness, not instructions to re-execute
 every prerequisite scenario.
 
+A HIL requirement names a scenario of the program's HIL catalog, and the
+programs decide each scenario's [role](../hil/scenarios/README.md#roles):
+validating a program fails while a scenario declared `qualification` is
+referenced by no program of `qualification/targets`. A requirement on an
+`investigation` scenario, such as one on a diagnostic image, is never
+satisfied: its decision is marked `investigation`, it derives the HIL gap
+`requirement-names-investigation-scenario`, and its next work is to re-home
+it to a qualification scenario on a product image.
+
 HIL requirements may select named `checks` in addition to the scenario and
 minimum repetitions. The scenario owns thresholds; requirements reference
 names, not duplicate numeric limits. Static validation rejects unsupported or
@@ -477,18 +484,12 @@ eligible proof, not necessarily that the check has never been executed.
 JSON `hil_decisions` explains each complete obligation: its applicability policy,
 completion boundary, status, selected evidence, and every observed scenario's
 exclusion reasons and unmet requirements. Console `HIL-OBLIGATION` rows summarize
-these decisions. When no observation is current but a complete one passed on a
-commit or snapshot the checkout has since moved away from, the status is
-`last-known-pass`: the decision names that run as `last_known`, the capability's
-HIL proof is `last-known` rather than `missing`, and no rerun is listed as
-work. At this stage stale evidence is information; qualification reruns the
-scenarios on a baseline the user chooses. A pass from a dirty tree, a replay or
-a mismatched procedure or observer is never a last known pass.
-Completed scenarios remain candidates when an unrelated
+these decisions. Only current evidence counts: an observation whose sources
+changed since is listed with its exclusions, and the obligation stays
+`missing`. Completed scenarios remain candidates when an unrelated
 scenario fails in the same sealed suite. A failed current scenario or repetition
-cannot be hidden by selecting a later PASS. The status is `unresolved-failure`
-until an explicit [failure disposition](evidence-reviews.md#resolving-a-failure)
-binds its resolution or explains why it does not apply. `broken`, `blocked`, `skipped` and `interrupted` alone are
+cannot be hidden by selecting a later PASS: the status is `unresolved-failure`
+while that observation stays current. `broken`, `blocked`, `skipped` and `interrupted` alone are
 neither PASS nor a product failure, but they do not erase a different repetition's
 explicit failure.
 
@@ -523,12 +524,11 @@ untracked, so commits that touch only other crates, image classes or
 scenarios leave it current. A `source-snapshot` build can establish this direct binding:
 the evaluator independently verifies snapshot identities, every archived file,
 and the current tracked and nonignored untracked file set of the closure, bytes and executable modes. It also
-checks the current lockfile and local override pins. No self-review is needed
-for a matching snapshot, regardless of dirty state or commit identity. Optional [reviewed applicability](evidence-reviews.md) admits an
-original complete observation for a specific capability/property and destination
-build after validating an explicit engineering conclusion and its bindings.
-Original outcomes and exclusions remain visible; a commit change or another PASS
-does not establish that a failure was resolved.
+checks the current lockfile and local override pins. A matching snapshot binds
+regardless of dirty state or commit identity. Nothing admits an observation
+whose closure differs from the checkout; original outcomes and exclusions
+remain visible, and a commit change or another PASS does not establish that a
+failure was resolved.
 
 A run bundle stays in ignored output, in the run store every checkout of the
 user shares (see [find and compare runs](../hil/host/runs.md#find-and-compare-runs)),
@@ -541,8 +541,8 @@ digest, and the build is stored once in `observers/<build_sha256>.json` next to
 the store's `runs` directory, as the exact bytes the digest is computed over.
 A shard does the same with `observers/` next to it in the evidence directory.
 The evaluator reads each build once and fails closed when it is missing or its
-bytes do not hash to its name. Runs sealed before the store existed embed their
-build and stay readable.
+bytes do not hash to its name. A stored record that embeds its build instead is
+an error.
 Digests of sealed files are remembered in the user's cache per file identity
 and status-change time (`OER_QUALIFICATION_HASH_CACHE=0` disables it). `cargo qualification hil-evidence (--manifest PATH |
 --hil-target TARGET)` records
@@ -562,8 +562,8 @@ workspace manifest the compiled packages inherit from, the stack policy and
 partition table, and the sources of the image builder, packer and memory
 auditor. A shard binds those files, its own observer's manifest directories
 and the observer's lock, toolchain and input registry, so a change in another
-radio's driver leaves it current. A schema 1 record listed only the compiled
-sources and binds no shard. The evaluator independently runs `cargo tree`
+radio's driver leaves it current. A record of another schema is an error.
+The evaluator independently runs `cargo tree`
 for the image's runtime (with the features its build provenance records) and
 bootstrap; when the recorded list lacks the manifest of any package found
 there, the shard falls back to the broad binding. An observation whose
@@ -572,12 +572,15 @@ never recorded: no source binding covers the builder's environment, and
 `hil-evidence` names the skipped run. Firmware builds drop inherited
 `CARGO_PROFILE_*`, `CARGO_BUILD_*` and `CARGO_TARGET_*` variables except the
 job count and target directory. A replayed
-image or an older bundle without recorded inputs binds the path packages of
+image, or one built without this repository's image builder, has no recorded
+inputs and binds the path packages of
 `hil/targets/esp32s31` and `platform/esp32s31` and every qualifying observer
 instead. The evaluator reads shards next to run bundles. A shard whose
 recorded sources all match the checkout supports its scenario whatever else the
 repository changed, and those digests stand for the observer's identity; a
-changed source makes it stale until the scenario runs again and is recorded.
+changed source makes it stale until the scenario runs again and is recorded,
+and a bound source that no longer exists is an error: record the scenario again
+or delete the shard.
 Running scenarios never writes tracked files: recording is an explicit step,
 `cargo hil evidence record` (this checkout's pending clean runs, or `--run
 ID`), which calls `hil-evidence` with the run's observer receipt, and `cargo hil
@@ -632,6 +635,32 @@ source bindings independently of dirty state.
 See the canonical
 [verification and qualification contract](../docs/verification-and-qualification.md)
 for evidence strength and the release workflow.
+
+### Host observer identity
+
+A firmware snapshot does not identify the process that observed its behavior.
+Run manifests include `runner.observer`: the SHA-256 of the running executable
+and, by digest, the build record embedded in it (host package and local
+dependency source hashes, compiler identity and build environment). On Linux the
+executable digest is read through `/proc/self/exe`, so replacing the executable
+while a run is active does not change its recorded subject.
+
+The evaluator checks the current inputs selected by
+[`observer-inputs.json`](../hil/schema/observer-inputs.json). Shared execution
+and transport mechanisms are the common execution, link, stand and evidence
+packages; each radio family's workloads and fixtures are a separate package, so
+a change in one family never invalidates another family's observations. The
+recorded build projects the selected direct dependency groups and their
+transitive dependencies, including shared feature unification: edges come from
+`cargo tree`, package features and unit profiles from Cargo's
+`compiler-artifact` messages, and emitted build-script flags are bound with
+output directories normalized. `cargo hil` builds the runner through xtask,
+keeps a receipt under `target/hil/observers/` and launches a copy identified by
+executable hash; a direct Cargo build has no receipt and cannot establish
+current observer compatibility. The registry's `build.profile` selects the
+required host profile (`debug` maps to Cargo's `dev`). An observation whose
+observer differs from the current one in sources, dependencies, features,
+compiler, profile or Cargo settings is excluded.
 
 ## Functional AP availability
 

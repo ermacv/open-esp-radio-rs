@@ -328,7 +328,7 @@ mod tests {
     }
 
     #[test]
-    fn a_record_of_the_compiled_sources_only_has_no_closure_of_its_own() {
+    fn a_source_inputs_record_of_another_schema_is_an_error() {
         let run = tempfile::tempdir().unwrap();
         let image = run.path().join("firmware/boot-smoke");
         std::fs::create_dir_all(&image).unwrap();
@@ -338,11 +338,11 @@ mod tests {
             r#"{"schema":1,"files":["crates/radio/src/lib.rs"]}"#,
         )
         .unwrap();
-        assert!(
+        let error =
             super::super::closure::Closure::of_run(run.path(), run.path(), &Default::default())
-                .unwrap()
-                .is_none()
-        );
+                .err()
+                .expect("schema 1 is not read");
+        assert!(error.to_string().contains("only schema 2"), "{error}");
     }
 
     #[test]

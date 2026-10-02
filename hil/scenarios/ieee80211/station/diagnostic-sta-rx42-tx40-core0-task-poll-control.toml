@@ -1,8 +1,8 @@
 schema = 5
 id = "diagnostic-sta-rx42-tx40-core0-task-poll-control"
 description = "Same diagnostic ELF station control for AP 42/40 Core0 task-poll localization"
+role = "investigation"
 repetitions = 1
-transfer = "identical-image"
 tags = ["diagnostic", "station", "udp", "bidirectional", "ht40", "task-poll", "ap-control", "air-strict"]
 
 [wifi]

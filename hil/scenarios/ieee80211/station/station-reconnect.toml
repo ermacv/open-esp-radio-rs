@@ -1,7 +1,8 @@
 schema = 5
 id = "station-reconnect"
 description = "Repeated safe station teardown and reassociation"
-tags = ["qualification", "station", "lifecycle"]
+role = "qualification"
+tags = ["station", "lifecycle"]
 
 [wifi]
 image = "correctness"

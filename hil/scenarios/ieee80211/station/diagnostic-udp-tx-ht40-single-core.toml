@@ -1,8 +1,8 @@
 schema = 5
 id = "diagnostic-udp-tx-ht40-single-core"
 description = "Observer-free HT40 UDP station-to-host ceiling with the radio and IP stack on CPU0 alone"
+role = "investigation"
 repetitions = 3
-transfer = "identical-image"
 tags = ["diagnostic", "performance", "udp", "station", "ht40", "single-core", "ceiling", "air-strict"]
 
 [wifi]

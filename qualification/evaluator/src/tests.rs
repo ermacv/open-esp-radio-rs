@@ -19,9 +19,10 @@ impl StaticProgramRoot {
         }
         fs::create_dir_all(path.join("catalog")).unwrap();
         fs::create_dir_all(path.join("scenarios")).unwrap();
+        fs::create_dir_all(path.join("qualification/targets")).unwrap();
         fs::write(
             path.join("scenarios/static.toml"),
-            "schema = 5\nid = \"static\"\nrepetitions = 1\n[system]\nkind = \"boot-smoke\"\n",
+            "schema = 5\nid = \"static\"\nrole = \"investigation\"\nrepetitions = 1\n[system]\nkind = \"boot-smoke\"\n",
         )
         .unwrap();
         fs::write(path.join("Cargo.toml"), "[workspace]\n").unwrap();
@@ -168,6 +169,12 @@ fn absent_vendor_index_allows_status_and_hil_planning_without_qualifying_hardwar
             "hil-not-applicable = \"source-only-contract\"",
             "hil-requirements = [{ scenario = \"static\", minimum-repetitions = 1 }]",
         );
+        // The program now references `static`: a qualification scenario.
+        let scenario = root.path.join("scenarios/static.toml");
+        let qualified = fs::read_to_string(&scenario)
+            .unwrap()
+            .replace("role = \"investigation\"", "role = \"qualification\"");
+        fs::write(&scenario, qualified).unwrap();
         if hardware {
             document = document.replace(
                 "vendor-not-applicable = \"source-only-contract\"",

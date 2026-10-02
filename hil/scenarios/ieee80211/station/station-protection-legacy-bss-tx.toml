@@ -1,8 +1,8 @@
 schema = 5
 id = "station-protection-legacy-bss-tx"
 description = "HT40 station UDP TX while an overlapping 802.11b BSS obliges the AP to require ERP protection"
-transfer = "unchanged-functional-contract"
-tags = ["qualification", "wifi", "station", "protection", "udp", "tx", "ht40", "air-strict"]
+role = "investigation"
+tags = ["wifi", "station", "protection", "udp", "tx", "ht40", "air-strict"]
 
 [wifi]
 image = "correctness"

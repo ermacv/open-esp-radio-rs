@@ -1,9 +1,9 @@
 schema = 5
 id = "udp-rx-he20-performance-ceiling"
 description = "Observer-free HE20 UDP host-to-station ceiling"
+role = "investigation"
 repetitions = 3
-transfer = "identical-image"
-tags = ["qualification", "performance", "udp", "station", "he20", "split-core", "ceiling", "air-strict"]
+tags = ["performance", "udp", "station", "he20", "split-core", "ceiling", "air-strict"]
 
 [wifi]
 image = "performance"

@@ -1,8 +1,8 @@
 schema = 5
 id = "udp-tx-ht40-beacon-loss-air-diagnostic"
 description = "HT40 UDP station-to-host saturation at 130 Mbit/s with a 1 Mbit/s reverse flow that admits the access point's own TX monitor and an independent air monitor, to show whether the access point still transmits beacons and probe responses while the station saturates the air"
+role = "investigation"
 repetitions = 1
-transfer = "identical-image"
 tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "beacon-loss", "air-strict"]
 
 [wifi]

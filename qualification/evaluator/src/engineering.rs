@@ -67,7 +67,6 @@ pub(crate) struct Entry {
     pub(crate) vendor_roots: Vec<VendorRoot>,
     pub(crate) vendor_evidence: Vec<VendorReference>,
     pub(crate) hil_requirements: Vec<HilRequirement>,
-    pub(crate) hil_reviews: Vec<PathBuf>,
     pub(crate) not_applicable: BTreeMap<&'static str, String>,
     pub(crate) gaps: Vec<Gap>,
     pub(crate) evidence: Option<Evidence>,
@@ -142,7 +141,6 @@ impl Entry {
             vendor_roots: Vec::new(),
             vendor_evidence: Vec::new(),
             hil_requirements: Vec::new(),
-            hil_reviews: Vec::new(),
             not_applicable: BTreeMap::new(),
             gaps: Vec::new(),
             evidence: None,
@@ -274,7 +272,6 @@ impl ProjectMap {
                     symbol: r.symbol.clone(),
                 })
                 .collect();
-            entry.hil_reviews = document.hil_reviews.clone();
             entry.hil_requirements = document
                 .hil_requirements
                 .iter()

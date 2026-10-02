@@ -124,7 +124,7 @@ cargo hil image build <image-class>
 cargo hil report verify [run-id]
 cargo hil run <scenario-id>
 cargo hil run <scenario-id> --firmware-from <run-id>
-cargo hil run-all --tag qualification   # or --all for the whole catalog
+cargo hil run-all --role qualification  # or --all for the whole catalog
 ```
 
 The `network-comparison` tag selects five station workloads: bidirectional UDP at 65 + 65 Mbit/s, RX-only and

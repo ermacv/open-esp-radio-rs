@@ -508,8 +508,43 @@ impl Index {
         Ok(())
     }
 
-    /// Every recorded source directory still has its recorded digest, and
-    /// the decisions that apply to the shard's closures are unchanged.
+    /// Whether every recorded source still has its recorded digest and the
+    /// decisions that apply to the shard's closures are unchanged. A
+    /// recorded source or decision file that no longer exists is an error:
+    /// the shard names a missing referent.
+    pub fn currency(&self, root: &Path) -> Result<bool> {
+        for source in &self.sources {
+            if fs::symlink_metadata(root.join(&source.path)).is_err() {
+                return Err(format!(
+                    "evidence shard {} binds {}, which does not exist",
+                    self.scenario,
+                    source.path.display()
+                )
+                .into());
+            }
+            if digest_source(root, &source.path)? != source.sha256 {
+                return Ok(false);
+            }
+        }
+        let Some(decisions) = &self.dependence.coverage_decisions else {
+            return Ok(true);
+        };
+        if fs::symlink_metadata(root.join(&decisions.path)).is_err() {
+            return Err(format!(
+                "evidence shard {} binds the coverage decisions {}, which do not exist",
+                self.scenario,
+                decisions.path.display()
+            )
+            .into());
+        }
+        Ok(
+            CoverageDecisions::read(root, &decisions.path)?.applicable_digest(&self.functions)
+                == decisions.sha256,
+        )
+    }
+
+    /// The generator's question: whether the shard can be kept as it is.
+    /// Anything that differs or no longer exists means regenerating it.
     pub fn is_current(&self, root: &Path) -> bool {
         self.sources.iter().all(|source| {
             digest_source(root, &source.path).is_ok_and(|digest| digest == source.sha256)
@@ -558,7 +593,9 @@ impl Evidence {
                     format!("evidence shard {} names another scenario", path.display()).into(),
                 );
             }
-            let current = shard.is_current(root);
+            let current = shard
+                .currency(root)
+                .map_err(|error| format!("{}: {error}", path.display()))?;
             shards.push((shard, current));
         }
         Ok(Self { shards })

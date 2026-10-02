@@ -79,9 +79,6 @@ pub(super) fn print(map: &ProjectMap, next_only: bool, details: bool) {
                     test.source.display()
                 );
             }
-            for path in &entry.hil_reviews {
-                println!("HIL-REVIEW\t{}\t{}", entry.id, path.display());
-            }
             for requirement in &entry.hil_requirements {
                 println!(
                     "HIL-REQUIREMENT\t{}\tscenario={}\tchecks={}\trepetitions={}",
@@ -205,13 +202,6 @@ pub(super) fn markdown(map: &ProjectMap, output: &Path, root: &Path) -> Result<S
             text.push_str(&format!("- Host test: [{}]({}), filter `{}`; [source]({}). Execution is not recorded by this declaration.\n", test.manifest.display(), crate::inventory::link_to(&test.manifest, output, root)?, escape(&test.filter), crate::inventory::link_to(&test.source, output, root)?));
         }
         text.push('\n');
-        for path in &entry.hil_reviews {
-            text.push_str(&format!(
-                "- Applicability review: [{}]({})\n",
-                path.display(),
-                crate::inventory::link_to(path, output, root)?
-            ));
-        }
         for requirement in &entry.hil_requirements {
             text.push_str(&format!(
                 "- HIL: `{}`, repetitions {}, checks `{}`.\n",

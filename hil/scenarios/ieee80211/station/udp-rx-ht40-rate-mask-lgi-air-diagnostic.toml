@@ -1,7 +1,7 @@
 schema = 5
 id = "udp-rx-ht40-rate-mask-lgi-air-diagnostic"
 description = "HT40 MCS7 OpenWrt fixed-LGI rate-mask perturbation with air and AP aggregation evidence"
-transfer = "identical-image"
+role = "investigation"
 tags = ["diagnostic", "udp", "station", "rx", "ht40", "mcs7", "long-gi", "rate-mask", "air", "air-strict"]
 
 [wifi]

@@ -1,8 +1,8 @@
 schema = 5
 id = "diagnostic-ap-mixed-tx-work"
 description = "Saturated AP aggregates plus isolated sparse-peer MPDUs with separate transmission-work evidence"
+role = "investigation"
 repetitions = 1
-transfer = "identical-image"
 tags = ["diagnostic", "access-point", "multi-client", "ht40", "aggregation", "air-strict"]
 
 [wifi]

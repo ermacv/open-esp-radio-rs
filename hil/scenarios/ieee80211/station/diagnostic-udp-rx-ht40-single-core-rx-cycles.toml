@@ -1,7 +1,7 @@
 schema = 5
 id = "diagnostic-udp-rx-ht40-single-core-rx-cycles"
 description = "CPU0 RX phase and service-batch cycles of the HT40 saturated RX path with the IP stack on CPU0 too"
-transfer = "identical-image"
+role = "investigation"
 tags = ["diagnostic", "udp", "station", "rx", "ht40", "single-core", "cycles", "air-strict"]
 
 [wifi]

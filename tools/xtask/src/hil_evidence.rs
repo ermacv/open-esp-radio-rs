@@ -24,9 +24,8 @@ pub struct Pending {
     /// The scenarios that passed in it.
     pub scenarios: Vec<String>,
     /// The lease owner the run was made for; several sessions may share a
-    /// checkout. `None` for entries noted before owners were.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub owner: Option<String>,
+    /// checkout.
+    pub owner: String,
 }
 
 const HELP: &str = "\
@@ -62,7 +61,7 @@ pub fn command(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCod
                     "{}  {}  ({})",
                     entry.run,
                     entry.scenarios.join(", "),
-                    entry.owner.as_deref().unwrap_or("unknown owner")
+                    entry.owner
                 );
             }
         }
@@ -217,7 +216,7 @@ mod tests {
         Pending {
             run: run.into(),
             scenarios: scenarios.iter().map(|s| s.to_string()).collect(),
-            owner: Some(String::from("wifi")),
+            owner: String::from("wifi"),
         }
     }
 
@@ -240,6 +239,15 @@ mod tests {
         );
         forget(root.path(), &[String::from("r1")]).unwrap();
         assert_eq!(load(root.path()).unwrap(), [pending("r3", &["b"])]);
+    }
+
+    #[test]
+    fn a_pending_entry_names_its_owner() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join(PENDING);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, br#"[{"run":"r1","scenarios":["a"]}]"#).unwrap();
+        assert!(load(root.path()).is_err());
     }
 
     #[test]

@@ -1,7 +1,7 @@
 schema = 5
 id = "udp-rx-ht40-40m-512-performance"
 description = "Production HT40 RX packet-rate control at 40 Mbit/s with 512-byte UDP payloads"
-transfer = "identical-image"
+role = "investigation"
 tags = ["performance", "udp", "station", "rx", "ht40", "split-core", "packet-rate", "air-strict"]
 
 [wifi]

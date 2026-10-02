@@ -1,8 +1,8 @@
 schema = 5
 id = "udp-tx-ht40-mac-irq-diagnostic"
 description = "HT40 saturated TX publication-to-IRQ and IRQ-to-service latency"
+role = "investigation"
 repetitions = 1
-transfer = "identical-image"
 tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "mac-irq", "air-strict"]
 
 [wifi]

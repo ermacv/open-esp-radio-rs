@@ -30,29 +30,28 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + S
 
 pub const SCENARIO_SCHEMA: u16 = 5;
 
-/// Whether review may transfer a whole-scenario observation across images.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+/// What a scenario is for. A scenario is a qualification scenario because a
+/// qualification program references it; the evaluator checks the declared
+/// role against the programs, so the role is derived, never chosen.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum TransferPolicy {
-    /// Permit a reviewed functional transfer with unchanged relevant inputs.
-    #[default]
-    UnchangedFunctionalContract,
-    /// Require the same application bytes for this whole-scenario guarantee.
-    IdenticalImage,
+pub enum Role {
+    /// Referenced by a qualification program; it runs on a product image.
+    Qualification,
+    /// Referenced by no program: diagnostics, measurements and experiments.
+    Investigation,
 }
 
-/// Identity and review policy shared by every scenario family.
+/// Identity and role shared by every scenario family.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Header {
     pub schema: u16,
     pub id: String,
     pub description: String,
+    pub role: Role,
     #[serde(default = "one_repetition")]
     pub repetitions: u8,
-    /// Review policy for the whole scenario; execution is unaffected.
-    #[serde(default)]
-    pub transfer: TransferPolicy,
     #[serde(default)]
     pub tags: Vec<String>,
     /// Why the scenario cannot run on the current firmware. The runner
@@ -109,8 +108,8 @@ const HEADER_FIELDS: [&str; 8] = [
     "schema",
     "id",
     "description",
+    "role",
     "repetitions",
-    "transfer",
     "tags",
     "unsupported",
     "profile",
@@ -164,10 +163,7 @@ impl Header {
             )?;
             // Sampling perturbs timing, so a profile never shapes a
             // performance or qualification figure.
-            if self
-                .tags
-                .iter()
-                .any(|tag| tag == "performance" || tag == "qualification")
+            if self.role == Role::Qualification || self.tags.iter().any(|tag| tag == "performance")
             {
                 return Err(format!(
                     "scenario `{}` profiles a performance or qualification scenario; profile a \
@@ -291,19 +287,20 @@ impl<F: ScenarioFamily> Scenario<F> {
             )
             .into());
         }
-        // The station-exit image admits air observers beside saturated
-        // traffic. An observer must never shape a qualification or gated
-        // figure, so only diagnostic scenarios may select it.
-        if self.image() == ImageClass::DiagnosticStationExit {
-            let tagged = |tag: &str| self.header.tags.iter().any(|known| known == tag);
-            if !tagged("diagnostic") || tagged("qualification") || tagged("performance") {
-                return Err(format!(
-                    "scenario {} selects {} without being a diagnostic-only scenario",
-                    self.header.id,
-                    ImageClass::DiagnosticStationExit.id()
-                )
-                .into());
-            }
+        // A diagnostic image carries observers and probes that the product
+        // does not: its observations never qualify a product, and never
+        // shape a gated performance figure.
+        if self.image().diagnostic()
+            && (self.header.role == Role::Qualification
+                || self.header.tags.iter().any(|tag| tag == "performance"))
+        {
+            return Err(format!(
+                "scenario {} runs on the diagnostic image {}; only an investigation scenario \
+                 without the performance tag may",
+                self.header.id,
+                self.image().id()
+            )
+            .into());
         }
         Ok(())
     }

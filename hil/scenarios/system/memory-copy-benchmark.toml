@@ -1,7 +1,7 @@
 schema = 5
 id = "memory-copy-benchmark"
 description = "Bounded CPU, blocking GDMA and async GDMA copies from SRAM/PSRAM into SRAM; correctness and measured counter scopes"
-transfer = "identical-image"
+role = "investigation"
 tags = ["diagnostic", "memory", "copy", "gdma"]
 
 [system]

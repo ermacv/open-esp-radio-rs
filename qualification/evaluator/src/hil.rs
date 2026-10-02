@@ -1,7 +1,6 @@
 //! Independent consumption of immutable HIL run bundles.
 
 mod attempt;
-mod build_record;
 mod checks;
 mod chips;
 mod closure;
@@ -10,7 +9,6 @@ mod measurement;
 mod observer;
 mod procedure;
 mod provenance;
-pub(crate) mod review;
 pub(crate) mod shard;
 mod snapshot;
 mod subject;
@@ -62,6 +60,7 @@ pub(crate) struct HilRequirement {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ScenarioCatalog {
     repetitions: BTreeMap<String, u8>,
+    roles: BTreeMap<String, ScenarioRole>,
     checks: BTreeMap<String, BTreeMap<String, checks::Contract>>,
     definitions: BTreeMap<String, serde_json::Value>,
 }
@@ -92,8 +91,9 @@ impl ScenarioCatalog {
             .into());
         }
         let mut repetitions = BTreeMap::new();
+        let mut roles = BTreeMap::new();
         let mut documents = BTreeMap::new();
-        Self::read_directory(&directory, &mut repetitions, &mut documents)?;
+        Self::read_directory(&directory, &mut repetitions, &mut roles, &mut documents)?;
         if repetitions.is_empty() {
             return Err(format!("HIL scenario catalog is empty: {}", directory.display()).into());
         }
@@ -103,6 +103,7 @@ impl ScenarioCatalog {
             .collect::<Result<_>>()?;
         Ok(Self {
             repetitions,
+            roles,
             checks,
             definitions: documents,
         })
@@ -113,6 +114,7 @@ impl ScenarioCatalog {
     fn read_directory(
         directory: &Path,
         repetitions: &mut BTreeMap<String, u8>,
+        roles: &mut BTreeMap<String, ScenarioRole>,
         documents: &mut BTreeMap<String, serde_json::Value>,
     ) -> Result<()> {
         let mut entries = fs::read_dir(directory)?.collect::<std::io::Result<Vec<_>>>()?;
@@ -121,7 +123,7 @@ impl ScenarioCatalog {
             let path = entry.path();
             let kind = entry.file_type()?;
             if kind.is_dir() {
-                Self::read_directory(&path, repetitions, documents)?;
+                Self::read_directory(&path, repetitions, roles, documents)?;
                 continue;
             }
             if !kind.is_file() {
@@ -142,7 +144,8 @@ impl ScenarioCatalog {
                 .into());
             }
             let input = fs::read_to_string(&path)?;
-            let document: ScenarioDocument = toml_edit::de::from_str(&input)?;
+            let document: ScenarioDocument = toml_edit::de::from_str(&input)
+                .map_err(|error| format!("{}: {error}", path.display()))?;
             if document.schema != HIL_SCENARIO_SCHEMA
                 || document.id.is_empty()
                 || !document
@@ -170,15 +173,37 @@ impl ScenarioCatalog {
             {
                 return Err(format!("duplicate HIL scenario id {}", document.id).into());
             }
-            if value.get("transfer").is_some_and(|v| {
-                !matches!(
-                    v.as_str(),
-                    Some("identical-image" | "unchanged-functional-contract")
-                )
-            }) {
-                return Err("unsupported HIL transfer policy".into());
-            }
+            roles.insert(document.id.clone(), document.role);
             documents.insert(document.id, value);
+        }
+        Ok(())
+    }
+
+    /// Whether `scenario` is an investigation scenario, which no observation
+    /// lets satisfy a qualification program.
+    pub(crate) fn investigation(&self, scenario: &str) -> bool {
+        self.roles.get(scenario) == Some(&ScenarioRole::Investigation)
+    }
+
+    /// Hold every declared role to the programs: a qualification scenario is
+    /// one that `referenced` (the scenarios every program of this catalog
+    /// requires) names, and every other scenario is an investigation one.
+    /// A requirement on an investigation scenario is accepted here and
+    /// reported by its decision, which it can never satisfy.
+    pub(crate) fn check_roles(&self, referenced: &BTreeSet<String>) -> Result<()> {
+        let unreferenced = self
+            .roles
+            .iter()
+            .filter(|(id, role)| **role == ScenarioRole::Qualification && !referenced.contains(*id))
+            .map(|(id, _)| id.as_str())
+            .collect::<Vec<_>>();
+        if !unreferenced.is_empty() {
+            return Err(format!(
+                "HIL scenarios with role \"qualification\" that no program references: {}; \
+                 give them role \"investigation\"",
+                unreferenced.join(", ")
+            )
+            .into());
         }
         Ok(())
     }
@@ -221,7 +246,6 @@ impl ScenarioCatalog {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct HilEvidenceIndex {
-    current_observer: observer::Current,
     scenarios: BTreeMap<String, Vec<ScenarioEvidence>>,
     summary: HilEvidenceSummary,
 }
@@ -343,8 +367,6 @@ struct ScenarioEvidence {
     failure: Option<serde_json::Value>,
     repetition_failures: Vec<Option<serde_json::Value>>,
     run_directory: Option<PathBuf>,
-    review: Option<review::ReviewLink>,
-    resolution: Option<review::ResolutionLink>,
     /// The executed scenario document of an observation recorded in a
     /// tracked shard, which has no run directory to read it from.
     procedure_document: Option<serde_json::Value>,
@@ -358,7 +380,7 @@ struct ScenarioEvidence {
 
 impl ScenarioEvidence {
     fn applicable(&self) -> bool {
-        self.exclusions.is_empty() || self.review.is_some()
+        self.exclusions.is_empty()
     }
     fn observation_id(&self, scenario: &str) -> Option<String> {
         let seal = self.completion_seal.as_ref()?;
@@ -387,8 +409,19 @@ struct CompletionSeal {
 struct ScenarioDocument {
     schema: u16,
     id: String,
+    role: ScenarioRole,
     #[serde(default = "one_repetition")]
     repetitions: u8,
+}
+
+/// What a scenario is for. A scenario is a qualification scenario because a
+/// program references it; [`ScenarioCatalog::check_roles`] holds the declared
+/// role to the programs.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ScenarioRole {
+    Qualification,
+    Investigation,
 }
 
 const fn one_repetition() -> u8 {
@@ -420,7 +453,6 @@ impl HilEvidenceIndex {
     #[cfg(test)]
     pub(crate) fn synthetic(entries: &[(&str, usize)]) -> Self {
         Self {
-            current_observer: observer::Current::default(),
             scenarios: entries
                 .iter()
                 .map(|(scenario, repetitions)| {
@@ -435,8 +467,6 @@ impl HilEvidenceIndex {
                             failure: None,
                             repetition_failures: vec![None; *repetitions],
                             run_directory: None,
-                            review: None,
-                            resolution: None,
                             repetition_outcomes: vec![Outcome::Passed; *repetitions],
                             exclusions: Vec::new(),
                             repetitions: *repetitions,
@@ -515,7 +545,6 @@ impl HilEvidenceIndex {
                     evaluator_dirty: repository.dirty,
                     ..HilEvidenceSummary::default()
                 },
-                current_observer,
                 ..Self::default()
             });
         }
@@ -615,7 +644,7 @@ impl HilEvidenceIndex {
                         .is_some_and(|firmware| firmware.source == PlannedFirmwareSource::Replay);
                 let replays_firmware = artifact_replays_firmware || plan_replays_firmware;
                 // Exact snapshot bytes establish identity independently of Git
-                // bookkeeping. Reviews justify differences, never missing commits.
+                // bookkeeping.
                 let binding = provenance::current_sources(root, &run_directory, &manifest)?;
                 let mut exclusions = Vec::new();
                 if replays_firmware {
@@ -683,8 +712,6 @@ impl HilEvidenceIndex {
                             completion_seal,
                             subject,
                             run_directory: Some(run_directory.clone()),
-                            review: None,
-                            resolution: None,
                             failure: scenario.failure,
                             repetition_failures: scenario
                                 .repetitions
@@ -715,7 +742,7 @@ impl HilEvidenceIndex {
                             .exclusions
                             .push(decision::Exclusion::CurrentObserverConfigurationUnavailable);
                     } else {
-                        match observer::assess(root, &current_observer, observation, None, None)? {
+                        match observer::assess(root, &current_observer, observation, None)? {
                             observer::Compatibility::Compatible => {}
                             observer::Compatibility::GraphNotProjectable => observation
                                 .exclusions
@@ -733,11 +760,7 @@ impl HilEvidenceIndex {
             summary.current_source_producer += usize::from(current_producer);
             summary.qualifying += usize::from(qualifying);
         }
-        Ok(Self {
-            scenarios,
-            summary,
-            current_observer,
-        })
+        Ok(Self { scenarios, summary })
     }
 
     pub(crate) fn evidence_for(

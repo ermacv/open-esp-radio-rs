@@ -1,6 +1,7 @@
 schema = 5
 id = "network-comparison-03-tx-ceiling"
 description = "Four-stack HT40 comparison: tx-ceiling"
+role = "investigation"
 repetitions = 1
 tags = ["diagnostic", "station", "ht40", "network-comparison", "air-strict"]
 

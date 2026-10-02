@@ -1,8 +1,8 @@
 schema = 5
 id = "access-point-single-client-bidirectional-8m"
 description = "Single-client AP 8+8 Mbit/s bidirectional baseline"
+role = "investigation"
 repetitions = 1
-transfer = "identical-image"
 tags = ["characterization", "wifi", "access-point", "network", "single-client", "bidirectional", "air-strict"]
 
 [wifi]

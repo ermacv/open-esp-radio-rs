@@ -124,9 +124,6 @@ impl VendorProof {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum HilProof {
     Qualified,
-    /// Every obligation passed, some only on sources that have changed
-    /// since: the last known state, reported, not a missing proof.
-    LastKnown,
     Missing,
     NotApplicable,
 }
@@ -135,7 +132,6 @@ impl HilProof {
     pub(crate) const fn label(self) -> &'static str {
         match self {
             Self::Qualified => "qualified",
-            Self::LastKnown => "last-known",
             Self::Missing => "missing",
             Self::NotApplicable => "not-applicable",
         }
@@ -421,8 +417,6 @@ pub(crate) struct CapabilityDocument {
     #[serde(default)]
     pub(crate) hil_requirements: Vec<HilRequirementDocument>,
     #[serde(default)]
-    pub(crate) hil_reviews: Vec<PathBuf>,
-    #[serde(default)]
     pub(crate) hil_not_applicable: Option<String>,
     #[serde(default)]
     pub(crate) async_not_applicable: Option<String>,
@@ -483,6 +477,9 @@ impl ManifestDocument {
         }
 
         let scenarios = ScenarioCatalog::load(root, &self.hil.catalog)?;
+        let mut referenced = referenced_scenarios(root, &self.hil.catalog)?;
+        referenced.extend(self.requirement_scenarios());
+        scenarios.check_roles(&referenced)?;
         let context = StaticContext {
             root,
             scenario_catalog: &scenarios,
@@ -519,6 +516,56 @@ impl ManifestDocument {
 /// Directory of the qualification programs, relative to the repository root.
 const PROGRAMS: &str = "qualification/targets";
 
+impl ManifestDocument {
+    /// The scenarios the resolved program's HIL requirements name.
+    fn requirement_scenarios(&self) -> impl Iterator<Item = String> + '_ {
+        self.capabilities.iter().flat_map(|capability| {
+            capability
+                .hil_requirements
+                .iter()
+                .map(|requirement| requirement.scenario.clone())
+        })
+    }
+}
+
+/// Every program below [`PROGRAMS`], relative to the repository root.
+fn program_paths(root: &Path) -> Result<Vec<PathBuf>> {
+    let mut stack = vec![PathBuf::from(PROGRAMS)];
+    let mut programs = vec![];
+    while let Some(directory) = stack.pop() {
+        let entries = fs::read_dir(root.join(&directory))
+            .map_err(|error| format!("cannot read {}: {error}", directory.display()))?;
+        for entry in entries {
+            let entry = entry?;
+            let path = directory.join(entry.file_name());
+            if entry.file_type()?.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|e| e == "toml") {
+                programs.push(path);
+            }
+        }
+    }
+    programs.sort();
+    Ok(programs)
+}
+
+/// The scenarios that the programs reading the HIL scenario catalog
+/// `catalog` require, which makes them its qualification scenarios.
+fn referenced_scenarios(root: &Path, catalog: &Path) -> Result<BTreeSet<String>> {
+    let mut referenced = BTreeSet::new();
+    for path in program_paths(root)? {
+        let input = fs::read_to_string(root.join(&path))?;
+        let document: ManifestDocument = toml_edit::de::from_str(&input)
+            .map_err(|error| format!("cannot parse {}: {error}", path.display()))?;
+        if document.hil.catalog != catalog {
+            continue;
+        }
+        let resolved = document.resolve_catalogs(root, &root.join(&path), &input)?;
+        referenced.extend(resolved.requirement_scenarios());
+    }
+    Ok(referenced)
+}
+
 /// A program whose `[hil]` section names `target`; every such program must
 /// name the same run and evidence directories, so any one records the same
 /// shards.
@@ -532,21 +579,7 @@ pub(crate) fn hil_program(root: &Path, target: &str) -> Result<PathBuf> {
         Option<serde_json::Value>,
         Option<serde_json::Value>,
     )> = None;
-    let mut stack = vec![PathBuf::from(PROGRAMS)];
-    let mut programs = vec![];
-    while let Some(directory) = stack.pop() {
-        for entry in fs::read_dir(root.join(&directory))? {
-            let entry = entry?;
-            let path = directory.join(entry.file_name());
-            if entry.file_type()?.is_dir() {
-                stack.push(path);
-            } else if path.extension().is_some_and(|e| e == "toml") {
-                programs.push(path);
-            }
-        }
-    }
-    programs.sort();
-    for path in programs {
+    for path in program_paths(root)? {
         let program: Program = toml_edit::de::from_str(&fs::read_to_string(root.join(&path))?)
             .map_err(|e| format!("{}: {e}", path.display()))?;
         let Some(hil) = program.hil else { continue };
@@ -650,7 +683,6 @@ impl ValidatedProgram {
             evidence: &evidence,
             scenario_catalog: &scenario_catalog,
             hil_index: &hil_index,
-            declarations: &declarations,
         };
         let mut capabilities = BTreeMap::new();
         for capability_document in document.capabilities {
@@ -696,7 +728,6 @@ struct EvaluationContext<'a> {
     evidence: &'a NativeEvidence,
     scenario_catalog: &'a ScenarioCatalog,
     hil_index: &'a HilEvidenceIndex,
-    declarations: &'a BTreeMap<String, CapabilityDocument>,
 }
 
 fn evaluate_capability(
@@ -714,27 +745,14 @@ fn evaluate_capability(
     let dependencies = validated.dependencies;
     let mut gaps = validated.gaps;
     let hil_requirements = validated.hil_requirements.clone();
-    let (reviewed_index, reviews) = crate::hil::review::apply(
-        context.root,
-        &document,
-        context.declarations,
-        context.hil_index,
-        context.scenario_catalog,
-    )?;
     let hil_decisions = hil_requirements
         .iter()
         .map(|requirement| {
-            let mut decision = reviewed_index.decision_for(requirement, context.scenario_catalog);
-            decision.attach_reviews(
-                context.root,
-                &document,
-                context.declarations,
-                context.scenario_catalog,
-                &reviews,
-            )?;
-            Ok(decision)
+            context
+                .hil_index
+                .decision_for(requirement, context.scenario_catalog)
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<Vec<_>>();
     let hil_checks = hil_requirements
         .iter()
         .flat_map(|requirement| {
@@ -747,7 +765,9 @@ fn evaluate_capability(
                     scenario: requirement.scenario.clone(),
                     check: check.clone(),
                     minimum_repetitions: requirement.minimum_repetitions,
-                    evidence: reviewed_index.evidence_for(&selected, context.scenario_catalog),
+                    evidence: context
+                        .hil_index
+                        .evidence_for(&selected, context.scenario_catalog),
                 }
             })
         })
@@ -780,23 +800,24 @@ fn evaluate_capability(
     } else {
         let requirements = validated.hil_requirements;
         let mut complete = !requirements.is_empty() && !has_gap(&gaps, Axis::Hil);
-        let mut last_known = complete;
         for decision in &hil_decisions {
             match &decision.evidence {
                 Some(reference) => evidence.push(reference.clone()),
-                None => {
-                    complete = false;
-                    last_known &= decision.status == crate::hil::EvidenceStatus::LastKnownPass;
-                }
+                None => complete = false,
             }
             if decision.status == crate::hil::EvidenceStatus::UnresolvedFailure {
                 ensure_gap(&mut gaps, Axis::Hil, "current-hil-failure-unresolved");
             }
+            if decision.investigation {
+                ensure_gap(
+                    &mut gaps,
+                    Axis::Hil,
+                    "requirement-names-investigation-scenario",
+                );
+            }
         }
         if complete {
             HilProof::Qualified
-        } else if last_known {
-            HilProof::LastKnown
         } else {
             ensure_gap(&mut gaps, Axis::Hil, "current-hil-evidence-missing");
             HilProof::Missing
@@ -848,7 +869,6 @@ fn validate_capability_declaration_inner(
 ) -> Result<ValidatedDeclaration> {
     let id = slug(&document.id, "capability id")?;
     source_contract::validate(&document.source_contracts, context.root)?;
-    crate::hil::review::validate(context.root, document)?;
     document
         .development
         .validate(&document.gaps, context.root)?;

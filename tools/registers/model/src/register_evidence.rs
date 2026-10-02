@@ -25,6 +25,20 @@ pub struct RegisterEvidenceCatalog {
 pub struct RegisterEvidenceSource {
     pub id: String,
     pub description: String,
+    /// What kind of observation the source is, when it is one awaiting a
+    /// typed record: phase 2 replaces each unattested HIL observation with an
+    /// attestation bound to its sealed run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<SourceKind>,
+}
+
+/// The kinds of evidence sources that carry a typed marker.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SourceKind {
+    /// A hardware observation described in prose, not yet attested by a
+    /// sealed HIL run record.
+    UnattestedHilObservation,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -237,6 +251,7 @@ mod tests {
             sources: vec![RegisterEvidenceSource {
                 id: "REVIEW".to_owned(),
                 description: "reviewed source".to_owned(),
+                kind: None,
             }],
             ranges: vec![RegisterEvidenceRange {
                 name: "BLOCK_A".to_owned(),
@@ -254,5 +269,24 @@ mod tests {
             sources: vec!["REVIEW".to_owned()],
         });
         assert!(catalog.validate(path).is_err());
+    }
+
+    #[test]
+    fn unattested_hil_observations_carry_a_typed_kind() {
+        let catalog: RegisterEvidenceCatalog = toml_edit::de::from_str(
+            "schema = 1\n[[sources]]\nid = \"HIL_X\"\ndescription = \"seen\"\nkind = \"unattested-hil-observation\"\n[[sources]]\nid = \"DOC\"\ndescription = \"read\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            catalog.sources[0].kind,
+            Some(SourceKind::UnattestedHilObservation)
+        );
+        assert_eq!(catalog.sources[1].kind, None);
+        assert!(
+            toml_edit::de::from_str::<RegisterEvidenceCatalog>(
+                "schema = 1\n[[sources]]\nid = \"X\"\ndescription = \"d\"\nkind = \"rumor\"\n"
+            )
+            .is_err()
+        );
     }
 }

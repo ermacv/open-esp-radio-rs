@@ -1,9 +1,14 @@
-name: Firmware matrix
+name: Nightly
 
-# Every HIL image class, built and audited as the runner builds it. `CI`
-# builds and audits the two final images on every push; this workflow covers
-# all classes once a night (about 40 minutes sequentially), so a stack frame or
-# placement regression in a diagnostic class is found before it blocks a run.
+# The checks too heavy for every push, once a night on main:
+# - every HIL image class, built and audited as the runner builds it (CI
+#   type-checks the two final images on every push), so a stack frame or
+#   placement regression in a diagnostic class is found before it blocks a
+#   run;
+# - Blobray's workspace, Clippy and tests;
+# - each chip's vendor verification: its probe images, the vendor host
+#   stand, and the provenance of every cited vendor function against the
+#   pinned artifacts that `vendor-fetch` downloads.
 on:
   schedule:
     - cron: '17 2 * * *'
@@ -13,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: firmware-matrix
+  group: nightly
   cancel-in-progress: false
 
 env:
@@ -56,13 +61,13 @@ jobs:
           host=$(rustc -vV | sed -n 's/^host: //p')
           echo "$(rustc --print sysroot)/lib/rustlib/$host/bin" >> "$GITHUB_PATH"
       - name: Fetch every workspace
-        run: for manifest in $(git ls-files '*Cargo.lock' | sed 's/Cargo.lock$/Cargo.toml/'); do cargo fetch --locked --manifest-path "$manifest"; done
+        run: cargo tidy fetch
       # The log lives outside the checkout: the image builder's source
       # snapshot refuses untracked files in the tree.
       - name: Build and audit every image class
         run: |
           set -o pipefail
-          cargo xtask check firmware --all 2>&1 | tee "$RUNNER_TEMP/firmware-matrix.log"
+          cargo xtask --verbose check firmware --all 2>&1 | tee "$RUNNER_TEMP/firmware-matrix.log"
       - name: Summarize the classes
         if: always()
         run: |
@@ -73,3 +78,74 @@ jobs:
             grep -E '^(PASS|FAIL) ' "$RUNNER_TEMP/firmware-matrix.log" || echo 'no class result was printed'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      chips: ${{ steps.model.outputs.chips }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The chips with a vendor verification project, from oer-tidy's model.
+      - id: model
+        run: |
+          chips=$(cargo tidy chips --json | jq -c '[.[].id]')
+          verified=$(for chip in $(echo "$chips" | jq -r '.[]'); do
+            [ -f "verification/$chip/artifacts.toml" ] && echo "$chip"; done | jq -R . | jq -cs .)
+          echo "chips=$verified" >> "$GITHUB_OUTPUT"
+
+  blobray:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tools/blobray/target
+          key: blobray-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'tools/blobray/Cargo.lock') }}
+          restore-keys: blobray-${{ runner.os }}-
+      - run: cargo clippy --locked --manifest-path tools/blobray/Cargo.toml --workspace --all-targets -- -D warnings
+      - run: cargo test --locked --manifest-path tools/blobray/Cargo.toml --workspace --no-fail-fast
+
+  verification:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        chip: ${{ fromJSON(needs.plan.outputs.chips) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: verification-${{ matrix.chip }}-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', 'verification/*/artifacts.toml') }}
+          restore-keys: verification-${{ matrix.chip }}-${{ runner.os }}-
+      - name: Fetch every workspace
+        run: cargo tidy fetch
+      - name: Pinned vendor artifacts
+        run: cargo xtask --verbose vendor-fetch ${{ matrix.chip }}
+      - name: Provenance of every cited vendor function
+        run: cargo xtask --verbose check provenance --chip ${{ matrix.chip }}
+      - name: Probe images
+        run: cargo xtask --verbose build vendor-probes --chip ${{ matrix.chip }}
+      - name: Vendor host stands
+        run: |
+          for manifest in verification/${{ matrix.chip }}/host/*/Cargo.toml; do
+            [ -f "$manifest" ] || continue
+            cargo clippy --locked --manifest-path "$manifest" --all-targets -- -D warnings
+            cargo test --locked --manifest-path "$manifest" --no-fail-fast
+          done

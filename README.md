@@ -98,7 +98,8 @@ and every package depending on them, and the tests of the changed packages.
 `--full` adds what CI checks on the pull request. The
 [tooling reference](tools/xtask/README.md) lists every check.
 
-The [CI workflow](.github/workflows/ci.yml) runs on every push to any branch:
+The [CI workflow](.github/workflows/ci.yml) runs on every push to any branch,
+in a few jobs that each run a sequence of commands over one build cache:
 `cargo fmt --check` for every workspace, `cargo clippy --workspace
 --all-targets -- -D warnings` and `cargo test --workspace` for the root
 workspace, the policy and architecture checks, type checks of the final HIL
@@ -116,7 +117,7 @@ documentation target with `RUSTDOCFLAGS=-D warnings`, as each package's
 focused package tests and the relevant target profile while iterating.
 
 The complete source checkpoint is the [CI workflow](.github/workflows/ci.yml):
-each job runs one command, and every command also runs locally:
+each step runs one command, and every command also runs locally:
 
 ```console
 cargo xtask check metadata
@@ -129,7 +130,7 @@ cargo xtask check images
 
 They need the embedded target; `check images` also needs `espflash` and the
 toolchain's `llvm-tools` component on `PATH`. Each example is checked from its
-own directory, as its `examples` CI job shows: `cargo check --release --locked`
+own directory, as the `firmware` CI job shows: `cargo check --release --locked`
 for the default and every listed feature profile, plus
 `cargo test --lib --locked --target <host>` where the example has host tests.
 Together they check dependency

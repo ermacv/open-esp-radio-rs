@@ -11,6 +11,7 @@ use oer_ieee80211_mac::twt::{
     IndividualTwtSetup, IndividualTwtSetupCommand, IndividualTwtTeardown, TwtWakeDurationUnit,
     TwtWireError,
 };
+use oer_time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IndividualTwtRequesterConfigError {
@@ -23,23 +24,23 @@ pub enum IndividualTwtRequesterConfigError {
 /// Association-scoped retry and deadline policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IndividualTwtRequesterConfig {
-    response_timeout_micros: u32,
-    retry_interval_micros: u32,
+    response_timeout: Duration,
+    retry_interval: Duration,
     setup_attempt_limit: u8,
     teardown_attempt_limit: u8,
 }
 
 impl IndividualTwtRequesterConfig {
     pub const fn new(
-        response_timeout_micros: u32,
-        retry_interval_micros: u32,
+        response_timeout: Duration,
+        retry_interval: Duration,
         setup_attempt_limit: u8,
         teardown_attempt_limit: u8,
     ) -> Result<Self, IndividualTwtRequesterConfigError> {
-        if response_timeout_micros == 0 {
+        if response_timeout.as_micros() == 0 {
             return Err(IndividualTwtRequesterConfigError::ZeroResponseTimeout);
         }
-        if retry_interval_micros == 0 {
+        if retry_interval.as_micros() == 0 {
             return Err(IndividualTwtRequesterConfigError::ZeroRetryInterval);
         }
         if setup_attempt_limit == 0 {
@@ -49,19 +50,19 @@ impl IndividualTwtRequesterConfig {
             return Err(IndividualTwtRequesterConfigError::ZeroTeardownAttemptLimit);
         }
         Ok(Self {
-            response_timeout_micros,
-            retry_interval_micros,
+            response_timeout,
+            retry_interval,
             setup_attempt_limit,
             teardown_attempt_limit,
         })
     }
 
-    pub const fn response_timeout_micros(self) -> u32 {
-        self.response_timeout_micros
+    pub const fn response_timeout(self) -> Duration {
+        self.response_timeout
     }
 
-    pub const fn retry_interval_micros(self) -> u32 {
-        self.retry_interval_micros
+    pub const fn retry_interval(self) -> Duration {
+        self.retry_interval
     }
 
     pub const fn setup_attempt_limit(self) -> u8 {
@@ -217,11 +218,11 @@ pub struct IndividualTwtTransmission {
 pub enum IndividualTwtRequesterEvent {
     SetupPublished {
         flow_id: IndividualTwtFlowId,
-        response_deadline_micros: u64,
+        response_deadline: Instant,
     },
     SetupRetryScheduled {
         flow_id: IndividualTwtFlowId,
-        retry_at_micros: u64,
+        retry_at: Instant,
     },
     SetupTimedOut {
         flow_id: IndividualTwtFlowId,
@@ -234,7 +235,7 @@ pub enum IndividualTwtRequesterEvent {
     },
     TeardownRetryScheduled {
         flow_id: IndividualTwtFlowId,
-        retry_at_micros: u64,
+        retry_at: Instant,
     },
     TeardownTxFailed {
         flow_id: IndividualTwtFlowId,
@@ -305,7 +306,7 @@ enum FlowPhase {
     SetupQueued {
         proposal: IndividualTwtProposal,
         attempts_remaining: u8,
-        ready_at_micros: u64,
+        ready_at: Instant,
     },
     SetupTransmitting {
         proposal: IndividualTwtProposal,
@@ -318,7 +319,7 @@ enum FlowPhase {
         dialog_token: u8,
         generation: u32,
         attempts_remaining: u8,
-        deadline_micros: u64,
+        deadline: Instant,
     },
     AwaitingHardwareInstall {
         generation: u32,
@@ -327,7 +328,7 @@ enum FlowPhase {
     Active(IndividualTwtAgreement),
     TeardownQueued {
         attempts_remaining: u8,
-        ready_at_micros: u64,
+        ready_at: Instant,
     },
     TeardownTransmitting {
         generation: u32,
@@ -402,7 +403,7 @@ impl IndividualTwtRequester {
     pub fn queue_setup(
         &mut self,
         proposal: IndividualTwtProposal,
-        now_micros: u64,
+        now: Instant,
     ) -> Result<(), IndividualTwtRequesterError> {
         let proposal = proposal.validate()?;
         let flow_id = proposal.parameters.flow_id;
@@ -412,7 +413,7 @@ impl IndividualTwtRequester {
         self.flows[flow_id.index()] = FlowPhase::SetupQueued {
             proposal,
             attempts_remaining: self.config.setup_attempt_limit,
-            ready_at_micros: now_micros,
+            ready_at: now,
         };
         Ok(())
     }
@@ -423,7 +424,7 @@ impl IndividualTwtRequester {
     pub fn queue_teardown(
         &mut self,
         flow_id: IndividualTwtFlowId,
-        now_micros: u64,
+        now: Instant,
     ) -> Result<(), IndividualTwtRequesterError> {
         if matches!(self.flows[flow_id.index()], FlowPhase::Idle) {
             return Err(IndividualTwtRequesterError::NoAgreement(flow_id));
@@ -436,26 +437,26 @@ impl IndividualTwtRequester {
         }
         self.flows[flow_id.index()] = FlowPhase::TeardownQueued {
             attempts_remaining: self.config.teardown_attempt_limit,
-            ready_at_micros: now_micros,
+            ready_at: now,
         };
         Ok(())
     }
 
     pub fn service(
         &mut self,
-        now_micros: u64,
+        now: Instant,
     ) -> Result<IndividualTwtService, IndividualTwtRequesterError> {
         for index in 0..INDIVIDUAL_TWT_FLOW_CAPACITY {
             let FlowPhase::AwaitingResponse {
                 proposal,
                 attempts_remaining,
-                deadline_micros,
+                deadline,
                 ..
             } = self.flows[index]
             else {
                 continue;
             };
-            if now_micros < deadline_micros {
+            if now < deadline {
                 continue;
             }
             let flow_id = IndividualTwtFlowId::new(index as u8)
@@ -466,19 +467,16 @@ impl IndividualTwtRequester {
                     IndividualTwtRequesterEvent::SetupTimedOut { flow_id },
                 ));
             }
-            let retry_at_micros = now_micros
-                .checked_add(u64::from(self.config.retry_interval_micros))
+            let retry_at = now
+                .checked_add(self.config.retry_interval)
                 .ok_or(IndividualTwtRequesterError::DeadlineOverflow)?;
             self.flows[index] = FlowPhase::SetupQueued {
                 proposal,
                 attempts_remaining,
-                ready_at_micros: retry_at_micros,
+                ready_at: retry_at,
             };
             return Ok(IndividualTwtService::Event(
-                IndividualTwtRequesterEvent::SetupRetryScheduled {
-                    flow_id,
-                    retry_at_micros,
-                },
+                IndividualTwtRequesterEvent::SetupRetryScheduled { flow_id, retry_at },
             ));
         }
 
@@ -489,8 +487,8 @@ impl IndividualTwtRequester {
                 FlowPhase::SetupQueued {
                     proposal,
                     attempts_remaining,
-                    ready_at_micros,
-                } if now_micros >= ready_at_micros => {
+                    ready_at,
+                } if now >= ready_at => {
                     let generation = self.take_generation()?;
                     let dialog_token = self.take_dialog_token();
                     let setup = IndividualTwtSetup {
@@ -515,8 +513,8 @@ impl IndividualTwtRequester {
                 }
                 FlowPhase::TeardownQueued {
                     attempts_remaining,
-                    ready_at_micros,
-                } if now_micros >= ready_at_micros => {
+                    ready_at,
+                } if now >= ready_at => {
                     let body = IndividualTwtTeardown::one(flow_id).encode_body()?;
                     let generation = self.take_generation()?;
                     let attempts_remaining = attempts_remaining - 1;
@@ -541,7 +539,7 @@ impl IndividualTwtRequester {
         &mut self,
         transmission: IndividualTwtTransmission,
         acknowledged: bool,
-        now_micros: u64,
+        now: Instant,
     ) -> Result<IndividualTwtRequesterEvent, IndividualTwtRequesterError> {
         let index = transmission.flow_id.index();
         match (self.flows[index], transmission.kind) {
@@ -555,26 +553,26 @@ impl IndividualTwtRequester {
                 IndividualTwtTxKind::Setup,
             ) if generation == transmission.generation => {
                 if acknowledged {
-                    let deadline_micros = now_micros
-                        .checked_add(u64::from(self.config.response_timeout_micros))
+                    let deadline = now
+                        .checked_add(self.config.response_timeout)
                         .ok_or(IndividualTwtRequesterError::DeadlineOverflow)?;
                     self.flows[index] = FlowPhase::AwaitingResponse {
                         proposal,
                         dialog_token,
                         generation,
                         attempts_remaining,
-                        deadline_micros,
+                        deadline,
                     };
                     Ok(IndividualTwtRequesterEvent::SetupPublished {
                         flow_id: transmission.flow_id,
-                        response_deadline_micros: deadline_micros,
+                        response_deadline: deadline,
                     })
                 } else {
                     self.retry_or_finish_setup(
                         transmission.flow_id,
                         proposal,
                         attempts_remaining,
-                        now_micros,
+                        now,
                         false,
                     )
                 }
@@ -597,16 +595,16 @@ impl IndividualTwtRequester {
                         flow_id: transmission.flow_id,
                     })
                 } else {
-                    let retry_at_micros = now_micros
-                        .checked_add(u64::from(self.config.retry_interval_micros))
+                    let retry_at = now
+                        .checked_add(self.config.retry_interval)
                         .ok_or(IndividualTwtRequesterError::DeadlineOverflow)?;
                     self.flows[index] = FlowPhase::TeardownQueued {
                         attempts_remaining,
-                        ready_at_micros: retry_at_micros,
+                        ready_at: retry_at,
                     };
                     Ok(IndividualTwtRequesterEvent::TeardownRetryScheduled {
                         flow_id: transmission.flow_id,
-                        retry_at_micros,
+                        retry_at,
                     })
                 }
             }
@@ -677,7 +675,7 @@ impl IndividualTwtRequester {
                 // A response has already crossed the wire. Zero is due in
                 // every monotonic runtime domain without inventing a new
                 // timestamp parameter at this protocol edge.
-                ready_at_micros: 0,
+                ready_at: Instant::EPOCH,
             };
             return Ok(
                 IndividualTwtSetupDisposition::ExplicitInformationUnsupported { flow_id, frontier },
@@ -748,7 +746,7 @@ impl IndividualTwtRequester {
         &mut self,
         flow_id: IndividualTwtFlowId,
         generation: u32,
-        now_micros: u64,
+        now: Instant,
     ) -> Result<(), IndividualTwtRequesterError> {
         let index = flow_id.index();
         let FlowPhase::AwaitingHardwareInstall {
@@ -763,7 +761,7 @@ impl IndividualTwtRequester {
         }
         self.flows[index] = FlowPhase::TeardownQueued {
             attempts_remaining: self.config.teardown_attempt_limit,
-            ready_at_micros: now_micros,
+            ready_at: now,
         };
         Ok(())
     }
@@ -848,19 +846,13 @@ impl IndividualTwtRequester {
         removed
     }
 
-    pub fn next_deadline_micros(&self) -> Option<u64> {
+    pub fn next_deadline(&self) -> Option<Instant> {
         self.flows
             .iter()
             .filter_map(|phase| match phase {
-                FlowPhase::SetupQueued {
-                    ready_at_micros, ..
-                }
-                | FlowPhase::TeardownQueued {
-                    ready_at_micros, ..
-                } => Some(*ready_at_micros),
-                FlowPhase::AwaitingResponse {
-                    deadline_micros, ..
-                } => Some(*deadline_micros),
+                FlowPhase::SetupQueued { ready_at, .. }
+                | FlowPhase::TeardownQueued { ready_at, .. } => Some(*ready_at),
+                FlowPhase::AwaitingResponse { deadline, .. } => Some(*deadline),
                 _ => None,
             })
             .min()
@@ -890,7 +882,7 @@ impl IndividualTwtRequester {
         flow_id: IndividualTwtFlowId,
         proposal: IndividualTwtProposal,
         attempts_remaining: u8,
-        now_micros: u64,
+        now: Instant,
         timed_out: bool,
     ) -> Result<IndividualTwtRequesterEvent, IndividualTwtRequesterError> {
         if attempts_remaining == 0 {
@@ -901,18 +893,15 @@ impl IndividualTwtRequester {
                 IndividualTwtRequesterEvent::SetupTxFailed { flow_id }
             });
         }
-        let retry_at_micros = now_micros
-            .checked_add(u64::from(self.config.retry_interval_micros))
+        let retry_at = now
+            .checked_add(self.config.retry_interval)
             .ok_or(IndividualTwtRequesterError::DeadlineOverflow)?;
         self.flows[flow_id.index()] = FlowPhase::SetupQueued {
             proposal,
             attempts_remaining,
-            ready_at_micros: retry_at_micros,
+            ready_at: retry_at,
         };
-        Ok(IndividualTwtRequesterEvent::SetupRetryScheduled {
-            flow_id,
-            retry_at_micros,
-        })
+        Ok(IndividualTwtRequesterEvent::SetupRetryScheduled { flow_id, retry_at })
     }
 
     fn take_dialog_token(&mut self) -> u8 {
@@ -1087,8 +1076,8 @@ pub const INDIVIDUAL_TWT_REQUESTER_DISABLED: Option<IndividualTwtRequesterConfig
 /// ESP32-S31 composition while the hardware boundary remains unsupported.
 pub const fn conservative_individual_twt_requester_config() -> IndividualTwtRequesterConfig {
     IndividualTwtRequesterConfig {
-        response_timeout_micros: 1_000_000,
-        retry_interval_micros: 250_000,
+        response_timeout: Duration::from_secs(1),
+        retry_interval: Duration::from_millis(250),
         setup_attempt_limit: 3,
         teardown_attempt_limit: 3,
     }

@@ -15,7 +15,7 @@ use oer_ieee80211_sta::modem_sleep::{
 };
 use oer_ieee80211_upper_mac::TxReport;
 use oer_ieee80211_upper_mac_service::UpperMacTxError;
-use oer_time::{Clock, Duration, Instant};
+use oer_time::{Clock, Instant};
 
 use super::link::{BeaconTimingOps, PortError, PortLink, PortLinkError, PortStationEnv};
 
@@ -114,7 +114,7 @@ pub(crate) struct PowerContext<'a, 'p, X: PortStationEnv> {
 impl<X: PortStationEnv> PowerContext<'_, '_, X> {
     fn clock(&self) -> PmClock {
         PmClock {
-            now_micros: self.timer.now().as_micros(),
+            now: self.timer.now(),
         }
     }
 }
@@ -369,12 +369,8 @@ impl<P: Ieee80211LowerMacPort> PortPowerSave<P> {
             }
             PmAction::BlockTx | PmAction::RfSleep => self.set_gate(context.link, false)?,
             PmAction::UnblockTx | PmAction::RfWake => self.set_gate(context.link, true)?,
-            PmAction::Arm {
-                timer,
-                after_micros,
-            } => {
-                self.deadlines[timer_index(timer)] =
-                    now.checked_add(Duration::from_micros(after_micros));
+            PmAction::Arm { timer, after } => {
+                self.deadlines[timer_index(timer)] = now.checked_add(after);
             }
             PmAction::Disarm(timer) => self.deadlines[timer_index(timer)] = None,
             PmAction::ReleaseHeldFrames => self.release = true,

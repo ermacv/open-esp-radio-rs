@@ -1,11 +1,15 @@
 use super::*;
 use oer_ieee80211_mac::twt::IndividualTwtFlowType;
 
-const CONFIG: IndividualTwtRequesterConfig =
-    match IndividualTwtRequesterConfig::new(1_000, 100, 2, 2) {
-        Ok(config) => config,
-        Err(_) => panic!("valid requester config"),
-    };
+const CONFIG: IndividualTwtRequesterConfig = match IndividualTwtRequesterConfig::new(
+    oer_time::Duration::from_micros(1_000),
+    oer_time::Duration::from_micros(100),
+    2,
+    2,
+) {
+    Ok(config) => config,
+    Err(_) => panic!("valid requester config"),
+};
 
 fn parameters(implicit: bool) -> IndividualTwtParameterSet {
     IndividualTwtParameterSet {
@@ -35,10 +39,12 @@ fn proposal(implicit: bool) -> IndividualTwtProposal {
 fn generation_exhaustion_never_reissues_a_stale_identity() {
     let mut requester = IndividualTwtRequester::new(CONFIG);
     requester.generation = u32::MAX;
-    requester.queue_setup(proposal(true), 0).unwrap();
+    requester
+        .queue_setup(proposal(true), oer_time::Instant::from_micros(0))
+        .unwrap();
 
     assert_eq!(
-        requester.service(0),
+        requester.service(oer_time::Instant::from_micros(0)),
         Err(IndividualTwtRequesterError::GenerationExhausted)
     );
     assert_eq!(
@@ -70,12 +76,17 @@ fn explicit_proposal_reports_the_exact_information_frontier() {
 #[test]
 fn peer_accepted_explicit_agreement_is_torn_down_not_installed() {
     let mut requester = IndividualTwtRequester::new(CONFIG);
-    requester.queue_setup(proposal(true), 0).unwrap();
-    let IndividualTwtService::Transmit(transmission) = requester.service(0).unwrap() else {
+    requester
+        .queue_setup(proposal(true), oer_time::Instant::from_micros(0))
+        .unwrap();
+    let IndividualTwtService::Transmit(transmission) = requester
+        .service(oer_time::Instant::from_micros(0))
+        .unwrap()
+    else {
         panic!("setup must be ready");
     };
     requester
-        .complete_transmission(transmission, true, 10)
+        .complete_transmission(transmission, true, oer_time::Instant::from_micros(10))
         .unwrap();
 
     let mut response_parameters = parameters(false);
@@ -99,8 +110,14 @@ fn peer_accepted_explicit_agreement_is_torn_down_not_installed() {
             },
         }
     );
-    assert_eq!(requester.next_deadline_micros(), Some(0));
-    let IndividualTwtService::Transmit(teardown) = requester.service(10).unwrap() else {
+    assert_eq!(
+        requester.next_deadline(),
+        Some(oer_time::Instant::from_micros(0))
+    );
+    let IndividualTwtService::Transmit(teardown) = requester
+        .service(oer_time::Instant::from_micros(10))
+        .unwrap()
+    else {
         panic!("rollback teardown must be ready immediately");
     };
     assert_eq!(teardown.kind, IndividualTwtTxKind::Teardown);

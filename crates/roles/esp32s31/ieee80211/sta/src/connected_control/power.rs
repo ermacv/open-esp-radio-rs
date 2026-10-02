@@ -25,7 +25,7 @@ use crate::{
 
 use super::{
     ConnectedControlCore, ConnectedControlError, ConnectedControlTx, ConnectedDisconnectReason,
-    ControlInFlight, earliest_deadline,
+    ControlInFlight,
 };
 
 /// Capacity of the queue of power commands waiting for the runtime.
@@ -142,7 +142,7 @@ pub(super) struct ConnectedPower {
     start: Option<JoinBeacon>,
     /// The coexistence snapshot of a started association.
     coex: Option<PowerCoexSnapshot>,
-    deadlines: [Option<u64>; 5],
+    deadlines: [Option<oer_time::Instant>; 5],
     tbtt: bool,
     phase: Option<CoexPhaseView>,
     preemption: Option<Option<u64>>,
@@ -231,9 +231,9 @@ impl ConnectedPower {
             || self.nulls[0].is_some()
     }
 
-    pub(super) fn next_deadline(&self) -> Option<u64> {
+    pub(super) fn next_deadline(&self) -> Option<oer_time::Instant> {
         self.deadlines.iter().fold(None, |earliest, deadline| {
-            earliest_deadline(earliest, *deadline)
+            oer_ieee80211_sta::time::earliest(earliest, *deadline)
         })
     }
 
@@ -266,13 +266,13 @@ impl ConnectedPower {
         command
     }
 
-    /// The index of the earliest timer expired at `now_micros`.
-    fn expired_timer(&self, now_micros: u64) -> Option<usize> {
+    /// The index of the earliest timer expired at `now`.
+    fn expired_timer(&self, now: oer_time::Instant) -> Option<usize> {
         self.deadlines
             .iter()
             .enumerate()
             .filter_map(|(index, deadline)| deadline.map(|deadline| (index, deadline)))
-            .filter(|(_, deadline)| *deadline <= now_micros)
+            .filter(|(_, deadline)| *deadline <= now)
             .min_by_key(|(_, deadline)| *deadline)
             .map(|(index, _)| index)
     }
@@ -390,7 +390,7 @@ impl ConnectedControlCore {
             Some(PowerInput::Phase(phase))
         } else if let Some(end) = power.preemption {
             Some(PowerInput::Preemption(end))
-        } else if let Some(index) = power.expired_timer(tx.now().as_micros()) {
+        } else if let Some(index) = power.expired_timer(tx.now()) {
             Some(PowerInput::Timer(index))
         } else if power.engine.is_started() && tx.has_network_tx_report() {
             Some(PowerInput::NetworkTxReport)
@@ -442,7 +442,7 @@ impl ConnectedControlCore {
                 // The TBTT schedule is in the access point's TSF, so the
                 // station takes it before power management places its first
                 // TBTT, as the vendor does on the Association Response.
-                hardware.set_station_tsf(join.access_point_tsf_at(clock.now_micros));
+                hardware.set_station_tsf(join.access_point_tsf_at(clock.now.as_micros()));
                 self.power.engine.start(join.beacon, coex, &mut actions);
             }
             PowerInput::Null(power_save) => {
@@ -568,7 +568,6 @@ impl ConnectedControlCore {
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
     {
-        let now_micros = tx.now().as_micros();
         for action in actions.iter() {
             match action {
                 PmAction::SendNull { power_save } => {
@@ -611,12 +610,9 @@ impl ConnectedControlCore {
                     self.power.tx_blocked = false;
                     hardware.set_power_save_tx_block(false);
                 }
-                PmAction::Arm {
-                    timer,
-                    after_micros,
-                } => {
-                    self.power.deadlines[timer_index(timer)] =
-                        Some(now_micros.saturating_add(after_micros));
+                PmAction::Arm { timer, after } => {
+                    // A deadline past the representable time never comes.
+                    self.power.deadlines[timer_index(timer)] = tx.now().checked_add(after);
                 }
                 PmAction::Disarm(timer) => self.power.deadlines[timer_index(timer)] = None,
                 PmAction::ReleaseHeldFrames => self.power.network_held = false,
@@ -691,7 +687,5 @@ fn trace_power_input(input: PowerInput, control_event_waiting: bool) {
 }
 
 pub(super) fn power_clock<X: ConnectedControlTx>(tx: &X) -> PmClock {
-    PmClock {
-        now_micros: tx.now().as_micros(),
-    }
+    PmClock { now: tx.now() }
 }

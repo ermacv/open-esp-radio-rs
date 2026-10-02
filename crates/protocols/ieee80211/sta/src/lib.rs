@@ -24,6 +24,7 @@ pub mod request;
 pub mod sa_query;
 pub mod scan;
 pub mod station;
+pub mod time;
 pub mod twt;
 
 pub mod association;

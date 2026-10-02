@@ -14,10 +14,22 @@ fn transmission() -> FtmRequestTransmission {
         0,
     )
     .unwrap();
-    let config = FtmRequesterConfig::new(parameters, 1_000, 100, 10_000, 1).unwrap();
+    let config = FtmRequesterConfig::new(
+        parameters,
+        oer_time::Duration::from_micros(1_000),
+        oer_time::Duration::from_micros(100),
+        oer_time::Duration::from_micros(10_000),
+        1,
+    )
+    .unwrap();
     let mut requester = FtmRequester::<3>::new(config);
-    requester.start([1; 6], 0).unwrap();
-    let FtmRequesterService::Transmit(transmission) = requester.service(0).unwrap() else {
+    requester
+        .start([1; 6], oer_time::Instant::from_micros(0))
+        .unwrap();
+    let FtmRequesterService::Transmit(transmission) = requester
+        .service(oer_time::Instant::from_micros(0))
+        .unwrap()
+    else {
         panic!("new FTM request must be ready")
     };
     transmission

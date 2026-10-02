@@ -22,6 +22,7 @@
 //! follows.
 
 use oer_ieee80211_trace::{PowerState, PowerStateTrace};
+use oer_time::{Duration, Instant};
 
 /// Beacon receive window requested at each TBTT (`g_pm_cfg[20]`).
 pub const BEACON_WINDOW_MICROS: u32 = 25_000;
@@ -176,7 +177,7 @@ pub enum PmAction {
     /// Wake the station's RF.
     RfWake,
     /// Arm a timer to expire after the given time.
-    Arm { timer: PmTimer, after_micros: u64 },
+    Arm { timer: PmTimer, after: Duration },
     /// Disarm a timer.
     Disarm(PmTimer),
     /// Transmit the frames held while the station was in power save.
@@ -364,8 +365,8 @@ enum WakeResult {
 /// of that counter matter, so one monotonic microsecond clock serves both.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PmClock {
-    /// Monotonic time, in microseconds.
-    pub now_micros: u64,
+    /// The image's monotonic time.
+    pub now: Instant,
 }
 
 /// What the TX path reports when power management asks.
@@ -635,7 +636,7 @@ impl ModemSleep {
         if self.sleep_type != SleepType::None {
             actions.push(PmAction::Arm {
                 timer: PmTimer::Active,
-                after_micros: u64::from(self.active_timeout_micros),
+                after: Duration::from_micros(u64::from(self.active_timeout_micros)),
             });
         }
     }
@@ -644,7 +645,7 @@ impl ModemSleep {
         actions.push(PmAction::Disarm(PmTimer::SleepDelay));
         actions.push(PmAction::Arm {
             timer: PmTimer::SleepDelay,
-            after_micros: u64::from(SLEEP_DELAY_MICROS),
+            after: Duration::from_micros(u64::from(SLEEP_DELAY_MICROS)),
         });
         self.sleep_delay_armed = true;
     }
@@ -658,7 +659,7 @@ impl ModemSleep {
         actions.push(PmAction::Disarm(PmTimer::Dream));
         actions.push(PmAction::Arm {
             timer: PmTimer::Dream,
-            after_micros: u64::from(DREAM_TIMEOUT_MICROS),
+            after: Duration::from_micros(u64::from(DREAM_TIMEOUT_MICROS)),
         });
     }
 
@@ -683,7 +684,7 @@ impl ModemSleep {
         if !coex.active {
             return;
         }
-        let now = clock.now_micros;
+        let now = clock.now.as_micros();
         if !force && now < self.slice_end.wrapping_add(self.cycle_remainder) {
             return;
         }
@@ -691,7 +692,7 @@ impl ModemSleep {
         let offset = if cycle == 0 {
             0
         } else {
-            clock.now_micros.wrapping_sub(self.cycle_anchor) % cycle
+            clock.now.as_micros().wrapping_sub(self.cycle_anchor) % cycle
         };
         let slice = u64::from(coex.phase0_share_percent)
             * u64::from(coex.interval)
@@ -708,7 +709,7 @@ impl ModemSleep {
             self.in_slice = true;
             actions.push(PmAction::Arm {
                 timer: PmTimer::SliceEnd,
-                after_micros: self.slice_deadline - now,
+                after: Duration::from_micros(self.slice_deadline - now),
             });
         } else {
             self.in_slice = false;
@@ -728,7 +729,7 @@ impl ModemSleep {
         if !coex.active {
             return true;
         }
-        let now = clock.now_micros;
+        let now = clock.now.as_micros();
         let threshold = u64::from(threshold);
         if now >= self.slice_deadline || self.slice_deadline - now < threshold {
             return false;
@@ -840,7 +841,8 @@ impl ModemSleep {
         }
         let may = !traffic.tx_pending
             || (coex.active
-                && (!self.in_slice || (self.preempted && clock.now_micros >= self.preemption_end)));
+                && (!self.in_slice
+                    || (self.preempted && clock.now.as_micros() >= self.preemption_end)));
         if !may {
             return;
         }
@@ -901,7 +903,7 @@ impl ModemSleep {
                 return;
             }
             self.power_save_null_in_flight = false;
-            if self.preempted && clock.now_micros >= self.preemption_end {
+            if self.preempted && clock.now.as_micros() >= self.preemption_end {
                 self.sleep(clock, coex, traffic, actions);
             } else {
                 self.enable_sleep_delay_timer(actions);
@@ -963,7 +965,7 @@ impl ModemSleep {
         // its slice ended under coexistence.
         let keep_anchor = beacon_was_expected || (coex.active && self.beacon_expected_at_slice_end);
         if !keep_anchor {
-            self.cycle_anchor = clock.now_micros;
+            self.cycle_anchor = clock.now.as_micros();
         }
         self.coex_tbtt(clock, coex, traffic, actions);
         self.set_next_tbtt(coex, actions);
@@ -981,7 +983,7 @@ impl ModemSleep {
         actions.push(PmAction::Disarm(PmTimer::SliceEnd));
         self.in_slice = true;
         if coex.active {
-            self.slice_deadline = clock.now_micros.wrapping_add(
+            self.slice_deadline = clock.now.as_micros().wrapping_add(
                 u64::from(coex.overall_period()) * u64::from(self.beacon_interval_micros),
             );
             actions.push(PmAction::SetCoexInterval(
@@ -1195,7 +1197,7 @@ impl ModemSleep {
                 if unicast {
                     if self.in_slice_threshold(clock, WAKE_SLICE_THRESHOLD_MICROS, coex, actions) {
                         self.receiving = true;
-                        self.request_slice_until_end(clock.now_micros, actions);
+                        self.request_slice_until_end(clock.now.as_micros(), actions);
                         let _ = self.go_to_wake(false, clock, coex, traffic, actions);
                     } else {
                         self.wake_deferred = true;
@@ -1204,7 +1206,7 @@ impl ModemSleep {
                     if self.in_slice_threshold(clock, GROUP_SLICE_THRESHOLD_MICROS, coex, actions) {
                         self.receiving = true;
                         self.enable_dream_timer(actions);
-                        let now = clock.now_micros;
+                        let now = clock.now.as_micros();
                         if now < self.slice_end {
                             let remaining = u32::try_from(self.slice_end - now).unwrap_or(u32::MAX);
                             actions.push(PmAction::CoexRequest {
@@ -1243,7 +1245,7 @@ impl ModemSleep {
                 let dozing = self.state == PmState::Dozing;
                 let mut hold = false;
                 if self.in_slice_threshold(clock, WAKE_SLICE_THRESHOLD_MICROS, coex, actions) {
-                    self.request_slice_until_end(clock.now_micros, actions);
+                    self.request_slice_until_end(clock.now.as_micros(), actions);
                     if dozing {
                         self.dream(coex, Some(clock), actions);
                     }
@@ -1341,7 +1343,7 @@ impl ModemSleep {
         coex: CoexView,
         actions: &mut PmActions,
     ) {
-        let now = clock.now_micros;
+        let now = clock.now.as_micros();
         let slice = u64::from(phase.share_percent)
             * u64::from(coex.interval)
             * u64::from(coex.current_period);
@@ -1368,7 +1370,7 @@ impl ModemSleep {
             self.slice_deadline = slice_end.wrapping_sub(margin);
             actions.push(PmAction::Arm {
                 timer: PmTimer::SliceEnd,
-                after_micros: self.slice_deadline.wrapping_sub(now),
+                after: Duration::from_micros(self.slice_deadline.wrapping_sub(now)),
             });
         }
         if phase.wifi & CoexPhaseView::SHARED != 0 {
@@ -1469,7 +1471,7 @@ impl ModemSleep {
         traffic: PmTraffic,
         actions: &mut PmActions,
     ) {
-        let now = clock.now_micros;
+        let now = clock.now.as_micros();
         let was_preempted = self.preempted;
         self.preempted = end_micros.is_some();
         let margin = if self.started { 2_000 } else { 1_000 };
@@ -1478,7 +1480,7 @@ impl ModemSleep {
         if self.preempted && now < self.preemption_end {
             actions.push(PmAction::Arm {
                 timer: PmTimer::Preemption,
-                after_micros: self.preemption_end - now,
+                after: Duration::from_micros(self.preemption_end - now),
             });
         }
         if self.started {

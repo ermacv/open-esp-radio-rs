@@ -6,6 +6,7 @@
 //! TIM observation without importing vendor PM contexts or RTOS timers.
 
 use oer_ieee80211_mac::station_beacon::{StaBeaconObservation, StaTimObservation};
+use oer_time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaBeaconLossConfigError {
@@ -18,7 +19,7 @@ pub enum StaBeaconLossConfigError {
 /// Association-derived beacon-loss policy.
 ///
 /// The connected station declares the link unreachable, and starts probing
-/// the access point, when no beacon has arrived for `timeout_micros`, as the
+/// the access point, when no beacon has arrived for `timeout`, as the
 /// vendor's station beacon timeout does. `miss_limit` is the separate
 /// consecutive-miss count the MAC's hardware beacon monitor uses while the
 /// modem sleeps.
@@ -26,14 +27,14 @@ pub enum StaBeaconLossConfigError {
 pub struct StaBeaconLossConfig {
     interval_tu: u16,
     miss_limit: u8,
-    window_micros: u64,
+    window: Duration,
 }
 
 impl StaBeaconLossConfig {
     pub const fn new(
         interval_tu: u16,
         miss_limit: u8,
-        timeout_micros: u64,
+        timeout: Duration,
     ) -> Result<Self, StaBeaconLossConfigError> {
         if interval_tu == 0 {
             return Err(StaBeaconLossConfigError::ZeroInterval);
@@ -41,13 +42,13 @@ impl StaBeaconLossConfig {
         if miss_limit == 0 {
             return Err(StaBeaconLossConfigError::ZeroMissLimit);
         }
-        if timeout_micros == 0 {
+        if timeout.as_micros() == 0 {
             return Err(StaBeaconLossConfigError::ZeroTimeout);
         }
         Ok(Self {
             interval_tu,
             miss_limit,
-            window_micros: timeout_micros,
+            window: timeout,
         })
     }
 
@@ -60,8 +61,8 @@ impl StaBeaconLossConfig {
     }
 
     /// How long the link may go without a beacon before it is probed.
-    pub const fn window_micros(self) -> u64 {
-        self.window_micros
+    pub const fn window(self) -> Duration {
+        self.window
     }
 }
 
@@ -69,7 +70,7 @@ impl StaBeaconLossConfig {
 // CAPABILITY: wifi-bounded-wait-owners
 pub struct StaBeaconMonitor {
     config: StaBeaconLossConfig,
-    deadline_micros: Option<u64>,
+    deadline: Option<Instant>,
     last_observation: Option<StaBeaconObservation>,
     observed: u32,
 }
@@ -78,7 +79,7 @@ impl StaBeaconMonitor {
     pub const fn new(config: StaBeaconLossConfig) -> Self {
         Self {
             config,
-            deadline_micros: None,
+            deadline: None,
             last_observation: None,
             observed: 0,
         }
@@ -88,8 +89,8 @@ impl StaBeaconMonitor {
         self.config
     }
 
-    pub const fn deadline_micros(&self) -> Option<u64> {
-        self.deadline_micros
+    pub const fn deadline(&self) -> Option<Instant> {
+        self.deadline
     }
 
     pub const fn last_observation(&self) -> Option<StaBeaconObservation> {
@@ -108,11 +109,10 @@ impl StaBeaconMonitor {
     }
 
     /// Arm from the association-complete edge before the first beacon arrives.
-    pub fn arm(&mut self, now_micros: u64) -> Result<(), StaBeaconLossConfigError> {
-        if self.deadline_micros.is_none() {
-            self.deadline_micros = Some(
-                now_micros
-                    .checked_add(self.config.window_micros)
+    pub fn arm(&mut self, now: Instant) -> Result<(), StaBeaconLossConfigError> {
+        if self.deadline.is_none() {
+            self.deadline = Some(
+                now.checked_add(self.config.window)
                     .ok_or(StaBeaconLossConfigError::DeadlineOverflow)?,
             );
         }
@@ -124,12 +124,11 @@ impl StaBeaconMonitor {
     /// policy source; an unprotected beacon cannot silently stretch it.
     pub fn observe(
         &mut self,
-        now_micros: u64,
+        now: Instant,
         observation: StaBeaconObservation,
     ) -> Result<(), StaBeaconLossConfigError> {
-        self.deadline_micros = Some(
-            now_micros
-                .checked_add(self.config.window_micros)
+        self.deadline = Some(
+            now.checked_add(self.config.window)
                 .ok_or(StaBeaconLossConfigError::DeadlineOverflow)?,
         );
         self.last_observation = Some(observation);
@@ -142,13 +141,9 @@ impl StaBeaconMonitor {
     ///
     /// This deliberately does not fabricate a beacon observation or TIM:
     /// active-probe reachability and passive beacon state remain distinct.
-    pub fn observe_reachability(
-        &mut self,
-        now_micros: u64,
-    ) -> Result<(), StaBeaconLossConfigError> {
-        self.deadline_micros = Some(
-            now_micros
-                .checked_add(self.config.window_micros)
+    pub fn observe_reachability(&mut self, now: Instant) -> Result<(), StaBeaconLossConfigError> {
+        self.deadline = Some(
+            now.checked_add(self.config.window)
                 .ok_or(StaBeaconLossConfigError::DeadlineOverflow)?,
         );
         Ok(())
@@ -158,19 +153,18 @@ impl StaBeaconMonitor {
     /// response deadline selected by the chip control policy.
     pub fn wait_for_reachability(
         &mut self,
-        now_micros: u64,
-        timeout_micros: u64,
+        now: Instant,
+        timeout: Duration,
     ) -> Result<(), StaBeaconLossConfigError> {
-        self.deadline_micros = Some(
-            now_micros
-                .checked_add(timeout_micros)
+        self.deadline = Some(
+            now.checked_add(timeout)
                 .ok_or(StaBeaconLossConfigError::DeadlineOverflow)?,
         );
         Ok(())
     }
 
-    pub const fn expired(&self, now_micros: u64) -> bool {
-        matches!(self.deadline_micros, Some(deadline) if now_micros >= deadline)
+    pub const fn expired(&self, now: Instant) -> bool {
+        matches!(self.deadline, Some(deadline) if now.as_micros() >= deadline.as_micros())
     }
 }
 

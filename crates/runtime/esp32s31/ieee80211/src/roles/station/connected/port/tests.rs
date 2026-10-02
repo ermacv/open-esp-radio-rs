@@ -125,7 +125,7 @@ fn config() -> ConnectedStaConfig {
                 flags: 0,
             },
             beacon_miss_limit: 10,
-            beacon_timeout_micros: 6_000_000,
+            beacon_timeout: oer_time::Duration::from_secs(6),
         },
     }
 }
@@ -165,7 +165,10 @@ fn plan_owns_rate_rx_tx_block_ack_and_beacon_policy() {
         plan.ht_duplicate_tx_selection(),
         HtDuplicateTxSelection::NotRequested
     );
-    assert_eq!(plan.beacon_loss().window_micros(), 6_000_000);
+    assert_eq!(
+        plan.beacon_loss().window(),
+        oer_time::Duration::from_micros(6_000_000)
+    );
 }
 
 #[test]

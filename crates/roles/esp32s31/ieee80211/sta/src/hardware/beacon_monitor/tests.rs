@@ -7,7 +7,7 @@ fn binding() -> StationBeaconMonitorBinding {
 }
 
 fn policy(miss_limit: u8) -> StaBeaconLossConfig {
-    StaBeaconLossConfig::new(100, miss_limit, 1_024_000).unwrap()
+    StaBeaconLossConfig::new(100, miss_limit, oer_time::Duration::from_micros(1_024_000)).unwrap()
 }
 
 fn snapshot() -> MacStaReceivePolicySnapshot {

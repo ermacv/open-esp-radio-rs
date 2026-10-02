@@ -225,77 +225,22 @@ pub(crate) struct Holder {
     pub(crate) unknown: crate::Unknown,
 }
 
-/// Whether a schema 1 state has a live holder or waiting ticket.
-pub(crate) fn legacy_live(value: &serde_json::Value) -> bool {
-    let live = |ticket: &serde_json::Value| {
-        serde_json::from_value::<ProcessIdentity>(ticket["process"].clone())
-            .is_ok_and(|process| process.alive())
-    };
-    live(&value["holder"]["ticket"])
-        || value["queue"]
-            .as_array()
-            .is_some_and(|queue| queue.iter().any(live))
-}
-
-/// Read schema 1, one whole-stand holder, as schema 2 with that holder and
-/// every ticket claiming the whole stand; read schema 2's budgets as
-/// estimates, starting every balance at zero.
-pub(crate) fn migrate(mut value: serde_json::Value) -> crate::Result<State> {
-    if value["schema"] == 1 {
-        let whole = serde_json::to_value(vec![Claim::stand()])?;
-        let add_claims = |ticket: &mut serde_json::Value| {
-            ticket["claims"] = whole.clone();
-        };
-        let object = value
-            .as_object_mut()
-            .ok_or("arbiter state is not an object")?;
-        if let Some(queue) = object
-            .get_mut("queue")
-            .and_then(|queue| queue.as_array_mut())
-        {
-            queue.iter_mut().for_each(add_claims);
-        }
-        let holders = match object.remove("holder") {
-            Some(serde_json::Value::Null) | None => Vec::new(),
-            Some(mut holder) => {
-                add_claims(&mut holder["ticket"]);
-                vec![holder]
-            }
-        };
-        object.insert("holders".into(), serde_json::Value::Array(holders));
-        let jumped = object
-            .remove("head_next")
-            .unwrap_or(serde_json::Value::Bool(false));
-        object.insert("jumped".into(), jumped);
-        object.insert("schema".into(), 2.into());
+/// Why a state file of another schema cannot be read. The arbiter reads one
+/// schema: a newer state needs a newer checkout, and an older one is never
+/// converted, so the operator drains or resets it.
+pub(crate) fn unreadable(path: &std::path::Path, schema: &serde_json::Value) -> String {
+    let path = path.display();
+    match schema.as_u64() {
+        Some(schema) if schema > u64::from(STATE_SCHEMA) => format!(
+            "HIL arbiter state {path} has schema {schema}; this checkout reads schema \
+             {STATE_SCHEMA}. Update the checkout"
+        ),
+        _ => format!(
+            "HIL arbiter state {path} has schema {schema}; this checkout reads only schema \
+             {STATE_SCHEMA} and does not convert older states. Let the checkouts that hold or \
+             wait for the stand finish, then remove {path} to reset the queue"
+        ),
     }
-    if value["schema"] == 2 {
-        let object = value
-            .as_object_mut()
-            .ok_or("arbiter state is not an object")?;
-        object.remove("jumped");
-        let budget_to_estimate = |ticket: &mut serde_json::Value| {
-            if let Some(ticket) = ticket.as_object_mut() {
-                let budget = ticket.remove("budget_secs").unwrap_or(0.into());
-                ticket.insert("estimate_secs".into(), budget);
-                ticket.remove("budget_source");
-                ticket.remove("short");
-            }
-        };
-        if let Some(queue) = object.get_mut("queue").and_then(|q| q.as_array_mut()) {
-            queue.iter_mut().for_each(budget_to_estimate);
-        }
-        if let Some(holders) = object.get_mut("holders").and_then(|h| h.as_array_mut()) {
-            for holder in holders {
-                budget_to_estimate(&mut holder["ticket"]);
-                if let Some(holder) = holder.as_object_mut() {
-                    holder.remove("over_budget");
-                }
-            }
-        }
-        object.insert("schema".into(), STATE_SCHEMA.into());
-    }
-    Ok(serde_json::from_value(value)?)
 }
 
 #[cfg(test)]
@@ -388,41 +333,13 @@ mod tests {
     }
 
     #[test]
-    fn schema_one_state_becomes_whole_stand_claims() {
-        let ticket = serde_json::json!({
-            "id": 2, "owner": "phy", "work": "run", "budget_secs": 60,
-            "budget_source": {"kind": "explicit"}, "short": false,
-            "process": {"pid": 1, "start_ticks": 1}, "enqueued_unix": 5
-        });
-        let state = migrate(serde_json::json!({
-            "schema": 1, "next_id": 3, "queue": [ticket.clone()],
-            "holder": {"ticket": ticket, "token": "t", "granted_unix": 6, "over_budget": false},
-            "head_next": true
-        }))
-        .unwrap();
-        assert_eq!(state.schema, STATE_SCHEMA);
-        assert_eq!(state.holders.len(), 1);
-        assert_eq!(state.queue[0].claims, [Claim::stand()]);
-        assert_eq!(state.holders[0].ticket.claims, [Claim::stand()]);
-        // The schema 2 budget becomes the estimate; balances start empty.
-        assert_eq!(state.queue[0].estimate_secs, 60);
-        assert!(state.balances.is_empty());
-        assert!(
-            state.queue[0].unknown == crate::Unknown::default(),
-            "no budget field is kept"
-        );
-    }
-
-    #[test]
-    fn a_schema_one_state_is_live_while_its_processes_run() {
-        let me = serde_json::to_value(ProcessIdentity::current().unwrap()).unwrap();
-        let gone = serde_json::json!({"pid": u32::MAX, "start_ticks": 1});
-        let state = |holder: serde_json::Value, queued: serde_json::Value| serde_json::json!({"schema": 1, "holder": holder, "queue": [{"process": queued}]});
-        assert!(legacy_live(&state(
-            serde_json::json!({"ticket": {"process": me}}),
-            gone.clone()
-        )));
-        assert!(legacy_live(&state(serde_json::Value::Null, me)));
-        assert!(!legacy_live(&state(serde_json::Value::Null, gone)));
+    fn a_state_of_another_schema_names_its_remedy() {
+        let path = std::path::Path::new("/stand/state.json");
+        let older = unreadable(path, &serde_json::json!(1));
+        assert!(older.contains("does not convert"), "{older}");
+        assert!(older.contains("remove /stand/state.json"), "{older}");
+        assert!(unreadable(path, &serde_json::Value::Null).contains("does not convert"));
+        let newer = unreadable(path, &serde_json::json!(STATE_SCHEMA + 1));
+        assert!(newer.contains("Update the checkout"), "{newer}");
     }
 }

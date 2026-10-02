@@ -12,15 +12,8 @@ const RETAINED_RECORDS: usize = 2000;
 #[serde(rename_all = "kebab-case")]
 pub enum LeaseOutcome {
     Released,
-    /// Terminated at twice a requested budget; leases before balances only.
-    BudgetExceeded,
     /// The holder exited without releasing; another process reaped it.
     Abandoned,
-    /// Terminated at a requested budget; leases before balances only.
-    Preempted,
-    /// Released at a boundary after a requested budget; leases before
-    /// balances only.
-    Yielded,
     /// Released at a boundary to a waiter with a higher balance, to queue
     /// its remaining work.
     YieldedToBalance,

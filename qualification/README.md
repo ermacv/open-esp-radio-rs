@@ -632,6 +632,13 @@ per-obligation decisions still enforce checks, repetitions and failures.
 `hil-current-source-producer` / `hil.current_source_producer` counts direct
 source bindings independently of dirty state.
 
+A declared evidence directory that does not exist (the vendor evidence index,
+the HIL evidence directory, or the checkout's `target/hil/<chip>/runs` link
+before its first run) holds no evidence: the evaluator prints
+`EVIDENCE-DIR absent kind=… path=… shards=0` (`bundles=0` for runs), and
+every obligation it would serve stays `missing`. A path that an existing
+record names and that does not exist remains an error.
+
 See the canonical
 [verification and qualification contract](../docs/verification-and-qualification.md)
 for evidence strength and the release workflow.

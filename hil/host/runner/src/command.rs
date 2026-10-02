@@ -310,6 +310,7 @@ pub(crate) fn run() -> Result<()> {
         }
         CliCommand::RunAll {
             tag,
+            role,
             layout_seed,
             source_include,
             include_untracked,
@@ -321,7 +322,7 @@ pub(crate) fn run() -> Result<()> {
             let selected = crate::cli::Selection {
                 scenario: None,
                 tag: tag.clone(),
-                role: None,
+                role: role.clone(),
                 chip: None,
             }
             .resolve(&catalog)?;

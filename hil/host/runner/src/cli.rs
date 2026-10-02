@@ -115,7 +115,7 @@ pub(crate) enum CliCommand {
     },
     /// Execute catalog scenarios, flashing once per selected image class.
     /// The whole catalog runs only with an explicit `--all`.
-    #[command(group(clap::ArgGroup::new("selection").required(true).args(["tag", "all"])))]
+    #[command(group(clap::ArgGroup::new("selection").required(true).args(["tag", "role", "all"])))]
     RunAll {
         /// Explicit nonignored untracked source file; repeat for each included file.
         #[arg(long = "source-include", value_name = "FILE")]
@@ -132,6 +132,10 @@ pub(crate) enum CliCommand {
         /// Select only scenarios carrying this tag. May be repeated.
         #[arg(long)]
         tag: Vec<String>,
+        /// Select only scenarios of this role: `qualification` runs every
+        /// scenario a qualification program references.
+        #[arg(long, value_parser = ["qualification", "investigation"])]
+        role: Option<String>,
         /// Run every catalog scenario: the whole default suite.
         #[arg(long)]
         all: bool,

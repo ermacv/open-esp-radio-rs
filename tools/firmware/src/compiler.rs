@@ -1,4 +1,12 @@
-//! Compiler configuration shared by every image build.
+//! Compiler configuration shared by every image build: the single owner of
+//! the ESP32-S31 image compiler flags. No `.cargo/config.toml` carries Rust
+//! flags for an image; `cargo xtask build firmware`, the HIL image builder
+//! and their type checks all apply [`configure_image_compiler`].
+//!
+//! `RUSTC_BOOTSTRAP=1` is set here, on the image's Cargo command only, and
+//! exists for the unstable `-Z` flags alone (`emit-stack-sizes`,
+//! `move-size-limit`, `share-generics`) on the exact stable toolchain that
+//! `rust-toolchain.toml` pins.
 
 use std::{env, process::Command};
 
@@ -9,9 +17,9 @@ use crate::TARGET;
 /// Configure `command`, a Cargo build of an image, with the compiler flags
 /// every image shares.
 pub fn configure_image_compiler(command: &mut Command, budget: &StackBudget) {
-    // The pinned project toolchain supports these flags, but they remain
-    // unstable. Image construction enables them; the stack-size ELF section
-    // is consumed by a safe host-side parser.
+    // The pinned stable toolchain supports these flags, but they remain
+    // unstable: RUSTC_BOOTSTRAP enables them for this command alone. The
+    // stack-size ELF section is consumed by a safe host-side parser.
     command.env("RUSTC_BOOTSTRAP", "1").env(
         "RUSTFLAGS",
         image_rustflags(env::var("RUSTFLAGS").ok(), budget.max_move_bytes),

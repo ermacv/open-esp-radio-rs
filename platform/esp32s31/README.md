@@ -14,6 +14,11 @@ radio role, executor or network-stack dependency.
 | `partitions` | Application partition layout |
 | `stack.toml` | Frame budgets for standalone application composition |
 
+Every image of this platform, standalone or HIL, is compiled with the flags
+of one owner, [`oer-esp32s31-firmware`'s `compiler`
+module](../../tools/firmware/README.md); no `.cargo/config.toml` adds Rust
+flags.
+
 The boot sequence is ROM → ESP-IDF bootloader → Flash bootstrap → application.
 The ROM image uses DIO at 80 MHz; ESP-IDF enables QIO for the application.
 `xtask` extracts and checks the ROM image from the installed `espflash` image

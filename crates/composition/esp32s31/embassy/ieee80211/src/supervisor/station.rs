@@ -2010,7 +2010,9 @@ pub(crate) async fn run_connected<'state, 'security>(
                     "open-radio: connected exit beacon lost={} observed={} deadline={:?} now={} last_tsf={:?}",
                     control.beacon_lost(),
                     beacon.map_or(0, |monitor| monitor.observed()),
-                    beacon.and_then(|monitor| monitor.deadline_micros()),
+                    beacon
+                        .and_then(|monitor| monitor.deadline())
+                        .map(oer_time::Instant::as_micros),
                     embassy_time::Instant::now().as_micros(),
                     beacon
                         .and_then(|monitor| monitor.last_observation())

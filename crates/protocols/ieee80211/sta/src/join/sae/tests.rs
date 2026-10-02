@@ -53,9 +53,10 @@ fn a_full_exchange_yields_the_access_point_pmk() {
     assert_eq!((sent.transaction, sent.status_code), (1, 0));
     let station_values = SaeCommitValues::parse(sent.body(), false).unwrap();
 
-    let StaSaeEvent::Transmit(confirm) =
-        station.observe_management_frame(&access_point_commit(&access_point))
-    else {
+    let StaSaeEvent::Transmit(confirm) = station.observe_management_frame(
+        &access_point_commit(&access_point),
+        oer_time::Instant::EPOCH,
+    ) else {
         panic!("the station confirms after the peer commit");
     };
     assert_eq!((confirm.transaction, confirm.status_code), (2, 0));
@@ -64,7 +65,7 @@ fn a_full_exchange_yields_the_access_point_pmk() {
 
     let reply = from_access_point(2, 0, &access_point_keys.own_confirm(1));
     assert_eq!(
-        station.observe_management_frame(&reply),
+        station.observe_management_frame(&reply, oer_time::Instant::EPOCH),
         StaSaeEvent::Authenticated(StaSaePmk {
             pmk: access_point_keys.pmk,
             pmkid: access_point_keys.pmkid,
@@ -81,9 +82,10 @@ fn an_anti_clogging_refusal_repeats_the_commit_with_the_token() {
         SaePwe::HuntingAndPecking,
     );
     let first = station.commit();
-    let StaSaeEvent::Transmit(again) =
-        station.observe_management_frame(&from_access_point(1, 76, &[19, 0, 7, 8, 9]))
-    else {
+    let StaSaeEvent::Transmit(again) = station.observe_management_frame(
+        &from_access_point(1, 76, &[19, 0, 7, 8, 9]),
+        oer_time::Instant::EPOCH,
+    ) else {
         panic!("the station repeats its commit");
     };
     assert_eq!(&again.body()[2..5], &[7, 8, 9]);
@@ -92,28 +94,45 @@ fn an_anti_clogging_refusal_repeats_the_commit_with_the_token() {
 
 #[test]
 fn the_timer_is_four_seconds_then_two_after_the_confirm() {
+    use oer_time::{Duration, Instant};
+
     let mut station = StaSaeAuthentication::new(
         LOCAL,
         BSSID,
         commit(LOCAL, BSSID, 0x20),
         SaePwe::HuntingAndPecking,
     );
-    for _ in 1..STA_SAE_COMMIT_TIMEOUT_MS {
-        assert_eq!(station.finish_millisecond(), StaSaeEvent::Irrelevant);
-    }
-    // The peer commit resets the timer to the confirm exchange.
+    assert_eq!(station.next_deadline(), None);
+    let committed = Instant::from_micros(1_000);
+    station.start(committed);
+    let commit_deadline = committed.checked_add(STA_SAE_COMMIT_TIMEOUT).unwrap();
+    assert_eq!(station.next_deadline(), Some(commit_deadline));
+    let before = |deadline: Instant| deadline.checked_sub(Duration::from_micros(1)).unwrap();
+    assert_eq!(
+        station.on_deadline(before(commit_deadline)),
+        StaSaeEvent::Irrelevant
+    );
+    // The peer commit, just before the deadline, rearms the timer for the
+    // confirm exchange.
+    let confirmed = before(commit_deadline);
     let access_point = commit(BSSID, LOCAL, 0x40);
     assert!(matches!(
-        station.observe_management_frame(&access_point_commit(&access_point)),
+        station.observe_management_frame(&access_point_commit(&access_point), confirmed),
         StaSaeEvent::Transmit(_)
     ));
-    for _ in 1..STA_SAE_CONFIRM_TIMEOUT_MS {
-        assert_eq!(station.finish_millisecond(), StaSaeEvent::Irrelevant);
-    }
+    let confirm_deadline = confirmed.checked_add(STA_SAE_CONFIRM_TIMEOUT).unwrap();
+    assert_eq!(station.next_deadline(), Some(confirm_deadline));
     assert_eq!(
-        station.finish_millisecond(),
+        station.on_deadline(commit_deadline),
+        StaSaeEvent::Irrelevant
+    );
+    assert_eq!(
+        station.on_deadline(confirm_deadline),
         StaSaeEvent::Failed(StaSaeFailure::Timeout)
     );
+    assert_eq!(station.next_deadline(), None);
+    assert_eq!(STA_SAE_COMMIT_TIMEOUT, Duration::from_secs(4));
+    assert_eq!(STA_SAE_CONFIRM_TIMEOUT, Duration::from_secs(2));
 }
 
 #[test]
@@ -132,12 +151,15 @@ fn a_wrong_password_or_a_refusal_fails() {
     .unwrap();
     let sent = SaeCommitValues::parse(station.commit().body(), false).unwrap();
     assert!(matches!(
-        station.observe_management_frame(&access_point_commit(&impostor)),
+        station.observe_management_frame(&access_point_commit(&impostor), oer_time::Instant::EPOCH),
         StaSaeEvent::Transmit(_)
     ));
     let impostor_keys = impostor.process(sent).unwrap();
     assert_eq!(
-        station.observe_management_frame(&from_access_point(2, 0, &impostor_keys.own_confirm(1))),
+        station.observe_management_frame(
+            &from_access_point(2, 0, &impostor_keys.own_confirm(1)),
+            oer_time::Instant::EPOCH
+        ),
         StaSaeEvent::Failed(StaSaeFailure::Protocol(SaeError::ConfirmMismatch))
     );
 
@@ -148,7 +170,10 @@ fn a_wrong_password_or_a_refusal_fails() {
         SaePwe::HuntingAndPecking,
     );
     assert_eq!(
-        refused.observe_management_frame(&from_access_point(1, 77, &[20, 0])),
+        refused.observe_management_frame(
+            &from_access_point(1, 77, &[20, 0]),
+            oer_time::Instant::EPOCH
+        ),
         StaSaeEvent::Failed(StaSaeFailure::Rejected { status_code: 77 })
     );
     // An H2E station refuses a hunting-and-pecking commit.
@@ -160,7 +185,10 @@ fn a_wrong_password_or_a_refusal_fails() {
     );
     assert_eq!(h2e.commit().status_code, 126);
     assert_eq!(
-        h2e.observe_management_frame(&access_point_commit(&commit(BSSID, LOCAL, 0x40))),
+        h2e.observe_management_frame(
+            &access_point_commit(&commit(BSSID, LOCAL, 0x40)),
+            oer_time::Instant::EPOCH
+        ),
         StaSaeEvent::Failed(StaSaeFailure::Protocol(SaeError::Malformed))
     );
 }

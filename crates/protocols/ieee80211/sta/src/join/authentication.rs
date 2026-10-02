@@ -5,7 +5,7 @@ use oer_ieee80211_mac::station::{
     StaDisconnect, StaSequenceCounter, parse_open_authentication_response, parse_sta_disconnect,
 };
 
-use super::STA_RESPONSE_TIMEOUT_MS;
+use super::STA_RESPONSE_TIMEOUT;
 
 /// Bounded open Authentication attempts retained by the qualified STA path.
 pub const STA_AUTHENTICATION_ATTEMPT_LIMIT: u16 = 3;
@@ -15,7 +15,7 @@ pub const STA_AUTHENTICATION_ATTEMPT_LIMIT: u16 = 3;
 pub struct StaAuthenticationAttempt {
     pub ordinal: u16,
     pub sequence_number: SequenceNumber,
-    pub response_timeout_ms: u32,
+    pub response_timeout: oer_time::Duration,
 }
 
 /// Protocol-level reason why one Authentication attempt ended.
@@ -109,7 +109,7 @@ impl StaAuthenticationRuntime {
         Ok(StaAuthenticationAttempt {
             ordinal: self.attempts_started,
             sequence_number: sequence.take(),
-            response_timeout_ms: STA_RESPONSE_TIMEOUT_MS,
+            response_timeout: STA_RESPONSE_TIMEOUT,
         })
     }
 

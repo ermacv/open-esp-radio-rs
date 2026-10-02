@@ -13,7 +13,9 @@ use oer_ieee80211_mac::station::StaSequenceCounter;
 use oer_ieee80211_sta::join::{
     StaAssociationSuccess, StaAuthenticationSuccess, StaJoinBackend, StaJoinError,
     StaJoinRxDirective, StaJoinRxObserver,
-    association::{StaAssociationEvent, StaAssociationRuntime, StaAssociationRuntimeError},
+    association::{
+        StaAssociationEvent, StaAssociationPoll, StaAssociationRuntime, StaAssociationRuntimeError,
+    },
     authentication::{
         StaAuthenticationEvent, StaAuthenticationRuntime, StaAuthenticationRuntimeError,
     },
@@ -46,6 +48,7 @@ impl StaJoinRxObserver for AuthenticationObserver<'_> {
 
 struct SaeObserver<'exchange> {
     exchange: &'exchange mut StaSaeAuthentication,
+    now: Instant,
     event: Option<StaSaeEvent>,
 }
 
@@ -54,7 +57,7 @@ impl StaJoinRxObserver for SaeObserver<'_> {
         let Some(frame) = management_frame else {
             return StaJoinRxDirective::Continue;
         };
-        match self.exchange.observe_management_frame(frame) {
+        match self.exchange.observe_management_frame(frame, self.now) {
             StaSaeEvent::Irrelevant => StaJoinRxDirective::Continue,
             event => {
                 self.event = Some(event);
@@ -66,6 +69,7 @@ impl StaJoinRxObserver for SaeObserver<'_> {
 
 struct AssociationObserver<'runtime> {
     runtime: &'runtime mut StaAssociationRuntime,
+    now: Instant,
     terminal: Option<Result<StaAssociationEvent, StaAssociationRuntimeError>>,
 }
 
@@ -78,7 +82,7 @@ impl StaJoinRxObserver for AssociationObserver<'_> {
         let Some(frame) = management_frame else {
             return StaJoinRxDirective::Continue;
         };
-        match self.runtime.observe_management_frame(frame) {
+        match self.runtime.observe_management_frame(frame, self.now) {
             Ok(StaAssociationEvent::Irrelevant) => StaJoinRxDirective::Continue,
             terminal => {
                 self.terminal = Some(terminal);
@@ -87,6 +91,11 @@ impl StaJoinRxObserver for AssociationObserver<'_> {
         }
     }
 }
+
+/// How often the runner services received frames while it waits. The join
+/// backends poll RX; an event-driven wait replaces this cadence when the roles
+/// run on the lower-MAC port (radio plan 8).
+pub const RX_POLL_INTERVAL: Duration = Duration::from_millis(1);
 
 /// Unique transaction runner for one pre-connected station exchange.
 // CAPABILITY: authentication-association
@@ -123,16 +132,16 @@ where
             .map_err(StaJoinError::Backend)
     }
 
-    async fn wait_boundary(
+    /// Wait for the next receive poll after `previous`, returning its time.
+    async fn wait_next_poll(
         &mut self,
-        started: Instant,
-        elapsed_ms: u32,
-    ) -> Result<(), StaJoinError<B::Error>> {
-        let deadline = started
-            .checked_add(Duration::from_millis(elapsed_ms))
+        previous: Instant,
+    ) -> Result<Instant, StaJoinError<B::Error>> {
+        let poll = previous
+            .checked_add(RX_POLL_INTERVAL)
             .ok_or(StaJoinError::ClockOverflow)?;
-        self.timer.wait_until(deadline).await;
-        Ok(())
+        self.timer.wait_until(poll).await;
+        Ok(poll)
     }
 
     /// Run one SAE Authentication exchange and return its PMK.
@@ -158,15 +167,13 @@ where
             self.stop_receive().await?;
             return Err(StaJoinError::Backend(error));
         }
-        let started_micros = self.timer.now();
-        let mut elapsed_ms = 0_u32;
+        let mut poll = self.timer.now();
+        exchange.start(poll);
         loop {
-            elapsed_ms = elapsed_ms
-                .checked_add(1)
-                .ok_or(StaJoinError::ClockOverflow)?;
-            self.wait_boundary(started_micros, elapsed_ms).await?;
+            poll = self.wait_next_poll(poll).await?;
             let mut observer = SaeObserver {
                 exchange: &mut exchange,
+                now: poll,
                 event: None,
             };
             if let Err(error) = self.backend.service_receive(&mut observer).await {
@@ -175,7 +182,7 @@ where
             }
             let event = match observer.event {
                 Some(event) => event,
-                None => exchange.finish_millisecond(),
+                None => exchange.on_deadline(poll),
             };
             match event {
                 StaSaeEvent::Irrelevant => {}
@@ -226,10 +233,13 @@ where
                 self.stop_receive().await?;
                 return Err(StaJoinError::Backend(error));
             }
-            let started_micros = self.timer.now();
+            let mut poll = self.timer.now();
+            let deadline = poll
+                .checked_add(attempt.response_timeout)
+                .ok_or(StaJoinError::ClockOverflow)?;
             let mut terminal = None;
-            for elapsed_ms in 1..=attempt.response_timeout_ms {
-                self.wait_boundary(started_micros, elapsed_ms).await?;
+            while poll < deadline {
+                poll = self.wait_next_poll(poll).await?;
                 let mut observer = AuthenticationObserver {
                     runtime: &mut runtime,
                     terminal: None,
@@ -297,27 +307,37 @@ where
             .start_receive()
             .await
             .map_err(StaJoinError::Backend)?;
-        let mut started_micros = None;
-
+        let mut poll = self.timer.now();
         loop {
-            let attempt = runtime
-                .begin_tick(sequence)
-                .map_err(StaJoinError::AssociationRuntime)?;
-            if let Some(attempt) = attempt
-                && let Err(error) = self.backend.transmit_association(attempt).await
-            {
-                self.stop_receive().await?;
-                return Err(StaJoinError::Backend(error));
+            loop {
+                match runtime
+                    .poll(poll, sequence)
+                    .map_err(StaJoinError::AssociationRuntime)?
+                {
+                    StaAssociationPoll::Idle => break,
+                    StaAssociationPoll::Transmit(attempt) => {
+                        if let Err(error) = self.backend.transmit_association(attempt).await {
+                            self.stop_receive().await?;
+                            return Err(StaJoinError::Backend(error));
+                        }
+                    }
+                    StaAssociationPoll::Failed {
+                        failure,
+                        total_received_frames,
+                    } => {
+                        self.stop_receive().await?;
+                        return Err(StaJoinError::AssociationFailed {
+                            failure,
+                            total_received_frames,
+                        });
+                    }
+                }
             }
-            let started_micros = *started_micros.get_or_insert_with(|| self.timer.now());
-            let boundary_ms = runtime
-                .ticks()
-                .checked_add(1)
-                .ok_or(StaJoinError::ClockOverflow)?;
-            self.wait_boundary(started_micros, boundary_ms).await?;
+            poll = self.wait_next_poll(poll).await?;
 
             let mut observer = AssociationObserver {
                 runtime: &mut runtime,
+                now: poll,
                 terminal: None,
             };
             if let Err(error) = self.backend.service_receive(&mut observer).await {
@@ -353,27 +373,6 @@ where
                     return Err(StaJoinError::AssociationRuntime(error));
                 }
                 None => {}
-            }
-
-            match runtime
-                .finish_tick()
-                .map_err(StaJoinError::AssociationRuntime)?
-            {
-                StaAssociationEvent::Irrelevant => {}
-                StaAssociationEvent::Failed {
-                    failure,
-                    total_received_frames,
-                } => {
-                    self.stop_receive().await?;
-                    return Err(StaJoinError::AssociationFailed {
-                        failure,
-                        total_received_frames,
-                    });
-                }
-                StaAssociationEvent::Associated { .. } => {
-                    self.stop_receive().await?;
-                    return Err(StaJoinError::InvalidAssociationEvent);
-                }
             }
         }
     }

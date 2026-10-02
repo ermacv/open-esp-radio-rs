@@ -314,7 +314,7 @@ fn association_timeout_sends_seven_requests_and_stops_rx_at_1000_ms() {
         runner
             .backend()
             .association_attempts
-            .map(|attempt| attempt.unwrap().elapsed_ms),
+            .map(|attempt| attempt.unwrap().offset.as_micros() / 1_000),
         [0, 160, 320, 480, 640, 800, 960]
     );
     assert_eq!(runner.timer.now_micros.get(), 1_000_000);

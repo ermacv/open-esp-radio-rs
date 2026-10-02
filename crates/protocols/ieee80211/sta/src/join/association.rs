@@ -9,7 +9,10 @@ use oer_ieee80211_mac::{
     },
 };
 
-use super::STA_RESPONSE_TIMEOUT_MS;
+use oer_time::{Duration, Instant};
+
+use super::STA_RESPONSE_TIMEOUT;
+use crate::time::deadline_after;
 
 /// Compatibility schedule for Association retransmission inside the vendor
 /// one-second state deadline.
@@ -21,11 +24,17 @@ use super::STA_RESPONSE_TIMEOUT_MS;
 pub struct StaAssociationRetrySchedule;
 
 impl StaAssociationRetrySchedule {
-    pub const INTERVAL_MS: u32 = 160;
+    pub const INTERVAL: Duration = Duration::from_millis(160);
 
-    pub const fn attempt_at(elapsed_ms: u32) -> Option<u16> {
-        if elapsed_ms < STA_RESPONSE_TIMEOUT_MS && elapsed_ms.is_multiple_of(Self::INTERVAL_MS) {
-            Some((elapsed_ms / Self::INTERVAL_MS + 1) as u16)
+    /// When the `ordinal`th request (from one) of an epoch is due, measured
+    /// from the epoch's start, while it falls before the epoch's deadline.
+    pub const fn offset(ordinal: u16) -> Option<Duration> {
+        if ordinal == 0 {
+            return None;
+        }
+        let micros = (ordinal as u64 - 1) * Self::INTERVAL.as_micros();
+        if micros < STA_RESPONSE_TIMEOUT.as_micros() {
+            Some(Duration::from_micros(micros))
         } else {
             None
         }
@@ -37,7 +46,8 @@ impl StaAssociationRetrySchedule {
 pub struct StaAssociationAttempt {
     pub ordinal: u16,
     pub sequence_number: SequenceNumber,
-    pub elapsed_ms: u32,
+    /// When the request was due, from the start of its epoch.
+    pub offset: Duration,
 }
 
 /// Protocol-level reason why an Association epoch ended unsuccessfully.
@@ -60,7 +70,7 @@ pub enum StaAssociationFailure {
     SecurityModeMismatch,
 }
 
-/// Result of observing a management frame or completing one millisecond tick.
+/// Result of observing a management frame.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaAssociationEvent {
     Irrelevant,
@@ -77,18 +87,29 @@ pub enum StaAssociationEvent {
 /// Invalid executor interaction with [`StaAssociationRuntime`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaAssociationRuntimeError {
-    TickAlreadyActive,
-    NoActiveTick,
     Terminal,
+}
+
+/// What the association asks of its executor at one instant.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaAssociationPoll {
+    Idle,
+    /// Send this Association Request now.
+    Transmit(StaAssociationAttempt),
+    Failed {
+        failure: StaAssociationFailure,
+        total_received_frames: u32,
+    },
 }
 
 /// Allocation-free owner of one ordinary STA Association epoch.
 ///
-/// A target executor begins one tick, optionally transmits the returned
-/// attempt, reports every completed RX descriptor, supplies extracted
-/// management frames, then finishes the tick. This type owns the one-second
-/// deadline, retransmission cadence, management sequence consumption and
-/// terminal response policy; it does not own timers, DMA or MAC registers.
+/// A target executor polls it with the time, transmits the request it asks
+/// for, reports every completed RX descriptor and supplies extracted
+/// management frames, and waits until [`Self::next_deadline`] or the next
+/// frame. This type owns the one-second deadline, retransmission cadence,
+/// management sequence consumption and terminal response policy; it does not
+/// own timers, DMA or MAC registers.
 ///
 /// SOURCE(esp32s31): complete `libnet80211.a[ieee80211_sta.o]::
 /// ieee80211_sta_new_state` Association branch arms the 1,000-ms state timer.
@@ -100,17 +121,17 @@ pub struct StaAssociationRuntime {
     local: [u8; 6],
     bssid: [u8; 6],
     security: LinkProtection,
-    elapsed_ms: u32,
-    tick_active: bool,
+    /// Start of the current request epoch: `None` before the first poll and
+    /// while the station waits out a temporary refusal.
+    epoch_start: Option<Instant>,
+    /// Requests sent in the current epoch.
+    sent: u16,
     terminal: bool,
     received_frames: u32,
-    /// Milliseconds left until the station comes back after a temporary
-    /// refusal; the association deadline and retransmissions pause meanwhile.
-    comeback_remaining_ms: u32,
+    /// When the station comes back after a temporary refusal; the epoch's
+    /// deadline and retransmissions pause meanwhile.
+    comeback_until: Option<Instant>,
     came_back: bool,
-    /// Completed millisecond ticks of the whole epoch, including a comeback
-    /// wait; the executor paces its ticks by this count.
-    ticks: u32,
 }
 
 /// Status of a temporary association refusal: the access point protects the
@@ -121,7 +142,7 @@ const REJECTED_TEMPORARILY: u16 = 30;
 const MAXIMUM_COMEBACK_TU: u32 = 5_000;
 /// The vendor comes back this many TUs after the named comeback time.
 const COMEBACK_MARGIN_TU: u32 = 100;
-const MICROS_PER_TU: u32 = 1_024;
+const MICROS_PER_TU: u64 = 1_024;
 
 impl StaAssociationRuntime {
     pub const fn new(local: [u8; 6], bssid: [u8; 6], security: LinkProtection) -> Self {
@@ -129,57 +150,87 @@ impl StaAssociationRuntime {
             local,
             bssid,
             security,
-            elapsed_ms: 0,
-            tick_active: false,
+            epoch_start: None,
+            sent: 0,
             terminal: false,
             received_frames: 0,
-            comeback_remaining_ms: 0,
+            comeback_until: None,
             came_back: false,
-            ticks: 0,
         }
     }
 
-    /// Begin the current millisecond tick and consume a management sequence
-    /// number exactly when the retry schedule calls for a new MPDU.
-    pub fn begin_tick(
+    /// Advance to `now`: start the epoch on its first poll, expire its
+    /// one-second deadline, or consume a management sequence number exactly
+    /// when the retry schedule calls for a new request.
+    pub fn poll(
         &mut self,
+        now: Instant,
         sequence: &mut StaSequenceCounter,
-    ) -> Result<Option<StaAssociationAttempt>, StaAssociationRuntimeError> {
-        if self.terminal || self.elapsed_ms >= STA_RESPONSE_TIMEOUT_MS {
+    ) -> Result<StaAssociationPoll, StaAssociationRuntimeError> {
+        if self.terminal {
             return Err(StaAssociationRuntimeError::Terminal);
         }
-        if self.tick_active {
-            return Err(StaAssociationRuntimeError::TickAlreadyActive);
+        if let Some(until) = self.comeback_until {
+            if now < until {
+                return Ok(StaAssociationPoll::Idle);
+            }
+            self.comeback_until = None;
         }
-        self.tick_active = true;
-        if self.comeback_remaining_ms != 0 {
-            return Ok(None);
+        let start = *self.epoch_start.get_or_insert(now);
+        if now >= deadline_after(start, STA_RESPONSE_TIMEOUT) {
+            self.terminal = true;
+            return Ok(StaAssociationPoll::Failed {
+                failure: StaAssociationFailure::Timeout,
+                total_received_frames: self.received_frames,
+            });
         }
-        Ok(
-            StaAssociationRetrySchedule::attempt_at(self.elapsed_ms).map(|ordinal| {
-                StaAssociationAttempt {
+        let ordinal = self.sent + 1;
+        match StaAssociationRetrySchedule::offset(ordinal) {
+            Some(offset) if now >= deadline_after(start, offset) => {
+                self.sent = ordinal;
+                Ok(StaAssociationPoll::Transmit(StaAssociationAttempt {
                     ordinal,
                     sequence_number: sequence.take(),
-                    elapsed_ms: self.elapsed_ms,
-                }
-            }),
+                    offset,
+                }))
+            }
+            _ => Ok(StaAssociationPoll::Idle),
+        }
+    }
+
+    /// When the association next needs a poll: the end of a comeback wait,
+    /// the next scheduled request or the epoch's deadline.
+    pub fn next_deadline(&self) -> Option<Instant> {
+        if self.terminal {
+            return None;
+        }
+        if self.comeback_until.is_some() {
+            return self.comeback_until;
+        }
+        let start = self.epoch_start?;
+        let timeout = deadline_after(start, STA_RESPONSE_TIMEOUT);
+        Some(
+            StaAssociationRetrySchedule::offset(self.sent + 1)
+                .map_or(timeout, |offset| deadline_after(start, offset).min(timeout)),
         )
     }
 
     /// Account for one completed RX descriptor, including a frame which is
     /// not a valid management input.
     pub fn observe_received_frame(&mut self) -> Result<(), StaAssociationRuntimeError> {
-        self.require_active_tick()?;
+        self.require_running()?;
         self.received_frames = self.received_frames.saturating_add(1);
         Ok(())
     }
 
-    /// Classify one extracted management frame for the selected peer.
+    /// Classify one extracted management frame for the selected peer,
+    /// received at `now`.
     pub fn observe_management_frame(
         &mut self,
         frame: &[u8],
+        now: Instant,
     ) -> Result<StaAssociationEvent, StaAssociationRuntimeError> {
-        self.require_active_tick()?;
+        self.require_running()?;
         if let Some(disconnect) = parse_sta_disconnect(frame, self.local, self.bssid) {
             return Ok(self.fail(StaAssociationFailure::PeerDisconnect(disconnect)));
         }
@@ -189,7 +240,7 @@ impl StaAssociationRuntime {
         if response.status_code == REJECTED_TEMPORARILY
             && let Some(comeback_tu) = response.association_comeback_tu
         {
-            return Ok(self.come_back(comeback_tu));
+            return Ok(self.come_back(comeback_tu, now));
         }
         if response.status_code != 0 {
             return Ok(self.fail(StaAssociationFailure::Rejected {
@@ -199,7 +250,6 @@ impl StaAssociationRuntime {
         if !response.matches_security(self.security) {
             return Ok(self.fail(StaAssociationFailure::SecurityModeMismatch));
         }
-        self.tick_active = false;
         self.terminal = true;
         Ok(StaAssociationEvent::Associated {
             response,
@@ -207,43 +257,13 @@ impl StaAssociationRuntime {
         })
     }
 
-    /// Complete the current millisecond tick and expire the complete vendor
-    /// state deadline after exactly 1,000 ticks.
-    pub fn finish_tick(&mut self) -> Result<StaAssociationEvent, StaAssociationRuntimeError> {
-        self.require_active_tick()?;
-        self.tick_active = false;
-        self.ticks = self.ticks.saturating_add(1);
-        if self.comeback_remaining_ms != 0 {
-            self.comeback_remaining_ms -= 1;
-            return Ok(StaAssociationEvent::Irrelevant);
-        }
-        self.elapsed_ms = self.elapsed_ms.saturating_add(1);
-        if self.elapsed_ms >= STA_RESPONSE_TIMEOUT_MS {
-            Ok(self.fail(StaAssociationFailure::Timeout))
-        } else {
-            Ok(StaAssociationEvent::Irrelevant)
-        }
-    }
-
-    /// Milliseconds of the current request's deadline.
-    pub const fn elapsed_ms(&self) -> u32 {
-        self.elapsed_ms
-    }
-
-    /// Completed ticks of the whole epoch, including a comeback wait.
-    pub const fn ticks(&self) -> u32 {
-        self.ticks
-    }
-
     pub const fn total_received_frames(&self) -> u32 {
         self.received_frames
     }
 
-    fn require_active_tick(&self) -> Result<(), StaAssociationRuntimeError> {
+    fn require_running(&self) -> Result<(), StaAssociationRuntimeError> {
         if self.terminal {
             Err(StaAssociationRuntimeError::Terminal)
-        } else if !self.tick_active {
-            Err(StaAssociationRuntimeError::NoActiveTick)
         } else {
             Ok(())
         }
@@ -257,19 +277,19 @@ impl StaAssociationRuntime {
     ///
     /// SOURCE(esp32s31): complete pinned `libnet80211.a[ieee80211_sta.o]::
     /// sta_recv_assoc` and `sta_assoc_comeback`.
-    fn come_back(&mut self, comeback_tu: u32) -> StaAssociationEvent {
+    fn come_back(&mut self, comeback_tu: u32, now: Instant) -> StaAssociationEvent {
         if self.came_back || comeback_tu > MAXIMUM_COMEBACK_TU {
             return self.fail(StaAssociationFailure::ComebackRefused { comeback_tu });
         }
         self.came_back = true;
-        self.elapsed_ms = 0;
-        self.comeback_remaining_ms =
-            ((comeback_tu + COMEBACK_MARGIN_TU) * MICROS_PER_TU).div_ceil(1_000);
+        self.epoch_start = None;
+        self.sent = 0;
+        let wait = Duration::from_micros((comeback_tu + COMEBACK_MARGIN_TU) as u64 * MICROS_PER_TU);
+        self.comeback_until = Some(deadline_after(now, wait));
         StaAssociationEvent::Irrelevant
     }
 
     fn fail(&mut self, failure: StaAssociationFailure) -> StaAssociationEvent {
-        self.tick_active = false;
         self.terminal = true;
         StaAssociationEvent::Failed {
             failure,

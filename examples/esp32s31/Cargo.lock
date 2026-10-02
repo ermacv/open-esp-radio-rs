@@ -1827,6 +1827,7 @@ dependencies = [
  "oer-ieee80211-trace",
  "oer-ieee80211-upper-mac",
  "oer-memory",
+ "oer-time",
  "oer-trace",
  "pin-project",
  "subtle",
@@ -2103,6 +2104,7 @@ version = "0.1.0"
 dependencies = [
  "oer-ieee80211-mac",
  "oer-ieee80211-rsn",
+ "oer-time",
 ]
 
 [[package]]
@@ -2126,6 +2128,9 @@ dependencies = [
 [[package]]
 name = "oer-ieee80211-mac"
 version = "0.1.0"
+dependencies = [
+ "oer-time",
+]
 
 [[package]]
 name = "oer-ieee80211-pac"

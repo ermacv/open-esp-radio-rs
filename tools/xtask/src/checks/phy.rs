@@ -13,7 +13,6 @@ const PHY: &str = "crates/hardware/esp32s31/phy/Cargo.toml";
 const PHY_PACKAGES: &[&str] = &[
     "critical-section",
     "oer-memory",
-    "oer-esp32s31-coex",
     "oer-esp32s31-hal",
     "oer-esp32s31-pac",
     "oer-esp32s31-pac-raw",
@@ -36,12 +35,18 @@ const PHY_PACKAGES: &[&str] = &[
     // and the portable trace events it records.
     "oer-espressif-ieee802154-engine",
     "oer-ieee802154-trace",
+    // The Espressif coexistence priority table, timer policy and time-slice
+    // schedule recovered from esp-coex-lib as reviewed source, over the
+    // portable coexistence vocabulary; no vendor archive or radio ABI.
+    "oer-espressif-coex",
+    "oer-radio-coex",
+    // Portable radio port vocabulary and monotonic time contracts the HAL's
+    // radio owners are typed over; plain value types, no runtime or driver.
+    "oer-radio-port",
+    "oer-time",
     // The chip-neutral modem clock planner behind the HAL's clock owners.
     "oer-radio-analog",
     "oer-radio-clock",
-    // Safe structural pin projection for the observed child future; this is
-    // a Rust macro library, with no allocator, native build or radio ABI.
-    "pin-project-lite",
     "vcell",
 ];
 

@@ -54,7 +54,7 @@ const fn timer_index(timer: PmTimer) -> usize {
 /// | `UnblockTx`, `RfWake` | `TxGate { open: true }` |
 /// | `StartTbtt`, `SetTbttInterval`, `SetTbttAhead`, `StopTbtt` | [`LowerMacBeaconTiming::set_tbtt`](oer_ieee80211_lower_mac::LowerMacBeaconTiming::set_tbtt) of the station interface, the TBTT lead being the TBTT and wake leads together |
 /// | `Arm`, `Disarm` | Deadlines on the station's monotonic clock, due through [`Self::next_deadline`] |
-/// | `ReleaseHeldFrames` | [`Self::take_release`] tells the connection to send the frame it held |
+/// | `ReleaseHeldFrames` | the connection is told to send the frame it held |
 ///
 /// The port knows no coexistence schedule, so the manager runs with
 /// [`CoexView::INACTIVE`] and its coexistence and beacon-priority effects

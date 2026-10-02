@@ -547,7 +547,7 @@ Digests of sealed files are remembered in the user's cache per file identity
 and status-change time (`OER_QUALIFICATION_HASH_CACHE=0` disables it). `cargo qualification hil-evidence (--manifest PATH |
 --hil-target TARGET)` records
 the latest qualifying observation of every scenario as a tracked shard in the
-program's `[hil] evidence` directory (`hil/evidence/esp32s31`). A shard holds
+program's `[hil] evidence` directory (`hil/evidence/<chip>/`). A shard holds
 the observation's outcome, repetitions, measurements and failures, the run's
 completion seal, the observation subject (observer proof, firmware identity,
 repository provenance) and the executed scenario document, and the digests of

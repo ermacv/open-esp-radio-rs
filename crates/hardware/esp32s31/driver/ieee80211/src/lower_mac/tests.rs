@@ -394,6 +394,18 @@ const BACKINGS: usize = 8;
 
 type Lease = PinnedDmaTxRadioLease<'static, BACKING, 0, 0>;
 type Backing = ReturningStableDmaBacking<Lease, &'static FreeBackings>;
+/// A request the core must refuse: the frame, the edit that makes it
+/// invalid and the refusal.
+type MpduRefusal<'a> = (
+    &'a [u8],
+    fn(&mut Esp32s31MpduAttempt<'static, 512>),
+    SubmitError,
+);
+/// An aggregate edit the core must refuse, and the refusal.
+type AmpduRefusal = (
+    fn(&mut Esp32s31AmpduAttempt<'static, Backings, SUBFRAMES>),
+    SubmitError,
+);
 
 /// The pool indices of free backings.
 #[derive(Default)]
@@ -980,11 +992,7 @@ fn submissions_outside_the_limits_are_refused_without_publication() {
     let ht = PhyRate::Ht(
         phy::HtRate::new(phy::HtMcs::new(0).unwrap(), PpduBandwidth::Mhz20, false).unwrap(),
     );
-    let refusals: [(
-        &[u8],
-        fn(&mut Esp32s31MpduAttempt<'static, 512>),
-        SubmitError,
-    ); 10] = [
+    let refusals: [MpduRefusal<'_>; 10] = [
         (&frame, |request| request.vif = AP, SubmitError::UnknownVif),
         (
             &frame,
@@ -2127,10 +2135,7 @@ fn aggregates_outside_the_limits_are_refused_with_their_subframes() {
         .unwrap(),
     );
 
-    let refusals: [(
-        fn(&mut Esp32s31AmpduAttempt<'static, Backings, SUBFRAMES>),
-        SubmitError,
-    ); 4] = [
+    let refusals: [AmpduRefusal; 4] = [
         // HE aggregates are outside the declared formats, as are non-HT.
         (
             |request| request.rate = PhyRate::Legacy(LegacyRate::Ofdm24M),

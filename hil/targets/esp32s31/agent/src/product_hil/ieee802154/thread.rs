@@ -27,7 +27,7 @@ use oer_hil_protocol::{
     ieee802154::Ieee802154ThreadSendRequest, ieee802154::Ieee802154ThreadStartRequest,
     ieee802154::Ieee802154ThreadState,
 };
-use oer_ieee802154::{Ieee802154RadioPort, RadioCommand, RequestId};
+use oer_ieee802154::{Ieee802154RadioPort, LifecycleCommand, RadioCommand, RequestId};
 use oer_ieee802154_openthread::{
     OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults,
 };
@@ -38,6 +38,11 @@ use static_cell::{ConstStaticCell, StaticCell};
 use tinyrlibc as _;
 
 use super::client::Client;
+
+/// The image's own sleep after the stack stopped: the last consumer
+/// identity below the backend-reserved range (`0xFFFF_FF00..`), which the
+/// OpenThread radio, counting up from one, does not reach in a session.
+const STOP_SLEEP: RequestId = RequestId::new(0xFFFF_FEFF);
 use crate::console::{
     Ieee802154ThreadCommand, publish_event_reliably, receive_ieee802154_thread_command,
 };
@@ -309,13 +314,12 @@ pub(in crate::product_hil) async fn run_thread(
 
     let _ = ot.enable_thread(false);
     let _ = ot.enable_ipv6(false);
+    // The stack has stopped: the image leaves receive mode and disables
+    // the radio itself before the client stops. Their terminal events are
+    // not read; the stop discards the runtime with its queue.
     let runtime = system.runtime();
-    let _ = runtime.submit(RadioCommand::Sleep {
-        id: RequestId::new(u32::MAX - 1),
-    });
-    let _ = runtime.submit(RadioCommand::Disable {
-        id: RequestId::new(u32::MAX),
-    });
+    let _ = runtime.submit(RadioCommand::Sleep { id: STOP_SLEEP });
+    let _ = runtime.lifecycle(LifecycleCommand::Disable);
     let stopped = {
         let stopped = core::pin::pin!(client.stop(system));
         stopped.await

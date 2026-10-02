@@ -164,11 +164,7 @@ impl Bench {
             hw,
             sink: Sink::default(),
         };
-        bench
-            .submit(RadioCommand::Enable {
-                id: RequestId::new(1),
-            })
-            .unwrap();
+        bench.radio.enable(&mut bench.hw, &mut bench.sink).unwrap();
         bench
     }
 
@@ -453,11 +449,7 @@ fn configuration_reaches_the_identity_and_the_pib() {
 fn configuration_needs_the_capability_of_its_setting() {
     use oer_ieee802154::{RadioCapabilities, RadioStateMachine};
     let mut machine = RadioStateMachine::new(RadioCapabilities::NONE);
-    machine
-        .admit(RadioCommand::Enable {
-            id: RequestId::new(1),
-        })
-        .unwrap();
+    machine.enable().unwrap();
     let configure = |configuration| RadioCommand::Configure {
         id: RequestId::new(2),
         configuration,

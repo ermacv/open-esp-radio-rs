@@ -45,10 +45,7 @@ async fn restart(
     config: Ieee802154SessionConfig,
 ) -> (Ieee802154SessionRestartEvidence, Option<Ieee802154System>) {
     let mut evidence = Ieee802154SessionRestartEvidence::default();
-    let id = session.id();
-    let _ = session.submit(RadioCommand::Sleep { id });
-    let id = session.id();
-    let _ = session.submit(RadioCommand::Disable { id });
+    let _ = session.rest_disabled().await;
     let stopped = {
         let stopped = core::pin::pin!(client.stop(system));
         stopped.await
@@ -67,7 +64,7 @@ async fn restart(
         return (evidence, None);
     };
     session.runtime = system.runtime();
-    evidence.result = match session.configure(config) {
+    evidence.result = match session.configure(config).await {
         Ok(()) => {
             let id = session.id();
             let channel = session.channel;
@@ -129,7 +126,7 @@ pub(in crate::product_hil) async fn run_session(
     client
         .set_maintenance_policy(config.maintenance_policy)
         .await;
-    let started = match session.configure(config) {
+    let started = match session.configure(config).await {
         Ok(()) => Ieee802154SessionResult::Done,
         Err(result) => result,
     };
@@ -210,10 +207,7 @@ pub(in crate::product_hil) async fn run_session(
         coexistence.disable_failed = true;
     }
 
-    let id = session.id();
-    let _ = session.submit(RadioCommand::Sleep { id });
-    let id = session.id();
-    let _ = session.submit(RadioCommand::Disable { id });
+    let _ = session.rest_disabled().await;
     let stopped = {
         let stopped = core::pin::pin!(client.stop(system));
         stopped.await

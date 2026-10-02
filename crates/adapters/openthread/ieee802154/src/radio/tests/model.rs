@@ -14,8 +14,8 @@ use oer_ieee802154::{
     Ieee802154Capabilities, Ieee802154RadioPort, Interface, LifecycleCommand, LifecycleError,
     LifecycleEvent, LinkMetrics, MacKeys, PortError, ProbingInitiator, RadioCapabilities,
     RadioCommand, RadioEvent, RadioInstant, RadioSetting, RadioState, RadioStateMachine,
-    ReceivedFrame, RequestId, RxMetadata, SecurityStatus, SentAcknowledgement, SettingError,
-    TxSecurity, TxStatus,
+    ReceivedFrame, RxMetadata, SecurityStatus, SentAcknowledgement, SettingError, TxSecurity,
+    TxStatus,
 };
 use openthread_radio::{
     CslConfig, EnhAckProbingConfig, EnhAckProbingInitiator, FrameCounterUpdate as OtCounter,
@@ -36,6 +36,7 @@ enum ModelEvent {
 #[derive(Default)]
 struct Recorded {
     commands: Vec<RadioCommand<'static>>,
+    lifecycle: Vec<LifecycleCommand>,
     transmitted: Vec<(Vec<u8>, u8, TxSecurity)>,
     keys: Option<MacKeys>,
     csl: CslReceiver,
@@ -145,16 +146,18 @@ impl Ieee802154RadioPort for ModelPort {
     }
 
     fn lifecycle(&self, command: LifecycleCommand) -> Result<Result<(), LifecycleError>, Never> {
-        let id = RequestId::new(u32::MAX);
-        let (command, terminal) = match command {
-            LifecycleCommand::Enable => (RadioCommand::Enable { id }, LifecycleEvent::Enabled),
-            LifecycleCommand::Disable => (RadioCommand::Disable { id }, LifecycleEvent::Disabled),
+        let mut model = self.0.borrow_mut();
+        let (done, terminal) = match command {
+            LifecycleCommand::Enable => (model.machine.enable(), LifecycleEvent::Enabled),
+            LifecycleCommand::Disable => (
+                model.machine.disable().map(|_| ()),
+                LifecycleEvent::Disabled,
+            ),
             LifecycleCommand::Quiesce => return Ok(Err(LifecycleError::InvalidState)),
         };
-        let mut model = self.0.borrow_mut();
-        Ok(match model.machine.admit(command) {
-            Ok(_) => {
-                model.recorded.commands.push(command);
+        Ok(match done {
+            Ok(()) => {
+                model.recorded.lifecycle.push(command);
                 model
                     .events
                     .push_back(Ok(ModelEvent::Other(RadioEvent::Lifecycle(terminal))));
@@ -204,9 +207,6 @@ impl Ieee802154RadioPort for ModelPort {
                     .recorded
                     .commands
                     .push(RadioCommand::Configure { id, configuration });
-            }
-            RadioCommand::Enable { .. } => {
-                model.recorded.commands.push(RadioCommand::Enable { id })
             }
             RadioCommand::Receive { channel, .. } => {
                 model
@@ -460,5 +460,9 @@ fn init_takes_the_enable_terminal_event() {
     let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, || 1_000, || None, DEFAULTS);
     block_on(radio.init()).unwrap();
     assert!(port.0.borrow().events.is_empty());
+    assert_eq!(
+        port.0.borrow().recorded.lifecycle,
+        [LifecycleCommand::Enable]
+    );
     block_on(radio.init()).unwrap();
 }

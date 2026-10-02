@@ -299,10 +299,6 @@ impl<H> Ieee802154RuntimePaused<'_, H> {
 /// mode, in the backend-reserved range; neither produces an event.
 const PAUSE_REQUEST: RequestId = RequestId::new(0xFFFF_FF00);
 
-/// Correlation identifier, in the backend-reserved range, of the enable and
-/// disable the port's lifecycle admits.
-const LIFECYCLE_REQUEST: RequestId = RequestId::new(0xFFFF_FF01);
-
 /// The bounded event queue: overflow is reported in its order, a loss
 /// marker taking the place of the first dropped event.
 struct EventQueue<M: RawMutex, const EVENTS: usize> {
@@ -432,7 +428,8 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
     /// `esp_ieee802154_enable` after clocks, PHY and the interrupt owner are
     /// active: enable the engine, run its MAC initialization and install the
     /// radio role in the `Disabled` state. The platform CPU route may be
-    /// enabled afterwards; the portable `Enable` command opens admission.
+    /// enabled afterwards; the port's `Enable` lifecycle command opens
+    /// admission.
     ///
     /// # Errors
     ///
@@ -902,31 +899,24 @@ where
         })
     }
 
-    /// `Enable` and `Disable` admit the radio's own commands under a
-    /// backend-reserved identity and report their terminal event; the
-    /// radio has no quiesce.
+    /// `Enable` and `Disable` enable or disable the radio role and report
+    /// their terminal event; the radio has no quiesce.
     fn lifecycle(
         &self,
         command: LifecycleCommand,
     ) -> Result<Result<(), LifecycleError>, Ieee802154RuntimeError> {
-        let (radio_command, terminal) = match command {
-            LifecycleCommand::Enable => (
-                RadioCommand::Enable {
-                    id: LIFECYCLE_REQUEST,
-                },
-                LifecycleEvent::Enabled,
-            ),
-            LifecycleCommand::Disable => (
-                RadioCommand::Disable {
-                    id: LIFECYCLE_REQUEST,
-                },
-                LifecycleEvent::Disabled,
-            ),
+        let terminal = match command {
+            LifecycleCommand::Enable => LifecycleEvent::Enabled,
+            LifecycleCommand::Disable => LifecycleEvent::Disabled,
             LifecycleCommand::Quiesce => return Ok(Err(LifecycleError::InvalidState)),
         };
-        self.with_radio(
-            |radio, hardware, sink| match radio.submit(hardware, radio_command, sink) {
-                Ok(_) => {
+        self.with_radio(|radio, hardware, sink| {
+            let done = match command {
+                LifecycleCommand::Enable => radio.enable(hardware, sink),
+                _ => radio.disable(hardware, sink),
+            };
+            match done {
+                Ok(()) => {
                     sink.event(RadioEvent::Lifecycle(terminal));
                     Ok(())
                 }
@@ -937,8 +927,8 @@ where
                 },
                 Err(CommandError::Busy { .. }) => Err(LifecycleError::Busy),
                 Err(_) => Err(LifecycleError::InvalidState),
-            },
-        )
+            }
+        })
     }
 
     fn submit(

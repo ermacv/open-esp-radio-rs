@@ -78,11 +78,13 @@ fn enabled<const EVENTS: usize>() -> Runtime<EVENTS> {
             .is_ok()
     );
     runtime
-        .submit(RadioCommand::Enable {
-            id: RequestId::new(1),
-        })
+        .lifecycle(LifecycleCommand::Enable)
         .unwrap()
         .unwrap();
+    assert_eq!(
+        block_on(runtime.next_event()),
+        Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Enabled))
+    );
     runtime
 }
 
@@ -113,11 +115,13 @@ fn install_admits_commands_only_after_enable() {
         Ok(Err(CommandError::Disabled))
     );
     runtime
-        .submit(RadioCommand::Enable {
-            id: RequestId::new(3),
-        })
+        .lifecycle(LifecycleCommand::Enable)
         .unwrap()
         .unwrap();
+    assert_eq!(
+        block_on(runtime.next_event()),
+        Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Enabled))
+    );
     assert_eq!(
         runtime.state(),
         Ok(RadioState::Resting(RestingState::Sleeping))
@@ -268,9 +272,6 @@ fn lifecycle_commands_end_with_terminal_events() {
     assert!(oer_ieee802154::Correlation::is_backend_reserved(
         super::PAUSE_REQUEST
     ));
-    assert!(oer_ieee802154::Correlation::is_backend_reserved(
-        super::LIFECYCLE_REQUEST
-    ));
 }
 
 /// The engine's software-coexistence PTIs are published while installed
@@ -305,11 +306,13 @@ fn uninstall_returns_the_coexistence_ptis_to_the_foundation_image() {
         )))
         .unwrap();
     runtime
-        .submit(RadioCommand::Enable {
-            id: RequestId::new(1),
-        })
+        .lifecycle(LifecycleCommand::Enable)
         .unwrap()
         .unwrap();
+    assert_eq!(
+        block_on(runtime.next_event()),
+        Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Enabled))
+    );
     runtime
         .submit(RadioCommand::Receive {
             id: RequestId::new(2),

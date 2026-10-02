@@ -20,7 +20,8 @@ use oer_hil_protocol::{
 };
 use oer_ieee802154::{
     Channel, Configuration, EnergyScanRequest, FrameView, Ieee802154RadioPort, Interface,
-    RadioCommand, RadioInstant, RequestId, ScheduledReceiveRequest, TxMode, TxRequest, TxSecurity,
+    LifecycleCommand, LifecycleEvent, RadioCommand, RadioInstant, RequestId,
+    ScheduledReceiveRequest, TxMode, TxRequest, TxSecurity,
 };
 
 use super::client::{Client, now_micros, tx_outcome};
@@ -105,7 +106,7 @@ async fn run_cycle(
         Ok(Ok(_)) => Ok(()),
         _ => Err(Stop(Ieee802154AirCheckStop::CommandRejected)),
     };
-    submit(RadioCommand::Enable { id: id() })?;
+    lifecycle(system, LifecycleCommand::Enable, LifecycleEvent::Enabled).await?;
 
     submit(RadioCommand::EnergyScan(EnergyScanRequest {
         id: id(),
@@ -254,7 +255,22 @@ async fn run_cycle(
             }
         }
     }
-    submit(RadioCommand::Disable { id: id() })
+    lifecycle(system, LifecycleCommand::Disable, LifecycleEvent::Disabled).await
+}
+
+/// Run one lifecycle command and take its terminal event.
+async fn lifecycle(
+    system: &Ieee802154System,
+    command: LifecycleCommand,
+    terminal: LifecycleEvent,
+) -> Result<(), Stop> {
+    let Ok(Ok(())) = system.runtime().lifecycle(command) else {
+        return Err(Stop(Ieee802154AirCheckStop::CommandRejected));
+    };
+    match next_event(system).await? {
+        Ieee802154RadioEvent::Lifecycle(event) if event == terminal => Ok(()),
+        _ => Err(Stop(Ieee802154AirCheckStop::UnexpectedEvent)),
+    }
 }
 
 async fn next_event(system: &Ieee802154System) -> Result<Ieee802154RadioEvent, Stop> {

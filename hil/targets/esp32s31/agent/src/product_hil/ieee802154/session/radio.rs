@@ -18,8 +18,8 @@ use oer_hil_protocol::{
 };
 use oer_ieee802154::{
     AutoPendingMode, Channel, Configuration, EnergyScanRequest, EnhancedAckGeneration, EventsLost,
-    FrameAddress, FrameView, Ieee802154RadioPort, Interface, RadioCommand, RadioSetting, RequestId,
-    TxMode, TxRequest, TxSecurity,
+    FrameAddress, FrameView, Ieee802154RadioPort, Interface, LifecycleCommand, LifecycleEvent,
+    RadioCommand, RadioSetting, RequestId, TxMode, TxRequest, TxSecurity,
 };
 
 use super::super::client::tx_outcome;
@@ -86,7 +86,7 @@ impl Session {
 
     /// Apply the host's identity and filter to an enabled radio, and
     /// install the enhanced-ACK generator the host asked for.
-    pub(super) fn configure(
+    pub(super) async fn configure(
         &mut self,
         config: Ieee802154SessionConfig,
     ) -> Result<(), Ieee802154SessionResult> {
@@ -101,8 +101,8 @@ impl Session {
         ) {
             return Err(Ieee802154SessionResult::StartFailed);
         }
-        let id = self.id();
-        self.submit(RadioCommand::Enable { id })?;
+        self.lifecycle(LifecycleCommand::Enable, LifecycleEvent::Enabled)
+            .await?;
         for configuration in [
             Configuration::PanId(config.pan_id),
             Configuration::ShortAddress(config.short_address),
@@ -113,6 +113,30 @@ impl Session {
             self.submit(RadioCommand::Configure { id, configuration })?;
         }
         Ok(())
+    }
+
+    /// Run one lifecycle command and take its terminal event; frames
+    /// received before it are recorded.
+    pub(super) async fn lifecycle(
+        &mut self,
+        command: LifecycleCommand,
+        terminal: LifecycleEvent,
+    ) -> Result<(), Ieee802154SessionResult> {
+        let Ok(Ok(())) = self.runtime.lifecycle(command) else {
+            return Err(Ieee802154SessionResult::CommandRejected);
+        };
+        match self.terminal_event(ASSESS_TIMEOUT).await? {
+            Ieee802154RadioEvent::Lifecycle(event) if event == terminal => Ok(()),
+            _ => Err(Ieee802154SessionResult::UnexpectedEvent),
+        }
+    }
+
+    /// Leave receive mode and disable the radio before its client stops.
+    pub(super) async fn rest_disabled(&mut self) -> Result<(), Ieee802154SessionResult> {
+        let id = self.id();
+        self.submit(RadioCommand::Sleep { id })?;
+        self.lifecycle(LifecycleCommand::Disable, LifecycleEvent::Disabled)
+            .await
     }
 
     /// Take one runtime event; received frames are recorded.

@@ -8,17 +8,11 @@ use crate::mac::time_sync::TimeSync;
 
 /// Portable Host-to-radio operation.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+///
+/// Enabling and disabling the radio are the port's lifecycle commands
+/// ([`Ieee802154RadioPort::lifecycle`](crate::Ieee802154RadioPort::lifecycle)),
+/// not submissions.
 pub enum RadioCommand<'frame> {
-    /// Acquire the radio and enter sleep.
-    Enable {
-        /// Caller-owned correlation identifier.
-        id: RequestId,
-    },
-    /// Release an enabled, non-busy radio.
-    Disable {
-        /// Caller-owned correlation identifier.
-        id: RequestId,
-    },
     /// Leave receive mode and enter sleep.
     Sleep {
         /// Caller-owned correlation identifier.
@@ -79,9 +73,7 @@ impl RadioCommand<'_> {
     /// Return the caller-owned correlation identifier.
     pub const fn id(self) -> RequestId {
         match self {
-            Self::Enable { id }
-            | Self::Disable { id }
-            | Self::Sleep { id }
+            Self::Sleep { id }
             | Self::Receive { id, .. }
             | Self::Configure { id, .. }
             | Self::ClearChannelAssessment { id, .. }
@@ -95,8 +87,6 @@ impl RadioCommand<'_> {
     /// Return the finite operation kind without retaining frame bytes.
     pub const fn kind(self) -> CommandKind {
         match self {
-            Self::Enable { .. } => CommandKind::Enable,
-            Self::Disable { .. } => CommandKind::Disable,
             Self::Sleep { .. } => CommandKind::Sleep,
             Self::Receive { .. } => CommandKind::Receive,
             Self::Configure { .. } => CommandKind::Configure,
@@ -112,10 +102,6 @@ impl RadioCommand<'_> {
 /// Frame-free command discriminator suitable for bounded mailboxes and logs.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CommandKind {
-    /// Enable operation.
-    Enable,
-    /// Disable operation.
-    Disable,
     /// Sleep operation.
     Sleep,
     /// Receive operation.

@@ -199,9 +199,7 @@ pub trait Ieee802154RadioPort {
     /// [`RadioEvent::Lifecycle`] follows through [`Self::next_event`].
     /// `Enable` acquires the radio and enters sleep, `Disable` releases a
     /// resting radio (`Busy` while an operation runs). A backend without a
-    /// quiesce refuses `Quiesce` as `InvalidState`. The
-    /// [`RadioCommand::Enable`] and [`RadioCommand::Disable`] submissions
-    /// stay for callers that need no terminal event.
+    /// quiesce refuses `Quiesce` as `InvalidState`.
     fn lifecycle(
         &self,
         command: LifecycleCommand,

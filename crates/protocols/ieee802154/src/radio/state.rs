@@ -82,9 +82,9 @@ pub struct AcceptedCommand {
 /// A command cannot be admitted in the current finite state/capability set.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CommandError {
-    /// Only enable is accepted while disabled.
+    /// The controller is disabled: only enabling it is accepted.
     Disabled,
-    /// Enable was requested for an already enabled controller.
+    /// Enabling was requested for an already enabled controller.
     AlreadyEnabled,
     /// An asynchronous operation already owns the radio.
     Busy {
@@ -219,6 +219,37 @@ impl RadioStateMachine {
         self.state
     }
 
+    /// Acquire the radio: a disabled controller rests asleep.
+    ///
+    /// # Errors
+    ///
+    /// The controller is already enabled; nothing changed.
+    pub fn enable(&mut self) -> Result<(), CommandError> {
+        if self.state != RadioState::Disabled {
+            return Err(CommandError::AlreadyEnabled);
+        }
+        self.state = RadioState::Resting(RestingState::Sleeping);
+        Ok(())
+    }
+
+    /// Release a resting radio and return the state it left.
+    ///
+    /// # Errors
+    ///
+    /// The controller is disabled, or an operation owns the radio; nothing
+    /// changed.
+    pub fn disable(&mut self) -> Result<RadioState, CommandError> {
+        let previous = self.state;
+        match previous {
+            RadioState::Disabled => Err(CommandError::Disabled),
+            RadioState::Resting(_) => {
+                self.state = RadioState::Disabled;
+                Ok(previous)
+            }
+            _ => Err(CommandError::Busy { state: previous }),
+        }
+    }
+
     /// Validate and admit one command, advancing state exactly once.
     ///
     /// A backend must retain any borrowed transmit bytes before this call
@@ -228,15 +259,7 @@ impl RadioStateMachine {
         let kind = command.kind();
         let id = command.id();
         let current = match command {
-            RadioCommand::Enable { .. } => match previous {
-                RadioState::Disabled => RadioState::Resting(RestingState::Sleeping),
-                _ => return Err(CommandError::AlreadyEnabled),
-            },
             _ if previous == RadioState::Disabled => return Err(CommandError::Disabled),
-            RadioCommand::Disable { .. } => match resting(previous) {
-                Some(_) => RadioState::Disabled,
-                None => return Err(CommandError::Busy { state: previous }),
-            },
             RadioCommand::Sleep { .. } => match resting(previous) {
                 Some(_) => RadioState::Resting(RestingState::Sleeping),
                 None => return Err(CommandError::Busy { state: previous }),

@@ -13,7 +13,8 @@
 //! the runtime does under its lock.
 //!
 //! The composition owns power, clocks, PHY and the MAC initialization; the
-//! portable `Enable` and `Disable` commands only open and close admission.
+//! role's [`Ieee802154Radio::enable`] and [`Ieee802154Radio::disable`] only
+//! open and close admission.
 //! Receive-ring slots never outlive one delivery: a frame is lent to the
 //! sink and its slot returns to the ring before the entry ends.
 
@@ -766,7 +767,7 @@ pub struct Ieee802154Radio<'storage> {
 
 impl<'storage> Ieee802154Radio<'storage> {
     /// Admit portable commands to an engine the composition has enabled and
-    /// initialized. The role starts `Disabled` until `Enable` is admitted.
+    /// initialized. The role starts `Disabled` until [`Self::enable`].
     /// An engine built with multi-PAN gives the radio its interfaces.
     pub const fn new(engine: Ieee802154Engine<'storage>, platform: Ieee802154Platform) -> Self {
         let machine = match engine.multipan() {
@@ -886,6 +887,57 @@ impl<'storage> Ieee802154Radio<'storage> {
         &mut self.engine
     }
 
+    /// Enable the radio: it rests asleep (`esp_ieee802154_enable` leaves the
+    /// MAC idle).
+    ///
+    /// # Errors
+    ///
+    /// The radio is already enabled; nothing ran.
+    pub fn enable<L: Ieee802154LowLevel + ?Sized, S: Ieee802154RadioSink + ?Sized>(
+        &mut self,
+        ll: &mut L,
+        sink: &mut S,
+    ) -> Result<(), CommandError> {
+        self.machine.enable()?;
+        self.rest_asleep(ll, None, sink);
+        Ok(())
+    }
+
+    /// Disable a resting radio: the MAC sleeps and the portable state is
+    /// disabled.
+    ///
+    /// # Errors
+    ///
+    /// The radio is disabled, or an operation owns it; nothing ran.
+    pub fn disable<L: Ieee802154LowLevel + ?Sized, S: Ieee802154RadioSink + ?Sized>(
+        &mut self,
+        ll: &mut L,
+        sink: &mut S,
+    ) -> Result<(), CommandError> {
+        let previous = self.machine.disable()?;
+        let flushed_on = match previous {
+            RadioState::Resting(RestingState::Receiving { channel }) => Some(channel),
+            _ => None,
+        };
+        self.rest_asleep(ll, flushed_on, sink);
+        Ok(())
+    }
+
+    /// Put the MAC to sleep and deliver what stopping produced.
+    fn rest_asleep<L: Ieee802154LowLevel + ?Sized, S: Ieee802154RadioSink + ?Sized>(
+        &mut self,
+        ll: &mut L,
+        flushed_on: Option<Channel>,
+        sink: &mut S,
+    ) {
+        let mut collector =
+            Collector::new(self.platform, &mut self.enhanced_ack, &mut self.security);
+        self.engine.pib().set_rx_when_idle(false);
+        self.engine.sleep(ll, &mut collector);
+        let notifications = collector.notifications;
+        self.deliver(ll, notifications, Some(flushed_on), sink);
+    }
+
     /// Admit `command`, start its engine operation and deliver the events
     /// the start itself produced.
     ///
@@ -929,9 +981,7 @@ impl<'storage> Ieee802154Radio<'storage> {
             Collector::new(self.platform, &mut self.enhanced_ack, &mut self.security);
         let engine = &mut self.engine;
         match command {
-            RadioCommand::Enable { .. }
-            | RadioCommand::Disable { .. }
-            | RadioCommand::Sleep { .. } => {
+            RadioCommand::Sleep { .. } => {
                 engine.pib().set_rx_when_idle(false);
                 engine.sleep(ll, &mut collector);
             }

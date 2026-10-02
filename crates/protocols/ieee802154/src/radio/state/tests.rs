@@ -26,7 +26,7 @@ fn metadata(channel: Channel) -> RxMetadata {
 
 fn enabled(capabilities: RadioCapabilities) -> RadioStateMachine {
     let mut machine = RadioStateMachine::new(capabilities);
-    machine.admit(RadioCommand::Enable { id: ID }).unwrap();
+    machine.enable().unwrap();
     machine
 }
 
@@ -34,8 +34,8 @@ fn enabled(capabilities: RadioCapabilities) -> RadioStateMachine {
 fn finite_enable_receive_sleep_disable_path_is_exact() {
     let mut machine = RadioStateMachine::new(RadioCapabilities::NONE);
     assert_eq!(machine.state(), RadioState::Disabled);
-    let enable = machine.admit(RadioCommand::Enable { id: ID }).unwrap();
-    assert_eq!(enable.previous, RadioState::Disabled);
+    machine.enable().unwrap();
+    assert_eq!(machine.enable(), Err(CommandError::AlreadyEnabled));
     assert_eq!(machine.state(), RadioState::Resting(RestingState::Sleeping));
 
     machine
@@ -55,12 +55,12 @@ fn finite_enable_receive_sleep_disable_path_is_exact() {
             id: RequestId::new(9),
         })
         .unwrap();
-    machine
-        .admit(RadioCommand::Disable {
-            id: RequestId::new(10),
-        })
-        .unwrap();
+    assert_eq!(
+        machine.disable(),
+        Ok(RadioState::Resting(RestingState::Sleeping))
+    );
     assert_eq!(machine.state(), RadioState::Disabled);
+    assert_eq!(machine.disable(), Err(CommandError::Disabled));
 }
 
 #[test]
@@ -523,7 +523,7 @@ fn interface_settings_need_multi_pan_and_an_existing_interface() {
     );
 
     let mut machine = RadioStateMachine::with_interfaces(RadioCapabilities::MULTI_PAN, 4);
-    machine.admit(RadioCommand::Enable { id: ID }).unwrap();
+    machine.enable().unwrap();
     assert_eq!(machine.interfaces(), 4);
     machine
         .admit(configure_interface(3, InterfaceSetting::Enabled(true)))
@@ -589,7 +589,7 @@ fn a_transmission_names_an_existing_interface() {
     assert_eq!(single.state(), RadioState::Resting(RestingState::Sleeping));
 
     let mut machine = RadioStateMachine::with_interfaces(RadioCapabilities::MULTI_PAN, 2);
-    machine.admit(RadioCommand::Enable { id: ID }).unwrap();
+    machine.enable().unwrap();
     machine.admit(request(1)).unwrap();
 }
 

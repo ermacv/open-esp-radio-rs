@@ -20,8 +20,8 @@ Read first (about 3k tokens): [package names](../../../docs/architecture.md#pack
    The directory repeats the tokens under its layer directory.
 3. **Classify** in `[package.metadata.open-radio]`: a `layer` (it implies the
    scope: production, experimental or development) and a `platform` —
-   `portable`, `host`, `chip` (with `chip = "<id>"`), `family` (with
-   `family = "<id>"`) or `selected`. Declare `inputs` for repository files
+   `portable`, `host`, `chip` (with `chip = "<id>"`) or `family` (with
+   `family = "<id>"`). Declare `inputs` for repository files
    outside the package its tests read, so the gate follows them.
 4. **Dependencies** follow the layer table; build dependencies are host or
    portable; internal packages never depend on the `oer` facade.

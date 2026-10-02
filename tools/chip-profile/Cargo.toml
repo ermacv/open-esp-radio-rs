@@ -7,7 +7,6 @@ license.workspace = true
 publish = false
 
 [dependencies]
-oer-chip-cfg = { path = "../../crates/chip/cfg" }
 serde = { version = "=1.0.229", features = ["derive"] }
 toml = "=1.1.4"
 

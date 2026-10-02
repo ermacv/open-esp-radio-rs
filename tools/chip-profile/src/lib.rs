@@ -3,8 +3,7 @@
 //! Every supported chip has `platform/<id>/chip.toml`, holding only what
 //! differs between chips and cannot be derived from the id: the chip family,
 //! the Rust target, the boot flow, the chip name `espflash` uses, the silicon revisions and
-//! the chip's properties (radio bands, Bluetooth modes, cores), which
-//! firmware sees as compile-time configuration through `oer-chip-cfg`.
+//! the chip's properties (radio bands, Bluetooth modes, cores).
 //! Everything else follows the id by convention (`verification/<id>`,
 //! `registers/<id>`, `hil/targets/<id>`, `qualification/targets/<id>`,
 //! `target/hil/<id>`), and a capability exists where its directory does.
@@ -57,9 +56,35 @@ pub struct Profile {
     /// runner writes and replays them there.
     #[serde(default)]
     pub flash: Option<FlashLayout>,
-    /// What the chip has, which firmware sees as compile-time `cfg`s and
-    /// constants (`oer-chip-cfg`).
-    pub properties: oer_chip_cfg::Properties,
+    /// What the chip has.
+    pub properties: Properties,
+}
+
+/// A Wi-Fi band the chip's radio serves.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum WifiBand {
+    #[serde(rename = "2g4")]
+    Band2g4,
+    #[serde(rename = "5g")]
+    Band5g,
+}
+
+/// A Bluetooth mode the chip's controller serves.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BluetoothMode {
+    Le,
+    BrEdr,
+}
+
+/// The `[properties]` table of a chip profile.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct Properties {
+    pub wifi_bands: Vec<WifiBand>,
+    pub bluetooth: Vec<BluetoothMode>,
+    pub ieee802154: bool,
+    pub cores: u8,
 }
 
 /// Flash offsets of an ESP-IDF application image: the chip's second-stage

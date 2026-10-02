@@ -11,9 +11,8 @@ boot = "staged"
 espflash-chip = "esp32s31"
 revisions = ["rev0"]
 
-# What the chip has, as compile-time properties (`oer-chip-cfg` turns them
-# into cfgs and constants for the code above the PAC). Differences of
-# address or layout belong in the register model, not here.
+# What the chip has: its radio bands, Bluetooth modes, IEEE 802.15.4 and
+# cores. Differences of address or layout belong in the register model.
 [properties]
 wifi-bands = ["2g4"]
 # BTDM controller (BR/EDR and LE) in the vendor Bluetooth library.

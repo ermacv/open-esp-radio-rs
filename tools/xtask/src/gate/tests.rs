@@ -82,6 +82,20 @@ fn a_source_selects_its_innermost_package_and_formats_its_workspace() {
 }
 
 #[test]
+fn the_fast_gate_tests_only_what_changed() {
+    let selection = run(&["crates/hal/nested/src/lib.rs"]);
+    let affected = BTreeSet::from([key("Cargo.toml", "hal-nested"), key("Cargo.toml", "driver")]);
+    assert_eq!(
+        tested(Depth::Fast, &selection, &affected),
+        BTreeSet::from([&key("Cargo.toml", "hal-nested")])
+    );
+    assert_eq!(
+        tested(Depth::Full, &selection, &affected),
+        affected.iter().collect()
+    );
+}
+
+#[test]
 fn declared_inputs_select_the_packages_that_read_them() {
     let selection = run(&["qualification/catalog/esp32s31/coex.toml"]);
     assert!(selection.docs);

@@ -262,7 +262,7 @@ impl World {
                 routing.set(self.router.run());
                 continue;
             }
-            if ap.step(&self.model, self.timer.now.get()) {
+            if ap.step(self.model, self.timer.now.get()) {
                 quiet = false;
                 continue;
             }
@@ -472,7 +472,7 @@ fn an_open_join_connects_and_exchanges_data_both_ways_body() {
         );
         assert!(matches!(sent, Ok(PortSend::Sent(_))));
     }
-    ap.absorb(&world.model);
+    ap.absorb(world.model);
     assert_eq!(ap.uplink.len(), 3);
     assert_eq!(ap.uplink[0].payload, b"best");
     assert_eq!(ap.uplink[0].destination, PEER);
@@ -523,7 +523,7 @@ fn a_wpa2_psk_connection_installs_its_keys_through_the_port_body() {
     let world = World::new();
     let mut ap = ScriptedAp::new(ApSecurity::Wpa2Psk);
     let mut station = connect(&world, &mut ap, world.station(wpa2(&PMKSA)));
-    ap.absorb(&world.model);
+    ap.absorb(world.model);
     assert_eq!(
         ap.eapol_from_station,
         [
@@ -561,7 +561,7 @@ fn a_wpa2_psk_connection_installs_its_keys_through_the_port_body() {
             .drive(&mut ap, station.send(&ethernet(PEER, IPV4, payload), 0))
             .unwrap();
     }
-    ap.absorb(&world.model);
+    ap.absorb(world.model);
     assert_eq!(ap.uplink.len(), 2);
     assert!(
         ap.uplink
@@ -687,7 +687,7 @@ fn power_save_dozes_and_wakes_for_buffered_traffic_at_a_tbtt_body() {
     let start = world.timer.now.get();
     ap.next_beacon_micros = Some(start + 10_000);
     world.run_for(&mut ap, &mut station, 100, &mut delivered);
-    ap.absorb(&world.model);
+    ap.absorb(world.model);
     let state = station.connection().unwrap().power_save().unwrap().state();
     assert_eq!(ap.nulls, [true], "{state:?}");
     assert_eq!(state, PmState::Dozing);
@@ -697,7 +697,7 @@ fn power_save_dozes_and_wakes_for_buffered_traffic_at_a_tbtt_body() {
     // for the beacon, finds its AID in the TIM and leaves power save.
     ap.tim_unicast = true;
     world.run_for(&mut ap, &mut station, 20, &mut delivered);
-    ap.absorb(&world.model);
+    ap.absorb(world.model);
     let state = station.connection().unwrap().power_save().unwrap().state();
     assert_eq!(ap.beacons_sent, 2);
     assert_eq!(ap.nulls, [true, false], "{state:?}");
@@ -757,7 +757,7 @@ fn an_sae_authentication_joins_a_wpa3_access_point_body() {
         Wpa2Message4Protection::Unprotected,
     );
     let mut station = connect(&world, &mut ap, world.station(security));
-    ap.absorb(&world.model);
+    ap.absorb(world.model);
     assert!(station.report().sae);
     assert_eq!(ap.authentications, 2);
     assert!(ap.handshake_complete);
@@ -774,7 +774,7 @@ fn an_sae_authentication_joins_a_wpa3_access_point_body() {
         world.run_for(&mut ap, &mut station, 5, &mut delivered),
         None
     );
-    ap.absorb(&world.model);
+    ap.absorb(world.model);
     let request = ap.actions.last().unwrap().clone();
     assert_eq!(&request[..2], &[8, 0]);
     let query = world.model.submitted().into_iter().last().unwrap();
@@ -857,7 +857,7 @@ fn the_lifecycle_rejoins_the_same_access_point_after_a_deauthentication_body() {
                 sent_deauthentication = true;
                 continue;
             }
-            if ap.step(&world.model, world.timer.now.get()) {
+            if ap.step(world.model, world.timer.now.get()) {
                 continue;
             }
             let next = world.timer.wanted.get().expect("a deadline");
@@ -875,7 +875,7 @@ fn the_lifecycle_rejoins_the_same_access_point_after_a_deauthentication_body() {
     );
     // The second attempt reused the candidate: one scan's worth of Probe
     // Requests, and a Deauthentication when the station stopped.
-    ap.absorb(&world.model);
+    ap.absorb(world.model);
     assert_eq!(ap.probe_requests.len(), 3);
     assert_eq!(ap.associations, 2);
     assert!(ap.deauthenticated);

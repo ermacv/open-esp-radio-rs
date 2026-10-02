@@ -148,6 +148,12 @@ pub struct PortStation<'p, X: PortStationEnv> {
     report: PortAttemptReport,
 }
 
+/// A connected station's connection and the context its phases run in.
+type ConnectionParts<'a, 'p, X> = (
+    &'a mut PortConnection<<X as PortStationEnv>::Port>,
+    ConnectionContext<'a, 'p, X>,
+);
+
 impl<'p, X: PortStationEnv> PortStation<'p, X> {
     pub fn new(
         link: PortLink<'p, X>,
@@ -220,12 +226,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         StaAttempt::new(PortAttemptPort::new()).run(self).await
     }
 
-    fn context(
-        &mut self,
-    ) -> Result<
-        (&mut PortConnection<X::Port>, ConnectionContext<'_, 'p, X>),
-        PortLinkError<PortError<X>>,
-    > {
+    fn context(&mut self) -> Result<ConnectionParts<'_, 'p, X>, PortLinkError<PortError<X>>> {
         let Self {
             link,
             timer,

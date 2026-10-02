@@ -113,6 +113,13 @@ impl PortFrame {
 }
 
 /// One input of the port the station consumes.
+///
+/// A frame travels inline: the station allocates nothing, so the small
+/// variants share the frame's size.
+#[allow(
+    clippy::large_enum_variant,
+    reason = "no_std without an allocator: received frames move by value"
+)]
 #[derive(Clone)]
 pub enum PortInput {
     Frame(PortFrame),
@@ -167,14 +174,17 @@ pub enum PortLinkError<E> {
     MissingState,
 }
 
+/// The outcome of a port setting call: the port's own failure outside, the
+/// setting's refusal inside.
+type SettingOutcome<P> = Result<Result<(), SettingError>, <P as Ieee80211LowerMacPort>::Error>;
+
 /// The beacon-timing operations of a port that implements
 /// [`LowerMacBeaconTiming`], kept as values so the station stays generic
 /// over the base port.
 pub struct BeaconTimingOps<P: Ieee80211LowerMacPort> {
     pub(crate) tbtt: fn(&P::Event) -> Option<TbttEvent>,
-    pub(crate) set_tbtt:
-        fn(&P, VifId, Option<TbttSchedule>) -> Result<Result<(), SettingError>, P::Error>,
-    pub(crate) set_tsf: fn(&P, VifId, Tsf) -> Result<Result<(), SettingError>, P::Error>,
+    pub(crate) set_tbtt: fn(&P, VifId, Option<TbttSchedule>) -> SettingOutcome<P>,
+    pub(crate) set_tsf: fn(&P, VifId, Tsf) -> SettingOutcome<P>,
 }
 
 impl<P: Ieee80211LowerMacPort> Clone for BeaconTimingOps<P> {

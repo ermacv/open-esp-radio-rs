@@ -35,13 +35,8 @@ const MARKER: &str = "// CAPABILITY:";
 /// Directories never scanned: build output, private inputs and VCS state.
 const SKIPPED: &[&str] = &["target", "_oracles"];
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum Scope {
-    Production,
-    Experimental,
-    Development,
-}
+/// What a package is for; `oer-tidy` derives it from the package's layer.
+pub(crate) use oer_tidy::classification::Scope;
 
 /// The package that owns an anchored file, as its manifest classifies it.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -506,12 +501,7 @@ struct ManifestPackage {
 #[derive(Deserialize)]
 struct ManifestMetadata {
     #[serde(rename = "open-radio")]
-    open_radio: Option<OpenRadio>,
-}
-
-#[derive(Deserialize)]
-struct OpenRadio {
-    scope: Scope,
+    open_radio: Option<toml::Table>,
 }
 
 /// `None` when the manifest is a virtual workspace; `Some(None)` for a
@@ -519,15 +509,23 @@ struct OpenRadio {
 fn classify(text: &str, path: &Path) -> Result<Option<Option<Package>>> {
     let manifest: Manifest =
         toml_edit::de::from_str(text).map_err(|error| format!("{}: {error}", path.display()))?;
-    Ok(manifest.package.map(|package| {
-        package
-            .metadata
-            .and_then(|metadata| metadata.open_radio)
-            .map(|open_radio| Package {
-                name: package.name,
-                scope: open_radio.scope,
-            })
-    }))
+    let Some(package) = manifest.package else {
+        return Ok(None);
+    };
+    let Some(open_radio) = package.metadata.and_then(|metadata| metadata.open_radio) else {
+        return Ok(Some(None));
+    };
+    let class = oer_tidy::classification::classify(&package.name, &|key| {
+        open_radio
+            .get(key)
+            .and_then(toml::Value::as_str)
+            .map(str::to_owned)
+    })
+    .map_err(|error| format!("{}: {error}", path.display()))?;
+    Ok(Some(Some(Package {
+        name: package.name,
+        scope: class.scope,
+    })))
 }
 
 /// Every violation of the anchoring rules.

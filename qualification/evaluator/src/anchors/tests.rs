@@ -21,15 +21,26 @@ impl Repository {
         Self { path }
     }
 
+    /// A package whose layer implies `scope`.
     fn package(&self, directory: &str, scope: &str, platform: &str) {
+        let layer = match scope {
+            "production" => "hardware",
+            "experimental" => "experiment",
+            _ => "tool",
+        };
+        let chip = if platform == "chip" {
+            "chip = \"esp32s31\"\n"
+        } else {
+            ""
+        };
         let root = self.path.join(directory);
         fs::create_dir_all(root.join("src")).unwrap();
         fs::write(
             root.join("Cargo.toml"),
             format!(
                 "[package]\nname = \"{}\"\nversion.workspace = true\n\n\
-                 [package.metadata.open-radio]\nscope = \"{scope}\"\nlayer = \"hardware\"\n\
-                 platform = \"{platform}\"\n",
+                 [package.metadata.open-radio]\nlayer = \"{layer}\"\n\
+                 platform = \"{platform}\"\n{chip}",
                 directory.replace('/', "-")
             ),
         )

@@ -1004,7 +1004,7 @@ details = "Vendor classification: `Y`."
         fs::create_dir_all(package.join("src")).unwrap();
         fs::write(
             package.join("Cargo.toml"),
-            "[package]\nname = \"radio\"\n[package.metadata.open-radio]\nscope = \"production\"\n",
+            "[package]\nname = \"radio\"\n[package.metadata.open-radio]\nlayer = \"hardware\"\nplatform = \"portable\"\n",
         )
         .unwrap();
         fs::write(

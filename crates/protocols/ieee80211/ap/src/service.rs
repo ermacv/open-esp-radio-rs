@@ -59,8 +59,8 @@ pub const AP_ASSOCIATION_DEADLINE_MICROS: u64 = 15_000_000;
 /// EAPOL-Key response window, 1-second subsequent windows, and four total
 /// publications. An acknowledged Message 1 uses the subsequent window
 /// immediately. It is protocol policy, not an ESP32 hardware fact.
-pub const AP_WPA2_FIRST_RETRY_INTERVAL_MICROS: u32 = 100_000;
-pub const AP_WPA2_SUBSEQUENT_RETRY_INTERVAL_MICROS: u32 = 1_000_000;
+pub const AP_WPA2_FIRST_RETRY_INTERVAL: oer_time::Duration = oer_time::Duration::from_millis(100);
+pub const AP_WPA2_SUBSEQUENT_RETRY_INTERVAL: oer_time::Duration = oer_time::Duration::from_secs(1);
 /// Retransmissions after the original M1 or M3 publication.
 pub const AP_WPA2_RETRY_ATTEMPTS: u8 = 3;
 pub const AP_TX_BLOCK_ACK_TID: u8 = 0;
@@ -569,8 +569,8 @@ const fn new_ap_tx_block_ack() -> TxBlockAckSession {
 
 const fn new_ap_wpa2_retry() -> RsnRetry {
     match RsnRetry::new(RsnRetryConfig {
-        first_interval_us: AP_WPA2_FIRST_RETRY_INTERVAL_MICROS,
-        subsequent_interval_us: AP_WPA2_SUBSEQUENT_RETRY_INTERVAL_MICROS,
+        first_interval: AP_WPA2_FIRST_RETRY_INTERVAL,
+        subsequent_interval: AP_WPA2_SUBSEQUENT_RETRY_INTERVAL,
         attempts: AP_WPA2_RETRY_ATTEMPTS,
     }) {
         Ok(retry) => retry,

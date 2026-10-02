@@ -1,11 +1,12 @@
 //! Event-driven WPA2 retransmission state without sleeps or timer polling.
 
 use crate::state::{RsnTransmit, RsnTxMessage};
+use oer_time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RsnRetryConfig {
-    pub first_interval_us: u32,
-    pub subsequent_interval_us: u32,
+    pub first_interval: Duration,
+    pub subsequent_interval: Duration,
     /// Number of retransmissions after the original transmission.
     pub attempts: u8,
 }
@@ -21,7 +22,7 @@ pub enum RsnRetryError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RsnRetryAlarm {
     pub generation: u32,
-    pub deadline_us: u64,
+    pub deadline: Instant,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -36,7 +37,7 @@ pub enum RsnRetryAction {
 
 /// One outstanding finite retransmission schedule.
 ///
-/// The caller programs `RsnRetryAlarm.deadline_us` into a one-shot hardware
+/// The caller programs `RsnRetryAlarm.deadline` into a one-shot hardware
 /// or executor alarm. `on_alarm` consumes an interrupt/event edge; it never
 /// reads time, sleeps, or loops over missed deadlines.
 pub struct RsnRetry {
@@ -48,10 +49,10 @@ pub struct RsnRetry {
 
 impl RsnRetry {
     pub const fn new(config: RsnRetryConfig) -> Result<Self, RsnRetryError> {
-        if config.first_interval_us == 0 {
+        if config.first_interval.as_micros() == 0 {
             return Err(RsnRetryError::ZeroFirstInterval);
         }
-        if config.subsequent_interval_us == 0 {
+        if config.subsequent_interval.as_micros() == 0 {
             return Err(RsnRetryError::ZeroSubsequentInterval);
         }
         if config.attempts == 0 {
@@ -68,10 +69,10 @@ impl RsnRetry {
     pub fn arm(
         &mut self,
         original: RsnTransmit,
-        now_us: u64,
+        now: Instant,
     ) -> Result<RsnRetryAlarm, RsnRetryError> {
-        let deadline_us = now_us
-            .checked_add(self.config.first_interval_us as u64)
+        let deadline = now
+            .checked_add(self.config.first_interval)
             .ok_or(RsnRetryError::DeadlineOverflow)?;
         self.generation = next_generation(self.generation);
         self.pending = Some(RsnTransmit {
@@ -81,7 +82,7 @@ impl RsnRetry {
         self.attempts_left = self.config.attempts;
         Ok(RsnRetryAlarm {
             generation: self.generation,
-            deadline_us,
+            deadline,
         })
     }
 
@@ -98,18 +99,18 @@ impl RsnRetry {
     /// subsequent timeout once TX status proves that the station received M1.
     pub fn defer_first_after_ack(
         &self,
-        now_us: u64,
+        now: Instant,
     ) -> Result<Option<RsnRetryAlarm>, RsnRetryError> {
         if self.pending.is_none() || self.attempts_left != self.config.attempts {
             return Ok(None);
         }
-        Ok(Some(self.alarm_after(now_us)?))
+        Ok(Some(self.alarm_after(now)?))
     }
 
     pub fn on_alarm(
         &mut self,
         alarm: RsnRetryAlarm,
-        now_us: u64,
+        now: Instant,
     ) -> Result<RsnRetryAction, RsnRetryError> {
         if alarm.generation != self.generation {
             return Ok(RsnRetryAction::Stale);
@@ -126,7 +127,7 @@ impl RsnRetry {
         // Even the last retransmission retains one response window. The next
         // alarm reports explicit exhaustion instead of silently leaving the
         // handshake pending forever after the retry budget is consumed.
-        let next_alarm = self.alarm_after(now_us)?;
+        let next_alarm = self.alarm_after(now)?;
         Ok(RsnRetryAction::Transmit { frame, next_alarm })
     }
 
@@ -141,11 +142,11 @@ impl RsnRetry {
         }
     }
 
-    fn alarm_after(&self, now_us: u64) -> Result<RsnRetryAlarm, RsnRetryError> {
+    fn alarm_after(&self, now: Instant) -> Result<RsnRetryAlarm, RsnRetryError> {
         Ok(RsnRetryAlarm {
             generation: self.generation,
-            deadline_us: now_us
-                .checked_add(self.config.subsequent_interval_us as u64)
+            deadline: now
+                .checked_add(self.config.subsequent_interval)
                 .ok_or(RsnRetryError::DeadlineOverflow)?,
         })
     }

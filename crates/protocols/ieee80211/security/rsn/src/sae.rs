@@ -34,6 +34,7 @@ use sha2::Sha256;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::kdf::kdf_sha256;
+use oer_time::{Duration, Instant};
 
 /// The only SAE group the station offers: NIST P-256.
 pub const SAE_GROUP_P256: u16 = 19;
@@ -521,7 +522,7 @@ impl<'a> SaeReceivedCommit<'a> {
 }
 
 /// Seconds an access point keeps one comeback-token key.
-const COMEBACK_KEY_LIFETIME_MICROS: u64 = 60_000_000;
+const COMEBACK_KEY_LIFETIME: Duration = Duration::from_secs(60);
 
 /// The anti-clogging tokens an access point issues and checks.
 ///
@@ -538,7 +539,7 @@ const COMEBACK_KEY_LIFETIME_MICROS: u64 = 60_000_000;
 /// (`auth_build_token_req`, `check_comeback_token`, `comeback_token_hash`).
 pub struct SaeComebackTokens {
     key: [u8; 32],
-    key_drawn_micros: Option<u64>,
+    key_drawn: Option<Instant>,
     pending: [u16; 256],
 }
 
@@ -546,7 +547,7 @@ impl SaeComebackTokens {
     pub const fn new() -> Self {
         Self {
             key: [0; 32],
-            key_drawn_micros: None,
+            key_drawn: None,
             pending: [0; 256],
         }
     }
@@ -556,15 +557,15 @@ impl SaeComebackTokens {
     pub fn issue(
         &mut self,
         station: [u8; 6],
-        now_micros: u64,
+        now: Instant,
         draw_key: impl FnOnce() -> [u8; 32],
     ) -> [u8; SAE_ANTI_CLOGGING_TOKEN_LEN] {
         let expired = self
-            .key_drawn_micros
-            .is_none_or(|drawn| now_micros.saturating_sub(drawn) > COMEBACK_KEY_LIFETIME_MICROS);
+            .key_drawn
+            .is_none_or(|drawn| now.saturating_duration_since(drawn) > COMEBACK_KEY_LIFETIME);
         if expired {
             self.key = draw_key();
-            self.key_drawn_micros = Some(now_micros);
+            self.key_drawn = Some(now);
             self.pending = [0; 256];
         }
         let slot = usize::from(hmac_sha256(&self.key, &[&station])[0]);

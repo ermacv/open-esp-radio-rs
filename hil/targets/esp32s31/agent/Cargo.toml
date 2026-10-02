@@ -86,7 +86,6 @@ open-radio-hil = [
     "dep:oer-esp32s31-ieee80211-system",
     "dep:oer-esp32s31-radio-system",
     "dep:oer-esp32s31-phy",
-    "dep:oer-esp32s31-ieee80211-esp-hal",
     "dep:oer-hil-protocol",
     "dep:oer-hil-agent",
     "dep:oer-hil-image-keys",
@@ -277,7 +276,6 @@ gatt-application = { package = "oer-example-bluetooth-gatt", path = "../../../..
 oer-bluetooth-controller = { path = "../../../../crates/protocols/bluetooth/le/controller", optional = true }
 oer-bluetooth-hci = { path = "../../../../crates/protocols/bluetooth/hci", optional = true }
 trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", rev = "a6af435ba1539cead0afce04718ad8a089bcc4b9", optional = true, default-features = false, features = ["default-packet-pool", "gatt", "peripheral"] }
-oer-esp32s31-bluetooth = { workspace = true, optional = true }
 oer-esp32s31-bluetooth-system = { workspace = true, optional = true }
 oer-esp32s31-radio-esp-hal = { workspace = true, features = ["esp32s31"], optional = true }
 oer-espressif-ieee802154-engine = { workspace = true, optional = true }
@@ -295,12 +293,10 @@ oer-esp32s31-soc-esp-hal.workspace = true
 oer-trace = { path = "../../../../crates/trace", features = ["record"] }
 oer-time-embassy = { path = "../../../../crates/adapters/embassy/time" }
 oer-esp32s31-executor-embassy.workspace = true
-oer-esp32s31-ieee80211-esp-hal = { workspace = true, features = ["esp32s31"], optional = true }
 oer-hil-protocol = { workspace = true, optional = true, features = ["async-io"] }
 oer-hil-agent = { path = "../../../agent", optional = true, default-features = false }
 oer-hil-image-keys = { workspace = true, optional = true }
 oer-hil-trace.workspace = true
-oer-esp32s31-platform-board = { path = "../../../../platform/esp32s31/board" }
 oer-esp32s31-platform-runtime = { path = "../../../../platform/esp32s31/runtime" }
 oer-hil-esp32s31-telemetry = { workspace = true, optional = true }
 oer-ieee80211-runtime = { workspace = true, optional = true }

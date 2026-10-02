@@ -1230,7 +1230,6 @@ dependencies = [
  "heapless 0.9.3",
  "log",
  "oer-hil-protocol",
- "oer-trace",
 ]
 
 [[package]]
@@ -1257,10 +1256,6 @@ dependencies = [
 
 [[package]]
 name = "oer-soc-deadline"
-version = "0.1.0"
-
-[[package]]
-name = "oer-trace"
 version = "0.1.0"
 
 [[package]]

@@ -50,7 +50,7 @@ The ownership map and bundle contract are in the
 `cargo hil` builds the observer through xtask using Cargo's actual artifact
 messages, saves its executable receipt, and atomically publishes
 `target/hil/current-observer.json`. Cargo uses `--locked` and, like every Cargo
-command in this repository, runs offline (`.cargo/config.toml`); `cargo xtask
+command in this repository, runs offline (`.cargo/config.toml`); `cargo tidy
 fetch` downloads what a changed lock file needs. Cancellation of
 xtask is forwarded to its owned runner process group, with up to five minutes
 for fixture cleanup and evidence sealing; this does not limit campaign runtime.

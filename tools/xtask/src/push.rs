@@ -127,7 +127,15 @@ pub fn run(ctx: &Context, draft: bool) -> Result<()> {
     ) {
         Ok(url) if !url.is_empty() => url,
         _ => {
-            let mut create = vec!["pr", "create", "--fill", "--base", MAIN, "--head", &branch];
+            let mut create = vec![
+                "pr",
+                "create",
+                "--fill-first",
+                "--base",
+                MAIN,
+                "--head",
+                &branch,
+            ];
             if draft {
                 create.push("--draft");
             }

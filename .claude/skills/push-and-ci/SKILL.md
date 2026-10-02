@@ -29,7 +29,8 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    A production change needed by Blobray or verification work is its own commit.
    The pull request merges by rebase, so each commit lands on `main` as is.
 6. **Push** with `cargo xtask push` in the background: it gates exactly
-   `HEAD`, pushes the branch, opens the pull request (`gh pr create --fill`)
+   `HEAD`, pushes the branch, opens the pull request titled by its first
+   commit (`gh pr create --fill-first`)
    and enables auto-merge. Do not wait for CI: GitHub merges the branch once
    the required `ci-ok` check passes. `--draft` for work that needs the
    user's review first. Never push to `main` directly.

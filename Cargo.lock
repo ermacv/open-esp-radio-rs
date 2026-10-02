@@ -3771,7 +3771,6 @@ dependencies = [
  "oer-register-contracts",
  "oer-register-model",
  "oer-register-review",
- "proc-macro2",
  "quote",
  "serde",
  "svd2rust",

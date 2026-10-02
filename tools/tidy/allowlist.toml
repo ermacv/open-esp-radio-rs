@@ -85,11 +85,6 @@ dependency = "critical-section"
 reason = "test builds select critical-section's std implementation for the crates that take critical sections"
 
 [[unused-dependency]]
-manifest = "crates/adapters/openthread/ieee802154/Cargo.toml"
-dependency = "embassy-time"
-reason = "test builds select embassy-time's std driver and generic timer queue for the crates that wait on time"
-
-[[unused-dependency]]
 manifest = "examples/bluetooth-gatt/Cargo.toml"
 dependency = "embassy-time"
 reason = "test builds select embassy-time's std driver and generic timer queue for the crates that wait on time"

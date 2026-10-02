@@ -1,5 +1,7 @@
 //! Direct subprocess arguments and owned command lifetimes, without a shell.
 
+#[cfg(unix)]
+mod guardian;
 pub mod owned;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -50,6 +52,9 @@ pub fn install_signal_handlers() -> Result<SignalGuard> {
         let mut signals = signal_hook::iterator::Signals::new([
             signal_hook::consts::SIGINT,
             signal_hook::consts::SIGTERM,
+            // A closed terminal or a killed agent shell: stop the children
+            // too instead of leaving their groups running.
+            signal_hook::consts::SIGHUP,
         ])?;
         let handle = signals.handle();
         let worker = std::thread::spawn(move || {
@@ -69,6 +74,34 @@ pub fn install_signal_handlers() -> Result<SignalGuard> {
 
 pub fn run(command: &mut Command) -> Result<()> {
     run_with_shutdown_grace(command, std::time::Duration::from_secs(1))
+}
+
+/// [`run`], stopping the command's whole process group once `timeout`
+/// elapses.
+pub fn run_with_timeout(command: &mut Command, timeout: std::time::Duration) -> Result<()> {
+    let status = owned::Child::spawn(command)?
+        .with_timeout(timeout)
+        .wait()
+        .map_err(|error| {
+            if error.is::<owned::DeadlineExceeded>() {
+                format!(
+                    "{} exceeded its {} s limit",
+                    command.get_program().to_string_lossy(),
+                    timeout.as_secs()
+                )
+                .into()
+            } else {
+                error
+            }
+        })?;
+    if !status.success() {
+        return Err(format!(
+            "{} failed with {status}",
+            command.get_program().to_string_lossy()
+        )
+        .into());
+    }
+    Ok(())
 }
 
 /// Give a nested supervisor time to clean up the sessions or services it owns.

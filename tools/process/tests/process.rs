@@ -112,7 +112,7 @@ fn cancellation_harness() {
 }
 #[test]
 fn signals_cancel_capture_and_stop_descendants() {
-    for signal in [libc::SIGINT, libc::SIGTERM] {
+    for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
         let directory = tempfile::tempdir().unwrap();
         let marker = directory.path().join("pids");
         let mut harness = Command::new(std::env::current_exe().unwrap())
@@ -143,6 +143,39 @@ fn signals_cancel_capture_and_stop_descendants() {
         }
         assert_stopped(&pids);
     }
+}
+
+#[test]
+fn a_killed_owner_takes_its_child_groups_with_it() {
+    let directory = tempfile::tempdir().unwrap();
+    let marker = directory.path().join("pids");
+    let mut harness = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "cancellation_harness", "--nocapture"])
+        .env("OER_PROCESS_TEST_EXECUTABLE", &fixture().executable)
+        .env("OER_PROCESS_TEST_MARKER", &marker)
+        .spawn()
+        .unwrap();
+    let pids = wait_for_pids(&marker);
+    // SIGKILL leaves the owner no chance to clean up: its guardian must.
+    harness.kill().unwrap();
+    harness.wait().unwrap();
+    assert_stopped(&pids);
+}
+
+#[test]
+fn a_timeout_stops_the_command_and_names_its_limit() {
+    let directory = tempfile::tempdir().unwrap();
+    let marker = directory.path().join("pids");
+    let error = process::run_with_timeout(
+        Command::new(&fixture().executable).arg("tree").arg(&marker),
+        Duration::from_secs(1),
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("exceeded its 1 s limit"),
+        "{error}"
+    );
+    assert_stopped(&wait_for_pids(&marker));
 }
 
 #[test]

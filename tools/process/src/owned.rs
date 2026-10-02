@@ -35,6 +35,7 @@ impl Child {
             command.process_group(0);
             let mut child = command.spawn()?;
             let group = i32::try_from(child.id()).expect("Unix PID fits pid_t");
+            super::guardian::register(group);
             Ok(Self {
                 stdin: child.stdin.take(),
                 stdout: child.stdout.take(),
@@ -146,6 +147,7 @@ impl Child {
                 std::thread::sleep(Duration::from_millis(10));
             }
             self.signal(libc::SIGKILL);
+            super::guardian::unregister(self.group);
         }
         let _ = self.child.wait();
         self.finished = true;

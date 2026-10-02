@@ -90,7 +90,7 @@ machine-wide push queue keeps `main` still while a push rechecks, so a push
 checks at most twice and never chases a moving `main`. After a dependency or
 pin change, `cargo xtask lock` updates every workspace's lock file at once.
 Cargo runs offline in this repository (`.cargo/config.toml`): after a pull
-that changed a lock file, `cargo xtask fetch` downloads the new dependencies
+that changed a lock file, `cargo tidy fetch` downloads the new dependencies
 (`check changed` and image builds do this themselves).
 For a second checkout, use `cargo xtask worktree add`: its `target/` starts
 warm instead of rebuilding every dependency, and it is never shared with another

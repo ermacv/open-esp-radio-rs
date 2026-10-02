@@ -1,6 +1,36 @@
 use super::*;
 
 #[test]
+fn aes256_wrap_matches_rfc3394_section_4_3_and_rejects_tampering() {
+    let mut kek = [0; 32];
+    for (index, octet) in kek.iter_mut().enumerate() {
+        *octet = index as u8;
+    }
+    let plain = [
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee,
+        0xff,
+    ];
+    let expected = [
+        0x64, 0xe8, 0xc3, 0xf9, 0xce, 0x0f, 0x5b, 0xa2, 0x63, 0xe9, 0x77, 0x79, 0x05, 0x81, 0x8a,
+        0x2a, 0x93, 0xc8, 0x19, 0x1e, 0x7d, 0x6e, 0x8a, 0xe7,
+    ];
+    let wrapped = software_aes256_key_wrap(&kek, &plain).unwrap();
+    assert_eq!(wrapped.as_bytes(), expected);
+    assert_eq!(
+        software_aes256_key_unwrap(&kek, &expected)
+            .unwrap()
+            .as_bytes(),
+        plain
+    );
+    let mut changed = expected;
+    changed[0] ^= 1;
+    assert_eq!(
+        software_aes256_key_unwrap(&kek, &changed).err(),
+        Some(SoftwareAesKeyUnwrapError::IntegrityCheckFailed)
+    );
+}
+
+#[test]
 fn unwraps_rfc3394_vector_and_rejects_changed_integrity() {
     let kek = [
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,

@@ -26,6 +26,8 @@ protocol that owns them:
 | `data/duplicate` | Association/peer-scoped receive retry history |
 | `qos` | Typed traffic intent, UP/AC and DSCP classification helpers |
 | `roaming` | k/v Neighbor Report, RRM, BTM, idle, WNM Sleep, standalone TFS, DMS, Event/Diagnostic and URI wire codecs with complete optional elements |
+| `gas` | Advertisement Protocol IE and GAS Initial/Comeback Action wire formats |
+| `anqp` | Base ANQP and Hotspot 2.0 Release 1–3 envelopes and nested record formats |
 | `channel` | `Channel` (2.4 GHz and 5 GHz, 20/40 MHz geometry of the global operating classes) and the 2.4 GHz `WifiChannel` the role owners configure |
 | `phy` | `PhyRate`: validated non-HT, HT and HE SU rates |
 | `extensions/wmm` | WMM AC parameters and vendor IE parsing |
@@ -72,6 +74,14 @@ generations, time, measurements, regulatory facts and terminal TX results are
 supplied values. Physical scans/transitions, management protection, security and
 queue services stay with the existing owners. ESP32-S31 runtime routing and
 capability advertisement are not connected to these protocol owners.
+
+[`gas`](gas/README.md) owns pre-association sans-IO GAS requester/responder
+dialogs and ANQP query services. It composes MAC wire formats with supplied
+time, peer epochs, provider records and TX admission/completion. Fragment
+assembly, MAC retry caches and wire-token quarantine remain transport-owned;
+ANQP validates query/response identities, filters Home Realms and handles
+Hotspot/OSU/icon records. Network selection, credentials and external data
+producers retain their own ownership.
 
 The [RSN crate](security/rsn/README.md) separates secret ownership and
 derivation (`crypto`), packet views and MIC handling (`eapol`), wire formats

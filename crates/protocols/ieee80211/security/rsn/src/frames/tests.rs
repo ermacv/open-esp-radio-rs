@@ -32,6 +32,29 @@ fn contiguous_association_security_ies_retain_exact_rsn_and_rsnxe() {
 }
 
 #[test]
+fn association_security_storage_uses_its_declared_capacity_for_the_rsn_field() {
+    use oer_ieee80211_mac::security::rsn::RsnElement;
+    let rsn = [
+        48, 20, 1, 0, 0, 15, 172, 4, 1, 0, 0, 15, 172, 4, 1, 0, 0, 15, 172, 18, 128, 0,
+    ];
+    let mut bytes = [0; 128];
+    let length = RsnElement::parse(&rsn)
+        .unwrap()
+        .encode_with_pmkids(&[[1; 16], [2; 16], [3; 16]], &mut bytes)
+        .unwrap();
+    let owned = OwnedAssociationSecurityIes::<128>::try_copy_bytes(&bytes[..length]).unwrap();
+    assert_eq!(
+        RsnElement::parse(owned.rsn_ie()).unwrap().pmkid_count(),
+        Some(3)
+    );
+    assert_eq!(owned.as_bytes(), &bytes[..length]);
+    assert_eq!(
+        OwnedAssociationSecurityIes::<64>::try_copy_bytes(&bytes[..length]),
+        Err(RsnFrameError::CapacityExceeded)
+    );
+}
+
+#[test]
 fn gtk_key_data_round_trips_with_key_wrap_padding() {
     let rsn = rsn_ie();
     let gtk = RsnGtk::new(2, false, [0x5a; 16]).unwrap();

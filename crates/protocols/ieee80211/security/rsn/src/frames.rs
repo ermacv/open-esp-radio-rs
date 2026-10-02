@@ -1,13 +1,13 @@
 //! Fixed WPA2-CCMP EAPOL frame construction and GTK key-data parsing.
 
 use oer_ieee80211_mac::management::VENDOR_ELEMENT_ID;
-use oer_ieee80211_mac::security::rsn::{RSN_ELEMENT_ID, RSN_OUI};
+use oer_ieee80211_mac::security::rsn::{RSN_ELEMENT_ID, RSN_OUI, RSNXE_ELEMENT_ID};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::state::{RsnApState, RsnStaState, RsnTransmit, RsnTxMessage};
 use crate::{
-    Akm, EAPOL_KEY_FIXED_LEN, EAPOL_KEY_PACKET_LEN, EAPOL_PACKET_TYPE_KEY, EapolKeyFrame, Ptk,
-    RSN_KCK_LEN, RSN_KEY_DESCRIPTOR_TYPE, RSN_MIC_LEN, RsnInterface, RsnKeyConfirmationKey,
+    Akm, EAPOL_PACKET_TYPE_KEY, EapolKeyFrame, Ptk, RSN_KCK_LEN, RSN_KEY_DESCRIPTOR_TYPE,
+    RSN_MIC_LEN, RsnInterface, RsnKeyConfirmationKey,
 };
 
 pub const RSN_IE_CAPACITY: usize = 64;
@@ -21,7 +21,6 @@ pub const RSN_PLAIN_KEY_DATA_CAPACITY: usize = 128;
 pub const RSN_TX_EAPOL_CAPACITY: usize = 512;
 pub const RSN_TX_ETHERNET_CAPACITY: usize = RSN_TX_EAPOL_CAPACITY + 14;
 
-const RSNXE_ELEMENT_ID: u8 = 0xf4;
 const GTK_KDE_TYPE: u8 = 1;
 /// IGTK KDE: key id (2), IPN (6) and IGTK (16) after the OUI and type.
 const IGTK_KDE_TYPE: u8 = 9;
@@ -60,10 +59,13 @@ pub enum RsnFrameError {
     UnexpectedIgtk,
     RsnIeMismatch,
     RsnxeMismatch,
+    FtBindingMismatch,
     UnexpectedTransmitAction,
+    WrongMicLength,
+    WrongCryptoSuite,
 }
 
-mod key_data;
+pub(crate) mod key_data;
 mod security_ies;
 mod transmit;
 

@@ -359,7 +359,8 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
         &rsn,
     )
     .unwrap()
-    .authenticate(&ptk);
+    .authenticate(&ptk)
+    .unwrap();
     let message2 =
         OwnedEapolFrame::<512>::try_copy(RsnInterface::AccessPoint, peer, message2.as_bytes())
             .unwrap();
@@ -380,7 +381,8 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
     assert_eq!(&message3_mpdu[30..32], &[0x88, 0x8e]);
     let message4 = RsnTxFrame::<512>::message4(oer_ieee80211_mac::security::rsn::Akm::Psk, ap, 10)
         .unwrap()
-        .authenticate(&ptk);
+        .authenticate(&ptk)
+        .unwrap();
     let message4 =
         OwnedEapolFrame::<512>::try_copy(RsnInterface::AccessPoint, peer, message4.as_bytes())
             .unwrap();
@@ -442,7 +444,8 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
     let repeated_message4 =
         RsnTxFrame::<512>::message4(oer_ieee80211_mac::security::rsn::Akm::Psk, ap, 10)
             .unwrap()
-            .authenticate(&ptk);
+            .authenticate(&ptk)
+            .unwrap();
     let repeated_message4 = OwnedEapolFrame::<512>::try_copy(
         RsnInterface::AccessPoint,
         peer,

@@ -332,7 +332,10 @@ impl RsnCompletedMessage3 {
             key_info: frame.key_info().raw(),
             replay_counter: frame.replay_counter(),
             authenticator_nonce_tag: message3_nonce_tag(frame.nonce()),
-            mic: *frame.mic(),
+            mic: frame
+                .mic()
+                .try_into()
+                .expect("authenticated legacy suite has a 16-octet MIC"),
         }
     }
 
@@ -378,7 +381,12 @@ struct RsnCompletedGroupMessage1 {
 
 impl RsnCompletedGroupMessage1 {
     fn capture(frame: EapolKeyFrame<'_>) -> Self {
-        Self { mic: *frame.mic() }
+        Self {
+            mic: frame
+                .mic()
+                .try_into()
+                .expect("authenticated legacy suite has a 16-octet MIC"),
+        }
     }
 
     fn matches(&self, frame: EapolKeyFrame<'_>) -> bool {
@@ -436,7 +444,7 @@ impl RsnConnectedSupplicant {
         if !key.verify_mic_with_confirmation_key(&self.key_confirmation) {
             return Err(RsnConnectedSupplicantError::InvalidMic);
         }
-        if key.mic() != &self.completed_message3.mic {
+        if key.mic() != self.completed_message3.mic {
             return Err(RsnConnectedSupplicantError::RetainedMessage3Mismatch);
         }
         RsnTxFrame::message4(
@@ -445,10 +453,11 @@ impl RsnConnectedSupplicant {
             self.completed_message3.replay_counter,
         )
         .map_err(RsnConnectedSupplicantError::Frame)
-        .map(|frame| {
+        .and_then(|frame| {
             frame
                 .authenticate_with_confirmation_key(&self.key_confirmation)
-                .mark_retransmission()
+                .map(RsnTxFrame::mark_retransmission)
+                .map_err(RsnConnectedSupplicantError::Frame)
         })
     }
 
@@ -506,7 +515,8 @@ impl RsnConnectedSupplicant {
                 replay_counter,
             )
             .map_err(RsnConnectedSupplicantError::Frame)?
-            .authenticate_with_confirmation_key(&self.key_confirmation);
+            .authenticate_with_confirmation_key(&self.key_confirmation)
+            .map_err(RsnConnectedSupplicantError::Frame)?;
             return Ok(RsnConnectedAction::Retransmit(response));
         }
         if !key.key_info().encrypted_key_data() || key.key_data().is_empty() {
@@ -573,7 +583,10 @@ impl RsnConnectedSupplicant {
         .map_err(|error| {
             RsnConnectedProcessError::Supplicant(RsnConnectedSupplicantError::Frame(error))
         })?
-        .authenticate_with_confirmation_key(&self.key_confirmation);
+        .authenticate_with_confirmation_key(&self.key_confirmation)
+        .map_err(|error| {
+            RsnConnectedProcessError::Supplicant(RsnConnectedSupplicantError::Frame(error))
+        })?;
         Ok(RsnGroupKeyInstallRequest {
             ticket,
             replay_counter,
@@ -863,7 +876,8 @@ impl RsnStaSupplicant {
         let frame =
             build_sta_action_frame::<N, _>(&self.state, transmit, &self.association_security_ies)
                 .map_err(RsnStaSupplicantError::Frame)?
-                .authenticate(self.ptk()?);
+                .authenticate(self.ptk()?)
+                .map_err(RsnStaSupplicantError::Frame)?;
         Ok(RsnStaSupplicantAction::Transmit(frame))
     }
 

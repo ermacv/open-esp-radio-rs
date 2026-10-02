@@ -1,7 +1,7 @@
 //! Authenticator four-way-handshake state and its bounded peer table.
 
 use super::*;
-use crate::AkmKeys;
+use crate::HandshakeSuite;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RsnApPhase {
@@ -39,8 +39,8 @@ pub enum RsnApAction<const N: usize = DEFAULT_EAPOL_FRAME_CAPACITY> {
     DeauthenticatePeer,
 }
 
-pub struct RsnApState {
-    akm: Akm,
+pub struct RsnApState<S: HandshakeSuite = Akm> {
+    akm: S,
     authenticator: [u8; 6],
     supplicant: [u8; 6],
     authenticator_nonce: [u8; RSN_NONCE_LEN],
@@ -52,9 +52,9 @@ pub struct RsnApState {
     next_ticket: u32,
 }
 
-impl RsnApState {
+impl<S: HandshakeSuite> RsnApState<S> {
     pub const fn new(
-        akm: Akm,
+        akm: S,
         authenticator: [u8; 6],
         supplicant: [u8; 6],
         authenticator_nonce: [u8; RSN_NONCE_LEN],
@@ -80,7 +80,7 @@ impl RsnApState {
         })
     }
 
-    pub const fn akm(&self) -> Akm {
+    pub const fn akm(&self) -> S {
         self.akm
     }
 
@@ -142,7 +142,7 @@ impl RsnApState {
     ) -> Result<RsnApAction<N>, RsnStateError> {
         self.validate_frame(&frame)?;
         let key = frame.key_frame();
-        if key.key_info().descriptor_version() != self.akm.key_descriptor_version() {
+        if key.key_info().descriptor_version() != self.akm.eapol_descriptor_version() {
             return Err(RsnStateError::UnsupportedDescriptorVersion);
         }
         match key.message() {
@@ -309,6 +309,9 @@ impl RsnApState {
         &self,
         frame: &OwnedEapolFrame<N>,
     ) -> Result<(), RsnStateError> {
+        if frame.key_frame().mic_length() != self.akm.eapol_mic_length() {
+            return Err(RsnStateError::WrongMicLength);
+        }
         if frame.interface() != RsnInterface::AccessPoint {
             return Err(RsnStateError::WrongInterface);
         }

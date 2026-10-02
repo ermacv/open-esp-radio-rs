@@ -1,7 +1,7 @@
 //! Station four-way-handshake state and its complete event/action transitions.
 
 use super::*;
-use crate::AkmKeys;
+use crate::HandshakeSuite;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RsnStaPhase {
@@ -38,8 +38,8 @@ pub enum RsnStaAction<const N: usize = DEFAULT_EAPOL_FRAME_CAPACITY> {
     Deauthenticate,
 }
 
-pub struct RsnStaState {
-    akm: Akm,
+pub struct RsnStaState<S: HandshakeSuite = Akm> {
+    akm: S,
     local: [u8; 6],
     authenticator: [u8; 6],
     supplicant_nonce: [u8; RSN_NONCE_LEN],
@@ -51,9 +51,9 @@ pub struct RsnStaState {
     next_ticket: u32,
 }
 
-impl RsnStaState {
+impl<S: HandshakeSuite> RsnStaState<S> {
     pub const fn new(
-        akm: Akm,
+        akm: S,
         local: [u8; 6],
         authenticator: [u8; 6],
         supplicant_nonce: [u8; RSN_NONCE_LEN],
@@ -75,7 +75,7 @@ impl RsnStaState {
         })
     }
 
-    pub const fn akm(&self) -> Akm {
+    pub const fn akm(&self) -> S {
         self.akm
     }
 
@@ -113,7 +113,7 @@ impl RsnStaState {
     ) -> Result<RsnStaAction<N>, RsnStateError> {
         self.validate_frame(&frame)?;
         let key = frame.key_frame();
-        if key.key_info().descriptor_version() != self.akm.key_descriptor_version() {
+        if key.key_info().descriptor_version() != self.akm.eapol_descriptor_version() {
             return Err(RsnStateError::UnsupportedDescriptorVersion);
         }
 
@@ -344,6 +344,9 @@ impl RsnStaState {
         &self,
         frame: &OwnedEapolFrame<N>,
     ) -> Result<(), RsnStateError> {
+        if frame.key_frame().mic_length() != self.akm.eapol_mic_length() {
+            return Err(RsnStateError::WrongMicLength);
+        }
         if frame.interface() != RsnInterface::Station {
             return Err(RsnStateError::WrongInterface);
         }

@@ -16,6 +16,9 @@ pub const RSN_KCK_LEN: usize = 16;
 pub const RSN_KEK_LEN: usize = 16;
 pub const RSN_KEY_DATA_CAPACITY: usize = 512;
 pub const RSN_UNWRAPPED_KEY_DATA_CAPACITY: usize = RSN_KEY_DATA_CAPACITY - 8;
+pub(crate) const PTK_CONTEXT_LEN: usize = 2 * oer_ieee80211_mac::management::MAC_ADDRESS_LEN
+    + 2 * oer_ieee80211_mac::security::RSN_NONCE_LEN;
+pub(crate) const PAIRWISE_KEY_EXPANSION_LABEL: &[u8] = b"Pairwise key expansion";
 
 const RSN_ASSOCIATION_SECURITY_BINDING_LABEL: &[u8] =
     b"open-esp-radio-rs AP association security IEs";
@@ -33,6 +36,29 @@ pub struct PtkContext {
     pub supplicant_address: [u8; 6],
     pub authenticator_nonce: [u8; 32],
     pub supplicant_nonce: [u8; 32],
+}
+
+impl PtkContext {
+    /// Canonical pairwise KDF context shared by the ordinary RSN and OWE
+    /// hierarchies. FT uses its own explicitly different transition context.
+    pub(crate) fn canonical(self) -> [u8; PTK_CONTEXT_LEN] {
+        let mut canonical = [0; PTK_CONTEXT_LEN];
+        let (first_address, second_address) =
+            ordered(&self.authenticator_address, &self.supplicant_address);
+        let (first_nonce, second_nonce) =
+            ordered(&self.authenticator_nonce, &self.supplicant_nonce);
+        let mut offset = 0;
+        for part in [
+            &first_address[..],
+            &second_address[..],
+            &first_nonce[..],
+            &second_nonce[..],
+        ] {
+            canonical[offset..offset + part.len()].copy_from_slice(part);
+            offset += part.len();
+        }
+        canonical
+    }
 }
 
 /// Pairwise master key. The bytes cannot be formatted and are cleared on drop.
@@ -56,6 +82,9 @@ impl AssociationSecurityBinding {
 }
 
 impl Pmk {
+    pub(crate) const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
     /// Import an already-derived 256-bit PSK.
     ///
     /// This avoids retaining a passphrase in applications which provision raw
@@ -85,15 +114,7 @@ impl Pmk {
 
     /// Derive the pairwise transient key with the association's suite.
     pub fn derive_ptk(&self, akm: Akm, context: PtkContext) -> Ptk {
-        let mut canonical = [0; 76];
-        let (first_address, second_address) =
-            ordered(&context.authenticator_address, &context.supplicant_address);
-        canonical[..6].copy_from_slice(first_address);
-        canonical[6..12].copy_from_slice(second_address);
-        let (first_nonce, second_nonce) =
-            ordered(&context.authenticator_nonce, &context.supplicant_nonce);
-        canonical[12..44].copy_from_slice(first_nonce);
-        canonical[44..76].copy_from_slice(second_nonce);
+        let mut canonical = context.canonical();
         let bytes = akm.expand_ptk(&self.0, &canonical);
         canonical.zeroize();
         Ptk { akm, bytes }

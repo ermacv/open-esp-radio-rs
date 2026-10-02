@@ -5,7 +5,7 @@
 //! the Action body. A MAC owner remains responsible for the management header,
 //! sequence control, FCS, protection policy and physical publication.
 
-pub const PUBLIC_ACTION_CATEGORY: u8 = 4;
+pub use crate::management::PUBLIC_ACTION_CATEGORY;
 pub const FTM_REQUEST_PUBLIC_ACTION: u8 = 32;
 pub const FTM_MEASUREMENT_PUBLIC_ACTION: u8 = 33;
 pub const FTM_PARAMETERS_ELEMENT_ID: u8 = 206;

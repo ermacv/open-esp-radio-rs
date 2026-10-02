@@ -4,15 +4,15 @@
 //! key, allocate, retry, or wait. Each method consumes one completion/event
 //! and returns at most one owned action for the radio executor.
 
-use crate::AkmKeys;
+use crate::HandshakeSuite;
 use crate::{Akm, DEFAULT_EAPOL_FRAME_CAPACITY, EapolKeyMessage, OwnedEapolFrame, RsnInterface};
 
-pub const RSN_NONCE_LEN: usize = 32;
+pub use oer_ieee80211_mac::security::RSN_NONCE_LEN;
 
 const RSN_CCMP_TEMPORAL_KEY_LEN: u16 = 16;
 /// Key Information of an authenticator pairwise Message 3 for `akm`.
-fn pairwise_message3_key_info(akm: Akm) -> u16 {
-    akm.key_descriptor_version() as u16
+fn pairwise_message3_key_info(akm: impl HandshakeSuite) -> u16 {
+    akm.eapol_descriptor_version() as u16
         | (1 << 3) // Pairwise.
         | (1 << 6) // Install.
         | (1 << 7) // ACK.
@@ -58,6 +58,7 @@ pub enum RsnStateError {
     WrongInterface,
     WrongPeer,
     UnsupportedDescriptorVersion,
+    WrongMicLength,
     UnsupportedMessage,
     UnexpectedMessage,
     StaleReplayCounter,
@@ -88,6 +89,7 @@ impl RsnStateError {
             Self::WrongInterface
                 | Self::WrongPeer
                 | Self::UnsupportedDescriptorVersion
+                | Self::WrongMicLength
                 | Self::UnsupportedMessage
                 | Self::UnexpectedMessage
                 | Self::StaleReplayCounter

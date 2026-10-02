@@ -9,7 +9,10 @@
 //! PTK/MIC/key-data processing to typed key-install requests. The negotiated
 //! [`Akm`] selects the key descriptor version, pairwise key expansion and
 //! EAPOL-Key MIC; everything else is shared. PSK (`00-0F-AC:2`) and
-//! PSK-SHA256 (`00-0F-AC:6`) are implemented. With management frame
+//! PSK-SHA256 (`00-0F-AC:6`) and SAE (`00-0F-AC:8`) are implemented.
+//! [`ft`] owns the distinct FT key hierarchy and STA/AP transition procedures
+//! and reuses the typed four-way automata for initial FT association.
+//! With management frame
 //! protection negotiated, group keys carry the IGTK and [`bip`] verifies
 //! group-addressed robust management frames. Platform MAC crates remain
 //! responsible only for executing key-install and transmit requests.
@@ -22,9 +25,11 @@ pub mod akm;
 pub mod bip;
 pub mod element;
 pub mod frames;
+pub mod ft;
 mod kdf;
 pub mod keys;
 pub mod management_ccmp;
+pub mod owe;
 pub mod retry;
 pub mod runner;
 pub mod sae;
@@ -35,7 +40,7 @@ pub mod crypto;
 pub mod eapol;
 
 pub(crate) use akm::AkmKeys;
-pub use akm::RSN_MIC_LEN;
+pub use akm::{HandshakeSuite, RSN_MIC_LEN};
 pub use crypto::{
     AssociationSecurityBinding, PSK_PASSPHRASE_MAX_LEN, PSK_PASSPHRASE_MIN_LEN,
     PSK_PBKDF2_ITERATIONS, PSK_SSID_MAX_LEN, Pmk, PskDerivationError, Ptk, PtkContext, RSN_KCK_LEN,

@@ -136,7 +136,8 @@ fn established_supplicant() -> (RsnConnectedSupplicant, Ptk) {
         wrapped.as_bytes(),
     )
     .unwrap()
-    .authenticate(&peer_ptk);
+    .authenticate(&peer_ptk)
+    .unwrap();
     let RsnStaSupplicantAction::InstallKeys(request) = embassy_futures::block_on(process_frame(
         &mut supplicant,
         owned_eapol(&message3),
@@ -172,7 +173,8 @@ fn group_message1(
         wrapped.as_bytes(),
     )
     .unwrap()
-    .authenticate(ptk);
+    .authenticate(ptk)
+    .unwrap();
     ConnectedSecurityFrame::Protected(owned_eapol(&frame))
 }
 
@@ -820,7 +822,8 @@ fn completed_wpa2_fixture(hardware: &mut Hardware) -> CompletedWpa2Fixture {
         wrapped.as_bytes(),
     )
     .unwrap()
-    .authenticate(&ptk);
+    .authenticate(&ptk)
+    .unwrap();
     let RsnStaSupplicantAction::InstallKeys(request) = embassy_futures::block_on(process_frame(
         &mut supplicant,
         owned_station_eapol(&message3),
@@ -846,7 +849,8 @@ fn completed_wpa2_fixture(hardware: &mut Hardware) -> CompletedWpa2Fixture {
         wrapped.as_bytes(),
     )
     .unwrap()
-    .authenticate(&ptk);
+    .authenticate(&ptk)
+    .unwrap();
     let mut forged = [0; 512];
     let length = message3.as_bytes().len();
     forged[..length].copy_from_slice(message3.as_bytes());

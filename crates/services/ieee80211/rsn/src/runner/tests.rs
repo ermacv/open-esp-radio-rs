@@ -100,7 +100,8 @@ impl Backend {
             plain.as_bytes(),
         )
         .unwrap()
-        .authenticate(&ptk);
+        .authenticate(&ptk)
+        .unwrap();
         OwnedEapolFrame::try_copy(RsnInterface::Station, AP, frame.as_bytes()).unwrap()
     }
 

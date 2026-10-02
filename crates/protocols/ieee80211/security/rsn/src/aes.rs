@@ -3,14 +3,16 @@
 use core::future::Future;
 
 use ::aes::{
-    Aes128,
-    cipher::{BlockDecrypt, BlockEncrypt, KeyInit, generic_array::GenericArray},
+    Aes128, Aes256,
+    cipher::{BlockDecrypt, BlockEncrypt, KeyInit, consts::U16, generic_array::GenericArray},
 };
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{RSN_KEY_DATA_CAPACITY, RSN_UNWRAPPED_KEY_DATA_CAPACITY};
 
 const RFC3394_IV: [u8; 8] = [0xa6; 8];
+/// RFC3394 ciphertext overhead: the integrity register prepended to key data.
+pub const RFC3394_OVERHEAD_LEN: usize = RFC3394_IV.len();
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SoftwareAesKeyUnwrapError {
@@ -128,6 +130,21 @@ pub fn software_aes128_key_wrap(
     kek: &[u8; 16],
     plaintext: &[u8],
 ) -> Result<RsnWrappedKeyData, SoftwareAesKeyWrapError> {
+    key_wrap(&Aes128::new(GenericArray::from_slice(kek)), plaintext)
+}
+
+/// RFC 3394 with a 256-bit KEK, used by OWE groups 20/21.
+pub fn software_aes256_key_wrap(
+    kek: &[u8; 32],
+    plaintext: &[u8],
+) -> Result<RsnWrappedKeyData, SoftwareAesKeyWrapError> {
+    key_wrap(&Aes256::new(GenericArray::from_slice(kek)), plaintext)
+}
+
+fn key_wrap(
+    cipher: &impl BlockEncrypt<BlockSize = U16>,
+    plaintext: &[u8],
+) -> Result<RsnWrappedKeyData, SoftwareAesKeyWrapError> {
     if plaintext.len() < 16 || !plaintext.len().is_multiple_of(8) {
         return Err(SoftwareAesKeyWrapError::InvalidLength);
     }
@@ -139,7 +156,6 @@ pub fn software_aes128_key_wrap(
         return Err(SoftwareAesKeyWrapError::CapacityExceeded);
     }
 
-    let cipher = Aes128::new(GenericArray::from_slice(kek));
     let mut output = RsnWrappedKeyData {
         len,
         bytes: [0; RSN_KEY_DATA_CAPACITY],
@@ -170,6 +186,21 @@ pub fn software_aes128_key_unwrap(
     kek: &[u8; 16],
     encrypted: &[u8],
 ) -> Result<RsnUnwrappedKeyData, SoftwareAesKeyUnwrapError> {
+    key_unwrap(&Aes128::new(GenericArray::from_slice(kek)), encrypted)
+}
+
+/// RFC 3394 with a 256-bit KEK; failed integrity never exposes plaintext.
+pub fn software_aes256_key_unwrap(
+    kek: &[u8; 32],
+    encrypted: &[u8],
+) -> Result<RsnUnwrappedKeyData, SoftwareAesKeyUnwrapError> {
+    key_unwrap(&Aes256::new(GenericArray::from_slice(kek)), encrypted)
+}
+
+fn key_unwrap(
+    cipher: &impl BlockDecrypt<BlockSize = U16>,
+    encrypted: &[u8],
+) -> Result<RsnUnwrappedKeyData, SoftwareAesKeyUnwrapError> {
     if encrypted.len() < 24 || !encrypted.len().is_multiple_of(8) {
         return Err(SoftwareAesKeyUnwrapError::InvalidLength);
     }
@@ -178,7 +209,6 @@ pub fn software_aes128_key_unwrap(
         return Err(SoftwareAesKeyUnwrapError::CapacityExceeded);
     }
 
-    let cipher = Aes128::new(GenericArray::from_slice(kek));
     let mut accumulator = [0; 8];
     accumulator.copy_from_slice(&encrypted[..8]);
     let mut output = RsnUnwrappedKeyData {

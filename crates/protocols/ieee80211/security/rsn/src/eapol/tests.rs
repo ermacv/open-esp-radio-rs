@@ -1,5 +1,52 @@
 use super::*;
 
+#[test]
+fn negotiated_mic_geometry_retains_key_data_and_rejects_wrong_geometry() {
+    for geometry in [
+        KeyMicLength::Octets16,
+        KeyMicLength::Octets24,
+        KeyMicLength::Octets32,
+    ] {
+        let mut bytes = [0; 140];
+        let prefix = geometry.packet_prefix_len();
+        let len = prefix + 3;
+        bytes[0] = 2;
+        bytes[1] = EAPOL_PACKET_TYPE_KEY;
+        bytes[2..4].copy_from_slice(&((len - EAPOL_HEADER_LEN) as u16).to_be_bytes());
+        bytes[4] = RSN_KEY_DESCRIPTOR_TYPE;
+        bytes[5..7].copy_from_slice(&(KEY_INFO_PAIRWISE | KEY_INFO_MIC).to_be_bytes());
+        bytes[EAPOL_KEY_MIC_START..geometry.end()].fill(0xa5);
+        bytes[geometry.end()..prefix].copy_from_slice(&3u16.to_be_bytes());
+        bytes[prefix..len].copy_from_slice(&[1, 2, 3]);
+        let view = EapolKeyFrame::parse_with_mic_length(&bytes[..len], geometry).unwrap();
+        assert_eq!(view.mic(), &bytes[EAPOL_KEY_MIC_START..geometry.end()]);
+        assert_eq!(view.key_data(), &[1, 2, 3]);
+        let retained = OwnedEapolFrame::<140>::try_copy_with_mic_length(
+            RsnInterface::Station,
+            [2; 6],
+            &bytes[..len],
+            geometry,
+        )
+        .unwrap();
+        assert_eq!(retained.key_frame(), view);
+        if geometry != KeyMicLength::Octets16 {
+            assert!(EapolKeyFrame::parse(&bytes[..len]).is_err());
+            let mut station =
+                crate::state::RsnStaState::new(Akm::Psk, [4; 6], [2; 6], [1; 32]).unwrap();
+            assert_eq!(
+                station.on_frame(retained).unwrap_err(),
+                crate::state::RsnStateError::WrongMicLength
+            );
+            assert_eq!(station.phase(), crate::state::RsnStaPhase::AwaitingMessage1);
+        }
+        bytes[len] = 0;
+        assert_eq!(
+            EapolKeyFrame::parse_with_mic_length(&bytes[..len + 1], geometry),
+            Err(EapolParseError::LengthMismatch)
+        );
+    }
+}
+
 fn key_packet(key_info: u16, replay_counter: u64) -> [u8; EAPOL_KEY_PACKET_LEN] {
     let mut packet = [0; EAPOL_KEY_PACKET_LEN];
     packet[0] = 2;

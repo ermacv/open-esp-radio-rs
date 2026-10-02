@@ -46,7 +46,8 @@ fn awaiting_message3(pmk: &Pmk) -> (RsnStaSupplicant, OwnedEapolFrame<512>) {
     let message3 =
         RsnTxFrame::<512>::message3(Akm::Psk, LOCAL, 2, ANONCE, [0; 8], wrapped.as_bytes())
             .unwrap()
-            .authenticate(&ptk);
+            .authenticate(&ptk)
+            .unwrap();
     (supplicant, owned(&message3))
 }
 

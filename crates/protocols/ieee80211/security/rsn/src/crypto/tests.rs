@@ -59,7 +59,8 @@ fn derives_known_ptk_and_builds_message_2() {
         &security_ies,
     )
     .unwrap()
-    .authenticate(&ptk);
+    .authenticate(&ptk)
+    .unwrap();
     let parsed = EapolKeyFrame::parse(message.as_bytes()).unwrap();
     assert_eq!(parsed.message(), EapolKeyMessage::PairwiseMessage2);
     assert_eq!(parsed.replay_counter(), 7);
@@ -70,7 +71,8 @@ fn derives_known_ptk_and_builds_message_2() {
     let message4 =
         frames::RsnTxFrame::<512>::message4(crate::Akm::Psk, context.authenticator_address, 8)
             .unwrap()
-            .authenticate(&ptk);
+            .authenticate(&ptk)
+            .unwrap();
     let parsed4 = EapolKeyFrame::parse(message4.as_bytes()).unwrap();
     assert_eq!(parsed4.protocol_version(), 1);
     assert_eq!(parsed4.message(), EapolKeyMessage::PairwiseMessage4);

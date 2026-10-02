@@ -63,7 +63,8 @@ fn encrypted_message3(
         wrapped.as_bytes(),
     )
     .unwrap()
-    .authenticate(ptk);
+    .authenticate(ptk)
+    .unwrap();
     owned(&frame)
 }
 
@@ -101,7 +102,8 @@ fn connected(ptk: Ptk) -> RsnConnectedSupplicant {
     let message3 =
         RsnTxFrame::<512>::message3(crate::Akm::Psk, LOCAL, 2, ANONCE, [0; 8], &[0x55; 24])
             .unwrap()
-            .authenticate(&ptk);
+            .authenticate(&ptk)
+            .unwrap();
     let completed_message3 = RsnCompletedMessage3::capture(message3.key_frame());
     let (key_confirmation, key_encryption) = ptk.into_connected_keys();
     RsnConnectedSupplicant {
@@ -380,7 +382,8 @@ fn connected_group_rekey_installs_once_and_retransmits_idempotently() {
     let ptk = pmk.derive_ptk(crate::Akm::Psk, context());
     let frame = RsnTxFrame::<512>::group_message1(crate::Akm::Psk, LOCAL, 3, [9; 8], &[0x55; 24])
         .unwrap()
-        .authenticate(&ptk);
+        .authenticate(&ptk)
+        .unwrap();
     let mut connected = connected(pmk.derive_ptk(crate::Akm::Psk, context()));
     let unwrap = GroupKeyUnwrap {
         plain: group_kde(1, 0x6a),
@@ -421,7 +424,8 @@ fn connected_group_rekey_authenticates_duplicate_before_cached_response() {
     let ptk = pmk.derive_ptk(crate::Akm::Psk, context());
     let frame = RsnTxFrame::<512>::group_message1(crate::Akm::Psk, LOCAL, 3, [9; 8], &[0x55; 24])
         .unwrap()
-        .authenticate(&ptk);
+        .authenticate(&ptk)
+        .unwrap();
     let mut connected = connected(pmk.derive_ptk(crate::Akm::Psk, context()));
     let unwrap = GroupKeyUnwrap {
         plain: group_kde(1, 0x6a),
@@ -454,7 +458,8 @@ fn connected_group_rekey_rejects_authenticated_changed_same_replay() {
     let ptk = pmk.derive_ptk(crate::Akm::Psk, context());
     let frame = RsnTxFrame::<512>::group_message1(crate::Akm::Psk, LOCAL, 3, [9; 8], &[0x55; 24])
         .unwrap()
-        .authenticate(&ptk);
+        .authenticate(&ptk)
+        .unwrap();
     let original = owned(&frame);
     let mut connected = connected(pmk.derive_ptk(crate::Akm::Psk, context()));
     let unwrap = GroupKeyUnwrap {
@@ -494,7 +499,8 @@ fn failed_group_rekey_does_not_retain_message1_commitment() {
     let ptk = pmk.derive_ptk(crate::Akm::Psk, context());
     let frame = RsnTxFrame::<512>::group_message1(crate::Akm::Psk, LOCAL, 3, [9; 8], &[0x55; 24])
         .unwrap()
-        .authenticate(&ptk);
+        .authenticate(&ptk)
+        .unwrap();
     let mut connected = connected(pmk.derive_ptk(crate::Akm::Psk, context()));
     let unwrap = GroupKeyUnwrap {
         plain: group_kde(1, 0x6a),
@@ -526,7 +532,8 @@ fn connected_group_rekey_rejects_bad_mic_and_stale_replay() {
     let ptk = pmk.derive_ptk(crate::Akm::Psk, context());
     let valid = RsnTxFrame::<512>::group_message1(crate::Akm::Psk, LOCAL, 3, [0; 8], &[0x55; 24])
         .unwrap()
-        .authenticate(&ptk);
+        .authenticate(&ptk)
+        .unwrap();
     let mut bytes = [0; 512];
     bytes[..valid.as_bytes().len()].copy_from_slice(valid.as_bytes());
     bytes[81] ^= 1;
@@ -549,7 +556,8 @@ fn connected_group_rekey_rejects_bad_mic_and_stale_replay() {
 
     let stale = RsnTxFrame::<512>::group_message1(crate::Akm::Psk, LOCAL, 1, [0; 8], &[0x55; 24])
         .unwrap()
-        .authenticate(&ptk);
+        .authenticate(&ptk)
+        .unwrap();
     assert!(matches!(
         group_message1(&mut connected, owned(&stale), &unwrap),
         Err(RsnConnectedProcessError::Supplicant(
@@ -645,7 +653,8 @@ fn group_key_data_request_keeps_the_supplicant_busy_until_completed() {
     let ptk = pmk.derive_ptk(crate::Akm::Psk, context());
     let frame = RsnTxFrame::<512>::group_message1(crate::Akm::Psk, LOCAL, 3, [9; 8], &[0x55; 24])
         .unwrap()
-        .authenticate(&ptk);
+        .authenticate(&ptk)
+        .unwrap();
     let mut connected = connected(pmk.derive_ptk(crate::Akm::Psk, context()));
     let RsnConnectedAction::UnwrapGroupKeyData(request) =
         connected.on_group_message1(owned(&frame)).unwrap()
@@ -678,7 +687,8 @@ fn failed_group_key_data_unwrap_returns_the_error_and_releases_the_supplicant() 
     let ptk = pmk.derive_ptk(crate::Akm::Psk, context());
     let frame = RsnTxFrame::<512>::group_message1(crate::Akm::Psk, LOCAL, 3, [9; 8], &[0x55; 24])
         .unwrap()
-        .authenticate(&ptk);
+        .authenticate(&ptk)
+        .unwrap();
     let mut connected = connected(pmk.derive_ptk(crate::Akm::Psk, context()));
 
     let RsnConnectedAction::UnwrapGroupKeyData(request) =

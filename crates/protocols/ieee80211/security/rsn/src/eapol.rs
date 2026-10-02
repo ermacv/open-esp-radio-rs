@@ -27,8 +27,31 @@ const KEY_INFO_REQUEST: u16 = 1 << 11;
 const KEY_INFO_ENCRYPTED_KEY_DATA: u16 = 1 << 12;
 const KEY_INFO_SMK: u16 = 1 << 13;
 
-const EAPOL_KEY_MIC_START: usize = 81;
-const EAPOL_KEY_MIC_END: usize = 97;
+pub(crate) const EAPOL_KEY_MIC_START: usize = 81;
+
+/// MIC geometry is selected by the negotiated AKM/PMK, never guessed from
+/// untrusted length fields. OWE groups 19/20/21 use 16/24/32 octets.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KeyMicLength {
+    Octets16,
+    Octets24,
+    Octets32,
+}
+impl KeyMicLength {
+    pub const fn octets(self) -> usize {
+        match self {
+            Self::Octets16 => 16,
+            Self::Octets24 => 24,
+            Self::Octets32 => 32,
+        }
+    }
+    pub(crate) const fn end(self) -> usize {
+        EAPOL_KEY_MIC_START + self.octets()
+    }
+    pub(crate) const fn packet_prefix_len(self) -> usize {
+        self.end() + core::mem::size_of::<u16>()
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EapolParseError {
@@ -126,11 +149,20 @@ pub struct EapolKeyFrame<'a> {
     bytes: &'a [u8],
     key_data: &'a [u8],
     key_info: EapolKeyInfo,
+    mic_length: KeyMicLength,
 }
 
 impl<'a> EapolKeyFrame<'a> {
     pub fn parse(bytes: &'a [u8]) -> Result<Self, EapolParseError> {
-        if bytes.len() < EAPOL_KEY_PACKET_LEN {
+        Self::parse_with_mic_length(bytes, KeyMicLength::Octets16)
+    }
+
+    pub fn parse_with_mic_length(
+        bytes: &'a [u8],
+        mic_length: KeyMicLength,
+    ) -> Result<Self, EapolParseError> {
+        let prefix_len = mic_length.packet_prefix_len();
+        if bytes.len() < prefix_len {
             return Err(EapolParseError::Truncated);
         }
         if bytes[1] != EAPOL_PACKET_TYPE_KEY {
@@ -141,15 +173,16 @@ impl<'a> EapolKeyFrame<'a> {
         let packet_len = EAPOL_HEADER_LEN
             .checked_add(body_len)
             .ok_or(EapolParseError::LengthMismatch)?;
-        if packet_len != bytes.len() || body_len < EAPOL_KEY_FIXED_LEN {
+        if packet_len != bytes.len() || body_len < prefix_len - EAPOL_HEADER_LEN {
             return Err(EapolParseError::LengthMismatch);
         }
         if bytes[4] != RSN_KEY_DESCRIPTOR_TYPE {
             return Err(EapolParseError::NotRsnKeyDescriptor);
         }
 
-        let key_data_len = u16::from_be_bytes([bytes[97], bytes[98]]) as usize;
-        let key_data_end = EAPOL_KEY_PACKET_LEN
+        let mic_end = mic_length.end();
+        let key_data_len = u16::from_be_bytes([bytes[mic_end], bytes[mic_end + 1]]) as usize;
+        let key_data_end = prefix_len
             .checked_add(key_data_len)
             .ok_or(EapolParseError::LengthMismatch)?;
         if key_data_end != packet_len {
@@ -158,8 +191,9 @@ impl<'a> EapolKeyFrame<'a> {
 
         Ok(Self {
             bytes,
-            key_data: &bytes[EAPOL_KEY_PACKET_LEN..key_data_end],
+            key_data: &bytes[prefix_len..key_data_end],
             key_info: EapolKeyInfo(u16::from_be_bytes([bytes[5], bytes[6]])),
+            mic_length,
         })
     }
 
@@ -208,10 +242,12 @@ impl<'a> EapolKeyFrame<'a> {
             .expect("validated EAPOL-Key IV range")
     }
 
-    pub fn mic(self) -> &'a [u8; 16] {
-        self.bytes[81..97]
-            .try_into()
-            .expect("validated EAPOL-Key MIC range")
+    pub fn mic(self) -> &'a [u8] {
+        &self.bytes[EAPOL_KEY_MIC_START..self.mic_length.end()]
+    }
+
+    pub const fn mic_length(self) -> KeyMicLength {
+        self.mic_length
     }
 
     pub fn key_receive_sequence(self) -> &'a [u8; 8] {
@@ -240,11 +276,27 @@ impl<'a> EapolKeyFrame<'a> {
     }
 
     fn verify_mic_with_kck(self, akm: Akm, kck: &[u8; RSN_KCK_LEN]) -> bool {
-        let mut mac = akm.mic(kck);
+        self.verify_with_mic(akm.mic(kck))
+    }
+
+    pub fn verify_ft_mic(self, ptk: &crate::ft::FtPtk) -> bool {
+        use crate::HandshakeSuite;
+        self.key_info().descriptor_version() == ptk.akm().eapol_descriptor_version()
+            && self.verify_with_mic(crate::akm::EapolMic::aes_cmac(ptk.kck()))
+    }
+
+    fn verify_with_mic(self, mut mac: crate::akm::EapolMic) -> bool {
+        if self.mic_length != KeyMicLength::Octets16 {
+            return false;
+        }
         mac.update(&self.bytes[..EAPOL_KEY_MIC_START]);
-        mac.update(&[0; EAPOL_KEY_MIC_END - EAPOL_KEY_MIC_START]);
-        mac.update(&self.bytes[EAPOL_KEY_MIC_END..]);
-        mac.verify(self.mic())
+        mac.update(&[0; 16]);
+        mac.update(&self.bytes[self.mic_length.end()..]);
+        mac.verify(
+            self.mic()
+                .try_into()
+                .expect("checked standard MIC geometry"),
+        )
     }
 }
 
@@ -255,6 +307,7 @@ pub struct OwnedEapolFrame<const N: usize = DEFAULT_EAPOL_FRAME_CAPACITY> {
     peer: [u8; 6],
     len: usize,
     bytes: [u8; N],
+    mic_length: KeyMicLength,
 }
 
 impl<const N: usize> OwnedEapolFrame<N> {
@@ -263,7 +316,16 @@ impl<const N: usize> OwnedEapolFrame<N> {
         peer: [u8; 6],
         bytes: &[u8],
     ) -> Result<Self, EapolCopyError> {
-        EapolKeyFrame::parse(bytes).map_err(EapolCopyError::Invalid)?;
+        Self::try_copy_with_mic_length(interface, peer, bytes, KeyMicLength::Octets16)
+    }
+
+    pub fn try_copy_with_mic_length(
+        interface: RsnInterface,
+        peer: [u8; 6],
+        bytes: &[u8],
+        mic_length: KeyMicLength,
+    ) -> Result<Self, EapolCopyError> {
+        EapolKeyFrame::parse_with_mic_length(bytes, mic_length).map_err(EapolCopyError::Invalid)?;
         if bytes.len() > N {
             return Err(EapolCopyError::CapacityExceeded);
         }
@@ -275,6 +337,7 @@ impl<const N: usize> OwnedEapolFrame<N> {
             peer,
             len: bytes.len(),
             bytes: owned,
+            mic_length,
         })
     }
 
@@ -291,7 +354,8 @@ impl<const N: usize> OwnedEapolFrame<N> {
     }
 
     pub fn key_frame(&self) -> EapolKeyFrame<'_> {
-        EapolKeyFrame::parse(self.as_bytes()).expect("owned EAPOL frame was validated on creation")
+        EapolKeyFrame::parse_with_mic_length(self.as_bytes(), self.mic_length)
+            .expect("owned EAPOL frame was validated on creation")
     }
 }
 

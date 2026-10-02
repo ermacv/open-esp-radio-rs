@@ -68,7 +68,8 @@ fn signed_message2(
         &security_ies,
     )
     .unwrap()
-    .authenticate(&ptk);
+    .authenticate(&ptk)
+    .unwrap();
     OwnedEapolFrame::try_copy(RsnInterface::AccessPoint, PEER, message2.as_bytes()).unwrap()
 }
 
@@ -615,7 +616,8 @@ fn complete_four_way_handshake_retains_ptk_until_hardware_authorization() {
         &rsn,
     )
     .unwrap()
-    .authenticate(&ptk);
+    .authenticate(&ptk)
+    .unwrap();
     let message2 =
         OwnedEapolFrame::<512>::try_copy(RsnInterface::AccessPoint, PEER, message2.as_bytes())
             .unwrap();
@@ -660,7 +662,8 @@ fn complete_four_way_handshake_retains_ptk_until_hardware_authorization() {
 
     let message4 = RsnTxFrame::<512>::message4(oer_ieee80211_mac::security::rsn::Akm::Psk, AP, 10)
         .unwrap()
-        .authenticate(&ptk);
+        .authenticate(&ptk)
+        .unwrap();
     let message4 =
         OwnedEapolFrame::<512>::try_copy(RsnInterface::AccessPoint, PEER, message4.as_bytes())
             .unwrap();
@@ -801,7 +804,8 @@ fn unauthenticated_eapol_cannot_poison_or_refresh_a_securing_peer() {
     );
     let valid_m4 = RsnTxFrame::<512>::message4(oer_ieee80211_mac::security::rsn::Akm::Psk, AP, 10)
         .unwrap()
-        .authenticate(&ptk);
+        .authenticate(&ptk)
+        .unwrap();
     let valid_m4 =
         OwnedEapolFrame::try_copy(RsnInterface::AccessPoint, PEER, valid_m4.as_bytes()).unwrap();
     let forged_m4 = corrupt_mic(valid_m4.clone());
@@ -1373,7 +1377,8 @@ fn a_wpa3_handshake_uses_the_sae_pmk_and_delivers_the_igtk() {
         &rsn,
     )
     .unwrap()
-    .authenticate(&ptk);
+    .authenticate(&ptk)
+    .unwrap();
     let message2 =
         OwnedEapolFrame::<512>::try_copy(RsnInterface::AccessPoint, PEER, message2.as_bytes())
             .unwrap();

@@ -2,6 +2,17 @@
 
 use crate::sequence::SequenceNumber;
 
+pub mod elements;
+
+/// Public Action category, shared by GAS, FTM and other Public Action formats.
+pub const PUBLIC_ACTION_CATEGORY: u8 = 4;
+/// Protected Dual of Public Action; management protection is owned externally.
+pub const PROTECTED_DUAL_ACTION_CATEGORY: u8 = 9;
+/// IEEE status codes shared by Authentication and Association responses.
+pub const STATUS_SUCCESS: u16 = 0;
+pub const STATUS_UNSPECIFIED_FAILURE: u16 = 1;
+pub const STATUS_UNSUPPORTED_FINITE_CYCLIC_GROUP: u16 = 77;
+
 pub const MANAGEMENT_HEADER_LEN: usize = 24;
 pub const MAX_SSID_LEN: usize = 32;
 pub const MAX_SUPPORTED_RATES_LEN: usize = 24;
@@ -24,6 +35,10 @@ pub const fn is_group_address(address: MacAddress) -> bool {
 pub const SSID_ELEMENT_ID: u8 = 0;
 /// Vendor-specific IE; its body defines the vendor OUI and subtype namespace.
 pub const VENDOR_ELEMENT_ID: u8 = 221;
+/// Extension IE: its first body octet selects the extension namespace.
+pub const EXTENSION_ELEMENT_ID: u8 = 255;
+/// Wi-Fi Alliance OUI shared by its management and ANQP vendor formats.
+pub const WFA_OUI: [u8; 3] = [0x50, 0x6f, 0x9a];
 const SUPPORTED_RATES_ELEMENT_ID: u8 = 1;
 const EXTENDED_SUPPORTED_RATES_ELEMENT_ID: u8 = 50;
 const SUPPORTED_RATES_ELEMENT_CAPACITY: usize = 8;

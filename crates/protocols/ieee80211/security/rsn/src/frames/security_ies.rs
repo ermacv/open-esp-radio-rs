@@ -50,7 +50,7 @@ impl<const N: usize> OwnedAssociationSecurityIes<N> {
         let Some(rsn) = bytes.get(..rsn_len) else {
             return Err(RsnFrameError::InvalidRsnIe);
         };
-        let rsn = OwnedRsnIe::<RSN_IE_CAPACITY>::try_copy(rsn)?;
+        let rsn = OwnedRsnIe::<N>::try_copy(rsn)?;
         let rsnxe = bytes.get(rsn_len..).ok_or(RsnFrameError::InvalidRsnxe)?;
         Self::try_copy(&rsn, rsnxe)
     }

@@ -1,10 +1,9 @@
 //! Borrowed k/v information elements and their assigned IE identifiers.
 use super::WireError;
-/// ID and Length octets preceding each element body.
-pub const ELEMENT_HEADER_LEN: usize = 2;
-pub const ELEMENT_LENGTH_OFFSET: usize = 1;
-pub const MAX_ELEMENT_BODY_LEN: usize = u8::MAX as usize;
-pub const MAX_ENCODED_ELEMENT_LEN: usize = ELEMENT_HEADER_LEN + MAX_ELEMENT_BODY_LEN;
+use crate::management::elements as framing;
+pub use framing::{
+    ELEMENT_HEADER_LEN, ELEMENT_LENGTH_OFFSET, MAX_ELEMENT_BODY_LEN, MAX_ENCODED_ELEMENT_LEN,
+};
 
 /// Information-element identifiers; subelement namespaces are protocol-specific.
 pub mod element_id {
@@ -37,51 +36,40 @@ pub mod element_id {
 
 /// A completely validated sequence of two-octet-header TLVs.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Elements<'a>(&'a [u8]);
+pub struct Elements<'a>(framing::Elements<'a>);
 
 impl<'a> Elements<'a> {
-    pub const EMPTY: Self = Self(&[]);
+    pub const EMPTY: Self = Self(framing::Elements::EMPTY);
 
     pub fn parse(bytes: &'a [u8]) -> Result<Self, WireError> {
-        let mut rest = bytes;
-        while !rest.is_empty() {
-            if rest.len() < ELEMENT_HEADER_LEN {
-                return Err(WireError::MalformedElement);
-            }
-            let len = ELEMENT_HEADER_LEN + usize::from(rest[ELEMENT_LENGTH_OFFSET]);
-            rest = rest.get(len..).ok_or(WireError::MalformedElement)?;
-        }
-        Ok(Self(bytes))
+        framing::Elements::parse(bytes)
+            .map(Self)
+            .map_err(wire_error)
     }
 
     pub const fn as_bytes(self) -> &'a [u8] {
-        self.0
+        self.0.as_bytes()
     }
 
     pub fn iter(self) -> impl Iterator<Item = Element<'a>> {
-        let mut rest = self.0;
-        core::iter::from_fn(move || {
-            if rest.is_empty() {
-                return None;
-            }
-            let len = usize::from(rest[ELEMENT_LENGTH_OFFSET]);
-            let element = Element {
-                id: rest[0],
-                body: &rest[ELEMENT_HEADER_LEN..ELEMENT_HEADER_LEN + len],
-            };
-            rest = &rest[ELEMENT_HEADER_LEN + len..];
-            Some(element)
+        self.0.iter().map(|element| Element {
+            id: element.id,
+            body: element.body,
         })
     }
 
     pub fn unique(self, id: u8) -> Result<Option<&'a [u8]>, WireError> {
-        let mut found = None;
-        for element in self.iter().filter(|element| element.id == id) {
-            if found.replace(element.body).is_some() {
-                return Err(WireError::DuplicateElement(id));
-            }
-        }
-        Ok(found)
+        self.0
+            .unique(id)
+            .map(|element| element.map(|element| element.body))
+            .map_err(wire_error)
+    }
+}
+
+fn wire_error(error: framing::ElementError) -> WireError {
+    match error {
+        framing::ElementError::Truncated => WireError::MalformedElement,
+        framing::ElementError::Duplicate(id) => WireError::DuplicateElement(id),
     }
 }
 

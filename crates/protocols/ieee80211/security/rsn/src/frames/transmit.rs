@@ -1,7 +1,7 @@
 //! Bounded EAPOL/Ethernet transmission and typed handshake action encoding.
 
 use super::*;
-use crate::AkmKeys;
+use crate::{AkmKeys, HandshakeSuite};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RsnTxFrame<const N: usize = RSN_TX_EAPOL_CAPACITY> {
@@ -10,11 +10,12 @@ pub struct RsnTxFrame<const N: usize = RSN_TX_EAPOL_CAPACITY> {
     retransmission: bool,
     len: usize,
     bytes: [u8; N],
+    suite: crate::akm::SuiteIdentity,
 }
 
 impl<const N: usize> RsnTxFrame<N> {
     pub fn message1(
-        akm: Akm,
+        akm: impl HandshakeSuite,
         peer: [u8; 6],
         replay_counter: u64,
         authenticator_nonce: [u8; 32],
@@ -22,8 +23,9 @@ impl<const N: usize> RsnTxFrame<N> {
         Self::build(
             RsnInterface::AccessPoint,
             peer,
+            akm.identity(),
             2,
-            KEY_INFO_PAIRWISE | KEY_INFO_ACK | u16::from(akm.key_descriptor_version()),
+            KEY_INFO_PAIRWISE | KEY_INFO_ACK | u16::from(akm.eapol_descriptor_version()),
             RSN_GTK_LEN as u16,
             replay_counter,
             authenticator_nonce,
@@ -50,21 +52,38 @@ impl<const N: usize> RsnTxFrame<N> {
         supplicant_nonce: [u8; 32],
         security_ies: &OwnedAssociationSecurityIes<R>,
     ) -> Result<Self, RsnFrameError> {
-        Self::build(
-            RsnInterface::Station,
+        Self::message2_with_key_data(
+            akm,
             peer,
-            1,
-            KEY_INFO_PAIRWISE | KEY_INFO_MIC | u16::from(akm.key_descriptor_version()),
-            0,
             replay_counter,
             supplicant_nonce,
-            [0; 8],
             security_ies.as_bytes(),
         )
     }
 
+    pub fn message2_with_key_data(
+        akm: impl HandshakeSuite,
+        peer: [u8; 6],
+        replay_counter: u64,
+        supplicant_nonce: [u8; 32],
+        key_data: &[u8],
+    ) -> Result<Self, RsnFrameError> {
+        Self::build(
+            RsnInterface::Station,
+            peer,
+            akm.identity(),
+            1,
+            KEY_INFO_PAIRWISE | KEY_INFO_MIC | u16::from(akm.eapol_descriptor_version()),
+            0,
+            replay_counter,
+            supplicant_nonce,
+            [0; 8],
+            key_data,
+        )
+    }
+
     pub fn message3(
-        akm: Akm,
+        akm: impl HandshakeSuite,
         peer: [u8; 6],
         replay_counter: u64,
         authenticator_nonce: [u8; 32],
@@ -77,6 +96,7 @@ impl<const N: usize> RsnTxFrame<N> {
         Self::build(
             RsnInterface::AccessPoint,
             peer,
+            akm.identity(),
             2,
             KEY_INFO_PAIRWISE
                 | KEY_INFO_INSTALL
@@ -84,7 +104,7 @@ impl<const N: usize> RsnTxFrame<N> {
                 | KEY_INFO_MIC
                 | KEY_INFO_SECURE
                 | KEY_INFO_ENCRYPTED_KEY_DATA
-                | u16::from(akm.key_descriptor_version()),
+                | u16::from(akm.eapol_descriptor_version()),
             RSN_GTK_LEN as u16,
             replay_counter,
             authenticator_nonce,
@@ -93,15 +113,20 @@ impl<const N: usize> RsnTxFrame<N> {
         )
     }
 
-    pub fn message4(akm: Akm, peer: [u8; 6], replay_counter: u64) -> Result<Self, RsnFrameError> {
+    pub fn message4(
+        akm: impl HandshakeSuite,
+        peer: [u8; 6],
+        replay_counter: u64,
+    ) -> Result<Self, RsnFrameError> {
         Self::build(
             RsnInterface::Station,
             peer,
+            akm.identity(),
             1,
             KEY_INFO_PAIRWISE
                 | KEY_INFO_MIC
                 | KEY_INFO_SECURE
-                | u16::from(akm.key_descriptor_version()),
+                | u16::from(akm.eapol_descriptor_version()),
             0,
             replay_counter,
             [0; 32],
@@ -112,15 +137,16 @@ impl<const N: usize> RsnTxFrame<N> {
 
     /// Build the station response to one connected-state Group Message 1.
     pub fn group_message2(
-        akm: Akm,
+        akm: impl HandshakeSuite,
         peer: [u8; 6],
         replay_counter: u64,
     ) -> Result<Self, RsnFrameError> {
         Self::build(
             RsnInterface::Station,
             peer,
+            akm.identity(),
             1,
-            KEY_INFO_MIC | KEY_INFO_SECURE | u16::from(akm.key_descriptor_version()),
+            KEY_INFO_MIC | KEY_INFO_SECURE | u16::from(akm.eapol_descriptor_version()),
             0,
             replay_counter,
             [0; 32],
@@ -132,7 +158,7 @@ impl<const N: usize> RsnTxFrame<N> {
     /// Build an authenticator Group Message 1 for protocol tests and the
     /// future AP authenticator. The caller supplies RFC3394-wrapped GTK data.
     pub fn group_message1(
-        akm: Akm,
+        akm: impl HandshakeSuite,
         peer: [u8; 6],
         replay_counter: u64,
         key_rsc: [u8; 8],
@@ -144,12 +170,13 @@ impl<const N: usize> RsnTxFrame<N> {
         Self::build(
             RsnInterface::AccessPoint,
             peer,
+            akm.identity(),
             2,
             KEY_INFO_ACK
                 | KEY_INFO_MIC
                 | KEY_INFO_SECURE
                 | KEY_INFO_ENCRYPTED_KEY_DATA
-                | u16::from(akm.key_descriptor_version()),
+                | u16::from(akm.eapol_descriptor_version()),
             RSN_GTK_LEN as u16,
             replay_counter,
             [0; 32],
@@ -162,6 +189,7 @@ impl<const N: usize> RsnTxFrame<N> {
     fn build(
         interface: RsnInterface,
         peer: [u8; 6],
+        suite: crate::akm::SuiteIdentity,
         protocol_version: u8,
         key_info: u16,
         key_length: u16,
@@ -175,10 +203,12 @@ impl<const N: usize> RsnTxFrame<N> {
         {
             return Err(RsnFrameError::ZeroNonce);
         }
-        let len = EAPOL_KEY_PACKET_LEN
+        let mic_length = suite.mic_length();
+        let prefix_len = mic_length.packet_prefix_len();
+        let len = prefix_len
             .checked_add(key_data.len())
             .ok_or(RsnFrameError::CapacityExceeded)?;
-        let body_len = EAPOL_KEY_FIXED_LEN
+        let body_len = (prefix_len - crate::EAPOL_HEADER_LEN)
             .checked_add(key_data.len())
             .ok_or(RsnFrameError::CapacityExceeded)?;
         if len > N || body_len > u16::MAX as usize || key_data.len() > u16::MAX as usize {
@@ -195,14 +225,15 @@ impl<const N: usize> RsnTxFrame<N> {
         bytes[9..17].copy_from_slice(&replay_counter.to_be_bytes());
         bytes[17..49].copy_from_slice(&nonce);
         bytes[65..73].copy_from_slice(&key_rsc);
-        bytes[97..99].copy_from_slice(&(key_data.len() as u16).to_be_bytes());
-        bytes[EAPOL_KEY_PACKET_LEN..len].copy_from_slice(key_data);
+        bytes[mic_length.end()..prefix_len].copy_from_slice(&(key_data.len() as u16).to_be_bytes());
+        bytes[prefix_len..len].copy_from_slice(key_data);
         Ok(Self {
             interface,
             peer,
             retransmission: false,
             len,
             bytes,
+            suite,
         })
     }
 
@@ -226,30 +257,84 @@ impl<const N: usize> RsnTxFrame<N> {
     }
 
     pub fn key_frame(&self) -> EapolKeyFrame<'_> {
-        EapolKeyFrame::parse(self.as_bytes()).expect("RsnTxFrame is validated on construction")
+        EapolKeyFrame::parse_with_mic_length(self.as_bytes(), self.suite.mic_length())
+            .expect("RsnTxFrame is validated on construction")
     }
 
     /// Authenticate a supplicant or authenticator action with the pairwise
     /// KCK. The builder always initializes the MIC field to zero; clearing it
     /// here as well makes repeated authentication deterministic.
-    pub fn authenticate(mut self, ptk: &Ptk) -> Self {
-        self.authenticate_with_kck(ptk.akm(), ptk.kck());
-        self
+    pub fn authenticate(mut self, ptk: &Ptk) -> Result<Self, RsnFrameError> {
+        self.authenticate_with_kck(ptk.akm(), ptk.kck())?;
+        Ok(self)
     }
 
     pub(crate) fn authenticate_with_confirmation_key(
         mut self,
         key: &RsnKeyConfirmationKey,
-    ) -> Self {
-        self.authenticate_with_kck(key.akm(), key.as_bytes());
-        self
+    ) -> Result<Self, RsnFrameError> {
+        self.authenticate_with_kck(key.akm(), key.as_bytes())?;
+        Ok(self)
     }
 
-    fn authenticate_with_kck(&mut self, akm: Akm, kck: &[u8; RSN_KCK_LEN]) {
+    fn authenticate_with_kck(
+        &mut self,
+        akm: Akm,
+        kck: &[u8; RSN_KCK_LEN],
+    ) -> Result<(), RsnFrameError> {
+        if self.suite != akm.identity() {
+            return Err(RsnFrameError::WrongCryptoSuite);
+        }
+        self.authenticate_with_mic(akm.mic(kck))
+    }
+
+    /// Authenticate an FT EAPOL frame with its FT-specific KCK.
+    /// The negotiated suite and peer must match the key's derivation context.
+    pub fn authenticate_ft(mut self, ptk: &crate::ft::FtPtk) -> Result<Self, RsnFrameError> {
+        let expected_peer = match self.interface {
+            RsnInterface::Station => ptk.context().addresses.access_point,
+            RsnInterface::AccessPoint => ptk.context().addresses.station,
+        };
+        if self.peer != expected_peer
+            || self.suite != ptk.akm().identity()
+            || self.key_frame().key_info().descriptor_version()
+                != ptk.akm().eapol_descriptor_version()
+        {
+            return Err(RsnFrameError::UnexpectedTransmitAction);
+        }
+        self.authenticate_with_mic(crate::akm::EapolMic::aes_cmac(ptk.kck()))?;
+        Ok(self)
+    }
+
+    fn authenticate_with_mic(
+        &mut self,
+        mut mac: crate::akm::EapolMic,
+    ) -> Result<(), RsnFrameError> {
+        if self.suite.mic_length() != crate::eapol::KeyMicLength::Octets16 {
+            return Err(RsnFrameError::WrongMicLength);
+        }
         self.set_mic(&[0; RSN_MIC_LEN]);
-        let mut mac = akm.mic(kck);
         mac.update(self.as_bytes());
         self.set_mic(&mac.finalize());
+        Ok(())
+    }
+
+    /// OWE keys must match the peer, AKM-defined descriptor and full MIC
+    /// geometry; a legacy 16-octet key cannot authenticate a wider packet.
+    pub fn authenticate_owe(mut self, ptk: &crate::owe::OwePtk) -> Result<Self, RsnFrameError> {
+        let expected = match self.interface {
+            RsnInterface::Station => ptk.addresses().access_point,
+            RsnInterface::AccessPoint => ptk.addresses().station,
+        };
+        if self.peer != expected {
+            return Err(RsnFrameError::UnexpectedTransmitAction);
+        }
+        if self.suite != ptk.group().identity() {
+            return Err(RsnFrameError::WrongCryptoSuite);
+        }
+        ptk.authenticate_eapol(&mut self.bytes[..self.len])
+            .map_err(|_| RsnFrameError::WrongCryptoSuite)?;
+        Ok(self)
     }
 
     pub(crate) const fn mark_retransmission(mut self) -> Self {
@@ -258,7 +343,8 @@ impl<const N: usize> RsnTxFrame<N> {
     }
 
     fn set_mic(&mut self, mic: &[u8; RSN_MIC_LEN]) {
-        self.bytes[81..97].copy_from_slice(mic);
+        self.bytes[crate::eapol::EAPOL_KEY_MIC_START..crate::eapol::KeyMicLength::Octets16.end()]
+            .copy_from_slice(mic);
     }
 }
 

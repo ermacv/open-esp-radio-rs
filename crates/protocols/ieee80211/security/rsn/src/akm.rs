@@ -14,17 +14,115 @@ use zeroize::Zeroize;
 
 use crate::{RSN_KCK_LEN, RSN_PTK_LEN};
 
-const PTK_EXPANSION_LABEL: &[u8] = b"Pairwise key expansion";
+use crate::crypto::{PAIRWISE_KEY_EXPANSION_LABEL, PTK_CONTEXT_LEN};
 
-/// Length of every EAPOL-Key MIC produced by a supported suite.
+/// MIC length of the legacy PSK/SAE and FT suites. OWE selects its own length.
 pub const RSN_MIC_LEN: usize = 16;
+
+mod sealed {
+    pub trait Suite {}
+    impl Suite for super::Akm {}
+    impl Suite for oer_ieee80211_mac::security::rsn::FtAkm {}
+    impl Suite for oer_ieee80211_mac::owe::Group {}
+}
+
+/// Negotiated descriptor rules for the shared four-way-handshake automata.
+/// Key derivation remains separate: FT suites require PMK-R1, not a PMK.
+pub trait HandshakeSuite: sealed::Suite + Copy + core::fmt::Debug + Eq {
+    fn identity(self) -> SuiteIdentity;
+    fn eapol_descriptor_version(self) -> u8;
+    fn eapol_mic_length(self) -> crate::eapol::KeyMicLength {
+        crate::eapol::KeyMicLength::Octets16
+    }
+}
+impl HandshakeSuite for Akm {
+    fn identity(self) -> SuiteIdentity {
+        SuiteIdentity::Rsn(self)
+    }
+    fn eapol_descriptor_version(self) -> u8 {
+        self.key_descriptor_version()
+    }
+}
+impl HandshakeSuite for oer_ieee80211_mac::security::rsn::FtAkm {
+    fn identity(self) -> SuiteIdentity {
+        SuiteIdentity::Ft(self)
+    }
+    fn eapol_descriptor_version(self) -> u8 {
+        match self {
+            Self::Psk | Self::Ieee8021X => 3,
+            Self::Sae => 0,
+        }
+    }
+}
+
+impl HandshakeSuite for oer_ieee80211_mac::owe::Group {
+    fn identity(self) -> SuiteIdentity {
+        SuiteIdentity::Owe(self)
+    }
+    fn eapol_descriptor_version(self) -> u8 {
+        0
+    }
+    fn eapol_mic_length(self) -> crate::eapol::KeyMicLength {
+        owe_key_geometry(self).mic
+    }
+}
+
+/// RFC 8110 4.4 key geometry belongs to RSN suite policy, not MAC IE syntax.
+pub(crate) struct OweKeyGeometry {
+    pub(crate) mic: crate::eapol::KeyMicLength,
+    pub(crate) kek_len: usize,
+}
+impl OweKeyGeometry {
+    pub(crate) const fn pmk_len(&self) -> usize {
+        2 * self.mic.octets()
+    }
+    pub(crate) const fn ptk_len(&self) -> usize {
+        self.mic.octets() + self.kek_len + oer_ieee80211_mac::security::CCMP_128_KEY_LEN
+    }
+}
+pub(crate) const fn owe_key_geometry(group: oer_ieee80211_mac::owe::Group) -> OweKeyGeometry {
+    use crate::eapol::KeyMicLength;
+    use oer_ieee80211_mac::owe::Group;
+    match group {
+        Group::P256 => OweKeyGeometry {
+            mic: KeyMicLength::Octets16,
+            kek_len: 16,
+        },
+        Group::P384 => OweKeyGeometry {
+            mic: KeyMicLength::Octets24,
+            kek_len: 32,
+        },
+        Group::P521 => OweKeyGeometry {
+            mic: KeyMicLength::Octets32,
+            kek_len: 32,
+        },
+    }
+}
+
+/// Negotiated suite retained by an outgoing frame. Descriptor version alone
+/// cannot distinguish SAE from OWE, or ordinary RSN from FT.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SuiteIdentity {
+    Rsn(Akm),
+    Ft(oer_ieee80211_mac::security::rsn::FtAkm),
+    Owe(oer_ieee80211_mac::owe::Group),
+}
+impl SuiteIdentity {
+    pub(crate) fn mic_length(self) -> crate::eapol::KeyMicLength {
+        match self {
+            Self::Rsn(value) => value.eapol_mic_length(),
+            Self::Ft(value) => value.eapol_mic_length(),
+            Self::Owe(value) => value.eapol_mic_length(),
+        }
+    }
+}
 
 /// The per-suite key hierarchy and EAPOL-Key integrity of an [`Akm`].
 pub(crate) trait AkmKeys {
     /// Key Information descriptor version carried by every EAPOL-Key frame.
     fn key_descriptor_version(self) -> u8;
     /// Expand a PMK over the canonical address/nonce context into a PTK.
-    fn expand_ptk(self, pmk: &[u8; 32], context: &[u8; 76]) -> [u8; RSN_PTK_LEN];
+    fn expand_ptk(self, pmk: &[u8; 32], context: &[u8; PTK_CONTEXT_LEN]) -> [u8; RSN_PTK_LEN];
     fn mic(self, kck: &[u8; RSN_KCK_LEN]) -> EapolMic;
 }
 
@@ -37,7 +135,7 @@ impl AkmKeys for Akm {
         }
     }
 
-    fn expand_ptk(self, pmk: &[u8; 32], context: &[u8; 76]) -> [u8; RSN_PTK_LEN] {
+    fn expand_ptk(self, pmk: &[u8; 32], context: &[u8; PTK_CONTEXT_LEN]) -> [u8; RSN_PTK_LEN] {
         match self {
             Self::Psk => prf_sha1(pmk, context),
             Self::PskSha256 | Self::Sae => kdf_sha256(pmk, context),
@@ -49,9 +147,7 @@ impl AkmKeys for Akm {
             Self::Psk => EapolMic::HmacSha1(
                 Hmac::<Sha1>::new_from_slice(kck).expect("KCK length is always accepted by HMAC"),
             ),
-            Self::PskSha256 | Self::Sae => EapolMic::AesCmac(
-                Cmac::<Aes128>::new_from_slice(kck).expect("a 16-byte KCK is an AES-128 key"),
-            ),
+            Self::PskSha256 | Self::Sae => EapolMic::aes_cmac(kck),
         }
     }
 }
@@ -67,6 +163,10 @@ pub(crate) enum EapolMic {
 }
 
 impl EapolMic {
+    pub(crate) fn aes_cmac(kck: &[u8; RSN_KCK_LEN]) -> Self {
+        Self::AesCmac(Cmac::<Aes128>::new_from_slice(kck).expect("a 16-byte KCK is an AES-128 key"))
+    }
+
     pub(crate) fn update(&mut self, bytes: &[u8]) {
         match self {
             Self::HmacSha1(mac) => mac.update(bytes),
@@ -103,14 +203,14 @@ impl EapolMic {
 }
 
 /// IEEE 802.11 PRF-384 with HMAC-SHA1 and the pairwise expansion label.
-fn prf_sha1(pmk: &[u8; 32], context: &[u8; 76]) -> [u8; RSN_PTK_LEN] {
+fn prf_sha1(pmk: &[u8; 32], context: &[u8; PTK_CONTEXT_LEN]) -> [u8; RSN_PTK_LEN] {
     let mut ptk = [0; RSN_PTK_LEN];
     let mut written = 0;
     let mut counter = 0_u8;
     while written < ptk.len() {
         let mut mac =
             Hmac::<Sha1>::new_from_slice(pmk).expect("PMK length is always accepted by HMAC");
-        mac.update(PTK_EXPANSION_LABEL);
+        mac.update(PAIRWISE_KEY_EXPANSION_LABEL);
         mac.update(&[0]);
         mac.update(context);
         mac.update(&[counter]);
@@ -125,9 +225,9 @@ fn prf_sha1(pmk: &[u8; 32], context: &[u8; 76]) -> [u8; RSN_PTK_LEN] {
 }
 
 /// IEEE 802.11 KDF-SHA-256-384 with the pairwise expansion label.
-fn kdf_sha256(pmk: &[u8; 32], context: &[u8; 76]) -> [u8; RSN_PTK_LEN] {
+fn kdf_sha256(pmk: &[u8; 32], context: &[u8; PTK_CONTEXT_LEN]) -> [u8; RSN_PTK_LEN] {
     let mut ptk = [0; RSN_PTK_LEN];
-    crate::kdf::kdf_sha256(pmk, PTK_EXPANSION_LABEL, context, &mut ptk);
+    crate::kdf::kdf_sha256(pmk, PAIRWISE_KEY_EXPANSION_LABEL, context, &mut ptk);
     ptk
 }
 

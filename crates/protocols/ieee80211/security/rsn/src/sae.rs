@@ -36,9 +36,9 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 use crate::kdf::kdf_sha256;
 
 /// The only SAE group the station offers: NIST P-256.
-pub const SAE_GROUP_P256: u16 = 19;
+pub const SAE_GROUP_P256: u16 = oer_ieee80211_mac::security::NistEccGroup::P256.number();
 /// Octets of one P-256 field element or scalar.
-pub const SAE_PRIME_LEN: usize = 32;
+pub const SAE_PRIME_LEN: usize = oer_ieee80211_mac::security::NistEccGroup::P256.coordinate_len();
 /// An SAE Commit body of group 19 without an anti-clogging token or
 /// optional elements: group, scalar and element.
 pub const SAE_COMMIT_LEN: usize = 2 + SAE_PRIME_LEN + 2 * SAE_PRIME_LEN;

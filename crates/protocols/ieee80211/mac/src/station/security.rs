@@ -84,10 +84,7 @@ impl SelectedRsn {
 }
 
 /// RSN Extension element identifier.
-const RSNXE_ELEMENT_ID: u8 = 244;
-/// RSNXE capability bit of SAE hash to element.
-const RSNXE_SAE_H2E: u8 = 1 << 5;
-
+use crate::security::rsn::{RSNXE_ELEMENT_ID, RSNXE_SAE_H2E};
 /// Select the RSN element (and RSNXE) of a personal association.
 ///
 /// As the vendor's `ieee80211_parse_rsn` does, the station uses SAE whenever

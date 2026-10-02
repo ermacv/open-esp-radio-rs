@@ -392,8 +392,8 @@ impl<'peers> AccessPointService<'peers> {
             .wpa2
             .as_ref()
             .ok_or(ApServiceError::WrongPeerPhase)?;
-        let response =
-            build_ap_action_frame(state, transmit, [0; 8], wrapped.as_bytes())?.authenticate(&ptk);
+        let response = build_ap_action_frame(state, transmit, [0; 8], wrapped.as_bytes())?
+            .authenticate(&ptk)?;
         let existing = self.checked_peer_mut(peer)?;
         existing.pending_ptk = Some(ptk);
         // Valid M2 closes the Message-1 response window. Message 3 receives a
@@ -419,8 +419,8 @@ impl<'peers> AccessPointService<'peers> {
             .ok_or(ApWpa2Error::MissingPairwiseKey)?;
         let plain = self.message3_key_data()?;
         let wrapped = software_aes128_key_wrap(ptk.kek(), plain.as_bytes())?;
-        let response =
-            build_ap_action_frame(state, transmit, [0; 8], wrapped.as_bytes())?.authenticate(ptk);
+        let response = build_ap_action_frame(state, transmit, [0; 8], wrapped.as_bytes())?
+            .authenticate(ptk)?;
         Ok(ApWpa2Progress::Transmit(response))
     }
 

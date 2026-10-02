@@ -152,6 +152,7 @@ enum KeyDataContext<'a> {
     Message3 {
         expected_rsn_ie: &'a [u8],
         expected_rsnxe: &'a [u8],
+        ft: Option<FtKeyDataContext<'a>>,
     },
     /// Group Message 1: only the group-key KDEs.
     GroupMessage1,
@@ -170,6 +171,37 @@ pub fn parse_gtk_key_data(
         KeyDataContext::Message3 {
             expected_rsn_ie,
             expected_rsnxe,
+            ft: None,
+        },
+        management_protection,
+    )
+    .map(|parsed| parsed.groups)
+}
+
+/// FT binding already validated against the initial Association Response.
+pub(crate) struct FtKeyDataContext<'a> {
+    pub md: &'a [u8],
+    pub ft: &'a [u8],
+}
+
+pub(crate) struct ParsedKeyData {
+    pub groups: RsnGroupKeys,
+    pub reassociation_deadline_tu: Option<u32>,
+    pub key_lifetime_seconds: Option<u32>,
+}
+pub(crate) fn parse_ft_gtk_key_data(
+    bytes: &[u8],
+    expected_rsn_ie: &[u8],
+    expected_rsnxe: &[u8],
+    ft: FtKeyDataContext<'_>,
+    management_protection: bool,
+) -> Result<ParsedKeyData, RsnFrameError> {
+    parse_key_data(
+        bytes,
+        KeyDataContext::Message3 {
+            expected_rsn_ie,
+            expected_rsnxe,
+            ft: Some(ft),
         },
         management_protection,
     )
@@ -185,18 +217,23 @@ pub fn parse_group_gtk_key_data(
     management_protection: bool,
 ) -> Result<RsnGroupKeys, RsnFrameError> {
     parse_key_data(bytes, KeyDataContext::GroupMessage1, management_protection)
+        .map(|parsed| parsed.groups)
 }
 
 fn parse_key_data(
     bytes: &[u8],
     context: KeyDataContext<'_>,
     management_protection: bool,
-) -> Result<RsnGroupKeys, RsnFrameError> {
+) -> Result<ParsedKeyData, RsnFrameError> {
     let mut offset = 0;
     let mut saw_rsn = false;
     let mut saw_rsnxe = false;
     let mut gtk = None;
     let mut igtk = None;
+    let mut saw_md = false;
+    let mut saw_ft = false;
+    let mut reassociation_deadline_tu = None;
+    let mut key_lifetime_seconds = None;
 
     while offset < bytes.len() {
         let remaining = &bytes[offset..];
@@ -213,7 +250,48 @@ fn parse_key_data(
             return Err(RsnFrameError::MalformedKeyData);
         }
         let element = &remaining[..element_len];
+        use oer_ieee80211_mac::ft::{
+            FAST_TRANSITION_ELEMENT_ID, MOBILITY_DOMAIN_ELEMENT_ID, TIMEOUT_INTERVAL_ELEMENT_ID,
+            TimeoutInterval,
+        };
         match (element[0], &context) {
+            (
+                MOBILITY_DOMAIN_ELEMENT_ID,
+                KeyDataContext::Message3 {
+                    ft: Some(binding), ..
+                },
+            ) => {
+                if saw_md || element != binding.md {
+                    return Err(RsnFrameError::FtBindingMismatch);
+                }
+                saw_md = true;
+            }
+            (
+                FAST_TRANSITION_ELEMENT_ID,
+                KeyDataContext::Message3 {
+                    ft: Some(binding), ..
+                },
+            ) => {
+                if saw_ft || element != binding.ft {
+                    return Err(RsnFrameError::FtBindingMismatch);
+                }
+                saw_ft = true;
+            }
+            (TIMEOUT_INTERVAL_ELEMENT_ID, KeyDataContext::Message3 { ft: Some(_), .. }) => {
+                let interval =
+                    TimeoutInterval::parse(element).map_err(|_| RsnFrameError::MalformedKeyData)?;
+                let (destination, value) = match interval {
+                    TimeoutInterval::ReassociationDeadline { tu } => {
+                        (&mut reassociation_deadline_tu, tu)
+                    }
+                    TimeoutInterval::KeyLifetime { seconds } => {
+                        (&mut key_lifetime_seconds, seconds)
+                    }
+                };
+                if destination.replace(value).is_some() {
+                    return Err(RsnFrameError::MalformedKeyData);
+                }
+            }
             (
                 RSN_ELEMENT_ID,
                 KeyDataContext::Message3 {
@@ -288,9 +366,16 @@ fn parse_key_data(
             return Err(RsnFrameError::MissingRsnxe);
         }
     }
+    if matches!(context, KeyDataContext::Message3 { ft: Some(_), .. }) && (!saw_md || !saw_ft) {
+        return Err(RsnFrameError::FtBindingMismatch);
+    }
     let gtk = gtk.ok_or(RsnFrameError::MissingGtk)?;
     if management_protection && igtk.is_none() {
         return Err(RsnFrameError::MissingIgtk);
     }
-    Ok(RsnGroupKeys { gtk, igtk })
+    Ok(ParsedKeyData {
+        groups: RsnGroupKeys { gtk, igtk },
+        reassociation_deadline_tu,
+        key_lifetime_seconds,
+    })
 }

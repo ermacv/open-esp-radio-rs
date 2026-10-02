@@ -8,6 +8,41 @@ pub const BIP_CMAC_128_KEY_LEN: usize = 16;
 pub const BIP_PACKET_NUMBER_LEN: usize = 6;
 /// The two alternating IGTK identifiers. GTK identifiers occupy 0 through 3.
 pub const IGTK_KEY_IDS: core::ops::RangeInclusive<u16> = 4..=5;
+/// Nonce width in RSN EAPOL-Key and Fast Transition elements.
+pub const RSN_NONCE_LEN: usize = 32;
+
+/// IANA finite cyclic group numbers of the supported NIST ECC curves.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NistEccGroup {
+    P256,
+    P384,
+    P521,
+}
+impl NistEccGroup {
+    pub const fn number(self) -> u16 {
+        match self {
+            Self::P256 => 19,
+            Self::P384 => 20,
+            Self::P521 => 21,
+        }
+    }
+    pub const fn from_number(number: u16) -> Option<Self> {
+        match number {
+            19 => Some(Self::P256),
+            20 => Some(Self::P384),
+            21 => Some(Self::P521),
+            _ => None,
+        }
+    }
+    /// Compact ECC encoding contains only the fixed-width x coordinate.
+    pub const fn coordinate_len(self) -> usize {
+        match self {
+            Self::P256 => 32,
+            Self::P384 => 48,
+            Self::P521 => 66,
+        }
+    }
+}
 
 /// Data protection of one infrastructure link: what the data path, the
 /// hardware key slots and replay admission follow.
@@ -196,7 +231,7 @@ pub const AP_WPA3_PERSONAL_RSN_ELEMENT: [u8; 28] = [
 
 /// RSNXE of an access point offering SAE hash-to-element: a one-octet
 /// field whose length nibble is zero and whose bit 5 is SAE H2E.
-pub const AP_SAE_H2E_RSNX_ELEMENT: [u8; 3] = [244, 1, 1 << 5];
+pub const AP_SAE_H2E_RSNX_ELEMENT: [u8; 3] = [rsn::RSNXE_ELEMENT_ID, 1, rsn::RSNXE_SAE_H2E];
 
 impl ApSecurityPolicy {
     /// The data protection of the BSS.

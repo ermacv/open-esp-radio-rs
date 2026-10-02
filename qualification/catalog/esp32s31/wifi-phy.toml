@@ -1185,25 +1185,28 @@ packages = ["oer-ieee80211-mac", "oer-ieee80211-roaming"]
 id = "wifi-roaming-and-service-discovery-fast-bss-transition-802-11r"
 section = "wifi-roaming-and-service-discovery"
 title = "Fast BSS Transition (802.11r)"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "No FT AKM selection, mobility-domain/FT element processing, PMK-R0/PMK-R1 hierarchy or FT authentication/reassociation owner exists. FT policy and cryptography can be portable over the existing management and CCMP mechanisms, but key installation and old/new association ownership must be coordinated with the driver. The station's same-AP SAE PMKSA cache is not an FT implementation; over-the-DS FT and AP key-holder integration are also absent. See [roaming protocol definitions](https://docs.espressif.com/projects/esp-idf/en/v6.0.2/esp32/api-guides/wifi-driver/security-and-roaming.html)."
+scope-and-limitations = "Portable FT-PSK, FT-SAE and FT-802.1X implement the SHA-256 PMK-R0/R1/PTK hierarchy, initial FT four-way binding over shared RSN automata, STA/target-AP over-the-air and over-the-DS authentication/reassociation, current-AP DS relay, FT MIC and wrapped GTK/IGTK, RIC admission contract, bounded retries, key expiry, operation identities and explicit atomic key/association commit and rollback. Root/R1 caches and authorized inter-AP key request/delivery contracts are bounded; FT-802.1X takes authenticated EAP MSK octets 32..64 and SAE carries the chosen PWE method. The caller supplies fresh nonces, monotonic time, selected association security and trusted backhaul policy. Chip AKM selection/advertisement, frame routing, old/new association and hardware key transactions, an EAP provider and an authenticated inter-AP transport implementation remain absent; no on-air interoperability or qualification is claimed. Later SHA-384, SAE-EXT-KEY, OCI/BIGTK and multi-link FT profiles are not supported."
+packages = ["oer-ieee80211-mac", "oer-ieee80211-rsn"]
 
 [[items]]
 id = "wifi-roaming-and-service-discovery-gas-anqp-802-11u"
 section = "wifi-roaming-and-service-discovery"
 title = "Generic Advertisement Service / ANQP (802.11u)"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "No GAS Initial/Comeback exchange, bounded response-fragment assembly or ANQP query/response owner exists. This is a software composition of Public Action exchanges with dialog tokens, comeback deadlines, payload limits and service/network records. Ordinary scan or association information elements do not implement pre-association ANQP discovery."
+scope-and-limitations = "Portable sans-IO GAS requester/responder implement Initial/Comeback exchanges, delayed provider handoff, bounded concurrent dialogs and complete response assembly, MAC Retry/sequence-aware replay, whole-query restarts, explicit token quarantine, fixed leases, cancellation and stale TX/provider fencing. Base ANQP query/response formats, explicit provider resolutions, NAI Home Realm filtering and Hotspot 2.0 Release 1–3 ANQP/OSU/icon records are implemented. External 3GPP, location-report and TDLS facts remain exact provider data; producers and their procedures are outside GAS. ESP32-S31 management routing, pre-association channel scheduling, advertisement and protection integration remain absent; no on-air interoperability or qualification is claimed. See [GAS and ANQP protocol logic](../../../../protocols/ieee80211/gas/README.md)."
+packages = ["oer-ieee80211-mac", "oer-ieee80211-gas"]
 
 [[items]]
 id = "wifi-roaming-and-service-discovery-passpoint"
 section = "wifi-roaming-and-service-discovery"
 title = "Passpoint / Hotspot 2.0"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "No Passpoint advertisement, credential/profile selection, ANQP-based network selection or enterprise connection composition exists. The software product depends on GAS/ANQP, interworking information elements and 802.1X/EAP credential/certificate ownership. Online signup and release-specific subscription features require their own application protocols; neither an ordinary WPA2 connection nor a future GAS parser establishes Passpoint interoperability or certification."
+scope-and-limitations = "Hotspot 2.0 Release 1–3 ANQP record formats and GAS query services are implemented, including OSU providers, icon exchange, operator icon metadata and OSU provider NAI lists. Passpoint indication/interworking advertisement, credential/profile selection, ANQP-based network selection and enterprise connection composition remain absent. OSU HTTP/subscription procedures, WNM Terms and Conditions notifications, EAP credential/certificate ownership and driver routing retain separate owners; this ANQP core establishes neither Passpoint interoperability nor certification. See [GAS and ANQP protocol logic](../../../../protocols/ieee80211/gas/README.md)."
+packages = ["oer-ieee80211-mac", "oer-ieee80211-gas"]
 
 [[items]]
 id = "wifi-legacy-and-ht-mac-behavior-rts-protection"
@@ -1347,9 +1350,9 @@ scope-and-limitations = "No WPA3-Enterprise EAP/AKM and protected-management com
 id = "wifi-security-opportunistic-wireless-encryption-owe"
 section = "wifi-security"
 title = "Opportunistic Wireless Encryption (OWE)"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "No OWE key exchange, association selection or key lifecycle exists. The Diffie-Hellman exchange, OWE AKM derivation and association policy can be software over the existing CCMP data path; group validation, derived-PMK binding, transition-mode discovery and per-role lifecycle remain missing. Open BSS support does not provide Enhanced Open."
+scope-and-limitations = "Portable MAC formats cover DH groups 19/20/21 and transition advertisements. The RSN owner has checked RustCrypto compact DH for all three groups, full-length OWE PMK/PTK derivation, negotiated MIC geometry, AES-256 key wrap, exact association/four-way binding, scoped expiring PMKSA storage and reciprocal transition discovery. STA/AP association automata cover bounded stable retries, status-77 group negotiation, cache/fresh selection and correlated TX completion. Chip-role selection, MLME composition and key execution remain incomplete. Enhanced Open product support is not available."
 
 [[items]]
 id = "wifi-security-bip-protected-management-frames"

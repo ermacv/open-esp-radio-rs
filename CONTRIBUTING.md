@@ -18,7 +18,7 @@ Use the toolchain in `rust-toolchain.toml`. Fetch public dependencies before
 offline checks. Examples, platform, HIL, Blobray (`tools/blobray`) and
 verification probes have separate workspaces and lockfiles; a root workspace
 build does not cover them all.
-The [repository guidelines](AGENTS.md) and
+The [repository guidelines](CLAUDE.md) and
 [documentation policy](docs/documentation.md) define the contribution rules.
 
 ## Make one reviewable change

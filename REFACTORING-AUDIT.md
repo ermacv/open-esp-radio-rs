@@ -2,7 +2,7 @@
 
 Temporary review record of the architecture refactoring branch. It is kept
 here at the maintainer's request and must be removed before the branch merges
-into `main` (see the documentation rules in `AGENTS.md`).
+into `main` (see the documentation rules in `CLAUDE.md`).
 
 Audited revision: `f07876d` (branch `ccr-4c23f497-cfn0jy`). Four independent
 read-only reviews covered the port contracts, sans-IO and layering, the

@@ -6,6 +6,8 @@
 //! `push` until a later run of the same workflow passes, so whoever pushed the
 //! failing commit, or anyone who sees it first, fixes it before other work.
 
+use std::{collections::BTreeSet, path::Path};
+
 use crate::Context;
 use oer_process as process;
 use serde::Deserialize;
@@ -79,13 +81,38 @@ fn conclusion<'de, D: serde::Deserializer<'de>>(
         .map_err(serde::de::Error::custom)
 }
 
-/// For each workflow, its newest run in `runs` that judged its commit, when
-/// that run failed. Cancelled and skipped runs are passed over.
-pub fn failures(runs: &[Run]) -> Vec<&Run> {
+/// The names of the workflows in `.github/workflows` of `root`: the
+/// top-level `name:` of each file.
+fn workflows(root: &Path) -> std::io::Result<BTreeSet<String>> {
+    let mut names = BTreeSet::new();
+    for entry in std::fs::read_dir(root.join(".github/workflows"))? {
+        let path = entry?.path();
+        if !path
+            .extension()
+            .is_some_and(|extension| extension == "yml" || extension == "yaml")
+        {
+            continue;
+        }
+        if let Some(name) = std::fs::read_to_string(&path)?
+            .lines()
+            .find_map(|line| line.strip_prefix("name:"))
+        {
+            names.insert(name.trim().trim_matches(['\'', '"']).to_owned());
+        }
+    }
+    Ok(names)
+}
+
+/// For each workflow of `workflows`, its newest run in `runs` that judged its
+/// commit, when that run failed. Cancelled and skipped runs are passed over,
+/// and so are the runs of a workflow the tree no longer has.
+pub fn failures<'a>(runs: &'a [Run], workflows: &BTreeSet<String>) -> Vec<&'a Run> {
     let mut judged = runs
         .iter()
         .filter(|run| {
-            run.status == RunStatus::Completed && run.conclusion.is_some_and(Conclusion::is_verdict)
+            workflows.contains(&run.workflow_name)
+                && run.status == RunStatus::Completed
+                && run.conclusion.is_some_and(Conclusion::is_verdict)
         })
         .collect::<Vec<_>>();
     judged.sort_by(|a, b| b.created_at.cmp(&a.created_at));
@@ -117,6 +144,8 @@ pub fn report(ctx: &Context) -> Result<Vec<String>, String> {
 }
 
 fn report_with(ctx: &Context, gh: &str) -> Result<Vec<String>, String> {
+    let workflows =
+        workflows(&ctx.root).map_err(|error| format!("cannot read .github/workflows: {error}"))?;
     let output = process::capture(ctx.command(gh).args([
         "run",
         "list",
@@ -140,7 +169,7 @@ fn report_with(ctx: &Context, gh: &str) -> Result<Vec<String>, String> {
     })?;
     let runs = serde_json::from_slice::<Vec<Run>>(&output.stdout)
         .map_err(|error| format!("`gh run list` printed no run list: {error}"))?;
-    Ok(failures(&runs)
+    Ok(failures(&runs, &workflows)
         .into_iter()
         .map(|run| {
             let jobs = process::capture(ctx.command(gh).args([
@@ -197,6 +226,47 @@ mod tests {
         serde_json::from_str(json).unwrap()
     }
 
+    fn current() -> BTreeSet<String> {
+        ["CI", "Documentation", "Nightly"].map(String::from).into()
+    }
+
+    #[test]
+    fn a_removed_workflow_never_reads_as_red() {
+        let runs = runs(
+            r#"[
+            {"workflowName":"Firmware matrix","headSha":"c0","status":"completed","conclusion":"failure","url":"f","databaseId":1,"createdAt":"2026-10-02T08:00:00Z"},
+            {"workflowName":"CI","headSha":"c1","status":"completed","conclusion":"success","url":"u","databaseId":2,"createdAt":"2026-10-02T07:00:00Z"}
+        ]"#,
+        );
+        assert!(failures(&runs, &current()).is_empty());
+    }
+
+    #[test]
+    fn workflows_are_named_by_their_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let workflows_directory = directory.path().join(".github/workflows");
+        std::fs::create_dir_all(&workflows_directory).unwrap();
+        std::fs::write(
+            workflows_directory.join("ci.yml"),
+            "name: CI\non:\n  push:\n",
+        )
+        .unwrap();
+        std::fs::write(
+            workflows_directory.join("docs.yaml"),
+            "# Docs\nname: 'Documentation'\njobs:\n  build:\n    name: inner\n",
+        )
+        .unwrap();
+        std::fs::write(
+            workflows_directory.join("notes.md"),
+            "name: Not a workflow\n",
+        )
+        .unwrap();
+        assert_eq!(
+            workflows(directory.path()).unwrap(),
+            ["CI", "Documentation"].map(String::from).into()
+        );
+    }
+
     #[test]
     fn only_the_newest_finished_run_of_each_workflow_counts() {
         let runs = runs(
@@ -209,7 +279,7 @@ mod tests {
             {"workflowName":"Firmware matrix","headSha":"c0","status":"completed","conclusion":"cancelled","url":"f","databaseId":6,"createdAt":"2026-09-29T06:00:00Z"}
         ]"#,
         );
-        let failed = failures(&runs);
+        let failed = failures(&runs, &current());
         assert_eq!(failed.len(), 1);
         assert_eq!(failed[0].workflow_name, "CI");
         assert_eq!(failed[0].head_sha, "c2");
@@ -225,7 +295,7 @@ mod tests {
             {"workflowName":"CI","headSha":"mid","status":"completed","conclusion":"failure","url":"u2","databaseId":2,"createdAt":"2026-09-29T02:00:00Z"}
         ]"#,
         );
-        let failed = failures(&runs);
+        let failed = failures(&runs, &current());
         assert_eq!(failed.len(), 1);
         assert_eq!(failed[0].head_sha, "mid");
     }
@@ -234,6 +304,7 @@ mod tests {
     fn a_missing_gh_is_reported_not_taken_for_green() {
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(directory.path().join("Cargo.toml"), "[workspace]\n").unwrap();
+        std::fs::create_dir_all(directory.path().join(".github/workflows")).unwrap();
         let ctx = Context::new(directory.path()).unwrap();
         assert_eq!(
             report_with(&ctx, "oer-gh-that-does-not-exist"),
@@ -248,6 +319,6 @@ mod tests {
         );
         assert_eq!(runs[0].status, RunStatus::Other);
         assert_eq!(runs[0].conclusion, Some(Conclusion::Other));
-        assert!(failures(&runs).is_empty());
+        assert!(failures(&runs, &current()).is_empty());
     }
 }

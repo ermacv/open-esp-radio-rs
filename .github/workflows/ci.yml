@@ -290,6 +290,9 @@ jobs:
             target
           key: publication-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
           restore-keys: publication-${{ runner.os }}-
+      # `check phy` reads Cargo metadata offline, as every xtask check does.
+      - name: Fetch every workspace
+        run: cargo tidy fetch
       - name: ESP32-C5 PAC and HAL
         run: |
           target=$(cargo tidy chips --json | jq -r '.[] | select(.id == "esp32c5") | .["rust-target"]')

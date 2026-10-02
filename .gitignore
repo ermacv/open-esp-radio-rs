@@ -7,6 +7,8 @@ crates/composition/**/Cargo.lock
 /oracle-regression.json
 /hil/local.toml
 /hil/*.local.toml
+# Claude Code sessions' git worktrees: full checkouts of other branches.
+/.claude/worktrees/
 
 
 # Working files rescued from target/ on 2026-09-29; move them to a job directory.

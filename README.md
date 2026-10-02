@@ -90,10 +90,11 @@ cargo fmt --all -- --check
 cargo xtask check docs
 ```
 
-Before a push, `cargo xtask check changed` runs what the changed files need:
-formatting of every affected workspace, workspace Clippy, tests and API
-documentation of the changed packages, and the documentation, metadata,
-provenance and capability-anchor checks where they apply. The
+`cargo xtask push` runs the fast gate before it pushes, and `cargo xtask
+check changed` runs it over uncommitted work: formatting of every affected
+workspace, the lock check, the documentation and capability-anchor checks
+where they apply, and Clippy and tests of the changed packages and every
+package depending on them. `--full` adds what CI checks after a push. The
 [tooling reference](tools/xtask/README.md) lists every check.
 
 The [CI workflow](.github/workflows/ci.yml) runs `cargo fmt --check` for every

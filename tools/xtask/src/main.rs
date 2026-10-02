@@ -9,6 +9,10 @@ use oer_xtask::{Context, Result, checks};
 struct Cli {
     #[arg(long, global = true)]
     root: Option<PathBuf>,
+    /// Stream the output of every command a check runs instead of logging
+    /// it under target/xtask/logs and showing only a failure's diagnostics.
+    #[arg(long, global = true)]
+    verbose: bool,
     #[command(subcommand)]
     command: Task,
 }
@@ -127,16 +131,17 @@ enum Task {
         #[command(subcommand)]
         compare: Compare,
     },
-    /// Rebase onto origin/main, run `check changed` there, and push to main
-    /// only a revision that passed; reinstall `oer-stand` when its tooling
-    /// changed.
+    /// Run the fast gate on exactly the committed tree, rebase onto
+    /// origin/main, and push to main; rerun the gate only for the packages
+    /// both this push and the incoming commits affect.
     Push,
     /// Update every workspace's Cargo.lock to its manifests after a
     /// dependency or pin change.
-    Lock,
-    /// Download the dependencies every workspace's lock file names and the
-    /// local cache lacks; Cargo otherwise runs offline in this repository.
-    Fetch,
+    Lock {
+        /// Only verify, offline, that every lock matches its manifests.
+        #[arg(long)]
+        check: bool,
+    },
     /// Add or remove a Git worktree whose target/ starts as a copy-on-write
     /// clone of this checkout's build outputs.
     Worktree {
@@ -146,18 +151,12 @@ enum Task {
     /// Build the xtask of origin/main once and install `oer-stand`, which
     /// runs the operational HIL stand commands without building this tree.
     StandInstall,
-    /// List, or with --apply remove, rebuildable build caches unused for a
-    /// while (incremental data, HIL image caches); running builds are skipped.
+    /// List, or with --apply remove, this checkout's rebuildable build caches
+    /// unused for a while (incremental data, HIL image caches) and the host's
+    /// unused HIL snapshot builds; running builds are skipped.
     Sweep {
-        /// Every sibling open-esp-radio-rs checkout, not only this one.
-        #[arg(long)]
-        all_checkouts: bool,
         #[arg(long)]
         apply: bool,
-        /// The daily sweep of every checkout that `check changed` starts in
-        /// the background: skipped when a recent one ran and space is ample.
-        #[arg(long, conflicts_with_all = ["all_checkouts", "apply"])]
-        automatic: bool,
     },
     Check {
         #[command(subcommand)]
@@ -220,11 +219,16 @@ enum Worktree {
 
 #[derive(Subcommand)]
 enum Check {
-    /// Before a push: format, Clippy, tests and API documentation for what
-    /// this checkout changed against the merge base with BASE.
+    /// The push gate over what this checkout changed against the merge base
+    /// with BASE, committed or not: tidy, formatting, lock, docs, and Clippy
+    /// and tests of the changed packages and their dependents.
     Changed {
         #[arg(long, default_value = "origin/main")]
         base: String,
+        /// Also what CI checks after a push: workspace Clippy, API docs, HIL
+        /// image type checks, PHY, network, register and provenance audits.
+        #[arg(long)]
+        full: bool,
     },
     Metadata,
     /// Test every root-workspace package with the feature sets its
@@ -252,11 +256,14 @@ enum Check {
     /// Build both final HIL application images and run their target audits.
     Images,
     /// Build HIL image classes with their link-time audits, reporting every
-    /// class: all of them with `--all`, or each `--class`.
-    #[command(group(clap::ArgGroup::new("selection").required(true).args(["all", "classes"])))]
+    /// class: all of them with `--all`, or each `--class`; `--list` prints
+    /// every class with the runtime features it builds with.
+    #[command(group(clap::ArgGroup::new("selection").required(true).args(["all", "classes", "list"])))]
     Firmware {
         #[arg(long)]
         all: bool,
+        #[arg(long)]
+        list: bool,
         #[arg(long = "class")]
         classes: Vec<oer_hil_image_class::ImageClass>,
         /// Only `cargo check` each runtime, without code generation or audits.
@@ -314,7 +321,64 @@ fn run() -> Result<std::process::ExitCode> {
         None => Context::discover()?,
     };
     let _signals = process::install_signal_handlers()?;
-    match cli.command {
+    let log = match log_name(&cli.command) {
+        Some(name) if !cli.verbose => Some(oer_xtask::report::Log::start(&ctx.root, &name)?),
+        _ => None,
+    };
+    let result = dispatch(&ctx, cli.command);
+    if let Some(log) = &log {
+        match &result {
+            Ok(_) => println!("log: {}", log.path.display()),
+            Err(_) => {
+                let digest = log.digest();
+                if !digest.is_empty() {
+                    eprintln!("{digest}");
+                }
+                eprintln!("full log: {}", log.path.display());
+            }
+        }
+    }
+    result
+}
+
+/// The log of a command whose child output is logged by default: the
+/// checks, `doc`, `lock` and `push`.
+fn log_name(command: &Task) -> Option<String> {
+    let name = match command {
+        Task::Check {
+            check: Check::Firmware { list: true, .. },
+        } => return None,
+        Task::Check { check } => format!("check-{}", check_name(check)),
+        Task::Doc => String::from("doc"),
+        Task::Lock { .. } => String::from("lock"),
+        Task::Push => String::from("push"),
+        _ => return None,
+    };
+    Some(name)
+}
+
+fn check_name(check: &Check) -> &'static str {
+    match check {
+        Check::Changed { .. } => "changed",
+        Check::Metadata => "metadata",
+        Check::FeatureSets => "feature-sets",
+        Check::Architecture => "architecture",
+        Check::Network => "network",
+        Check::Docs => "docs",
+        Check::Tidy => "tidy",
+        Check::Capabilities { .. } => "capabilities",
+        Check::Phy { .. } => "phy",
+        Check::Images => "images",
+        Check::Firmware { .. } => "firmware",
+        Check::BlobrayStandalone => "blobray-standalone",
+        Check::IsaConformance { .. } => "isa-conformance",
+        Check::Provenance { .. } => "provenance",
+    }
+}
+
+fn dispatch(ctx: &Context, command: Task) -> Result<std::process::ExitCode> {
+    let ctx = ctx.clone();
+    match command {
         Task::HilObserver => {
             oer_xtask::hil::prepare(&ctx)?;
             println!(
@@ -425,8 +489,13 @@ fn run() -> Result<std::process::ExitCode> {
             }
         }
         Task::Push => oer_xtask::push::run(&ctx),
-        Task::Lock => checks::metadata::update_locks(&ctx),
-        Task::Fetch => checks::metadata::fetch(&ctx),
+        Task::Lock { check: false } => checks::metadata::update_locks(&ctx),
+        Task::Lock { check: true } => checks::metadata::check_locks(
+            &ctx,
+            &checks::metadata::workspaces(&ctx)?
+                .into_iter()
+                .collect::<Vec<_>>(),
+        ),
         Task::Worktree { worktree } => match worktree {
             Worktree::Add { path, branch, from } => {
                 oer_xtask::worktree::add(&ctx, &path, &branch, &from)
@@ -435,34 +504,27 @@ fn run() -> Result<std::process::ExitCode> {
             Worktree::Prepare => oer_xtask::worktree::prepare(&ctx),
         },
         Task::StandInstall => oer_xtask::stand_install::run(&ctx),
-        Task::Sweep {
-            automatic: true, ..
-        } => oer_xtask::sweep::automatically(&ctx.root),
-        Task::Sweep {
-            all_checkouts,
-            apply,
-            ..
-        } => {
-            let roots = if all_checkouts {
-                oer_xtask::sweep::checkouts(&ctx.root)
-            } else {
-                vec![ctx.root.clone()]
-            };
-            oer_xtask::sweep::run(&roots, oer_xtask::sweep::Policy::default(), apply).map(|_| ())
+        Task::Sweep { apply } => {
+            oer_xtask::sweep::run(&ctx.root, oer_xtask::sweep::Policy::default(), apply).map(|_| ())
         }
         Task::Check { check } => match check {
-            Check::Changed { base } => checks::changed::run(&ctx, &base),
+            Check::Changed { base, full } => checks::changed::run(&ctx, &base, full),
             Check::Metadata => checks::metadata::run(&ctx).map(|_| ()),
             Check::FeatureSets => checks::feature_sets::run(&ctx),
             Check::Architecture => checks::architecture::run(&ctx),
             Check::Network => checks::network::run(&ctx),
             Check::Docs => checks::docs::run(&ctx),
-            Check::Tidy => checks::tidy::run(&ctx),
+            Check::Tidy => checks::tidy::run(&ctx).map(|()| println!("check tidy passed")),
             Check::Capabilities { changed } => checks::docs::capabilities(&ctx, &changed),
             Check::Phy { chip } => checks::phy::run(&ctx, &chip),
             Check::Images => checks::images::run(&ctx),
+            Check::Firmware { list: true, .. } => {
+                print!("{}", checks::firmware::list());
+                Ok(())
+            }
             Check::Firmware {
                 all: _,
+                list: false,
                 classes,
                 type_check,
                 jobs,
@@ -524,6 +586,22 @@ fn main() -> std::process::ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checks_log_by_default_and_stream_with_verbose() {
+        let cli = Cli::try_parse_from(["xtask", "check", "changed", "--full"]).unwrap();
+        assert!(!cli.verbose);
+        assert_eq!(log_name(&cli.command).as_deref(), Some("check-changed"));
+        let cli = Cli::try_parse_from(["xtask", "--verbose", "push"]).unwrap();
+        assert!(cli.verbose);
+        assert_eq!(log_name(&cli.command).as_deref(), Some("push"));
+        let cli = Cli::try_parse_from(["xtask", "check", "firmware", "--list"]).unwrap();
+        assert_eq!(log_name(&cli.command), None);
+        let cli = Cli::try_parse_from(["xtask", "lock", "--check"]).unwrap();
+        assert!(matches!(cli.command, Task::Lock { check: true }));
+        assert!(Cli::try_parse_from(["xtask", "fetch"]).is_err());
+        assert!(Cli::try_parse_from(["xtask", "sweep", "--all-checkouts"]).is_err());
+    }
 
     #[test]
     fn the_integrity_tier_is_a_check_without_options() {

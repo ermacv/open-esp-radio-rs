@@ -110,9 +110,14 @@ struct Job {
 }
 
 /// One line per workflow whose newest finished run on `main` failed, naming
-/// the failed jobs; empty when CI is green or `gh` cannot tell.
-pub fn report(ctx: &Context) -> Vec<String> {
-    let Ok(output) = process::capture(ctx.command("gh").args([
+/// the failed jobs; empty when CI is green. An error names why `gh` could
+/// not tell.
+pub fn report(ctx: &Context) -> Result<Vec<String>, String> {
+    report_with(ctx, "gh")
+}
+
+fn report_with(ctx: &Context, gh: &str) -> Result<Vec<String>, String> {
+    let output = process::capture(ctx.command(gh).args([
         "run",
         "list",
         "--branch",
@@ -121,16 +126,24 @@ pub fn report(ctx: &Context) -> Vec<String> {
         "30",
         "--json",
         "workflowName,headSha,status,conclusion,url,databaseId,createdAt",
-    ])) else {
-        return Vec::new();
-    };
-    let Ok(runs) = serde_json::from_slice::<Vec<Run>>(&output.stdout) else {
-        return Vec::new();
-    };
-    failures(&runs)
+    ]))
+    .map_err(|error| match error.downcast_ref::<std::io::Error>() {
+        Some(io) if io.kind() == std::io::ErrorKind::NotFound => "`gh` is not installed".to_owned(),
+        _ => error
+            .to_string()
+            .lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or("`gh run list` failed")
+            .trim()
+            .to_owned(),
+    })?;
+    let runs = serde_json::from_slice::<Vec<Run>>(&output.stdout)
+        .map_err(|error| format!("`gh run list` printed no run list: {error}"))?;
+    Ok(failures(&runs)
         .into_iter()
         .map(|run| {
-            let jobs = process::capture(ctx.command("gh").args([
+            let jobs = process::capture(ctx.command(gh).args([
                 "run",
                 "view",
                 &run.database_id.to_string(),
@@ -160,7 +173,20 @@ pub fn report(ctx: &Context) -> Vec<String> {
                 run.url
             )
         })
-        .collect()
+        .collect())
+}
+
+/// Prints [`report`]'s lines, or one warning line when CI's state is
+/// unknown, prefixed with `label`.
+pub fn print(ctx: &Context, label: &str) {
+    match report(ctx) {
+        Ok(failures) => {
+            for failure in failures {
+                println!("{label}: {failure}");
+            }
+        }
+        Err(reason) => println!("{label}: warning: the state of CI on main is unknown: {reason}"),
+    }
 }
 
 #[cfg(test)]
@@ -202,6 +228,17 @@ mod tests {
         let failed = failures(&runs);
         assert_eq!(failed.len(), 1);
         assert_eq!(failed[0].head_sha, "mid");
+    }
+
+    #[test]
+    fn a_missing_gh_is_reported_not_taken_for_green() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("Cargo.toml"), "[workspace]\n").unwrap();
+        let ctx = Context::new(directory.path()).unwrap();
+        assert_eq!(
+            report_with(&ctx, "oer-gh-that-does-not-exist"),
+            Err("`gh` is not installed".to_owned())
+        );
     }
 
     #[test]

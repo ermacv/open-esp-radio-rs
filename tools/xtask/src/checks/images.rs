@@ -245,13 +245,7 @@ pub fn run(ctx: &Context) -> Result<()> {
     process::run(
         ctx.cargo()
             .env("CARGO_TARGET_DIR", ctx.root.join("target"))
-            .args([
-                "build",
-                "--quiet",
-                "--locked",
-                "-p",
-                "oer-hil-runner",
-            ]),
+            .args(["build", "--quiet", "--locked", "-p", "oer-hil-runner"]),
     )?;
     process::run(crate::blobray::cargo(ctx, "build").args([
         "--locked",

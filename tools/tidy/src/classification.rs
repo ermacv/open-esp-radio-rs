@@ -54,6 +54,7 @@ pub const KEYS: &[&str] = &[
     "supported-feature-profiles",
     "test-feature-sets",
     "default-configuration",
+    "inputs",
 ];
 
 /// Where a package's code runs.
@@ -114,9 +115,8 @@ pub fn classify(
     name: &str,
     field: &dyn Fn(&str) -> Option<String>,
 ) -> Result<Classification, String> {
-    let required = |key: &str| {
-        field(key).ok_or_else(|| format!("package {name} lacks open-radio.{key}"))
-    };
+    let required =
+        |key: &str| field(key).ok_or_else(|| format!("package {name} lacks open-radio.{key}"));
     let layer = required("layer")?;
     let scope = LAYERS
         .iter()
@@ -238,6 +238,37 @@ pub fn of(package: &Package) -> Result<Classification, String> {
     })
 }
 
+/// Whether the repository `path` matches the input `pattern` of a
+/// package's `open-radio.inputs`: `/`-separated components where `*`
+/// matches within one component and `**` any number of components; a
+/// pattern that ends before the path matches everything below it.
+pub fn input_matches(pattern: &str, path: &str) -> bool {
+    fn component(pattern: &str, text: &str) -> bool {
+        match pattern.split_once('*') {
+            None => pattern == text,
+            Some((head, tail)) => {
+                text.starts_with(head)
+                    && (head.len()..=text.len()).any(|start| component(tail, &text[start..]))
+            }
+        }
+    }
+    fn components(pattern: &[&str], path: &[&str]) -> bool {
+        match (pattern.split_first(), path.split_first()) {
+            (None, _) => true,
+            (Some((&"**", rest)), _) => {
+                (0..=path.len()).any(|skip| components(rest, &path[skip..]))
+            }
+            (Some((first, rest)), Some((name, others))) => {
+                component(first, name) && components(rest, others)
+            }
+            (Some(_), None) => false,
+        }
+    }
+    let pattern: Vec<&str> = pattern.trim_end_matches('/').split('/').collect();
+    let path: Vec<&str> = path.split('/').collect();
+    components(&pattern, &path)
+}
+
 /// The workspace directory whose packages name themselves: Blobray's.
 const OWN_NAMES: &str = "tools/blobray";
 
@@ -264,6 +295,35 @@ pub fn check(context: &Context<'_>, chips: &Chips) -> Vec<String> {
                     ""
                 }
             ));
+        }
+        if let Some(inputs) = package
+            .open_radio
+            .as_ref()
+            .and_then(|table| table.get("inputs"))
+        {
+            let patterns: Option<Vec<&str>> = inputs
+                .as_array()
+                .and_then(|items| items.iter().map(Value::as_str).collect());
+            match patterns {
+                Some(patterns) => {
+                    for pattern in patterns {
+                        if !context
+                            .repo
+                            .files()
+                            .any(|file| input_matches(pattern, file))
+                        {
+                            problems.push(format!(
+                                "{}: open-radio.inputs pattern `{pattern}` matches no file",
+                                package.manifest
+                            ));
+                        }
+                    }
+                }
+                None => problems.push(format!(
+                    "{}: open-radio.inputs must be an array of path patterns",
+                    package.manifest
+                )),
+            }
         }
         let class = match of(package) {
             Ok(class) => class,
@@ -360,9 +420,21 @@ mod tests {
         assert_eq!(class.platform, Platform::Chip("esp32s31".into()));
         for invalid in [
             &[("layer", "hardware"), ("platform", "chip")][..],
-            &[("layer", "hardware"), ("platform", "portable"), ("chip", "esp32s31")],
-            &[("layer", "hardware"), ("platform", "chip"), ("chip", "ESP32")],
-            &[("layer", "hardware"), ("platform", "family"), ("chip", "esp32s31")],
+            &[
+                ("layer", "hardware"),
+                ("platform", "portable"),
+                ("chip", "esp32s31"),
+            ],
+            &[
+                ("layer", "hardware"),
+                ("platform", "chip"),
+                ("chip", "ESP32"),
+            ],
+            &[
+                ("layer", "hardware"),
+                ("platform", "family"),
+                ("chip", "esp32s31"),
+            ],
         ] {
             assert!(classified(invalid).is_err(), "{invalid:?}");
         }
@@ -379,8 +451,12 @@ mod tests {
         assert_eq!(verdict.evidence, Some(Evidence::Verdict));
         assert!(classified(&[("layer", "verification"), ("platform", "host")]).is_err());
         assert!(
-            classified(&[("layer", "tool"), ("platform", "host"), ("evidence", "report")])
-                .is_err()
+            classified(&[
+                ("layer", "tool"),
+                ("platform", "host"),
+                ("evidence", "report")
+            ])
+            .is_err()
         );
         let observation = classified(&[
             ("layer", "hil"),
@@ -391,7 +467,12 @@ mod tests {
         assert_eq!(observation.hil, Some(Hil::Observation));
         assert!(classified(&[("layer", "hil"), ("platform", "host"), ("hil", "x")]).is_err());
         assert!(
-            classified(&[("layer", "tool"), ("platform", "host"), ("hil", "operation")]).is_err()
+            classified(&[
+                ("layer", "tool"),
+                ("platform", "host"),
+                ("hil", "operation")
+            ])
+            .is_err()
         );
     }
 
@@ -404,6 +485,32 @@ mod tests {
         let (observation, operation) = (Some(Hil::Observation), Some(Hil::Operation));
         assert!(!hil_edge_allowed(observation, operation));
         assert!(hil_edge_allowed(operation, observation));
+    }
+
+    #[test]
+    fn input_patterns_match_prefixes_and_globs() {
+        assert!(input_matches(
+            "qualification",
+            "qualification/catalog/a.toml"
+        ));
+        assert!(input_matches(
+            ".github/workflows/",
+            ".github/workflows/ci.yml"
+        ));
+        assert!(!input_matches("qualification", "qualifications/a.toml"));
+        let manifests = "hil/targets/**/Cargo.toml";
+        assert!(input_matches(
+            manifests,
+            "hil/targets/esp32s31/agent/Cargo.toml"
+        ));
+        assert!(input_matches(manifests, "hil/targets/Cargo.toml"));
+        assert!(!input_matches(
+            manifests,
+            "hil/targets/esp32s31/agent/src/main.rs"
+        ));
+        assert!(input_matches("docs/*.md", "docs/guide.md"));
+        assert!(input_matches("a/*-x*/b", "a/one-x2/b"));
+        assert!(!input_matches("docs/*.md", "docs/guide.txt"));
     }
 
     #[test]
@@ -495,6 +602,14 @@ mod tests {
                 ),
             ),
             (
+                "h/Cargo.toml",
+                &manifest(
+                    "oer-h",
+                    "layer = \"tool\"\nplatform = \"host\"\ninputs = [\"a\", \"gone/**/x\"]",
+                    "",
+                ),
+            ),
+            (
                 "tools/blobray/x/Cargo.toml",
                 &manifest("blobray-x", "layer = \"tool\"\nplatform = \"host\"", ""),
             ),
@@ -507,6 +622,7 @@ mod tests {
                 "c/Cargo.toml: package open-radio-c does not follow the `oer-<tokens>` naming rule (docs/architecture.md)",
                 "d/Cargo.toml: package oer-d lacks [package.metadata.open-radio]",
                 "e/Cargo.toml: observation package oer-e depends on stand operation package oer-f",
+                "h/Cargo.toml: open-radio.inputs pattern `gone/**/x` matches no file",
             ]
         );
     }

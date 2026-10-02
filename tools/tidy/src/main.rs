@@ -1,7 +1,8 @@
 //! `oer-tidy [check] [--root DIR]` runs every integrity check and fails on
 //! any problem; `oer-tidy workspaces [--json]` prints the manifest of every
 //! Cargo workspace and `oer-tidy chips [--json]` every chip profile, one per
-//! line or as a JSON array for CI matrices.
+//! line or as a JSON array for CI matrices; `oer-tidy fetch` downloads what
+//! every workspace's lock file names and the Cargo cache lacks.
 
 use std::{
     path::{Path, PathBuf},
@@ -11,7 +12,7 @@ use std::{
 
 use oer_tidy::{Result, chips::Chips, manifest::Manifests, repo::Repo, workspaces};
 
-const USAGE: &str = "usage: oer-tidy [check | workspaces | chips] [--json] [--root DIR]";
+const USAGE: &str = "usage: oer-tidy [check | workspaces | chips | fetch] [--json] [--root DIR]";
 
 fn main() -> ExitCode {
     match run() {
@@ -43,7 +44,9 @@ fn run() -> Result<ExitCode> {
             "--root" => {
                 root_argument = Some(PathBuf::from(arguments.next().ok_or(USAGE)?));
             }
-            "check" | "workspaces" | "chips" if command.is_none() => command = Some(argument),
+            "check" | "workspaces" | "chips" | "fetch" if command.is_none() => {
+                command = Some(argument)
+            }
             "--json" => json = true,
             "-h" | "--help" => {
                 println!("{USAGE}");
@@ -86,6 +89,11 @@ fn run() -> Result<ExitCode> {
                     println!("{id}");
                 }
             }
+            return Ok(ExitCode::SUCCESS);
+        }
+        Some("fetch") if !json => {
+            let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+            oer_tidy::fetch::run(&repo, Path::new(&cargo))?;
             return Ok(ExitCode::SUCCESS);
         }
         _ if json => return Err(USAGE.to_owned()),

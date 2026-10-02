@@ -30,6 +30,23 @@ pub struct Outcome {
     pub failure: Option<String>,
 }
 
+/// Every class with the runtime features its image builds with, and how to
+/// type-check one.
+pub fn list() -> String {
+    let mut text = String::new();
+    for class in ImageClass::ALL {
+        text.push_str(&format!(
+            "{:<36} {}\n",
+            class.id(),
+            class.build_features(Integration::OwnedXarxa.feature())
+        ));
+    }
+    text.push_str(
+        "type-check one class: cargo xtask check firmware --class <class> --type-check\n",
+    );
+    text
+}
+
 /// The classes to take: `selected`, or every class when it is empty, in
 /// [`ImageClass::ALL`] order without repeats.
 pub fn classes(selected: &[ImageClass]) -> Vec<ImageClass> {
@@ -461,6 +478,19 @@ mod tests {
             changed(&["docs/guide.md"]).contains(&bluetooth),
             "no record: build it"
         );
+    }
+
+    #[test]
+    fn the_listing_names_every_class_with_its_features() {
+        let listing = list();
+        for class in ImageClass::ALL {
+            let line = listing
+                .lines()
+                .find(|line| line.split_whitespace().next() == Some(class.id()))
+                .unwrap_or_else(|| panic!("{} is not listed", class.id()));
+            assert!(line.contains(class.runtime_features()), "{line}");
+        }
+        assert!(listing.contains("--type-check"));
     }
 
     #[test]

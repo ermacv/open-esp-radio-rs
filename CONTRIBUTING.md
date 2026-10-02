@@ -37,8 +37,10 @@ artifact. See [source policy](docs/source-policy.md).
 ## Choose checks by the changed boundary
 
 Run commands from the repository root unless the component guide says otherwise.
-Before every push to `main`, run `cargo xtask check changed`: it selects the
-checks below that the changed files need. The table lists what each boundary
+Push to `main` with `cargo xtask push`: it runs the fast gate on exactly the
+committed tree and pushes only what passed. `cargo xtask check changed` runs
+the same gate over uncommitted work, and `--full` adds what CI checks after a
+push. The table lists what each boundary
 adds when you iterate on it.
 
 | Change | Checks |

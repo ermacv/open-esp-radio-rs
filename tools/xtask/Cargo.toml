@@ -49,3 +49,5 @@ workspace = true
 [package.metadata.open-radio]
 layer = "tool"
 platform = "host"
+# The tests read the workflows and the chip profiles.
+inputs = [".github/workflows", "platform/*/chip.toml"]

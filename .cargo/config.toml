@@ -1,13 +1,16 @@
 [alias]
-registers = "run --profile blobray -p oer-register-tool --"
-xtask = "run -p oer-xtask --"
+# Every alias runs its tool quietly: Cargo's own progress lines stay out of
+# the tool's output, and a compile error still prints.
+registers = "run --quiet --profile blobray -p oer-register-tool --"
+xtask = "run --quiet -p oer-xtask --"
 hil = "run --quiet -p oer-xtask -- hil"
 memory = "run --quiet -p oer-memory-report --"
 qualification = "run --quiet --profile qualification -p oer-qualification --"
-# Keep Cargo's preparation phase visible. In particular, do not hide a
-# compiler rebuild or `Blocking waiting for file lock` behind a silent pause;
-# the Blobray UI can only start after Cargo launches the binary.
-blobray = "run --manifest-path tools/blobray/Cargo.toml --profile blobray -p blobray-cli --bin blobray --"
+blobray = "run --quiet --manifest-path tools/blobray/Cargo.toml --profile blobray -p blobray-cli --bin blobray --"
+# The repository model of oer-tidy: `cargo tidy check`, `workspaces`,
+# `chips` and `fetch`. Its few dependencies rarely change, so it still
+# builds after a pull that changed what xtask needs.
+tidy = "run --quiet -p oer-tidy --"
 
 [net]
 # GitHub access in the lab uses HTTPS credentials managed by Git. Delegate git
@@ -16,8 +19,9 @@ git-fetch-with-cli = true
 # Builds resolve from the lock files and the local cache only. Online, every
 # Cargo command re-checks each git dependency under the host-wide package
 # cache lock (about 12 s), and parallel builds of all checkouts queue behind
-# it. `cargo xtask fetch` downloads what changed lock files need; `cargo xtask
-# lock`, `check changed` and the image builds fetch when something is missing.
+# it. `cargo tidy fetch` downloads what changed lock files need, and `cargo
+# xtask lock` updates the locks online; the image builds fetch when something
+# is missing.
 offline = true
 
 [env]

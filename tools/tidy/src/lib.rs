@@ -24,6 +24,7 @@ pub mod allowlist;
 pub mod chips;
 pub mod classification;
 pub mod dependencies;
+pub mod fetch;
 pub mod manifest;
 pub mod reachability;
 pub mod records;

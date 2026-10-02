@@ -72,6 +72,31 @@ pub fn install_signal_handlers() -> Result<SignalGuard> {
     Err("host process-group cancellation is unsupported on this host".into())
 }
 
+fn output_log() -> &'static std::sync::Mutex<Option<std::fs::File>> {
+    static LOG: OnceLock<std::sync::Mutex<Option<std::fs::File>>> = OnceLock::new();
+    LOG.get_or_init(|| std::sync::Mutex::new(None))
+}
+
+/// Sends the output of every later [`run`] and [`run_with_timeout`] command
+/// to `file` instead of the terminal, or back to the terminal with `None`.
+/// Captures are unaffected.
+pub fn log_output_to(file: Option<std::fs::File>) {
+    *output_log()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = file;
+}
+
+fn route(command: &mut Command) -> Result<()> {
+    if let Some(file) = output_log()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+    {
+        command.stdout(file.try_clone()?).stderr(file.try_clone()?);
+    }
+    Ok(())
+}
+
 pub fn run(command: &mut Command) -> Result<()> {
     run_with_shutdown_grace(command, std::time::Duration::from_secs(1))
 }
@@ -79,6 +104,7 @@ pub fn run(command: &mut Command) -> Result<()> {
 /// [`run`], stopping the command's whole process group once `timeout`
 /// elapses.
 pub fn run_with_timeout(command: &mut Command, timeout: std::time::Duration) -> Result<()> {
+    route(command)?;
     let status = owned::Child::spawn(command)?
         .with_timeout(timeout)
         .wait()
@@ -110,6 +136,7 @@ pub fn run_with_shutdown_grace(
     command: &mut Command,
     shutdown_grace: std::time::Duration,
 ) -> Result<()> {
+    route(command)?;
     let mut child = owned::Child::spawn_with_shutdown_grace(command, shutdown_grace)?;
     let status = child.wait()?;
     if !status.success() {

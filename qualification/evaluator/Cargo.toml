@@ -29,3 +29,6 @@ workspace = true
 [package.metadata.open-radio]
 layer = "qualification"
 platform = "host"
+# The tests read every catalog, program and review, and resolve image
+# sources with `cargo tree` over the HIL targets' manifests.
+inputs = ["qualification", "hil/targets/**/Cargo.toml"]

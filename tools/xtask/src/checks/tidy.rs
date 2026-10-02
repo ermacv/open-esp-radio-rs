@@ -1,14 +1,25 @@
-//! The fast integrity tier: `oer-tidy`, a small package without Cargo or
-//! compiler work of its own, checked before anything builds.
+//! The fast integrity tier: every `oer-tidy` check over this checkout, run
+//! in-process.
 
 use crate::{Context, Result};
-use oer_process as process;
 
-/// Run every `oer-tidy` check over this checkout.
+/// Run every `oer-tidy` check over this checkout; fails listing every
+/// problem.
 pub fn run(ctx: &Context) -> Result<()> {
-    process::run(
-        ctx.cargo()
-            .args(["run", "--quiet", "-p", "oer-tidy", "--", "check", "--root"])
-            .arg(&ctx.root),
+    let repo = oer_tidy::repo::Repo::from_git(&ctx.root)?;
+    let mut problems = Vec::new();
+    for outcome in oer_tidy::run(&repo)? {
+        for problem in outcome.problems {
+            problems.push(format!("tidy {}: {problem}", outcome.check));
+        }
+    }
+    if problems.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "{} problem(s) (exceptions: tools/tidy/allowlist.toml):\n{}",
+        problems.len(),
+        problems.join("\n")
     )
+    .into())
 }

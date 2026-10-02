@@ -38,4 +38,6 @@ workspace = true
 [package.metadata.open-radio]
 layer = "hil"
 platform = "host"
+# The evaluator reads the evidence this package writes.
+inputs = ["qualification/evaluator"]
 hil = "observation"

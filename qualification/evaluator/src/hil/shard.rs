@@ -131,11 +131,28 @@ impl Snapshot {
     }
 }
 
-fn current(root: &Path, sources: &[SourceDigest]) -> bool {
-    !sources.is_empty()
-        && sources
-            .iter()
-            .all(|s| digest(root, &s.path).is_ok_and(|d| d == s.sha256))
+/// Whether every source `shard` binds still has its recorded digest. A
+/// source that no longer exists is an error, not a stale shard: the shard
+/// is recorded again or deleted.
+fn current(root: &Path, shard: &Path, sources: &[SourceDigest]) -> Result<bool> {
+    if sources.is_empty() {
+        return Ok(false);
+    }
+    for source in sources {
+        if fs::symlink_metadata(root.join(&source.path)).is_err() {
+            return Err(format!(
+                "HIL evidence shard {} binds {}, which does not exist; record the scenario \
+                 again or delete the shard",
+                shard.display(),
+                source.path.display()
+            )
+            .into());
+        }
+        if digest(root, &source.path)? != source.sha256 {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 impl Shard {
@@ -207,7 +224,7 @@ pub(super) fn load(root: &Path, directory: &Path, target: &str) -> Result<Vec<(S
             return Err(format!("invalid HIL evidence shard {}", path.display()).into());
         }
         shard.subject.resolve_observer(&root.join(directory))?;
-        let current = current(root, &shard.sources);
+        let current = current(root, &path, &shard.sources)?;
         shards.push((shard, current));
     }
     Ok(shards)

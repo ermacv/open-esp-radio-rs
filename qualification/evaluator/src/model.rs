@@ -477,6 +477,9 @@ impl ManifestDocument {
         }
 
         let scenarios = ScenarioCatalog::load(root, &self.hil.catalog)?;
+        let mut referenced = referenced_scenarios(root, &self.hil.catalog)?;
+        referenced.extend(self.requirement_scenarios());
+        scenarios.check_roles(&referenced)?;
         let context = StaticContext {
             root,
             scenario_catalog: &scenarios,
@@ -513,6 +516,56 @@ impl ManifestDocument {
 /// Directory of the qualification programs, relative to the repository root.
 const PROGRAMS: &str = "qualification/targets";
 
+impl ManifestDocument {
+    /// The scenarios the resolved program's HIL requirements name.
+    fn requirement_scenarios(&self) -> impl Iterator<Item = String> + '_ {
+        self.capabilities.iter().flat_map(|capability| {
+            capability
+                .hil_requirements
+                .iter()
+                .map(|requirement| requirement.scenario.clone())
+        })
+    }
+}
+
+/// Every program below [`PROGRAMS`], relative to the repository root.
+fn program_paths(root: &Path) -> Result<Vec<PathBuf>> {
+    let mut stack = vec![PathBuf::from(PROGRAMS)];
+    let mut programs = vec![];
+    while let Some(directory) = stack.pop() {
+        let entries = fs::read_dir(root.join(&directory))
+            .map_err(|error| format!("cannot read {}: {error}", directory.display()))?;
+        for entry in entries {
+            let entry = entry?;
+            let path = directory.join(entry.file_name());
+            if entry.file_type()?.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|e| e == "toml") {
+                programs.push(path);
+            }
+        }
+    }
+    programs.sort();
+    Ok(programs)
+}
+
+/// The scenarios that the programs reading the HIL scenario catalog
+/// `catalog` require, which makes them its qualification scenarios.
+fn referenced_scenarios(root: &Path, catalog: &Path) -> Result<BTreeSet<String>> {
+    let mut referenced = BTreeSet::new();
+    for path in program_paths(root)? {
+        let input = fs::read_to_string(root.join(&path))?;
+        let document: ManifestDocument = toml_edit::de::from_str(&input)
+            .map_err(|error| format!("cannot parse {}: {error}", path.display()))?;
+        if document.hil.catalog != catalog {
+            continue;
+        }
+        let resolved = document.resolve_catalogs(root, &root.join(&path), &input)?;
+        referenced.extend(resolved.requirement_scenarios());
+    }
+    Ok(referenced)
+}
+
 /// A program whose `[hil]` section names `target`; every such program must
 /// name the same run and evidence directories, so any one records the same
 /// shards.
@@ -526,21 +579,7 @@ pub(crate) fn hil_program(root: &Path, target: &str) -> Result<PathBuf> {
         Option<serde_json::Value>,
         Option<serde_json::Value>,
     )> = None;
-    let mut stack = vec![PathBuf::from(PROGRAMS)];
-    let mut programs = vec![];
-    while let Some(directory) = stack.pop() {
-        for entry in fs::read_dir(root.join(&directory))? {
-            let entry = entry?;
-            let path = directory.join(entry.file_name());
-            if entry.file_type()?.is_dir() {
-                stack.push(path);
-            } else if path.extension().is_some_and(|e| e == "toml") {
-                programs.push(path);
-            }
-        }
-    }
-    programs.sort();
-    for path in programs {
+    for path in program_paths(root)? {
         let program: Program = toml_edit::de::from_str(&fs::read_to_string(root.join(&path))?)
             .map_err(|e| format!("{}: {e}", path.display()))?;
         let Some(hil) = program.hil else { continue };
@@ -768,6 +807,13 @@ fn evaluate_capability(
             }
             if decision.status == crate::hil::EvidenceStatus::UnresolvedFailure {
                 ensure_gap(&mut gaps, Axis::Hil, "current-hil-failure-unresolved");
+            }
+            if decision.investigation {
+                ensure_gap(
+                    &mut gaps,
+                    Axis::Hil,
+                    "requirement-names-investigation-scenario",
+                );
             }
         }
         if complete {

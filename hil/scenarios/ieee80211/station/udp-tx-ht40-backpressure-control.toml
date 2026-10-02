@@ -1,7 +1,7 @@
 schema = 5
 id = "udp-tx-ht40-backpressure-control"
 description = "Paced HT40 TX control for comparison with saturated task-poll diagnostics"
-transfer = "identical-image"
+role = "investigation"
 tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "task-poll", "backpressure", "air-strict"]
 
 [wifi]

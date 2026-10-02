@@ -1,8 +1,8 @@
 schema = 5
 id = "network-comparison-02-rx-ceiling"
 description = "Four-stack HT40 comparison: rx-ceiling"
+role = "investigation"
 repetitions = 1
-transfer = "identical-image"
 tags = ["diagnostic", "station", "ht40", "network-comparison", "air-strict"]
 
 [wifi]

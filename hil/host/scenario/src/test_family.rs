@@ -81,9 +81,9 @@ pub fn scenario(text: &str) -> super::Scenario<TestFamily> {
 pub fn catalog() -> super::Catalog<TestFamily> {
     super::Catalog::new(
         [
-            "schema = 5\nid = \"throughput\"\ndescription = \"rate only\"\ntags = [\"he20\"]\n[system]\nkind = \"network\"\nstation_network = true\n",
-            "schema = 5\nid = \"boot-smoke\"\ndescription = \"boot\"\n[system]\nkind = \"boot-smoke\"\n",
-            "schema = 5\nid = \"silence\"\ndescription = \"rate and silence\"\ntags = [\"he20\"]\n[system]\nkind = \"network\"\nstation_network = true\nsilence = true\n",
+            "schema = 5\nid = \"throughput\"\ndescription = \"rate only\"\nrole = \"investigation\"\ntags = [\"he20\"]\n[system]\nkind = \"network\"\nstation_network = true\n",
+            "schema = 5\nid = \"boot-smoke\"\ndescription = \"boot\"\nrole = \"investigation\"\n[system]\nkind = \"boot-smoke\"\n",
+            "schema = 5\nid = \"silence\"\ndescription = \"rate and silence\"\nrole = \"investigation\"\ntags = [\"he20\"]\n[system]\nkind = \"network\"\nstation_network = true\nsilence = true\n",
         ]
         .into_iter()
         .map(scenario)

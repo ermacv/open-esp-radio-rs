@@ -1,8 +1,8 @@
 schema = 5
 id = "diagnostic-ap-two-client-udp-rx"
 description = "Two-client AP UDP RX endpoint and per-flow accounting smoke"
+role = "investigation"
 repetitions = 1
-transfer = "identical-image"
 tags = ["diagnostic", "wifi", "access-point", "multi-client", "udp", "rx", "air-strict"]
 
 [wifi]

@@ -1,9 +1,9 @@
 schema = 5
 id = "tcp-tx-ht40-split"
 description = "Split-core HT40 sustained TCP station-to-host transmission"
+role = "investigation"
 repetitions = 3
-transfer = "identical-image"
-tags = ["qualification", "tcp", "station", "ht40", "split-core", "air-strict"]
+tags = ["tcp", "station", "ht40", "split-core", "air-strict"]
 
 [wifi]
 image = "performance"

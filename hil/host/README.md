@@ -150,8 +150,9 @@ The plan lists provided checks and selection reasons; it does not infer success
 from tags, select by changed files, or claim minimum coverage of an arbitrary
 product program. Selection never expands beyond the requested scenarios.
 Scenario digests drop null values, fill schema-5 defaults from
-`hil/schema/scenario-v5-defaults.json` and exclude top-level `description`,
-`tags` and `transfer`; all execution fields remain bound, including
+`hil/schema/scenario-v5-defaults.json` (generated from the typed scenario
+families by the runner's catalog test) and exclude top-level `description`,
+`role`, `tags` and `unsupported`; all execution fields remain bound, including
 repetitions and the complete family table. A plan neither executes hardware
 nor invalidates sealed observations.
 

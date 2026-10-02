@@ -135,7 +135,7 @@ continues its remaining scenarios in the same run bundle after flashing its
 image again. Such a run also renews its lease itself once it has held it for
 20 minutes, a third of the hour below: at the next scenario boundary it
 releases, queues again (at once when nobody waits) and flashes its image
-again, so a long suite such as `run-all --tag qualification` never meets the
+again, so a long suite such as `run-all --role qualification` never meets the
 hour, and a scenario started after a renewal has 40 minutes. A single scenario
 and a `lease` command run to their end. Every
 lease ends at one hour: it is stopped with `SIGTERM`, which runs the ordinary

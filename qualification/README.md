@@ -458,6 +458,15 @@ maps both into the declared capability graph.
 Capability dependencies describe readiness, not instructions to re-execute
 every prerequisite scenario.
 
+A HIL requirement names a scenario of the program's HIL catalog, and the
+programs decide each scenario's [role](../hil/scenarios/README.md#roles):
+validating a program fails while a scenario declared `qualification` is
+referenced by no program of `qualification/targets`. A requirement on an
+`investigation` scenario, such as one on a diagnostic image, is never
+satisfied: its decision is marked `investigation`, it derives the HIL gap
+`requirement-names-investigation-scenario`, and its next work is to re-home
+it to a qualification scenario on a product image.
+
 HIL requirements may select named `checks` in addition to the scenario and
 minimum repetitions. The scenario owns thresholds; requirements reference
 names, not duplicate numeric limits. Static validation rejects unsupported or
@@ -569,7 +578,9 @@ inputs and binds the path packages of
 instead. The evaluator reads shards next to run bundles. A shard whose
 recorded sources all match the checkout supports its scenario whatever else the
 repository changed, and those digests stand for the observer's identity; a
-changed source makes it stale until the scenario runs again and is recorded.
+changed source makes it stale until the scenario runs again and is recorded,
+and a bound source that no longer exists is an error: record the scenario again
+or delete the shard.
 Running scenarios never writes tracked files: recording is an explicit step,
 `cargo hil evidence record` (this checkout's pending clean runs, or `--run
 ID`), which calls `hil-evidence` with the run's observer receipt, and `cargo hil

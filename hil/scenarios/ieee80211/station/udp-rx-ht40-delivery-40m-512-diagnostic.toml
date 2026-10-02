@@ -1,7 +1,7 @@
 schema = 5
 id = "udp-rx-ht40-delivery-40m-512-diagnostic"
 description = "HT40 RX delivery-boundary diagnostic at 40 Mbit/s with 512-byte UDP payloads"
-transfer = "identical-image"
+role = "investigation"
 tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "packet-rate", "delivery", "air-strict"]
 
 [wifi]

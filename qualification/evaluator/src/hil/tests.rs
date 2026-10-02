@@ -17,6 +17,7 @@ fn current_scenario_catalog_drives_requirement_repetition_bounds() {
         r#"schema = 5
 id = "ble-direct-test"
 description = "Exercise the current HIL scenario document shape"
+role = "investigation"
 repetitions = 3
 
 [system]
@@ -58,7 +59,7 @@ fn scenario_catalog_rejects_non_current_schema() {
     fs::create_dir_all(&catalog_directory).unwrap();
     fs::write(
         catalog_directory.join("future-scenario.toml"),
-        "schema = 6\nid = \"future-scenario\"\nrepetitions = 1\n[system]\nkind = \"boot-smoke\"\n",
+        "schema = 6\nid = \"future-scenario\"\nrole = \"investigation\"\nrepetitions = 1\n[system]\nkind = \"boot-smoke\"\n",
     )
     .unwrap();
 
@@ -709,6 +710,15 @@ fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
     assert!(HilEvidenceIndex::load(&root, runs, evidence, "esp32s31", &later).is_err());
     fs::write(&build, stored).unwrap();
     assert!(HilEvidenceIndex::load(&root, runs, evidence, "esp32s31", &later).is_ok());
+
+    // A shard binding a source that no longer exists fails closed instead
+    // of reading as stale.
+    fs::rename(root.join("firmware"), root.join("moved")).unwrap();
+    let error = HilEvidenceIndex::load(&root, runs, evidence, "esp32s31", &later)
+        .expect_err("a missing bound source")
+        .to_string();
+    assert!(error.contains("does not exist"), "{error}");
+    fs::rename(root.join("moved"), root.join("firmware")).unwrap();
 
     // A shard names its own scenario, and only shards live in the directory.
     fs::write(root.join("evidence/notes.txt"), "").unwrap();

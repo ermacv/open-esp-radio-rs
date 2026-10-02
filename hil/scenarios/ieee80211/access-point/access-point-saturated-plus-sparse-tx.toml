@@ -1,8 +1,8 @@
 schema = 5
 id = "access-point-saturated-plus-sparse-tx"
 description = "Observer-free AP TX service of a sparse peer beside one saturated HT40 peer"
-transfer = "identical-image"
-tags = ["qualification", "characterization", "wifi", "access-point", "multi-client", "ht40", "split-core", "ceiling", "tx", "fairness", "sparse", "air-strict"]
+role = "investigation"
+tags = ["characterization", "wifi", "access-point", "multi-client", "ht40", "split-core", "ceiling", "tx", "fairness", "sparse", "air-strict"]
 
 [wifi]
 image = "performance"

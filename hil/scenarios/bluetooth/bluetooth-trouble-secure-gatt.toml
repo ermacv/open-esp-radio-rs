@@ -1,8 +1,8 @@
 schema = 5
 id = "bluetooth-trouble-secure-gatt"
 description = "Automated Numeric Comparison, protected traffic and RAM-bonded reconnect across cold restart with a withheld Reset reader; injected bond-load failure requires terminal cold close without restart; temporary Linux bond removed on cleanup"
+role = "qualification"
 repetitions = 3
-transfer = "identical-image"
 tags = ["bluetooth", "peripheral", "gatt", "trouble", "security", "automated"]
 
 [bluetooth]

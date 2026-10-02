@@ -3,8 +3,23 @@
 Folders identify the workload domain: system, IEEE 802.15.4, Bluetooth,
 IEEE 802.11 station/access-point/roles/monitor and radio coexistence.
 Scenario IDs are stable across folder moves. Tags select overlapping
-diagnostic, characterization and qualification uses; they do not assign
-ownership or make a hardware-readiness claim.
+diagnostic and characterization uses; they do not assign ownership or make a
+hardware-readiness claim.
+
+## Roles
+
+Every document declares its `role`. A `qualification` scenario is one that a
+[qualification program](../../qualification/README.md) references; every other
+scenario is an `investigation` scenario: the catalog of diagnostics,
+measurements and experiments no program requires. The role is derived, never
+chosen: validating any program fails while a `qualification` scenario is
+referenced by no program, and a requirement on an `investigation` scenario can
+never be satisfied (its obligation reports `requirement-names-investigation-scenario`).
+A scenario on a diagnostic image class (`diagnostic-*`), or one that requests a
+profile, must be an `investigation` scenario and may not carry the
+`performance` tag: observers and probes the product does not carry never
+qualify it or shape a gated figure. `cargo hil run-all --role qualification`
+runs every qualification scenario.
 
 ## Document shape
 
@@ -14,8 +29,8 @@ Schema 5 documents have a common header and exactly one family table:
 schema = 5
 id = "udp-rx-he20-calibration"
 description = "..."
+role = "investigation"          # or "qualification"; see Roles
 repetitions = 3                 # default 1
-transfer = "identical-image"    # default unchanged-functional-contract
 tags = ["he20"]
 unsupported = "..."             # optional; see Unsupported scenarios
 
@@ -190,9 +205,9 @@ observes production lifecycle events; it does not implement retry policy.
 An optional top-level `[profile]` table (`harts = "both" | "core0" |
 "core1"`, `period-us` in 100..=100000) samples the program counter of the
 image's harts during the workload's measured window. The image class must
-compile the sampler (`pc-profile`, today `diagnostic-task-residence`), and a
-scenario tagged `performance` or `qualification` refuses it: sampling
-perturbs timing. The table is part of the procedure, so a profiled scenario
+compile the sampler (`pc-profile`, today `diagnostic-task-residence`), and only
+an `investigation` scenario without the `performance` tag may request it:
+sampling perturbs timing. The table is part of the procedure, so a profiled scenario
 is a different scenario from its unprofiled copy, and its evidence never
 stands in for a throughput or timing measurement.
 
@@ -210,13 +225,3 @@ marked scenario is served, or an unmarked one is not, by the image classes
 declared in `hil/targets/esp32s31/agent/Cargo.toml` and their declared
 capabilities; after flashing, the runner checks the same roles against the
 capabilities the image reports.
-
-## Transfer policy
-
-The optional top-level `transfer` field is `unchanged-functional-contract`
-(default) or `identical-image`. A whole-scenario timing, memory or RF guarantee
-requires `identical-image`, including deadlines and reset windows for which
-no named numeric check exists. This field governs
-review applicability and does not alter execution. Named checks have their own
-explicit transfer contract in the evaluator. Functional checks may be reviewed
-separately while a timing guarantee remains bound to the application image.

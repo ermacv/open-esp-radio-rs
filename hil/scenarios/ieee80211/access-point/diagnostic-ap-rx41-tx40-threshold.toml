@@ -1,8 +1,8 @@
 schema = 5
 id = "diagnostic-ap-rx41-tx40-threshold"
 description = "Temporary AP duplex threshold probe with 41 Mbit/s uplink and 40 Mbit/s downlink"
+role = "investigation"
 repetitions = 1
-transfer = "identical-image"
 tags = ["diagnostic-ap-airtime-threshold", "air-strict"]
 
 [wifi]

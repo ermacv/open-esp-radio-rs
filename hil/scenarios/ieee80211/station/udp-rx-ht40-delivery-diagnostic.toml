@@ -1,8 +1,8 @@
 schema = 5
 id = "udp-rx-ht40-delivery-diagnostic"
 description = "Split-core HT40 host-to-station delivery-frontier diagnostic"
+role = "investigation"
 repetitions = 1
-transfer = "identical-image"
 tags = ["diagnostic", "udp", "station", "ht40", "split-core", "air-strict"]
 
 [wifi]

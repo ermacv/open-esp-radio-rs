@@ -1,7 +1,8 @@
 schema = 5
 id = "wifi-station-pmf-restart"
 description = "HT40/WPA2 STA against an access point requiring management frame protection: negotiated PMF with PSK-SHA256, protected BlockAck and UDP before and after one station stop and cold restart, whose reassociation meets the access point's SA Query of the previous association"
-tags = ["qualification", "wifi", "lifecycle", "security"]
+role = "investigation"
+tags = ["wifi", "lifecycle", "security"]
 
 [wifi]
 image = "correctness"

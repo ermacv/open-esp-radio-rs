@@ -82,6 +82,30 @@ impl ImageClass {
         Self::DiagnosticMemoryBenchmark,
     ];
 
+    /// Whether the image adds observers or probes that the product does
+    /// not carry. Its observations can never qualify a product.
+    pub const fn diagnostic(self) -> bool {
+        matches!(
+            self,
+            Self::DiagnosticMacIrq
+                | Self::DiagnosticTxWait
+                | Self::DiagnosticTaskResidence
+                | Self::DiagnosticTxArchitecture
+                | Self::DiagnosticTaskPoll
+                | Self::DiagnosticCore0RxCoarse
+                | Self::DiagnosticCore0RxCycles
+                | Self::DiagnosticRxDelivery
+                | Self::DiagnosticRxOwnership
+                | Self::DiagnosticStationExit
+                | Self::DiagnosticIeee802154EventStatus
+                | Self::DiagnosticIeee802154EdEvent
+                | Self::DiagnosticIeee802154Radio
+                | Self::DiagnosticIeee802154Thread
+                | Self::DiagnosticIeee802154Route
+                | Self::DiagnosticMemoryBenchmark
+        )
+    }
+
     pub const fn id(self) -> &'static str {
         match self {
             Self::SystemWatchdog => "system-watchdog",

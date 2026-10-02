@@ -1,7 +1,7 @@
 schema = 5
 id = "udp-rx-ht40-core0-rx-cache-off-diagnostic"
 description = "Same-ELF Core0 RX control with L1 cache event tracing disabled"
-transfer = "identical-image"
+role = "investigation"
 tags = ["diagnostic", "udp", "station", "rx", "ht40", "mcs7", "core0", "cycles", "cache-ab", "air-strict"]
 
 [wifi]

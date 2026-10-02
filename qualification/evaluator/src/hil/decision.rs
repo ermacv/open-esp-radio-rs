@@ -120,6 +120,10 @@ pub(crate) struct EvidenceDecision {
     /// document declares; the obligation stays open until it can.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) unsupported: Option<String>,
+    /// The requirement names an investigation scenario: no observation of
+    /// it satisfies a qualification program.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) investigation: bool,
 }
 
 impl EvidenceDecision {
@@ -146,6 +150,12 @@ impl EvidenceDecision {
     /// Guidance only: never changes evidence eligibility or resolves a failure.
     pub(crate) fn next_work(&self) -> Option<(crate::model::WorkKind, Cow<'_, str>)> {
         use crate::model::WorkKind;
+        if self.investigation {
+            return Some((
+                WorkKind::Implement,
+                "The requirement names an investigation scenario, which cannot satisfy a qualification program; re-home it to a qualification scenario on a product image.".into(),
+            ));
+        }
         if let (EvidenceStatus::Missing, Some(reason)) = (self.status, &self.unsupported) {
             return Some((
                 WorkKind::Implement,
@@ -224,6 +234,7 @@ impl HilEvidenceIndex {
             unsupported: catalog
                 .unsupported(&requirement.scenario)
                 .map(str::to_owned),
+            investigation: catalog.investigation(&requirement.scenario),
         };
         let mut candidates = Vec::new();
         for observation in self
@@ -298,6 +309,7 @@ impl HilEvidenceIndex {
             });
         }
         if decision.status != EvidenceStatus::UnresolvedFailure
+            && !decision.investigation
             && let Some(observation) = candidates
                 .into_iter()
                 .max_by_key(|entry| (entry.started_unix_millis, &entry.run_id))

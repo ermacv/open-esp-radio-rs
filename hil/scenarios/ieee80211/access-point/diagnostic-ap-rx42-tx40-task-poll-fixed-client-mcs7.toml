@@ -1,8 +1,8 @@
 schema = 5
 id = "diagnostic-ap-rx42-tx40-task-poll-fixed-client-mcs7"
 description = "AP 42/40 Mbit/s fixed-MCS7 duplex collapse with Core0/Core1 task-poll telemetry"
+role = "investigation"
 repetitions = 1
-transfer = "identical-image"
 tags = ["diagnostic", "wifi", "access-point", "ht40", "bidirectional", "task-poll", "fixed-client-mcs", "air-strict"]
 
 [wifi]

@@ -1,9 +1,9 @@
 schema = 5
 id = "udp-rx-ht40-ceiling"
 description = "HT40 UDP host-to-station ceiling and 100 Mbit/s regression check"
+role = "investigation"
 repetitions = 3
-transfer = "identical-image"
-tags = ["qualification", "characterization", "udp", "station", "ht40", "split-core", "ceiling", "air-strict"]
+tags = ["characterization", "udp", "station", "ht40", "split-core", "ceiling", "air-strict"]
 
 [wifi]
 image = "correctness"

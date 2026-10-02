@@ -100,4 +100,16 @@ mod tests {
     fn the_repository_directory_is_this_package() {
         assert!(env!("CARGO_MANIFEST_DIR").ends_with(super::REPOSITORY_DIRECTORY));
     }
+
+    #[test]
+    fn a_diagnostic_class_is_named_diagnostic() {
+        for class in super::ImageClass::ALL {
+            assert_eq!(
+                class.diagnostic(),
+                class.id().starts_with("diagnostic-"),
+                "{}",
+                class.id()
+            );
+        }
+    }
 }

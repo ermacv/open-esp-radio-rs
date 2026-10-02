@@ -321,6 +321,7 @@ pub(crate) fn run() -> Result<()> {
             let selected = crate::cli::Selection {
                 scenario: None,
                 tag: tag.clone(),
+                role: None,
                 chip: None,
             }
             .resolve(&catalog)?;

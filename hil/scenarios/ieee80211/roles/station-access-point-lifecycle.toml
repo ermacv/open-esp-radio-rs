@@ -1,6 +1,7 @@
 schema = 5
 id = "station-access-point-lifecycle"
 description = "One same-channel production STA+AP owner exposes both network endpoints and returns every owner on stop"
+role = "qualification"
 tags = ["diagnostic", "psram-stack", "wifi", "station", "access-point", "lifecycle"]
 
 [wifi]

@@ -330,14 +330,19 @@ fn cleanup_error_appends_to_the_primary_workload_failure() {
 #[test]
 fn run_all_selection_has_one_ordered_image_plan_and_requirement_union() {
     let catalog = catalog();
-    let tags = vec![String::from("qualification")];
     let selected = crate::cli::Selection {
         scenario: None,
-        tag: tags,
+        tag: Vec::new(),
+        role: Some(String::from("qualification")),
         chip: None,
     }
     .resolve(&catalog)
     .unwrap();
+    assert!(
+        selected
+            .iter()
+            .all(|scenario| scenario.header.role == oer_hil_scenario::Role::Qualification)
+    );
     let groups = group_selected_scenarios(&selected);
     let flattened = groups
         .iter()

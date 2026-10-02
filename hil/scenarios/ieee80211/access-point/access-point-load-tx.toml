@@ -1,8 +1,8 @@
 schema = 5
 id = "access-point-load-tx"
 description = "Sustained two-flow AP outbound fairness baseline with exact delivery"
-transfer = "identical-image"
-tags = ["qualification", "wifi", "access-point", "network", "load", "tx", "air-strict"]
+role = "investigation"
+tags = ["wifi", "access-point", "network", "load", "tx", "air-strict"]
 
 [wifi]
 image = "correctness"

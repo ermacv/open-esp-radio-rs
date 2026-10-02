@@ -1,8 +1,8 @@
 schema = 5
 id = "diagnostic-ap-airtime-rx45-tx40-observed"
 description = "Temporary AP asymmetric duplex control with 45 Mbit/s uplink and 40 Mbit/s downlink"
+role = "investigation"
 repetitions = 1
-transfer = "identical-image"
 tags = ["diagnostic-ap-airtime-sweep", "diagnostic-ap-rx-disposition", "air-strict"]
 
 [wifi]

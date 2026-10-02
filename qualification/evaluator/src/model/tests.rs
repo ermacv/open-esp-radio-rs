@@ -456,6 +456,16 @@ fn corrupt_unsupported_and_non_match_native_indexes_fail_closed() {
     write(&valid);
     fs::write(root.join(directory).join("notes.txt"), "").unwrap();
     assert!(NativeEvidence::load(root, directory, "test-radio").is_err());
+    fs::remove_file(root.join(directory).join("notes.txt")).unwrap();
+    // A shard binding a source that no longer exists fails closed.
+    let mut missing = valid.clone();
+    missing.sources[0].path = PathBuf::from("deleted/source");
+    write(&missing);
+    let Err(error) = NativeEvidence::load(root, directory, "test-radio") else {
+        panic!("a missing bound source was accepted");
+    };
+    let error = error.to_string();
+    assert!(error.contains("does not exist"), "{error}");
 }
 
 #[test]

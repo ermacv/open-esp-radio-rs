@@ -1,8 +1,8 @@
 schema = 5
 id = "access-point-single-client-ceiling-rx-core0-coarse"
 description = "Single-client AP HT40 UDP receive ceiling with coarse Core0 phase accounting"
+role = "investigation"
 repetitions = 1
-transfer = "identical-image"
 tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "ht40", "split-core", "ceiling", "rx", "core0", "air-strict"]
 
 [wifi]

@@ -105,7 +105,7 @@ impl<'a, 'p, X: PortStationEnv, const N: usize> PortScan<'a, 'p, X, N> {
             RxEvidence::HardwareObserved(rssi) | RxEvidence::ProtocolValidated(rssi) => rssi,
             RxEvidence::Unavailable => UNKNOWN_RSSI_DBM,
         };
-        let now = self.timer.now().as_micros();
+        let now = self.timer.now();
         self.table
             .observe_management(frame.bytes(), self.channel, rssi, now);
     }

@@ -257,7 +257,7 @@ impl StaPeerPort {
             association_id: response.association_id,
             beacon_interval_tu: prepared.access_point.beacon_interval_tu,
             beacon_timestamp_tsf: prepared.access_point.timestamp,
-            beacon_received_at_micros: prepared.access_point.received_at_micros,
+            beacon_received_at_micros: prepared.access_point.received_at.as_micros(),
             peer_qos: plan.peer_qos,
             management_protection: station.management_protection,
             sae: station.sae,

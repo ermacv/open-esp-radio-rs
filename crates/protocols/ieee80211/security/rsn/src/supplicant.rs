@@ -21,12 +21,13 @@ use crate::{
     keys::RsnKeyInstall,
     state::{RsnStaAction, RsnStaPhase, RsnStaState, RsnStateError, RsnTransmit},
 };
+use oer_time::{Duration, Instant};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Hardware-qualified open-STA compatibility window for the first EAPOL-Key
 /// message. The numeric value is retained from the pre-transfer HIL policy;
 /// it is not claimed as a recovered vendor constant.
-pub const RSN_STA_MESSAGE1_TIMEOUT_MS: u32 = 3_000;
+pub const RSN_STA_MESSAGE1_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Complete window after the original Message 2 transmission.
 ///
@@ -36,7 +37,7 @@ pub const RSN_STA_MESSAGE1_TIMEOUT_MS: u32 = 3_000;
 /// `wpa_sm_rx_eapol` and produces another Message 2. The six-second value
 /// preserves the two former three-second HIL receive windows without
 /// inventing a station-originated Message 2 retry.
-pub const RSN_STA_MESSAGE3_TIMEOUT_MS: u32 = 6_000;
+pub const RSN_STA_MESSAGE3_TIMEOUT: Duration = Duration::from_secs(6);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RsnStaResponseWait {
@@ -44,52 +45,64 @@ pub enum RsnStaResponseWait {
     Message3,
 }
 
+impl RsnStaResponseWait {
+    /// How long the supplicant waits for this message.
+    pub const fn timeout(self) -> Duration {
+        match self {
+            Self::Message1 => RSN_STA_MESSAGE1_TIMEOUT,
+            Self::Message3 => RSN_STA_MESSAGE3_TIMEOUT,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RsnStaDeadlineEvent {
     Pending,
     Expired {
         wait: RsnStaResponseWait,
-        elapsed_ms: u32,
+        elapsed: Duration,
     },
 }
 
-/// Finite millisecond deadline owned independently from Embassy or a hardware
-/// alarm. A target calls [`Self::finish_millisecond`] after servicing all RX
-/// completions for that interval.
+/// The absolute deadline of one response wait on the image's monotonic time.
+///
+/// The caller polls it with the time at which it last serviced received
+/// frames, so a frame received by the deadline is processed before the
+/// timeout wins. It never reads a clock or waits.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RsnStaResponseDeadline {
     wait: RsnStaResponseWait,
-    elapsed_ms: u32,
+    started: Instant,
+    deadline: Instant,
 }
 
 impl RsnStaResponseDeadline {
-    pub const fn new(wait: RsnStaResponseWait) -> Self {
-        Self {
-            wait,
-            elapsed_ms: 0,
+    /// Start waiting at `now`; `None` when the deadline lies past the
+    /// representable time.
+    pub const fn start(wait: RsnStaResponseWait, now: Instant) -> Option<Self> {
+        match now.checked_add(wait.timeout()) {
+            Some(deadline) => Some(Self {
+                wait,
+                started: now,
+                deadline,
+            }),
+            None => None,
         }
     }
 
-    pub const fn elapsed_ms(&self) -> u32 {
-        self.elapsed_ms
+    pub const fn deadline(&self) -> Instant {
+        self.deadline
     }
 
-    pub fn finish_millisecond(&mut self) -> RsnStaDeadlineEvent {
-        self.elapsed_ms = self.elapsed_ms.saturating_add(1);
-        if self.elapsed_ms >= self.timeout_ms() {
+    /// Whether the wait expired at `now`.
+    pub const fn poll(&self, now: Instant) -> RsnStaDeadlineEvent {
+        if now.as_micros() >= self.deadline.as_micros() {
             RsnStaDeadlineEvent::Expired {
                 wait: self.wait,
-                elapsed_ms: self.elapsed_ms,
+                elapsed: now.saturating_duration_since(self.started),
             }
         } else {
             RsnStaDeadlineEvent::Pending
-        }
-    }
-
-    const fn timeout_ms(&self) -> u32 {
-        match self.wait {
-            RsnStaResponseWait::Message1 => RSN_STA_MESSAGE1_TIMEOUT_MS,
-            RsnStaResponseWait::Message3 => RSN_STA_MESSAGE3_TIMEOUT_MS,
         }
     }
 }

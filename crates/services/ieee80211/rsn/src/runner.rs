@@ -196,6 +196,11 @@ impl<B: RsnKeyInstallBackend> RsnKeyInstallRunner<B> {
     }
 }
 
+/// How often the runner services received frames while it waits for a
+/// message. The backends poll RX; an event-driven wait replaces this cadence
+/// when the roles run on the lower-MAC port (radio plan 8).
+pub const RX_POLL_INTERVAL: Duration = Duration::from_millis(1);
+
 pub struct RsnHandshakeRunner<B, T, U> {
     backend: B,
     timer: T,
@@ -231,16 +236,16 @@ where
             .map_err(RsnHandshakeError::Backend)
     }
 
-    async fn wait_boundary(
+    /// Wait for the next receive poll after `previous`, returning its time.
+    async fn wait_next_poll(
         &mut self,
-        started: Instant,
-        elapsed_ms: u32,
-    ) -> Result<(), RsnHandshakeError<B::Error, U::Error>> {
-        let deadline = started
-            .checked_add(Duration::from_millis(elapsed_ms))
+        previous: Instant,
+    ) -> Result<Instant, RsnHandshakeError<B::Error, U::Error>> {
+        let poll = previous
+            .checked_add(RX_POLL_INTERVAL)
             .ok_or(RsnHandshakeError::ClockOverflow)?;
-        self.timer.wait_until(deadline).await;
-        Ok(())
+        self.timer.wait_until(poll).await;
+        Ok(poll)
     }
 
     async fn transmit_message2(
@@ -279,15 +284,12 @@ where
         .map_err(RsnHandshakeError::Create)?;
         let mut completed_frames = 0_u32;
         let mut message2_transmissions = 0_u16;
-        let mut message1_deadline = RsnStaResponseDeadline::new(RsnStaResponseWait::Message1);
-        let message1_started = self.timer.now();
+        let mut poll = self.timer.now();
+        let message1_deadline = RsnStaResponseDeadline::start(RsnStaResponseWait::Message1, poll)
+            .ok_or(RsnHandshakeError::ClockOverflow)?;
 
         'message1: loop {
-            let boundary = message1_deadline
-                .elapsed_ms()
-                .checked_add(1)
-                .ok_or(RsnHandshakeError::ClockOverflow)?;
-            self.wait_boundary(message1_started, boundary).await?;
+            poll = self.wait_next_poll(poll).await?;
             loop {
                 let progress = match self.backend.service_receive().await {
                     Ok(progress) => progress,
@@ -332,27 +334,21 @@ where
                     break;
                 }
             }
-            if matches!(
-                message1_deadline.finish_millisecond(),
-                RsnStaDeadlineEvent::Expired { .. }
-            ) {
+            if let RsnStaDeadlineEvent::Expired { wait, elapsed } = message1_deadline.poll(poll) {
                 self.stop_receive().await?;
                 return Err(RsnHandshakeError::Timeout {
-                    wait: RsnStaResponseWait::Message1,
-                    elapsed_ms: message1_deadline.elapsed_ms(),
+                    wait,
+                    elapsed,
                     completed_frames,
                 });
             }
         }
 
-        let mut message3_deadline = RsnStaResponseDeadline::new(RsnStaResponseWait::Message3);
-        let message3_started = self.timer.now();
+        let mut poll = self.timer.now();
+        let message3_deadline = RsnStaResponseDeadline::start(RsnStaResponseWait::Message3, poll)
+            .ok_or(RsnHandshakeError::ClockOverflow)?;
         loop {
-            let boundary = message3_deadline
-                .elapsed_ms()
-                .checked_add(1)
-                .ok_or(RsnHandshakeError::ClockOverflow)?;
-            self.wait_boundary(message3_started, boundary).await?;
+            poll = self.wait_next_poll(poll).await?;
             loop {
                 let progress = match self.backend.service_receive().await {
                     Ok(progress) => progress,
@@ -409,14 +405,11 @@ where
                     break;
                 }
             }
-            if matches!(
-                message3_deadline.finish_millisecond(),
-                RsnStaDeadlineEvent::Expired { .. }
-            ) {
+            if let RsnStaDeadlineEvent::Expired { wait, elapsed } = message3_deadline.poll(poll) {
                 self.stop_receive().await?;
                 return Err(RsnHandshakeError::Timeout {
-                    wait: RsnStaResponseWait::Message3,
-                    elapsed_ms: message3_deadline.elapsed_ms(),
+                    wait,
+                    elapsed,
                     completed_frames,
                 });
             }

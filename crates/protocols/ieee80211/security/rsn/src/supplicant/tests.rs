@@ -559,30 +559,39 @@ fn connected_group_rekey_rejects_bad_mic_and_stale_replay() {
 }
 
 #[test]
-fn response_deadlines_preserve_total_wait_without_spontaneous_m2_retry() {
-    let mut message1 = RsnStaResponseDeadline::new(RsnStaResponseWait::Message1);
-    for elapsed in 1..RSN_STA_MESSAGE1_TIMEOUT_MS {
-        assert_eq!(message1.finish_millisecond(), RsnStaDeadlineEvent::Pending);
-        assert_eq!(message1.elapsed_ms(), elapsed);
-    }
-    assert_eq!(
-        message1.finish_millisecond(),
-        RsnStaDeadlineEvent::Expired {
-            wait: RsnStaResponseWait::Message1,
-            elapsed_ms: RSN_STA_MESSAGE1_TIMEOUT_MS,
-        }
-    );
+fn response_deadlines_expire_exactly_at_their_total_wait() {
+    use oer_time::{Duration, Instant};
 
-    let mut message3 = RsnStaResponseDeadline::new(RsnStaResponseWait::Message3);
-    for _ in 1..RSN_STA_MESSAGE3_TIMEOUT_MS {
-        assert_eq!(message3.finish_millisecond(), RsnStaDeadlineEvent::Pending);
+    let started = Instant::from_micros(500);
+    for (wait, timeout) in [
+        (RsnStaResponseWait::Message1, RSN_STA_MESSAGE1_TIMEOUT),
+        (RsnStaResponseWait::Message3, RSN_STA_MESSAGE3_TIMEOUT),
+    ] {
+        let deadline = RsnStaResponseDeadline::start(wait, started).unwrap();
+        let expiry = started.checked_add(timeout).unwrap();
+        assert_eq!(deadline.deadline(), expiry);
+        assert_eq!(
+            deadline.poll(expiry.checked_sub(Duration::from_micros(1)).unwrap()),
+            RsnStaDeadlineEvent::Pending
+        );
+        assert_eq!(
+            deadline.poll(expiry),
+            RsnStaDeadlineEvent::Expired {
+                wait,
+                elapsed: timeout,
+            }
+        );
     }
+    assert_eq!(RSN_STA_MESSAGE1_TIMEOUT, Duration::from_secs(3));
+    assert_eq!(RSN_STA_MESSAGE3_TIMEOUT, Duration::from_secs(6));
+}
+
+#[test]
+fn a_response_deadline_past_the_time_range_is_refused() {
+    let late = oer_time::Instant::from_micros(u64::MAX);
     assert_eq!(
-        message3.finish_millisecond(),
-        RsnStaDeadlineEvent::Expired {
-            wait: RsnStaResponseWait::Message3,
-            elapsed_ms: RSN_STA_MESSAGE3_TIMEOUT_MS,
-        }
+        RsnStaResponseDeadline::start(RsnStaResponseWait::Message1, late),
+        None
     );
 }
 

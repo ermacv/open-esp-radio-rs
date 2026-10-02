@@ -8,12 +8,18 @@ use oer_ieee80211_rsn::{
     aes::RsnUnwrappedKeyData,
     frames::{OwnedRsnIe, RsnGtk, RsnPlainKeyData},
     runner::RsnRxProgress,
-    supplicant::{RSN_STA_MESSAGE1_TIMEOUT_MS, RSN_STA_MESSAGE3_TIMEOUT_MS},
+    supplicant::{RSN_STA_MESSAGE1_TIMEOUT, RSN_STA_MESSAGE3_TIMEOUT},
 };
 
 use super::*;
 use oer_ieee80211_mac::station::StaSequenceCounter;
 use oer_time::Clock;
+
+/// Receive polls before each response timeout wins.
+const MESSAGE1_POLLS: u32 =
+    (RSN_STA_MESSAGE1_TIMEOUT.as_micros() / crate::runner::RX_POLL_INTERVAL.as_micros()) as u32;
+const MESSAGE3_POLLS: u32 =
+    (RSN_STA_MESSAGE3_TIMEOUT.as_micros() / crate::runner::RX_POLL_INTERVAL.as_micros()) as u32;
 
 const LOCAL: [u8; 6] = [1; 6];
 const AP: [u8; 6] = [2; 6];
@@ -391,12 +397,12 @@ fn message1_timeout_is_exact_and_stops_the_live_ring() {
         embassy_futures::block_on(runner.run(config(&pmk), &mut || sequence.take())),
         Err(RsnHandshakeError::Timeout {
             wait: RsnStaResponseWait::Message1,
-            elapsed_ms: RSN_STA_MESSAGE1_TIMEOUT_MS,
+            elapsed: RSN_STA_MESSAGE1_TIMEOUT,
             completed_frames: 0,
         })
     ));
     assert_eq!(runner.timer.now_micros.get(), 3_000_000);
-    assert_eq!(runner.timer.waits.get(), RSN_STA_MESSAGE1_TIMEOUT_MS);
+    assert_eq!(runner.timer.waits.get(), MESSAGE1_POLLS);
     assert!(!runner.backend().receive_live);
     assert_eq!(runner.backend().stops, 1);
 }
@@ -416,7 +422,7 @@ fn peer_message1_sends_m2_once_but_never_retries_it_on_local_timeout() {
         embassy_futures::block_on(runner.run(config(&pmk), &mut || sequence.take())),
         Err(RsnHandshakeError::Timeout {
             wait: RsnStaResponseWait::Message3,
-            elapsed_ms: RSN_STA_MESSAGE3_TIMEOUT_MS,
+            elapsed: RSN_STA_MESSAGE3_TIMEOUT,
             completed_frames: 1,
         })
     ));
@@ -427,7 +433,7 @@ fn peer_message1_sends_m2_once_but_never_retries_it_on_local_timeout() {
     assert_eq!(runner.timer.now_micros.get(), 6_001_000);
     assert_eq!(
         runner.timer.waits.get(),
-        RSN_STA_MESSAGE1_TIMEOUT_MS.min(1) + RSN_STA_MESSAGE3_TIMEOUT_MS
+        MESSAGE1_POLLS.min(1) + MESSAGE3_POLLS
     );
 }
 
@@ -457,7 +463,7 @@ fn repeated_peer_message1_is_the_only_message2_refresh_source() {
 #[test]
 fn message1_on_exact_deadline_is_serviced_before_timeout() {
     let pmk = Pmk::derive(b"password", b"ssid").unwrap();
-    let backend = Backend::new(Some(RSN_STA_MESSAGE1_TIMEOUT_MS), None, None);
+    let backend = Backend::new(Some(MESSAGE1_POLLS), None, None);
     let mut runner = RsnHandshakeRunner::new(
         backend,
         TestTimer::default(),

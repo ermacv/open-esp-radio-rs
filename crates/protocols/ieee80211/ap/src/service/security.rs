@@ -149,7 +149,9 @@ impl<'peers> AccessPointService<'peers> {
         let armed = stage_changed || !retransmission;
         if armed {
             existing.wpa2_retry.cancel();
-            let mut alarm = existing.wpa2_retry.arm(transmit, now_micros)?;
+            let mut alarm = existing
+                .wpa2_retry
+                .arm(transmit, oer_time::Instant::from_micros(now_micros))?;
             // hostapd extends only the acknowledged initial M1 window. M3
             // retains the short first timeout, then uses the subsequent one.
             if acknowledged
@@ -157,7 +159,7 @@ impl<'peers> AccessPointService<'peers> {
             {
                 alarm = existing
                     .wpa2_retry
-                    .defer_first_after_ack(now_micros)?
+                    .defer_first_after_ack(oer_time::Instant::from_micros(now_micros))?
                     .expect("freshly armed WPA2 retry has a first window");
             }
             existing.wpa2_retry_alarm = Some(alarm);
@@ -172,7 +174,10 @@ impl<'peers> AccessPointService<'peers> {
             .peers
             .iter()
             .flatten()
-            .filter_map(|peer| peer.wpa2_retry_alarm.map(|alarm| alarm.deadline_us))
+            .filter_map(|peer| {
+                peer.wpa2_retry_alarm
+                    .map(|alarm| alarm.deadline.as_micros())
+            })
             .min()
     }
 
@@ -184,7 +189,7 @@ impl<'peers> AccessPointService<'peers> {
         let Some(index) = self.storage().peers.iter().position(|peer| {
             peer.as_ref()
                 .and_then(|peer| peer.wpa2_retry_alarm)
-                .is_some_and(|alarm| alarm.deadline_us <= now_micros)
+                .is_some_and(|alarm| alarm.deadline.as_micros() <= now_micros)
         }) else {
             return Ok(ApWpa2RetryProgress::None);
         };
@@ -196,7 +201,9 @@ impl<'peers> AccessPointService<'peers> {
                 .wpa2_retry_alarm
                 .take()
                 .expect("due WPA2 retry retains its alarm");
-            let action = peer.wpa2_retry.on_alarm(alarm, now_micros)?;
+            let action = peer
+                .wpa2_retry
+                .on_alarm(alarm, oer_time::Instant::from_micros(now_micros))?;
             (peer.address, action)
         };
         match action {

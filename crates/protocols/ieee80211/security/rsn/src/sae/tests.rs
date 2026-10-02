@@ -267,9 +267,18 @@ fn an_access_point_reads_rejected_groups_and_refuses_bad_commits() {
 fn a_comeback_token_is_bound_to_its_station_and_used_once() {
     let station = [2, 0, 0, 0, 0, 7];
     let mut tokens = SaeComebackTokens::new();
-    let token = tokens.issue(station, 1_000, || [0x42; 32]);
+    let token = tokens.issue(station, oer_time::Instant::from_micros(1_000), || {
+        [0x42; 32]
+    });
     assert_eq!(token[..2], [0, 1]);
-    assert_eq!(tokens.issue(station, 2_000, || unreachable!()), token);
+    assert_eq!(
+        tokens.issue(
+            station,
+            oer_time::Instant::from_micros(2_000),
+            || unreachable!()
+        ),
+        token
+    );
     assert!(!tokens.check([2, 0, 0, 0, 0, 8], &token));
     let mut forged = token;
     forged[31] ^= 1;
@@ -277,7 +286,9 @@ fn a_comeback_token_is_bound_to_its_station_and_used_once() {
     assert!(tokens.check(station, &token));
     assert!(!tokens.check(station, &token));
 
-    let reissued = tokens.issue(station, 70_000_000, || [0x43; 32]);
+    let reissued = tokens.issue(station, oer_time::Instant::from_micros(70_000_000), || {
+        [0x43; 32]
+    });
     assert_ne!(reissued, token);
     assert!(tokens.check(station, &reissued));
 }

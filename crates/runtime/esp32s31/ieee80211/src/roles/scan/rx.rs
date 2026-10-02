@@ -78,9 +78,9 @@ impl<'a, O, const RECORDS: usize> ScanObservationContext<'a, O, RECORDS> {
     where
         O: ScanFrameObserver,
     {
-        let outcome =
-            self.table
-                .observe_management(frame, self.channel, rssi, self.observed_at.as_micros());
+        let outcome = self
+            .table
+            .observe_management(frame, self.channel, rssi, self.observed_at);
         self.observer.observe(frame, rssi, outcome);
         outcome
     }
@@ -197,7 +197,7 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
                             frame,
                             context.channel,
                             rssi,
-                            context.observed_at.as_micros(),
+                            context.observed_at,
                         );
                         context.observer.observe(frame, rssi, outcome);
                         match outcome {

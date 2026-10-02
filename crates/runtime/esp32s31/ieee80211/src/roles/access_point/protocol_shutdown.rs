@@ -12,7 +12,7 @@ impl<'storage, 'beacon, 'slot, P, E, T, const DMA_BUFFER_SIZE: usize, const TX_B
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     fn rx_batch_record(
         &self,

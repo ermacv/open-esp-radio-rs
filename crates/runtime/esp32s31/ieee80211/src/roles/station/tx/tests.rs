@@ -2,6 +2,7 @@ use core::{
     sync::atomic::{AtomicU8, Ordering},
     task::{Context, Waker},
 };
+use oer_time::Timer as _;
 
 use crate::datapath::{
     PinnedTxFrame, PinnedTxPool, PinnedTxResources,
@@ -1514,7 +1515,10 @@ fn aggregate_abort_retains_frames_until_deadline_and_quarantines_failed_detach()
             Ok(_) => panic!("settling DMA owner must not be handed off"),
         };
         hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
-        embassy_futures::block_on(tx.ordinary.wait_until_micros(deadline - 1));
+        embassy_futures::block_on(
+            tx.ordinary
+                .wait_until(oer_time::Instant::from_micros(deadline - 1)),
+        );
         for wake in [
             timeout,
             WifiTxWake::Deadline,

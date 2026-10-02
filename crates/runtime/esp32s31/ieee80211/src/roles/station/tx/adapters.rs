@@ -10,7 +10,7 @@ impl<
     B: MaterializedTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     const SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,
@@ -192,7 +192,7 @@ impl<
     B: MaterializedTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     const SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,
@@ -276,19 +276,36 @@ impl<
     }
 }
 
+/// The ordinary owner's clock, for control waits.
 impl<
     B: MaterializedTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     const SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,
-> ConnectedControlTimer
+> oer_time::Clock
     for ConnectedTx<'_, '_, B, P, E, T, SLOTS, AMPDU_BUFFER_SIZE, ORDINARY_BUFFER_SIZE>
 {
-    fn wait_until_micros(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_ {
-        self.ordinary.wait_until_micros(deadline_micros)
+    fn now(&self) -> oer_time::Instant {
+        self.ordinary.now()
+    }
+}
+
+impl<
+    B: MaterializedTxFrame,
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: oer_time::Timer,
+    const SLOTS: usize,
+    const AMPDU_BUFFER_SIZE: usize,
+    const ORDINARY_BUFFER_SIZE: usize,
+> oer_time::Timer
+    for ConnectedTx<'_, '_, B, P, E, T, SLOTS, AMPDU_BUFFER_SIZE, ORDINARY_BUFFER_SIZE>
+{
+    fn wait_until(&self, deadline: oer_time::Instant) -> impl Future<Output = ()> {
+        self.ordinary.wait_until(deadline)
     }
 }
 
@@ -311,7 +328,7 @@ where
     H: HtAmpduHardware,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     SoftwareFrame: SoftwareTxFrame,
 {
     type Error = AggregateTxError;

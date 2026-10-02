@@ -8,7 +8,7 @@
 use core::pin::Pin;
 
 use oer_esp32s31_ieee80211::tx::{
-    ControlTxConfig, WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer,
+    ControlTxConfig, WifiTxEntropy, WifiTxPowerProfile, WifiTxResources,
 };
 
 use oer_esp32s31_ieee80211_mac::tx::{
@@ -56,7 +56,7 @@ impl<'slot, P, E, T, const BUFFER_SIZE: usize> StaTxEpochExt<'slot, P, E, T, BUF
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     fn new(
         resources: WifiTxResources<'slot, P, E, T, BUFFER_SIZE>,

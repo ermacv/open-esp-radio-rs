@@ -22,7 +22,7 @@ use crate::{
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
+use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile};
 
 /// Complete running frontier returned by connected driver assembly.
 pub struct ConnectedDriverAssembly<R> {
@@ -168,7 +168,7 @@ where
     S: ConnectedRxProtocolSink<RX_CAPACITY, RX_SLOTS>,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     H: oer_esp32s31_ieee80211_mac::init::StaEspNowRxPolicyHardware,
     F: FnOnce(
         crate::datapath::services::SingleRoleServices<

@@ -120,16 +120,15 @@ impl WifiTxPowerProfile for Power {
 
 struct Timer;
 
-impl WifiTxTimer for Timer {
-    fn now_micros(&self) -> u64 {
-        0
+/// Time that stands still; waits end at once.
+impl oer_time::Clock for Timer {
+    fn now(&self) -> oer_time::Instant {
+        oer_time::Instant::from_micros(0)
     }
+}
 
-    fn wait_until(&mut self, _deadline_micros: u64) -> impl Future<Output = ()> + '_ {
-        ready(())
-    }
-
-    fn after_micros(&mut self, _micros: u64) -> impl Future<Output = ()> + '_ {
+impl oer_time::Timer for Timer {
+    fn wait_until(&self, _deadline: oer_time::Instant) -> impl Future<Output = ()> {
         ready(())
     }
 }

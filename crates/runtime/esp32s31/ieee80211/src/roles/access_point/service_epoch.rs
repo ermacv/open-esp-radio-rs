@@ -62,7 +62,7 @@ impl<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     /// Run the AP control plane until the caller publishes stop.
     ///

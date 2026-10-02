@@ -232,7 +232,7 @@ impl ConnectedStaPort {
         M: RawMutex,
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
     {
         assert_eq!(
             resources.aggregate.primary().state(),
@@ -490,7 +490,7 @@ impl ConnectedStaPort {
         S: ConnectedRxProtocolSink<RX_CAPACITY, RX_SLOTS>,
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
         H: StaEspNowRxPolicyHardware,
     {
         let tx = match Self::build_tx(&mut plan, tx) {

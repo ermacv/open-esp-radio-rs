@@ -2634,6 +2634,8 @@ dependencies = [
  "oer-ieee80211-mac",
  "oer-ieee80211-softmac",
  "oer-memory",
+ "oer-time",
+ "oer-time-virtual",
  "riscv",
 ]
 
@@ -2649,6 +2651,7 @@ dependencies = [
  "oer-ieee80211-rsn",
  "oer-ieee80211-softmac",
  "oer-memory",
+ "oer-time",
 ]
 
 [[package]]
@@ -2726,6 +2729,7 @@ dependencies = [
  "oer-network-interface",
  "oer-time",
  "oer-time-embassy",
+ "oer-time-virtual",
  "oer-trace",
  "riscv",
  "xarxa-driver",
@@ -2747,6 +2751,8 @@ dependencies = [
  "oer-ieee80211-softmac",
  "oer-ieee80211-sta",
  "oer-ieee80211-trace",
+ "oer-time",
+ "oer-time-virtual",
  "oer-trace",
  "riscv",
  "static_cell",
@@ -2788,6 +2794,8 @@ dependencies = [
  "oer-network-interface",
  "oer-radio",
  "oer-radio-embassy",
+ "oer-time",
+ "oer-time-embassy",
  "riscv",
  "static_cell",
 ]
@@ -3811,6 +3819,14 @@ name = "oer-time-embassy"
 version = "0.1.0"
 dependencies = [
  "embassy-time",
+ "oer-time",
+]
+
+[[package]]
+name = "oer-time-virtual"
+version = "0.1.0"
+dependencies = [
+ "embassy-sync 0.8.0",
  "oer-time",
 ]
 

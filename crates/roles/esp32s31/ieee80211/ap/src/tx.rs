@@ -12,7 +12,6 @@ use oer_esp32s31_ieee80211::{
     ordinary_tx::{
         OrdinaryTxError, OrdinaryTxInterface, OrdinaryTxOutcome, OrdinaryTxOwner, OrdinaryTxPlan,
         TX_CCMP_MIC_SIZE, TX_METADATA_SIZE, WifiTxEntropy, WifiTxPowerProfile, WifiTxResources,
-        WifiTxTimer,
     },
     tx::{WifiTxProgress, WifiTxWake},
 };
@@ -122,6 +121,23 @@ pub struct ApTx<'slot, P, E, T, const BUFFER_SIZE: usize> {
     ht_duplicate_certification: Option<HtDuplicateCertificationRequest>,
 }
 
+/// The transmitter's timer, for phases that wait on its clock.
+impl<P, E, T: oer_time::Clock, const BUFFER_SIZE: usize> oer_time::Clock
+    for ApTx<'_, P, E, T, BUFFER_SIZE>
+{
+    fn now(&self) -> oer_time::Instant {
+        self.ordinary.now()
+    }
+}
+
+impl<P, E, T: oer_time::Timer, const BUFFER_SIZE: usize> oer_time::Timer
+    for ApTx<'_, P, E, T, BUFFER_SIZE>
+{
+    fn wait_until(&self, deadline: oer_time::Instant) -> impl Future<Output = ()> {
+        self.ordinary.wait_until(deadline)
+    }
+}
+
 /// AP-local ordinary-TX policy retained while the physical descriptor owner
 /// is lent to the station role.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -134,7 +150,7 @@ impl<'slot, P, E, T, const BUFFER_SIZE: usize> ApTx<'slot, P, E, T, BUFFER_SIZE>
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     /// Submitted ordinary work, read before another exchange starts.
     pub fn work(&self) -> oer_ieee80211_softmac::MacTxWork {
@@ -182,21 +198,6 @@ where
         self.ordinary
             .policy_mut()
             .install_bss_protection(protection);
-    }
-
-    pub fn now_micros(&self) -> u64 {
-        self.ordinary.now_micros()
-    }
-
-    pub fn wait_until(
-        &mut self,
-        deadline_micros: u64,
-    ) -> impl core::future::Future<Output = ()> + '_ {
-        self.ordinary.wait_until(deadline_micros)
-    }
-
-    pub fn after_micros(&mut self, micros: u64) -> impl core::future::Future<Output = ()> + '_ {
-        self.ordinary.after_micros(micros)
     }
 
     pub const fn publication_timeout_micros(&self) -> u64 {

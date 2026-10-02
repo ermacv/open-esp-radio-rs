@@ -75,6 +75,8 @@
 
 use core::pin::Pin;
 
+use oer_time::Clock;
+
 use oer_esp32s31_hal::types::StaTbttSchedule;
 use oer_esp32s31_ieee80211_mac::{
     MacInterface,
@@ -122,7 +124,7 @@ use crate::{
         MAX_SINGLE_ATTEMPT_BACKOFF_SLOTS, OrdinaryTxError, OrdinaryTxInterface, OrdinaryTxOutcome,
         OrdinaryTxOwner, OrdinaryTxPlan, QueuedSingleAttempt, QueuedSingleAttemptProgress,
         QueuedSingleAttemptRefused, SingleAttempt, SingleAttemptProtection, TX_CCMP_MIC_SIZE,
-        TX_FCS_SIZE, TX_METADATA_SIZE, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
+        TX_FCS_SIZE, TX_METADATA_SIZE, WifiTxEntropy, WifiTxPowerProfile,
     },
     tx::WifiTxWake,
 };
@@ -530,7 +532,7 @@ impl<'slot, P, E, T, const BUFFER_SIZE: usize, const TX_BUFFERS: usize>
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     /// A disabled core without aggregates over an idle ordinary TX owner
     /// and the idle slots it lends as transmit buffers.
@@ -557,7 +559,7 @@ impl<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     S: AmpduBacking,
 {
     fn build(
@@ -602,7 +604,7 @@ where
 
     /// The radio clock: the ordinary TX owner's timer.
     pub fn now_micros(&self) -> u64 {
-        self.tx.now_micros()
+        self.tx.now().as_micros()
     }
 
     /// The earliest deadline of a published attempt or of the timeout
@@ -996,7 +998,7 @@ where
                     }
                     Work::Ampdu(published) => {
                         let settling = published.abort_settling();
-                        let now = self.tx.now_micros();
+                        let now = self.tx.now().as_micros();
                         match ampdu::service(
                             hardware,
                             published,
@@ -1514,7 +1516,7 @@ where
             hardware,
             buffer,
             plan,
-            self.tx.now_micros(),
+            self.tx.now().as_micros(),
             self.config.publication_timeout_micros,
         )
         .map_err(LowerMacFault::Ampdu)
@@ -1648,7 +1650,7 @@ impl<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     S: AmpduBackingSource,
 {
     /// A disabled core that also lends `ampdu` idle aggregate owners, whose

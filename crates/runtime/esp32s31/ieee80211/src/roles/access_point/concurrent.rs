@@ -276,7 +276,7 @@ pub fn park_sta_ap_access_point_role<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     B: StableDmaBacking + 'ampdu,
 {
     let AccessPointRoleRuntime {
@@ -479,7 +479,7 @@ pub fn finish_sta_ap_access_point_role<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     B: StableDmaBacking + 'ampdu,
     H: ApRuntimeHardware,
 {
@@ -629,7 +629,7 @@ impl<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     B: StableDmaBacking + 'ampdu,
 {
     fn observe_role_state(&mut self)
@@ -853,7 +853,7 @@ where
     M: RawMutex,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     H: TxHardware
         + ApRuntimeHardware
         + RxBlockAckHardware
@@ -1327,7 +1327,7 @@ where
     H: TxHardware + ApRuntimeHardware + RxBlockAckHardware,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     B: StableDmaBacking + 'ampdu,
     NetworkTx: network_tx::AccessPointPowerSaveNetworkTx<P, E, T, DMA_BUFFER_SIZE, TX_BUFFER_SIZE>,
     Security: FnMut() -> ([u8; 32], u64),
@@ -1751,7 +1751,7 @@ where
     H: TxHardware + ApRuntimeHardware + RxBlockAckHardware,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     B: StableDmaBacking + 'ampdu,
     NetworkTx: network_tx::AccessPointPowerSaveNetworkTx<P, E, T, DMA_BUFFER_SIZE, TX_BUFFER_SIZE>,
     StatusObserver: FnMut(AccessPointServiceStatus),

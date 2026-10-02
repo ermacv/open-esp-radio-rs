@@ -5,7 +5,7 @@
 //! owned PHY calibration profile into the narrow power lookup consumed by the
 //! Wi-Fi descriptor path without exposing the vendor parameter image.
 
-use core::{future::Future, pin::Pin};
+use core::pin::Pin;
 
 use oer_esp32s31_ieee80211_mac::{tx::TxSlot, tx::runtime::WifiTxRuntimePolicy};
 use oer_esp32s31_phy::PhyTxTargetPowerProfile;
@@ -61,13 +61,6 @@ impl WifiTxPowerProfile for PhyTxTargetPowerProfile {
             alternate: pair.alternate,
         }
     }
-}
-
-/// Monotonic time and the two bounded asynchronous edges used by Wi-Fi TX.
-pub trait WifiTxTimer {
-    fn now_micros(&self) -> u64;
-    fn wait_until(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_;
-    fn after_micros(&mut self, micros: u64) -> impl Future<Output = ()> + '_;
 }
 
 /// Finite policy for management and EAPOL frames sent before connected IRQ

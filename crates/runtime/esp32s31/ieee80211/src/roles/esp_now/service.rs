@@ -55,7 +55,7 @@ use oer_esp32s31_ieee80211_mac::{
 use oer_esp32s31_ieee80211_sta::{
     control_tx::ControlTransmitter,
     single_mpdu_tx::{
-        SingleMpduEspNowTxError, SingleMpduTxError, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
+        SingleMpduEspNowTxError, SingleMpduTxError, WifiTxEntropy, WifiTxPowerProfile,
     },
 };
 
@@ -404,7 +404,7 @@ where
     RX: StandaloneEspNowReceive<H, S, PEERS>,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     /// Run until `stop` resolves, then close all application admission and
     /// return with IRQ, RX DMA and ordinary TX quiescent.

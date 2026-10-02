@@ -1461,7 +1461,7 @@ impl oer_esp32s31_ieee80211::tx::WifiTxEntropy for OrdinaryTxProbeEntropy {
 
 struct OrdinaryTxProbeTimer;
 
-impl oer_esp32s31_ieee80211::tx::WifiTxTimer for OrdinaryTxProbeTimer {
+impl oer_time::Timer for OrdinaryTxProbeTimer {
     fn now_micros(&self) -> u64 {
         1
     }

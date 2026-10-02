@@ -237,7 +237,7 @@ pub(super) type ControlTx = ControlTransmitter<
     'static,
     PhyTxTargetPowerProfile,
     fn() -> u32,
-    oer_esp32s31_ieee80211_runtime::datapath::tx::time::EmbassyWifiTxTimer,
+    oer_time_embassy::EmbassyClock,
     TX_BUFFER_SIZE,
 >;
 pub(super) type TxStorage = StaTxEpoch<ControlTx>;

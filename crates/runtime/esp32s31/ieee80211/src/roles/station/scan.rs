@@ -22,7 +22,7 @@ use crate::roles::radio_channel::RadioChannel;
 
 use oer_esp32s31_ieee80211::coex::WifiCoexActivity;
 
-use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
+use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile};
 
 use oer_esp32s31_ieee80211_mac::{
     init::{MacRuntimeStopHardware, MacSnifferHardware},
@@ -480,7 +480,7 @@ where
     R: ScanReceivePort<H>,
     X: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     O: ScanFrameObserver,
     W: ScanTimer,
     C: PlatformClockProvider,

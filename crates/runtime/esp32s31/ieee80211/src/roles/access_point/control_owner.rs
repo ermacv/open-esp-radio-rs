@@ -169,7 +169,7 @@ impl<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     pub fn new(
         receive: R,

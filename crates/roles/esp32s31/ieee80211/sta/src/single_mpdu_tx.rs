@@ -58,7 +58,6 @@ use oer_ieee80211_softmac::{
 pub use oer_esp32s31_ieee80211::ordinary_tx::{
     OrdinaryTxOutcome as SingleMpduTxOutcome, OrdinaryTxReport as SingleMpduTxReport,
     TxResetReason, WifiTxEntropy, WifiTxPowerPair, WifiTxPowerProfile, WifiTxResources,
-    WifiTxTimer,
 };
 
 use oer_esp32s31_ieee80211::tx::{WifiTxProgress, WifiTxWake};
@@ -265,6 +264,23 @@ pub struct SingleMpduTx<'slot, P, E, T, const BUFFER_SIZE: usize> {
     config: SingleMpduTxConfig,
 }
 
+/// The transmitter's timer, for phases that wait on its clock.
+impl<P, E, T: oer_time::Clock, const BUFFER_SIZE: usize> oer_time::Clock
+    for SingleMpduTx<'_, P, E, T, BUFFER_SIZE>
+{
+    fn now(&self) -> oer_time::Instant {
+        self.ordinary.now()
+    }
+}
+
+impl<P, E, T: oer_time::Timer, const BUFFER_SIZE: usize> oer_time::Timer
+    for SingleMpduTx<'_, P, E, T, BUFFER_SIZE>
+{
+    fn wait_until(&self, deadline: oer_time::Instant) -> impl Future<Output = ()> {
+        self.ordinary.wait_until(deadline)
+    }
+}
+
 /// Opaque station-local state retained while another VIF owns physical TX.
 pub struct SingleMpduTxParked {
     ordinary: OrdinaryTxParked,
@@ -275,7 +291,7 @@ impl<'slot, P, E, T, const BUFFER_SIZE: usize> SingleMpduTx<'slot, P, E, T, BUFF
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     /// Ordinary publications, including per-attempt length/rate and retries.
     pub fn work(&self) -> oer_ieee80211_softmac::MacTxWork {
@@ -404,10 +420,6 @@ where
 
     pub fn reset_terminal_exchange(&mut self, queue: LegacyTxQueue) {
         self.ordinary.reset_terminal_exchange(queue);
-    }
-
-    pub fn after_micros(&mut self, micros: u64) -> impl Future<Output = ()> + '_ {
-        self.ordinary.after_micros(micros)
     }
 
     /// Split an idle connected transmitter back into reusable descriptor
@@ -671,14 +683,6 @@ where
             },
             OrdinaryRetryRatePolicy::Schedule(schedule),
         )
-    }
-
-    pub fn now_micros(&self) -> u64 {
-        self.ordinary.now_micros()
-    }
-
-    pub fn wait_until_micros(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_ {
-        self.ordinary.wait_until(deadline_micros)
     }
 
     /// Copy and encode one Ethernet frame, then publish the first DMA attempt.

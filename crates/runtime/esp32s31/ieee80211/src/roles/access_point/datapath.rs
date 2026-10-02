@@ -155,7 +155,7 @@ impl<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     O: FnMut(AccessPointServiceStatus),
     L: FnMut(LinkState),
     B: MaterializedTxFrame,
@@ -401,7 +401,7 @@ where
     N: SoftwareTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     H: RxDma
         + TxHardware
         + ApRuntimeHardware

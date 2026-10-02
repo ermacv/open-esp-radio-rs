@@ -1,7 +1,4 @@
-use core::{
-    future::{Future, ready},
-    pin::Pin,
-};
+use core::pin::Pin;
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use crate::connection_coex::ReconnectFramePriority;
@@ -115,28 +112,7 @@ impl WifiTxPowerProfile for Power {
     }
 }
 
-#[derive(Default)]
-struct Timer {
-    now: u64,
-    settled: u64,
-}
-
-impl WifiTxTimer for Timer {
-    fn now_micros(&self) -> u64 {
-        self.now
-    }
-
-    fn wait_until(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_ {
-        self.now = deadline_micros;
-        ready(())
-    }
-
-    fn after_micros(&mut self, micros: u64) -> impl Future<Output = ()> + '_ {
-        self.now += micros;
-        self.settled += micros;
-        ready(())
-    }
-}
+type Timer = oer_time_virtual::SkipClock;
 
 fn completion(status: u8) -> MacTxCompletionObservation {
     MacTxCompletionObservation::new_model(status, 0)

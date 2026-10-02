@@ -11,6 +11,7 @@ use crate::{
 use oer_ieee80211_mac::{
     block_ack::encode_block_ack_request, qos::WmmAccessCategory, sequence::SequenceNumber,
 };
+use oer_time::Clock as _;
 
 use oer_memory::StableDmaBacking;
 
@@ -435,7 +436,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
     where
         P: oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerProfile,
         E: oer_esp32s31_ieee80211::ordinary_tx::WifiTxEntropy,
-        T: oer_esp32s31_ieee80211::ordinary_tx::WifiTxTimer,
+        T: oer_time::Timer,
     {
         let prepared = self.prepared()?;
         let config = ordinary
@@ -466,7 +467,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
                     lifetime_micros: VENDOR_AMPDU_MSDU_LIFETIME_MICROS,
                     retain_single_mpdu: true,
                 },
-                ordinary.now_micros(),
+                ordinary.now().as_micros(),
             )?,
         };
         Ok(prepared)
@@ -489,7 +490,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
     where
         P: oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerProfile,
         E: oer_esp32s31_ieee80211::ordinary_tx::WifiTxEntropy,
-        T: oer_esp32s31_ieee80211::ordinary_tx::WifiTxTimer,
+        T: oer_time::Timer,
     {
         let ApAmpduState::Hardware {
             cookie,
@@ -505,7 +506,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             hardware,
             cookie,
             &mut retry,
-            ordinary.now_micros(),
+            ordinary.now().as_micros(),
             block_ack_operational,
         )?
         else {
@@ -561,7 +562,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
     where
         P: oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerProfile,
         E: oer_esp32s31_ieee80211::ordinary_tx::WifiTxEntropy,
-        T: oer_esp32s31_ieee80211::ordinary_tx::WifiTxTimer,
+        T: oer_time::Timer,
         H: HtAmpduHardware,
     {
         let ApAmpduState::RequestingBlockAck {
@@ -578,7 +579,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         let subframes = retry.current_subframes();
         let decision = retry.observe_block_ack_request(
             block_ack,
-            ordinary.now_micros(),
+            ordinary.now().as_micros(),
             block_ack_operational,
         );
         let observation = ApAmpduCompletion {
@@ -622,7 +623,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
     where
         P: oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerProfile,
         E: oer_esp32s31_ieee80211::ordinary_tx::WifiTxEntropy,
-        T: oer_esp32s31_ieee80211::ordinary_tx::WifiTxTimer,
+        T: oer_time::Timer,
         H: HtAmpduHardware,
     {
         let RetainedAggregate {
@@ -726,7 +727,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
     where
         P: oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerProfile,
         E: oer_esp32s31_ieee80211::ordinary_tx::WifiTxEntropy,
-        T: oer_esp32s31_ieee80211::ordinary_tx::WifiTxTimer,
+        T: oer_time::Timer,
         H: oer_esp32s31_ieee80211_mac::tx::TxHardware,
     {
         let ApAmpduState::Unaggregating {

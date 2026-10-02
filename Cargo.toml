@@ -32,6 +32,7 @@ members = [
     "crates/runtime/ieee80211",
     "crates/adapters/embassy/radio",
     "crates/adapters/embassy/time",
+    "crates/adapters/virtual/time",
     "crates/runtime/esp32s31/bluetooth",
     "crates/composition/esp32s31/embassy/bluetooth",
     "crates/composition/esp32s31/embassy/ieee80211",

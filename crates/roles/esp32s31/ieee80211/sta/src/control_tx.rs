@@ -23,7 +23,7 @@ use oer_esp32s31_ieee80211::{
     },
     ordinary_tx::{
         OrdinaryTxError, OrdinaryTxOutcome, OrdinaryTxOwner, OrdinaryTxPlan, TX_CCMP_MIC_SIZE,
-        TX_METADATA_SIZE, TxResetReason, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
+        TX_METADATA_SIZE, TxResetReason, WifiTxEntropy, WifiTxPowerProfile,
     },
     tx::{WifiTxProgress, WifiTxWake},
 };
@@ -175,11 +175,28 @@ pub struct ControlTransmitter<'slot, P, E, T, const BUFFER_SIZE: usize> {
     config: ControlTxConfig,
 }
 
+/// The transmitter's timer, for phases that wait on its clock.
+impl<P, E, T: oer_time::Clock, const BUFFER_SIZE: usize> oer_time::Clock
+    for ControlTransmitter<'_, P, E, T, BUFFER_SIZE>
+{
+    fn now(&self) -> oer_time::Instant {
+        self.ordinary.now()
+    }
+}
+
+impl<P, E, T: oer_time::Timer, const BUFFER_SIZE: usize> oer_time::Timer
+    for ControlTransmitter<'_, P, E, T, BUFFER_SIZE>
+{
+    fn wait_until(&self, deadline: oer_time::Instant) -> impl Future<Output = ()> {
+        self.ordinary.wait_until(deadline)
+    }
+}
+
 impl<'slot, P, E, T, const BUFFER_SIZE: usize> ControlTransmitter<'slot, P, E, T, BUFFER_SIZE>
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     pub fn new(
         resources: WifiTxResources<'slot, P, E, T, BUFFER_SIZE>,
@@ -206,10 +223,6 @@ where
     /// Whether the pre-connected ordinary descriptor is hardware-owned.
     pub const fn active(&self) -> bool {
         self.ordinary.active()
-    }
-
-    pub fn now_micros(&self) -> u64 {
-        self.ordinary.now_micros()
     }
 
     pub fn take_last_outcome(&mut self) -> Option<SingleMpduTxOutcome> {
@@ -630,7 +643,7 @@ impl<'slot, P, E, T, H, const BUFFER_SIZE: usize> StaJoinTransmit<H>
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     H: TxHardware,
 {
     type Error = ControlTxError;
@@ -673,7 +686,7 @@ impl<P, E, T, const BUFFER_SIZE: usize> StaPeerTransmit
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     fn install_ht_ampdu_policy(&mut self, parameters: HtPeerAmpduParameters) {
         ControlTransmitter::install_ht_ampdu_policy(self, parameters);
@@ -697,7 +710,7 @@ impl<'slot, P, E, T, H, const BUFFER_SIZE: usize> HandshakeTransmit<H>
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     H: TxHardware,
 {
     type Error = ControlTxError;

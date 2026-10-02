@@ -20,7 +20,7 @@ where
     B: MaterializedTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     /// Admit a selected request through its source before the ordinary STA
     /// classifier, BlockAck, retry and DMA ownership transitions.

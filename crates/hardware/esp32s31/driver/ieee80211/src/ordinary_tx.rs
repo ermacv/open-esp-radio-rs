@@ -7,9 +7,9 @@
 
 use core::pin::Pin;
 
-pub use crate::tx::{
-    WifiTxEntropy, WifiTxPowerPair, WifiTxPowerProfile, WifiTxResources, WifiTxTimer,
-};
+use oer_time::{Clock, Instant, Timer};
+
+pub use crate::tx::{WifiTxEntropy, WifiTxPowerPair, WifiTxPowerProfile, WifiTxResources};
 use oer_esp32s31_ieee80211_mac::{
     MacInterface,
     edca::EdcaContentionParameters,
@@ -426,6 +426,19 @@ pub struct OrdinaryTxOwner<'slot, P, E, T, const BUFFER_SIZE: usize> {
     last_outcome: Option<OrdinaryTxOutcome>,
 }
 
+/// The owner's timer, for phases that wait on the owner's clock.
+impl<P, E, T: Clock, const BUFFER_SIZE: usize> Clock for OrdinaryTxOwner<'_, P, E, T, BUFFER_SIZE> {
+    fn now(&self) -> Instant {
+        self.timer.now()
+    }
+}
+
+impl<P, E, T: Timer, const BUFFER_SIZE: usize> Timer for OrdinaryTxOwner<'_, P, E, T, BUFFER_SIZE> {
+    fn wait_until(&self, deadline: Instant) -> impl Future<Output = ()> {
+        self.timer.wait_until(deadline)
+    }
+}
+
 /// Opaque logical completion state detached from idle physical TX resources.
 ///
 /// There is intentionally no public constructor: only a real terminal owner
@@ -438,7 +451,7 @@ impl<'slot, P, E, T, const BUFFER_SIZE: usize> OrdinaryTxOwner<'slot, P, E, T, B
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: Timer,
 {
     pub fn new(resources: WifiTxResources<'slot, P, E, T, BUFFER_SIZE>) -> Self {
         let WifiTxResources {
@@ -599,28 +612,26 @@ where
         self.policy.reset_terminal_exchange(queue);
     }
 
-    pub fn after_micros(&mut self, micros: u64) -> impl Future<Output = ()> + '_ {
-        self.timer.after_micros(micros)
-    }
-
-    pub fn now_micros(&self) -> u64 {
-        self.timer.now_micros()
-    }
-
-    pub fn wait_until(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_ {
-        self.timer.wait_until(deadline_micros)
-    }
-
     /// The next service deadline, including an in-progress hardware abort.
     pub fn next_deadline_micros(&self) -> Option<u64> {
         self.active.as_ref().map(|active| active.deadline_micros)
     }
 
+    /// Wait for the next service deadline. A deadline already reached, and
+    /// an idle owner, still yield to the executor once: the service loops
+    /// poll again after this wait, and the time contract would otherwise end
+    /// the wait at once and let them run without yielding.
     pub fn wait_deadline(&mut self) -> impl Future<Output = ()> + '_ {
         let deadline = self
             .next_deadline_micros()
-            .unwrap_or_else(|| self.timer.now_micros());
-        self.timer.wait_until(deadline)
+            .map_or_else(|| self.timer.now(), Instant::from_micros);
+        let reached = self.timer.now() >= deadline;
+        async move {
+            if reached {
+                yield_once().await;
+            }
+            self.timer.wait_until(deadline).await;
+        }
     }
 
     /// Submitted work for the current/last exchange, retained through retries
@@ -835,7 +846,7 @@ where
             return self.finish_aborted_attempt(hardware, active, false);
         }
         let expired = matches!(wake, WifiTxWake::Deadline)
-            && self.timer.now_micros() >= active.deadline_micros;
+            && self.timer.now().as_micros() >= active.deadline_micros;
         if (events & EVENT_TX_TIMEOUT != 0 || expired) && may_begin_timeout_abort {
             if self
                 .slot
@@ -1033,7 +1044,7 @@ where
         }
         if tx_events == EVENT_TX_TIMEOUT || matches!(wake, WifiTxWake::Deadline) {
             if matches!(wake, WifiTxWake::Deadline)
-                && self.timer.now_micros() < active.deadline_micros
+                && self.timer.now().as_micros() < active.deadline_micros
             {
                 self.active = Some(active);
                 return Ok(WifiTxProgress::Pending);
@@ -1079,7 +1090,11 @@ where
     ) -> Result<WifiTxProgress, OrdinaryTxError> {
         let progress = self.poll_once(hardware)?;
         if progress == WifiTxProgress::Pending {
-            let next_poll = self.timer.now_micros().saturating_add(poll_interval_us);
+            let next_poll = self
+                .timer
+                .now()
+                .as_micros()
+                .saturating_add(poll_interval_us);
             let deadline = match self.active.as_ref() {
                 Some(active) if matches!(active.phase, OrdinaryTxPhase::AbortSettling) => {
                     active.deadline_micros
@@ -1089,7 +1104,7 @@ where
                     .unwrap_or(next_poll)
                     .min(next_poll),
             };
-            self.timer.wait_until(deadline).await;
+            self.timer.wait_until(Instant::from_micros(deadline)).await;
         }
         Ok(progress)
     }
@@ -1116,7 +1131,7 @@ where
         {
             return self.start_abort_settle(active);
         }
-        if self.timer.now_micros() >= active.deadline_micros {
+        if self.timer.now().as_micros() >= active.deadline_micros {
             return self.reset_required(active, TxResetReason::ExecutorDeadline);
         }
         self.active = Some(active);
@@ -1156,7 +1171,8 @@ where
         mut active: ActiveTx,
     ) -> Result<WifiTxProgress, OrdinaryTxError> {
         // Start the interval after the hardware abort request has completed.
-        let Some(deadline_micros) = self.timer.now_micros().checked_add(TX_ABORT_SETTLE_US) else {
+        let Some(deadline_micros) = self.timer.now().as_micros().checked_add(TX_ABORT_SETTLE_US)
+        else {
             self.slot.as_mut().require_reset(active.cookie)?;
             return Err(OrdinaryTxError::DeadlineOverflow);
         };
@@ -1173,7 +1189,7 @@ where
     ) -> Result<WifiTxProgress, OrdinaryTxError> {
         // Late completion and repeated IRQs cannot bypass the hardware settle
         // interval. Abort detach, not completion acknowledgement, owns release.
-        if self.timer.now_micros() < active.deadline_micros {
+        if self.timer.now().as_micros() < active.deadline_micros {
             self.active = Some(active);
             return Ok(WifiTxProgress::Pending);
         }
@@ -1344,7 +1360,8 @@ where
     ) -> Result<(), OrdinaryTxError> {
         let deadline_micros = self
             .timer
-            .now_micros()
+            .now()
+            .as_micros()
             .checked_add(active.completion_timeout_us)
             .ok_or(OrdinaryTxError::DeadlineOverflow)?;
         let rate = active.retry.current_rate()?;
@@ -1550,4 +1567,18 @@ where
         self.slot.as_mut().require_reset(active.cookie)?;
         Err(OrdinaryTxError::RadioResetRequired(reason))
     }
+}
+
+/// Return to the executor once, then complete.
+fn yield_once() -> impl Future<Output = ()> {
+    let mut yielded = false;
+    core::future::poll_fn(move |context| {
+        if yielded {
+            core::task::Poll::Ready(())
+        } else {
+            yielded = true;
+            context.waker().wake_by_ref();
+            core::task::Poll::Pending
+        }
+    })
 }

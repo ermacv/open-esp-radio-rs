@@ -32,6 +32,8 @@ embassy-net-owned = { package = "embassy-net", git = "https://github.com/ermacv/
 embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
 log = { version = "0.4.29", optional = true }
+oer-time = { path = "../../../../time" }
+oer-time-embassy = { path = "../../../../adapters/embassy/time" }
 riscv = { version = "0.15", optional = true }
 oer-radio = { path = "../../../../radio", default-features = false, features = ["wifi"] }
 oer-radio-embassy = { path = "../../../../adapters/embassy/radio" }

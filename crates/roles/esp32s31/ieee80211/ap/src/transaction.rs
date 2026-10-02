@@ -17,7 +17,7 @@ use crate::{
 use oer_esp32s31_ieee80211::{
     ordinary_tx::{
         OrdinaryTxOutcome, TX_CCMP_MIC_SIZE, TX_FCS_SIZE, TX_METADATA_SIZE, WifiTxEntropy,
-        WifiTxPowerProfile, WifiTxResources, WifiTxTimer,
+        WifiTxPowerProfile, WifiTxResources,
     },
     tx::{WifiTxProgress, WifiTxWake},
 };
@@ -329,7 +329,7 @@ impl<'beacon, 'slot, P, E, T, const BUFFER_SIZE: usize> ApMac<'beacon, 'slot, P,
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     /// Submitted ordinary work, read before another exchange starts.
     pub fn work(&self) -> oer_ieee80211_softmac::MacTxWork {

@@ -268,16 +268,14 @@ impl WifiTxPowerProfile for Power {
 #[derive(Default)]
 struct ModelTimer;
 
-impl WifiTxTimer for ModelTimer {
-    fn now_micros(&self) -> u64 {
-        0
+impl oer_time::Clock for ModelTimer {
+    fn now(&self) -> oer_time::Instant {
+        oer_time::Instant::EPOCH
     }
+}
 
-    fn wait_until(&mut self, _deadline_micros: u64) -> impl Future<Output = ()> + '_ {
-        ready(())
-    }
-
-    fn after_micros(&mut self, _micros: u64) -> impl Future<Output = ()> + '_ {
+impl oer_time::Timer for ModelTimer {
+    fn wait_until(&self, _deadline: oer_time::Instant) -> impl Future<Output = ()> {
         ready(())
     }
 }

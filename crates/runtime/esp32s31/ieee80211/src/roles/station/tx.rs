@@ -36,7 +36,7 @@ use oer_esp32s31_ieee80211::{
         AmpduTxRoleAdapter, HtAmpduPublicationInputs, HtAmpduTxRolePolicy,
         HtAmpduTxRolePolicyError, ht_ampdu_publication_config,
     },
-    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
+    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile},
 };
 
 use oer_esp32s31_ieee80211_mac::{
@@ -94,8 +94,8 @@ use crate::{
     },
     diagnostics::aggregate_tx::{AggregateBuildStop, NetworkSingleMpduReason},
     roles::station::control::{
-        ConnectedControlTimer, ConnectedControlTx, ConnectedHeControlRuntimeRejection,
-        HeNdpaRuntimeRequest, HeTriggerRuntimeRequest,
+        ConnectedControlTx, ConnectedHeControlRuntimeRejection, HeNdpaRuntimeRequest,
+        HeTriggerRuntimeRequest,
     },
 };
 
@@ -400,7 +400,7 @@ pub struct ConnectedTx<
     B: MaterializedTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     const SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,

@@ -100,26 +100,7 @@ impl WifiTxPowerProfile for ScanTxPower {
     }
 }
 
-#[derive(Default)]
-struct ScanTxTimer {
-    now: u64,
-}
-
-impl WifiTxTimer for ScanTxTimer {
-    fn now_micros(&self) -> u64 {
-        self.now
-    }
-
-    fn wait_until(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_ {
-        self.now = deadline_micros;
-        ready(())
-    }
-
-    fn after_micros(&mut self, micros: u64) -> impl Future<Output = ()> + '_ {
-        self.now = self.now.saturating_add(micros);
-        ready(())
-    }
-}
+type ScanTxTimer = oer_time_virtual::SkipClock;
 
 fn scan_tx_completion(status: u8) -> MacTxCompletionObservation {
     MacTxCompletionObservation::new_model(status, 0)

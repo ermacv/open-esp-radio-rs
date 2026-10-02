@@ -38,7 +38,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
     {
         self.prepare_ready_standby(aggregate, control, network)?;
         if TX_PHASE_TELEMETRY {
@@ -113,7 +113,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
     {
         assert!(
             (self.aggregate_pending() || self.has_prepared()) && aggregate.has_standby(),
@@ -154,7 +154,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
     {
         if self.prepared_standby.as_ref().is_some_and(|batch| {
             !control
@@ -269,7 +269,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
     {
         let (admission, remaining) = {
             let batch = self
@@ -419,7 +419,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: WifiTxTimer,
+        T: oer_time::Timer,
     {
         let result = (|| {
             #[cfg(any(feature = "diagnostics", test))]

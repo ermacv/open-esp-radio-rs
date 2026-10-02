@@ -19,7 +19,7 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use embassy_time::Timer;
 
-use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
+use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile};
 
 use oer_esp32s31_ieee80211_mac::{rx::RxDma, tx::TxHardware};
 

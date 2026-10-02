@@ -1,4 +1,4 @@
-use core::{cell::RefCell, future::ready, pin::Pin};
+use core::{cell::RefCell, pin::Pin};
 use std::{boxed::Box, vec::Vec};
 
 use oer_esp32s31_hal::types::{
@@ -360,26 +360,7 @@ impl WifiTxPowerProfile for Power {
     }
 }
 
-#[derive(Default)]
-struct Timer {
-    now: u64,
-}
-
-impl WifiTxTimer for Timer {
-    fn now_micros(&self) -> u64 {
-        self.now
-    }
-
-    fn wait_until(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_ {
-        self.now = deadline_micros;
-        ready(())
-    }
-
-    fn after_micros(&mut self, micros: u64) -> impl Future<Output = ()> + '_ {
-        self.now += micros;
-        ready(())
-    }
-}
+type Timer = oer_time_virtual::SkipClock;
 
 fn entropy() -> u32 {
     0x1234_5678
@@ -834,7 +815,9 @@ fn a_hardware_timeout_ends_the_attempt_as_aborted() {
         .unwrap();
     assert!(events.completions.is_empty());
     let settle = core.next_deadline_micros().unwrap();
-    core.tx.timer.now = settle;
+    core.tx
+        .timer
+        .advance_to(oer_time::Instant::from_micros(settle));
     core.service(&mut hardware, WifiTxWake::Deadline, &mut events)
         .unwrap();
     assert_eq!(events.completions.len(), 1);
@@ -1920,7 +1903,9 @@ fn a_collision_or_timeout_on_one_queue_leaves_the_others_published() {
     assert!(service(&mut core, &mut hardware, interrupt(EVENT_TX_TIMEOUT)).is_empty());
     assert_eq!(core.next_deadline_micros(), Some(settle));
 
-    core.tx.timer.now = settle;
+    core.tx
+        .timer
+        .advance_to(oer_time::Instant::from_micros(settle));
     let completions = service(&mut core, &mut hardware, WifiTxWake::Deadline);
     assert_eq!(ids(&completions), [1]);
     assert_eq!(completions[0].status, TxStatus::Aborted);
@@ -1928,7 +1913,9 @@ fn a_collision_or_timeout_on_one_queue_leaves_the_others_published() {
     assert!(hardware.cca_forced);
     let settle = core.next_deadline_micros().unwrap();
     assert_eq!(settle, 32);
-    core.tx.timer.now = settle;
+    core.tx
+        .timer
+        .advance_to(oer_time::Instant::from_micros(settle));
     let completions = service(&mut core, &mut hardware, WifiTxWake::Deadline);
     assert_eq!(ids(&completions), [3]);
     assert_eq!(completions[0].status, TxStatus::Aborted);
@@ -2250,7 +2237,9 @@ fn an_aggregate_shares_the_queues_with_mpdus() {
     hardware.timeout_pending[queue_of(Video)] = true;
     assert!(service(&mut core, &mut hardware, interrupt(EVENT_TX_TIMEOUT)).is_empty());
     assert_eq!(ids(&complete(&mut core, &mut hardware, 0)), [1]);
-    core.tx.timer.now = core.next_deadline_micros().unwrap();
+    core.tx.timer.advance_to(oer_time::Instant::from_micros(
+        core.next_deadline_micros().unwrap(),
+    ));
     let completions = service(&mut core, &mut hardware, WifiTxWake::Deadline);
     assert_eq!(ids(&completions), [4]);
     assert_eq!(completions[0].status, TxStatus::Aborted);

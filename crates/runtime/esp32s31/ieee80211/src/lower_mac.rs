@@ -26,8 +26,8 @@
 //! watchdog of the attempts in flight, which it turns into a deadline edge
 //! of the ordinary TX owner, and the PHY retune an `Enable` needs after a
 //! channel change, through [`LowerMacRetune`]. The ordinary TX owner's timer
-//! must therefore read the `embassy-time` clock (`EmbassyWifiTxTimer` in
-//! production), which is why the port's radio clock is the image's
+//! must therefore read the image's monotonic clock
+//! (`oer_time_embassy::EmbassyClock` in production), which is why the port's radio clock is the image's
 //! monotonic clock ([`RadioEpoch::Monotonic`]).
 //!
 //! Besides the base port it implements the extensions the ESP32-S31 has:
@@ -66,7 +66,7 @@ use oer_esp32s31_ieee80211::{
         LowerMacHardware, LowerMacSink, NoAmpdu, esp32s31_ampdu_capabilities,
         esp32s31_lower_mac_capabilities,
     },
-    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
+    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile},
     tx::WifiTxWake,
 };
 use oer_esp32s31_ieee80211_mac::rx::NormalizedRxFrame;
@@ -444,7 +444,7 @@ impl<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     H: LowerMacHardware,
     R: LowerMacRetune,
     S: AmpduBacking,
@@ -489,7 +489,7 @@ impl<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     H: LowerMacHardware,
     R: LowerMacRetune,
     S: AmpduBacking,
@@ -849,7 +849,7 @@ impl<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     H: LowerMacHardware,
     R: LowerMacRetune,
     S: AmpduBacking,
@@ -866,9 +866,10 @@ where
         esp32s31_lower_mac_capabilities(BUFFER_SIZE)
     }
 
-    /// The core's clock is the ordinary TX owner's `WifiTxTimer`, which
-    /// reads the `embassy-time` clock in production (`EmbassyWifiTxTimer`,
-    /// `datapath/tx/time.rs`): the image's monotonic clock in microseconds.
+    /// The core's clock is the ordinary TX owner's [`oer_time::Timer`], which
+    /// reads the `embassy-time` clock in production
+    /// (`oer_time_embassy::EmbassyClock`): the image's monotonic clock in
+    /// microseconds.
     fn clock_info(&self) -> ClockInfo {
         ClockInfo {
             resolution: oer_time::Duration::from_micros(1),
@@ -999,7 +1000,7 @@ impl<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     H: LowerMacHardware,
     R: LowerMacRetune,
     S: AmpduBacking,
@@ -1070,7 +1071,7 @@ impl<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     H: LowerMacHardware,
     R: LowerMacRetune,
     S: AmpduBacking,
@@ -1122,7 +1123,7 @@ impl<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     H: LowerMacHardware,
     R: LowerMacRetune,
     S: AmpduBackingSource,

@@ -726,7 +726,7 @@ impl<'storage, 'beacon, 'slot, P, E, T, const DMA_BUFFER_SIZE: usize, const TX_B
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     /// Construct AP protocol/control state without binding a DMA producer or
     /// private RX queue. Same-channel STA+AP composition owns those physical

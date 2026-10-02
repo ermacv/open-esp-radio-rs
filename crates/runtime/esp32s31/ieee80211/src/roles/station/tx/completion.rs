@@ -15,7 +15,7 @@ where
     B: MaterializedTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
 {
     /// Service one captured event synchronously. Pending timeout-abort keeps
     /// the aggregate owners in this state machine, never in a suspended future.

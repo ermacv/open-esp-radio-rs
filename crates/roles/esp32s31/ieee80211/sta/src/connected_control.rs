@@ -436,7 +436,7 @@ impl<P, E, T, const BUFFER_SIZE: usize> ConnectedControlTx
 where
     P: oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerProfile,
     E: oer_esp32s31_ieee80211::ordinary_tx::WifiTxEntropy,
-    T: oer_esp32s31_ieee80211::ordinary_tx::WifiTxTimer,
+    T: oer_time::Timer,
 {
     fn take_last_outcome(&mut self) -> Option<SingleMpduTxOutcome> {
         SingleMpduTx::take_last_outcome(self)
@@ -450,7 +450,7 @@ where
     }
 
     fn now_micros(&self) -> u64 {
-        SingleMpduTx::now_micros(self)
+        oer_time::Clock::now(self).as_micros()
     }
 
     fn peek_qos_sequence(&self, tid: u8) -> Option<SequenceNumber> {

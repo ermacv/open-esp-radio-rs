@@ -73,7 +73,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
     where
         P: oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerProfile,
         E: oer_esp32s31_ieee80211::ordinary_tx::WifiTxEntropy,
-        T: oer_esp32s31_ieee80211::ordinary_tx::WifiTxTimer,
+        T: oer_time::Timer,
         H: oer_esp32s31_ieee80211_mac::tx::ampdu::HtAmpduHardware,
     {
         let standby = self

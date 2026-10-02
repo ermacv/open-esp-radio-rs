@@ -77,26 +77,6 @@ use crate::{
     },
 };
 
-/// Executor deadline capability kept outside the finite control core.
-pub trait ConnectedControlTimer {
-    fn wait_until_micros(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_;
-}
-
-impl<P, E, T, const BUFFER_SIZE: usize> ConnectedControlTimer
-    for oer_esp32s31_ieee80211_sta::single_mpdu_tx::SingleMpduTx<'_, P, E, T, BUFFER_SIZE>
-where
-    P: oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerProfile,
-    E: oer_esp32s31_ieee80211::ordinary_tx::WifiTxEntropy,
-    T: oer_esp32s31_ieee80211::ordinary_tx::WifiTxTimer,
-{
-    fn wait_until_micros(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_ {
-        oer_esp32s31_ieee80211_sta::single_mpdu_tx::SingleMpduTx::wait_until_micros(
-            self,
-            deadline_micros,
-        )
-    }
-}
-
 /// Finite ownership released when one connected control epoch stops.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ConnectedControlShutdown {
@@ -593,7 +573,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
     }
 
     /// Paired-runtime wait which deliberately owns no physical TX resource.
-    /// Embassy time is the production clock used by `EmbassyWifiTxTimer`, so
+    /// Embassy time is the production clock (`oer_time_embassy::EmbassyClock`), so
     /// this preserves the standalone deadline epoch without lending DMA to a
     /// sleeping station role.
     pub async fn wait_ready_without_tx(&mut self) {
@@ -615,7 +595,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
     /// Wait without consuming the event that made control work ready.
     pub async fn wait_ready<'a, X>(&'a mut self, tx: &'a mut X)
     where
-        X: ConnectedControlTx + ConnectedControlTimer + 'a,
+        X: ConnectedControlTx + oer_time::Timer + 'a,
     {
         if self.has_immediate_work() {
             return;
@@ -625,7 +605,10 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         let receiver = &self.receiver;
         wait_control_input(receiver, power, async move {
             match deadline {
-                Some(deadline) => tx.wait_until_micros(deadline).await,
+                Some(deadline) => {
+                    oer_time::Timer::wait_until(&*tx, oer_time::Instant::from_micros(deadline))
+                        .await
+                }
                 None => core::future::pending().await,
             }
         })
@@ -911,7 +894,7 @@ impl<'resources, M, H, X, const CAPACITY: usize> DatapathControlService<H, X>
 where
     M: RawMutex,
     H: ConnectedControlHardware,
-    X: ConnectedControlTx + ConnectedControlTimer,
+    X: ConnectedControlTx + oer_time::Timer,
 {
     type Error = ConnectedControlError;
     type Exit = ConnectedDisconnectReason;

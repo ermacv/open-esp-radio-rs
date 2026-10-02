@@ -14,7 +14,7 @@ use core::future::Future;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use oer_esp32s31_ieee80211::{
-    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer},
+    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxResources},
     tx::WifiTxWake,
 };
 
@@ -291,7 +291,7 @@ where
     M: RawMutex,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     'resources: 'ampdu,
 {
     let (rx, tx, control) = role.into_parts();
@@ -433,7 +433,7 @@ where
     M: RawMutex,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     'resources: 'ampdu,
 {
     let ConnectedStaDrivers { services, report } = drivers;
@@ -603,7 +603,7 @@ where
     M: RawMutex,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     'resources: 'ampdu,
 {
     if !prepared.station.tx().is_parked() {
@@ -693,7 +693,7 @@ where
     M: RawMutex,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     'resources: 'ampdu,
 {
     fn activate_tx(
@@ -854,7 +854,7 @@ where
     H: ConnectedControlHardware,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     'resources: 'ampdu,
 {
     type Error = StaApStationControlError;
@@ -1030,7 +1030,7 @@ where
     H: HtAmpduHardware,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: WifiTxTimer,
+    T: oer_time::Timer,
     'resources: 'ampdu,
     SoftwareFrame: SoftwareTxFrame,
 {

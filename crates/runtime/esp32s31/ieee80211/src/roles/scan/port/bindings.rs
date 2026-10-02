@@ -69,7 +69,7 @@ impl<'slot, P, E, W, H, const BUFFER_SIZE: usize> ScanTransmitPort<H>
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    W: WifiTxTimer,
+    W: oer_time::Timer,
     H: TxHardware,
 {
     type Error = ControlTxError;

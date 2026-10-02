@@ -5,7 +5,7 @@
 //! `test-support` feature, to host tests of other packages; the underlying
 //! MAC/PAC model constructors exist only on 64-bit hosts.
 
-use core::{future::ready, pin::Pin};
+use core::pin::Pin;
 
 use oer_esp32s31_hal::types::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
@@ -34,7 +34,7 @@ use oer_ieee80211_mac::{
     station::{STA_PROTECTED_QOS_ETHERNET_HEADROOM, StaTxSequenceCounters},
 };
 
-use super::{WifiTxPowerProfile, WifiTxTimer};
+use super::WifiTxPowerProfile;
 
 pub const STATION: [u8; 6] = [2, 3, 4, 5, 6, 7];
 pub const BSSID: [u8; 6] = [0x20, 0x21, 0x22, 0x23, 0x24, 0x25];
@@ -185,26 +185,7 @@ impl WifiTxPowerProfile for Power {
     }
 }
 
-#[derive(Default)]
-pub struct Timer {
-    pub now: u64,
-}
-
-impl WifiTxTimer for Timer {
-    fn now_micros(&self) -> u64 {
-        self.now
-    }
-
-    fn wait_until(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_ {
-        self.now = deadline_micros;
-        ready(())
-    }
-
-    fn after_micros(&mut self, micros: u64) -> impl Future<Output = ()> + '_ {
-        self.now += micros;
-        ready(())
-    }
-}
+pub type Timer = oer_time_virtual::SkipClock;
 
 pub fn aggregate_completion(
     starting_sequence: u16,

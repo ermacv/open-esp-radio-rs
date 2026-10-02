@@ -99,8 +99,8 @@ fn replay_commit_is_lane_scoped_and_two_phase() {
 fn transmit_packet_numbers_advance_by_their_step_from_a_new_key() {
     let mut ordinary = CcmpTxPacketNumber::new(CcmpPacketNumberStep::ONE);
     assert_eq!(ordinary.last(), CcmpPacketNumber::ZERO);
-    assert_eq!(ordinary.next(), Ok(CcmpPacketNumber::new(1).unwrap()));
-    assert_eq!(ordinary.next(), Ok(CcmpPacketNumber::new(2).unwrap()));
+    assert_eq!(ordinary.allocate(), Ok(CcmpPacketNumber::new(1).unwrap()));
+    assert_eq!(ordinary.allocate(), Ok(CcmpPacketNumber::new(2).unwrap()));
 
     let mut stepped = CcmpTxPacketNumber::new(CcmpPacketNumberStep::new(3).unwrap());
     assert_eq!(
@@ -127,10 +127,13 @@ fn transmit_packet_numbers_stop_at_the_48_bit_limit_without_wrapping() {
         CcmpPacketNumber::new(CCMP_PACKET_NUMBER_MAX - 3).unwrap(),
     );
     assert_eq!(
-        allocator.next(),
+        allocator.allocate(),
         Ok(CcmpPacketNumber::new(CCMP_PACKET_NUMBER_MAX).unwrap())
     );
-    assert_eq!(allocator.next(), Err(CcmpTxPacketNumberError::Exhausted));
+    assert_eq!(
+        allocator.allocate(),
+        Err(CcmpTxPacketNumberError::Exhausted)
+    );
     assert_eq!(
         allocator.last(),
         CcmpPacketNumber::new(CCMP_PACKET_NUMBER_MAX).unwrap()
@@ -139,5 +142,5 @@ fn transmit_packet_numbers_stop_at_the_48_bit_limit_without_wrapping() {
         step,
         CcmpPacketNumber::new(CCMP_PACKET_NUMBER_MAX - 2).unwrap(),
     );
-    assert_eq!(near.next(), Err(CcmpTxPacketNumberError::Exhausted));
+    assert_eq!(near.allocate(), Err(CcmpTxPacketNumberError::Exhausted));
 }

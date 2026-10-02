@@ -223,7 +223,7 @@ impl CcmpTxPacketNumber {
     }
 
     /// Allocate the PN of the next MPDU.
-    pub fn next(&mut self) -> Result<CcmpPacketNumber, CcmpTxPacketNumberError> {
+    pub fn allocate(&mut self) -> Result<CcmpPacketNumber, CcmpTxPacketNumberError> {
         let next = self.last + u64::from(self.step.get());
         if next > CCMP_PACKET_NUMBER_MAX {
             return Err(CcmpTxPacketNumberError::Exhausted);
@@ -237,7 +237,7 @@ impl CcmpTxPacketNumber {
         &mut self,
         key_id: CcmpKeyId,
     ) -> Result<[u8; CCMP_HEADER_LEN], CcmpTxPacketNumberError> {
-        let packet_number = self.next()?;
+        let packet_number = self.allocate()?;
         Ok(CcmpHeader::new(packet_number, key_id).encode())
     }
 }

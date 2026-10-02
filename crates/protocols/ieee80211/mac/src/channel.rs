@@ -202,10 +202,10 @@ const fn ghz5_pair_position(number: u8) -> Option<bool> {
         _ => return None,
     };
     let offset = number - base;
-    if offset % 4 != 0 {
+    if !offset.is_multiple_of(4) {
         return None;
     }
-    Some(offset % 8 == 0)
+    Some(offset.is_multiple_of(8))
 }
 
 /// Invalid channel geometry.

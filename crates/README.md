@@ -21,6 +21,7 @@ Cargo package identities are independent of this directory hierarchy.
 | --- | --- |
 | `oer/` | Thin public facade; reexports protocols, chip backends and selected compositions |
 | `radio/` | `wifi/` owns public requests, affine role lifecycle and the executor-free service port |
+| `radio/port/` | The vocabulary every radio port shares (`oer-radio-port`): failure classes and `PortError`, `EventsLost` with its ordering rule, the terminal `Poisoned` event, lifecycle commands, events and refusals, correlation identities with a backend-reserved range, and the clock resolution and epoch relation |
 | `radio/coex/` | Portable radio client identity (`RadioClient`) and coexistence priority vocabulary (`CoexPriority`) every protocol and backend shares |
 | `memory/` | Audited stable-memory proofs and affine buffer/queue handoff |
 | `trace/` | Typed, reset-retained event trace and snapshot slots; drivers define the events, images place the storage |
@@ -36,7 +37,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `protocols/bluetooth/hci/` | `wire` holds packet views; `transport` holds the synchronous Controller-to-Host queue and packet validation; `controller` holds reset-scoped bootstrap state, command classification and the `le` codecs |
 | `protocols/ieee802154/` | `mac/frame` holds bounded bytes; `radio/{command,event,state,channel,capabilities}` holds portable contracts and one state machine; `port` declares the `Ieee802154RadioPort` every backend implements and the settings it applies |
 | `services/ieee80211/{sta,rsn}/` | Executor-independent drivers of the protocol state machines: station join, candidate scan, attempt and lifecycle; WPA2 handshake and key-install runners; `sta`'s `port` runs the whole station over any lower-MAC port |
-| `services/ieee80211/upper-mac/` | `UpperMacTx`: runs the transmit planner over any lower-MAC port, one submission per attempt |
+| `services/ieee80211/upper-mac/` | `EventRouter`, the one consumer of a lower-MAC port's events, dispatching completions by `TxId`, received frames, lifecycle terminals and extension events; `UpperMacTx`, which runs the transmit planner over the router, one submission per attempt, so exchanges of several access categories run concurrently |
 | `services/bluetooth/hci/transport/` | Bounded in-process HCI Host/Controller transport and the storage of one HCI epoch |
 | `hardware/esp32s31/{pac,hal,phy}/` | PAC `ownership` partitions register authority; HAL `root` and `owner` own the radio root and protocol routes; domain modules hold register operations, transactions and RF algorithms |
 | `hardware/esp32s31/driver/ieee80211/{dma,mac}/` | S31 descriptor ownership and MAC `rx/tx/rate`; `mac/tx/metadata` lowers portable traffic intent |

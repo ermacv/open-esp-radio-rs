@@ -135,7 +135,11 @@ adapter consumes, and
 the Wi-Fi port, carrying the portable `Channel` and `PhyRate` values of
 `oer-ieee80211-mac`. `LeRadioPort` declares submission and its clock
 asynchronous: the ESP32-S31 backend admits every request against a fresh
-controller-time latch, a bounded wait for the hardware.
+controller-time latch, a bounded wait for the hardware. What the three
+ports share (failure classes, the loss marker, the terminal poisoned
+event, the lifecycle vocabulary, correlation identities and the clock
+relation) is the contract package
+[`oer-radio-port`](../crates/radio/port/README.md).
 
 **Placement follows hardware autonomy.** Work the backend performs without
 software on the air timeline (acknowledgement turnaround, FCS or CRC,
@@ -154,10 +158,39 @@ protocol:
 | Part | Semantics |
 | --- | --- |
 | Submission | Immediate admission of one request with a caller-chosen correlation identity: refusal is the call's result, never a later event, and a value, not a fault. Submission is synchronous when a backend can decide without waiting; a port whose backends need a fresh hardware reading to decide may declare it asynchronous, provided the wait is bounded, depends on no other submission or event, and dropping the future admits nothing |
-| Events | Asynchronous stream of owned events, each viewed through a borrowed portable value; loss of events is reported, never silent |
+| Events | Asynchronous stream of owned events, each viewed through a borrowed portable value, with exactly one consumer; loss of events is reported, never silent |
 | Capabilities | What the backend supports and what it performs autonomously, read before submission |
 | Lifecycle | Enable, disable, quiesce and cancel of submitted work, each with a terminal event |
-| Clock | The backend's radio time on the shared time contract, with a stated resolution; asynchronous under the same conditions as submission |
+| Clock | The backend's radio time on the shared time contract, with a stated resolution and the relation of its epoch to monotonic time (`ClockInfo`); asynchronous under the same conditions as submission |
+
+**Correlation identities.** Each port keeps its own 32-bit identity type
+(`TxId`, `RequestId`, `EventId`), so a completion of one port cannot be
+taken for another's work; each implements `oer_radio_port::Correlation`,
+the top 256 raw values are reserved for work the backend submits itself,
+and a caller's `CorrelationIds` allocator wraps before them.
+
+**Event model.** Every port has exactly one consumer of its events. Users
+that share a port share it through a router that owns the stream and
+dispatches each event by its identity; for IEEE 802.11 that is the
+`EventRouter` of `oer-ieee80211-upper-mac-service`, which hands each
+completion to the exchange that registered its `TxId` and queues received
+frames, lifecycle terminals and extension events separately. Taking an
+event only dequeues it. Timed work a backend performs in software (the
+802.15.4 CSMA-CA backoffs and retry delays, the Wi-Fi publication watchdog
+and retune, the Bluetooth LE scheduler) runs in the backend's runner
+future (`run`), which the composition polls beside the consumer for as long
+as the port exists.
+
+**Loss and poisoning.** A backend that drops events reports one
+`EventsLost` in place of the first dropped event: events before it precede
+the gap, events after it follow it. The consumer may continue; it recovers
+work whose terminal event may be in the gap by cancelling that work by its
+identity, which either produces the terminal event or is refused as not
+running, proving that the work ended. An uninstall that discards events
+leaves the loss pending across a later install. A poisoned backend reports
+the terminal `Poisoned` event after every earlier event and again at every
+later call that takes one, and every other call returns an error of class
+`Poisoned`.
 
 **Capability model.** A port states what a backend can do in three separate
 places. A structural optional feature (an operation some backends lack
@@ -176,7 +209,16 @@ qualification catalog, not in code.
 handle any protocol's failures alike: `Rejected` (the request was not admitted
 and nothing changed), `Recoverable` (admitted work ended without its result;
 the port remains usable) and `Poisoned` (the backend's state is unknown; only
-a reset restores the port).
+a reset restores the port). A port's error type implements
+`oer_radio_port::PortError`, which names its class: a backend that is not
+installed or is paused refuses work as `Rejected`, and only a poisoned one
+as `Poisoned`.
+
+| Port | Lifecycle | Clock epoch (ESP32-S31) |
+| --- | --- | --- |
+| `Ieee80211LowerMacPort` | `lifecycle(Enable / Disable / Quiesce)` and `cancel(TxId)` | `Monotonic`: the core's clock is the `embassy-time` clock |
+| `Ieee802154RadioPort` | `lifecycle(Enable / Disable)` with `RadioEvent::Lifecycle` terminals (no quiesce); `RadioCommand::Cancel` | `Monotonic`: the platform `now_micros` the time driver also reads |
+| `LeRadioPort` | None: install, quiesce and uninstall move memory and hardware owners and stay the backend's own operations; `RadioRequest::Cancel` | `Unrelated`: the extended controller clock |
 
 **Shared RF path.** Protocols that share one radio name themselves with the
 portable [`RadioClient`](../crates/radio/coex/src/lib.rs) of `oer-radio-coex`

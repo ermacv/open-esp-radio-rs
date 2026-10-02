@@ -14,7 +14,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{Context, Result, process};
+use crate::{Context, Result};
+use oer_process as process;
 
 /// Subdirectories of `target/` that are never worth cloning: incremental
 /// session data is keyed to this checkout's paths, HIL outputs live in the

@@ -3,8 +3,8 @@
 use crate::{
     Context, Result,
     graph::{self, Graph},
-    process,
 };
+use oer_process as process;
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},

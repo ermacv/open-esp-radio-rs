@@ -6,7 +6,8 @@
 //! `push` until a later run of the same workflow passes, so whoever pushed the
 //! failing commit, or anyone who sees it first, fixes it before other work.
 
-use crate::{Context, process};
+use crate::Context;
+use oer_process as process;
 use serde::Deserialize;
 
 /// A workflow run as `gh run list --json` reports it.

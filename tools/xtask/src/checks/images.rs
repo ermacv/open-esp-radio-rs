@@ -12,10 +12,8 @@ use std::{
 
 use sha2::{Digest, Sha256};
 
-use crate::{
-    Context, Result,
-    process::{self, owned},
-};
+use crate::{Context, Result};
+use oer_process::{self as process, owned};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum FinalImageClass {
@@ -251,14 +249,12 @@ pub fn run(ctx: &Context) -> Result<()> {
                 "build",
                 "--quiet",
                 "--locked",
-                "--offline",
                 "-p",
                 "oer-hil-runner",
             ]),
     )?;
     process::run(crate::blobray::cargo(ctx, "build").args([
         "--locked",
-        "--offline",
         "--profile",
         "blobray",
         "-p",

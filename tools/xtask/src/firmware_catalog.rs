@@ -330,7 +330,7 @@ pub fn flash(
                 .arg(&port)
                 .args(["--after", "no-reset", address])
                 .arg(file);
-            crate::process::run(&mut command)?;
+            oer_process::run(&mut command)?;
         }
         // espflash's reset leaves an esp32c5 in its ROM download mode, and
         // an RTS reset after it leaves its USB console silent: a board with

@@ -21,7 +21,7 @@ fn ignored_production_workspace_member_remains_in_compiled_audit_inventory() {
         fs::write(directory.join("src/lib.rs"), "").unwrap();
     }
     let context = Context::new(repository.path()).unwrap();
-    crate::process::run(context.command("git").args(["init", "--quiet"])).unwrap();
+    oer_process::run(context.command("git").args(["init", "--quiet"])).unwrap();
     assert!(
         !paths::source_manifests(&context)
             .unwrap()
@@ -67,7 +67,7 @@ fn architecture_repository(dependency_section: &str, target_layer: &str) -> temp
         )).unwrap();
     }
     let context = Context::new(repository.path()).unwrap();
-    crate::process::run(context.command("git").args(["init", "--quiet"])).unwrap();
+    oer_process::run(context.command("git").args(["init", "--quiet"])).unwrap();
     repository
 }
 
@@ -597,15 +597,15 @@ fn source_package_discovery_covers_independent_and_ignored_workspace_members() {
         fs::write(repository.path().join(directory).join("src/lib.rs"), "").unwrap();
     }
     let context = Context::new(repository.path()).unwrap();
-    crate::process::run(context.command("git").args(["init", "--quiet"])).unwrap();
-    crate::process::run(
+    oer_process::run(context.command("git").args(["init", "--quiet"])).unwrap();
+    oer_process::run(
         context
             .command("git")
             .args(["add", "Cargo.toml", ".gitignore", "island"]),
     )
     .unwrap();
     for manifest in ["Cargo.toml", "island/Cargo.toml"] {
-        crate::process::run(context.cargo().args([
+        oer_process::run(context.cargo().args([
             "generate-lockfile",
             "--offline",
             "--manifest-path",

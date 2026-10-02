@@ -1,8 +1,9 @@
 //! PHY archive policy over compiled symbols. ELF is read natively; LLVM
 //! bitcode members use the llvm-nm shipped with the active Rust toolchain.
 
-use crate::{Context, Result, process};
+use crate::{Context, Result};
 use object::{Object, ObjectSymbol, SymbolKind};
+use oer_process as process;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 

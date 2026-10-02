@@ -26,7 +26,7 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 | `cargo xtask worktree add PATH --branch B [--from REV]` / `remove PATH` / `prepare` | Create a Git worktree whose `target/` starts from this checkout's build outputs (without incremental data, HIL outputs and vendor firmware builds, whose CMake caches name the source checkout), so only the workspace's own crates rebuild; `remove` deletes it with its `target/`. When `target/` is a btrfs subvolume the seed is an instant snapshot, otherwise a reflink copy taking minutes; `prepare` turns this checkout's `target/` into a subvolume once (run it while no build uses `target/`) |
 | `cargo xtask fetch` | Download the dependencies every workspace's lock file names and the local cache lacks; Cargo runs offline in this repository, so a pull that changed a lock file needs it before a plain `cargo build` |
 | `cargo xtask lock` | Update every workspace's `Cargo.lock` to its manifests after a dependency or pin change; `check metadata` reports every stale lock in one run |
-| `cargo xtask sweep [--all-checkouts] [--apply]` | List, or remove, rebuildable build caches: `incremental` crate data unused for a day and HIL image caches unused for 3 days or built for a removed network implementation. Directories whose Cargo build lock is held are skipped; run bundles, evidence and archives are never touched. `check changed` and the HIL runner commands sweep every sibling checkout at most once a day for the whole host, and at once, with 2-hour and 12-hour limits, while less than 200 GiB are free; below 20 GiB free they refuse to build |
+| `cargo xtask sweep [--all-checkouts] [--apply]` | List, or remove, rebuildable build caches: `incremental` crate data unused for a day and HIL image caches unused for 3 days. Directories whose Cargo build lock is held are skipped; run bundles, evidence and archives are never touched. `check changed` and the HIL runner commands sweep every sibling checkout at most once a day for the whole host, and at once, with 2-hour and 12-hour limits, while less than 200 GiB are free; below 20 GiB free they refuse to build |
 | `cargo xtask check metadata` | Locked metadata for every actual Cargo workspace island, including unstaged source moves; every island applies the root `[patch]` replacements and resolves each Git package to one commit; every island repeats the root `[workspace.lints]` and every package inherits it, except the standalone Blobray workspace and the generated raw PAC |
 | `cargo xtask check architecture` | Run Clippy on minimum/default and supported feature profiles of every production package for its chip's Rust target (`platform/<chip>/chip.toml`), applying each crate's lint policy; reject Wi-Fi packages in Bluetooth facade profiles; check layer/platform edges, that contract, protocol, hardware, role and service packages reach no HAL or Embassy crate but `embassy-sync`, isolated facade consumers, public type identities and composition feature contracts; crate-root unsafe attributes match the reviewed audited list and direct PAC dependencies the reviewed consumer list. Classification and package names are `check tidy` rules |
 | `cargo xtask check network` | Resolve isolated network consumers and audit their dependency boundaries; CI compiles the profiles |
@@ -115,19 +115,17 @@ there are no source-spelling or regex checks for required Rust identifiers.
 Builds retain normal Cargo parallelism. `OPEN_RADIO_ANALYSIS_BUILD_JOBS` is an
 optional explicit local limit for vendor probe builds.
 
-Standalone firmware builds keep a Cargo cache per example and network selection,
-and copy their ELFs and images into a unique
-`target/firmware/esp32s31-<example>/<network-or-none>/build-<id>/` bundle.
-Station and AP use the owned Xarxa/Embassy stack (`--network owned-xarxa`, the
-default and only value); see the
-[implementation guide](../../docs/network-implementations.md).
+Standalone firmware builds keep a Cargo cache per example and copy their ELFs
+and images into a unique `target/firmware/esp32s31-<example>/build-<id>/`
+bundle. Station and AP link the owned Xarxa/Embassy stack, their default
+feature; see the [implementation guide](../../docs/network-implementations.md).
 
 Firmware builds never modify a committed `Cargo.lock`. Each build copies the
 workspace catalog into its own cache and resolves through Cargo's
 `resolver.lockfile-path` (Cargo 1.97+), so a `[patch]` or local override
 writes only that copy, which is archived as the build's effective lockfile.
 Metadata checks read committed catalogs without waiting, and builds of
-different examples, networks or image classes run concurrently. An overlapping
+different examples or image classes run concurrently. An overlapping
 build of the same output fails on that copy's lease; the artifact lease
 separately protects the selected cache and output snapshot.
 Successful bundles remain available for inspection, while failed partial bundles

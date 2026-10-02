@@ -25,7 +25,7 @@ pub fn update_locks(context: &Context) -> Result<()> {
     for manifest in workspaces(context)? {
         let lock = manifest.with_file_name("Cargo.lock");
         let before = fs::read_to_string(&lock).ok();
-        crate::process::capture(
+        oer_process::capture(
             context
                 .cargo()
                 .args(["metadata", "--format-version", "1"])
@@ -66,7 +66,7 @@ pub fn fetch(context: &Context) -> Result<()> {
             "fetching the dependencies of {}",
             manifest.strip_prefix(&context.root)?.display()
         );
-        crate::process::run(
+        oer_process::run(
             context
                 .cargo()
                 .args(["fetch", "--locked"])

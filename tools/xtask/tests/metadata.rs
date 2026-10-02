@@ -27,7 +27,7 @@ fn fixture() -> Fixture {
     f.git(&["init", "--quiet"]);
     f.git(&["add", "."]);
     for manifest in ["Cargo.toml", "crates/old/Cargo.toml"] {
-        oer_xtask::process::capture(f.context.cargo().args([
+        oer_process::capture(f.context.cargo().args([
             "generate-lockfile",
             "--offline",
             "--manifest-path",
@@ -81,7 +81,7 @@ fn git_worktree_discovery_uses_its_own_source_root() {
     ]);
     let external = tempfile::tempdir().unwrap();
     let path = external.path().join("worktree с пробелами");
-    oer_xtask::process::capture(
+    oer_process::capture(
         f.context
             .command("git")
             .args(["worktree", "add", "--detach"])

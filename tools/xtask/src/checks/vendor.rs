@@ -1,6 +1,7 @@
 //! Build each chip's caller-owned vendor comparison artifacts.
 
-use crate::{Context, Result, process};
+use crate::{Context, Result};
+use oer_process as process;
 use std::{ffi::OsStr, num::NonZeroUsize, process::Command};
 
 const JOBS: &str = "OPEN_RADIO_ANALYSIS_BUILD_JOBS";
@@ -149,12 +150,7 @@ fn parse_jobs(value: Option<&OsStr>) -> Result<Option<NonZeroUsize>> {
     })?))
 }
 
-fn command(
-    context: &Context,
-    probe: &Probe,
-    target: &str,
-    jobs: Option<NonZeroUsize>,
-) -> Command {
+fn command(context: &Context, probe: &Probe, target: &str, jobs: Option<NonZeroUsize>) -> Command {
     let mut command = context.cargo();
     command
         .args(["build", "--manifest-path"])

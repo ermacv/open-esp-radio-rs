@@ -14,7 +14,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{Context, Result, cargo, doc, process};
+use crate::{Context, Result, cargo, doc};
+use oer_process as process;
 
 /// What one set of changed files requires.
 #[derive(Debug, Default, Eq, PartialEq)]
@@ -412,7 +413,7 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
     }
     if plan.platform_link {
         println!("check changed: linking the station example for the platform change");
-        crate::firmware::build(ctx, "station", &[], false, None)?;
+        crate::firmware::build(ctx, "station", &[], false)?;
     }
     for workspace in &plan.other_workspaces {
         println!(

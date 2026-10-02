@@ -142,8 +142,8 @@ jobs:
       # needs `unsafe`; the API exists only on the chip target.
       - run: cargo test --doc --locked -p oer-esp32s31-soc-esp-hal --features axi-gdma-mem2mem --target riscv32imafc-unknown-none-elf
 
-  # Network profiles that no other job compiles: the HIL runtime with each
-  # network stack, and the Wi-Fi composition with a single network feature.
+  # Profiles that no other job compiles: the HIL runtime with its network,
+  # and the Wi-Fi composition on the chip target.
   network-profiles:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -170,8 +170,8 @@ jobs:
           cargo check --locked -p oer-esp32s31-ieee80211-system --target "$TARGET"
 
   # The ESP32-S31 examples share one workspace; run Cargo from an example's
-  # directory so the workspace `.cargo/config.toml` selects the chip target. Every feature profile an
-  # example supports is checked, and host tests cover application libraries.
+  # directory so the workspace `.cargo/config.toml` selects the chip target.
+  # Host tests cover application libraries.
   examples:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -180,14 +180,10 @@ jobs:
       matrix:
         include:
           - example: esp32s31/access-point
-            profiles: default
             host-tests: true
           - example: esp32s31/monitor
-            profiles: default
           - example: esp32s31/station
-            profiles: default
           - example: esp32s31/thread
-            profiles: default
     defaults:
       run:
         working-directory: examples/${{ matrix.example }}
@@ -203,19 +199,7 @@ jobs:
             examples/esp32s31/target
           key: ${{ matrix.example }}-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'examples/esp32s31/Cargo.lock') }}
           restore-keys: ${{ matrix.example }}-${{ runner.os }}-
-      - name: Check feature profiles
-        env:
-          PROFILES: ${{ matrix.profiles }}
-        run: |
-          for profile in $PROFILES; do
-            echo "::group::$profile"
-            if [ "$profile" = default ]; then
-              cargo check --release --locked
-            else
-              cargo check --release --locked --no-default-features --features "$profile"
-            fi
-            echo "::endgroup::"
-          done
+      - run: cargo check --release --locked
       - name: Host tests
         if: matrix.host-tests
         run: cargo test --lib --locked --target x86_64-unknown-linux-gnu

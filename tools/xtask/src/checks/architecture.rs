@@ -1,4 +1,5 @@
-use crate::{Context, Result, cargo, graph::Graph, process};
+use crate::{Context, Result, cargo, graph::Graph};
+use oer_process as process;
 
 use super::{CHIP, common::*};
 
@@ -60,7 +61,6 @@ pub fn run(ctx: &Context) -> Result<()> {
         "clippy",
         "--quiet",
         "--locked",
-        "--offline",
         "-p",
         "oer-esp32s31-bluetooth",
         "--features",
@@ -234,12 +234,7 @@ fn shared_words(ctx: &Context) -> Result<usize> {
             .map(|directory| directory.as_std_path().join("src"))
             .ok_or_else(|| format!("the HIL target workspace resolves no {name} package").into())
     };
-    shared_words::check(
-        &ctx.root,
-        CHIP,
-        &directory("esp-hal")?,
-        &directory(CHIP)?,
-    )
+    shared_words::check(&ctx.root, CHIP, &directory("esp-hal")?, &directory(CHIP)?)
 }
 
 #[cfg(test)]

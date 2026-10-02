@@ -144,7 +144,10 @@ fn wrong_class_missing_files_and_stale_artifacts_fail_closed() {
     let root = temporary.path();
     let start = root.join("performance.start");
     let mut report = fixture_report(root, FinalImageClass::Performance, &start);
-    assert!(validate_final_image_report(b"", FinalImageClass::Performance, TARGET, root, &start).is_err());
+    assert!(
+        validate_final_image_report(b"", FinalImageClass::Performance, TARGET, root, &start)
+            .is_err()
+    );
     report["image_class"] = json!("correctness");
     assert!(checked(&report, FinalImageClass::Performance, root, &start).is_err());
     report["image_class"] = json!("performance");

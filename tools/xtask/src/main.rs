@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use oer_xtask::{Context, Result, checks, process};
+use oer_process as process;
+use oer_xtask::{Context, Result, checks};
 
 #[derive(Parser)]
 #[command(about = "Repository checks and build orchestration")]
@@ -261,7 +262,7 @@ enum Check {
         /// Only `cargo check` each runtime, without code generation or audits.
         #[arg(long)]
         type_check: bool,
-        /// Classes built at once; defaults to a fifth of the cores, 1 to 4.
+        /// Classes built at once; defaults to half the cores, at most 8.
         #[arg(long)]
         jobs: Option<usize>,
     },
@@ -297,9 +298,6 @@ enum Build {
         features: Vec<String>,
         #[arg(long)]
         no_default_features: bool,
-        /// Network implementation: owned-xarxa, the only one.
-        #[arg(long)]
-        network: Option<oer_esp32s31_firmware::network::Integration>,
     },
     VendorProbes {
         #[arg(long)]
@@ -491,16 +489,10 @@ fn run() -> Result<std::process::ExitCode> {
                     monitor,
                     features,
                     no_default_features,
-                    network,
                 },
         } => {
-            let output = oer_xtask::firmware::build(
-                &ctx,
-                &example,
-                &features,
-                no_default_features,
-                network,
-            )?;
+            let output =
+                oer_xtask::firmware::build(&ctx, &example, &features, no_default_features)?;
             if flash {
                 oer_xtask::firmware::flash(&output, &example, port.as_deref(), monitor)?;
             }
@@ -532,17 +524,6 @@ fn main() -> std::process::ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn documentation_check_has_no_api_matrix_modes() {
-        assert!(matches!(
-            Cli::try_parse_from(["xtask", "check", "docs"])
-                .unwrap()
-                .command,
-            Task::Check { check: Check::Docs }
-        ));
-        assert!(Cli::try_parse_from(["xtask", "check", "docs", "--full"]).is_err());
-    }
 
     #[test]
     fn the_integrity_tier_is_a_check_without_options() {

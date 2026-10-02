@@ -6,7 +6,8 @@ use std::{collections::BTreeSet, io::Cursor, path::PathBuf};
 use cargo_metadata::Message;
 
 use super::{artifacts, common};
-use crate::{Context, Result, cargo, process};
+use crate::{Context, Result, cargo};
+use oer_process as process;
 
 const PHY: &str = "crates/hardware/esp32s31/phy/Cargo.toml";
 const PHY_PACKAGES: &[&str] = &[
@@ -78,7 +79,6 @@ fn phy(ctx: &Context) -> Result<PathBuf> {
     let output = process::capture(ctx.cargo().args([
         "build",
         "--locked",
-        "--offline",
         "-p",
         "oer-esp32s31-phy",
         "--lib",

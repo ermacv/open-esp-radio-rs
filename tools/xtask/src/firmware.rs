@@ -4,8 +4,9 @@ mod workspace;
 
 pub use workspace::FirmwareBuild;
 
-use crate::{Context, Result, process};
+use crate::{Context, Result};
 use oer_esp32s31_firmware::{BOOTSTRAP_BIN, TARGET};
+use oer_process as process;
 use std::{env, fs, path::Path};
 
 pub fn build(
@@ -13,17 +14,7 @@ pub fn build(
     example: &str,
     features: &[String],
     no_default_features: bool,
-    network: Option<oer_esp32s31_firmware::network::Integration>,
 ) -> Result<FirmwareBuild> {
-    use oer_esp32s31_firmware::network::Integration;
-    let network = if matches!(example, "station" | "access-point") {
-        Some(Integration::for_example(network, features)?)
-    } else {
-        if network.is_some() {
-            return Err("--network applies to station and access-point IP examples".into());
-        }
-        None
-    };
     let directory = ctx.root.join("examples/esp32s31").join(example);
     let manifest = directory.join("Cargo.toml");
     let contents = fs::read_to_string(&manifest)?;
@@ -36,15 +27,14 @@ pub fn build(
     let directory_output = ctx
         .root
         .join("target/firmware")
-        .join(format!("esp32s31-{example}"))
-        .join(network.map_or("none", |n| n.id()));
+        .join(format!("esp32s31-{example}"));
     let workspace = workspace::Workspace::acquire(&directory_output)?;
     let output = workspace.output();
     let budget =
         oer_memory_report::StackBudget::load(&ctx.root.join("platform/esp32s31/stack.toml"))?;
     let runtime_target = workspace.cache().join("runtime");
-    // A patched network resolves into this private copy, never the example's catalog.
-    // The examples share one workspace and its lockfile.
+    // A patched dependency resolves into this private copy, never the
+    // example's catalog. The examples share one workspace and its lockfile.
     let runtime_lock = oer_esp32s31_firmware::network::BuildLock::prepare(
         &ctx.root.join("examples/esp32s31"),
         &workspace.cache().join("lock"),
@@ -58,11 +48,7 @@ pub fn build(
         .env("CARGO_INCREMENTAL", "0");
     command.arg("--locked");
     runtime_lock.configure(&mut command);
-    if let Some(network) = network {
-        network.configure(&mut command, &ctx.root);
-        command.args(["--features", network.feature()]);
-    }
-    if no_default_features || network.is_some() {
+    if no_default_features {
         command.arg("--no-default-features");
     }
     if !features.is_empty() {
@@ -70,7 +56,7 @@ pub fn build(
     }
     oer_esp32s31_firmware::compiler::configure_image_compiler(&mut command, &budget);
     process::run(&mut command)?;
-    runtime_lock.validate(&ctx.root, network.unwrap_or_default())?;
+    runtime_lock.validate(&ctx.root, Default::default())?;
     let runtime = workspace.snapshot(
         &runtime_target.join(TARGET).join("release").join(binary),
         "runtime.elf",
@@ -139,10 +125,6 @@ pub fn build(
     fs::copy(
         ctx.root.join("platform/esp32s31/Cargo.lock"),
         output.join("bootstrap-Cargo.lock"),
-    )?;
-    fs::write(
-        output.join("network.txt"),
-        format!("{}\n", network.map_or("none", |n| n.id())),
     )?;
     println!("application image: {}", image.display());
     println!("bootstrap ELF: {}", bootstrap.display());

@@ -15,7 +15,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{Context, Result, process};
+use crate::{Context, Result};
+use oer_process as process;
 
 /// One named symbol of an image.
 #[derive(Clone, Debug)]

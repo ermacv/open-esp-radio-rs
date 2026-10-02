@@ -13,9 +13,6 @@ use std::{
 
 use crate::Result;
 
-/// Network implementations whose HIL image caches can never be reused.
-const REMOVED_NETWORKS: &[&str] = &["upstream-xarxa", "patched-xarxa", "upstream-smoltcp"];
-
 /// How old unused caches must be before they are removed.
 #[derive(Clone, Copy, Debug)]
 pub struct Policy {
@@ -246,8 +243,7 @@ fn incremental(target: &Path, policy: Policy, now: SystemTime, found: &mut Vec<C
     visit(target, 4, policy, now, found);
 }
 
-/// Per-image HIL build caches: always when built for a removed network,
-/// otherwise when unused for the policy's age and not building.
+/// Per-image HIL build caches unused for the policy's age and not building.
 fn image_caches(target: &Path, policy: Policy, now: SystemTime, found: &mut Vec<Candidate>) {
     let chip = target.join("hil/esp32s31");
     let groups = [
@@ -266,15 +262,7 @@ fn image_caches(target: &Path, policy: Policy, now: SystemTime, found: &mut Vec<
             if !image_cache {
                 continue;
             }
-            if let Some(network) = REMOVED_NETWORKS
-                .iter()
-                .find(|network| name.ends_with(*network))
-            {
-                found.push(Candidate {
-                    path,
-                    reason: format!("image cache for the removed {network} network"),
-                });
-            } else if age(&path, now).is_some_and(|age| age > policy.image_caches) {
+            if age(&path, now).is_some_and(|age| age > policy.image_caches) {
                 found.push(Candidate {
                     path,
                     reason: "image cache unused".into(),
@@ -552,22 +540,23 @@ mod tests {
     }
 
     #[test]
-    fn only_old_or_dead_caches_are_candidates_and_bundles_are_kept() {
+    fn only_old_caches_are_candidates_and_bundles_are_kept() {
         let root = tempfile::tempdir().unwrap();
         let target = root.path().join("target");
         let old = target.join("debug/incremental/crate-old");
         let fresh = target.join("debug/incremental/crate-fresh");
-        let dead = target.join("hil/esp32s31/psram-code-performance-upstream-xarxa");
+        let stale = target.join("hil/esp32s31/psram-code-correctness-owned-xarxa");
         let live = target.join("hil/esp32s31/psram-code-performance-owned-xarxa");
         let runs = target.join("hil/esp32s31/runs.before-shared-store");
-        for directory in [&old, &fresh, &dead, &live, &runs] {
+        for directory in [&old, &fresh, &stale, &live, &runs] {
             fs::create_dir_all(directory).unwrap();
         }
         aged(&old, 10);
+        aged(&stale, 10);
         aged(&runs, 30);
         let found = candidates(root.path(), Policy::default(), SystemTime::now());
         let paths = found.iter().map(|c| c.path.clone()).collect::<Vec<_>>();
-        assert_eq!(paths, [old, dead]);
+        assert_eq!(paths, [old, stale]);
     }
 
     #[test]

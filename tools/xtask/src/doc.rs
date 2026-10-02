@@ -8,7 +8,8 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use crate::{Context, Result, cargo, checks::common, process};
+use crate::{Context, Result, cargo, checks::common};
+use oer_process as process;
 
 /// One `cargo doc` invocation: a workspace, an optional target and packages.
 #[derive(Debug, Eq, PartialEq)]
@@ -87,7 +88,7 @@ pub fn command(ctx: &Context, subcommand: &str, group: &Group) -> std::process::
     flags.push_str(" -D warnings");
     command
         .env("RUSTDOCFLAGS", flags.trim())
-        .args([subcommand, "--locked", "--offline", "--manifest-path"])
+        .args([subcommand, "--locked", "--manifest-path"])
         .arg(&group.manifest);
     if let Some(target) = &group.target {
         command.args(["--target", target]);
@@ -120,7 +121,7 @@ pub fn run(ctx: &Context) -> Result<()> {
     }
     process::run(
         ctx.cargo()
-            .args(["test", "--doc", "--workspace", "--locked", "--offline"]),
+            .args(["test", "--doc", "--workspace", "--locked"]),
     )
 }
 

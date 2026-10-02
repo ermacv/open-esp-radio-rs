@@ -2,7 +2,8 @@
 //! inside the scenario process.
 //!
 //! Private inputs stay explicit arguments of the scenario.
-use crate::{Context, Result, process};
+use crate::{Context, Result};
+use oer_process as process;
 use std::ffi::OsString;
 use std::path::PathBuf;
 

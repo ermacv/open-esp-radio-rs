@@ -1,37 +1,14 @@
 use super::*;
 
 #[test]
-fn owned_xarxa_is_the_only_integration_and_removed_names_are_rejected() {
+fn owned_xarxa_is_the_only_integration() {
     assert_eq!(Integration::default(), Integration::OwnedXarxa);
     assert_eq!(
         "owned-xarxa".parse::<Integration>().unwrap(),
         Integration::OwnedXarxa
     );
-    for removed in [
-        "upstream-xarxa",
-        "upstream",
-        "patched-xarxa",
-        "udp-backpressure",
-        "upstream-smoltcp",
-    ] {
-        let error = removed.parse::<Integration>().unwrap_err();
-        assert!(error.contains("was removed"), "{error}");
-    }
-    assert!("auto".parse::<Integration>().is_err());
-}
-
-#[test]
-fn example_selection_accepts_only_the_owned_network_feature() {
-    assert_eq!(
-        Integration::for_example(None, &[]).unwrap(),
-        Integration::OwnedXarxa
-    );
-    assert_eq!(
-        Integration::for_example(None, &["owned-network".into()]).unwrap(),
-        Integration::OwnedXarxa
-    );
-    for removed in ["upstream-network", "embassy-network"] {
-        assert!(Integration::for_example(None, &[removed.into()]).is_err());
+    for other in ["upstream-xarxa", "auto", ""] {
+        assert!(other.parse::<Integration>().is_err(), "{other}");
     }
 }
 

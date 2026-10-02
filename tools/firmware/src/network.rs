@@ -11,7 +11,7 @@ use std::{
 
 /// The network implementation a firmware links. Owned Xarxa/Embassy is the
 /// only one: the maintained owner-transfer forks declared in the manifests.
-/// The type remains so that artifacts keep recording which stack they carry.
+/// HIL image records name it.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Integration {
     #[default]
@@ -29,20 +29,6 @@ impl Integration {
         }
     }
 
-    /// Resolve the example's selection; the Cargo feature and `--network`
-    /// can name only the owned stack.
-    pub fn for_example(explicit: Option<Self>, features: &[String]) -> Result<Self> {
-        for feature in features {
-            if feature.ends_with("-network") && feature != Self::OwnedXarxa.feature() {
-                return Err(format!(
-                    "network feature `{feature}` was removed; owned-network is the only network implementation"
-                )
-                .into());
-            }
-        }
-        Ok(explicit.unwrap_or_default())
-    }
-
     /// No source override: the owned stack's pins live in the manifests.
     pub fn configure(self, _command: &mut Command, _root: &Path) {}
 }
@@ -51,10 +37,6 @@ impl FromStr for Integration {
     fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
         match value {
             "owned-xarxa" => Ok(Self::OwnedXarxa),
-            "upstream-xarxa" | "upstream" | "patched-xarxa" | "udp-backpressure"
-            | "upstream-smoltcp" => Err(format!(
-                "network integration `{value}` was removed; owned-xarxa is the only network implementation"
-            )),
             _ => Err(format!(
                 "unknown network integration `{value}` (expected owned-xarxa)"
             )),

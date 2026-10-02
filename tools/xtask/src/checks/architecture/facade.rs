@@ -1,6 +1,7 @@
 //! Resolve facade consumers independently of workspace feature unification.
 
-use crate::{Context, Result, cargo, process};
+use crate::{Context, Result, cargo};
+use oer_process as process;
 
 use super::super::common::*;
 
@@ -164,7 +165,6 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
                 .args([
                     "test",
                     "--quiet",
-                    "--offline",
                     "--locked",
                     "--package",
                     "open-esp-radio",

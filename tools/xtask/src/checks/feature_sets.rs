@@ -5,7 +5,8 @@
 //! changed package with each and CI tests every package with each, so the
 //! list lives next to the package rather than in a workflow.
 
-use crate::{Context, Result, cargo, process};
+use crate::{Context, Result, cargo};
+use oer_process as process;
 
 /// Test `package` with each of its declared test feature sets.
 pub fn test(ctx: &Context, package: &cargo_metadata::Package) -> Result<()> {

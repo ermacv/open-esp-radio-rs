@@ -1,5 +1,6 @@
 //! Serial output without changing the terminal or re-entering the ROM loader.
-use crate::{Result, process};
+use crate::Result;
+use oer_process as process;
 use std::{
     io::{self, Read, Write},
     path::Path,

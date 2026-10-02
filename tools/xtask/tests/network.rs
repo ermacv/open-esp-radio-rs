@@ -1,9 +1,9 @@
 mod support;
+use oer_process as process;
 use oer_xtask::{
     cargo,
     checks::network::{self, Boundary},
     graph::Graph,
-    process,
 };
 use serde_json::{Value, json};
 use std::fs;

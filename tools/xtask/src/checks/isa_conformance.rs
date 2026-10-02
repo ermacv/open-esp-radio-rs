@@ -6,7 +6,8 @@
 //! run: the riscv-arch-test checkout must resolve to the pinned commit and the
 //! Sail archive must have the pinned SHA-256. The check then runs the ignored
 //! `riscv_conformance` test of `blobray-cli` with them and the caller's clang.
-use crate::{Context, Result, process};
+use crate::{Context, Result};
+use oer_process as process;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -32,7 +32,7 @@ pub struct CargoConfiguration {
 impl CargoConfiguration {
     pub fn apply(&self, command: &mut Command) {
         command
-            .args(["--locked", "--offline", "--manifest-path"])
+            .args(["--locked", "--manifest-path"])
             .arg(&self.manifest)
             .args(["--package", &self.package, "--target", &self.target])
             .args(&self.features);
@@ -97,8 +97,16 @@ pub fn production_packages(ctx: &Context) -> Result<Vec<ProductionPackage>> {
             let section = &document["package"];
             let table = section.get("metadata").and_then(|m| m.get("open-radio"));
             let class = oer_tidy::classification::classify(
-                section.get("name").and_then(toml::Value::as_str).unwrap_or(""),
-                &|key| table.and_then(|t| t.get(key)).and_then(toml::Value::as_str).map(str::to_owned),
+                section
+                    .get("name")
+                    .and_then(toml::Value::as_str)
+                    .unwrap_or(""),
+                &|key| {
+                    table
+                        .and_then(|t| t.get(key))
+                        .and_then(toml::Value::as_str)
+                        .map(str::to_owned)
+                },
             )?;
             if class.scope != Scope::Production {
                 continue;

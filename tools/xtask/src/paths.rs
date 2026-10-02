@@ -1,6 +1,7 @@
 //! Git source inventory includes unstaged moves and excludes private/build inputs.
 
-use crate::{Context, Result, process};
+use crate::{Context, Result};
+use oer_process as process;
 use std::{
     collections::BTreeSet,
     path::{Component, PathBuf},

@@ -15,7 +15,8 @@ use std::{
     process::Command,
 };
 
-use crate::{Context, Result, process};
+use crate::{Context, Result};
+use oer_process as process;
 
 /// Rechecks inside the queue before a push gives up; `main` moving there
 /// means someone pushes without the queue.

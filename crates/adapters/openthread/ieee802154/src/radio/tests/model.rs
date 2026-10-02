@@ -9,11 +9,13 @@ use std::{collections::VecDeque, vec, vec::Vec};
 
 use embassy_futures::block_on;
 use oer_ieee802154::{
-    AcceptedCommand, CommandError, Configuration, CslReceiver, EnhancedAckGeneration, EventsLost,
-    FcsStatus, Frame, FrameCounterUpdate, FramePending, Ieee802154RadioPort, Interface,
-    LinkMetrics, MacKeys, ProbingInitiator, RadioCapabilities, RadioCommand, RadioEvent,
-    RadioInstant, RadioSetting, RadioState, RadioStateMachine, ReceivedFrame, RxMetadata,
-    SecurityStatus, SentAcknowledgement, SettingError, TxSecurity, TxStatus,
+    AcceptedCommand, ClockInfo, CommandError, Configuration, CslReceiver, EnhancedAckGeneration,
+    EventsLost, FailureClass, FcsStatus, Frame, FrameCounterUpdate, FramePending,
+    Ieee802154Capabilities, Ieee802154RadioPort, Interface, LifecycleCommand, LifecycleError,
+    LifecycleEvent, LinkMetrics, MacKeys, PortError, ProbingInitiator, RadioCapabilities,
+    RadioCommand, RadioEvent, RadioInstant, RadioSetting, RadioState, RadioStateMachine,
+    ReceivedFrame, RequestId, RxMetadata, SecurityStatus, SentAcknowledgement, SettingError,
+    TxSecurity, TxStatus,
 };
 use openthread_radio::{
     CslConfig, EnhAckProbingConfig, EnhAckProbingInitiator, FrameCounterUpdate as OtCounter,
@@ -43,7 +45,7 @@ struct Recorded {
 
 struct Model {
     machine: RadioStateMachine,
-    events: VecDeque<ModelEvent>,
+    events: VecDeque<Result<ModelEvent, EventsLost>>,
     recorded: Recorded,
 }
 
@@ -53,6 +55,12 @@ struct ModelPort(RefCell<Model>);
 /// The model never fails as a whole.
 #[derive(Debug)]
 struct Never;
+
+impl PortError for Never {
+    fn class(&self) -> FailureClass {
+        FailureClass::Rejected
+    }
+}
 
 const CAPABILITIES: RadioCapabilities = RadioCapabilities::CLEAR_CHANNEL_ASSESSMENT
     .union(RadioCapabilities::ENERGY_SCAN)
@@ -79,7 +87,12 @@ impl ModelPort {
             .machine
             .observe(event)
             .expect("a valid terminal event");
-        model.events.push_back(ModelEvent::Other(event));
+        model.events.push_back(Ok(ModelEvent::Other(event)));
+    }
+
+    /// The port drops events: a loss marker follows the queued ones.
+    fn lose(&self) {
+        self.0.borrow_mut().events.push_back(Err(EventsLost));
     }
 
     /// A frame arrives on the receive channel.
@@ -106,7 +119,7 @@ impl ModelPort {
             .expect("the model receives");
         model
             .events
-            .push_back(ModelEvent::Received(frame, metadata));
+            .push_back(Ok(ModelEvent::Received(frame, metadata)));
     }
 }
 
@@ -124,8 +137,32 @@ impl Ieee802154RadioPort for ModelPort {
         }
     }
 
-    fn capabilities(&self) -> RadioCapabilities {
-        CAPABILITIES
+    fn capabilities(&self) -> Ieee802154Capabilities {
+        Ieee802154Capabilities {
+            operations: CAPABILITIES,
+            interfaces: 1,
+        }
+    }
+
+    fn lifecycle(&self, command: LifecycleCommand) -> Result<Result<(), LifecycleError>, Never> {
+        let id = RequestId::new(u32::MAX);
+        let (command, terminal) = match command {
+            LifecycleCommand::Enable => (RadioCommand::Enable { id }, LifecycleEvent::Enabled),
+            LifecycleCommand::Disable => (RadioCommand::Disable { id }, LifecycleEvent::Disabled),
+            LifecycleCommand::Quiesce => return Ok(Err(LifecycleError::InvalidState)),
+        };
+        let mut model = self.0.borrow_mut();
+        Ok(match model.machine.admit(command) {
+            Ok(_) => {
+                model.recorded.commands.push(command);
+                model
+                    .events
+                    .push_back(Ok(ModelEvent::Other(RadioEvent::Lifecycle(terminal))));
+                Ok(())
+            }
+            Err(CommandError::AlreadyEnabled) => Err(LifecycleError::AlreadyInState),
+            Err(_) => Err(LifecycleError::InvalidState),
+        })
     }
 
     fn submit(
@@ -184,7 +221,7 @@ impl Ieee802154RadioPort for ModelPort {
 
     async fn next_event(&self) -> Result<ModelEvent, EventsLost> {
         core::future::poll_fn(|_| match self.0.borrow_mut().events.pop_front() {
-            Some(event) => Poll::Ready(Ok(event)),
+            Some(event) => Poll::Ready(event),
             None => Poll::Pending,
         })
         .await
@@ -194,16 +231,12 @@ impl Ieee802154RadioPort for ModelPort {
         Ok(RadioInstant::from_micros(1_000))
     }
 
-    fn clock(&self) -> Result<fn() -> u64, Never> {
-        Ok(|| 1_000)
+    fn clock_info(&self) -> ClockInfo {
+        ClockInfo::MONOTONIC_MICROS
     }
 
     fn state(&self) -> Result<RadioState, Never> {
         Ok(self.0.borrow().machine.state())
-    }
-
-    fn interfaces(&self) -> Result<u8, Never> {
-        Ok(1)
     }
 
     fn apply(&self, setting: RadioSetting<'_>) -> Result<Result<(), SettingError>, Never> {
@@ -262,7 +295,7 @@ const PSDU: [u8; 11] = [0x41, 0x98, 0x01, 0x34, 0x12, 0x78, 0x56, 0xaa, 0xbb, 0,
 #[test]
 fn the_adapter_drives_a_host_model_port() {
     let port = ModelPort::new();
-    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, || Some(-71), DEFAULTS);
+    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, || 1_000, || Some(-71), DEFAULTS);
 
     let caps = block_on(radio.init()).unwrap();
     assert_eq!(
@@ -389,7 +422,7 @@ fn the_adapter_drives_a_host_model_port() {
 #[test]
 fn a_port_refusal_is_an_openthread_error() {
     let port = ModelPort::new();
-    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, || None, DEFAULTS);
+    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, || 1_000, || None, DEFAULTS);
     // Not enabled yet: the model refuses receive mode.
     assert_eq!(
         block_on(radio.set_receive(15)),
@@ -397,4 +430,35 @@ fn a_port_refusal_is_an_openthread_error() {
     );
     block_on(radio.init()).unwrap();
     assert_eq!(block_on(radio.set_receive(15)), Ok(()));
+}
+
+/// A loss of events reaches OpenThread as one failed reception after the
+/// frames received before it, and reception goes on.
+#[test]
+fn lost_events_are_a_failed_reception() {
+    let port = ModelPort::new();
+    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, || 1_000, || None, DEFAULTS);
+    block_on(radio.init()).unwrap();
+    block_on(radio.set_receive(15)).unwrap();
+    port.arrive(&PSDU[..9], 15);
+    port.lose();
+    port.arrive(&PSDU[..9], 15);
+    let mut buffer = [0; 127];
+    assert!(block_on(radio.receive(&mut buffer)).is_ok());
+    assert_eq!(
+        block_on(radio.receive(&mut buffer)),
+        Err(openthread_radio::RadioErrorKind::RxFailed)
+    );
+    assert!(block_on(radio.receive(&mut buffer)).is_ok());
+}
+
+/// `init` enables through the port's lifecycle and takes its terminal
+/// event; a second `init` finds the radio enabled.
+#[test]
+fn init_takes_the_enable_terminal_event() {
+    let port = ModelPort::new();
+    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, || 1_000, || None, DEFAULTS);
+    block_on(radio.init()).unwrap();
+    assert!(port.0.borrow().events.is_empty());
+    block_on(radio.init()).unwrap();
 }

@@ -60,7 +60,16 @@ pub(in crate::product_hil) async fn run_air_check(
             evidence.stop = Ieee802154AirCheckStop::StartFailed;
             return evidence;
         };
-        let outcome = run_cycle(&system, channel, request, &mut evidence.cycles[index]).await;
+        // The runtime's runner progresses backoffs beside the cycle.
+        let outcome = match embassy_futures::select::select(
+            run_cycle(&system, channel, request, &mut evidence.cycles[index]),
+            system.run(),
+        )
+        .await
+        {
+            embassy_futures::select::Either::First(outcome) => outcome,
+            embassy_futures::select::Either::Second(never) => match never {},
+        };
         let stopped = {
             let stopped = core::pin::pin!(client.stop(system));
             stopped.await

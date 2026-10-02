@@ -275,6 +275,7 @@ pub(in crate::product_hil) async fn run_thread(
 
     let radio: ThreadRadio = OpenThreadRadio::new(
         system.runtime(),
+        system.radio_clock(),
         system.recent_rssi_reader(),
         OpenThreadRadioDefaults::esp_idf(
             IEEE802154_DEFAULT_TX_POWER_DBM,
@@ -293,9 +294,12 @@ pub(in crate::product_hil) async fn run_thread(
     let session = async {
         // The stack's radio, alarm and tasklet loops share one large future.
         let running = core::pin::pin!(ot.run(radio));
+        // The runtime's runner progresses backoffs beside OpenThread.
+        let runner = core::pin::pin!(system.run());
         let served = core::pin::pin!(serve(&ot, &socket));
-        let stop_request = match select(running, served).await {
-            Either::First(never) => match never {},
+        let stop_request = match select(select(running, runner), served).await {
+            Either::First(Either::First(never)) => match never {},
+            Either::First(Either::Second(never)) => match never {},
             Either::Second(stop_request) => stop_request,
         };
         tracking_stop.signal(());

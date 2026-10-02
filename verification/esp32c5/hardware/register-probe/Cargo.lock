@@ -1019,6 +1019,7 @@ dependencies = [
 name = "oer-ieee802154"
 version = "0.1.0"
 dependencies = [
+ "oer-radio-port",
  "oer-time",
 ]
 
@@ -1044,6 +1045,13 @@ version = "0.1.0"
 [[package]]
 name = "oer-radio-coex"
 version = "0.1.0"
+
+[[package]]
+name = "oer-radio-port"
+version = "0.1.0"
+dependencies = [
+ "oer-time",
+]
 
 [[package]]
 name = "oer-time"

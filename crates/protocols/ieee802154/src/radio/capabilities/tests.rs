@@ -3,11 +3,19 @@ use crate::RadioInstant;
 
 #[test]
 fn unknown_bits_fail_closed_and_known_sets_round_trip() {
-    // Every bit of the image is a published capability now.
+    // The sixteen low bits are published capabilities; the wider image
+    // fails closed above them.
     for bit in 0..16 {
-        let image = 1_u16 << bit;
+        let image = 1_u32 << bit;
         assert!(RadioCapabilities::from_bits(image).is_ok());
     }
+    assert_eq!(
+        RadioCapabilities::from_bits(1 << 16),
+        Err(CapabilityBitsError {
+            bits: 1 << 16,
+            unknown: 1 << 16
+        })
+    );
     assert_eq!(
         RadioCapabilities::from_bits(RadioCapabilities::CANCEL.bits()),
         Ok(RadioCapabilities::CANCEL)

@@ -533,6 +533,21 @@ impl Ieee802154System {
         || RUNTIME.recent_rssi().ok()
     }
 
+    /// The radio clock the runtime was installed with, the epoch of
+    /// [`Ieee802154RadioPort::now`], as a function for synchronous callers
+    /// such as OpenThread's `otPlatRadioGetNow`. It is the image's
+    /// monotonic clock in microseconds, the one `embassy-time` reads.
+    pub fn radio_clock(&self) -> fn() -> u64 {
+        now_micros
+    }
+
+    /// The runtime's runner: CSMA-CA backoffs and retry delays. Poll it
+    /// beside the consumer of the runtime's events for as long as the
+    /// client runs; it never ends.
+    pub async fn run(&self) -> core::convert::Infallible {
+        RUNTIME.run().await
+    }
+
     /// Read the arbiter's coexistence table again and publish the scene
     /// levels of `config` (`esp_ieee802154_set_coex_config`). Call it after
     /// the table or the levels change; the TX/RX priority applies from the

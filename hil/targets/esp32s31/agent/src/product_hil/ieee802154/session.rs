@@ -157,6 +157,8 @@ pub(in crate::product_hil) async fn run_session(
         }
     };
     let counts = Cell::new(Ieee802154SessionMaintenanceCounts::default());
+    // The runtime's runner progresses backoffs beside the served commands.
+    let runtime = session.runtime;
     let serving = async {
         loop {
             let served = {
@@ -167,7 +169,10 @@ pub(in crate::product_hil) async fn run_session(
                     config,
                     &counts
                 ));
-                served.await
+                match embassy_futures::select::select(served, runtime.run()).await {
+                    embassy_futures::select::Either::First(served) => served,
+                    embassy_futures::select::Either::Second(never) => match never {},
+                }
             };
             match served {
                 Served::Stop(stop_request) => {

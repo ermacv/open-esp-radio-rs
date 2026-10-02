@@ -1,5 +1,7 @@
 //! Backend-to-caller observations, completion categories and receive metadata.
 
+use oer_radio_port::{LifecycleEvent, Poisoned};
+
 use super::{RadioInstant, RequestId, channel::Channel, interface::Interface};
 use crate::mac::frame::FrameView;
 
@@ -50,13 +52,20 @@ pub enum RadioEvent<'frame> {
         /// Correlation identifier from the accepted request.
         id: RequestId,
     },
-    /// Fail-closed backend fault. A valid fault disables the state machine.
+    /// Fail-closed backend fault. A valid fault disables the state machine;
+    /// the failure is recoverable, and `Enable` serves again.
     Fault {
         /// Active operation identifier, or `None` outside an operation.
         id: Option<RequestId>,
         /// Portable fault category.
         fault: RadioFault,
     },
+    /// The terminal event of a port lifecycle command
+    /// ([`Ieee802154RadioPort::lifecycle`](crate::Ieee802154RadioPort::lifecycle)).
+    Lifecycle(LifecycleEvent),
+    /// The backend's state is unknown: the terminal event of a poisoned
+    /// port, reported after every earlier event and at every later call.
+    Poisoned(Poisoned),
 }
 
 /// How a backend validated the received frame check sequence.

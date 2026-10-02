@@ -88,7 +88,10 @@ fn radio() -> (&'static Runtime, Thread) {
             .install(parts, PLATFORM, Ieee802154PibDefaults::default())
             .is_ok()
     );
-    (runtime, OpenThreadRadio::new(runtime, live_rssi, DEFAULTS))
+    (
+        runtime,
+        OpenThreadRadio::new(runtime, PLATFORM.now_micros, live_rssi, DEFAULTS),
+    )
 }
 
 /// A radio OpenThread has initialized.

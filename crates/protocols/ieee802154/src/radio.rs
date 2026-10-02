@@ -31,6 +31,16 @@ impl RequestId {
     }
 }
 
+impl oer_radio_port::Correlation for RequestId {
+    fn from_raw(raw: u32) -> Self {
+        Self(raw)
+    }
+
+    fn raw(self) -> u32 {
+        self.0
+    }
+}
+
 /// Microseconds in the backend's monotonic radio epoch.
 ///
 /// The epoch is deliberately not wall-clock time. An adapter must use one

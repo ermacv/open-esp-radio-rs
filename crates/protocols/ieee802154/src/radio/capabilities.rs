@@ -6,9 +6,9 @@ use crate::{Configuration, InterfaceSetting, TxMode};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CapabilityBitsError {
     /// Complete rejected image.
-    pub bits: u16,
+    pub bits: u32,
     /// Unknown bits from the rejected image.
-    pub unknown: u16,
+    pub unknown: u32,
 }
 
 /// Portable controller capability bitset.
@@ -17,7 +17,7 @@ pub struct CapabilityBitsError {
 /// adapters from silently publishing capabilities unknown to this contract.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[repr(transparent)]
-pub struct RadioCapabilities(u16);
+pub struct RadioCapabilities(u32);
 
 impl RadioCapabilities {
     /// No optional operation is implemented.
@@ -59,10 +59,11 @@ impl RadioCapabilities {
     /// ([`RadioCommand::Cancel`](crate::RadioCommand::Cancel)).
     pub const CANCEL: Self = Self(1 << 15);
 
-    const KNOWN: u16 = u16::MAX;
+    /// The bits this contract publishes; the image has room for more.
+    const KNOWN: u32 = (1 << 16) - 1;
 
     /// Validate a serialized capability image.
-    pub const fn from_bits(bits: u16) -> Result<Self, CapabilityBitsError> {
+    pub const fn from_bits(bits: u32) -> Result<Self, CapabilityBitsError> {
         let unknown = bits & !Self::KNOWN;
         if unknown == 0 {
             Ok(Self(bits))
@@ -72,7 +73,7 @@ impl RadioCapabilities {
     }
 
     /// Return the stable serialized image.
-    pub const fn bits(self) -> u16 {
+    pub const fn bits(self) -> u32 {
         self.0
     }
 

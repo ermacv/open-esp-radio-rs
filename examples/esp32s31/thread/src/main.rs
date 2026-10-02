@@ -160,6 +160,7 @@ async fn thread_task(
     .expect("OpenThread must initialize once");
     let thread_radio = OpenThreadRadio::new(
         system.runtime(),
+        system.radio_clock(),
         system.recent_rssi_reader(),
         OpenThreadRadioDefaults::esp_idf(
             IEEE802154_DEFAULT_TX_POWER_DBM,
@@ -167,6 +168,7 @@ async fn thread_task(
         ),
     );
     spawner.spawn(openthread_task(ot.clone(), thread_radio).expect("OpenThread task storage"));
+    spawner.spawn(runner_task(system.runtime()).expect("runner task storage"));
     spawner.spawn(role_task(ot.clone(), system, radio).expect("role task storage"));
 
     if THREAD_DATASET.is_empty() {
@@ -213,6 +215,12 @@ async fn thread_task(
             error!("the echo to {remote} failed");
         }
     }
+}
+
+/// The radio runtime's runner: CSMA-CA backoffs and retry delays.
+#[embassy_executor::task]
+async fn runner_task(runtime: &'static Ieee802154SystemRuntime) {
+    let _ = runtime.run().await;
 }
 
 #[embassy_executor::task]

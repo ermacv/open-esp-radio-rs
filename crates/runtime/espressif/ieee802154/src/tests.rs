@@ -24,8 +24,9 @@ use oer_espressif_ieee802154_engine::{
 };
 use oer_ieee802154::{
     Channel, CommandError, CslReceiver, EnhancedAckGeneration, EventsLost, FrameCounterUpdate,
-    FrameView, Ieee802154RadioPort, Interface, RadioCapabilities, RadioCommand, RadioSetting,
-    RadioState, RequestId, RestingState, SettingError, TxMode, TxRequest, TxStatus,
+    FrameView, Ieee802154RadioPort, Interface, LifecycleCommand, LifecycleError, LifecycleEvent,
+    PortError, RadioCapabilities, RadioCommand, RadioSetting, RadioState, RequestId, RestingState,
+    SettingError, TxMode, TxRequest, TxStatus,
 };
 
 use super::{
@@ -176,7 +177,7 @@ fn a_transmission_completes_through_the_event_queue() {
     );
 }
 
-/// Overflow reports the loss once and keeps the queued event.
+/// Overflow reports the loss once, after the event queued before it.
 #[test]
 fn an_overflowing_queue_reports_the_loss_once() {
     let runtime = enabled::<1>();
@@ -190,7 +191,13 @@ fn an_overflowing_queue_reports_the_loss_once() {
     for _ in 0..3 {
         runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
     }
+    assert!(matches!(
+        block_on(runtime.next_event()),
+        Ok(Ieee802154RadioEvent::Received(_))
+    ));
     assert_eq!(block_on(runtime.next_event()), Err(EventsLost));
+    // Events after the gap follow the marker.
+    runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
     assert!(matches!(
         block_on(runtime.next_event()),
         Ok(Ieee802154RadioEvent::Received(_))
@@ -209,8 +216,61 @@ fn uninstall_returns_the_parts_and_discards_events() {
         .unwrap();
     runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
     assert!(runtime.uninstall().is_some());
-    assert!(runtime.events.try_receive().is_err());
     assert_eq!(runtime.state(), Err(Ieee802154RuntimeError::NotInstalled));
+    assert_eq!(
+        runtime.state().unwrap_err().class(),
+        oer_ieee802154::FailureClass::Rejected
+    );
+    // The discarded frame stays a reported loss across a new install.
+    assert!(
+        runtime
+            .install(parts(), PLATFORM, Ieee802154PibDefaults::default())
+            .is_ok()
+    );
+    assert_eq!(block_on(runtime.next_event()), Err(EventsLost));
+    assert!(runtime.events.take().is_none());
+}
+
+/// The port's lifecycle ends each command with a terminal event; the
+/// radio has no quiesce.
+#[test]
+fn lifecycle_commands_end_with_terminal_events() {
+    let runtime = Runtime::<4>::new();
+    assert!(
+        runtime
+            .install(parts(), PLATFORM, Ieee802154PibDefaults::default())
+            .is_ok()
+    );
+    assert_eq!(runtime.lifecycle(LifecycleCommand::Enable), Ok(Ok(())));
+    assert_eq!(
+        block_on(runtime.next_event()),
+        Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Enabled))
+    );
+    assert_eq!(
+        runtime.lifecycle(LifecycleCommand::Enable),
+        Ok(Err(LifecycleError::AlreadyInState))
+    );
+    assert_eq!(
+        runtime.lifecycle(LifecycleCommand::Quiesce),
+        Ok(Err(LifecycleError::InvalidState))
+    );
+    assert_eq!(runtime.lifecycle(LifecycleCommand::Disable), Ok(Ok(())));
+    assert_eq!(
+        block_on(runtime.next_event()),
+        Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Disabled))
+    );
+    assert_eq!(runtime.state(), Ok(RadioState::Disabled));
+    assert_eq!(
+        runtime.lifecycle(LifecycleCommand::Disable),
+        Ok(Err(LifecycleError::AlreadyInState))
+    );
+    // The runtime's own identities lie in the backend-reserved range.
+    assert!(oer_ieee802154::Correlation::is_backend_reserved(
+        super::PAUSE_REQUEST
+    ));
+    assert!(oer_ieee802154::Correlation::is_backend_reserved(
+        super::LIFECYCLE_REQUEST
+    ));
 }
 
 /// The engine's software-coexistence PTIs are published while installed
@@ -325,10 +385,7 @@ fn pausing_leaves_receive_mode_and_resuming_enters_it_again() {
             channel: channel(15)
         }))
     );
-    assert!(
-        runtime.events.try_receive().is_err(),
-        "pausing emits no event"
-    );
+    assert!(runtime.events.take().is_none(), "pausing emits no event");
 }
 
 #[test]
@@ -408,7 +465,7 @@ fn an_installed_enhanced_ack_generator_answers_2015_frames() {
     image[1..11].copy_from_slice(&mac);
     runtime.model_interrupt(Some(&image), &[Ieee802154Event::RxDone]);
     assert!(
-        runtime.events.try_receive().is_err(),
+        runtime.events.take().is_none(),
         "the frame waits for its ACK"
     );
     runtime.model_interrupt(None, &[Ieee802154Event::AckTxDone]);
@@ -418,10 +475,11 @@ fn an_installed_enhanced_ack_generator_answers_2015_frames() {
     ));
 }
 
-/// `next_event` runs the CSMA-CA backoff and then starts the CCA attempt; a
+/// The runner runs the CSMA-CA backoff and then starts the CCA attempt; a
 /// busy channel backs off again, and the outcome arrives as usual.
+/// Awaiting events alone does not progress the backoff.
 #[test]
-fn next_event_runs_csma_ca_backoffs() {
+fn the_runner_runs_csma_ca_backoffs() {
     let runtime = enabled::<4>();
     runtime
         .submit(RadioCommand::Transmit(TxRequest {
@@ -443,10 +501,19 @@ fn next_event_runs_csma_ca_backoffs() {
             .lock(|installed| installed.borrow().as_ref().unwrap().hardware.command)
     };
     assert_ne!(command(), Some(Ieee802154LlCommand::CcaTxStart));
+    // Taking events only dequeues them.
+    assert!(matches!(
+        block_on(select(
+            runtime.next_event(),
+            Timer::after(Duration::from_millis(10)),
+        )),
+        Either::Second(())
+    ));
+    assert_ne!(command(), Some(Ieee802154LlCommand::CcaTxStart));
     // The backoff (21 % 8 unit periods, 1.6 ms) ends within the wait.
     let wait = || {
         block_on(select(
-            runtime.next_event(),
+            runtime.run(),
             Timer::after(Duration::from_millis(50)),
         ))
     };
@@ -474,10 +541,10 @@ fn next_event_runs_csma_ca_backoffs() {
     );
 }
 
-/// `next_event` runs the delay before a retry after a missing
+/// The runner runs the delay before a retry after a missing
 /// acknowledgement, then the retry goes out.
 #[test]
-fn next_event_runs_retry_delays() {
+fn the_runner_runs_retry_delays() {
     let runtime = enabled::<4>();
     let mut acknowledged = MAC;
     acknowledged[0] |= 0x20;
@@ -519,7 +586,7 @@ fn next_event_runs_retry_delays() {
     no_ack();
     assert_ne!(take_command(), Some(Ieee802154LlCommand::TxStart));
     let waited = block_on(select(
-        runtime.next_event(),
+        runtime.run(),
         Timer::after(Duration::from_millis(50)),
     ));
     assert!(matches!(waited, Either::Second(())));
@@ -536,15 +603,18 @@ fn next_event_runs_retry_delays() {
     );
 }
 
-/// The runtime lends the radio clock and the CSL state of the installed
-/// radio, and neither without one.
+/// The runtime reads the radio clock and the CSL state of the installed
+/// radio, and neither without one; the clock is the platform's monotonic
+/// clock.
 #[test]
 fn the_clock_and_csl_state_belong_to_the_installed_radio() {
     let runtime = Runtime::<4>::new();
-    assert_eq!(runtime.clock(), Err(Ieee802154RuntimeError::NotInstalled));
+    assert_eq!(runtime.now(), Err(Ieee802154RuntimeError::NotInstalled));
+    assert_eq!(
+        runtime.clock_info().epoch,
+        oer_ieee802154::RadioEpoch::Monotonic
+    );
     let runtime = enabled::<4>();
-    let clock = runtime.clock().unwrap();
-    assert_eq!(clock(), (PLATFORM.now_micros)());
     assert_eq!(
         runtime.now().map(oer_ieee802154::RadioInstant::as_micros),
         Ok((PLATFORM.now_micros)())
@@ -623,7 +693,7 @@ fn txrx_statistics_are_collected_on_request() {
 #[test]
 fn interface_keys_belong_to_the_interfaces_of_the_installed_radio() {
     let single = enabled::<4>();
-    assert_eq!(single.interfaces(), Ok(1));
+    assert_eq!(single.capabilities().interfaces, 1);
     assert_eq!(
         single.apply(RadioSetting::RemoveMacKeys {
             interface: Interface::new(1)
@@ -652,10 +722,11 @@ fn interface_keys_belong_to_the_interfaces_of_the_installed_radio() {
             .install(parts, PLATFORM, Ieee802154PibDefaults::default())
             .is_ok()
     );
-    assert_eq!(runtime.interfaces(), Ok(2));
+    assert_eq!(runtime.capabilities().interfaces, 2);
     assert!(
         runtime
             .capabilities()
+            .operations
             .contains(RadioCapabilities::MULTI_PAN | RadioCapabilities::CANCEL)
     );
     // Keys start from the zeroed ones and keep the counter; the counter
@@ -764,10 +835,14 @@ fn the_lease_and_a_dropped_frame_are_traced() {
 #[test]
 fn the_port_reports_the_role_capabilities() {
     let runtime = Runtime::<4>::new();
-    assert_eq!(runtime.capabilities(), IEEE802154_RADIO_CAPABILITIES);
+    assert_eq!(
+        runtime.capabilities().operations,
+        IEEE802154_RADIO_CAPABILITIES
+    );
     assert!(
         enabled::<4>()
             .capabilities()
+            .operations
             .contains(RadioCapabilities::CANCEL)
     );
 }

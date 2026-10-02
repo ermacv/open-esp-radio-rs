@@ -2438,6 +2438,7 @@ dependencies = [
 name = "oer-ieee802154"
 version = "0.1.0"
 dependencies = [
+ "oer-radio-port",
  "oer-time",
 ]
 
@@ -2507,6 +2508,13 @@ dependencies = [
  "embassy-sync 0.8.0",
  "oer-ieee80211-runtime",
  "oer-radio",
+]
+
+[[package]]
+name = "oer-radio-port"
+version = "0.1.0"
+dependencies = [
+ "oer-time",
 ]
 
 [[package]]

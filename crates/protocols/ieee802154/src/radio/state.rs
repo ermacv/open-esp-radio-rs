@@ -464,6 +464,9 @@ impl RadioStateMachine {
                 }
                 RadioState::Disabled
             }
+            // The terminal of a lifecycle command the state already took.
+            (state, RadioEvent::Lifecycle(_)) => state,
+            (_, RadioEvent::Poisoned(_)) => RadioState::Disabled,
             (state, _) => return Err(EventError::Unexpected { state }),
         };
         self.state = next;

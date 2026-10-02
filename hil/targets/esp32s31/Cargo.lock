@@ -1696,8 +1696,6 @@ dependencies = [
 name = "oer-esp32s31-bluetooth"
 version = "0.1.0"
 dependencies = [
- "critical-section",
- "embassy-sync 0.8.0",
  "oer-bluetooth-hci",
  "oer-esp32s31-bluetooth-memory",
  "oer-esp32s31-hal",
@@ -1731,7 +1729,6 @@ dependencies = [
  "embassy-sync 0.8.0",
  "embassy-time",
  "oer-bluetooth-radio",
- "oer-bluetooth-runtime",
  "oer-esp32s31-bluetooth",
  "oer-esp32s31-bluetooth-memory",
  "oer-esp32s31-bluetooth-radio",

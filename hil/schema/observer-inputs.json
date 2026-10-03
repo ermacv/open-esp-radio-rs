@@ -54,6 +54,7 @@
     "wifi/station-reconnect": false,
     "wifi/station-ap-loss": false,
     "wifi/station-ap-absence": false,
+    "wifi/station-sleep": false,
     "wifi/role": true,
     "wifi/phy-watchdog": true,
     "wifi/monitor-capture": true,

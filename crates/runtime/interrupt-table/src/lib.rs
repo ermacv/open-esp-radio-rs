@@ -14,7 +14,7 @@
 //! # let mut matrix = FakeMatrix::new(Core::Zero);
 //! // Not a token of the table: no source to enable.
 //! struct Elsewhere;
-//! let _ = oer_interrupt_table::enable(&mut matrix, __OER_INTERRUPT_TABLE, &Elsewhere);
+//! let _ = oer_interrupt_table::enable(&mut matrix, INTERRUPT_TABLE, &Elsewhere);
 //! ```
 //!
 //! ```compile_fail,E0271
@@ -48,7 +48,7 @@
 //! # oer_interrupt_table::__fake_matrix!();
 //! # let mut matrix = FakeMatrix::new(Core::Zero);
 //! let tokens = Interrupts::take().unwrap();
-//! oer_interrupt_table::enable(&mut matrix, __OER_INTERRUPT_TABLE, &tokens.timer).unwrap();
+//! oer_interrupt_table::enable(&mut matrix, INTERRUPT_TABLE, &tokens.timer).unwrap();
 //! ```
 #![no_std]
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
@@ -76,20 +76,30 @@ pub trait Matrix {
     fn slot(&self, source: Self::Source) -> usize;
 }
 
-/// One entry of an image's interrupt table.
+/// One entry of an image's interrupt table, laid out for the tools that read
+/// it from the image.
 #[derive(Debug)]
+#[repr(C)]
 pub struct Binding<S, L, C> {
     pub source: S,
     pub level: L,
     pub core: C,
-    /// The handler the vector slot of `source` holds from the link on.
-    pub handler: unsafe extern "C" fn(),
+    /// The handler the vector slot of `source` holds from the link on;
+    /// `None` (a zero word) for an entry a `cfg` leaves out of the image.
+    pub handler: Option<unsafe extern "C" fn()>,
 }
 
-/// The bindings of a matrix: an entry a `cfg` leaves out of the image is
-/// `None`.
-pub type Table<M> =
-    [Option<Binding<<M as Matrix>::Source, <M as Matrix>::Level, <M as Matrix>::Core>>];
+/// The bindings of a matrix.
+pub type Table<M> = [Binding<<M as Matrix>::Source, <M as Matrix>::Level, <M as Matrix>::Core>];
+
+/// The entries of `table` the image holds, with their handlers.
+fn present<S, L, C>(
+    table: &[Binding<S, L, C>],
+) -> impl Iterator<Item = (&Binding<S, L, C>, unsafe extern "C" fn())> {
+    table
+        .iter()
+        .filter_map(|binding| binding.handler.map(|handler| (binding, handler)))
+}
 
 /// The token of one table entry: the only way to enable or disable its source.
 ///
@@ -142,7 +152,7 @@ where
     M: Matrix,
     E: Entry<Source = M::Source, Level = M::Level, Core = M::Core>,
 {
-    if !table.iter().flatten().any(|binding| {
+    if !present(table).any(|(binding, _)| {
         binding.source == E::SOURCE && binding.level == E::LEVEL && binding.core == E::CORE
     }) {
         return Err(Error::NotInTable { source: E::SOURCE });
@@ -175,11 +185,7 @@ where
 /// As [`verify`].
 pub fn install<M: Matrix>(matrix: &mut M, table: &Table<M>) -> Result<(), MatrixError<M>> {
     let current = matrix.current_core();
-    for binding in table
-        .iter()
-        .flatten()
-        .filter(|binding| binding.core == current)
-    {
+    for (binding, _) in present(table).filter(|(binding, _)| binding.core == current) {
         matrix.silence(binding.core, binding.source);
     }
     verify(matrix, table)
@@ -193,12 +199,10 @@ pub fn install<M: Matrix>(matrix: &mut M, table: &Table<M>) -> Result<(), Matrix
 ///
 /// The first disagreement.
 pub fn verify<M: Matrix>(matrix: &M, table: &Table<M>) -> Result<(), MatrixError<M>> {
-    for (index, binding) in table.iter().enumerate() {
-        let Some(binding) = binding else { continue };
-        if table[..index]
-            .iter()
-            .flatten()
-            .any(|other| other.source == binding.source)
+    for (index, (binding, _)) in present(table).enumerate() {
+        if present(table)
+            .take(index)
+            .any(|(other, _)| other.source == binding.source)
         {
             return Err(Error::Duplicate {
                 source: binding.source,
@@ -206,12 +210,8 @@ pub fn verify<M: Matrix>(matrix: &M, table: &Table<M>) -> Result<(), MatrixError
         }
     }
     let current = matrix.current_core();
-    for binding in table
-        .iter()
-        .flatten()
-        .filter(|binding| binding.core == current)
-    {
-        if matrix.slot(binding.source) != binding.handler as usize {
+    for (binding, handler) in present(table).filter(|(binding, _)| binding.core == current) {
+        if matrix.slot(binding.source) != handler as usize {
             return Err(Error::ForeignHandler {
                 source: binding.source,
             });
@@ -229,9 +229,11 @@ pub fn verify<M: Matrix>(matrix: &M, table: &Table<M>) -> Result<(), MatrixError
     Ok(())
 }
 
-/// Declare an image's interrupt table: once per image, since it defines the
-/// `__OER_INTERRUPT_TABLE` symbol and, for each source, the strong symbol of
-/// the source's name that its vector slot holds from the link on.
+/// Declare an image's interrupt table: once per image, since it defines
+/// `INTERRUPT_TABLE` (exported as `__OER_INTERRUPT_TABLE` for the tools that
+/// read the image) and, for each source, the strong symbol of the source's
+/// name that its vector slot holds from the link on. The image hands
+/// `INTERRUPT_TABLE` to its platform's runtime.
 ///
 /// A chip's platform wraps it with its types; each entry reads
 /// `field: Token = SOURCE => handler, LEVEL, CORE;` and defines the token
@@ -303,27 +305,29 @@ macro_rules! interrupt_table {
         }
 
         /// The image's interrupt table.
-        #[unsafe(no_mangle)]
-        pub static __OER_INTERRUPT_TABLE: &[::core::option::Option<
-            $crate::Binding<$source_ty, $level_ty, $core_ty>,
-        >] = &[
-            $({
-                #[cfg(all($($cfg),*))]
-                let entry = ::core::option::Option::Some($crate::Binding {
-                    source: <$token as $crate::Entry>::SOURCE,
-                    level: <$token as $crate::Entry>::LEVEL,
-                    core: <$token as $crate::Entry>::CORE,
-                    handler: $source,
-                });
-                #[cfg(not(all($($cfg),*)))]
-                let entry = ::core::option::Option::None;
-                entry
+        #[unsafe(export_name = "__OER_INTERRUPT_TABLE")]
+        pub static INTERRUPT_TABLE: &[$crate::Binding<$source_ty, $level_ty, $core_ty>] = &[
+            $($crate::Binding {
+                source: __OerInterruptSources::$source,
+                level: __OerInterruptLevels::$level,
+                core: __OerInterruptCores::$core,
+                handler: {
+                    #[cfg(all($($cfg),*))]
+                    let handler = ::core::option::Option::Some(
+                        $source as unsafe extern "C" fn(),
+                    );
+                    #[cfg(not(all($($cfg),*)))]
+                    let handler = ::core::option::Option::None;
+                    handler
+                },
             },)*
         ];
     };
 }
 
-/// The strong symbol of one source, whose name its vector slot links to.
+/// The strong symbol of one source, whose name its vector slot links to, and
+/// `__oer_interrupt_body_<source>`, the address of the handler it calls, for
+/// the tools that check where the handler lies.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __interrupt_handler {
@@ -334,6 +338,12 @@ macro_rules! __interrupt_handler {
         extern "C" fn $source() {
             $handler()
         }
+
+        const _: () = {
+            #[used]
+            #[unsafe(export_name = concat!("__oer_interrupt_body_", stringify!($source)))]
+            static BODY: fn() = $handler;
+        };
     };
 }
 
@@ -367,6 +377,7 @@ macro_rules! __fake_matrix {
         pub enum Source {
             Timer,
             Radio,
+            Absent,
         }
         #[derive(Clone, Copy, Debug, Eq, PartialEq)]
         pub enum Level {
@@ -382,21 +393,23 @@ macro_rules! __fake_matrix {
         /// Routes by core and source, and the vector slots by source.
         pub struct FakeMatrix {
             pub current: Core,
-            pub routes: [[Option<Level>; 2]; 2],
-            pub slots: [usize; 2],
+            pub routes: [[Option<Level>; 3]; 2],
+            pub slots: [usize; 3],
         }
 
         impl FakeMatrix {
             /// Every source routed to level two on both cores, every slot
             /// holding what the link put there.
             pub fn new(current: Core) -> Self {
-                let mut slots = [0; 2];
-                for binding in __OER_INTERRUPT_TABLE.iter().flatten() {
-                    slots[binding.source as usize] = binding.handler as usize;
+                let mut slots = [0; 3];
+                for binding in INTERRUPT_TABLE {
+                    if let Some(handler) = binding.handler {
+                        slots[binding.source as usize] = handler as usize;
+                    }
                 }
                 Self {
                     current,
-                    routes: [[Some(Level::Two); 2]; 2],
+                    routes: [[Some(Level::Two); 3]; 2],
                     slots,
                 }
             }

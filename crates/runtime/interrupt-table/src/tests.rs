@@ -5,7 +5,7 @@ crate::__fake_matrix!();
 #[test]
 fn install_silences_the_current_core_s_sources_and_checks_their_slots() {
     let mut matrix = FakeMatrix::new(Core::Zero);
-    install(&mut matrix, __OER_INTERRUPT_TABLE).unwrap();
+    install(&mut matrix, INTERRUPT_TABLE).unwrap();
     // The timer is core zero's entry; core one's radio is not core zero's to
     // touch.
     assert_eq!(matrix.routed(Core::Zero, Source::Timer), None);
@@ -14,7 +14,7 @@ fn install_silences_the_current_core_s_sources_and_checks_their_slots() {
     let mut matrix = FakeMatrix::new(Core::Zero);
     matrix.slots[Source::Timer as usize] = 0x1234;
     assert_eq!(
-        install(&mut matrix, __OER_INTERRUPT_TABLE),
+        install(&mut matrix, INTERRUPT_TABLE),
         Err(Error::ForeignHandler {
             source: Source::Timer
         })
@@ -27,16 +27,16 @@ fn a_token_routes_its_source_to_its_level_on_its_core_alone() {
     assert!(Interrupts::take().is_none());
 
     let mut matrix = FakeMatrix::new(Core::Zero);
-    install(&mut matrix, __OER_INTERRUPT_TABLE).unwrap();
-    enable(&mut matrix, __OER_INTERRUPT_TABLE, &tokens.timer).unwrap();
+    install(&mut matrix, INTERRUPT_TABLE).unwrap();
+    enable(&mut matrix, INTERRUPT_TABLE, &tokens.timer).unwrap();
     assert_eq!(matrix.routed(Core::Zero, Source::Timer), Some(Level::One));
-    verify(&matrix, __OER_INTERRUPT_TABLE).unwrap();
+    verify(&matrix, INTERRUPT_TABLE).unwrap();
     disable(&mut matrix, &tokens.timer);
     assert_eq!(matrix.routed(Core::Zero, Source::Timer), None);
 
     // The radio belongs to core one.
     assert_eq!(
-        enable(&mut matrix, __OER_INTERRUPT_TABLE, &tokens.radio),
+        enable(&mut matrix, INTERRUPT_TABLE, &tokens.radio),
         Err(Error::WrongCore {
             source: Source::Radio,
             core: Core::One,
@@ -58,10 +58,10 @@ fn a_token_routes_its_source_to_its_level_on_its_core_alone() {
 #[test]
 fn verify_rejects_a_source_routed_to_another_level() {
     let mut matrix = FakeMatrix::new(Core::Zero);
-    install(&mut matrix, __OER_INTERRUPT_TABLE).unwrap();
+    install(&mut matrix, INTERRUPT_TABLE).unwrap();
     matrix.route(Source::Timer, Level::Two);
     assert_eq!(
-        verify(&matrix, __OER_INTERRUPT_TABLE),
+        verify(&matrix, INTERRUPT_TABLE),
         Err(Error::WrongLevel {
             source: Source::Timer,
             level: Level::Two
@@ -73,18 +73,18 @@ fn verify_rejects_a_source_routed_to_another_level() {
 fn a_table_lists_each_source_once() {
     let matrix = FakeMatrix::new(Core::Zero);
     let twice = [
-        Some(crate::Binding {
+        crate::Binding {
             source: Source::Timer,
             level: Level::One,
             core: Core::Zero,
-            handler: Timer,
-        }),
-        Some(crate::Binding {
+            handler: Some(Timer as unsafe extern "C" fn()),
+        },
+        crate::Binding {
             source: Source::Timer,
             level: Level::One,
             core: Core::Zero,
-            handler: Timer,
-        }),
+            handler: Some(Timer as unsafe extern "C" fn()),
+        },
     ];
     assert_eq!(
         verify(&matrix, &twice),
@@ -96,6 +96,7 @@ fn a_table_lists_each_source_once() {
 
 #[test]
 fn an_entry_its_cfg_leaves_out_has_no_binding() {
-    assert_eq!(__OER_INTERRUPT_TABLE.len(), 3);
-    assert!(__OER_INTERRUPT_TABLE[2].is_none());
+    assert_eq!(INTERRUPT_TABLE.len(), 3);
+    assert_eq!(INTERRUPT_TABLE[2].source, Source::Absent);
+    assert!(INTERRUPT_TABLE[2].handler.is_none());
 }

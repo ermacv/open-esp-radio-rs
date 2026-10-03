@@ -206,7 +206,10 @@ pub struct TsfGeneration {
 /// sample keeps the generation: [`TSF_DRIFT_PPM`] of the time since then,
 /// rounded up, plus the sample's uncertainty. A beacon follow after missed
 /// beacons corrects more drift and stays within it; a larger set, and the
-/// first one, is a jump and starts a new generation.
+/// first one, is a jump and starts a new generation. The TSF is not modular
+/// here: a set to a value across 2^64, or one after the counter passed 2^64
+/// since the last sample (a reading below it), is a jump, so the instants of
+/// one generation always compare in order.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TsfRelation {
     generation: TsfGeneration,
@@ -263,9 +266,11 @@ impl TsfRelation {
     /// it, to `value`.
     pub fn set(&mut self, current: TsfInstant, value: TsfInstant) -> TsfSetKind {
         let kind = match self.last_sample {
+            // The counter only advances from the last set: a reading below
+            // it passed 2^64.
+            Some(last) if current < last => TsfSetKind::Jump,
             Some(last) => {
-                let elapsed =
-                    Duration::from_micros(current.as_micros().saturating_sub(last.as_micros()));
+                let elapsed = Duration::from_micros(current.as_micros() - last.as_micros());
                 let moved = value.as_micros().abs_diff(current.as_micros());
                 if moved <= self.tolerance(elapsed).as_micros() {
                     TsfSetKind::Drift

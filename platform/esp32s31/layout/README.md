@@ -10,7 +10,7 @@ the host packer and image auditor in [`oer-esp32s31-firmware`](../../../tools/fi
 | --- | --- |
 | `memory` | SRAM, Flash XIP and PSRAM regions, the second-stage loader bound, the bootstrap PSRAM probe page, the stage-two PSRAM window and stack sizes |
 | `stage_two` | The little-endian image `Header`, its magic, ABI version and size, and the payload CRC-32 with the checksum field read as zero |
-| `build` (feature `build`) | `configure_runtime` and `configure_bootstrap`, which link a binary with the scripts under [`linker`](../linker) and define every layout value as a `--defsym` symbol |
+| `build` (feature `build`) | `configure_runtime` and `configure_bootstrap`, which link a binary with the scripts under [`linker`](../linker), define every layout value as a `--defsym` symbol and keep the link's relocations in the ELF (`--emit-relocs`) for the stack analysis |
 
 The linker scripts contain no addresses or header constants of their own; they
 read `SRAM_ORIGIN`, `RUNTIME_PSRAM_ORIGIN`, `STAGE_TWO_MAGIC` and the other

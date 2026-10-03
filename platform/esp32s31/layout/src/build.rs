@@ -24,7 +24,10 @@ fn link(bin: &str, linker_dir: &Path, scripts: &[&str], entry: &str) {
         println!("cargo:rerun-if-changed={}", path.display());
     }
     println!("cargo:rustc-link-search={}", linker_dir.display());
-    for argument in ["-Trom/esp32s31-eco0.x", entry, "--nmagic"] {
+    // `--emit-relocs` keeps the link's relocations in the ELF: the stack
+    // analysis reads jump tables, function addresses and calls from them
+    // instead of reconstructing them from machine code.
+    for argument in ["-Trom/esp32s31-eco0.x", entry, "--nmagic", "--emit-relocs"] {
         println!("cargo:rustc-link-arg-bin={bin}={argument}");
     }
     for (name, region) in [("SRAM", memory::SRAM), ("PSRAM", memory::PSRAM)] {

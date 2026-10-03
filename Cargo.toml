@@ -8,6 +8,7 @@ members = [
     "tools/chip-profile",
     "tools/command-tree",
     "tools/firmware",
+    "tools/image-linker",
     "tools/symbol-lineage",
     "tools/tidy",
     "verification/esp32s31/hardware/calibration",

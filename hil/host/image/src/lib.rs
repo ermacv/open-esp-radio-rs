@@ -311,7 +311,7 @@ pub fn check(root: &Path, class: oer_hil_image_class::ImageClass) -> Result<()> 
         .arg("--release")
         .env("CARGO_TARGET_DIR", cache.join("runtime"));
     lock.configure(&mut command);
-    crate::stack::configure_image_compiler(&mut command, &stack_budget, &target);
+    crate::stack::configure_image_compiler(&mut command, &stack_budget, &target)?;
     ensure_fetched(
         root,
         &root.join("hil/targets/esp32s31/Cargo.toml"),
@@ -612,7 +612,7 @@ fn build_resolved(
     add_local_esp_hal_patches(&mut runtime, local_esp_hal);
     add_local_embassy_patches(&mut runtime, local_embassy);
     add_local_xarxa_patches(&mut runtime, local_xarxa);
-    crate::stack::configure_image_compiler(&mut runtime, &stack_budget, &target);
+    crate::stack::configure_image_compiler(&mut runtime, &stack_budget, &target)?;
     if !overridden {
         ensure_fetched(root, &manifest, |command| runtime_lock.configure(command))?;
     }
@@ -668,7 +668,7 @@ fn build_resolved(
     }
     bootstrap_lock.configure(&mut bootstrap);
     add_bootstrap_patches(&mut bootstrap, local_esp_hal);
-    crate::stack::configure_image_compiler(&mut bootstrap, &stack_budget, &target);
+    crate::stack::configure_image_compiler(&mut bootstrap, &stack_budget, &target)?;
     if local_esp_hal.is_none() {
         ensure_fetched(
             root,

@@ -45,7 +45,8 @@ production code against the real source artifact; do not assert equivalence
 by comparing a table with a duplicate fixture. Preserve applicable attribution
 and license notices.
 
-Every vendor function a `SOURCE:` block, register-model evidence source or
+Every vendor function a `SOURCE:` block, ROM function summary
+(`platform/<chip>/linker/rom/functions.toml`), register-model evidence source or
 register or field description names is registered with the
 relocation-normalized code fingerprint of the revision its facts were reviewed
 against (`verification/<chip>/facts/provenance.toml`). A pin update

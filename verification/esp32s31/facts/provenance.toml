@@ -5362,6 +5362,12 @@ decisions = ["coverage.toml"]
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "memset"
+code = "568f1d35e758ab82126426a68435e6740e2f192dcf667e24fcbe281a33fd9388"
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "phy_adc_rate_set"
 code = "01ce36bfdab120f8ecb69ea1b1d0ec482f5ee3c23c9ad49697a85fea9efefa1e"
 

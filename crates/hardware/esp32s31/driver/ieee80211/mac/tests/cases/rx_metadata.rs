@@ -20,6 +20,16 @@ fn rx_phy_info_matches_the_pinned_s31_public_metadata_layout() {
 }
 
 #[test]
+fn rx_local_timestamp_is_the_little_endian_word_after_the_group_flag() {
+    let mut metadata = [0_u8; 0x40];
+    metadata[0x0b] = 0xff;
+    metadata[0x0c..0x10].copy_from_slice(&0x8765_4321_u32.to_le_bytes());
+    metadata[0x10] = 0xff;
+    assert_eq!(decode_rx_local_timestamp(&metadata), Some(0x8765_4321));
+    assert_eq!(decode_rx_local_timestamp(&metadata[..0x0f]), None);
+}
+
+#[test]
 fn staged_rx_metadata_decodes_only_instruction_proved_s31_fields() {
     let mut metadata = [0_u8; 0x40];
     metadata[0] = (-47_i8) as u8;

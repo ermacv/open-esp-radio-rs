@@ -22,5 +22,5 @@ mod system;
 #[cfg(target_arch = "riscv32")]
 pub use system::{RadioStart, RadioStartError, Schedule, SharedRadio, Tracking, start};
 
-pub use oer_esp32s31_hal::root::ConcurrentPartitions;
+pub use oer_esp32s31_hal::root::{ConcurrentPartitions, MacLocalTime};
 pub use oer_esp32s31_phy::PhyCalibrationCache;

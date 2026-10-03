@@ -104,6 +104,7 @@ const RX_PHY_RATE_OFFSET: usize = 0x01;
 const RX_PHY_RSSI_OFFSET: usize = 0x00;
 const RX_PHY_HE_SIGA1_OFFSET: usize = 0x04;
 const RX_PHY_HE_SIGA2_OFFSET: usize = 0x09;
+const RX_LOCAL_TIMESTAMP_OFFSET: usize = 0x0c;
 const RX_PHY_SINGLE_MPDU_OFFSET: usize = 0x1f;
 const RX_PHY_BB_FORMAT_OFFSET: usize = 0x25;
 const RX_PHY_HE_MU_RU_SIZE_OFFSET: usize = 0x1a;
@@ -783,6 +784,23 @@ impl RxPhyInfo {
             RxBasebandFormat::Ht | RxBasebandFormat::Unknown(_) => None,
         }
     }
+}
+
+/// The receive timestamp of the S31 RX-control prefix: the Wi-Fi MAC local
+/// time (`WIFI_MAC_LOCAL_TIME`) the hardware recorded for this frame, a
+/// wrapping 32-bit value in the counter's unit.
+///
+/// SOURCE: public ESP32-S31 `esp_wifi_rxctrl_t` definition. The packed ABI
+/// places the 32-bit `timestamp` at bytes 12..16, after `is_group` in byte
+/// 11; vendor `lmacAdjustTimestamp` reads and rewrites the same word
+/// relative to the local-time counter.
+pub fn decode_rx_local_timestamp(buffer: &[u8]) -> Option<u32> {
+    Some(u32::from_le_bytes(
+        buffer
+            .get(RX_LOCAL_TIMESTAMP_OFFSET..RX_LOCAL_TIMESTAMP_OFFSET + 4)?
+            .try_into()
+            .ok()?,
+    ))
 }
 
 /// Decode the finite PHY-rate view without interpreting the format-specific

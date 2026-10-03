@@ -112,6 +112,7 @@ async fn main(
         wifi: _wifi,
         bluetooth,
         ieee802154: _ieee802154,
+        mac_local_time: _,
     } = partitions;
     let Ok(parked) = BluetoothParked::new(bluetooth) else {
         super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-memory\r\n");

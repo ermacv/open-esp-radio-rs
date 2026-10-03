@@ -380,3 +380,8 @@ fn a_dtim_change_rescales_the_listen_interval_and_reprograms_max_modem() {
     // Ten beacons against a DTIM of three: nine.
     assert_eq!(interval, Some(9 * BI));
 }
+
+#[test]
+fn the_listen_interval_starts_at_one_beacon_as_pm_attach_sets_it() {
+    assert_eq!(ModemSleep::new(SleepType::None).listen_interval_beacons, 1);
+}

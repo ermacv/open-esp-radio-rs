@@ -435,7 +435,8 @@ pub struct ModemSleep {
     /// `[11]`
     dtim_period: u8,
     /// `[34]`: the listen interval in beacons, rounded to the DTIM
-    /// (`scale_listen_interval`); max-modem's TBTT interval.
+    /// (`scale_listen_interval`); max-modem's TBTT interval. `pm_attach`
+    /// starts it at one.
     listen_interval_beacons: u16,
     /// `[12]`: the overall period the TBTT interval was last derived from.
     tbtt_period: u8,
@@ -491,7 +492,7 @@ impl ModemSleep {
             beacon_parsed: false,
             beacon_interval_micros: DEFAULT_BEACON_INTERVAL_MICROS,
             dtim_period: 1,
-            listen_interval_beacons: 0,
+            listen_interval_beacons: 1,
             tbtt_period: 0,
             slice_end: 0,
             slice_deadline: 0,
@@ -1196,8 +1197,13 @@ impl ModemSleep {
     /// one: the vendor's sets it to the listen interval or the DTIM when its
     /// configuration byte `g_pm_cfg[86]` is set, not modelled). Its tail
     /// call `pm_on_sample_beacon` serves the beacon-offset feature, which
-    /// this model does not run. Callers: `pm_start` (DTIM 1) and
+    /// this model does not run. Callers here: `pm_start` (DTIM 1) and
     /// `pm_parse_beacon` (first beacon, beacon interval or DTIM change).
+    /// The vendor also rescales when a probe response carries a new beacon
+    /// interval (`pm_on_probe_resp_rx`, which this model does not handle)
+    /// and when the listen interval is reconfigured while associated
+    /// (`ic_update_listen_interval`; here the power mode is fixed for a
+    /// whole association).
     fn scale_listen_interval(&mut self, coex: CoexView, actions: &mut PmActions) {
         let scaled = scaled_listen_interval(
             self.sleep_type.listen_interval().get(),

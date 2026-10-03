@@ -4021,6 +4021,12 @@ code = "6892eb7f2e0c17e9734dc7fa8ce20211172868b6466cf5a24445c59aa5c4c918"
 [[function]]
 artifact = "libpp"
 member = "if_hwctrl.o"
+symbol = "ic_update_listen_interval"
+code = "7caec59be316cd22dade694630367e34cfc664c6b72bc7974603cae37da3ea29"
+
+[[function]]
+artifact = "libpp"
+member = "if_hwctrl.o"
 symbol = "ic_update_sta_tsf"
 code = "67358168a25e4ebfbfe50209914508741ba02792eb115ee79873075696a2cb6e"
 
@@ -4223,6 +4229,12 @@ artifact = "libpp"
 member = "pm.o"
 symbol = "pm_on_coex_start"
 code = "9cd22e467d052cfa15a326431b7b3f171db31d67eae8a51301fd40c0ef48897f"
+
+[[function]]
+artifact = "libpp"
+member = "pm.o"
+symbol = "pm_on_probe_resp_rx"
+code = "6841958b66214cb8506c79233025440bd8d6f6df59d750c2d247a9a595cb105e"
 
 [[function]]
 artifact = "libpp"

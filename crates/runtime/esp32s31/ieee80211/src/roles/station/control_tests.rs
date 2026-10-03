@@ -501,6 +501,7 @@ fn make_tx<'a>(
             config: SingleMpduTxConfig {
                 station_address: STATION,
                 bssid: BSSID,
+                ssid: oer_ieee80211_mac::ssid::WifiSsid::new(b"test").unwrap(),
                 peer_qos: true,
                 management_protection: false,
                 access_category: WmmAccessCategory::BestEffort,

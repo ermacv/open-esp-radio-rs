@@ -98,6 +98,9 @@ impl StaPeerStation {
 pub struct StaConnectedLink {
     pub station_address: [u8; 6],
     pub bssid: [u8; 6],
+    /// The SSID the station associated with: the configured SSID the
+    /// selected candidate matched (`ScanTable` selects by it).
+    pub ssid: oer_ieee80211_mac::ssid::WifiSsid,
     pub association_id: u16,
     pub beacon_interval_tu: u16,
     /// The access point's timestamp in the beacon or probe response the
@@ -162,6 +165,8 @@ pub enum StaPeerPortError {
     AssociationWmm(EdcaParametersError),
     He20(He20InstallError),
     RateControl(MacHeBeamformingReportProfileError),
+    /// The selected candidate carries no valid SSID.
+    Ssid(oer_ieee80211_mac::ssid::WifiSsidError),
 }
 
 /// Stateless namespace for the two finite peer-policy transactions.
@@ -201,6 +206,10 @@ impl StaPeerPort {
         H: StaNoiseFloorHardware + He20PeerHardware + BeamformingReportHardware,
         T: StaPeerTransmit,
     {
+        // Before any hardware write: the connected link probes the access
+        // point with the SSID it associated with.
+        let ssid = oer_ieee80211_mac::ssid::WifiSsid::new(prepared.access_point.ssid_bytes())
+            .map_err(StaPeerPortError::Ssid)?;
         let noise_floor_dbm = radio.hardware.read_noise_floor_dbm();
         let plan = prepared
             .policy
@@ -255,6 +264,7 @@ impl StaPeerPort {
         let link = StaConnectedLink {
             station_address: station.station_address,
             bssid: prepared.access_point.bssid,
+            ssid,
             association_id: response.association_id,
             beacon_interval_tu: prepared.access_point.beacon_interval_tu,
             beacon_timestamp_tsf: prepared.access_point.timestamp,

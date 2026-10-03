@@ -45,6 +45,7 @@ fn peer() -> ConnectedStaPeer {
         link: StaConnectedLink {
             station_address: [1, 2, 3, 4, 5, 6],
             bssid: [7, 8, 9, 10, 11, 12],
+            ssid: oer_ieee80211_mac::ssid::WifiSsid::new(b"test").unwrap(),
             association_id: 7,
             beacon_interval_tu: 100,
             beacon_timestamp_tsf: 0,

@@ -67,6 +67,9 @@ use oer_esp32s31_ieee80211::tx::{WifiTxProgress, WifiTxWake};
 pub struct SingleMpduTxConfig {
     pub station_address: [u8; 6],
     pub bssid: [u8; 6],
+    /// The SSID the station associated with, which its reachability probes
+    /// name.
+    pub ssid: oer_ieee80211_mac::ssid::WifiSsid,
     pub peer_qos: bool,
     /// The association protects its robust management frames, so robust
     /// Action frames leave under the pairwise key.
@@ -1059,9 +1062,15 @@ where
         result
     }
 
-    /// Encode and publish one AP reachability Probe Request: to the access
-    /// point's address when `directed`, to the broadcast address otherwise
-    /// (as the destination and the BSSID).
+    /// Encode and publish one AP reachability Probe Request naming the
+    /// association's SSID: to the access point's address when `directed`,
+    /// to the broadcast address otherwise (as the destination and the
+    /// BSSID).
+    ///
+    /// SOURCE(esp32s31): complete `libnet80211.a[wl_cnx.o]::send_ap_probe`
+    /// passes the configured SSID (`g_wifi_nvs`) to
+    /// `ieee80211_send_probereq` for either address; a hidden-SSID access
+    /// point answers only a Probe Request that names its SSID.
     ///
     /// TX completion is not reachability evidence: connected control waits
     /// for a BSSID-validated Probe Response or beacon before cancelling its
@@ -1089,7 +1098,7 @@ where
                 source: self.config.station_address,
                 bssid: address,
                 sequence_number,
-                ssid: b"",
+                ssid: self.config.ssid.as_bytes(),
                 supported_rates: BASIC_RATES,
             }
             .encode(&mut buffer[TX_METADATA_SIZE..])

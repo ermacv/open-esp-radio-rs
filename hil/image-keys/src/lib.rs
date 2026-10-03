@@ -53,6 +53,11 @@ pub fn image_keys(enabled: &dyn Fn(&str) -> bool) -> ImageKeys {
         add(system::WatchdogArmed::KEY, true);
         return sorted(keys);
     }
+    if enabled("system-panic-reset") {
+        add(system::InjectPanic::KEY, true);
+        add(system::PanicInjected::KEY, true);
+        return sorted(keys);
+    }
     if enabled("bluetooth-radio") && !enabled("open-radio-hil") {
         if enabled("bluetooth-secure-gatt") {
             add(bluetooth::SecureGatt::KEY, true);
@@ -150,6 +155,7 @@ fn sorted(mut keys: ImageKeys) -> ImageKeys {
 /// runtime manifest declares each of them.
 pub const READ_FEATURES: &[&str] = &[
     "system-watchdog",
+    "system-panic-reset",
     "bluetooth-radio",
     "open-radio-hil",
     "bluetooth-secure-gatt",
@@ -192,6 +198,8 @@ mod tests {
     fn the_family_follows_the_image_s_features() {
         let watchdog = with(&["system-watchdog"]);
         assert!(has::<system::WatchdogTest>(&watchdog) && !has::<network::Udp>(&watchdog));
+        let panic = with(&["system-panic-reset"]);
+        assert!(has::<system::InjectPanic>(&panic) && !has::<system::WatchdogTest>(&panic));
         let dtm = with(&["bluetooth-radio"]);
         assert!(has::<bluetooth::Dtm>(&dtm) && has::<bluetooth::Hci>(&dtm));
         assert!(!has::<network::Udp>(&dtm));
@@ -213,6 +221,7 @@ mod tests {
     fn every_image_serves_the_base_module() {
         for features in [
             &["system-watchdog"][..],
+            &["system-panic-reset"],
             &["bluetooth-radio"],
             &["open-radio-hil"],
         ] {

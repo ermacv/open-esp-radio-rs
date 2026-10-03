@@ -1164,6 +1164,7 @@ fn audit_radio_observers<'a>(
     if matches!(
         class,
         ImageClass::SystemWatchdog
+            | ImageClass::SystemPanicReset
             | ImageClass::BluetoothGatt
             | ImageClass::BluetoothSecureGatt
             | ImageClass::BluetoothDtm

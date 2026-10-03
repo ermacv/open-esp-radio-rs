@@ -19,6 +19,8 @@ crate::messages! {
     property MemoryBenchmark = "system/memory-benchmark";
     endpoint InjectHang = "system/hang/inject" => crate::system::HangInjected;
     topic HangInjected = "system/hang/injected";
+    endpoint InjectPanic = "system/panic/inject" => crate::system::PanicInjected;
+    topic PanicInjected = "system/panic/injected";
     endpoint GetStacks = "system/stacks/get" => crate::system::Stacks;
     topic Stacks = "system/stacks";
     endpoint GetInterruptStacks = "system/interrupt-stacks/get" => crate::system::InterruptStacks;
@@ -74,6 +76,15 @@ pub struct InjectHang(pub crate::system::HangTarget);
 /// The stall is armed; the chip resets once the watchdog detects it.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
 pub struct HangInjected(pub crate::system::HangTarget);
+
+/// Diagnostic: panic in thread context once the acknowledgement is out, so
+/// the platform's panic entry records the panic and resets the chip.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
+pub struct InjectPanic;
+
+/// The panic follows this acknowledgement.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
+pub struct PanicInjected;
 
 /// Return the boot-lifetime CPU stack high-water marks. This diagnostic
 /// query is valid only outside an active traffic session.

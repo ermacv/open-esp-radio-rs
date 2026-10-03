@@ -16,8 +16,25 @@ phy-trace = ["oer-esp32s31-phy?/trace", "trace-snapshots"]
 # Experimental direct RX-gain transaction SRAM placement for an otherwise
 # identical diagnostic image.
 phy-rx-hot-sram = ["oer-esp32s31-phy?/rx-gain-hot-sram", "oer-esp32s31-ieee80211-system?/phy-rx-hot-sram"]
-boot-smoke = []
+# The HIL report of a panic instead of the product's record-and-reset; every
+# image but `system-panic-reset` has it.
+panic-diagnostics = ["oer-esp32s31-platform-runtime/panic-diagnostics"]
+boot-smoke = ["panic-diagnostics"]
 system-watchdog = [
+    "panic-diagnostics",
+    "dep:oer-hil-protocol",
+    "oer-hil-protocol?/system",
+    "dep:embassy-futures",
+    "dep:embassy-sync",
+    "dep:log",
+    "dep:oer-hil-agent",
+    "dep:oer-hil-image-keys",
+    "dep:heapless",
+    "dep:critical-section",
+]
+# The product panic entry alone: a panic records itself and resets the chip,
+# and the next boot reports the record.
+system-panic-reset = [
     "dep:oer-hil-protocol",
     "oer-hil-protocol?/system",
     "dep:embassy-futures",
@@ -36,6 +53,7 @@ owned-network = ["dep:embassy-net-owned", "dep:oer-embassy-net-owned", "dep:xarx
 # Direct Test Mode image serves the `bluetooth-dtm-*` scenarios; the GATT
 # images run the Trouble Host and the GATT application.
 bluetooth-radio = [
+    "panic-diagnostics",
     "oer-hil-protocol?/bluetooth",
     "dep:oer-bluetooth-controller",
     "dep:oer-bluetooth-hci",
@@ -70,6 +88,7 @@ bluetooth-secure-gatt = [
     "oer-hil-agent/secure-gatt",
 ]
 open-radio-hil = [
+    "panic-diagnostics",
     "oer-hil-protocol?/wifi",
     "oer-hil-agent?/wifi",
     "dep:oer-ieee80211-softmac",
@@ -303,7 +322,7 @@ oer-hil-protocol = { workspace = true, optional = true, features = ["async-io"] 
 oer-hil-agent = { path = "../../../agent", optional = true, default-features = false }
 oer-hil-image-keys = { workspace = true, optional = true }
 oer-hil-trace.workspace = true
-oer-esp32s31-platform-runtime = { path = "../../../../platform/esp32s31/runtime", features = ["panic-diagnostics"] }
+oer-esp32s31-platform-runtime = { path = "../../../../platform/esp32s31/runtime" }
 oer-hil-esp32s31-telemetry = { workspace = true, optional = true }
 oer-ieee80211-runtime = { workspace = true, optional = true }
 oer-esp32s31-hil-calibration-artifact = { path = "../calibration-artifact", optional = true }

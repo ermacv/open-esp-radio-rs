@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "kebab-case")]
 pub enum ImageClass {
     SystemWatchdog,
+    /// The radio-free image with the product panic entry alone, without the
+    /// HIL panic report: a panic records itself and resets the chip.
+    SystemPanicReset,
     BluetoothDtm,
     BluetoothGatt,
     BluetoothSecureGatt,
@@ -46,6 +49,7 @@ impl ImageClass {
         if matches!(
             self,
             Self::SystemWatchdog
+                | Self::SystemPanicReset
                 | Self::BluetoothGatt
                 | Self::BluetoothSecureGatt
                 | Self::BluetoothDtm
@@ -56,10 +60,11 @@ impl ImageClass {
         }
     }
 
-    pub const ALL: [Self; 25] = [
+    pub const ALL: [Self; 26] = [
         Self::BluetoothSecureGatt,
         Self::BluetoothGatt,
         Self::SystemWatchdog,
+        Self::SystemPanicReset,
         Self::BluetoothDtm,
         Self::BootSmoke,
         Self::Performance,
@@ -112,6 +117,7 @@ impl ImageClass {
     pub const fn id(self) -> &'static str {
         match self {
             Self::SystemWatchdog => "system-watchdog",
+            Self::SystemPanicReset => "system-panic-reset",
             Self::BluetoothDtm => "bluetooth-dtm",
             Self::BluetoothGatt => "bluetooth-gatt",
             Self::BluetoothSecureGatt => "bluetooth-secure-gatt",
@@ -153,6 +159,7 @@ impl ImageClass {
             Self::BluetoothGatt => "bluetooth-gatt",
             Self::BluetoothSecureGatt => "bluetooth-secure-gatt",
             Self::SystemWatchdog => "system-watchdog",
+            Self::SystemPanicReset => "system-panic-reset",
             Self::BluetoothDtm => "bluetooth-hil,phy-rx-hot-sram",
             Self::BootSmoke => "boot-smoke",
             Self::Performance => "open-radio-hil",
@@ -193,6 +200,7 @@ impl ImageClass {
         !matches!(
             self,
             Self::SystemWatchdog
+                | Self::SystemPanicReset
                 | Self::BluetoothGatt
                 | Self::BluetoothSecureGatt
                 | Self::BluetoothDtm

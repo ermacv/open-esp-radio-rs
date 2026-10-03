@@ -36,6 +36,7 @@ impl Platform for Chip {
             reset_reason: ResetReason::Software,
             raw_reset_reason: 3,
             post_mortem: None,
+            platform_panic: None,
         }
     }
 

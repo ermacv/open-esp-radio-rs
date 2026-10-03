@@ -69,6 +69,7 @@
     "system/boot-smoke": false,
     "system/watchdog": true,
     "system/hang-watchdog": true,
+    "system/panic-reset": true,
     "system/memory-benchmark": true,
     "system/timebase": true,
     "ieee802154/event-status": false,

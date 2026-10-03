@@ -568,6 +568,7 @@ mod tests {
                 checkpoints: 1,
                 fault,
             }),
+            platform_panic: None,
         }
     }
 

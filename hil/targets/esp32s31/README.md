@@ -401,7 +401,7 @@ Each image enables only the HIL protocol families it serves
 ([radio families](../../protocol/README.md#radio-families)), so its build, and
 the evidence bound to its sources, reads only their protocol modules: the
 Bluetooth images the `bluetooth` family, the radio-free `system-watchdog`
-image the `system` family, and the Wi-Fi images the `wifi` family, each with
+and `system-panic-reset` images the `system` family, and the Wi-Fi images the `wifi` family, each with
 the shared core. The IEEE 802.15.4 images and the memory benchmark image are
 built on the Wi-Fi runtime (`product_hil`, its console and `oer-hil-agent`'s
 `wifi` modules), so they also compile the `wifi` family and about thirty
@@ -416,7 +416,11 @@ Every image links one `oer-trace` trace in RTC fast memory beside the
 post-mortem record (`runtime/src/trace.rs`): 512 entries, and two 1024-word
 snapshot slots only with the `trace-snapshots` feature. The hang watchdog and
 the panic report, which the platform's panic entry calls through its
-`panic-diagnostics` hook, freeze it before the reset; the next boot holds the frozen
+`panic-diagnostics` hook, freeze it before the reset; every image but
+`system-panic-reset` has that hook (the agent's `panic-diagnostics` feature,
+which each image's base feature enables), and that image runs the product
+panic entry alone, so the `system-panic-reset` scenario exercises the
+product's record-and-reset path; the next boot holds the frozen
 trace for the host, which pages it out through the
 [trace commands](../../protocol/diagnostics.md#event-trace). The
 `station-exit-evidence` feature also enables the station runtime's own trace

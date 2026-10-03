@@ -11,10 +11,11 @@ compile_error!("owned Xarxa is the only network integration: enable the owned-ne
     feature = "bluetooth-hil",
     feature = "bluetooth-gatt",
     feature = "bluetooth-secure-gatt",
-    feature = "system-watchdog"
+    feature = "system-watchdog",
+    feature = "system-panic-reset"
 )))]
 compile_error!(
-    "select boot-smoke, open-radio-hil, bluetooth-hil, bluetooth-gatt, bluetooth-secure-gatt or system-watchdog"
+    "select boot-smoke, open-radio-hil, bluetooth-hil, bluetooth-gatt, bluetooth-secure-gatt, system-watchdog or system-panic-reset"
 );
 #[cfg(any(
     all(feature = "bluetooth-hil", feature = "bluetooth-gatt"),
@@ -33,6 +34,19 @@ compile_error!(
     )
 ))]
 compile_error!("system-watchdog requires an exclusive radio-free image");
+#[cfg(all(
+    feature = "system-panic-reset",
+    any(
+        feature = "panic-diagnostics",
+        feature = "boot-smoke",
+        feature = "system-watchdog",
+        feature = "open-radio-hil",
+        feature = "bluetooth-radio"
+    )
+))]
+compile_error!(
+    "system-panic-reset requires an exclusive radio-free image with the product panic entry"
+);
 #[cfg(all(
     feature = "bluetooth-radio",
     any(feature = "boot-smoke", feature = "open-radio-hil")
@@ -90,6 +104,7 @@ mod gdma_mem2mem_probe;
 mod hang_watchdog;
 #[cfg(any(
     feature = "system-watchdog",
+    feature = "system-panic-reset",
     feature = "open-radio-hil",
     feature = "bluetooth-radio"
 ))]
@@ -107,6 +122,7 @@ mod software_interrupt;
 mod stack_evidence;
 #[cfg(any(
     feature = "system-watchdog",
+    feature = "system-panic-reset",
     feature = "open-radio-hil",
     feature = "bluetooth-radio"
 ))]
@@ -115,6 +131,7 @@ mod system;
 mod trace;
 #[cfg(any(
     feature = "system-watchdog",
+    feature = "system-panic-reset",
     feature = "open-radio-hil",
     feature = "bluetooth-radio"
 ))]
@@ -241,6 +258,7 @@ use oer_esp32s31_platform_runtime as _;
 
 /// The HIL report of a panic, which the platform's panic entry calls after
 /// writing its retained record (feature `panic-diagnostics`).
+#[cfg(feature = "panic-diagnostics")]
 #[unsafe(no_mangle)]
 fn oer_platform_panic_diagnostics(info: &core::panic::PanicInfo<'_>) -> ! {
     // The trace keeps what happened before the panic.
@@ -312,6 +330,14 @@ extern "C" fn runtime_main() -> ! {
         feature = "bluetooth-radio"
     ))]
     system::postmortem::begin();
+    // Before any boot evidence is served: taking it clears the record.
+    #[cfg(any(
+        feature = "system-watchdog",
+        feature = "system-panic-reset",
+        feature = "open-radio-hil",
+        feature = "bluetooth-radio"
+    ))]
+    system::take_platform_panic();
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     trace::install();
     // The bootstrap configured PSRAM before entering this separately linked
@@ -395,6 +421,9 @@ extern "C" fn runtime_main() -> ! {
         peripherals.USB_DEVICE,
         peripherals.RNG,
     );
+
+    #[cfg(feature = "system-panic-reset")]
+    system::panic_reset::start(executor, peripherals.USB_DEVICE, peripherals.RNG);
 
     #[cfg(feature = "system-watchdog")]
     system::console::start(

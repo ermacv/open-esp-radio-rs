@@ -12,7 +12,7 @@ telemetry
 wifi base
 [messages]
 base/accepted 1ac686128bebf3dd topic
-base/boot 51bf31ecd81d5cdd topic
+base/boot 472a6c8ee83e5591 topic
 base/boot/get 26ffe1f703e77a0f endpoint
 base/hello 8e2dcdd3a6a11774 topic
 base/hello/get c394eef0bb216fb5 endpoint
@@ -133,6 +133,8 @@ system/interrupt-stacks/get 651c27a44d5bc802 endpoint
 system/memory-benchmark 6490d78e1fedac51 property
 system/memory-benchmark/completed 898d77a237a16f8e topic
 system/memory-benchmark/run 9166cc0e5e410a17 endpoint
+system/panic/inject 4a8069a58696abc1 endpoint
+system/panic/injected 9f469405c60e21be topic
 system/stacks 415930f2a651bd9c topic
 system/stacks/get 3af83191bf626410 endpoint
 system/timebase-probe 5e565d5e923db7c7 property

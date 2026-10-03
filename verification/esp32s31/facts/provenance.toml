@@ -1872,6 +1872,12 @@ code = "39260153501e905439ca9bf6d6c7f81cd0f16eabdde67ffab99a60939d18ed68"
 
 [[function]]
 artifact = "libnet80211"
+member = "ieee80211_nvs.o"
+symbol = "wifi_nvs_get_sta_listen_interval"
+code = "1a95557e3e1be42b56860d59651e46b8f761479fabc7b5e2eaee85f94ba6c875"
+
+[[function]]
+artifact = "libnet80211"
 member = "ieee80211_output.o"
 symbol = "esp_wifi_80211_tx"
 code = "ad1068c8ee57ba621df8763bacc122ab9db12e690481c3dc78f25eb2800b413a"
@@ -4221,8 +4227,26 @@ code = "9cd22e467d052cfa15a326431b7b3f171db31d67eae8a51301fd40c0ef48897f"
 [[function]]
 artifact = "libpp"
 member = "pm.o"
+symbol = "pm_on_sample_beacon"
+code = "64af92279b59b3ff36fc1699282d85a3ffdaf8eb2b78aaf984ae662c816090e9"
+
+[[function]]
+artifact = "libpp"
+member = "pm.o"
 symbol = "pm_on_tbtt"
 code = "7aef2e82858b1bb222cfccd44fa716be5c285a620caf739799a072191d0726f0"
+
+[[function]]
+artifact = "libpp"
+member = "pm.o"
+symbol = "pm_parse_beacon"
+code = "ad4783404c9aed195e4a3f4809f84c0111d5c6fe8241d3761da457bd313f97ad"
+
+[[function]]
+artifact = "libpp"
+member = "pm.o"
+symbol = "pm_scale_listen_interval"
+code = "1d243f647e7fb94a055eef8a5ecc7d1eed22f30c0bffbaf3aac51be166a18993"
 
 [[function]]
 artifact = "libpp"
@@ -6386,6 +6410,18 @@ artifact = "rom"
 member = ""
 symbol = "pm_on_tbtt"
 code = "b4fba893ada15b01751b183416befe2fb0d4d0399a2e8468c603e0f29149d35e"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "pm_parse_beacon"
+code = "42317c99b4b06257c9f55b22cbef5396485f19471fb24c2f072dfb5258521dd4"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "pm_scale_listen_interval"
+code = "02ae10257c058b212bf692155dc72af035660734be579788a01546f8d1876a80"
 
 [[function]]
 artifact = "rom"

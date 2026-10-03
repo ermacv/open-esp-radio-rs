@@ -115,7 +115,7 @@ impl ProductionWifiEpochRunner {
                 frame: scan_frame,
                 scan_observer: ProductionScanObserver,
                 sequence: &mut sequence,
-                timer: super::reception_timer(),
+                timer: super::reception_timer(self.mac_clock),
             },
             scan_request,
         )

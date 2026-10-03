@@ -18,7 +18,7 @@ use oer_esp32s31_ieee80211_mac::{
     },
 };
 use oer_ieee80211_lower_mac::{
-    AmpduPayload, HardwareServices, LowerMacEvent, PhyRate, RxEvidence, TxAttempt,
+    AmpduPayload, HardwareServices, LowerMacEvent, PhyRate, RxEvidence, TxAttempt, time_units,
 };
 use oer_ieee80211_mac::{
     channel::ChannelWidth,
@@ -30,6 +30,7 @@ use oer_ieee80211_softmac::{MacRxEvidence, MacRxMetadata};
 use oer_memory::{
     DmaIndexReturn, PinnedDmaTxPool, PinnedDmaTxRadioLease, ReturningStableDmaBacking,
 };
+use oer_time::Duration;
 
 use super::*;
 use crate::ordinary_tx::{WifiTxPowerPair, WifiTxResources};
@@ -1584,12 +1585,24 @@ fn the_station_tsf_is_set_and_read_and_the_access_point_tsf_only_restarts() {
     .unwrap()
     .unwrap();
 
-    assert_eq!(core.set_tsf(&mut hardware, STA, Tsf(123_456)), Ok(()));
-    assert_eq!(core.tsf(&mut hardware, STA), Ok(Tsf(123_456)));
-    assert_eq!(core.set_tsf(&mut hardware, AP, Tsf(0)), Ok(()));
+    assert_eq!(
+        core.set_tsf(
+            &mut hardware,
+            VifTsf::new(STA, TsfInstant::from_micros(123_456))
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        core.tsf(&mut hardware, STA),
+        Ok(VifTsf::new(STA, TsfInstant::from_micros(123_456)))
+    );
+    assert_eq!(
+        core.set_tsf(&mut hardware, VifTsf::new(AP, TsfInstant::from_micros(0))),
+        Ok(())
+    );
     assert_eq!(hardware.access_point_tsf_resets, 1);
     assert_eq!(
-        core.set_tsf(&mut hardware, AP, Tsf(5)),
+        core.set_tsf(&mut hardware, VifTsf::new(AP, TsfInstant::from_micros(5))),
         Err(SettingError::Unsupported)
     );
     assert_eq!(core.tsf(&mut hardware, AP), Err(SettingError::Unsupported));
@@ -1607,11 +1620,11 @@ fn the_station_tbtt_schedule_is_programmed_and_its_events_announce_the_next_tbtt
     let mut hardware = Hardware::default();
     let mut core = enabled(&mut hardware);
     let schedule = TbttSchedule {
-        beacon_interval_tu: 100,
-        next: Tsf(1_000_000),
-        lead_micros: 3_000,
+        next: VifTsf::new(STA, TsfInstant::from_micros(1_000_000)),
+        beacon_interval: time_units(100),
+        lead: Duration::from_micros(3_000),
     };
-    assert_eq!(core.set_tbtt(&mut hardware, STA, Some(schedule)), Ok(()));
+    assert_eq!(core.set_tbtt(&mut hardware, schedule), Ok(()));
     assert_eq!(
         hardware.tbtt,
         Some(StaTbttSchedule {
@@ -1634,24 +1647,27 @@ fn the_station_tbtt_schedule_is_programmed_and_its_events_announce_the_next_tbtt
         assert_eq!(
             events.tbtts.pop(),
             Some(TbttEvent {
-                vif: STA,
-                tsf: Tsf(announced)
+                tbtt: VifTsf::new(STA, TsfInstant::from_micros(announced))
             })
         );
     }
 
     for refused in [
         TbttSchedule {
-            beacon_interval_tu: 0,
+            beacon_interval: Duration::ZERO,
             ..schedule
         },
         TbttSchedule {
-            lead_micros: u16::MAX,
+            beacon_interval: Duration::from_micros(u64::from(u32::MAX) + 1),
+            ..schedule
+        },
+        TbttSchedule {
+            lead: Duration::from_micros(u64::from(u16::MAX)),
             ..schedule
         },
     ] {
         assert_eq!(
-            core.set_tbtt(&mut hardware, STA, Some(refused)),
+            core.set_tbtt(&mut hardware, refused),
             Err(SettingError::Unsupported)
         );
     }
@@ -1665,18 +1681,24 @@ fn the_station_tbtt_schedule_is_programmed_and_its_events_announce_the_next_tbtt
     .unwrap()
     .unwrap();
     assert_eq!(
-        core.set_tbtt(&mut hardware, AP, Some(schedule)),
+        core.set_tbtt(
+            &mut hardware,
+            TbttSchedule {
+                next: VifTsf::new(AP, TsfInstant::from_micros(1_000_000)),
+                ..schedule
+            }
+        ),
         Err(SettingError::Unsupported)
     );
 
-    assert_eq!(core.set_tbtt(&mut hardware, STA, None), Ok(()));
+    assert_eq!(core.stop_tbtt(&mut hardware, STA), Ok(()));
     assert_eq!(hardware.tbtt, None);
     // A stale edge after the stop reports nothing.
     core.station_tbtt(&mut hardware, &mut events);
     assert!(events.tbtts.is_empty());
 
     // Removing the station stops its schedule.
-    core.set_tbtt(&mut hardware, STA, Some(schedule)).unwrap();
+    core.set_tbtt(&mut hardware, schedule).unwrap();
     core.apply(
         &mut hardware,
         LowerMacSetting::Vif {
@@ -2269,4 +2291,72 @@ fn an_aggregate_shares_the_queues_with_mpdus() {
     assert_eq!(events.completions[0].status, TxStatus::Aborted);
     assert_eq!(source.free(), BACKINGS);
     assert_eq!(hardware.publications(), 3);
+}
+
+#[test]
+fn the_tsf_relation_breaks_at_a_jump_a_channel_change_an_interface_change_and_an_access_point_restart()
+ {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    let generation =
+        |core: &Core, hardware: &mut Hardware| core.tsf_reading(hardware, STA).unwrap().1;
+
+    // The first set starts a generation.
+    let start = generation(&core, &mut hardware);
+    core.set_tsf(
+        &mut hardware,
+        VifTsf::new(STA, TsfInstant::from_micros(1_000_000)),
+    )
+    .unwrap();
+    let followed = generation(&core, &mut hardware);
+    assert_ne!(followed, start);
+
+    let allowed = |elapsed: u64| {
+        (elapsed * u64::from(TSF_DRIFT_PPM)).div_ceil(1_000_000)
+            + STATION_TSF_SAMPLE_UNCERTAINTY_MICROS
+    };
+    let interval = 102_400;
+
+    // After ten missed beacons the follow corrects the drift of ten
+    // intervals: more than one interval allows, within what ten allow.
+    let mut last = 1_000_000;
+    let reading = last + 10 * interval;
+    let corrected = reading + allowed(10 * interval);
+    assert!(corrected - reading > allowed(interval));
+    hardware.station_tsf = reading;
+    core.set_tsf(
+        &mut hardware,
+        VifTsf::new(STA, TsfInstant::from_micros(corrected)),
+    )
+    .unwrap();
+    assert_eq!(generation(&core, &mut hardware), followed);
+    last = corrected;
+
+    // At the next beacon, one interval later, the same correction is a
+    // real jump.
+    let reading = last + interval;
+    hardware.station_tsf = reading;
+    core.set_tsf(
+        &mut hardware,
+        VifTsf::new(
+            STA,
+            TsfInstant::from_micros(reading + allowed(interval) + 1),
+        ),
+    )
+    .unwrap();
+    let jumped = generation(&core, &mut hardware);
+    assert_ne!(jumped, followed);
+
+    // Reconfiguring the station (a reassociation or roam) breaks it.
+    core.apply(
+        &mut hardware,
+        LowerMacSetting::Vif {
+            vif: STA,
+            config: Some(station()),
+        },
+    )
+    .unwrap()
+    .unwrap();
+    let reassociated = generation(&core, &mut hardware);
+    assert_ne!(reassociated, jumped);
 }

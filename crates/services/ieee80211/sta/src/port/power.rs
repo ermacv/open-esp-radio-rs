@@ -1,7 +1,8 @@
 //! Station power save over the lower-MAC port.
 
 use oer_ieee80211_lower_mac::{
-    Ieee80211LowerMacPort, KeySelector, LowerMacSetting, MacAddress, TbttSchedule, Tsf,
+    Ieee80211LowerMacPort, KeySelector, LowerMacSetting, MacAddress, TbttSchedule, TsfInstant,
+    VifTsf,
 };
 use oer_ieee80211_mac::{
     qos::WmmAccessCategory,
@@ -15,12 +16,10 @@ use oer_ieee80211_sta::modem_sleep::{
 };
 use oer_ieee80211_upper_mac::TxReport;
 use oer_ieee80211_upper_mac_service::UpperMacTxError;
-use oer_time::{Clock, Instant};
+use oer_time::{Clock, Duration, Instant};
 
 use super::link::{BeaconTimingOps, PortError, PortLink, PortLinkError, PortStationEnv};
 
-/// Microseconds of one IEEE time unit.
-const MICROS_PER_TU: u32 = 1_024;
 /// Effect lists one input of the power manager may chain through Null
 /// completions.
 const ACTION_QUEUE: usize = 4;
@@ -168,8 +167,11 @@ impl<P: Ieee80211LowerMacPort> PortPowerSave<P> {
     ) -> Result<(), PortLinkError<PortError<X>>> {
         let vif = context.link.config().vif;
         // The station TSF follows the access point's.
-        let _ = (self.ops.set_tsf)(context.link.port(), vif, Tsf(beacon.timestamp_tsf))
-            .map_err(PortLinkError::Port)?;
+        let _ = (self.ops.set_tsf)(
+            context.link.port(),
+            VifTsf::new(vif, TsfInstant::from_micros(beacon.timestamp_tsf)),
+        )
+        .map_err(PortLinkError::Port)?;
         let mut actions = PmActions::new();
         self.modem.beacon(
             PmBeacon {
@@ -292,14 +294,23 @@ impl<P: Ieee80211LowerMacPort> PortPowerSave<P> {
         &self,
         link: &PortLink<'_, X>,
     ) -> Result<(), PortLinkError<PortError<X>>> {
-        let schedule = self.schedule.map(|schedule| TbttSchedule {
-            beacon_interval_tu: (schedule.interval_micros / MICROS_PER_TU) as u16,
-            next: Tsf(schedule.first_tbtt_tsf),
-            lead_micros: schedule
-                .ahead_micros
-                .saturating_add(schedule.wake_ahead_micros),
-        });
-        (self.ops.set_tbtt)(link.port(), link.config().vif, schedule)
+        let vif = link.config().vif;
+        let outcome = match self.schedule {
+            Some(schedule) => (self.ops.set_tbtt)(
+                link.port(),
+                TbttSchedule {
+                    next: VifTsf::new(vif, TsfInstant::from_micros(schedule.first_tbtt_tsf)),
+                    beacon_interval: Duration::from_micros(u64::from(schedule.interval_micros)),
+                    lead: Duration::from_micros(u64::from(
+                        schedule
+                            .ahead_micros
+                            .saturating_add(schedule.wake_ahead_micros),
+                    )),
+                },
+            ),
+            None => (self.ops.stop_tbtt)(link.port(), vif),
+        };
+        outcome
             .map_err(PortLinkError::Port)?
             .map_err(PortLinkError::Setting)
     }

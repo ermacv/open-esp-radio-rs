@@ -8,6 +8,7 @@
 //! lacks a feature is recorded in its qualification catalog, not in code.
 
 use oer_radio_port::CancelError;
+use oer_time::Duration;
 
 use crate::{
     capabilities::PhyFormatSet,
@@ -88,28 +89,200 @@ pub trait LowerMacAmpdu: Ieee80211LowerMacPort {
     ) -> SubmitResult<AmpduAttempt<Self::AmpduBuffer>, Self::Error>;
 }
 
-/// A value of an interface's Timing Synchronization Function in
-/// microseconds (IEEE 802.11-2020 11.1.3).
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Tsf(pub u64);
+/// The clock domain of IEEE 802.11 Timing Synchronization Functions
+/// (IEEE 802.11-2020 11.1.3): microseconds of a BSS's TSF.
+pub enum Ieee80211Tsf {}
+
+/// An instant of a TSF, without the interface whose TSF it is.
+pub type TsfInstant = oer_time::RadioInstant<Ieee80211Tsf>;
+
+/// The length of `units` time units (TU) of 1024 µs.
+pub const fn time_units(units: u16) -> Duration {
+    Duration::from_micros(units as u64 * 1024)
+}
+
+/// A value of one interface's TSF. Two interfaces count different TSFs (a
+/// station follows its access point's, an access point keeps its own), so
+/// arithmetic between values of different interfaces is an error.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct VifTsf {
+    pub vif: VifId,
+    pub at: TsfInstant,
+}
+
+/// Two TSF values of different interfaces were combined.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct TsfVifMismatch {
+    pub left: VifId,
+    pub right: VifId,
+}
+
+impl VifTsf {
+    pub const fn new(vif: VifId, at: TsfInstant) -> Self {
+        Self { vif, at }
+    }
+
+    /// The same interface's TSF `duration` later; `None` past the end of
+    /// the TSF.
+    pub const fn checked_add(self, duration: Duration) -> Option<Self> {
+        match self.at.as_micros().checked_add(duration.as_micros()) {
+            Some(at) => Some(Self {
+                vif: self.vif,
+                at: TsfInstant::from_micros(at),
+            }),
+            None => None,
+        }
+    }
+
+    /// How long after `earlier` this value lies, saturating at zero; an
+    /// error for a value of another interface.
+    pub const fn saturating_duration_since(
+        self,
+        earlier: Self,
+    ) -> Result<Duration, TsfVifMismatch> {
+        if self.vif.0 != earlier.vif.0 {
+            return Err(TsfVifMismatch {
+                left: self.vif,
+                right: earlier.vif,
+            });
+        }
+        Ok(Duration::from_micros(
+            self.at.as_micros().saturating_sub(earlier.at.as_micros()),
+        ))
+    }
+}
 
 /// When the backend reports target beacon transmission times.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct TbttSchedule {
-    /// The beacon interval in time units of 1024 µs.
-    pub beacon_interval_tu: u16,
-    /// A target beacon transmission time of the schedule.
-    pub next: Tsf,
-    /// How long before each TBTT its event is reported, in microseconds.
-    pub lead_micros: u16,
+    /// A target beacon transmission time of the schedule, in the TSF of the
+    /// interface the schedule is for.
+    pub next: VifTsf,
+    /// The beacon interval ([`time_units`] of the beacon's interval field).
+    pub beacon_interval: Duration,
+    /// How long before each TBTT its event is reported.
+    pub lead: Duration,
 }
 
 /// One target beacon transmission time of an interface's schedule.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct TbttEvent {
-    pub vif: VifId,
-    /// The TBTT the event announces, in the interface's TSF.
-    pub tsf: Tsf,
+    /// The TBTT the event announces, in its interface's TSF.
+    pub tbtt: VifTsf,
+}
+
+/// The largest rate difference between an interface's TSF and the port's
+/// radio clock, in parts per million.
+///
+/// IEEE 802.11-2020 11.1.3 bounds every station's timer at ±0.01 %
+/// (100 ppm). A station's TSF follows the access point's timer while the
+/// radio clock runs on the station's own crystal, and the two may err in
+/// opposite directions: the bound is the sum of both sides. A narrower
+/// bound needs a cited tolerance of the station's crystal.
+pub const TSF_DRIFT_PPM: u32 = 200;
+
+/// One paired reading of an interface's TSF and the port's radio clock,
+/// taken back to back by the backend, in the generation of their relation.
+///
+/// The relation breaks, and the generation changes, when the TSF jumps (a
+/// new BSS, a reassociation, a channel change, a TSF set beyond the
+/// backend's tolerance, an access point's TSF restart) and with every break
+/// of the radio clock itself (its stamp's generation).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TsfSample {
+    pub tsf: VifTsf,
+    /// The port's radio clock beside it.
+    pub local: crate::Ieee80211Stamp,
+    /// How far apart the two readings may lie.
+    pub uncertainty: Duration,
+    /// The TSF relation the sample belongs to.
+    pub generation: u32,
+}
+
+/// Why a TSF projection has no value.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum TsfProjectionError {
+    /// The radio stamp belongs to another generation of the radio clock.
+    StaleStamp,
+    /// The projected value lies outside the representable range.
+    OutOfRange,
+}
+
+impl TsfSample {
+    /// The TSF of this sample's interface when the port's radio clock read
+    /// `local`, with the sample's uncertainty plus the drift over the
+    /// distance from the sample.
+    pub fn tsf_at(
+        &self,
+        local: crate::Ieee80211Stamp,
+    ) -> Result<oer_radio_port::Projected<VifTsf>, TsfProjectionError> {
+        if local.generation != self.local.generation {
+            return Err(TsfProjectionError::StaleStamp);
+        }
+        let (at, distance) = shift(
+            self.tsf.at.as_micros(),
+            self.local.at.as_micros(),
+            local.at.as_micros(),
+        )?;
+        Ok(oer_radio_port::Projected {
+            at: VifTsf::new(self.tsf.vif, TsfInstant::from_micros(at)),
+            uncertainty: drift_bound(self.uncertainty, distance)?,
+        })
+    }
+
+    /// The port's radio clock when this sample's interface's TSF reads
+    /// `tsf`, in the sample's radio-clock generation; the inverse of
+    /// [`Self::tsf_at`]. An error for a TSF of another interface.
+    pub fn local_at(
+        &self,
+        tsf: VifTsf,
+    ) -> Result<
+        Result<oer_radio_port::Projected<crate::Ieee80211Stamp>, TsfProjectionError>,
+        TsfVifMismatch,
+    > {
+        if tsf.vif.0 != self.tsf.vif.0 {
+            return Err(TsfVifMismatch {
+                left: tsf.vif,
+                right: self.tsf.vif,
+            });
+        }
+        Ok((|| {
+            let (at, distance) = shift(
+                self.local.at.as_micros(),
+                self.tsf.at.as_micros(),
+                tsf.at.as_micros(),
+            )?;
+            Ok(oer_radio_port::Projected {
+                at: crate::Ieee80211Stamp {
+                    at: crate::Ieee80211Instant::from_micros(at),
+                    generation: self.local.generation,
+                },
+                uncertainty: drift_bound(self.uncertainty, distance)?,
+            })
+        })())
+    }
+}
+
+/// `target_base` moved by `at - source_base`, and that distance.
+fn shift(target_base: u64, source_base: u64, at: u64) -> Result<(u64, u64), TsfProjectionError> {
+    let shifted = if at >= source_base {
+        target_base.checked_add(at - source_base)
+    } else {
+        target_base.checked_sub(source_base - at)
+    };
+    shifted
+        .map(|shifted| (shifted, at.abs_diff(source_base)))
+        .ok_or(TsfProjectionError::OutOfRange)
+}
+
+/// `uncertainty` plus [`TSF_DRIFT_PPM`] of `distance`, rounded up.
+fn drift_bound(uncertainty: Duration, distance: u64) -> Result<Duration, TsfProjectionError> {
+    let drift = (u128::from(distance) * u128::from(TSF_DRIFT_PPM)).div_ceil(1_000_000);
+    u64::try_from(drift)
+        .ok()
+        .and_then(|drift| uncertainty.as_micros().checked_add(drift))
+        .map(Duration::from_micros)
+        .ok_or(TsfProjectionError::OutOfRange)
 }
 
 /// Which roles the beacon-timing operations serve.
@@ -135,18 +308,21 @@ pub trait LowerMacBeaconTiming: Ieee80211LowerMacPort {
     fn beacon_timing_capabilities(&self) -> BeaconTimingCapabilities;
 
     /// The TSF of a configured interface.
-    fn tsf(&self, vif: VifId) -> Result<Result<Tsf, SettingError>, Self::Error>;
+    fn tsf(&self, vif: VifId) -> Result<Result<VifTsf, SettingError>, Self::Error>;
 
-    /// Set an interface's TSF.
-    fn set_tsf(&self, vif: VifId, tsf: Tsf) -> Result<Result<(), SettingError>, Self::Error>;
+    /// The TSF of a configured interface and the port's radio clock read
+    /// back to back, in the current generation of their relation.
+    fn tsf_sample(&self, vif: VifId) -> Result<Result<TsfSample, SettingError>, Self::Error>;
 
-    /// Report target beacon transmission times of an interface as events,
-    /// or stop (`None`).
-    fn set_tbtt(
-        &self,
-        vif: VifId,
-        schedule: Option<TbttSchedule>,
-    ) -> Result<Result<(), SettingError>, Self::Error>;
+    /// Set the TSF of the interface `tsf` names.
+    fn set_tsf(&self, tsf: VifTsf) -> Result<Result<(), SettingError>, Self::Error>;
+
+    /// Report the target beacon transmission times of the schedule's
+    /// interface as events.
+    fn set_tbtt(&self, schedule: TbttSchedule) -> Result<Result<(), SettingError>, Self::Error>;
+
+    /// Stop reporting an interface's target beacon transmission times.
+    fn stop_tbtt(&self, vif: VifId) -> Result<Result<(), SettingError>, Self::Error>;
 
     /// The TBTT an event reports; `None` for another event. Its base view
     /// is [`LowerMacEvent::Extension`](crate::LowerMacEvent::Extension).

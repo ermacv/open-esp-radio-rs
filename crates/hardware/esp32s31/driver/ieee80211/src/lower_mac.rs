@@ -105,9 +105,9 @@ use oer_ieee80211_lower_mac::{
     KeyInstall, KeyScope, KeySelector, LifecycleCommand, LifecycleError, LifecycleEvent,
     LowerMacCapabilities, LowerMacSetting, MacAddress, MonitorCapabilities, MpduAttempt,
     PhyFormatSet, PhyRate, Protection, RateSupport, ReceiveFilter, Refused, RxBlockAckAgreement,
-    RxMeta, SettingError, SubmitError, TbttEvent, TbttSchedule, Tsf, TxBuffer, TxCompletion,
-    TxFault, TxId, TxPayload, TxPower, TxResponse, TxStatus, VifConfig, VifId, VifRole, VifRoleSet,
-    WidthSet,
+    RxMeta, SettingError, SubmitError, TSF_DRIFT_PPM, TbttEvent, TbttSchedule, TsfInstant,
+    TxBuffer, TxCompletion, TxFault, TxId, TxPayload, TxPower, TxResponse, TxStatus, VifConfig,
+    VifId, VifRole, VifRoleSet, VifTsf, WidthSet,
 };
 use oer_ieee80211_mac::{
     channel::{Band, WifiChannel},
@@ -159,9 +159,6 @@ const RX_BLOCK_ACK_BANKS: usize = RESOURCES.rx_block_ack_entries as usize;
 const BLOCK_ACK_REQUEST_FRAME_CONTROL: u8 = 0x84;
 /// Frame Control, Duration and Address 1: the bytes the owner reads.
 const MIN_FRAME_LENGTH: usize = 10;
-/// Microseconds of one time unit.
-const TIME_UNIT_MICROS: u32 = 1024;
-
 /// Light-sleep wake lead the vendor power manager publishes beside the
 /// station TBTT lead (`g_pm_cfg[16]`, as
 /// `roles/esp32s31/ieee80211/sta/src/modem_sleep.rs` records it). The port
@@ -462,6 +459,57 @@ struct Attempt<'slot, S: AmpduBacking, const BUFFER_SIZE: usize, const AMPDU_SLO
     work: Work<'slot, S, BUFFER_SIZE, AMPDU_SLOTS>,
 }
 
+/// The generation of an interface's TSF relation and its last sample: the
+/// value the TSF was last set to within it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TsfRelation {
+    generation: u32,
+    last_set: Option<u64>,
+}
+
+/// The uncertainty of a station TSF sample the core keeps: the set value
+/// and the reading beside it are each a count of the station TSF counter's
+/// microseconds.
+const STATION_TSF_SAMPLE_UNCERTAINTY_MICROS: u64 = 1;
+
+impl TsfRelation {
+    const NEW: Self = Self {
+        generation: 0,
+        last_set: None,
+    };
+
+    /// Start a new generation: the TSF jumped.
+    fn break_relation(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+        self.last_set = None;
+    }
+
+    /// Record a station TSF set from `current` to `value`. A set within
+    /// what the relation predicts since its last sample (the drift over the
+    /// time since then plus the sample's uncertainty) keeps the generation:
+    /// a follow after missed beacons drifts further but stays within it.
+    /// Any other set, and the first, breaks it.
+    fn station_set(&mut self, current: u64, value: u64) {
+        let within = self.last_set.is_some_and(|last| {
+            value.abs_diff(current) <= tsf_set_tolerance(current.saturating_sub(last))
+        });
+        if !within {
+            self.break_relation();
+        }
+        self.last_set = Some(value);
+    }
+}
+
+/// How far a station TSF set may move the TSF `elapsed` µs after the
+/// relation's last sample without breaking it: [`TSF_DRIFT_PPM`] of the
+/// elapsed time, rounded up, plus the sample's uncertainty.
+fn tsf_set_tolerance(elapsed: u64) -> u64 {
+    let drift = (u128::from(elapsed) * u128::from(TSF_DRIFT_PPM)).div_ceil(1_000_000);
+    u64::try_from(drift)
+        .unwrap_or(u64::MAX)
+        .saturating_add(STATION_TSF_SAMPLE_UNCERTAINTY_MICROS)
+}
+
 /// The running station TBTT schedule.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct StationTbtt {
@@ -519,6 +567,9 @@ pub struct LowerMacCore<
     gate_open: bool,
     monitor: bool,
     tbtt: Option<StationTbtt>,
+    /// The relation of each interface's TSF to the radio clock, by
+    /// interface.
+    tsf: [TsfRelation; LOWER_MAC_VIFS as usize],
     /// The attempt of each ordinary queue, by its hardware index
     /// ([`LegacyTxQueue::hardware_index`]).
     queues: [Option<Attempt<'slot, S, BUFFER_SIZE, AMPDU_SLOTS>>; LOWER_MAC_TX_QUEUES],
@@ -582,6 +633,7 @@ where
             gate_open: true,
             monitor: false,
             tbtt: None,
+            tsf: [TsfRelation::NEW; LOWER_MAC_VIFS as usize],
             queues: [const { None }; LOWER_MAC_TX_QUEUES],
         }
     }
@@ -1214,6 +1266,11 @@ where
         if self.state != PortState::Disabled {
             return Err(SettingError::Busy);
         }
+        if self.channel != channel {
+            for relation in &mut self.tsf {
+                relation.break_relation();
+            }
+        }
         self.channel = channel;
         Ok(())
     }
@@ -1260,6 +1317,9 @@ where
             ReceivePolicy::AccessPoint { address } => hardware.apply_ap_link_policy(address),
         }
         self.vifs[index] = Some(config);
+        // A new association, a reassociation or a roam: the interface
+        // follows another TSF.
+        self.tsf[index].break_relation();
         Ok(())
     }
 
@@ -1269,6 +1329,7 @@ where
         let Some(previous) = self.vifs[usize::from(vif.0)].take() else {
             return;
         };
+        self.tsf[usize::from(vif.0)].break_relation();
         for slot in &mut self.keys {
             if slot.as_ref().is_some_and(|key| key.vif == vif) {
                 slot.take().expect("checked above").token.clear(hardware);
@@ -1526,69 +1587,112 @@ where
         &self,
         hardware: &mut H,
         vif: VifId,
-    ) -> Result<Tsf, SettingError> {
+    ) -> Result<VifTsf, SettingError> {
+        self.tsf_reading(hardware, vif).map(|(tsf, _)| tsf)
+    }
+
+    /// An interface's TSF and the generation of its relation, for a
+    /// [`TsfSample`](oer_ieee80211_lower_mac::TsfSample) the backend pairs
+    /// with its radio clock.
+    pub fn tsf_reading<H: StationTsfHardware>(
+        &self,
+        hardware: &mut H,
+        vif: VifId,
+    ) -> Result<(VifTsf, u32), SettingError> {
         let role = self.vif(vif).ok_or(SettingError::UnknownVif)?.role;
         if !ESP32S31_BEACON_TIMING_CAPABILITIES.tsf_read.contains(role) {
             return Err(SettingError::Unsupported);
         }
-        Ok(Tsf(hardware.station_tsf()))
+        let at = TsfInstant::from_micros(hardware.station_tsf());
+        Ok((
+            VifTsf::new(vif, at),
+            self.tsf[usize::from(vif.0)].generation,
+        ))
     }
 
     /// Set an interface's TSF: the station timer to any value, the
-    /// access-point timer only back to zero through its reset seam.
+    /// access-point timer only back to zero through its reset seam. A
+    /// station set beyond the drift its relation allows, and an access-point
+    /// restart, start a new generation of the relation.
     pub fn set_tsf<H: LowerMacHardware>(
         &mut self,
         hardware: &mut H,
-        vif: VifId,
-        tsf: Tsf,
+        tsf: VifTsf,
     ) -> Result<(), SettingError> {
-        match self.vif(vif).ok_or(SettingError::UnknownVif)?.role {
-            VifRole::Station => hardware.set_station_tsf(tsf.0),
-            VifRole::AccessPoint if tsf == Tsf(0) => hardware.reset_and_start_access_point_tsf(),
+        let value = tsf.at.as_micros();
+        let relation = &mut self.tsf[usize::from(tsf.vif.0)];
+        match self.vifs[usize::from(tsf.vif.0)]
+            .ok_or(SettingError::UnknownVif)?
+            .role
+        {
+            VifRole::Station => {
+                relation.station_set(hardware.station_tsf(), value);
+                hardware.set_station_tsf(value);
+            }
+            VifRole::AccessPoint if value == 0 => {
+                relation.break_relation();
+                hardware.reset_and_start_access_point_tsf();
+            }
             VifRole::AccessPoint => return Err(SettingError::Unsupported),
         }
         Ok(())
     }
 
-    /// Program or stop the station TBTT schedule. The event fires
-    /// `lead_micros` before each TBTT; the wake lead published beside it
-    /// keeps the vendor's window above the lead.
+    /// Program the station TBTT schedule. The event fires the schedule's
+    /// lead before each TBTT; the wake lead published beside it keeps the
+    /// vendor's window above the lead.
     pub fn set_tbtt<H: LowerMacHardware>(
         &mut self,
         hardware: &mut H,
-        vif: VifId,
-        schedule: Option<TbttSchedule>,
+        schedule: TbttSchedule,
     ) -> Result<(), SettingError> {
-        let role = self.vif(vif).ok_or(SettingError::UnknownVif)?.role;
-        if !ESP32S31_BEACON_TIMING_CAPABILITIES.tbtt.contains(role) {
-            return Err(SettingError::Unsupported);
-        }
-        let Some(schedule) = schedule else {
-            if self.tbtt.is_some_and(|tbtt| tbtt.vif == vif) {
-                self.tbtt = None;
-                hardware.stop_station_tbtt();
-            }
-            return Ok(());
-        };
-        let interval_micros = u32::from(schedule.beacon_interval_tu) * TIME_UNIT_MICROS;
-        let wake_ahead_micros = schedule
-            .lead_micros
+        let vif = schedule.next.vif;
+        self.tbtt_role(vif)?;
+        let interval_micros = u32::try_from(schedule.beacon_interval.as_micros())
+            .ok()
+            .filter(|&interval| interval != 0)
+            .ok_or(SettingError::Unsupported)?;
+        let ahead_micros =
+            u16::try_from(schedule.lead.as_micros()).map_err(|_| SettingError::Unsupported)?;
+        let wake_ahead_micros = ahead_micros
             .checked_add(STATION_TBTT_WAKE_WINDOW_MICROS)
             .ok_or(SettingError::Unsupported)?;
-        if interval_micros == 0 {
-            return Err(SettingError::Unsupported);
-        }
+        let first = schedule.next.at.as_micros();
         hardware.start_station_tbtt(StaTbttSchedule {
-            first_tbtt_tsf: schedule.next.0,
+            first_tbtt_tsf: first,
             interval_micros,
-            ahead_micros: schedule.lead_micros,
+            ahead_micros,
             wake_ahead_micros,
         });
         self.tbtt = Some(StationTbtt {
             vif,
-            first: schedule.next.0,
+            first,
             interval: u64::from(interval_micros),
         });
+        Ok(())
+    }
+
+    /// Stop an interface's station TBTT schedule.
+    pub fn stop_tbtt<H: LowerMacHardware>(
+        &mut self,
+        hardware: &mut H,
+        vif: VifId,
+    ) -> Result<(), SettingError> {
+        self.tbtt_role(vif)?;
+        if self.tbtt.is_some_and(|tbtt| tbtt.vif == vif) {
+            self.tbtt = None;
+            hardware.stop_station_tbtt();
+        }
+        Ok(())
+    }
+
+    /// Whether `vif` is configured with a role whose TBTT schedule the
+    /// backend programs.
+    fn tbtt_role(&self, vif: VifId) -> Result<(), SettingError> {
+        let role = self.vif(vif).ok_or(SettingError::UnknownVif)?.role;
+        if !ESP32S31_BEACON_TIMING_CAPABILITIES.tbtt.contains(role) {
+            return Err(SettingError::Unsupported);
+        }
         Ok(())
     }
 
@@ -1601,9 +1705,9 @@ where
         sink: &mut K,
     ) {
         if let Some(tbtt) = self.tbtt {
+            let at = TsfInstant::from_micros(tbtt.announced(hardware.station_tsf()));
             sink.tbtt(TbttEvent {
-                vif: tbtt.vif,
-                tsf: Tsf(tbtt.announced(hardware.station_tsf())),
+                tbtt: VifTsf::new(tbtt.vif, at),
             });
         }
     }

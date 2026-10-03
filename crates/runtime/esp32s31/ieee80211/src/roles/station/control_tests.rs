@@ -1019,8 +1019,8 @@ fn rx_addba_hardware_is_committed_only_after_response_tx_success() {
         false,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
         1,
-    )
-    .with_rx_reorder_commands(reorder_sender);
+    );
+    control.set_rx_reorder_commands(reorder_sender);
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
         prepare: true,
@@ -1111,8 +1111,8 @@ fn failed_rx_addba_response_rolls_back_hardware_and_software() {
         false,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
         1,
-    )
-    .with_rx_reorder_commands(reorder_sender);
+    );
+    control.set_rx_reorder_commands(reorder_sender);
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
         prepare: true,

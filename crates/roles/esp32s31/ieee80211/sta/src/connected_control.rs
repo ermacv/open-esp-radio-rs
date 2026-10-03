@@ -694,9 +694,8 @@ impl ConnectedControlCore {
         self.sa_query = StationSaQuery::new();
     }
 
-    pub fn with_he_trigger_based(mut self, config: Option<HeTriggerBasedTxConfig>) -> Self {
+    pub fn set_he_trigger_based(&mut self, config: Option<HeTriggerBasedTxConfig>) {
         self.he_trigger_based = config;
-        self
     }
 
     /// Supervise the link from beacons, probing a silent access point as

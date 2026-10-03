@@ -1,4 +1,5 @@
 use super::*;
+use crate::roles::station::control_slot::PlacedConnectedControl;
 
 impl ConnectedStaPort {
     /// Bind the selected connected peer to the allocation-free staged RX
@@ -300,29 +301,31 @@ impl ConnectedStaPort {
     }
 
     /// Construct BlockAck, beacon-loss, RX-reorder and power control from the
-    /// same connected plan used by RX and TX.
+    /// same connected plan used by RX and TX, placed in the resources' slot
+    /// and configured there, never moved by value.
     pub fn build_control<'resources, M: RawMutex, const CAPACITY: usize>(
         plan: &ConnectedStaPlan,
         resources: ConnectedStaControlResources<'resources, M, CAPACITY>,
-    ) -> ConnectedControl<'resources, M, CAPACITY> {
+    ) -> PlacedConnectedControl<'resources, M, CAPACITY> {
         let tx_block_ack = StaTxBlockAckSessions::new(
             plan.config.block_ack.tx_block_ack_window,
             plan.config.block_ack.tx_block_ack_negotiation_timeout,
             plan.config.block_ack.tid0_amsdu,
         )
         .expect("connected STA plan validated TX BlockAck policy");
-        let mut control = ConnectedControl::new_shared(
+        let mut control = resources.slot.place(ConnectedControl::new_shared(
             resources.receiver,
             plan.link.bssid,
             plan.link.association_phy == PhyMode::He20,
             tx_block_ack,
             resources.rx_block_ack,
             resources.tsf_epoch,
-        )
-        .with_he_trigger_based(plan.config.tx.he_trigger_based)
-        .with_rx_block_ack_maximum_window(plan.config.block_ack.rx_block_ack_maximum_window)
-        .expect("connected STA plan validated RX BlockAck policy")
-        .with_rx_reorder_commands(resources.reorder_commands);
+        ));
+        control.set_he_trigger_based(plan.config.tx.he_trigger_based);
+        control
+            .set_rx_block_ack_maximum_window(plan.config.block_ack.rx_block_ack_maximum_window)
+            .expect("connected STA plan validated RX BlockAck policy");
+        control.set_rx_reorder_commands(resources.reorder_commands);
         control.enable_beacon_loss(plan.beacon_loss);
         control
             .enable_hardware_beacon_monitor_frontier(
@@ -454,7 +457,7 @@ impl ConnectedStaPort {
                 AGGREGATE_BUFFER_SIZE,
                 ORDINARY_BUFFER_SIZE,
             >,
-            ConnectedControl<'control, M, CONTROL_CAPACITY>,
+            PlacedConnectedControl<'control, M, CONTROL_CAPACITY>,
             ConnectedReceiveProtocol<
                 'queue,
                 'pool,

@@ -12,6 +12,7 @@ mod composer;
 pub mod connected;
 pub mod control;
 pub mod control_mailbox;
+pub mod control_slot;
 pub mod epoch;
 pub mod esp_now_mailbox;
 pub mod esp_now_tx;

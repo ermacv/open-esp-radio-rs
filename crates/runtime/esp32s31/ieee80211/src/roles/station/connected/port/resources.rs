@@ -177,6 +177,12 @@ pub struct ConnectedStaTxHandoffFailure<
 
 /// Named control-plane resources for one connected epoch.
 pub struct ConnectedStaControlResources<'resources, M: RawMutex, const CAPACITY: usize> {
+    /// The slot the association's control is placed in.
+    pub slot: &'resources mut crate::roles::station::control_slot::ConnectedControlStorage<
+        'resources,
+        M,
+        CAPACITY,
+    >,
     pub receiver: ConnectedControlReceiver<'resources, M, CAPACITY>,
     pub reorder_commands: RxReorderCommandSender<'resources, M>,
     pub rx_block_ack: &'resources StaApRxBlockAck,

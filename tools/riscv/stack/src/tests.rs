@@ -10,6 +10,7 @@ const RET: u32 = 0x0000_8067; // jalr zero, 0(ra)
 const LOAD_SLOT: u32 = 0x0001_2783; // lw a5, 0(sp)
 const CALL_A5: u32 = 0x0007_80e7; // jalr ra, 0(a5)
 const TEXT: u32 = 0x1000;
+const BRANCH_NEXT: u32 = 0x0000_0263; // beq zero, zero, 4
 
 /// `jal ra, target` at `site`.
 fn call(site: u32, target: u32) -> u32 {
@@ -29,9 +30,18 @@ struct Symbol {
     frame: Option<u8>,
 }
 
+const RODATA: u32 = 0x2000;
+
 /// A static RV32 executable with one loaded `.text` holding the symbols in
 /// order from `TEXT`, a symbol table and `.stack_sizes`.
 fn executable(symbols: &[Symbol]) -> Vec<u8> {
+    image(symbols, &[], false)
+}
+
+/// [`executable`] with `rodata` words in a `.rodata` at `RODATA`, covered by
+/// a sized `table` data symbol when `sized`.
+fn image(symbols: &[Symbol], rodata: &[u32], sized: bool) -> Vec<u8> {
+    let rodata: Vec<u8> = rodata.iter().flat_map(|word| word.to_le_bytes()).collect();
     let mut text = Vec::new();
     let mut entries = Vec::new();
     let mut sizes = Vec::new();
@@ -48,6 +58,9 @@ fn executable(symbols: &[Symbol]) -> Vec<u8> {
     }
     let mut strtab = vec![0u8];
     let mut symtab = vec![0u8; 16];
+    if sized {
+        entries.push(("table", RODATA, rodata.len() as u32));
+    }
     for (name, address, size) in &entries {
         let offset = strtab.len() as u32;
         strtab.extend_from_slice(name.as_bytes());
@@ -55,13 +68,14 @@ fn executable(symbols: &[Symbol]) -> Vec<u8> {
         symtab.extend_from_slice(&offset.to_le_bytes());
         symtab.extend_from_slice(&address.to_le_bytes());
         symtab.extend_from_slice(&size.to_le_bytes());
-        symtab.push(0x12); // STB_GLOBAL, STT_FUNC
+        let data = *address == RODATA;
+        symtab.push(if data { 0x11 } else { 0x12 }); // STB_GLOBAL, STT_OBJECT or STT_FUNC
         symtab.push(0);
-        symtab.extend_from_slice(&1u16.to_le_bytes()); // .text
+        symtab.extend_from_slice(&(if data { 6u16 } else { 1 }).to_le_bytes()); // .rodata or .text
     }
-    let shstrtab = b"\0.text\0.stack_sizes\0.symtab\0.strtab\0.shstrtab\0";
+    let shstrtab = b"\0.text\0.stack_sizes\0.symtab\0.strtab\0.shstrtab\0.rodata\0";
     // Layout: ELF header, one program header, then the section contents.
-    let mut out = vec![0u8; 52 + 32];
+    let mut out = vec![0u8; 52 + 2 * 32];
     let place = |out: &mut Vec<u8>, bytes: &[u8]| {
         while !out.len().is_multiple_of(4) {
             out.push(0);
@@ -75,6 +89,7 @@ fn executable(symbols: &[Symbol]) -> Vec<u8> {
     let symtab_offset = place(&mut out, &symtab);
     let strtab_offset = place(&mut out, &strtab);
     let shstrtab_offset = place(&mut out, shstrtab);
+    let rodata_offset = place(&mut out, &rodata);
     while !out.len().is_multiple_of(4) {
         out.push(0);
     }
@@ -111,6 +126,18 @@ fn executable(symbols: &[Symbol]) -> Vec<u8> {
             1,
             0,
         ),
+        header(
+            46,
+            1,
+            2,
+            RODATA,
+            rodata_offset,
+            rodata.len() as u32,
+            0,
+            0,
+            4,
+            0,
+        ),
     ];
     for fields in headers {
         for field in fields {
@@ -125,7 +152,7 @@ fn executable(symbols: &[Symbol]) -> Vec<u8> {
     for word in [1u32, TEXT, 52, sections, 0] {
         elf.extend_from_slice(&word.to_le_bytes());
     }
-    for half in [52u16, 32, 1, 40, 6, 5] {
+    for half in [52u16, 32, 2, 40, 7, 5] {
         elf.extend_from_slice(&half.to_le_bytes());
     }
     // PT_LOAD of .text, readable and executable.
@@ -141,7 +168,20 @@ fn executable(symbols: &[Symbol]) -> Vec<u8> {
     ] {
         elf.extend_from_slice(&word.to_le_bytes());
     }
-    out[..84].copy_from_slice(&elf);
+    // PT_LOAD of .rodata, readable.
+    for word in [
+        1u32,
+        rodata_offset,
+        RODATA,
+        RODATA,
+        rodata.len() as u32,
+        rodata.len() as u32,
+        4,
+        4,
+    ] {
+        elf.extend_from_slice(&word.to_le_bytes());
+    }
+    out[..116].copy_from_slice(&elf);
     out
 }
 
@@ -243,4 +283,200 @@ fn a_complete_graph_without_a_record_gives_the_observed_frame() {
 fn frame_records_decode_with_uleb128_sizes() {
     let image = executable(&[leaf(Some(32))]);
     assert_eq!(stack_sizes(&image).unwrap(), BTreeMap::from([(TEXT, 32)]));
+}
+
+/// `slli a0, a0, 2; lui a2, %hi(RODATA); addi a2, a2, 0; add a0, a0, a2;
+/// lw a0, 0(a0); jr a0`, then two returns as the table's arms; `bounded`
+/// first checks the index: `li a1, 1; bltu a1, a0, <first arm>`.
+fn dispatch(bounded: bool) -> Symbol {
+    let check: &[u32] = if bounded {
+        &[0x0010_0593, 0x00a5_ee63]
+    } else {
+        &[]
+    };
+    let mut words = check.to_vec();
+    words.extend([
+        0x0025_1513,
+        0x0000_2637,
+        0x0006_0613,
+        0x00c5_0533,
+        0x0005_2503,
+        0x0005_0067,
+        RET,
+        RET,
+    ]);
+    Symbol {
+        name: "dispatch",
+        words,
+        frame: Some(0),
+    }
+}
+
+#[test]
+fn a_bounded_jump_table_reads_exactly_its_entries() {
+    // Two arms; the word after the table is not an entry.
+    let image = image(&[dispatch(true)], &[TEXT + 32, TEXT + 36, 0x5000], false);
+    let function = &functions(&image).unwrap()[0];
+    assert_eq!(sweep::transfers(&image, function).unwrap(), []);
+    assert_eq!(analyze(&image).unwrap().bound(TEXT).unwrap().bytes, Some(0));
+}
+
+#[test]
+fn a_bounded_table_entry_out_of_the_function_is_a_jump() {
+    let image = image(&[dispatch(true)], &[TEXT + 32, 0x5000], false);
+    let function = &functions(&image).unwrap()[0];
+    let transfers: Vec<_> = sweep::transfers(&image, function)
+        .unwrap()
+        .iter()
+        .map(|t| (t.site, t.target, t.kind))
+        .collect();
+    assert_eq!(transfers, [(TEXT + 28, Some(0x5000), TransferKind::Tail)]);
+    let bound = analyze(&image).unwrap().bound(TEXT).unwrap();
+    assert_eq!(bound.reasons(), BTreeMap::from([(Reason::OutsideImage, 1)]));
+}
+
+#[test]
+fn an_unbounded_jump_table_stays_unknown() {
+    // Without a bound or a sized table object, entries past the readable
+    // ones could leave the function.
+    let image = image(&[dispatch(false)], &[TEXT + 24, TEXT + 28], false);
+    let bound = analyze(&image).unwrap().bound(TEXT).unwrap();
+    assert_eq!(bound.bytes, None);
+    assert_eq!(bound.unresolved, [(TEXT + 20, Reason::IndirectJump)]);
+}
+
+#[test]
+fn a_jump_through_a_sized_table_object_keeps_only_entries_out_of_the_function() {
+    let image = image(&[dispatch(false)], &[TEXT + 24, 0x5000], true);
+    let analysis = analyze(&image).unwrap();
+    let jumps: Vec<_> = analysis.functions[&TEXT]
+        .transfers
+        .iter()
+        .map(|t| (t.site, t.target))
+        .collect();
+    assert_eq!(jumps, [(TEXT + 20, Some(0x5000))]);
+}
+
+#[test]
+fn a_call_through_a_constant_table_object_reaches_every_entry() {
+    // root: lui s11, %hi(RODATA); addi s11, s11, 0; then, past a merge
+    // where the sweep forgets the constant but the value analysis keeps it,
+    // slli a0, a0, 2; add a0, a0, s11; lw a0, 0(a0); jalr a0, at depth 16.
+    let (small, large) = (TEXT + 52, TEXT + 64);
+    let image = image(
+        &[
+            Symbol {
+                name: "root",
+                words: vec![
+                    SP_DOWN_16,
+                    SAVE_RA,
+                    0x0000_2db7,
+                    0x000d_8d93,
+                    BRANCH_NEXT,
+                    0x0025_1513,
+                    0x01b5_0533,
+                    0x0005_2503,
+                    0x0005_00e7,
+                    LOAD_RA,
+                    SP_UP_16,
+                    RET,
+                    RET,
+                ],
+                frame: Some(16),
+            },
+            Symbol {
+                name: "small",
+                words: vec![SP_DOWN_16, SP_UP_16, RET],
+                frame: Some(16),
+            },
+            Symbol {
+                name: "large",
+                words: vec![SP_DOWN_32, SP_UP_32, RET],
+                frame: Some(32),
+            },
+        ],
+        &[small, large, small],
+        true,
+    );
+    let analysis = analyze(&image).unwrap();
+    let calls: Vec<_> = analysis.functions[&TEXT]
+        .transfers
+        .iter()
+        .map(|t| (t.site, t.target))
+        .collect();
+    assert_eq!(calls, [(TEXT + 32, Some(small)), (TEXT + 32, Some(large))]);
+    let bound = analysis.bound(TEXT).unwrap();
+    assert_eq!(bound.bytes, Some(48));
+    assert_eq!(bound.path, [(TEXT, 16), (large, 32)]);
+}
+
+#[test]
+fn a_table_base_rewritten_before_the_call_stays_unresolved() {
+    // As above, but `addi s11, s11, 4` after the indexing `add`.
+    let image = image(
+        &[Symbol {
+            name: "root",
+            words: vec![
+                SP_DOWN_16,
+                SAVE_RA,
+                0x0000_2db7,
+                0x000d_8d93,
+                BRANCH_NEXT,
+                0x0025_1513,
+                0x01b5_0533,
+                0x004d_8d93,
+                0x0005_2503,
+                0x0005_00e7,
+                LOAD_RA,
+                SP_UP_16,
+                RET,
+            ],
+            frame: Some(16),
+        }],
+        &[TEXT, TEXT],
+        true,
+    );
+    let bound = analyze(&image).unwrap().bound(TEXT).unwrap();
+    assert_eq!(bound.bytes, None);
+    assert_eq!(bound.reasons(), BTreeMap::from([(Reason::LoadedCall, 1)]));
+}
+
+#[test]
+fn analysed_jump_targets_inside_the_function_are_not_transfers() {
+    // li a0, 0; beqz a1, 1f; li a0, 1; 1: slli a0, a0, 2; lui a2,
+    // %hi(RODATA); addi a2, a2, 0; add a0, a0, a2; lw a0, 0(a0); jr a0;
+    // ret. The value analysis knows the index is 0 or 1: entry 0 is the
+    // local `ret`, entry 1 the function `leaf`.
+    let leaf_address = TEXT + 40;
+    let image = image(
+        &[
+            Symbol {
+                name: "dispatch",
+                words: vec![
+                    0x0000_0513,
+                    0x0005_8463,
+                    0x0010_0513,
+                    0x0025_1513,
+                    0x0000_2637,
+                    0x0006_0613,
+                    0x00c5_0533,
+                    0x0005_2503,
+                    0x0005_0067,
+                    RET,
+                ],
+                frame: Some(0),
+            },
+            leaf(Some(32)),
+        ],
+        &[TEXT + 36, leaf_address],
+        false,
+    );
+    let analysis = analyze(&image).unwrap();
+    let jumps: Vec<_> = analysis.functions[&TEXT]
+        .transfers
+        .iter()
+        .map(|t| (t.site, t.target, t.kind))
+        .collect();
+    assert_eq!(jumps, [(TEXT + 32, Some(leaf_address), TransferKind::Tail)]);
+    assert_eq!(analysis.bound(TEXT).unwrap().bytes, Some(32));
 }

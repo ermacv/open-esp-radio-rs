@@ -14,6 +14,15 @@ function become edges of the value analysis's graph, which then also reaches
 the code behind them; a table the analysis's register values locate there is
 added the same way until none is new.
 
+`analyze` also takes reviewed summaries (`Summary`, parsed from a
+`[[function]]` TOML such as `platform/esp32s31/linker/rom/functions.toml`) of
+companion functions the machine code alone does not bound: each names its
+function's address, which must carry that name. A summary of a function the
+image reaches applies: where the analysis bounds the function itself, the
+two must agree on frame and calls, and otherwise the summary stands for it.
+`Analysis::summaries` lists the ones that applied; a summary no image of the
+platform uses is stale, which the platform's audit over all its images fails.
+
 `analyze` takes the image and its companions, such as the chip's ROM ELF
 (`esp32s31_rev0_rom.elf` of the pinned `esp-rom-elfs`): a call from one into
 another reaches the callee like any other, and no two may place code at the

@@ -15,6 +15,8 @@ oer-riscv-decode = { path = "../decode" }
 oer-riscv-lift = { path = "../lift" }
 oer-riscv-model = { path = "../model" }
 oer-riscv-program = { path = "../program" }
+serde = { version = "=1.0.229", features = ["derive"] }
+toml = "=1.1.4"
 
 [dev-dependencies]
 object = { version = "=0.39.1", default-features = false, features = ["elf", "std", "write"] }
@@ -25,3 +27,4 @@ workspace = true
 [package.metadata.open-radio]
 layer = "tool"
 platform = "host"
+inputs = ["platform/esp32s31/linker/rom/functions.toml"]

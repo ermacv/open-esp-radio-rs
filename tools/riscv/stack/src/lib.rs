@@ -24,6 +24,7 @@
 
 mod image;
 mod relocations;
+mod summaries;
 mod sweep;
 
 use oer_riscv_model::{Error, ErrorCode, Result};
@@ -32,6 +33,7 @@ use std::fmt;
 
 pub use image::{Function, functions, stack_sizes};
 use oer_riscv_analysis::KnownJump;
+pub use summaries::{Summary, parse as parse_summaries};
 pub use sweep::{TableBase, TargetSource, Transfer, TransferKind};
 
 /// Where a function's frame comes from.
@@ -41,6 +43,9 @@ pub enum FrameSource {
     StackSizes,
     /// The deepest observed `sp` of a complete control-flow graph.
     Observed,
+    /// A reviewed summary of a companion function the machine code alone
+    /// does not bound.
+    Summary,
 }
 
 /// What the analysis established about one function.
@@ -148,19 +153,26 @@ pub struct Analysis {
     pub functions: BTreeMap<u32, FunctionFacts>,
     /// Address ranges of the executable sections of every analysed ELF.
     pub code: Vec<(u32, u32)>,
+    /// The summaries this image used: those of the functions it reaches.
+    pub summaries: BTreeSet<String>,
 }
 
 /// Analyze every function of the static RV32 executable `elf` and of the
 /// `companions` it calls into, such as the chip's ROM ELF: a transfer from
 /// one into another reaches the callee's frame like any other call. No two
-/// ELFs may place code at the same address.
-pub fn analyze(elf: &[u8], companions: &[&[u8]]) -> Result<Analysis> {
+/// ELFs may place code at the same address. `summaries` stand for companion
+/// functions the machine code alone does not bound ([`Summary`]).
+pub fn analyze(elf: &[u8], companions: &[&[u8]], summaries: &[Summary]) -> Result<Analysis> {
     let mut analysis = Analysis {
         functions: BTreeMap::new(),
         code: Vec::new(),
+        summaries: BTreeSet::new(),
     };
+    let mut image = None;
     for elf in std::iter::once(elf).chain(companions.iter().copied()) {
-        let Analysis { functions, code } = analyze_one(elf)?;
+        let Analysis {
+            functions, code, ..
+        } = analyze_one(elf)?;
         for &(start, end) in &code {
             if analysis
                 .code
@@ -174,8 +186,10 @@ pub fn analyze(elf: &[u8], companions: &[&[u8]]) -> Result<Analysis> {
             }
         }
         analysis.code.extend(code);
+        image.get_or_insert_with(|| functions.keys().copied().collect::<BTreeSet<u32>>());
         analysis.functions.extend(functions);
     }
+    analysis.summaries = summaries::apply(&mut analysis, &image.unwrap_or_default(), summaries)?;
     Ok(analysis)
 }
 
@@ -195,7 +209,11 @@ fn analyze_one(elf: &[u8]) -> Result<Analysis> {
         }
         Ok(facts)
     })?;
-    Ok(Analysis { functions, code })
+    Ok(Analysis {
+        functions,
+        code,
+        summaries: BTreeSet::new(),
+    })
 }
 
 /// The entries of the table a transfer loads its target from, when the

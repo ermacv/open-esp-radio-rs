@@ -1,6 +1,7 @@
 //! ISA-only function decoder and relocation interpretation; no I/O authority.
 mod execution;
 mod extensions;
+mod float;
 use blobray_domain::*;
 pub use execution::{RiscvExecutor, Rv32imacExecutor};
 use extensions::{Classified, Extension};
@@ -9,7 +10,7 @@ use rv_asm::{Inst, IsCompressed, Xlen};
 pub struct RiscvDecoder;
 impl FunctionDecoder for RiscvDecoder {
     fn identity(&self) -> &'static str {
-        "rv32imac-zba-zbb-zbs-zcb-zcmp/rv-asm-0.2.1/policy-3"
+        "rv32imafc-zba-zbb-zbs-zcb-zcmp/rv-asm-0.2.1/policy-4"
     }
     fn unsupported_flow(&self, bytes: &[u8]) -> UnsupportedFlow {
         // ISA structure only, not CSR/privileged execution support. Zicsr:
@@ -68,6 +69,13 @@ impl FunctionDecoder for RiscvDecoder {
                     length: width as u8,
                     text: extension.to_string(),
                     flow,
+                });
+            }
+            (Instruction::Float(float), width) => {
+                return Some(DecodedOp {
+                    length: width as u8,
+                    text: float.to_string(),
+                    flow: InstructionFlow::Next,
                 });
             }
         };
@@ -265,11 +273,12 @@ mod tests {
 }
 
 /// One decoded instruction: a base RV32IMAC form from rv-asm, or an
-/// extension form it lacks.
+/// extension or single-precision form it lacks.
 #[derive(Clone, Copy)]
 enum Instruction {
     Base(Inst),
     Extension(Extension),
+    Float(float::Float),
 }
 
 fn decode_instruction(bytes: &[u8]) -> Option<(Instruction, usize)> {
@@ -284,6 +293,17 @@ fn decode_instruction(bytes: &[u8]) -> Option<(Instruction, usize)> {
         return None;
     }
     let half = u16::from_le_bytes([bytes[0], bytes[1]]);
+    let float = if half & 3 != 3 {
+        float::compressed(half).map(|float| (float, 2))
+    } else {
+        bytes
+            .get(..4)
+            .and_then(|word| float::word(u32::from_le_bytes(word.try_into().ok()?)))
+            .map(|float| (float, 4))
+    };
+    if let Some((float, width)) = float {
+        return Some((Instruction::Float(float), width));
+    }
     let width = if half & 3 != 3 {
         2
     } else if half & 0x1f != 0x1f {

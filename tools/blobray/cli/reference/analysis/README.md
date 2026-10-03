@@ -94,14 +94,16 @@ relocations, TLS, RV32E/quad-float ABI and writable executable segments are
 outside this static profile. Static relocation sections retained by
 `--emit-relocs` are provenance; their edits are not applied again during
 value/flow interpretation. Read-only ELF permissions are the declared static
-memory interpretation, not a hardware-memory-map assertion. Floating-point
-instruction semantics remain unsupported; concrete execution uses the separate
+memory interpretation, not a hardware-memory-map assertion. Single-precision
+instructions are decoded and lifted for their integer and memory effects only;
+the FP register file is not modeled. Concrete execution uses the separate
 [execution contract](../execution/README.md#concrete-execution-and-comparison).
 
 ### Structural decoding
 
 Decoder policy 1 uses pinned `rv-asm 0.2.1` through an independently injected RV32 decoder.
-It supports its RV32IMAC encodings and records unsupported encodings as gaps.
+It supports its RV32IMAC encodings, the backend's Zba/Zbb/Zbs, Zcb, Zcmp and
+single-precision F forms, and records unsupported encodings as gaps.
 Printed instruction text is versioned with that decoder, not a parsing interface;
 bytes, offsets and typed flow are the structural interface. Calls use ABI link
 registers x1/x5; canonical indirect return patterns describe the calling convention,

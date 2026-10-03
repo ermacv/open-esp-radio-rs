@@ -240,6 +240,9 @@ fn shape(code: &dyn Code, semantics: &dyn FunctionSemantics, pc: u32) -> Option<
             SemanticOp::Upper { dest, .. } | SemanticOp::Link { dest } => {
                 ([0; 2], dest, Kind::Plain)
             }
+            // No executor runs floating point, so no executed step has this
+            // shape; it keeps the static CFG running through FP code.
+            SemanticOp::Opaque { dest } => ([0; 2], dest, Kind::Plain),
             SemanticOp::Memory {
                 kind,
                 base,
@@ -253,6 +256,9 @@ fn shape(code: &dyn Code, semantics: &dyn FunctionSemantics, pc: u32) -> Option<
                     // A conditional store's result depends on its operands.
                     MemoryKind::StoreConditional => ([base, source.unwrap_or(0)], Kind::Store),
                     MemoryKind::Atomic => ([base, source.unwrap_or(0)], Kind::Atomic),
+                    // As for `Opaque`: static CFG only.
+                    MemoryKind::FloatLoad => ([base, 0], Kind::Load),
+                    MemoryKind::FloatStore => ([base, 0], Kind::Store),
                 };
                 (uses, dest.unwrap_or(0), kind)
             }

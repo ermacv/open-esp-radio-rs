@@ -70,6 +70,30 @@ fn a_read_modify_write_that_ors_a_constant_sets_those_bits() {
 }
 
 #[test]
+fn a_floating_point_load_reads_and_its_store_writes_an_unknown_word() {
+    // lui/addi the word, flw fa0, 0(a5), fsw fa0, 4(a5), ret.
+    let corpus = corpus(
+        "float",
+        code(&["2010e7b7", "83078793", "0007a507", "00a7a227", "8082"]),
+    );
+    assert_eq!(
+        accesses(&corpus),
+        [
+            Access {
+                location: Location::Absolute(0x2010_d830),
+                width: 4,
+                effect: Effect::Read,
+            },
+            Access {
+                location: Location::Absolute(0x2010_d834),
+                width: 4,
+                effect: Effect::Unknown { bits: u32::MAX },
+            },
+        ]
+    );
+}
+
+#[test]
 fn a_masked_argument_or_into_a_cleared_field_is_a_value_field() {
     // libcoexist hal_set_extern_pti: clear bits 15:12 through an and-mask,
     // then insert (argument << 4) & 0xff into bits 7:4.

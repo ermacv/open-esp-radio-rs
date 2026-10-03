@@ -88,8 +88,16 @@ fn direct_jump_and_unknown_clobber_have_distinct_coverage() {
     assert!(!bad.status.success());
     let result: serde_json::Value = serde_json::from_slice(&bad.stdout).unwrap();
     assert_eq!(result["summary"]["forbidden_targets"], 1);
-    // FP arithmetic cannot be an integer transfer but must erase constants.
-    let unknown = run(&elf(&[0x000032b7, 0x00000053, 0x00028067]), &[]);
+    // A decoded single-precision fadd.s has no integer effect: t0 keeps its
+    // constant and the jump reaches the forbidden range.
+    let float = run(&elf(&[0x000032b7, 0x00000053, 0x00028067]), &[]);
+    assert!(!float.status.success());
+    let result: serde_json::Value = serde_json::from_slice(&float.stdout).unwrap();
+    assert_eq!(result["summary"]["forbidden_targets"], 1);
+    assert_eq!(result["summary"]["unsupported_non_control"], 0);
+    // An undecoded double-precision fadd.d cannot be an integer transfer but
+    // must erase constants.
+    let unknown = run(&elf(&[0x000032b7, 0x02000053, 0x00028067]), &[]);
     assert!(
         unknown.status.success(),
         "{}",

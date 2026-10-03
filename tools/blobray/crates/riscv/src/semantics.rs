@@ -18,12 +18,13 @@ impl FunctionSemantics for RiscvDecoder {
     }
 
     fn semantic_identity(&self) -> &'static str {
-        "rv32imac-zba-zbb-zbs-zcb-zcmp/values-7/rv-asm-0.2.1"
+        "rv32imafc-zba-zbb-zbs-zcb-zcmp/values-8/rv-asm-0.2.1"
     }
     fn lift(&self, bytes: &[u8]) -> SemanticOp {
         let inst = match decode_instruction(bytes) {
             Some((Instruction::Base(inst), _)) => inst,
             Some((Instruction::Extension(extension), _)) => return lift_extension(extension),
+            Some((Instruction::Float(float), _)) => return lift_float(float),
             None => return SemanticOp::Unsupported,
         };
         use Operand::{Immediate as Imm, Register as Reg};
@@ -345,7 +346,7 @@ impl FunctionSemantics for RiscvDecoder {
         let store = matches!(
             operation,
             SemanticOp::Memory {
-                kind: MemoryKind::Store,
+                kind: MemoryKind::Store | MemoryKind::FloatStore,
                 ..
             }
         );
@@ -358,7 +359,7 @@ impl FunctionSemantics for RiscvDecoder {
                         right: Operand::Immediate(_),
                         ..
                     } | SemanticOp::Memory {
-                        kind: MemoryKind::Load,
+                        kind: MemoryKind::Load | MemoryKind::FloatLoad,
                         ..
                     }
                 )
@@ -418,6 +419,30 @@ fn lift_extension(extension: Extension) -> SemanticOp {
         | Extension::Pop { .. }
         | Extension::MoveToSaved { .. }
         | Extension::MoveFromSaved { .. } => SemanticOp::Unsupported,
+    }
+}
+
+/// FP loads and stores address memory through an integer base; an
+/// operation's only integer effect is an integer destination.
+fn lift_float(float: float::Float) -> SemanticOp {
+    let memory = |kind, base, displacement| SemanticOp::Memory {
+        kind,
+        base,
+        displacement,
+        width: 4,
+        dest: None,
+        source: None,
+        swap: false,
+        signed: false,
+    };
+    match float {
+        float::Float::Load { base, offset, .. } => memory(MemoryKind::FloatLoad, base, offset),
+        float::Float::Store { base, offset, .. } => memory(MemoryKind::FloatStore, base, offset),
+        float::Float::Operation {
+            operands: [Some(float::Register::Integer(dest)), ..],
+            ..
+        } => SemanticOp::Opaque { dest },
+        float::Float::Operation { .. } => SemanticOp::None,
     }
 }
 

@@ -19,7 +19,17 @@ registers from `s11` down to `ra` below `sp`, pops load them back, and the
 returning forms return through `ra`, as the decoded flow states. Zcmt table
 jumps need the `jvt` CSR and remain unsupported.
 
-The decoder, semantic and execution identities (`policy-3`, `values-7` and
+The `float` module decodes the single-precision F extension, which rv-asm
+0.2.1 also lacks: `flw`/`fsw` with `C.FLW`, `C.FSW`, `C.FLWSP` and `C.FSWSP`,
+the fused multiply-adds and every OP-FP form, rejecting other formats and the
+reserved rounding modes 5 and 6. The FP register file is not modeled: loads
+and stores lift to `FloatLoad`/`FloatStore` accesses through their integer base,
+a form with an integer destination (`fmv.x.w`, `fclass.s`, comparisons,
+`fcvt.w[u].s`) lifts to `Opaque`, and every other form to `None`. Neither
+executor profile runs floating point; the F forms stop execution as
+unsupported.
+
+The decoder, semantic and execution identities (`policy-4`, `values-8` and
 `execution-13`, each over rv-asm 0.2.1) cover every behavior below; any
 change to decoding, lifting or concrete execution changes its identity.
 

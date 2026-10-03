@@ -3,7 +3,6 @@
 #[cfg(feature = "psram-dma-diagnostic")]
 use super::registers::terminal_status;
 use super::{
-    completion::channel0_interrupt,
     descriptor::{
         AxiGdmaDescriptor, BurstSize, build_chain, build_segment_chains, required_descriptors,
         validate_descriptors,
@@ -14,10 +13,13 @@ use super::{
     },
     status::AxiGdmaMem2MemStatus,
 };
+use crate::interrupt_table::{self, Route};
 use crate::{PsramCacheWritebackError, writeback_psram_for_dma_read};
 use core::marker::PhantomData;
-use esp_hal::interrupt::{InterruptHandler, Priority};
-use esp_hal::peripherals::DMA_AXI_CH0;
+use esp_hal::interrupt::Priority;
+use esp_hal::peripherals::{DMA_AXI_CH0, Interrupt};
+use esp_hal::system::Cpu;
+use oer_interrupt_table::Entry;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AxiGdmaMem2MemError {
@@ -90,7 +92,43 @@ impl<'buffer> AxiGdmaMem2MemSegment<'buffer> {
 /// Exclusive owner of ESP32-S31 AXI-GDMA channel zero in M2M mode.
 pub struct AxiGdmaMem2Mem<'d> {
     _channel: DMA_AXI_CH0<'d>,
+    input: Route,
+    output: Route,
     _not_send: PhantomData<*mut ()>,
+}
+
+/// AXI GDMA channel 0 with the routes of its two interrupt sources in the
+/// image's interrupt table, whose entries name `axi_gdma_mem2mem_interrupt`.
+pub struct AxiGdmaMem2MemChannel<'d> {
+    channel: DMA_AXI_CH0<'d>,
+    input: Route,
+    output: Route,
+}
+
+impl<'d> AxiGdmaMem2MemChannel<'d> {
+    /// `input` and `output` are the tokens of `AXI_PDMA_IN_CH0` and
+    /// `AXI_PDMA_OUT_CH0`; another source's token does not compile.
+    pub fn new<I, O>(channel: DMA_AXI_CH0<'d>, input: I, output: O) -> Self
+    where
+        I: Entry<Source = Interrupt, Level = Priority, Core = Cpu>,
+        O: Entry<Source = Interrupt, Level = Priority, Core = Cpu>,
+    {
+        const {
+            assert!(
+                I::SOURCE as u16 == Interrupt::AXI_PDMA_IN_CH0 as u16,
+                "the input token is not AXI_PDMA_IN_CH0's"
+            );
+            assert!(
+                O::SOURCE as u16 == Interrupt::AXI_PDMA_OUT_CH0 as u16,
+                "the output token is not AXI_PDMA_OUT_CH0's"
+            );
+        };
+        Self {
+            channel,
+            input: Route::new(input),
+            output: Route::new(output),
+        }
+    }
 }
 
 enum PayloadOwner<'transfer, 'buffer> {
@@ -150,18 +188,25 @@ pub type AxiGdmaMem2MemSegmentsTransfer<'transfer, 'buffer, 'd> =
     AxiGdmaMem2MemTransferOwner<'transfer, 'buffer, 'd>;
 
 impl<'d> AxiGdmaMem2Mem<'d> {
-    pub fn new(channel: DMA_AXI_CH0<'d>) -> Self {
+    /// Take channel 0 and route both of its sources to their table level.
+    ///
+    /// # Panics
+    ///
+    /// On another core than the table's.
+    pub fn new(channel: AxiGdmaMem2MemChannel<'d>) -> Self {
         enable_and_configure_group();
         let mut this = Self {
-            _channel: channel,
+            _channel: channel.channel,
+            input: channel.input,
+            output: channel.output,
             _not_send: PhantomData,
         };
         this.stop_and_reset_channel();
-        let handler = InterruptHandler::new(channel0_interrupt, Priority::Priority1);
-        this._channel.bind_dma_in_interrupt(handler);
-        this._channel.bind_dma_out_interrupt(handler);
-        this._channel.enable_dma_in_interrupt(Priority::Priority1);
-        this._channel.enable_dma_out_interrupt(Priority::Priority1);
+        for route in [&this.input, &this.output] {
+            if let Err(error) = interrupt_table::enable_route(route) {
+                panic!("AXI GDMA channel 0: {error:?}");
+            }
+        }
         this
     }
 
@@ -409,6 +454,8 @@ impl Drop for AxiGdmaMem2MemTransferOwner<'_, '_, '_> {
 impl Drop for AxiGdmaMem2Mem<'_> {
     fn drop(&mut self) {
         self.stop_and_reset_channel();
+        interrupt_table::disable_route(&self.input);
+        interrupt_table::disable_route(&self.output);
     }
 }
 

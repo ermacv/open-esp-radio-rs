@@ -34,11 +34,12 @@ pub use cache::performance::{
 };
 #[cfg(feature = "axi-gdma-mem2mem")]
 pub use dma::mem2mem::{
-    AxiGdmaDescriptor, AxiGdmaMem2Mem, AxiGdmaMem2MemError, AxiGdmaMem2MemPrepared,
-    AxiGdmaMem2MemPreparedOwner, AxiGdmaMem2MemReport, AxiGdmaMem2MemRxStatus,
-    AxiGdmaMem2MemSegment, AxiGdmaMem2MemSegmentsPrepared, AxiGdmaMem2MemSegmentsTransfer,
-    AxiGdmaMem2MemStatus, AxiGdmaMem2MemTransfer, AxiGdmaMem2MemTransferError,
-    AxiGdmaMem2MemTransferOwner, AxiGdmaMem2MemTxStatus, BurstSize,
+    AxiGdmaDescriptor, AxiGdmaMem2Mem, AxiGdmaMem2MemChannel, AxiGdmaMem2MemError,
+    AxiGdmaMem2MemPrepared, AxiGdmaMem2MemPreparedOwner, AxiGdmaMem2MemReport,
+    AxiGdmaMem2MemRxStatus, AxiGdmaMem2MemSegment, AxiGdmaMem2MemSegmentsPrepared,
+    AxiGdmaMem2MemSegmentsTransfer, AxiGdmaMem2MemStatus, AxiGdmaMem2MemTransfer,
+    AxiGdmaMem2MemTransferError, AxiGdmaMem2MemTransferOwner, AxiGdmaMem2MemTxStatus, BurstSize,
+    axi_gdma_mem2mem_interrupt,
 };
 #[cfg(feature = "esp32s31")]
 pub use flash::mmu::{FLASH_XIP_END, FLASH_XIP_START, FlashMmu};

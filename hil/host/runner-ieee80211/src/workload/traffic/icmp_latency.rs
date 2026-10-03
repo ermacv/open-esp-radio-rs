@@ -365,7 +365,7 @@ impl Default for Config {
     }
 }
 impl Config {
-    fn validate(self) -> Result<Self> {
+    pub(crate) fn validate(self) -> Result<Self> {
         if self.count == 0 {
             return Err("ICMP count must be nonzero".into());
         }

@@ -31,7 +31,10 @@ blobray --format json function-records --input libpp=/path/to/libpp.a --function
 
 Each `--input ROLE=PATH` is an archive or ELF; repeat `--function NAME` for
 several functions, and every function of that name in any input is reported.
-The JSON document is `{"schema":1,"inputs":[...],"functions":[...],"missing":[...]}`:
+`--format human` prints each function's record count and completeness, then
+its instruction listing: offset, decoded instruction and the symbols its
+relocations name (`name+addend`). The JSON document is
+`{"schema":2,"inputs":[...],"abi":...,"functions":[...],"missing":[...]}`:
 an `analyzed` function carries its coverage, its value-semantics summary,
 `complete` and every record (instructions, blocks, edges, references,
 expressions, values, memory accesses, conditions and return values); a
@@ -59,10 +62,45 @@ displacements after it: such an access is a candidate to read, not a proof.
 An access whose last displacement is `--offset` (of `--width` bytes, when
 given) is reported with its instruction offset, kind and width; absolute
 addresses are no field. The JSON document is
-`{"schema":1,"inputs":[...],"offset":N,"width":W,"functions":[...],"blocked":[...],"gaps":N,"unknown_addresses":N}`:
-`blocked` lists the functions no analysis could read, `gaps` counts the code
-no function covers and `unknown_addresses` the accesses whose address is not
-known at all. Any of the three means the list may be incomplete.
+`{"schema":2,"inputs":[...],"abi":...,"offset":N,"width":W,"functions":[...],"blocked":[...],"partial":N,"gaps":N,"unknown_addresses":N}`:
+`blocked` lists the functions no analysis could read, `partial` counts the
+analyzed functions whose coverage or value semantics is incomplete, `gaps`
+counts the code no function covers and `unknown_addresses` the accesses whose
+address is not known at all. Any of them means the list may be incomplete.
+
+### Calling convention
+
+Without an assumption, every register is unknown after a call the analysis
+cannot follow (every call, since callees are not expanded): a field read
+through `s0` after a call has no address and is missing from
+`field-accesses`. `--abi riscv-integer` on `function-records`,
+`field-accesses`, `callers` and `register-accesses` assumes the RISC-V integer
+calling convention instead: such a call keeps `sp`, `gp`, `tp` and `s0`-`s11`,
+and `a0`/`a1` become the call's result. It is an explicit assumption, never
+inferred from ELF flags, and every JSON document records it as `abi`
+(`"riscv-integer"` or `null`). On the pinned ESP32-S31 `libpp.a` it turns
+8000-odd accesses at unknown addresses into known ones.
+
+### Callers
+
+`callers` lists every reference the analyzed functions make to the named
+symbols:
+
+```console
+blobray callers --input libpp=/path/to/libpp.a --symbol pm_scale_listen_interval
+```
+
+A reference is a relocation: in a relocatable object every call, jump and
+address of another symbol carries one, so a `call`, a `branch` and an
+`address` (a function pointer stored in a table) are all found with the
+referencing instruction's offset. Repeat `--symbol NAME` for several targets.
+The JSON document is
+`{"schema":1,"inputs":[...],"abi":...,"symbols":[...],"callers":[...],"blocked":[...],"gaps":N}`.
+A call inside one section that the assembler resolved without a relocation
+is not a reference and is not listed.
+
+Symbol names in every JSON document are strings when their bytes are UTF-8
+and byte arrays otherwise.
 
 Selection takes static and dynamic `STT_FUNC` symbols defined in nonempty
 executable sections of RV32 ET_REL objects or static ET_EXEC images. Aliases

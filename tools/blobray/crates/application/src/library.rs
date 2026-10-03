@@ -48,9 +48,13 @@ fn blocks_function(error: &Error) -> bool {
 }
 
 /// Analyze every function symbol of an executable section of every object
-/// `inputs` contain, presenting each outcome to `visit`.
+/// `inputs` contain, presenting each outcome to `visit`. `abi` is the
+/// explicit calling-convention assumption: with it, a call the analysis
+/// cannot follow keeps the registers the RISC-V integer ABI preserves;
+/// without it, every register is unknown after such a call.
 pub fn analyze_library(
     inputs: &[Executable],
+    abi: Option<oer_riscv_model::CallAbi>,
     decoder: &dyn FunctionSemantics,
     memory: &WorkingMemory,
     control: &mut dyn RunControl,
@@ -65,7 +69,7 @@ pub fn analyze_library(
         position.artifact(executable.id());
         control.set_position(position);
         let container = visit_members(executable, memory, control, &mut |member, c| {
-            analyze_object(input, member, decoder, memory, c, visit)
+            analyze_object(input, member, abi, decoder, memory, c, visit)
         })?;
         let gap = |reason: &str, visit: &mut Visit<'_>, c: &mut dyn RunControl| {
             visit(
@@ -139,6 +143,7 @@ fn research_function<'m>(
     symbol: &SymbolId,
     input: u64,
     payload: &ArtifactId,
+    abi: Option<oer_riscv_model::CallAbi>,
     decoder: &dyn FunctionSemantics,
     memory: &'m WorkingMemory,
     control: &mut dyn RunControl,
@@ -187,7 +192,7 @@ fn research_function<'m>(
             memory,
             control,
             sink,
-            None,
+            abi,
         )
     })
 }
@@ -201,9 +206,11 @@ impl FunctionSink for Records<'_, '_> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn analyze_object(
     input: u64,
     member: Member<'_>,
+    abi: Option<oer_riscv_model::CallAbi>,
     decoder: &dyn FunctionSemantics,
     memory: &WorkingMemory,
     control: &mut dyn RunControl,
@@ -284,6 +291,7 @@ fn analyze_object(
                     &function.symbol,
                     input,
                     &payload,
+                    abi,
                     decoder,
                     memory,
                     c,
@@ -332,6 +340,7 @@ fn analyze_object(
 /// inside `ranges` when it is nonempty, with blocked functions and gaps.
 pub fn register_accesses(
     inputs: &[Executable],
+    abi: Option<oer_riscv_model::CallAbi>,
     ranges: &[ImageRegion],
     decoder: &dyn FunctionSemantics,
     memory: &WorkingMemory,
@@ -351,6 +360,7 @@ pub fn register_accesses(
     };
     analyze_library(
         inputs,
+        abi,
         decoder,
         memory,
         control,

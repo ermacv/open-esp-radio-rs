@@ -11,7 +11,8 @@
       "audit-targets",
       "register-accesses",
       "function-records",
-      "field-accesses"
+      "field-accesses",
+      "callers"
     ]
   },
   {
@@ -33,6 +34,7 @@
     "flags": [
       "--input",
       "--range",
+      "--abi",
       "--working-memory-mib",
       "--timeout-secs",
       "--max-work-units"
@@ -48,6 +50,7 @@
     "flags": [
       "--input",
       "--function",
+      "--abi",
       "--working-memory-mib",
       "--timeout-secs",
       "--max-work-units"
@@ -64,6 +67,7 @@
       "--input",
       "--offset",
       "--width",
+      "--abi",
       "--working-memory-mib",
       "--timeout-secs",
       "--max-work-units"
@@ -72,6 +76,22 @@
     "path": [
       "blobray",
       "field-accesses"
+    ],
+    "subcommands": []
+  },
+  {
+    "flags": [
+      "--input",
+      "--symbol",
+      "--abi",
+      "--working-memory-mib",
+      "--timeout-secs",
+      "--max-work-units"
+    ],
+    "forwards": false,
+    "path": [
+      "blobray",
+      "callers"
     ],
     "subcommands": []
   }

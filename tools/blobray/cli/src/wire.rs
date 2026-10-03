@@ -6,7 +6,9 @@ use blobray_domain::{
     CheckVerdict, ForbiddenTargetRange, LibraryFunction, RegisterAccess, RegisterAccessSummary,
     TargetAuditRecord, TargetAuditSummary,
 };
-use oer_riscv_model::{ArtifactId, Error, FunctionCoverage, FunctionRecord, SemanticSummary};
+use oer_riscv_model::{
+    ArtifactId, CallAbi, Error, FunctionCoverage, FunctionRecord, SemanticSummary,
+};
 use serde::{Deserialize, Serialize};
 
 /// Schema of the `audit-targets` document.
@@ -29,8 +31,8 @@ pub struct TargetAuditDocument {
 }
 
 /// Schema of the `register-accesses` document
-/// (`{"schema":1,"inputs":[...],"records":[...],"summary":{...}}`).
-pub const REGISTER_ACCESSES_SCHEMA: u32 = 1;
+/// (`{"schema":2,"inputs":[...],"abi":...,"records":[...],"summary":{...}}`).
+pub const REGISTER_ACCESSES_SCHEMA: u32 = 2;
 
 /// One analyzed input of a `register-accesses` document, by position.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -46,14 +48,17 @@ pub struct RegisterAccessInput {
 pub struct RegisterAccessDocument {
     pub schema: u32,
     pub inputs: Vec<RegisterAccessInput>,
+    /// The calling convention the analysis assumed, if any.
+    pub abi: Option<CallAbi>,
     pub records: Vec<RegisterAccess>,
     pub summary: RegisterAccessSummary,
 }
 
 /// Schema of the `function-records` document
-/// (`{"schema":1,"inputs":[...],"functions":[...],"missing":[...]}`).
-pub const FUNCTION_RECORDS_SCHEMA: u32 = 1;
-pub const FIELD_ACCESSES_SCHEMA: u32 = 1;
+/// (`{"schema":2,"inputs":[...],"abi":...,"functions":[...],"missing":[...]}`).
+pub const FUNCTION_RECORDS_SCHEMA: u32 = 2;
+pub const FIELD_ACCESSES_SCHEMA: u32 = 2;
+pub const CALLERS_SCHEMA: u32 = 1;
 
 /// Every memory access of the analyzed functions that lands on one field
 /// offset, as a field of its root ([`crate::field`]), and the functions no
@@ -63,6 +68,8 @@ pub const FIELD_ACCESSES_SCHEMA: u32 = 1;
 pub struct FieldAccessesDocument {
     pub schema: u32,
     pub inputs: Vec<RegisterAccessInput>,
+    /// The calling convention the analysis assumed, if any.
+    pub abi: Option<CallAbi>,
     /// The field's displacement from the last loaded pointer or the root.
     pub offset: i64,
     /// The access width the request selects, if any.
@@ -72,6 +79,9 @@ pub struct FieldAccessesDocument {
     pub functions: Vec<FieldAccessFunction>,
     /// Functions that cannot be analyzed: their accesses are unknown.
     pub blocked: Vec<LibraryFunction>,
+    /// Analyzed functions whose coverage or value semantics is incomplete:
+    /// some of their accesses may be missing above.
+    pub partial: u64,
     /// Code no function covers, whose accesses are unknown too.
     pub gaps: u64,
     /// Accesses of the analyzed functions whose address is not known at
@@ -94,6 +104,8 @@ pub struct FieldAccessFunction {
 pub struct FunctionRecordsDocument {
     pub schema: u32,
     pub inputs: Vec<RegisterAccessInput>,
+    /// The calling convention the analysis assumed, if any.
+    pub abi: Option<CallAbi>,
     pub functions: Vec<NamedFunction>,
     /// Requested names that no analyzed or blocked function carries.
     pub missing: Vec<String>,
@@ -117,4 +129,32 @@ pub enum NamedFunction {
         function: LibraryFunction,
         error: Error,
     },
+}
+
+/// Every reference the analyzed functions make to the requested symbols:
+/// each is a relocation, as every call, jump or address of another symbol
+/// is in a relocatable object.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CallersDocument {
+    pub schema: u32,
+    pub inputs: Vec<RegisterAccessInput>,
+    /// The calling convention the analysis assumed, if any.
+    pub abi: Option<CallAbi>,
+    /// The requested symbol names.
+    pub symbols: Vec<String>,
+    /// The referencing functions, in input, object and symbol order.
+    pub callers: Vec<Caller>,
+    /// Functions that cannot be analyzed: their references are unknown.
+    pub blocked: Vec<LibraryFunction>,
+    /// Code no function covers.
+    pub gaps: u64,
+}
+
+/// One function's references to the requested symbols.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Caller {
+    pub function: LibraryFunction,
+    pub references: Vec<crate::listing::SymbolReference>,
 }

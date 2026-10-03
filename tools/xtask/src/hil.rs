@@ -950,22 +950,52 @@ impl FlashedArgs {
     }
 }
 
-/// Run one command, typically a series of HIL commands, under one lease.
-/// Nested `cargo hil` commands join the lease instead of queueing.
 /// Why a lease refuses `command`: a hub port is switched only by a power
 /// cycle of a registered board (`cargo hil board reset BOARD --via power`),
-/// never by `uhubctl` in a leased command, which could leave a port off.
+/// never by `uhubctl` in a leased command, which could leave a port off. The
+/// program is matched, directly or as a command of a shell's `-c` script; an
+/// argument that only names it (`devices set --power-uhubctl`) passes.
 fn switches_hub_power(command: &[OsString]) -> Option<String> {
-    command
-        .iter()
-        .any(|argument| argument.to_string_lossy().contains("uhubctl"))
-        .then(|| {
-            "a lease runs no `uhubctl`: cycle a board's hub port with \
-             `cargo hil board reset BOARD --via power`"
-                .to_owned()
-        })
+    let is_uhubctl = |word: &str| {
+        Path::new(word)
+            .file_name()
+            .is_some_and(|name| name == "uhubctl")
+    };
+    let (program, arguments) = command.split_first()?;
+    let program = program.to_string_lossy();
+    let shell = matches!(
+        Path::new(program.as_ref())
+            .file_name()
+            .and_then(|name| name.to_str()),
+        Some("sh" | "bash" | "zsh" | "fish" | "dash")
+    );
+    let script_runs_it = || {
+        arguments
+            .iter()
+            .skip_while(|argument| *argument != "-c")
+            .nth(1)
+            .is_some_and(|script| {
+                script
+                    .to_string_lossy()
+                    .split([';', '&', '|', '\n', '(', ')', '`'])
+                    .filter_map(|segment| {
+                        segment.split_whitespace().find(|word| {
+                            !word.contains('=')
+                                && !matches!(*word, "sudo" | "env" | "exec" | "command")
+                        })
+                    })
+                    .any(is_uhubctl)
+            })
+    };
+    (is_uhubctl(&program) || (shell && script_runs_it())).then(|| {
+        "a lease runs no `uhubctl`: cycle a board's hub port with \
+         `cargo hil board reset BOARD --via power`"
+            .to_owned()
+    })
 }
 
+/// Run one command, typically a series of HIL commands, under one lease.
+/// Nested `cargo hil` commands join the lease instead of queueing.
 fn lease(ctx: &Context, outer: LeaseOptions, args: &[OsString]) -> Result<std::process::ExitCode> {
     use clap::Parser as _;
     let cli = LeaseCli::try_parse_from(args)?;
@@ -2438,10 +2468,27 @@ mod tests {
             command(&["uhubctl", "-l", "3-8.3", "-p", "2", "-a", "off"]),
             command(&["sh", "-c", "uhubctl -l 3-8.3 -p 2 -a off; sleep 5"]),
             command(&["/usr/sbin/uhubctl", "-a", "cycle"]),
+            command(&["bash", "-c", "sleep 1 && sudo uhubctl -a on"]),
         ] {
             assert!(super::switches_hub_power(&refused).is_some(), "{refused:?}");
         }
-        assert!(super::switches_hub_power(&command(&["cargo", "hil", "peer", "send"])).is_none());
+        for allowed in [
+            command(&["cargo", "hil", "peer", "send"]),
+            command(&[
+                "cargo",
+                "hil",
+                "devices",
+                "set",
+                "AA",
+                "--power-uhubctl",
+                "3-8.3",
+                "--power-port",
+                "2",
+            ]),
+            command(&["sh", "-c", "echo uhubctl is refused"]),
+        ] {
+            assert!(super::switches_hub_power(&allowed).is_none(), "{allowed:?}");
+        }
     }
 
     use super::{

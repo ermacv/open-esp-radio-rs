@@ -106,9 +106,10 @@ The read never changes the repetition's outcome.
 
 A target that does not answer within those 20 s climbs the recovery ladder:
 an EN pulse through the board's registered reset path, or an RTS pulse on its
-own USB Serial/JTAG port when it has none, then the same query again. No
-board is on a switchable hub port, so the stand cannot power-cycle one; a
-board neither reset brings back needs a person. The failure then names where core 0 was when the reset hit, from the
+own USB Serial/JTAG port when it has none, then the same query again. The
+ladder does not cycle power: a board neither reset brings back needs
+`cargo hil board reset BOARD --via power` when its hub port is registered,
+otherwise a person. The failure then names where core 0 was when the reset hit, from the
 ROM banner's saved program counter symbolized like a hang: stuck in code, or
 idle in its executor. A step that brings it back is journaled as a recovery, `hardware` when
 the port had vanished or the ROM waited for a download. When the ROM answers

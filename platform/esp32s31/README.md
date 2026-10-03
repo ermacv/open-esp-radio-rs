@@ -73,7 +73,9 @@ Each image declares its peripheral interrupt sources once with
 `oer_esp32s31_platform_runtime::interrupt_table!` (source, handler, level,
 core; see [`oer-interrupt-table`](../../crates/runtime/interrupt-table/README.md)):
 the macro links each handler into its source's slot of esp-hal's
-`__EXTERNAL_INTERRUPTS` and creates one token per source. Installing a hart's
+`__EXTERNAL_INTERRUPTS` and creates one token per source; the image hands its `INTERRUPT_TABLE` to
+`adopt_psram`. The runtime's placement audit requires every entry's slot
+symbol and handler function in SRAM. Installing a hart's
 interrupt stack silences every source of that hart's entries and checks the
 slots; `enable_interrupts_after_handoff` checks again that every slot holds its
 handler and every table source is silent or routed to its level. An owner

@@ -41,7 +41,8 @@ extern "C" fn runtime_main() -> ! {
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
     // SAFETY: the common stage-two entry runs after the board bootstrap,
     // with global interrupts disabled and the PSRAM mapping intact.
-    let _psram = unsafe { oer_esp32s31_platform_runtime::adopt_psram(peripherals.PSRAM) };
+    let _psram =
+        unsafe { oer_esp32s31_platform_runtime::adopt_psram(peripherals.PSRAM, INTERRUPT_TABLE) };
 
     static WATCHDOG: StaticCell<DeadlineWatchdog> = StaticCell::new();
     let watchdog = WATCHDOG.init(DeadlineWatchdog::new(peripherals.TIMG1));

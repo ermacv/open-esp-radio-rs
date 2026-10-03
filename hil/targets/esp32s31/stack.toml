@@ -21,8 +21,8 @@ reason = "one-time HCI Controller creation builds the Controller core, whose bou
 [[reviewed_frames]]
 function_contains = "::roles::station::connected::port::ConnectedStaPort>::compose::<"
 source_ends_with = ["crates/runtime/esp32s31/ieee80211/src/roles/station/connected/port/composition.rs", "oer-esp32s31-ieee80211-runtime-0.1.0/src/roles/station/connected/port/composition.rs"]
-max_bytes = 9728
-reason = "atomic connected composition retains the validated plan, including its BSS protection facts and management frame protection, and complete success-or-failure graph while transferring the affine pairwise replay endpoint and, with protected management frames, the software temporal key, IGTK receive state and SA Query procedure, and the join beacon's reception time that seeds the station TSF, and the connected TX owner that can hold an aggregate while its BlockAckReq is answered; the separate 4-KiB move limit still rejects hidden owner copies. Built out of line when its caller does not inline it, the frame measured 9552 bytes"
+max_bytes = 9792
+reason = "atomic connected composition retains the validated plan, including its BSS protection facts and management frame protection, and complete success-or-failure graph while transferring the affine pairwise replay endpoint and, with protected management frames, the software temporal key, IGTK receive state and SA Query procedure, and the join beacon's reception time that seeds the station TSF, the connected TX owner that can hold an aggregate while its BlockAckReq is answered, and the link monitor with its probe policy; the separate 4-KiB move limit still rejects hidden owner copies. Built out of line when its caller does not inline it, the frame measured 9552 bytes, and 9760 bytes once connected control carried the link monitor"
 
 [[reviewed_frames]]
 function_contains = "::supervisor::new::{closure#0}"
@@ -70,8 +70,8 @@ reason = "connected epoch future owns the recoverable DMA, VIF-scoped BlockAck i
 [[reviewed_frames]]
 function_contains = "::supervisor::outside_poll_frame::<"
 source_ends_with = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/mod.rs", "oer-esp32s31-ieee80211-system-0.1.0/src/supervisor/mod.rs"]
-max_bytes = 14336
-reason = "a connected epoch's synchronous teardown moves the quiesced services, parked RX, TX resources, network and security material by value into the returned station owner or its fault; it runs outside the connected epoch's poll frame and exists only while it runs (measured 13504 bytes)"
+max_bytes = 14400
+reason = "a connected epoch's synchronous teardown moves the quiesced services, parked RX, TX resources, network and security material by value into the returned station owner or its fault; it runs outside the connected epoch's poll frame and exists only while it runs (measured 13504 bytes, and 14368 bytes once connected control carried the link monitor with its probe policy)"
 
 [[reviewed_frames]]
 function_contains = "::actor::run_embassy_wifi_supervisor_actor"

@@ -40,7 +40,12 @@ pub unsafe fn adopt_psram(
 /// executor handlers are bound. MIE must have stayed clear since that hart
 /// entered the runtime. Earlier enabling can dispatch an interrupt into
 /// uninitialized ownership state.
+///
+/// # Panics
+/// When a hardware-vector slot of the hart's active MTVT is not the runtime's
+/// stack-switching entry.
 pub unsafe fn enable_interrupts_after_handoff() {
+    stacks::verify_current_hart_vectors();
     // SAFETY: the caller guarantees that every handler this hart can dispatch
     // is bound; setting MIE touches no memory and leaves the stack unchanged.
     unsafe { core::arch::asm!("csrsi mstatus, 8", options(nomem, nostack)) };

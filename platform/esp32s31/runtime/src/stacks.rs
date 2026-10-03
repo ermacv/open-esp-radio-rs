@@ -126,6 +126,36 @@ pub unsafe fn install_current_hart_interrupt_stack() {
     };
 }
 
+/// Panic unless the current hart's active MTVT holds the runtime's entries in
+/// every hardware-vector slot.
+///
+/// The static stack analysis checks the entries of `_runtime_psram_mtvt_source`
+/// (each swaps `sp` to the interrupt stack before its first memory access);
+/// this keeps that check true of the table the hart dispatches through: a slot
+/// another owner rewrote after [`install_current_hart_interrupt_stack`], such
+/// as ESP-HAL's direct IPC binding, would run on the interrupted stack.
+pub(crate) fn verify_current_hart_vectors() {
+    let table: *const u32;
+    unsafe {
+        asm!(
+            "csrr {table}, 0x307",
+            table = out(reg) table,
+            options(nomem, nostack),
+        )
+    };
+    let source = unsafe { &*ptr::addr_of!(_runtime_psram_mtvt_source) };
+    let active: [u32; 48] = core::array::from_fn(|slot| unsafe { table.add(slot).read_volatile() });
+    if let Some(slot) = foreign_vector(&active, source) {
+        panic!("interrupt vector {slot} is not the runtime's stack-switching entry");
+    }
+}
+
+/// The first hardware-vector slot (slot zero is none) of `active` that differs
+/// from `source`.
+fn foreign_vector(active: &[u32; 48], source: &[u32; 48]) -> Option<usize> {
+    (1..source.len()).find(|&slot| active[slot] != source[slot])
+}
+
 /// NAPOT `tdata2` watching `bytes` (a power of two) aligned at or above
 /// `bottom`: the aligned start with the low bits encoding the length.
 const fn napot_guard(bottom: usize, bytes: usize) -> usize {
@@ -528,3 +558,18 @@ _runtime_enter_cpu1_psram:
     .option pop
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_rewritten_hardware_vector_is_foreign_but_slot_zero_is_not_one() {
+        let source: [u32; 48] = core::array::from_fn(|slot| 0x1000 + 4 * slot as u32);
+        let mut active = source;
+        active[0] = 0;
+        assert_eq!(foreign_vector(&active, &source), None);
+        active[3] = 0x2000;
+        assert_eq!(foreign_vector(&active, &source), Some(3));
+    }
+}

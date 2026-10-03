@@ -19,11 +19,14 @@ fork relies on but neither ESP-IDF nor the PAC settles:
   before `PROBE-DONE` means the disable did not apply.
 
 The image boots through the ESP-IDF bootloader that `espflash` bundles, the
-one production images use. From this directory:
+one production images use; `cargo hil flash` has no project bootloader for
+the ESP32-S31, so `espflash` flashes it under a board lease. From the
+repository root, with the board's port from `cargo hil board check esp32s31`:
 
 ```console
-cargo build --release
-cargo hil flash --board esp32s31 --air none --image esp32s31-boot-state-probe \
-  --monitor 30s --until PROBE-DONE \
-  target/riscv32imafc-unknown-none-elf/release/oer-esp32s31-boot-state-probe
+(cd verification/esp32s31/hardware/boot-state-probe && cargo build --release)
+elf=verification/esp32s31/hardware/boot-state-probe/target/riscv32imafc-unknown-none-elf/release/oer-esp32s31-boot-state-probe
+cargo hil lease --board esp32s31 --air none --flashed esp32s31-boot-state-probe \
+  --port PORT --application "$elf" -- sh -c \
+  "espflash flash --chip esp32s31 --port PORT $elf && timeout 25 espflash monitor --chip esp32s31 --port PORT --non-interactive --elf $elf"
 ```

@@ -7,7 +7,9 @@
 
 use oer_esp32s31_hal::types::MacStaReceivePolicySnapshot;
 
-use oer_esp32s31_ieee80211::cooperative_hardware::CooperativeRadioHardware;
+use oer_esp32s31_ieee80211::{
+    cooperative_hardware::CooperativeRadioHardware, station_tsf::StationTsfHardware,
+};
 
 use oer_esp32s31_ieee80211_mac::{
     crypto::{StaGroupCcmpKeyMaterial, StaGroupCcmpReplaceError, StaGroupCcmpSlot},
@@ -51,14 +53,12 @@ pub enum StationIndividualTwtHardwareError {
 }
 
 /// ESP32-S31 register operations required by connected BlockAck control.
+///
+/// The station TSF is written only through the connection's
+/// [`StationTsf`](oer_esp32s31_ieee80211::station_tsf::StationTsf) owner.
 pub trait ConnectedControlHardware:
-    TxHardware + RxBlockAckHardware + MacRuntimeStopHardware
+    TxHardware + RxBlockAckHardware + MacRuntimeStopHardware + StationTsfHardware
 {
-    fn station_tsf(&mut self) -> u64;
-
-    /// Replace the station TSF with the access point's.
-    fn set_station_tsf(&mut self, value: u64);
-
     /// The Wi-Fi MAC local time: the free-running microsecond counter whose
     /// readings receive timestamps carry, wrapping in 32 bits.
     fn mac_local_time(&mut self) -> u32;
@@ -165,14 +165,6 @@ pub trait ConnectedControlHardware:
 }
 
 impl ConnectedControlHardware for CooperativeRadioHardware<'_> {
-    fn station_tsf(&mut self) -> u64 {
-        CooperativeRadioHardware::station_tsf(self)
-    }
-
-    fn set_station_tsf(&mut self, value: u64) {
-        CooperativeRadioHardware::set_station_tsf(self, value);
-    }
-
     fn mac_local_time(&mut self) -> u32 {
         CooperativeRadioHardware::mac_local_time(self)
     }

@@ -199,6 +199,90 @@ pub struct TsfSample {
     pub generation: u32,
 }
 
+/// The relation of one interface's TSF to the radio clock across TSF sets:
+/// its generation and its last sample, the value the TSF was last set to.
+///
+/// The backend that owns an interface's TSF writes keeps one and records
+/// every write. A set within what the relation predicts since its last
+/// sample keeps the generation: [`TSF_DRIFT_PPM`] of the time since then,
+/// rounded up, plus the sample's uncertainty. A beacon follow after missed
+/// beacons corrects more drift and stays within it; a larger set, and the
+/// first one, is a jump and starts a new generation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TsfRelation {
+    generation: u32,
+    last_sample: Option<TsfInstant>,
+    sample_uncertainty: Duration,
+}
+
+/// What a TSF set did to its relation.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum TsfSetKind {
+    /// Within the drift since the last sample: the generation stays.
+    Drift,
+    /// Beyond it, or the first set: a new generation.
+    Jump,
+}
+
+impl TsfRelation {
+    /// A relation without a sample, whose samples are each uncertain by
+    /// `sample_uncertainty` (the backend's TSF counter resolution).
+    pub const fn new(sample_uncertainty: Duration) -> Self {
+        Self {
+            generation: 0,
+            last_sample: None,
+            sample_uncertainty,
+        }
+    }
+
+    /// The current generation.
+    pub const fn generation(&self) -> u32 {
+        self.generation
+    }
+
+    /// Start a new generation without a sample: the TSF jumped (a new
+    /// association, a channel change, a timer restart).
+    pub fn break_relation(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+        self.last_sample = None;
+    }
+
+    /// How far a set `elapsed` after the last sample may move the TSF
+    /// without breaking the relation.
+    pub fn tolerance(&self, elapsed: Duration) -> Duration {
+        let drift =
+            (u128::from(elapsed.as_micros()) * u128::from(TSF_DRIFT_PPM)).div_ceil(1_000_000);
+        Duration::from_micros(
+            u64::try_from(drift)
+                .unwrap_or(u64::MAX)
+                .saturating_add(self.sample_uncertainty.as_micros()),
+        )
+    }
+
+    /// Record a set of the TSF from `current`, the value read just before
+    /// it, to `value`.
+    pub fn set(&mut self, current: TsfInstant, value: TsfInstant) -> TsfSetKind {
+        let kind = match self.last_sample {
+            Some(last) => {
+                let elapsed =
+                    Duration::from_micros(current.as_micros().saturating_sub(last.as_micros()));
+                let moved = value.as_micros().abs_diff(current.as_micros());
+                if moved <= self.tolerance(elapsed).as_micros() {
+                    TsfSetKind::Drift
+                } else {
+                    TsfSetKind::Jump
+                }
+            }
+            None => TsfSetKind::Jump,
+        };
+        if kind == TsfSetKind::Jump {
+            self.break_relation();
+        }
+        self.last_sample = Some(value);
+        kind
+    }
+}
+
 /// Why a TSF projection has no value.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum TsfProjectionError {

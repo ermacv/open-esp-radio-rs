@@ -176,6 +176,7 @@ fn group_message1(
 #[derive(Default)]
 struct Hardware {
     station_tsf: u64,
+    station_tsf_writes: usize,
     mac_local_time: u32,
     prepare: bool,
     completion: Option<MacTxCompletionObservation>,
@@ -327,16 +328,23 @@ impl RxBlockAckHardware for Hardware {
     }
 }
 
-impl ConnectedControlHardware for Hardware {
-    fn disable_station_receive_policy(&mut self) {}
-
+impl oer_esp32s31_ieee80211::station_tsf::StationTsfHardware for Hardware {
     fn station_tsf(&mut self) -> u64 {
         self.station_tsf
     }
 
-    fn set_station_tsf(&mut self, value: u64) {
+    fn set_station_tsf(
+        &mut self,
+        _: oer_esp32s31_ieee80211::station_tsf::StationTsfWrite,
+        value: u64,
+    ) {
         self.station_tsf = value;
+        self.station_tsf_writes += 1;
     }
+}
+
+impl ConnectedControlHardware for Hardware {
+    fn disable_station_receive_policy(&mut self) {}
 
     fn mac_local_time(&mut self) -> u32 {
         self.mac_local_time
@@ -2464,4 +2472,84 @@ fn a_beacon_queued_behind_power_inputs_takes_the_next_step() {
         DatapathControlContext::IDLE,
     );
     assert_eq!(hardware.station_tsf, 2_000_000 + 2_000);
+}
+
+#[test]
+fn the_role_writes_the_station_tsf_through_its_owner_at_power_start_and_each_beacon() {
+    let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
+    let (mut publisher, receiver) = resources.split();
+    let link = StationPowerLink::<NoopRawMutex>::new();
+    let mut control = ConnectedControl::new(
+        receiver,
+        BSSID,
+        false,
+        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+    );
+    control.enable_power_management(
+        SleepType::None,
+        JoinBeacon {
+            received_at: Some(oer_time::Instant::from_micros(1_000)),
+            ..join_beacon()
+        },
+        link.bind(&SharedCoex),
+    );
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = Hardware {
+        prepare: true,
+        station_tsf: 7,
+        ..Hardware::default()
+    };
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
+    embassy_futures::block_on(tx.wait_until(oer_time::Instant::from_micros(6_000)));
+    let mut performed = std::vec::Vec::new();
+    settle(
+        &mut control,
+        &link,
+        &mut hardware,
+        &mut tx,
+        DatapathControlContext::IDLE,
+        &mut performed,
+    );
+    // The power start's write goes through the owner and starts the
+    // association's relation.
+    assert_eq!(hardware.station_tsf_writes, 1);
+    let started = control.station_tsf().generation();
+
+    // A beacon after ten missed ones corrects ten intervals of drift: the
+    // relation keeps its generation.
+    let interval = 102_400;
+    let mut follow =
+        |hardware: &mut Hardware, control: &mut ConnectedControl<'_, _, 4>, tx: &mut _, at: u64| {
+            // The follow adds the counter's 2 000 µs since the stamp.
+            hardware.mac_local_time = 12_000;
+            publisher.publish(ConnectedRxEvent::Beacon {
+                observation: StaBeaconObservation {
+                    timestamp_tsf: at - 2_000,
+                    ..idle_beacon()
+                },
+                metadata: MacRxMetadata::unavailable(),
+                stamp: Some(10_000),
+            });
+            settle(
+                control,
+                &link,
+                hardware,
+                tx,
+                DatapathControlContext::IDLE,
+                &mut performed,
+            );
+            assert_eq!(hardware.station_tsf, at);
+        };
+    hardware.station_tsf += 10 * interval;
+    let drifted = hardware.station_tsf + 100;
+    follow(&mut hardware, &mut control, &mut tx, drifted);
+    assert_eq!(hardware.station_tsf_writes, 2);
+    assert_eq!(control.station_tsf().generation(), started);
+
+    // The same correction at the next consecutive beacon is a jump.
+    hardware.station_tsf += interval;
+    let jumped = hardware.station_tsf + 100;
+    follow(&mut hardware, &mut control, &mut tx, jumped);
+    assert_eq!(hardware.station_tsf_writes, 3);
+    assert_ne!(control.station_tsf().generation(), started);
 }

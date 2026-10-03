@@ -34,6 +34,8 @@ use oer_time::Duration;
 
 use super::*;
 use crate::ordinary_tx::{WifiTxPowerPair, WifiTxResources};
+use crate::station_tsf::StationTsfWrite;
+use oer_ieee80211_lower_mac::TSF_DRIFT_PPM;
 
 const STATION: MacAddress = [0x02, 0x03, 0x04, 0x05, 0x06, 0x07];
 const ACCESS_POINT: MacAddress = [0x02, 0x11, 0x12, 0x13, 0x14, 0x15];
@@ -328,7 +330,7 @@ impl StationTsfHardware for Hardware {
         self.station_tsf
     }
 
-    fn set_station_tsf(&mut self, value: u64) {
+    fn set_station_tsf(&mut self, _: StationTsfWrite, value: u64) {
         self.station_tsf = value;
     }
 }
@@ -2313,7 +2315,7 @@ fn the_tsf_relation_breaks_at_a_jump_a_channel_change_an_interface_change_and_an
 
     let allowed = |elapsed: u64| {
         (elapsed * u64::from(TSF_DRIFT_PPM)).div_ceil(1_000_000)
-            + STATION_TSF_SAMPLE_UNCERTAINTY_MICROS
+            + STATION_TSF_SAMPLE_UNCERTAINTY.as_micros()
     };
     let interval = 102_400;
 

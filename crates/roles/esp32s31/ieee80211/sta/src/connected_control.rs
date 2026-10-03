@@ -20,7 +20,11 @@ use crate::{
 };
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
-use oer_esp32s31_ieee80211::datapath::{DatapathControlContext, DatapathControlProgress};
+use oer_esp32s31_ieee80211::{
+    datapath::{DatapathControlContext, DatapathControlProgress},
+    station_tsf::StationTsf,
+};
+use oer_ieee80211_lower_mac::TsfInstant;
 
 use oer_esp32s31_ieee80211_mac::{
     MacInterface,
@@ -639,6 +643,8 @@ pub struct ConnectedControlCore {
     sa_query: StationSaQuery,
     /// The leaving station published its Deauthentication.
     left: bool,
+    /// The owner of the station TSF writes for this association.
+    station_tsf: StationTsf,
     observations: ConnectedControlObservations,
 }
 
@@ -660,8 +666,16 @@ impl ConnectedControlCore {
             sa_query_random: None,
             sa_query: StationSaQuery::new(),
             left: false,
+            station_tsf: StationTsf::new(),
             observations: ConnectedControlObservations::default(),
         }
+    }
+
+    /// The owner of the station TSF writes and its relation. It lives for
+    /// one association, whose first write (at the start of power
+    /// management) is a jump.
+    pub const fn station_tsf(&self) -> &StationTsf {
+        &self.station_tsf
     }
 
     /// Answer and start SA Queries for an association that protects its
@@ -1312,10 +1326,13 @@ impl ConnectedControlCore {
             // local time, the counter its receive timestamp is a reading of.
             if let Some(stamp) = beacon.stamp {
                 let elapsed = hardware.mac_local_time().wrapping_sub(stamp);
-                hardware.set_station_tsf(access_point_tsf_after(
-                    observation.timestamp_tsf,
-                    u64::from(elapsed),
-                ));
+                self.station_tsf.set(
+                    hardware,
+                    TsfInstant::from_micros(access_point_tsf_after(
+                        observation.timestamp_tsf,
+                        u64::from(elapsed),
+                    )),
+                );
             }
             follow_beacon_protection(tx, observation.protection);
             if let Some(monitor) = &mut self.beacon_monitor {

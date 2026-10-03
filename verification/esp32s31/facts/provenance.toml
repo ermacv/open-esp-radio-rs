@@ -1921,6 +1921,12 @@ code = "f3eca92c93a3f454724dce591995005e307fb21114026b438fac511aa4f694c3"
 [[function]]
 artifact = "libnet80211"
 member = "ieee80211_output.o"
+symbol = "ieee80211_send_probereq"
+code = "eede7e4b6fda3aae1f51171ab540d9b6296070aa728957fffceb259e6c263c38"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_output.o"
 symbol = "ieee80211_set_tx_desc"
 code = "26422c19752c875379fbd92fe32f5837da2e6681c1b44fe1fba4f3a6a2913f75"
 
@@ -4227,6 +4233,12 @@ code = "f1338e52532bb0273ed33c588148ca8557ddb530d312e788dc62e16ca4699a38"
 [[function]]
 artifact = "libpp"
 member = "pm.o"
+symbol = "pm_tbtt_process"
+code = "221da650e370dc945930247c4089ad0bcc8571ce7facf429784bab2e50c709a2"
+
+[[function]]
+artifact = "libpp"
+member = "pm.o"
 symbol = "pm_update_next_tbtt"
 code = "1eba78c72219e5cbb4280adeef87cf114439ea4765cbac413d411a31d5505790"
 
@@ -6368,6 +6380,12 @@ artifact = "rom"
 member = ""
 symbol = "pm_on_tbtt"
 code = "b4fba893ada15b01751b183416befe2fb0d4d0399a2e8468c603e0f29149d35e"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "pm_tbtt_process"
+code = "6057fe53bb32c6a41f0bcbf3b204b326227519ef29173697a48f89e76b0e9d14"
 
 [[function]]
 artifact = "rom"

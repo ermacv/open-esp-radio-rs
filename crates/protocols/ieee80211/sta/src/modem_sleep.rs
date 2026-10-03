@@ -962,9 +962,26 @@ impl ModemSleep {
             self.dream(coex, Some(clock), actions);
             self.receiving = false;
         }
-        // The cycle counts from this TBTT unless the associated station
-        // missed the previous beacon, or a beacon was still expected when
-        // its slice ended under coexistence.
+        // The cycle counts from the handling of this TBTT unless the
+        // associated station missed the previous beacon, or a beacon was
+        // still expected when its slice ended under coexistence.
+        //
+        // SOURCE(esp32s31): complete pinned `libpp.a[pm.o]::pm_tbtt_process`
+        // stores the MAC local time (`WIFI_MAC_LOCAL_TIME`, 32 bits) read
+        // while it handles the TBTT event as the 64-bit anchor at `g_pm[96]`
+        // (high word zero); `libpp.a[pm_coex.o]::
+        // pm_coex_recalculate_wifi_time_slice` places the station at
+        // `(WIFI_MAC_LOCAL_TIME - anchor) % (overall period * interval * 100)`.
+        // The anchor is the handling of the event, not the TBTT itself.
+        //
+        // Known difference: the vendor counts in the MAC local time, this
+        // model in monotonic time. Both count the crystal's microseconds, so
+        // the distances agree while the MAC counter runs; they are
+        // equivalent only if the counter also runs through RF sleep, which
+        // the station sleep HIL scenario measures. The vendor's subtraction
+        // of the 32-bit counter from the 64-bit anchor misplaces the station
+        // once the counter wraps (every ~71.6 minutes); that is a vendor
+        // defect and is not reproduced.
         let keep_anchor = beacon_was_expected || (coex.active && self.beacon_expected_at_slice_end);
         if !keep_anchor {
             self.cycle_anchor = clock.now.as_micros();

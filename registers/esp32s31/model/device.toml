@@ -21,7 +21,7 @@ fragments = [
     "peripherals/phy-baseband-config-oracle.toml",
     "peripherals/phy-iq-estimator-oracle.toml",
     "peripherals/phy-rx-dco-oracle.toml",
-    "peripherals/phy-cold-deadline-oracle.toml",
+    "peripherals/wifi-mac-local-time.toml",
     "peripherals/phy-clock-oracle.toml",
     "peripherals/pmu-radio.toml",
     "peripherals/hp-sys-clkrst-radio.toml",

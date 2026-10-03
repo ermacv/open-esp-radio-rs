@@ -5491,22 +5491,28 @@
       </registers>
     </peripheral>
     <peripheral>
-      <name>PHY_COLD_DEADLINE_ORACLE</name>
-      <description>Free-running word sampled by the complete rev0 ROM SDM-stability
-        deadline. The instruction body proves its address and unsigned
-        wraparound consumer, but not its hardware clock source.</description>
+      <name>WIFI_MAC_LOCAL_TIME</name>
+      <description>Free-running Wi-Fi MAC local-time counter, read-only and without read side
+        effects. Complete lmacAdjustTimestamp subtracts the receive timestamp
+        a received frame carries from this word as the frame's age and, while
+        the station slept, rewrites that timestamp as this word minus a
+        TU-scaled sleep interval; pm_twt_set_target_wdev_time,
+        pm_get_null_max_tx_time and pm_coex_recalculate_wifi_time_slice read
+        it as the MAC's current time. The PHY SDM deadline samples the same
+        word. Its unit and rate against the system timer are not
+        established.</description>
       <baseAddress>0x2010D800</baseAddress>
       <registers>
         <register>
-          <name>DEADLINE_COUNTER_OPAQUE</name>
-          <description>Opaque: meaning not established. Complete phy_wait_i2c_sdm_stable samples this full word before and after each independently completed PHY-I2C read.</description>
+          <name>COUNTER</name>
+          <description>Project-assigned name. The MAC local-time counter. Complete phy_wait_i2c_sdm_stable samples it before and after each independently completed PHY-I2C read.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
               <name>VALUE</name>
-              <description>Project-assigned name. Full-width wrapping deadline value.</description>
+              <description>Project-assigned name. Full-width wrapping counter value; its unit is not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>

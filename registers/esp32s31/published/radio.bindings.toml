@@ -41115,12 +41115,12 @@ access = "read-write"
 address = 537974784
 width = 32
 access = "read-only"
-identity = "PHY_COLD_DEADLINE_ORACLE.DEADLINE_COUNTER_OPAQUE"
-peripheral = "PHY_COLD_DEADLINE_ORACLE"
-peripheral-type = "PhyColdDeadlineOracle"
-peripheral-module = "phy_cold_deadline_oracle"
+identity = "WIFI_MAC_LOCAL_TIME.COUNTER"
+peripheral = "WIFI_MAC_LOCAL_TIME"
+peripheral-type = "WifiMacLocalTime"
+peripheral-module = "wifi_mac_local_time"
 scope = []
-register-method = "deadline_counter_opaque"
+register-method = "counter"
 
 [[registers.fields]]
 svd-name = "VALUE"

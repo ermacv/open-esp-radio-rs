@@ -75,6 +75,12 @@ peripherals = [
 ]
 
 [[ownership-partitions]]
+name = "MacLocalTimePeripherals"
+member = "mac_local_time"
+description = "The free-running Wi-Fi MAC local-time counter. Reading it has no side effect and no partition writes it; the restricted PAC consumes this owner once and issues a copyable read-only capability that the radio PHY and the Wi-Fi MAC both hold."
+peripherals = ["WIFI_MAC_LOCAL_TIME"]
+
+[[ownership-partitions]]
 name = "RadioPhyPeripherals"
 member = "radio_phy"
 description = "Role-neutral RF and PHY register views serialized by the shared radio lifecycle."
@@ -89,7 +95,6 @@ peripherals = [
     "PHY_BRX_RECOVERED_GAPS",
     "PHY_BTAGC_RECOVERED",
     "PHY_CLOCK_ORACLE",
-    "PHY_COLD_DEADLINE_ORACLE",
     "PHY_FECTRL_RECOVERED",
     "PHY_FEDATA_RECOVERED",
     "PHY_FEDATA_WIFI_RECOVERED",
@@ -6457,11 +6462,11 @@ exposure = "facade"
 sources = ["BLOB_LIBPHY_PHY_XTAL_DUTY_CAL", "ROM_REV0_PHY_RX_DCO_CAL"]
 
 [[field-reads]]
-name = "sample_phy_sdm_deadline_counter"
-peripheral = "PHY_COLD_DEADLINE_ORACLE"
-register = "DEADLINE_COUNTER_OPAQUE"
+name = "read_mac_local_time"
+peripheral = "WIFI_MAC_LOCAL_TIME"
+register = "COUNTER"
 field = "VALUE"
-sources = ["ROM_REV0_PHY_WAIT_I2C_SDM_STABLE"]
+sources = ["ROM_REV0_PHY_WAIT_I2C_SDM_STABLE", "BLOB_LIBPP_MAC_LOCAL_TIME"]
 
 [[field-replace-modifies]]
 name = "enable_phy_calibration_clock"

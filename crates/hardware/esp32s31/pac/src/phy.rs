@@ -36,14 +36,19 @@ impl RadioPhyRegisters {
         );
     }
 
-    /// Sample the full-width counter used by the SDM-stability deadline.
+    /// Sample the counter the SDM-stability deadline measures: the Wi-Fi
+    /// MAC local time ([`crate::MacLocalTime`]).
     ///
-    /// Complete rev0 ROM `phy_wait_i2c_sdm_stable` at `0x2f823e76` proves the
-    /// address and wrapping-difference consumer, but not the clock source.
+    /// Complete rev0 ROM `phy_wait_i2c_sdm_stable` at `0x2f823e76` samples it
+    /// and compares wrapping differences; the deadline's unit is the
+    /// counter's, which is not established.
     pub fn sample_sdm_deadline_counter(&mut self) -> u32 {
-        crate::svd::field_read::sample_phy_sdm_deadline_counter(
-            &self.peripherals.phy_cold_deadline_oracle,
-        )
+        self.mac_local_time.now()
+    }
+
+    /// The MAC local-time read this owner holds a copy of.
+    pub const fn mac_local_time(&self) -> crate::MacLocalTime {
+        self.mac_local_time
     }
 }
 

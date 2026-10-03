@@ -35,6 +35,45 @@ pub(crate) struct Ieee802154TaskPeripheralOwners {
 #[must_use = "the shared PHY owner must remain inside its active radio route"]
 pub struct RadioPhyRegisters {
     pub(crate) peripherals: svd::peripheral_ownership::RadioPhyPeripherals,
+    /// The PHY's copy of the MAC local-time read, for its SDM deadline.
+    pub(crate) mac_local_time: MacLocalTime,
+}
+
+/// Read-only capability for the free-running Wi-Fi MAC local-time counter.
+///
+/// The radio PHY (its SDM-stability deadline) and the Wi-Fi MAC (the time
+/// its receive timestamps count in) both read this counter, and reading it
+/// has no side effect, so the capability is copyable rather than owned by
+/// either.
+///
+/// Invariant: [`RadioPartitions`] consumes the unique generated
+/// `MacLocalTimePeripherals` owner when it mints this capability, no
+/// partition or transaction writes the counter, and the only access any copy
+/// performs is the single read of [`Self::now`].
+#[derive(Clone, Copy, Debug)]
+pub struct MacLocalTime(());
+
+impl MacLocalTime {
+    /// Mint the capability from the consumed partition owner.
+    pub(crate) fn mint(owner: svd::peripheral_ownership::MacLocalTimePeripherals) -> Self {
+        let svd::peripheral_ownership::MacLocalTimePeripherals {
+            wifi_mac_local_time: _,
+        } = owner;
+        Self(())
+    }
+
+    /// The counter now: a full-width wrapping value whose unit and rate
+    /// against the system timer are not established.
+    #[allow(
+        unsafe_code,
+        reason = "every copy of the read-only capability reads the counter the consumed owner held"
+    )]
+    pub fn now(self) -> u32 {
+        // SAFETY: the owner was consumed by `mint` (see the invariant), and
+        // this handle only performs one side-effect-free read.
+        let registers = unsafe { svd::WifiMacLocalTime::steal() };
+        svd::field_read::read_mac_local_time(&registers)
+    }
 }
 
 /// Unique owner of every radio register partition shared by more than one
@@ -165,6 +204,8 @@ pub struct RadioPartitions {
     pub bluetooth_interrupts: BluetoothInterruptSetup,
     pub shared_radio: SharedRadioPartition,
     pub ieee802154: Ieee802154Partition,
+    /// The MAC local-time read; the radio PHY already holds its own copy.
+    pub mac_local_time: MacLocalTime,
 }
 
 impl RadioPartitions {
@@ -186,7 +227,9 @@ impl RadioPartitions {
             shared_radio,
             ieee802154,
             modem_etm,
+            mac_local_time,
         } = svd::peripheral_ownership::partition(peripherals);
+        let mac_local_time = MacLocalTime::mint(mac_local_time);
         let (ieee802154_etm, bluetooth_phy_etm, bluetooth_etm) =
             crate::modem::etm::split(modem_etm);
         let (shared_radio, ieee802154_rx_info) = crate::ieee802154::baseband::split(shared_radio);
@@ -195,6 +238,7 @@ impl RadioPartitions {
             wifi_interrupts: MacInterruptSetup::from_peripherals(wifi_interrupts),
             radio_phy: RadioPhyRegisters {
                 peripherals: radio_phy,
+                mac_local_time,
             },
             coexistence: CoexistencePartition(coexistence),
             bluetooth: BluetoothControllerPartition {
@@ -214,6 +258,7 @@ impl RadioPartitions {
                 etm: ieee802154_etm,
                 rx_info: ieee802154_rx_info,
             },
+            mac_local_time,
         }
     }
 

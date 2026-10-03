@@ -1,5 +1,8 @@
 //! Finite-height lattice: unreachable -> bounded exact alternatives -> unknown.
-//! Queue membership is bounded by the graph; no expression trees or memory state.
+//! Queue membership is bounded by the graph; no expression trees. The only
+//! memory state is a bounded set of entry-stack slots holding exact words: a
+//! word stored to an exact entry-stack address and loaded back unchanged, as
+//! `core::hint::black_box` spills a function pointer.
 use super::value_sets::Sets;
 use super::*;
 use std::collections::VecDeque;
@@ -24,11 +27,105 @@ pub(super) enum Value {
         pc: bool,
     },
 }
-type State = [Value; 32];
+/// Entry-stack slots one state tracks; a store beyond them is forgotten.
+const SLOTS: usize = 8;
+/// Integer registers, indexed through `Deref`, and the entry-stack words
+/// known exactly, sorted by offset with the free slots last.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct State {
+    registers: [Value; 32],
+    slots: [Option<(i64, Value)>; SLOTS],
+}
+impl std::ops::Deref for State {
+    type Target = [Value; 32];
+    fn deref(&self) -> &[Value; 32] {
+        &self.registers
+    }
+}
+impl std::ops::DerefMut for State {
+    fn deref_mut(&mut self) -> &mut [Value; 32] {
+        &mut self.registers
+    }
+}
+impl State {
+    fn slot(&self, offset: i64) -> Option<Value> {
+        self.slots
+            .iter()
+            .flatten()
+            .find(|(at, _)| *at == offset)
+            .map(|(_, value)| *value)
+    }
+    /// Forget every slot a `width`-byte store at `offset` overlaps.
+    fn clobber(&mut self, offset: i64, width: u8) {
+        for slot in &mut self.slots {
+            if let Some((at, _)) = *slot
+                && at < offset.saturating_add(i64::from(width))
+                && offset < at.saturating_add(4)
+            {
+                *slot = None;
+            }
+        }
+        self.canonical();
+    }
+    fn remember(&mut self, offset: i64, value: Value) {
+        self.clobber(offset, 4);
+        if let Some(free) = self.slots.iter_mut().find(|slot| slot.is_none()) {
+            *free = Some((offset, value));
+        }
+        self.canonical();
+    }
+    fn canonical(&mut self) {
+        self.slots
+            .sort_unstable_by_key(|slot| slot.map_or((1, 0), |(at, _)| (0, at)));
+    }
+}
 fn unknown_state() -> State {
-    let mut s = [Value::Unknown; 32];
-    s[0] = Value::Constant(0);
-    s
+    let mut registers = [Value::Unknown; 32];
+    registers[0] = Value::Constant(0);
+    State {
+        registers,
+        slots: [None; SLOTS],
+    }
+}
+/// Whether a slot may hold `v`: an exact leaf or a bounded set of them.
+fn exact(v: Value) -> bool {
+    matches!(
+        v,
+        Value::Set(_)
+            | Value::Constant(_)
+            | Value::Image(_)
+            | Value::Section(..)
+            | Value::Symbol(..)
+            | Value::Stack(_)
+    )
+}
+/// Join `new` into `old`: registers pointwise, slots only where both hold one.
+fn join(
+    old: &mut State,
+    new: &State,
+    sets: &mut Sets<'_>,
+    control: &mut dyn RunControl,
+) -> Result<bool> {
+    let mut changed = false;
+    for (a, b) in old.registers.iter_mut().zip(new.registers) {
+        let joined = sets.join(*a, b, control)?;
+        changed |= *a != joined;
+        *a = joined;
+    }
+    for i in 0..SLOTS {
+        let Some((at, value)) = old.slots[i] else {
+            continue;
+        };
+        let joined = match new.slot(at) {
+            Some(other) => sets.join(value, other, control)?,
+            None => Value::Unknown,
+        };
+        let next = exact(joined).then_some((at, joined));
+        changed |= old.slots[i] != next;
+        old.slots[i] = next;
+    }
+    old.canonical();
+    Ok(changed)
 }
 #[derive(Clone, Copy)]
 struct Relocation {
@@ -448,8 +545,24 @@ fn transfer(
                 // An FP register's word is outside the integer model.
                 .or((kind == MemoryKind::FloatStore).then_some(Value::Unknown));
             effects.memory = Some((kind, width, address, value));
+            match (kind, address) {
+                (MemoryKind::Load | MemoryKind::LoadReserved | MemoryKind::FloatLoad, _) => {}
+                (MemoryKind::Store, Value::Stack(at)) if width == 4 => match value {
+                    Some(v) if exact(v) => state.remember(at, v),
+                    _ => state.clobber(at, width),
+                },
+                (_, Value::Stack(at)) => state.clobber(at, width),
+                // Any other address may alias the stack.
+                _ => state.slots = [None; SLOTS],
+            }
             let mut loaded = Value::Unknown;
             if kind == MemoryKind::Load
+                && width == 4
+                && let Value::Stack(at) = address
+                && let Some(v) = state.slot(at)
+            {
+                loaded = v;
+            } else if kind == MemoryKind::Load
                 && let Some(image) = input.image
             {
                 loaded = sets.map(address, control, |address, control| {
@@ -638,15 +751,7 @@ pub(super) fn analyze_with(
                     states[to] = Some(out);
                     true
                 }
-                Some(old) => {
-                    let mut changed = false;
-                    for (a, b) in old.iter_mut().zip(out) {
-                        let joined = symbols.sets.join(*a, b, control)?;
-                        changed |= *a != joined;
-                        *a = joined;
-                    }
-                    changed
-                }
+                Some(old) => join(old, &out, &mut symbols.sets, control)?,
             };
             if changed && !queued[to] {
                 queued[to] = true;
@@ -1425,6 +1530,100 @@ mod tests {
                 .iter()
                 .any(|r| matches!(r, FunctionRecord::Transfer { .. }))
         );
+    }
+    #[test]
+    fn exact_words_round_trip_through_entry_stack_slots_until_clobbered() {
+        let input = FunctionInput {
+            image: None,
+            section: 1,
+            extent: CodeRange {
+                start: 0,
+                length: 4,
+            },
+            bytes: &[0; 4],
+            relocations: &PreparedReferences::empty(),
+            data_ranges: &[],
+        };
+        let node = Node {
+            offset: 0,
+            decoded: DecodedOp {
+                length: 4,
+                text: String::new(),
+                flow: InstructionFlow::Next,
+            },
+            conflict: false,
+        };
+        let memory = WorkingMemory::new(1024 * 1024).unwrap();
+        let mut sets = Sets::new(&memory);
+        let mut step = |state: State, kind, base, displacement, width, register: u8| {
+            let (dest, source) = if kind == MemoryKind::Load {
+                (Some(register), None)
+            } else {
+                (None, Some(register))
+            };
+            transfer(
+                Operation {
+                    op: SemanticOp::Memory {
+                        kind,
+                        base,
+                        displacement,
+                        width,
+                        dest,
+                        source,
+                        swap: false,
+                        signed: false,
+                    },
+                    opaque_call: false,
+                    relocation: None,
+                    gap: None,
+                },
+                &node,
+                &input,
+                state,
+                &mut || Ok(()),
+                &mut sets,
+            )
+            .unwrap()
+            .0
+        };
+        let mut entry = unknown_state();
+        entry[2] = Value::Stack(-16);
+        entry[13] = Value::Constant(0x5006_0dc6);
+        // sw a3, 8(sp); lw a5, 8(sp): the spilled pointer comes back.
+        let stored = step(entry, MemoryKind::Store, 2, 8, 4, 13);
+        assert_eq!(stored.slot(-8), Some(Value::Constant(0x5006_0dc6)));
+        assert_eq!(
+            step(stored, MemoryKind::Load, 2, 8, 4, 15)[15],
+            Value::Constant(0x5006_0dc6)
+        );
+        // A narrower load, an overlapping byte store and a store through an
+        // unknown pointer each lose it.
+        assert_eq!(
+            step(stored, MemoryKind::Load, 2, 8, 2, 15)[15],
+            Value::Unknown
+        );
+        let byte = step(stored, MemoryKind::Store, 2, 11, 1, 13);
+        assert_eq!(
+            step(byte, MemoryKind::Load, 2, 8, 4, 15)[15],
+            Value::Unknown
+        );
+        let aliased = step(stored, MemoryKind::Store, 14, 0, 4, 13);
+        assert_eq!(
+            step(aliased, MemoryKind::Load, 2, 8, 4, 15)[15],
+            Value::Unknown
+        );
+        // A disjoint stack store keeps it; an unknown word replaces it.
+        let disjoint = step(stored, MemoryKind::Store, 2, 4, 4, 13);
+        assert_eq!(disjoint.slot(-8), Some(Value::Constant(0x5006_0dc6)));
+        let replaced = step(stored, MemoryKind::Store, 2, 8, 4, 14);
+        assert_eq!(replaced.slot(-8), None);
+        // A join keeps a slot only where both paths hold it.
+        let mut joined = stored;
+        assert!(!join(&mut joined, &disjoint, &mut sets, &mut || Ok(())).unwrap());
+        assert_eq!(joined.slot(-8), Some(Value::Constant(0x5006_0dc6)));
+        assert_eq!(joined.slot(-12), None);
+        assert!(join(&mut joined, &entry, &mut sets, &mut || Ok(())).unwrap());
+        assert_eq!(joined.slot(-8), None);
     }
     #[test]
     fn conflicts_and_calls_cannot_propagate_stale_values() {

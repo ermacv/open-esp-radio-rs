@@ -24,7 +24,8 @@ Find the owning package in the
    the next deadline leave as values. No `embassy-time`, executor or HAL.
 3. **Time.** Lower layers read and wait on time through the `oer-time`
    `Clock` and `Timer` ports; tests drive the virtual clocks of
-   `oer-time-virtual`.
+   `oer-time-virtual`. Radio domains, stamps and alarms follow
+   [clocks, stamps and alarms](../../../docs/architecture.md#clocks-stamps-and-alarms).
 4. **Change every caller.** No compatibility aliases or shims: update every
    backend, service, runtime and composition that uses the changed type in
    the same change (grep the type name across `crates/`, `hil/`, `examples/`).

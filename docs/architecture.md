@@ -105,13 +105,60 @@ Every lower layer, runtimes included, reads and waits on time through the
 [`oer-time`](../crates/time/src/lib.rs) `Clock` and `Timer` ports: a runtime
 takes its timer from its owner or caller, a composition passes
 `oer_time_embassy::EmbassyClock`, and runtime tests use the per-instance
-virtual clocks of `oer-time-virtual`. A radio backend's own epoch is an
-`oer_time::RadioInstant<D>` whose domain `D` its port declares
-(`Ieee80211Instant`, `LeInstant`, `Ieee802154Instant`), so two ports'
-instants never mix; the port's `ClockInfo` converts to monotonic time, exactly for a `Monotonic` epoch and, for an `Affine` one, from a `ClockSample` the port returns on demand, with a drift-bounded uncertainty; a receive stamp carries the generation of the clock relation it was taken in, and a break between the clocks (a wake from sleep) starts a new generation that earlier stamps do not convert in. Protocols take every time as a value: deadlines they return are `Instant`s, air-time plans stay in the port's domain.
+virtual clocks of `oer-time-virtual`. Radio time follows the model below.
 An adapter can implement a runtime interface, while a runtime can consume
 an adapter's executor-neutral contract. Cargo still rejects actual dependency
 cycles. Neither layer can depend on the final composition.
+
+#### Clocks, stamps and alarms
+
+Three kinds of time object exist, each in one domain:
+
+- a **clock** reads "now" in its domain and nothing else: `oer_time::Clock`
+  for monotonic time, a port's `now()` for its radio domain;
+- a **stamp** is a value the hardware recorded when an event happened; it
+  carries its domain and the generation of its clock relation
+  (`oer_radio_port::RadioStamp<D>`, `RxMeta::timestamp`);
+- an **alarm** wakes something at an instant of its domain. An executor
+  **wait** is an alarm of monotonic time (`oer_time::Timer`); a hardware
+  timer of a MAC or PHY (the station TBTT, the TSF timers, the BLE modem
+  LP timer) is an alarm of its own domain, armed through a port operation,
+  never an `oer_time::Timer`.
+
+The domains in the code:
+
+| Domain | Counted by | Type | Relation to monotonic time | New generation |
+| --- | --- | --- | --- | --- |
+| Monotonic CPU time | the system timer through `oer-time-embassy` | `oer_time::Instant` | itself | — |
+| ESP32-S31 Wi-Fi MAC local time | `WIFI_MAC_LOCAL_TIME` (`MacLocalTime`), widened by `MacTimeline`, related by `MacClockStorage`/`MacClockHandle` | `Ieee80211Instant`, `Ieee80211Stamp` | `Affine` (`MAC_CLOCK_INFO`, 1 ppm) | every radio start (`MacClockStorage::start`), every RF wake, a counter break |
+| IEEE 802.11 lower-MAC host model | the test (`set_now`) | `Ieee80211Instant` | `Monotonic` | — |
+| An interface's TSF | the MAC's TSF of that interface | `Tsf` (a value, not yet a domain type) | none: protocol time of the BSS | — |
+| BLE controller | the controller clock, extended from its 32-bit latch | `LeInstant`; inside the driver `SchedulerInstant` | `Unrelated` | — |
+| BLE modem LP timer | the modem LP timer | `BluetoothModemLpTimerInstant` (wrapping, no claimed unit) | none | — |
+| IEEE 802.15.4 | the runtime's monotonic clock | `Ieee802154Instant` | `Monotonic` | — |
+| FTM | the FTM exchange's timestamps | `FtmTimestampPs`, 48-bit picosecond wire values (`oer_ieee80211_mac::ftm`) | none | — |
+
+Rules:
+
+- A sans-IO protocol takes time as values of its own domain. A deadline it
+  returns for the executor to wait on is a monotonic `Instant`; an instant
+  it returns for a hardware alarm stays in that alarm's domain, and the
+  driver arms it.
+- Domains do not mix at the type level: a port's instants are
+  `RadioInstant<D>` of its own domain `D`.
+- Time crosses between domains only at a boundary, through the port's
+  `ClockInfo` and a `ClockSample` with its generation and uncertainty; a
+  stamp of another generation is not converted (`EpochError::StaleSample`).
+- Time-exact work stays in its domain: the station follows the access
+  point's TSF by the MAC local time between a beacon's stamp and now, not
+  through monotonic time. A software handoff bound is monotonic: the HE
+  Trigger and NDPA response windows count from the frame's executor handoff
+  (`RxTimes::handoff`).
+- The hot path only records values: a received frame carries
+  `RxTimes { handoff, stamp }` with the raw stamp, and no clock is read on
+  reception; a consumer that needs the reception time converts the stamp.
+- Hardware counters and alarms belong to their driver and reach the layers
+  above as read-only capabilities (`MacLocalTime`) or port operations.
 
 ## Package names
 

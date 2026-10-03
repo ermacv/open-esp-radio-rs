@@ -3,7 +3,9 @@
 `oer-riscv-program` reads one borrowed static RV32 ELF executable for the
 program model of [`oer-riscv-model`](../model/README.md): its ELF
 floating-point ABI (`abi`), its validated load segments and the
-`ProgramView` that serves file-backed read-only constants as `ImageMemory`
+`ProgramView` that serves file-backed constants as `ImageMemory` (bytes of
+readable segments that are neither writable nor executable: code loaded into
+RAM may hold tables the program rewrites, such as an interrupt vector table)
 to the [analysis](../analysis/README.md), its code symbols
 (`code_symbols`, `code_symbol_at`) and its executable sections. It performs
 no loading, relocation or execution, and has no filesystem access.

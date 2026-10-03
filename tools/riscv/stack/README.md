@@ -42,9 +42,11 @@ transfer. A call or jump through `table[index]`, whose base is a constant or a
 register the value analysis knows at the transfer, reaches each entry of the
 table when its length is exact: the index's bounds check on the path to the
 dispatch (`bltu limit, index` or `bgeu index, limit` against a constant) or
-mask (`andi`), or the size of a data object the base starts in an unwritable
-section, such as esp-hal's `__EXTERNAL_INTERRUPTS` handler table, against
-which the language bounds-checks the index; a zero entry is an empty
+mask (`andi`), or the size of a data object the base starts in a section
+neither writable nor executable, against which the language bounds-checks the
+index (a table in code loaded into RAM, such as esp-hal's
+`__EXTERNAL_INTERRUPTS` handler table, is rewritten at run time, so its file
+bytes are no constant); a zero entry is an empty
 `Option<fn>` slot, never a target, since a Rust function pointer is not
 null. Entries of a jump inside its own
 function are already in the sweep. A table of unknown length, such as a

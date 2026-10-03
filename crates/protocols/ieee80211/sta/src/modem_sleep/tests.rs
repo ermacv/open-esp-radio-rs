@@ -304,3 +304,79 @@ fn stop_wakes_the_rf_and_releases_held_frames() {
     assert!(!pm.is_started());
     assert_eq!(pm.state(), PmState::Awake);
 }
+
+#[test]
+fn the_listen_interval_scales_to_beacons_rounded_to_the_dtim() {
+    // At 100 TU beacons a listen interval counts beacons directly.
+    // At or above one DTIM: the nearest multiple of the DTIM, a tie up.
+    assert_eq!(scaled_listen_interval(10, BI, 3), 9);
+    assert_eq!(scaled_listen_interval(11, BI, 3), 12);
+    assert_eq!(scaled_listen_interval(10, BI, 4), 12);
+    assert_eq!(scaled_listen_interval(10, BI, 1), 10);
+    // Below one DTIM: the nearest divisor of it, a tie up.
+    assert_eq!(scaled_listen_interval(3, BI, 10), 2);
+    assert_eq!(scaled_listen_interval(4, BI, 10), 5);
+    assert_eq!(scaled_listen_interval(3, BI, 8), 4);
+    // The listen interval counts 100-TU units: at 200 TU beacons ten units
+    // are five beacons.
+    assert_eq!(scaled_listen_interval(10, 2 * BI, 1), 5);
+    // Fewer than one beacon is one.
+    assert_eq!(scaled_listen_interval(1, 4 * BI, 1), 1);
+}
+
+#[test]
+fn max_modem_programs_the_tbtt_at_the_listen_interval_not_every_beacon() {
+    let listen_interval = crate::request::StationListenInterval::new(10).unwrap();
+    let mut pm = started(SleepType::MaxModem(listen_interval), CoexView::INACTIVE);
+    let tim = PmTim {
+        dtim_count: 0,
+        dtim_period: 1,
+        unicast: false,
+        group: false,
+    };
+    let actions = run(|actions| {
+        pm.beacon(
+            beacon(BI as u64 * 9, Some(tim)),
+            clock(1_000_000),
+            CoexView::INACTIVE,
+            PmTraffic::IDLE,
+            actions,
+        )
+    });
+    let interval = actions.iter().find_map(|action| match action {
+        PmAction::StartTbtt(schedule) => Some(schedule.interval_micros),
+        _ => None,
+    });
+    assert_eq!(interval, Some(10 * BI));
+}
+
+#[test]
+fn a_dtim_change_rescales_the_listen_interval_and_reprograms_max_modem() {
+    let listen_interval = crate::request::StationListenInterval::new(10).unwrap();
+    let mut pm = started(SleepType::MaxModem(listen_interval), CoexView::INACTIVE);
+    let tim = |dtim_period| PmTim {
+        dtim_count: 0,
+        dtim_period,
+        unicast: false,
+        group: false,
+    };
+    let mut beacon_with = |dtim_period| {
+        run(|actions| {
+            pm.beacon(
+                beacon(BI as u64 * 9, Some(tim(dtim_period))),
+                clock(1_000_000),
+                CoexView::INACTIVE,
+                PmTraffic::IDLE,
+                actions,
+            )
+        })
+    };
+    let _ = beacon_with(1);
+    let actions = beacon_with(3);
+    let interval = actions.iter().find_map(|action| match action {
+        PmAction::StartTbtt(schedule) => Some(schedule.interval_micros),
+        _ => None,
+    });
+    // Ten beacons against a DTIM of three: nine.
+    assert_eq!(interval, Some(9 * BI));
+}

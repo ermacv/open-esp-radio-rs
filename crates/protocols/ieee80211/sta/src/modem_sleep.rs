@@ -91,8 +91,20 @@ pub enum SleepType {
     None,
     /// Modem sleep waking for every DTIM.
     MinModem,
-    /// Modem sleep waking at the listen interval.
-    MaxModem,
+    /// Modem sleep waking at the listen interval, rounded to the DTIM.
+    MaxModem(crate::request::StationListenInterval),
+}
+
+impl SleepType {
+    /// The configured listen interval: the max-modem setting, and the
+    /// station's default otherwise (the vendor reads one listen interval for
+    /// every type and uses it only for max-modem).
+    const fn listen_interval(self) -> crate::request::StationListenInterval {
+        match self {
+            Self::MaxModem(listen_interval) => listen_interval,
+            Self::None | Self::MinModem => crate::request::StationListenInterval::DEFAULT,
+        }
+    }
 }
 
 impl From<crate::request::StationPowerMode> for SleepType {
@@ -101,7 +113,7 @@ impl From<crate::request::StationPowerMode> for SleepType {
         match mode {
             StationPowerMode::None => Self::None,
             StationPowerMode::MinModem => Self::MinModem,
-            StationPowerMode::MaxModem(_) => Self::MaxModem,
+            StationPowerMode::MaxModem(listen_interval) => Self::MaxModem(listen_interval),
         }
     }
 }
@@ -422,6 +434,9 @@ pub struct ModemSleep {
     beacon_interval_micros: u32,
     /// `[11]`
     dtim_period: u8,
+    /// `[34]`: the listen interval in beacons, rounded to the DTIM
+    /// (`scale_listen_interval`); max-modem's TBTT interval.
+    listen_interval_beacons: u16,
     /// `[12]`: the overall period the TBTT interval was last derived from.
     tbtt_period: u8,
     /// `[112]`: end of the Wi-Fi slice, monotonic.
@@ -476,6 +491,7 @@ impl ModemSleep {
             beacon_parsed: false,
             beacon_interval_micros: DEFAULT_BEACON_INTERVAL_MICROS,
             dtim_period: 1,
+            listen_interval_beacons: 0,
             tbtt_period: 0,
             slice_end: 0,
             slice_deadline: 0,
@@ -572,6 +588,8 @@ impl ModemSleep {
                 self.beacon_interval_micros / SCHEDULE_INTERVAL_UNIT_MICROS,
             ));
         }
+        self.dtim_period = 1;
+        self.scale_listen_interval(coex, actions);
         self.coex_pwr_update(coex, actions);
         self.coex_was_active = coex.active;
         self.update_tbtt_at_next_beacon = true;
@@ -982,10 +1000,11 @@ impl ModemSleep {
         // `min-modem`, 353 sleeps of 41 to 304 ms) and
         // 1791049759094-00287589 (`station-sleep-max-modem`, listen interval
         // 10, 256 sleeps of 41 to 99 ms) found the MAC and monotonic distances
-        // within 1 µs. `max-modem` here wakes for every beacon (see
-        // `update_next_tbtt`), so no sleep is longer than a DTIM interval;
-        // longer sleeps and light sleep, where the chip's power domains may
-        // switch off, are not measured, and equivalence there needs the same
+        // within 1 µs. Those max-modem sleeps were taken while this model
+        // still woke max-modem for every beacon; it now sleeps the scaled
+        // listen interval (`scale_listen_interval`), so its longer sleeps
+        // are not yet measured, nor is light sleep, where the chip's power
+        // domains may switch off: equivalence there needs the same
         // scenario. The vendor's subtraction
         // of the 32-bit counter from the 64-bit anchor misplaces the station
         // once the counter wraps (every ~71.6 minutes); that is a vendor
@@ -1133,6 +1152,7 @@ impl ModemSleep {
         if !self.beacon_parsed {
             self.beacon_interval_micros = interval;
             self.dtim_period = dtim_period;
+            self.scale_listen_interval(coex, actions);
             if coex.active {
                 actions.push(PmAction::SetCoexInterval(
                     interval / SCHEDULE_INTERVAL_UNIT_MICROS,
@@ -1144,6 +1164,7 @@ impl ModemSleep {
         }
         if self.beacon_interval_micros != interval {
             self.beacon_interval_micros = interval;
+            self.scale_listen_interval(coex, actions);
             if coex.active {
                 actions.push(PmAction::SetCoexInterval(
                     interval / SCHEDULE_INTERVAL_UNIT_MICROS,
@@ -1153,9 +1174,43 @@ impl ModemSleep {
         }
         if self.dtim_period != dtim_period {
             self.dtim_period = dtim_period;
+            self.scale_listen_interval(coex, actions);
             if self.sleep_type != SleepType::None {
                 self.update_tbtt_at_next_beacon = true;
             }
+        }
+    }
+
+    /// `pm_scale_listen_interval`: the configured listen interval, counted
+    /// in 100-TU units, as a number of this access point's beacons, rounded
+    /// to the nearest multiple of the DTIM period (at least one DTIM) or,
+    /// below one DTIM, to the nearest divisor of it; a tie rounds up. A
+    /// change under max-modem reprograms the TBTT at the next beacon.
+    ///
+    /// SOURCE(esp32s31): complete pinned `libpp.a[pm.o]::pm_scale_listen_interval`
+    /// at esp32-wifi-lib `af55a0ca`: `wifi_nvs_get_sta_listen_interval() *
+    /// 102400 / g_pm[52]` truncated to 16 bits (0 becomes 1), the rounding
+    /// against `g_pm[11]`, and on a change the store to `g_pm[34]` with,
+    /// for sleep type 2, `g_pm[18] = 1` and the coexistence power update
+    /// (this model's `coex_pwr_update`, which keeps the flexible period at
+    /// one: the vendor's sets it to the listen interval or the DTIM when its
+    /// configuration byte `g_pm_cfg[86]` is set, not modelled). Its tail
+    /// call `pm_on_sample_beacon` serves the beacon-offset feature, which
+    /// this model does not run. Callers: `pm_start` (DTIM 1) and
+    /// `pm_parse_beacon` (first beacon, beacon interval or DTIM change).
+    fn scale_listen_interval(&mut self, coex: CoexView, actions: &mut PmActions) {
+        let scaled = scaled_listen_interval(
+            self.sleep_type.listen_interval().get(),
+            self.beacon_interval_micros,
+            self.dtim_period,
+        );
+        if scaled == self.listen_interval_beacons {
+            return;
+        }
+        self.listen_interval_beacons = scaled;
+        if matches!(self.sleep_type, SleepType::MaxModem(_)) {
+            self.update_tbtt_at_next_beacon = true;
+            self.coex_pwr_update(coex, actions);
         }
     }
 
@@ -1163,15 +1218,15 @@ impl ModemSleep {
     /// intervals kept in step with the DTIM. When the DTIM is not yet
     /// aligned with that period, the interval first runs up to the DTIM
     /// and is re-derived at the next beacon.
-    fn handle_tbtt_interval(&mut self, beacons: u8, tim: Option<PmTim>) -> u32 {
+    fn handle_tbtt_interval(&mut self, beacons: u16, tim: Option<PmTim>) -> u32 {
         let Some(tim) = tim else {
             self.update_tbtt_at_next_beacon = true;
             return self.beacon_interval_micros;
         };
         let beacons = beacons.max(1);
-        let period = tim.dtim_period.max(1);
+        let period = u16::from(tim.dtim_period.max(1));
         let compatible = beacons.is_multiple_of(period) || period.is_multiple_of(beacons);
-        let offset = tim.dtim_count % beacons;
+        let offset = u16::from(tim.dtim_count) % beacons;
         if !compatible || offset == 0 {
             return u32::from(beacons) * self.beacon_interval_micros;
         }
@@ -1193,11 +1248,16 @@ impl ModemSleep {
         self.tbtt_ahead_micros = ahead;
         self.tbtt_window_micros = TBTT_WAKE_WINDOW_MICROS;
         let interval = if coex.active {
-            self.handle_tbtt_interval(coex.overall_period(), beacon.tim)
+            self.handle_tbtt_interval(u16::from(coex.overall_period()), beacon.tim)
         } else {
             match self.sleep_type {
-                SleepType::MinModem => self.handle_tbtt_interval(self.dtim_period, beacon.tim),
-                SleepType::MaxModem | SleepType::None => self.beacon_interval_micros,
+                SleepType::MinModem => {
+                    self.handle_tbtt_interval(u16::from(self.dtim_period), beacon.tim)
+                }
+                SleepType::MaxModem(_) => {
+                    self.handle_tbtt_interval(self.listen_interval_beacons, beacon.tim)
+                }
+                SleepType::None => self.beacon_interval_micros,
             }
         };
         let timestamp = beacon.timestamp_tsf.as_micros();
@@ -1549,6 +1609,37 @@ impl ModemSleep {
                 duration_micros: u32::try_from(self.slice_end - now).unwrap_or(u32::MAX),
             });
         }
+    }
+}
+
+/// `pm_scale_listen_interval`'s arithmetic: `listen_interval` 100-TU units
+/// in beacons of `beacon_interval_micros`, rounded to the DTIM period.
+fn scaled_listen_interval(
+    listen_interval: u16,
+    beacon_interval_micros: u32,
+    dtim_period: u8,
+) -> u16 {
+    let raw =
+        (u32::from(listen_interval).wrapping_mul(102_400) / beacon_interval_micros.max(1)) as u16;
+    let beacons = raw.max(1);
+    let dtim = u16::from(dtim_period.max(1));
+    let (down, up) = if beacons >= dtim {
+        let down = beacons - beacons % dtim;
+        (down, down.wrapping_add(dtim))
+    } else {
+        let up = (beacons..=dtim)
+            .find(|divisor| dtim % divisor == 0)
+            .unwrap_or(dtim);
+        let down = (1..=beacons)
+            .rev()
+            .find(|divisor| dtim % divisor == 0)
+            .unwrap_or(1);
+        (down, up)
+    };
+    if beacons - down < up.wrapping_sub(beacons) {
+        down
+    } else {
+        up
     }
 }
 

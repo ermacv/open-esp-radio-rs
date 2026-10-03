@@ -19,7 +19,7 @@ esp32s31 = [
 ]
 
 [dependencies]
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "8f9dc79ab549e98e726ae10490a0aabed4cb5186", default-features = false, features = ["esp32s31", "unstable"], optional = true }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "81b820d5f611d6aa6c4ceada63d65bf7e0be101f", default-features = false, features = ["esp32s31", "unstable"], optional = true }
 oer-esp32s31-hal = { path = "../../../../hardware/esp32s31/hal", optional = true }
 oer-esp32s31-phy = { path = "../../../../hardware/esp32s31/phy", optional = true }
 oer-esp32s31-ieee80211 = { path = "../../../../hardware/esp32s31/driver/ieee80211", optional = true }

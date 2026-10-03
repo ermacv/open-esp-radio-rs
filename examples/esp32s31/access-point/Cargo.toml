@@ -20,8 +20,8 @@ static_cell = "2.1.1"
 oer-esp32s31-platform-runtime = { path = "../../../platform/esp32s31/runtime" }
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "8f9dc79ab549e98e726ae10490a0aabed4cb5186", default-features = false, features = ["esp32s31", "rt", "unstable"] }
-esp-println = { git = "https://github.com/ermacv/esp-hal", rev = "8f9dc79ab549e98e726ae10490a0aabed4cb5186", default-features = false, features = ["auto", "esp32s31", "log-04"] }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "81b820d5f611d6aa6c4ceada63d65bf7e0be101f", default-features = false, features = ["esp32s31", "rt", "unstable"] }
+esp-println = { git = "https://github.com/ermacv/esp-hal", rev = "81b820d5f611d6aa6c4ceada63d65bf7e0be101f", default-features = false, features = ["auto", "esp32s31", "log-04"] }
 oer = { package = "open-esp-radio", path = "../../../crates/oer", default-features = false, features = ["wifi"] }
 oer-esp32s31-executor-embassy = { path = "../../../crates/adapters/embassy/esp32s31/executor", features = ["esp32s31"] }
 

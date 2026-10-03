@@ -19,7 +19,7 @@ oer-memory = { path = "../../../../memory" }
 atomic-waker = { version = "1.1.2", optional = true }
 critical-section = "1.2.0"
 oer-soc-deadline = { path = "../../../../hardware/soc/deadline" }
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "8f9dc79ab549e98e726ae10490a0aabed4cb5186", default-features = false, features = ["esp32s31", "unstable"], optional = true }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "81b820d5f611d6aa6c4ceada63d65bf7e0be101f", default-features = false, features = ["esp32s31", "unstable"], optional = true }
 
 # Host tests need the std implementation; chip doctests use esp-hal's.
 [target.'cfg(not(target_os = "none"))'.dev-dependencies]

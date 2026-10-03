@@ -22,6 +22,8 @@ mod status;
 mod transfer;
 
 #[cfg(feature = "axi-gdma-mem2mem")]
+pub use completion::channel0_interrupt as axi_gdma_mem2mem_interrupt;
+#[cfg(feature = "axi-gdma-mem2mem")]
 pub use descriptor::{AxiGdmaDescriptor, BurstSize};
 #[cfg(feature = "axi-gdma-mem2mem")]
 pub use status::{AxiGdmaMem2MemRxStatus, AxiGdmaMem2MemStatus, AxiGdmaMem2MemTxStatus};

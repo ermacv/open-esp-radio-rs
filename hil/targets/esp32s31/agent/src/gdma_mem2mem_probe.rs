@@ -13,7 +13,6 @@ use core::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
-use esp_hal::peripherals::DMA_AXI_CH0;
 use oer_esp32s31_soc_esp_hal::{
     AxiGdmaDescriptor, AxiGdmaMem2Mem, AxiGdmaMem2MemSegment, BurstSize,
 };
@@ -379,7 +378,7 @@ fn report_bytes(
 // completed or dropped before another iteration reuses those allocations.
 // Cancelling this future drops its transfer first; forgetting the whole future
 // retains the channel and static storage indefinitely without another caller.
-pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
+pub(crate) async fn run(channel: oer_esp32s31_soc_esp_hal::AxiGdmaMem2MemChannel<'static>) {
     mark(0x0001, 0);
     let source = unsafe { &mut *ptr::addr_of_mut!(SOURCE) };
     let next_source = unsafe { &mut *ptr::addr_of_mut!(NEXT_SOURCE) };

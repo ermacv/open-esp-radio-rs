@@ -18,7 +18,6 @@ use core::{
 use counters::{Counters, memory_fence};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 use embassy_time::{Duration, Instant, with_timeout};
-use esp_hal::peripherals::DMA_AXI_CH0;
 use oer_esp32s31_soc_esp_hal::{
     AxiGdmaDescriptor, AxiGdmaMem2Mem, AxiGdmaMem2MemSegment, AxiGdmaMem2MemTransferError,
     BurstSize,
@@ -85,7 +84,7 @@ pub(crate) fn submit(id: u32, configuration: MemoryBenchmarkRequest) -> Result<(
 }
 
 #[embassy_executor::task]
-pub(crate) async fn task(channel: DMA_AXI_CH0<'static>) {
+pub(crate) async fn task(channel: oer_esp32s31_soc_esp_hal::AxiGdmaMem2MemChannel<'static>) {
     // SAFETY: the uniquely consumed peripheral admits this task only once.
     // This task retains all static allocations independently of any borrowed
     // transfer. No CPU accesses them during DMA. On any failure the mailbox

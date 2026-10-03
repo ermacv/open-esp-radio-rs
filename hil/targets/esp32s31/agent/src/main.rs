@@ -115,6 +115,12 @@ oer_esp32s31_platform_runtime::interrupt_table! {
     #[cfg(feature = "ieee802154-route-probe")]
     /// The IEEE 802.15.4 MAC's interrupt, to the route probe.
     ieee802154_probe: Ieee802154Probe = MODEM_ZB_MAC => product_hil::route_probe_interrupt, Priority1, ProCpu;
+    #[cfg(any(feature = "memory-benchmark", feature = "gdma-mem2mem-probe"))]
+    /// AXI GDMA channel 0's inbound interrupt.
+    dma_input: DmaInput = AXI_PDMA_IN_CH0 => oer_esp32s31_soc_esp_hal::axi_gdma_mem2mem_interrupt, Priority1, ProCpu;
+    #[cfg(any(feature = "memory-benchmark", feature = "gdma-mem2mem-probe"))]
+    /// AXI GDMA channel 0's outbound interrupt.
+    dma_output: DmaOutput = AXI_PDMA_OUT_CH0 => oer_esp32s31_soc_esp_hal::axi_gdma_mem2mem_interrupt, Priority1, ProCpu;
     #[cfg(feature = "open-radio-hil")]
     /// Wakes the core-1 Embassy executor.
     app_wake: AppExecutorWake = FROM_CPU_INTR1 => oer_esp32s31_executor_embassy::wake_handler::<1>, Priority1, AppCpu;
@@ -600,7 +606,12 @@ extern "C" fn runtime_main() -> ! {
             }
             #[cfg(feature = "memory-benchmark")]
             spawner.spawn(
-                memory_benchmark::task(peripherals.DMA_AXI_CH0).unwrap_or_else(|_| {
+                memory_benchmark::task(oer_esp32s31_soc_esp_hal::AxiGdmaMem2MemChannel::new(
+                    peripherals.DMA_AXI_CH0,
+                    interrupts.dma_input,
+                    interrupts.dma_output,
+                ))
+                .unwrap_or_else(|_| {
                     fail(c"OPEN_RADIO_HIL runtime=FAIL reason=memory-benchmark-allocation\r\n")
                 }),
             );
@@ -614,7 +625,11 @@ extern "C" fn runtime_main() -> ! {
                     l1_cache,
                     watchdog_service,
                     #[cfg(feature = "gdma-mem2mem-probe")]
-                    peripherals.DMA_AXI_CH0,
+                    oer_esp32s31_soc_esp_hal::AxiGdmaMem2MemChannel::new(
+                        peripherals.DMA_AXI_CH0,
+                        interrupts.dma_input,
+                        interrupts.dma_output,
+                    ),
                 ) else {
                     fail(c"OPEN_RADIO_HIL runtime=FAIL reason=radio-task-allocation\r\n");
                 };
@@ -694,7 +709,8 @@ async fn open_radio_hil_task(
     trng: esp_hal::rng::Trng,
     l1_cache: &'static oer_esp32s31_soc_esp_hal::L1CachePerformanceCounters,
     watchdog: &'static oer_esp32s31_soc_esp_hal::watchdog::DeadlineWatchdog,
-    #[cfg(feature = "gdma-mem2mem-probe")] gdma_channel: esp_hal::peripherals::DMA_AXI_CH0<'static>,
+    #[cfg(feature = "gdma-mem2mem-probe")]
+    gdma_channel: oer_esp32s31_soc_esp_hal::AxiGdmaMem2MemChannel<'static>,
 ) {
     #[cfg(feature = "gdma-mem2mem-probe")]
     gdma_mem2mem_probe::run(gdma_channel).await;

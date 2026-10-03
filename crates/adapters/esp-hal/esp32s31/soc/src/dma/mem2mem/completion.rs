@@ -20,9 +20,11 @@ oer_memory::zeroed_static! {
         zeroed in ".flash.critical.bss.axi_gdma_mem2mem";
 }
 
+/// The interrupt-table handler of both channel-0 sources
+/// (`AXI_PDMA_IN_CH0`, `AXI_PDMA_OUT_CH0`).
 #[inline(never)]
 #[unsafe(link_section = ".rwtext.axi_gdma_mem2mem")]
-pub(super) extern "C" fn channel0_interrupt() {
+pub fn channel0_interrupt() {
     disable_channel_interrupts();
     if let Some(waker) = CHANNEL0_WAKER.get() {
         waker.wake();

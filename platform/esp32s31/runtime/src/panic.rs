@@ -164,11 +164,7 @@ fn record(info: &core::panic::PanicInfo<'_>) {
     let (file, line, column) = info
         .location()
         .map_or(("", 0, 0), |l| (l.file(), l.line(), l.column()));
-    let bytes = file.as_bytes();
-    let kept = &bytes[bytes.len().saturating_sub(FILE_BYTES)..];
-    slot.file = [0; FILE_BYTES];
-    slot.file[..kept.len()].copy_from_slice(kept);
-    slot.file_length = kept.len() as u32;
+    (slot.file, slot.file_length) = file_tail(file);
     slot.hart = hart as u32;
     slot.in_interrupt = u32::from(in_interrupt);
     slot.interrupted_pc = if in_interrupt { mepc as u32 } else { 0 };
@@ -197,6 +193,24 @@ fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
     esp_hal::system::software_reset()
 }
 
+/// The last [`FILE_BYTES`] of `file`, zero-padded, and how many there are.
+/// It copies through iterators, without an index whose bounds check could
+/// fail: a panic while recording re-enters the handler, a call-graph cycle
+/// that leaves every interrupt's stack bound unknown.
+fn file_tail(file: &str) -> ([u8; FILE_BYTES], u32) {
+    let bytes = file.as_bytes();
+    let mut kept = [0; FILE_BYTES];
+    let mut length = 0;
+    for (to, from) in kept
+        .iter_mut()
+        .zip(bytes.iter().skip(bytes.len().saturating_sub(FILE_BYTES)))
+    {
+        *to = *from;
+        length += 1;
+    }
+    (kept, length)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -220,6 +234,17 @@ mod tests {
         assert_eq!(record_with(b"src/lib.rs").file(), "src/lib.rs");
         // "é" is 0xc3 0xa9; a suffix may start at its second byte.
         assert_eq!(record_with(b"\xa9/lib.rs").file(), "/lib.rs");
+    }
+
+    #[test]
+    fn a_file_keeps_its_last_bytes_zero_padded() {
+        let (kept, length) = file_tail("src/lib.rs");
+        assert_eq!((&kept[..10], length), (&b"src/lib.rs"[..], 10));
+        assert!(kept[10..].iter().all(|&b| b == 0));
+        let long = "a/".repeat(30) + "tail.rs";
+        let (kept, length) = file_tail(&long);
+        assert_eq!(length as usize, FILE_BYTES);
+        assert_eq!(&kept[..], &long.as_bytes()[long.len() - FILE_BYTES..]);
     }
 
     #[test]

@@ -8,8 +8,8 @@ explicit gaps.
 
 Decoding belongs to [`oer-riscv-decode`](../decode/README.md),
 selected with every extension it decodes: ESP-IDF builds the ESP32-S31 for
-`rv32imafc_zba_zbb_zbs_zcb_zcmp_zcmt`, and only the Zcmt table jumps stay
-undecoded. Integer and Zcb memory forms lift to single operations;
+`rv32imafc_zba_zbb_zbs_zcb_zcmp_zcmt` with Zicsr, and only the Zcmt table
+jumps stay undecoded. Integer and Zcb memory forms lift to single operations;
 `IntegerOp::evaluate` in the model is the one concrete definition that
 analysis and execution share. The Zcmp forms move several registers and lift
 to `Unsupported`, so abstract analysis keeps a gap for them while concrete
@@ -20,9 +20,10 @@ as the decoded flow states.
 The FP register file is not modeled: single-precision loads and stores lift to
 `FloatLoad`/`FloatStore` accesses through their integer base, a form with an
 integer destination (`fmv.x.w`, `fclass.s`, comparisons, `fcvt.w[u].s`) lifts
-to `Opaque`, and every other form to `None`.
+to `Opaque`, and every other form to `None`. A Zicsr access writes only its
+`rd` among the integer registers and lifts to `Opaque` of it.
 
-The decoder and semantic identities (`policy-5` and `values-9`, each over
+The decoder and semantic identities (`policy-6` and `values-10`, each over
 rv-asm 0.2.1) cover every behavior below; any change to decoding or lifting
 changes its identity. `decode_instruction` is the decoding Blobray's executor
 shares.

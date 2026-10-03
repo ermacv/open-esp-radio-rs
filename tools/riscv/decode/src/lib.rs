@@ -4,7 +4,7 @@
 //! The pinned rv-asm 0.2.1 decodes the RV32I base with M, A and C, and this
 //! crate decodes the forms it lacks: the Zba, Zbb and Zbs integer forms, the
 //! Zcb loads, stores and arithmetic, the Zcmp push, pop and register moves,
-//! and the single-precision F extension with its compressed loads and stores.
+//! the Zicsr CSR accesses and the single-precision F extension with its compressed loads and stores.
 //! The caller selects the instruction set with [`Extensions`]; an encoding
 //! outside it, a reserved encoding or an incomplete instruction decodes to
 //! `None`. Neither this crate nor rv-asm has I/O, ELF knowledge or a `std`
@@ -19,7 +19,7 @@ use core::fmt;
 mod extensions;
 mod float;
 
-pub use extensions::{A0, A1, Extension, RA, list_registers};
+pub use extensions::{A0, A1, CsrOp, Extension, RA, list_registers};
 pub use float::{Float, Register};
 pub use rv_asm::{AmoOp, AmoOrdering, Fence, FenceSet, Imm, Inst, Reg};
 
@@ -43,12 +43,14 @@ impl Extensions {
     pub const ZCB: Self = Self(1 << 7);
     /// Requires C.
     pub const ZCMP: Self = Self(1 << 8);
+    pub const ZICSR: Self = Self(1 << 9);
     /// RV32IMAC.
     pub const RV32IMAC: Self = Self::M.union(Self::A).union(Self::C);
     /// Every extension this crate decodes: the ESP32-S31's
-    /// `rv32imafc_zba_zbb_zbs_zcb_zcmp` without Zcmt.
+    /// `rv32imafc_zicsr_zba_zbb_zbs_zcb_zcmp` without Zcmt.
     pub const ALL: Self = Self::RV32IMAC
         .union(Self::F)
+        .union(Self::ZICSR)
         .union(Self::ZBA)
         .union(Self::ZBB)
         .union(Self::ZBS)
@@ -151,6 +153,7 @@ impl Instruction {
                     | Extension::Pop { .. }
                     | Extension::MoveToSaved { .. }
                     | Extension::MoveFromSaved { .. } => Extensions::ZCMP,
+                    Extension::Csr { .. } => Extensions::ZICSR,
                 }
             }
             Instruction::Float(_) => Extensions::F,

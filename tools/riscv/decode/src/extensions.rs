@@ -1,5 +1,5 @@
-//! RV32 bit-manipulation (Zba, Zbb, Zbs) and code-size (Zcb, Zcmp)
-//! encodings, which the pinned rv-asm 0.2.1 does not decode.
+//! RV32 bit-manipulation (Zba, Zbb, Zbs), code-size (Zcb, Zcmp) and CSR
+//! access (Zicsr) encodings, which the pinned rv-asm 0.2.1 does not decode.
 //!
 //! ESP-IDF builds for the ESP32-S31 target
 //! `rv32imafc_zba_zbb_zbs_zcb_zcmp_zcmt`. Zcmp occupies the 16-bit encoding
@@ -7,7 +7,8 @@
 //! and 1, so those spaces are classified here before rv-asm sees them. Zcmt
 //! table jumps need the `jvt` CSR and stay unsupported.
 //! Encodings: <https://docs.riscv.org/reference/isa/unpriv/b-st-ext.html> and
-//! <https://docs.riscv.org/reference/isa/unpriv/zc.html>.
+//! <https://docs.riscv.org/reference/isa/unpriv/zc.html> and
+//! <https://docs.riscv.org/reference/isa/unpriv/zicsr.html>.
 use crate::{ExtensionOp as IntegerOp, Operand};
 use core::fmt;
 
@@ -44,6 +45,22 @@ pub enum Extension {
     MoveToSaved { first: u8, second: u8 },
     /// `cm.mva01s`: `a0` and `a1` take two saved registers.
     MoveFromSaved { first: u8, second: u8 },
+    /// `csrrw`, `csrrs`, `csrrc` and their immediate forms: `dest` takes
+    /// the old value of `csr`, which `source` then writes, sets or clears.
+    Csr {
+        op: CsrOp,
+        dest: u8,
+        source: Operand,
+        csr: u16,
+    },
+}
+
+/// How a Zicsr access changes its CSR.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum CsrOp {
+    Write,
+    Set,
+    Clear,
 }
 
 /// How a word falls into the extension spaces.
@@ -262,6 +279,20 @@ fn word(word: u32) -> Option<Extension> {
         (0x13, 0x30, 5) => integer(RotateRight, shamt),
         (0x13, 0x14, 5) if field == 7 => integer(OrCombineBytes, none),
         (0x13, 0x34, 5) if field == 0x18 => integer(ByteReverse, none),
+        (0x73, _, 1..=3 | 5..=7) => Some(Extension::Csr {
+            op: match funct3 & 3 {
+                1 => CsrOp::Write,
+                2 => CsrOp::Set,
+                _ => CsrOp::Clear,
+            },
+            dest,
+            source: if funct3 & 4 == 0 {
+                Operand::Register(left)
+            } else {
+                Operand::Immediate(u32::from(left))
+            },
+            csr: (word >> 20) as u16,
+        }),
         _ => None,
     }
 }
@@ -334,6 +365,24 @@ impl fmt::Display for Extension {
                     _ if unary => Ok(()),
                     Operand::Register(r) => write!(f, ", {}", name(r)),
                     Operand::Immediate(v) => write!(f, ", {v}"),
+                }
+            }
+            Extension::Csr {
+                op,
+                dest,
+                source,
+                csr,
+            } => {
+                let mnemonic = match op {
+                    CsrOp::Write => "csrrw",
+                    CsrOp::Set => "csrrs",
+                    CsrOp::Clear => "csrrc",
+                };
+                match source {
+                    Operand::Register(r) => {
+                        write!(f, "{mnemonic} {}, {csr:#x}, {}", name(dest), name(r))
+                    }
+                    Operand::Immediate(v) => write!(f, "{mnemonic}i {}, {csr:#x}, {v}", name(dest)),
                 }
             }
             Extension::Memory {

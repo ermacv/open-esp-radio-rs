@@ -511,6 +511,8 @@ fn run(
                     regs[extensions::A1 as usize] = s1;
                 }
                 Extension::Integer { .. } | Extension::Memory { .. } => lifted!(),
+                // Concrete execution has no CSR state.
+                Extension::Csr { .. } => stop!(ExecutionGap::UnsupportedInstruction),
             },
             // Excluded by every profile's admission.
             Instruction::Float(_) => stop!(ExecutionGap::UnsupportedInstruction),

@@ -96,3 +96,36 @@ fn reserved_compressed_stack_adjustment_does_not_decode() {
     assert!(decode(&0x6141u16.to_le_bytes(), Extensions::ALL).is_some());
     assert!(decode(&0x0101u16.to_le_bytes(), Extensions::ALL).is_some());
 }
+
+#[test]
+fn zicsr_accesses_decode_with_their_csr_and_source() {
+    // LLVM's encodings of csrrs a3, mhartid, zero; csrrw zero, mscratch, sp;
+    // csrrci a0, mstatus, 8; csrrc t0, 0x7e1, a1.
+    let forms: [(u32, &str); 4] = [
+        (0xf140_26f3, "csrrs a3, 0xf14, zero"),
+        (0x3401_1073, "csrrw zero, 0x340, sp"),
+        (0x3004_7573, "csrrci a0, 0x300, 8"),
+        (0x7e15_b2f3, "csrrc t0, 0x7e1, a1"),
+    ];
+    for (word, text) in forms {
+        let bytes = word.to_le_bytes();
+        let (instruction, width) = decode(&bytes, Extensions::ALL).unwrap();
+        assert_eq!((instruction.to_string().as_str(), width), (text, 4));
+        assert!(!decodes(&bytes, Extensions::RV32IMAC));
+    }
+    assert_eq!(
+        decode(&0x3401_1073u32.to_le_bytes(), Extensions::ZICSR)
+            .unwrap()
+            .0,
+        Instruction::Extension(Extension::Csr {
+            op: CsrOp::Write,
+            dest: 0,
+            source: Operand::Register(2),
+            csr: 0x340,
+        })
+    );
+    // mret and wfi are not CSR accesses and stay undecoded.
+    for word in [0x3020_0073u32, 0x1050_0073] {
+        assert!(!decodes(&word.to_le_bytes(), Extensions::ALL));
+    }
+}

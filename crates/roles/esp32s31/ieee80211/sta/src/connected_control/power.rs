@@ -23,7 +23,7 @@ use crate::{
     },
 };
 
-use oer_ieee80211_lower_mac::TsfInstant;
+use oer_ieee80211_mac::tsf::TsfInstant;
 
 use super::{
     ConnectedControlCore, ConnectedControlError, ConnectedControlTx, ConnectedDisconnectReason,
@@ -118,7 +118,7 @@ impl JoinBeacon {
     /// and the frame's reception to the node's timestamp and passes the sum
     /// to `hal_set_sta_tsf`; `libnet80211.a[ieee80211_sta.o]::
     /// sta_recv_assoc` calls it with the joined node's timestamp.
-    pub fn access_point_tsf_at(self, now: oer_time::Instant) -> Option<u64> {
+    pub fn access_point_tsf_at(self, now: oer_time::Instant) -> Option<TsfInstant> {
         let received_at = self.received_at?;
         Some(access_point_tsf_after(
             self.beacon.timestamp_tsf,
@@ -129,8 +129,8 @@ impl JoinBeacon {
 
 /// The access point TSF `timestamp_tsf` advanced by `elapsed_micros`, the
 /// time since its frame arrived.
-pub const fn access_point_tsf_after(timestamp_tsf: u64, elapsed_micros: u64) -> u64 {
-    timestamp_tsf.wrapping_add(elapsed_micros)
+pub const fn access_point_tsf_after(timestamp_tsf: TsfInstant, elapsed_micros: u64) -> TsfInstant {
+    TsfInstant::from_micros(timestamp_tsf.as_micros().wrapping_add(elapsed_micros))
 }
 
 /// Power management of one association and the inputs waiting for it.
@@ -443,7 +443,7 @@ impl ConnectedControlCore {
                 // station takes it before power management places its first
                 // TBTT, as the vendor does on the Association Response.
                 if let Some(tsf) = join.access_point_tsf_at(clock.now) {
-                    self.station_tsf.set(hardware, TsfInstant::from_micros(tsf));
+                    self.station_tsf.set(hardware, tsf);
                 }
                 self.power.engine.start(join.beacon, coex, &mut actions);
             }
@@ -619,7 +619,7 @@ impl ConnectedControlCore {
                 PmAction::Disarm(timer) => self.power.deadlines[timer_index(timer)] = None,
                 PmAction::ReleaseHeldFrames => self.power.network_held = false,
                 PmAction::StartTbtt(schedule) => hardware.start_station_tbtt(StaTbttSchedule {
-                    first_tbtt_tsf: schedule.first_tbtt_tsf,
+                    first_tbtt_tsf: schedule.first_tbtt.as_micros(),
                     interval_micros: schedule.interval_micros,
                     ahead_micros: schedule.ahead_micros,
                     wake_ahead_micros: schedule.wake_ahead_micros,

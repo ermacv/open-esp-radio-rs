@@ -75,7 +75,7 @@ pub struct PortConnectionConfig {
     /// The access point's beacon interval, in time units.
     pub beacon_interval_tu: u16,
     /// The access point's TSF when the station joined.
-    pub join_timestamp_tsf: u64,
+    pub join_timestamp_tsf: oer_ieee80211_mac::tsf::TsfInstant,
 }
 
 /// Why the association ended.

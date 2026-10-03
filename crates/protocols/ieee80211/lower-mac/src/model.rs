@@ -25,6 +25,7 @@ use core::{
 };
 
 use crate::{Ieee80211ClockSample, Ieee80211Instant, Ieee80211Stamp};
+use oer_ieee80211_mac::tsf::TsfInstant;
 use oer_ieee80211_mac::{
     phy::{HeMcs, HtMcs},
     qos::WmmAccessCategory,

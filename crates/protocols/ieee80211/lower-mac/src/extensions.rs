@@ -7,6 +7,7 @@
 //! at all. Each extension states its own parametric limits. Why a backend
 //! lacks a feature is recorded in its qualification catalog, not in code.
 
+use oer_ieee80211_mac::tsf::TsfInstant;
 use oer_radio_port::CancelError;
 use oer_time::Duration;
 
@@ -89,18 +90,6 @@ pub trait LowerMacAmpdu: Ieee80211LowerMacPort {
     ) -> SubmitResult<AmpduAttempt<Self::AmpduBuffer>, Self::Error>;
 }
 
-/// The clock domain of IEEE 802.11 Timing Synchronization Functions
-/// (IEEE 802.11-2020 11.1.3): microseconds of a BSS's TSF.
-pub enum Ieee80211Tsf {}
-
-/// An instant of a TSF, without the interface whose TSF it is.
-pub type TsfInstant = oer_time::RadioInstant<Ieee80211Tsf>;
-
-/// The length of `units` time units (TU) of 1024 µs.
-pub const fn time_units(units: u16) -> Duration {
-    Duration::from_micros(units as u64 * 1024)
-}
-
 /// A value of one interface's TSF. Two interfaces count different TSFs (a
 /// station follows its access point's, an access point keeps its own), so
 /// arithmetic between values of different interfaces is an error.
@@ -158,7 +147,7 @@ pub struct TbttSchedule {
     /// A target beacon transmission time of the schedule, in the TSF of the
     /// interface the schedule is for.
     pub next: VifTsf,
-    /// The beacon interval ([`time_units`] of the beacon's interval field).
+    /// The beacon interval ([`time_units`](oer_ieee80211_mac::tsf::time_units) of the beacon's interval field).
     pub beacon_interval: Duration,
     /// How long before each TBTT its event is reported.
     pub lead: Duration,

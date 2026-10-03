@@ -10,6 +10,7 @@ use core::{
 use std::vec::Vec;
 
 use crate::Ieee80211Instant;
+use oer_ieee80211_mac::tsf::{TsfInstant, time_units};
 
 use oer_ieee80211_mac::{
     phy::{

@@ -1,4 +1,5 @@
 use super::*;
+use oer_ieee80211_mac::tsf::TsfInstant;
 
 use std::vec::Vec;
 
@@ -23,7 +24,7 @@ fn clock(now: u64) -> PmClock {
 
 fn beacon(timestamp_tsf: u64, tim: Option<PmTim>) -> PmBeacon {
     PmBeacon {
-        timestamp_tsf,
+        timestamp_tsf: TsfInstant::from_micros(timestamp_tsf),
         interval_tu: BEACON_INTERVAL_TU,
         tim,
     }
@@ -63,7 +64,7 @@ fn start_places_the_first_tbtt_on_the_last_beacon_boundary() {
     assert!(pm.is_started());
     assert_eq!(pm.state(), PmState::Awake);
     assert!(actions.contains(&PmAction::StartTbtt(PmTbttSchedule {
-        first_tbtt_tsf: BI as u64 * 7,
+        first_tbtt: TsfInstant::from_micros(BI as u64 * 7),
         interval_micros: BI,
         ahead_micros: TBTT_AHEAD_MICROS,
         wake_ahead_micros: TBTT_WAKE_WINDOW_MICROS + TBTT_AHEAD_MICROS,

@@ -1746,7 +1746,7 @@ impl ConnectedRxDispatcher {
                 trace_beacon(
                     BeaconVerdict::Published,
                     rssi_dbm,
-                    observation.timestamp_tsf as u32,
+                    observation.timestamp_tsf.as_micros() as u32,
                 );
                 sink.publish(ConnectedRxEvent::Beacon {
                     observation,

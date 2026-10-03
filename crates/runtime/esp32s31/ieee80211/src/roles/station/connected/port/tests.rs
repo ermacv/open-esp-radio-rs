@@ -48,7 +48,7 @@ fn peer() -> ConnectedStaPeer {
             ssid: oer_ieee80211_mac::ssid::WifiSsid::new(b"test").unwrap(),
             association_id: 7,
             beacon_interval_tu: 100,
-            beacon_timestamp_tsf: 0,
+            beacon_timestamp_tsf: oer_ieee80211_mac::tsf::TsfInstant::from_micros(0),
             beacon_received_at: None,
             peer_qos: true,
             management_protection: false,

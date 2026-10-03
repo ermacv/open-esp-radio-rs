@@ -1,8 +1,7 @@
 //! Station power save over the lower-MAC port.
 
 use oer_ieee80211_lower_mac::{
-    Ieee80211LowerMacPort, KeySelector, LowerMacSetting, MacAddress, TbttSchedule, TsfInstant,
-    VifTsf,
+    Ieee80211LowerMacPort, KeySelector, LowerMacSetting, MacAddress, TbttSchedule, VifTsf,
 };
 use oer_ieee80211_mac::{
     qos::WmmAccessCategory,
@@ -167,11 +166,8 @@ impl<P: Ieee80211LowerMacPort> PortPowerSave<P> {
     ) -> Result<(), PortLinkError<PortError<X>>> {
         let vif = context.link.config().vif;
         // The station TSF follows the access point's.
-        let _ = (self.ops.set_tsf)(
-            context.link.port(),
-            VifTsf::new(vif, TsfInstant::from_micros(beacon.timestamp_tsf)),
-        )
-        .map_err(PortLinkError::Port)?;
+        let _ = (self.ops.set_tsf)(context.link.port(), VifTsf::new(vif, beacon.timestamp_tsf))
+            .map_err(PortLinkError::Port)?;
         let mut actions = PmActions::new();
         self.modem.beacon(
             PmBeacon {
@@ -299,7 +295,7 @@ impl<P: Ieee80211LowerMacPort> PortPowerSave<P> {
             Some(schedule) => (self.ops.set_tbtt)(
                 link.port(),
                 TbttSchedule {
-                    next: VifTsf::new(vif, TsfInstant::from_micros(schedule.first_tbtt_tsf)),
+                    next: VifTsf::new(vif, schedule.first_tbtt),
                     beacon_interval: Duration::from_micros(u64::from(schedule.interval_micros)),
                     lead: Duration::from_micros(u64::from(
                         schedule

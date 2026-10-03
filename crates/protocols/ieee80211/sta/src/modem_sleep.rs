@@ -21,6 +21,7 @@
 //! espressif/esp32-wifi-lib `af55a0ca`; each method names the function it
 //! follows.
 
+use oer_ieee80211_mac::tsf::TsfInstant;
 use oer_ieee80211_trace::{PowerState, PowerStateTrace};
 use oer_time::{Duration, Instant};
 
@@ -144,7 +145,8 @@ pub enum PmTimer {
 /// One station TBTT schedule.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PmTbttSchedule {
-    pub first_tbtt_tsf: u64,
+    /// A TBTT of the schedule, in the station TSF.
+    pub first_tbtt: TsfInstant,
     pub interval_micros: u32,
     pub ahead_micros: u16,
     pub wake_ahead_micros: u16,
@@ -320,7 +322,7 @@ impl CoexPhaseView {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PmBeacon {
     /// The beacon's timestamp in the station TSF.
-    pub timestamp_tsf: u64,
+    pub timestamp_tsf: TsfInstant,
     /// The advertised beacon interval, in time units.
     pub interval_tu: u16,
     /// The TIM of the beacon, when present.
@@ -1173,9 +1175,10 @@ impl ModemSleep {
                 SleepType::MaxModem | SleepType::None => self.beacon_interval_micros,
             }
         };
-        let phase = beacon.timestamp_tsf % u64::from(self.beacon_interval_micros);
+        let timestamp = beacon.timestamp_tsf.as_micros();
+        let phase = timestamp % u64::from(self.beacon_interval_micros);
         actions.push(PmAction::StartTbtt(PmTbttSchedule {
-            first_tbtt_tsf: beacon.timestamp_tsf - phase,
+            first_tbtt: TsfInstant::from_micros(timestamp - phase),
             interval_micros: interval,
             ahead_micros: ahead,
             wake_ahead_micros: TBTT_WAKE_WINDOW_MICROS + ahead,

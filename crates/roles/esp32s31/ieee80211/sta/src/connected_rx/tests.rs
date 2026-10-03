@@ -479,7 +479,7 @@ fn routes_associated_beacon_and_local_tim_as_owned_control_state() {
         ConnectedRxDispatch::Beacon
     );
     assert_eq!(sink.beacons.len(), 1);
-    assert_eq!(sink.beacons[0].timestamp_tsf, 123);
+    assert_eq!(sink.beacons[0].timestamp_tsf.as_micros(), 123);
     assert_eq!(sink.beacons[0].interval_tu, 100);
     assert!(sink.beacons[0].tim.unwrap().unicast_buffered);
     assert!(sink.beacons[0].tim.unwrap().group_buffered);

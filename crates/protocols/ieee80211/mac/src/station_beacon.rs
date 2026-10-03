@@ -37,7 +37,8 @@ pub struct StaTimObservation {
 /// Fixed connected-beacon fields that may outlive the borrowed MPDU.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaBeaconObservation {
-    pub timestamp_tsf: u64,
+    /// The beacon's Timestamp field: the access point's TSF.
+    pub timestamp_tsf: crate::tsf::TsfInstant,
     pub interval_tu: u16,
     pub capability_information: u16,
     pub tim: Option<StaTimObservation>,
@@ -144,7 +145,7 @@ pub fn parse_sta_beacon(
     }
 
     Ok(StaBeaconObservation {
-        timestamp_tsf: u64::from_le_bytes(timestamp),
+        timestamp_tsf: crate::tsf::TsfInstant::from_micros(u64::from_le_bytes(timestamp)),
         interval_tu,
         capability_information: u16::from_le_bytes([mpdu[34], mpdu[35]]),
         tim,

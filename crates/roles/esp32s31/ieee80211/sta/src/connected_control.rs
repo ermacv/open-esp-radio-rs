@@ -24,7 +24,6 @@ use oer_esp32s31_ieee80211::{
     datapath::{DatapathControlContext, DatapathControlProgress},
     station_tsf::StationTsf,
 };
-use oer_ieee80211_lower_mac::TsfInstant;
 
 use oer_esp32s31_ieee80211_mac::{
     MacInterface,
@@ -1335,10 +1334,7 @@ impl ConnectedControlCore {
                 let elapsed = hardware.mac_local_time().wrapping_sub(stamp);
                 self.station_tsf.set(
                     hardware,
-                    TsfInstant::from_micros(access_point_tsf_after(
-                        observation.timestamp_tsf,
-                        u64::from(elapsed),
-                    )),
+                    access_point_tsf_after(observation.timestamp_tsf, u64::from(elapsed)),
                 );
             }
             follow_beacon_protection(tx, observation.protection);

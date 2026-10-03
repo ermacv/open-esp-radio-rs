@@ -741,8 +741,9 @@ impl<'registers> WifiMacHal<'registers> {
     }
 
     /// Replace the station TSF, as the vendor does from an access point's
-    /// timestamp.
-    pub fn set_station_tsf(&mut self, value: u64) {
+    /// timestamp. Outside the HAL only the unique register owner writes it
+    /// ([`PublishedRadioOwner::set_station_tsf`](crate::ieee80211::arena::PublishedRadioOwner::set_station_tsf)).
+    pub(crate) fn set_station_tsf(&mut self, value: u64) {
         self.pac_mut().set_station_tsf(value);
     }
 

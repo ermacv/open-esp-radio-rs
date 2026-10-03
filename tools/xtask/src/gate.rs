@@ -44,6 +44,12 @@ const GLOBAL: &[&str] = &[
     "rustfmt.toml",
 ];
 
+/// The image classes CI type-checks on every pull request.
+const FINAL_IMAGES: [oer_hil_image_class::ImageClass; 2] = [
+    oer_hil_image_class::ImageClass::Performance,
+    oer_hil_image_class::ImageClass::Correctness,
+];
+
 /// How long the tests of one workspace may run in the gate.
 pub const TEST_LIMIT: Duration = Duration::from_secs(20 * 60);
 
@@ -454,6 +460,20 @@ pub fn tested<'a>(
         .collect()
 }
 
+/// The packages of `affected` that build only for a chip, which the host
+/// checks of the gate never compile.
+pub fn chip_only<'a>(tree: &Tree, affected: &'a BTreeSet<Key>) -> BTreeSet<&'a Key> {
+    affected
+        .iter()
+        .filter(|(workspace, name)| {
+            !tree
+                .packages
+                .iter()
+                .any(|p| &p.workspace == workspace && &p.name == name && p.host)
+        })
+        .collect()
+}
+
 /// Runs the gate for `selection` at `depth`, with Clippy of the packages of
 /// `affected` the host builds and the tests [`tested`] names.
 pub fn run(
@@ -514,9 +534,21 @@ pub fn run(
                 .any(|p| &p.workspace == workspace && &p.name == name && p.host)
         })
         .collect();
-    let left = affected.len() - host.len();
+    let left = chip_only(tree, affected).len();
     if left > 0 {
-        println!("gate: {left} chip-only package(s) left to CI");
+        // Packages built only for a chip are invisible to the host checks
+        // below: type-check the two final images, as CI does, so an interface
+        // change their chip-only code still uses fails here. Their full
+        // build, the other classes and the examples remain CI's.
+        println!("gate: {left} chip-only package(s); type-checking the final images");
+        step("type-check final images", || {
+            crate::checks::firmware::run(
+                ctx,
+                &FINAL_IMAGES,
+                crate::checks::firmware::Depth::TypeCheck,
+                crate::checks::firmware::default_jobs(),
+            )
+        })?;
     }
     let tested = tested(depth, selection, affected);
     let mut by_workspace: BTreeMap<&str, Vec<&str>> = BTreeMap::new();

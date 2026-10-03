@@ -1002,11 +1002,12 @@ impl ModemSleep {
         // 1791049759094-00287589 (`station-sleep-max-modem`, listen interval
         // 10, 256 sleeps of 41 to 99 ms) found the MAC and monotonic distances
         // within 1 µs. Those max-modem sleeps were taken while this model
-        // still woke max-modem for every beacon; it now sleeps the scaled
-        // listen interval (`scale_listen_interval`), so its longer sleeps
-        // are not yet measured, nor is light sleep, where the chip's power
-        // domains may switch off: equivalence there needs the same
-        // scenario. The vendor's subtraction
+        // still woke max-modem for every beacon; sleeping the scaled listen
+        // interval (`scale_listen_interval`), run 1791062289291-003a3fc2
+        // (`station-sleep-max-modem`, listen interval 10, DTIM 1) found 58
+        // sleeps of 941 to 1021 ms within 1 µs too. Light sleep, where the
+        // chip's power domains may switch off, is not measured: equivalence
+        // there needs the same scenario. The vendor's subtraction
         // of the 32-bit counter from the 64-bit anchor misplaces the station
         // once the counter wraps (every ~71.6 minutes); that is a vendor
         // defect and is not reproduced.

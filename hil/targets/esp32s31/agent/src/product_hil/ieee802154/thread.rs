@@ -29,7 +29,7 @@ use oer_hil_protocol::{
 };
 use oer_ieee802154::{Ieee802154RadioPort, LifecycleCommand, RadioCommand, RequestId};
 use oer_ieee802154_openthread::{
-    OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults,
+    OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults, PortClock, PortRssi,
 };
 use openthread::{
     DeviceRole, OpenThread, OtResources, OtUdpResources, SimpleRamSettings, UdpSocket,
@@ -59,6 +59,8 @@ static OT_RESOURCES: StaticCell<OtResources> = StaticCell::new();
 static OT_UDP: StaticCell<OtUdpResources<UDP_SOCKETS, UDP_BUFFER>> = StaticCell::new();
 static OT_SETTINGS_BUFFER: ConstStaticCell<[u8; 1024]> = ConstStaticCell::new([0; 1024]);
 static OT_SETTINGS: StaticCell<SimpleRamSettings> = StaticCell::new();
+static RADIO_CLOCK: StaticCell<PortClock<'static, Ieee802154SystemRuntime>> = StaticCell::new();
+static RADIO_RSSI: StaticCell<PortRssi<'static, Ieee802154SystemRuntime>> = StaticCell::new();
 static UDP_RECEIVE: ConstStaticCell<[u8; UDP_BUFFER]> = ConstStaticCell::new([0; UDP_BUFFER]);
 
 /// The IEEE 802.15.4 EUI-64 as ESP-IDF derives it
@@ -216,6 +218,7 @@ async fn serve(ot: &OpenThread<'_>, socket: &UdpSocket<'_>) -> u32 {
 fn start_openthread(
     request: &Ieee802154ThreadStartRequest,
     trng: Trng,
+    runtime: &'static Ieee802154SystemRuntime,
 ) -> Option<(OpenThread<'static>, UdpSocket<'static>)> {
     let ot_resources = OT_RESOURCES.init(OtResources::new());
     // OpenThread's `SubMac` reads the radio capabilities when the instance
@@ -225,6 +228,8 @@ fn start_openthread(
         ieee_eui64(),
         TRNG.init(trng),
         OT_SETTINGS.init(SimpleRamSettings::new(OT_SETTINGS_BUFFER.take())),
+        RADIO_CLOCK.init(PortClock::new(runtime)),
+        Some(RADIO_RSSI.init(PortRssi::new(runtime))),
         ot_resources,
         OT_UDP.init(OtUdpResources::new()),
     )
@@ -269,7 +274,7 @@ pub(in crate::product_hil) async fn run_thread(
     };
     let joined = Trng::try_new()
         .ok()
-        .and_then(|trng| start_openthread(&request, trng));
+        .and_then(|trng| start_openthread(&request, trng, system.runtime()));
     let Some((ot, socket)) = joined else {
         publish_event_reliably(0, request_id, started(Ieee802154SessionResult::StartFailed)).await;
         let stopped = core::pin::pin!(client.stop(system));
@@ -280,8 +285,6 @@ pub(in crate::product_hil) async fn run_thread(
 
     let radio: ThreadRadio = OpenThreadRadio::new(
         system.runtime(),
-        system.radio_clock(),
-        system.recent_rssi_reader(),
         OpenThreadRadioDefaults::esp_idf(
             IEEE802154_DEFAULT_TX_POWER_DBM,
             IEEE802154_RECEIVE_SENSITIVITY_DBM,

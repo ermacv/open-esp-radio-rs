@@ -33,4 +33,6 @@ pub mod frames;
 
 mod radio;
 
-pub use radio::{OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults};
+pub use radio::{
+    OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults, PortClock, PortRssi,
+};

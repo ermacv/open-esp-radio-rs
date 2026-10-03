@@ -128,9 +128,10 @@ retry timers run in the runtime's runner, `Ieee802154System::run` (the
 runtime's `Ieee802154Runtime::run`), which the application polls beside the
 consumer of the port's events for as long as the client runs; `next_event`
 only takes events. The random words come from the hardware generator.
-`Ieee802154System::radio_clock` is the radio clock as a function for
-synchronous callers such as OpenThread: the image's monotonic clock in
-microseconds, the one the `embassy-time` driver reads.
+The port's clock (`now`) is the runtime's `embassy-time` clock, running
+whether or not a radio is installed; synchronous callers such as OpenThread
+read it, and the live RSSI, through the port itself (the OpenThread
+adapter's `PortClock` and `PortRssi`).
 
 Source matching is part of the portable contract: `Configuration` sets the
 pending mode and adds, removes or resets the sources of interface zero's

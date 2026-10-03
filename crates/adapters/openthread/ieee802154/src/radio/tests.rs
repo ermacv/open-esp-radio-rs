@@ -18,11 +18,13 @@ use oer_espressif_ieee802154_runtime::{
 };
 use oer_ieee802154::{Ieee802154RadioPort, Interface};
 use openthread_radio::{
-    Config, CslConfig, FrameCounterUpdate, MacCapabilities, MacKeys, Radio, RadioErrorKind,
-    SrcMatchConfig, TxFrame,
+    Config, CslConfig, FrameCounterUpdate, MacCapabilities, MacKeys, Radio, RadioClock as _,
+    RadioErrorKind, RadioRssi as _, SrcMatchConfig, TxFrame,
 };
 
-use super::{OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults};
+use super::{
+    OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults, PortClock, PortRssi,
+};
 use crate::frames::{
     CSL_ACCURACY_PPM, CSL_UNCERTAINTY, extended_pending_address, short_pending_address,
 };
@@ -73,10 +75,6 @@ const RECEIVED_IMAGE: [u8; 12] = [
     180,
 ];
 
-fn live_rssi() -> Option<i8> {
-    Some(-71)
-}
-
 /// An installed runtime, and the OpenThread radio over it.
 fn radio() -> (&'static Runtime, Thread) {
     let runtime: &'static Runtime = Box::leak(Box::new(Runtime::new(SkipClock::starting_at(
@@ -93,10 +91,7 @@ fn radio() -> (&'static Runtime, Thread) {
             .install(parts, PLATFORM, Ieee802154PibDefaults::default())
             .is_ok()
     );
-    (
-        runtime,
-        OpenThreadRadio::new(runtime, || NOW_MICROS, live_rssi, DEFAULTS),
-    )
+    (runtime, OpenThreadRadio::new(runtime, DEFAULTS))
 }
 
 /// A radio OpenThread has initialized.
@@ -138,13 +133,17 @@ fn init_enables_the_radio_and_reports_the_port_capabilities() {
     assert!(block_on(radio.init()).is_ok());
 }
 
-/// OpenThread's `otPlatRadioGetRssi` reads the reader the composition
-/// handed over, not the last frame.
+/// OpenThread's `otPlatRadioGetNow` and `otPlatRadioGetRssi` read the
+/// port itself: its clock and its live RSSI, not a second path to them.
 #[test]
-fn the_rssi_read_is_the_composition_reader() {
-    let (_, radio) = radio();
-    let read = radio.rssi().expect("the radio reads RSSI live");
-    assert_eq!(read(), Some(-71));
+fn openthread_reads_the_port_clock_and_live_rssi() {
+    let (runtime, _) = radio();
+    assert_eq!(PortClock::new(runtime).now_micros(), NOW_MICROS);
+    assert_eq!(
+        PortRssi::new(runtime).rssi(),
+        runtime.recent_rssi().ok(),
+        "the live read is the port's"
+    );
 }
 
 /// Identity and promiscuous mode reach the hardware filter.

@@ -953,9 +953,10 @@ where
     }
 
     /// The radio clock (`otPlatRadioGetNow`): the runtime's own clock, the
-    /// one its engine reads at every event.
+    /// one its engine reads at every event. It runs whether or not a radio
+    /// is installed.
     fn now(&self) -> Result<Ieee802154Instant, Ieee802154RuntimeError> {
-        self.with_radio(|_, _, _| Ieee802154Instant::from_micros(self.timer.now().as_micros()))
+        Ok(Ieee802154Instant::from_micros(self.timer.now().as_micros()))
     }
 
     /// The radio clock is the runtime's clock (`esp_timer_get_time` in

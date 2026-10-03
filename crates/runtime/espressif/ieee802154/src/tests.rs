@@ -612,7 +612,13 @@ fn the_runner_runs_retry_delays() {
 #[test]
 fn the_clock_and_csl_state_belong_to_the_installed_radio() {
     let runtime = Runtime::<4>::new(VirtualClock::new());
-    assert_eq!(runtime.now(), Err(Ieee802154RuntimeError::NotInstalled));
+    assert_eq!(
+        runtime
+            .now()
+            .map(oer_ieee802154::Ieee802154Instant::as_micros),
+        Ok(0),
+        "the clock runs before a radio is installed"
+    );
     assert_eq!(
         runtime.clock_info().epoch,
         oer_ieee802154::RadioEpoch::Monotonic

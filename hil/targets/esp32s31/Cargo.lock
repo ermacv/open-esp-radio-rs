@@ -2565,7 +2565,7 @@ dependencies = [
 [[package]]
 name = "openthread"
 version = "0.4.0"
-source = "git+https://github.com/ermacv/openthread?rev=13538da6b576ed8f1316adbad2196c06e4cf7c99#13538da6b576ed8f1316adbad2196c06e4cf7c99"
+source = "git+https://github.com/ermacv/openthread?rev=5173f96654a2f317e29fb7d8e69fb8a887607f6d#5173f96654a2f317e29fb7d8e69fb8a887607f6d"
 dependencies = [
  "bitflags 2.13.1",
  "embassy-futures",
@@ -2581,7 +2581,7 @@ dependencies = [
 [[package]]
 name = "openthread-radio"
 version = "0.4.0"
-source = "git+https://github.com/ermacv/openthread?rev=13538da6b576ed8f1316adbad2196c06e4cf7c99#13538da6b576ed8f1316adbad2196c06e4cf7c99"
+source = "git+https://github.com/ermacv/openthread?rev=5173f96654a2f317e29fb7d8e69fb8a887607f6d#5173f96654a2f317e29fb7d8e69fb8a887607f6d"
 dependencies = [
  "bitflags 2.13.1",
  "embassy-time",
@@ -2591,7 +2591,7 @@ dependencies = [
 [[package]]
 name = "openthread-sys"
 version = "0.4.0"
-source = "git+https://github.com/ermacv/openthread?rev=13538da6b576ed8f1316adbad2196c06e4cf7c99#13538da6b576ed8f1316adbad2196c06e4cf7c99"
+source = "git+https://github.com/ermacv/openthread?rev=5173f96654a2f317e29fb7d8e69fb8a887607f6d#5173f96654a2f317e29fb7d8e69fb8a887607f6d"
 dependencies = [
  "anyhow",
  "bindgen",

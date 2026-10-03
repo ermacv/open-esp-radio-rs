@@ -11,7 +11,7 @@ description = "OpenThread radio over any IEEE 802.15.4 radio port"
 heapless = "0.9.3"
 oer-ieee802154 = { path = "../../../protocols/ieee802154" }
 # The fork's radio trait, without the OpenThread C library.
-openthread-radio = { git = "https://github.com/ermacv/openthread", rev = "13538da6b576ed8f1316adbad2196c06e4cf7c99", default-features = false }
+openthread-radio = { git = "https://github.com/ermacv/openthread", rev = "5173f96654a2f317e29fb7d8e69fb8a887607f6d", default-features = false }
 
 [dev-dependencies]
 embassy-futures = "0.1.2"

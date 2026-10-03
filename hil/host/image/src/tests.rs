@@ -295,3 +295,20 @@ fn an_unchanged_embedded_runtime_keeps_its_timestamp() {
     assert_eq!(fs::read(&target).unwrap(), b"changed");
     assert_ne!(fs::metadata(&target).unwrap().modified().unwrap(), old);
 }
+
+#[test]
+fn cargo_tree_lines_name_their_packages() {
+    let tree = "oer-esp32s31-hil-agent v0.1.0 (/repo/hil/targets/esp32s31/agent)\n\
+                critical-section v1.2.0\n\
+                oer-ieee802154 v0.1.0 (/repo/crates/protocols/ieee802154) (*)\n";
+    assert_eq!(
+        tree_packages(tree),
+        [
+            "critical-section",
+            "oer-esp32s31-hil-agent",
+            "oer-ieee802154"
+        ]
+        .map(str::to_owned)
+        .into()
+    );
+}

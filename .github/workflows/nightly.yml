@@ -6,6 +6,7 @@ name: Nightly
 #   placement regression in a diagnostic class is found before it blocks a
 #   run;
 # - every ESP32-S31 example, built and audited (CI type-checks them);
+# - the RV32 decoder's accepted encodings against the toolchain's llvm-objdump;
 # - Blobray's workspace, Clippy and tests;
 # - each chip's vendor verification: its probe images, the vendor host
 #   stand, and the provenance of every cited vendor function against the
@@ -82,6 +83,11 @@ jobs:
             echo "::endgroup::"
           done
           exit "$failed"
+      # The decoder must accept exactly the encodings LLVM disassembles,
+      # except the differences its test names.
+      - name: RV32 decoder against the toolchain's llvm-objdump
+        if: ${{ !cancelled() }}
+        run: cargo test --locked -p oer-riscv-decode --test llvm_reference -- --ignored
       - name: Summarize the classes
         if: always()
         run: |

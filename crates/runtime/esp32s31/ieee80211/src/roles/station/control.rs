@@ -29,10 +29,7 @@ use oer_ieee80211_mac::twt::IndividualTwtFlowId;
 use oer_ieee80211_sta::{
     ftm::FtmRequesterConfig,
     link_monitor::{StaBeaconLossConfig, StaBeaconMonitor},
-    twt::{
-        IndividualTwtProposal, IndividualTwtRequester, IndividualTwtRequesterConfig,
-        IndividualTwtWakePlan,
-    },
+    twt::{IndividualTwtProposal, IndividualTwtRequester, IndividualTwtRequesterConfig},
 };
 
 pub use oer_esp32s31_ieee80211_sta::{
@@ -43,7 +40,7 @@ pub use oer_esp32s31_ieee80211_sta::{
         ConnectedHeControlRuntimeEvidence, ConnectedHeControlRuntimeOutcome,
         ConnectedHeControlRuntimeRejection, ConnectedIndividualTwtRuntimeEvidence,
         ConnectedIndividualTwtRuntimeOutcome, HeNdpaRuntimeRequest, HeTriggerRuntimeRequest,
-        JoinBeacon,
+        JoinBeacon, StationTwtWakePlan,
     },
     ftm::{
         StationFtmFrontierStatus, StationFtmHardwareError, StationFtmHardwareFrontier,
@@ -424,13 +421,14 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         self.core.individual_twt_requester()
     }
 
-    pub fn individual_twt_wake_plan(
+    /// The next individual-TWT wake at the station TSF now, with the TSF
+    /// generation it belongs to (see [`StationTwtWakePlan`]).
+    pub fn individual_twt_wake_plan<H: ConnectedControlHardware>(
         &self,
-        station_tsf: u64,
-        wake_guard_micros: u32,
-    ) -> Result<Option<IndividualTwtWakePlan>, ConnectedControlError> {
-        self.core
-            .individual_twt_wake_plan(station_tsf, wake_guard_micros)
+        hardware: &mut H,
+        wake_guard: oer_time::Duration,
+    ) -> Result<Option<StationTwtWakePlan>, ConnectedControlError> {
+        self.core.individual_twt_wake_plan(hardware, wake_guard)
     }
 
     pub fn dropped_he_observations(&self) -> u32 {

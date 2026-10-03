@@ -1,4 +1,5 @@
 use super::*;
+use oer_ieee80211_mac::tsf::TsfInstant;
 use oer_ieee80211_mac::twt::IndividualTwtFlowType;
 
 const CONFIG: IndividualTwtRequesterConfig = match IndividualTwtRequesterConfig::new(
@@ -65,7 +66,7 @@ fn explicit_proposal_reports_the_exact_information_frontier() {
             IndividualTwtRequesterError::ExplicitTwtInformationUnsupported(
                 IndividualTwtInformationFrontier {
                     flow_id: IndividualTwtFlowId::new(2).unwrap(),
-                    initial_target_wake_time_tsf: 10_000,
+                    initial_target_wake_time: TsfInstant::from_micros(10_000),
                     information_frames_disabled: false,
                 }
             )
@@ -105,7 +106,7 @@ fn peer_accepted_explicit_agreement_is_torn_down_not_installed() {
             flow_id: IndividualTwtFlowId::new(2).unwrap(),
             frontier: IndividualTwtInformationFrontier {
                 flow_id: IndividualTwtFlowId::new(2).unwrap(),
-                initial_target_wake_time_tsf: 10_000,
+                initial_target_wake_time: TsfInstant::from_micros(10_000),
                 information_frames_disabled: false,
             },
         }
@@ -123,46 +124,87 @@ fn peer_accepted_explicit_agreement_is_torn_down_not_installed() {
     assert_eq!(teardown.kind, IndividualTwtTxKind::Teardown);
 }
 
-#[test]
-fn wake_plan_rejects_a_window_crossing_the_comparable_tsf_half() {
-    let agreement = IndividualTwtAgreement {
-        flow_id: IndividualTwtFlowId::new(0).unwrap(),
+fn agreement(flow: u8, target: u64, interval: u64, duration: u64) -> IndividualTwtAgreement {
+    IndividualTwtAgreement {
+        flow_id: IndividualTwtFlowId::new(flow).unwrap(),
         control: IndividualTwtControl::REQUEST,
         trigger: false,
         implicit: true,
         flow_type: IndividualTwtFlowType::Announced,
         protection: false,
-        target_wake_time_tsf: i64::MAX as u64,
-        wake_interval_micros: i64::MAX as u64,
-        wake_duration_micros: 256,
-    };
+        target_wake_time: TsfInstant::from_micros(target),
+        wake_interval: Duration::from_micros(interval),
+        wake_duration: Duration::from_micros(duration),
+    }
+}
+
+fn tsf(micros: u64) -> TsfInstant {
+    TsfInstant::from_micros(micros)
+}
+
+#[test]
+fn wake_plan_refuses_a_window_past_the_tsf_range() {
+    // The current window has closed and the next one starts past 2^64: beyond the TSF
+    // generation the plan is computed in, so it is refused, not wrapped.
+    let late = agreement(0, u64::MAX - 600, 1_000, 256);
     assert_eq!(
-        plan_agreement_wake(agreement, 0, 10),
-        Err(IndividualTwtWakePlanError::AmbiguousTsfDistance)
+        plan_agreement_wake(late, tsf(u64::MAX - 100), Duration::from_micros(10)),
+        Err(IndividualTwtWakePlanError::BeyondTsfRange)
+    );
+    // A target past now is a window ahead, never one after a wrap.
+    let ahead = agreement(0, 50, 1_000, 256);
+    assert_eq!(
+        plan_agreement_wake(ahead, tsf(0), Duration::from_micros(10)),
+        Ok(IndividualTwtWakePlan {
+            flow_bitmap: 1,
+            wake: tsf(40),
+            service_start: tsf(50),
+            service_end: tsf(306),
+            service_open: false,
+        })
     );
 }
 
 #[test]
-fn wake_plan_preserves_a_future_window_across_tsf_wrap() {
-    let agreement = IndividualTwtAgreement {
-        flow_id: IndividualTwtFlowId::new(0).unwrap(),
-        control: IndividualTwtControl::REQUEST,
-        trigger: false,
-        implicit: true,
-        flow_type: IndividualTwtFlowType::Announced,
-        protection: false,
-        target_wake_time_tsf: 50,
-        wake_interval_micros: 1_000,
-        wake_duration_micros: 256,
-    };
+fn wake_plan_follows_the_periodic_schedule_from_the_target() {
+    let periodic = agreement(1, 1_000, 1_000, 256);
+    // Inside the third window: open, wake now.
     assert_eq!(
-        plan_agreement_wake(agreement, u64::MAX - 100, 10),
+        plan_agreement_wake(periodic, tsf(3_100), Duration::from_micros(10)),
         Ok(IndividualTwtWakePlan {
-            flow_bitmap: 1,
-            wake_tsf: 40,
-            service_start_tsf: 50,
-            service_end_tsf: 306,
+            flow_bitmap: 2,
+            wake: tsf(3_100),
+            service_start: tsf(3_000),
+            service_end: tsf(3_256),
+            service_open: true,
+        })
+    );
+    // After it: the next window, waking the guard before it, not before now.
+    assert_eq!(
+        plan_agreement_wake(periodic, tsf(3_995), Duration::from_micros(10)),
+        Ok(IndividualTwtWakePlan {
+            flow_bitmap: 2,
+            wake: tsf(3_995),
+            service_start: tsf(4_000),
+            service_end: tsf(4_256),
             service_open: false,
         })
     );
+}
+
+#[test]
+fn the_earliest_of_two_flows_wins_and_open_windows_merge() {
+    let guard = Duration::from_micros(10);
+    let early = plan_agreement_wake(agreement(0, 500, 10_000, 100), tsf(0), guard).unwrap();
+    let late = plan_agreement_wake(agreement(1, 900, 10_000, 100), tsf(0), guard).unwrap();
+    assert_eq!(late.merge_or_earlier(early), early);
+    let first = plan_agreement_wake(agreement(0, 0, 10_000, 600), tsf(550), guard).unwrap();
+    let second = plan_agreement_wake(agreement(1, 500, 10_000, 600), tsf(550), guard).unwrap();
+    let merged = first.merge_or_earlier(second);
+    assert_eq!(merged.flow_bitmap, 0b11);
+    assert_eq!(
+        (merged.service_start, merged.service_end),
+        (tsf(0), tsf(1_100))
+    );
+    assert!(merged.service_open);
 }

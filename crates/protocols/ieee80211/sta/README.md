@@ -26,7 +26,9 @@ Module map:
 - `link_monitor`: beacon-loss decisions;
 - `pmksa`: the SAE PMKSA cache a reconnect resumes, and its shared owner;
 - `ftm`, `twt`: bounded requester state and deadlines; their presence does not
-  establish a chip timestamp or wake-schedule implementation;
+  establish a chip timestamp or wake-schedule implementation. The TWT wake
+  plan is computed in `TsfInstant`s of one TSF generation the caller tracks;
+  it never wraps, and a service window past 2^64 is `BeyondTsfRange`;
 - `request`: caller-visible station configuration and selection values.
 
 This is not a generic 802.11 frame crate and it is not an ESP32 backend.

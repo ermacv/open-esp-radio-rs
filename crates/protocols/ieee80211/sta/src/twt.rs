@@ -2,9 +2,13 @@
 //!
 //! This owner performs no I/O and reads no clock. A caller supplies monotonic
 //! runtime deadlines for negotiation and the associated station TSF for wake
-//! planning. Chip code must separately prove that it can install the accepted
+//! planning, as [`TsfInstant`]s: the wake plan is computed within one TSF
+//! generation, which the caller tracks. A TSF crossing 2^64 is a jump that
+//! starts a new generation, so planning never wraps: a service window past
+//! 2^64 is refused ([`IndividualTwtWakePlanError::BeyondTsfRange`]). Chip code must separately prove that it can install the accepted
 //! agreement before any TWT Setup frame is published.
 
+use oer_ieee80211_mac::tsf::TsfInstant;
 use oer_ieee80211_mac::twt::{
     INDIVIDUAL_TWT_FLOW_CAPACITY, INDIVIDUAL_TWT_SETUP_BODY_LEN, INDIVIDUAL_TWT_TEARDOWN_BODY_LEN,
     IndividualTwtAction, IndividualTwtControl, IndividualTwtFlowId, IndividualTwtParameterSet,
@@ -111,7 +115,7 @@ impl IndividualTwtProposal {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IndividualTwtInformationFrontier {
     pub flow_id: IndividualTwtFlowId,
-    pub initial_target_wake_time_tsf: u64,
+    pub initial_target_wake_time: TsfInstant,
     pub information_frames_disabled: bool,
 }
 
@@ -122,7 +126,7 @@ impl IndividualTwtInformationFrontier {
     ) -> Self {
         Self {
             flow_id: parameters.flow_id,
-            initial_target_wake_time_tsf: parameters.target_wake_time_tsf,
+            initial_target_wake_time: TsfInstant::from_micros(parameters.target_wake_time_tsf),
             information_frames_disabled: control.information_frames_disabled,
         }
     }
@@ -137,9 +141,9 @@ pub struct IndividualTwtAgreement {
     pub implicit: bool,
     pub flow_type: oer_ieee80211_mac::twt::IndividualTwtFlowType,
     pub protection: bool,
-    pub target_wake_time_tsf: u64,
-    pub wake_interval_micros: u64,
-    pub wake_duration_micros: u32,
+    pub target_wake_time: TsfInstant,
+    pub wake_interval: Duration,
+    pub wake_duration: Duration,
 }
 
 impl IndividualTwtAgreement {
@@ -152,9 +156,11 @@ impl IndividualTwtAgreement {
             implicit: parameters.implicit,
             flow_type: parameters.flow_type,
             protection: parameters.protection,
-            target_wake_time_tsf: parameters.target_wake_time_tsf,
-            wake_interval_micros: parameters.wake_interval_micros()?,
-            wake_duration_micros: parameters.wake_duration_micros(response.control)?,
+            target_wake_time: TsfInstant::from_micros(parameters.target_wake_time_tsf),
+            wake_interval: Duration::from_micros(parameters.wake_interval_micros()?),
+            wake_duration: Duration::from_micros(u64::from(
+                parameters.wake_duration_micros(response.control)?,
+            )),
         })
     }
 
@@ -165,7 +171,7 @@ impl IndividualTwtAgreement {
         } else {
             Some(IndividualTwtInformationFrontier {
                 flow_id: self.flow_id,
-                initial_target_wake_time_tsf: self.target_wake_time_tsf,
+                initial_target_wake_time: self.target_wake_time,
                 information_frames_disabled: self.control.information_frames_disabled,
             })
         }
@@ -858,20 +864,23 @@ impl IndividualTwtRequester {
             .min()
     }
 
+    /// The earliest active or upcoming service window across the installed
+    /// flows at station TSF `now`, waking `wake_guard` before it starts.
+    /// `now` and the plan belong to one TSF generation.
     pub fn plan_next_wake(
         &self,
-        station_tsf: u64,
-        wake_guard_micros: u32,
+        now: TsfInstant,
+        wake_guard: Duration,
     ) -> Result<Option<IndividualTwtWakePlan>, IndividualTwtWakePlanError> {
         let mut best: Option<IndividualTwtWakePlan> = None;
         for phase in self.flows {
             let FlowPhase::Active(agreement) = phase else {
                 continue;
             };
-            let candidate = plan_agreement_wake(agreement, station_tsf, wake_guard_micros)?;
+            let candidate = plan_agreement_wake(agreement, now, wake_guard)?;
             best = Some(match best {
                 None => candidate,
-                Some(current) => current.merge_or_earlier(candidate, station_tsf),
+                Some(current) => current.merge_or_earlier(candidate),
             });
         }
         Ok(best)
@@ -939,60 +948,43 @@ pub enum IndividualTwtWakePlanError {
     InvalidAgreement,
     WakeGuardOutsideInterval {
         flow_id: IndividualTwtFlowId,
-        wake_guard_micros: u32,
-        interval_micros: u64,
+        wake_guard: Duration,
+        interval: Duration,
     },
-    AmbiguousTsfDistance,
+    /// The service window ends past 2^64: beyond the TSF generation the plan
+    /// is computed in.
+    BeyondTsfRange,
 }
 
 /// Earliest active or upcoming service window across all installed flows.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IndividualTwtWakePlan {
     pub flow_bitmap: u8,
-    pub wake_tsf: u64,
-    pub service_start_tsf: u64,
-    pub service_end_tsf: u64,
+    pub wake: TsfInstant,
+    pub service_start: TsfInstant,
+    pub service_end: TsfInstant,
     pub service_open: bool,
 }
 
 impl IndividualTwtWakePlan {
-    fn merge_or_earlier(self, other: Self, now_tsf: u64) -> Self {
-        let self_distance = self.wake_tsf.wrapping_sub(now_tsf);
-        let other_distance = other.wake_tsf.wrapping_sub(now_tsf);
+    fn merge_or_earlier(self, other: Self) -> Self {
         if self.service_open && other.service_open {
             return Self {
                 flow_bitmap: self.flow_bitmap | other.flow_bitmap,
-                wake_tsf: now_tsf,
-                service_start_tsf: if self
-                    .service_start_tsf
-                    .wrapping_sub(now_tsf)
-                    .wrapping_sub(other.service_start_tsf.wrapping_sub(now_tsf))
-                    <= i64::MAX as u64
-                {
-                    other.service_start_tsf
-                } else {
-                    self.service_start_tsf
-                },
-                service_end_tsf: later_future_tsf(
-                    now_tsf,
-                    self.service_end_tsf,
-                    other.service_end_tsf,
-                ),
+                wake: self.wake,
+                service_start: self.service_start.min(other.service_start),
+                service_end: self.service_end.max(other.service_end),
                 service_open: true,
             };
         }
-        if other.service_open || (!self.service_open && other_distance < self_distance) {
+        if other.service_open || (!self.service_open && other.wake < self.wake) {
             other
-        } else if self.service_open || self_distance < other_distance {
+        } else if self.service_open || self.wake < other.wake {
             self
         } else {
             Self {
                 flow_bitmap: self.flow_bitmap | other.flow_bitmap,
-                service_end_tsf: later_future_tsf(
-                    now_tsf,
-                    self.service_end_tsf,
-                    other.service_end_tsf,
-                ),
+                service_end: self.service_end.max(other.service_end),
                 ..self
             }
         }
@@ -1001,66 +993,56 @@ impl IndividualTwtWakePlan {
 
 fn plan_agreement_wake(
     agreement: IndividualTwtAgreement,
-    station_tsf: u64,
-    wake_guard_micros: u32,
+    now: TsfInstant,
+    wake_guard: Duration,
 ) -> Result<IndividualTwtWakePlan, IndividualTwtWakePlanError> {
-    let interval = agreement.wake_interval_micros;
-    let duration = u64::from(agreement.wake_duration_micros);
-    if interval == 0 || duration == 0 || duration > interval || interval > i64::MAX as u64 {
+    let interval = agreement.wake_interval.as_micros();
+    let duration = agreement.wake_duration.as_micros();
+    if interval == 0 || duration == 0 || duration > interval {
         return Err(IndividualTwtWakePlanError::InvalidAgreement);
     }
-    if u64::from(wake_guard_micros) >= interval {
+    if wake_guard.as_micros() >= interval {
         return Err(IndividualTwtWakePlanError::WakeGuardOutsideInterval {
             flow_id: agreement.flow_id,
-            wake_guard_micros,
-            interval_micros: interval,
+            wake_guard,
+            interval: agreement.wake_interval,
         });
     }
-
-    let since_target = station_tsf.wrapping_sub(agreement.target_wake_time_tsf);
-    let (service_start_tsf, service_open) = if since_target <= i64::MAX as u64 {
-        let offset = since_target % interval;
-        let current_start = station_tsf.wrapping_sub(offset);
+    let now = now.as_micros();
+    let target = agreement.target_wake_time.as_micros();
+    let (service_start, service_open) = if now >= target {
+        let offset = (now - target) % interval;
+        let current_start = now - offset;
         if offset < duration {
             (current_start, true)
         } else {
-            (current_start.wrapping_add(interval), false)
+            (
+                current_start
+                    .checked_add(interval)
+                    .ok_or(IndividualTwtWakePlanError::BeyondTsfRange)?,
+                false,
+            )
         }
     } else {
-        let until_target = agreement.target_wake_time_tsf.wrapping_sub(station_tsf);
-        if until_target > i64::MAX as u64 {
-            return Err(IndividualTwtWakePlanError::AmbiguousTsfDistance);
-        }
-        (agreement.target_wake_time_tsf, false)
+        (target, false)
     };
-    let service_end_tsf = service_start_tsf.wrapping_add(duration);
-    if !service_open && service_end_tsf.wrapping_sub(station_tsf) > i64::MAX as u64 {
-        // The start is in the comparable future half, but the complete
-        // service window is not. Publishing a partial window would make
-        // merge/end ordering ambiguous across TSF wrap.
-        return Err(IndividualTwtWakePlanError::AmbiguousTsfDistance);
-    }
-    let wake_tsf = if service_open {
-        station_tsf
+    let service_end = service_start
+        .checked_add(duration)
+        .ok_or(IndividualTwtWakePlanError::BeyondTsfRange)?;
+    let wake = if service_open {
+        now
     } else {
-        let until_start = service_start_tsf.wrapping_sub(station_tsf);
-        station_tsf.wrapping_add(until_start.saturating_sub(u64::from(wake_guard_micros)))
+        service_start
+            .saturating_sub(wake_guard.as_micros())
+            .max(now)
     };
     Ok(IndividualTwtWakePlan {
         flow_bitmap: 1 << agreement.flow_id.get(),
-        wake_tsf,
-        service_start_tsf,
-        service_end_tsf,
+        wake: TsfInstant::from_micros(wake),
+        service_start: TsfInstant::from_micros(service_start),
+        service_end: TsfInstant::from_micros(service_end),
         service_open,
     })
-}
-
-fn later_future_tsf(now_tsf: u64, left: u64, right: u64) -> u64 {
-    if left.wrapping_sub(now_tsf) >= right.wrapping_sub(now_tsf) {
-        left
-    } else {
-        right
-    }
 }
 
 const fn next_dialog_token(current: u8) -> u8 {

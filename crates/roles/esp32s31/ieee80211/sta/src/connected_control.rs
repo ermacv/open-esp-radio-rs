@@ -22,7 +22,7 @@ use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_esp32s31_ieee80211::{
     datapath::{DatapathControlContext, DatapathControlProgress},
-    station_tsf::StationTsf,
+    station_tsf::{StationTsf, StationTsfHardware},
 };
 
 use oer_esp32s31_ieee80211_mac::{
@@ -647,6 +647,23 @@ pub struct ConnectedControlCore {
     observations: ConnectedControlObservations,
 }
 
+/// An individual-TWT wake plan and the station TSF generation it was
+/// computed in. Its instants describe the station TSF only in that
+/// generation: a TSF jump (a reconnection, a radio restart, a TSF crossing
+/// 2^64) makes the plan stale, and a stale plan is never armed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StationTwtWakePlan {
+    pub plan: IndividualTwtWakePlan,
+    pub generation: oer_ieee80211_lower_mac::TsfGeneration,
+}
+
+impl StationTwtWakePlan {
+    /// Whether the plan still describes the station TSF `owner` writes.
+    pub fn is_current(&self, owner: &StationTsf) -> bool {
+        owner.generation() == self.generation
+    }
+}
+
 impl ConnectedControlCore {
     /// Control of one association, whose station TSF owner takes
     /// `tsf_epoch`, a number no other owner took (`MacClockHandle::tsf_epoch`).
@@ -820,15 +837,22 @@ impl ConnectedControlCore {
         self.individual_twt.as_ref()
     }
 
-    pub fn individual_twt_wake_plan(
+    /// The next individual-TWT wake, planned at the station TSF now and
+    /// waking `wake_guard` before the service starts, with the station TSF
+    /// generation it was computed in.
+    pub fn individual_twt_wake_plan<H: StationTsfHardware>(
         &self,
-        station_tsf: u64,
-        wake_guard_micros: u32,
-    ) -> Result<Option<IndividualTwtWakePlan>, ConnectedControlError> {
-        match self.individual_twt.as_ref() {
-            Some(requester) => Ok(requester.plan_next_wake(station_tsf, wake_guard_micros)?),
-            None => Ok(None),
-        }
+        hardware: &mut H,
+        wake_guard: oer_time::Duration,
+    ) -> Result<Option<StationTwtWakePlan>, ConnectedControlError> {
+        let Some(requester) = self.individual_twt.as_ref() else {
+            return Ok(None);
+        };
+        let now = self.station_tsf.read(hardware);
+        let generation = self.station_tsf.generation();
+        Ok(requester
+            .plan_next_wake(now, wake_guard)?
+            .map(|plan| StationTwtWakePlan { plan, generation }))
     }
 
     // CAPABILITY: wifi-802-11ax-he-triggered-response-scheduling

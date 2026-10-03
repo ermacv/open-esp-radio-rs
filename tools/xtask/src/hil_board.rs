@@ -21,6 +21,8 @@ use crate::{Context, Result, hil_flash};
 const BANNER: Duration = Duration::from_secs(3);
 /// How long a port that re-enumerates after a reset may take to return.
 const REATTACH: Duration = Duration::from_secs(5);
+/// How long a port may take to return after its hub port's power cycle.
+const POWER_REATTACH: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub(crate) enum Via {
@@ -30,6 +32,9 @@ pub(crate) enum Via {
     Jtag,
     /// Pulse EN through the board's registered UART bridge.
     En,
+    /// Cycle the power of the board's registered hub port: off, then on. The
+    /// stand's only way to switch a hub port; a lease runs no `uhubctl`.
+    Power,
 }
 
 /// `cargo hil board reset|check|console`.
@@ -221,6 +226,7 @@ fn reset_path(via: Via) -> oer_hil_arbiter::ResetPath {
         Via::Rts => oer_hil_arbiter::ResetPath::Rts,
         Via::Jtag => oer_hil_arbiter::ResetPath::Jtag,
         Via::En => oer_hil_arbiter::ResetPath::En,
+        Via::Power => oer_hil_arbiter::ResetPath::Power,
     }
 }
 
@@ -391,20 +397,38 @@ fn reset(target: &Target, via: Via, download: bool) -> Result<Option<String>> {
             let banner = control.reset(mode)?;
             return Ok(oer_hil_arbiter::control::reset_line(&banner).map(str::to_owned));
         }
+        Via::Power => {
+            let power = target
+                .arbiter
+                .devices()?
+                .into_iter()
+                .find(|device| device.mac == target.mac)
+                .and_then(|device| device.control?.power)
+                .ok_or(
+                    "the board has no registered hub port; `cargo hil devices set --power-uhubctl`",
+                )?;
+            power.cycle()?;
+            return Ok(reattached_rom_line(target, POWER_REATTACH));
+        }
     };
     if let Some(line) = rom_line(&lines, BANNER) {
         return Ok(Some(line));
     }
     // A chip whose USB Serial/JTAG port re-enumerates prints the banner
     // before the port returns.
-    let deadline = Instant::now() + REATTACH;
+    Ok(reattached_rom_line(target, REATTACH))
+}
+
+/// The ROM's `rst:` line once the board's port returns within `within`.
+fn reattached_rom_line(target: &Target, within: Duration) -> Option<String> {
+    let deadline = Instant::now() + within;
     while Instant::now() < deadline {
         if let Ok(serial) = hil_flash::open_without_reset(&target.port) {
-            return Ok(rom_line(&hil_flash::serial_lines(serial), BANNER));
+            return rom_line(&hil_flash::serial_lines(serial), BANNER);
         }
         std::thread::sleep(Duration::from_millis(200));
     }
-    Ok(None)
+    None
 }
 
 /// Open a board's port, retrying for two seconds: the console reader of the

@@ -220,9 +220,15 @@ RTS before DTR so opening a port never resets the chip, and hold a lease of
 the board while they use it; a script or terminal that opens a board or
 bridge port itself can reset the chip or pull its boot strap.
 `cargo hil board reset BOARD` resets through the USB Serial/JTAG RTS line
-(default), `--via jtag` through OpenOCD and the chip's debug module, or
-`--via en` through the registered bridge, and prints the reset line the ROM
-reports. `board check` reports, without resetting, whether the board is
+(default), `--via jtag` through OpenOCD and the chip's debug module,
+`--via en` through the registered bridge, or `--via power` by cycling the
+power of the board's registered hub port (off, then on), and prints the reset
+line the ROM reports. A hub port is switched only that way, under the board's
+lease: `cargo hil lease` refuses a command that runs `uhubctl`, and the
+repository's Claude Code hook refuses `uhubctl` with an action, so no port is
+left off. `cargo hil devices set MAC --power-uhubctl LOCATION --power-port
+PORT` registers the hub port that powers the board alone, never a port that
+carries a cascaded hub. `board check` reports, without resetting, whether the board is
 attached, its last flash, maintenance, its reset paths and whether it answers
 the peer text protocol. `board console --for DUR [--until TEXT]` prints and
 saves the console under `target/hil/console/<mac>/`. `board soak --cycles N
@@ -247,6 +253,7 @@ cargo hil devices set 38:44:BE:AA:25:64 --reset-uart 5B90165754 --en rts --boot 
 cargo hil devices reset esp32c5       # rst:0x1 (POWERON),boot:0x18 (SPI_FAST_FLASH_BOOT)
 cargo hil board check esp32c5
 cargo hil board reset esp32c5 --via jtag
+cargo hil board reset esp32c5 --via power
 cargo hil board console esp32c5 --for 30s --until @READY
 cargo hil board soak esp32c5 --for 8h --via rts,jtag,en
 cargo hil peer send esp32c5 SYNC

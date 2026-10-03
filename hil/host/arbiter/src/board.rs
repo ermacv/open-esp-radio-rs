@@ -78,6 +78,8 @@ pub enum ResetPath {
     Jtag,
     /// EN through the board's registered UART bridge.
     En,
+    /// A power cycle of the board's registered hub port.
+    Power,
 }
 
 impl std::fmt::Display for BoardEvent {

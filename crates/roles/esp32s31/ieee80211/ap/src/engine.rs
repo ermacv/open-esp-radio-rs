@@ -408,7 +408,7 @@ impl ApEngineObserver {
 /// supervisor can only acknowledge stop after consuming [`stop`](Self::stop).
 #[must_use = "an active AP engine must be consumed through stop before radio reuse"]
 pub struct ApEngine<'storage> {
-    next_probe_response_micros: u64,
+    next_probe_response: oer_time::Instant,
     /// Protection carried by the retained beacon/probe-response template.
     advertised_protection: ApBssProtection,
     service: AccessPointService<'storage>,
@@ -488,7 +488,7 @@ impl<'storage> ApEngine<'storage> {
         // leaves an unowned hardware TSF epoch behind.
         reset_and_start_access_point_tsf(hardware);
         Ok(Self {
-            next_probe_response_micros: 0,
+            next_probe_response: oer_time::Instant::EPOCH,
             advertised_protection,
             service,
             beacon,
@@ -556,16 +556,16 @@ impl<'storage> ApEngine<'storage> {
         })
     }
 
-    pub const fn next_beacon_delay(&self, now_micros: u32) -> Option<(u32, u32)> {
-        self.beacon.next_delay(now_micros)
+    pub const fn next_beacon_delay(&self, now: u32) -> Option<(u32, u32)> {
+        self.beacon.next_delay(now)
     }
 
-    pub const fn beacon_publication_due(&self, now_micros: u32) -> bool {
-        self.beacon.publication_due(now_micros)
+    pub const fn beacon_publication_due(&self, now: u32) -> bool {
+        self.beacon.publication_due(now)
     }
 
-    pub const fn beacon_publication_lateness(&self, now_micros: u32) -> (u32, u32) {
-        self.beacon.publication_lateness(now_micros)
+    pub const fn beacon_publication_lateness(&self, now: u32) -> (u32, u32) {
+        self.beacon.publication_lateness(now)
     }
 
     /// Install the PTK only after message four has been MIC-verified, then
@@ -574,7 +574,7 @@ impl<'storage> ApEngine<'storage> {
         &mut self,
         hardware: &mut H,
         peer: [u8; 6],
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<(), ApEngineError> {
         if !self.service.wpa2_authorized(peer)? {
             return Err(ApEngineError::Service(ApServiceError::WrongPeerPhase));
@@ -587,7 +587,7 @@ impl<'storage> ApEngine<'storage> {
             .association_id;
         self.security
             .install_pairwise(hardware, peer, association_id, ptk)?;
-        self.service.authorize(peer, now_micros)?;
+        self.service.authorize(peer, now)?;
         #[cfg(any(feature = "diagnostics", test))]
         self.observe(ApEngineObservationEvent::PeerAuthorized {
             authorized_peers: self.service.authorized_count(),
@@ -602,7 +602,7 @@ impl<'storage> ApEngine<'storage> {
         hardware: &mut H,
         peer: [u8; 6],
         frame: OwnedEapolFrame<N>,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<ApWpa2Outcome<N>, ApEngineError> {
         let Some(status) = self.service.peer_status(peer) else {
             return Ok(ApWpa2Outcome::None);
@@ -617,7 +617,7 @@ impl<'storage> ApEngine<'storage> {
             ApWpa2Progress::None => Ok(ApWpa2Outcome::None),
             ApWpa2Progress::Transmit(frame) => Ok(ApWpa2Outcome::Transmit(frame)),
             ApWpa2Progress::AuthorizePeer => {
-                self.authorize_peer(hardware, peer, now_micros)?;
+                self.authorize_peer(hardware, peer, now)?;
                 Ok(ApWpa2Outcome::PeerAuthorized { peer })
             }
             ApWpa2Progress::DeauthenticatePeer => Ok(ApWpa2Outcome::DeauthenticatePeer { peer }),
@@ -704,11 +704,11 @@ impl<'storage> ApEngine<'storage> {
         self.service.status_revision()
     }
 
-    pub fn next_peer_deadline(&self) -> Option<u64> {
+    pub fn next_peer_deadline(&self) -> Option<oer_time::Instant> {
         self.service.next_peer_deadline()
     }
 
-    pub fn next_wpa2_retry_deadline(&self) -> Option<u64> {
+    pub fn next_wpa2_retry_deadline(&self) -> Option<oer_time::Instant> {
         self.service.next_wpa2_retry_deadline()
     }
 
@@ -717,11 +717,11 @@ impl<'storage> ApEngine<'storage> {
         peer: [u8; 6],
         retransmission: bool,
         acknowledged: bool,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<(), ApEngineError> {
         if self
             .service
-            .observe_wpa2_transmit(peer, retransmission, acknowledged, now_micros)?
+            .observe_wpa2_transmit(peer, retransmission, acknowledged, now)?
         {
             #[cfg(any(feature = "diagnostics", test))]
             self.observe(ApEngineObservationEvent::Wpa2ResponseWindow);
@@ -731,9 +731,9 @@ impl<'storage> ApEngine<'storage> {
 
     pub fn take_due_wpa2_retry<const N: usize>(
         &mut self,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<ApWpa2RetryProgress<N>, ApEngineError> {
-        let progress = self.service.take_due_wpa2_retry(now_micros)?;
+        let progress = self.service.take_due_wpa2_retry(now)?;
         match progress {
             ApWpa2RetryProgress::Transmit { .. } => {
                 #[cfg(any(feature = "diagnostics", test))]
@@ -751,22 +751,22 @@ impl<'storage> ApEngine<'storage> {
     pub fn observe_peer_activity(
         &mut self,
         peer: [u8; 6],
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<(), ApEngineError> {
         if let Some(binding) = self.rx_peer
             && binding.peer.address() == peer
             && binding.status_revision == self.service.status_revision()
         {
             self.service
-                .observe_bound_data_activity(binding.peer, now_micros)?;
+                .observe_bound_data_activity(binding.peer, now)?;
             return Ok(());
         }
-        self.service.observe_activity(peer, now_micros)?;
+        self.service.observe_activity(peer, now)?;
         Ok(())
     }
 
-    pub fn begin_due_peer_close(&mut self, now_micros: u64) -> Option<ApPeerClose> {
-        let close = self.service.begin_due_peer_close(now_micros)?;
+    pub fn begin_due_peer_close(&mut self, now: oer_time::Instant) -> Option<ApPeerClose> {
+        let close = self.service.begin_due_peer_close(now)?;
         match close.kind {
             ApPeerCloseKind::AuthenticationTimeout => {
                 #[cfg(any(feature = "diagnostics", test))]

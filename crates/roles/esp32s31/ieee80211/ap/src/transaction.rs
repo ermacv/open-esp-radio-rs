@@ -43,7 +43,7 @@ enum PendingPublication {
     ProbeResponse {
         receiver: [u8; 6],
         sequence_control: u16,
-        started_at_micros: u64,
+        started_at: oer_time::Instant,
     },
     Association {
         peer: [u8; 6],
@@ -194,8 +194,8 @@ pub struct ApTxFailureObservation {
 pub struct ProbeFailure {
     pub receiver: [u8; 6],
     pub sequence_control: u16,
-    pub started_at_micros: u64,
-    pub completed_at_micros: u64,
+    pub started_at: oer_time::Instant,
+    pub completed_at: oer_time::Instant,
     pub outcome: OrdinaryTxOutcome,
 }
 
@@ -295,27 +295,24 @@ impl<'beacon> ApMacParked<'beacon> {
 
     /// Observe the role-local beacon schedule without recovering the shared
     /// ordinary-TX capability.
-    pub const fn beacon_publication_due(&self, now_micros: u32) -> bool {
-        self.engine.beacon_publication_due(now_micros)
+    pub const fn beacon_publication_due(&self, now: u32) -> bool {
+        self.engine.beacon_publication_due(now)
     }
 
     /// Return the current beacon deadline while the physical TX owner is lent
     /// to neither role.
-    pub const fn next_beacon_delay(&self, now_micros: u32) -> Option<(u32, u32)> {
-        self.engine.next_beacon_delay(now_micros)
+    pub const fn next_beacon_delay(&self, beacon_now_micros: u32) -> Option<(u32, u32)> {
+        self.engine.next_beacon_delay(beacon_now_micros)
     }
 
     /// Earliest AP protocol deadline which may require a future hardware
     /// publication. This is observation only and grants no MMIO authority.
-    pub fn next_control_deadline(&self) -> Option<u64> {
+    pub fn next_control_deadline(&self) -> Option<oer_time::Instant> {
         self.engine
             .next_peer_deadline()
             .into_iter()
             .chain(self.engine.next_wpa2_retry_deadline())
-            .chain(
-                self.block_ack_alarm
-                    .map(|(_, alarm)| alarm.deadline.as_micros()),
-            )
+            .chain(self.block_ack_alarm.map(|(_, alarm)| alarm.deadline))
             .min()
     }
 
@@ -429,30 +426,34 @@ where
         self.pending.is_some()
     }
 
-    pub const fn next_beacon_delay(&self, now_micros: u32) -> Option<(u32, u32)> {
-        self.engine.next_beacon_delay(now_micros)
+    pub const fn next_beacon_delay(&self, beacon_now_micros: u32) -> Option<(u32, u32)> {
+        self.engine.next_beacon_delay(beacon_now_micros)
     }
 
-    pub const fn beacon_publication_due(&self, now_micros: u32) -> bool {
-        self.engine.beacon_publication_due(now_micros)
+    pub const fn beacon_publication_due(&self, now: u32) -> bool {
+        self.engine.beacon_publication_due(now)
     }
 
-    pub const fn beacon_publication_lateness(&self, now_micros: u32) -> (u32, u32) {
-        self.engine.beacon_publication_lateness(now_micros)
+    pub const fn beacon_publication_lateness(&self, now: u32) -> (u32, u32) {
+        self.engine.beacon_publication_lateness(now)
     }
 
     pub fn wait_tx_deadline(&mut self) -> impl core::future::Future<Output = ()> + '_ {
         self.transmit.wait_deadline()
     }
 
-    pub fn publish_beacon<H>(&mut self, hardware: &mut H, now_micros: u64) -> Result<(), ApMacError>
+    pub fn publish_beacon<H>(
+        &mut self,
+        hardware: &mut H,
+        now: oer_time::Instant,
+    ) -> Result<(), ApMacError>
     where
         H: TxHardware,
     {
         self.require_idle()?;
         let publication = self
             .engine
-            .prepare_beacon_publication(now_micros)
+            .prepare_beacon_publication(now.as_micros())
             .ok_or(ApMacError::Engine(ApEngineError::BeaconPreparation))?;
         self.transmit
             .start_encoded(hardware, ApTxClass::Beacon, publication.frame)?;
@@ -468,7 +469,7 @@ where
         request: &[u8],
         authenticator_nonce: [u8; 32],
         initial_replay_counter: u64,
-        now_micros: u64,
+        now: oer_time::Instant,
         scratch: &mut [u8],
     ) -> Result<ApManagementOutcome, ApMacError>
     where
@@ -480,7 +481,7 @@ where
             request,
             authenticator_nonce,
             initial_replay_counter,
-            now_micros,
+            now,
             scratch,
         )?;
         if let Some(peer) = request
@@ -510,7 +511,7 @@ where
             PendingPublication::ProbeResponse {
                 receiver: peer,
                 sequence_control: u16::from_le_bytes([scratch[22], scratch[23]]),
-                started_at_micros: now_micros,
+                started_at: now,
             }
         } else if scratch[0] == 0xb0 {
             PendingPublication::Authentication
@@ -562,13 +563,13 @@ where
         &mut self,
         hardware: &mut H,
         peer: [u8; 6],
-        now_micros: u64,
+        now: oer_time::Instant,
         scratch: &mut [u8],
     ) -> Result<bool, ApMacError> {
         self.require_idle()?;
         let Some((length, alarm)) = self
             .engine
-            .prepare_tx_block_ack_request(peer, now_micros, scratch)?
+            .prepare_tx_block_ack_request(peer, now, scratch)?
         else {
             return Ok(false);
         };
@@ -635,16 +636,15 @@ where
         ))
     }
 
-    pub fn next_tx_block_ack_deadline(&self) -> Option<u64> {
-        self.block_ack_alarm
-            .map(|(_, alarm)| alarm.deadline.as_micros())
+    pub fn next_tx_block_ack_deadline(&self) -> Option<oer_time::Instant> {
+        self.block_ack_alarm.map(|(_, alarm)| alarm.deadline)
     }
 
-    pub fn expire_tx_block_ack(&mut self, now_micros: u64) -> Result<bool, ApMacError> {
+    pub fn expire_tx_block_ack(&mut self, now: oer_time::Instant) -> Result<bool, ApMacError> {
         let Some((peer, alarm)) = self.block_ack_alarm else {
             return Ok(false);
         };
-        if now_micros < alarm.deadline.as_micros() {
+        if now < alarm.deadline {
             return Ok(false);
         }
         self.block_ack_alarm = None;
@@ -863,7 +863,7 @@ where
         &mut self,
         hardware: &mut H,
         wake: WifiTxWake,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<(WifiTxProgress, ApTxCompletionAction), ApMacError> {
         if self.pending.is_none() {
             return Err(ApMacError::ServiceWithoutPublication);
@@ -891,7 +891,7 @@ where
             if let PendingPublication::ProbeResponse {
                 receiver,
                 sequence_control,
-                started_at_micros,
+                started_at,
             } = pending
             {
                 self.observer
@@ -899,8 +899,8 @@ where
                     .get_or_insert(ProbeFailure {
                         receiver,
                         sequence_control,
-                        started_at_micros,
-                        completed_at_micros: now_micros,
+                        started_at,
+                        completed_at: now,
                         outcome,
                     });
             }
@@ -963,12 +963,8 @@ where
                         peer,
                         retransmission,
                     } => {
-                        self.engine.observe_wpa2_transmit(
-                            peer,
-                            retransmission,
-                            false,
-                            now_micros,
-                        )?;
+                        self.engine
+                            .observe_wpa2_transmit(peer, retransmission, false, now)?;
                         ApTxCompletionAction::PublicationFailed
                     }
                     _ => ApTxCompletionAction::PublicationFailed,
@@ -1035,7 +1031,7 @@ where
                         .saturating_add(1);
                 }
                 self.engine
-                    .observe_wpa2_transmit(peer, retransmission, true, now_micros)?;
+                    .observe_wpa2_transmit(peer, retransmission, true, now)?;
                 ApTxCompletionAction::None
             }
             PendingPublication::Data { peer } => {
@@ -1048,7 +1044,7 @@ where
                         .saturating_add(1);
                 }
                 if peer[0] & 1 == 0 {
-                    self.engine.observe_peer_activity(peer, now_micros)?;
+                    self.engine.observe_peer_activity(peer, now)?;
                 }
                 ApTxCompletionAction::None
             }

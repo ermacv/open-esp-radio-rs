@@ -244,7 +244,7 @@ impl ApSaeResponder {
     pub fn receive<R: ApSaeRandom>(
         &mut self,
         frame: ApSaeFrame<'_>,
-        now_micros: u64,
+        now: oer_time::Instant,
         queued_commits: usize,
         random: &mut R,
     ) -> ApSaeOutput {
@@ -256,7 +256,7 @@ impl ApSaeResponder {
         } = frame;
         match transaction {
             COMMIT_TRANSACTION => {
-                self.receive_commit(peer, status, body, now_micros, queued_commits, random)
+                self.receive_commit(peer, status, body, now, queued_commits, random)
             }
             CONFIRM_TRANSACTION => self.receive_confirm(peer, status, body),
             _ => ApSaeOutput::new(),
@@ -291,7 +291,7 @@ impl ApSaeResponder {
         peer: [u8; 6],
         status: u16,
         body: &[u8],
-        now_micros: u64,
+        now: oer_time::Instant,
         queued_commits: usize,
         random: &mut R,
     ) -> ApSaeOutput {
@@ -391,13 +391,11 @@ impl ApSaeResponder {
                 .as_ref()
                 .expect("the slot holds a session");
             let h2e = h2e || session.h2e;
-            let token =
-                self.comeback
-                    .issue(peer, oer_time::Instant::from_micros(now_micros), || {
-                        let mut key = [0; 32];
-                        random.fill(&mut key);
-                        key
-                    });
+            let token = self.comeback.issue(peer, now, || {
+                let mut key = [0; 32];
+                random.fill(&mut key);
+                key
+            });
             let mut request = [0_u8; 2 + 3 + SAE_ANTI_CLOGGING_TOKEN_LEN];
             request[..2].copy_from_slice(&SAE_GROUP_P256.to_le_bytes());
             let len = if h2e {

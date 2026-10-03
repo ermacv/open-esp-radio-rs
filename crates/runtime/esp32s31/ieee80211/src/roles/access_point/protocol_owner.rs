@@ -250,6 +250,7 @@ impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize>
             .mac
             .next_control_deadline()
             .into_iter()
+            .map(oer_time::Instant::as_micros)
             .chain(self.state.rx_reorder.next_deadline())
             .fold(beacon_deadline, u64::min))
     }

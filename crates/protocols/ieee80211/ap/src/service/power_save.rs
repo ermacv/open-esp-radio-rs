@@ -115,7 +115,7 @@ impl<'peers> AccessPointService<'peers> {
     pub fn observe_power_save(
         &mut self,
         observation: ApPowerSaveObservation,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<ApPowerSaveAction, ApServiceError> {
         match observation {
             ApPowerSaveObservation::Sleeping { peer } | ApPowerSaveObservation::Active { peer } => {
@@ -125,13 +125,13 @@ impl<'peers> AccessPointService<'peers> {
                     ApPeerPowerState::Active
                 };
                 let binding = self.bind_peer(peer).ok_or(ApServiceError::UnknownPeer)?;
-                self.observe_bound_power_state(binding, requested, now_micros)
+                self.observe_bound_power_state(binding, requested, now)
             }
             ApPowerSaveObservation::PsPoll {
                 peer,
                 association_id,
             } => {
-                let inactive_timeout_micros = self.inactive_timeout.micros();
+                let inactive_timeout = self.inactive_timeout.duration();
                 let release_already_pending = {
                     let existing = self.checked_peer_mut(peer)?;
                     if existing.phase != ApPeerPhase::Authorized
@@ -142,8 +142,8 @@ impl<'peers> AccessPointService<'peers> {
                     if existing.association_id != association_id {
                         return Err(ApServiceError::AssociationIdMismatch);
                     }
-                    existing.last_activity_micros = now_micros;
-                    existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
+                    existing.last_activity = now;
+                    existing.deadline = now.saturating_add(inactive_timeout);
                     existing.buffered_release_in_flight
                 };
                 // A retried PS-Poll may arrive while the exact oldest frame is
@@ -172,9 +172,9 @@ impl<'peers> AccessPointService<'peers> {
         &mut self,
         binding: ApPeerBinding,
         requested: ApPeerPowerState,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<ApPowerSaveAction, ApServiceError> {
-        let inactive_timeout_micros = self.inactive_timeout.micros();
+        let inactive_timeout = self.inactive_timeout.duration();
         let (peer, changed, buffered_frames) = {
             let existing = self
                 .bound_peer_mut(binding)
@@ -184,8 +184,8 @@ impl<'peers> AccessPointService<'peers> {
             }
             let changed = existing.power_state != requested;
             existing.power_state = requested;
-            existing.last_activity_micros = now_micros;
-            existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
+            existing.last_activity = now;
+            existing.deadline = now.saturating_add(inactive_timeout);
             (existing.address, changed, existing.buffered_unicast_frames)
         };
         if !changed {
@@ -210,10 +210,10 @@ impl<'peers> AccessPointService<'peers> {
         &mut self,
         binding: ApPeerBinding,
         requested: ApPeerPowerState,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<ApPowerSaveAction, ApServiceError> {
-        let inactive_timeout_micros = self.inactive_timeout.micros();
-        let refresh_margin_micros = inactive_timeout_micros / 2;
+        let inactive_timeout = self.inactive_timeout.duration();
+        let refresh_margin = oer_time::Duration::from_micros(inactive_timeout.as_micros() / 2);
         let (peer, changed, buffered_frames) = {
             let existing = self
                 .bound_peer_mut(binding)
@@ -222,12 +222,11 @@ impl<'peers> AccessPointService<'peers> {
                 return Err(ApServiceError::WrongPeerPhase);
             }
             let changed = existing.power_state != requested;
-            let refresh_due =
-                existing.deadline_micros <= now_micros.saturating_add(refresh_margin_micros);
+            let refresh_due = existing.deadline <= now.saturating_add(refresh_margin);
             if changed || refresh_due {
                 existing.power_state = requested;
-                existing.last_activity_micros = now_micros;
-                existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
+                existing.last_activity = now;
+                existing.deadline = now.saturating_add(inactive_timeout);
             }
             (existing.address, changed, existing.buffered_unicast_frames)
         };

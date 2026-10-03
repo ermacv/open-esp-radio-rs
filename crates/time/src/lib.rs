@@ -18,7 +18,9 @@
 //! Both axes count microseconds in `u64`, so neither wraps within the life
 //! of an image. Arithmetic is checked: an operation that would leave the
 //! representable range returns `None` or [`TimeOverflow`] instead of
-//! wrapping or saturating silently.
+//! wrapping or saturating silently. The one explicit exception is
+//! [`Instant::saturating_add`] for deadlines, where the end of the range
+//! means "never".
 
 use core::future::Future;
 
@@ -52,6 +54,13 @@ impl Instant {
             Some(micros) => Some(Self(micros)),
             None => None,
         }
+    }
+
+    /// The deadline `duration` later, or the end of representable time when
+    /// it lies past it: such a deadline never comes, and `u64` microseconds
+    /// outlast any image. Use it for deadlines, never to measure time.
+    pub const fn saturating_add(self, duration: Duration) -> Self {
+        Self(self.0.saturating_add(duration.0))
     }
 
     /// The instant `duration` earlier, or `None` before the epoch.

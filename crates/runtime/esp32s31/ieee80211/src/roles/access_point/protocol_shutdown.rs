@@ -92,7 +92,7 @@ where
         match self
             .mac
             .engine_mut()
-            .handle_eapol(hardware, plan.source, frame, now_micros)?
+            .handle_eapol(hardware, plan.source, frame, oer_time::Instant::from_micros(now_micros))?
         {
             ApWpa2Outcome::Transmit(frame) => {
                 let mac = &mut self.mac;
@@ -114,7 +114,7 @@ where
             ApWpa2Outcome::PeerAuthorized { peer } => {
                 let mac = &mut self.mac;
                 let tx_frame = &mut *self.state.tx_frame;
-                if mac.publish_tx_block_ack_request(hardware, peer, now_micros, tx_frame)? {
+                if mac.publish_tx_block_ack_request(hardware, peer, oer_time::Instant::from_micros(now_micros), tx_frame)? {
                     observe_access_point!(self, observation, {
                         observation.control_frames_staged =
                             observation.control_frames_staged.saturating_add(1);
@@ -142,7 +142,7 @@ where
         let probe_failure_before = self.mac.first_probe_failure();
         let (progress, action) = self
             .mac
-            .service_tx(hardware, wake, self.now().as_micros())?;
+            .service_tx(hardware, wake, self.now())?;
         #[cfg(feature = "diagnostics")]
         if progress == WifiTxProgress::Complete {
             let failures = self.mac.observation().tx_failures;
@@ -162,8 +162,8 @@ where
             let report = failure.outcome.report();
             log::warn!(
                 "AP_PROBE_FAIL ra={:02x?} sc={} start_us={} end_us={} status={:?} attempts={} rate={:?}",
-                failure.receiver, failure.sequence_control, failure.started_at_micros,
-                failure.completed_at_micros, report.status.result, report.status.attempts,
+                failure.receiver, failure.sequence_control, failure.started_at.as_micros(),
+                failure.completed_at.as_micros(), report.status.result, report.status.attempts,
                 report.status.final_rate,
             );
             log::warn!("AP_PROBE_RETRIES {:?}", report.retries);
@@ -318,7 +318,7 @@ where
                     observation.maximum_beacon_lateness_micros.max(lateness);
             });
         }
-        self.mac.publish_beacon(hardware, now_micros)?;
+        self.mac.publish_beacon(hardware, oer_time::Instant::from_micros(now_micros))?;
         Ok(())
     }
 
@@ -480,11 +480,11 @@ where
             self.publish_beacon(hardware, now_micros)?;
             return Ok(DatapathControlProgress::TxPending);
         }
-        self.mac.expire_tx_block_ack(now_micros)?;
+        self.mac.expire_tx_block_ack(oer_time::Instant::from_micros(now_micros))?;
         match self
             .mac
             .engine_mut()
-            .take_due_wpa2_retry::<EAPOL_CAPACITY>(now_micros)?
+            .take_due_wpa2_retry::<EAPOL_CAPACITY>(oer_time::Instant::from_micros(now_micros))?
         {
             ApWpa2RetryProgress::Transmit { peer, frame } => {
                 let mac = &mut self.mac;
@@ -502,7 +502,7 @@ where
             }
             ApWpa2RetryProgress::None => {}
         }
-        if let Some(close) = self.mac.engine_mut().begin_due_peer_close(now_micros) {
+        if let Some(close) = self.mac.engine_mut().begin_due_peer_close(oer_time::Instant::from_micros(now_micros)) {
             self.publish_peer_close(hardware, close)?;
             return Ok(DatapathControlProgress::TxPending);
         }
@@ -525,6 +525,7 @@ where
             .into_iter()
             .chain(self.mac.engine().next_wpa2_retry_deadline())
             .chain(self.mac.next_tx_block_ack_deadline())
+            .map(oer_time::Instant::as_micros)
             .chain(self.rx_reorder.next_deadline())
             .fold(beacon_deadline, u64::min))
     }

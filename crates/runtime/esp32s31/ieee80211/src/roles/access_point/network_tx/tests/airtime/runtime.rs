@@ -428,7 +428,11 @@ fn run(case: Case) {
             control
                 .mac
                 .engine_mut()
-                .observe_rx_peer_power_state([4; 6], ApPeerPowerState::Sleeping, 2)
+                .observe_rx_peer_power_state(
+                    [4; 6],
+                    ApPeerPowerState::Sleeping,
+                    oer_time::Instant::from_micros(2),
+                )
                 .unwrap();
         }
         device
@@ -550,7 +554,11 @@ fn run(case: Case) {
                 control
                     .mac
                     .engine_mut()
-                    .observe_rx_peer_power_state([4; 6], ApPeerPowerState::Sleeping, 3)
+                    .observe_rx_peer_power_state(
+                        [4; 6],
+                        ApPeerPowerState::Sleeping,
+                        oer_time::Instant::from_micros(3),
+                    )
                     .unwrap();
                 assert_eq!(
                     owner.start_prepared(&mut aggregate, &mut control, &mut hardware, &source),
@@ -568,7 +576,11 @@ fn run(case: Case) {
                 control
                     .mac
                     .engine_mut()
-                    .observe_rx_peer_power_state([4; 6], ApPeerPowerState::Active, 4)
+                    .observe_rx_peer_power_state(
+                        [4; 6],
+                        ApPeerPowerState::Active,
+                        oer_time::Instant::from_micros(4),
+                    )
                     .unwrap();
             }
             Poll::Ready(owner.start_prepared(&mut aggregate, &mut control, &mut hardware, &source))
@@ -616,7 +628,7 @@ fn run(case: Case) {
                             peer: identity.address(),
                             association_id: identity.association_id(),
                         },
-                        3,
+                        oer_time::Instant::from_micros(3),
                     )
                     .unwrap();
                 let ApPowerSaveAction::ReleaseOne(release) = action else {
@@ -633,7 +645,11 @@ fn run(case: Case) {
                 control
                     .mac
                     .engine_mut()
-                    .observe_rx_peer_power_state([4; 6], ApPeerPowerState::Active, 3)
+                    .observe_rx_peer_power_state(
+                        [4; 6],
+                        ApPeerPowerState::Active,
+                        oer_time::Instant::from_micros(3),
+                    )
                     .unwrap();
             } else {
                 // The protocol owner supplies this exact successfully advertised DTIM prefix.

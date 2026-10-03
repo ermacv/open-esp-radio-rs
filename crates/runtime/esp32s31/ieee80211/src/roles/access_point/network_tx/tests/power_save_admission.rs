@@ -65,7 +65,7 @@ fn exercise_retention(destination: impl Fn(usize) -> u8) {
         &mut peers,
     );
     for peer in [[4; 6], [6; 6]] {
-        service.authenticate_open(peer, 0);
+        service.authenticate_open(peer, oer_time::Instant::from_micros(0));
         service
             .associate_open(
                 peer,
@@ -84,11 +84,14 @@ fn exercise_retention(destination: impl Fn(usize) -> u8) {
                     ht: None,
                     qos_supported: false,
                 },
-                1,
+                oer_time::Instant::from_micros(1),
             )
             .unwrap();
         service
-            .observe_power_save(ApPowerSaveObservation::Sleeping { peer }, 2)
+            .observe_power_save(
+                ApPowerSaveObservation::Sleeping { peer },
+                oer_time::Instant::from_micros(2),
+            )
             .unwrap();
     }
     let mut beacon = [0; AP_BEACON_CAPACITY];

@@ -89,7 +89,7 @@ fn exchange(h2e: bool) {
 
     let output = access_point.receive(
         frame(STATION, 1, station.status(), &commit[..len]),
-        0,
+        oer_time::Instant::from_micros(0),
         0,
         &mut random,
     );
@@ -100,7 +100,12 @@ fn exchange(h2e: bool) {
     let keys = station.commit.process(access_point_commit).unwrap();
 
     let confirm = keys.own_confirm(1);
-    let output = access_point.receive(frame(STATION, 2, 0, &confirm), 0, 0, &mut random);
+    let output = access_point.receive(
+        frame(STATION, 2, 0, &confirm),
+        oer_time::Instant::from_micros(0),
+        0,
+        &mut random,
+    );
     let ApSaeResult::Accepted { pmk, pmkid } = output.result else {
         panic!("the confirm is accepted: {output:?}");
     };
@@ -111,7 +116,12 @@ fn exchange(h2e: bool) {
     assert_eq!(keys.verify_peer_confirm(reply.body()), Ok(1));
 
     // A repeated Confirm is ignored but the stored Confirm is sent again.
-    let output = access_point.receive(frame(STATION, 2, 0, &confirm), 0, 0, &mut random);
+    let output = access_point.receive(
+        frame(STATION, 2, 0, &confirm),
+        oer_time::Instant::from_micros(0),
+        0,
+        &mut random,
+    );
     assert_eq!(output.result, ApSaeResult::Continue);
     assert_eq!(only_reply(&output).body(), reply.body());
 }
@@ -132,13 +142,18 @@ fn a_wrong_password_fails_the_confirm() {
     let mut random = Counter(7);
     let station = Station::new(STATION, b"wrong password", false);
     let (commit, len) = station.commit_body(None);
-    let output = access_point.receive(frame(STATION, 1, 0, &commit[..len]), 0, 0, &mut random);
+    let output = access_point.receive(
+        frame(STATION, 1, 0, &commit[..len]),
+        oer_time::Instant::from_micros(0),
+        0,
+        &mut random,
+    );
     let access_point_commit = SaeCommitValues::parse(only_reply(&output).body(), false).unwrap();
     let keys = station.commit.process(access_point_commit).unwrap();
 
     let output = access_point.receive(
         frame(STATION, 2, 0, &keys.own_confirm(1)),
-        0,
+        oer_time::Instant::from_micros(0),
         0,
         &mut random,
     );
@@ -158,26 +173,41 @@ fn two_open_sessions_require_an_anti_clogging_token() {
     for peer in [[2, 0, 0, 0, 0, 3], [2, 0, 0, 0, 0, 4]] {
         let station = Station::new(peer, PASSWORD, false);
         let (commit, len) = station.commit_body(None);
-        let output = access_point.receive(frame(peer, 1, 0, &commit[..len]), 0, 0, &mut random);
+        let output = access_point.receive(
+            frame(peer, 1, 0, &commit[..len]),
+            oer_time::Instant::from_micros(0),
+            0,
+            &mut random,
+        );
         assert_eq!(only_reply(&output).status, AP_SAE_STATUS_SUCCESS);
     }
 
     let station = Station::new(STATION, PASSWORD, false);
     let (commit, len) = station.commit_body(None);
-    let output = access_point.receive(frame(STATION, 1, 0, &commit[..len]), 0, 0, &mut random);
+    let output = access_point.receive(
+        frame(STATION, 1, 0, &commit[..len]),
+        oer_time::Instant::from_micros(0),
+        0,
+        &mut random,
+    );
     let request = only_reply(&output);
     assert_eq!(request.status, AP_SAE_STATUS_ANTI_CLOGGING_TOKEN_REQUIRED);
     assert_eq!(output.result, ApSaeResult::Continue);
     let token = anti_clogging_token(request.body(), false).unwrap();
 
     let (commit, len) = station.commit_body(Some(token));
-    let output = access_point.receive(frame(STATION, 1, 0, &commit[..len]), 0, 0, &mut random);
+    let output = access_point.receive(
+        frame(STATION, 1, 0, &commit[..len]),
+        oer_time::Instant::from_micros(0),
+        0,
+        &mut random,
+    );
     assert_eq!(only_reply(&output).status, AP_SAE_STATUS_SUCCESS);
 
     // A token is valid once.
     let output = access_point.receive(
         frame([2, 0, 0, 0, 0, 5], 1, 0, &commit[..len]),
-        0,
+        oer_time::Instant::from_micros(0),
         0,
         &mut random,
     );
@@ -197,7 +227,7 @@ fn queued_commits_count_toward_anti_clogging() {
     let (commit, len) = station.commit_body(None);
     let output = access_point.receive(
         frame(STATION, 1, AP_SAE_STATUS_HASH_TO_ELEMENT, &commit[..len]),
-        0,
+        oer_time::Instant::from_micros(0),
         2,
         &mut Counter(1),
     );
@@ -212,7 +242,12 @@ fn a_commit_of_another_group_is_refused_with_its_group() {
     let station = Station::new(STATION, PASSWORD, false);
     let (mut commit, len) = station.commit_body(None);
     commit[0] = 20;
-    let output = access_point.receive(frame(STATION, 1, 0, &commit[..len]), 0, 0, &mut Counter(2));
+    let output = access_point.receive(
+        frame(STATION, 1, 0, &commit[..len]),
+        oer_time::Instant::from_micros(0),
+        0,
+        &mut Counter(2),
+    );
     let reply = only_reply(&output);
     assert_eq!(reply.status, AP_SAE_STATUS_UNSUPPORTED_GROUP);
     assert_eq!(reply.body(), [20, 0]);
@@ -230,10 +265,20 @@ fn a_reflected_commit_is_dropped() {
     let mut random = Counter(9);
     let station = Station::new(STATION, PASSWORD, false);
     let (commit, len) = station.commit_body(None);
-    let output = access_point.receive(frame(STATION, 1, 0, &commit[..len]), 0, 0, &mut random);
+    let output = access_point.receive(
+        frame(STATION, 1, 0, &commit[..len]),
+        oer_time::Instant::from_micros(0),
+        0,
+        &mut random,
+    );
     let reflected = only_reply(&output);
 
-    let output = access_point.receive(frame(STATION, 1, 0, reflected.body()), 0, 0, &mut random);
+    let output = access_point.receive(
+        frame(STATION, 1, 0, reflected.body()),
+        oer_time::Instant::from_micros(0),
+        0,
+        &mut random,
+    );
     assert_eq!(output, ApSaeOutput::new());
 }
 
@@ -243,17 +288,32 @@ fn a_full_responder_refuses_a_new_station_and_forgets_a_removed_one() {
     let mut random = Counter(4);
     for index in 0..AP_MAX_CLIENTS as u8 {
         let peer = [2, 0, 0, 0, 1, index];
-        access_point.receive(frame(peer, 1, 7, &[]), 0, 0, &mut random);
+        access_point.receive(
+            frame(peer, 1, 7, &[]),
+            oer_time::Instant::from_micros(0),
+            0,
+            &mut random,
+        );
     }
     let station = Station::new(STATION, PASSWORD, false);
     let (commit, len) = station.commit_body(None);
-    let output = access_point.receive(frame(STATION, 1, 0, &commit[..len]), 0, 0, &mut random);
+    let output = access_point.receive(
+        frame(STATION, 1, 0, &commit[..len]),
+        oer_time::Instant::from_micros(0),
+        0,
+        &mut random,
+    );
     assert_eq!(
         only_reply(&output).status,
         AP_SAE_STATUS_UNABLE_TO_HANDLE_NEW_STA
     );
 
     access_point.forget([2, 0, 0, 0, 1, 0]);
-    let output = access_point.receive(frame(STATION, 1, 0, &commit[..len]), 0, 0, &mut random);
+    let output = access_point.receive(
+        frame(STATION, 1, 0, &commit[..len]),
+        oer_time::Instant::from_micros(0),
+        0,
+        &mut random,
+    );
     assert_eq!(only_reply(&output).status, AP_SAE_STATUS_SUCCESS);
 }

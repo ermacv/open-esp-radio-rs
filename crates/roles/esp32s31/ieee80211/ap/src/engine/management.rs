@@ -41,14 +41,12 @@ impl<'storage> ApEngine<'storage> {
         peer: [u8; 6],
         pmk: Pmk,
         pmkid: [u8; AP_PMKID_LEN],
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<u16, ApEngineError> {
         if self.service.peer_status(peer).is_some() {
             self.security.clear_peer(hardware, peer)?;
         }
-        Ok(self
-            .service
-            .authenticate_sae(peer, pmk, pmkid, now_micros)?)
+        Ok(self.service.authenticate_sae(peer, pmk, pmkid, now)?)
     }
 
     /// Encode one reply of the SAE responder.
@@ -75,7 +73,7 @@ impl<'storage> ApEngine<'storage> {
         frame: &[u8],
         authenticator_nonce: [u8; 32],
         initial_replay_counter: u64,
-        now_micros: u64,
+        now: oer_time::Instant,
         output: &mut [u8],
     ) -> Result<ApManagementOutcome, ApEngineError> {
         let Some(request) = parse_ap_management_request(
@@ -94,7 +92,7 @@ impl<'storage> ApEngine<'storage> {
                 // Global admission budget: changing the sender MAC cannot create
                 // additional TX credit. Discard excess requests; never queue them
                 // or arm a timer to transmit stale discovery responses later.
-                if now_micros < self.next_probe_response_micros {
+                if now < self.next_probe_response {
                     return Ok(ApManagementOutcome::Ignored);
                 }
                 self.advertise_current_protection()?;
@@ -103,11 +101,11 @@ impl<'storage> ApEngine<'storage> {
                     self.beacon.advertisement(),
                     peer,
                     sequence,
-                    now_micros,
+                    now.as_micros(),
                     output,
                 )
                 .map_err(ApEngineError::Probe)?;
-                self.next_probe_response_micros = now_micros.saturating_add(10_000);
+                self.next_probe_response = now.saturating_add(oer_time::Duration::from_millis(10));
                 Ok(ApManagementOutcome::Response {
                     len,
                     begin_wpa2: false,
@@ -151,7 +149,7 @@ impl<'storage> ApEngine<'storage> {
                     self.security.clear_peer(hardware, peer)?;
                 }
                 let ApMlmeAction::AuthenticationResponse { status, .. } =
-                    self.service.authenticate_open(peer, now_micros)
+                    self.service.authenticate_open(peer, now)
                 else {
                     unreachable!("authenticate_open has one response action")
                 };
@@ -251,7 +249,7 @@ impl<'storage> ApEngine<'storage> {
                 let action = match self.service.link_protection() {
                     LinkProtection::Open => {
                         self.service
-                            .associate_open(peer, security, capabilities, now_micros)?
+                            .associate_open(peer, security, capabilities, now)?
                     }
                     LinkProtection::Ccmp => self.service.associate_rsn(
                         peer,
@@ -259,7 +257,7 @@ impl<'storage> ApEngine<'storage> {
                         capabilities,
                         authenticator_nonce,
                         initial_replay_counter,
-                        now_micros,
+                        now,
                     )?,
                 };
                 let ApMlmeAction::AssociationResponse {

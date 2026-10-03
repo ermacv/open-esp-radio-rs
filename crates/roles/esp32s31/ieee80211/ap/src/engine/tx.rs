@@ -9,13 +9,10 @@ impl<'storage> ApEngine<'storage> {
     pub fn prepare_tx_block_ack_request(
         &mut self,
         peer: [u8; 6],
-        now_micros: u64,
+        now: oer_time::Instant,
         output: &mut [u8],
     ) -> Result<Option<(usize, TxBlockAckAlarm)>, ApEngineError> {
-        let Some(request) = self
-            .service
-            .begin_tx_block_ack(peer, oer_time::Instant::from_micros(now_micros))?
-        else {
+        let Some(request) = self.service.begin_tx_block_ack(peer, now)? else {
             return Ok(None);
         };
         let sequence = self.service.next_management_sequence();

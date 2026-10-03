@@ -176,7 +176,7 @@ fn unschedulable_beacon_reports_preparation_failure_without_publication() {
     );
 
     assert_eq!(
-        mac.publish_beacon(&mut hardware, 102_400),
+        mac.publish_beacon(&mut hardware, oer_time::Instant::from_micros(102_400)),
         Err(ApMacError::Engine(ApEngineError::BeaconPreparation))
     );
     assert_eq!(mac.observation().beacons_transmitted, 0);
@@ -222,7 +222,8 @@ fn prepared_beacon_becomes_evidence_only_after_terminal_success() {
         },
     );
 
-    mac.publish_beacon(&mut hardware, 102_400).unwrap();
+    mac.publish_beacon(&mut hardware, oer_time::Instant::from_micros(102_400))
+        .unwrap();
     assert_eq!(mac.observation().beacons_transmitted, 0);
     hardware.completion = Some(MacTxCompletionObservation::new_model(0, 0));
     let (progress, action) = mac
@@ -231,7 +232,7 @@ fn prepared_beacon_becomes_evidence_only_after_terminal_success() {
             WifiTxWake::Interrupt {
                 events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
             },
-            1,
+            oer_time::Instant::from_micros(1),
         )
         .unwrap();
     assert_eq!(progress, WifiTxProgress::Complete);
@@ -264,7 +265,7 @@ fn mixed_bss_protects_ordinary_data_with_cts_to_self_at_a_dsss_rate() {
         legacy_wpa_present: false,
         malformed_elements: false,
     };
-    service.authenticate_open(target, 1);
+    service.authenticate_open(target, oer_time::Instant::from_micros(1));
     let ht_ie = oer_ieee80211_mac::ht::ht_capability_ie(
         crate::profile::HT_CAPABILITIES,
         WifiChannel::mhz20(6).unwrap(),
@@ -279,10 +280,10 @@ fn mixed_bss_protects_ordinary_data_with_cts_to_self_at_a_dsss_rate() {
                 ht: oer_ieee80211_mac::ht::ht_peer_capabilities(&ht_ie),
                 qos_supported: true,
             },
-            2,
+            oer_time::Instant::from_micros(2),
         )
         .unwrap();
-    service.authenticate_open(legacy, 3);
+    service.authenticate_open(legacy, oer_time::Instant::from_micros(3));
     service
         .associate_open(
             legacy,
@@ -293,7 +294,7 @@ fn mixed_bss_protects_ordinary_data_with_cts_to_self_at_a_dsss_rate() {
                 ht: None,
                 qos_supported: false,
             },
-            4,
+            oer_time::Instant::from_micros(4),
         )
         .unwrap();
     let engine = ApEngine::start(

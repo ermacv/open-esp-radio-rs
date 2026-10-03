@@ -152,7 +152,7 @@ impl<'storage> ApEngine<'storage> {
         &mut self,
         request: ApOrdinaryPairwiseRxRequest,
         state: ApPeerPowerState,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> (
         ApRxAdmission,
         Result<Option<ApPowerSaveAction>, ApEngineError>,
@@ -166,7 +166,7 @@ impl<'storage> ApEngine<'storage> {
         };
         let activity = self
             .service
-            .observe_bound_data_power_state(binding.peer, state, now_micros)
+            .observe_bound_data_power_state(binding.peer, state, now)
             .map(Some)
             .map_err(ApEngineError::from);
         (admission, activity)

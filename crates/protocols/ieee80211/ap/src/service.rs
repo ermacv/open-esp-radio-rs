@@ -52,7 +52,7 @@ pub const AP_STATUS_INVALID_RSN: u16 = 40;
 /// Status 53: the station named no PMKID of a security association this
 /// access point holds for it.
 pub const AP_STATUS_INVALID_PMKID: u16 = 53;
-pub const AP_ASSOCIATION_DEADLINE_MICROS: u64 = 15_000_000;
+pub const AP_ASSOCIATION_DEADLINE: oer_time::Duration = oer_time::Duration::from_secs(15);
 /// AP-owned response window for each four-way-handshake publication.
 ///
 /// This follows the generic hostap authenticator policy: a 100-ms first
@@ -92,8 +92,8 @@ impl AccessPointInactiveTimeout {
         self.0
     }
 
-    pub const fn micros(self) -> u64 {
-        self.0 as u64 * 1_000_000
+    pub const fn duration(self) -> oer_time::Duration {
+        oer_time::Duration::from_secs(self.0 as u32)
     }
 }
 
@@ -436,8 +436,8 @@ struct ApPeer {
     power_state: ApPeerPowerState,
     buffered_unicast_frames: u16,
     buffered_release_in_flight: bool,
-    last_activity_micros: u64,
-    deadline_micros: u64,
+    last_activity: oer_time::Instant,
+    deadline: oer_time::Instant,
 }
 
 /// Caller-owned storage for all per-client AP protocol and key state.
@@ -485,8 +485,8 @@ impl ApPeer {
             power_state: self.power_state,
             buffered_unicast_frames: self.buffered_unicast_frames,
             buffered_release_in_flight: self.buffered_release_in_flight,
-            last_activity_micros: self.last_activity_micros,
-            deadline_micros: self.deadline_micros,
+            last_activity: self.last_activity,
+            deadline: self.deadline,
         }
     }
 
@@ -494,7 +494,7 @@ impl ApPeer {
         address: [u8; 6],
         association_id: u16,
         association_epoch: u32,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Self {
         Self {
             address,
@@ -519,8 +519,8 @@ impl ApPeer {
             power_state: ApPeerPowerState::Active,
             buffered_unicast_frames: 0,
             buffered_release_in_flight: false,
-            last_activity_micros: now_micros,
-            deadline_micros: now_micros.saturating_add(AP_ASSOCIATION_DEADLINE_MICROS),
+            last_activity: now,
+            deadline: now.saturating_add(AP_ASSOCIATION_DEADLINE),
         }
     }
 
@@ -598,8 +598,8 @@ pub struct ApPeerStatus {
     pub power_state: ApPeerPowerState,
     pub buffered_unicast_frames: u16,
     pub buffered_release_in_flight: bool,
-    pub last_activity_micros: u64,
-    pub deadline_micros: u64,
+    pub last_activity: oer_time::Instant,
+    pub deadline: oer_time::Instant,
 }
 
 impl ApPeerStatus {

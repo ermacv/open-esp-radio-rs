@@ -103,7 +103,14 @@ fn active_epoch_owns_policy_group_key_management_and_stop_frontier() {
     let mut response = [0; 160];
     assert_eq!(
         engine
-            .handle_management(&mut hardware, &request, [1; 32], 7, 1, &mut response)
+            .handle_management(
+                &mut hardware,
+                &request,
+                [1; 32],
+                7,
+                oer_time::Instant::from_micros(1),
+                &mut response
+            )
             .unwrap(),
         ApManagementOutcome::Response {
             len: 30,
@@ -161,7 +168,14 @@ fn associated_peer_stop_emits_vendor_ordered_disconnects_before_removal() {
     authentication[26..28].copy_from_slice(&1_u16.to_le_bytes());
     let mut output = [0; 160];
     engine
-        .handle_management(&mut hardware, &authentication, [7; 32], 9, 1, &mut output)
+        .handle_management(
+            &mut hardware,
+            &authentication,
+            [7; 32],
+            9,
+            oer_time::Instant::from_micros(1),
+            &mut output,
+        )
         .unwrap();
     assert_eq!(
         engine.bss_protection().ht,
@@ -177,7 +191,14 @@ fn associated_peer_stop_emits_vendor_ordered_disconnects_before_removal() {
     association[28..34].copy_from_slice(&[1, 4, 12, 24, 48, 108]);
     association[34..].copy_from_slice(&RSN);
     engine
-        .handle_management(&mut hardware, &association, [7; 32], 9, 2, &mut output)
+        .handle_management(
+            &mut hardware,
+            &association,
+            [7; 32],
+            9,
+            oer_time::Instant::from_micros(2),
+            &mut output,
+        )
         .unwrap();
     assert_eq!(
         engine.bss_protection().ht,
@@ -186,7 +207,14 @@ fn associated_peer_stop_emits_vendor_ordered_disconnects_before_removal() {
     );
     assert!(matches!(
         engine
-            .handle_management(&mut hardware, &association, [8; 32], 10, 3, &mut output)
+            .handle_management(
+                &mut hardware,
+                &association,
+                [8; 32],
+                10,
+                oer_time::Instant::from_micros(3),
+                &mut output
+            )
             .unwrap(),
         ApManagementOutcome::Response {
             begin_wpa2: false,
@@ -207,7 +235,7 @@ fn associated_peer_stop_emits_vendor_ordered_disconnects_before_removal() {
                 &retried_authentication,
                 [9; 32],
                 11,
-                4,
+                oer_time::Instant::from_micros(4),
                 &mut output,
             )
             .unwrap(),
@@ -238,7 +266,7 @@ fn associated_peer_stop_emits_vendor_ordered_disconnects_before_removal() {
                 &peer_deauthentication,
                 [9; 32],
                 10,
-                3,
+                oer_time::Instant::from_micros(3),
                 &mut output,
             )
             .unwrap(),
@@ -316,7 +344,14 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
     authentication[26..28].copy_from_slice(&1_u16.to_le_bytes());
     let mut response = [0; 160];
     engine
-        .handle_management(&mut hardware, &authentication, ANONCE, 9, 1, &mut response)
+        .handle_management(
+            &mut hardware,
+            &authentication,
+            ANONCE,
+            9,
+            oer_time::Instant::from_micros(1),
+            &mut response,
+        )
         .unwrap();
 
     let mut association = [0; 84];
@@ -332,7 +367,14 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
     ));
     assert!(matches!(
         engine
-            .handle_management(&mut hardware, &association, ANONCE, 9, 2, &mut response)
+            .handle_management(
+                &mut hardware,
+                &association,
+                ANONCE,
+                9,
+                oer_time::Instant::from_micros(2),
+                &mut response
+            )
             .unwrap(),
         ApManagementOutcome::Response {
             begin_wpa2: true,
@@ -364,7 +406,12 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
         OwnedEapolFrame::<512>::try_copy(RsnInterface::AccessPoint, peer, message2.as_bytes())
             .unwrap();
     let ApWpa2Outcome::Transmit(message3) = engine
-        .handle_eapol(&mut hardware, peer, message2, 3)
+        .handle_eapol(
+            &mut hardware,
+            peer,
+            message2,
+            oer_time::Instant::from_micros(3),
+        )
         .unwrap()
     else {
         panic!("message two must produce message three");
@@ -386,7 +433,7 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
             .unwrap();
     assert!(matches!(
         engine
-            .handle_eapol(&mut hardware, peer, message4, 4)
+            .handle_eapol(&mut hardware, peer, message4, oer_time::Instant::from_micros(4))
             .unwrap(),
         ApWpa2Outcome::PeerAuthorized { peer: authorized } if authorized == peer
     ));
@@ -425,16 +472,16 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
         CcmpReplayLane::NonQos,
         CcmpHeader::new(rx_pn4, CcmpKeyId::PAIRWISE),
     );
-    let deadline = engine.service.peer_status(peer).unwrap().deadline_micros;
+    let deadline = engine.service.peer_status(peer).unwrap().deadline;
     let (admission, activity) = engine.admit_ordinary_pairwise_rx_with_activity(
         ordinary_rx_request,
         ApPeerPowerState::Active,
-        5,
+        oer_time::Instant::from_micros(5),
     );
     assert_eq!(admission, ApRxAdmission::authorized(duplicate_owner));
     assert_eq!(activity.unwrap(), Some(ApPowerSaveAction::None));
     assert_eq!(
-        engine.service.peer_status(peer).unwrap().deadline_micros,
+        engine.service.peer_status(peer).unwrap().deadline,
         deadline,
         "ordinary admission and coalesced activity share one peer binding"
     );
@@ -451,7 +498,12 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
     .unwrap();
     assert!(matches!(
         engine
-            .handle_eapol(&mut hardware, peer, repeated_message4, 5)
+            .handle_eapol(
+                &mut hardware,
+                peer,
+                repeated_message4,
+                oer_time::Instant::from_micros(5)
+            )
             .unwrap(),
         ApWpa2Outcome::None
     ));
@@ -620,7 +672,14 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
     // deauthentication. The old PTK must leave hardware before the same
     // AID begins a new handshake.
     engine
-        .handle_management(&mut hardware, &authentication, ANONCE, 11, 5, &mut response)
+        .handle_management(
+            &mut hardware,
+            &authentication,
+            ANONCE,
+            11,
+            oer_time::Instant::from_micros(5),
+            &mut response,
+        )
         .unwrap();
     assert_eq!(hardware.cleared, [8]);
     assert!(!engine.is_authorized_peer(peer));
@@ -649,7 +708,7 @@ fn open_ht_peer_uses_bounded_qos_amsdu_without_key_or_block_ack_owner() {
         oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
         &mut peers,
     );
-    service.authenticate_open(peer, 1);
+    service.authenticate_open(peer, oer_time::Instant::from_micros(1));
     let ht_ie = oer_ieee80211_mac::ht::ht_capability_ie(
         crate::profile::HT_CAPABILITIES,
         WifiChannel::mhz20(6).unwrap(),
@@ -672,7 +731,7 @@ fn open_ht_peer_uses_bounded_qos_amsdu_without_key_or_block_ack_owner() {
                 ht: oer_ieee80211_mac::ht::ht_peer_capabilities(&ht_ie),
                 qos_supported: true,
             },
-            2,
+            oer_time::Instant::from_micros(2),
         )
         .unwrap();
     let mut hardware = Hardware::default();
@@ -768,7 +827,14 @@ fn non_erp_association_updates_the_advertised_erp_and_ht_protection() {
     authentication[26..28].copy_from_slice(&1_u16.to_le_bytes());
     let mut output = [0; 256];
     engine
-        .handle_management(&mut hardware, &authentication, [7; 32], 9, 1, &mut output)
+        .handle_management(
+            &mut hardware,
+            &authentication,
+            [7; 32],
+            9,
+            oer_time::Instant::from_micros(1),
+            &mut output,
+        )
         .unwrap();
 
     // An 802.11b station: DSSS/HR rates only, no Short Preamble, no HT.
@@ -780,7 +846,14 @@ fn non_erp_association_updates_the_advertised_erp_and_ht_protection() {
     association[28..34].copy_from_slice(&[1, 4, 0x82, 0x84, 0x8b, 0x96]);
     association[34..].copy_from_slice(&RSN);
     let outcome = engine
-        .handle_management(&mut hardware, &association, [7; 32], 9, 2, &mut output)
+        .handle_management(
+            &mut hardware,
+            &association,
+            [7; 32],
+            9,
+            oer_time::Instant::from_micros(2),
+            &mut output,
+        )
         .unwrap();
     let ApManagementOutcome::Response { len, .. } = outcome else {
         panic!("association must be answered");
@@ -845,7 +918,7 @@ fn a_wpa3_engine_hands_sae_to_the_responder_and_accepts_its_result() {
                 &commit[..commit_len],
                 [1; 32],
                 7,
-                1,
+                oer_time::Instant::from_micros(1),
                 &mut output
             )
             .unwrap(),
@@ -858,7 +931,13 @@ fn a_wpa3_engine_hands_sae_to_the_responder_and_accepts_its_result() {
     );
     assert_eq!(output[..3], [0x13, 0, 0xab]);
     assert_eq!(
-        engine.accept_sae(&mut hardware, peer, Pmk::from_bytes([3; 32]), [4; 16], 2),
+        engine.accept_sae(
+            &mut hardware,
+            peer,
+            Pmk::from_bytes([3; 32]),
+            [4; 16],
+            oer_time::Instant::from_micros(2)
+        ),
         Ok(oer_ieee80211_ap::AP_STATUS_SUCCESS)
     );
     assert_eq!(
@@ -888,7 +967,7 @@ fn a_wpa3_engine_hands_sae_to_the_responder_and_accepts_its_result() {
                 status: 0,
                 body: &[20, 0],
             },
-            0,
+            oer_time::Instant::from_micros(0),
             0,
             &mut Fixed,
         );
@@ -924,7 +1003,7 @@ fn a_wpa3_engine_hands_sae_to_the_responder_and_accepts_its_result() {
                 &commit[..commit_len],
                 [1; 32],
                 7,
-                1,
+                oer_time::Instant::from_micros(1),
                 &mut output
             )
             .unwrap(),

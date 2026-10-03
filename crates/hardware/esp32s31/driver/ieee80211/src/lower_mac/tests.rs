@@ -1296,6 +1296,7 @@ fn normalized(mpdu: &[u8]) -> NormalizedRxFrame<'_> {
             amsdu: MacRxEvidence::Unavailable,
         },
         logical_length: mpdu.len(),
+        stamp: None,
     }
 }
 

@@ -20,7 +20,7 @@ use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_esp32s31_ieee80211_mac::{
     ap_policy::{configure_ap_receive_policy, disable_ap_receive_policy},
-    ap_tsf::{reset_and_start_access_point_tsf, stop_access_point_tsf},
+    ap_tsf::AccessPointTsf,
     crypto::CryptoKeyError,
     tx::protection::{BasicRates, BssProtection, HePacketPadding},
 };
@@ -416,6 +416,8 @@ pub struct ApEngine<'storage> {
     security: ApSecurity<'storage>,
     rx_peer: Option<ApRxPeerBinding>,
     channel: WifiChannel,
+    /// The single writer of the access-point TSF.
+    tsf: AccessPointTsf,
     #[cfg(any(feature = "diagnostics", test))]
     observer: ApEngineObserver,
 }
@@ -434,6 +436,7 @@ impl<'storage> ApEngine<'storage> {
         channel: WifiChannel,
         beacon_interval_tu: u16,
         dtim_period: u8,
+        tsf_epoch: u32,
     ) -> Result<Self, ApEngineStartFailure<'storage>> {
         let link_protection = service.link_protection();
         let advertised_protection = service.bss_protection(is_forty_mhz(channel));
@@ -486,8 +489,10 @@ impl<'storage> ApEngine<'storage> {
         // This is the first irreversible timing edge. Beacon construction and
         // group-key installation have succeeded, so a failed start never
         // leaves an unowned hardware TSF epoch behind.
-        reset_and_start_access_point_tsf(hardware);
+        let mut tsf = AccessPointTsf::new(tsf_epoch);
+        tsf.restart(hardware);
         Ok(Self {
+            tsf,
             next_probe_response: oer_time::Instant::EPOCH,
             advertised_protection,
             service,
@@ -859,13 +864,19 @@ impl<'storage> ApEngine<'storage> {
         Ok(())
     }
 
-    pub fn stop<H: ApRuntimeHardware>(self, hardware: &mut H) -> ApEngineStop<'storage> {
+    /// The generation of the access-point TSF: a value or sample of its
+    /// timer taken in another generation does not describe it.
+    pub const fn tsf_generation(&self) -> oer_ieee80211_lower_mac::TsfGeneration {
+        self.tsf.generation()
+    }
+
+    pub fn stop<H: ApRuntimeHardware>(mut self, hardware: &mut H) -> ApEngineStop<'storage> {
         // RX admission closes before the outer descriptor epoch is allowed
         // to stop. A composition may have already performed this idempotent
         // pre-quiesce leaf while it still owned the live runner.
         disable_ap_receive_policy(hardware);
         let (security, pairwise_storage) = self.security.stop(hardware);
-        stop_access_point_tsf(hardware);
+        self.tsf.stop(hardware);
         ApEngineStop {
             service: self.service,
             beacon_storage: self.beacon.into_storage(),

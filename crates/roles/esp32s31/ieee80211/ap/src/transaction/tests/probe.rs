@@ -37,6 +37,7 @@ fn exercise_probe_completion(status: u8) {
         oer_ieee80211_mac::channel::WifiChannel::mhz20(6).unwrap(),
         100,
         2,
+        1,
     )
     .unwrap_or_else(|_| panic!("AP engine starts"));
     let mut slot = pin!(TxSlot::<512>::new_model());

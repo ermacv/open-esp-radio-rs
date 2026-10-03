@@ -2345,7 +2345,7 @@ const _: () = assert!(core::mem::size_of::<ConnectedStationFault<'static, 'stati
 const _: () = assert!(core::mem::size_of::<ConnectedStationRunExit<'static, 'static>>() <= 3312);
 // Measured 1488 bytes (3816 while it held the control by value).
 const _: () = assert!(core::mem::size_of::<ConnectedDriverTeardownFailure>() <= 1552);
-// The connected epoch's future: measured 26072 bytes (33024 while it held
+// The connected epoch's future: measured 26144 bytes (33024 while it held
 // the control by value).
 const _: () = assert!(
     returned_size::<
@@ -2356,5 +2356,5 @@ const _: () = assert!(
         _,
         _,
     >(&run_connected)
-        <= 26136
+        <= 26208
 );

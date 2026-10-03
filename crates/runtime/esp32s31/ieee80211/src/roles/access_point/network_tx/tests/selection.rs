@@ -42,6 +42,7 @@ fn ap_selection_leaves_more_than_an_arena_of_other_peer_owners_at_the_source() {
         WifiChannel::mhz20(13).unwrap(),
         100,
         2,
+        1,
     )
     .unwrap_or_else(|_| panic!("open AP startup"));
     let pool = allocator::<SOURCE_CAPACITY>();

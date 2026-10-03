@@ -55,9 +55,17 @@ impl CcmpKeyHardware for Hardware {
 }
 
 impl oer_esp32s31_ieee80211_mac::ap_tsf::ApTsfHardware for Hardware {
-    fn reset_and_start_access_point_tsf(&mut self) {}
+    fn reset_and_start_access_point_tsf(
+        &mut self,
+        _: oer_esp32s31_ieee80211_mac::ap_tsf::AccessPointTsfWrite,
+    ) {
+    }
 
-    fn stop_access_point_tsf(&mut self) {}
+    fn stop_access_point_tsf(
+        &mut self,
+        _: oer_esp32s31_ieee80211_mac::ap_tsf::AccessPointTsfWrite,
+    ) {
+    }
 }
 
 impl TxHardware for Hardware {
@@ -158,6 +166,7 @@ fn unschedulable_beacon_reports_preparation_failure_without_publication() {
         oer_ieee80211_mac::channel::WifiChannel::mhz20(6).unwrap(),
         0,
         2,
+        1,
     )
     .unwrap_or_else(|_| panic!("AP engine starts"));
     let mut slot = pin!(TxSlot::<512>::new_model());
@@ -205,6 +214,7 @@ fn prepared_beacon_becomes_evidence_only_after_terminal_success() {
         oer_ieee80211_mac::channel::WifiChannel::mhz20(6).unwrap(),
         100,
         2,
+        1,
     )
     .unwrap_or_else(|_| panic!("AP engine starts"));
     let mut slot = pin!(TxSlot::<512>::new_model());
@@ -306,6 +316,7 @@ fn mixed_bss_protects_ordinary_data_with_cts_to_self_at_a_dsss_rate() {
         WifiChannel::mhz20(6).unwrap(),
         100,
         2,
+        1,
     )
     .unwrap_or_else(|_| panic!("Open mixed AP starts"));
     assert_eq!(engine.bss_protection().erp, ErpProtection::new(true, false));

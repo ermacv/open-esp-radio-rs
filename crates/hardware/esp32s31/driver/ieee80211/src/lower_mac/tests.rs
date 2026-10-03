@@ -317,11 +317,17 @@ impl ApRxPolicyHardware for Hardware {
 }
 
 impl ApTsfHardware for Hardware {
-    fn reset_and_start_access_point_tsf(&mut self) {
+    fn reset_and_start_access_point_tsf(
+        &mut self,
+        _: oer_esp32s31_ieee80211_mac::ap_tsf::AccessPointTsfWrite,
+    ) {
         self.access_point_tsf_resets += 1;
     }
 
-    fn stop_access_point_tsf(&mut self) {
+    fn stop_access_point_tsf(
+        &mut self,
+        _: oer_esp32s31_ieee80211_mac::ap_tsf::AccessPointTsfWrite,
+    ) {
         unreachable!("the port never stops the access-point TSF")
     }
 }
@@ -2317,7 +2323,7 @@ fn the_tsf_relation_breaks_at_a_jump_a_channel_change_an_interface_change_and_an
 
     let allowed = |elapsed: u64| {
         (elapsed * u64::from(TSF_DRIFT_PPM)).div_ceil(1_000_000)
-            + STATION_TSF_SAMPLE_UNCERTAINTY.as_micros()
+            + crate::station_tsf::STATION_TSF_SAMPLE_UNCERTAINTY.as_micros()
     };
     let interval = 102_400;
 

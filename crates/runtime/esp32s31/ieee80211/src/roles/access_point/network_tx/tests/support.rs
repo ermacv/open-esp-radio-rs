@@ -16,8 +16,16 @@ impl ApRxPolicyHardware for Hardware {
     fn disable_ap_link_policy(&mut self) {}
 }
 impl ApTsfHardware for Hardware {
-    fn reset_and_start_access_point_tsf(&mut self) {}
-    fn stop_access_point_tsf(&mut self) {}
+    fn reset_and_start_access_point_tsf(
+        &mut self,
+        _: oer_esp32s31_ieee80211_mac::ap_tsf::AccessPointTsfWrite,
+    ) {
+    }
+    fn stop_access_point_tsf(
+        &mut self,
+        _: oer_esp32s31_ieee80211_mac::ap_tsf::AccessPointTsfWrite,
+    ) {
+    }
 }
 impl CcmpKeyHardware for Hardware {
     fn install_sta_ccmp_entry(
@@ -109,6 +117,7 @@ pub(super) fn with_authorized_ap_capabilities(
         WifiChannel::mhz20(13).unwrap(),
         100,
         2,
+        1,
     )
     .unwrap_or_else(|_| panic!("open AP startup"));
     test(engine);

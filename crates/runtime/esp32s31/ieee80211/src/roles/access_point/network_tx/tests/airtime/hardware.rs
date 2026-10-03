@@ -149,8 +149,16 @@ impl oer_esp32s31_ieee80211_mac::ap_policy::ApRxPolicyHardware for Hardware {
     fn disable_ap_link_policy(&mut self) {}
 }
 impl oer_esp32s31_ieee80211_mac::ap_tsf::ApTsfHardware for Hardware {
-    fn reset_and_start_access_point_tsf(&mut self) {}
-    fn stop_access_point_tsf(&mut self) {}
+    fn reset_and_start_access_point_tsf(
+        &mut self,
+        _: oer_esp32s31_ieee80211_mac::ap_tsf::AccessPointTsfWrite,
+    ) {
+    }
+    fn stop_access_point_tsf(
+        &mut self,
+        _: oer_esp32s31_ieee80211_mac::ap_tsf::AccessPointTsfWrite,
+    ) {
+    }
 }
 impl RxBlockAckHardware for Hardware {
     fn program_rx_block_ack(

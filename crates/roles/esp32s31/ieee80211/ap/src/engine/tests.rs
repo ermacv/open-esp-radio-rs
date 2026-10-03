@@ -50,11 +50,17 @@ impl CcmpKeyHardware for Hardware {
 }
 
 impl ApTsfHardware for Hardware {
-    fn reset_and_start_access_point_tsf(&mut self) {
+    fn reset_and_start_access_point_tsf(
+        &mut self,
+        _: oer_esp32s31_ieee80211_mac::ap_tsf::AccessPointTsfWrite,
+    ) {
         self.tsf_started = true;
     }
 
-    fn stop_access_point_tsf(&mut self) {
+    fn stop_access_point_tsf(
+        &mut self,
+        _: oer_esp32s31_ieee80211_mac::ap_tsf::AccessPointTsfWrite,
+    ) {
         self.tsf_stopped = true;
     }
 }
@@ -91,6 +97,7 @@ fn active_epoch_owns_policy_group_key_management_and_stop_frontier() {
         WifiChannel::mhz20(6).unwrap(),
         100,
         2,
+        1,
     )
     .unwrap_or_else(|_| panic!("AP start"));
 
@@ -161,6 +168,7 @@ fn associated_peer_stop_emits_vendor_ordered_disconnects_before_removal() {
         WifiChannel::mhz20(6).unwrap(),
         100,
         2,
+        1,
     )
     .unwrap_or_else(|_| panic!("AP start"));
 
@@ -337,6 +345,7 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
         WifiChannel::mhz20(6).unwrap(),
         100,
         2,
+        1,
     )
     .unwrap_or_else(|_| panic!("AP start"));
 
@@ -748,6 +757,7 @@ fn open_ht_peer_uses_bounded_qos_amsdu_without_key_or_block_ack_owner() {
         WifiChannel::mhz20(6).unwrap(),
         100,
         2,
+        1,
     )
     .unwrap_or_else(|_| panic!("Open AP starts"));
 
@@ -813,6 +823,7 @@ fn non_erp_association_updates_the_advertised_erp_and_ht_protection() {
         WifiChannel::mhz20(6).unwrap(),
         100,
         2,
+        1,
     )
     .unwrap_or_else(|_| panic!("AP start"));
     let protection_fields = |frame: &[u8]| {
@@ -916,6 +927,7 @@ fn a_wpa3_engine_hands_sae_to_the_responder_and_accepts_its_result() {
         WifiChannel::mhz20(6).unwrap(),
         100,
         2,
+        1,
     )
     .unwrap_or_else(|_| panic!("AP start"));
     let mut output = [0; 160];
@@ -1002,6 +1014,7 @@ fn a_wpa3_engine_hands_sae_to_the_responder_and_accepts_its_result() {
         WifiChannel::mhz20(6).unwrap(),
         100,
         2,
+        1,
     )
     .unwrap_or_else(|_| panic!("AP start"));
     assert_eq!(

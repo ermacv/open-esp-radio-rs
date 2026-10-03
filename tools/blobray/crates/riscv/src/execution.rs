@@ -21,8 +21,10 @@ enum Profile {
 impl Profile {
     /// Whether `decoded` belongs to the profile.
     fn admits(self, bytes: &[u8], decoded: &Decoded) -> bool {
+        // No profile executes floating point: the FP register file and its
+        // rounding and exception state are not modeled.
         match self {
-            Self::Full => true,
+            Self::Full => !matches!(decoded.inst, Instruction::Float(_)),
             Self::Rv32imac => {
                 !matches!(decoded.inst, Instruction::Extension(_)) && !floating_point(bytes)
             }
@@ -527,6 +529,8 @@ fn run(
                 }
                 Extension::Integer { .. } | Extension::Memory { .. } => lifted!(),
             },
+            // Excluded by every profile's admission.
+            Instruction::Float(_) => stop!(ExecutionGap::UnsupportedInstruction),
         }
         if let Some((tail, return_pc, indirect)) = transfer
             && next != u32::MAX - 1
@@ -626,7 +630,7 @@ mod tests {
     }
 
     #[test]
-    fn the_rv32imac_profile_refuses_extension_and_floating_point_forms() {
+    fn no_profile_executes_floating_point_and_rv32imac_refuses_extensions() {
         // add a0, a0, a1 and c.addi a0, 1.
         let base: [&[u8]; 2] = [&0x00b5_0533u32.to_le_bytes(), &0x0505u16.to_le_bytes()];
         // sh1add a0, a0, a1 (Zba), cm.push {ra}, -16 (Zcmp), flw fa0, 0(a0).
@@ -642,9 +646,12 @@ mod tests {
         for bytes in outside {
             assert!(!admitted(Profile::Rv32imac, bytes), "{bytes:02x?}");
         }
-        // The full profile executes the extension forms it decodes.
+        // The full profile executes the extension forms it decodes, but no
+        // profile executes the floating point the decoder now also decodes.
         assert!(admitted(Profile::Full, outside[0]));
         assert!(admitted(Profile::Full, outside[1]));
+        assert!(RiscvDecoder.decode(outside[2]).is_some());
+        assert!(!admitted(Profile::Full, outside[2]));
         // c.flwsp fa0, 0(sp) and c.fsw fa0, 0(a0) are floating point.
         assert!(floating_point(&0x6502u16.to_le_bytes()));
         assert!(floating_point(&0xe108u16.to_le_bytes()));

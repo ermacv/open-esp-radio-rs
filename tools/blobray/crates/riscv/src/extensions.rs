@@ -272,7 +272,7 @@ const ABI: [&str; 32] = [
     "t5", "t6",
 ];
 
-fn name(register: u8) -> &'static str {
+pub(crate) fn name(register: u8) -> &'static str {
     ABI[register as usize]
 }
 

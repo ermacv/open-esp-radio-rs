@@ -159,7 +159,9 @@ fn validate(op: SemanticOp) -> Result<()> {
         SemanticOp::Integer {
             dest, left, right, ..
         } => dest < 32 && operand(left) && operand(right),
-        SemanticOp::Upper { dest, .. } | SemanticOp::Link { dest } => dest < 32,
+        SemanticOp::Upper { dest, .. }
+        | SemanticOp::Link { dest }
+        | SemanticOp::Opaque { dest } => dest < 32,
         SemanticOp::Memory {
             kind,
             base,
@@ -181,6 +183,9 @@ fn validate(op: SemanticOp) -> Result<()> {
                     MemoryKind::LoadReserved => width == 4 && dest.is_some() && source.is_none(),
                     MemoryKind::StoreConditional | MemoryKind::Atomic => {
                         width == 4 && dest.is_some() && source.is_some()
+                    }
+                    MemoryKind::FloatLoad | MemoryKind::FloatStore => {
+                        width == 4 && dest.is_none() && source.is_none()
                     }
                 }
         }
@@ -320,7 +325,8 @@ fn transfer(
                 }
                 SemanticOp::Integer { dest, .. }
                 | SemanticOp::Upper { dest, .. }
-                | SemanticOp::Link { dest } => {
+                | SemanticOp::Link { dest }
+                | SemanticOp::Opaque { dest } => {
                     effects.register = Some((
                         dest,
                         if dest == 0 {
@@ -438,7 +444,9 @@ fn transfer(
                         })
                     }
                 })
-                .transpose()?;
+                .transpose()?
+                // An FP register's word is outside the integer model.
+                .or((kind == MemoryKind::FloatStore).then_some(Value::Unknown));
             effects.memory = Some((kind, width, address, value));
             let mut loaded = Value::Unknown;
             if kind == MemoryKind::Load
@@ -461,6 +469,7 @@ fn transfer(
             }
             effects.register = dest.map(|r| (r, loaded));
         }
+        SemanticOp::Opaque { dest } => effects.register = Some((dest, Value::Unknown)),
         SemanticOp::None | SemanticOp::Fence { .. } => {}
         SemanticOp::Unsupported => unreachable!("unsupported operation carries a gap"),
     }

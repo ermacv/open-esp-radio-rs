@@ -136,6 +136,8 @@ fn operands(line: &Line) -> (Option<u8>, Vec<u8>) {
             [left, right].into_iter().filter_map(register).collect(),
         ),
         SemanticOp::Upper { dest, .. } | SemanticOp::Link { dest } => (Some(dest), vec![]),
+        // Its inputs are FP registers, which the integer model does not track.
+        SemanticOp::Opaque { dest } => (Some(dest), vec![]),
         SemanticOp::Memory {
             base, dest, source, ..
         } => (dest, [Some(base), source].into_iter().flatten().collect()),

@@ -962,7 +962,7 @@ impl State {
                 }
                 let access = location.clone().map(|location| {
                     let effect = match kind {
-                        MemoryKind::Load => Effect::Read,
+                        MemoryKind::Load | MemoryKind::FloatLoad => Effect::Read,
                         _ => match source.map(|s| self.get(s)) {
                             Some(Value::Word {
                                 location: read,
@@ -1010,7 +1010,7 @@ impl State {
                 }
                 access
             }
-            SemanticOp::Link { dest } => {
+            SemanticOp::Link { dest } | SemanticOp::Opaque { dest } => {
                 self.set(dest, UNKNOWN);
                 None
             }

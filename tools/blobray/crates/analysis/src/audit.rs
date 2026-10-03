@@ -169,7 +169,8 @@ pub fn audit_section(
             SemanticOp::Memory {
                 dest: Some(dest), ..
             }
-            | SemanticOp::Link { dest } => values[usize::from(dest)] = None,
+            | SemanticOp::Link { dest }
+            | SemanticOp::Opaque { dest } => values[usize::from(dest)] = None,
             SemanticOp::Unsupported => values.fill(None),
             _ => (),
         }

@@ -136,6 +136,10 @@ pub enum MemoryKind {
     LoadReserved,
     StoreConditional,
     Atomic,
+    /// A word loaded into a floating-point register: no integer destination.
+    FloatLoad,
+    /// A floating-point register's word stored: no integer source.
+    FloatStore,
 }
 /// An instruction's bounded local effect, before abstract interpretation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -168,6 +172,11 @@ pub enum SemanticOp {
         source: Option<u8>,
         swap: bool,
         signed: bool,
+    },
+    /// `dest` takes a value outside the integer model, such as a
+    /// floating-point comparison, move or conversion result.
+    Opaque {
+        dest: u8,
     },
     None,
     Unsupported,

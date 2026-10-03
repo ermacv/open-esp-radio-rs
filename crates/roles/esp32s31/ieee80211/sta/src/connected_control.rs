@@ -55,7 +55,10 @@ use oer_ieee80211_sta::{
     ftm::{
         FtmRequester, FtmRequesterConfig, FtmRequesterError, FtmRequesterEvent, FtmRequesterService,
     },
-    link_monitor::{StaBeaconLossConfig, StaBeaconLossConfigError, StaBeaconMonitor},
+    link_monitor::{
+        StaBeaconLossConfig, StaBeaconLossConfigError, StaBeaconMonitor, StaLinkAction,
+        StaLinkMonitor,
+    },
     twt::{
         IndividualTwtAgreement, IndividualTwtProposal, IndividualTwtRequester,
         IndividualTwtRequesterConfig, IndividualTwtRequesterError, IndividualTwtRequesterEvent,
@@ -69,12 +72,6 @@ use oer_ieee80211_sta::{
 const CONNECTED_FTM_FRONTIER_SAMPLE_CAPACITY: usize = 30;
 
 use oer_ieee80211_sta::time::earliest as earliest_deadline;
-
-// Complete `libnet80211.a[ieee80211_sta.o]::send_ap_probe` rearms
-// `mgd_probe_send_timeout` for 500 ms. Its timeout process retries a bounded
-// five times before returning to the disconnect path.
-const BEACON_PROBE_INTERVAL: oer_time::Duration = oer_time::Duration::from_millis(500);
-const BEACON_PROBE_ATTEMPT_LIMIT: u8 = 5;
 
 /// Protocol reason which ended one connected station epoch.
 ///
@@ -379,9 +376,12 @@ pub trait ConnectedControlTx: oer_time::Clock {
         reason_code: u16,
     ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, SingleMpduTxError>;
 
+    /// Publish one access-point reachability Probe Request: to the access
+    /// point when `directed`, broadcast otherwise.
     fn start_beacon_probe<H: TxHardware>(
         &mut self,
         hardware: &mut H,
+        directed: bool,
     ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, SingleMpduTxError>;
 
     fn start_power_management_null<H: TxHardware>(
@@ -444,8 +444,10 @@ where
     fn start_beacon_probe<H: TxHardware>(
         &mut self,
         hardware: &mut H,
+        directed: bool,
     ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
-        SingleMpduTx::start_beacon_probe(self, hardware).map(|_| DatapathControlProgress::TxPending)
+        SingleMpduTx::start_beacon_probe(self, hardware, directed)
+            .map(|_| DatapathControlProgress::TxPending)
     }
 
     fn peek_qos_sequence(&self, tid: u8) -> Option<SequenceNumber> {
@@ -626,8 +628,7 @@ pub struct ConnectedControlCore {
     initial_tx_block_ack: [bool; 3],
     tx_block_ack_attempts_remaining: [u8; 3],
     in_flight: Option<ControlInFlight>,
-    beacon_monitor: Option<StaBeaconMonitor>,
-    beacon_probe_attempts: u8,
+    beacon_monitor: Option<StaLinkMonitor>,
     beacon_lost: bool,
     power: ConnectedPower,
     individual_twt: Option<IndividualTwtRequester>,
@@ -652,7 +653,6 @@ impl ConnectedControlCore {
             tx_block_ack_attempts_remaining: [0; 3],
             in_flight: None,
             beacon_monitor: None,
-            beacon_probe_attempts: 0,
             beacon_lost: false,
             power: ConnectedPower::new(),
             individual_twt: None,
@@ -677,9 +677,14 @@ impl ConnectedControlCore {
         self
     }
 
+    /// Supervise the link from beacons, probing a silent access point as
+    /// the Espressif station does
+    /// ([`STATION_LINK_PROBE`](oer_espressif_ieee80211_policy::station_link::STATION_LINK_PROBE)).
     pub fn enable_beacon_loss(&mut self, config: StaBeaconLossConfig) {
-        self.beacon_monitor = Some(StaBeaconMonitor::new(config));
-        self.beacon_probe_attempts = 0;
+        self.beacon_monitor = Some(StaLinkMonitor::new(
+            config,
+            oer_espressif_ieee80211_policy::station_link::STATION_LINK_PROBE,
+        ));
         self.beacon_lost = false;
     }
 
@@ -818,7 +823,10 @@ impl ConnectedControlCore {
     }
 
     pub const fn beacon_monitor(&self) -> Option<&StaBeaconMonitor> {
-        self.beacon_monitor.as_ref()
+        match &self.beacon_monitor {
+            Some(link) => Some(link.beacons()),
+            None => None,
+        }
     }
 
     pub const fn beacon_lost(&self) -> bool {
@@ -862,7 +870,7 @@ impl ConnectedControlCore {
           let link = self
               .beacon_monitor
               .as_ref()
-              .and_then(StaBeaconMonitor::deadline);
+              .and_then(StaLinkMonitor::deadline);
           let individual_twt = self
               .individual_twt
               .as_ref()
@@ -959,7 +967,6 @@ impl ConnectedControlCore {
         self.individual_twt = None;
         self.individual_twt_kick = false;
         self.beacon_monitor = None;
-        self.beacon_probe_attempts = 0;
         self.beacon_lost = false;
         self.clear_power_inputs();
 
@@ -1142,15 +1149,14 @@ impl ConnectedControlCore {
         {
             return Ok(progress);
         }
-        if self
-            .beacon_monitor
-            .as_ref()
-            .is_some_and(|monitor| monitor.expired(now))
-        {
-            if self.beacon_probe_attempts < BEACON_PROBE_ATTEMPT_LIMIT {
-                return self.start_beacon_probe(hardware, tx);
+        match self.beacon_monitor.as_ref().and_then(|link| link.due(now)) {
+            Some(StaLinkAction::Probe { directed }) => {
+                return self.start_beacon_probe(hardware, tx, directed);
             }
-            return self.disconnect_for_beacon_loss(hardware, tx, reorder, rx_block_ack);
+            Some(StaLinkAction::Lost) => {
+                return self.disconnect_for_beacon_loss(hardware, tx, reorder, rx_block_ack);
+            }
+            None => {}
         }
 
         if let Some(index) = self
@@ -1311,10 +1317,9 @@ impl ConnectedControlCore {
                     u64::from(elapsed),
                 ));
             }
-            self.beacon_probe_attempts = 0;
             follow_beacon_protection(tx, observation.protection);
             if let Some(monitor) = &mut self.beacon_monitor {
-                monitor.observe(tx.now(), observation)?;
+                monitor.observe_beacon(tx.now(), observation)?;
                 self.trace_beacon_monitor(BeaconMonitorOp::Refreshed);
             }
             let beacon = PmBeacon {
@@ -1338,9 +1343,8 @@ impl ConnectedControlCore {
             return Ok(DatapathControlProgress::More);
         }
         if let ConnectedRxControlEvent::ProbeResponse = event {
-            self.beacon_probe_attempts = 0;
             if let Some(monitor) = &mut self.beacon_monitor {
-                monitor.observe_reachability(tx.now())?;
+                monitor.observe_probe_response(tx.now())?;
                 self.trace_beacon_monitor(BeaconMonitorOp::ProbeAnswered);
             }
             return Ok(DatapathControlProgress::More);
@@ -1780,6 +1784,7 @@ impl ConnectedControlCore {
         &mut self,
         hardware: &mut H,
         tx: &mut X,
+        directed: bool,
     ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, ConnectedControlError>
     where
         H: ConnectedControlHardware,
@@ -1788,10 +1793,9 @@ impl ConnectedControlCore {
         self.beacon_monitor
             .as_mut()
             .expect("beacon probes require an enabled beacon monitor")
-            .wait_for_reachability(tx.now(), BEACON_PROBE_INTERVAL)?;
+            .probe_sent(tx.now())?;
         self.trace_beacon_monitor(BeaconMonitorOp::ProbeStarted);
-        let progress = tx.start_beacon_probe(hardware)?;
-        self.beacon_probe_attempts += 1;
+        let progress = tx.start_beacon_probe(hardware, directed)?;
         self.in_flight = Some(ControlInFlight::BeaconProbe);
         Ok(progress)
     }
@@ -1800,7 +1804,7 @@ impl ConnectedControlCore {
         let deadline = self
             .beacon_monitor
             .as_ref()
-            .and_then(StaBeaconMonitor::deadline)
+            .and_then(StaLinkMonitor::deadline)
             .map_or(0, oer_time::Instant::as_micros);
         oer_trace::emit(&BeaconMonitorTrace {
             op,
@@ -1836,7 +1840,6 @@ impl ConnectedControlCore {
                 hardware.set_he_tid_enabled(tid, false)?;
             }
         }
-        self.beacon_probe_attempts = 0;
         self.beacon_lost = true;
         self.trace_beacon_monitor(BeaconMonitorOp::Lost);
         Ok(DatapathControlProgress::Exit(

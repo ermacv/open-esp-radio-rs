@@ -1059,7 +1059,9 @@ where
         result
     }
 
-    /// Encode and publish one directed AP reachability Probe Request.
+    /// Encode and publish one AP reachability Probe Request: to the access
+    /// point's address when `directed`, to the broadcast address otherwise
+    /// (as the destination and the BSSID).
     ///
     /// TX completion is not reachability evidence: connected control waits
     /// for a BSSID-validated Probe Response or beacon before cancelling its
@@ -1067,6 +1069,7 @@ where
     pub fn start_beacon_probe<H: TxHardware>(
         &mut self,
         hardware: &mut H,
+        directed: bool,
     ) -> Result<WifiTxProgress, SingleMpduTxError> {
         const BASIC_RATES: &[u8] = &[0x82, 0x84, 0x8b, 0x96];
 
@@ -1076,10 +1079,15 @@ where
         let sequence_number = self.sequences.take_non_qos();
         let frame_length = {
             let buffer = self.ordinary.buffer_mut()?;
+            let address = if directed {
+                self.config.bssid
+            } else {
+                [0xff; 6]
+            };
             ProbeRequest {
-                destination: self.config.bssid,
+                destination: address,
                 source: self.config.station_address,
-                bssid: self.config.bssid,
+                bssid: address,
                 sequence_number,
                 ssid: b"",
                 supported_rates: BASIC_RATES,

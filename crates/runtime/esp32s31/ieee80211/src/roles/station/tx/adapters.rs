@@ -79,11 +79,12 @@ impl<
     fn start_beacon_probe<H: oer_esp32s31_ieee80211_mac::tx::TxHardware>(
         &mut self,
         hardware: &mut H,
+        directed: bool,
     ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
         if self.active() {
             return Err(SingleMpduTxError::Busy);
         }
-        self.ordinary.start_beacon_probe(hardware)?;
+        self.ordinary.start_beacon_probe(hardware, directed)?;
         self.active = ConnectedTxActive::Ordinary;
         Ok(DatapathControlProgress::TxPending)
     }

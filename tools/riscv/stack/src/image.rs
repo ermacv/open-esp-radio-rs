@@ -128,16 +128,19 @@ pub fn functions(elf: &[u8]) -> Result<Vec<Function>> {
     Ok(functions)
 }
 
-/// The little-endian word at `address` of an allocated, unwritable section
-/// with file contents, such as `.rodata`.
+/// The little-endian word at `address` of an allocated section with file
+/// contents that is neither writable nor executable, such as `.rodata`: code
+/// loaded into RAM may hold tables the program rewrites, such as a vector
+/// table in an `AX` section.
 pub(crate) fn read_only_word(file: &object::File<'_>, address: u32) -> Option<u32> {
-    use object::elf::{SHF_ALLOC, SHF_WRITE};
+    use object::elf::{SHF_ALLOC, SHF_EXECINSTR, SHF_WRITE};
     let address = u64::from(address);
     file.sections().find_map(|section| {
         let object::SectionFlags::Elf { sh_flags } = section.flags() else {
             return None;
         };
-        let readonly = sh_flags & u64::from(SHF_ALLOC) != 0 && sh_flags & u64::from(SHF_WRITE) == 0;
+        let readonly =
+            sh_flags & u64::from(SHF_ALLOC | SHF_WRITE | SHF_EXECINSTR) == u64::from(SHF_ALLOC);
         if !readonly
             || address < section.address()
             || address + 4 > section.address() + section.size()

@@ -235,7 +235,12 @@ impl ImageMemory for ProgramView<'_> {
         let address = u64::from(address);
         for segment in &self.segments {
             c.checkpoint(1)?;
-            if segment.flags & (object::elf::PF_R | object::elf::PF_W) != object::elf::PF_R
+            // Only a readable segment that is neither writable nor executable
+            // holds constants: code loaded into RAM may carry tables the
+            // program rewrites, such as a vector table in an `AX` section,
+            // whose file bytes are only the initial contents.
+            if segment.flags & (object::elf::PF_R | object::elf::PF_W | object::elf::PF_X)
+                != object::elf::PF_R
                 || address < segment.address
             {
                 continue;
@@ -545,6 +550,11 @@ mod tests {
     /// and a writable PROGBITS section at `section_address` whose four bytes
     /// the file carries at offset 84.
     fn elf(section_address: u32) -> Vec<u8> {
+        segment_elf(section_address, 0, 6)
+    }
+    /// `elf`, its load segment carrying `file_size` bytes from offset 84 and
+    /// the ELF permissions `flags`.
+    fn segment_elf(section_address: u32, file_size: u32, flags: u32) -> Vec<u8> {
         let mut b = vec![0x7f, b'E', b'L', b'F', 1, 1, 1, 0];
         b.resize(16, 0);
         put16(&mut b, 2); // ET_EXEC
@@ -560,8 +570,8 @@ mod tests {
         put16(&mut b, 40);
         put16(&mut b, 3);
         put16(&mut b, 2);
-        // PT_LOAD RW, no file bytes, 16 bytes of memory.
-        for v in [1, 84, 0x2000, 0x2000, 0, 16, 6, 4] {
+        // PT_LOAD, 16 bytes of memory.
+        for v in [1, 84, 0x2000, 0x2000, file_size, 16, flags, 4] {
             put32(&mut b, v);
         }
         b.extend_from_slice(&[0x11, 0x22, 0x33, 0x44]); // offset 84
@@ -595,5 +605,25 @@ mod tests {
         );
         // Outside every zero-filled range, boot data is not mapped at all.
         assert_eq!(load(elf(0x3000)).unwrap(), [(0x2000, vec![])]);
+    }
+    #[test]
+    fn constants_come_only_from_segments_neither_writable_nor_executable() {
+        let constant = |flags| {
+            let bytes = segment_elf(0x3000, 4, flags);
+            let file = object::File::parse(bytes.as_slice()).unwrap();
+            let memory = WorkingMemory::new(1 << 20).unwrap();
+            let view = ProgramView::new(&bytes, &file, &memory, &mut || Ok(())).unwrap();
+            let mut word = [0; 4];
+            let known = view
+                .read_constant(0x2000, &mut word, &mut || Ok(()))
+                .unwrap();
+            known.then_some(word)
+        };
+        let (r, w, x) = (object::elf::PF_R, object::elf::PF_W, object::elf::PF_X);
+        assert_eq!(constant(r), Some([0x11, 0x22, 0x33, 0x44]));
+        assert_eq!(constant(r | w), None);
+        // A vector table in RAM code: the program rewrites what the file
+        // carries as its initial contents.
+        assert_eq!(constant(r | x), None);
     }
 }

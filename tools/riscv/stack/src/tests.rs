@@ -774,3 +774,20 @@ fn the_platform_rom_summaries_parse() {
     let summaries = parse_summaries(text).unwrap();
     assert!(summaries.iter().any(|s| s.name == "memset"));
 }
+
+#[test]
+fn only_data_neither_writable_nor_executable_reads_as_constant() {
+    let elf = image(
+        &[Symbol {
+            name: "f",
+            words: vec![RET],
+            frame: Some(0),
+        }],
+        &[0x1234_5678],
+        true,
+    );
+    let file = object::File::parse(elf.as_slice()).unwrap();
+    assert_eq!(image::read_only_word(&file, RODATA), Some(0x1234_5678));
+    // Code loaded into RAM may hold a table the program rewrites.
+    assert_eq!(image::read_only_word(&file, TEXT), None);
+}

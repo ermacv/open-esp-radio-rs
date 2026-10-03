@@ -32,7 +32,6 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use critical_section::Mutex;
 use esp_hal::{
     Blocking,
-    interrupt::Priority,
     time::Duration,
     timer::{PeriodicTimer, systimer::Alarm},
 };
@@ -133,10 +132,13 @@ pub(crate) fn heartbeat(executor: Executor) {
     HEARTBEATS[executor as usize].fetch_add(1, Ordering::Relaxed);
 }
 
-/// Start the watchdog on SYSTIMER alarm 0; its interrupt runs on this core.
-pub(super) fn start(alarm: Alarm<'static>) {
+/// Start the watchdog on SYSTIMER alarm 0; `token` is its source's, whose
+/// table entry names [`check`] on this core.
+pub(super) fn start(alarm: Alarm<'static>, token: crate::HangWatchdogCheck) {
     let mut periodic = PeriodicTimer::new(alarm);
-    periodic.set_interrupt_handler(check);
+    if let Err(error) = oer_esp32s31_soc_esp_hal::interrupt_table::enable(&token) {
+        panic!("hang watchdog alarm: {error:?}");
+    }
     periodic
         .start(Duration::from_millis(CHECK_PERIOD_MILLIS))
         .expect("the watchdog period fits the timer");
@@ -144,11 +146,13 @@ pub(super) fn start(alarm: Alarm<'static>) {
     critical_section::with(|cs| TIMER.borrow_ref_mut(cs).replace(periodic));
 }
 
-/// Bind the sampling interrupt on core 1; call on core 1 before its
-/// executor enables interrupts.
-pub(super) fn bind_core1_sampler() {
-    let mut interrupt = crate::software_interrupt::hang_watchdog();
-    interrupt.set_interrupt_handler(sample_core1);
+/// Enable the sampling interrupt on core 1; call on core 1 before its
+/// executor enables interrupts. `token` is its source's, whose table entry
+/// names [`sample_core1`] on core 1.
+pub(super) fn enable_core1_sampler(token: crate::HangWatchdogSample) {
+    if let Err(error) = oer_esp32s31_soc_esp_hal::interrupt_table::enable(&token) {
+        panic!("hang watchdog core 1 sampler: {error:?}");
+    }
 }
 
 fn raise_core1_sample() {
@@ -187,13 +191,13 @@ fn hart(responded: bool, [mepc, ra, sp, mcause, mstatus]: [u32; 5]) -> HartState
     }
 }
 
-#[esp_hal::handler(priority = Priority::max())]
+/// An interrupt-table handler of the image.
 #[allow(
     unsafe_code,
-    reason = "esp-hal requires an unsafe link_section attribute for an IRAM ISR declaration"
+    reason = "an interrupt handler runs from SRAM, which only a link section selects"
 )]
 #[unsafe(link_section = ".rwtext.open_radio_irq")]
-fn sample_core1() {
+pub(crate) fn sample_core1() {
     crate::software_interrupt::hang_watchdog().reset();
     for (slot, value) in CORE1_CONTEXT.iter().zip(interrupted()) {
         slot.store(value, Ordering::Relaxed);
@@ -201,13 +205,13 @@ fn sample_core1() {
     CORE1_RESPONSES.fetch_add(1, Ordering::Release);
 }
 
-#[esp_hal::handler(priority = Priority::max())]
+/// An interrupt-table handler of the image.
 #[allow(
     unsafe_code,
-    reason = "esp-hal requires an unsafe link_section attribute for an IRAM ISR declaration"
+    reason = "an interrupt handler runs from SRAM, which only a link section selects"
 )]
 #[unsafe(link_section = ".rwtext.open_radio_irq")]
-fn check() {
+pub(crate) fn check() {
     critical_section::with(|cs| {
         if let Some(timer) = TIMER.borrow_ref_mut(cs).as_mut() {
             timer.clear_interrupt();

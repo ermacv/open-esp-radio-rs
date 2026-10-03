@@ -791,3 +791,126 @@ fn only_data_neither_writable_nor_executable_reads_as_constant() {
     // Code loaded into RAM may hold a table the program rewrites.
     assert_eq!(image::read_only_word(&file, TEXT), None);
 }
+
+/// The platform's interrupt entry up to its handler call
+/// (`platform/esp32s31/runtime/src/stacks.rs`, `PSRAM_TRAP_ENTER`).
+const PLATFORM_ENTRY: [u32; 35] = [
+    0x3401_1173,
+    0x3402_92f3,
+    0x0251_6063,
+    0x0051_4133,
+    0x0051_42b3,
+    0x0051_4133,
+    0xfb01_0113,
+    0x0061_2423,
+    0x0401_2023,
+    0x0140_006f,
+    0xfb01_0113,
+    0x0061_2423,
+    0x0010_0313,
+    0x0461_2023,
+    0x0011_2023,
+    0x3400_2373,
+    0x0061_2223,
+    0x0071_2623,
+    0x01c1_2823,
+    0x01d1_2a23,
+    0x01e1_2c23,
+    0x01f1_2e23,
+    0x02a1_2023,
+    0x02b1_2223,
+    0x02c1_2423,
+    0x02d1_2623,
+    0x02e1_2823,
+    0x02f1_2a23,
+    0x0301_2c23,
+    0x0311_2e23,
+    0x3000_2373,
+    0x0461_2223,
+    0x0000_6337,
+    0x3003_3073,
+    0x3402_9073,
+];
+
+/// `entry` words, then `la a0, handler; j dispatch`, a `dispatch` that
+/// calls `a0` and a `handler` that returns.
+fn trap_image(entry: &[u32]) -> (Vec<u8>, u32) {
+    let auipc = TEXT + 4 * entry.len() as u32;
+    let dispatch = auipc + 12;
+    let handler = dispatch + 4;
+    let mut words = entry.to_vec();
+    words.push(0x0000_0517); // auipc a0, 0
+    words.push(((handler - auipc) << 20) | (10 << 15) | (10 << 7) | 0x13); // addi a0, a0
+    words.push(call(auipc + 8, dispatch) - (1 << 7)); // jal zero, dispatch
+    let elf = executable(&[
+        Symbol {
+            name: "entry",
+            words,
+            frame: None,
+        },
+        Symbol {
+            name: "dispatch",
+            words: vec![0x0005_00e7], // jalr ra, 0(a0)
+            frame: None,
+        },
+        Symbol {
+            name: "handler",
+            words: vec![RET],
+            frame: Some(0),
+        },
+    ]);
+    (elf, handler)
+}
+
+#[test]
+fn the_platform_trap_entry_keeps_its_frame_on_the_interrupt_stack() {
+    let (elf, handler) = trap_image(&PLATFORM_ENTRY);
+    let functions = functions(&elf).unwrap();
+    assert_eq!(
+        trap_entry(&elf, &functions, TEXT).unwrap(),
+        TrapEntry {
+            entry: TEXT,
+            frame: 80,
+            handler,
+        }
+    );
+}
+
+#[test]
+fn a_trap_entry_must_move_sp_before_its_first_memory_access() {
+    let mut entry = vec![0x0011_2023]; // sw ra, 0(sp)
+    entry.extend(PLATFORM_ENTRY);
+    let (elf, _) = trap_image(&entry);
+    let functions = functions(&elf).unwrap();
+    let error = trap_entry(&elf, &functions, TEXT).unwrap_err();
+    assert!(error.message.contains("outside its frame"), "{error:?}");
+}
+
+#[test]
+fn a_trap_entry_learns_the_interrupt_stack_only_from_comparing_both_stacks() {
+    // csrrw sp, mscratch, sp; addi sp, sp, -16; sw ra, 0(sp): mscratch may
+    // hold the interrupted task's sp in a nested trap.
+    let (elf, _) = trap_image(&[0x3401_1173, SP_DOWN_16, 0x0011_2023]);
+    let functions = functions(&elf).unwrap();
+    assert!(trap_entry(&elf, &functions, TEXT).is_err());
+}
+
+#[test]
+fn a_vector_table_names_its_entries_by_relocations() {
+    let elf = placed(
+        TEXT,
+        &[Symbol {
+            name: "f",
+            words: vec![RET],
+            frame: Some(0),
+        }],
+        &[TEXT, TEXT],
+        true,
+        true,
+    );
+    assert_eq!(
+        vector_table(&elf, "table").unwrap(),
+        [Some(TEXT), Some(TEXT)]
+    );
+    assert!(vector_table(&elf, "missing").is_err());
+}

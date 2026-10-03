@@ -68,6 +68,20 @@ indirect tail calls through a pointer, transfers outside the image (ROM) or into
 a function's middle, functions without a frame, and recursion. The partial
 path over what is resolved is diagnostic, never a bound.
 
+Traps run on the hart's interrupt stack. `vector_table` reads a vector
+table's entries from the words its relocations name (an empty slot holds
+zero), and `trap_entry` checks one entry by executing it symbolically on every
+path to the call of its handler: the trap arrives with the interrupted `sp`
+and `mscratch`, the other stack (the interrupt stack's top in thread mode, the
+task's `sp` inside a trap), and the interrupt stack (SRAM) lies below every
+task stack (PSRAM). Each memory access must address the entry's frame below
+the lower of the two, which the entry may learn only from an unsigned
+comparison of both (a register swap through three `xor`s keeps the values
+apart); an access before that, an unknown transfer or different handlers on
+different paths fail. `TrapEntry::frame` is the deepest `sp` below the
+interrupt stack's position at the handler call: what every nesting level adds
+beside its handler's bound.
+
 ```console
 cargo test -p oer-riscv-stack
 ```

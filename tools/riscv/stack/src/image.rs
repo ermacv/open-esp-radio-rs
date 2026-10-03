@@ -36,7 +36,7 @@ fn invalid(message: impl Into<String>) -> Error {
     Error::new(ErrorCode::Integrity, message)
 }
 
-fn parse(elf: &[u8]) -> Result<object::File<'_>> {
+pub(crate) fn parse(elf: &[u8]) -> Result<object::File<'_>> {
     let file = object::File::parse(elf).map_err(|_| invalid("invalid ELF"))?;
     if file.kind() != object::ObjectKind::Executable
         || file.architecture() != object::Architecture::Riscv32

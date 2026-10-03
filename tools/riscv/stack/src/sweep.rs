@@ -128,6 +128,11 @@ fn write(instruction: &Instruction) -> Option<(u8, Write)> {
     }
 }
 
+/// The integer register `instruction` writes.
+pub(crate) fn destination(instruction: &Instruction) -> Option<u8> {
+    write(instruction).map(|(register, _)| register)
+}
+
 /// Table lengths beyond this are not taken from a bound.
 const MAX_ENTRIES: u32 = 4096;
 

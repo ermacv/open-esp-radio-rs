@@ -74,6 +74,7 @@
     "system/memory-benchmark": true,
     "system/timebase": true,
     "system/ipc-call": true,
+    "system/interrupt-table": true,
     "ieee802154/event-status": false,
     "ieee802154/ed-event": true,
     "ieee802154/air-check": true,

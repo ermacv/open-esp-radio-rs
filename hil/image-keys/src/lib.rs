@@ -128,6 +128,10 @@ pub fn image_keys(enabled: &dyn Fn(&str) -> bool) -> ImageKeys {
     add(telemetry::MacIrq::KEY, enabled("mac-irq-telemetry"));
     add(system::TimebaseProbe::KEY, true);
     add(system::IpcCall::KEY, enabled("open-radio-hil"));
+    add(
+        system::SourceGate::KEY,
+        enabled("open-radio-hil") && traffic,
+    );
     add(system::MemoryBenchmark::KEY, !traffic);
     add(
         ieee802154::EventStatusProbe::KEY,

@@ -11,6 +11,8 @@ For each entry the macro defines:
 - the source's strong handler symbol, named as the source, which the chip's
   vector slot of the source links to: a second handler for one source fails
   the link;
+- `__oer_interrupt_body_<SOURCE>`, a word holding the handler function's
+  address, for the tools that check where the handler lies;
 - a token type, neither `Copy` nor `Clone`, which `Interrupts::take` hands out
   once per image. `enable` and `disable` take only a token; `enable` routes
   the source to the table's level on the table's core and fails on another
@@ -18,7 +20,11 @@ For each entry the macro defines:
   `unsafe` trait and the token's constructor an `unsafe fn`: only the macro
   creates a token;
 - with `#[cfg(...)]` before its doc comment, nothing at all in a build that
-  leaves the entry out: its table element is `None`.
+  leaves the entry out: its table element has no handler (a zero word).
+
+The table is `INTERRUPT_TABLE`, a slice of `#[repr(C)]` bindings exported as
+`__OER_INTERRUPT_TABLE` for the tools that read the image; the image hands it
+to its platform's runtime as a typed value.
 
 `install` silences every source of the current core's entries and checks each
 vector slot against the table; `verify` checks again that every slot holds its

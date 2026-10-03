@@ -15,6 +15,7 @@ Claude Code agents do almost all the work; the owner sets the tasks.
 - **Generated files.** Never read the raw PACs, `pac/src/generated.rs`, published SVD/bindings or `verification/*/facts` TOML: grep them with an explicit path (tree-wide searches skip them through `.ignore`). Regenerate, never hand-edit.
 - **Sources.** Never commit vendor binaries, disassembly dumps, credentials, unreviewed extraction artifacts or anything from `_oracles/`. Recovered tables and coefficients belong in production source with their provenance: [source policy](docs/source-policy.md#recovered-tables-and-coefficients).
 - **Docs current.** Update the owning README or rustdoc in the same change ([documentation policy](docs/documentation.md)). Never add audit reports, work plans, migration histories, experiment diaries or test-run summaries; generated reports stay in ignored outputs.
+- **Block knowledge.** A non-obvious fact about a block found during a task (an invariant, a trap, where a value really comes from) goes into that block's guide skill or owning README in the same PR.
 - Preserve unrelated changes in an already-dirty worktree.
 
 ## Gate, push, commit
@@ -43,3 +44,9 @@ Each directory's `CLAUDE.md` holds its layout, local rules and commands.
 Task workflows live in `.claude/skills/`: `protocol-change`,
 `driver-or-hardware-change`, `new-package`, `qualification-entry`,
 `vendor-evidence`, `hil-run` and `push-and-ci`.
+
+One task is one session and one PR. A block guide skill (`block-wifi`) maps
+a block's packages across layers, its shared contracts, traps and checks; the
+agent profile of the same name in `.claude/agents/` starts a session with it
+(`@block-wifi` in agent view, `claude --agent block-wifi`). A shared
+contract does not change while a block that depends on it has work in flight.

@@ -20,7 +20,7 @@ changes.
 | Owner-specific ignored output directories | Generated API docs, run reports, measurements and verification output |
 | `docs/book.toml` and `docs/SUMMARY.md` | mdBook configuration and guide order; documents elsewhere remain with their owners |
 | Root and directory `CLAUDE.md` | Agent rules and navigation: always-relevant rules at the root; a directory's layout, local rules and commands; links to the owner documents instead of restating them |
-| `.claude/` | Claude Code task skills (checklists that link to owner sections), shared permissions and the hooks that enforce agent rules |
+| `.claude/` | Claude Code task skills (checklists that link to owner sections), block guide skills (a block's packages, shared contracts, traps and checks), frontmatter-only agent profiles in `agents/` that start a session with a block guide, shared permissions and the hooks that enforce agent rules |
 
 The documentation tree follows code ownership. A subsystem's detailed contract
 has one canonical location; other documents link to it. Root navigation does

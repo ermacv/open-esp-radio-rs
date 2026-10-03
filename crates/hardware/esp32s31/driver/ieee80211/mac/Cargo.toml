@@ -18,6 +18,7 @@ validation-probes = ["oer-esp32s31-hal/validation-probes"]
 trace = ["oer-trace/record"]
 
 [dependencies]
+bytemuck = { version = "1.25.2", default-features = false, features = ["derive", "min_const_generics", "zeroable_atomics", "zeroable_maybe_uninit"] }
 oer-time = { path = "../../../../../time" }
 oer-memory = { path = "../../../../../memory" }
 oer-esp32s31-hal = { path = "../../../hal" }

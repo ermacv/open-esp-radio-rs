@@ -222,7 +222,11 @@ fn ampdu_frame_layout_rejects_unaligned_dma_prefix() {
 fn retained_dma_owner_cancels_reserved_storage_before_releasing_backing() {
     let storage = HtAmpduTxStorage::<2, 0>::new();
     let mut storage = core::pin::pin!(storage);
-    let pool = PinnedDmaTxPool::<256, 0, 0, 1>::new();
+    let pool: &PinnedDmaTxPool<256, 0, 0, 1> = PinnedDmaTxPool::pin_static(std::boxed::Box::leak(
+        std::boxed::Box::new(PinnedDmaTxPool::new()),
+    ))
+    .into_ref()
+    .get_ref();
     let network = pool.claim_network(0);
     let (index, ()) = network.publish(TX_AMPDU_METADATA_SIZE + 32, |bytes| {
         bytes[TX_AMPDU_METADATA_SIZE..TX_AMPDU_METADATA_SIZE + 32].fill(0x5a);
@@ -261,7 +265,11 @@ fn retained_dma_owner_cancels_reserved_storage_before_releasing_backing() {
 fn rejected_referenced_commit_rolls_back_the_lower_lease() {
     let storage = HtAmpduTxStorage::<2, 0>::new();
     let mut storage = core::pin::pin!(storage);
-    let pool = PinnedDmaTxPool::<256, 0, 0, 1>::new();
+    let pool: &PinnedDmaTxPool<256, 0, 0, 1> = PinnedDmaTxPool::pin_static(std::boxed::Box::leak(
+        std::boxed::Box::new(PinnedDmaTxPool::new()),
+    ))
+    .into_ref()
+    .get_ref();
     let network = pool.claim_network(0);
     let (index, ()) = network.publish(TX_AMPDU_METADATA_SIZE + 32, |_| {});
     let backing = pool.claim_radio(index);
@@ -299,7 +307,11 @@ fn rejected_referenced_commit_rolls_back_the_lower_lease() {
 fn retained_dma_owner_quarantines_hardware_owned_backing_without_drop_panic() {
     let storage = HtAmpduTxStorage::<2, 0>::new();
     let mut storage = core::pin::pin!(storage);
-    let pool = PinnedDmaTxPool::<256, 0, 0, 1>::new();
+    let pool: &PinnedDmaTxPool<256, 0, 0, 1> = PinnedDmaTxPool::pin_static(std::boxed::Box::leak(
+        std::boxed::Box::new(PinnedDmaTxPool::new()),
+    ))
+    .into_ref()
+    .get_ref();
     let network = pool.claim_network(0);
     let (index, ()) = network.publish(TX_AMPDU_METADATA_SIZE + 32, |bytes| {
         bytes[TX_AMPDU_METADATA_SIZE..TX_AMPDU_METADATA_SIZE + 32].fill(0x5a);
@@ -342,7 +354,11 @@ fn retained_dma_owner_quarantines_hardware_owned_backing_without_drop_panic() {
 fn retained_abort_releases_backing_only_after_successful_detach() {
     for detach_failed in [false, true] {
         let mut storage = core::pin::pin!(HtAmpduTxStorage::<2, 0>::new());
-        let pool = PinnedDmaTxPool::<256, 0, 0, 1>::new();
+        let pool: &PinnedDmaTxPool<256, 0, 0, 1> = PinnedDmaTxPool::pin_static(
+            std::boxed::Box::leak(std::boxed::Box::new(PinnedDmaTxPool::new())),
+        )
+        .into_ref()
+        .get_ref();
         let (index, ()) = pool
             .claim_network(0)
             .publish(TX_AMPDU_METADATA_SIZE + 32, |_| {});
@@ -402,7 +418,11 @@ fn retained_abort_releases_backing_only_after_successful_detach() {
 fn retained_dma_owner_preserves_backing_identity_through_selective_retry() {
     let storage = HtAmpduTxStorage::<4, 0>::new();
     let mut storage = core::pin::pin!(storage);
-    let pool = PinnedDmaTxPool::<256, 0, 0, 4>::new();
+    let pool: &PinnedDmaTxPool<256, 0, 0, 4> = PinnedDmaTxPool::pin_static(std::boxed::Box::leak(
+        std::boxed::Box::new(PinnedDmaTxPool::new()),
+    ))
+    .into_ref()
+    .get_ref();
     let rate = HtRate::new(
         crate::tx::HtMcs::Mcs0,
         crate::tx::HtGuardInterval::Long800Ns,

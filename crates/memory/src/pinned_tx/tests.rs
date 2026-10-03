@@ -29,6 +29,12 @@ impl DmaIndexReturn for ReturnProbe<'_> {
     }
 }
 
+/// A pool as production holds it: zeroed static storage, pinned.
+fn pinned_pool() -> &'static TestPool {
+    let pool = Box::leak(Box::new(crate::zeroed::zeroed::<TestPool>()));
+    TestPool::pin_static(pool).into_ref().get_ref()
+}
+
 fn prepared_radio(pool: &TestPool) -> PinnedDmaTxRadioLease<'_, 32, 8, 4> {
     let network = pool.claim_network(0);
     let (index, ()) = network.publish(4, |frame| frame.copy_from_slice(&[1, 2, 3, 4]));
@@ -37,10 +43,10 @@ fn prepared_radio(pool: &TestPool) -> PinnedDmaTxRadioLease<'_, 32, 8, 4> {
 
 #[test]
 fn dropped_stage_leases_restore_the_slot() {
-    let pool = TestPool::new();
+    let pool = pinned_pool();
     drop(pool.claim_network(0));
 
-    let radio = prepared_radio(&pool);
+    let radio = prepared_radio(pool);
     assert_eq!(radio.ethernet(), &[1, 2, 3, 4]);
     drop(radio);
 
@@ -61,7 +67,7 @@ fn radio_backing_runs_target_prepare_only_at_dma_publication_edge() {
 
 #[test]
 fn failed_transactional_writer_never_publishes_the_slot() {
-    let pool = TestPool::new();
+    let pool = pinned_pool();
     let lease = pool.claim_network(0);
     let (lease, error) = lease
         .try_publish(4, |frame| {
@@ -76,12 +82,12 @@ fn failed_transactional_writer_never_publishes_the_slot() {
 
 #[test]
 fn returning_backing_releases_before_publishing_its_index() {
-    let pool = TestPool::new();
+    let pool = pinned_pool();
     let returned = Cell::new(None);
     let backing = ReturningStableDmaBacking::new(
-        prepared_radio(&pool),
+        prepared_radio(pool),
         ReturnProbe {
-            pool: &pool,
+            pool,
             returned: &returned,
         },
     );
@@ -94,12 +100,12 @@ fn returning_backing_releases_before_publishing_its_index() {
 
 #[test]
 fn forgotten_backing_remains_quarantined() {
-    let pool = TestPool::new();
+    let pool = pinned_pool();
     let returned = Cell::new(None);
     let backing = ReturningStableDmaBacking::new(
-        prepared_radio(&pool),
+        prepared_radio(pool),
         ReturnProbe {
-            pool: &pool,
+            pool,
             returned: &returned,
         },
     );
@@ -120,4 +126,31 @@ fn explicit_pool_audit_checks_quarantined_slots() {
     // changing the otherwise CPU-read-only guard.
     pool.slots[1].dma_overrun_guard.get_mut()[7] = 0;
     let _ = pool.claimed_slots();
+}
+
+#[test]
+fn a_zeroed_pool_is_the_free_coherent_pool_new_builds() {
+    let pool = pinned_pool();
+    for slot in &pool.slots {
+        assert_eq!(slot.state.load(Ordering::Acquire), SLOT_FREE);
+        assert_eq!(slot.length.load(Ordering::Acquire), 0);
+    }
+    // No prepare hook is coherent memory: the bytes stay as written.
+    let mut radio = prepared_radio(pool);
+    StableDmaBacking::prepare_for_dma_read(&mut radio);
+    assert_eq!(radio.ethernet(), &[1, 2, 3, 4]);
+}
+
+#[test]
+#[should_panic(expected = "crossed its backing boundary")]
+fn pinning_installs_the_guard_a_dma_overrun_breaks() {
+    let pool = pinned_pool();
+    let radio = prepared_radio(pool);
+    #[allow(unsafe_code, reason = "simulated DMA overrun")]
+    // SAFETY: the test plays the DMA actor that overruns the backing; no
+    // lease reads the guard concurrently.
+    unsafe {
+        (*pool.slots[0].dma_overrun_guard.get())[0] = 0;
+    }
+    drop(radio);
 }

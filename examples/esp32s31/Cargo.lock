@@ -232,6 +232,20 @@ name = "bytemuck"
 version = "1.25.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95832e849adfb21180ccb6826a99da14e5d266ae5c2e668e1602cf234f153797"
+dependencies = [
+ "bytemuck_derive",
+]
+
+[[package]]
+name = "bytemuck_derive"
+version = "1.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a1f896587b6f2c069c73d2f0913e2d590c3990285cd2f0b6aa02b786b4c679c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
+]
 
 [[package]]
 name = "byteorder"
@@ -1778,6 +1792,7 @@ dependencies = [
 name = "oer-esp32s31-ieee80211-dma"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "oer-esp32s31-hal",
  "oer-memory",
  "pin-project",
@@ -1800,6 +1815,7 @@ dependencies = [
 name = "oer-esp32s31-ieee80211-mac"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "oer-esp32s31-hal",
  "oer-esp32s31-ieee80211-dma",
  "oer-espressif-ieee80211-policy",
@@ -1873,6 +1889,7 @@ dependencies = [
 name = "oer-esp32s31-ieee80211-system"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "embassy-executor",
  "embassy-futures",
  "embassy-net",
@@ -1900,6 +1917,7 @@ dependencies = [
  "oer-ieee80211-runtime",
  "oer-ieee80211-softmac",
  "oer-ieee80211-sta",
+ "oer-memory",
  "oer-network-interface",
  "oer-radio",
  "oer-radio-embassy",
@@ -2263,6 +2281,9 @@ dependencies = [
 [[package]]
 name = "oer-memory"
 version = "0.1.0"
+dependencies = [
+ "bytemuck",
+]
 
 [[package]]
 name = "oer-network-interface"

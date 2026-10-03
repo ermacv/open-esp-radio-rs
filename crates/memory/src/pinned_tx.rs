@@ -25,6 +25,13 @@ struct PinnedTxBytes<const FRAME_CAPACITY: usize, const HEADROOM: usize, const T
     trailer: [u8; TRAILER],
 }
 
+#[allow(unsafe_code, reason = "byte arrays are zero-valid")]
+// SAFETY: three `u8` arrays.
+unsafe impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
+    bytemuck::Zeroable for PinnedTxBytes<FRAME_CAPACITY, HEADROOM, TRAILER>
+{
+}
+
 impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
     PinnedTxBytes<FRAME_CAPACITY, HEADROOM, TRAILER>
 {
@@ -49,16 +56,25 @@ struct PinnedTxSlot<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TR
     state: AtomicU8,
 }
 
+#[allow(unsafe_code, reason = "a free slot is zero bytes")]
+// SAFETY: zero-valid cells of byte arrays, a zero length and state 0,
+// `SLOT_FREE`; the guard is installed by `pin_static`.
+unsafe impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
+    bytemuck::Zeroable for PinnedTxSlot<FRAME_CAPACITY, HEADROOM, TRAILER>
+{
+}
+
 impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
     PinnedTxSlot<FRAME_CAPACITY, HEADROOM, TRAILER>
 {
     const fn new() -> Self {
         Self {
             bytes: UnsafeCell::new(PinnedTxBytes::new()),
-            // DMA pools normally live in a zero-initialized linker section.
-            // `pin_static` installs the non-zero diagnostic marker before the
-            // allocation can be published to hardware.
-            dma_overrun_guard: UnsafeCell::new([DMA_OVERRUN_GUARD_BYTE; DMA_OVERRUN_GUARD_SIZE]),
+            // DMA pools live in a region the boot zeroes, so the pool starts
+            // as zero bytes (`Zeroable`); `pin_static` installs the non-zero
+            // diagnostic marker before the allocation can be published to
+            // hardware.
+            dma_overrun_guard: UnsafeCell::new([0; DMA_OVERRUN_GUARD_SIZE]),
             length: AtomicUsize::new(0),
             state: AtomicU8::new(SLOT_FREE),
         }
@@ -192,6 +208,12 @@ unsafe impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: u
 }
 
 /// Permanently located TX allocations exposed to radio DMA.
+///
+/// Its zero bytes are the free pool `new` builds: every slot free and empty,
+/// the guards not yet installed and no prepare hook (coherent memory). Use a
+/// pool only through [`Self::pin_static`], which installs the DMA overrun
+/// guards: a slot's first release from an unpinned pool fails its guard
+/// check.
 pub struct PinnedDmaTxPool<
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
@@ -199,11 +221,25 @@ pub struct PinnedDmaTxPool<
     const QUEUE_DEPTH: usize,
 > {
     slots: [PinnedTxSlot<FRAME_CAPACITY, HEADROOM, TRAILER>; QUEUE_DEPTH],
-    prepare_for_dma_read: fn(&mut [u8]),
+    /// The cache maintenance before a DMA reader receives a buffer; `None`
+    /// is coherent memory (`coherent_dma_read`), the zero value.
+    prepare_for_dma_read: Option<fn(&mut [u8])>,
     _pin: PhantomPinned,
 }
 
 fn coherent_dma_read(_: &mut [u8]) {}
+
+#[allow(unsafe_code, reason = "the free pool is zero bytes")]
+// SAFETY: free slots, a `None` prepare hook (the null niche of
+// `Option<fn>`, coherent memory) and a zero-sized pin marker.
+unsafe impl<
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> bytemuck::Zeroable for PinnedDmaTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+{
+}
 
 impl<
     const FRAME_CAPACITY: usize,
@@ -215,7 +251,7 @@ impl<
     pub const fn new() -> Self {
         Self {
             slots: [const { PinnedTxSlot::new() }; QUEUE_DEPTH],
-            prepare_for_dma_read: coherent_dma_read,
+            prepare_for_dma_read: None,
             _pin: PhantomPinned,
         }
     }
@@ -233,7 +269,7 @@ impl<
         for slot in &mut storage.slots {
             *slot.dma_overrun_guard.get_mut() = [DMA_OVERRUN_GUARD_BYTE; DMA_OVERRUN_GUARD_SIZE];
         }
-        storage.prepare_for_dma_read = prepare_for_dma_read;
+        storage.prepare_for_dma_read = Some(prepare_for_dma_read);
         Pin::static_mut(storage)
     }
 
@@ -303,7 +339,7 @@ impl<
             slot,
             index,
             live: true,
-            prepare_for_dma_read: self.prepare_for_dma_read,
+            prepare_for_dma_read: self.prepare_for_dma_read.unwrap_or(coherent_dma_read),
         }
     }
 

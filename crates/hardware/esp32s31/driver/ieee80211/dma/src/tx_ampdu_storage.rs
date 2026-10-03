@@ -14,7 +14,8 @@ use crate::descriptor::{
     BIT_30, DESCRIPTOR_BYTES, Descriptor, descriptor_address_valid, dma_range_valid, tx_owned_word,
 };
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, bytemuck::Zeroable)]
+#[repr(u8)]
 pub enum AmpduDmaState {
     #[default]
     Free,
@@ -106,10 +107,12 @@ impl AmpduExternalDescriptor<'_> {
 }
 
 #[repr(C, align(16))]
+#[derive(bytemuck::Zeroable)]
 struct AmpduDmaBuffer<const BUFFER_SIZE: usize>([u8; BUFFER_SIZE]);
 
 /// Final static allocation for an internal-buffer A-MPDU arena.
 #[pin_project]
+#[derive(bytemuck::Zeroable)]
 // CAPABILITY: rx-tx-dma
 pub struct AmpduDmaStorage<const SLOTS: usize, const BUFFER_SIZE: usize> {
     #[pin]

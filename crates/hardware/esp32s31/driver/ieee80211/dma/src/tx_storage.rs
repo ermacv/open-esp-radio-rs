@@ -16,7 +16,8 @@ use crate::descriptor::{
 };
 
 /// DMA-memory state independent of an EDCA queue or protocol cookie.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, bytemuck::Zeroable)]
+#[repr(u8)]
 pub enum TxDmaState {
     #[default]
     Free,
@@ -35,6 +36,7 @@ pub enum TxDmaStorageError {
 }
 
 #[repr(C, align(16))]
+#[derive(bytemuck::Zeroable)]
 struct TxDmaBuffer<const BUFFER_SIZE: usize>([u8; BUFFER_SIZE]);
 
 /// Final allocation containing one ordinary TX descriptor and source buffer.
@@ -50,6 +52,7 @@ struct TxDmaBuffer<const BUFFER_SIZE: usize>([u8; BUFFER_SIZE]);
     doc = "Consume the native model allocation through [`Self::pin_static_model`]."
 )]
 #[pin_project]
+#[derive(bytemuck::Zeroable)]
 pub struct TxDmaStorage<const BUFFER_SIZE: usize> {
     #[pin]
     descriptor: Descriptor,

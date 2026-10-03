@@ -16,7 +16,11 @@ fn exchange_byte_limit_stops_existing_builder_without_consuming_the_next_owner()
         .unwrap()
         .get();
     let mut storage = core::pin::pin!(HtAmpduTxStorage::<4, 0>::new());
-    let pool = PinnedDmaTxPool::<256, 0, 0, 4>::new();
+    let pool: &PinnedDmaTxPool<256, 0, 0, 4> = PinnedDmaTxPool::pin_static(std::boxed::Box::leak(
+        std::boxed::Box::new(PinnedDmaTxPool::new()),
+    ))
+    .into_ref()
+    .get_ref();
     let mut retention = RetainedAmpduDmaStorage::new();
     let mut owner = RetainedDmaAmpduTx::new_model(storage.as_mut(), &mut retention).unwrap();
     owner.configure_max_aggregate_bytes(limit).unwrap();

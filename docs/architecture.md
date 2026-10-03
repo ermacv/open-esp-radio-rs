@@ -426,6 +426,23 @@ compositions have separate validation requirements.
 compiled probes and native evidence index. Generic Blobray crates do not depend
 on a chip project; the scenarios depend on Blobray.
 
+## Statics in zeroed regions
+
+A board's runtime linker script places some input sections, by name, in
+`NOLOAD` regions the boot clears (`.critical.bss`, `.dma.bss`, `.psram.bss`,
+`.rtc_fast.bss` and the plain `.bss` family); the platform layout lists them
+in one place (`platform/esp32s31/layout/src/zeroed.rs`). No byte of such a
+section reaches the image, so a static placed there starts as zeros whatever
+its initializer says. A static in a zeroed region is declared only through
+`oer_memory::zeroed_static!`: its type implements `bytemuck::Zeroable`, the marker esp-hal's
+`#[ram(zeroed)]` requires (all-zero bytes are a valid value and mean its
+initial state, derived with `#[derive(bytemuck::Zeroable)]` from fields
+that are), and its initializer is `zeroed()`. A value with no zero representation is a
+`ZeroedStatic<MaybeUninit<T>>` written when its owner claims it. The image
+linker (`tools/image-linker`) checks every link input, vendor archives
+included: an input section bound for a zeroed region that holds a non-zero
+byte or a relocation fails the link.
+
 ## HIL and operating-system boundaries
 
 Every HIL package declares `package.metadata.open-radio.hil` as

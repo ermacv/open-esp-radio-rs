@@ -3,7 +3,11 @@ use super::*;
 #[test]
 fn rejected_publication_costs_nothing_and_abort_keeps_submitted_work() {
     let mut storage = core::pin::pin!(HtAmpduTxStorage::<2, 0>::new());
-    let pool = PinnedDmaTxPool::<256, 0, 0, 1>::new();
+    let pool: &PinnedDmaTxPool<256, 0, 0, 1> = PinnedDmaTxPool::pin_static(std::boxed::Box::leak(
+        std::boxed::Box::new(PinnedDmaTxPool::new()),
+    ))
+    .into_ref()
+    .get_ref();
     let (index, ()) = pool
         .claim_network(0)
         .publish(TX_AMPDU_METADATA_SIZE + 32, |_| {});

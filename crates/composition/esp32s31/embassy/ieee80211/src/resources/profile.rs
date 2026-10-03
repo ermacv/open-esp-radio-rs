@@ -6,7 +6,10 @@
 //! belongs in initialized PSRAM while DMA-visible and latency-critical state
 //! remains in SRAM.
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::{
+    mem::MaybeUninit,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
@@ -23,7 +26,8 @@ use oer_ieee80211_mac::{
     scan::ScanTable,
 };
 
-use static_cell::{ConstStaticCell, StaticCell};
+use oer_memory::zeroed::{ZeroedStatic, zeroed};
+use static_cell::StaticCell;
 
 /// Physical RX descriptor capacity. The upper zero-copy owner remains capped
 /// at 32, leaving 64 descriptors in the radio domain. A delayed masked-IRQ
@@ -158,25 +162,26 @@ impl Default for DefaultScanMemory {
 /// [`DefaultScanMemory`] in ordinary memory. [`Self::claim`] reserves
 /// both owners before exposing any field, so a conflicting claim cannot
 /// partially consume either arena.
+///
+/// A board places it in a region the boot zeroes, so it is `bytemuck::Zeroable`:
+/// the DMA arenas and frame buffers start as their zero state, and the
+/// role-control resources, whose signals have no zero representation, are
+/// written when [`Self::claim`] takes them.
+#[derive(bytemuck::Zeroable)]
+#[zeroable(bound = "")]
 pub struct DefaultWifiMemory<M: RawMutex> {
     claimed: AtomicBool,
-    rx_dma: ConstStaticCell<DefaultRxDmaStorage>,
-    tx_dma: ConstStaticCell<TxDmaStorage<ESP32S31_DEFAULT_TX_BUFFER_SIZE>>,
-    ap_beacon: ConstStaticCell<[u8; AP_BEACON_CAPACITY]>,
-    scan_frame: ConstStaticCell<[u8; ESP32S31_DEFAULT_SCAN_FRAME_CAPACITY]>,
-    station_control: ConstStaticCell<StationControlResources<M>>,
+    rx_dma: ZeroedStatic<DefaultRxDmaStorage>,
+    tx_dma: ZeroedStatic<TxDmaStorage<ESP32S31_DEFAULT_TX_BUFFER_SIZE>>,
+    ap_beacon: ZeroedStatic<[u8; AP_BEACON_CAPACITY]>,
+    scan_frame: ZeroedStatic<[u8; ESP32S31_DEFAULT_SCAN_FRAME_CAPACITY]>,
+    station_control: ZeroedStatic<MaybeUninit<StationControlResources<M>>>,
 }
 
 impl<M: RawMutex> DefaultWifiMemory<M> {
+    /// The unclaimed memory: all zero bytes.
     pub const fn new() -> Self {
-        Self {
-            claimed: AtomicBool::new(false),
-            rx_dma: ConstStaticCell::new(DefaultRxDmaStorage::new()),
-            tx_dma: ConstStaticCell::new(TxDmaStorage::new()),
-            ap_beacon: ConstStaticCell::new([0; AP_BEACON_CAPACITY]),
-            scan_frame: ConstStaticCell::new([0; ESP32S31_DEFAULT_SCAN_FRAME_CAPACITY]),
-            station_control: ConstStaticCell::new(StationControlResources::new()),
-        }
+        zeroed()
     }
 
     /// Acquire the complete initial station owner graph exactly once.
@@ -214,7 +219,7 @@ impl<M: RawMutex> DefaultWifiMemory<M> {
             scan_table: scan.table.init_with(ScanTable::new),
             ap_beacon: self.ap_beacon.take(),
             scan_frame: self.scan_frame.take(),
-            station_control: self.station_control.take(),
+            station_control: self.station_control.init(StationControlResources::new()),
         })
     }
 }

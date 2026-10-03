@@ -26,7 +26,18 @@ use crate::{
 };
 
 /// One aligned DMA-visible buffer with room for the hardware recycle guard.
+#[allow(
+    unsafe_code,
+    reason = "a descriptor's zero words are the empty descriptor"
+)]
+// SAFETY: `vcell::VolatileCell<u32>` is `repr(transparent)` over
+// `UnsafeCell<u32>`, so a descriptor's zero bytes are three zero words: the
+// empty, software-owned descriptor `Descriptor::new` builds. (`descriptor.rs`
+// forbids `unsafe`, and neither `vcell` nor `bytemuck` is ours.)
+unsafe impl bytemuck::Zeroable for crate::descriptor::Descriptor {}
+
 #[repr(C, align(4))]
+#[derive(bytemuck::Zeroable)]
 pub struct RxDmaBuffer<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>(
     UnsafeCell<[u8; STORAGE_SIZE]>,
     AtomicU8,
@@ -276,17 +287,6 @@ unsafe fn release_observed_buffer<
     };
 }
 
-const fn identity_atomic_buffer_ids<const COUNT: usize>() -> [AtomicU8; COUNT] {
-    assert!(COUNT <= u8::MAX as usize + 1);
-    let mut ids = [const { AtomicU8::new(0) }; COUNT];
-    let mut index = 0;
-    while index < COUNT {
-        ids[index] = AtomicU8::new(index as u8);
-        index += 1;
-    }
-    ids
-}
-
 /// First immutable DMA-address binding that no longer matches its arena.
 ///
 /// This is fault evidence only. It exposes neither descriptor mutation nor a
@@ -516,11 +516,18 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> Dr
 /// it for its entire epoch. Keeping that table separate avoids a
 /// self-referential owner and lets a platform place only DMA-visible storage
 /// in its dedicated linker section.
+///
+/// Its zero bytes are the reusable arena `new` builds: empty descriptors,
+/// buffers in the ring, the identity descriptor binding and no observer.
 #[repr(C)]
+#[derive(bytemuck::Zeroable)]
 pub struct RxDmaStorage<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> {
     descriptors: [Descriptor; COUNT],
     buffers: [RxDmaBuffer<BUFFER_SIZE, STORAGE_SIZE>; COUNT],
-    descriptor_buffer_ids: [AtomicU8; COUNT],
+    /// Per descriptor, the distance to its bound buffer: descriptor `i` uses
+    /// buffer `(i + offset) % COUNT`. Zero is the identity binding, so the
+    /// arena's zero bytes bind every descriptor to its own buffer.
+    descriptor_buffer_offsets: [AtomicU8; COUNT],
     lifecycle: AtomicU8,
     #[cfg(feature = "rx-ownership-observation")]
     observer: Option<&'static dyn RxOwnershipObserver>,
@@ -542,7 +549,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         Self {
             descriptors: [const { Descriptor::new() }; COUNT],
             buffers: [const { RxDmaBuffer::new() }; COUNT],
-            descriptor_buffer_ids: identity_atomic_buffer_ids(),
+            descriptor_buffer_offsets: [const { AtomicU8::new(0) }; COUNT],
             lifecycle: AtomicU8::new(RxDmaArenaState::Reusable as u8),
             #[cfg(feature = "rx-ownership-observation")]
             observer: None,
@@ -686,18 +693,17 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
     )]
     fn bind_descriptor_rotation(&self, rotation: usize) -> Result<(), RxDmaStorageError> {
         self.validate_descriptor_rotation(rotation)?;
-        for descriptor_index in 0..COUNT {
-            let buffer_id = (descriptor_index + rotation) % COUNT;
-            self.descriptor_buffer_ids[descriptor_index].store(buffer_id as u8, Ordering::Release);
+        for offset in &self.descriptor_buffer_offsets {
+            offset.store(rotation as u8, Ordering::Release);
         }
         Ok(())
     }
 
     /// Current physical buffer identity bound to one descriptor.
     pub fn descriptor_buffer_id(&self, descriptor_index: usize) -> Option<usize> {
-        self.descriptor_buffer_ids
+        self.descriptor_buffer_offsets
             .get(descriptor_index)
-            .map(|id| usize::from(id.load(Ordering::Acquire)))
+            .map(|offset| (descriptor_index + usize::from(offset.load(Ordering::Acquire))) % COUNT)
     }
 
     fn buffer_for_descriptor(

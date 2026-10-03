@@ -4,8 +4,12 @@
 //! TX arena. All of that allocation belongs to the integration root, not to a
 //! station `connected` transaction.
 
+#[cfg(feature = "owned-network")]
+use core::mem::MaybeUninit;
 #[cfg(feature = "tx-psram-dma-probe")]
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+
+use oer_memory::zeroed::ZeroedStatic;
 
 use crate::resources::profile::{
     ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY as NETWORK_FRAME_CAPACITY,
@@ -200,81 +204,46 @@ static NETWORK_TX_RESOURCES: ConstStaticCell<NetworkTxResources> =
     ConstStaticCell::new(NetworkTxResources::new());
 static NETWORK_RUNNER: StaticCell<RadioNetworkRunner> = StaticCell::new();
 
+/// xarxa's packet payload storage in a region the boot zeroes.
 #[cfg(feature = "owned-network")]
-#[allow(
-    unsafe_code,
-    reason = "network packet payloads are explicitly placed in the PSRAM ownership tier"
-)]
-#[unsafe(link_section = ".psram.bss.open_radio_station_network_packets")]
-static STATION_NETWORK_PACKET_STORAGE: ConstStaticCell<
-    PacketPoolStorage<NETWORK_PACKET_POOL_CAPACITY>,
-> = ConstStaticCell::new(PacketPoolStorage::new());
-#[cfg(feature = "owned-network")]
-#[allow(
-    unsafe_code,
-    reason = "network packet payloads are explicitly placed in the PSRAM ownership tier"
-)]
-#[unsafe(link_section = ".psram.bss.open_radio_ap_network_packets")]
-static ACCESS_POINT_NETWORK_PACKET_STORAGE: ConstStaticCell<
-    PacketPoolStorage<NETWORK_PACKET_POOL_CAPACITY>,
-> = ConstStaticCell::new(PacketPoolStorage::new());
-#[cfg(feature = "owned-network")]
-#[allow(
-    unsafe_code,
-    reason = "RX packet payloads are explicitly separated from the physical DMA staging tier"
-)]
-#[unsafe(link_section = ".psram.bss.open_radio_station_rx_packets")]
-static STATION_RX_PACKET_STORAGE: ConstStaticCell<
-    PacketPoolStorage<NETWORK_RX_PACKET_POOL_CAPACITY>,
-> = ConstStaticCell::new(PacketPoolStorage::new());
-#[cfg(feature = "owned-network")]
-#[allow(
-    unsafe_code,
-    reason = "RX packet payloads are explicitly separated from the physical DMA staging tier"
-)]
-#[unsafe(link_section = ".psram.bss.open_radio_ap_rx_packets")]
-static ACCESS_POINT_RX_PACKET_STORAGE: ConstStaticCell<
-    PacketPoolStorage<NETWORK_RX_PACKET_POOL_CAPACITY>,
-> = ConstStaticCell::new(PacketPoolStorage::new());
+struct ZeroedPacketStorage<const COUNT: usize>(PacketPoolStorage<COUNT>);
 
 #[cfg(feature = "owned-network")]
-#[allow(
-    unsafe_code,
-    reason = "hot packet-pool ownership metadata is explicitly retained in internal SRAM"
-)]
-#[unsafe(link_section = ".critical.bss.open_radio_station_network_pool")]
-static STATION_NETWORK_PACKET_POOL: StaticCell<PacketPool<NETWORK_PACKET_POOL_CAPACITY>> =
-    StaticCell::new();
-#[cfg(feature = "owned-network")]
-#[allow(
-    unsafe_code,
-    reason = "hot packet-pool ownership metadata is explicitly retained in internal SRAM"
-)]
-#[unsafe(link_section = ".critical.bss.open_radio_ap_network_pool")]
-static ACCESS_POINT_NETWORK_PACKET_POOL: StaticCell<PacketPool<NETWORK_PACKET_POOL_CAPACITY>> =
-    StaticCell::new();
-#[cfg(feature = "owned-network")]
-#[allow(
-    unsafe_code,
-    reason = "hot packet-pool ownership metadata is explicitly retained in internal SRAM"
-)]
-#[unsafe(link_section = ".critical.bss.open_radio_station_rx_pool")]
-static STATION_RX_PACKET_POOL: StaticCell<PacketPool<NETWORK_RX_PACKET_POOL_CAPACITY>> =
-    StaticCell::new();
-#[cfg(feature = "owned-network")]
-#[allow(
-    unsafe_code,
-    reason = "hot packet-pool ownership metadata is explicitly retained in internal SRAM"
-)]
-#[unsafe(link_section = ".critical.bss.open_radio_ap_rx_pool")]
-static ACCESS_POINT_RX_PACKET_POOL: StaticCell<PacketPool<NETWORK_RX_PACKET_POOL_CAPACITY>> =
-    StaticCell::new();
-#[allow(
-    unsafe_code,
-    reason = "the linker must retain production network TX backing in DMA-visible SRAM"
-)]
-#[unsafe(link_section = ".dma.bss.open_radio_network_tx")]
-static NETWORK_TX_POOL: ConstStaticCell<NetworkTxPool> = ConstStaticCell::new(NetworkTxPool::new());
+#[allow(unsafe_code, reason = "xarxa's packet storage accepts any bytes")]
+// SAFETY: at the pinned xarxa revision `PacketPoolStorage<COUNT>` is
+// `[UnsafeCell<MaybeUninit<Data>>; COUNT]`, valid for any bytes; its `new`
+// builds zero bytes, and the pool writes a slot before reading it.
+unsafe impl<const COUNT: usize> bytemuck::Zeroable for ZeroedPacketStorage<COUNT> {}
+
+oer_memory::zeroed_static! {
+    #[cfg(feature = "owned-network")]
+    /// Placement: network packet payloads are explicitly placed in the PSRAM ownership tier.
+    static STATION_NETWORK_PACKET_STORAGE: ZeroedStatic<ZeroedPacketStorage<NETWORK_PACKET_POOL_CAPACITY>> = zeroed in ".psram.bss.open_radio_station_network_packets";
+    #[cfg(feature = "owned-network")]
+    /// Placement: network packet payloads are explicitly placed in the PSRAM ownership tier.
+    static ACCESS_POINT_NETWORK_PACKET_STORAGE: ZeroedStatic<ZeroedPacketStorage<NETWORK_PACKET_POOL_CAPACITY>> = zeroed in ".psram.bss.open_radio_ap_network_packets";
+    #[cfg(feature = "owned-network")]
+    /// Placement: RX packet payloads are explicitly separated from the physical DMA staging tier.
+    static STATION_RX_PACKET_STORAGE: ZeroedStatic<ZeroedPacketStorage<NETWORK_RX_PACKET_POOL_CAPACITY>> = zeroed in ".psram.bss.open_radio_station_rx_packets";
+    #[cfg(feature = "owned-network")]
+    /// Placement: RX packet payloads are explicitly separated from the physical DMA staging tier.
+    static ACCESS_POINT_RX_PACKET_STORAGE: ZeroedStatic<ZeroedPacketStorage<NETWORK_RX_PACKET_POOL_CAPACITY>> = zeroed in ".psram.bss.open_radio_ap_rx_packets";
+
+    #[cfg(feature = "owned-network")]
+    /// Placement: hot packet-pool ownership metadata is explicitly retained in internal SRAM.
+    static STATION_NETWORK_PACKET_POOL: ZeroedStatic<MaybeUninit<PacketPool<NETWORK_PACKET_POOL_CAPACITY>>> = zeroed in ".critical.bss.open_radio_station_network_pool";
+    #[cfg(feature = "owned-network")]
+    /// Placement: hot packet-pool ownership metadata is explicitly retained in internal SRAM.
+    static ACCESS_POINT_NETWORK_PACKET_POOL: ZeroedStatic<MaybeUninit<PacketPool<NETWORK_PACKET_POOL_CAPACITY>>> = zeroed in ".critical.bss.open_radio_ap_network_pool";
+    #[cfg(feature = "owned-network")]
+    /// Placement: hot packet-pool ownership metadata is explicitly retained in internal SRAM.
+    static STATION_RX_PACKET_POOL: ZeroedStatic<MaybeUninit<PacketPool<NETWORK_RX_PACKET_POOL_CAPACITY>>> = zeroed in ".critical.bss.open_radio_station_rx_pool";
+    #[cfg(feature = "owned-network")]
+    /// Placement: hot packet-pool ownership metadata is explicitly retained in internal SRAM.
+    static ACCESS_POINT_RX_PACKET_POOL: ZeroedStatic<MaybeUninit<PacketPool<NETWORK_RX_PACKET_POOL_CAPACITY>>> = zeroed in ".critical.bss.open_radio_ap_rx_pool";
+    /// Placement: the linker must retain production network TX backing in DMA-visible SRAM.
+    static NETWORK_TX_POOL: ZeroedStatic<NetworkTxPool> = zeroed in ".dma.bss.open_radio_network_tx";
+}
 
 #[cfg(feature = "tx-psram-dma-probe")]
 static DIRECT_PSRAM_TX_DMA_PROBE: AtomicBool = AtomicBool::new(false);
@@ -284,14 +253,12 @@ static DIRECT_PSRAM_TX_DMA_PREPARES: AtomicU32 = AtomicU32::new(0);
 static DIRECT_PSRAM_TX_DMA_FIRST_ADDRESS: AtomicU32 = AtomicU32::new(0);
 #[cfg(feature = "tx-psram-dma-probe")]
 static DIRECT_PSRAM_TX_DMA_LAST_ADDRESS: AtomicU32 = AtomicU32::new(0);
-#[cfg(feature = "tx-psram-dma-probe")]
-#[allow(
-    unsafe_code,
-    reason = "the diagnostic pool must occupy the cached PSRAM aperture before its explicit cache writeback"
-)]
-#[unsafe(link_section = ".psram.bss.open_radio_network_tx_dma_probe")]
-static PSRAM_NETWORK_TX_POOL: ConstStaticCell<NetworkTxPool> =
-    ConstStaticCell::new(NetworkTxPool::new());
+oer_memory::zeroed_static! {
+    #[cfg(feature = "tx-psram-dma-probe")]
+    /// Placement: the diagnostic pool must occupy the cached PSRAM aperture before its explicit cache writeback.
+    static PSRAM_NETWORK_TX_POOL: ZeroedStatic<NetworkTxPool> =
+        zeroed in ".psram.bss.open_radio_network_tx_dma_probe";
+}
 
 /// Select a same-image experiment where Wi-Fi A-MPDU descriptors reference
 /// PSRAM packet buffers directly. Descriptors remain in internal SRAM.
@@ -350,26 +317,22 @@ fn prepare_psram_for_wifi_dma_read(storage: &mut [u8]) {
 static TX_AMPDU_STORAGE: ConstStaticCell<
     HtAmpduTxStorage<TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>,
 > = ConstStaticCell::new(HtAmpduTxStorage::new());
-#[allow(
-    unsafe_code,
-    reason = "the linker must retain production A-MPDU descriptors in DMA-visible SRAM"
-)]
-#[unsafe(link_section = ".dma.bss.open_radio_tx_ampdu_descriptors")]
-static TX_AMPDU_DMA_STORAGE: ConstStaticCell<AmpduDmaStorage<TX_AMPDU_FRAME_COUNT, 0>> =
-    ConstStaticCell::new(AmpduDmaStorage::new());
+oer_memory::zeroed_static! {
+    /// Placement: the linker must retain production A-MPDU descriptors in DMA-visible SRAM.
+    static TX_AMPDU_DMA_STORAGE: ZeroedStatic<AmpduDmaStorage<TX_AMPDU_FRAME_COUNT, 0>> =
+        zeroed in ".dma.bss.open_radio_tx_ampdu_descriptors";
+}
 static TX_AMPDU_RETENTION: ConstStaticCell<RadioAmpduRetention> =
     ConstStaticCell::new(RetainedAmpduDmaStorage::new());
 
 static TX_AMPDU_STANDBY_STORAGE: ConstStaticCell<
     HtAmpduTxStorage<TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>,
 > = ConstStaticCell::new(HtAmpduTxStorage::new());
-#[allow(
-    unsafe_code,
-    reason = "the linker must retain standby A-MPDU descriptors in DMA-visible SRAM"
-)]
-#[unsafe(link_section = ".dma.bss.open_radio_tx_ampdu_standby_descriptors")]
-static TX_AMPDU_STANDBY_DMA_STORAGE: ConstStaticCell<AmpduDmaStorage<TX_AMPDU_FRAME_COUNT, 0>> =
-    ConstStaticCell::new(AmpduDmaStorage::new());
+oer_memory::zeroed_static! {
+    /// Placement: the linker must retain standby A-MPDU descriptors in DMA-visible SRAM.
+    static TX_AMPDU_STANDBY_DMA_STORAGE: ZeroedStatic<AmpduDmaStorage<TX_AMPDU_FRAME_COUNT, 0>> =
+        zeroed in ".dma.bss.open_radio_tx_ampdu_standby_descriptors";
+}
 static TX_AMPDU_STANDBY_RETENTION: ConstStaticCell<RadioAmpduRetention> =
     ConstStaticCell::new(RetainedAmpduDmaStorage::new());
 
@@ -397,16 +360,22 @@ pub(crate) fn initialize_network(
     let station_resources = NETWORK_RESOURCES.take();
     let access_point_resources = ACCESS_POINT_NETWORK_RESOURCES.take();
     let station_packet_allocator = STATION_NETWORK_PACKET_POOL
-        .init(PacketPool::new(STATION_NETWORK_PACKET_STORAGE.take()))
+        .init(PacketPool::new(
+            &mut STATION_NETWORK_PACKET_STORAGE.take().0,
+        ))
         .allocator();
     let access_point_packet_allocator = ACCESS_POINT_NETWORK_PACKET_POOL
-        .init(PacketPool::new(ACCESS_POINT_NETWORK_PACKET_STORAGE.take()))
+        .init(PacketPool::new(
+            &mut ACCESS_POINT_NETWORK_PACKET_STORAGE.take().0,
+        ))
         .allocator();
     let station_rx_allocator = STATION_RX_PACKET_POOL
-        .init(PacketPool::new(STATION_RX_PACKET_STORAGE.take()))
+        .init(PacketPool::new(&mut STATION_RX_PACKET_STORAGE.take().0))
         .allocator();
     let access_point_rx_allocator = ACCESS_POINT_RX_PACKET_POOL
-        .init(PacketPool::new(ACCESS_POINT_RX_PACKET_STORAGE.take()))
+        .init(PacketPool::new(
+            &mut ACCESS_POINT_RX_PACKET_STORAGE.take().0,
+        ))
         .allocator();
     let tx_consumer = initialize_physical_tx();
     let station_interface =

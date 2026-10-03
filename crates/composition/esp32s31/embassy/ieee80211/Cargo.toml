@@ -24,6 +24,7 @@ supported-feature-profiles = [
 ]
 
 [dependencies]
+bytemuck = { version = "1.25.2", default-features = false, features = ["derive", "min_const_generics", "zeroable_atomics", "zeroable_maybe_uninit"] }
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
 # The owned Xarxa/Embassy network stack: the maintained owner-transfer fork.
@@ -55,6 +56,7 @@ oer-ieee80211-ap = { path = "../../../../protocols/ieee80211/ap" }
 oer-ieee80211-softmac = { path = "../../../../protocols/ieee80211/softmac" }
 oer-ieee80211-sta = { path = "../../../../protocols/ieee80211/sta" }
 oer-ieee80211-rsn = { path = "../../../../protocols/ieee80211/security/rsn" }
+oer-memory = { path = "../../../../memory" }
 static_cell = "2.1.1"
 
 # Hardware composition is target-only; the product resource profile and its

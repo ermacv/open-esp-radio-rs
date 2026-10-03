@@ -140,7 +140,7 @@ fn blobray_records_resolve_to_named_local_accesses() {
         path: PathBuf::new(),
         sha256: String::new(),
     }];
-    let named = r#"{"input":0,"symbol":{},"name":[102,110]}"#;
+    let named = r#"{"input":0,"symbol":{},"name":"fn"}"#;
     let accesses = format!(
         r#"{{"schema":1,"inputs":[],"records":[
         {{"kind":"gap","input":0,"object":null,"reason":"unsupported input format"}},
@@ -169,7 +169,7 @@ fn observations_of_unknown_inputs_or_unnamed_functions_fail() {
             "fact":{{"kind":"memory-access","access":"load"}},"address":4096,"mask":null}}]}}"#
         )
     };
-    assert!(observations(&accesses(r#"{"input":0,"name":[102]}"#), &[]).is_err());
+    assert!(observations(&accesses(r#"{"input":0,"name":"f"}"#), &[]).is_err());
     let inputs = [Input {
         id: "libx".into(),
         path: PathBuf::new(),

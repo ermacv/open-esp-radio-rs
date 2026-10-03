@@ -51,6 +51,7 @@ pub struct ReferenceTarget {
     pub binding: u8,
     pub definition: SymbolDefinition,
     pub symbol: SymbolId,
+    #[serde(with = "crate::symbol_name")]
     pub name: Vec<u8>,
     pub section: Option<u32>,
     pub offset: u64,

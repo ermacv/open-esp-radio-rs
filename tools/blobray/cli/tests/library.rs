@@ -46,6 +46,7 @@ fn accesses(
     let mut records = Vec::new();
     let summary = register_accesses(
         inputs,
+        None,
         ranges,
         &oer_riscv_lift::RiscvDecoder,
         &memory,

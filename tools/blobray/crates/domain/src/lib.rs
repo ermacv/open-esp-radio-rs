@@ -73,6 +73,7 @@ impl ArtifactInventory {
 #[serde(deny_unknown_fields)]
 pub struct ObjectInventory {
     pub id: ObjectId,
+    #[serde(with = "oer_riscv_model::symbol_name::option")]
     pub name: Option<Vec<u8>>,
     pub content: Option<ArtifactId>,
     pub elf: Option<ElfInventory>,
@@ -96,6 +97,7 @@ pub struct ElfInventory {
 #[serde(deny_unknown_fields)]
 pub struct SectionRecord {
     pub index: u32,
+    #[serde(with = "oer_riscv_model::symbol_name::option")]
     pub name: Option<Vec<u8>>,
     pub section_type: u32,
     pub flags: u64,
@@ -112,6 +114,7 @@ pub struct SectionRecord {
 #[serde(deny_unknown_fields)]
 pub struct SymbolRecord {
     pub id: SymbolId,
+    #[serde(with = "oer_riscv_model::symbol_name::option")]
     pub name: Option<Vec<u8>>,
     pub name_offset: u32,
     pub value: u64,

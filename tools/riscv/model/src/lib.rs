@@ -22,6 +22,7 @@ pub use record_memory::*;
 mod image;
 pub use image::*;
 mod source;
+pub mod symbol_name;
 pub use source::*;
 
 /// Codes shared by API errors and JSON diagnostics.

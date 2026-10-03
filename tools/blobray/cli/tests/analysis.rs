@@ -99,6 +99,7 @@ fn analyze_with(object: Vec<u8>, memory: u64, control: &mut Limits) -> Result<An
     let mut found = None;
     analyze_library(
         &[library],
+        None,
         &oer_riscv_lift::RiscvDecoder,
         &memory,
         control,

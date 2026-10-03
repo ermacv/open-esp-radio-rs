@@ -4,7 +4,7 @@ use blobray_application as app;
 use blobray_domain::CheckVerdict;
 use clap::{Parser, Subcommand, ValueEnum};
 use oer_riscv_model::{
-    DEFAULT_WORKING_BYTES, Error, ErrorCode, FunctionDecoder, FunctionSemantics, Result,
+    CallAbi, DEFAULT_WORKING_BYTES, Error, ErrorCode, FunctionDecoder, FunctionSemantics, Result,
 };
 use std::io::Write;
 use std::{ffi::OsString, path::PathBuf, process::ExitCode};
@@ -15,6 +15,30 @@ enum Format {
     #[default]
     Human,
     Json,
+}
+
+/// The calling convention a library analysis may assume.
+#[derive(Clone, Copy, ValueEnum)]
+enum AbiArg {
+    /// The RISC-V integer calling convention: a call keeps sp, gp, tp and
+    /// s0-s11.
+    RiscvInteger,
+}
+
+/// Explicit assumptions of a library analysis; none by default.
+#[derive(clap::Args)]
+struct Assumptions {
+    /// Assume this calling convention at every call the analysis cannot
+    /// follow; without it, every register is unknown after such a call and
+    /// an access through a preserved register loses its address.
+    #[arg(long, value_enum)]
+    abi: Option<AbiArg>,
+}
+
+impl Assumptions {
+    fn abi(&self) -> Option<CallAbi> {
+        self.abi.map(|AbiArg::RiscvInteger| CallAbi::RiscvInteger)
+    }
 }
 
 #[derive(Parser)]
@@ -51,6 +75,8 @@ enum Command {
         #[arg(long = "range", value_parser = parse_range)]
         ranges: Vec<blobray_domain::ImageRegion>,
         #[command(flatten)]
+        assumptions: Assumptions,
+        #[command(flatten)]
         limits: InProcessOptions,
     },
     /// Analyze every function of captured libraries in this process and report
@@ -63,6 +89,8 @@ enum Command {
         /// A function symbol name to report; repeat for several.
         #[arg(long = "function", required = true, value_name = "NAME")]
         functions: Vec<String>,
+        #[command(flatten)]
+        assumptions: Assumptions,
         #[command(flatten)]
         limits: InProcessOptions,
     },
@@ -79,6 +107,23 @@ enum Command {
         /// Only accesses of this many bytes.
         #[arg(long)]
         width: Option<u8>,
+        #[command(flatten)]
+        assumptions: Assumptions,
+        #[command(flatten)]
+        limits: InProcessOptions,
+    },
+    /// Analyze every function of captured libraries in this process and report
+    /// every reference to the named symbols: calls, jumps and addresses taken,
+    /// each a relocation in a relocatable object.
+    Callers {
+        /// Repeat ROLE=PATH; a function names its input by position.
+        #[arg(long = "input", required = true, value_name = "ROLE=PATH")]
+        inputs: Vec<OsString>,
+        /// A symbol name whose references to report; repeat for several.
+        #[arg(long = "symbol", required = true, value_name = "NAME")]
+        symbols: Vec<String>,
+        #[command(flatten)]
+        assumptions: Assumptions,
         #[command(flatten)]
         limits: InProcessOptions,
     },
@@ -159,19 +204,28 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
         Command::RegisterAccesses {
             inputs,
             ranges,
+            assumptions,
             limits,
-        } => register_accesses(inputs, ranges, limits, format),
+        } => register_accesses(inputs, ranges, assumptions.abi(), limits, format),
         Command::FunctionRecords {
             inputs,
             functions,
+            assumptions,
             limits,
-        } => function_records(inputs, functions, limits, format),
+        } => function_records(inputs, functions, assumptions.abi(), limits, format),
         Command::FieldAccesses {
             inputs,
             offset,
             width,
+            assumptions,
             limits,
-        } => field_accesses(inputs, offset, width, limits, format),
+        } => field_accesses(inputs, offset, width, assumptions.abi(), limits, format),
+        Command::Callers {
+            inputs,
+            symbols,
+            assumptions,
+            limits,
+        } => callers(inputs, symbols, assumptions.abi(), limits, format),
     }
 }
 
@@ -181,6 +235,7 @@ fn field_accesses(
     inputs: Vec<OsString>,
     offset: i64,
     width: Option<u8>,
+    abi: Option<CallAbi>,
     limits: InProcessOptions,
     format: Format,
 ) -> Result<ExitCode> {
@@ -202,14 +257,17 @@ fn field_accesses(
     let mut blocked = Vec::new();
     let mut gaps = 0_u64;
     let mut unknown_addresses = 0_u64;
+    let mut partial = 0_u64;
     app::library::analyze_library(
         &executables,
+        abi,
         &oer_riscv_lift::RiscvDecoder,
         &memory,
         &mut control,
         &mut |outcome, _| {
             match outcome {
                 app::library::LibraryOutcome::Analyzed(analyzed) => {
+                    partial += u64::from(!analyzed.complete());
                     unknown_addresses += blobray_cli::field::unknown_addresses(analyzed.records);
                     let accesses =
                         blobray_cli::field::field_accesses(analyzed.records, offset, width);
@@ -243,10 +301,12 @@ fn field_accesses(
                         },
                     )
                     .collect(),
+                abi,
                 offset,
                 width,
                 functions,
                 blocked,
+                partial,
                 gaps,
                 unknown_addresses,
             };
@@ -282,11 +342,18 @@ fn field_accesses(
             }
             writeln!(
                 out,
-                "{} functions access the field; {} functions blocked; {gaps} gaps; {unknown_addresses} accesses at unknown addresses",
+                "{} functions access the field; {} functions blocked; {partial} functions analyzed incompletely; {gaps} gaps; {unknown_addresses} accesses at unknown addresses",
                 functions.len(),
                 blocked.len()
             )
             .map_err(io_error)?;
+            if abi.is_none() && unknown_addresses > 0 {
+                writeln!(
+                    out,
+                    "without --abi riscv-integer every register is unknown after a call the analysis cannot follow; accesses through a preserved register then have no address"
+                )
+                .map_err(io_error)?;
+            }
         }
     }
     Ok(ExitCode::SUCCESS)
@@ -297,6 +364,7 @@ fn field_accesses(
 fn function_records(
     inputs: Vec<OsString>,
     names: Vec<String>,
+    abi: Option<CallAbi>,
     limits: InProcessOptions,
     format: Format,
 ) -> Result<ExitCode> {
@@ -323,6 +391,7 @@ fn function_records(
     let mut functions = Vec::new();
     app::library::analyze_library(
         &executables,
+        abi,
         &oer_riscv_lift::RiscvDecoder,
         &memory,
         &mut control,
@@ -376,6 +445,7 @@ fn function_records(
                         },
                     )
                     .collect(),
+                abi,
                 functions,
                 missing,
             };
@@ -397,7 +467,12 @@ fn function_records(
                         function.input,
                         records.len(),
                         if *complete { "complete" } else { "incomplete" }
-                    ),
+                    )
+                    .and_then(|()| {
+                        blobray_cli::listing::listing(records)
+                            .iter()
+                            .try_for_each(|line| writeln!(out, "{line}"))
+                    }),
                     blobray_cli::wire::NamedFunction::Blocked { function, error } => writeln!(
                         out,
                         "{} (input {}): blocked: {error}",
@@ -563,6 +638,7 @@ fn audit_targets(
 fn register_accesses(
     inputs: Vec<OsString>,
     ranges: Vec<blobray_domain::ImageRegion>,
+    abi: Option<CallAbi>,
     limits: InProcessOptions,
     format: Format,
 ) -> Result<ExitCode> {
@@ -595,15 +671,17 @@ fn register_accesses(
             .collect();
         write!(
             out,
-            "{{\"schema\":{},\"inputs\":{},\"records\":[",
+            "{{\"schema\":{},\"inputs\":{},\"abi\":{},\"records\":[",
             blobray_cli::wire::REGISTER_ACCESSES_SCHEMA,
-            serde_json::to_string(&described).map_err(json_error)?
+            serde_json::to_string(&described).map_err(json_error)?,
+            serde_json::to_string(&abi).map_err(json_error)?
         )
         .map_err(io_error)?;
     }
     let mut first = true;
     let summary = app::library::register_accesses(
         &executables,
+        abi,
         &ranges,
         &oer_riscv_lift::RiscvDecoder,
         &memory,
@@ -639,6 +717,115 @@ fn register_accesses(
             summary.unresolved_addresses
         )
         .map_err(io_error)?;
+    }
+    out.flush().map_err(io_error)?;
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Analyze the libraries `inputs` name in this process and print every
+/// reference their functions make to a symbol `symbols` names.
+fn callers(
+    inputs: Vec<OsString>,
+    symbols: Vec<String>,
+    abi: Option<CallAbi>,
+    limits: InProcessOptions,
+    format: Format,
+) -> Result<ExitCode> {
+    let inputs = inputs
+        .into_iter()
+        .map(parse_input)
+        .collect::<Result<Vec<_>>>()?;
+    let executables = inputs
+        .iter()
+        .map(|input| {
+            std::fs::read(&input.path)
+                .map(app::in_process::Executable::new)
+                .map_err(io_error)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let memory = limits.memory()?;
+    let mut control = limits.control();
+    let mut callers = Vec::new();
+    let mut blocked = Vec::new();
+    let mut gaps = 0_u64;
+    app::library::analyze_library(
+        &executables,
+        abi,
+        &oer_riscv_lift::RiscvDecoder,
+        &memory,
+        &mut control,
+        &mut |outcome, _| {
+            match outcome {
+                app::library::LibraryOutcome::Analyzed(analyzed) => {
+                    let references =
+                        blobray_cli::listing::references_to(analyzed.records, &symbols);
+                    if !references.is_empty() {
+                        callers.push(blobray_cli::wire::Caller {
+                            function: analyzed.function.clone(),
+                            references,
+                        });
+                    }
+                }
+                app::library::LibraryOutcome::Blocked { function, .. } => {
+                    blocked.push(function.clone());
+                }
+                app::library::LibraryOutcome::Gap { .. } => gaps += 1,
+            }
+            Ok(())
+        },
+    )?;
+    let mut out = std::io::BufWriter::new(std::io::stdout().lock());
+    match format {
+        Format::Json => {
+            let document = blobray_cli::wire::CallersDocument {
+                schema: blobray_cli::wire::CALLERS_SCHEMA,
+                inputs: inputs
+                    .iter()
+                    .zip(&executables)
+                    .map(
+                        |(input, executable)| blobray_cli::wire::RegisterAccessInput {
+                            role: input.role.clone(),
+                            sha256: executable.id().clone(),
+                        },
+                    )
+                    .collect(),
+                abi,
+                symbols,
+                callers,
+                blocked,
+                gaps,
+            };
+            serde_json::to_writer(&mut out, &document).map_err(json_error)?;
+            writeln!(out).map_err(io_error)?;
+        }
+        Format::Human => {
+            for caller in &callers {
+                let name = caller
+                    .function
+                    .name
+                    .as_deref()
+                    .map(String::from_utf8_lossy)
+                    .unwrap_or_default();
+                for reference in &caller.references {
+                    writeln!(
+                        out,
+                        "{name} (input {}) +{:x}: {:?} {}",
+                        caller.function.input,
+                        reference.offset,
+                        reference.kind,
+                        String::from_utf8_lossy(&reference.target),
+                    )
+                    .map_err(io_error)?;
+                }
+            }
+            writeln!(
+                out,
+                "{} functions reference the symbols; {} functions blocked; {gaps} gaps",
+                callers.len(),
+                blocked.len()
+            )
+            .map_err(io_error)?;
+        }
     }
     out.flush().map_err(io_error)?;
     Ok(ExitCode::SUCCESS)

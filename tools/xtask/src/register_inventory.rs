@@ -438,7 +438,7 @@ struct AccessRecord {
 #[derive(Deserialize)]
 struct LibraryFunction {
     input: usize,
-    name: Option<Vec<u8>>,
+    name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -474,10 +474,7 @@ fn observations(accesses: &str, inputs: &[Input]) -> Result<Vec<Observation>> {
             .get(function.input)
             .ok_or("function of an unknown input")?;
         observations.push(Observation {
-            function: (
-                input.id.clone(),
-                String::from_utf8_lossy(&name).into_owned(),
-            ),
+            function: (input.id.clone(), name),
             address,
             access: match fact.access.as_deref() {
                 Some("load") => Access::Load,

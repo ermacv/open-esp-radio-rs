@@ -1349,7 +1349,6 @@ where
         network: &mut dyn DatapathNetworkRx,
         now: Instant,
     ) -> Result<DatapathRxProgress, Self::Error> {
-        let now_micros = now.as_micros();
         loop {
             let record = if let Some(active) = self.protocol.active() {
                 active.processor.rx_batch_record()
@@ -1370,9 +1369,9 @@ where
                             .parked_state()
                             .expect("paired AP role is active or parked")
                             .processor
-                            .rx_reorder_work_due(now_micros)
+                            .rx_reorder_work_due(now)
                     },
-                    |active| active.processor.rx_reorder_work_due(now_micros),
+                    |active| active.processor.rx_reorder_work_due(now),
                 );
                 if !reorder_work_due {
                     break;
@@ -1397,7 +1396,7 @@ where
                     .active_mut()
                     .expect("AP reorder maintenance owns the physical TX boundary")
                     .processor
-                    .service_rx_reorder_expiry(now_micros)
+                    .service_rx_reorder_expiry(now)
                     .map_err(|error| {
                         StaApAccessPointPairedRxError::Role(StaApAccessPointRxError::Control(error))
                     })?;
@@ -1495,7 +1494,7 @@ where
                 ) => {
                     #[cfg(feature = "diagnostics")]
                     self.network_backpressure_since_micros
-                        .get_or_insert(now_micros);
+                        .get_or_insert(now.as_micros());
                     return Ok(DatapathRxProgress::NetworkBackpressured);
                 }
                 Err(RxEnqueueError::InvalidLength(error)) => {
@@ -1515,7 +1514,7 @@ where
 
         #[cfg(feature = "diagnostics")]
         if let Some(started) = self.network_backpressure_since_micros.take() {
-            let elapsed = now_micros.saturating_sub(started);
+            let elapsed = now.as_micros().saturating_sub(started);
             let report = if let Some(active) = self.protocol.active_mut() {
                 &mut active.processor.observer.observation
             } else {
@@ -1563,7 +1562,7 @@ where
                 .processor
                 .service_routed_rx_while_parked(
                     frame,
-                    now.as_micros(),
+                    now,
                     #[cfg(feature = "diagnostics")]
                     self.delivery_observer,
                 )
@@ -1598,7 +1597,7 @@ where
                 hardware,
                 frame,
                 &mut self.security_material,
-                now.as_micros(),
+                now,
                 #[cfg(feature = "diagnostics")]
                 self.delivery_observer,
             )
@@ -1656,7 +1655,7 @@ where
             .service_routed_rx_during_tx::<H, _, _>(
                 frame,
                 &mut self.security_material,
-                now.as_micros(),
+                now,
                 #[cfg(feature = "diagnostics")]
                 self.delivery_observer,
             )
@@ -1672,7 +1671,6 @@ where
     }
 
     fn has_pending_rx(&self, now: Instant) -> bool {
-        let now_micros = now.as_micros();
         self.protocol.active().map_or_else(
             || {
                 let processor = &self
@@ -1680,11 +1678,10 @@ where
                     .parked_state()
                     .expect("paired AP role is active or parked")
                     .processor;
-                processor.rx_batch_pending() || processor.rx_reorder_work_due(now_micros)
+                processor.rx_batch_pending() || processor.rx_reorder_work_due(now)
             },
             |active| {
-                active.processor.rx_batch_pending()
-                    || active.processor.rx_reorder_work_due(now_micros)
+                active.processor.rx_batch_pending() || active.processor.rx_reorder_work_due(now)
             },
         )
     }
@@ -1786,7 +1783,7 @@ where
                 AMPDU_BUFFER_SIZE,
             >,
         >,
-        now_micros: u64,
+        now: oer_time::Instant,
         retain_physical_tx: bool,
     ) -> Result<crate::roles::concurrent::StaApAccessPointControlProgress, Self::Error> {
         if self.protocol.is_parked() {
@@ -1802,7 +1799,7 @@ where
             .apply_pending_protocol_actions(hardware)
             .map_err(StaApAccessPointPairedControlError::Role)?;
         let progress = processor
-            .service_control(hardware, now_micros)
+            .service_control(hardware, now)
             .map_err(StaApAccessPointPairedControlError::Role)?;
         self.observe_role_state();
         match progress {

@@ -911,12 +911,12 @@ where
         }
     }
 
-    fn station_control_ready(&self, now_micros: u64) -> bool {
+    fn station_control_ready(&self, now: oer_time::Instant) -> bool {
         self.control().has_immediate_work()
             || self
                 .control()
                 .next_alarm_deadline()
-                .is_some_and(|deadline| deadline.as_micros() <= now_micros)
+                .is_some_and(|deadline| deadline <= now)
     }
 
     fn station_required_before_stop(&self) -> bool {

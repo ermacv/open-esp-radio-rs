@@ -325,7 +325,7 @@ where {
     /// one absolute deadline; mailbox-driven roles inspect their published
     /// readiness state. The conservative default preserves custom services
     /// which have not specialised their control scheduler.
-    fn control_ready(&self, _now_micros: u64) -> bool {
+    fn control_ready(&self, _now: oer_time::Instant) -> bool {
         true
     }
 

@@ -182,7 +182,7 @@ impl AccessPointProtectedFrameDispatch {
         peer: Option<[u8; 6]>,
         current_buffer: usize,
         current_is_amsdu: bool,
-        now_micros: u64,
+        now: oer_time::Instant,
         deferred: &mut DeferredAccessPointRxSink<'_>,
         in_place: &mut InPlaceAccessPointRxSink,
         #[cfg(any(feature = "diagnostics", test))]
@@ -227,9 +227,9 @@ impl AccessPointProtectedFrameDispatch {
             outcome
         };
         let outcome = if may_publish_in_place && current_can_publish_in_place {
-            data_rx.dispatch_at(ordered, now_micros, &mut measured_admit, in_place)
+            data_rx.dispatch_at(ordered, now, &mut measured_admit, in_place)
         } else {
-            data_rx.dispatch_at(ordered, now_micros, &mut measured_admit, deferred)
+            data_rx.dispatch_at(ordered, now, &mut measured_admit, deferred)
         };
         #[cfg(feature = "task-poll-telemetry")]
         crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_ingress_path(
@@ -247,18 +247,18 @@ impl AccessPointProtectedFrameDispatch {
         };
         #[cfg(any(feature = "diagnostics", test))]
         {
-            report.record_dispatch_rejection(outcome, ordered, now_micros);
+            report.record_dispatch_rejection(outcome, ordered, now.as_micros());
             if deferred.exhausted {
                 report.record_rx_rejection(
                     AccessPointRxRejectionReason::DeferredOutputCapacity,
                     ordered,
-                    now_micros,
+                    now.as_micros(),
                 );
             } else if in_place.unsupported {
                 report.record_rx_rejection(
                     AccessPointRxRejectionReason::InPlaceOutputUnsupported,
                     ordered,
-                    now_micros,
+                    now.as_micros(),
                 );
             }
         }
@@ -287,7 +287,7 @@ impl AccessPointProtectedFrameDispatch {
             oer_esp32s31_ieee80211_ap::rx::ApOrdinaryPairwiseRxRequest,
         ) -> ApRxAdmission,
         _peer: [u8; 6],
-        #[cfg(any(feature = "diagnostics", test))] now_micros: u64,
+        #[cfg(any(feature = "diagnostics", test))] now: oer_time::Instant,
         in_place: &mut InPlaceAccessPointRxSink,
         #[cfg(any(feature = "diagnostics", test))]
         report: &mut AccessPointControlObservation,
@@ -330,12 +330,12 @@ impl AccessPointProtectedFrameDispatch {
         };
         #[cfg(any(feature = "diagnostics", test))]
         {
-            report.record_dispatch_rejection(outcome, ordered, now_micros);
+            report.record_dispatch_rejection(outcome, ordered, now.as_micros());
             if in_place.unsupported {
                 report.record_rx_rejection(
                     AccessPointRxRejectionReason::InPlaceOutputUnsupported,
                     ordered,
-                    now_micros,
+                    now.as_micros(),
                 );
             }
             let mut activity_peer = None;

@@ -175,8 +175,8 @@ where
             return Err(AccessPointRunError::InterruptActivate(error));
         }
         interrupts.mac_runtime().notify_rx_handoff();
-        let now_micros = self.now().as_micros();
-        self.publish_beacon(hardware, now_micros)
+        let now = self.now();
+        self.publish_beacon(hardware, now)
             .map_err(AccessPointRunError::Control)?;
         #[cfg(feature = "diagnostics")]
         log_access_point_queue_zero("after-first-beacon", hardware);

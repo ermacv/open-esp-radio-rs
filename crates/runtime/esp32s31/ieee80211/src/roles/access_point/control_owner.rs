@@ -270,7 +270,7 @@ where
         tx_domain: AccessPointRxTxDomain,
         maximum_frames: usize,
         security_material: &mut S,
-        mut now_micros: u64,
+        mut now: oer_time::Instant,
         #[cfg(feature = "diagnostics")] delivery_observer: Option<&dyn RxNetworkDeliveryObserver>,
     ) -> Result<DatapathRxProgress, AccessPointControlError>
     where
@@ -292,7 +292,7 @@ where
             );
             return Ok(DatapathRxProgress::NetworkBackpressured);
         }
-        if self.service_rx_reorder_expiry(now_micros)? {
+        if self.service_rx_reorder_expiry(now)? {
             crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
                 serviced_frames,
                 crate::diagnostics::core0_ap_rx_cycles::Core0ApRxTurnExit::InitialReorder,
@@ -350,7 +350,7 @@ where
                 },
                 staged_frame,
                 security_material,
-                now_micros,
+                now,
                 #[cfg(feature = "diagnostics")]
                 delivery_observer,
             )?;
@@ -384,8 +384,8 @@ where
                 );
                 return Ok(DatapathRxProgress::ProbePending);
             }
-            now_micros = self.now().as_micros();
-            if self.service_rx_reorder_expiry(now_micros)? {
+            now = self.now();
+            if self.service_rx_reorder_expiry(now)? {
                 crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
                     serviced_frames,
                     crate::diagnostics::core0_ap_rx_cycles::Core0ApRxTurnExit::ReorderPending,

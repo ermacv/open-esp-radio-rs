@@ -254,7 +254,7 @@ where
             #[cfg(feature = "task-poll-telemetry")]
             core0_scheduler_cycles.first_network_queue_completed();
             let control_ready = self.control_ready_latched
-                || self.services.control_ready(self.clock.now().as_micros())
+                || self.services.control_ready(self.clock.now())
                 || (network_tx_pending && self.services.control_required_before_network_tx());
             #[cfg(feature = "task-poll-telemetry")]
             core0_scheduler_cycles.control_ready_completed();

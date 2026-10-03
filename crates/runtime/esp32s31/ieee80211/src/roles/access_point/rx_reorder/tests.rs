@@ -44,7 +44,7 @@ fn one_gap_releases_current_then_retained_frame_in_sequence_order() {
                 retry: false,
             },
             None,
-            1_000,
+            oer_time::Instant::from_micros(1_000),
             |segment| released.push(segment.descriptor_address),
         )
         .unwrap();
@@ -63,7 +63,7 @@ fn one_gap_releases_current_then_retained_frame_in_sequence_order() {
                 retry: false,
             },
             None,
-            1_001,
+            oer_time::Instant::from_micros(1_001),
             |segment| released.push(segment.descriptor_address),
         )
         .unwrap();
@@ -71,7 +71,7 @@ fn one_gap_releases_current_then_retained_frame_in_sequence_order() {
     assert_eq!(released, [10]);
     assert!(reorder.has_pending_release());
     assert!(
-        reorder.work_due(1_001),
+        reorder.work_due(oer_time::Instant::from_micros(1_001)),
         "an older released owner must be scheduler-visible before a newer MPDU"
     );
     assert!(
@@ -82,7 +82,7 @@ fn one_gap_releases_current_then_retained_frame_in_sequence_order() {
     assert!(reorder.dispatch_pending(|segment| released.push(segment.descriptor_address)));
     assert_eq!(released, [10, 11]);
     assert!(!reorder.has_pending_release());
-    assert!(!reorder.work_due(1_001));
+    assert!(!reorder.work_due(oer_time::Instant::from_micros(1_001)));
     assert_eq!(storage.available_slots(), RX_REORDER_BACKING_SLOT_COUNT);
     assert_eq!(reorder.next_deadline(), None);
 }
@@ -106,7 +106,7 @@ fn in_order_mpdu_dispatches_without_reorder_backing_or_pending_release() {
                 retry: false,
             },
             None,
-            1_000,
+            oer_time::Instant::from_micros(1_000),
             |segment| released.push(segment.descriptor_address),
         )
         .unwrap();
@@ -132,7 +132,10 @@ fn direct_ingest_is_non_mutating_until_initial_resync_and_on_a_gap() {
     };
 
     assert_eq!(
-        reorder.try_ingest_immediate(key(SequenceNumber::new(10).unwrap()), 1_000),
+        reorder.try_ingest_immediate(
+            key(SequenceNumber::new(10).unwrap()),
+            oer_time::Instant::from_micros(1_000)
+        ),
         Ok(None)
     );
     assert_eq!(
@@ -145,7 +148,10 @@ fn direct_ingest_is_non_mutating_until_initial_resync_and_on_a_gap() {
     // in-order frontier.
     reorder.pending_hardware_window_reset[0] = false;
     let progress = reorder
-        .try_ingest_immediate(key(SequenceNumber::new(10).unwrap()), 1_001)
+        .try_ingest_immediate(
+            key(SequenceNumber::new(10).unwrap()),
+            oer_time::Instant::from_micros(1_001),
+        )
         .unwrap()
         .expect("the exact frontier is admitted");
     assert!(progress.active);
@@ -156,7 +162,10 @@ fn direct_ingest_is_non_mutating_until_initial_resync_and_on_a_gap() {
     );
 
     assert_eq!(
-        reorder.try_ingest_immediate(key(SequenceNumber::new(12).unwrap()), 1_002),
+        reorder.try_ingest_immediate(
+            key(SequenceNumber::new(12).unwrap()),
+            oer_time::Instant::from_micros(1_002)
+        ),
         Ok(None)
     );
     assert_eq!(
@@ -183,7 +192,7 @@ fn out_of_window_mpdu_advances_only_the_software_reorder_frontier() {
                 retry: false,
             },
             None,
-            1_000,
+            oer_time::Instant::from_micros(1_000),
             |_| panic!("far successor remains buffered"),
         )
         .unwrap();
@@ -213,7 +222,7 @@ fn window_advance_that_closes_a_full_run_retains_release_ownership() {
                     retry: false,
                 },
                 None,
-                sequence as u64,
+                oer_time::Instant::from_micros(sequence as u64),
                 |_| panic!("the leading gap retains the partial run"),
             )
             .unwrap();
@@ -231,7 +240,7 @@ fn window_advance_that_closes_a_full_run_retains_release_ownership() {
                 retry: false,
             },
             None,
-            8,
+            oer_time::Instant::from_micros(8),
             |segment| released.push(segment.descriptor_address),
         )
         .unwrap();
@@ -263,7 +272,7 @@ fn aligned_first_physical_ampdu_does_not_reset_the_hardware_window() {
             segment(10, &bytes),
             key(SequenceNumber::new(10).unwrap()),
             None,
-            1,
+            oer_time::Instant::from_micros(1),
             |_| {},
         )
         .unwrap();
@@ -275,7 +284,7 @@ fn aligned_first_physical_ampdu_does_not_reset_the_hardware_window() {
             segment(11, &bytes),
             key(SequenceNumber::new(11).unwrap()),
             Some(2),
-            2,
+            oer_time::Instant::from_micros(2),
             |_| {},
         )
         .unwrap();
@@ -287,7 +296,7 @@ fn aligned_first_physical_ampdu_does_not_reset_the_hardware_window() {
             segment(12, &bytes),
             key(SequenceNumber::new(12).unwrap()),
             Some(2),
-            3,
+            oer_time::Instant::from_micros(3),
             |_| {},
         )
         .unwrap();
@@ -313,7 +322,7 @@ fn stale_first_ht_ampdu_rebases_to_the_negotiated_sequence() {
             segment(10, &bytes),
             key(SequenceNumber::new(10).unwrap()),
             None,
-            1,
+            oer_time::Instant::from_micros(1),
             |_| {},
         )
         .unwrap();
@@ -323,7 +332,7 @@ fn stale_first_ht_ampdu_rebases_to_the_negotiated_sequence() {
             segment(10, &bytes),
             key(SequenceNumber::new(10).unwrap()),
             Some(2),
-            2,
+            oer_time::Instant::from_micros(2),
             |_| {},
         )
         .unwrap();
@@ -358,27 +367,34 @@ fn peer_banks_keep_equal_tid_sequence_spaces_independent() {
                     retry: false,
                 },
                 None,
-                5_000,
+                oer_time::Instant::from_micros(5_000),
                 |_| panic!("gap successor must remain retained"),
             )
             .unwrap();
     }
     let mut released = std::vec::Vec::new();
     assert_eq!(
-        reorder.expire_due(5_000 + RX_REORDER_GAP_TIMEOUT_MICROS - 1, |segment| {
-            released.push(segment.descriptor_address)
-        },),
+        reorder.expire_due(
+            oer_time::Instant::from_micros(5_000 + RX_REORDER_GAP_TIMEOUT_MICROS - 1),
+            |segment| { released.push(segment.descriptor_address) },
+        ),
         0
     );
     assert_eq!(
-        reorder.expire_due(5_000 + RX_REORDER_GAP_TIMEOUT_MICROS, |segment| released
-            .push(segment.descriptor_address),),
+        reorder.expire_due(
+            oer_time::Instant::from_micros(5_000 + RX_REORDER_GAP_TIMEOUT_MICROS),
+            |segment| released.push(segment.descriptor_address),
+        ),
         1
     );
     assert_eq!(released, [21]);
-    assert_eq!(reorder.next_deadline(), Some(305_000));
     assert_eq!(
-        reorder.expire_due(305_000, |segment| released.push(segment.descriptor_address)),
+        reorder.next_deadline(),
+        Some(oer_time::Instant::from_micros(305_000))
+    );
+    assert_eq!(
+        reorder.expire_due(oer_time::Instant::from_micros(305_000), |segment| released
+            .push(segment.descriptor_address)),
         1
     );
     assert_eq!(released, [21, 41]);
@@ -403,7 +419,7 @@ fn peer_teardown_discards_retained_frames_and_releases_backing() {
                 retry: false,
             },
             None,
-            0,
+            oer_time::Instant::from_micros(0),
             |_| panic!("gap successor must remain retained"),
         )
         .unwrap();
@@ -419,7 +435,7 @@ fn peer_teardown_discards_retained_frames_and_releases_backing() {
                 retry: false,
             },
             None,
-            1,
+            oer_time::Instant::from_micros(1),
             |segment| assert_eq!(segment.descriptor_address, 100),
         )
         .unwrap();
@@ -452,7 +468,7 @@ fn hardware_rejection_is_safe_only_for_independently_stale_or_owned_sequences() 
             segment(11, &bytes),
             key(SequenceNumber::new(11).unwrap()),
             None,
-            0,
+            oer_time::Instant::from_micros(0),
             |_| {},
         )
         .unwrap();
@@ -465,7 +481,7 @@ fn hardware_rejection_is_safe_only_for_independently_stale_or_owned_sequences() 
             segment(10, &bytes),
             key(SequenceNumber::new(10).unwrap()),
             None,
-            1,
+            oer_time::Instant::from_micros(1),
             |_| {},
         )
         .unwrap();
@@ -509,7 +525,7 @@ fn full_shared_backing_drops_one_frame_without_advancing_sequence_state() {
                         retry: false,
                     },
                     None,
-                    0,
+                    oer_time::Instant::from_micros(0),
                     |_| panic!("a leading gap retains every successor"),
                 )
                 .unwrap();
@@ -529,7 +545,7 @@ fn full_shared_backing_drops_one_frame_without_advancing_sequence_state() {
                 retry: false,
             },
             None,
-            1,
+            oer_time::Instant::from_micros(1),
             |_| panic!("exhausted backing cannot publish out of order"),
         )
         .unwrap();
@@ -561,7 +577,7 @@ fn block_ack_request_releases_retained_frames_through_the_ordered_queue() {
                     retry: false,
                 },
                 None,
-                1_000,
+                oer_time::Instant::from_micros(1_000),
                 |_| panic!("a gap before 10 retains every later frame"),
             )
             .unwrap();
@@ -574,12 +590,30 @@ fn block_ack_request_releases_retained_frames_through_the_ordered_queue() {
     };
 
     // No agreement for this peer, and a start at the window start: ignored.
-    assert_eq!(reorder.move_window(request(PEER_B, 6, 11), 1_001), None);
-    assert_eq!(reorder.move_window(request(PEER_A, 6, 10), 1_001), None);
+    assert_eq!(
+        reorder.move_window(
+            request(PEER_B, 6, 11),
+            oer_time::Instant::from_micros(1_001)
+        ),
+        None
+    );
+    assert_eq!(
+        reorder.move_window(
+            request(PEER_A, 6, 10),
+            oer_time::Instant::from_micros(1_001)
+        ),
+        None
+    );
     assert!(!reorder.has_pending_release());
 
     // The client gave up on sequence 10: 11 and 12 follow in order.
-    assert_eq!(reorder.move_window(request(PEER_A, 6, 11), 1_002), Some(2));
+    assert_eq!(
+        reorder.move_window(
+            request(PEER_A, 6, 11),
+            oer_time::Instant::from_micros(1_002)
+        ),
+        Some(2)
+    );
     assert_eq!(reorder.next_deadline(), None, "no gap is left to age");
     let mut released = std::vec::Vec::new();
     while reorder.dispatch_pending(|segment| released.push(segment.descriptor_address)) {}
@@ -587,5 +621,8 @@ fn block_ack_request_releases_retained_frames_through_the_ordered_queue() {
     assert_eq!(storage.available_slots(), RX_REORDER_BACKING_SLOT_COUNT);
 
     // A request behind the moved start changes nothing.
-    assert_eq!(reorder.move_window(request(PEER_A, 6, 5), 1_003), None);
+    assert_eq!(
+        reorder.move_window(request(PEER_A, 6, 5), oer_time::Instant::from_micros(1_003)),
+        None
+    );
 }

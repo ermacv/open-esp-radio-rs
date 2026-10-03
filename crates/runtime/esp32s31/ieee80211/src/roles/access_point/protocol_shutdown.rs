@@ -42,7 +42,7 @@ where
         &mut self,
         hardware: &mut H,
         mpdu: &[u8],
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<bool, AccessPointControlError>
     where
         H: TxHardware + ApRuntimeHardware,
@@ -92,7 +92,7 @@ where
         match self
             .mac
             .engine_mut()
-            .handle_eapol(hardware, plan.source, frame, oer_time::Instant::from_micros(now_micros))?
+            .handle_eapol(hardware, plan.source, frame, now)?
         {
             ApWpa2Outcome::Transmit(frame) => {
                 let mac = &mut self.mac;
@@ -114,7 +114,7 @@ where
             ApWpa2Outcome::PeerAuthorized { peer } => {
                 let mac = &mut self.mac;
                 let tx_frame = &mut *self.state.tx_frame;
-                if mac.publish_tx_block_ack_request(hardware, peer, oer_time::Instant::from_micros(now_micros), tx_frame)? {
+                if mac.publish_tx_block_ack_request(hardware, peer, now, tx_frame)? {
                     observe_access_point!(self, observation, {
                         observation.control_frames_staged =
                             observation.control_frames_staged.saturating_add(1);
@@ -306,13 +306,13 @@ where
     pub fn publish_beacon<H: TxHardware>(
         &mut self,
         hardware: &mut H,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<(), AccessPointControlError> {
         #[cfg(any(feature = "diagnostics", test))]
         {
             let (missed, lateness) = self
                 .mac
-                .beacon_publication_lateness(oer_time::Instant::from_micros(now_micros));
+                .beacon_publication_lateness(now);
             let missed = u32::try_from(missed).unwrap_or(u32::MAX);
             let lateness = u32::try_from(lateness.as_micros()).unwrap_or(u32::MAX);
             observe_access_point!(self, observation, {
@@ -322,7 +322,7 @@ where
                     observation.maximum_beacon_lateness_micros.max(lateness);
             });
         }
-        self.mac.publish_beacon(hardware, oer_time::Instant::from_micros(now_micros))?;
+        self.mac.publish_beacon(hardware, now)?;
         Ok(())
     }
 
@@ -472,7 +472,7 @@ where
     pub fn service_control<H>(
         &mut self,
         hardware: &mut H,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<DatapathControlProgress<Infallible>, AccessPointControlError>
     where
         H: TxHardware + ApRuntimeHardware,
@@ -480,15 +480,15 @@ where
         if self.tx_pending() {
             return Ok(DatapathControlProgress::TxPending);
         }
-        if self.beacon_publication_due(oer_time::Instant::from_micros(now_micros)) {
-            self.publish_beacon(hardware, now_micros)?;
+        if self.beacon_publication_due(now) {
+            self.publish_beacon(hardware, now)?;
             return Ok(DatapathControlProgress::TxPending);
         }
-        self.mac.expire_tx_block_ack(oer_time::Instant::from_micros(now_micros))?;
+        self.mac.expire_tx_block_ack(now)?;
         match self
             .mac
             .engine_mut()
-            .take_due_wpa2_retry::<EAPOL_CAPACITY>(oer_time::Instant::from_micros(now_micros))?
+            .take_due_wpa2_retry::<EAPOL_CAPACITY>(now)?
         {
             ApWpa2RetryProgress::Transmit { peer, frame } => {
                 let mac = &mut self.mac;
@@ -506,7 +506,7 @@ where
             }
             ApWpa2RetryProgress::None => {}
         }
-        if let Some(close) = self.mac.engine_mut().begin_due_peer_close(oer_time::Instant::from_micros(now_micros)) {
+        if let Some(close) = self.mac.engine_mut().begin_due_peer_close(now) {
             self.publish_peer_close(hardware, close)?;
             return Ok(DatapathControlProgress::TxPending);
         }
@@ -526,8 +526,7 @@ where
             .chain(self.mac.next_tx_block_ack_deadline())
             .chain(
                 self.rx_reorder
-                    .next_deadline()
-                    .map(oer_time::Instant::from_micros),
+                    .next_deadline(),
             )
             .fold(beacon, core::cmp::min))
     }

@@ -248,8 +248,7 @@ impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize>
             .chain(
                 self.state
                     .rx_reorder
-                    .next_deadline()
-                    .map(oer_time::Instant::from_micros),
+                    .next_deadline(),
             )
             .fold(beacon, core::cmp::min))
     }

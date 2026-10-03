@@ -19,6 +19,26 @@ order:
   supported RV32 ELF, an unavailable thin member or an executable section with
   no function symbol.
 
+### Function records
+
+`function-records` runs that analysis in its own process and prints the complete
+records of the functions it names, so an investigation can read how a vendor
+function derives its addresses and values:
+
+```console
+blobray --format json function-records --input libpp=/path/to/libpp.a --function lmacAdjustTimestamp
+```
+
+Each `--input ROLE=PATH` is an archive or ELF; repeat `--function NAME` for
+several functions, and every function of that name in any input is reported.
+The JSON document is `{"schema":1,"inputs":[...],"functions":[...],"missing":[...]}`:
+an `analyzed` function carries its coverage, its value-semantics summary,
+`complete` and every record (instructions, blocks, edges, references,
+expressions, values, memory accesses, conditions and return values); a
+`blocked` one carries the error that stopped it. `missing` lists the names no
+input defines, and the command then exits with failure. `--working-memory-mib`,
+`--timeout-secs` and `--max-work-units` bound the analysis cooperatively.
+
 Selection takes static and dynamic `STT_FUNC` symbols defined in nonempty
 executable sections of RV32 ET_REL objects or static ET_EXEC images. Aliases
 and occurrences in different tables remain separate functions even when their

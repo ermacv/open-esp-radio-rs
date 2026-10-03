@@ -20,7 +20,7 @@ enum Format {
 #[derive(Parser)]
 #[command(
     name = "blobray",
-    about = "Captured binary research inside this process: final-image target audits and library register accesses"
+    about = "Captured binary research inside this process: final-image target audits, library register accesses and function records"
 )]
 struct Cli {
     #[arg(long, global = true, value_enum, default_value = "human")]
@@ -50,6 +50,19 @@ enum Command {
         /// START:LENGTH candidate interval; without one, every numeric address.
         #[arg(long = "range", value_parser = parse_range)]
         ranges: Vec<blobray_domain::ImageRegion>,
+        #[command(flatten)]
+        limits: InProcessOptions,
+    },
+    /// Analyze every function of captured libraries in this process and report
+    /// the complete records of the named functions: every fact, expression and
+    /// value the analysis derived, with coverage and semantics completeness.
+    FunctionRecords {
+        /// Repeat ROLE=PATH; a function names its input by position.
+        #[arg(long = "input", required = true, value_name = "ROLE=PATH")]
+        inputs: Vec<OsString>,
+        /// A function symbol name to report; repeat for several.
+        #[arg(long = "function", required = true, value_name = "NAME")]
+        functions: Vec<String>,
         #[command(flatten)]
         limits: InProcessOptions,
     },
@@ -132,7 +145,136 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             ranges,
             limits,
         } => register_accesses(inputs, ranges, limits, format),
+        Command::FunctionRecords {
+            inputs,
+            functions,
+            limits,
+        } => function_records(inputs, functions, limits, format),
     }
+}
+
+/// Analyze the libraries `inputs` name in this process and print the complete
+/// records of the functions `names` names.
+fn function_records(
+    inputs: Vec<OsString>,
+    names: Vec<String>,
+    limits: InProcessOptions,
+    format: Format,
+) -> Result<ExitCode> {
+    let inputs = inputs
+        .into_iter()
+        .map(parse_input)
+        .collect::<Result<Vec<_>>>()?;
+    let executables = inputs
+        .iter()
+        .map(|input| {
+            std::fs::read(&input.path)
+                .map(app::in_process::Executable::new)
+                .map_err(io_error)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let memory = limits.memory()?;
+    let mut control = limits.control();
+    let wanted = |function: &blobray_domain::LibraryFunction| {
+        function
+            .name
+            .as_deref()
+            .is_some_and(|name| names.iter().any(|wanted| wanted.as_bytes() == name))
+    };
+    let mut functions = Vec::new();
+    app::library::analyze_library(
+        &executables,
+        &blobray_backend_riscv::RiscvDecoder,
+        &memory,
+        &mut control,
+        &mut |outcome, _| {
+            match outcome {
+                app::library::LibraryOutcome::Analyzed(analyzed) if wanted(analyzed.function) => {
+                    functions.push(blobray_cli::wire::NamedFunction::Analyzed {
+                        function: analyzed.function.clone(),
+                        complete: analyzed.complete(),
+                        coverage: analyzed.coverage,
+                        semantics: analyzed.semantics,
+                        records: analyzed.records.to_vec(),
+                    });
+                }
+                app::library::LibraryOutcome::Blocked { function, error } if wanted(function) => {
+                    functions.push(blobray_cli::wire::NamedFunction::Blocked {
+                        function: function.clone(),
+                        error: error.clone(),
+                    });
+                }
+                _ => {}
+            }
+            Ok(())
+        },
+    )?;
+    let found = |name: &str| {
+        functions.iter().any(|function| {
+            let (blobray_cli::wire::NamedFunction::Analyzed { function, .. }
+            | blobray_cli::wire::NamedFunction::Blocked { function, .. }) = function;
+            function.name.as_deref() == Some(name.as_bytes())
+        })
+    };
+    let missing: Vec<String> = names.iter().filter(|name| !found(name)).cloned().collect();
+    let status = if missing.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    };
+    let mut out = std::io::BufWriter::new(std::io::stdout().lock());
+    match format {
+        Format::Json => {
+            let document = blobray_cli::wire::FunctionRecordsDocument {
+                schema: blobray_cli::wire::FUNCTION_RECORDS_SCHEMA,
+                inputs: inputs
+                    .iter()
+                    .zip(&executables)
+                    .map(
+                        |(input, executable)| blobray_cli::wire::RegisterAccessInput {
+                            role: input.role.clone(),
+                            sha256: executable.id().clone(),
+                        },
+                    )
+                    .collect(),
+                functions,
+                missing,
+            };
+            serde_json::to_writer(&mut out, &document).map_err(json_error)?;
+            writeln!(out).map_err(io_error)?;
+        }
+        Format::Human => {
+            for function in &functions {
+                match function {
+                    blobray_cli::wire::NamedFunction::Analyzed {
+                        function,
+                        complete,
+                        records,
+                        ..
+                    } => writeln!(
+                        out,
+                        "{} (input {}): {} records, {}",
+                        String::from_utf8_lossy(function.name.as_deref().unwrap_or_default()),
+                        function.input,
+                        records.len(),
+                        if *complete { "complete" } else { "incomplete" }
+                    ),
+                    blobray_cli::wire::NamedFunction::Blocked { function, error } => writeln!(
+                        out,
+                        "{} (input {}): blocked: {error}",
+                        String::from_utf8_lossy(function.name.as_deref().unwrap_or_default()),
+                        function.input
+                    ),
+                }
+                .map_err(io_error)?;
+            }
+            for name in &missing {
+                writeln!(out, "{name}: no input defines it").map_err(io_error)?;
+            }
+        }
+    }
+    out.flush().map_err(io_error)?;
+    Ok(status)
 }
 
 fn io_error(e: std::io::Error) -> Error {

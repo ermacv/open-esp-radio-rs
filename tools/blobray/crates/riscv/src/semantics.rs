@@ -317,7 +317,7 @@ impl FunctionSemantics for RiscvDecoder {
                 width: 4,
                 dest: Some(dest.0),
                 source: Some(src.0),
-                swap: op == rv_asm::AmoOp::Swap,
+                swap: op == oer_riscv_decode::AmoOp::Swap,
                 signed: false,
             },
             Inst::Beq { .. }
@@ -327,7 +327,7 @@ impl FunctionSemantics for RiscvDecoder {
             | Inst::Bltu { .. }
             | Inst::Bgeu { .. } => SemanticOp::None,
             Inst::Fence { fence } => {
-                let bits = |s: rv_asm::FenceSet| {
+                let bits = |s: oer_riscv_decode::FenceSet| {
                     u8::from(s.device_input) * 8
                         + u8::from(s.device_output) * 4
                         + u8::from(s.memory_read) * 2
@@ -389,10 +389,13 @@ fn lift_extension(extension: Extension) -> SemanticOp {
             left,
             right,
         } => SemanticOp::Integer {
-            op,
+            op: integer_op(op),
             dest,
             left: Operand::Register(left),
-            right,
+            right: match right {
+                oer_riscv_decode::Operand::Register(r) => Operand::Register(r),
+                oer_riscv_decode::Operand::Immediate(v) => Operand::Immediate(v),
+            },
         },
         Extension::Memory {
             load,
@@ -422,9 +425,42 @@ fn lift_extension(extension: Extension) -> SemanticOp {
     }
 }
 
+/// The domain operation of a decoded extension operation.
+fn integer_op(op: oer_riscv_decode::ExtensionOp) -> IntegerOp {
+    use oer_riscv_decode::ExtensionOp as E;
+    match op {
+        E::And => IntegerOp::And,
+        E::Xor => IntegerOp::Xor,
+        E::Mul => IntegerOp::Mul,
+        E::ShiftAdd1 => IntegerOp::ShiftAdd1,
+        E::ShiftAdd2 => IntegerOp::ShiftAdd2,
+        E::ShiftAdd3 => IntegerOp::ShiftAdd3,
+        E::AndNot => IntegerOp::AndNot,
+        E::OrNot => IntegerOp::OrNot,
+        E::XorNot => IntegerOp::XorNot,
+        E::Min => IntegerOp::Min,
+        E::Minu => IntegerOp::Minu,
+        E::Max => IntegerOp::Max,
+        E::Maxu => IntegerOp::Maxu,
+        E::RotateLeft => IntegerOp::RotateLeft,
+        E::RotateRight => IntegerOp::RotateRight,
+        E::CountLeadingZeros => IntegerOp::CountLeadingZeros,
+        E::CountTrailingZeros => IntegerOp::CountTrailingZeros,
+        E::PopCount => IntegerOp::PopCount,
+        E::SignExtendByte => IntegerOp::SignExtendByte,
+        E::SignExtendHalf => IntegerOp::SignExtendHalf,
+        E::OrCombineBytes => IntegerOp::OrCombineBytes,
+        E::ByteReverse => IntegerOp::ByteReverse,
+        E::BitSet => IntegerOp::BitSet,
+        E::BitClear => IntegerOp::BitClear,
+        E::BitInvert => IntegerOp::BitInvert,
+        E::BitExtract => IntegerOp::BitExtract,
+    }
+}
+
 /// FP loads and stores address memory through an integer base; an
 /// operation's only integer effect is an integer destination.
-fn lift_float(float: float::Float) -> SemanticOp {
+fn lift_float(float: oer_riscv_decode::Float) -> SemanticOp {
     let memory = |kind, base, displacement| SemanticOp::Memory {
         kind,
         base,
@@ -436,50 +472,19 @@ fn lift_float(float: float::Float) -> SemanticOp {
         signed: false,
     };
     match float {
-        float::Float::Load { base, offset, .. } => memory(MemoryKind::FloatLoad, base, offset),
-        float::Float::Store { base, offset, .. } => memory(MemoryKind::FloatStore, base, offset),
-        float::Float::Operation {
-            operands: [Some(float::Register::Integer(dest)), ..],
+        oer_riscv_decode::Float::Load { base, offset, .. } => {
+            memory(MemoryKind::FloatLoad, base, offset)
+        }
+        oer_riscv_decode::Float::Store { base, offset, .. } => {
+            memory(MemoryKind::FloatStore, base, offset)
+        }
+        oer_riscv_decode::Float::Operation {
+            operands: [Some(oer_riscv_decode::Register::Integer(dest)), ..],
             ..
         } => SemanticOp::Opaque { dest },
-        float::Float::Operation { .. } => SemanticOp::None,
+        oer_riscv_decode::Float::Operation { .. } => SemanticOp::None,
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn compressed_and_full_instructions_lift_without_display_parsing() {
-        assert_eq!(
-            RiscvDecoder.lift(&[0x05, 0x05]),
-            SemanticOp::Integer {
-                op: IntegerOp::Add,
-                dest: 10,
-                left: Operand::Register(10),
-                right: Operand::Immediate(1)
-            }
-        );
-        assert!(matches!(
-            RiscvDecoder.lift(&[0x02, 0x45]),
-            SemanticOp::Memory {
-                kind: MemoryKind::Load,
-                base: 2,
-                dest: Some(10),
-                width: 4,
-                displacement: 0,
-                ..
-            }
-        ));
-        assert!(matches!(
-            RiscvDecoder.lift(&0x60000537u32.to_le_bytes()),
-            SemanticOp::Upper {
-                dest: 10,
-                value: 0x60000000,
-                pc_relative: false
-            }
-        ));
-        assert_eq!(RiscvDecoder.lift(&[0xff; 4]), SemanticOp::Unsupported);
-        assert_eq!(RiscvDecoder.lift(&[0x73, 0, 0, 0]), SemanticOp::Unsupported);
-    }
-}
+mod tests;

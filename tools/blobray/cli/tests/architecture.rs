@@ -12,7 +12,10 @@ fn core_obeys_crate_boundaries() {
         ("blobray-artifacts", ["blobray-domain"].as_slice()),
         ("blobray-analysis", ["blobray-domain"].as_slice()),
         ("blobray-verification", ["blobray-domain"].as_slice()),
-        ("blobray-backend-riscv", ["blobray-domain"].as_slice()),
+        (
+            "blobray-backend-riscv",
+            ["blobray-domain", "oer-riscv-decode"].as_slice(),
+        ),
         (
             "blobray-application",
             [

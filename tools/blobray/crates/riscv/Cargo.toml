@@ -10,7 +10,7 @@ description = "RV32 function decoding and relocation interpretation"
 
 [dependencies]
 blobray-domain = { path = "../domain" }
-rv-asm = "=0.2.1"
+oer-riscv-decode = { path = "../../../riscv/decode" }
 object = { version = "=0.39.1", default-features = false, features = ["elf"] }
 
 [lints]

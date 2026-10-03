@@ -3782,6 +3782,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-riscv-decode"
+version = "0.1.0"
+dependencies = [
+ "rv-asm",
+]
+
+[[package]]
 name = "oer-soc-deadline"
 version = "0.1.0"
 
@@ -4324,6 +4331,12 @@ checksum = "a252f5e20f038fe7b4ea53e073e65398d652c864cc162fc77c56c2f13717b888"
 dependencies = [
  "twox-hash",
 ]
+
+[[package]]
+name = "rv-asm"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5713b6e431d860b0c0a95e410df4a859c3579db2b6e98470ae9e69658da59a38"
 
 [[package]]
 name = "ryu"

@@ -10,18 +10,18 @@
 //! <https://docs.riscv.org/reference/isa/unpriv/c-st-ext.html>. The D, Q and
 //! Zfh formats and `C.FLD`/`C.FSD` are not single precision and stay
 //! undecoded.
-use std::fmt;
+use core::fmt;
 
 /// One operand register and the file it names.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Register {
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum Register {
     Integer(u8),
     Float(u8),
 }
 
 /// One decoded RV32F instruction.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Float {
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum Float {
     /// `flw` and its compressed forms: FP `dest` takes the word at `base + offset`.
     Load { dest: u8, base: u8, offset: i32 },
     /// `fsw` and its compressed forms: FP `source` is stored at `base + offset`.

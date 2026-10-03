@@ -2957,6 +2957,7 @@ version = "0.1.0"
 dependencies = [
  "oer-espressif-ieee802154-engine",
  "oer-ieee802154",
+ "oer-time",
 ]
 
 [[package]]
@@ -3574,6 +3575,7 @@ dependencies = [
  "oer-espressif-ieee802154-engine",
  "oer-espressif-ieee802154-runtime",
  "oer-ieee802154",
+ "oer-time",
  "oer-time-virtual",
  "openthread-radio",
 ]

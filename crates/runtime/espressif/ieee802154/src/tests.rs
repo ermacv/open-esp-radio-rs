@@ -34,10 +34,7 @@ use super::{
 
 static LEVELS: [i8; 1] = [0];
 
-const PLATFORM: Ieee802154Platform = Ieee802154Platform {
-    now_micros: || 0,
-    random: || 21,
-};
+const PLATFORM: Ieee802154Platform = Ieee802154Platform { random: || 21 };
 
 /// 2006 data frame without an ACK request, as MAC bytes.
 const MAC: [u8; 10] = [0x41, 0x98, 0x01, 0x34, 0x12, 0xff, 0xff, 0x78, 0x56, 0xaa];
@@ -625,7 +622,8 @@ fn the_clock_and_csl_state_belong_to_the_installed_radio() {
         runtime
             .now()
             .map(oer_ieee802154::Ieee802154Instant::as_micros),
-        Ok((PLATFORM.now_micros)())
+        Ok(0),
+        "the radio clock is the runtime's virtual clock, at its epoch"
     );
     assert_eq!(
         runtime.apply(RadioSetting::Csl(CslReceiver {

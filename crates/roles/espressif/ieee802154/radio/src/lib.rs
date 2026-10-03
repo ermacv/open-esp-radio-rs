@@ -40,6 +40,7 @@ use oer_ieee802154::{
     RestingState, RetryStart, RxMetadata, SecurityStatus, SentAcknowledgement, TimeSync, TxMode,
     TxSecurity, TxStatus, csl_phase, generate_enhanced_ack, write_csl_ie,
 };
+use oer_time::Clock;
 
 /// The portable capabilities the role implements over any engine.
 ///
@@ -234,10 +235,6 @@ impl Ieee802154EnhancedAckGenerator {
 /// Platform services the engine calls during an entry.
 #[derive(Clone, Copy)]
 pub struct Ieee802154Platform {
-    /// The monotonic microsecond clock (`esp_timer_get_time`); the engine
-    /// truncates it to the vendor's wrapping 32-bit timer domain, and receive
-    /// timestamps use it as the radio epoch.
-    pub now_micros: fn() -> u64,
     /// A uniform random word for each CSMA-CA backoff, as OpenThread draws
     /// one from its non-cryptographic generator.
     pub random: fn() -> u32,
@@ -311,11 +308,11 @@ impl Transmission {
 
     /// `SubMac::StartCsmaBackoff`: back off before a CSMA-CA attempt, or
     /// attempt at once.
-    fn start_access<L>(
+    fn start_access<L, C: Clock + ?Sized>(
         &mut self,
         engine: &mut Ieee802154Engine<'_>,
         ll: &mut L,
-        env: &mut Collector<'_>,
+        env: &mut Collector<'_, C>,
     ) where
         L: Ieee802154LowLevel + ?Sized,
     {
@@ -328,12 +325,12 @@ impl Transmission {
 
     /// `SubMac::StartTimerForBackoff`: wait receiving on the transmit
     /// channel when the radio receives when idle, otherwise asleep.
-    fn start_delay<L>(
+    fn start_delay<L, C: Clock + ?Sized>(
         &mut self,
         delay: Delay,
         engine: &mut Ieee802154Engine<'_>,
         ll: &mut L,
-        env: &mut Collector<'_>,
+        env: &mut Collector<'_, C>,
     ) where
         L: Ieee802154LowLevel + ?Sized,
     {
@@ -348,8 +345,12 @@ impl Transmission {
 
     /// `SubMac::BeginTransmit`: one attempt in the request's channel access,
     /// secured as `otPlatRadioTransmit` secures it.
-    fn attempt<L>(&mut self, engine: &mut Ieee802154Engine<'_>, ll: &mut L, env: &mut Collector<'_>)
-    where
+    fn attempt<L, C: Clock + ?Sized>(
+        &mut self,
+        engine: &mut Ieee802154Engine<'_>,
+        ll: &mut L,
+        env: &mut Collector<'_, C>,
+    ) where
         L: Ieee802154LowLevel + ?Sized,
     {
         if let Some(security) = self.security {
@@ -438,8 +439,11 @@ const NOTIFICATIONS: usize = 8;
 
 /// The engine environment of one entry: notifications are collected and
 /// translated after the engine returns.
-struct Collector<'role> {
-    platform: Ieee802154Platform,
+struct Collector<'role, C: Clock + ?Sized> {
+    /// The radio clock (`esp_timer_get_time`), read fresh at each engine
+    /// event: the engine truncates it to the vendor's wrapping 32-bit timer
+    /// domain, and receive timestamps use it as the radio epoch.
+    clock: &'role C,
     enhanced_ack: &'role mut Option<Ieee802154EnhancedAckGenerator>,
     security: &'role mut RadioSecurity,
     notifications: [Option<Notification>; NOTIFICATIONS],
@@ -482,14 +486,14 @@ struct RadioSecurity {
 
 type Notifications = [Option<Notification>; NOTIFICATIONS];
 
-impl<'role> Collector<'role> {
+impl<'role, C: Clock + ?Sized> Collector<'role, C> {
     const fn new(
-        platform: Ieee802154Platform,
+        clock: &'role C,
         enhanced_ack: &'role mut Option<Ieee802154EnhancedAckGenerator>,
         security: &'role mut RadioSecurity,
     ) -> Self {
         Self {
-            platform,
+            clock,
             enhanced_ack,
             security,
             notifications: [None; NOTIFICATIONS],
@@ -506,9 +510,9 @@ impl<'role> Collector<'role> {
     }
 }
 
-impl Ieee802154Environment for Collector<'_> {
+impl<C: Clock + ?Sized> Ieee802154Environment for Collector<'_, C> {
     fn now_micros(&mut self) -> u64 {
-        (self.platform.now_micros)()
+        self.clock.now().as_micros()
     }
 
     fn receive_done(
@@ -553,7 +557,7 @@ impl Ieee802154Environment for Collector<'_> {
     /// sequence and the network time.
     fn transmit_sfd_done(&mut self, frame: &mut [u8; FRAME_SIZE]) {
         let csl = self.security.csl;
-        let now_micros = (self.platform.now_micros)();
+        let now_micros = self.clock.now().as_micros();
         let length = usize::from(frame[0] & 0x7f) + 1;
         if let Some(phase) = csl_phase(now_micros as u32, csl.sample_time, csl.period) {
             write_csl_ie(&mut frame[..length], csl.period, phase);
@@ -836,18 +840,6 @@ impl<'storage> Ieee802154Radio<'storage> {
             .map(|security| &mut security.keys)
     }
 
-    /// The radio clock (`otPlatRadioGetNow`): the monotonic epoch of
-    /// scheduled operations and receive timestamps.
-    pub fn now(&self) -> Ieee802154Instant {
-        Ieee802154Instant::from_micros((self.platform.now_micros)())
-    }
-
-    /// The radio clock as a function, for callers that read it without the
-    /// radio (OpenThread's `otPlatRadioGetNow`).
-    pub const fn clock(&self) -> fn() -> u64 {
-        self.platform.now_micros
-    }
-
     /// The CSL receiver state ([`Ieee802154Csl`]).
     pub fn csl(&mut self) -> &mut Ieee802154Csl {
         &mut self.security.csl
@@ -893,13 +885,18 @@ impl<'storage> Ieee802154Radio<'storage> {
     /// # Errors
     ///
     /// The radio is already enabled; nothing ran.
-    pub fn enable<L: Ieee802154LowLevel + ?Sized, S: Ieee802154RadioSink + ?Sized>(
+    pub fn enable<
+        L: Ieee802154LowLevel + ?Sized,
+        C: Clock + ?Sized,
+        S: Ieee802154RadioSink + ?Sized,
+    >(
         &mut self,
         ll: &mut L,
+        clock: &C,
         sink: &mut S,
     ) -> Result<(), CommandError> {
         self.machine.enable()?;
-        self.rest_asleep(ll, None, sink);
+        self.rest_asleep(ll, clock, None, sink);
         Ok(())
     }
 
@@ -909,9 +906,14 @@ impl<'storage> Ieee802154Radio<'storage> {
     /// # Errors
     ///
     /// The radio is disabled, or an operation owns it; nothing ran.
-    pub fn disable<L: Ieee802154LowLevel + ?Sized, S: Ieee802154RadioSink + ?Sized>(
+    pub fn disable<
+        L: Ieee802154LowLevel + ?Sized,
+        C: Clock + ?Sized,
+        S: Ieee802154RadioSink + ?Sized,
+    >(
         &mut self,
         ll: &mut L,
+        clock: &C,
         sink: &mut S,
     ) -> Result<(), CommandError> {
         let previous = self.machine.disable()?;
@@ -919,23 +921,27 @@ impl<'storage> Ieee802154Radio<'storage> {
             RadioState::Resting(RestingState::Receiving { channel }) => Some(channel),
             _ => None,
         };
-        self.rest_asleep(ll, flushed_on, sink);
+        self.rest_asleep(ll, clock, flushed_on, sink);
         Ok(())
     }
 
     /// Put the MAC to sleep and deliver what stopping produced.
-    fn rest_asleep<L: Ieee802154LowLevel + ?Sized, S: Ieee802154RadioSink + ?Sized>(
+    fn rest_asleep<
+        L: Ieee802154LowLevel + ?Sized,
+        C: Clock + ?Sized,
+        S: Ieee802154RadioSink + ?Sized,
+    >(
         &mut self,
         ll: &mut L,
+        clock: &C,
         flushed_on: Option<Channel>,
         sink: &mut S,
     ) {
-        let mut collector =
-            Collector::new(self.platform, &mut self.enhanced_ack, &mut self.security);
+        let mut collector = Collector::new(clock, &mut self.enhanced_ack, &mut self.security);
         self.engine.pib().set_rx_when_idle(false);
         self.engine.sleep(ll, &mut collector);
         let notifications = collector.notifications;
-        self.deliver(ll, notifications, Some(flushed_on), sink);
+        self.deliver(ll, clock, notifications, Some(flushed_on), sink);
     }
 
     /// Admit `command`, start its engine operation and deliver the events
@@ -944,9 +950,14 @@ impl<'storage> Ieee802154Radio<'storage> {
     /// # Errors
     ///
     /// The portable state machine rejected the command; nothing ran.
-    pub fn submit<L: Ieee802154LowLevel + ?Sized, S: Ieee802154RadioSink + ?Sized>(
+    pub fn submit<
+        L: Ieee802154LowLevel + ?Sized,
+        C: Clock + ?Sized,
+        S: Ieee802154RadioSink + ?Sized,
+    >(
         &mut self,
         ll: &mut L,
+        clock: &C,
         command: RadioCommand<'_>,
         sink: &mut S,
     ) -> Result<AcceptedCommand, CommandError> {
@@ -977,8 +988,7 @@ impl<'storage> Ieee802154Radio<'storage> {
         // A cancellation flushes frames on the channel the stopped
         // operation received on.
         let cancel_flushed_on = self.backoff_receive_channel();
-        let mut collector =
-            Collector::new(self.platform, &mut self.enhanced_ack, &mut self.security);
+        let mut collector = Collector::new(clock, &mut self.enhanced_ack, &mut self.security);
         let engine = &mut self.engine;
         match command {
             RadioCommand::Sleep { .. } => {
@@ -1107,9 +1117,9 @@ impl<'storage> Ieee802154Radio<'storage> {
             _ => None,
         };
         let notifications = collector.notifications;
-        self.deliver(ll, notifications, Some(flushed_on), sink);
+        self.deliver(ll, clock, notifications, Some(flushed_on), sink);
         if let RadioCommand::Cancel { target, .. } = command {
-            self.end_cancelled(ll, target, sink);
+            self.end_cancelled(ll, clock, target, sink);
         }
         Ok(accepted)
     }
@@ -1117,9 +1127,14 @@ impl<'storage> Ieee802154Radio<'storage> {
     /// Report the terminal event of a cancelled operation the stopped
     /// engine did not report itself, then rest as the operation would
     /// have left the radio: receiving again on the resting channel.
-    fn end_cancelled<L: Ieee802154LowLevel + ?Sized, S: Ieee802154RadioSink + ?Sized>(
+    fn end_cancelled<
+        L: Ieee802154LowLevel + ?Sized,
+        C: Clock + ?Sized,
+        S: Ieee802154RadioSink + ?Sized,
+    >(
         &mut self,
         ll: &mut L,
+        clock: &C,
         target: RequestId,
         sink: &mut S,
     ) {
@@ -1151,12 +1166,11 @@ impl<'storage> Ieee802154Radio<'storage> {
             let _ = self.finish(event, sink);
         }
         if let RadioState::Resting(RestingState::Receiving { channel }) = self.machine.state() {
-            let mut collector =
-                Collector::new(self.platform, &mut self.enhanced_ack, &mut self.security);
+            let mut collector = Collector::new(clock, &mut self.enhanced_ack, &mut self.security);
             self.engine.pib().set_channel(hal_channel(channel));
             self.engine.receive(ll, &mut collector);
             let notifications = collector.notifications;
-            self.deliver(ll, notifications, Some(Some(channel)), sink);
+            self.deliver(ll, clock, notifications, Some(Some(channel)), sink);
         }
     }
 
@@ -1197,9 +1211,14 @@ impl<'storage> Ieee802154Radio<'storage> {
     /// End the running delay (`SubMac::HandleTimer`): after a CSMA-CA
     /// backoff attempt with one CCA, after a retry delay acquire the channel
     /// again; deliver the events the step produced.
-    pub fn delay_elapsed<L: Ieee802154LowLevel + ?Sized, S: Ieee802154RadioSink + ?Sized>(
+    pub fn delay_elapsed<
+        L: Ieee802154LowLevel + ?Sized,
+        C: Clock + ?Sized,
+        S: Ieee802154RadioSink + ?Sized,
+    >(
         &mut self,
         ll: &mut L,
+        clock: &C,
         sink: &mut S,
     ) {
         let receiving = self.backoff_receive_channel();
@@ -1209,8 +1228,7 @@ impl<'storage> Ieee802154Radio<'storage> {
         let Phase::Delaying(delay) = transmission.phase else {
             return;
         };
-        let mut collector =
-            Collector::new(self.platform, &mut self.enhanced_ack, &mut self.security);
+        let mut collector = Collector::new(clock, &mut self.enhanced_ack, &mut self.security);
         match delay {
             Delay::CsmaBackoff => transmission.attempt(&mut self.engine, ll, &mut collector),
             Delay::Retransmission(_) => {
@@ -1218,7 +1236,7 @@ impl<'storage> Ieee802154Radio<'storage> {
             }
         }
         let notifications = collector.notifications;
-        self.deliver(ll, notifications, Some(receiving), sink);
+        self.deliver(ll, clock, notifications, Some(receiving), sink);
     }
 
     /// The channel a backoff receives on, when the radio receives when idle.
@@ -1232,25 +1250,34 @@ impl<'storage> Ieee802154Radio<'storage> {
     }
 
     /// The engine interrupt handler; deliver the events it produced.
-    pub fn isr<L: Ieee802154LowLevel + ?Sized, S: Ieee802154RadioSink + ?Sized>(
+    pub fn isr<
+        L: Ieee802154LowLevel + ?Sized,
+        C: Clock + ?Sized,
+        S: Ieee802154RadioSink + ?Sized,
+    >(
         &mut self,
         ll: &mut L,
+        clock: &C,
         sink: &mut S,
     ) {
-        let mut collector =
-            Collector::new(self.platform, &mut self.enhanced_ack, &mut self.security);
+        let mut collector = Collector::new(clock, &mut self.enhanced_ack, &mut self.security);
         self.engine.isr(ll, &mut collector);
         let notifications = collector.notifications;
-        self.deliver(ll, notifications, None, sink);
+        self.deliver(ll, clock, notifications, None, sink);
     }
 
     /// Translate collected notifications. Frames flushed by an engine call
     /// the role made (`flushed` is `Some`, naming the receive channel if the
     /// radio was receiving) belong to the receive that call ended, so they
     /// are delivered without admission checks.
-    fn deliver<L: Ieee802154LowLevel + ?Sized, S: Ieee802154RadioSink + ?Sized>(
+    fn deliver<
+        L: Ieee802154LowLevel + ?Sized,
+        C: Clock + ?Sized,
+        S: Ieee802154RadioSink + ?Sized,
+    >(
         &mut self,
         ll: &mut L,
+        clock: &C,
         notifications: Notifications,
         flushed: Option<Option<Channel>>,
         sink: &mut S,
@@ -1270,7 +1297,7 @@ impl<'storage> Ieee802154Radio<'storage> {
                 Follow::Restore(channel) => {
                     // Resume receive on the resting channel an operation left.
                     let mut collector =
-                        Collector::new(self.platform, &mut self.enhanced_ack, &mut self.security);
+                        Collector::new(clock, &mut self.enhanced_ack, &mut self.security);
                     let previous = self.engine.pib().channel();
                     self.engine.pib().set_channel(channel);
                     self.engine.receive(ll, &mut collector);
@@ -1283,7 +1310,7 @@ impl<'storage> Ieee802154Radio<'storage> {
                         return;
                     };
                     let mut collector =
-                        Collector::new(self.platform, &mut self.enhanced_ack, &mut self.security);
+                        Collector::new(clock, &mut self.enhanced_ack, &mut self.security);
                     match follow {
                         Follow::Delay(delay) => {
                             transmission.start_delay(delay, &mut self.engine, ll, &mut collector);

@@ -10,6 +10,7 @@ description = "Executor-free Espressif IEEE 802.15.4 radio role: the portable ra
 [dependencies]
 oer-espressif-ieee802154-engine = { path = "../../../../hardware/espressif/ieee802154/engine" }
 oer-ieee802154 = { path = "../../../../protocols/ieee802154" }
+oer-time = { path = "../../../../time" }
 
 [dev-dependencies]
 oer-espressif-ieee802154-engine = { path = "../../../../hardware/espressif/ieee802154/engine", features = ["model"] }

@@ -1,5 +1,7 @@
 //! Physical RX ownership, staging, ordering and protocol dispatch boundaries.
 
+#[cfg(feature = "rx-clock-probe")]
+mod clock_probe;
 pub mod dma;
 pub(crate) mod ethernet;
 pub mod frontier;

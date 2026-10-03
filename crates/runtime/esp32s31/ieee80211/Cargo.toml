@@ -70,6 +70,9 @@ diagnostics = [
 ]
 # Intrusive station TX waiting probe; adds timed hardware observations.
 tx-wait-probe = ["diagnostics"]
+# Intrusive receive-clock probe: logs frame receive timestamps beside their
+# handoff time (`diagnostic-rx-clock`).
+rx-clock-probe = ["diagnostics"]
 # Low-overhead phase timing for the Core0 RX producer. This is deliberately
 # tied to the intrusive task-poll image and is absent from production builds.
 task-poll-telemetry = [

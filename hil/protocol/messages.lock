@@ -147,6 +147,7 @@ telemetry/profile/control ae68ada13f2e14ba endpoint
 telemetry/profile/samples afa02b2ba450762d topic
 telemetry/profile/samples/get 118d9de14439dfd5 endpoint
 telemetry/profile/state d074cf5350d6d74e topic
+telemetry/rx-clock b74b0096c5d093d5 property
 telemetry/rx-ownership 7cd7c2906476e034 property
 telemetry/station-exit b36c7f2cca56b5cf property
 telemetry/task-poll fcc9380f19c3650f property

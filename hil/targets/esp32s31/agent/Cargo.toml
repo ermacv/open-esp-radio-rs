@@ -130,6 +130,12 @@ tx-wait-probe = [
     "oer-esp32s31-ieee80211-system/tx-wait-probe",
     "oer-hil-esp32s31-telemetry/tx-wait-probe",
 ]
+# Receive-clock probe: frame receive timestamps beside their handoff time,
+# and paired MAC local-time and monotonic readings (`diagnostic-rx-clock`).
+rx-clock-probe = [
+    "driver-observation",
+    "oer-esp32s31-ieee80211-system/rx-clock-probe",
+]
 # Common low-overhead observer used by both residence and task-poll images.
 # Keep it independent from the TX architecture probes: task-poll scenarios do
 # not select those probes and must not pay for their DMA-visible owners.

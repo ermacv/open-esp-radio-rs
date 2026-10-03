@@ -1857,6 +1857,11 @@ pub async fn run(
     let (radio, partitions) = oer_esp32s31_radio_system::start(spawner, radio_platform, start)
         .expect("the shared radio must start once");
     phy_register_image::adopt(radio);
+    #[cfg(feature = "rx-clock-probe")]
+    spawner.spawn(
+        mac_clock_pairs_task(partitions.mac_local_time)
+            .expect("the MAC clock pair task must allocate once"),
+    );
     spawner.spawn(phy_tracking_task(radio).expect("PHY tracking task must allocate once"));
     spawner.spawn(
         crate::hang_watchdog::protocol_heartbeat_task()
@@ -2653,3 +2658,19 @@ async fn wifi_role_task(
 #[cfg(feature = "driver-observation")]
 mod phy_diagnostics;
 pub(crate) mod phy_register_image;
+
+/// Every 100 ms, read the MAC local-time counter between two monotonic
+/// readings; the gap between those bounds the pair's uncertainty. With the
+/// frame timestamps the runtime logs, these pairs give the counter's unit,
+/// its drift and each frame's age at handoff (`diagnostic-rx-clock`).
+#[cfg(feature = "rx-clock-probe")]
+#[embassy_executor::task]
+async fn mac_clock_pairs_task(local_time: oer_esp32s31_radio_system::MacLocalTime) -> ! {
+    loop {
+        let before = embassy_time::Instant::now().as_micros();
+        let mac = local_time.now();
+        let after = embassy_time::Instant::now().as_micros();
+        log::info!("rx_clock_pair mac={mac} mono_before_us={before} mono_after_us={after}");
+        embassy_time::Timer::after_millis(100).await;
+    }
+}

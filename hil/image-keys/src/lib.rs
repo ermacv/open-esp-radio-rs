@@ -103,6 +103,7 @@ pub fn image_keys(enabled: &dyn Fn(&str) -> bool) -> ImageKeys {
         enabled("rx-ownership-telemetry"),
     );
     add(telemetry::PcProfile::KEY, enabled("pc-profile"));
+    add(telemetry::RxClock::KEY, enabled("rx-clock-probe"));
     add(
         telemetry::StationExit::KEY,
         enabled("station-exit-evidence") && !enabled("driver-observation"),
@@ -161,6 +162,7 @@ pub const READ_FEATURES: &[&str] = &[
     "rx-delivery-telemetry",
     "rx-ownership-telemetry",
     "pc-profile",
+    "rx-clock-probe",
     "station-exit-evidence",
     "connected-datapath-poll-telemetry",
     "tx-architecture-probes",

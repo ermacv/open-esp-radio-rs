@@ -17,6 +17,7 @@ pub enum ImageClass {
     WifiBleCoex,
     DiagnosticMacIrq,
     DiagnosticTxWait,
+    DiagnosticRxClock,
     DiagnosticTaskResidence,
     DiagnosticTxArchitecture,
     DiagnosticTaskPoll,
@@ -55,7 +56,7 @@ impl ImageClass {
         }
     }
 
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 25] = [
         Self::BluetoothSecureGatt,
         Self::BluetoothGatt,
         Self::SystemWatchdog,
@@ -66,6 +67,7 @@ impl ImageClass {
         Self::WifiBleCoex,
         Self::DiagnosticMacIrq,
         Self::DiagnosticTxWait,
+        Self::DiagnosticRxClock,
         Self::DiagnosticTaskResidence,
         Self::DiagnosticTxArchitecture,
         Self::DiagnosticTaskPoll,
@@ -89,6 +91,7 @@ impl ImageClass {
             self,
             Self::DiagnosticMacIrq
                 | Self::DiagnosticTxWait
+                | Self::DiagnosticRxClock
                 | Self::DiagnosticTaskResidence
                 | Self::DiagnosticTxArchitecture
                 | Self::DiagnosticTaskPoll
@@ -118,6 +121,7 @@ impl ImageClass {
             Self::WifiBleCoex => "wifi-ble-coex",
             Self::DiagnosticMacIrq => "diagnostic-mac-irq",
             Self::DiagnosticTxWait => "diagnostic-tx-wait",
+            Self::DiagnosticRxClock => "diagnostic-rx-clock",
             Self::DiagnosticTaskResidence => "diagnostic-task-residence",
             Self::DiagnosticTxArchitecture => "diagnostic-tx-architecture",
             Self::DiagnosticTaskPoll => "diagnostic-task-poll",
@@ -158,6 +162,7 @@ impl ImageClass {
             Self::Correctness => "open-radio-hil,driver-observation",
             Self::DiagnosticMacIrq => "open-radio-hil,mac-irq-telemetry",
             Self::DiagnosticTxWait => "open-radio-hil,tx-wait-probe,task-poll-telemetry",
+            Self::DiagnosticRxClock => "open-radio-hil,rx-clock-probe",
             Self::DiagnosticTaskResidence => "open-radio-hil,task-residence-telemetry",
             Self::DiagnosticTxArchitecture => "open-radio-hil,tx-architecture-probes",
             Self::DiagnosticTaskPoll => "open-radio-hil,task-poll-telemetry",
@@ -212,6 +217,7 @@ impl ImageClass {
                 | Self::WifiBleCoex
                 | Self::DiagnosticMacIrq
                 | Self::DiagnosticTxWait
+                | Self::DiagnosticRxClock
                 | Self::DiagnosticTaskResidence
                 | Self::DiagnosticTxArchitecture
                 | Self::DiagnosticTaskPoll

@@ -399,7 +399,10 @@ impl<
         // Timestamp the first executor-visible handoff, before either the
         // standalone or same-channel routing queue can delay protocol parsing.
         // Retried publication preserves this first sample in the affine frame.
-        frame.mark_runtime_received_at_micros(self.clock.now().as_micros());
+        let handoff = self.clock.now();
+        #[cfg(feature = "rx-clock-probe")]
+        super::clock_probe::observe(frame.segment().buffer, handoff);
+        frame.mark_runtime_received_at_micros(handoff.as_micros());
         self.frames.try_send(frame)
     }
 }

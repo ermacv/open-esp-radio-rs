@@ -291,12 +291,12 @@ where
         self.mac.tx_pending()
     }
 
-    pub const fn next_beacon_delay(&self, now_micros: u32) -> Option<(u32, u32)> {
-        self.mac.next_beacon_delay(now_micros)
+    pub const fn next_beacon(&self) -> Option<oer_time::Instant> {
+        self.mac.next_beacon()
     }
 
-    pub const fn beacon_publication_due(&self, now_micros: u32) -> bool {
-        self.mac.beacon_publication_due(now_micros)
+    pub fn beacon_publication_due(&self, now: oer_time::Instant) -> bool {
+        self.mac.beacon_publication_due(now)
     }
 
     pub fn wait_tx_deadline(&mut self) -> impl core::future::Future<Output = ()> + '_ {
@@ -310,7 +310,11 @@ where
     ) -> Result<(), AccessPointControlError> {
         #[cfg(any(feature = "diagnostics", test))]
         {
-            let (missed, lateness) = self.mac.beacon_publication_lateness(now_micros as u32);
+            let (missed, lateness) = self
+                .mac
+                .beacon_publication_lateness(oer_time::Instant::from_micros(now_micros));
+            let missed = u32::try_from(missed).unwrap_or(u32::MAX);
+            let lateness = u32::try_from(lateness.as_micros()).unwrap_or(u32::MAX);
             observe_access_point!(self, observation, {
                 observation.missed_beacon_intervals =
                     observation.missed_beacon_intervals.saturating_add(missed);
@@ -476,7 +480,7 @@ where
         if self.tx_pending() {
             return Ok(DatapathControlProgress::TxPending);
         }
-        if self.beacon_publication_due(now_micros as u32) {
+        if self.beacon_publication_due(oer_time::Instant::from_micros(now_micros)) {
             self.publish_beacon(hardware, now_micros)?;
             return Ok(DatapathControlProgress::TxPending);
         }
@@ -509,15 +513,10 @@ where
         Ok(DatapathControlProgress::Idle)
     }
 
-    fn next_control_deadline_micros(
-        &self,
-        now_micros: u64,
-    ) -> Result<u64, AccessPointControlError> {
-        let (beacon_tick, _) = self
-            .next_beacon_delay(now_micros as u32)
+    fn next_control_deadline(&self) -> Result<oer_time::Instant, AccessPointControlError> {
+        let beacon = self
+            .next_beacon()
             .ok_or(AccessPointControlError::InvalidBeaconSchedule)?;
-        let beacon_deadline = now_micros
-            .saturating_add(u64::from(beacon_tick.wrapping_sub(now_micros as u32)));
         Ok(self
             .mac
             .engine()
@@ -525,9 +524,12 @@ where
             .into_iter()
             .chain(self.mac.engine().next_wpa2_retry_deadline())
             .chain(self.mac.next_tx_block_ack_deadline())
-            .map(oer_time::Instant::as_micros)
-            .chain(self.rx_reorder.next_deadline())
-            .fold(beacon_deadline, u64::min))
+            .chain(
+                self.rx_reorder
+                    .next_deadline()
+                    .map(oer_time::Instant::from_micros),
+            )
+            .fold(beacon, core::cmp::min))
     }
 
     /// Advance AP shutdown by one finite DATAPATH transition.

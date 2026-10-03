@@ -51,7 +51,7 @@ struct AccessPoint {
 impl StaApAccessPointControlRole<(), ()> for AccessPoint {
     type Error = Infallible;
 
-    fn beacon_publication_due(&self, _now_micros: u32) -> bool {
+    fn beacon_publication_due(&self, _now: Instant) -> bool {
         self.due
     }
 
@@ -74,11 +74,8 @@ impl StaApAccessPointControlRole<(), ()> for AccessPoint {
         Ok(DatapathPairedStopProgress::Stopped)
     }
 
-    fn next_access_point_control_deadline_micros(
-        &self,
-        now_micros: u64,
-    ) -> Result<u64, Self::Error> {
-        Ok(now_micros.saturating_add(1_000))
+    fn next_access_point_control_deadline(&self) -> Result<Instant, Self::Error> {
+        Ok(Instant::from_micros(1_000))
     }
 }
 
@@ -218,7 +215,7 @@ fn retained_access_point_tx_excludes_station_control() {
 fn absolute_access_point_deadline_is_an_o1_readiness_edge() {
     let arbiter = StaApControlArbiter {
         timer: SkipClock::new(),
-        next_access_point_deadline_micros: 10_000,
+        next_access_point_deadline: Instant::from_micros(10_000),
     };
     let station = Station {
         calls: 0,

@@ -1761,16 +1761,16 @@ where
 {
     type Error = StaApAccessPointPairedControlError;
 
-    fn beacon_publication_due(&self, now_micros: u32) -> bool {
+    fn beacon_publication_due(&self, now: oer_time::Instant) -> bool {
         self.protocol.active().map_or_else(
             || {
                 self.protocol
                     .parked_state()
                     .expect("paired AP role is active or parked")
                     .processor
-                    .beacon_publication_due(now_micros)
+                    .beacon_publication_due(now)
             },
-            |active| active.processor.beacon_publication_due(now_micros),
+            |active| active.processor.beacon_publication_due(now),
         )
     }
 
@@ -1878,18 +1878,15 @@ where
         }
     }
 
-    fn next_access_point_control_deadline_micros(
-        &self,
-        now_micros: u64,
-    ) -> Result<u64, Self::Error> {
+    fn next_access_point_control_deadline(&self) -> Result<oer_time::Instant, Self::Error> {
         if let Some(active) = self.protocol.active() {
-            active.processor.next_control_deadline_micros(now_micros)
+            active.processor.next_control_deadline()
         } else {
             self.protocol
                 .parked_state()
                 .expect("paired AP role is active or parked")
                 .processor
-                .next_control_deadline_micros(now_micros)
+                .next_control_deadline()
         }
         .map_err(StaApAccessPointPairedControlError::Role)
     }

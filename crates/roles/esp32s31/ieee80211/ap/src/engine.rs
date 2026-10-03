@@ -514,8 +514,8 @@ impl<'storage> ApEngine<'storage> {
         self.observer.observe(event);
     }
 
-    pub fn prepare_beacon(&mut self, executor_timestamp_micros: u64) -> Option<&mut [u8]> {
-        self.prepare_beacon_publication(executor_timestamp_micros)
+    pub fn prepare_beacon(&mut self, now: oer_time::Instant) -> Option<&mut [u8]> {
+        self.prepare_beacon_publication(now)
             .map(|publication| publication.frame)
     }
 
@@ -524,7 +524,7 @@ impl<'storage> ApEngine<'storage> {
     /// beacon publication succeeds.
     pub fn prepare_beacon_publication(
         &mut self,
-        executor_timestamp_micros: u64,
+        now: oer_time::Instant,
     ) -> Option<ApBeaconPublication<'_>> {
         let group_pending = self.service.group_traffic_pending();
         let buffered_group_frames = self.service.buffered_group_frames();
@@ -532,12 +532,9 @@ impl<'storage> ApEngine<'storage> {
         let unicast_tim_bitmap = unicast_tim_bitmap.partial();
         self.advertise_current_protection().ok()?;
         let management_sequence = self.service.next_management_sequence();
-        let beacon = self.beacon.prepare(
-            executor_timestamp_micros,
-            management_sequence,
-            group_pending,
-            unicast_tim_bitmap,
-        );
+        let beacon =
+            self.beacon
+                .prepare(now, management_sequence, group_pending, unicast_tim_bitmap);
         if beacon.is_some() {
             #[cfg(any(feature = "diagnostics", test))]
             self.observer
@@ -556,15 +553,15 @@ impl<'storage> ApEngine<'storage> {
         })
     }
 
-    pub const fn next_beacon_delay(&self, now: u32) -> Option<(u32, u32)> {
-        self.beacon.next_delay(now)
+    pub const fn next_beacon(&self) -> Option<oer_time::Instant> {
+        self.beacon.next_publication()
     }
 
-    pub const fn beacon_publication_due(&self, now: u32) -> bool {
+    pub fn beacon_publication_due(&self, now: oer_time::Instant) -> bool {
         self.beacon.publication_due(now)
     }
 
-    pub const fn beacon_publication_lateness(&self, now: u32) -> (u32, u32) {
+    pub fn beacon_publication_lateness(&self, now: oer_time::Instant) -> (u64, oer_time::Duration) {
         self.beacon.publication_lateness(now)
     }
 

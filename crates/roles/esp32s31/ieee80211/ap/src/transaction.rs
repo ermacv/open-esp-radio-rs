@@ -295,14 +295,14 @@ impl<'beacon> ApMacParked<'beacon> {
 
     /// Observe the role-local beacon schedule without recovering the shared
     /// ordinary-TX capability.
-    pub const fn beacon_publication_due(&self, now: u32) -> bool {
+    pub fn beacon_publication_due(&self, now: oer_time::Instant) -> bool {
         self.engine.beacon_publication_due(now)
     }
 
     /// Return the current beacon deadline while the physical TX owner is lent
     /// to neither role.
-    pub const fn next_beacon_delay(&self, beacon_now_micros: u32) -> Option<(u32, u32)> {
-        self.engine.next_beacon_delay(beacon_now_micros)
+    pub const fn next_beacon(&self) -> Option<oer_time::Instant> {
+        self.engine.next_beacon()
     }
 
     /// Earliest AP protocol deadline which may require a future hardware
@@ -426,15 +426,15 @@ where
         self.pending.is_some()
     }
 
-    pub const fn next_beacon_delay(&self, beacon_now_micros: u32) -> Option<(u32, u32)> {
-        self.engine.next_beacon_delay(beacon_now_micros)
+    pub const fn next_beacon(&self) -> Option<oer_time::Instant> {
+        self.engine.next_beacon()
     }
 
-    pub const fn beacon_publication_due(&self, now: u32) -> bool {
+    pub fn beacon_publication_due(&self, now: oer_time::Instant) -> bool {
         self.engine.beacon_publication_due(now)
     }
 
-    pub const fn beacon_publication_lateness(&self, now: u32) -> (u32, u32) {
+    pub fn beacon_publication_lateness(&self, now: oer_time::Instant) -> (u64, oer_time::Duration) {
         self.engine.beacon_publication_lateness(now)
     }
 
@@ -453,7 +453,7 @@ where
         self.require_idle()?;
         let publication = self
             .engine
-            .prepare_beacon_publication(now.as_micros())
+            .prepare_beacon_publication(now)
             .ok_or(ApMacError::Engine(ApEngineError::BeaconPreparation))?;
         self.transmit
             .start_encoded(hardware, ApTxClass::Beacon, publication.frame)?;

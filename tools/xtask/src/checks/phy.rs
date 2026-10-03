@@ -20,6 +20,7 @@ use crate::{Context, Result, cargo};
 use oer_process as process;
 
 const PHY: &str = "crates/hardware/esp32s31/phy/Cargo.toml";
+const PHY_PACKAGE: &str = "oer-esp32s31-phy";
 /// Packages the PHY build may compile for the chip target.
 const PHY_PACKAGES: &[&str] = &[
     // The zero-valid marker `oer-memory`'s zeroed statics use (the one
@@ -107,8 +108,18 @@ fn built_packages(
     Ok(built)
 }
 
-/// Every chip-built package and every proc macro must be reviewed.
+/// Every chip-built package and every proc macro must be reviewed, and the
+/// PHY itself must be among the chip-built packages: a build layout the
+/// target-directory rule no longer recognizes fails rather than passing an
+/// empty set.
 fn check_built_packages(built: &BuiltPackages) -> Result<()> {
+    if !built.chip.contains(PHY_PACKAGE) {
+        return Err(format!(
+            "the PHY build reported no chip-target artifact of {PHY_PACKAGE}; \
+             its packages cannot be audited"
+        )
+        .into());
+    }
     for package in &built.chip {
         if !PHY_PACKAGES.contains(&package.as_str()) {
             return Err(format!("unexpected package in source-only PHY build: {package}").into());

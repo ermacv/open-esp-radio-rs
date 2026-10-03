@@ -10,6 +10,9 @@ pub use oer_interrupt_table as __interrupt_table;
 
 /// Adopt the board mapping and install the stage-two interrupt context.
 ///
+/// `interrupt_table` is the image's `INTERRUPT_TABLE`
+/// ([`interrupt_table!`]): both harts install and check it.
+///
 /// Code, data and task stacks run from PSRAM from here on, so the adopted
 /// mapping keeps the PSRAM function clock (and through it MPLL) referenced in
 /// esp-hal's clock tree for the lifetime of the image: a driver that requests
@@ -21,7 +24,9 @@ pub use oer_interrupt_table as __interrupt_table;
 /// application's timer and executor handlers have been bound.
 pub unsafe fn adopt_psram(
     peripheral: esp_hal::peripherals::PSRAM<'static>,
+    interrupt_table: &'static oer_interrupt_table::Table<interrupts::EspHalMatrix>,
 ) -> esp_hal::psram::Psram {
+    interrupts::adopt(interrupt_table);
     unsafe {
         let psram = oer_esp32s31_platform_board::adopt_initialized_psram(peripheral);
         esp_hal::interrupt::reinitialize_vectoring_after_handoff();

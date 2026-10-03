@@ -8,8 +8,10 @@
 //! checks again. An owner routes its source with [`enable`] and its token, and
 //! silences it with [`disable`].
 
+use core::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+
 use esp_hal::{interrupt::Priority, peripherals::Interrupt, system::Cpu};
-use oer_interrupt_table::{Entry, Matrix, MatrixError, Table};
+use oer_interrupt_table::{Binding, Entry, Matrix, MatrixError, Table};
 
 /// The ESP32-S31 interrupt matrix, as esp-hal drives it.
 pub struct EspHalMatrix;
@@ -43,17 +45,26 @@ impl Matrix for EspHalMatrix {
 /// An ESP32-S31 table error.
 pub type Error = MatrixError<EspHalMatrix>;
 
-unsafe extern "Rust" {
-    /// The table the image's [`interrupt_table!`](crate::interrupt_table)
-    /// defines.
-    static __OER_INTERRUPT_TABLE: &'static Table<EspHalMatrix>;
+/// The image's table, which [`adopt`] stores once: its first entry and length.
+static TABLE: AtomicPtr<Binding<Interrupt, Priority, Cpu>> = AtomicPtr::new(core::ptr::null_mut());
+static TABLE_LENGTH: AtomicUsize = AtomicUsize::new(0);
+
+/// Keep the image's `INTERRUPT_TABLE` for both harts.
+pub(crate) fn adopt(table: &'static Table<EspHalMatrix>) {
+    TABLE_LENGTH.store(table.len(), Ordering::Relaxed);
+    TABLE.store(table.as_ptr().cast_mut(), Ordering::Release);
 }
 
-/// The image's interrupt table.
+/// The image's interrupt table; empty before
+/// [`adopt_psram`](crate::adopt_psram).
 pub fn table() -> &'static Table<EspHalMatrix> {
-    // SAFETY: the image's `interrupt_table!` defines the symbol once, an
-    // immutable static of this type; linking fails without it.
-    unsafe { __OER_INTERRUPT_TABLE }
+    let first = TABLE.load(Ordering::Acquire);
+    if first.is_null() {
+        return &[];
+    }
+    // SAFETY: `adopt` stored the start of a `&'static` slice and, before it,
+    // that slice's length; nothing writes either again.
+    unsafe { core::slice::from_raw_parts(first, TABLE_LENGTH.load(Ordering::Relaxed)) }
 }
 
 /// Route the token's source to its table level; on its table core only.
@@ -90,7 +101,8 @@ pub(crate) fn verify_current_hart() {
     }
 }
 
-/// Declare the image's interrupt table, once per image:
+/// Declare the image's interrupt table, once per image, and hand its
+/// `INTERRUPT_TABLE` to [`adopt_psram`](crate::adopt_psram):
 ///
 /// ```ignore
 /// oer_esp32s31_platform_runtime::interrupt_table! {

@@ -368,7 +368,8 @@ extern "C" fn runtime_main() -> ! {
     // runtime. `esp_hal::init()` cannot carry process-local mapping metadata
     // across that ELF boundary, so stage two explicitly adopts the live
     // hardware mapping without reinitializing the PSRAM device or MMU.
-    let _psram = unsafe { oer_esp32s31_platform_runtime::adopt_psram(peripherals.PSRAM) };
+    let _psram =
+        unsafe { oer_esp32s31_platform_runtime::adopt_psram(peripherals.PSRAM, INTERRUPT_TABLE) };
     exception::install_stack_guard(ptr::addr_of!(_stack_end) as usize);
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     let l1_cache = L1_CACHE_PERFORMANCE.init(

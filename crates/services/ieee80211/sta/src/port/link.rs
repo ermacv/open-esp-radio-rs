@@ -11,7 +11,7 @@ use oer_ieee80211_lower_mac::{
     Channel, CoexPriority, EventsLost, FailureClass, Ieee80211LowerMacPort, KeySelector,
     LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacBeaconTiming, LowerMacEvent,
     LowerMacSetting, MacAddress, PhyRate, ReceiveFilter, RxMeta, SettingError, TbttEvent,
-    TbttSchedule, Tsf, TxPower, VifConfig, VifId, VifRole,
+    TbttSchedule, TxPower, VifConfig, VifId, VifRole, VifTsf,
 };
 use oer_ieee80211_mac::{
     ccmp::CcmpTxPacketNumberError,
@@ -183,8 +183,9 @@ type SettingOutcome<P> = Result<Result<(), SettingError>, <P as Ieee80211LowerMa
 /// over the base port.
 pub struct BeaconTimingOps<P: Ieee80211LowerMacPort> {
     pub(crate) tbtt: fn(&P::Event) -> Option<TbttEvent>,
-    pub(crate) set_tbtt: fn(&P, VifId, Option<TbttSchedule>) -> SettingOutcome<P>,
-    pub(crate) set_tsf: fn(&P, VifId, Tsf) -> SettingOutcome<P>,
+    pub(crate) set_tbtt: fn(&P, TbttSchedule) -> SettingOutcome<P>,
+    pub(crate) stop_tbtt: fn(&P, VifId) -> SettingOutcome<P>,
+    pub(crate) set_tsf: fn(&P, VifTsf) -> SettingOutcome<P>,
 }
 
 impl<P: Ieee80211LowerMacPort> Clone for BeaconTimingOps<P> {
@@ -200,6 +201,7 @@ impl<P: LowerMacBeaconTiming> BeaconTimingOps<P> {
         Self {
             tbtt: P::tbtt,
             set_tbtt: P::set_tbtt,
+            stop_tbtt: P::stop_tbtt,
             set_tsf: P::set_tsf,
         }
     }

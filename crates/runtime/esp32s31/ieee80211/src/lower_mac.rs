@@ -72,11 +72,11 @@ use oer_esp32s31_ieee80211::{
 use oer_esp32s31_ieee80211_mac::rx::NormalizedRxFrame;
 use oer_ieee80211_lower_mac::{
     AmpduCapabilities, BeaconTimingCapabilities, CancelError, ClockInfo, EventsLost, FailureClass,
-    Ieee80211LowerMacPort, KeyHandle, KeyInstall, LifecycleCommand, LifecycleError, LifecycleEvent,
-    LowerMacAmpdu, LowerMacBeaconTiming, LowerMacCapabilities, LowerMacEvent, LowerMacMonitor,
-    LowerMacSetting, MonitorCapabilities, Poisoned, PortError, Refused, RxEvidence, RxMeta,
-    SettingError, SubmitError, SubmitResult, TbttEvent, TbttSchedule, Tsf, TxCompletion, TxId,
-    VifId,
+    Ieee80211LowerMacPort, Ieee80211Stamp, KeyHandle, KeyInstall, LifecycleCommand, LifecycleError,
+    LifecycleEvent, LowerMacAmpdu, LowerMacBeaconTiming, LowerMacCapabilities, LowerMacEvent,
+    LowerMacMonitor, LowerMacSetting, MonitorCapabilities, Poisoned, PortError, Refused,
+    RxEvidence, RxMeta, SettingError, SubmitError, SubmitResult, TbttEvent, TbttSchedule,
+    TsfSample, TxCompletion, TxId, VifId, VifTsf,
 };
 use oer_ieee80211_lower_mac::{Ieee80211ClockSample, Ieee80211Instant};
 
@@ -1036,24 +1036,56 @@ where
         ESP32S31_BEACON_TIMING_CAPABILITIES
     }
 
-    fn tsf(&self, vif: VifId) -> Result<Result<Tsf, SettingError>, Esp32s31LowerMacError> {
+    fn tsf(&self, vif: VifId) -> Result<Result<VifTsf, SettingError>, Esp32s31LowerMacError> {
         self.with_core(|core, hardware, _| Ok(core.tsf(hardware, vif)))
     }
 
-    fn set_tsf(
+    /// The TSF read between two MAC-clock readings of one generation: the
+    /// sample's radio stamp is the first, its uncertainty the distance to
+    /// the second plus the counter's microsecond.
+    fn tsf_sample(
         &self,
         vif: VifId,
-        tsf: Tsf,
-    ) -> Result<Result<(), SettingError>, Esp32s31LowerMacError> {
-        self.with_core(|core, hardware, _| Ok(core.set_tsf(hardware, vif, tsf)))
+    ) -> Result<Result<TsfSample, SettingError>, Esp32s31LowerMacError> {
+        let (before, reading, after) = self.with_core(|core, hardware, _| {
+            let before = self.timer.snapshot();
+            let reading = core.tsf_reading(hardware, vif);
+            Ok((before, reading, self.timer.snapshot()))
+        })?;
+        let (before, after) = before
+            .zip(after)
+            .map(|(before, after)| (before.sample(), after.sample()))
+            .filter(|(before, after)| before.generation == after.generation)
+            .ok_or(Esp32s31LowerMacError::StaleClock)?;
+        Ok(reading.map(|(tsf, generation)| TsfSample {
+            tsf,
+            local: Ieee80211Stamp {
+                at: before.radio,
+                generation: before.generation,
+            },
+            uncertainty: oer_time::Duration::from_micros(
+                1 + after
+                    .radio
+                    .as_micros()
+                    .saturating_sub(before.radio.as_micros()),
+            ),
+            generation,
+        }))
+    }
+
+    fn set_tsf(&self, tsf: VifTsf) -> Result<Result<(), SettingError>, Esp32s31LowerMacError> {
+        self.with_core(|core, hardware, _| Ok(core.set_tsf(hardware, tsf)))
     }
 
     fn set_tbtt(
         &self,
-        vif: VifId,
-        schedule: Option<TbttSchedule>,
+        schedule: TbttSchedule,
     ) -> Result<Result<(), SettingError>, Esp32s31LowerMacError> {
-        self.with_core(|core, hardware, _| Ok(core.set_tbtt(hardware, vif, schedule)))
+        self.with_core(|core, hardware, _| Ok(core.set_tbtt(hardware, schedule)))
+    }
+
+    fn stop_tbtt(&self, vif: VifId) -> Result<Result<(), SettingError>, Esp32s31LowerMacError> {
+        self.with_core(|core, hardware, _| Ok(core.stop_tbtt(hardware, vif)))
     }
 
     fn tbtt(event: &Esp32s31LowerMacEvent<FRAME>) -> Option<TbttEvent> {

@@ -650,8 +650,7 @@ fn loss_is_reported_once_in_place_of_the_first_dropped_event() {
         assert_eq!(
             Model::tbtt(&event),
             Some(TbttEvent {
-                vif: STATION,
-                tsf: Tsf(0)
+                tbtt: VifTsf::new(STATION, TsfInstant::from_micros(0))
             })
         );
     }
@@ -706,15 +705,17 @@ fn the_model_clock_is_monotonic_and_samples_one_reading() {
 #[test]
 fn beacon_timing_addresses_configured_interfaces_within_its_roles() {
     let model = enabled_station();
-    assert_eq!(model.set_tsf(STATION, Tsf(1_024_000)), Ok(Ok(())));
-    assert_eq!(model.tsf(STATION), Ok(Ok(Tsf(1_024_000))));
+    let at = VifTsf::new(STATION, TsfInstant::from_micros(1_024_000));
+    assert_eq!(model.set_tsf(at), Ok(Ok(())));
+    assert_eq!(model.tsf(STATION), Ok(Ok(at)));
     assert_eq!(model.tsf(VifId(1)), Ok(Err(SettingError::UnknownVif)));
     let schedule = TbttSchedule {
-        beacon_interval_tu: 100,
-        next: Tsf(1_024_000),
-        lead_micros: 3_000,
+        next: at,
+        beacon_interval: time_units(100),
+        lead: oer_time::Duration::from_micros(3_000),
     };
-    assert_eq!(model.set_tbtt(STATION, Some(schedule)), Ok(Ok(())));
+    assert_eq!(model.set_tbtt(schedule), Ok(Ok(())));
+    assert_eq!(model.stop_tbtt(STATION), Ok(Ok(())));
     model
         .apply(LowerMacSetting::Vif {
             vif: ACCESS_POINT,
@@ -728,7 +729,10 @@ fn beacon_timing_addresses_configured_interfaces_within_its_roles() {
         .unwrap()
         .unwrap();
     assert_eq!(
-        model.set_tbtt(ACCESS_POINT, Some(schedule)),
+        model.set_tbtt(TbttSchedule {
+            next: VifTsf::new(ACCESS_POINT, at.at),
+            ..schedule
+        }),
         Ok(Err(SettingError::Unsupported))
     );
     assert_eq!(
@@ -794,4 +798,99 @@ fn a_block_ack_report_acknowledges_its_bitmap_and_a_bounded_predecessor() {
     assert!(!acknowledged(4094 - 65));
     // Beyond the bitmap: not yet reported.
     assert!(!acknowledged(62));
+}
+
+#[test]
+fn tsf_values_of_different_interfaces_do_not_combine() {
+    let station = VifTsf::new(STATION, TsfInstant::from_micros(5_000));
+    let access_point = VifTsf::new(ACCESS_POINT, TsfInstant::from_micros(1_000));
+    assert_eq!(
+        station.saturating_duration_since(access_point),
+        Err(TsfVifMismatch {
+            left: STATION,
+            right: ACCESS_POINT
+        })
+    );
+    let earlier = VifTsf::new(STATION, TsfInstant::from_micros(1_000));
+    assert_eq!(
+        station.saturating_duration_since(earlier),
+        Ok(oer_time::Duration::from_micros(4_000))
+    );
+    assert_eq!(
+        earlier.checked_add(oer_time::Duration::from_micros(4_000)),
+        Some(station)
+    );
+    assert_eq!(time_units(100).as_micros(), 102_400);
+}
+
+#[test]
+fn a_tsf_sample_projects_both_ways_with_the_drift_bound() {
+    let sample = TsfSample {
+        tsf: VifTsf::new(STATION, TsfInstant::from_micros(10_000_000)),
+        local: Ieee80211Stamp {
+            at: Ieee80211Instant::from_micros(500_000),
+            generation: 3,
+        },
+        uncertainty: oer_time::Duration::from_micros(2),
+        generation: 7,
+    };
+    let distance = 1_000_000;
+    let drift = (distance * u64::from(TSF_DRIFT_PPM)).div_ceil(1_000_000);
+    let later = Ieee80211Stamp {
+        at: Ieee80211Instant::from_micros(500_000 + distance),
+        generation: 3,
+    };
+    let projected = sample.tsf_at(later).unwrap();
+    assert_eq!(projected.at.at.as_micros(), 10_000_000 + distance);
+    assert_eq!(projected.at.vif, STATION);
+    assert_eq!(projected.uncertainty.as_micros(), 2 + drift);
+    // The inverse lands on the same radio stamp.
+    let back = sample.local_at(projected.at).unwrap().unwrap();
+    assert_eq!(back.at, later);
+    assert_eq!(back.uncertainty.as_micros(), 2 + drift);
+    // A stamp of another radio-clock generation, a TSF of another
+    // interface, and a value before the TSF's start do not project.
+    let stale = Ieee80211Stamp {
+        generation: 4,
+        ..later
+    };
+    assert_eq!(sample.tsf_at(stale), Err(TsfProjectionError::StaleStamp));
+    assert!(
+        sample
+            .local_at(VifTsf::new(ACCESS_POINT, projected.at.at))
+            .is_err()
+    );
+    let before_start = Ieee80211Stamp {
+        at: Ieee80211Instant::from_micros(0),
+        generation: 3,
+    };
+    assert_eq!(
+        TsfSample {
+            tsf: VifTsf::new(STATION, TsfInstant::from_micros(10)),
+            ..sample
+        }
+        .tsf_at(before_start),
+        Err(TsfProjectionError::OutOfRange)
+    );
+}
+
+#[test]
+fn the_model_tsf_advances_with_its_clock_and_each_set_starts_a_generation() {
+    let model = enabled_station();
+    model.set_now(Ieee80211Instant::from_micros(100));
+    let first = model.tsf_sample(STATION).unwrap().unwrap();
+    model
+        .set_tsf(VifTsf::new(STATION, TsfInstant::from_micros(1_000_000)))
+        .unwrap()
+        .unwrap();
+    model.set_now(Ieee80211Instant::from_micros(600));
+    let sample = model.tsf_sample(STATION).unwrap().unwrap();
+    assert_eq!(sample.tsf.at.as_micros(), 1_000_500);
+    assert_eq!(sample.local.at, Ieee80211Instant::from_micros(600));
+    assert_ne!(sample.generation, first.generation);
+    model.fire_tbtt(STATION);
+    assert_eq!(
+        Model::tbtt(&next(&model)).map(|event| event.tbtt),
+        Some(sample.tsf)
+    );
 }

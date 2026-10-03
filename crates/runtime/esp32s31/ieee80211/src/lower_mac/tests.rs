@@ -493,8 +493,9 @@ fn an_attempt_completes_through_the_interrupt_entry_and_the_queue() {
     let spare = port.tx_buffer(frame.len()).unwrap().unwrap();
     port.release_tx_buffer(spare);
 
-    assert_eq!(port.set_tsf(STA, Tsf(7)), Ok(Ok(())));
-    assert_eq!(port.tsf(STA), Ok(Ok(Tsf(7))));
+    let seven = VifTsf::new(STA, oer_ieee80211_lower_mac::TsfInstant::from_micros(7));
+    assert_eq!(port.set_tsf(seven), Ok(Ok(())));
+    assert_eq!(port.tsf(STA), Ok(Ok(seven)));
     // The port's radio clock is the MAC local time.
     assert_eq!(
         port.now(),
@@ -573,11 +574,14 @@ fn station_tbtts_arrive_through_the_power_interrupt() {
     assert!(port.queues.take().is_none());
 
     let schedule = TbttSchedule {
-        beacon_interval_tu: 100,
-        next: Tsf(1_000_000),
-        lead_micros: 3_000,
+        next: VifTsf::new(
+            STA,
+            oer_ieee80211_lower_mac::TsfInstant::from_micros(1_000_000),
+        ),
+        beacon_interval: oer_ieee80211_lower_mac::time_units(100),
+        lead: oer_time::Duration::from_micros(3_000),
     };
-    assert_eq!(port.set_tbtt(STA, Some(schedule)), Ok(Ok(())));
+    assert_eq!(port.set_tbtt(schedule), Ok(Ok(())));
     assert_eq!(
         with_hardware(&port, |hardware| hardware
             .tbtt
@@ -591,8 +595,10 @@ fn station_tbtts_arrive_through_the_power_interrupt() {
     assert_eq!(
         Port::tbtt(event),
         Some(TbttEvent {
-            vif: STA,
-            tsf: Tsf(1_000_000)
+            tbtt: VifTsf::new(
+                STA,
+                oer_ieee80211_lower_mac::TsfInstant::from_micros(1_000_000)
+            )
         })
     );
     assert_eq!(

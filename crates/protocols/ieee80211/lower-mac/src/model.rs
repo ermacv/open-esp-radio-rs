@@ -24,7 +24,7 @@ use core::{
     task::{Context, Poll},
 };
 
-use crate::{Ieee80211ClockSample, Ieee80211Instant};
+use crate::{Ieee80211ClockSample, Ieee80211Instant, Ieee80211Stamp};
 use oer_ieee80211_mac::{
     phy::{HeMcs, HtMcs},
     qos::WmmAccessCategory,
@@ -174,12 +174,32 @@ struct InFlight {
     full_block_ack: Option<BlockAckReport>,
 }
 
+/// An interface's TSF: it advances with the model's radio clock from the
+/// value it was set to.
+#[derive(Clone, Copy, Default)]
+struct ModelTsf {
+    set_to: u64,
+    set_at: u64,
+    generation: u32,
+}
+
+impl ModelTsf {
+    fn at(self, now: Ieee80211Instant) -> TsfInstant {
+        TsfInstant::from_micros(
+            self.set_to
+                .wrapping_add(now.as_micros().saturating_sub(self.set_at)),
+        )
+    }
+}
+
 #[derive(Default)]
 struct State {
     enabled: bool,
     channel: Option<Channel>,
     vifs: [Option<VifConfig>; 2],
-    tsf: [Tsf; 2],
+    /// Each interface's TSF as the value it was last set to, the model's
+    /// radio clock then and the generation of its relation.
+    tsf: [ModelTsf; 2],
     keys: [bool; 4],
     rx_block_ack: Vec<RxBlockAckAgreement>,
     gate_closed: bool,
@@ -333,11 +353,24 @@ impl LowerMacModel {
         }
     }
 
+    /// Whether `vif` is configured with a role whose TBTT schedule the
+    /// model programs.
+    fn tbtt_role(&self, vif: VifId) -> Result<Result<(), SettingError>, ModelPoisoned> {
+        let capabilities = self.beacon_timing_capabilities();
+        Ok(match self.serving()?.vif(vif) {
+            Some(config) if capabilities.tbtt.contains(config.role) => Ok(()),
+            Some(_) => Err(SettingError::Unsupported),
+            None => Err(SettingError::UnknownVif),
+        })
+    }
+
     /// Report the TBTT of an interface's current TSF.
     pub fn fire_tbtt(&self, vif: VifId) {
         let mut state = self.state.borrow_mut();
-        let tsf = state.tsf[usize::from(vif.0)];
-        state.push(ModelEvent::Tbtt(TbttEvent { vif, tsf }));
+        let at = state.tsf[usize::from(vif.0)].at(self.now.get());
+        state.push(ModelEvent::Tbtt(TbttEvent {
+            tbtt: VifTsf::new(vif, at),
+        }));
     }
 
     /// End the published attempt of `queue` with `status`; a successful
@@ -828,36 +861,60 @@ impl LowerMacBeaconTiming for LowerMacModel {
         }
     }
 
-    fn tsf(&self, vif: VifId) -> Result<Result<Tsf, SettingError>, ModelPoisoned> {
+    fn tsf(&self, vif: VifId) -> Result<Result<VifTsf, SettingError>, ModelPoisoned> {
+        let now = self.now.get();
         let state = self.serving()?;
         Ok(match state.vif(vif) {
-            Some(_) => Ok(state.tsf[usize::from(vif.0)]),
+            Some(_) => Ok(VifTsf::new(vif, state.tsf[usize::from(vif.0)].at(now))),
             None => Err(SettingError::UnknownVif),
         })
     }
 
-    fn set_tsf(&self, vif: VifId, tsf: Tsf) -> Result<Result<(), SettingError>, ModelPoisoned> {
-        let mut state = self.serving()?;
+    /// The model's radio clock is the monotonic clock of one generation;
+    /// the TSF relation's generation advances with every TSF set.
+    fn tsf_sample(&self, vif: VifId) -> Result<Result<TsfSample, SettingError>, ModelPoisoned> {
+        let now = self.now.get();
+        let state = self.serving()?;
         Ok(match state.vif(vif) {
             Some(_) => {
-                state.tsf[usize::from(vif.0)] = tsf;
+                let tsf = state.tsf[usize::from(vif.0)];
+                Ok(TsfSample {
+                    tsf: VifTsf::new(vif, tsf.at(now)),
+                    local: Ieee80211Stamp {
+                        at: now,
+                        generation: 0,
+                    },
+                    uncertainty: oer_time::Duration::ZERO,
+                    generation: tsf.generation,
+                })
+            }
+            None => Err(SettingError::UnknownVif),
+        })
+    }
+
+    fn set_tsf(&self, tsf: VifTsf) -> Result<Result<(), SettingError>, ModelPoisoned> {
+        let now = self.now.get();
+        let mut state = self.serving()?;
+        Ok(match state.vif(tsf.vif) {
+            Some(_) => {
+                let current = &mut state.tsf[usize::from(tsf.vif.0)];
+                *current = ModelTsf {
+                    set_to: tsf.at.as_micros(),
+                    set_at: now.as_micros(),
+                    generation: current.generation.wrapping_add(1),
+                };
                 Ok(())
             }
             None => Err(SettingError::UnknownVif),
         })
     }
 
-    fn set_tbtt(
-        &self,
-        vif: VifId,
-        _schedule: Option<TbttSchedule>,
-    ) -> Result<Result<(), SettingError>, ModelPoisoned> {
-        let capabilities = self.beacon_timing_capabilities();
-        Ok(match self.serving()?.vif(vif) {
-            Some(config) if capabilities.tbtt.contains(config.role) => Ok(()),
-            Some(_) => Err(SettingError::Unsupported),
-            None => Err(SettingError::UnknownVif),
-        })
+    fn set_tbtt(&self, schedule: TbttSchedule) -> Result<Result<(), SettingError>, ModelPoisoned> {
+        self.tbtt_role(schedule.next.vif)
+    }
+
+    fn stop_tbtt(&self, vif: VifId) -> Result<Result<(), SettingError>, ModelPoisoned> {
+        self.tbtt_role(vif)
     }
 
     fn tbtt(event: &ModelEvent) -> Option<TbttEvent> {

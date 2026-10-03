@@ -83,8 +83,9 @@ symbol and handler function in SRAM. Installing a hart's
 interrupt stack silences every source of that hart's entries and checks the
 slots; `enable_interrupts_after_handoff` checks again that every slot holds its
 handler and every table source is silent or routed to its level. An owner
-routes its source with `interrupts::enable` and its token, on the table's core
-only, and silences it with `interrupts::disable`. The stack analysis does not
+routes its source with `oer_esp32s31_soc_esp_hal::interrupt_table::enable` and
+its token, on the table's core only, and silences it with `disable`; the
+matrix lives in that adapter so that owners in `crates/` reach it. The stack analysis does not
 yet fail a table entry whose `enable` no root of the image reaches. HIL's
 `system-interrupt-table` checks that a source stays silent until enabled and
 after it is disabled. esp-hal's PMP region setup

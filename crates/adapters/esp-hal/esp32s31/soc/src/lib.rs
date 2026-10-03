@@ -17,6 +17,8 @@ pub mod entropy;
 #[cfg(feature = "esp32s31")]
 mod flash;
 #[cfg(feature = "esp32s31")]
+pub mod interrupt_table;
+#[cfg(feature = "esp32s31")]
 mod reset;
 pub mod watchdog;
 

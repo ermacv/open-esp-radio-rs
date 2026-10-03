@@ -15,6 +15,8 @@ fn observation(phy: PhyExpectation) -> Observation {
             .into(),
         ht: true,
         he: phy == PhyExpectation::He20,
+        beacon_interval_tu: None,
+        dtim_period: None,
     }
 }
 
@@ -26,6 +28,7 @@ fn ht20_width_does_not_prove_he20() {
         channel: 13,
         management_frame_protection: ManagementFrameProtection::Disabled,
         access_point_security: AccessPointSecurity::Wpa2Personal,
+        beacon: None,
     };
     let mut observed = observation(PhyExpectation::Ht20);
     assert!(profile.verify(&observed).is_err());
@@ -48,6 +51,7 @@ fn ht40_requires_the_requested_secondary_channel() {
         channel: 13,
         management_frame_protection: ManagementFrameProtection::Disabled,
         access_point_security: AccessPointSecurity::Wpa2Personal,
+        beacon: None,
     };
     let mut observed = observation(PhyExpectation::Ht20);
     observed.htmode = "HT40-".into();
@@ -65,6 +69,7 @@ fn capability_is_interface_specific_and_respects_regulation() {
         channel: 13,
         management_frame_protection: ManagementFrameProtection::Disabled,
         access_point_security: AccessPointSecurity::Wpa2Personal,
+        beacon: None,
     };
     let caps = "Supported interface modes:\n * AP\n HT20/HT40\n HE Iftypes: managed\n * 2472 MHz [13] (20.0 dBm)\n";
     assert!(verify_capabilities(profile, caps).is_err());
@@ -125,6 +130,7 @@ fn restoring_uci_and_radio_up_is_insufficient_if_the_original_ap_is_missing() {
             channel: 13,
             management_frame_protection: ManagementFrameProtection::Disabled,
             access_point_security: AccessPointSecurity::Wpa2Personal,
+            beacon: None,
         },
         json!({}),
     )
@@ -152,6 +158,7 @@ fn uncommitted_router_changes_are_refused_before_any_mutation() {
             channel: 13,
             management_frame_protection: ManagementFrameProtection::Disabled,
             access_point_security: AccessPointSecurity::Wpa2Personal,
+            beacon: None,
         },
         json!({}),
     ) else {
@@ -182,6 +189,7 @@ fn restores_after_partial_apply_readback_failure_and_stop_failure() {
                 channel: 13,
                 management_frame_protection: ManagementFrameProtection::Disabled,
                 access_point_security: AccessPointSecurity::Wpa2Personal,
+                beacon: None,
             },
             json!({}),
         );
@@ -219,6 +227,7 @@ fn restore_failure_is_not_a_successful_owner_release() {
             channel: 13,
             management_frame_protection: ManagementFrameProtection::Disabled,
             access_point_security: AccessPointSecurity::Wpa2Personal,
+            beacon: None,
         },
         json!({}),
     )
@@ -252,6 +261,7 @@ fn existing_ap_is_verified_without_mutation_even_on_stop_or_drop() {
             channel: 13,
             management_frame_protection: ManagementFrameProtection::Disabled,
             access_point_security: AccessPointSecurity::Wpa2Personal,
+            beacon: None,
         },
         json!({}),
     )
@@ -282,6 +292,7 @@ fn existing_ap_mismatch_never_falls_back_to_apply_or_restore() {
                     channel: 13,
                     management_frame_protection: ManagementFrameProtection::Disabled,
                     access_point_security: AccessPointSecurity::Wpa2Personal,
+                    beacon: None,
                 },
                 json!({})
             )
@@ -299,6 +310,7 @@ fn existing_generic_ht40_setting_still_requires_exact_active_geometry() {
         channel: 13,
         management_frame_protection: ManagementFrameProtection::Disabled,
         access_point_security: AccessPointSecurity::Wpa2Personal,
+        beacon: None,
     };
     let mut observed = observation(PhyExpectation::Ht40);
     observed.htmode = "HT40".into();
@@ -325,6 +337,7 @@ fn management_frame_protection_selects_the_openwrt_ieee80211w_option() {
             PhyExpectation::Ht20,
             protection,
             AccessPointSecurity::Wpa2Personal,
+            None,
         )
         .options(openwrt, &config.station);
         assert_eq!(options[&openwrt.ap_section]["ieee80211w"], expected);
@@ -348,9 +361,59 @@ fn wpa3_security_selects_sae_and_management_frame_protection() {
             PhyExpectation::Ht20,
             ManagementFrameProtection::Disabled,
             security,
+            None,
         )
         .options(openwrt, &config.station);
         assert_eq!(options[&openwrt.ap_section]["encryption"], encryption);
         assert_eq!(options[&openwrt.ap_section]["ieee80211w"], ieee80211w);
     }
+}
+
+#[test]
+fn a_beacon_schedule_sets_the_radio_interval_and_the_bss_dtim_and_is_verified() {
+    let config = oer_hil_stand::config::LabConfig::for_test();
+    let oer_hil_stand::config::StationFixtureConfig::OpenWrt(openwrt) = &config.station_fixture
+    else {
+        panic!("OpenWrt test lab required");
+    };
+    let beacon = oer_hil_scenario::link::AccessPointBeacon {
+        interval_tu: 100,
+        dtim_period: 3,
+    };
+    let profile = Profile::new(
+        openwrt,
+        PhyExpectation::Ht20,
+        ManagementFrameProtection::Disabled,
+        AccessPointSecurity::Wpa2Personal,
+        Some(beacon),
+    );
+    let options = profile.options(openwrt, &config.station);
+    assert_eq!(options[&openwrt.radio]["beacon_int"], "100");
+    assert_eq!(options[&openwrt.ap_section]["dtim_period"], "3");
+    // Without a schedule the router's own stays.
+    let plain = Profile {
+        beacon: None,
+        ..profile
+    }
+    .options(openwrt, &config.station);
+    assert!(plain[&openwrt.radio].get("beacon_int").is_none());
+    assert!(plain[&openwrt.ap_section].get("dtim_period").is_none());
+    // A hostapd that runs another schedule fails the profile.
+    let frequency = 2407 + u16::from(profile.channel) * 5;
+    let mut observed = Observation {
+        enabled: true,
+        channel: profile.channel,
+        geometry: format!(
+            "channel {} ({frequency} MHz), width: 20 MHz, center1: {frequency} MHz",
+            profile.channel
+        ),
+        htmode: "HT20".into(),
+        ht: true,
+        he: false,
+        beacon_interval_tu: Some(100),
+        dtim_period: Some(3),
+    };
+    assert!(profile.verify(&observed).is_ok());
+    observed.dtim_period = Some(2);
+    assert!(profile.verify(&observed).is_err());
 }

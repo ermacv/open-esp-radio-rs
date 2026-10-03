@@ -1737,7 +1737,10 @@ impl SerialCapture {
 
     pub fn request_station_start(&self, target: Target<'_>) -> Result<WifiCommandHandle> {
         self.request_wifi_command(
-            oer_hil_protocol::wifi::StartStation(target.station.credentials()?),
+            oer_hil_protocol::wifi::StartStation(oer_hil_protocol::wifi::StationStart {
+                credentials: target.station.credentials()?,
+                power_save: target.settings.station_power_save,
+            }),
             "station start",
         )
     }

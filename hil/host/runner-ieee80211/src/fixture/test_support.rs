@@ -82,6 +82,7 @@ fn fixture_lifecycle_harness() {
             oer_hil_scenario::link::PhyExpectation::Ht40,
             oer_hil_scenario::link::ManagementFrameProtection::Disabled,
             oer_hil_scenario::link::AccessPointSecurity::Wpa2Personal,
+            None,
         )
         .err()
         .expect("injected fixture failure");

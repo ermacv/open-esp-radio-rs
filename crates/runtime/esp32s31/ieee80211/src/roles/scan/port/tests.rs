@@ -200,6 +200,10 @@ impl crate::mac_clock::ReceptionClock for DwellTimer {
     }
 
     fn on_rf_wake(&self) {}
+
+    fn counter_reading(&self) -> Option<(u32, oer_time::Instant)> {
+        None
+    }
 }
 
 impl oer_time::Timer for DwellTimer {

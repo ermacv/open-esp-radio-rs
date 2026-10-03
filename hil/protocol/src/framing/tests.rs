@@ -659,7 +659,16 @@ fn credentials_round_trip_without_debugging_the_secret() {
     let debug = std::format!("{credentials:?}");
     assert!(!debug.contains("private-password"));
 
-    let expected = Envelope::new(7, 1, 0, 1, crate::wifi::StartStation(credentials));
+    let expected = Envelope::new(
+        7,
+        1,
+        0,
+        1,
+        crate::wifi::StartStation(crate::wifi::StationStart {
+            credentials,
+            power_save: crate::wifi::WifiStationPowerSave::MaxModem { listen_interval: 3 },
+        }),
+    );
     let mut encoder = FrameEncoder::new();
     let frame = encoder.encode(&expected).unwrap();
     let mut decoder = FrameDecoder::new();
@@ -2073,4 +2082,13 @@ fn a_message_serialized_by_its_producer_frames_like_an_encoded_one() {
         .unwrap()
         .to_vec();
     assert_eq!(queued, direct);
+}
+
+#[test]
+fn a_max_modem_power_save_needs_a_listen_interval() {
+    use crate::wifi::WifiStationPowerSave;
+    assert!(WifiStationPowerSave::None.is_valid());
+    assert!(WifiStationPowerSave::MinModem.is_valid());
+    assert!(WifiStationPowerSave::MaxModem { listen_interval: 3 }.is_valid());
+    assert!(!WifiStationPowerSave::MaxModem { listen_interval: 0 }.is_valid());
 }

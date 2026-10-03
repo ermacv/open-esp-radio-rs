@@ -19,7 +19,7 @@ use std::{
 
 use crate::Result;
 use oer_hil_evidence::run::{Comparison, Measurement, MeasurementUnit};
-use oer_hil_link::await_network_ready;
+use oer_hil_link::{SerialCapture, await_network_ready};
 
 const DEFAULT_COUNT: u16 = 100;
 const DEFAULT_INTERVAL: Duration = Duration::from_millis(20);
@@ -65,6 +65,27 @@ pub fn run(
     context: &Context<'_>,
     require_no_beacon_loss: bool,
 ) -> Result<()> {
+    run_observed(
+        options,
+        output,
+        context,
+        require_no_beacon_loss,
+        |_| Ok(()),
+        |_| Ok(()),
+    )
+}
+
+/// [`run`] with two hooks on the live capture: `before` once the network is
+/// ready, before the first echo; `after` once the last echo is measured.
+/// Their observations of the device frame the ICMP session.
+pub(crate) fn run_observed<T>(
+    options: Config,
+    output: &Path,
+    context: &Context<'_>,
+    require_no_beacon_loss: bool,
+    before: impl FnOnce(&SerialCapture) -> Result<()>,
+    after: impl FnOnce(&SerialCapture) -> Result<T>,
+) -> Result<T> {
     let mut options = options.validate()?;
     let capture = context.capture(output)?;
     options.device = match await_network_ready(&capture, context.target(), NETWORK_READY_TIMEOUT) {
@@ -73,9 +94,18 @@ pub fn run(
             return capture.finish_with(Err(error));
         }
     };
+    if let Err(error) = before(&capture) {
+        return capture.finish_with(Err(error));
+    }
     let socket = IcmpSocket::connect(options.device)?;
     let summary = match measure(&socket, options) {
         Ok(summary) => summary,
+        Err(error) => {
+            return capture.finish_with(Err(error));
+        }
+    };
+    let observed = match after(&capture) {
+        Ok(observed) => observed,
         Err(error) => {
             return capture.finish_with(Err(error));
         }
@@ -129,7 +159,7 @@ pub fn run(
     }
     match acceptance_failure {
         Some(failure) => Err(format!("{failure}; report={}", report_path.display()).into()),
-        None => Ok(()),
+        None => Ok(observed),
     }
 }
 

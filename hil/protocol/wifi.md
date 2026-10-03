@@ -7,7 +7,7 @@ Hello -> WaitingForInitialization
       <- optional calibration chunks
       <- Initialize(IPv4 policy)
       -> Initialized + WifiIdle
-      <- StartStation(credentials) | StartAccessPoint(credentials, HT channel, static IPv4)
+      <- StartStation(credentials, power save) | StartAccessPoint(credentials, HT channel, static IPv4)
        | ScanWifi | StartMonitor | CaptureMonitor
 ```
 

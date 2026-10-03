@@ -28,6 +28,14 @@ fn every_station_event_decodes_to_what_it_encoded() {
         input: PowerInputKind::Tbtt,
         control_event_waiting: true,
     });
+    round_trip(RfSleepEntered {
+        mac_local_time: u32::MAX,
+        monotonic_micros: 0x1234_5678,
+    });
+    round_trip(RfWoke {
+        mac_local_time: 7,
+        monotonic_micros: u32::MAX,
+    });
     round_trip(NetworkTxPowerTrace {
         offer: true,
         control_event_waiting: false,

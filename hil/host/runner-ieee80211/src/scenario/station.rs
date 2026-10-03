@@ -288,6 +288,43 @@ impl StationIcmp {
     }
 }
 
+/// A station in modem sleep under ICMP probing: the scenario sets the
+/// access point's beacon schedule and the station's power save, and the
+/// workload records the RF sleep edges' MAC-counter and monotonic readings.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct StationSleep {
+    pub link: LinkExpectation,
+    pub power_save: oer_hil_protocol::wifi::WifiStationPowerSave,
+    pub access_point_beacon: oer_hil_scenario::link::AccessPointBeacon,
+    pub count: u16,
+    pub interval_ms: u16,
+    pub timeout_ms: u16,
+    pub payload_bytes: u16,
+}
+
+impl StationSleep {
+    pub(super) fn validate(&self) -> Result<()> {
+        use oer_hil_protocol::wifi::WifiStationPowerSave;
+        match self.power_save {
+            WifiStationPowerSave::None => {
+                return Err("station-sleep requires a modem-sleep power_save".into());
+            }
+            WifiStationPowerSave::MaxModem { listen_interval } => {
+                bounded(listen_interval, 1, u16::MAX, "power_save.listen_interval")?;
+            }
+            WifiStationPowerSave::MinModem => {}
+        }
+        self.access_point_beacon.validate()?;
+        validate_icmp(
+            self.count,
+            self.interval_ms,
+            self.timeout_ms,
+            self.payload_bytes,
+        )
+    }
+}
+
 pub(super) fn validate_icmp(
     count: u16,
     interval_ms: u16,

@@ -241,3 +241,23 @@ fn a_tsf_sample_of_an_earlier_radio_start_is_refused_with_its_mac_clock() {
         Err(TsfProjectionError::StaleStamp)
     );
 }
+
+#[test]
+fn a_counter_reading_pairs_the_raw_counter_with_monotonic_time_and_keeps_the_relation() {
+    let clock = VirtualClock::new();
+    clock.advance_to(at(10_000));
+    let counter = Counter::new(&clock, 1_000);
+    let storage = MacClockStorage::<NoopRawMutex, _, _>::new(&clock);
+    let mac = storage.start(&counter);
+    let before = mac.sample().unwrap();
+    clock.advance_to(at(12_000));
+    assert_eq!(
+        mac.counter_reading(),
+        Some((counter.raw_at(at(12_000)), at(12_000)))
+    );
+    // The reading neither starts a generation nor moves the timeline.
+    assert_eq!(mac.sample().unwrap().generation, before.generation);
+    // A replaced clock has no reading.
+    let _later = storage.start(&counter);
+    assert_eq!(mac.counter_reading(), None);
+}

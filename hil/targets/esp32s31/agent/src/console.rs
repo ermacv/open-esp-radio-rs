@@ -243,6 +243,7 @@ pub enum WifiControlRequest {
     StartStation {
         request_id: u32,
         credentials: NetworkCredentials,
+        power_save: oer_hil_protocol::wifi::WifiStationPowerSave,
     },
     RestartRadio {
         request_id: u32,
@@ -2278,12 +2279,17 @@ pub async fn protocol_task() {
                         };
                         respond(session_id, request_id, response).await;
                     }
-                    Request::StartStation(oer_hil_protocol::wifi::StartStation(credentials)) => {
+                    Request::StartStation(oer_hil_protocol::wifi::StartStation(
+                        oer_hil_protocol::wifi::StationStart {
+                            credentials,
+                            power_save,
+                        },
+                    )) => {
                         let response = if !crate::image_features::has::<
                             oer_hil_protocol::wifi::RoleControl,
                         >() {
                             Err(RejectReason::Unsupported)
-                        } else if credentials.validate().is_err() {
+                        } else if credentials.validate().is_err() || !power_save.is_valid() {
                             Err(RejectReason::InvalidConfiguration)
                         } else if !initialized
                             || state != SessionState::Idle
@@ -2296,6 +2302,7 @@ pub async fn protocol_task() {
                             .try_send(WifiControlRequest::StartStation {
                                 request_id,
                                 credentials,
+                                power_save,
                             })
                             .is_err()
                         {

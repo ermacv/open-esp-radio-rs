@@ -292,6 +292,10 @@ impl crate::mac_clock::ReceptionClock for ModelTimer {
     }
 
     fn on_rf_wake(&self) {}
+
+    fn counter_reading(&self) -> Option<(u32, oer_time::Instant)> {
+        None
+    }
 }
 
 /// Records every retune and answers with `accept`.

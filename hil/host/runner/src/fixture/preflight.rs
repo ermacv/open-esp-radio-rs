@@ -67,6 +67,7 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
                         phy,
                         plan.wifi.management_frame_protection,
                         plan.wifi.access_point_security,
+                        plan.wifi.access_point_beacon,
                     ),
                 )
                 .map_err(oer_hil_stand::Error::context)?;

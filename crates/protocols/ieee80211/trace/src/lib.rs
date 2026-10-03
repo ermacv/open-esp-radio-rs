@@ -686,6 +686,77 @@ impl fmt::Display for PowerStateTrace {
     }
 }
 
+/// The station's RF went to sleep: the raw MAC local-time counter and the
+/// low 32 bits of monotonic microseconds, read back to back just before.
+///
+/// With [`RfWoke`], a host tells whether the MAC counter runs through RF
+/// sleep: across one sleep, the counter's distance equals the monotonic
+/// distance when it runs, is zero when it holds still.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RfSleepEntered {
+    pub mac_local_time: u32,
+    pub monotonic_micros: u32,
+}
+
+/// The station's RF woke: the same pair read just after the wake.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RfWoke {
+    pub mac_local_time: u32,
+    pub monotonic_micros: u32,
+}
+
+impl Event for RfSleepEntered {
+    const KIND: Kind = kind(10);
+    const CHANNEL: Channel = channel(9);
+
+    fn encode(&self) -> [u32; 2] {
+        [self.mac_local_time, self.monotonic_micros]
+    }
+
+    fn decode(words: [u32; 2]) -> Option<Self> {
+        Some(Self {
+            mac_local_time: words[0],
+            monotonic_micros: words[1],
+        })
+    }
+}
+
+impl fmt::Display for RfSleepEntered {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "rf sleep mac={} monotonic={}",
+            self.mac_local_time, self.monotonic_micros
+        )
+    }
+}
+
+impl Event for RfWoke {
+    const KIND: Kind = kind(11);
+    const CHANNEL: Channel = channel(9);
+
+    fn encode(&self) -> [u32; 2] {
+        [self.mac_local_time, self.monotonic_micros]
+    }
+
+    fn decode(words: [u32; 2]) -> Option<Self> {
+        Some(Self {
+            mac_local_time: words[0],
+            monotonic_micros: words[1],
+        })
+    }
+}
+
+impl fmt::Display for RfWoke {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "rf wake mac={} monotonic={}",
+            self.mac_local_time, self.monotonic_micros
+        )
+    }
+}
+
 oer_trace::event_set!(
     pub StationTrace: BeaconDispatch,
     ControlMailbox,
@@ -696,6 +767,8 @@ oer_trace::event_set!(
     RxSlotTrace,
     LinkControlTrace,
     PowerStateTrace,
+    RfSleepEntered,
+    RfWoke,
 );
 
 #[cfg(test)]

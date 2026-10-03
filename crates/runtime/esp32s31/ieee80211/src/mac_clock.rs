@@ -58,6 +58,10 @@ pub trait ReceptionClock {
 
     /// Start a new generation after an RF wake ([`MacClockHandle::on_rf_wake`]).
     fn on_rf_wake(&self);
+
+    /// The raw counter and the monotonic time read back to back
+    /// ([`MacClockHandle::counter_reading`]).
+    fn counter_reading(&self) -> Option<(u32, Instant)>;
 }
 
 impl<M: RawMutex, L: LocalTimeCounter + Copy, C: Clock> ReceptionClock
@@ -69,6 +73,10 @@ impl<M: RawMutex, L: LocalTimeCounter + Copy, C: Clock> ReceptionClock
 
     fn on_rf_wake(&self) {
         MacClockHandle::on_rf_wake(self);
+    }
+
+    fn counter_reading(&self) -> Option<(u32, Instant)> {
+        MacClockHandle::counter_reading(self)
     }
 }
 
@@ -152,6 +160,10 @@ impl<T, K: ReceptionClock> ReceptionClock for ReceptionTimer<T, K> {
 
     fn on_rf_wake(&self) {
         self.reception.on_rf_wake();
+    }
+
+    fn counter_reading(&self) -> Option<(u32, Instant)> {
+        self.reception.counter_reading()
     }
 }
 
@@ -303,6 +315,13 @@ impl<M: RawMutex, L: LocalTimeCounter + Copy, C: Clock> MacClockHandle<'_, M, L,
         self.update(|state, counter, monotonic| {
             read_fresh(state, counter, monotonic, true);
         });
+    }
+
+    /// The raw MAC local-time counter and the monotonic time, read back to
+    /// back, without touching the relation: evidence of what the counter did
+    /// across an RF sleep. `None` once a later start replaced this clock.
+    pub fn counter_reading(&self) -> Option<(u32, Instant)> {
+        self.update(|_, counter, monotonic| (counter.read(), monotonic.now()))
     }
 
     /// A TSF epoch no owner of a TSF relation took before

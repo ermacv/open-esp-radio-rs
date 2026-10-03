@@ -45,6 +45,7 @@ impl Prepared {
                 phy,
                 plan.wifi.management_frame_protection,
                 plan.wifi.access_point_security,
+                plan.wifi.access_point_beacon,
             )
             .map_err(super::Error::context)?;
             // A fresh selected-radio epoch is part of the multi-client fixture.

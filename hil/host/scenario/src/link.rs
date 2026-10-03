@@ -104,6 +104,32 @@ impl AccessPointSecurity {
     }
 }
 
+/// The beacon schedule a scenario sets on the station fixture's access
+/// point: its beacon interval in time units and its DTIM period in beacons.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AccessPointBeacon {
+    pub interval_tu: u16,
+    pub dtim_period: u8,
+}
+
+impl AccessPointBeacon {
+    /// hostapd's accepted ranges: a beacon interval of 15..=65535 TU and a
+    /// DTIM period of 1..=255 beacons.
+    pub fn validate(self) -> Result<(), String> {
+        if self.interval_tu < 15 {
+            return Err(format!(
+                "access_point_beacon.interval_tu {} is below hostapd's 15 TU",
+                self.interval_tu
+            ));
+        }
+        if self.dtim_period == 0 {
+            return Err("access_point_beacon.dtim_period must be at least 1".into());
+        }
+        Ok(())
+    }
+}
+
 /// How one scenario uses the shared Wi-Fi laboratory.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct WifiLabUse {
@@ -115,4 +141,7 @@ pub struct WifiLabUse {
     pub access_point_security: AccessPointSecurity,
     /// The target runs the access point; the fixture follows its channel.
     pub access_point: bool,
+    /// The beacon schedule the station fixture's access point must run,
+    /// restored after the scenario.
+    pub access_point_beacon: Option<AccessPointBeacon>,
 }

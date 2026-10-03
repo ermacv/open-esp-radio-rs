@@ -34,6 +34,7 @@ fn station_udp_requirements_follow_the_offer_and_observers() {
             management_frame_protection: Default::default(),
             access_point_security: Default::default(),
             access_point: false,
+            access_point_beacon: None,
         }
     );
     let observed = valid(&udp_rx(
@@ -253,6 +254,7 @@ fn access_point_clients_select_fixture_services() {
             management_frame_protection: Default::default(),
             access_point_security: Default::default(),
             access_point: true,
+            access_point_beacon: None,
         }
     );
     let openwrt = valid(&ap("clients = { kind = 'openwrt' }\n", AP_UDP_RX)).plan();

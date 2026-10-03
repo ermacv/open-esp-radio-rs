@@ -1,7 +1,9 @@
 //! Lifetime-safe access to the repository-controlled HIL access point.
 
 use crate::Result;
-use oer_hil_scenario::link::{AccessPointSecurity, ManagementFrameProtection, PhyExpectation};
+use oer_hil_scenario::link::{
+    AccessPointBeacon, AccessPointSecurity, ManagementFrameProtection, PhyExpectation,
+};
 use oer_hil_stand::config::{StationConfig, StationFixtureConfig};
 
 /// Restores the selected AP frontier on every normal or error return.
@@ -18,7 +20,14 @@ impl ControlledAp {
         phy: PhyExpectation,
         management_frame_protection: ManagementFrameProtection,
         access_point_security: AccessPointSecurity,
+        beacon: Option<AccessPointBeacon>,
     ) -> Result<Self> {
+        if beacon.is_some() && !matches!(fixture, StationFixtureConfig::OpenWrt(_)) {
+            return Err(crate::fixture::Error::new(
+                "a scenario beacon schedule requires the OpenWrt station fixture",
+            )
+            .into());
+        }
         if (management_frame_protection.negotiated() || access_point_security.offers_sae())
             && !matches!(fixture, StationFixtureConfig::OpenWrt(_))
         {
@@ -39,6 +48,7 @@ impl ControlledAp {
                     phy,
                     management_frame_protection,
                     access_point_security,
+                    beacon,
                 )
                 .map_err(super::Error::context)?,
             ))),

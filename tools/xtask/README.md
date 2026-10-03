@@ -114,8 +114,12 @@ Clippy with `-D warnings` covers the selected host packages and every package
 depending on them, so a changed interface fails where it is used; the tests
 (with their declared feature sets, limited to 20 minutes) cover the selected
 host packages only. Host packages are every package of the root workspace and
-host or portable packages of the others. The tests of the dependents, `check
-docs`, packages that build only for a chip, the HIL images, API documentation
+host or portable packages of the others. When the change reaches a package
+that builds only for a chip, the gate also type-checks the two final HIL
+images (`check firmware --class performance --class correctness
+--type-check`), as CI does, since the host checks never compile that code.
+The tests of the dependents, `check docs`, the full HIL image builds, API
+documentation
 and the PHY, network, register and provenance audits are CI's on the pull
 request, or `check changed --full` locally. Both commands print any workflow
 of `.github/workflows` whose newest run on `main` failed, or a one-line

@@ -96,6 +96,20 @@ fn the_fast_gate_tests_only_what_changed() {
 }
 
 #[test]
+fn chip_only_packages_are_those_the_host_never_builds() {
+    let affected = BTreeSet::from([
+        key("Cargo.toml", "hal"),
+        key("hil/targets/chip/Cargo.toml", "agent"),
+    ]);
+    assert_eq!(
+        chip_only(&tree(), &affected),
+        BTreeSet::from([&key("hil/targets/chip/Cargo.toml", "agent")])
+    );
+    let host_only = BTreeSet::from([key("Cargo.toml", "hal")]);
+    assert!(chip_only(&tree(), &host_only).is_empty());
+}
+
+#[test]
 fn declared_inputs_select_the_packages_that_read_them() {
     let selection = run(&["qualification/catalog/esp32s31/coex.toml"]);
     assert!(selection.docs);

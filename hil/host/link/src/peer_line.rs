@@ -72,8 +72,50 @@ pub trait PeerLink {
 
 /// The peer's serial console.
 pub struct SerialLink {
+    path: String,
     port: Box<dyn serialport::SerialPort>,
     buffered: Vec<u8>,
+}
+
+/// A transport failure of a peer's console, naming the console and what was
+/// being done, so a run report says the peer — not the device under test —
+/// failed. The I/O error stays the source: the runner classifies it as an
+/// infrastructure fault.
+#[derive(Debug)]
+pub struct PeerConsoleError {
+    path: String,
+    operation: String,
+    source: Box<dyn std::error::Error + Send + Sync + 'static>,
+}
+
+impl PeerConsoleError {
+    fn new(
+        path: &str,
+        operation: impl Into<String>,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            path: path.to_owned(),
+            operation: operation.into(),
+            source: Box::new(source),
+        }
+    }
+}
+
+impl std::fmt::Display for PeerConsoleError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "peer console {}: {} failed: {}",
+            self.path, self.operation, self.source
+        )
+    }
+}
+
+impl std::error::Error for PeerConsoleError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&*self.source)
+    }
 }
 
 impl SerialLink {
@@ -83,14 +125,23 @@ impl SerialLink {
     /// A USB Serial/JTAG reset of an ESP32-C5 whose IEEE 802.15.4 radio runs
     /// can leave it in ROM download, so the peer is never reset from here.
     pub fn open(path: &Path) -> Result<Self> {
-        let mut port = serialport::new(path.to_string_lossy(), 115_200)
+        let path = path.to_string_lossy().into_owned();
+        let failed = |operation: &str, error: serialport::Error| {
+            PeerConsoleError::new(&path, operation, error)
+        };
+        let mut port = serialport::new(&path, 115_200)
             .timeout(Duration::from_millis(50))
-            .open()?;
-        port.write_request_to_send(false)?;
-        port.write_data_terminal_ready(false)?;
+            .open()
+            .map_err(|error| failed("open", error))?;
+        port.write_request_to_send(false)
+            .map_err(|error| failed("release RTS", error))?;
+        port.write_data_terminal_ready(false)
+            .map_err(|error| failed("release DTR", error))?;
         thread::sleep(Duration::from_millis(50));
-        port.clear(serialport::ClearBuffer::Input)?;
+        port.clear(serialport::ClearBuffer::Input)
+            .map_err(|error| failed("clear input", error))?;
         Ok(Self {
+            path,
             port,
             buffered: Vec::new(),
         })
@@ -99,9 +150,14 @@ impl SerialLink {
 
 impl PeerLink for SerialLink {
     fn send(&mut self, line: &str) -> Result<()> {
-        self.port.write_all(line.as_bytes())?;
-        self.port.write_all(b"\n")?;
-        self.port.flush()?;
+        let command = line.split(' ').next().unwrap_or(line);
+        self.port
+            .write_all(line.as_bytes())
+            .and_then(|()| self.port.write_all(b"\n"))
+            .and_then(|()| self.port.flush())
+            .map_err(|error| {
+                PeerConsoleError::new(&self.path, format!("write {command}"), error)
+            })?;
         Ok(())
     }
 
@@ -118,7 +174,9 @@ impl PeerLink for SerialLink {
             match self.port.read(&mut chunk) {
                 Ok(read) => self.buffered.extend_from_slice(&chunk[..read]),
                 Err(error) if error.kind() == ErrorKind::TimedOut => {}
-                Err(error) => return Err(error.into()),
+                Err(error) => {
+                    return Err(PeerConsoleError::new(&self.path, "read", error).into());
+                }
             }
         }
     }
@@ -194,5 +252,27 @@ impl<L: PeerLink> PeerLink for RecordingLink<L> {
             self.transcript.record("<", line);
         }
         Ok(line)
+    }
+}
+
+#[cfg(test)]
+mod console_error_tests {
+    use super::*;
+
+    #[test]
+    fn a_console_failure_names_the_peer_console_and_keeps_the_io_cause() {
+        let error = PeerConsoleError::new(
+            "/dev/ttyACM0",
+            "write CFG",
+            std::io::Error::from(ErrorKind::BrokenPipe),
+        );
+        assert!(
+            error
+                .to_string()
+                .starts_with("peer console /dev/ttyACM0: write CFG failed: "),
+            "{error}"
+        );
+        let source = std::error::Error::source(&error).expect("an I/O cause");
+        assert!(source.is::<std::io::Error>());
     }
 }

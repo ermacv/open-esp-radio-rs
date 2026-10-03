@@ -251,6 +251,7 @@ impl ConnectedStaPlan {
         SingleMpduTxConfig {
             station_address: self.link.station_address,
             bssid: self.link.bssid,
+            ssid: self.link.ssid,
             peer_qos: self.link.peer_qos,
             management_protection: self.link.management_protection,
             access_category: WmmAccessCategory::BestEffort,

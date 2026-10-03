@@ -149,6 +149,8 @@ impl StaPeerTransmit for MockTransmit {
 fn he20_access_point() -> ScanRecord {
     let mut access_point = ScanRecord::EMPTY;
     access_point.bssid = [2, 3, 4, 5, 6, 7];
+    access_point.ssid[..4].copy_from_slice(b"test");
+    access_point.ssid_len = 4;
     access_point.beacon_interval_tu = 100;
     access_point.rssi = -45;
     access_point.ht_capability_ie_present = true;
@@ -172,6 +174,8 @@ fn ht40_mcs32_access_point() -> ScanRecord {
 
     let mut access_point = ScanRecord::EMPTY;
     access_point.bssid = [2, 3, 4, 5, 6, 7];
+    access_point.ssid[..4].copy_from_slice(b"test");
+    access_point.ssid_len = 4;
     access_point.channel = channel.primary();
     access_point.beacon_interval_tu = 100;
     access_point.rssi = -45;
@@ -217,6 +221,7 @@ fn port_owns_scan_and_association_peer_programming() {
     .unwrap();
 
     assert_eq!(programmed.peer.link.bssid, access_point.bssid);
+    assert_eq!(programmed.peer.link.ssid.as_bytes(), b"test");
     assert_eq!(programmed.peer.link.association_id, 7);
     let threshold = HeTxopDurationRtsThreshold::new(64).unwrap();
     assert_eq!(
@@ -308,4 +313,38 @@ fn scan_mcs32_capability_reaches_the_connected_ht40_owner_without_tx_admission()
         programmed.peer.rate_control.current_schedule().kind,
         RateScheduleKind::Dot11N
     );
+}
+
+#[test]
+fn a_candidate_without_an_ssid_is_refused_before_any_peer_write() {
+    let mut access_point = he20_access_point();
+    access_point.ssid_len = 0;
+    let mut transmit = MockTransmit::new();
+    let prepared = StaPeerPort::prepare(&mut transmit, &access_point).unwrap();
+    let prepared_events = transmit.count;
+    let response = AssociationResponse {
+        capability_info: 0,
+        status_code: 0,
+        association_id: 7,
+        ht_capability: true,
+        he_capability: true,
+        he_operation: true,
+        wmm: true,
+        wmm_parameters: Some(parse_wmm_parameter_element(&STANDARD_WMM).unwrap()),
+        association_comeback_tu: None,
+    };
+    let mut hardware = MockRadio::new(-95);
+    let refused = StaPeerPort::program(
+        StaPeerRadio::new(&mut hardware, &mut transmit),
+        StaPeerStation::new([8, 9, 10, 11, 12, 13], PhyMode::He20, false, false),
+        &response,
+        prepared,
+    );
+    assert!(matches!(
+        refused,
+        Err(StaPeerPortError::Ssid(
+            oer_ieee80211_mac::ssid::WifiSsidError::Empty
+        ))
+    ));
+    assert_eq!(transmit.count, prepared_events);
 }

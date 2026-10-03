@@ -104,6 +104,31 @@ clock, and through it MPLL, referenced in ESP-HAL's clock tree for the life of
 the image. A driver that releases MPLL therefore never powers it down under
 PSRAM.
 
+## Boot state on the board
+
+The [boot-state probe](../../verification/esp32s31/hardware/boot-state-probe/README.md)
+reads what the bootloader leaves and what esp-hal relies on:
+
+- The `espflash`-bundled ESP-IDF bootloader already programs PMA entry 7 as
+  the locked 64 MiB NAPOT external-memory aperture at `0x5000_0000`, the
+  value esp-hal's `pre_init` writes; entry 15 covers the flash window
+  `0x4000_0000` (512 MiB), entries 12-14 the internal memories, and entry 8 is
+  unused. Newer ESP-IDF bootloaders that put the flash window top in entry 7
+  would conflict with esp-hal's locked write.
+- A Flash MMU entry implements bits 0-10 and 13 of the content word: the
+  page-number field the PAC publishes as 10 bits (`PADDR`, with bit 10 as
+  `ACCESS_SPIRAM`) is the 11-bit value mask of ESP-IDF's `ext_mem_defs.h`;
+  a read-back cannot tell which meaning bit 10 has, and the production
+  translation reads 10 bits, enough for 64 MiB of flash.
+- `PMU.IMM_HP_CK_POWER_1` reads zero after its tie-high and tie-low bits are
+  written: they are write-only pulses, not state.
+- After ESP-IDF's `rng_ll_enable` sequence, which pulses the block reset
+  after setting it, `TRNG.DATE.CLK_EN` reads zero while the TRNG still
+  produces changing output; ESP-IDF's `rng_ll_is_enabled` checks only the
+  LP clock and reset, and so does `entropy::source_status`.
+- Disabling the TIMG watchdog through esp-hal holds: no reset arrives past
+  the armed timeout.
+
 ## Recovery after a lockup
 
 An application can leave LP/PMU state behind that survives a watchdog reset,

@@ -40,8 +40,7 @@ impl<'d> Entropy<'d> {
 /// What the LP TRNG's registers say about the entropy source.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SourceStatus {
-    /// The LP peripheral clock and the TRNG's own clock run, and the block is
-    /// out of reset.
+    /// The LP peripheral clock runs and the block is out of reset.
     pub clocked: bool,
     /// Sampling, the CRC noise conditioner and the standard 256-bit output
     /// mode are on, as ESP-IDF's `rng_ll_enable` leaves them.
@@ -67,9 +66,9 @@ pub fn source_status() -> SourceStatus {
     let conf = trng.conf().read();
     let debug = trng.debug_conf().read();
     SourceStatus {
-        clocked: clock.lp_rng_clk_en().bit_is_set()
-            && clock.lp_rng_rst_en().bit_is_clear()
-            && trng.date().read().clk_en().bit_is_set(),
+        // ESP-IDF's `rng_ll_is_enabled`: `TRNG.DATE.CLK_EN` reads zero after
+        // `rng_ll_enable`, whose block reset follows the write that sets it.
+        clocked: clock.lp_rng_clk_en().bit_is_set() && clock.lp_rng_rst_en().bit_is_clear(),
         sampling: conf.sample_enable().bit_is_set()
             && conf.noise_crc_en().bit_is_set()
             && conf.random_output_mode().bit_is_set(),

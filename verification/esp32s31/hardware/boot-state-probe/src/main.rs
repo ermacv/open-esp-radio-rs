@@ -20,7 +20,7 @@ use esp_backtrace as _;
 use esp_hal::{
     delay::Delay,
     main,
-    peripherals::{PMU, SPI0, TIMG0},
+    peripherals::{LP_PERI, PMU, RNG, SPI0, TIMG0},
     time::Duration,
     timer::timg::{MwdtStage, TimerGroup},
 };
@@ -122,6 +122,18 @@ fn probe_pmu(delay: &Delay) {
     );
 }
 
+fn print_trng(stage: &str) {
+    let trng = RNG::regs();
+    println!(
+        "PROBE trng {stage}: rng_ctrl {:#010x} date {:#010x} conf {:#010x} debug_conf {:#010x} int_raw {:#010x}",
+        LP_PERI::regs().rng_ctrl().read().bits(),
+        trng.date().read().bits(),
+        trng.conf().read().bits(),
+        trng.debug_conf().read().bits(),
+        trng.int_raw().read().bits()
+    );
+}
+
 fn probe_watchdog(timg0: TIMG0<'static>, delay: &Delay) {
     let mut wdt = TimerGroup::new(timg0).wdt;
     wdt.set_timeout(MwdtStage::Stage0, Duration::from_secs(1));
@@ -146,6 +158,16 @@ fn main() -> ! {
     print_pma("esp-hal", &pma());
     probe_mmu();
     probe_pmu(&delay);
+    print_trng("after init");
+    delay.delay_millis(100);
+    print_trng("after 100 ms");
+    for _ in 0..4 {
+        delay.delay_micros(100);
+        println!(
+            "PROBE trng crc_sync_data {:#010x}",
+            RNG::regs().crc_sync_data().read().bits()
+        );
+    }
     probe_watchdog(peripherals.TIMG0, &delay);
 
     println!("PROBE-DONE");

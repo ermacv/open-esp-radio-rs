@@ -53,6 +53,36 @@ pub struct RegisterAccessDocument {
 /// Schema of the `function-records` document
 /// (`{"schema":1,"inputs":[...],"functions":[...],"missing":[...]}`).
 pub const FUNCTION_RECORDS_SCHEMA: u32 = 1;
+pub const FIELD_ACCESSES_SCHEMA: u32 = 1;
+
+/// Every memory access of the analyzed functions that lands on one field
+/// offset, as a field of its root ([`crate::field`]), and the functions no
+/// analysis could read.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FieldAccessesDocument {
+    pub schema: u32,
+    pub inputs: Vec<RegisterAccessInput>,
+    /// The field's displacement from the last loaded pointer or the root.
+    pub offset: i64,
+    /// The access width the request selects, if any.
+    pub width: Option<u8>,
+    /// The functions with at least one such access, in input, object and
+    /// symbol order.
+    pub functions: Vec<FieldAccessFunction>,
+    /// Functions that cannot be analyzed: their accesses are unknown.
+    pub blocked: Vec<LibraryFunction>,
+    /// Code no function covers, whose accesses are unknown too.
+    pub gaps: u64,
+}
+
+/// One function's accesses of the requested field.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FieldAccessFunction {
+    pub function: LibraryFunction,
+    pub accesses: Vec<crate::field::FieldAccess>,
+}
 
 /// The complete analysis of every function the request names, in input,
 /// object and symbol order, and the names no input defines.

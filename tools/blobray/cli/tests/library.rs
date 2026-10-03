@@ -253,3 +253,48 @@ fn the_command_reports_every_record_of_the_named_functions() {
     assert!(human.contains("absent: no input defines it"), "{human}");
     assert!(human.contains("entry (input 0)"), "{human}");
 }
+
+#[test]
+fn the_command_reports_the_accesses_of_one_field() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("library.a");
+    let library = library();
+    std::fs::write(&path, library.bytes()).unwrap();
+    // `lw t2, 0(a0)` reads field 0 of the entry `a0`; the accesses through
+    // `lui t0, 0x20` are absolute and no field.
+    let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
+        .args(["--format", "json", "field-accesses", "--input"])
+        .arg(format!("code={}", path.display()))
+        .args(["--offset", "0", "--width", "4"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let document: blobray_cli::wire::FieldAccessesDocument =
+        serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(document.schema, blobray_cli::wire::FIELD_ACCESSES_SCHEMA);
+    assert_eq!(&document.inputs[0].sha256, library.id());
+    assert!(document.blocked.is_empty());
+    // One `entry` in each of the two members.
+    assert_eq!(document.functions.len(), 2);
+    for function in &document.functions {
+        assert_eq!(function.accesses.len(), 1, "{function:?}");
+        let access = &function.accesses[0];
+        assert_eq!(access.offset, 28);
+        assert_eq!(access.width, 4);
+        assert_eq!(access.path, [0]);
+        assert_eq!(
+            access.root,
+            blobray_cli::field::FieldRoot::EntryRegister { register: 10 }
+        );
+    }
+
+    let human = Command::new(env!("CARGO_BIN_EXE_blobray"))
+        .args(["field-accesses", "--input"])
+        .arg(format!("code={}", path.display()))
+        .args(["--offset", "4"])
+        .output()
+        .unwrap();
+    assert!(human.status.success(), "{human:?}");
+    let human = String::from_utf8_lossy(&human.stdout);
+    assert!(human.contains("0 functions access the field"), "{human}");
+}

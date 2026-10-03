@@ -39,6 +39,29 @@ expressions, values, memory accesses, conditions and return values); a
 input defines, and the command then exits with failure. `--working-memory-mib`,
 `--timeout-secs` and `--max-work-units` bound the analysis cooperatively.
 
+### Field accesses
+
+`field-accesses` finds the functions that read or write one field when the
+function that owns it is unknown:
+
+```console
+blobray field-accesses --input libnet80211=/path/to/libnet80211.a --offset 148 --width 1
+```
+
+It analyzes every function and folds the address of each memory access
+into a root and a path: a root symbol (named from the function's
+references), an entry register, the entry stack, a call result or a section,
+then one displacement per loaded pointer and the field's own displacement
+last. `sb a4, 148(a5)` after `a5 = *(g_ic + 16)` is `g_ic [16, 148]`;
+additions of constants fold into the current displacement. An access whose
+last displacement is `--offset` (of `--width` bytes, when given) is
+reported with its instruction offset, kind and width. Absolute addresses and
+addresses with an unknown part are not fields and are not reported. The
+JSON document is
+`{"schema":1,"inputs":[...],"offset":N,"width":W,"functions":[...],"blocked":[...],"gaps":N}`;
+`blocked` lists the functions no analysis could read and `gaps` counts the
+code no function covers, whose accesses are unknown.
+
 Selection takes static and dynamic `STT_FUNC` symbols defined in nonempty
 executable sections of RV32 ET_REL objects or static ET_EXEC images. Aliases
 and occurrences in different tables remain separate functions even when their

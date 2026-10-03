@@ -22,7 +22,7 @@ and board prerequisites.
 | Task | Interface | Reference |
 | --- | --- | --- |
 | Inspect inputs | `blobray_application::captured::inventory` | [Inventory](cli/reference/inventory-linking/README.md#inventory) |
-| Investigate code | `blobray function-records`, `blobray_application::library::analyze_library` | [Function analysis](cli/reference/analysis/README.md#function-analysis-contract) |
+| Investigate code | `blobray function-records`, `blobray field-accesses`, `blobray_application::library::analyze_library` | [Function analysis](cli/reference/analysis/README.md#function-analysis-contract) |
 | Investigate registers | `blobray register-accesses` | [Library register accesses](cli/reference/registers-data/README.md#library-register-accesses) |
 | Recover tables and coefficients | `blobray_application::data::export` | [Tables and coefficients](cli/reference/registers-data/README.md#captured-data-tables-and-coefficients) |
 | Link an image | `blobray_application::linking::{link, propose_companions}` | [Linked images](cli/reference/inventory-linking/README.md#synthetic-linked-images), [ROM companions](cli/reference/analysis/README.md#explicit-rom-companions) |

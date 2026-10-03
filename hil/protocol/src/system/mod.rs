@@ -16,6 +16,7 @@ crate::messages! {
     endpoint WatchdogTest = "system/watchdog/test" => WatchdogArmed;
     topic WatchdogArmed = "system/watchdog/armed";
     property TimebaseProbe = "system/timebase-probe";
+    property IpcCall = "system/ipc-call";
     property MemoryBenchmark = "system/memory-benchmark";
     endpoint InjectHang = "system/hang/inject" => crate::system::HangInjected;
     topic HangInjected = "system/hang/injected";
@@ -27,6 +28,8 @@ crate::messages! {
     topic InterruptStacks = "system/interrupt-stacks";
     endpoint ProbeTimebase = "system/timebase/probe" => crate::system::TimebaseProbed;
     topic TimebaseProbed = "system/timebase/probed";
+    endpoint CallAcrossCores = "system/ipc/call" => crate::system::CoresCalled;
+    topic CoresCalled = "system/ipc/called";
     #[cfg(feature = "system")]
     endpoint RunMemoryBenchmark = "system/memory-benchmark/run" => crate::system::MemoryBenchmarkCompleted;
     #[cfg(feature = "system")]
@@ -115,6 +118,21 @@ pub struct ProbeTimebase(pub crate::system::TimebaseProbeRequest);
 /// Correlated response to its request.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
 pub struct TimebaseProbed(pub crate::system::TimebaseProbeEvidence);
+
+/// Post functions through esp-hal's inter-processor call: one from core 0 to
+/// itself, one from core 0 to core 1, and from that one, one from core 1 to
+/// core 0.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
+pub struct CallAcrossCores;
+
+/// The core each posted function ran on, by its route; `None` for a function
+/// that did not run within the agent's deadline.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
+pub struct CoresCalled {
+    pub core0_to_core0: Option<u8>,
+    pub core0_to_core1: Option<u8>,
+    pub core1_to_core0: Option<u8>,
+}
 
 /// `system/memory-benchmark/run`.
 #[cfg(feature = "system")]

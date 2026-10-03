@@ -1447,6 +1447,16 @@ impl SerialCapture {
         }
     }
 
+    pub fn call_across_cores(
+        &self,
+        timeout: Duration,
+    ) -> Result<oer_hil_protocol::system::CoresCalled> {
+        match self.call(0, oer_hil_protocol::system::CallAcrossCores, timeout)? {
+            Ok(called) => Ok(called),
+            Err(reason) => Err(format!("device rejected the cross-core call: {reason:?}").into()),
+        }
+    }
+
     pub fn probe_ieee802154_event_status(
         &self,
         request: Ieee802154EventStatusProbeRequest,

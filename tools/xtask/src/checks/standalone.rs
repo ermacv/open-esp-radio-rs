@@ -1,4 +1,5 @@
-//! Extract and compile Blobray without access to repository path dependencies.
+//! Extract and compile Blobray, with the RV32 decoder it takes by path, without
+//! access to any other repository path dependency.
 
 use std::{
     ffi::{OsStr, OsString},
@@ -40,20 +41,26 @@ pub fn run(context: &Context) -> Result<()> {
         .prefix("blobray-standalone-")
         .tempdir()?;
     let root = scratch.path().canonicalize()?;
-    let source = context.root.join("tools/blobray");
+    // Members keep their repository paths, so the decoder Blobray takes by
+    // path is extracted beside it and no path dependency is rewritten.
     let members = [
-        "cli",
-        "crates/domain",
-        "crates/artifacts",
-        "crates/application",
-        "crates/linker",
-        "crates/analysis",
-        "crates/verification",
-        "crates/riscv",
+        "tools/blobray/cli",
+        "tools/blobray/crates/domain",
+        "tools/blobray/crates/artifacts",
+        "tools/blobray/crates/application",
+        "tools/blobray/crates/linker",
+        "tools/blobray/crates/analysis",
+        "tools/blobray/crates/verification",
+        "tools/blobray/crates/riscv",
+        "tools/riscv/decode",
     ];
     let files = paths::source_files(context)?;
     for member in members {
-        extract(&source.join(member), &root.join(member), files.clone())?;
+        extract(
+            &context.root.join(member),
+            &root.join(member),
+            files.clone(),
+        )?;
     }
     let mut workspace: toml::Value = toml::from_str(WORKSPACE)?;
     workspace["workspace"]["members"] = toml::Value::Array(

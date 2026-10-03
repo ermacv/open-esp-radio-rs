@@ -1,6 +1,6 @@
 //! Concrete RV32IMAC execution. Instruction fetch, data, and events use explicit ports.
 use super::*;
-use crate::extensions::{self, Extension};
+use oer_riscv_decode::{self as extensions, Extension};
 
 /// Executor of the full decoded ISA: RV32IMAC with Zba, Zbb, Zbs, Zcb and
 /// Zcmp, as ESP-IDF builds the ESP32-S31.
@@ -25,25 +25,8 @@ impl Profile {
         // rounding and exception state are not modeled.
         match self {
             Self::Full => !matches!(decoded.inst, Instruction::Float(_)),
-            Self::Rv32imac => {
-                !matches!(decoded.inst, Instruction::Extension(_)) && !floating_point(bytes)
-            }
+            Self::Rv32imac => oer_riscv_decode::decode(bytes, Extensions::RV32IMAC).is_some(),
         }
-    }
-}
-
-/// Whether `bytes` encode an F or D instruction: the 32-bit LOAD-FP,
-/// STORE-FP, fused multiply-add and OP-FP major opcodes, and the compressed
-/// FP loads and stores of quadrants zero and two (C extension,
-/// <https://docs.riscv.org/reference/isa/unpriv/c-st-ext.html>).
-fn floating_point(bytes: &[u8]) -> bool {
-    const MAJOR_OPCODES: [u16; 7] = [0x07, 0x27, 0x43, 0x47, 0x4b, 0x4f, 0x53];
-    const COMPRESSED_FUNCT3: [u16; 4] = [1, 3, 5, 7];
-    let half = u16::from_le_bytes([bytes[0], bytes[1]]);
-    if half & 3 == 3 {
-        MAJOR_OPCODES.contains(&(half & 0x7f))
-    } else {
-        matches!(half & 3, 0 | 2) && COMPRESSED_FUNCT3.contains(&(half >> 13))
     }
 }
 
@@ -456,7 +439,7 @@ fn run(
                     if fence.fm != 0 {
                         stop!(ExecutionGap::UnsupportedInstruction);
                     }
-                    let bits = |s: rv_asm::FenceSet| {
+                    let bits = |s: oer_riscv_decode::FenceSet| {
                         u8::from(s.device_input) * 8
                             + u8::from(s.device_output) * 4
                             + u8::from(s.memory_read) * 2
@@ -577,12 +560,12 @@ fn run(
         pc = next;
     }
 }
-fn ordering(order: rv_asm::AmoOrdering) -> ExecutionOrdering {
+fn ordering(order: oer_riscv_decode::AmoOrdering) -> ExecutionOrdering {
     let (acquire, release) = order.aq_rl();
     ExecutionOrdering { acquire, release }
 }
-fn atomic(op: rv_asm::AmoOp, old: u32, value: u32) -> u32 {
-    use rv_asm::AmoOp;
+fn atomic(op: oer_riscv_decode::AmoOp, old: u32, value: u32) -> u32 {
+    use oer_riscv_decode::AmoOp;
     match op {
         AmoOp::Swap => value,
         AmoOp::Add => old.wrapping_add(value),
@@ -653,8 +636,9 @@ mod tests {
         assert!(RiscvDecoder.decode(outside[2]).is_some());
         assert!(!admitted(Profile::Full, outside[2]));
         // c.flwsp fa0, 0(sp) and c.fsw fa0, 0(a0) are floating point.
-        assert!(floating_point(&0x6502u16.to_le_bytes()));
-        assert!(floating_point(&0xe108u16.to_le_bytes()));
-        assert!(!floating_point(&0x0505u16.to_le_bytes()));
+        for bytes in [0x6502u16.to_le_bytes(), 0xe108u16.to_le_bytes()] {
+            assert!(!admitted(Profile::Rv32imac, &bytes));
+            assert!(!admitted(Profile::Full, &bytes));
+        }
     }
 }

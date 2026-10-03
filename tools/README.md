@@ -8,6 +8,7 @@ checks. A utility does not need its own Cargo package.
 | --- | --- |
 | [blobray](blobray/README.md) | Captured binary research, reviewed knowledge and bounded concrete comparison |
 | [memory-report](memory-report/README.md) | Generic ELF memory and stack analysis; the consumer supplies placement policy |
+| [riscv/decode](riscv/decode/README.md) | RV32 instruction bytes to typed instructions, lengths and text, for a selected extension set |
 | [symbol-lineage](symbol-lineage/README.md) | Source function names carried across obfuscated vendor archive revisions |
 | [process](process/README.md) | Host child-process ownership, cancellation and bounded cleanup shared by xtask and HIL |
 | [firmware](firmware/README.md) | Firmware image operations, flash segment writes and shared serial-device leases |
@@ -24,5 +25,6 @@ Neither producer decides product readiness. Register model/publication inputs
 have a separate [source map](../registers/esp32s31/README.md).
 
 Blobray analyzes inside its own process under cooperative limits. `cargo xtask check
-blobray-standalone` extracts and tests the shipping crate graph independently.
+blobray-standalone` extracts and tests the shipping crate graph, with the RV32
+decoder it takes by path, independently.
 Register publication uses the [register tool](registers/README.md).

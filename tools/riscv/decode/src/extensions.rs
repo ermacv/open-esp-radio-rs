@@ -8,12 +8,12 @@
 //! table jumps need the `jvt` CSR and stay unsupported.
 //! Encodings: <https://docs.riscv.org/reference/isa/unpriv/b-st-ext.html> and
 //! <https://docs.riscv.org/reference/isa/unpriv/zc.html>.
-use blobray_domain::{IntegerOp, Operand};
-use std::fmt;
+use crate::{ExtensionOp as IntegerOp, Operand};
+use core::fmt;
 
 /// One decoded extension instruction.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Extension {
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum Extension {
     /// `dest = left op right`; unary operations ignore `right`.
     Integer {
         op: IntegerOp,
@@ -55,9 +55,9 @@ pub(crate) enum Classified {
     Base,
 }
 
-pub(crate) const A0: u8 = 10;
-pub(crate) const A1: u8 = 11;
-pub(crate) const RA: u8 = 1;
+pub const A0: u8 = 10;
+pub const A1: u8 = 11;
+pub const RA: u8 = 1;
 
 /// Saved register `s<index>`.
 const fn saved(index: u8) -> u8 {
@@ -80,11 +80,11 @@ const fn saved_count(list: u8) -> u8 {
 
 /// Registers of a Zcmp list in the order the specification stores them from
 /// the top of the frame down: `s11` first, `ra` last.
-pub(crate) fn list_registers(list: u8) -> impl Iterator<Item = u8> {
+pub fn list_registers(list: u8) -> impl Iterator<Item = u8> {
     (0..saved_count(list))
         .rev()
         .map(saved)
-        .chain(std::iter::once(RA))
+        .chain(core::iter::once(RA))
 }
 
 /// The frame a register list needs, rounded to the 16-byte stack alignment.

@@ -1,5 +1,5 @@
-use crate::RiscvDecoder;
-use blobray_domain::{FunctionDecoder, FunctionSemantics, InstructionFlow, MemoryKind, SemanticOp};
+use super::*;
+use crate::{Extensions, Instruction, decode};
 
 /// Encodings and display text from LLVM 23's assembler
 /// (`llvm-mc -triple=riscv32 -mattr=+f,+c -show-encoding`), which prints the
@@ -30,61 +30,35 @@ const FORMS: &[(&[u8], &str)] = &[
 #[test]
 fn single_precision_forms_decode_as_the_assembler_wrote_them() {
     for (bytes, text) in FORMS {
-        let decoded = RiscvDecoder.decode(bytes).unwrap();
-        assert_eq!(decoded.text, *text);
-        assert_eq!(usize::from(decoded.length), bytes.len());
-        assert!(matches!(decoded.flow, InstructionFlow::Next), "{text}");
+        let (instruction, width) = decode(bytes, Extensions::ALL).unwrap();
+        assert!(matches!(instruction, Instruction::Float(_)), "{text}");
+        assert_eq!(instruction.to_string(), *text);
+        assert_eq!(width, bytes.len());
     }
 }
 
 #[test]
-fn loads_and_stores_lift_to_float_memory_without_integer_registers() {
+fn only_an_integer_destination_names_an_integer_register() {
+    // fmv.x.w a0, fa0 writes a0; fadd.s ft0, ft1, ft2 writes no integer register.
+    let destination = |bytes: &[u8]| match decode(bytes, Extensions::ALL) {
+        Some((Instruction::Float(Float::Operation { operands, .. }), _)) => operands[0],
+        other => panic!("{other:?}"),
+    };
     assert_eq!(
-        RiscvDecoder.lift(&[0x07, 0x25, 0xc1, 0xff]),
-        SemanticOp::Memory {
-            kind: MemoryKind::FloatLoad,
+        destination(&[0x53, 0x05, 0x05, 0xe0]),
+        Some(Register::Integer(10))
+    );
+    assert_eq!(
+        destination(&[0x53, 0xf0, 0x20, 0x00]),
+        Some(Register::Float(0))
+    );
+    assert_eq!(
+        decode(&[0x07, 0x25, 0xc1, 0xff], Extensions::ALL).map(|(i, _)| i),
+        Some(Instruction::Float(Float::Load {
+            dest: 10,
             base: 2,
-            displacement: -4,
-            width: 4,
-            dest: None,
-            source: None,
-            swap: false,
-            signed: false,
-        }
-    );
-    assert_eq!(
-        RiscvDecoder.lift(&[0xbe, 0xe0]),
-        SemanticOp::Memory {
-            kind: MemoryKind::FloatStore,
-            base: 2,
-            displacement: 64,
-            width: 4,
-            dest: None,
-            source: None,
-            swap: false,
-            signed: false,
-        }
-    );
-}
-
-#[test]
-fn only_an_integer_destination_is_an_integer_effect() {
-    // fmv.x.w a0, fa0 and fcvt.w.s a0, fa0 write a0; fadd.s and fmv.w.x do not.
-    assert_eq!(
-        RiscvDecoder.lift(&[0x53, 0x05, 0x05, 0xe0]),
-        SemanticOp::Opaque { dest: 10 }
-    );
-    assert_eq!(
-        RiscvDecoder.lift(&[0x53, 0x15, 0x05, 0xc0]),
-        SemanticOp::Opaque { dest: 10 }
-    );
-    assert_eq!(
-        RiscvDecoder.lift(&[0x53, 0xf0, 0x20, 0x00]),
-        SemanticOp::None
-    );
-    assert_eq!(
-        RiscvDecoder.lift(&[0x53, 0x05, 0x00, 0xf0]),
-        SemanticOp::None
+            offset: -4
+        }))
     );
 }
 
@@ -98,7 +72,6 @@ fn reserved_rounding_modes_and_other_formats_stay_undecoded() {
         &[0x07, 0x35, 0xc1, 0xff],
         &[0x00, 0x20],
     ] {
-        assert!(RiscvDecoder.decode(bytes).is_none(), "{bytes:02x?}");
-        assert_eq!(RiscvDecoder.lift(bytes), SemanticOp::Unsupported);
+        assert!(decode(bytes, Extensions::ALL).is_none(), "{bytes:02x?}");
     }
 }

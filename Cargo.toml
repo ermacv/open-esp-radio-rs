@@ -114,6 +114,7 @@ members = [
     "hil/host/runner-ieee80211",
     "qualification/evaluator",
     "tools/memory-report",
+    "tools/riscv/decode",
     "tools/registers",
     "tools/registers/contracts",
     "tools/registers/model",

@@ -101,7 +101,7 @@ version = "0.1.0"
 dependencies = [
  "blobray-domain",
  "object",
- "rv-asm",
+ "oer-riscv-decode",
 ]
 
 [[package]]
@@ -455,6 +455,13 @@ dependencies = [
  "serde",
  "serde_json",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "oer-riscv-decode"
+version = "0.1.0"
+dependencies = [
+ "rv-asm",
 ]
 
 [[package]]

@@ -1,12 +1,9 @@
 //! ISA-only function decoder and relocation interpretation; no I/O authority.
 mod execution;
-mod extensions;
-mod float;
 use blobray_domain::*;
 pub use execution::{RiscvExecutor, Rv32imacExecutor};
-use extensions::{Classified, Extension};
 use object::elf::*;
-use rv_asm::{Inst, IsCompressed, Xlen};
+use oer_riscv_decode::{Extension, Extensions, Inst, Instruction};
 pub struct RiscvDecoder;
 impl FunctionDecoder for RiscvDecoder {
     fn identity(&self) -> &'static str {
@@ -59,7 +56,7 @@ impl FunctionDecoder for RiscvDecoder {
             (Instruction::Extension(extension), width) => {
                 let flow = match extension {
                     Extension::Pop { ret: Some(_), .. } => InstructionFlow::Indirect {
-                        base: extensions::RA,
+                        base: oer_riscv_decode::RA,
                         offset: 0,
                         link: false,
                     },
@@ -272,66 +269,9 @@ mod tests {
     }
 }
 
-/// One decoded instruction: a base RV32IMAC form from rv-asm, or an
-/// extension or single-precision form it lacks.
-#[derive(Clone, Copy)]
-enum Instruction {
-    Base(Inst),
-    Extension(Extension),
-    Float(float::Float),
-}
-
+/// Every form the decoder knows: the ESP32-S31's instruction set without Zcmt.
 fn decode_instruction(bytes: &[u8]) -> Option<(Instruction, usize)> {
-    match extensions::classify(bytes) {
-        Classified::Extension(extension, width) => {
-            return (bytes.len() >= width).then_some((Instruction::Extension(extension), width));
-        }
-        Classified::Reserved => return None,
-        Classified::Base => {}
-    }
-    if bytes.len() < 2 {
-        return None;
-    }
-    let half = u16::from_le_bytes([bytes[0], bytes[1]]);
-    let float = if half & 3 != 3 {
-        float::compressed(half).map(|float| (float, 2))
-    } else {
-        bytes
-            .get(..4)
-            .and_then(|word| float::word(u32::from_le_bytes(word.try_into().ok()?)))
-            .map(|float| (float, 4))
-    };
-    if let Some((float, width)) = float {
-        return Some((Instruction::Float(float), width));
-    }
-    let width = if half & 3 != 3 {
-        2
-    } else if half & 0x1f != 0x1f {
-        4
-    } else {
-        return None;
-    };
-    if bytes.len() < width {
-        return None;
-    }
-    let mut code = [0; 4];
-    code[..width].copy_from_slice(&bytes[..width]);
-    let (inst, compressed) = Inst::decode(u32::from_le_bytes(code), Xlen::Rv32).ok()?;
-    if (compressed == IsCompressed::Yes) != (width == 2) {
-        return None;
-    }
-    // rv-asm 0.2.1 zero-extends C.ANDI's six-bit immediate. Normalize at
-    // this shared boundary so display, abstract lifting and concrete execution
-    // all implement the ISA's signed immediate (C extension, integer ALU).
-    let inst = match (width, inst) {
-        (2, Inst::Andi { imm, dest, src1 }) => Inst::Andi {
-            imm: rv_asm::Imm::new_i32(((imm.as_u32() << 26) as i32) >> 26),
-            dest,
-            src1,
-        },
-        (_, inst) => inst,
-    };
-    Some((Instruction::Base(inst), width))
+    oer_riscv_decode::decode(bytes, Extensions::ALL)
 }
 
 mod semantics;

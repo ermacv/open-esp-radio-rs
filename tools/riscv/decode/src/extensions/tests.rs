@@ -1,6 +1,12 @@
 use super::*;
-use crate::RiscvDecoder;
-use blobray_domain::{FunctionDecoder, FunctionSemantics, InstructionFlow, SemanticOp};
+use crate::{Extensions, Instruction, decode};
+
+fn extension(bytes: &[u8]) -> Extension {
+    match decode(bytes, Extensions::ALL) {
+        Some((Instruction::Extension(extension), _)) => extension,
+        other => panic!("{bytes:02x?} decoded to {other:?}"),
+    }
+}
 
 /// Encodings and display text from LLVM's assembler.
 const STACK_FORMS: &[(u16, &str)] = &[
@@ -17,36 +23,27 @@ const STACK_FORMS: &[(u16, &str)] = &[
 #[test]
 fn stack_forms_decode_as_the_assembler_wrote_them() {
     for (half, text) in STACK_FORMS {
-        let decoded = RiscvDecoder.decode(&half.to_le_bytes()).unwrap();
-        assert_eq!(decoded.text, *text);
-        assert_eq!(decoded.length, 2);
-        let returns = text.starts_with("cm.popret");
+        let (instruction, width) = decode(&half.to_le_bytes(), Extensions::ALL).unwrap();
+        assert_eq!(instruction.to_string(), *text);
+        assert_eq!(width, 2);
         assert_eq!(
             matches!(
-                decoded.flow,
-                InstructionFlow::Indirect {
-                    base: 1,
-                    offset: 0,
-                    link: false
-                }
+                instruction,
+                Instruction::Extension(Extension::Pop { ret: Some(_), .. })
             ),
-            returns,
+            text.starts_with("cm.popret"),
             "{text}"
-        );
-        assert_eq!(
-            RiscvDecoder.lift(&half.to_le_bytes()),
-            SemanticOp::Unsupported
         );
     }
     // The frame stores s11 at the top and ra at the bottom.
     assert_eq!(list_registers(9).collect::<Vec<_>>(), [20, 19, 18, 9, 8, 1]);
     // Zcmt table jumps and a register list below {ra} are not decoded.
-    assert!(RiscvDecoder.decode(&0xa002u16.to_le_bytes()).is_none());
-    assert!(RiscvDecoder.decode(&0xb832u16.to_le_bytes()).is_none());
+    assert!(decode(&0xa002u16.to_le_bytes(), Extensions::ALL).is_none());
+    assert!(decode(&0xb832u16.to_le_bytes(), Extensions::ALL).is_none());
 }
 
 #[test]
-fn integer_forms_lift_to_their_operations() {
+fn integer_forms_decode_to_their_operations() {
     use IntegerOp::*;
     use Operand::{Immediate as I, Register as R};
     // (LLVM encoding, operation, destination, left, right)
@@ -83,16 +80,16 @@ fn integer_forms_lift_to_their_operations() {
     ];
     for (word, op, dest, left, right) in words {
         assert_eq!(
-            RiscvDecoder.lift(&word.to_le_bytes()),
-            SemanticOp::Integer {
+            extension(&word.to_le_bytes()),
+            Extension::Integer {
                 op: *op,
                 dest: *dest,
-                left: Operand::Register(*left),
+                left: *left,
                 right: *right,
             },
             "{word:#010x}"
         );
-        assert_eq!(RiscvDecoder.decode(&word.to_le_bytes()).unwrap().length, 4);
+        assert_eq!(decode(&word.to_le_bytes(), Extensions::ALL).unwrap().1, 4);
     }
     let halves: &[(u16, IntegerOp, u8, Operand)] = &[
         (0x9c61, And, 8, I(0xff)),
@@ -104,11 +101,11 @@ fn integer_forms_lift_to_their_operations() {
     ];
     for (half, op, dest, right) in halves {
         assert_eq!(
-            RiscvDecoder.lift(&half.to_le_bytes()),
-            SemanticOp::Integer {
+            extension(&half.to_le_bytes()),
+            Extension::Integer {
                 op: *op,
                 dest: *dest,
-                left: Operand::Register(*dest),
+                left: *dest,
                 right: *right,
             },
             "{half:#06x}"
@@ -117,9 +114,9 @@ fn integer_forms_lift_to_their_operations() {
 }
 
 #[test]
-fn zcb_memory_forms_lift_to_loads_and_stores() {
+fn zcb_memory_forms_decode_to_loads_and_stores() {
     // (LLVM encoding, load, register, base, offset, width, signed)
-    let forms: &[(u16, bool, u8, u8, i32, u8, bool)] = &[
+    let forms: &[(u16, bool, u8, u8, u8, u8, bool)] = &[
         (0x81e8, true, 10, 11, 3, 1, false),
         (0x8430, true, 12, 8, 2, 2, false),
         (0x87d4, true, 13, 15, 0, 2, true),
@@ -127,41 +124,17 @@ fn zcb_memory_forms_lift_to_loads_and_stores() {
         (0x8d3c, false, 15, 10, 2, 2, false),
     ];
     for (half, load, register, base, offset, width, signed) in forms {
-        let SemanticOp::Memory {
-            kind,
-            base: b,
-            displacement,
-            width: w,
-            dest,
-            source,
-            signed: s,
-            ..
-        } = RiscvDecoder.lift(&half.to_le_bytes())
-        else {
-            panic!("{half:#06x} is not a memory operation");
-        };
-        assert_eq!(kind == blobray_domain::MemoryKind::Load, *load);
-        assert_eq!((b, displacement, w, s), (*base, *offset, *width, *signed));
-        assert_eq!(if *load { dest } else { source }, Some(*register));
-    }
-}
-
-#[test]
-fn operations_follow_the_extension_definitions() {
-    use IntegerOp::*;
-    for (op, a, b, expected) in [
-        (ShiftAdd3, 1, 2, 10),
-        (XorNot, 0xf0, 0x0f, 0xffff_ff00),
-        (Min, u32::MAX, 1, u32::MAX),
-        (Maxu, u32::MAX, 1, u32::MAX),
-        (RotateRight, 1, 33, 0x8000_0000),
-        (CountLeadingZeros, 0, 0, 32),
-        (CountTrailingZeros, 0, 0, 32),
-        (SignExtendHalf, 0x8000, 0, 0xffff_8000),
-        (OrCombineBytes, 0x0100_8000, 0, 0xff00_ff00),
-        (BitClear, u32::MAX, 32, 0xffff_fffe),
-        (BitExtract, 0x8000_0000, 31, 1),
-    ] {
-        assert_eq!(op.evaluate(a, b), expected, "{op:?}");
+        assert_eq!(
+            extension(&half.to_le_bytes()),
+            Extension::Memory {
+                load: *load,
+                register: *register,
+                base: *base,
+                offset: *offset,
+                width: *width,
+                signed: *signed,
+            },
+            "{half:#06x}"
+        );
     }
 }

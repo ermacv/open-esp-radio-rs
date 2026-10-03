@@ -1,33 +1,27 @@
 # RV32 function decoding and relocation interpretation
 
-Owns the `FunctionDecoder` and `FunctionSemantics` implementations over pinned rv-asm 0.2.1 and RISC-V
+Owns the `FunctionDecoder` and `FunctionSemantics` implementations and RISC-V
 relocation interpretation. It receives bytes and structural facts, never a
 archive path or loader capability. Unsupported encodings remain
 explicit gaps.
 
-ESP-IDF builds the ESP32-S31 for `rv32imafc_zba_zbb_zbs_zcb_zcmp_zcmt`. The
-`extensions` module decodes the Zba, Zbb and Zbs integer forms, the Zcb loads,
-stores and arithmetic, and the Zcmp `cm.push`, `cm.pop`, `cm.popret`,
-`cm.popretz`, `cm.mvsa01` and `cm.mva01s`, which rv-asm 0.2.1 lacks. It
-classifies the Zcmp and Zcb encoding spaces before rv-asm, which would read the
-Zcmp space as the D-extension C.FSDSP the chip does not have. Integer and Zcb
-memory forms lift to single operations; `IntegerOp::evaluate` in the domain is
-the one concrete definition that analysis and execution share. The Zcmp forms
-move several registers and lift to `Unsupported`, so abstract analysis keeps a
-gap for them while concrete execution runs them: pushes store the listed
-registers from `s11` down to `ra` below `sp`, pops load them back, and the
-returning forms return through `ra`, as the decoded flow states. Zcmt table
-jumps need the `jvt` CSR and remain unsupported.
+Decoding belongs to [`oer-riscv-decode`](../../../riscv/decode/README.md),
+selected with every extension it decodes: ESP-IDF builds the ESP32-S31 for
+`rv32imafc_zba_zbb_zbs_zcb_zcmp_zcmt`, and only the Zcmt table jumps stay
+undecoded. Integer and Zcb memory forms lift to single operations;
+`IntegerOp::evaluate` in the domain is the one concrete definition that
+analysis and execution share. The Zcmp forms move several registers and lift
+to `Unsupported`, so abstract analysis keeps a gap for them while concrete
+execution runs them: pushes store the listed registers from `s11` down to `ra`
+below `sp`, pops load them back, and the returning forms return through `ra`,
+as the decoded flow states.
 
-The `float` module decodes the single-precision F extension, which rv-asm
-0.2.1 also lacks: `flw`/`fsw` with `C.FLW`, `C.FSW`, `C.FLWSP` and `C.FSWSP`,
-the fused multiply-adds and every OP-FP form, rejecting other formats and the
-reserved rounding modes 5 and 6. The FP register file is not modeled: loads
-and stores lift to `FloatLoad`/`FloatStore` accesses through their integer base,
-a form with an integer destination (`fmv.x.w`, `fclass.s`, comparisons,
-`fcvt.w[u].s`) lifts to `Opaque`, and every other form to `None`. Neither
-executor profile runs floating point; the F forms stop execution as
-unsupported.
+The FP register file is not modeled: single-precision loads and stores lift to
+`FloatLoad`/`FloatStore` accesses through their integer base, a form with an
+integer destination (`fmv.x.w`, `fclass.s`, comparisons, `fcvt.w[u].s`) lifts
+to `Opaque`, and every other form to `None`. Neither executor profile runs
+floating point; the Rv32imac profile decodes RV32IMAC alone, and the full
+profile stops at an F form as unsupported.
 
 The decoder, semantic and execution identities (`policy-4`, `values-8` and
 `execution-13`, each over rv-asm 0.2.1) cover every behavior below; any
@@ -35,10 +29,8 @@ change to decoding, lifting or concrete execution changes its identity.
 
 Lifting returns bounded typed operations over RV32 registers. Loads, stores and
 atomics describe effects without reading memory. Compressed instructions use the
-shared normalized operands. The backend corrects rv-asm 0.2.1's unsigned
-C.ANDI immediate to the ISA's signed six-bit value before display, lifting or
-execution. The [C extension](https://docs.riscv.org/reference/isa/v20260120/unpriv/c-st-ext.html)
-defines this sign extension. The backend declares relocation roles;
+shared normalized operands, including the decoder's signed C.ANDI immediate.
+The backend declares relocation roles;
 analysis validates the flowing address relationship and owns abstract states.
 
 `RiscvExecutor` owns concrete RV32 register state and the iterative instruction

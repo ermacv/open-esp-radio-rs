@@ -8,6 +8,7 @@
 use oer_ieee80211_mac::qos::WmmAccessCategory;
 use oer_ieee80211_softmac::EdcaContention;
 use oer_ieee80211_upper_mac::{AckFailureAccounting, AmpduRetryPolicy, RetryLimits};
+use oer_time::RadioDuration;
 
 /// Short retry limit: `lmacConfMib[0x15]` of `lmacInit`.
 pub const SHORT_RETRY_LIMIT: u8 = 0x20;
@@ -62,12 +63,12 @@ pub const MSDU_AGED_MARGIN_MICROS: u32 = 1 << 10;
 /// exchange against the same short limit, and `lmacEndRetryAMPDUFail` then
 /// keeps the aggregate and sends a BlockAckReq (blobray 7a0f2090f).
 pub const fn ampdu_retry_policy(
-    lifetime_micros: u32,
+    lifetime: RadioDuration,
     retain_single_mpdu: bool,
 ) -> AmpduRetryPolicy {
     AmpduRetryPolicy {
-        lifetime_micros,
-        aged_margin_micros: MSDU_AGED_MARGIN_MICROS,
+        lifetime,
+        aged_margin: RadioDuration::from_micros(MSDU_AGED_MARGIN_MICROS),
         retry_limit: SHORT_RETRY_LIMIT,
         retain_single_mpdu,
     }
@@ -144,8 +145,11 @@ mod tests {
                 ecw_max: 10
             }
         );
-        let policy = ampdu_retry_policy(AMPDU_MSDU_LIFETIME_MICROS, false);
+        let policy = ampdu_retry_policy(
+            RadioDuration::from_micros(AMPDU_MSDU_LIFETIME_MICROS),
+            false,
+        );
         assert_eq!(policy.retry_limit, 32);
-        assert_eq!(policy.aged_margin_micros, 1024);
+        assert_eq!(policy.aged_margin, RadioDuration::from_micros(1024));
     }
 }

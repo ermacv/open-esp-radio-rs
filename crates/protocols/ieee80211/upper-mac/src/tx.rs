@@ -343,7 +343,7 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
                     ampdu.first_sequence,
                     ampdu.subframes,
                     self.ampdu_policy,
-                    ampdu.committed_at.as_micros(),
+                    ampdu.committed_at,
                 )
                 .map_err(TxPlanError::Ampdu)?,
             ),
@@ -379,7 +379,6 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
         if completion.ack_snr_db.is_some() {
             exchange.ack_snr_db = completion.ack_snr_db;
         }
-        let now = now.as_micros();
         let next = match exchange.phase {
             Phase::Mpdu(mut retry) => {
                 let step = retry.observe(completion.status);

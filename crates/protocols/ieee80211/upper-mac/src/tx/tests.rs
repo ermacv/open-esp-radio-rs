@@ -11,8 +11,8 @@ const LIMITS: RetryLimits = RetryLimits {
 };
 
 const AMPDU_POLICY: AmpduRetryPolicy = AmpduRetryPolicy {
-    lifetime_micros: 100_000,
-    aged_margin_micros: 1_024,
+    lifetime: oer_time::RadioDuration::from_micros(100_000),
+    aged_margin: oer_time::RadioDuration::from_micros(1_024),
     retry_limit: 4,
     retain_single_mpdu: false,
 };

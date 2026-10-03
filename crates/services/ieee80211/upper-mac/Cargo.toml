@@ -17,6 +17,7 @@ oer-ieee80211-upper-mac = { path = "../../../protocols/ieee80211/upper-mac" }
 [dev-dependencies]
 oer-ieee80211-lower-mac = { path = "../../../protocols/ieee80211/lower-mac", features = ["model"] }
 oer-time = { path = "../../../time" }
+oer-time-virtual = { path = "../../../adapters/virtual/time" }
 
 [lints]
 workspace = true

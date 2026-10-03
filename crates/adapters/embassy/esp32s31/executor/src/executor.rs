@@ -2,10 +2,12 @@ use core::marker::PhantomData;
 
 use embassy_executor::{Spawner, raw};
 use esp_hal::{
-    interrupt::{InterruptHandler, Priority, software::SoftwareInterrupt},
+    interrupt::{Priority, software::SoftwareInterrupt},
+    peripherals::Interrupt,
     system::Cpu,
 };
 use esp_sync::NonReentrantMutex;
+use oer_interrupt_table::Entry;
 use portable_atomic::{AtomicBool, AtomicUsize, Ordering};
 
 const SOFTWARE_INTERRUPT_COUNT: usize = 4;
@@ -61,15 +63,6 @@ impl OwnedSoftwareInterrupt {
             Self::Three(interrupt) => interrupt.raise(),
         }
     }
-
-    fn set_interrupt_handler(&mut self, handler: InterruptHandler) {
-        match self {
-            Self::Zero(interrupt) => interrupt.set_interrupt_handler(handler),
-            Self::One(interrupt) => interrupt.set_interrupt_handler(handler),
-            Self::Two(interrupt) => interrupt.set_interrupt_handler(handler),
-            Self::Three(interrupt) => interrupt.set_interrupt_handler(handler),
-        }
-    }
 }
 
 #[used]
@@ -101,17 +94,29 @@ impl<const SWI: u8> Executor<SWI> {
         }
     }
 
-    pub fn run(&'static mut self, init: impl FnOnce(Spawner)) -> ! {
+    /// Run the executor on the calling core, woken through its software
+    /// interrupt: `wake` is that source's token of the image's interrupt table,
+    /// whose entry names [`wake_handler::<SWI>`](wake_handler) on this core.
+    ///
+    /// # Panics
+    ///
+    /// When the table routes the source to another core.
+    pub fn run<W>(&'static mut self, wake: W, init: impl FnOnce(Spawner)) -> !
+    where
+        W: Entry<Source = Interrupt, Level = Priority, Core = Cpu>,
+    {
+        const {
+            assert!(
+                W::SOURCE as u16 == software_interrupt_source(SWI) as u16,
+                "the token is not this executor's software interrupt"
+            )
+        };
         let current_core = Cpu::current() as usize;
-        let mut interrupt = self
+        let interrupt = self
             .interrupt
             .take()
             .expect("executor software interrupt was already installed");
         interrupt.reset();
-        interrupt.set_interrupt_handler(InterruptHandler::new(
-            wake_handler::<SWI>,
-            Priority::Priority1,
-        ));
         ESP32S31_EMBASSY_INTERRUPTS.with(|interrupts| {
             assert!(
                 interrupts[SWI as usize].is_none(),
@@ -119,6 +124,9 @@ impl<const SWI: u8> Executor<SWI> {
             );
             interrupts[SWI as usize] = Some(interrupt);
         });
+        if let Err(error) = oer_esp32s31_soc_esp_hal::interrupt_table::enable(&wake) {
+            panic!("executor software interrupt {SWI}: {error:?}");
+        }
         ESP32S31_EMBASSY_EXECUTOR_CORE[SWI as usize]
             .compare_exchange(
                 UNASSIGNED_CORE,
@@ -164,8 +172,20 @@ impl_executor_constructor!(1, One);
 impl_executor_constructor!(2, Two);
 impl_executor_constructor!(3, Three);
 
+/// The peripheral interrupt source of software interrupt `SWI`.
+const fn software_interrupt_source(swi: u8) -> Interrupt {
+    match swi {
+        0 => Interrupt::FROM_CPU_INTR0,
+        1 => Interrupt::FROM_CPU_INTR1,
+        2 => Interrupt::FROM_CPU_INTR2,
+        _ => Interrupt::FROM_CPU_INTR3,
+    }
+}
+
+/// The interrupt-table handler of an executor's software interrupt
+/// (`FROM_CPU_INTR<SWI>`): it wakes the executor.
 #[esp_hal::ram]
-extern "C" fn wake_handler<const SWI: u8>() {
+pub fn wake_handler<const SWI: u8>() {
     ESP32S31_EMBASSY_INTERRUPTS.with(|interrupts| {
         interrupts[SWI as usize]
             .as_ref()

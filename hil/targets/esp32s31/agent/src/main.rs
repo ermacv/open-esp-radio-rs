@@ -90,6 +90,13 @@ use oer_esp32s31_executor_embassy::Executor;
 use static_cell::StaticCell;
 
 oer_esp32s31_platform_runtime::interrupt_table! {
+    /// Wakes the core-0 Embassy executor.
+    wake: ExecutorWake = FROM_CPU_INTR0 => oer_esp32s31_executor_embassy::wake_handler::<0>, Priority1, ProCpu;
+    /// The Embassy time driver's alarm (TIMG0 timer 0).
+    alarm: TimeAlarm = TG0_T0_LEVEL => oer_esp32s31_executor_embassy::timer_interrupt, Priority1, ProCpu;
+    #[cfg(feature = "open-radio-hil")]
+    /// Wakes the core-1 Embassy executor.
+    app_wake: AppExecutorWake = FROM_CPU_INTR1 => oer_esp32s31_executor_embassy::wake_handler::<1>, Priority1, AppCpu;
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     /// System timer alarm 2, the interrupt-table probe's source.
     source_gate: SourceGateToken = SYSTIMER_TARGET2 => source_gate::on_alarm, Priority1, ProCpu;
@@ -197,6 +204,17 @@ const PROFILE_NAME: &core::ffi::CStr = c"psram-code-psram-data-psram-stack";
 static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 #[cfg(feature = "open-radio-hil")]
 static APP_EXECUTOR: StaticCell<Executor<1>> = StaticCell::new();
+/// Core 1's executor wake token, which core 0 leaves for it before starting it.
+#[cfg(feature = "open-radio-hil")]
+static APP_WAKE: critical_section::Mutex<core::cell::RefCell<Option<AppExecutorWake>>> =
+    critical_section::Mutex::new(core::cell::RefCell::new(None));
+
+/// Leave core 1 its executor wake token. A function of its own, so that
+/// `runtime_main`'s closures keep the names the stack coverage reviews.
+#[cfg(feature = "open-radio-hil")]
+fn leave_app_wake(wake: AppExecutorWake) {
+    critical_section::with(|cs| APP_WAKE.borrow_ref_mut(cs).replace(wake));
+}
 // The hardware entropy source is a process-lifetime owner. Keeping it in a
 // named static prevents task cancellation or panic cleanup from trying to
 // disable the source while a nested radio future still owns `Trng`.
@@ -377,15 +395,15 @@ extern "C" fn runtime_main() -> ! {
         oer_esp32s31_soc_esp_hal::L1CachePerformanceCounters::new(peripherals.CACHE),
     );
 
+    let interrupts = Interrupts::take().expect("the image takes its interrupt tokens once");
     let timer_group = TimerGroup::new(peripherals.TIMG0);
-    oer_esp32s31_executor_embassy::init(OneShotTimer::new(timer_group.timer0));
+    oer_esp32s31_executor_embassy::init(OneShotTimer::new(timer_group.timer0), interrupts.alarm);
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     {
         let systimer = esp_hal::timer::systimer::SystemTimer::new(peripherals.SYSTIMER);
         hang_watchdog::start(systimer.alarm0);
         #[cfg(feature = "pc-profile")]
         pc_profile::init(systimer.alarm1);
-        let interrupts = Interrupts::take().expect("the image takes its interrupt tokens once");
         source_gate::install(OneShotTimer::new(systimer.alarm2), interrupts.source_gate);
     }
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
@@ -393,6 +411,7 @@ extern "C" fn runtime_main() -> ! {
 
     #[cfg(feature = "open-radio-hil")]
     let _app_spawner = {
+        leave_app_wake(interrupts.app_wake);
         let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
         let app_interrupt = software_interrupt::executor1(peripherals.FROM_CPU_INTR1);
         let guard = cpu_control
@@ -437,6 +456,7 @@ extern "C" fn runtime_main() -> ! {
     #[cfg(feature = "bluetooth-radio")]
     bluetooth::start(
         executor,
+        interrupts.wake,
         oer_esp32s31_radio_esp_hal::EspHalRadioPlatform::new(
             peripherals.MODEM_SYSCON,
             peripherals.MODEM_LPCON,
@@ -452,18 +472,24 @@ extern "C" fn runtime_main() -> ! {
     );
 
     #[cfg(feature = "system-panic-reset")]
-    system::panic_reset::start(executor, peripherals.USB_DEVICE, peripherals.RNG);
+    system::panic_reset::start(
+        executor,
+        interrupts.wake,
+        peripherals.USB_DEVICE,
+        peripherals.RNG,
+    );
 
     #[cfg(feature = "system-watchdog")]
     system::console::start(
         executor,
+        interrupts.wake,
         peripherals.USB_DEVICE,
         peripherals.RNG,
         peripherals.TIMG1,
     );
 
     #[cfg(feature = "boot-smoke")]
-    executor.run(move |spawner| {
+    executor.run(interrupts.wake, move |spawner| {
         let Ok(task) = boot_smoke(boot_smoke_console::BootSmokeConsole::new(
             peripherals.USB_DEVICE,
         )) else {
@@ -504,7 +530,7 @@ extern "C" fn runtime_main() -> ! {
             bluetooth_entropy,
         };
         let usb = peripherals.USB_DEVICE;
-        executor.run(|spawner| {
+        executor.run(interrupts.wake, |spawner| {
             let Ok(logger) = console::console_task(usb, boot_id) else {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=logger-allocation\r\n");
             };
@@ -562,9 +588,11 @@ fn run_app_core(
     // `_runtime_start` with MIE clear; its per-hart vector state and stack
     // ownership are complete, so hand interrupt enable to its executor.
     unsafe { oer_esp32s31_platform_runtime::enable_interrupts_after_handoff() };
+    let wake = critical_section::with(|cs| APP_WAKE.borrow_ref_mut(cs).take())
+        .expect("core 0 leaves core 1 its executor wake token");
     APP_EXECUTOR
         .init(Executor::<1>::new(app_interrupt))
-        .run(|spawner| {
+        .run(wake, |spawner| {
             spawner.spawn(stack_evidence::cpu1_sampler().expect("CPU1 stack sampler allocation"));
             #[cfg(not(feature = "memory-benchmark"))]
             {

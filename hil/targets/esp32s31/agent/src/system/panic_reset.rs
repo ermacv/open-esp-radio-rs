@@ -13,6 +13,7 @@ static PANICS: Channel<CriticalSectionRawMutex, RequestIdentity, 1> = Channel::n
 
 pub(crate) fn start(
     executor: &'static mut crate::Executor<0>,
+    wake: crate::ExecutorWake,
     usb: esp_hal::peripherals::USB_DEVICE<'static>,
     rng: esp_hal::peripherals::RNG<'static>,
 ) -> ! {
@@ -23,7 +24,7 @@ pub(crate) fn start(
     drop(entropy);
     CONSOLE.start(boot);
     crate::transport::init_logger();
-    executor.run(|spawner| {
+    executor.run(wake, |spawner| {
         spawner.spawn(panic_on_request().expect("panic-reset task"));
         spawner.spawn(run(usb, boot).expect("system console task"));
     });

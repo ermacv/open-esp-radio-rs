@@ -61,6 +61,7 @@ static ENTROPY: StaticCell<BluetoothEntropy<'static>> = StaticCell::new();
 #[cfg(feature = "bluetooth-radio")]
 pub(super) fn start(
     executor: &'static mut super::Executor<0>,
+    wake: crate::ExecutorWake,
     platform: EspHalRadioPlatform,
     usb: esp_hal::peripherals::USB_DEVICE<'static>,
     rng: esp_hal::peripherals::RNG<'static>,
@@ -71,7 +72,7 @@ pub(super) fn start(
     crate::transport::init_logger();
     let entropy = ENTROPY.init(BluetoothEntropy::new(entropy));
     let public_address = platform.bluetooth_public_address();
-    executor.run(|spawner| {
+    executor.run(wake, |spawner| {
         // The image keeps its own tracking task, which reports a tracking
         // failure as `reason=phy-tracking` before the reset.
         let start = oer_esp32s31_radio_system::RadioStart::new()

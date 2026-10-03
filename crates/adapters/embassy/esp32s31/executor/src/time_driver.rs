@@ -7,11 +7,14 @@ use crate::timer_queue::WakeQueue;
 use embassy_time_driver::Driver;
 use esp_hal::{
     Blocking,
-    interrupt::{InterruptHandler, Priority},
+    interrupt::Priority,
+    peripherals::Interrupt,
+    system::Cpu,
     time::{Duration, Instant},
     timer::{Error, OneShotTimer},
 };
 use esp_sync::NonReentrantMutex;
+use oer_interrupt_table::Entry;
 
 /// ESP-HAL timer capability accepted by [`init`].
 pub type Timer = OneShotTimer<'static, Blocking>;
@@ -167,8 +170,9 @@ pub(crate) fn dispatch_pending() {
     }
 }
 
+/// The interrupt-table handler of the time driver's alarm source.
 #[esp_hal::ram]
-extern "C" fn timer_interrupt() {
+pub fn timer_interrupt() {
     ESP32S31_EMBASSY_TIME_DRIVER.acknowledge_interrupt(
         #[cfg(feature = "timer-observation")]
         now(),
@@ -177,12 +181,24 @@ extern "C" fn timer_interrupt() {
     crate::executor::mark_work::<0>();
 }
 
-/// Install the global Embassy time driver on the calling core.
-pub fn init(mut timer: Timer) {
+/// Install the global Embassy time driver on the calling core. `alarm` is the
+/// token of `timer`'s source in the image's interrupt table, whose entry names
+/// [`timer_interrupt`] on this core; another source's token leaves the time
+/// driver without its alarm.
+///
+/// # Panics
+///
+/// When the table routes the source to another core.
+pub fn init<A>(mut timer: Timer, alarm: A)
+where
+    A: Entry<Source = Interrupt, Level = Priority, Core = Cpu>,
+{
     timer.stop();
     timer.unlisten();
     timer.clear_interrupt();
-    timer.set_interrupt_handler(InterruptHandler::new(timer_interrupt, Priority::Priority1));
+    if let Err(error) = oer_esp32s31_soc_esp_hal::interrupt_table::enable(&alarm) {
+        panic!("time driver alarm: {error:?}");
+    }
     timer.listen();
 
     ESP32S31_EMBASSY_TIME_DRIVER.state.with(|state| {

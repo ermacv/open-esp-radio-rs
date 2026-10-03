@@ -61,32 +61,35 @@ fn names(packages: &[&str]) -> BTreeMap<Utf8PathBuf, String> {
 
 const TRIPLE: &str = "riscv32imafc-unknown-none-elf";
 
+fn chip(package: &str) -> serde_json::Value {
+    built(
+        package,
+        "lib",
+        &format!("/t/{TRIPLE}/release/deps/lib{package}.rlib"),
+    )
+}
+
+fn stream(artifacts: &[serde_json::Value]) -> String {
+    artifacts
+        .iter()
+        .map(|artifact| format!("{artifact}\n"))
+        .collect()
+}
+
 #[test]
 fn only_packages_the_phy_build_compiles_are_checked() {
     // `syn` is in the workspace metadata (another package's derive enables
     // it) but the PHY build never compiles it: the check passes.
-    let messages = format!(
-        "{}\n{}\n",
-        built(
-            "bytemuck",
-            "lib",
-            &format!("/t/{TRIPLE}/release/deps/libbytemuck.rlib")
-        ),
-        built(
-            "vcell",
-            "lib",
-            &format!("/t/{TRIPLE}/release/deps/libvcell.rlib")
-        ),
-    );
+    let messages = stream(&[chip("bytemuck"), chip(PHY_PACKAGE)]);
     let built = built_packages(
         messages.as_bytes(),
-        &names(&["bytemuck", "vcell", "syn"]),
+        &names(&["bytemuck", PHY_PACKAGE, "syn"]),
         TRIPLE,
     )
     .unwrap();
     assert_eq!(
         built.chip,
-        BTreeSet::from(["bytemuck".to_owned(), "vcell".to_owned()])
+        BTreeSet::from(["bytemuck".to_owned(), PHY_PACKAGE.to_owned()])
     );
     assert!(built.host.is_empty());
     check_built_packages(&built).unwrap();
@@ -94,34 +97,48 @@ fn only_packages_the_phy_build_compiles_are_checked() {
 
 #[test]
 fn a_chip_built_package_missing_from_the_list_fails() {
-    let messages = format!(
-        "{}\n",
-        built(
-            "unreviewed",
-            "lib",
-            &format!("/t/{TRIPLE}/release/deps/libunreviewed.rlib")
-        ),
-    );
-    let built = built_packages(messages.as_bytes(), &names(&["unreviewed"]), TRIPLE).unwrap();
-    assert!(check_built_packages(&built).is_err());
+    let messages = stream(&[chip("unreviewed"), chip(PHY_PACKAGE)]);
+    let built = built_packages(
+        messages.as_bytes(),
+        &names(&["unreviewed", PHY_PACKAGE]),
+        TRIPLE,
+    )
+    .unwrap();
+    let error = check_built_packages(&built).unwrap_err().to_string();
+    assert!(error.contains("unreviewed"), "{error}");
 }
 
 #[test]
 fn a_proc_macro_the_build_runs_is_checked_as_a_host_package() {
-    let messages = format!(
-        "{}\n{}\n",
+    let messages = stream(&[
         built(
             "some_derive",
             "proc-macro",
-            "/t/release/deps/libsome_derive.so"
+            "/t/release/deps/libsome_derive.so",
         ),
         // A host library behind a proc macro or build script is not published.
         built("syn", "lib", "/t/release/deps/libsyn.rlib"),
-    );
-    let built =
-        built_packages(messages.as_bytes(), &names(&["some_derive", "syn"]), TRIPLE).unwrap();
+        chip(PHY_PACKAGE),
+    ]);
+    let built = built_packages(
+        messages.as_bytes(),
+        &names(&["some_derive", "syn", PHY_PACKAGE]),
+        TRIPLE,
+    )
+    .unwrap();
     assert_eq!(built.host, BTreeSet::from(["some_derive".to_owned()]));
-    assert!(built.chip.is_empty());
+    assert_eq!(built.chip, BTreeSet::from([PHY_PACKAGE.to_owned()]));
     let error = check_built_packages(&built).unwrap_err().to_string();
     assert!(error.contains("host proc macro"), "{error}");
+}
+
+#[test]
+fn a_build_whose_outputs_the_target_rule_misses_fails_instead_of_passing_empty() {
+    // The PHY's rlib outside a target-triple directory: nothing is recognized
+    // as chip-built, which must not read as a clean audit.
+    let messages = stream(&[built(PHY_PACKAGE, "lib", "/t/release/deps/libphy.rlib")]);
+    let built = built_packages(messages.as_bytes(), &names(&[PHY_PACKAGE]), TRIPLE).unwrap();
+    assert!(built.chip.is_empty());
+    let error = check_built_packages(&built).unwrap_err().to_string();
+    assert!(error.contains(PHY_PACKAGE), "{error}");
 }

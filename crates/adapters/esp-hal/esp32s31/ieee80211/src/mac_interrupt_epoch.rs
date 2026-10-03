@@ -10,7 +10,7 @@ use crate::EspHalWifiPlatform;
 
 use critical_section::Mutex;
 
-use esp_hal::{interrupt::InterruptHandler, system::Cpu};
+use esp_hal::system::Cpu;
 
 use oer_esp32s31_hal::{
     ieee80211::arena::{RadioAccess, RadioOwnerArenaError},
@@ -70,12 +70,10 @@ pub struct EspHalPowerInterruptServiceReport {
 
 /// Concrete ESP-HAL CPU route for the unique S31 Wi-Fi interrupt owner.
 ///
-/// Handler addresses are fixture/application composition. Register storage,
+/// The image's interrupt table names the handlers; register storage,
 /// publication, CPU routing and recovery are platform-adapter mechanics.
 // CAPABILITY: wifi-interrupt-epoch-owners
 pub struct EspHalMacInterruptRoute {
-    mac_handler: InterruptHandler,
-    power_handler: InterruptHandler,
     phase: Phase,
     // Bind, detach and resume belong to the same executor/core. Runtime core
     // checks also reject misuse through a separately obtained platform token.
@@ -89,10 +87,8 @@ enum Phase {
 }
 
 impl EspHalMacInterruptRoute {
-    pub const fn new(mac_handler: InterruptHandler, power_handler: InterruptHandler) -> Self {
+    pub const fn new() -> Self {
         Self {
-            mac_handler,
-            power_handler,
             phase: Phase::Inactive,
             _same_core: PhantomData,
         }
@@ -130,7 +126,9 @@ impl EspHalMacInterruptRoute {
             *MAC_INTERRUPT_REGISTERS.borrow_ref_mut(cs) = Some(mac);
             *POWER_INTERRUPT_REGISTERS.borrow_ref_mut(cs) = Some(power);
             self.phase = Phase::Active(Cpu::current());
-            platform.bind_interrupts(self.mac_handler, self.power_handler);
+            if let Err(error) = platform.enable_interrupts() {
+                panic!("Wi-Fi interrupt epoch: {error:?}");
+            }
         });
     }
 

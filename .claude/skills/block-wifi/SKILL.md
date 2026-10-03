@@ -27,6 +27,8 @@ Layers and edges: [layer dependencies](../../../docs/architecture.md#layer-depen
 
 ## Traps
 
+- Time follows [clocks, stamps and alarms](../../../docs/architecture.md#clocks-stamps-and-alarms).
+
 - Every port method but `next_event` is synchronous (`port.rs:74`).
 - `RxEvidence` keeps provenance: never derive a value and report it `HardwareObserved` (`lower-mac/src/rx.rs:13`). `RxMeta.channel` is configuration, not a per-frame observation (`rx.rs:72`).
 - The S31 port's radio clock is the MAC local time, `Affine` to the monotonic clock (`MAC_CLOCK_INFO`, `runtime/esp32s31/ieee80211/src/mac_clock.rs`): convert a port instant or stamp with `clock_sample()`, never by reading its microseconds as monotonic time.

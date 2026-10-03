@@ -195,7 +195,8 @@ sleep, the MAC local-time counter's and the monotonic distance between the
 sleep and wake edges, and whether the counter ran, held still or jumped. It
 publishes `wifi.station.rf-sleep-observed` once a sleep was paired.
 `station-sleep-dtim1` and `station-sleep-dtim3` are the DTIM 1/3 matrix at a
-100 TU beacon interval; both are `investigation` scenarios.
+100 TU beacon interval under `min-modem`; `station-sleep-max-modem` sleeps for
+listening intervals of 10 beacons. All are `investigation` scenarios.
 
 ### AP availability
 

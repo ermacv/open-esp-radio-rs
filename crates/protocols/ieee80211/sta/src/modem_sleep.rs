@@ -976,10 +976,14 @@ impl ModemSleep {
         //
         // Known difference: the vendor counts in the MAC local time, this
         // model in monotonic time. Both count the crystal's microseconds, so
-        // the distances agree while the MAC counter runs, and it runs
-        // through RF sleep: HIL run 1791048926868-0027206b
-        // (`station-sleep-dtim1`/`-dtim3`) paired 353 sleeps of 41 to 304 ms
-        // whose MAC and monotonic distances differ by at most 1 µs. The
+        // the distances agree while the MAC counter runs. It runs through
+        // the RF sleeps of modem sleep at minimum depth: HIL run
+        // 1791048926868-0027206b (`station-sleep-dtim1`/`-dtim3`,
+        // `min-modem`) paired 353 sleeps of 41 to 304 ms whose MAC and
+        // monotonic distances differ by at most 1 µs. Longer sleeps
+        // (`max-modem` with a long listen interval, `station-sleep-max-modem`)
+        // and light sleep, where the chip's power domains may switch off,
+        // are not measured; equivalence there needs the same scenario. The
         // vendor's subtraction
         // of the 32-bit counter from the 64-bit anchor misplaces the station
         // once the counter wraps (every ~71.6 minutes); that is a vendor

@@ -4,7 +4,7 @@ use super::*;
 
 pub(super) struct ProductionStationEnginePort<O> {
     radio: &'static SharedRadio,
-    mac_clock: &'static StationMacClock,
+    mac_clock: StationMacClock,
     mode: ProductionStationMode,
     power_mode: StationPowerMode,
     access_point: ProductionAccessPointResources,
@@ -26,7 +26,7 @@ static STATION_PMKSA: oer_esp32s31_ieee80211_sta::attempt::StaSharedPmksa =
 impl<O> ProductionStationEnginePort<O> {
     fn new(
         radio: &'static SharedRadio,
-        mac_clock: &'static StationMacClock,
+        mac_clock: StationMacClock,
         power_mode: StationPowerMode,
         access_point: ProductionAccessPointResources,
         monitor: ProductionMonitorResources,
@@ -44,7 +44,7 @@ impl<O> ProductionStationEnginePort<O> {
 
     fn paired_cutover(
         radio: &'static SharedRadio,
-        mac_clock: &'static StationMacClock,
+        mac_clock: StationMacClock,
         power_mode: StationPowerMode,
         access_point: ProductionAccessPointResources,
         monitor: ProductionMonitorResources,

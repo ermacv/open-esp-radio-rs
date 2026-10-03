@@ -582,7 +582,12 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                 released.platform,
                 self.radio_start,
             )) {
-                Ok((_phy, wifi)) => wifi,
+                Ok((_phy, wifi, mac_clock)) => {
+                    // The restarted MAC reads a fresh clock; the epochs of
+                    // the earlier start have ended.
+                    self.mac_clock = mac_clock;
+                    wifi
+                }
                 Err(failure) => {
                     crate::WatchdogConfig::complete(protection);
                     return Err(

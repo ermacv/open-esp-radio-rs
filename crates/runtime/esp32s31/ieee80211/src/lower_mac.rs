@@ -154,12 +154,15 @@ pub enum Esp32s31LowerMacError {
     NotInstalled,
     /// The backend's state is unknown; only a radio reset restores it.
     Poisoned(LowerMacFault),
+    /// The port's MAC clock belongs to a radio start a later one replaced:
+    /// a [`FailureClass::Rejected`] state of a port that outlived its start.
+    StaleClock,
 }
 
 impl PortError for Esp32s31LowerMacError {
     fn class(&self) -> FailureClass {
         match self {
-            Self::NotInstalled => FailureClass::Rejected,
+            Self::NotInstalled | Self::StaleClock => FailureClass::Rejected,
             Self::Poisoned(_) => FailureClass::Poisoned,
         }
     }
@@ -684,7 +687,7 @@ where
         // break left it without one.
         let stamp = frame
             .stamp
-            .and_then(|raw| self.timer.snapshot().stamp(raw))
+            .and_then(|raw| self.timer.snapshot()?.stamp(raw))
             .map_or(RxEvidence::Unavailable, RxEvidence::HardwareObserved);
         let _ = self.with_core(|core, _, sink| {
             if let Some((bytes, mut meta)) = core.received(frame) {
@@ -976,13 +979,17 @@ where
     }
 
     fn now(&self) -> Result<Ieee80211Instant, Esp32s31LowerMacError> {
-        self.with_core(|_, _, _| Ok(self.timer.snapshot().sample().radio))
+        self.with_core(|_, _, _| Ok(self.timer.snapshot()))?
+            .map(|snapshot| snapshot.sample().radio)
+            .ok_or(Esp32s31LowerMacError::StaleClock)
     }
 
     /// The MAC local time and the monotonic time read back to back, in the
     /// current generation of the MAC clock.
     fn clock_sample(&self) -> Result<Ieee80211ClockSample, Esp32s31LowerMacError> {
-        self.with_core(|_, _, _| Ok(self.timer.snapshot().sample()))
+        self.with_core(|_, _, _| Ok(self.timer.snapshot()))?
+            .map(|snapshot| snapshot.sample())
+            .ok_or(Esp32s31LowerMacError::StaleClock)
     }
 }
 

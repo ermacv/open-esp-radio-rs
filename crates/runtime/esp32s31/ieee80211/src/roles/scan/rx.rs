@@ -52,8 +52,9 @@ impl ScanFrameObserver for NoopScanFrameObserver {
 pub struct ScanObservationContext<'a, O, const RECORDS: usize> {
     channel: u8,
     /// The MAC clock relation when this synchronous observation drain
-    /// began; every frame it drains was received before it.
-    clock: MacClockSnapshot,
+    /// began; every frame it drains was received before it. `None` for a
+    /// clock a later radio start replaced.
+    clock: Option<MacClockSnapshot>,
     frame: &'a mut [u8],
     table: &'a mut ScanTable<RECORDS>,
     observer: &'a mut O,
@@ -62,7 +63,7 @@ pub struct ScanObservationContext<'a, O, const RECORDS: usize> {
 impl<'a, O, const RECORDS: usize> ScanObservationContext<'a, O, RECORDS> {
     pub fn new(
         channel: u8,
-        clock: MacClockSnapshot,
+        clock: Option<MacClockSnapshot>,
         frame: &'a mut [u8],
         table: &'a mut ScanTable<RECORDS>,
         observer: &'a mut O,
@@ -87,7 +88,7 @@ impl<'a, O, const RECORDS: usize> ScanObservationContext<'a, O, RECORDS> {
     where
         O: ScanFrameObserver,
     {
-        let received_at = stamp.and_then(|raw| self.clock.received_at(raw));
+        let received_at = stamp.and_then(|raw| self.clock?.received_at(raw));
         let outcome = self
             .table
             .observe_management(frame, self.channel, rssi, received_at);
@@ -204,7 +205,7 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
                             progress.parsed_management_frames.saturating_add(1);
                         let frame = &context.frame[..frame.length];
                         let received_at = decode_rx_local_timestamp(segment.buffer)
-                            .and_then(|raw| context.clock.received_at(raw));
+                            .and_then(|raw| context.clock?.received_at(raw));
                         let outcome = context.table.observe_management(
                             frame,
                             context.channel,

@@ -257,22 +257,29 @@ pub(super) type ProductionStationRuntime<'state> = StationRuntimeResources<
 static WIFI_MEMORY: DefaultWifiMemory<CriticalSectionRawMutex> = DefaultWifiMemory::new();
 static SCAN_MEMORY: DefaultScanMemory = DefaultScanMemory::new();
 
-/// The MAC local time with its relation to the monotonic clock.
-pub(crate) type StationMacClock = oer_esp32s31_ieee80211_runtime::mac_clock::MacClock<
+type StationMacClockStorage = oer_esp32s31_ieee80211_runtime::mac_clock::MacClockStorage<
     CriticalSectionRawMutex,
     oer_esp32s31_hal::root::MacLocalTime,
     EmbassyClock,
 >;
 
-/// The MAC clock of the one Wi-Fi supervisor this boot runs, made from its
-/// partition's MAC local-time capability.
-static MAC_CLOCK: StaticCell<StationMacClock> = StaticCell::new();
+/// The MAC clock of one radio start: the MAC local time with its relation
+/// to the monotonic clock.
+pub(crate) type StationMacClock = oer_esp32s31_ieee80211_runtime::mac_clock::MacClockHandle<
+    'static,
+    CriticalSectionRawMutex,
+    oer_esp32s31_hal::root::MacLocalTime,
+    EmbassyClock,
+>;
+
+/// The MAC clock's memory; every radio start ([`join_shared_radio`]) starts
+/// a fresh clock in it.
+static MAC_CLOCK: StationMacClockStorage = StationMacClockStorage::new(EmbassyClock);
 
 /// A role's monotonic timer paired with the MAC clock.
 pub(crate) const fn reception_timer(
-    mac_clock: &'static StationMacClock,
-) -> oer_esp32s31_ieee80211_runtime::mac_clock::ReceptionTimer<'static, EmbassyClock, StationMacClock>
-{
+    mac_clock: StationMacClock,
+) -> oer_esp32s31_ieee80211_runtime::mac_clock::ReceptionTimer<EmbassyClock, StationMacClock> {
     oer_esp32s31_ieee80211_runtime::mac_clock::ReceptionTimer {
         timer: EmbassyClock,
         reception: mac_clock,
@@ -599,7 +606,8 @@ static RADIO_SUPERVISOR_CONTROL: EmbassyWifiSupervisorControlResources<
 struct ProductionWifiEpochRunner {
     radio: &'static SharedRadio,
     /// The MAC local time and its relation to the monotonic clock.
-    mac_clock: &'static StationMacClock,
+    /// The MAC clock of the current radio start.
+    mac_clock: StationMacClock,
     watchdog: &'static crate::WatchdogConfig,
     trng: Trng,
     station_control: &'static StationControlResources<CriticalSectionRawMutex>,
@@ -908,16 +916,6 @@ pub async fn new(
     config: crate::RadioConfig,
 ) -> Result<WifiStarted, NewError> {
     diagnostics_event!("open-radio: Wi-Fi start on the shared radio");
-    // One supervisor runs per boot: a second start finds the clock taken.
-    let Some(mac_clock) =
-        MAC_CLOCK.try_init(oer_esp32s31_ieee80211_runtime::mac_clock::MacClock::new(
-            partition.mac_local_time(),
-            EmbassyClock,
-        ))
-    else {
-        return Err(NewError::SupervisorInUse);
-    };
-    let mac_clock: &'static StationMacClock = mac_clock;
 
     let crate::RadioConfig {
         #[cfg(feature = "rx-ownership-observation")]
@@ -949,7 +947,7 @@ pub async fn new(
     let protection = watchdog.startup();
     let started = await_stack_boundary!(join_shared_radio(radio, partition, platform, radio_start));
     crate::WatchdogConfig::complete(protection);
-    let (phy, wifi) = started.map_err(|failure| {
+    let (phy, wifi, mac_clock) = started.map_err(|failure| {
         let error = match &failure {
             JoinFailure::Prepare { error, .. } => NewError::Phy(*error),
             JoinFailure::Start { .. } => NewError::RadioStart,
@@ -1133,7 +1131,8 @@ pub async fn new(
 }
 
 /// Prepare the shared PHY for Wi-Fi and bring Wi-Fi up on it, under one
-/// arbiter lease. A failure returns the Wi-Fi owners it reached, after the
+/// arbiter lease, with a fresh MAC clock started on the partition's MAC
+/// local time. A failure returns the Wi-Fi owners it reached, after the
 /// shared-PHY terminal policy was applied to it.
 async fn join_shared_radio(
     radio: &'static SharedRadio,
@@ -1144,9 +1143,11 @@ async fn join_shared_radio(
     (
         oer_esp32s31_radio_runtime::RadioPhyPrepared,
         WifiStopped<EspHalWifiPlatform>,
+        StationMacClock,
     ),
     JoinFailure,
 > {
+    let mac_clock = MAC_CLOCK.start(partition.mac_local_time());
     let mut guard = radio.lock().await;
     let phy = match await_stack_boundary!(guard.prepare_phy()) {
         Ok(phy) => phy,
@@ -1176,7 +1177,7 @@ async fn join_shared_radio(
         NoopPhyTargetObserver,
         &EmbassyClock,
     )) {
-        Ok(wifi) => Ok((phy, wifi)),
+        Ok(wifi) => Ok((phy, wifi, mac_clock)),
         Err(failure) => {
             let ambiguous = failure.phy_hardware_ambiguous();
             let failure = JoinFailure::Start {

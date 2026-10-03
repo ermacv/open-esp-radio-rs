@@ -193,12 +193,10 @@ impl oer_time::Clock for DwellTimer {
 }
 
 impl crate::mac_clock::ReceptionClock for DwellTimer {
-    fn snapshot(&self) -> crate::mac_clock::MacClockSnapshot {
-        crate::mac_clock::MacClock::<embassy_sync::blocking_mutex::raw::NoopRawMutex, _, _>::new(
-            crate::mac_clock::FixedCounter(0),
-            &self.clock,
-        )
-        .snapshot()
+    fn snapshot(&self) -> Option<crate::mac_clock::MacClockSnapshot> {
+        crate::mac_clock::MacClockStorage::<embassy_sync::blocking_mutex::raw::NoopRawMutex, _, _>::new(&self.clock)
+            .start(crate::mac_clock::FixedCounter(0))
+            .snapshot()
     }
 
     fn on_rf_wake(&self) {}

@@ -2652,6 +2652,7 @@ dependencies = [
 name = "oer-esp32s31-ieee80211-dma"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "oer-esp32s31-hal",
  "oer-memory",
  "pin-project",
@@ -2674,6 +2675,7 @@ dependencies = [
 name = "oer-esp32s31-ieee80211-mac"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "oer-esp32s31-hal",
  "oer-esp32s31-ieee80211-dma",
  "oer-espressif-ieee80211-policy",
@@ -2755,6 +2757,7 @@ dependencies = [
 name = "oer-esp32s31-ieee80211-system"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "critical-section",
  "embassy-executor",
  "embassy-futures",
@@ -2784,6 +2787,7 @@ dependencies = [
  "oer-ieee80211-runtime",
  "oer-ieee80211-softmac",
  "oer-ieee80211-sta",
+ "oer-memory",
  "oer-network-interface",
  "oer-radio",
  "oer-radio-embassy",
@@ -3597,8 +3601,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-image-linker"
+version = "0.1.0"
+dependencies = [
+ "object 0.39.1",
+ "oer-esp32s31-platform-layout",
+ "tempfile",
+]
+
+[[package]]
 name = "oer-memory"
 version = "0.1.0"
+dependencies = [
+ "bytemuck",
+]
 
 [[package]]
 name = "oer-memory-report"

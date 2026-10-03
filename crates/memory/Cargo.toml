@@ -7,6 +7,9 @@ license.workspace = true
 repository.workspace = true
 description = "Audited buffer ownership boundaries for open ESP radio drivers"
 
+[dependencies]
+bytemuck = { version = "1.25.2", default-features = false, features = ["min_const_generics", "zeroable_atomics", "zeroable_maybe_uninit"] }
+
 [features]
 default = []
 # Diagnostic-only geometry for proving external-memory DMA on ESP32-S31.

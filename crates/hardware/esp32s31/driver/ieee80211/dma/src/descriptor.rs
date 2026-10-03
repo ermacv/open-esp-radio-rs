@@ -21,6 +21,8 @@ pub const BIT_31: u32 = 0x8000_0000;
 /// padded to 16 bytes on ESP32-S31 for AXI-GDMA, while Wi-Fi walks 12-byte
 /// nodes. `VolatileCell` models words that can change outside Rust through
 /// DMA without leaking raw pointers into the MAC backend.
+/// Its zero bytes are the empty, software-owned descriptor `new` builds
+/// (`bytemuck::Zeroable`, implemented in `rx_storage.rs`).
 #[repr(C, align(4))]
 pub struct Descriptor {
     word0: VolatileCell<u32>,

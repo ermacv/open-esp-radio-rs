@@ -133,3 +133,24 @@ fn invalid_model_ranges_fail_before_pinning() {
         TxDmaStorage::pin_static_model(storage, DESCRIPTOR_ADDRESS + 1, BUFFER_ADDRESS).is_err()
     );
 }
+
+#[test]
+fn zeroed_storage_is_the_free_storage_new_builds() {
+    let zeroed = oer_memory::zeroed::zeroed::<TxDmaStorage<64>>();
+    let new = TxDmaStorage::<64>::new();
+    assert_eq!(zeroed.state, new.state);
+    assert_eq!(zeroed.state, TxDmaState::Free);
+    assert_eq!(
+        (
+            zeroed.descriptor.word0(),
+            zeroed.descriptor.buffer_address(),
+            zeroed.descriptor.next_address()
+        ),
+        (
+            new.descriptor.word0(),
+            new.descriptor.buffer_address(),
+            new.descriptor.next_address()
+        )
+    );
+    assert_eq!(zeroed.buffer.0, new.buffer.0);
+}

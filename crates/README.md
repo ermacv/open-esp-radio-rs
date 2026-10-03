@@ -23,7 +23,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `radio/` | `wifi/` owns public requests, affine role lifecycle and the executor-free service port |
 | `radio/port/` | The vocabulary every radio port shares (`oer-radio-port`): failure classes and `PortError`, `EventsLost` with its ordering rule, the terminal `Poisoned` event, lifecycle commands, events and refusals, correlation identities with a backend-reserved range, and the clock resolution and epoch relation |
 | `radio/coex/` | Portable radio client identity (`RadioClient`) and coexistence priority vocabulary (`CoexPriority`) every protocol and backend shares |
-| `memory/` | Audited stable-memory proofs and affine buffer/queue handoff |
+| `memory/` | Audited stable-memory proofs, affine buffer/queue handoff and statics in zeroed regions (`zeroed_static!` over `bytemuck::Zeroable`) |
 | `trace/` | Typed, reset-retained event trace and snapshot slots; drivers define the events, images place the storage |
 | `network/interface/` | Stack-neutral interface, link and error values |
 | `protocols/ieee80211/{mac,softmac,sta,ap,security/rsn}/` | Sans-IO frame/protocol code, MAC contracts, role policy and security state machines, and the ports their drivers wait on |

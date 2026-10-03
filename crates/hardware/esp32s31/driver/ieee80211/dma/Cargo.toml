@@ -14,6 +14,7 @@ rx-ownership-observation = []
 tx-psram-dma-probe = ["oer-memory/tx-psram-dma-probe"]
 
 [dependencies]
+bytemuck = { version = "1.25.2", default-features = false, features = ["derive", "min_const_generics", "zeroable_atomics", "zeroable_maybe_uninit"] }
 oer-memory = { path = "../../../../../memory" }
 oer-esp32s31-hal = { path = "../../../hal" }
 pin-project = "1.1.13"

@@ -563,13 +563,11 @@ pub type ConnectedDisconnectedEpoch = DisconnectedStaEpoch<
 // This SRAM object stores only the 32 affine handoff records. Each admitted
 // frame retains its original buffer from the 96-entry DMA ring. The bounded
 // handoff therefore leaves at least 64 descriptor credits with the hardware.
-#[allow(
-    unsafe_code,
-    reason = "the linker must retain latency-critical RX staging in internal SRAM"
-)]
-#[unsafe(link_section = ".critical.bss.open_radio_rx_stage")]
-pub(super) static RX_STAGE_POOL: RxStagePool<RX_STAGE_SLOT_COUNT, RX_STAGE_CAPACITY> =
-    RxStagePool::new();
+oer_memory::zeroed_static! {
+    /// Placement: latency-critical RX staging stays in internal SRAM.
+    pub(super) static RX_STAGE_POOL: RxStagePool<RX_STAGE_SLOT_COUNT, RX_STAGE_CAPACITY> =
+        zeroed in ".critical.bss.open_radio_rx_stage";
+}
 
 /// Handoff slots kept from zero-copy network ownership: one BlockAck-16
 /// window of staging credits, so a complete in-flight A-MPDU burst still
@@ -651,12 +649,12 @@ type ProductionControlSlot =
 // "placed" control of zeros, which the first placement drops. The cell is
 // uninitialized storage instead, and the one-time claim writes the empty
 // slot.
-#[allow(
-    unsafe_code,
-    reason = "the connected control slot is explicitly placed in the PSRAM ownership tier"
-)]
-#[unsafe(link_section = ".psram.bss.open_radio_station_connected_control")]
-static CONNECTED_CONTROL_SLOT: StaticCell<ProductionControlSlot> = StaticCell::new();
+oer_memory::zeroed_static! {
+    /// Placement: the connected control slot is in the PSRAM ownership tier.
+    static CONNECTED_CONTROL_SLOT: oer_memory::zeroed::ZeroedStatic<
+        core::mem::MaybeUninit<ProductionControlSlot>,
+    > = zeroed in ".psram.bss.open_radio_station_connected_control";
+}
 
 /// The connected control's statics: its event queue and the slot each
 /// association's control is placed in. Before a control is placed, and once

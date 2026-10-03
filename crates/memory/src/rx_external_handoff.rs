@@ -8,6 +8,7 @@
 
 use core::{
     cell::UnsafeCell,
+    mem::MaybeUninit,
     ptr::NonNull,
     sync::atomic::{AtomicU8, Ordering},
 };
@@ -142,16 +143,36 @@ impl Drop for ExternalRxBuffer {
 unsafe impl Send for ExternalRxBuffer {}
 
 struct ExternalRxHandoffSlot {
-    buffer: UnsafeCell<Option<ExternalRxBuffer>>,
+    /// Initialized exactly while `state` is not `SLOT_FREE`: a free slot's
+    /// bytes are zero, which no `ExternalRxBuffer` is.
+    buffer: UnsafeCell<MaybeUninit<ExternalRxBuffer>>,
     offset: UnsafeCell<usize>,
     length: UnsafeCell<usize>,
     state: AtomicU8,
 }
 
+#[allow(unsafe_code, reason = "a free slot is zero bytes")]
+// SAFETY: state 0 is `SLOT_FREE`, whose binding is uninitialized;
+// offset and length are zero integers.
+unsafe impl bytemuck::Zeroable for ExternalRxHandoffSlot {}
+
+impl Drop for ExternalRxHandoffSlot {
+    fn drop(&mut self) {
+        if *self.state.get_mut() != SLOT_FREE {
+            #[allow(unsafe_code, reason = "a non-free slot holds its binding")]
+            // SAFETY: every non-free state holds an initialized binding, and
+            // `&mut self` excludes every lease.
+            unsafe {
+                self.buffer.get_mut().assume_init_drop();
+            }
+        }
+    }
+}
+
 impl ExternalRxHandoffSlot {
     const fn new() -> Self {
         Self {
-            buffer: UnsafeCell::new(None),
+            buffer: UnsafeCell::new(MaybeUninit::uninit()),
             offset: UnsafeCell::new(0),
             length: UnsafeCell::new(0),
             state: AtomicU8::new(SLOT_FREE),
@@ -170,12 +191,9 @@ impl ExternalRxHandoffSlot {
         // no consumer can observe the binding before the Release publication.
         #[allow(unsafe_code, reason = "slot state exclusively owns binding mutation")]
         unsafe {
-            *self.buffer.get() = Some(buffer);
+            let buffer = (*self.buffer.get()).write(buffer);
             *self.offset.get() = 0;
-            *self.length.get() = (*self.buffer.get())
-                .as_ref()
-                .expect("claimed external slot contains its buffer")
-                .length();
+            *self.length.get() = buffer.length();
         }
         Ok(())
     }
@@ -220,10 +238,7 @@ impl ExternalRxHandoffSlot {
         // state transition which published it supplies the acquire ordering.
         #[allow(unsafe_code, reason = "non-free slot retains its external binding")]
         unsafe {
-            (*self.buffer.get())
-                .as_ref()
-                .expect("claimed external slot contains a buffer")
-                .length()
+            (*self.buffer.get()).assume_init_ref().length()
         }
     }
 
@@ -233,10 +248,7 @@ impl ExternalRxHandoffSlot {
         unsafe {
             let offset = *self.offset.get();
             let length = *self.length.get();
-            (*self.buffer.get())
-                .as_ref()
-                .expect("claimed external slot contains a buffer")
-                .frame(offset, length)
+            (*self.buffer.get()).assume_init_ref().frame(offset, length)
         }
     }
 
@@ -247,9 +259,7 @@ impl ExternalRxHandoffSlot {
         unsafe {
             let offset = *self.offset.get();
             let length = *self.length.get();
-            let buffer = (*self.buffer.get())
-                .as_mut()
-                .expect("claimed external slot contains a buffer");
+            let buffer = (*self.buffer.get()).assume_init_mut();
             f(buffer.frame_mut(offset, length))
         }
     }
@@ -262,9 +272,7 @@ impl ExternalRxHandoffSlot {
             (
                 *self.offset.get(),
                 *self.length.get(),
-                (*self.buffer.get())
-                    .as_ref()
-                    .expect("claimed external slot contains a buffer"),
+                (*self.buffer.get()).assume_init_ref(),
             )
         };
         let (data, available) = buffer.raw_from(offset);
@@ -295,7 +303,7 @@ impl ExternalRxHandoffSlot {
         let buffer = unsafe {
             *self.offset.get() = 0;
             *self.length.get() = 0;
-            (*self.buffer.get()).take()
+            (*self.buffer.get()).assume_init_read()
         };
         // The DMA allocation must become releasable before this handoff slot
         // is advertised as a new radio credit. Publishing FREE first creates
@@ -318,6 +326,13 @@ unsafe impl Sync for ExternalRxHandoffSlot {}
 /// Bounded index pool for DMA buffers retained above the descriptor ring.
 pub struct ExternalRxHandoffPool<const FRAME_CAPACITY: usize, const SLOT_COUNT: usize> {
     slots: [ExternalRxHandoffSlot; SLOT_COUNT],
+}
+
+#[allow(unsafe_code, reason = "the free pool is zero bytes")]
+// SAFETY: an array of free slots.
+unsafe impl<const FRAME_CAPACITY: usize, const SLOT_COUNT: usize> bytemuck::Zeroable
+    for ExternalRxHandoffPool<FRAME_CAPACITY, SLOT_COUNT>
+{
 }
 
 impl<const FRAME_CAPACITY: usize, const SLOT_COUNT: usize>

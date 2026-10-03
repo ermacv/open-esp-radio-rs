@@ -724,3 +724,26 @@ fn retained_owner_is_a_small_handle_over_the_external_lease_arena() {
             < core::mem::size_of::<RetainedAmpduDmaStorage<TestBacking, 2>>()
     );
 }
+
+#[test]
+fn zeroed_arena_is_the_free_arena_new_builds() {
+    let zeroed = oer_memory::zeroed::zeroed::<AmpduDmaStorage<4, 32>>();
+    let new = AmpduDmaStorage::<4, 32>::new();
+    assert_eq!(zeroed.state, new.state);
+    assert_eq!(zeroed.state, AmpduDmaState::Free);
+    assert_eq!(zeroed.lease_generation, new.lease_generation);
+    assert_eq!(zeroed.published_count, new.published_count);
+    for (zeroed, new) in zeroed.descriptors.iter().zip(&new.descriptors) {
+        assert_eq!(
+            (
+                zeroed.word0(),
+                zeroed.buffer_address(),
+                zeroed.next_address()
+            ),
+            (new.word0(), new.buffer_address(), new.next_address())
+        );
+    }
+    for (zeroed, new) in zeroed.buffers.iter().zip(&new.buffers) {
+        assert_eq!(zeroed.0, new.0);
+    }
+}

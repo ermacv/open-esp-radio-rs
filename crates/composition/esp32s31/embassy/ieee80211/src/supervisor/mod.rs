@@ -249,12 +249,11 @@ pub(super) type ProductionStationRuntime<'state> = StationRuntimeResources<
 // Radio buffers remain in DMA-visible SRAM. The CPU-only scan table is a
 // separate ordinary-memory owner, reserved together with these buffers before
 // any cell is taken. Queue depths and diagnostic DMA allocations are unchanged.
-#[allow(
-    unsafe_code,
-    reason = "the linker must retain the production Wi-Fi DMA owner in DMA-visible SRAM"
-)]
-#[unsafe(link_section = ".dma.bss.open_radio_station")]
-static WIFI_MEMORY: DefaultWifiMemory<CriticalSectionRawMutex> = DefaultWifiMemory::new();
+oer_memory::zeroed_static! {
+    /// Placement: the production Wi-Fi DMA owner stays in DMA-visible SRAM.
+    static WIFI_MEMORY: DefaultWifiMemory<CriticalSectionRawMutex> =
+        zeroed in ".dma.bss.open_radio_station";
+}
 static SCAN_MEMORY: DefaultScanMemory = DefaultScanMemory::new();
 
 type StationMacClockStorage = oer_esp32s31_ieee80211_runtime::mac_clock::MacClockStorage<
@@ -290,13 +289,12 @@ pub(crate) const fn reception_timer(
 // safety-critical hot state rather than bulk DMA storage. Keeping the 256-byte
 // table in a separately named critical section prevents unrelated owner-graph
 // layout changes from silently changing the authority used to rearm a buffer.
-#[allow(
-    unsafe_code,
-    reason = "the linker must retain the RX DMA address binding in internal SRAM"
-)]
-#[unsafe(link_section = ".critical.bss.open_radio_rx_addresses")]
-static RX_BUFFER_ADDRESSES: ConstStaticCell<RxDmaBufferAddresses<RX_DESCRIPTOR_COUNT>> =
-    ConstStaticCell::new([0; RX_DESCRIPTOR_COUNT]);
+oer_memory::zeroed_static! {
+    /// Placement: the RX DMA address binding stays in internal SRAM.
+    static RX_BUFFER_ADDRESSES: oer_memory::zeroed::ZeroedStatic<
+        RxDmaBufferAddresses<RX_DESCRIPTOR_COUNT>,
+    > = zeroed in ".critical.bss.open_radio_rx_addresses";
+}
 // These two owners contain runtime-derived DMA and PHY values. StaticCell
 // retains their final address while `init_with` below avoids a by-value
 // intermediate during construction.

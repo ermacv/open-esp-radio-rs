@@ -112,3 +112,58 @@ fn an_adopted_network_slot_exposes_its_view_and_returns_on_release() {
     assert_eq!(probe.calls.load(Ordering::Relaxed), 1);
     assert_eq!(pool.claimed_slots(), 0);
 }
+
+#[allow(unsafe_code, reason = "test callback reconstructs its counter")]
+unsafe fn count_release(owner: NonNull<()>, _owner_index: usize) {
+    // SAFETY: the test installs a pointer to a live `AtomicU8` as the owner.
+    unsafe { owner.cast::<AtomicU8>().as_ref() }.fetch_add(1, Ordering::Relaxed);
+}
+
+fn counted_buffer(bytes: &mut [u8; 64], released: &AtomicU8) -> ExternalRxBuffer {
+    let pointer = NonNull::new(bytes.as_mut_ptr()).unwrap();
+    #[allow(unsafe_code, reason = "test owns stable bytes and the counter")]
+    // SAFETY: the bytes and the counter outlive the buffer in every test.
+    unsafe {
+        ExternalRxBuffer::new(
+            pointer,
+            bytes.len(),
+            bytes.len(),
+            NonNull::from(released).cast(),
+            0,
+            count_release,
+        )
+    }
+}
+
+#[test]
+fn a_zeroed_pool_is_free_and_binds_without_releasing_a_previous_buffer() {
+    let pool = crate::zeroed::zeroed::<ExternalRxHandoffPool<64, 2>>();
+    assert_eq!(pool.claimed_slots(), 0);
+    let released = AtomicU8::new(0);
+    let mut bytes = [0_u8; 64];
+    let radio = match pool.try_claim_radio(counted_buffer(&mut bytes, &released), 0) {
+        Ok(radio) => radio,
+        Err(_) => panic!("a zeroed slot must accept one buffer"),
+    };
+    // A free slot holds no buffer, so binding one releases nothing.
+    assert_eq!(released.load(Ordering::Relaxed), 0);
+    let index = radio.republish(0, 64);
+    assert_eq!(pool.claim_network(index).release(), 0);
+    assert_eq!(released.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn dropping_the_pool_releases_a_published_buffer_once() {
+    let released = AtomicU8::new(0);
+    let mut bytes = [0_u8; 64];
+    {
+        let pool = ExternalRxHandoffPool::<64, 1>::new();
+        let radio = match pool.try_claim_radio(counted_buffer(&mut bytes, &released), 0) {
+            Ok(radio) => radio,
+            Err(_) => panic!("a fresh slot must accept one buffer"),
+        };
+        let _ready = radio.republish(0, 64);
+        assert_eq!(released.load(Ordering::Relaxed), 0);
+    }
+    assert_eq!(released.load(Ordering::Relaxed), 1);
+}

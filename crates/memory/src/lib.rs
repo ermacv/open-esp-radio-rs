@@ -9,7 +9,8 @@
 //! final receive buffer through finite state-specific leases.
 //! [`StableDmaRange`] carries an unforgeable address/lifetime proof from those
 //! audited storage leaves into otherwise safe register APIs. Higher protocol
-//! and integration crates use only these safe capabilities.
+//! and integration crates use only these safe capabilities. [`zeroed`] gives
+//! statics in regions the boot zeroes an initializer that is all zero bytes.
 
 use core::marker::PhantomData;
 
@@ -17,6 +18,7 @@ mod affine_spsc;
 mod pinned_tx;
 mod rx_external_handoff;
 mod rx_handoff;
+pub mod zeroed;
 
 pub use affine_spsc::{
     AffineSpscQueue, AffineSpscReceiver, AffineSpscSender, AffineSpscTryReceiveError,

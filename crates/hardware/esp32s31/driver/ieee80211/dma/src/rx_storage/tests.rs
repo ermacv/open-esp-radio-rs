@@ -1081,3 +1081,28 @@ fn ambiguous_start_quarantines_the_arena_when_walker_is_observed_live() {
     assert!(mmio.walker);
     assert_eq!(storage.lifecycle_state(), RxDmaArenaState::ResetRequired);
 }
+
+#[test]
+fn zeroed_arena_is_the_reusable_identity_bound_arena_new_builds() {
+    let zeroed = oer_memory::zeroed::zeroed::<RxDmaStorage<4, 16, 20>>();
+    let new = RxDmaStorage::<4, 16, 20>::new();
+    assert_eq!(zeroed.lifecycle_state(), RxDmaArenaState::Reusable);
+    assert_eq!(zeroed.lifecycle_state(), new.lifecycle_state());
+    for index in 0..4 {
+        assert_eq!(zeroed.descriptor_buffer_id(index), Some(index));
+        assert_eq!(
+            zeroed.descriptor_buffer_id(index),
+            new.descriptor_buffer_id(index)
+        );
+    }
+    for (zeroed, new) in zeroed.descriptors().iter().zip(new.descriptors()) {
+        assert_eq!(
+            (
+                zeroed.word0(),
+                zeroed.buffer_address(),
+                zeroed.next_address()
+            ),
+            (new.word0(), new.buffer_address(), new.next_address())
+        );
+    }
+}

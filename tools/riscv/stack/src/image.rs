@@ -49,15 +49,37 @@ fn parse(elf: &[u8]) -> Result<object::File<'_>> {
     Ok(file)
 }
 
-/// The defined code symbols of `elf` as functions, ascending by address. A
-/// symbol without a size extends to the next code symbol of its section, or to
-/// the section's end. Mapping symbols (`$x`, `$d`) and local labels (`.L`) are
-/// not functions.
+/// The defined code symbols of `elf` as functions, ascending by address: its
+/// function symbols, and its global untyped symbols in an executable section
+/// outside every sized function, such as assembly entries and the ROM's
+/// `__call_*` trampolines. A symbol without a size extends to the next code
+/// symbol of its section, or to the section's end. Mapping symbols (`$x`,
+/// `$d`) and local labels (`.L`) are not functions.
 pub fn functions(elf: &[u8]) -> Result<Vec<Function>> {
     let file = parse(elf)?;
+    let sized: Vec<(u64, u64)> = file
+        .symbols()
+        .filter(|symbol| symbol.kind() == SymbolKind::Text && symbol.size() > 0)
+        .map(|symbol| (symbol.address(), symbol.address() + symbol.size()))
+        .collect();
+    let executable = |symbol: &object::Symbol<'_, '_>| {
+        symbol
+            .section_index()
+            .and_then(|index| file.section_by_index(index).ok())
+            .is_some_and(|section| {
+                matches!(section.flags(), object::SectionFlags::Elf { sh_flags }
+                    if sh_flags & u64::from(object::elf::SHF_EXECINSTR) != 0)
+            })
+    };
     let mut by_address: BTreeMap<u32, (u32, Vec<String>, u32)> = BTreeMap::new();
     for symbol in file.symbols() {
-        if symbol.is_undefined() || symbol.kind() != SymbolKind::Text {
+        let untyped_entry = symbol.kind() == SymbolKind::Unknown
+            && symbol.is_global()
+            && executable(&symbol)
+            && !sized
+                .iter()
+                .any(|&(start, end)| symbol.address() > start && symbol.address() < end);
+        if symbol.is_undefined() || !(symbol.kind() == SymbolKind::Text || untyped_entry) {
             continue;
         }
         let Ok(name) = symbol.name() else { continue };

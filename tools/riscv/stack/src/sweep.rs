@@ -371,6 +371,9 @@ pub fn transfers(elf: &[u8], function: &Function) -> Result<Vec<Transfer>> {
                         let mut targets: Vec<u32> = dispatched
                             .iter()
                             .flatten()
+                            // A Rust function pointer is never null: a zero
+                            // entry is an empty `Option<fn>` slot.
+                            .filter(|&&word| word != 0)
                             .map(|word| word & !1)
                             .filter(|&target| link || outside(target))
                             .collect();

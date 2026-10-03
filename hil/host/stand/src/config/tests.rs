@@ -45,6 +45,7 @@ fn ap_scenarios_resolve_both_radio_roles_from_one_channel_geometry() {
             management_frame_protection: Default::default(),
             access_point_security: Default::default(),
             access_point: true,
+            access_point_beacon: None,
         };
         let resolved = lab.resolve(wifi);
         let StationFixtureConfig::OpenWrt(config) = &resolved.station_fixture else {
@@ -70,6 +71,7 @@ fn ap_scenarios_resolve_both_radio_roles_from_one_channel_geometry() {
         management_frame_protection: Default::default(),
         access_point_security: Default::default(),
         access_point: false,
+        access_point_beacon: None,
     };
     assert_eq!(
         lab.resolve(station).access_point.channel_width(),

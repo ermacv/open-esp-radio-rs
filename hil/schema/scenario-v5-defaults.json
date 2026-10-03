@@ -105,6 +105,11 @@
             "guard_interval": "any"
           }
         },
+        "station-sleep": {
+          "link": {
+            "guard_interval": "any"
+          }
+        },
         "station-tcp": {
           "criteria": {
             "require_no_beacon_loss": false

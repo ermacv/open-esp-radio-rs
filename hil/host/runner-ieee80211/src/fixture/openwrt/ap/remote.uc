@@ -74,7 +74,9 @@ if (request.operation == 'observe') {
         enabled: status.status == 'ENABLED', channel: status.channel,
         geometry, htmode: config.get('wireless', radio, 'htmode'),
         ht: match(file, /(^|\n)ieee80211n=1(\n|$)/) != null,
-        he: match(file, /(^|\n)ieee80211ax=1(\n|$)/) != null
+        he: match(file, /(^|\n)ieee80211ax=1(\n|$)/) != null,
+        beacon_interval_tu: int(match(file, /(^|\n)beacon_int=([0-9]+)/)?.[2]) ?? null,
+        dtim_period: int(match(file, /(^|\n)dtim_period=([0-9]+)/)?.[2]) ?? null
     }));
     exit(0);
 }

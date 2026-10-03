@@ -14,6 +14,8 @@ pub struct Settings {
     pub tx_buffer: WifiTxBufferPolicy,
     pub rx_continuation: WifiRxContinuationPolicy,
     pub l1_cache_counters: bool,
+    /// The power save the station runs once started.
+    pub station_power_save: oer_hil_protocol::wifi::WifiStationPowerSave,
 }
 
 impl Default for Settings {
@@ -26,6 +28,7 @@ impl Default for Settings {
             tx_buffer: WifiTxBufferPolicy::OwnedSramPromotion,
             rx_continuation: WifiRxContinuationPolicy::ImmediateSoftwareProbe,
             l1_cache_counters: false,
+            station_power_save: oer_hil_protocol::wifi::WifiStationPowerSave::None,
         }
     }
 }

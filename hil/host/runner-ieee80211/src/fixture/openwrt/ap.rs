@@ -10,7 +10,9 @@ use std::{
 use zeroize::Zeroizing;
 
 use crate::Result;
-use oer_hil_scenario::link::{AccessPointSecurity, ManagementFrameProtection, PhyExpectation};
+use oer_hil_scenario::link::{
+    AccessPointBeacon, AccessPointSecurity, ManagementFrameProtection, PhyExpectation,
+};
 use oer_hil_stand::config::{OpenWrtConfig, StationConfig};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -21,6 +23,12 @@ pub struct Observation {
     pub htmode: String,
     pub ht: bool,
     pub he: bool,
+    /// The beacon interval and DTIM period hostapd runs, from its generated
+    /// configuration; `None` when it states none.
+    #[serde(default)]
+    pub beacon_interval_tu: Option<u16>,
+    #[serde(default)]
+    pub dtim_period: Option<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -30,6 +38,8 @@ pub struct Profile {
     pub channel: u8,
     pub management_frame_protection: ManagementFrameProtection,
     pub access_point_security: AccessPointSecurity,
+    /// The beacon schedule the scenario sets; `None` keeps the router's.
+    pub beacon: Option<AccessPointBeacon>,
 }
 
 impl Profile {
@@ -38,6 +48,7 @@ impl Profile {
         phy: PhyExpectation,
         management_frame_protection: ManagementFrameProtection,
         access_point_security: AccessPointSecurity,
+        beacon: Option<AccessPointBeacon>,
     ) -> Self {
         Self {
             ht40_above: config.ht40_above,
@@ -45,6 +56,7 @@ impl Profile {
             channel: config.channel,
             management_frame_protection,
             access_point_security,
+            beacon,
         }
     }
 
@@ -110,16 +122,35 @@ impl Profile {
         {
             return Err(format!("OpenWrt profile was not applied: expected {} channel {} center {center} MHz; observed {observed:?}", self.htmode(), self.channel).into());
         }
+        if let Some(beacon) = self.beacon
+            && (observed.beacon_interval_tu != Some(beacon.interval_tu)
+                || observed.dtim_period != Some(beacon.dtim_period))
+        {
+            return Err(format!(
+                "OpenWrt beacon schedule was not applied: expected {beacon:?}; observed beacon \
+                 interval {:?} TU, DTIM period {:?}",
+                observed.beacon_interval_tu, observed.dtim_period
+            )
+            .into());
+        }
         Ok(())
     }
 
     fn options(self, config: &OpenWrtConfig, station: &StationConfig) -> Value {
         let (ssid, passphrase) = station.credentials();
-        json!({
+        let mut options = json!({
             &config.radio: {"channel": self.channel.to_string(), "htmode": self.htmode(), "disabled": "0"},
             &config.ap_section: {"mode": "ap", "ssid": ssid, "key": passphrase,
                 "encryption": self.encryption(), "wmm": "1", "ieee80211w": self.ieee80211w(), "disabled": "0", "hidden": "0", "ifname": config.wireless_interface}
-        })
+        });
+        // The beacon interval is the radio's (`wifi-device`), the DTIM
+        // period the BSS's (`wifi-iface`); both are temporary like every
+        // other option, so the restore reverts them.
+        if let Some(beacon) = self.beacon {
+            options[&config.radio]["beacon_int"] = json!(beacon.interval_tu.to_string());
+            options[&config.ap_section]["dtim_period"] = json!(beacon.dtim_period.to_string());
+        }
+        options
     }
 }
 
@@ -169,14 +200,22 @@ impl AccessPoint {
         phy: PhyExpectation,
         management_frame_protection: ManagementFrameProtection,
         access_point_security: AccessPointSecurity,
+        beacon: Option<AccessPointBeacon>,
     ) -> Result<Self> {
         let profile = Profile::new(
             config,
             phy,
             management_frame_protection,
             access_point_security,
+            beacon,
         );
         probe(config, profile)?;
+        if config.read_only && profile.beacon.is_some() {
+            return Err(
+                "a scenario beacon schedule requires a writable OpenWrt fixture, not a read-only one"
+                    .into(),
+            );
+        }
         if config.read_only {
             return Self::attach(
                 Remote(config.clone()),
@@ -198,7 +237,9 @@ impl AccessPoint {
         let radio = &before["options"][&self.backend.0.radio];
         Ok(json!({"schema": 1, "requested": self.profile,
             "read_only": self.read_only,
-            "before": {"up": before["up"], "channel": radio["channel"], "htmode": radio["htmode"]},
+            "before": {"up": before["up"], "channel": radio["channel"], "htmode": radio["htmode"],
+                "beacon_int": radio["beacon_int"],
+                "dtim_period": before["options"][&self.backend.0.ap_section]["dtim_period"]},
             "applied": self.applied}))
     }
 }
@@ -235,6 +276,8 @@ impl<B: Backend> AccessPoint<B> {
                 htmode: String::new(),
                 ht: false,
                 he: false,
+                beacon_interval_tu: None,
+                dtim_period: None,
             },
         };
         owner.backend.invoke("apply", &options, true, None)?;

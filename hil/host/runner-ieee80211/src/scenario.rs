@@ -33,7 +33,7 @@ pub mod station;
 pub use access_point::{AccessPoint, AccessPointClients, AccessPointTraffic};
 pub use station::{
     AirObservation, InducedProtection, ProtectionPeer, RoleOperation, StationIcmp,
-    StationReconnect, StationTcp, StationUdp,
+    StationReconnect, StationSleep, StationTcp, StationUdp,
 };
 
 // Diagnostic phase totals use u32 cycle accumulators. At 320 MHz, 12 seconds
@@ -189,6 +189,7 @@ pub enum WifiWorkload {
     StationUdp(StationUdp),
     StationTcp(StationTcp),
     StationIcmp(StationIcmp),
+    StationSleep(StationSleep),
     StationReconnect(StationReconnect),
     StationApLoss {
         link: LinkExpectation,
@@ -234,6 +235,7 @@ impl WifiWorkload {
             Self::StationUdp(workload) => Some(workload.link),
             Self::StationTcp(workload) => Some(workload.link),
             Self::StationIcmp(workload) => Some(workload.link),
+            Self::StationSleep(workload) => Some(workload.link),
             Self::StationReconnect(workload) => Some(workload.link),
             Self::StationAccessPoint(workload) => Some(workload.link),
             Self::AccessPoint(workload) => workload.link,
@@ -273,6 +275,7 @@ impl WifiScenario {
             WifiWorkload::StationUdp(workload) => workload.validate(image)?,
             WifiWorkload::StationTcp(workload) => workload.validate(image)?,
             WifiWorkload::StationIcmp(workload) => workload.validate(image)?,
+            WifiWorkload::StationSleep(workload) => workload.validate()?,
             WifiWorkload::StationReconnect(workload) => workload.validate(image)?,
             WifiWorkload::StationApLoss {
                 timeout_seconds, ..
@@ -520,6 +523,7 @@ impl WifiScenario {
                 });
                 checks.push("wifi.station.control-responsive");
             }
+            WifiWorkload::StationSleep(_) => checks.push("wifi.station.rf-sleep-observed"),
             WifiWorkload::StationTcp(_)
             | WifiWorkload::StationIcmp(_)
             | WifiWorkload::StationReconnect(_)
@@ -539,6 +543,10 @@ impl WifiScenario {
                 tx_buffer: datapath.tx_buffer,
                 rx_continuation: datapath.rx_continuation,
                 l1_cache_counters: datapath.l1_cache_counters,
+                station_power_save: match &self.workload {
+                    WifiWorkload::StationSleep(workload) => workload.power_save,
+                    _ => oer_hil_protocol::wifi::WifiStationPowerSave::None,
+                },
             },
             checks,
             wifi: WifiLabUse {
@@ -554,6 +562,10 @@ impl WifiScenario {
                     .map(|link| link.access_point_security)
                     .unwrap_or_default(),
                 access_point: matches!(self.workload, WifiWorkload::AccessPoint(_)),
+                access_point_beacon: match &self.workload {
+                    WifiWorkload::StationSleep(workload) => Some(workload.access_point_beacon),
+                    _ => None,
+                },
             },
         }
     }

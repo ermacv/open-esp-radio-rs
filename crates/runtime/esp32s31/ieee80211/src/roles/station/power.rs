@@ -470,10 +470,22 @@ mod agent {
                 radio.set_coex_flexible_period(period)
             }
             ConnectedPowerCommand::RfSleep => {
+                super::trace_counter(mac_clock, |mac_local_time, monotonic_micros| {
+                    oer_trace::emit(&oer_ieee80211_trace::RfSleepEntered {
+                        mac_local_time,
+                        monotonic_micros,
+                    })
+                });
                 rf.sleep(radio).await.map_err(StationPowerFailure::Rf)?
             }
             ConnectedPowerCommand::RfWake => {
                 rf.wake(radio).await.map_err(StationPowerFailure::Rf)?;
+                super::trace_counter(mac_clock, |mac_local_time, monotonic_micros| {
+                    oer_trace::emit(&oer_ieee80211_trace::RfWoke {
+                        mac_local_time,
+                        monotonic_micros,
+                    })
+                });
                 // The MAC local time's relation to the monotonic clock
                 // across the sleep is not established: start a new
                 // generation of it.
@@ -481,5 +493,17 @@ mod agent {
             }
         }
         Ok(())
+    }
+}
+
+/// Trace the raw MAC counter beside the low 32 bits of monotonic time, the
+/// evidence of whether the counter runs through RF sleep.
+#[cfg(target_arch = "riscv32")]
+fn trace_counter<K: crate::mac_clock::ReceptionClock + ?Sized>(
+    mac_clock: &K,
+    emit: impl FnOnce(u32, u32),
+) {
+    if let Some((counter, monotonic)) = mac_clock.counter_reading() {
+        emit(counter, monotonic.as_micros() as u32);
     }
 }

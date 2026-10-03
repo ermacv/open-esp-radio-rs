@@ -137,6 +137,46 @@ impl NetworkIpv4Configuration {
     }
 }
 
+/// The power save a started station runs, as the product's
+/// `oer::wifi::StationPowerMode`.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, Schema)]
+#[serde(rename_all = "kebab-case")]
+pub enum WifiStationPowerSave {
+    /// No power save of its own (`WIFI_PS_NONE`).
+    #[default]
+    None,
+    /// Modem sleep waking for every DTIM (`WIFI_PS_MIN_MODEM`).
+    MinModem,
+    /// Modem sleep waking at the listen interval, in beacon intervals
+    /// (`WIFI_PS_MAX_MODEM`); zero is refused.
+    MaxModem { listen_interval: u16 },
+}
+
+impl WifiStationPowerSave {
+    /// Whether the station can run it: a max-modem listen interval of zero
+    /// beacon intervals cannot.
+    pub const fn is_valid(self) -> bool {
+        !matches!(self, Self::MaxModem { listen_interval: 0 })
+    }
+}
+
+/// A station start: the network and the station's power save.
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Schema)]
+pub struct StationStart {
+    pub credentials: NetworkCredentials,
+    pub power_save: WifiStationPowerSave,
+}
+
+impl core::fmt::Debug for StationStart {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("StationStart")
+            .field("credentials", &self.credentials)
+            .field("power_save", &self.power_save)
+            .finish()
+    }
+}
+
 /// Executor placement selected once, before any Wi-Fi worker or IP stack is
 /// materialized. Radio and RX protocol ownership remain on CPU0 in both modes.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, Schema)]

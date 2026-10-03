@@ -179,6 +179,24 @@ checks are published.
 Block Ack agreement, so the AP sends it single ERP-OFDM MPDUs;
 `access-point-non-ht-client-ceiling-tx` gates that transmit path.
 
+### Station sleep
+
+`station-sleep` starts the station with workload `power_save` (`min-modem`, or
+`{ max-modem = { listen_interval = N } }`) and has the OpenWrt fixture run
+`access_point_beacon = { interval_tu, dtim_period }`. The fixture sets them as
+temporary UCI options (the radio's `beacon_int`, the BSS's `dtim_period`),
+verifies them in hostapd's generated configuration, records the requested,
+original and applied values in `fixture-applied.json` and reverts them with the
+rest of the profile, also after a failed run; read-only, local and external
+fixtures refuse a beacon schedule. ICMP probing at the workload's cadence keeps
+the link in use; latency and loss are recorded, not judged. The workload
+enables the RF sleep trace channel and writes `station-sleep.json`: for each RF
+sleep, the MAC local-time counter's and the monotonic distance between the
+sleep and wake edges, and whether the counter ran, held still or jumped. It
+publishes `wifi.station.rf-sleep-observed` once a sleep was paired.
+`station-sleep-dtim1` and `station-sleep-dtim3` are the DTIM 1/3 matrix at a
+100 TU beacon interval; both are `investigation` scenarios.
+
 ### AP availability
 
 `station-ap-loss` waits for connection, stops the controlled AP, requires beacon

@@ -32,6 +32,9 @@ pub(super) fn execute(
         WifiWorkload::StationUdp(workload) => station_udp(workload, image, output, context),
         WifiWorkload::StationTcp(workload) => station_tcp(workload, output, context),
         WifiWorkload::StationIcmp(workload) => station_icmp(workload, output, context),
+        WifiWorkload::StationSleep(workload) => {
+            ieee80211::station_sleep::run(workload, output, context, fixture)
+        }
         WifiWorkload::StationReconnect(workload) => station_reconnect(workload, output, context),
         WifiWorkload::StationApLoss {
             link,

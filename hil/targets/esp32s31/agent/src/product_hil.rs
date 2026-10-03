@@ -31,10 +31,10 @@ use oer::ieee80211::mac::channel::Channel as MacChannel;
 use oer::wifi::{
     AccessPointClientLimit, AccessPointRequest, AccessPointSecurity, MacRxEvidence,
     MonitorCapturePolicy, MonitorRequest, Pmk, Preference, StaReconnectPolicy,
-    StationAccessPointRequest, StationRequest, StationScanChannels, StationScanPolicy,
-    StationSecurity, WifiChannel, WifiChannelWidth as DriverWifiChannelWidth, WifiMacAddress,
-    WifiMonitorConfig, WifiRoleStartFailure, WifiRoleStopFailure,
-    WifiScanRequest as DriverWifiScanRequest, WifiSsid,
+    StationAccessPointRequest, StationListenInterval, StationPowerMode, StationRequest,
+    StationScanChannels, StationScanPolicy, StationSecurity, WifiChannel,
+    WifiChannelWidth as DriverWifiChannelWidth, WifiMacAddress, WifiMonitorConfig,
+    WifiRoleStartFailure, WifiRoleStopFailure, WifiScanRequest as DriverWifiScanRequest, WifiSsid,
 };
 #[cfg(feature = "mac-irq-telemetry")]
 use oer_esp32s31_ieee80211_system::MacIrqObservation;
@@ -1530,6 +1530,21 @@ const fn hil_failure_reason(stage: StaLifecycleStage) -> StationAttemptFailureRe
     }
 }
 
+/// The product power mode of a requested station power save; `None` for a
+/// zero listen interval.
+pub(crate) fn station_power_mode(
+    power_save: oer_hil_protocol::wifi::WifiStationPowerSave,
+) -> Option<StationPowerMode> {
+    use oer_hil_protocol::wifi::WifiStationPowerSave;
+    Some(match power_save {
+        WifiStationPowerSave::None => StationPowerMode::None,
+        WifiStationPowerSave::MinModem => StationPowerMode::MinModem,
+        WifiStationPowerSave::MaxModem { listen_interval } => {
+            StationPowerMode::MaxModem(StationListenInterval::new(listen_interval)?)
+        }
+    })
+}
+
 fn station_request(ssid: &[u8], passphrase: &[u8]) -> StationRequest {
     station_request_with_preference(ssid, passphrase, Preference::PreferHe20)
 }
@@ -2462,11 +2477,19 @@ async fn wifi_role_task(
                 WifiControlRequest::StartStation {
                     request_id,
                     credentials: requested_credentials,
+                    power_save,
                 } => {
-                    let station = await_stack_boundary!(idle.start_station(station_request(
-                        requested_credentials.ssid(),
-                        requested_credentials.passphrase(),
-                    )))
+                    let power_mode = station_power_mode(power_save)
+                        .expect("the console admitted only a valid station power save");
+                    let station = await_stack_boundary!(
+                        idle.start_station(
+                            station_request(
+                                requested_credentials.ssid(),
+                                requested_credentials.passphrase(),
+                            )
+                            .with_power_mode(power_mode)
+                        )
+                    )
                     .unwrap_or_else(|error| panic!("production station start failed: {error:?}"));
                     credentials = Some(requested_credentials);
                     DIAGNOSTIC_STAGE.store(30, Ordering::Release);

@@ -148,7 +148,7 @@ pub struct StopStation;
 /// Materialize a station from the role-neutral Wi-Fi owner.
 #[cfg(feature = "wifi")]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub struct StartStation(pub crate::wifi::NetworkCredentials);
+pub struct StartStation(pub crate::wifi::StationStart);
 
 /// Unsolicited, reliable station generation/link transition.
 #[cfg(feature = "wifi")]

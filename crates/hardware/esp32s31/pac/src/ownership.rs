@@ -62,8 +62,8 @@ impl MacLocalTime {
         Self(())
     }
 
-    /// The counter now: a full-width wrapping value whose unit and rate
-    /// against the system timer are not established.
+    /// The counter now: a full-width wrapping value in microseconds, at the
+    /// system timer's rate (HIL scenario `diagnostic-rx-clock`).
     #[allow(
         unsafe_code,
         reason = "every copy of the read-only capability reads the counter the consumed owner held"
@@ -153,9 +153,20 @@ impl SharedRadioRegisters {
     }
 }
 
-/// Opaque Wi-Fi MAC register partition.
+/// Opaque Wi-Fi MAC register partition, with a copy of the read-only MAC
+/// local time.
 #[must_use = "dropping a radio partition permanently loses its register authority"]
-pub struct WifiMacPartition(svd::peripheral_ownership::WifiMacPeripherals);
+pub struct WifiMacPartition {
+    peripherals: svd::peripheral_ownership::WifiMacPeripherals,
+    mac_local_time: MacLocalTime,
+}
+
+impl WifiMacPartition {
+    /// The MAC local-time read this partition holds a copy of.
+    pub const fn mac_local_time(&self) -> MacLocalTime {
+        self.mac_local_time
+    }
+}
 
 /// Opaque coexistence register partition.
 #[must_use = "dropping a radio partition permanently loses its register authority"]
@@ -204,8 +215,6 @@ pub struct RadioPartitions {
     pub bluetooth_interrupts: BluetoothInterruptSetup,
     pub shared_radio: SharedRadioPartition,
     pub ieee802154: Ieee802154Partition,
-    /// The MAC local-time read; the radio PHY already holds its own copy.
-    pub mac_local_time: MacLocalTime,
 }
 
 impl RadioPartitions {
@@ -234,7 +243,10 @@ impl RadioPartitions {
             crate::modem::etm::split(modem_etm);
         let (shared_radio, ieee802154_rx_info) = crate::ieee802154::baseband::split(shared_radio);
         Self {
-            wifi_mac: WifiMacPartition(wifi_mac),
+            wifi_mac: WifiMacPartition {
+                peripherals: wifi_mac,
+                mac_local_time,
+            },
             wifi_interrupts: MacInterruptSetup::from_peripherals(wifi_interrupts),
             radio_phy: RadioPhyRegisters {
                 peripherals: radio_phy,
@@ -258,7 +270,6 @@ impl RadioPartitions {
                 etm: ieee802154_etm,
                 rx_info: ieee802154_rx_info,
             },
-            mac_local_time,
         }
     }
 
@@ -581,20 +592,33 @@ pub(crate) fn device_fence() {
 /// ```
 pub struct WifiRadioRegisters {
     pub(crate) peripherals: WifiRadioPeripheralOwners,
+    mac_local_time: MacLocalTime,
 }
 
 impl WifiRadioRegisters {
     /// Assemble the Wi-Fi register set. This performs no MMIO.
     pub fn new(wifi_mac: WifiMacPartition) -> Self {
-        let WifiMacPartition(wifi_mac) = wifi_mac;
+        let WifiMacPartition {
+            peripherals: wifi_mac,
+            mac_local_time,
+        } = wifi_mac;
         Self {
             peripherals: WifiRadioPeripheralOwners { wifi_mac },
+            mac_local_time,
         }
     }
 
     /// Return the partition. This performs no MMIO.
     pub fn into_partition(self) -> WifiMacPartition {
-        WifiMacPartition(self.peripherals.wifi_mac)
+        WifiMacPartition {
+            peripherals: self.peripherals.wifi_mac,
+            mac_local_time: self.mac_local_time,
+        }
+    }
+
+    /// The MAC local-time read the Wi-Fi registers hold a copy of.
+    pub const fn mac_local_time(&self) -> MacLocalTime {
+        self.mac_local_time
     }
 
     /// Order descriptor memory and MMIO at a hardware ownership boundary.

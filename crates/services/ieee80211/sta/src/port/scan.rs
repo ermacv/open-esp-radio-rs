@@ -1,8 +1,8 @@
 //! Candidate scan over the lower-MAC port.
 
 use oer_ieee80211_lower_mac::{
-    Channel, Ieee80211LowerMacPort, KeySelector, LowerMacMonitor, ReceiveFilter, RxEvidence,
-    SettingError, VifRole,
+    Channel, Ieee80211LowerMacPort, Ieee80211Stamp, KeySelector, LowerMacMonitor, ReceiveFilter,
+    RxEvidence, SettingError, VifRole,
 };
 use oer_ieee80211_mac::{
     management::{BROADCAST_ADDRESS, ProbeRequest, ProbeRequestError},
@@ -105,9 +105,25 @@ impl<'a, 'p, X: PortStationEnv, const N: usize> PortScan<'a, 'p, X, N> {
             RxEvidence::HardwareObserved(rssi) | RxEvidence::ProtocolValidated(rssi) => rssi,
             RxEvidence::Unavailable => UNKNOWN_RSSI_DBM,
         };
-        let now = self.timer.now();
+        let received_at = self.reception_time(frame.meta().timestamp);
         self.table
-            .observe_management(frame.bytes(), self.channel, rssi, now);
+            .observe_management(frame.bytes(), self.channel, rssi, received_at);
+    }
+
+    /// The monotonic time of a frame's reception: its port stamp converted
+    /// with a sample of the port's clock; `None` without a stamp, a sample
+    /// or a relation of the stamp's generation.
+    fn reception_time(&self, timestamp: RxEvidence<Ieee80211Stamp>) -> Option<Instant> {
+        let stamp = match timestamp {
+            RxEvidence::HardwareObserved(stamp) | RxEvidence::ProtocolValidated(stamp) => stamp,
+            RxEvidence::Unavailable => return None,
+        };
+        let port = self.link.port();
+        let sample = port.clock_sample().ok()?;
+        port.clock_info()
+            .to_monotonic_with(stamp, &sample)
+            .ok()
+            .map(|projected| projected.at)
     }
 
     fn set_monitor(&self, enabled: bool) -> Result<(), PortLinkError<PortError<X>>> {

@@ -15,5 +15,6 @@ pub mod coex;
 pub mod datapath;
 pub mod diagnostics;
 pub mod lower_mac;
+pub mod mac_clock;
 pub mod roles;
 mod time;

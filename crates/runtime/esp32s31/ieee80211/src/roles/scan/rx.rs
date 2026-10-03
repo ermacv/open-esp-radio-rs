@@ -14,12 +14,13 @@ use crate::datapath::rx::{
     dma::{ReceiveDmaStorage, RxEpochResources, StagedRxProducer, walker_enable_settle},
     frontier::{ReceiveFrontier, RxFrontierError, RxFrontierPhase},
 };
+use crate::mac_clock::MacClockSnapshot;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use oer_esp32s31_ieee80211_mac::rx::{
     RxDma, RxDmaBufferAddresses, RxIngressConfig, RxRingError, RxRingHalted, RxRingLive,
-    extract_management,
+    decode_rx_local_timestamp, extract_management,
 };
 
 use oer_ieee80211_mac::scan::{ScanObservation, ScanTable};
@@ -50,8 +51,9 @@ impl ScanFrameObserver for NoopScanFrameObserver {
 
 pub struct ScanObservationContext<'a, O, const RECORDS: usize> {
     channel: u8,
-    /// When this synchronous observation drain began.
-    observed_at: oer_time::Instant,
+    /// The MAC clock relation when this synchronous observation drain
+    /// began; every frame it drains was received before it.
+    clock: MacClockSnapshot,
     frame: &'a mut [u8],
     table: &'a mut ScanTable<RECORDS>,
     observer: &'a mut O,
@@ -60,27 +62,35 @@ pub struct ScanObservationContext<'a, O, const RECORDS: usize> {
 impl<'a, O, const RECORDS: usize> ScanObservationContext<'a, O, RECORDS> {
     pub fn new(
         channel: u8,
-        observed_at: oer_time::Instant,
+        clock: MacClockSnapshot,
         frame: &'a mut [u8],
         table: &'a mut ScanTable<RECORDS>,
         observer: &'a mut O,
     ) -> Self {
         Self {
             channel,
-            observed_at,
+            clock,
             frame,
             table,
             observer,
         }
     }
 
-    pub fn observe_management_frame(&mut self, frame: &[u8], rssi: i8) -> ScanObservation
+    /// Record one beacon or Probe Response whose raw receive timestamp is
+    /// `stamp`.
+    pub fn observe_management_frame(
+        &mut self,
+        frame: &[u8],
+        rssi: i8,
+        stamp: Option<u32>,
+    ) -> ScanObservation
     where
         O: ScanFrameObserver,
     {
+        let received_at = stamp.and_then(|raw| self.clock.received_at(raw));
         let outcome = self
             .table
-            .observe_management(frame, self.channel, rssi, self.observed_at);
+            .observe_management(frame, self.channel, rssi, received_at);
         self.observer.observe(frame, rssi, outcome);
         outcome
     }
@@ -193,11 +203,13 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
                         progress.parsed_management_frames =
                             progress.parsed_management_frames.saturating_add(1);
                         let frame = &context.frame[..frame.length];
+                        let received_at = decode_rx_local_timestamp(segment.buffer)
+                            .and_then(|raw| context.clock.received_at(raw));
                         let outcome = context.table.observe_management(
                             frame,
                             context.channel,
                             rssi,
-                            context.observed_at,
+                            received_at,
                         );
                         context.observer.observe(frame, rssi, outcome);
                         match outcome {

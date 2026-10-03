@@ -1859,7 +1859,7 @@ pub async fn run(
     phy_register_image::adopt(radio);
     #[cfg(feature = "rx-clock-probe")]
     spawner.spawn(
-        mac_clock_pairs_task(partitions.mac_local_time)
+        mac_clock_pairs_task(partitions.wifi.mac_local_time())
             .expect("the MAC clock pair task must allocate once"),
     );
     spawner.spawn(phy_tracking_task(radio).expect("PHY tracking task must allocate once"));

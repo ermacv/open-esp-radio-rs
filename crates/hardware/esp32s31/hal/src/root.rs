@@ -7,8 +7,8 @@
 //! [`RadioHardware::from_concurrent`] reunites them only after the shared
 //! restore obligations are complete.
 
-/// The read-only Wi-Fi MAC local-time capability [`ConcurrentPartitions`]
-/// carries.
+/// The read-only Wi-Fi MAC local-time capability a [`WifiPartition`]
+/// lends.
 pub use oer_esp32s31_pac::MacLocalTime;
 use oer_esp32s31_pac::{
     BluetoothControllerPartition, BluetoothInterruptSetup, BluetoothModemLpTimerRegisters,
@@ -83,6 +83,11 @@ pub struct WifiPartition {
 }
 
 impl WifiPartition {
+    /// The Wi-Fi MAC local-time counter: the clock of receive timestamps.
+    pub const fn mac_local_time(&self) -> MacLocalTime {
+        self.mac.mac_local_time()
+    }
+
     pub(crate) fn into_parts(self) -> (WifiMacPartition, MacInterruptSetup) {
         (self.mac, self.interrupts)
     }
@@ -149,9 +154,6 @@ pub struct ConcurrentPartitions {
     pub wifi: WifiPartition,
     pub bluetooth: BluetoothPartition,
     pub ieee802154: Ieee802154RadioPartition,
-    /// The read-only MAC local-time capability, which the radio PHY also
-    /// holds a copy of.
-    pub mac_local_time: MacLocalTime,
 }
 
 /// Why a concurrent split cannot become the neutral root again.
@@ -200,7 +202,6 @@ impl RadioHardware {
             bluetooth_interrupts,
             shared_radio,
             ieee802154,
-            mac_local_time,
         } = self.partitions;
         (
             SharedRadio::new(
@@ -213,7 +214,6 @@ impl RadioHardware {
                 attachment,
             ),
             ConcurrentPartitions {
-                mac_local_time,
                 wifi: WifiPartition {
                     mac: wifi_mac,
                     interrupts: wifi_interrupts,
@@ -266,14 +266,10 @@ impl RadioHardware {
             wifi,
             bluetooth,
             ieee802154,
-            // The radio PHY's copy is the same capability.
-            mac_local_time: _,
         } = partitions;
-        let mac_local_time = radio_phy.mac_local_time();
         Ok((
             Self::returned(
                 RadioPartitions {
-                    mac_local_time,
                     wifi_mac: wifi.mac,
                     wifi_interrupts: wifi.interrupts,
                     radio_phy,

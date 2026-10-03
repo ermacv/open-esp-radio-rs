@@ -20,7 +20,7 @@ where
     H: MacSnifferHardware + MacRuntimeStopHardware,
     R: ScanReceivePort<H>,
     T: ScanTransmitPort<H>,
-    W: oer_time::Timer,
+    W: oer_time::Timer + crate::mac_clock::ReceptionClock,
     O: ScanFrameObserver,
 {
     type Channel = u8;

@@ -1909,11 +1909,18 @@ pub(crate) async fn run_connected<'state, 'security>(
             radio,
             crate::interrupts::power_irq_runtime(),
             &mut station_rf,
+            super::mac_clock(),
         ),
     ));
     // The stop's air releases and RF wake reach the agent after the
     // datapath returned; perform them before the radio resources leave.
-    let power_stop = finish_station_power(&STATION_POWER_LINK, radio, &mut station_rf).await;
+    let power_stop = finish_station_power(
+        &STATION_POWER_LINK,
+        radio,
+        &mut station_rf,
+        super::mac_clock(),
+    )
+    .await;
     let rf_asleep = station_rf.asleep();
     WifiReconnectPolicy::get().association_lost(radio).await;
     if let Err(failure) = power_stop {

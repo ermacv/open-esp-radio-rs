@@ -342,7 +342,7 @@ impl ConnectedStaPort {
                         interval_tu: plan.link.beacon_interval_tu,
                         tim: None,
                     },
-                    received_at_micros: plan.link.beacon_received_at_micros,
+                    received_at: plan.link.beacon_received_at,
                 },
                 binding,
             );

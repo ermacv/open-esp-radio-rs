@@ -40,8 +40,8 @@ impl RadioPhyRegisters {
     /// MAC local time ([`crate::MacLocalTime`]).
     ///
     /// Complete rev0 ROM `phy_wait_i2c_sdm_stable` at `0x2f823e76` samples it
-    /// and compares wrapping differences; the deadline's unit is the
-    /// counter's, which is not established.
+    /// and compares wrapping differences; the deadline counts the
+    /// counter's microseconds.
     pub fn sample_sdm_deadline_counter(&mut self) -> u32 {
         self.mac_local_time.now()
     }

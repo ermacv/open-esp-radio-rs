@@ -25,8 +25,9 @@ pub use oer_esp32s31_ieee80211::rx::storage::{
 
 use oer_esp32s31_ieee80211_mac::rx::{
     RxDescriptorSnapshot, RxDma, RxRingError, RxRingHalted, RxRingLive, RxRingStopped,
+    decode_rx_local_timestamp,
     pool::{
-        RxStagePool, RxStageTransactionError, VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
+        RxStagePool, RxStageTransactionError, RxTimes, VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
         VENDOR_LARGE_RX_SLOT_COUNT,
     },
 };
@@ -400,9 +401,15 @@ impl<
         // standalone or same-channel routing queue can delay protocol parsing.
         // Retried publication preserves this first sample in the affine frame.
         let handoff = self.clock.now();
+        let buffer = frame.segment().buffer;
         #[cfg(feature = "rx-clock-probe")]
-        super::clock_probe::observe(frame.segment().buffer, handoff);
-        frame.mark_runtime_received_at_micros(handoff.as_micros());
+        super::clock_probe::observe(buffer, handoff);
+        // The receive timestamp travels as the raw value the MAC wrote; a
+        // consumer that needs the reception time converts it.
+        frame.mark_handoff(RxTimes {
+            handoff,
+            stamp: decode_rx_local_timestamp(buffer),
+        });
         self.frames.try_send(frame)
     }
 }

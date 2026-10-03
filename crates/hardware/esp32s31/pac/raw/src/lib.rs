@@ -12689,10 +12689,10 @@ pub mod wifi_mac_local_time {
     pub mod counter {
         #[doc = "Register `COUNTER` reader"]
         pub type R = crate::R<CounterSpec>;
-        #[doc = "Field `VALUE` reader - Project-assigned name. Full-width wrapping counter value; its unit is not established."]
+        #[doc = "Field `VALUE` reader - Project-assigned name. Full-width wrapping counter value in microseconds, at the system timer's rate; receive timestamps are readings of it."]
         pub type ValueR = crate::FieldReader<u32>;
         impl R {
-            #[doc = "Bits 0:31 - Project-assigned name. Full-width wrapping counter value; its unit is not established."]
+            #[doc = "Bits 0:31 - Project-assigned name. Full-width wrapping counter value in microseconds, at the system timer's rate; receive timestamps are readings of it."]
             #[inline(always)]
             pub fn value(&self) -> ValueR {
                 ValueR::new(self.bits)

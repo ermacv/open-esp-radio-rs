@@ -90,7 +90,7 @@ where
             self.sink.staged_rx_admission(),
             StagedRxAdmission::Immediate
         );
-        let runtime_received_at_micros = frame.runtime_received_at_micros();
+        let times = frame.times();
         let segment = frame.segment();
         debug_assert!(!self.runtime.dispatcher.may_publish_amsdu(segment));
         debug_assert!(self.runtime.dispatcher.may_publish_ethernet(segment));
@@ -99,11 +99,11 @@ where
 
         let (result, ethernet, _callback_started, _callback_ended, _data_cycles) = {
             let mut capture = StagedEthernetCapture::new(&mut self.sink, segment.buffer);
-            let result = self.runtime.dispatcher.dispatch_with_runtime_received_at(
+            let result = self.runtime.dispatcher.dispatch_received(
                 segment,
                 self.mpdu,
                 &mut [],
-                runtime_received_at_micros,
+                times,
                 &mut capture,
             );
             (
@@ -149,7 +149,7 @@ where
     ) -> ConnectedRxDispatch {
         #[cfg(feature = "task-poll-telemetry")]
         let mut core0_cycles = Core0ProtocolCycleProfile::begin();
-        let runtime_received_at_micros = frame.runtime_received_at_micros();
+        let times = frame.times();
         #[cfg(any(feature = "diagnostics", test))]
         let preflight_started = self.pipeline_observer.map(|observer| observer.now_micros());
         let dispatch_via_scratch = self.runtime.dispatcher.may_publish_amsdu(frame.segment())
@@ -166,9 +166,7 @@ where
         #[cfg(feature = "task-poll-telemetry")]
         core0_cycles.preflight_completed();
         if dispatch_via_scratch {
-            let result = self
-                .dispatch_segment(frame.segment(), runtime_received_at_micros)
-                .await;
+            let result = self.dispatch_segment(frame.segment(), times).await;
             #[cfg(feature = "task-poll-telemetry")]
             core0_cycles.dispatch_completed();
             drop(frame);
@@ -197,11 +195,11 @@ where
         let segment = frame.segment();
         let (result, ethernet, _callback_started, _callback_ended, _data_cycles) = {
             let mut capture = StagedEthernetCapture::new(&mut self.sink, segment.buffer);
-            let result = self.runtime.dispatcher.dispatch_with_runtime_received_at(
+            let result = self.runtime.dispatcher.dispatch_received(
                 segment,
                 self.mpdu,
                 &mut [],
-                runtime_received_at_micros,
+                times,
                 &mut capture,
             );
             (
@@ -257,7 +255,7 @@ where
     async fn dispatch_segment(
         &mut self,
         segment: oer_esp32s31_ieee80211_mac::rx::RxSegment<'_>,
-        runtime_received_at_micros: Option<u64>,
+        times: Option<oer_esp32s31_ieee80211_mac::rx::pool::RxTimes>,
     ) -> ConnectedRxDispatch {
         if self.runtime.dispatcher.may_publish_amsdu(segment) {
             return self.dispatch_amsdu(segment).await;
@@ -267,7 +265,7 @@ where
             &mut self.sink,
             self.mpdu,
             segment,
-            runtime_received_at_micros,
+            times,
             #[cfg(any(feature = "diagnostics", test))]
             self.pipeline_observer,
         )
@@ -442,7 +440,7 @@ async fn dispatch_non_amsdu_segment<
     sink: &mut S,
     mpdu: &mut [u8],
     segment: oer_esp32s31_ieee80211_mac::rx::RxSegment<'_>,
-    runtime_received_at_micros: Option<u64>,
+    times: Option<oer_esp32s31_ieee80211_mac::rx::pool::RxTimes>,
     #[cfg(any(feature = "diagnostics", test))] pipeline_observer: Option<&dyn RxPipelineObserver>,
 ) -> ConnectedRxDispatch {
     if dispatcher.may_publish_ethernet(segment) || dispatcher.may_complete_fragment(segment) {
@@ -461,13 +459,7 @@ async fn dispatch_non_amsdu_segment<
     }
     #[cfg(any(feature = "diagnostics", test))]
     let dispatch_started = pipeline_observer.map(|observer| observer.now_micros());
-    let result = dispatcher.dispatch_with_runtime_received_at(
-        segment,
-        mpdu,
-        &mut [],
-        runtime_received_at_micros,
-        sink,
-    );
+    let result = dispatcher.dispatch_received(segment, mpdu, &mut [], times, sink);
     #[cfg(any(feature = "diagnostics", test))]
     if let (Some(observer), Some(started)) = (pipeline_observer, dispatch_started) {
         let (data, amsdu, amsdu_subframes) = match result {

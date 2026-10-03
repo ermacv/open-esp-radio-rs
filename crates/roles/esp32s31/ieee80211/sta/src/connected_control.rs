@@ -220,8 +220,11 @@ pub struct HeTriggerRuntimeRequest {
     pub common: TriggerCommonInfo,
     pub schedule: HeTriggerScheduledRate,
     pub first_user: Option<[u8; 5]>,
-    pub runtime_received_at_micros: u64,
-    pub response_deadline_micros: u64,
+    /// The monotonic time of the event frame's first executor handoff, which
+    /// the runtime handoff window counts from.
+    pub handoff: oer_time::Instant,
+    /// The handoff plus the configured runtime handoff window.
+    pub response_deadline: oer_time::Instant,
     pub queue_policy: HeTriggerBasedTxConfig,
 }
 
@@ -230,8 +233,11 @@ pub struct HeTriggerRuntimeRequest {
 pub struct HeNdpaRuntimeRequest {
     pub identity: AssociatedHeControlIdentity,
     pub dialog_token: u8,
-    pub runtime_received_at_micros: u64,
-    pub response_deadline_micros: u64,
+    /// The monotonic time of the event frame's first executor handoff, which
+    /// the runtime handoff window counts from.
+    pub handoff: oer_time::Instant,
+    /// The handoff plus the configured runtime handoff window.
+    pub response_deadline: oer_time::Instant,
 }
 
 /// Fail-closed reason why one HE control event did not become an owned TX
@@ -1295,11 +1301,14 @@ impl ConnectedControlCore {
             // associated BSS; it also tests a flag at byte 0x94 of a
             // structure this port does not model, and updates here for every
             // such beacon.
-            if let Some(received_at) = beacon.received_at_micros {
-                hardware.set_station_tsf(access_point_tsf_at(
+            //
+            // The time since the frame arrived is the difference of the MAC
+            // local time, the counter its receive timestamp is a reading of.
+            if let Some(stamp) = beacon.stamp {
+                let elapsed = hardware.mac_local_time().wrapping_sub(stamp);
+                hardware.set_station_tsf(access_point_tsf_after(
                     observation.timestamp_tsf,
-                    received_at,
-                    tx.now().as_micros(),
+                    u64::from(elapsed),
                 ));
             }
             self.beacon_probe_attempts = 0;
@@ -1546,7 +1555,7 @@ impl ConnectedControlCore {
                 common,
                 schedule,
                 first_user,
-                runtime_received_at_micros,
+                handoff,
             } => {
                 self.observations.he_control.triggers_observed = self
                     .observations
@@ -1580,21 +1589,21 @@ impl ConnectedControlCore {
                         );
                     }
                 };
-                let Some(runtime_received_at_micros) = runtime_received_at_micros else {
+                let Some(handoff) = handoff else {
                     return self.reject_he_trigger(
                         identity,
                         ConnectedHeControlRuntimeRejection::RuntimeTimestampUnavailable,
                     );
                 };
-                let Some(response_deadline_micros) =
-                    runtime_received_at_micros.checked_add(window.get())
+                let Some(response_deadline) =
+                    handoff.checked_add(oer_time::Duration::from_micros(window.get()))
                 else {
                     return self.reject_he_trigger(
                         identity,
                         ConnectedHeControlRuntimeRejection::ResponseDeadlineOverflow,
                     );
                 };
-                if tx.now().as_micros() >= response_deadline_micros {
+                if tx.now() >= response_deadline {
                     return self.reject_he_trigger(
                         identity,
                         ConnectedHeControlRuntimeRejection::MissedResponseWindow,
@@ -1611,8 +1620,8 @@ impl ConnectedControlCore {
                     common,
                     schedule,
                     first_user,
-                    runtime_received_at_micros,
-                    response_deadline_micros,
+                    handoff,
+                    response_deadline,
                     queue_policy,
                 };
                 self.observations.he_control.tx_handoffs =
@@ -1638,7 +1647,7 @@ impl ConnectedControlCore {
                 identity,
                 dialog_token,
                 addressed_to_station,
-                runtime_received_at_micros,
+                handoff,
             } => {
                 self.observations.he_control.ndpa_observed =
                     self.observations.he_control.ndpa_observed.saturating_add(1);
@@ -1670,15 +1679,15 @@ impl ConnectedControlCore {
                         ConnectedHeControlRuntimeRejection::RuntimeHandoffWindowUnavailable,
                     );
                 };
-                let Some(runtime_received_at_micros) = runtime_received_at_micros else {
+                let Some(handoff) = handoff else {
                     return self.reject_he_ndpa(
                         identity,
                         dialog_token,
                         ConnectedHeControlRuntimeRejection::RuntimeTimestampUnavailable,
                     );
                 };
-                let Some(response_deadline_micros) =
-                    runtime_received_at_micros.checked_add(window.get())
+                let Some(response_deadline) =
+                    handoff.checked_add(oer_time::Duration::from_micros(window.get()))
                 else {
                     return self.reject_he_ndpa(
                         identity,
@@ -1686,7 +1695,7 @@ impl ConnectedControlCore {
                         ConnectedHeControlRuntimeRejection::ResponseDeadlineOverflow,
                     );
                 };
-                if tx.now().as_micros() >= response_deadline_micros {
+                if tx.now() >= response_deadline {
                     return self.reject_he_ndpa(
                         identity,
                         dialog_token,
@@ -1703,8 +1712,8 @@ impl ConnectedControlCore {
                 let request = HeNdpaRuntimeRequest {
                     identity,
                     dialog_token,
-                    runtime_received_at_micros,
-                    response_deadline_micros,
+                    handoff,
+                    response_deadline,
                 };
                 self.observations.he_control.tx_handoffs =
                     self.observations.he_control.tx_handoffs.saturating_add(1);
@@ -1981,7 +1990,7 @@ fn trace_link(event: LinkEvent) {
 }
 pub use power::{
     ConnectedPowerCommand, JoinBeacon, NetworkTxPowerReport, POWER_COMMAND_CAPACITY,
-    PowerCoexSnapshot, access_point_tsf_at,
+    PowerCoexSnapshot, access_point_tsf_after,
 };
 
 #[cfg(test)]

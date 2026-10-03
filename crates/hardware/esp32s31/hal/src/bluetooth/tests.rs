@@ -12,11 +12,7 @@ use super::{
 };
 
 /// The other partitions of a concurrent split.
-type Others = (
-    WifiPartition,
-    Ieee802154RadioPartition,
-    oer_esp32s31_pac::MacLocalTime,
-);
+type Others = (WifiPartition, Ieee802154RadioPartition);
 
 /// A concurrent split whose Bluetooth partition is assumed clocked.
 fn clocked() -> (SharedRadio, Others, ClockedOwner) {
@@ -25,11 +21,10 @@ fn clocked() -> (SharedRadio, Others, ClockedOwner) {
         wifi,
         bluetooth,
         ieee802154,
-        mac_local_time,
     } = partitions;
     (
         shared,
-        (wifi, ieee802154, mac_local_time),
+        (wifi, ieee802154),
         ClockedOwner::for_validation(bluetooth),
     )
 }
@@ -129,7 +124,7 @@ fn public_and_hci_random_forms_converge_on_one_controller_identity() {
 
 #[test]
 fn untouched_task_owner_returns_the_partition_to_the_neutral_root() {
-    let (shared, (wifi, ieee802154, mac_local_time), clocked) = clocked();
+    let (shared, (wifi, ieee802154), clocked) = clocked();
     let (task, interrupts) = clocked.separate_interrupt_owner();
     let clocked = task
         .into_clocked(interrupts)
@@ -138,7 +133,6 @@ fn untouched_task_owner_returns_the_partition_to_the_neutral_root() {
         wifi,
         bluetooth: clocked.into_partition_for_validation(),
         ieee802154,
-        mac_local_time,
     };
 
     // Reuniting the split proves that the finite HAL borrows neither moved

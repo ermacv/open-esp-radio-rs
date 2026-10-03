@@ -546,6 +546,11 @@ impl CooperativeRadioHardware<'_> {
         self.wifi_mac_hal().set_station_tsf(value);
     }
 
+    /// The Wi-Fi MAC local time, the counter of receive timestamps.
+    pub fn mac_local_time(&mut self) -> u32 {
+        self.wifi_mac_hal().mac_local_time()
+    }
+
     /// Start the station TSF.
     pub fn enable_station_tsf(&mut self) {
         self.wifi_mac_hal().enable_station_tsf();

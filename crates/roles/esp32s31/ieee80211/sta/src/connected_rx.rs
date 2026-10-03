@@ -14,6 +14,7 @@ use oer_esp32s31_ieee80211::protected_data_rx::{
     view_protected_data_fragment, view_unprotected_data, view_unprotected_data_fragment,
 };
 use oer_esp32s31_ieee80211_dma::rx_ring::RxSegment;
+use oer_esp32s31_ieee80211_mac::rx::pool::RxTimes;
 use oer_ieee80211_mac::{
     ccmp::{
         CcmpHeader, CcmpKeyId, CcmpReplayError, CcmpReplayLane, CcmpRxReplayCandidate,
@@ -1051,8 +1052,9 @@ pub enum ConnectedRxEvent<'frame> {
     Beacon {
         observation: StaBeaconObservation,
         metadata: MacRxMetadata<RxPhyInfo>,
-        /// The runtime's monotonic time of the frame's reception.
-        received_at_micros: Option<u64>,
+        /// The frame's receive timestamp: the raw MAC local time of its
+        /// reception.
+        stamp: Option<u32>,
     },
     ProbeResponse,
     Trigger {
@@ -1060,13 +1062,13 @@ pub enum ConnectedRxEvent<'frame> {
         common: TriggerCommonInfo,
         schedule: Result<HeTriggerScheduledRate, HeTriggerScheduledRateError>,
         first_user: Option<[u8; 5]>,
-        runtime_received_at_micros: Option<u64>,
+        handoff: Option<oer_time::Instant>,
     },
     Ndpa {
         identity: AssociatedHeControlIdentity,
         dialog_token: u8,
         addressed_to_station: bool,
-        runtime_received_at_micros: Option<u64>,
+        handoff: Option<oer_time::Instant>,
     },
     BlockAck {
         action: BlockAckAction,
@@ -1120,12 +1122,12 @@ pub enum ConnectedRxEvent<'frame> {
     },
 }
 
-/// A beacon of the associated access point and the runtime's monotonic time
-/// of its reception.
+/// A beacon of the associated access point and its receive timestamp, the
+/// raw MAC local time of its reception.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ReceivedBeacon {
     pub observation: StaBeaconObservation,
-    pub received_at_micros: Option<u64>,
+    pub stamp: Option<u32>,
 }
 
 /// Owned connected-station event that may cross the lifetime of one staged
@@ -1144,13 +1146,13 @@ pub enum ConnectedRxControlEvent {
         common: TriggerCommonInfo,
         schedule: Result<HeTriggerScheduledRate, HeTriggerScheduledRateError>,
         first_user: Option<[u8; 5]>,
-        runtime_received_at_micros: Option<u64>,
+        handoff: Option<oer_time::Instant>,
     },
     Ndpa {
         identity: AssociatedHeControlIdentity,
         dialog_token: u8,
         addressed_to_station: bool,
-        runtime_received_at_micros: Option<u64>,
+        handoff: Option<oer_time::Instant>,
     },
     BlockAck(BlockAckAction),
     IndividualTwt(IndividualTwtAction),
@@ -1195,12 +1197,10 @@ impl ConnectedRxEvent<'_> {
     pub const fn control(self) -> Option<ConnectedRxControlEvent> {
         match self {
             Self::Beacon {
-                observation,
-                received_at_micros,
-                ..
+                observation, stamp, ..
             } => Some(ConnectedRxControlEvent::Beacon(ReceivedBeacon {
                 observation,
-                received_at_micros,
+                stamp,
             })),
             Self::ProbeResponse => Some(ConnectedRxControlEvent::ProbeResponse),
             Self::Trigger {
@@ -1208,24 +1208,24 @@ impl ConnectedRxEvent<'_> {
                 common,
                 schedule,
                 first_user,
-                runtime_received_at_micros,
+                handoff,
             } => Some(ConnectedRxControlEvent::Trigger {
                 identity,
                 common,
                 schedule,
                 first_user,
-                runtime_received_at_micros,
+                handoff,
             }),
             Self::Ndpa {
                 identity,
                 dialog_token,
                 addressed_to_station,
-                runtime_received_at_micros,
+                handoff,
             } => Some(ConnectedRxControlEvent::Ndpa {
                 identity,
                 dialog_token,
                 addressed_to_station,
-                runtime_received_at_micros,
+                handoff,
             }),
             Self::BlockAck { action, .. } => Some(ConnectedRxControlEvent::BlockAck(action)),
             Self::IndividualTwt { action, .. } => {
@@ -1685,7 +1685,7 @@ impl ConnectedRxDispatcher {
         _ethernet: &mut [u8],
         sink: &mut dyn ConnectedRxSink,
     ) -> ConnectedRxDispatch {
-        self.dispatch_with_runtime_received_at(segment, mpdu, _ethernet, None, sink)
+        self.dispatch_received(segment, mpdu, _ethernet, None, sink)
     }
 
     /// Dispatch with the executor-clock sample attached by the physical RX
@@ -1694,14 +1694,15 @@ impl ConnectedRxDispatcher {
     /// The timestamp is optional because executor-neutral and synthetic users
     /// cannot manufacture it. Runtime Trigger/NDPA response policy rejects a
     /// missing sample rather than starting a fresh window at mailbox dequeue.
-    pub fn dispatch_with_runtime_received_at(
+    pub fn dispatch_received(
         &mut self,
         segment: RxSegment<'_>,
         mpdu: &mut [u8],
         _ethernet: &mut [u8],
-        runtime_received_at_micros: Option<u64>,
+        times: Option<RxTimes>,
         sink: &mut dyn ConnectedRxSink,
     ) -> ConnectedRxDispatch {
+        let handoff = times.map(|times| times.handoff);
         let raw = segment.buffer;
         let Some(frame_control) = public_frame_control(raw) else {
             return rejected(ConnectedRxProtection::Other, ConnectedRxError::PublicHeader);
@@ -1750,7 +1751,7 @@ impl ConnectedRxDispatcher {
                 sink.publish(ConnectedRxEvent::Beacon {
                     observation,
                     metadata,
-                    received_at_micros: runtime_received_at_micros,
+                    stamp: times.and_then(|times| times.stamp),
                 });
                 ConnectedRxDispatch::Beacon
             }
@@ -1806,7 +1807,7 @@ impl ConnectedRxDispatcher {
                         self.config.association_id,
                     ),
                     first_user,
-                    runtime_received_at_micros,
+                    handoff,
                 });
                 ConnectedRxDispatch::Trigger
             }
@@ -1838,7 +1839,7 @@ impl ConnectedRxDispatcher {
                     identity,
                     dialog_token: ndpa.dialog_token(),
                     addressed_to_station: ndpa.contains_association_id(self.config.association_id),
-                    runtime_received_at_micros,
+                    handoff,
                 });
                 ConnectedRxDispatch::Ndpa
             }
@@ -2001,13 +2002,7 @@ impl ConnectedRxDispatcher {
                 sink.publish(ConnectedRxEvent::PeerDisconnect(disconnect));
                 ConnectedRxDispatch::PeerDisconnect
             }
-            _ => self.dispatch_data(
-                segment,
-                frame_control,
-                protection,
-                runtime_received_at_micros,
-                sink,
-            ),
+            _ => self.dispatch_data(segment, frame_control, protection, handoff, sink),
         }
     }
 
@@ -2098,7 +2093,7 @@ impl ConnectedRxDispatcher {
         segment: RxSegment<'_>,
         public_frame_control: u16,
         protection: ConnectedRxProtection,
-        runtime_received_at_micros: Option<u64>,
+        handoff: Option<oer_time::Instant>,
         sink: &mut dyn ConnectedRxSink,
     ) -> ConnectedRxDispatch {
         if public_frame_control & DATA_TYPE_MASK != DATA_TYPE {
@@ -2120,24 +2115,18 @@ impl ConnectedRxDispatcher {
             return self.dispatch_shared_pairwise_data(
                 segment,
                 public_frame_control,
-                runtime_received_at_micros,
+                handoff,
                 sink,
             );
         }
         if fragmented {
             return match self.config.security {
-                LinkProtection::Open => self.dispatch_open_fragment(
-                    segment,
-                    protection,
-                    runtime_received_at_micros,
-                    sink,
-                ),
-                LinkProtection::Ccmp => self.dispatch_protected_fragment(
-                    segment,
-                    protection,
-                    runtime_received_at_micros,
-                    sink,
-                ),
+                LinkProtection::Open => {
+                    self.dispatch_open_fragment(segment, protection, handoff, sink)
+                }
+                LinkProtection::Ccmp => {
+                    self.dispatch_protected_fragment(segment, protection, handoff, sink)
+                }
             };
         }
         let (mpdu, retry, sequence_control, tid, ccmp_header, data) = match self.config.security {
@@ -2160,11 +2149,10 @@ impl ConnectedRxDispatcher {
                 {
                     return ConnectedRxDispatch::Ignored;
                 }
-                match self.fragments.admit_unfragmented(
-                    identity,
-                    view.retry,
-                    runtime_received_at_micros.map(oer_time::Instant::from_micros),
-                ) {
+                match self
+                    .fragments
+                    .admit_unfragmented(identity, view.retry, handoff)
+                {
                     Ok(OpenDataUnfragmentedAdmission::Admitted { .. }) => {}
                     Ok(OpenDataUnfragmentedAdmission::Duplicate { .. }) => {
                         return ConnectedRxDispatch::Duplicate;
@@ -2202,11 +2190,10 @@ impl ConnectedRxDispatcher {
                 {
                     return ConnectedRxDispatch::Ignored;
                 }
-                match self.fragments.admit_unfragmented(
-                    fragment_identity,
-                    view.retry,
-                    runtime_received_at_micros.map(oer_time::Instant::from_micros),
-                ) {
+                match self
+                    .fragments
+                    .admit_unfragmented(fragment_identity, view.retry, handoff)
+                {
                     Ok(OpenDataUnfragmentedAdmission::Admitted { .. }) => {}
                     Ok(OpenDataUnfragmentedAdmission::Duplicate { .. }) => {
                         return ConnectedRxDispatch::Duplicate;
@@ -2313,7 +2300,7 @@ impl ConnectedRxDispatcher {
         &mut self,
         segment: RxSegment<'_>,
         public_frame_control: u16,
-        runtime_received_at_micros: Option<u64>,
+        handoff: Option<oer_time::Instant>,
         sink: &mut dyn ConnectedRxSink,
       ) -> ConnectedRxDispatch {
         #[cfg(feature = "task-poll-telemetry")]
@@ -2344,7 +2331,7 @@ impl ConnectedRxDispatcher {
             match self.fragments.admit_unfragmented(
                 identity,
                 view.retry,
-                runtime_received_at_micros.map(oer_time::Instant::from_micros),
+                handoff,
             ) {
                 Ok(OpenDataUnfragmentedAdmission::Admitted { .. }) => {}
                 Ok(OpenDataUnfragmentedAdmission::Duplicate { .. }) => {
@@ -2437,10 +2424,10 @@ impl ConnectedRxDispatcher {
         &mut self,
         segment: RxSegment<'_>,
         protection: ConnectedRxProtection,
-        runtime_received_at_micros: Option<u64>,
+        handoff: Option<oer_time::Instant>,
         sink: &mut dyn ConnectedRxSink,
     ) -> ConnectedRxDispatch {
-        let Some(now_micros) = runtime_received_at_micros else {
+        let Some(now) = handoff else {
             return rejected(
                 protection,
                 ConnectedRxError::Fragment(OpenDataFragmentError::ClockUnavailable),
@@ -2492,21 +2479,17 @@ impl ConnectedRxDispatcher {
         let raw = view.raw;
         let metadata = view.metadata;
         self.fragment_admission_active = true;
-        match self.fragments.ingest(
-            view.fragment,
-            oer_time::Instant::from_micros(now_micros),
-            |data| {
-                if sink.wants_power_save_data() {
-                    sink.publish(ConnectedRxEvent::PowerSaveData(power_save_data));
-                }
-                sink.publish(ConnectedRxEvent::Ethernet {
-                    frame: data.ethernet_frame(),
-                    raw,
-                    amsdu: false,
-                    metadata,
-                });
-            },
-        ) {
+        match self.fragments.ingest(view.fragment, now, |data| {
+            if sink.wants_power_save_data() {
+                sink.publish(ConnectedRxEvent::PowerSaveData(power_save_data));
+            }
+            sink.publish(ConnectedRxEvent::Ethernet {
+                frame: data.ethernet_frame(),
+                raw,
+                amsdu: false,
+                metadata,
+            });
+        }) {
             Ok(OpenDataDefragmentation::Buffered { expired, evicted }) => {
                 ConnectedRxDispatch::FragmentBuffered {
                     expired,
@@ -2526,10 +2509,10 @@ impl ConnectedRxDispatcher {
         &mut self,
         segment: RxSegment<'_>,
         protection: ConnectedRxProtection,
-        runtime_received_at_micros: Option<u64>,
+        handoff: Option<oer_time::Instant>,
         sink: &mut dyn ConnectedRxSink,
     ) -> ConnectedRxDispatch {
-        let Some(now_micros) = runtime_received_at_micros else {
+        let Some(now) = handoff else {
             return rejected(
                 protection,
                 ConnectedRxError::Fragment(OpenDataFragmentError::ClockUnavailable),
@@ -2585,11 +2568,7 @@ impl ConnectedRxDispatcher {
             &mut self.shared_ccmp_replay,
             &mut self.owned_ccmp_replay,
         );
-        let admission = match fragments.preflight_in_epoch(
-            fragment,
-            0,
-            oer_time::Instant::from_micros(now_micros),
-        ) {
+        let admission = match fragments.preflight_in_epoch(fragment, 0, now) {
             Ok(OpenDataFragmentPreflight::Duplicate { .. }) => {
                 return ConnectedRxDispatch::Duplicate;
             }

@@ -120,7 +120,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 frame,
                 scan_observer: ProductionScanObserver,
                 sequence: security.sequences.non_qos_mut(),
-                timer: EmbassyClock,
+                timer: super::reception_timer(),
             },
             scan_request,
         )
@@ -309,7 +309,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 frame,
                 scan_observer: ProductionScanObserver,
                 sequence: security.sequences.non_qos_mut(),
-                timer: EmbassyClock,
+                timer: super::reception_timer(),
             },
             scan_request,
         )

@@ -478,7 +478,7 @@ where
     E: WifiTxEntropy,
     T: oer_time::Timer,
     O: ScanFrameObserver,
-    W: oer_time::Timer,
+    W: oer_time::Timer + crate::mac_clock::ReceptionClock,
     C: PlatformClockProvider,
     RadioChannel<'radio, P, C, Q, D>: ScanPhyPort<H, Error = ConcurrentWifiChannelError>,
 {

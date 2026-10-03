@@ -6,6 +6,7 @@ fn package(name: &str, directory: &str, workspace: &str, host: bool, inputs: &[&
         directory: directory.into(),
         workspace: workspace.into(),
         host,
+        chip: !host,
         inputs: inputs.iter().map(|input| (*input).to_owned()).collect(),
     }
 }
@@ -96,17 +97,30 @@ fn the_fast_gate_tests_only_what_changed() {
 }
 
 #[test]
-fn chip_only_packages_are_those_the_host_never_builds() {
+fn chip_code_is_in_chip_only_and_chip_platform_packages() {
     let affected = BTreeSet::from([
         key("Cargo.toml", "hal"),
         key("hil/targets/chip/Cargo.toml", "agent"),
     ]);
     assert_eq!(
-        chip_only(&tree(), &affected),
+        chip_code(&tree(), &affected),
         BTreeSet::from([&key("hil/targets/chip/Cargo.toml", "agent")])
     );
     let host_only = BTreeSet::from([key("Cargo.toml", "hal")]);
-    assert!(chip_only(&tree(), &host_only).is_empty());
+    assert!(chip_code(&tree(), &host_only).is_empty());
+
+    // A chip composition the host builds for its ownership tests still has
+    // code under the chip target's `cfg` only an image type-check compiles.
+    let mut tree = tree();
+    tree.packages.push(Package {
+        chip: true,
+        ..package("composition", "crates/composition", "Cargo.toml", true, &[])
+    });
+    let composition = BTreeSet::from([key("Cargo.toml", "composition")]);
+    assert_eq!(
+        chip_code(&tree, &composition),
+        BTreeSet::from([&key("Cargo.toml", "composition")])
+    );
 }
 
 #[test]

@@ -115,7 +115,8 @@ depending on them, so a changed interface fails where it is used; the tests
 (with their declared feature sets, limited to 20 minutes) cover the selected
 host packages only. Host packages are every package of the root workspace and
 host or portable packages of the others. When the change reaches a package
-that builds only for a chip, the gate also type-checks the two final HIL
+that builds only for a chip, or a chip or family package whose chip-target
+`cfg` code the host skips, the gate also type-checks the two final HIL
 images (`check firmware --class performance --class correctness
 --type-check`), as CI does, since the host checks never compile that code.
 The tests of the dependents, `check docs`, the full HIL image builds, API

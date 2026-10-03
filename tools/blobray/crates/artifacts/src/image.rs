@@ -15,20 +15,6 @@ pub struct LinkRootFacts {
 fn bad(message: impl Into<String>) -> Error {
     Error::new(ErrorCode::LinkBlocked, message)
 }
-pub(crate) fn abi(file: &object::File<'_>) -> Result<RiscvAbi> {
-    let object::FileFlags::Elf { e_flags, .. } = file.flags() else {
-        return Err(bad("not an ELF ABI"));
-    };
-    if e_flags & object::elf::EF_RISCV_RVE != 0 {
-        return Err(bad("RV32E is outside the RV32 integer-register profile"));
-    }
-    match e_flags & object::elf::EF_RISCV_FLOAT_ABI {
-        object::elf::EF_RISCV_FLOAT_ABI_SOFT => Ok(RiscvAbi::Ilp32),
-        object::elf::EF_RISCV_FLOAT_ABI_SINGLE => Ok(RiscvAbi::Ilp32f),
-        object::elf::EF_RISCV_FLOAT_ABI_DOUBLE => Ok(RiscvAbi::Ilp32d),
-        _ => Err(bad("unsupported ELF floating-point ABI")),
-    }
-}
 pub struct ValidatedImage {
     pub segments: Vec<ImageSegment>,
     pub abi: RiscvAbi,
@@ -51,7 +37,7 @@ fn check(file: &object::File<'_>, kind: object::ObjectKind) -> Result<()> {
     {
         return Err(bad("requires little-endian RV32 ELF of the declared kind"));
     }
-    abi(file)?;
+    oer_riscv_program::abi(file)?;
     Ok(())
 }
 pub fn inspect_link_input(
@@ -305,6 +291,6 @@ pub fn validate_image(
     }
     Ok(ValidatedImage {
         segments,
-        abi: abi(&file)?,
+        abi: oer_riscv_program::abi(&file)?,
     })
 }

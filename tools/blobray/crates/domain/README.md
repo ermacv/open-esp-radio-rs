@@ -11,15 +11,15 @@ dependency. It has no filesystem, database, backend or frontend dependencies.
 completeness, objects and diagnostics. Recorded malformed ELF references
 remain coverage diagnostics.
 
-[Streaming ports](src/stream.rs) separate stable positional byte reads
-(`ByteSource`) from ELF consumers (`ElfSink`). Callbacks borrow records for one
-call; retaining copies requires consumer-owned capacity.
+[Streaming ports](src/stream.rs) feed ELF consumers (`ElfSink`) from the
+model's `ByteSource`. Callbacks borrow records for one call; retaining copies
+requires consumer-owned capacity.
 
 [Image values](src/image.rs) own the `LinkRequest` with its exact root and
 companion selections, bounded RV32 regions, linker identity, the
 `static-analysis-elf-link-v1` contract, placement/extraction/exit observations
-with raw evidence spans and the `ImageManifest`. `RiscvAbi` records the ELF
-calling convention separately from the RV32 integer-analysis target.
+with raw evidence spans and the `ImageManifest`, over the model's `RiscvAbi`
+and `ImageSegment`.
 
 [Data values](src/data.rs) identify exact captured ranges and their spans; file
 offsets and executable VMAs are distinct values. [Register accesses](src/registers.rs)

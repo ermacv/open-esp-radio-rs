@@ -56,20 +56,10 @@ ELF ILP32/ILP32F/ILP32D ABI is recorded independently of ISA semantic coverage.
 Static relocation metadata is retained without reapplying edits to linked bytes.
 
 
-`execution_segments` lends validated static RV32 ELF segment bytes to a caller's
-admitted loader. It shares `ProgramView` validation with static image research,
-including overlapping mappings, permissions, dynamic/TLS rejection and input
-capacity. Borrowed bytes expire after the callback; application owns any copied
-mutable memory. This port performs no relocation, model selection or execution.
-
-`executable_sections` lends validated static RV32 executable sections independently
-of function symbols. Missing section coverage fails the final-image audit instead
-of being interpreted as a clean empty program.
-
-Function analysis and final-image audit share mapping-symbol validation and
-admitted interval storage. Only local zero-sized `$d`/`$x` markers authorize data
-intervals. ISA-qualified `$xrv32…` markers also end data intervals; other XLENs,
-conflicting, misaligned code or out-of-section markers fail closed.
+Static RV32 image views, `execution_segments`, `executable_sections`, code
+symbols and the `$d`/`$x` mapping-symbol validation belong to
+[`oer-riscv-program`](../../../riscv/program/README.md); function views and
+image validation use them.
 
 `with_prepared_object` owns one captured buffer, ELF/program view and lazily prepared sections. Callback-borrowed function views share target names and section metadata; object scope releases their admitted capacity. `MemberIndex` traverses an archive once and preserves ordinal payload identity, including thin-member markers.
 

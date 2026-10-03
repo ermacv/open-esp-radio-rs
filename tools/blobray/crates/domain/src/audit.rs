@@ -62,15 +62,6 @@ pub enum TargetAuditGapReason {
     UnsupportedEncoding,
 }
 
-/// Borrowed executable section with structurally validated ELF data intervals.
-/// Consumers must reset instruction state across each data interval.
-pub struct ExecutableSectionView<'a> {
-    pub section: u32,
-    pub address: u32,
-    pub bytes: &'a [u8],
-    pub data_ranges: &'a [CodeRange],
-}
-
 /// Outcome of a check over its declared scope.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

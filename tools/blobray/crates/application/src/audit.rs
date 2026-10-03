@@ -29,7 +29,7 @@ pub fn audit_targets(
     control.set_position(position);
     control.checkpoint(0)?;
     let mut total = TargetAuditSummary::default();
-    blobray_artifacts::executable_sections(
+    oer_riscv_program::executable_sections(
         executable.bytes(),
         memory,
         control,

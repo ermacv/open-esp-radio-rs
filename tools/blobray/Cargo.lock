@@ -86,6 +86,7 @@ dependencies = [
  "blobray-verification",
  "oer-riscv-analysis",
  "oer-riscv-model",
+ "oer-riscv-program",
  "serde",
  "serde_json",
  "tempfile",
@@ -98,6 +99,7 @@ dependencies = [
  "blobray-domain",
  "object",
  "oer-riscv-model",
+ "oer-riscv-program",
 ]
 
 [[package]]
@@ -498,6 +500,14 @@ dependencies = [
  "serde",
  "sha2",
  "thiserror",
+]
+
+[[package]]
+name = "oer-riscv-program"
+version = "0.1.0"
+dependencies = [
+ "object",
+ "oer-riscv-model",
 ]
 
 [[package]]

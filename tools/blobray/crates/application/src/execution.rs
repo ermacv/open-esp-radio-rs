@@ -51,7 +51,7 @@ fn segments<'a>(
     c: &mut dyn RunControl,
 ) -> Result<Vec<LoadedSegment<'a>>> {
     let mut result = Vec::new();
-    blobray_artifacts::execution_segments(source, memory, c, &mut |segment, bytes, c| {
+    oer_riscv_program::execution_segments(source, memory, c, &mut |segment, bytes, c| {
         let mut copy = memory.bytes(bytes.len(), c.position())?;
         for (chunk, source) in copy.chunks_mut(WORK_BLOCK).zip(bytes.chunks(WORK_BLOCK)) {
             c.checkpoint(1)?;

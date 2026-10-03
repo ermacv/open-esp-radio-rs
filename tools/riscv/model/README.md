@@ -30,3 +30,10 @@ immutable-byte port, not a loader or mutable execution bus. Dynamic execution,
 inferred function extents and cross-archive definition selection are not
 implicit in these values. Calls and possible continuations remain distinct
 graph observations.
+
+[Image values](src/image.rs) record the ELF floating-point calling
+convention (`RiscvAbi`) separately from the RV32 integer-analysis target,
+load segments (`ImageSegment`) and borrowed executable sections with their
+validated data intervals (`ExecutableSectionView`). The
+[byte-source port](src/source.rs) `ByteSource` gives stable positional,
+bounded reads of captured content; `hash_source` identifies it.

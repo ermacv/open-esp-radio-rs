@@ -19,6 +19,10 @@ mod semantics;
 pub use semantics::*;
 mod record_memory;
 pub use record_memory::*;
+mod image;
+pub use image::*;
+mod source;
+pub use source::*;
 
 /// Codes shared by API errors and JSON diagnostics.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

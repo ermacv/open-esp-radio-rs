@@ -29,6 +29,7 @@ const AUDITED_UNSAFE: &[&str] = &[
     "oer-esp32s31-ieee80211-system",
     "oer-esp32s31-ieee802154-system",
     "oer-esp32c5-pac",
+    "oer-interrupt-table",
 ];
 /// The closed radio PAC of each chip and the closed PAC crates of the
 /// register layouts chips share.

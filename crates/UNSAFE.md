@@ -69,6 +69,7 @@ packages. Prefixes below omit `oer-` only to keep the mapping readable.
 | `esp32s31-ieee80211-system` | `composition/esp32s31/embassy/ieee80211/` |
 | `esp32s31-ieee802154-system` | `composition/esp32s31/embassy/ieee802154/` |
 | `esp32c5-pac` | `hardware/esp32c5/pac/` |
+| `interrupt-table` | `runtime/interrupt-table/` |
 
 These exceptions cover distinct obligations: singleton acquisition and MMIO
 serialization, stable addresses and CPU/DMA transfer, target ABI and placement,

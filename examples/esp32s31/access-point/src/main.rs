@@ -4,8 +4,6 @@
 
 use embassy_executor::Spawner;
 
-use esp_backtrace as _;
-
 use esp_hal::{
     clock::CpuClock,
     interrupt::software::SoftwareInterrupt,
@@ -49,6 +47,9 @@ const AP_CLIENT_LIMIT: u8 = 4;
 #[unsafe(no_mangle)]
 extern "C" fn runtime_main() -> ! {
     esp_println::logger::init_logger_from_env();
+    if let Some(panic) = oer_esp32s31_platform_runtime::panic::take_previous() {
+        esp_println::println!("open-radio: the previous boot panicked at {panic}");
+    }
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
     // SAFETY: the common stage-two entry runs after the board bootstrap,
     // with global interrupts disabled and the PSRAM mapping intact.

@@ -30,7 +30,10 @@ fn awake_ps_and_producer_share_turns_without_reserving_on_the_wake_edge() {
         let mut pending = PendingApBufferedReleases::new();
         let identity = engine.admit_downlink([4; 6]).unwrap().identity();
         engine
-            .observe_power_save(ApPowerSaveObservation::Sleeping { peer: [4; 6] }, 2)
+            .observe_power_save(
+                ApPowerSaveObservation::Sleeping { peer: [4; 6] },
+                oer_time::Instant::from_micros(2),
+            )
             .unwrap();
         for n in 0..3 {
             device.transmit(packet(pool, 4, n)).unwrap();
@@ -39,7 +42,10 @@ fn awake_ps_and_producer_share_turns_without_reserving_on_the_wake_edge() {
         }
         assert!(!ap.has_prepared());
         let action = engine
-            .observe_power_save(ApPowerSaveObservation::Active { peer: [4; 6] }, 3)
+            .observe_power_save(
+                ApPowerSaveObservation::Active { peer: [4; 6] },
+                oer_time::Instant::from_micros(3),
+            )
             .unwrap();
         retain_ap_power_save_action(engine, &mut pending, action).unwrap();
         ap.refresh_awake_demand(engine);
@@ -130,7 +136,10 @@ fn awake_release_rollback_preserves_fifo_and_ps_poll_can_serve_a_sleeping_peer()
         let mut ap = AccessPointNetworkTx::new(&mut storage, None);
         for peer in [4, 6] {
             engine
-                .observe_power_save(ApPowerSaveObservation::Sleeping { peer: [peer; 6] }, 2)
+                .observe_power_save(
+                    ApPowerSaveObservation::Sleeping { peer: [peer; 6] },
+                    oer_time::Instant::from_micros(2),
+                )
                 .unwrap();
         }
         // Global arrival order must not give peer 6 two turns before peer 4.
@@ -141,7 +150,10 @@ fn awake_release_rollback_preserves_fifo_and_ps_poll_can_serve_a_sleeping_peer()
         }
         for peer in [4, 6] {
             engine
-                .observe_power_save(ApPowerSaveObservation::Active { peer: [peer; 6] }, 3)
+                .observe_power_save(
+                    ApPowerSaveObservation::Active { peer: [peer; 6] },
+                    oer_time::Instant::from_micros(3),
+                )
                 .unwrap();
         }
         let ApTxSelection::Buffered(owned) = ap
@@ -154,7 +166,10 @@ fn awake_release_rollback_preserves_fifo_and_ps_poll_can_serve_a_sleeping_peer()
         let identity = owned.release.identity();
         assert_eq!(identity.address(), [4; 6]);
         engine
-            .observe_power_save(ApPowerSaveObservation::Sleeping { peer: [4; 6] }, 4)
+            .observe_power_save(
+                ApPowerSaveObservation::Sleeping { peer: [4; 6] },
+                oer_time::Instant::from_micros(4),
+            )
             .unwrap();
         assert!(
             !owned.can_publish(engine),
@@ -177,7 +192,7 @@ fn awake_release_rollback_preserves_fifo_and_ps_poll_can_serve_a_sleeping_peer()
                     peer: [4; 6],
                     association_id: identity.association_id(),
                 },
-                5,
+                oer_time::Instant::from_micros(5),
             )
             .unwrap();
         retain_ap_power_save_action(engine, &mut pending, action).unwrap();
@@ -242,13 +257,19 @@ fn stale_ps_completion_does_not_consume_the_new_associations_buffered_owner() {
         let mut storage = super::super::super::AccessPointTxStorage::new();
         let mut ap = AccessPointNetworkTx::new(&mut storage, None);
         engine
-            .observe_power_save(ApPowerSaveObservation::Sleeping { peer: [4; 6] }, 2)
+            .observe_power_save(
+                ApPowerSaveObservation::Sleeping { peer: [4; 6] },
+                oer_time::Instant::from_micros(2),
+            )
             .unwrap();
         device.transmit(packet(pool, 4, 0)).unwrap();
         ap.retain_active_frame(engine, radio.try_take_for([4; 6]).unwrap())
             .unwrap();
         engine
-            .observe_power_save(ApPowerSaveObservation::Active { peer: [4; 6] }, 3)
+            .observe_power_save(
+                ApPowerSaveObservation::Active { peer: [4; 6] },
+                oer_time::Instant::from_micros(3),
+            )
             .unwrap();
         let ApTxSelection::Buffered(old) = ap
             .take_scheduled_active_or_network(engine, &source)
@@ -264,7 +285,10 @@ fn stale_ps_completion_does_not_consume_the_new_associations_buffered_owner() {
         assert_ne!(old_identity, new_identity);
         assert!(!old.can_publish(engine));
         engine
-            .observe_power_save(ApPowerSaveObservation::Sleeping { peer: [4; 6] }, 12)
+            .observe_power_save(
+                ApPowerSaveObservation::Sleeping { peer: [4; 6] },
+                oer_time::Instant::from_micros(12),
+            )
             .unwrap();
         device.transmit(packet(pool, 4, 1)).unwrap();
         ap.retain_active_frame(engine, radio.try_take_for([4; 6]).unwrap())
@@ -293,7 +317,14 @@ fn reauthenticate_peer(engine: &mut ApEngine<'_>, peer: [u8; 6]) {
     authentication[26..28].copy_from_slice(&1_u16.to_le_bytes());
     let mut output = [0; 160];
     engine
-        .handle_management(&mut Hardware, &authentication, [0; 32], 0, 10, &mut output)
+        .handle_management(
+            &mut Hardware,
+            &authentication,
+            [0; 32],
+            0,
+            oer_time::Instant::from_micros(10),
+            &mut output,
+        )
         .unwrap();
     let mut association = [0; 34];
     association[4..10].fill(2);
@@ -301,7 +332,14 @@ fn reauthenticate_peer(engine: &mut ApEngine<'_>, peer: [u8; 6]) {
     association[16..22].fill(2);
     association[28..].copy_from_slice(&[1, 4, 12, 24, 48, 108]);
     engine
-        .handle_management(&mut Hardware, &association, [0; 32], 0, 11, &mut output)
+        .handle_management(
+            &mut Hardware,
+            &association,
+            [0; 32],
+            0,
+            oer_time::Instant::from_micros(11),
+            &mut output,
+        )
         .unwrap();
 }
 
@@ -316,7 +354,10 @@ fn pending_ps_poll_discards_old_generations_and_preserves_current_requests() {
         for peer in [[4; 6], [6; 6]] {
             let identity = engine.admit_downlink(peer).unwrap().identity();
             engine
-                .observe_power_save(ApPowerSaveObservation::Sleeping { peer }, 2)
+                .observe_power_save(
+                    ApPowerSaveObservation::Sleeping { peer },
+                    oer_time::Instant::from_micros(2),
+                )
                 .unwrap();
             engine.commit_buffered_unicast(identity).unwrap();
             let action = engine
@@ -325,7 +366,7 @@ fn pending_ps_poll_discards_old_generations_and_preserves_current_requests() {
                         peer,
                         association_id: identity.association_id(),
                     },
-                    3,
+                    oer_time::Instant::from_micros(3),
                 )
                 .unwrap();
             retain_ap_power_save_action(engine, &mut pending, action).unwrap();
@@ -333,7 +374,10 @@ fn pending_ps_poll_discards_old_generations_and_preserves_current_requests() {
         reauthenticate_peer(engine, [4; 6]);
         let identity = engine.admit_downlink([4; 6]).unwrap().identity();
         engine
-            .observe_power_save(ApPowerSaveObservation::Sleeping { peer: [4; 6] }, 12)
+            .observe_power_save(
+                ApPowerSaveObservation::Sleeping { peer: [4; 6] },
+                oer_time::Instant::from_micros(12),
+            )
             .unwrap();
         let new_packet = packet(pool, 4, 1);
         engine.commit_buffered_unicast(identity).unwrap();

@@ -75,7 +75,7 @@ pub(super) fn with_authorized_ap_capabilities(
         WifiChannel::mhz20(13).unwrap(),
     );
     for peer in [[4; 6], [6; 6]] {
-        service.authenticate_open(peer, 0);
+        service.authenticate_open(peer, oer_time::Instant::from_micros(0));
         service
             .associate_open(
                 peer,
@@ -94,7 +94,7 @@ pub(super) fn with_authorized_ap_capabilities(
                     ht: ht.then(|| oer_ieee80211_mac::ht::ht_peer_capabilities(&ht_ie).unwrap()),
                     qos_supported: ht,
                 },
-                1,
+                oer_time::Instant::from_micros(1),
             )
             .unwrap();
     }

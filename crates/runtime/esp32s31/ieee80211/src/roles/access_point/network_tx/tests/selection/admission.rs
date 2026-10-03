@@ -52,7 +52,10 @@ fn retained_and_source_backlogs_share_turns_and_recheck_power_save() {
             );
         }
         engine
-            .observe_power_save(ApPowerSaveObservation::Sleeping { peer: [4; 6] }, 10)
+            .observe_power_save(
+                ApPowerSaveObservation::Sleeping { peer: [4; 6] },
+                oer_time::Instant::from_micros(10),
+            )
             .unwrap();
         assert!(
             ap.take_scheduled_active_or_network(engine, &source)

@@ -135,9 +135,9 @@ impl<'peers> AccessPointService<'peers> {
         peer: [u8; 6],
         retransmission: bool,
         acknowledged: bool,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<bool, ApWpa2Error> {
-        let inactive_timeout_micros = self.inactive_timeout.micros();
+        let inactive_timeout = self.inactive_timeout.duration();
         let transmit = self
             .checked_peer(peer)?
             .wpa2
@@ -149,9 +149,7 @@ impl<'peers> AccessPointService<'peers> {
         let armed = stage_changed || !retransmission;
         if armed {
             existing.wpa2_retry.cancel();
-            let mut alarm = existing
-                .wpa2_retry
-                .arm(transmit, oer_time::Instant::from_micros(now_micros))?;
+            let mut alarm = existing.wpa2_retry.arm(transmit, now)?;
             // hostapd extends only the acknowledged initial M1 window. M3
             // retains the short first timeout, then uses the subsequent one.
             if acknowledged
@@ -159,37 +157,34 @@ impl<'peers> AccessPointService<'peers> {
             {
                 alarm = existing
                     .wpa2_retry
-                    .defer_first_after_ack(oer_time::Instant::from_micros(now_micros))?
+                    .defer_first_after_ack(now)?
                     .expect("freshly armed WPA2 retry has a first window");
             }
             existing.wpa2_retry_alarm = Some(alarm);
         }
-        existing.last_activity_micros = now_micros;
-        existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
+        existing.last_activity = now;
+        existing.deadline = now.saturating_add(inactive_timeout);
         Ok(armed)
     }
 
-    pub fn next_wpa2_retry_deadline(&self) -> Option<u64> {
+    pub fn next_wpa2_retry_deadline(&self) -> Option<oer_time::Instant> {
         self.storage()
             .peers
             .iter()
             .flatten()
-            .filter_map(|peer| {
-                peer.wpa2_retry_alarm
-                    .map(|alarm| alarm.deadline.as_micros())
-            })
+            .filter_map(|peer| peer.wpa2_retry_alarm.map(|alarm| alarm.deadline))
             .min()
     }
 
     /// Consume at most one due authenticator retry edge.
     pub fn take_due_wpa2_retry<const N: usize>(
         &mut self,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<ApWpa2RetryProgress<N>, ApWpa2Error> {
         let Some(index) = self.storage().peers.iter().position(|peer| {
             peer.as_ref()
                 .and_then(|peer| peer.wpa2_retry_alarm)
-                .is_some_and(|alarm| alarm.deadline.as_micros() <= now_micros)
+                .is_some_and(|alarm| alarm.deadline <= now)
         }) else {
             return Ok(ApWpa2RetryProgress::None);
         };
@@ -201,9 +196,7 @@ impl<'peers> AccessPointService<'peers> {
                 .wpa2_retry_alarm
                 .take()
                 .expect("due WPA2 retry retains its alarm");
-            let action = peer
-                .wpa2_retry
-                .on_alarm(alarm, oer_time::Instant::from_micros(now_micros))?;
+            let action = peer.wpa2_retry.on_alarm(alarm, now)?;
             (peer.address, action)
         };
         match action {
@@ -473,11 +466,15 @@ impl<'peers> AccessPointService<'peers> {
         )?)
     }
 
-    pub fn authorize(&mut self, peer: [u8; 6], now_micros: u64) -> Result<(), ApServiceError> {
+    pub fn authorize(
+        &mut self,
+        peer: [u8; 6],
+        now: oer_time::Instant,
+    ) -> Result<(), ApServiceError> {
         if self.link_protection() != LinkProtection::Ccmp {
             return Err(ApServiceError::SecurityModeMismatch);
         }
-        let inactive_timeout_micros = self.inactive_timeout.micros();
+        let inactive_timeout = self.inactive_timeout.duration();
         let existing = self.checked_peer_mut(peer)?;
         if existing.wpa2.as_ref().map(RsnApState::phase) != Some(RsnApPhase::Authorized) {
             return Err(ApServiceError::WrongPeerPhase);
@@ -487,8 +484,8 @@ impl<'peers> AccessPointService<'peers> {
         existing.pending_ptk = None;
         existing.wpa2_retry.cancel();
         existing.wpa2_retry_alarm = None;
-        existing.last_activity_micros = now_micros;
-        existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
+        existing.last_activity = now;
+        existing.deadline = now.saturating_add(inactive_timeout);
         self.revise_status();
         Ok(())
     }

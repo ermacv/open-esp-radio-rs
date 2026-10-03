@@ -117,7 +117,10 @@ fn run(case: Case) {
 
         if case == Case::Sleeping {
             engine
-                .observe_power_save(ApPowerSaveObservation::Sleeping { peer: [4; 6] }, 2)
+                .observe_power_save(
+                    ApPowerSaveObservation::Sleeping { peer: [4; 6] },
+                    oer_time::Instant::from_micros(2),
+                )
                 .unwrap();
             device.transmit(packet(pool, 4, 1)).unwrap();
             device.transmit(packet(pool, 6, 2)).unwrap();
@@ -145,13 +148,19 @@ fn run(case: Case) {
         }
         if case == Case::Awake {
             engine
-                .observe_power_save(ApPowerSaveObservation::Sleeping { peer: [6; 6] }, 2)
+                .observe_power_save(
+                    ApPowerSaveObservation::Sleeping { peer: [6; 6] },
+                    oer_time::Instant::from_micros(2),
+                )
                 .unwrap();
             device.transmit(packet(pool, 6, 10)).unwrap();
             ap.retain_active_frame(engine, radio.try_take_for([6; 6]).unwrap())
                 .unwrap();
             engine
-                .observe_power_save(ApPowerSaveObservation::Active { peer: [6; 6] }, 3)
+                .observe_power_save(
+                    ApPowerSaveObservation::Active { peer: [6; 6] },
+                    oer_time::Instant::from_micros(3),
+                )
                 .unwrap();
         }
         if matches!(case, Case::Retained | Case::Frontier) {

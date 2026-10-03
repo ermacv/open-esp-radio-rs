@@ -80,15 +80,15 @@ fn observe_ap_rx_peer_activity(
     match power_state {
         Some(ApPeerPowerState::Active) => {
             let action =
-                engine.observe_rx_peer_power_state(peer, ApPeerPowerState::Active, at_micros)?;
+                engine.observe_rx_peer_power_state(peer, ApPeerPowerState::Active, oer_time::Instant::from_micros(at_micros))?;
             retain_ap_power_save_action(engine, pending, action)?;
         }
         Some(ApPeerPowerState::Sleeping) => {
             let action =
-                engine.observe_rx_peer_power_state(peer, ApPeerPowerState::Sleeping, at_micros)?;
+                engine.observe_rx_peer_power_state(peer, ApPeerPowerState::Sleeping, oer_time::Instant::from_micros(at_micros))?;
             retain_ap_power_save_action(engine, pending, action)?;
         }
-        None => engine.observe_peer_activity(peer, at_micros)?,
+        None => engine.observe_peer_activity(peer, oer_time::Instant::from_micros(at_micros))?,
     }
     Ok(())
 }
@@ -201,7 +201,7 @@ where
                 let (admission, activity) = engine.admit_ordinary_pairwise_rx_with_activity(
                     request,
                     power_state,
-                    now_micros,
+                    oer_time::Instant::from_micros(now_micros),
                 );
                 admitted_activity = Some(activity);
                 admission
@@ -1284,7 +1284,7 @@ where
             let action = self
                 .mac
                 .engine_mut()
-                .observe_power_save(observation, now_micros)?;
+                .observe_power_save(observation, oer_time::Instant::from_micros(now_micros))?;
             self.retain_power_save_action(action)?;
         }
         Ok(protocol_class)
@@ -1447,7 +1447,7 @@ where
             mpdu,
             authenticator_nonce,
             initial_replay_counter,
-            now_micros,
+            oer_time::Instant::from_micros(now_micros),
             tx_frame,
         )?;
         if let oer_esp32s31_ieee80211_ap::engine::ApManagementOutcome::PeerRemoved {
@@ -1577,7 +1577,7 @@ where
             processor
                 .mac
                 .engine_mut()
-                .observe_peer_activity(peer, now_micros)?;
+                .observe_peer_activity(peer, oer_time::Instant::from_micros(now_micros))?;
         }
         let used = sink.used();
         if used != 0 {
@@ -1692,7 +1692,7 @@ where
             processor
                 .mac
                 .engine_mut()
-                .observe_peer_activity(peer, now_micros)?;
+                .observe_peer_activity(peer, oer_time::Instant::from_micros(now_micros))?;
         }
         let used = sink.used();
         if used != 0 {

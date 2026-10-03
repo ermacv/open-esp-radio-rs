@@ -8,10 +8,7 @@ use oer_time::{Duration, Instant};
 /// it is the end of that range rather than an error: `u64` microseconds last
 /// far longer than any image runs.
 pub(crate) const fn deadline_after(now: Instant, duration: Duration) -> Instant {
-    match now.checked_add(duration) {
-        Some(deadline) => deadline,
-        None => Instant::from_micros(u64::MAX),
-    }
+    now.saturating_add(duration)
 }
 
 /// The earlier of two optional deadlines.

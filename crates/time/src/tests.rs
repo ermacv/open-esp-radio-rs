@@ -115,3 +115,16 @@ fn a_shared_reference_is_the_same_timer() {
     assert_eq!(shared.now(), Instant::from_micros(1));
     assert_eq!(poll(wait.as_mut()), Poll::Ready(()));
 }
+
+#[test]
+fn a_saturating_deadline_past_the_range_never_comes() {
+    let late = Instant::from_micros(u64::MAX - 1);
+    assert_eq!(
+        late.saturating_add(Duration::from_secs(1)),
+        Instant::from_micros(u64::MAX)
+    );
+    assert_eq!(
+        Instant::from_micros(5).saturating_add(Duration::from_micros(10)),
+        Instant::from_micros(15)
+    );
+}

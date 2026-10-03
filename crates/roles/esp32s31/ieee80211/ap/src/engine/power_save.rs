@@ -47,9 +47,9 @@ impl<'storage> ApEngine<'storage> {
     pub fn observe_power_save(
         &mut self,
         observation: ApPowerSaveObservation,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<ApPowerSaveAction, ApEngineError> {
-        Ok(self.service.observe_power_save(observation, now_micros)?)
+        Ok(self.service.observe_power_save(observation, now)?)
     }
 
     /// Refresh the PM state of the peer admitted by the current RX binding.
@@ -59,23 +59,21 @@ impl<'storage> ApEngine<'storage> {
         &mut self,
         peer: [u8; 6],
         state: ApPeerPowerState,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<ApPowerSaveAction, ApEngineError> {
         if let Some(binding) = self.rx_peer
             && binding.peer.address() == peer
             && binding.status_revision == self.service.status_revision()
         {
-            return Ok(self.service.observe_bound_data_power_state(
-                binding.peer,
-                state,
-                now_micros,
-            )?);
+            return Ok(self
+                .service
+                .observe_bound_data_power_state(binding.peer, state, now)?);
         }
         let observation = match state {
             ApPeerPowerState::Active => ApPowerSaveObservation::Active { peer },
             ApPeerPowerState::Sleeping => ApPowerSaveObservation::Sleeping { peer },
         };
-        self.observe_power_save(observation, now_micros)
+        self.observe_power_save(observation, now)
     }
 
     /// Parse and apply an AP power-save edge from one complete 802.11 MPDU.
@@ -83,14 +81,14 @@ impl<'storage> ApEngine<'storage> {
     pub fn observe_power_save_frame(
         &mut self,
         frame: &[u8],
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<Option<ApPowerSaveAction>, ApEngineError> {
         let Some(observation) =
             observe_ap_power_save_for_access_point(frame, self.service.address())
         else {
             return Ok(None);
         };
-        self.observe_power_save(observation, now_micros).map(Some)
+        self.observe_power_save(observation, now).map(Some)
     }
 
     pub fn commit_buffered_group(&mut self) -> Result<u16, ApEngineError> {

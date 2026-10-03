@@ -63,7 +63,14 @@ fn exercise_probe_completion(status: u8) {
     request[24..].copy_from_slice(&[0, 2, b'a', b'p']);
     let mut output = [0; 256];
     let outcome = mac
-        .publish_management(&mut hardware, &request, [0; 32], 0, 100, &mut output)
+        .publish_management(
+            &mut hardware,
+            &request,
+            [0; 32],
+            0,
+            oer_time::Instant::from_micros(100),
+            &mut output,
+        )
         .unwrap();
     assert!(matches!(
         outcome,
@@ -79,8 +86,15 @@ fn exercise_probe_completion(status: u8) {
     assert!(mac.engine().peer_status(peer).is_none());
     assert_eq!(hardware.publications, 1);
     assert!(
-        mac.publish_management(&mut hardware, &request, [0; 32], 0, 101, &mut output)
-            .is_err()
+        mac.publish_management(
+            &mut hardware,
+            &request,
+            [0; 32],
+            0,
+            oer_time::Instant::from_micros(101),
+            &mut output
+        )
+        .is_err()
     );
     assert_eq!(
         hardware.publications, 1,
@@ -96,7 +110,7 @@ fn exercise_probe_completion(status: u8) {
                 WifiTxWake::Interrupt {
                     events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
                 },
-                102 + attempt,
+                oer_time::Instant::from_micros(102 + attempt),
             )
             .unwrap();
         if progress == oer_esp32s31_ieee80211::tx::WifiTxProgress::Complete {
@@ -116,8 +130,8 @@ fn exercise_probe_completion(status: u8) {
         let failure = mac.first_probe_failure().unwrap();
         assert_eq!(failure.receiver, peer);
         assert_eq!(failure.sequence_control, sequence_control);
-        assert_eq!(failure.started_at_micros, 100);
-        assert!(failure.completed_at_micros >= 102);
+        assert_eq!(failure.started_at, oer_time::Instant::from_micros(100));
+        assert!(failure.completed_at >= oer_time::Instant::from_micros(102));
         assert!(matches!(
             failure.outcome,
             OrdinaryTxOutcome::HardwareFailure(_)
@@ -145,7 +159,7 @@ fn exercise_probe_completion(status: u8) {
                 &request,
                 [0; 32],
                 0,
-                103 + u64::from(index),
+                oer_time::Instant::from_micros(103 + u64::from(index)),
                 &mut output
             )
             .unwrap(),
@@ -154,8 +168,15 @@ fn exercise_probe_completion(status: u8) {
     }
     assert_eq!(hardware.publications, 1);
     assert!(matches!(
-        mac.publish_management(&mut hardware, &request, [0; 32], 0, 10_100, &mut output)
-            .unwrap(),
+        mac.publish_management(
+            &mut hardware,
+            &request,
+            [0; 32],
+            0,
+            oer_time::Instant::from_micros(10_100),
+            &mut output
+        )
+        .unwrap(),
         ApManagementOutcome::Response { .. }
     ));
     hardware.completion = Some(MacTxCompletionObservation::new_model(0, 0));
@@ -164,7 +185,7 @@ fn exercise_probe_completion(status: u8) {
         WifiTxWake::Interrupt {
             events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
         },
-        10_102,
+        oer_time::Instant::from_micros(10_102),
     )
     .unwrap();
     let publications = hardware.publications;
@@ -173,8 +194,15 @@ fn exercise_probe_completion(status: u8) {
     assert!(mac.engine().peer_status(peer).is_none());
     request[27] = b'x';
     assert_eq!(
-        mac.publish_management(&mut hardware, &request, [0; 32], 0, 103, &mut output)
-            .unwrap(),
+        mac.publish_management(
+            &mut hardware,
+            &request,
+            [0; 32],
+            0,
+            oer_time::Instant::from_micros(103),
+            &mut output
+        )
+        .unwrap(),
         ApManagementOutcome::Ignored
     );
     assert_eq!(hardware.publications, publications);

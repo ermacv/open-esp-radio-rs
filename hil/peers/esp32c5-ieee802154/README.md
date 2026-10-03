@@ -44,6 +44,19 @@ restores the ROM's ACTIVE-only analog I2C master clock map at start and after
 each radio enable, and USB resets and flashes over it work. The runner still
 takes a running peer over with `SYNC` instead of a reset.
 
+### A wedged USB console
+
+The peer's USB Serial/JTAG console can wedge with the board still
+enumerated: every write and every control request (RTS, DTR) fails with
+`EPIPE` ("Broken pipe"), the hub lists the device without its string
+descriptors (`[303a:1001]` with no product or serial), and neither an RTS
+nor a JTAG reset nor `espflash` reaches it. A scenario then ends `broken`
+with an infrastructure fault naming the peer console. Firmware is not the
+cause, so reflashing does not help; power-cycling only the peer's own hub
+port does, for example `cargo hil lease --board esp32c5 -- uhubctl -l
+<hub> -p <port> -a cycle`. Never cycle a port that carries a cascaded hub.
+`cargo hil peer send esp32c5 SYNC` answers `@OK SYNC` once it is back.
+
 ## Line protocol
 
 Lines end with `\n`. Every protocol line from the peer starts with `@`; the

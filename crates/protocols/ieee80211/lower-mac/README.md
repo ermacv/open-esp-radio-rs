@@ -21,7 +21,7 @@ unless the backend reports them in its `HardwareServices`.
 | Controls | `apply(LowerMacSetting)`: `Channel`, interface configuration (`VifConfig`: address, `VifRole`, BSSID, `ReceiveFilter`), key removal, receive Block Ack agreements and the global `TxGate`. `install_key` returns the `KeyHandle` attempts select |
 | Capabilities | `LowerMacCapabilities`, the parametric limits: bands, widths, rates, `HardwareServices`, interfaces, transmit queues, longest MPDU, largest backoff, lowest power ceiling, coexistence levels, the PPDU formats of unicast no-ACK frames, each role's receive rules, key slots and receive Block Ack limits |
 | Lifecycle | `lifecycle(Enable / Disable / Quiesce)`, each with a terminal `LifecycleEvent`, and `cancel(TxId)`, whose terminal event is the attempt's completion; a failed command ends with `LifecycleEvent::Failed { command, class: FailureClass }` |
-| Clock | `now()` is the `Ieee80211Instant` (`oer_time::RadioInstant` of the port's `Ieee80211Radio` domain) of receive timestamps; `clock_info()` states its resolution and `RadioEpoch` and converts to monotonic time |
+| Clock | `now()` is the `Ieee80211Instant` (`oer_time::RadioInstant` of the port's `Ieee80211Radio` domain) of receive timestamps; `clock_info()` states its resolution and `RadioEpoch` and converts to monotonic time; `clock_sample()` reads both clocks back to back in the current generation, and `RxMeta::timestamp` is an `Ieee80211Stamp` that converts with a sample of its generation |
 
 Every call but `next_event` is synchronous. The failure classes, `EventsLost`,
 `Poisoned`, the lifecycle vocabulary, `CancelError`, the `Correlation` trait

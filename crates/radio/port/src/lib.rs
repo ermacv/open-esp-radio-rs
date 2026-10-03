@@ -278,7 +278,7 @@ impl ClockInfo {
     /// The monotonic instant of the radio instant `at` of this port.
     ///
     /// Exact for a [`RadioEpoch::Monotonic`] clock. An affine clock needs a
-    /// paired reading of both clocks, which no port publishes yet, and an
+    /// paired reading of both clocks ([`Self::to_monotonic_with`]), and an
     /// unrelated clock has no monotonic instant at all.
     pub const fn to_monotonic<D>(self, at: RadioInstant<D>) -> Result<Instant, EpochError> {
         match self.epoch {
@@ -306,17 +306,57 @@ pub enum EpochError {
     Unrelated,
     /// The port's clock is affine: converting needs a [`ClockSample`].
     NeedsSample,
+    /// The stamp and the sample belong to different generations: the
+    /// relation between the clocks broke between them.
+    StaleSample,
     /// The converted instant lies outside the representable range.
     OutOfRange,
+}
+
+/// A radio instant with the generation of the clock relation it was taken
+/// in.
+///
+/// A port's generation changes whenever the relation between its radio
+/// clock and the monotonic clock breaks (a wake from sleep), so a stamp
+/// converts only with a [`ClockSample`] of its own generation.
+pub struct RadioStamp<D> {
+    /// The radio instant.
+    pub at: RadioInstant<D>,
+    /// The relation `at` belongs to.
+    pub generation: u32,
+}
+
+impl<D> Clone for RadioStamp<D> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<D> Copy for RadioStamp<D> {}
+
+impl<D> PartialEq for RadioStamp<D> {
+    fn eq(&self, other: &Self) -> bool {
+        self.at == other.at && self.generation == other.generation
+    }
+}
+
+impl<D> Eq for RadioStamp<D> {}
+
+impl<D> core::fmt::Debug for RadioStamp<D> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("RadioStamp")
+            .field("at", &self.at)
+            .field("generation", &self.generation)
+            .finish()
+    }
 }
 
 /// One paired reading of a port's radio clock and the image's monotonic
 /// clock, taken back to back by the backend.
 ///
-/// An [`RadioEpoch::Affine`] port publishes one at start, after each event
-/// that breaks the relation between its clocks (a wake from sleep) and
-/// periodically; `generation` changes with every such break, so a caller
-/// converts an instant with a sample of the generation it was taken in.
+/// A port returns one on demand, read when asked; `generation` is the
+/// relation it was read in, the same counter its [`RadioStamp`]s carry.
 pub struct ClockSample<D> {
     /// The radio clock's reading.
     pub radio: RadioInstant<D>,
@@ -348,6 +388,16 @@ impl<D> PartialEq for ClockSample<D> {
 
 impl<D> Eq for ClockSample<D> {}
 
+impl<D> ClockSample<D> {
+    /// The sample's radio reading as a stamp of its generation.
+    pub const fn stamp(&self) -> RadioStamp<D> {
+        RadioStamp {
+            at: self.radio,
+            generation: self.generation,
+        }
+    }
+}
+
 impl<D> core::fmt::Debug for ClockSample<D> {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter
@@ -370,25 +420,31 @@ pub struct Projected<T> {
 }
 
 impl ClockInfo {
-    /// The monotonic instant of the radio instant `at`, projected from
+    /// The monotonic instant of the radio stamp `at`, projected from
     /// `sample`.
     ///
     /// Exact for a [`RadioEpoch::Monotonic`] clock, which ignores the
-    /// sample. For an [`RadioEpoch::Affine`] clock the radio distance from
-    /// the sample is carried over unchanged, and the uncertainty is the
-    /// sample's plus the drift over that distance, rounded up to whole
-    /// microseconds. An unrelated clock has no monotonic instant.
+    /// sample. For an [`RadioEpoch::Affine`] clock the stamp must be of the
+    /// sample's generation ([`EpochError::StaleSample`] otherwise); the
+    /// radio distance from the sample is carried over unchanged, and the
+    /// uncertainty is the sample's plus the drift over that distance,
+    /// rounded up to whole microseconds. An unrelated clock has no monotonic
+    /// instant.
     pub fn to_monotonic_with<D>(
         self,
-        at: RadioInstant<D>,
+        at: RadioStamp<D>,
         sample: &ClockSample<D>,
     ) -> Result<Projected<Instant>, EpochError> {
         match self.epoch {
             RadioEpoch::Monotonic => Ok(Projected {
-                at: Instant::from_micros(at.as_micros()),
+                at: Instant::from_micros(at.at.as_micros()),
                 uncertainty: Duration::ZERO,
             }),
             RadioEpoch::Affine { drift_ppm } => {
+                if at.generation != sample.generation {
+                    return Err(EpochError::StaleSample);
+                }
+                let at = at.at;
                 let (at, distance) = shift(
                     sample.monotonic.as_micros(),
                     sample.radio.as_micros(),
@@ -403,17 +459,20 @@ impl ClockInfo {
         }
     }
 
-    /// The radio instant of the monotonic instant `at`, projected from
-    /// `sample`; the inverse of [`Self::to_monotonic_with`], with the same
-    /// uncertainty and errors.
+    /// The radio stamp of the monotonic instant `at`, of the sample's
+    /// generation, projected from `sample`; the inverse of
+    /// [`Self::to_monotonic_with`], with the same uncertainty.
     pub fn from_monotonic_with<D>(
         self,
         at: Instant,
         sample: &ClockSample<D>,
-    ) -> Result<Projected<RadioInstant<D>>, EpochError> {
+    ) -> Result<Projected<RadioStamp<D>>, EpochError> {
         match self.epoch {
             RadioEpoch::Monotonic => Ok(Projected {
-                at: RadioInstant::from_micros(at.as_micros()),
+                at: RadioStamp {
+                    at: RadioInstant::from_micros(at.as_micros()),
+                    generation: sample.generation,
+                },
                 uncertainty: Duration::ZERO,
             }),
             RadioEpoch::Affine { drift_ppm } => {
@@ -423,7 +482,10 @@ impl ClockInfo {
                     at.as_micros(),
                 )?;
                 Ok(Projected {
-                    at: RadioInstant::from_micros(at),
+                    at: RadioStamp {
+                        at: RadioInstant::from_micros(at),
+                        generation: sample.generation,
+                    },
                     uncertainty: drift_bound(sample.uncertainty, distance, drift_ppm)?,
                 })
             }

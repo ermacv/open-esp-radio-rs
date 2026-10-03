@@ -74,7 +74,11 @@ Each image declares its peripheral interrupt sources once with
 core; see [`oer-interrupt-table`](../../crates/runtime/interrupt-table/README.md)):
 the macro links each handler into its source's slot of esp-hal's
 `__EXTERNAL_INTERRUPTS` and creates one token per source; the image hands its `INTERRUPT_TABLE` to
-`adopt_psram`. The runtime's placement audit requires every entry's slot
+`adopt_psram`. Each 12-byte entry holds the `Interrupt` (`u16`), the
+`Priority` (`u8`), the `Cpu` (a 4-byte C enum at offset 4) and the handler
+address at offset 8 (zero for an entry a `cfg` leaves out); compile-time
+assertions in `interrupts.rs` keep that layout, which the stack analysis
+reads. The runtime's placement audit requires every entry's slot
 symbol and handler function in SRAM. Installing a hart's
 interrupt stack silences every source of that hart's entries and checks the
 slots; `enable_interrupts_after_handoff` checks again that every slot holds its

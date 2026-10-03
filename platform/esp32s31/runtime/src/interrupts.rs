@@ -42,6 +42,22 @@ impl Matrix for EspHalMatrix {
     }
 }
 
+// The stack analysis reads the table from the image by these offsets: a
+// change of esp-hal's or the PAC's representation of a field must fail here.
+const _: () = {
+    use core::mem::{align_of, offset_of, size_of};
+    type Entry = Binding<Interrupt, Priority, Cpu>;
+    assert!(size_of::<Interrupt>() == 2 && size_of::<Priority>() == 1);
+    assert!(size_of::<Cpu>() == 4);
+    assert!(offset_of!(Entry, source) == 0);
+    assert!(offset_of!(Entry, level) == 2);
+    assert!(offset_of!(Entry, core) == 4);
+    assert!(offset_of!(Entry, handler) == 8);
+    assert!(size_of::<Entry>() == 12 && align_of::<Entry>() == 4);
+    assert!(Cpu::ProCpu as u32 == 0 && Cpu::AppCpu as u32 == 1);
+    assert!(Priority::Priority1 as u8 == 1);
+};
+
 /// An ESP32-S31 table error.
 pub type Error = MatrixError<EspHalMatrix>;
 

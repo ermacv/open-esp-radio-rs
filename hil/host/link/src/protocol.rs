@@ -1347,6 +1347,37 @@ impl SerialCapture {
         }
     }
 
+    /// Ask the panic-reset image to panic; it acknowledges first.
+    pub fn inject_panic(&self) -> Result<()> {
+        match self.call(
+            0,
+            oer_hil_protocol::system::InjectPanic,
+            Duration::from_secs(5),
+        )? {
+            Ok(oer_hil_protocol::system::PanicInjected) => Ok(()),
+            response => Err(format!("panic injection rejected: {response:?}").into()),
+        }
+    }
+
+    /// Console bytes captured so far: a mark for
+    /// [`Self::console_shows_boot_since`].
+    pub fn console_length(&self) -> usize {
+        self.bytes
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len()
+    }
+
+    /// Whether the console bytes after `mark` show a chip starting: the ROM
+    /// banner or the bootloader's lines.
+    pub fn console_shows_boot_since(&self, mark: usize) -> bool {
+        let bytes = self
+            .bytes
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        console_shows_boot(bytes.get(mark..).unwrap_or_default())
+    }
+
     pub fn system_watchdog_test(
         &self,
         mode: oer_hil_protocol::system::WatchdogTestMode,

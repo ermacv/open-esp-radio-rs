@@ -22,6 +22,9 @@ pub enum SystemScenario {
     /// The hang watchdog of the correctness image records a stalled
     /// executor's post-mortem and resets the chip.
     HangWatchdog {},
+    /// The product panic entry records an intentional panic and resets the
+    /// chip on its exclusive radio-free image.
+    PanicReset {},
     MemoryBenchmark {
         boots: u8,
         iterations: u16,
@@ -46,7 +49,10 @@ const BOOT_SMOKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1
 impl SystemScenario {
     pub fn validate(&self) -> Result<()> {
         match self {
-            Self::BootSmoke {} | Self::Watchdog {} | Self::HangWatchdog {} => Ok(()),
+            Self::BootSmoke {}
+            | Self::Watchdog {}
+            | Self::HangWatchdog {}
+            | Self::PanicReset {} => Ok(()),
             Self::MemoryBenchmark {
                 boots,
                 iterations,
@@ -97,6 +103,7 @@ impl SystemScenario {
             Self::BootSmoke {} => ImageClass::BootSmoke,
             Self::Watchdog {} => ImageClass::SystemWatchdog,
             Self::HangWatchdog {} => ImageClass::Correctness,
+            Self::PanicReset {} => ImageClass::SystemPanicReset,
             Self::MemoryBenchmark { .. } => ImageClass::DiagnosticMemoryBenchmark,
             Self::Timebase { .. } => ImageClass::Correctness,
         })
@@ -109,6 +116,7 @@ impl SystemScenario {
             }),
             Self::Watchdog {} => system::watchdog::run(output, context),
             Self::HangWatchdog {} => system::hang_watchdog::run(output, context),
+            Self::PanicReset {} => system::panic_reset::run(output, context),
             Self::MemoryBenchmark {
                 boots,
                 iterations,
@@ -155,6 +163,7 @@ mod tests {
             ("kind = 'boot-smoke'", ImageClass::BootSmoke),
             ("kind = 'watchdog'", ImageClass::SystemWatchdog),
             ("kind = 'hang-watchdog'", ImageClass::Correctness),
+            ("kind = 'panic-reset'", ImageClass::SystemPanicReset),
             (
                 "kind = 'memory-benchmark'\nboots = 1\niterations = 1\nsizes = [64]",
                 ImageClass::DiagnosticMemoryBenchmark,

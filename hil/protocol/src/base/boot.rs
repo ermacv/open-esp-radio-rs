@@ -70,6 +70,25 @@ pub struct BootEvidence {
     /// when no valid record survived, as after a power-on.
     #[serde(default)]
     pub post_mortem: Option<PostMortemSummary>,
+    /// The record the platform's panic entry left for the boot after a
+    /// panic, read once by this boot; `None` when the previous boot did not
+    /// panic through it.
+    #[serde(default)]
+    pub platform_panic: Option<PlatformPanic>,
+}
+
+/// The platform panic entry's record of the previous boot's panic.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Schema)]
+pub struct PlatformPanic {
+    pub hart: u8,
+    /// The panic ran on the hart's interrupt stack.
+    pub in_interrupt: bool,
+    /// The interrupted instruction, when [`Self::in_interrupt`].
+    pub interrupted_pc: Option<u32>,
+    /// The end of the location's file path, as recorded.
+    pub file: heapless::String<48>,
+    pub line: u32,
+    pub column: u32,
 }
 
 /// The previous boot's post-mortem record, without its checkpoints, which

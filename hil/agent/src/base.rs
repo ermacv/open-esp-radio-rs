@@ -298,5 +298,12 @@ requests! {
     }
 }
 
+requests! {
+    /// The panic-reset image's one request.
+    pub enum PanicRequest (sessions = false) {
+        Inject(oer_hil_protocol::system::InjectPanic),
+    }
+}
+
 #[cfg(test)]
 mod tests;

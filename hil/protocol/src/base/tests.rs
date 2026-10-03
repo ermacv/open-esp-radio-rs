@@ -80,6 +80,7 @@ fn boot_evidence_round_trips() {
                 reset_reason,
                 raw_reset_reason: 3,
                 post_mortem: None,
+                platform_panic: None,
             },
         );
         assert_eq!(transmit(&expected), expected);
@@ -127,6 +128,14 @@ fn the_largest_post_mortem_fits_a_frame() {
                 boot_count: u32::MAX,
                 checkpoints: u8::MAX,
                 fault: Some(fault),
+            }),
+            platform_panic: Some(PlatformPanic {
+                hart: u8::MAX,
+                in_interrupt: true,
+                interrupted_pc: Some(u32::MAX),
+                file: text(48).as_str().try_into().unwrap(),
+                line: u32::MAX,
+                column: u32::MAX,
             }),
         };
         let expected = Envelope::new(u64::MAX, u32::MAX, u64::MAX, u32::MAX, boot);

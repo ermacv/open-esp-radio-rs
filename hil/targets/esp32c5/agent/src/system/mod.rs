@@ -24,6 +24,8 @@ pub(crate) fn boot_evidence() -> oer_hil_protocol::base::BootEvidence {
         },
         raw_reset_reason: raw.map_or(0, |reason| reason as u8),
         post_mortem: postmortem::previous(|previous| previous.map(|previous| previous.summary())),
+        // The ESP32-C5 runtime has no platform panic entry.
+        platform_panic: None,
     }
 }
 

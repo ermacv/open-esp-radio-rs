@@ -26,9 +26,10 @@
 //! watchdog of the attempts in flight, which it turns into a deadline edge
 //! of the ordinary TX owner, and the PHY retune an `Enable` needs after a
 //! channel change, through [`LowerMacRetune`]. The ordinary TX owner's timer
-//! and the port's own timer must therefore read the image's monotonic clock,
-//! which is why the port's radio clock is the image's
-//! monotonic clock ([`RadioEpoch::Monotonic`]).
+//! and the port's own timer must therefore read the image's monotonic clock.
+//! The port's timer is also the MAC clock ([`ReceptionClock`]): the port's
+//! radio clock is the Wi-Fi MAC local time, the counter receive timestamps
+//! carry, affine to the monotonic clock ([`MAC_CLOCK_INFO`]).
 //!
 //! Besides the base port it implements the extensions the ESP32-S31 has:
 //! [`LowerMacAmpdu`] (HT aggregates, when the core was built with aggregate
@@ -73,11 +74,13 @@ use oer_ieee80211_lower_mac::{
     AmpduCapabilities, BeaconTimingCapabilities, CancelError, ClockInfo, EventsLost, FailureClass,
     Ieee80211LowerMacPort, KeyHandle, KeyInstall, LifecycleCommand, LifecycleError, LifecycleEvent,
     LowerMacAmpdu, LowerMacBeaconTiming, LowerMacCapabilities, LowerMacEvent, LowerMacMonitor,
-    LowerMacSetting, MonitorCapabilities, Poisoned, PortError, RadioEpoch, Refused, RxMeta,
+    LowerMacSetting, MonitorCapabilities, Poisoned, PortError, Refused, RxEvidence, RxMeta,
     SettingError, SubmitError, SubmitResult, TbttEvent, TbttSchedule, Tsf, TxCompletion, TxId,
     VifId,
 };
 use oer_ieee80211_lower_mac::{Ieee80211ClockSample, Ieee80211Instant};
+
+use crate::mac_clock::{MAC_CLOCK_INFO, ReceptionClock};
 use oer_ieee80211_mac::channel::WifiChannel;
 
 /// Attempt completions the port owes at most: admitted attempts whose
@@ -672,9 +675,20 @@ where
     /// the port receives and a receive rule or monitor reception admits it.
     /// An MPDU longer than `FRAME` is reported as
     /// [`LowerMacEvent::RxTooLong`].
-    pub fn on_received(&self, frame: &NormalizedRxFrame<'_>) {
+    pub fn on_received(&self, frame: &NormalizedRxFrame<'_>)
+    where
+        T: ReceptionClock,
+    {
+        // The receive timestamp, in the generation it was taken in; a
+        // frame received before the snapshot always has its place unless a
+        // break left it without one.
+        let stamp = frame
+            .stamp
+            .and_then(|raw| self.timer.snapshot().stamp(raw))
+            .map_or(RxEvidence::Unavailable, RxEvidence::HardwareObserved);
         let _ = self.with_core(|core, _, sink| {
-            if let Some((bytes, meta)) = core.received(frame) {
+            if let Some((bytes, mut meta)) = core.received(frame) {
+                meta.timestamp = stamp;
                 let mut owned = [0; FRAME];
                 let event = match owned.get_mut(..bytes.len()) {
                     Some(prefix) => {
@@ -854,7 +868,7 @@ impl<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: oer_time::Timer,
+    T: oer_time::Timer + ReceptionClock,
     H: LowerMacHardware,
     R: LowerMacRetune,
     S: AmpduBacking,
@@ -871,13 +885,10 @@ where
         esp32s31_lower_mac_capabilities(BUFFER_SIZE)
     }
 
-    /// The core's clock is the ordinary TX owner's [`oer_time::Timer`], which
-    /// the composition binds to the image's monotonic clock in microseconds.
+    /// The radio clock is the Wi-Fi MAC local time, the counter of receive
+    /// timestamps: affine to the monotonic clock ([`MAC_CLOCK_INFO`]).
     fn clock_info(&self) -> ClockInfo {
-        ClockInfo {
-            resolution: oer_time::Duration::from_micros(1),
-            epoch: RadioEpoch::Monotonic,
-        }
+        MAC_CLOCK_INFO
     }
 
     fn tx_buffer(
@@ -965,22 +976,13 @@ where
     }
 
     fn now(&self) -> Result<Ieee80211Instant, Esp32s31LowerMacError> {
-        // The radio epoch is the monotonic clock (`clock_info`).
-        self.with_core(|core, _, _| Ok(Ieee80211Instant::from_micros(core.now().as_micros())))
+        self.with_core(|_, _, _| Ok(self.timer.snapshot().sample().radio))
     }
 
-    /// The radio epoch is the monotonic clock (`clock_info`): one reading
-    /// is both, in the one generation it has.
+    /// The MAC local time and the monotonic time read back to back, in the
+    /// current generation of the MAC clock.
     fn clock_sample(&self) -> Result<Ieee80211ClockSample, Esp32s31LowerMacError> {
-        self.with_core(|core, _, _| {
-            let monotonic = core.now();
-            Ok(Ieee80211ClockSample {
-                radio: Ieee80211Instant::from_micros(monotonic.as_micros()),
-                monotonic,
-                uncertainty: oer_time::Duration::ZERO,
-                generation: 0,
-            })
-        })
+        self.with_core(|_, _, _| Ok(self.timer.snapshot().sample()))
     }
 }
 
@@ -1018,7 +1020,7 @@ impl<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: oer_time::Timer,
+    T: oer_time::Timer + ReceptionClock,
     H: LowerMacHardware,
     R: LowerMacRetune,
     S: AmpduBacking,
@@ -1089,7 +1091,7 @@ impl<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: oer_time::Timer,
+    T: oer_time::Timer + ReceptionClock,
     H: LowerMacHardware,
     R: LowerMacRetune,
     S: AmpduBacking,
@@ -1141,7 +1143,7 @@ impl<
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: oer_time::Timer,
+    T: oer_time::Timer + ReceptionClock,
     H: LowerMacHardware,
     R: LowerMacRetune,
     S: AmpduBackingSource,

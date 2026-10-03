@@ -280,6 +280,21 @@ impl oer_time::Timer for ModelTimer {
     }
 }
 
+/// The MAC local time the model clock reads at its monotonic epoch.
+const MAC_AT_EPOCH: u32 = 5_000;
+
+impl crate::mac_clock::ReceptionClock for ModelTimer {
+    fn snapshot(&self) -> crate::mac_clock::MacClockSnapshot {
+        crate::mac_clock::MacClock::<embassy_sync::blocking_mutex::raw::NoopRawMutex, _, _>::new(
+            crate::mac_clock::FixedCounter(MAC_AT_EPOCH),
+            ModelTimer,
+        )
+        .snapshot()
+    }
+
+    fn on_rf_wake(&self) {}
+}
+
 /// Records every retune and answers with `accept`.
 struct Retune {
     accept: bool,
@@ -482,7 +497,21 @@ fn an_attempt_completes_through_the_interrupt_entry_and_the_queue() {
 
     assert_eq!(port.set_tsf(STA, Tsf(7)), Ok(Ok(())));
     assert_eq!(port.tsf(STA), Ok(Ok(Tsf(7))));
-    assert_eq!(port.now(), Ok(Ieee80211Instant::from_micros(0)));
+    // The port's radio clock is the MAC local time.
+    assert_eq!(
+        port.now(),
+        Ok(Ieee80211Instant::from_micros(u64::from(MAC_AT_EPOCH)))
+    );
+    assert!(matches!(
+        port.clock_info().epoch,
+        oer_ieee80211_lower_mac::RadioEpoch::Affine { .. }
+    ));
+    let sample = port.clock_sample().unwrap();
+    assert_eq!(
+        sample.radio,
+        Ieee80211Instant::from_micros(u64::from(MAC_AT_EPOCH))
+    );
+    assert_eq!(sample.monotonic, oer_time::Instant::EPOCH);
 }
 
 #[test]
@@ -587,7 +616,7 @@ fn received_frames_are_copied_and_overflow_is_reported_once() {
     let mut mpdu = data_frame();
     mpdu[4..10].copy_from_slice(&STATION);
     mpdu[10..16].copy_from_slice(&BSSID);
-    let received = |mpdu: &'static [u8]| NormalizedRxFrame {
+    let received = |mpdu: &'static [u8], stamp: Option<u32>| NormalizedRxFrame {
         mpdu,
         metadata: MacRxMetadata {
             channel: MacRxEvidence::Unavailable,
@@ -599,6 +628,7 @@ fn received_frames_are_copied_and_overflow_is_reported_once() {
             amsdu: MacRxEvidence::Unavailable,
         },
         logical_length: mpdu.len(),
+        stamp,
     };
     let mpdu: &'static [u8] = std::boxed::Box::leak(std::boxed::Box::new(mpdu));
     // A frame to the station as well, one byte longer than `FRAME`.
@@ -607,13 +637,16 @@ fn received_frames_are_copied_and_overflow_is_reported_once() {
     let long: &'static [u8] = std::boxed::Box::leak(std::boxed::Box::new(long));
 
     // A frame longer than `FRAME` is reported as such, not as a loss.
-    port.on_received(&received(long));
+    port.on_received(&received(long, None));
     assert_eq!(next(&port), Ok(LowerMacEvent::RxTooLong { length: 65 }));
 
-    // Two fit the queue, the third is lost and reported after them.
-    for _ in 0..3 {
-        port.on_received(&received(mpdu));
-    }
+    // Two fit the queue, the third is lost and reported after them. The
+    // first was stamped now, the second carries a stamp later than now,
+    // which has no place.
+    port.on_received(&received(mpdu, Some(MAC_AT_EPOCH)));
+    port.on_received(&received(mpdu, Some(MAC_AT_EPOCH + 1_000)));
+    port.on_received(&received(mpdu, None));
+    let mut stamps = std::vec::Vec::new();
     for _ in 0..2 {
         let Ok(LowerMacEvent::Received { frame, meta }) = next(&port) else {
             panic!("a received frame");
@@ -623,7 +656,23 @@ fn received_frames_are_copied_and_overflow_is_reported_once() {
             meta.channel,
             Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap()
         );
+        stamps.push(meta.timestamp);
     }
+    let sample = port.clock_sample().unwrap();
+    let RxEvidence::HardwareObserved(stamp) = stamps[0] else {
+        panic!("the receive stamp is a hardware observation");
+    };
+    assert_eq!(
+        stamp.at,
+        Ieee80211Instant::from_micros(u64::from(MAC_AT_EPOCH))
+    );
+    assert_eq!(
+        port.clock_info()
+            .to_monotonic_with(stamp, &sample)
+            .map(|projected| projected.at),
+        Ok(oer_time::Instant::EPOCH)
+    );
+    assert_eq!(stamps[1], RxEvidence::Unavailable);
     assert_eq!(next(&port), Err(EventsLost));
     assert!(port.queues.take().is_none());
 }
@@ -655,6 +704,7 @@ fn a_receive_overflow_does_not_drop_completions() {
                 amsdu: MacRxEvidence::Unavailable,
             },
             logical_length: mpdu.len(),
+            stamp: None,
         });
     }
     with_hardware(&port, |hardware| {

@@ -872,6 +872,9 @@ pub struct NormalizedRxFrame<'frame> {
     pub mpdu: &'frame [u8],
     pub metadata: MacRxMetadata<RxPhyInfo>,
     pub logical_length: usize,
+    /// The receive timestamp of the prefix: the raw MAC local time of the
+    /// frame's reception ([`decode_rx_local_timestamp`]).
+    pub stamp: Option<u32>,
 }
 
 /// Validate and borrow one contiguous completed unit for passive capture.
@@ -905,6 +908,7 @@ pub fn view_normalized_rx_frame<'frame>(
         mpdu,
         metadata,
         logical_length: layout.expected_frame_length,
+        stamp: decode_rx_local_timestamp(segment.buffer),
     })
 }
 

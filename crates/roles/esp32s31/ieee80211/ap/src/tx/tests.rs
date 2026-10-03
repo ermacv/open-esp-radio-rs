@@ -209,7 +209,7 @@ fn idle_ap_tx_lends_and_resumes_the_exact_ordinary_owner() {
             timer: Timer,
         },
         ApTxConfig {
-            publication_timeout_micros: 7_500,
+            publication_timeout: oer_time::Duration::from_micros(7_500),
         },
     );
     tx.set_ht_duplicate_certification_request(Some(request));
@@ -220,7 +220,10 @@ fn idle_ap_tx_lends_and_resumes_the_exact_ordinary_owner() {
     assert_eq!(resources.slot.state(), TxSlotState::Free);
 
     let tx = ApTx::resume(resources, parked);
-    assert_eq!(tx.publication_timeout_micros(), 7_500);
+    assert_eq!(
+        tx.publication_timeout(),
+        oer_time::Duration::from_micros(7_500)
+    );
     assert_eq!(tx.ht_duplicate_certification_request(), Some(request));
     assert_eq!(tx.queue_state(), MacTxQueueState::Ready);
     assert!(tx.try_into_resources().is_ok());
@@ -241,7 +244,7 @@ fn ap_aggregate_config_is_protected_by_bss_rules_not_by_its_length() {
             timer: Timer,
         },
         ApTxConfig {
-            publication_timeout_micros: 1_000,
+            publication_timeout: oer_time::Duration::from_micros(1_000),
         },
     );
     let rate = HtRate::new(
@@ -286,7 +289,7 @@ fn beacon_is_one_publication_and_resources_return_only_after_completion() {
     let mut tx = ApTx::new(
         resources,
         ApTxConfig {
-            publication_timeout_micros: 1_000,
+            publication_timeout: oer_time::Duration::from_micros(1_000),
         },
     );
     let mut hardware = Hardware {
@@ -331,7 +334,7 @@ fn aggregate_retry_uses_the_next_edca_contention_window() {
     let mut tx = ApTx::new(
         resources,
         ApTxConfig {
-            publication_timeout_micros: 1_000,
+            publication_timeout: oer_time::Duration::from_micros(1_000),
         },
     );
     let rate = HtRate::new(

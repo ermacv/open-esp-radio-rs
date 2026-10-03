@@ -329,7 +329,7 @@ pub struct LowerMacConfig {
     /// The channel the radio is tuned to.
     pub channel: WifiChannel,
     /// Executor watchdog of one publication.
-    pub publication_timeout_micros: u64,
+    pub publication_timeout: oer_time::Duration,
 }
 
 /// One lent transmit buffer: a whole ordinary TX slot, whose DMA buffer
@@ -445,12 +445,10 @@ impl<S: AmpduBacking, const BUFFER_SIZE: usize, const AMPDU_SLOTS: usize>
 
     /// The pending deadline of a published attempt, and whether it is the
     /// end of a timeout abort's settle.
-    const fn deadline(&self) -> Option<(u64, bool)> {
+    const fn deadline(&self) -> Option<(oer_time::Instant, bool)> {
         match self {
-            Self::Mpdu(queued) => Some((queued.deadline_micros(), queued.abort_settling())),
-            Self::Ampdu(published) => {
-                Some((published.deadline_micros(), published.abort_settling()))
-            }
+            Self::Mpdu(queued) => Some((queued.deadline(), queued.abort_settling())),
+            Self::Ampdu(published) => Some((published.deadline(), published.abort_settling())),
             Self::HeldMpdu { .. } | Self::HeldAmpdu { .. } => None,
         }
     }
@@ -602,15 +600,15 @@ where
     }
 
     /// The radio clock: the ordinary TX owner's timer.
-    pub fn now_micros(&self) -> u64 {
-        self.tx.now().as_micros()
+    pub fn now(&self) -> oer_time::Instant {
+        self.tx.now()
     }
 
     /// The earliest deadline of a published attempt or of the timeout
     /// abort settling, which the runtime turns into [`WifiTxWake::Deadline`].
     /// While an abort settles, no other queue's deadline comes before its
     /// end: that queue's abort waits for it.
-    pub fn next_deadline_micros(&self) -> Option<u64> {
+    pub fn next_deadline(&self) -> Option<oer_time::Instant> {
         let deadlines = || {
             self.queues
                 .iter()
@@ -920,7 +918,7 @@ where
                 access_category: attempt.access_category,
                 initial_rate: common.rate,
                 publication_limit: 1,
-                publication_timeout_micros: self.config.publication_timeout_micros,
+                publication_timeout: self.config.publication_timeout,
             },
             hardware_mic_length: common.hardware_mic_length,
             hardware_key_selector: common.hardware_key_selector,
@@ -997,7 +995,7 @@ where
                     }
                     Work::Ampdu(published) => {
                         let settling = published.abort_settling();
-                        let now = self.tx.now().as_micros();
+                        let now = self.tx.now();
                         match ampdu::service(
                             hardware,
                             published,
@@ -1515,8 +1513,8 @@ where
             hardware,
             buffer,
             plan,
-            self.tx.now().as_micros(),
-            self.config.publication_timeout_micros,
+            self.tx.now(),
+            self.config.publication_timeout,
         )
         .map_err(LowerMacFault::Ampdu)
     }

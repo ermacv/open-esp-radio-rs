@@ -172,23 +172,23 @@ pub struct EspNowLongRangeUnsupported {
 // CAPABILITY: wifi-frequency-tx-power-antenna-ftm-and-esp-now-esp-now-v1-v2-plaintext
 pub struct EspNowTxConfig {
     unicast_publication_limit: u8,
-    publication_timeout_micros: u64,
+    publication_timeout: u64,
 }
 
 impl EspNowTxConfig {
     pub const fn new(
         unicast_publication_limit: u8,
-        publication_timeout_micros: u64,
+        publication_timeout: u64,
     ) -> Result<Self, EspNowTxConfigError> {
         if unicast_publication_limit == 0 {
             return Err(EspNowTxConfigError::ZeroPublicationLimit);
         }
-        if publication_timeout_micros == 0 {
+        if publication_timeout == 0 {
             return Err(EspNowTxConfigError::ZeroPublicationTimeout);
         }
         Ok(Self {
             unicast_publication_limit,
-            publication_timeout_micros,
+            publication_timeout,
         })
     }
 
@@ -196,8 +196,8 @@ impl EspNowTxConfig {
         self.unicast_publication_limit
     }
 
-    pub const fn publication_timeout_micros(self) -> u64 {
-        self.publication_timeout_micros
+    pub const fn publication_timeout(self) -> u64 {
+        self.publication_timeout
     }
 }
 
@@ -558,7 +558,9 @@ where
                     access_category: WmmAccessCategory::Voice,
                     initial_rate,
                     publication_limit,
-                    publication_timeout_micros: config.publication_timeout_micros,
+                    publication_timeout: oer_time::Duration::from_micros(
+                        config.publication_timeout,
+                    ),
                 },
                 hardware_mic_length: 0,
                 // The portable handoff has no encrypted variant and therefore

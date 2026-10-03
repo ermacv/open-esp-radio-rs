@@ -695,11 +695,10 @@ where
                     });
                     self.exchange_started_micros = Some(started);
                 }
-                let deadline_micros = ordinary
+                let deadline = ordinary
                     .now()
-                    .as_micros()
-                    .saturating_add(ordinary.publication_timeout_micros());
-                self.aggregate_phase = Some(AggregateServicePhase::Published(deadline_micros));
+                    .saturating_add(ordinary.publication_timeout());
+                self.aggregate_phase = Some(AggregateServicePhase::Published(deadline));
                 #[cfg(any(feature = "diagnostics", test))]
                 control.observe_ht_aggregate(
                     policy.rate(),
@@ -829,9 +828,10 @@ where
         if let Some(accounting) = self.airtime.as_mut() {
             accounting.publish_standby();
         }
-        let now = ordinary.now().as_micros();
         self.aggregate_phase = Some(AggregateServicePhase::Published(
-            now.saturating_add(ordinary.publication_timeout_micros()),
+            ordinary
+                .now()
+                .saturating_add(ordinary.publication_timeout()),
         ));
         #[cfg(any(feature = "diagnostics", test))]
         {

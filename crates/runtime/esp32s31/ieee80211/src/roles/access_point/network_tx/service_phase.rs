@@ -6,8 +6,8 @@ use super::{AccessPointDatapathError, AggregateTxServiceEvent, ApAmpduError, Wif
 /// future alongside the DMA transaction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum AggregateServicePhase {
-    Published(u64),
-    AbortSettling(u64),
+    Published(oer_time::Instant),
+    AbortSettling(oer_time::Instant),
     ResetRequired,
     /// The aggregate's agreement ended and its missing MPDUs leave as
     /// ordinary frames; the ordinary owner's deadline and completion drive it.
@@ -25,15 +25,18 @@ pub(super) enum AggregateServiceAction {
 }
 
 impl AggregateServicePhase {
-    pub(super) fn deadline(self) -> u64 {
+    pub(super) fn deadline(self) -> oer_time::Instant {
         match self {
             Self::Published(deadline) | Self::AbortSettling(deadline) => deadline,
-            Self::ResetRequired | Self::Unaggregating | Self::RequestingBlockAck => u64::MAX,
+            // Never: these phases wait for an event, not a time.
+            Self::ResetRequired | Self::Unaggregating | Self::RequestingBlockAck => {
+                oer_time::Instant::from_micros(u64::MAX)
+            }
         }
     }
 
-    pub(super) fn after_abort(now: u64) -> Result<Self, AccessPointDatapathError> {
-        now.checked_add(16)
+    pub(super) fn after_abort(now: oer_time::Instant) -> Result<Self, AccessPointDatapathError> {
+        now.checked_add(oer_time::Duration::from_micros(16))
             .map(Self::AbortSettling)
             .ok_or(AccessPointDatapathError::Aggregate(
                 ApAmpduError::DeadlineOverflow,
@@ -43,7 +46,7 @@ impl AggregateServicePhase {
     pub(super) fn action(
         self,
         wake: WifiTxWake,
-        now: impl FnOnce() -> Result<u64, AccessPointDatapathError>,
+        now: impl FnOnce() -> Result<oer_time::Instant, AccessPointDatapathError>,
     ) -> Result<AggregateServiceAction, AccessPointDatapathError> {
         match self {
             Self::ResetRequired => Err(AccessPointDatapathError::Aggregate(

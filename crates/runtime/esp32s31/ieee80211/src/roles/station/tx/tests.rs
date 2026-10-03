@@ -265,7 +265,7 @@ fn idle_aggregate_returns_ordinary_and_storage_for_station_teardown() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            completion_timeout_us: 250_000,
+            completion_timeout: oer_time::Duration::from_micros(250_000),
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )
@@ -322,7 +322,7 @@ fn idle_station_tx_lends_physical_owners_without_losing_role_state() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            completion_timeout_us: 250_000,
+            completion_timeout: oer_time::Duration::from_micros(250_000),
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )
@@ -414,7 +414,7 @@ fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
         AggregateTxConfig {
             rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs0, HeGuardIntervalAndLtf::TwoLtf800Ns)),
             frame_limit: TEST_SLOTS as u8,
-            completion_timeout_us: 250_000,
+            completion_timeout: oer_time::Duration::from_micros(250_000),
             he_txop_limit: HeEdcaTxopLimit::from_units_32_us(5).unwrap(),
         },
     )
@@ -499,7 +499,7 @@ fn malformed_first_frame_reaches_ordinary_validation_before_aggregate_metadata()
         AggregateTxConfig {
             rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns)),
             frame_limit: TEST_SLOTS as u8,
-            completion_timeout_us: 250_000,
+            completion_timeout: oer_time::Duration::from_micros(250_000),
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )
@@ -553,7 +553,7 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
         AggregateTxConfig {
             rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns)),
             frame_limit: TEST_SLOTS as u8,
-            completion_timeout_us: 250_000,
+            completion_timeout: oer_time::Duration::from_micros(250_000),
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )
@@ -573,7 +573,7 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
     }));
     #[cfg(feature = "tx-wait-probe")]
     {
-        assert_eq!(tx.next_deadline_micros(), Some(5_000));
+        assert_eq!(tx.next_deadline(), Some(5_000));
         {
             let mut wait = core::pin::pin!(tx.wait_deadline());
             assert!(wait.as_mut().poll(&mut context()).is_ready());
@@ -582,7 +582,7 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
             tx.service(&mut hardware, WifiTxWake::Deadline),
             Ok(WifiTxProgress::Pending)
         );
-        assert_eq!(tx.next_deadline_micros(), Some(10_000));
+        assert_eq!(tx.next_deadline(), Some(10_000));
         assert_eq!(
             hardware.he_publications, 1,
             "observation must not republish the aggregate"
@@ -625,7 +625,7 @@ fn aggregate_uses_exact_ba_tid_and_defers_a_different_wmm_successor() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            completion_timeout_us: 250_000,
+            completion_timeout: oer_time::Duration::from_micros(250_000),
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )
@@ -724,7 +724,7 @@ fn negotiated_video_txop_bounds_he_aggregate_and_selects_video_queue() {
         AggregateTxConfig {
             rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns)),
             frame_limit: TEST_SLOTS as u8,
-            completion_timeout_us: 250_000,
+            completion_timeout: oer_time::Duration::from_micros(250_000),
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )
@@ -818,7 +818,7 @@ fn he_aggregate_above_the_txop_threshold_uses_rts_and_survives_a_cts_timeout() {
         AggregateTxConfig {
             rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns)),
             frame_limit: TEST_SLOTS as u8,
-            completion_timeout_us: 250_000,
+            completion_timeout: oer_time::Duration::from_micros(250_000),
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )
@@ -943,7 +943,7 @@ fn peer_advertised_tiny_he_txop_cannot_wrap_into_aggregate_capacity() {
         AggregateTxConfig {
             rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns)),
             frame_limit: TEST_SLOTS as u8,
-            completion_timeout_us: 250_000,
+            completion_timeout: oer_time::Duration::from_micros(250_000),
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )
@@ -1023,7 +1023,7 @@ fn negotiated_amsdu_pairs_network_frames_inside_the_block_ack_window() {
                 HtChannelWidth::Mhz40,
             )),
             frame_limit: TEST_SLOTS as u8,
-            completion_timeout_us: 250_000,
+            completion_timeout: oer_time::Duration::from_micros(250_000),
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )
@@ -1074,7 +1074,7 @@ fn aggregate_never_exceeds_the_peer_negotiated_block_ack_window() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            completion_timeout_us: 250_000,
+            completion_timeout: oer_time::Duration::from_micros(250_000),
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )
@@ -1140,7 +1140,7 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            completion_timeout_us: 250_000,
+            completion_timeout: oer_time::Duration::from_micros(250_000),
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )
@@ -1284,7 +1284,7 @@ fn exhausted_ba_generation_invalidates_a_software_prepared_aggregate_before_publ
         AggregateTxConfig {
             rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns)),
             frame_limit: TEST_SLOTS as u8,
-            completion_timeout_us: 250_000,
+            completion_timeout: oer_time::Duration::from_micros(250_000),
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )
@@ -1361,7 +1361,7 @@ fn ordinary_control_tx_cannot_admit_a_standby_aggregate() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            completion_timeout_us: 250_000,
+            completion_timeout: oer_time::Duration::from_micros(250_000),
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )
@@ -1407,7 +1407,7 @@ fn rejected_standby_preparation_preserves_the_hardware_owned_primary() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            completion_timeout_us: 250_000,
+            completion_timeout: oer_time::Duration::from_micros(250_000),
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )
@@ -1481,7 +1481,7 @@ fn aggregate_abort_retains_frames_until_deadline_and_quarantines_failed_detach()
             AggregateTxConfig {
                 rate: TxPhyRate::Ht(TEST_RATE),
                 frame_limit: TEST_SLOTS as u8,
-                completion_timeout_us: 250_000,
+                completion_timeout: oer_time::Duration::from_micros(250_000),
                 he_txop_limit: HeEdcaTxopLimit::DEFAULT,
             },
         )
@@ -1489,25 +1489,28 @@ fn aggregate_abort_retains_frames_until_deadline_and_quarantines_failed_detach()
         tx.set_block_ack_window(0, Some(TEST_SLOTS as u16));
         tx.start_network(&mut hardware, first, &network.tx_consumer())
             .unwrap();
-        let completion_deadline = tx.next_deadline_micros().unwrap();
+        let completion_deadline = tx.next_deadline().unwrap();
         assert_eq!(
             tx.service(&mut hardware, WifiTxWake::Deadline),
             Ok(WifiTxProgress::Pending)
         );
-        assert_eq!(tx.next_deadline_micros(), Some(completion_deadline));
+        assert_eq!(tx.next_deadline(), Some(completion_deadline));
         assert_eq!(hardware.abort_requests, 0);
 
         let timeout = WifiTxWake::Interrupt {
             events: EVENT_TX_TIMEOUT,
         };
-        let abort_started = tx.ordinary.now().as_micros();
+        let abort_started = tx.ordinary.now();
         assert_eq!(
             tx.service(&mut hardware, timeout),
             Ok(WifiTxProgress::Pending)
         );
-        let deadline = tx.next_deadline_micros().unwrap();
-        assert_eq!(deadline, abort_started + AMPDU_ABORT_SETTLE_US);
-        assert_eq!(tx.ordinary.now().as_micros(), abort_started);
+        let deadline = tx.next_deadline().unwrap();
+        assert_eq!(
+            deadline,
+            abort_started.checked_add(AMPDU_ABORT_SETTLE).unwrap()
+        );
+        assert_eq!(tx.ordinary.now(), abort_started);
         assert_eq!(tx.active_network_frame_count(), 2);
         assert_eq!(network.tx_consumer().promotion_capacity(), 1);
         tx = match tx.try_into_parts() {
@@ -1517,7 +1520,7 @@ fn aggregate_abort_retains_frames_until_deadline_and_quarantines_failed_detach()
         hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
         embassy_futures::block_on(
             tx.ordinary
-                .wait_until(oer_time::Instant::from_micros(deadline - 1)),
+                .wait_until(oer_time::Instant::from_micros(deadline.as_micros() - 1)),
         );
         for wake in [
             timeout,
@@ -1527,13 +1530,13 @@ fn aggregate_abort_retains_frames_until_deadline_and_quarantines_failed_detach()
             },
         ] {
             assert_eq!(tx.service(&mut hardware, wake), Ok(WifiTxProgress::Pending));
-            assert_eq!(tx.next_deadline_micros(), Some(deadline));
+            assert_eq!(tx.next_deadline(), Some(deadline));
             assert_eq!(network.tx_consumer().promotion_capacity(), 1);
         }
         assert_eq!(hardware.abort_requests, 1);
         assert_eq!(hardware.timeout_detaches, 0);
         embassy_futures::block_on(tx.wait_deadline());
-        assert_eq!(tx.ordinary.now().as_micros(), deadline);
+        assert_eq!(tx.ordinary.now().as_micros(), deadline.as_micros());
         let result = tx.service(&mut hardware, WifiTxWake::Deadline);
         assert_eq!(hardware.timeout_detaches, 1);
         assert_eq!(hardware.ht_publications, 1);
@@ -1574,7 +1577,7 @@ fn block_ack_completion_releases_all_referenced_network_leases() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            completion_timeout_us: 250_000,
+            completion_timeout: oer_time::Duration::from_micros(250_000),
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )
@@ -1654,7 +1657,7 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            completion_timeout_us: 250_000,
+            completion_timeout: oer_time::Duration::from_micros(250_000),
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )
@@ -1740,7 +1743,7 @@ fn one_missing_wmm_ht_mpdu_keeps_tid_queue_sequence_and_pn_in_ordinary_retry() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            completion_timeout_us: 250_000,
+            completion_timeout: oer_time::Duration::from_micros(250_000),
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )
@@ -1859,7 +1862,7 @@ fn an_agreement_ended_mid_exchange_sends_the_missing_mpdus_individually() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            completion_timeout_us: 250_000,
+            completion_timeout: oer_time::Duration::from_micros(250_000),
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )

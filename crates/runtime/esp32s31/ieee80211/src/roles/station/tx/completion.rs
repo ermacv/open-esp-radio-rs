@@ -20,7 +20,7 @@ where
 {
     /// Service one captured event synchronously. Pending timeout-abort keeps
     /// the aggregate owners in this state machine, never in a suspended future.
-    /// The executor or fused owner uses `next_deadline_micros` to wait.
+    /// The executor or fused owner uses `next_deadline` to wait.
     pub fn service<H: HtAmpduHardware>(
         &mut self,
         hardware: &mut H,
@@ -159,7 +159,7 @@ where
         hardware: &mut H,
         active: AggregateActive<SLOTS>,
     ) -> Result<WifiTxProgress, AggregateTxError> {
-        if self.ordinary.now().as_micros() < active.deadline_micros {
+        if self.ordinary.now() < active.deadline {
             self.active = ConnectedTxActive::AbortSettling(active);
             return Ok(WifiTxProgress::Pending);
         }
@@ -195,12 +195,12 @@ where
     ) -> Result<WifiTxProgress, AggregateTxError> {
         #[cfg(feature = "tx-wait-probe")]
         if let Some(observer) = self.observer {
-            let now = self.ordinary.now().as_micros();
+            let now = self.ordinary.now();
             if let Some((elapsed_micros, timer_lateness_micros)) = active.wait_probe.sample(now) {
                 let queue = active.traffic.queue().hardware_index();
                 observer.observe_wait_probe(crate::diagnostics::aggregate_tx::TxWaitSample {
                     deadline_wake: matches!(wake, WifiTxWake::Deadline),
-                    at_micros: now,
+                    at_micros: now.as_micros(),
                     elapsed_micros,
                     timer_lateness_micros,
                     first_sequence: active.first_sequence,
@@ -272,7 +272,7 @@ where
             AggregateTxServiceEvent::HardwareTimeout | AggregateTxServiceEvent::ExecutorDeadline
         ) {
             if service_event == AggregateTxServiceEvent::ExecutorDeadline
-                && self.ordinary.now().as_micros() < active.deadline_micros
+                && self.ordinary.now() < active.deadline
             {
                 self.active = ConnectedTxActive::Aggregate(active);
                 return Ok(WifiTxProgress::Pending);
@@ -291,16 +291,11 @@ where
                     },
                 );
             }
-            let Some(deadline_micros) = self
-                .ordinary
-                .now()
-                .as_micros()
-                .checked_add(AMPDU_ABORT_SETTLE_US)
-            else {
+            let Some(deadline) = self.ordinary.now().checked_add(AMPDU_ABORT_SETTLE) else {
                 self.ampdu.active_mut().require_reset(cookie)?;
                 return Err(AggregateTxError::DeadlineOverflow);
             };
-            active.deadline_micros = deadline_micros;
+            active.deadline = deadline;
             self.active = ConnectedTxActive::AbortSettling(active);
             return Ok(WifiTxProgress::Pending);
         }

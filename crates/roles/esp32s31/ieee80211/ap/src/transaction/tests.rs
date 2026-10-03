@@ -171,7 +171,7 @@ fn unschedulable_beacon_reports_preparation_failure_without_publication() {
             timer: Timer,
         },
         ApTxConfig {
-            publication_timeout_micros: 1_000,
+            publication_timeout: oer_time::Duration::from_micros(1_000),
         },
     );
 
@@ -218,7 +218,7 @@ fn prepared_beacon_becomes_evidence_only_after_terminal_success() {
             timer: Timer,
         },
         ApTxConfig {
-            publication_timeout_micros: 1_000,
+            publication_timeout: oer_time::Duration::from_micros(1_000),
         },
     );
 
@@ -322,7 +322,7 @@ fn mixed_bss_protects_ordinary_data_with_cts_to_self_at_a_dsss_rate() {
             timer: Timer,
         },
         ApTxConfig {
-            publication_timeout_micros: 1_000,
+            publication_timeout: oer_time::Duration::from_micros(1_000),
         },
     );
     let mut first = [0_u8; 18];

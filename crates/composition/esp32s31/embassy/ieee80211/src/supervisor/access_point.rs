@@ -444,7 +444,7 @@ impl ProductionWifiEpochRunner {
             engine,
             transmit,
             ApTxConfig {
-                publication_timeout_micros: TX_COMPLETION_TIMEOUT_US,
+                publication_timeout: TX_COMPLETION_TIMEOUT,
             },
         );
         let (receive, protocol_rx) = access_point_rx_pipeline(

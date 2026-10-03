@@ -103,7 +103,7 @@ use oer_esp32s31_ieee80211_sta::connected_control::{
     ConnectedDisconnectReason, NetworkTxPowerReport,
 };
 
-const AMPDU_ABORT_SETTLE_US: u64 = 16;
+const AMPDU_ABORT_SETTLE: oer_time::Duration = oer_time::Duration::from_micros(16);
 const HE_TRIGGER_DATA_TID: u8 = 0;
 
 /// Control-plane notification for the current station TX BlockAck state.
@@ -168,7 +168,7 @@ pub struct AggregateTxConfig {
     /// Maximum descriptors claimed for one aggregate.
     pub frame_limit: u8,
     /// Executor watchdog for each hardware publication.
-    pub completion_timeout_us: u64,
+    pub completion_timeout: oer_time::Duration,
     /// HE duration/APEP ceiling selected from negotiated EDCA policy.
     pub he_txop_limit: HeEdcaTxopLimit,
 }
@@ -297,7 +297,7 @@ struct AggregateActive<const SLOTS: usize> {
     retry: AmpduRetryState<SLOTS>,
     original_subframes: u8,
     /// Next deadline for the enclosing published/abort-settling phase.
-    deadline_micros: u64,
+    deadline: oer_time::Instant,
     #[cfg(any(feature = "diagnostics", test))]
     first_publication_micros: Option<u64>,
     #[cfg(feature = "tx-wait-probe")]

@@ -78,7 +78,7 @@ pub struct SingleMpduTxConfig {
     /// publication budget.
     pub control_schedule: RateScheduleRef,
     /// Watchdog applied independently to each hardware publication.
-    pub publication_timeout_micros: u64,
+    pub publication_timeout: oer_time::Duration,
 }
 
 /// Rate and publication budget of one network data MPDU, selected per frame
@@ -591,7 +591,7 @@ where
                         access_category,
                         initial_rate: selection.rate,
                         publication_limit: selection.publication_limit,
-                        publication_timeout_micros: self.config.publication_timeout_micros,
+                        publication_timeout: self.config.publication_timeout,
                     },
                     hardware_mic_length,
                     hardware_key_selector: self.security.hardware_key_selector(),
@@ -645,7 +645,7 @@ where
                         initial_rate: select_schedule_retry_rate(schedule, 0)
                             .expect("the control schedule starts with a legacy rate"),
                         publication_limit: schedule_publication_limit(schedule),
-                        publication_timeout_micros: self.config.publication_timeout_micros,
+                        publication_timeout: self.config.publication_timeout,
                     },
                     hardware_mic_length: 0,
                     hardware_key_selector: 0,
@@ -679,7 +679,7 @@ where
                 initial_rate: select_schedule_retry_rate(schedule, 0)
                     .expect("every recovered control schedule starts with a legacy rate"),
                 publication_limit: schedule_publication_limit(schedule),
-                publication_timeout_micros: config.publication_timeout_micros,
+                publication_timeout: config.publication_timeout,
             },
             OrdinaryRetryRatePolicy::Schedule(schedule),
         )
@@ -777,7 +777,7 @@ where
                         access_category: traffic.access_category,
                         initial_rate: selection.rate,
                         publication_limit: selection.publication_limit,
-                        publication_timeout_micros: self.config.publication_timeout_micros,
+                        publication_timeout: self.config.publication_timeout,
                     },
                     hardware_mic_length,
                     hardware_key_selector,
@@ -1156,8 +1156,8 @@ where
         self.ordinary.wait_deadline()
     }
 
-    pub fn next_deadline_micros(&self) -> Option<u64> {
-        self.ordinary.next_deadline_micros()
+    pub fn next_deadline(&self) -> Option<oer_time::Instant> {
+        self.ordinary.next_deadline()
     }
 
     /// Consume one IRQ/deadline edge and retain or release DMA ownership.

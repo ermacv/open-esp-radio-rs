@@ -319,18 +319,22 @@ fn slot() -> Pin<&'static mut TxSlot<512>> {
 }
 
 fn install(port: &Port, accept_retune: bool) -> &'static std::sync::Mutex<Vec<WifiChannel>> {
-    install_core(port, accept_retune, 250_000)
+    install_core(
+        port,
+        accept_retune,
+        oer_time::Duration::from_micros(250_000),
+    )
 }
 
 /// Install with an already expired publication watchdog.
-fn install_with_timeout(port: &Port, publication_timeout_micros: u64) {
-    install_core(port, true, publication_timeout_micros);
+fn install_with_timeout(port: &Port, publication_timeout: oer_time::Duration) {
+    install_core(port, true, publication_timeout);
 }
 
 fn install_core(
     port: &Port,
     accept_retune: bool,
-    publication_timeout_micros: u64,
+    publication_timeout: oer_time::Duration,
 ) -> &'static std::sync::Mutex<Vec<WifiChannel>> {
     let tuned = std::boxed::Box::leak(std::boxed::Box::new(std::sync::Mutex::new(Vec::new())));
     let core = LowerMacCore::new(
@@ -345,7 +349,7 @@ fn install_core(
         LowerMacConfig {
             station_address: STATION,
             channel: WifiChannel::mhz20(6).unwrap(),
-            publication_timeout_micros,
+            publication_timeout,
         },
     );
     assert!(
@@ -705,7 +709,7 @@ fn the_runner_of_a_poisoned_port_does_not_spin_on_an_expired_deadline() {
     std::thread::spawn(move || {
         let port: &'static Port =
             std::boxed::Box::leak(std::boxed::Box::new(Port::new(ModelTimer)));
-        install_with_timeout(port, 0);
+        install_with_timeout(port, oer_time::Duration::from_micros(0));
         port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
         let _ = next(port);
         assert_eq!(submit(port, attempt(port, 1, &data_frame())), Ok(Ok(())));
@@ -734,7 +738,7 @@ fn the_runner_services_a_kept_deadline_once_per_wake() {
     std::thread::spawn(move || {
         let port: &'static Port =
             std::boxed::Box::leak(std::boxed::Box::new(Port::new(ModelTimer)));
-        install_with_timeout(port, 0);
+        install_with_timeout(port, oer_time::Duration::from_micros(0));
         port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
         let _ = next(port);
         assert_eq!(submit(port, attempt(port, 1, &data_frame())), Ok(Ok(())));
@@ -850,7 +854,7 @@ fn install_ampdu(port: &AmpduPort) -> &'static Backings {
         LowerMacConfig {
             station_address: STATION,
             channel: WifiChannel::mhz20(6).unwrap(),
-            publication_timeout_micros: 250_000,
+            publication_timeout: oer_time::Duration::from_micros(250_000),
         },
     );
     let tuned = std::boxed::Box::leak(std::boxed::Box::new(std::sync::Mutex::new(Vec::new())));

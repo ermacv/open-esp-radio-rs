@@ -179,7 +179,7 @@ fn run(case: Case) {
                 timer: Timer::default(),
             },
             ApTxConfig {
-                publication_timeout_micros: 1000,
+                publication_timeout: oer_time::Duration::from_micros(1000),
             },
         );
         let mut rx = [0; 512];
@@ -325,7 +325,9 @@ fn run(case: Case) {
                 .publish(ordinary, &mut hardware)
                 .unwrap();
             owner.airtime.as_mut().unwrap().publish_active();
-            owner.aggregate_phase = Some(AggregateServicePhase::Published(1000));
+            owner.aggregate_phase = Some(AggregateServicePhase::Published(
+                oer_time::Instant::from_micros(1000),
+            ));
             // Reserve the successor while this exchange still owns hardware.
             owner
                 .airtime

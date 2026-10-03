@@ -207,7 +207,7 @@ fn make_tx<'a>(
                 access_category: LegacyTxQueue::BestEffort.access_category(),
                 control_schedule:
                     oer_esp32s31_ieee80211_mac::rate::control::DEFAULT_CONTROL_SCHEDULE,
-                publication_timeout_micros: 250_000,
+                publication_timeout: oer_time::Duration::from_micros(250_000),
             },
         },
     )
@@ -865,8 +865,11 @@ fn timeout_retains_dma_until_settle_deadline_without_waiting_or_republication() 
         tx.service(&mut hardware, timeout),
         Ok(WifiTxProgress::Pending)
     );
-    let deadline = tx.next_deadline_micros().unwrap();
-    assert_eq!(deadline, tx.ordinary.timer.now_micros() + 16);
+    let deadline = tx.next_deadline().unwrap();
+    assert_eq!(
+        deadline,
+        oer_time::Instant::from_micros(tx.ordinary.timer.now_micros() + 16)
+    );
     assert_eq!(tx.ordinary.slot_state(), TxSlotState::HardwareOwned);
     assert_eq!(tx.queue_state(), MacTxQueueState::Backpressured);
     assert!(tx.ordinary.buffer_mut().is_err());
@@ -875,7 +878,7 @@ fn timeout_retains_dma_until_settle_deadline_without_waiting_or_republication() 
     // An interrupt from the aborted exchange must not detach early or
     // turn the timeout into a successful completion.
     hardware.completion = Some(completion(0));
-    tx.ordinary.timer.set_micros(deadline - 1);
+    tx.ordinary.timer.set_micros(deadline.as_micros() - 1);
     for wake in [
         timeout,
         WifiTxWake::Deadline,
@@ -884,17 +887,17 @@ fn timeout_retains_dma_until_settle_deadline_without_waiting_or_republication() 
         },
     ] {
         assert_eq!(tx.service(&mut hardware, wake), Ok(WifiTxProgress::Pending));
-        assert_eq!(tx.next_deadline_micros(), Some(deadline));
+        assert_eq!(tx.next_deadline(), Some(deadline));
     }
     assert_eq!(hardware.abort_requests, 1);
     assert_eq!(hardware.timeout_detaches, 0);
-    tx.ordinary.timer.set_micros(deadline);
+    tx.ordinary.timer.set_micros(deadline.as_micros());
     assert_eq!(
         tx.service(&mut hardware, WifiTxWake::Deadline),
         Ok(WifiTxProgress::Complete)
     );
     assert_eq!(hardware.timeout_detaches, 1);
-    assert_eq!(tx.next_deadline_micros(), None);
+    assert_eq!(tx.next_deadline(), None);
     assert_eq!(tx.queue_state(), MacTxQueueState::Ready);
     assert_eq!(hardware.publications, 1);
     assert_eq!(
@@ -921,7 +924,10 @@ fn cancelling_poll_wait_keeps_abort_state_and_dma_ownership() {
     hardware.timeout = true;
     tx.ordinary.timer.pending_wait.set(true);
     {
-        let mut service = core::pin::pin!(tx.ordinary.service_polling(&mut hardware, 1));
+        let mut service = core::pin::pin!(
+            tx.ordinary
+                .service_polling(&mut hardware, oer_time::Duration::from_micros(1))
+        );
         let mut context = core::task::Context::from_waker(core::task::Waker::noop());
         assert!(service.as_mut().poll(&mut context).is_pending());
     }
@@ -929,8 +935,8 @@ fn cancelling_poll_wait_keeps_abort_state_and_dma_ownership() {
     assert_eq!(tx.ordinary.slot_state(), TxSlotState::HardwareOwned);
     assert_eq!(hardware.abort_requests, 1);
     assert_eq!(hardware.timeout_detaches, 0);
-    let deadline = tx.next_deadline_micros().unwrap();
-    tx.ordinary.timer.set_micros(deadline);
+    let deadline = tx.next_deadline().unwrap();
+    tx.ordinary.timer.set_micros(deadline.as_micros());
     assert_eq!(
         tx.service(&mut hardware, WifiTxWake::Deadline),
         Ok(WifiTxProgress::Complete)
@@ -988,14 +994,14 @@ fn executor_deadline_quarantines_without_drop_panic() {
         tx.start(&mut hardware, &ethernet(), data_selection(2))
             .unwrap();
 
-        let deadline = tx.next_deadline_micros().unwrap();
-        tx.ordinary.timer.set_micros(deadline - 1);
+        let deadline = tx.next_deadline().unwrap();
+        tx.ordinary.timer.set_micros(deadline.as_micros() - 1);
         assert_eq!(
             tx.service(&mut hardware, WifiTxWake::Deadline),
             Ok(WifiTxProgress::Pending)
         );
         assert_eq!(hardware.abort_requests, 0);
-        tx.ordinary.timer.set_micros(deadline);
+        tx.ordinary.timer.set_micros(deadline.as_micros());
 
         assert_eq!(
             tx.service(&mut hardware, WifiTxWake::Deadline),
@@ -1074,8 +1080,8 @@ fn an_idle_or_reached_deadline_wait_yields_to_the_executor_once() {
     // A deadline already reached yields once as well.
     tx.start(&mut hardware, &ethernet(), data_selection(2))
         .unwrap();
-    let deadline = tx.next_deadline_micros().unwrap();
-    tx.ordinary.timer.set_micros(deadline);
+    let deadline = tx.next_deadline().unwrap();
+    tx.ordinary.timer.set_micros(deadline.as_micros());
     {
         let mut wait = core::pin::pin!(tx.ordinary.wait_deadline());
         assert!(wait.as_mut().poll(&mut context).is_pending());

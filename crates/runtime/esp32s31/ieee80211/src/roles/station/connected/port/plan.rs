@@ -27,7 +27,7 @@ pub struct ConnectedStaConfig {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ConnectedStaTxPolicy {
     pub rate: ConnectedStaRateConfig,
-    pub completion_timeout_us: u64,
+    pub completion_timeout: oer_time::Duration,
     pub aggregate_frame_limit: u8,
     pub aggregate_he_txop_limit: HeEdcaTxopLimit,
     /// Optional recovered queue/MPLEN/BSR preparation for AP Trigger frames.
@@ -255,7 +255,7 @@ impl ConnectedStaPlan {
             management_protection: self.link.management_protection,
             access_category: WmmAccessCategory::BestEffort,
             control_schedule: self.control_schedule,
-            publication_timeout_micros: self.config.tx.completion_timeout_us,
+            publication_timeout: self.config.tx.completion_timeout,
         }
     }
 
@@ -263,7 +263,7 @@ impl ConnectedStaPlan {
         AggregateTxConfig {
             rate: self.aggregate_tx_rate,
             frame_limit: self.config.tx.aggregate_frame_limit,
-            completion_timeout_us: self.config.tx.completion_timeout_us,
+            completion_timeout: self.config.tx.completion_timeout,
             he_txop_limit: self.config.tx.aggregate_he_txop_limit,
         }
     }

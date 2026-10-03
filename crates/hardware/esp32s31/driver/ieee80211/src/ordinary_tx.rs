@@ -37,7 +37,7 @@ pub const TX_FCS_SIZE: usize = 4;
 /// Settle interval between the forced-CCA edge of a queue's timeout abort
 /// and its detach (`SOURCE[PROMOTED_LMAC_TX]`, see
 /// `TxSlot::begin_timeout_abort`).
-pub(crate) const TX_ABORT_SETTLE_US: u64 = 16;
+pub(crate) const TX_ABORT_SETTLE: oer_time::Duration = oer_time::Duration::from_micros(16);
 /// Metadata bit set by the complete HE S-MPDU preparation leaf before DMA
 /// publication. It selects the single-MPDU container geometry while the low
 /// twenty bits retain MPDU+MIC+FCS length.
@@ -348,8 +348,8 @@ impl<const BUFFER_SIZE: usize> QueuedSingleAttempt<'_, BUFFER_SIZE> {
 
     /// The publication deadline, or the end of the abort settle while one
     /// runs.
-    pub const fn deadline_micros(&self) -> u64 {
-        self.active.deadline_micros
+    pub const fn deadline(&self) -> oer_time::Instant {
+        self.active.deadline
     }
 
     /// Whether the queue's timeout abort is settling: CCA is forced until
@@ -402,10 +402,10 @@ struct ActiveTx {
     response: MacLegacyTxResponse,
     /// Protection selected for the current publication.
     protection: TxProtectionDecision,
-    completion_timeout_us: u64,
+    completion_timeout: oer_time::Duration,
     /// Next service boundary: publication expiry or abort-settle expiry.
     /// The previous phase's deadline is no longer actionable after transition.
-    deadline_micros: u64,
+    deadline: oer_time::Instant,
     phase: OrdinaryTxPhase,
     retries: OrdinaryTxRetryReport,
 }
@@ -613,8 +613,8 @@ where
     }
 
     /// The next service deadline, including an in-progress hardware abort.
-    pub fn next_deadline_micros(&self) -> Option<u64> {
-        self.active.as_ref().map(|active| active.deadline_micros)
+    pub fn next_deadline(&self) -> Option<oer_time::Instant> {
+        self.active.as_ref().map(|active| active.deadline)
     }
 
     /// Wait for the next service deadline. A deadline already reached, and
@@ -622,9 +622,7 @@ where
     /// poll again after this wait, and the time contract would otherwise end
     /// the wait at once and let them run without yielding.
     pub fn wait_deadline(&mut self) -> impl Future<Output = ()> + '_ {
-        let deadline = self
-            .next_deadline_micros()
-            .map_or_else(|| self.timer.now(), Instant::from_micros);
+        let deadline = self.next_deadline().unwrap_or_else(|| self.timer.now());
         let reached = self.timer.now() >= deadline;
         async move {
             if reached {
@@ -845,8 +843,7 @@ where
         {
             return self.finish_aborted_attempt(hardware, active, false);
         }
-        let expired = matches!(wake, WifiTxWake::Deadline)
-            && self.timer.now().as_micros() >= active.deadline_micros;
+        let expired = matches!(wake, WifiTxWake::Deadline) && self.timer.now() >= active.deadline;
         if (events & EVENT_TX_TIMEOUT != 0 || expired) && may_begin_timeout_abort {
             if self
                 .slot
@@ -989,8 +986,8 @@ where
             receiver,
             response,
             protection: TxProtectionDecision::UNPROTECTED,
-            completion_timeout_us: plan.exchange.publication_timeout_micros,
-            deadline_micros: 0,
+            completion_timeout: plan.exchange.publication_timeout,
+            deadline: oer_time::Instant::EPOCH,
             phase: OrdinaryTxPhase::Published,
             retries: OrdinaryTxRetryReport::default(),
         };
@@ -1004,7 +1001,7 @@ where
     /// Consume one IRQ/deadline edge and retain or release DMA ownership.
     ///
     /// This call never waits. A timeout starts a retained abort-settle phase
-    /// and returns `Pending`; the caller waits until `next_deadline_micros`
+    /// and returns `Pending`; the caller waits until `next_deadline`
     /// (or another event) before servicing again. An early wake cannot finish
     /// abort or release the descriptor.
     pub fn service<H: TxHardware>(
@@ -1043,9 +1040,7 @@ where
             return self.reset_required(active, TxResetReason::CompletionInterruptWithoutState);
         }
         if tx_events == EVENT_TX_TIMEOUT || matches!(wake, WifiTxWake::Deadline) {
-            if matches!(wake, WifiTxWake::Deadline)
-                && self.timer.now().as_micros() < active.deadline_micros
-            {
+            if matches!(wake, WifiTxWake::Deadline) && self.timer.now() < active.deadline {
                 self.active = Some(active);
                 return Ok(WifiTxProgress::Pending);
             }
@@ -1086,25 +1081,18 @@ where
     pub async fn service_polling<H: TxHardware>(
         &mut self,
         hardware: &mut H,
-        poll_interval_us: u64,
+        poll_interval: oer_time::Duration,
     ) -> Result<WifiTxProgress, OrdinaryTxError> {
         let progress = self.poll_once(hardware)?;
         if progress == WifiTxProgress::Pending {
-            let next_poll = self
-                .timer
-                .now()
-                .as_micros()
-                .saturating_add(poll_interval_us);
+            let next_poll = self.timer.now().saturating_add(poll_interval);
             let deadline = match self.active.as_ref() {
                 Some(active) if matches!(active.phase, OrdinaryTxPhase::AbortSettling) => {
-                    active.deadline_micros
+                    active.deadline
                 }
-                _ => self
-                    .next_deadline_micros()
-                    .unwrap_or(next_poll)
-                    .min(next_poll),
+                _ => self.next_deadline().unwrap_or(next_poll).min(next_poll),
             };
-            self.timer.wait_until(Instant::from_micros(deadline)).await;
+            self.timer.wait_until(deadline).await;
         }
         Ok(progress)
     }
@@ -1131,7 +1119,7 @@ where
         {
             return self.start_abort_settle(active);
         }
-        if self.timer.now().as_micros() >= active.deadline_micros {
+        if self.timer.now() >= active.deadline {
             return self.reset_required(active, TxResetReason::ExecutorDeadline);
         }
         self.active = Some(active);
@@ -1171,13 +1159,12 @@ where
         mut active: ActiveTx,
     ) -> Result<WifiTxProgress, OrdinaryTxError> {
         // Start the interval after the hardware abort request has completed.
-        let Some(deadline_micros) = self.timer.now().as_micros().checked_add(TX_ABORT_SETTLE_US)
-        else {
+        let Some(deadline) = self.timer.now().checked_add(TX_ABORT_SETTLE) else {
             self.slot.as_mut().require_reset(active.cookie)?;
             return Err(OrdinaryTxError::DeadlineOverflow);
         };
         active.phase = OrdinaryTxPhase::AbortSettling;
-        active.deadline_micros = deadline_micros;
+        active.deadline = deadline;
         self.active = Some(active);
         Ok(WifiTxProgress::Pending)
     }
@@ -1189,7 +1176,7 @@ where
     ) -> Result<WifiTxProgress, OrdinaryTxError> {
         // Late completion and repeated IRQs cannot bypass the hardware settle
         // interval. Abort detach, not completion acknowledgement, owns release.
-        if self.timer.now().as_micros() < active.deadline_micros {
+        if self.timer.now() < active.deadline {
             self.active = Some(active);
             return Ok(WifiTxProgress::Pending);
         }
@@ -1358,11 +1345,10 @@ where
         hardware: &mut H,
         active: &mut ActiveTx,
     ) -> Result<(), OrdinaryTxError> {
-        let deadline_micros = self
+        let deadline = self
             .timer
             .now()
-            .as_micros()
-            .checked_add(active.completion_timeout_us)
+            .checked_add(active.completion_timeout)
             .ok_or(OrdinaryTxError::DeadlineOverflow)?;
         let rate = active.retry.current_rate()?;
         let metadata = self.slot.as_mut().buffer_mut()?;
@@ -1390,7 +1376,7 @@ where
         };
         active.protection = protection;
         active.cookie = cookie;
-        active.deadline_micros = deadline_micros;
+        active.deadline = deadline;
         Ok(())
     }
 

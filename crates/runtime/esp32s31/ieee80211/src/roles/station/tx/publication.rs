@@ -158,14 +158,18 @@ where
         }
 
         #[cfg(any(feature = "diagnostics", test))]
-        let preparation_started = self.observer.map(|_| self.ordinary.now().as_micros());
+        let preparation_started = self.observer.map(|_| self.ordinary.now());
         let prepared = self.prepare_aggregate(first, network, traffic)?;
         #[cfg(any(feature = "diagnostics", test))]
         self.observe_prepared(&prepared);
         #[cfg(any(feature = "diagnostics", test))]
         if let (Some(observer), Some(started)) = (self.observer, preparation_started) {
             observer.observe(AggregateTxObservation::PreparationCompleted {
-                micros: self.ordinary.now().as_micros().wrapping_sub(started),
+                micros: self
+                    .ordinary
+                    .now()
+                    .saturating_duration_since(started)
+                    .as_micros(),
             });
         }
         self.activate_prepared(prepared)?;
@@ -482,7 +486,7 @@ where
             config,
             retry: prepared.retry,
             original_subframes: prepared.original_subframes,
-            deadline_micros: 0,
+            deadline: oer_time::Instant::EPOCH,
             #[cfg(any(feature = "diagnostics", test))]
             first_publication_micros: None,
             #[cfg(feature = "tx-wait-probe")]
@@ -647,7 +651,7 @@ where
         }
 
         #[cfg(any(feature = "diagnostics", test))]
-        let started = self.observer.map(|_| self.ordinary.now().as_micros());
+        let started = self.observer.map(|_| self.ordinary.now());
         assert!(
             self.ampdu.swap_active_standby(),
             "standby presence checked before preparation"
@@ -661,7 +665,12 @@ where
             None => self.prepare_aggregate(first, network, traffic),
         };
         #[cfg(any(feature = "diagnostics", test))]
-        let elapsed = started.map(|started| self.ordinary.now().as_micros().wrapping_sub(started));
+        let elapsed = started.map(|started| {
+            self.ordinary
+                .now()
+                .saturating_duration_since(started)
+                .as_micros()
+        });
         if result.is_err() && self.cookie.is_some() {
             self.cancel_current_reservation();
         }
@@ -1106,9 +1115,9 @@ where
         hardware: &mut H,
         active: &mut AggregateActive<SLOTS>,
     ) -> Result<(), AggregateTxError> {
-        let publication_started = self.ordinary.now().as_micros();
+        let publication_started = self.ordinary.now();
         let deadline = publication_started
-            .checked_add(self.config.completion_timeout_us)
+            .checked_add(self.config.completion_timeout)
             .ok_or(AggregateTxError::DeadlineOverflow)?;
         match active.config {
             AmpduTxConfig::Ht(config) => self.ampdu.active_mut().submit(
@@ -1126,20 +1135,22 @@ where
         }
         #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
-            let publication_finished = self.ordinary.now().as_micros();
+            let publication_finished = self.ordinary.now();
             if active.first_publication_micros.is_none() {
-                active.first_publication_micros = Some(publication_started);
+                active.first_publication_micros = Some(publication_started.as_micros());
             }
             #[cfg(feature = "tx-wait-probe")]
             {
                 active.wait_probe = wait_probe::Schedule::new(publication_started);
             }
             observer.observe(AggregateTxObservation::Published {
-                at_micros: publication_started,
-                program_micros: publication_finished.wrapping_sub(publication_started),
+                at_micros: publication_started.as_micros(),
+                program_micros: publication_finished
+                    .saturating_duration_since(publication_started)
+                    .as_micros(),
             });
         }
-        active.deadline_micros = deadline;
+        active.deadline = deadline;
         Ok(())
     }
 

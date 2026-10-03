@@ -50,7 +50,7 @@ fn exercise_probe_completion(status: u8) {
             timer: Timer,
         },
         ApTxConfig {
-            publication_timeout_micros: 1_000,
+            publication_timeout: oer_time::Duration::from_micros(1_000),
         },
     );
 

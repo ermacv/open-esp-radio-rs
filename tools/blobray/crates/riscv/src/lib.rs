@@ -7,7 +7,7 @@ use oer_riscv_decode::{Extension, Extensions, Inst, Instruction};
 pub struct RiscvDecoder;
 impl FunctionDecoder for RiscvDecoder {
     fn identity(&self) -> &'static str {
-        "rv32imafc-zba-zbb-zbs-zcb-zcmp/rv-asm-0.2.1/policy-4"
+        "rv32imafc-zba-zbb-zbs-zcb-zcmp/rv-asm-0.2.1/policy-5"
     }
     fn unsupported_flow(&self, bytes: &[u8]) -> UnsupportedFlow {
         // ISA structure only, not CSR/privileged execution support. Zicsr:

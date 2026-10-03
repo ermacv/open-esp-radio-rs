@@ -13,9 +13,10 @@ shorter than the instruction. `Extensions::ALL` is the ESP32-S31's
 base with M, A and C.
 
 rv-asm decodes RV32I with M, A and C (`Instruction::Base`). The crate corrects
-its unsigned C.ANDI immediate to the ISA's signed six-bit value, as the
+its unsigned C.ANDI immediate to the ISA's signed six-bit value and rejects the
+reserved C.ADDI16SP with a zero immediate, which rv-asm decodes, as the
 [C extension](https://docs.riscv.org/reference/isa/v20260120/unpriv/c-st-ext.html)
-defines it. The `extensions` module decodes the forms rv-asm lacks
+defines them. The `extensions` module decodes the forms rv-asm lacks
 (`Instruction::Extension`): the Zba, Zbb and Zbs integer forms, the Zcb loads,
 stores and arithmetic, and the Zcmp `cm.push`, `cm.pop`, `cm.popret`,
 `cm.popretz`, `cm.mvsa01` and `cm.mva01s`. It classifies the Zcmp and Zcb

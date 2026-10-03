@@ -23,8 +23,8 @@ to `Opaque`, and every other form to `None`. Neither executor profile runs
 floating point; the Rv32imac profile decodes RV32IMAC alone, and the full
 profile stops at an F form as unsupported.
 
-The decoder, semantic and execution identities (`policy-4`, `values-8` and
-`execution-13`, each over rv-asm 0.2.1) cover every behavior below; any
+The decoder, semantic and execution identities (`policy-5`, `values-9` and
+`execution-14`, each over rv-asm 0.2.1) cover every behavior below; any
 change to decoding, lifting or concrete execution changes its identity.
 
 Lifting returns bounded typed operations over RV32 registers. Loads, stores and

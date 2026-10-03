@@ -6426,24 +6426,6 @@ code = "b4fba893ada15b01751b183416befe2fb0d4d0399a2e8468c603e0f29149d35e"
 [[function]]
 artifact = "rom"
 member = ""
-symbol = "pm_parse_beacon"
-code = "42317c99b4b06257c9f55b22cbef5396485f19471fb24c2f072dfb5258521dd4"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "pm_scale_listen_interval"
-code = "02ae10257c058b212bf692155dc72af035660734be579788a01546f8d1876a80"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "pm_tbtt_process"
-code = "6057fe53bb32c6a41f0bcbf3b204b326227519ef29173697a48f89e76b0e9d14"
-
-[[function]]
-artifact = "rom"
-member = ""
 symbol = "pm_twt_set_target_tsf"
 code = "ea31a60204d92f4fe1b99bfad5390f1cc5d85686bc672f11468ab2bd31192d2a"
 

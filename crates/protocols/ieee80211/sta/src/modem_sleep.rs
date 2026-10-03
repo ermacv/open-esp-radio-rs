@@ -985,13 +985,14 @@ impl ModemSleep {
         // associated station missed the previous beacon, or a beacon was
         // still expected when its slice ended under coexistence.
         //
-        // SOURCE(esp32s31): complete pinned `libpp.a[pm.o]::pm_tbtt_process`
+        // SOURCE(esp32s31): complete pinned `libpp[pm.o]::pm_tbtt_process`
         // stores the MAC local time (`WIFI_MAC_LOCAL_TIME`, 32 bits) read
         // while it handles the TBTT event as the 64-bit anchor at `g_pm[96]`
         // (high word zero); `libpp.a[pm_coex.o]::
         // pm_coex_recalculate_wifi_time_slice` places the station at
         // `(WIFI_MAC_LOCAL_TIME - anchor) % (overall period * interval * 100)`.
         // The anchor is the handling of the event, not the TBTT itself.
+        // The ROM's copy of the TBTT handler is not reviewed.
         //
         // Known difference: the vendor counts in the MAC local time, this
         // model in monotonic time. Both count the crystal's microseconds, so
@@ -1189,7 +1190,7 @@ impl ModemSleep {
     /// below one DTIM, to the nearest divisor of it; a tie rounds up. A
     /// change under max-modem reprograms the TBTT at the next beacon.
     ///
-    /// SOURCE(esp32s31): complete pinned `libpp.a[pm.o]::pm_scale_listen_interval`
+    /// SOURCE(esp32s31): complete pinned `libpp[pm.o]::pm_scale_listen_interval`
     /// at esp32-wifi-lib `af55a0ca`: `wifi_nvs_get_sta_listen_interval() *
     /// 102400 / g_pm[52]` truncated to 16 bits (0 becomes 1), the rounding
     /// against `g_pm[11]`, and on a change the store to `g_pm[34]` with,
@@ -1199,12 +1200,23 @@ impl ModemSleep {
     /// configuration byte `g_pm_cfg[86]` is set, not modelled). Its tail
     /// call `pm_on_sample_beacon` serves the beacon-offset feature, which
     /// this model does not run. Callers here: `pm_start` (DTIM 1) and
-    /// `pm_parse_beacon` (first beacon, beacon interval or DTIM change).
+    /// `libpp[pm.o]::pm_parse_beacon` (first beacon, beacon interval or
+    /// DTIM change).
     /// The vendor also rescales when a probe response carries a new beacon
     /// interval (`pm_on_probe_resp_rx`, which this model does not handle)
     /// and when the listen interval is reconfigured while associated
     /// (`ic_update_listen_interval`; here the power mode is fixed for a
     /// whole association).
+    ///
+    /// The ROM carries its own copies, which this model does not follow.
+    /// Its scaling computes the same value and store, then calls two of its
+    /// function-table entries (offsets 1428, then 1472 as a tail call)
+    /// whatever the outcome, where the library copy runs the power update
+    /// only on a change under max-modem. Vendor builds link the library
+    /// copy, whose definition takes precedence over a ROM symbol the linker
+    /// script only provides (not checked against the pinned script). The
+    /// ROM's beacon parser, which calls through such tables, is not
+    /// reviewed.
     fn scale_listen_interval(&mut self, coex: CoexView, actions: &mut PmActions) {
         let scaled = scaled_listen_interval(
             self.sleep_type.listen_interval().get(),

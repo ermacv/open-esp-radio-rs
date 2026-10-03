@@ -21,7 +21,7 @@ cache, provider registry, or correspondence between library versions. The
 
 | Contract | Implementation | Regression coverage |
 | --- | --- | --- |
-| Failed record growth releases the incoming payload without losing old records | [record memory](../../crates/domain/src/record_memory.rs) | `failed_record_growth_rolls_back_payload_and_allows_reuse` in the same module |
+| Failed record growth releases the incoming payload without losing old records | [record memory](../../../riscv/model/src/record_memory.rs) | `failed_record_growth_rolls_back_payload_and_allows_reuse` in the same module |
 | Inventory keeps repeated members distinct and broken framing visible | [captured executables](../../crates/application/src/captured.rs) | [inventory tests](../../cli/tests/inventory.rs) |
 | Exact data ranges keep their provenance and reject unmapped ranges | [data export](../../crates/application/src/data.rs) | [data tests](../../cli/tests/data.rs) |
 | Section relocation admission supports small extents | [prepared object](../../crates/artifacts/src/function.rs) | `ten_thousand_section_relocations_fit_small_function_capacity` in [analysis tests](../../cli/tests/analysis.rs) |

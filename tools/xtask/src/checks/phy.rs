@@ -1,28 +1,30 @@
 //! Audit the compiled PHY library: it must link no vendor radio archive or
-//! ROM ABI, and its dependency graph must stay within the reviewed packages.
+//! ROM ABI, and the packages its build compiles must stay within the
+//! reviewed lists.
+//!
+//! The packages are read from the `compiler-artifact` messages of the PHY
+//! build itself, not from `cargo metadata`: metadata resolves features across
+//! the whole workspace, so a feature another package enables (a derive, say)
+//! would appear in the graph although the PHY build never compiles it.
 
-use std::{collections::BTreeSet, io::Cursor, path::PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    io::Cursor,
+    path::PathBuf,
+};
 
-use cargo_metadata::Message;
+use cargo_metadata::{Message, TargetKind, camino::Utf8PathBuf};
 
-use super::{artifacts, common};
+use super::artifacts;
 use crate::{Context, Result, cargo};
 use oer_process as process;
 
 const PHY: &str = "crates/hardware/esp32s31/phy/Cargo.toml";
+/// Packages the PHY build may compile for the chip target.
 const PHY_PACKAGES: &[&str] = &[
     // The zero-valid marker `oer-memory`'s zeroed statics use (the one
-    // esp-hal's `#[ram(zeroed)]` requires); a no-std trait crate, without its
-    // derive here.
+    // esp-hal's `#[ram(zeroed)]` requires); a no-std trait crate.
     "bytemuck",
-    // bytemuck's derive, which the Wi-Fi DMA, MAC and composition crates
-    // enable; the workspace-wide feature resolution carries it into this
-    // graph. A host proc macro: it adds no code to the PHY artifact.
-    "bytemuck_derive",
-    "proc-macro2",
-    "quote",
-    "syn",
-    "unicode-ident",
     "critical-section",
     "oer-memory",
     "oer-esp32s31-hal",
@@ -61,6 +63,66 @@ const PHY_PACKAGES: &[&str] = &[
     "oer-radio-clock",
     "vcell",
 ];
+
+/// Proc macros the PHY build may run on the host: they add no code of their
+/// own to the artifact but generate some of it.
+const PHY_HOST_PACKAGES: &[&str] = &[];
+
+/// The packages one build compiled: for the chip target, and as proc macros
+/// on the host.
+#[derive(Debug, Default, PartialEq)]
+struct BuiltPackages {
+    chip: BTreeSet<String>,
+    host: BTreeSet<String>,
+}
+
+/// Collect the packages a build's `compiler-artifact` messages name. A
+/// package is chip-built when an output lies under the target triple's
+/// directory; build scripts and the host libraries behind them are not
+/// published code and are skipped.
+fn built_packages(
+    messages: &[u8],
+    names: &BTreeMap<Utf8PathBuf, String>,
+    target: &str,
+) -> Result<BuiltPackages> {
+    let mut built = BuiltPackages::default();
+    for message in Message::parse_stream(Cursor::new(messages)) {
+        let Message::CompilerArtifact(artifact) = message? else {
+            continue;
+        };
+        let name = names
+            .get(&artifact.manifest_path)
+            .ok_or_else(|| format!("built package {} has no metadata", artifact.manifest_path))?
+            .clone();
+        if artifact.target.kind.contains(&TargetKind::ProcMacro) {
+            built.host.insert(name);
+        } else if artifact
+            .filenames
+            .iter()
+            .any(|file| file.components().any(|part| part.as_str() == target))
+        {
+            built.chip.insert(name);
+        }
+    }
+    Ok(built)
+}
+
+/// Every chip-built package and every proc macro must be reviewed.
+fn check_built_packages(built: &BuiltPackages) -> Result<()> {
+    for package in &built.chip {
+        if !PHY_PACKAGES.contains(&package.as_str()) {
+            return Err(format!("unexpected package in source-only PHY build: {package}").into());
+        }
+    }
+    for package in &built.host {
+        if !PHY_HOST_PACKAGES.contains(&package.as_str()) {
+            return Err(
+                format!("unexpected host proc macro in source-only PHY build: {package}").into(),
+            );
+        }
+    }
+    Ok(())
+}
 
 fn phy_artifact(messages: &[u8]) -> Result<PathBuf> {
     let mut artifacts = BTreeSet::new();
@@ -108,15 +170,13 @@ fn phy(ctx: &Context) -> Result<PathBuf> {
     artifacts::audit_phy(ctx, &artifact)?;
     let manifest = ctx.root.join(PHY);
     let graph = cargo::metadata(ctx, &manifest, &[], Some(&target), true)?;
-    for package in common::closure(&graph, &graph.root(&manifest)?)? {
-        if !PHY_PACKAGES.contains(&package.name.as_str()) {
-            return Err(format!(
-                "unexpected package in source-only PHY graph: {}",
-                package.name
-            )
-            .into());
-        }
-    }
+    let names = graph
+        .metadata
+        .packages
+        .iter()
+        .map(|package| (package.manifest_path.clone(), package.name.to_string()))
+        .collect();
+    check_built_packages(&built_packages(&output.stdout, &names, &target)?)?;
     Ok(artifact)
 }
 

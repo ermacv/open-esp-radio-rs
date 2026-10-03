@@ -10,7 +10,8 @@
     "subcommands": [
       "audit-targets",
       "register-accesses",
-      "function-records"
+      "function-records",
+      "field-accesses"
     ]
   },
   {
@@ -55,6 +56,22 @@
     "path": [
       "blobray",
       "function-records"
+    ],
+    "subcommands": []
+  },
+  {
+    "flags": [
+      "--input",
+      "--offset",
+      "--width",
+      "--working-memory-mib",
+      "--timeout-secs",
+      "--max-work-units"
+    ],
+    "forwards": false,
+    "path": [
+      "blobray",
+      "field-accesses"
     ],
     "subcommands": []
   }

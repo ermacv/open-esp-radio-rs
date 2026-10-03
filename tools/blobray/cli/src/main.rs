@@ -66,6 +66,22 @@ enum Command {
         #[command(flatten)]
         limits: InProcessOptions,
     },
+    /// Analyze every function of captured libraries in this process and report
+    /// every memory access that lands on one field offset, as a root symbol,
+    /// register or stack and the path of loaded pointers to the field.
+    FieldAccesses {
+        /// Repeat ROLE=PATH; a function names its input by position.
+        #[arg(long = "input", required = true, value_name = "ROLE=PATH")]
+        inputs: Vec<OsString>,
+        /// The field's byte displacement from its pointer or root.
+        #[arg(long, allow_negative_numbers = true)]
+        offset: i64,
+        /// Only accesses of this many bytes.
+        #[arg(long)]
+        width: Option<u8>,
+        #[command(flatten)]
+        limits: InProcessOptions,
+    },
 }
 
 const MIB: u64 = 1024 * 1024;
@@ -150,7 +166,127 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             functions,
             limits,
         } => function_records(inputs, functions, limits, format),
+        Command::FieldAccesses {
+            inputs,
+            offset,
+            width,
+            limits,
+        } => field_accesses(inputs, offset, width, limits, format),
     }
+}
+
+/// Analyze the libraries `inputs` name in this process and print every
+/// access of the field at `offset` (of `width` bytes, when given).
+fn field_accesses(
+    inputs: Vec<OsString>,
+    offset: i64,
+    width: Option<u8>,
+    limits: InProcessOptions,
+    format: Format,
+) -> Result<ExitCode> {
+    let inputs = inputs
+        .into_iter()
+        .map(parse_input)
+        .collect::<Result<Vec<_>>>()?;
+    let executables = inputs
+        .iter()
+        .map(|input| {
+            std::fs::read(&input.path)
+                .map(app::in_process::Executable::new)
+                .map_err(io_error)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let memory = limits.memory()?;
+    let mut control = limits.control();
+    let mut functions = Vec::new();
+    let mut blocked = Vec::new();
+    let mut gaps = 0_u64;
+    app::library::analyze_library(
+        &executables,
+        &blobray_backend_riscv::RiscvDecoder,
+        &memory,
+        &mut control,
+        &mut |outcome, _| {
+            match outcome {
+                app::library::LibraryOutcome::Analyzed(analyzed) => {
+                    let accesses =
+                        blobray_cli::field::field_accesses(analyzed.records, offset, width);
+                    if !accesses.is_empty() {
+                        functions.push(blobray_cli::wire::FieldAccessFunction {
+                            function: analyzed.function.clone(),
+                            accesses,
+                        });
+                    }
+                }
+                app::library::LibraryOutcome::Blocked { function, .. } => {
+                    blocked.push(function.clone());
+                }
+                app::library::LibraryOutcome::Gap { .. } => gaps += 1,
+            }
+            Ok(())
+        },
+    )?;
+    let mut out = std::io::BufWriter::new(std::io::stdout().lock());
+    match format {
+        Format::Json => {
+            let document = blobray_cli::wire::FieldAccessesDocument {
+                schema: blobray_cli::wire::FIELD_ACCESSES_SCHEMA,
+                inputs: inputs
+                    .iter()
+                    .zip(&executables)
+                    .map(
+                        |(input, executable)| blobray_cli::wire::RegisterAccessInput {
+                            role: input.role.clone(),
+                            sha256: executable.id().clone(),
+                        },
+                    )
+                    .collect(),
+                offset,
+                width,
+                functions,
+                blocked,
+                gaps,
+            };
+            serde_json::to_writer(&mut out, &document).map_err(json_error)?;
+            writeln!(out).map_err(io_error)?;
+        }
+        Format::Human => {
+            for function in &functions {
+                let name = function
+                    .function
+                    .name
+                    .as_deref()
+                    .map(String::from_utf8_lossy)
+                    .unwrap_or_default();
+                for access in &function.accesses {
+                    let root = match &access.root {
+                        blobray_cli::field::FieldRoot::Symbol {
+                            name: Some(name), ..
+                        } => name.clone(),
+                        other => format!("{other:?}"),
+                    };
+                    writeln!(
+                        out,
+                        "{name} (input {}) +{}: {:?} width {} {root} {:?}",
+                        function.function.input,
+                        access.offset,
+                        access.access,
+                        access.width,
+                        access.path,
+                    )
+                    .map_err(io_error)?;
+                }
+            }
+            writeln!(
+                out,
+                "{} functions access the field; {} functions blocked; {gaps} gaps",
+                functions.len(),
+                blocked.len()
+            )
+            .map_err(io_error)?;
+        }
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 /// Analyze the libraries `inputs` name in this process and print the complete

@@ -93,7 +93,7 @@ fn decode(bytes: &[u8]) -> Option<Decoded> {
 }
 impl Executor for RiscvExecutor {
     fn identity(&self) -> &'static str {
-        "rv32imac-zba-zbb-zbs-zcb-zcmp/execution-13/rv-asm-0.2.1"
+        "rv32imac-zba-zbb-zbs-zcb-zcmp/execution-14/rv-asm-0.2.1"
     }
     fn execute(
         &self,
@@ -107,7 +107,7 @@ impl Executor for RiscvExecutor {
 
 impl Executor for Rv32imacExecutor {
     fn identity(&self) -> &'static str {
-        "rv32imac/execution-13/rv-asm-0.2.1"
+        "rv32imac/execution-14/rv-asm-0.2.1"
     }
     fn execute(
         &self,

@@ -87,3 +87,12 @@ fn truncated_and_long_encodings_do_not_decode() {
     assert!(decode(&[0xff, 0xff, 0xff, 0xff], Extensions::ALL).is_none());
     assert!(decode(&[0, 0], Extensions::ALL).is_none());
 }
+
+#[test]
+fn reserved_compressed_stack_adjustment_does_not_decode() {
+    // C.ADDI16SP with nzimm = 0 is reserved; c.addi16sp sp, 16 and the
+    // c.addi sp, 0 HINT are instructions.
+    assert!(decode(&0x6101u16.to_le_bytes(), Extensions::ALL).is_none());
+    assert!(decode(&0x6141u16.to_le_bytes(), Extensions::ALL).is_some());
+    assert!(decode(&0x0101u16.to_le_bytes(), Extensions::ALL).is_some());
+}

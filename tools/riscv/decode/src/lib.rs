@@ -221,6 +221,11 @@ fn decode_any(bytes: &[u8]) -> Option<(Instruction, usize)> {
     if bytes.len() < width {
         return None;
     }
+    // C.ADDI16SP with a zero immediate is reserved; rv-asm 0.2.1 decodes it
+    // as `addi sp, sp, 0`.
+    if half == 0x6101 {
+        return None;
+    }
     let mut code = [0; 4];
     code[..width].copy_from_slice(&bytes[..width]);
     let (inst, compressed) = Inst::decode(u32::from_le_bytes(code), rv_asm::Xlen::Rv32).ok()?;

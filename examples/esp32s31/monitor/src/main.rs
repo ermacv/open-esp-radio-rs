@@ -29,6 +29,10 @@ oer_esp32s31_platform_runtime::interrupt_table! {
     wake: ExecutorWake = FROM_CPU_INTR0 => oer_esp32s31_executor_embassy::wake_handler::<0>, Priority1, ProCpu;
     /// The Embassy time driver's alarm (TIMG0 timer 0).
     alarm: TimeAlarm = TG0_T0_LEVEL => oer_esp32s31_executor_embassy::timer_interrupt, Priority1, ProCpu;
+    /// The Wi-Fi MAC's interrupt.
+    wifi_mac: WifiMac = MODEM_WIFI_MAC => oer::systems::esp32s31::embassy::wifi::mac_interrupt, Priority1, ProCpu;
+    /// The Wi-Fi power interrupt.
+    wifi_power: WifiPower = MODEM_WIFI_PWR => oer::systems::esp32s31::embassy::wifi::power_interrupt, Priority1, ProCpu;
 }
 
 static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
@@ -56,7 +60,8 @@ extern "C" fn runtime_main() -> ! {
     platform_executor::init(OneShotTimer::new(timer_group.timer0), interrupts.alarm);
     TRNG_SOURCE.init(TrngSource::new(peripherals.RNG));
     let trng = Trng::try_new().expect("ESP32-S31 TRNG must have a unique owner");
-    let wifi_platform = EspHalWifiPlatform::new(peripherals.WIFI);
+    let wifi_platform =
+        EspHalWifiPlatform::new(peripherals.WIFI, interrupts.wifi_mac, interrupts.wifi_power);
     let radio_platform = EspHalRadioPlatform::new(
         peripherals.MODEM_SYSCON,
         peripherals.MODEM_LPCON,

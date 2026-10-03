@@ -94,6 +94,12 @@ oer_esp32s31_platform_runtime::interrupt_table! {
     wake: ExecutorWake = FROM_CPU_INTR0 => oer_esp32s31_executor_embassy::wake_handler::<0>, Priority1, ProCpu;
     /// The Embassy time driver's alarm (TIMG0 timer 0).
     alarm: TimeAlarm = TG0_T0_LEVEL => oer_esp32s31_executor_embassy::timer_interrupt, Priority1, ProCpu;
+    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+    /// The Wi-Fi MAC's interrupt.
+    wifi_mac: WifiMac = MODEM_WIFI_MAC => oer_esp32s31_ieee80211_system::mac_interrupt, Priority1, ProCpu;
+    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+    /// The Wi-Fi power interrupt.
+    wifi_power: WifiPower = MODEM_WIFI_PWR => oer_esp32s31_ieee80211_system::power_interrupt, Priority1, ProCpu;
     #[cfg(feature = "open-radio-hil")]
     /// Wakes the core-1 Embassy executor.
     app_wake: AppExecutorWake = FROM_CPU_INTR1 => oer_esp32s31_executor_embassy::wake_handler::<1>, Priority1, AppCpu;
@@ -525,7 +531,11 @@ extern "C" fn runtime_main() -> ! {
                 peripherals.LP_TSENS,
                 peripherals.I2C_ANA_MST,
             ),
-            wifi: oer_esp32s31_ieee80211_system::EspHalWifiPlatform::new(peripherals.WIFI),
+            wifi: oer_esp32s31_ieee80211_system::EspHalWifiPlatform::new(
+                peripherals.WIFI,
+                interrupts.wifi_mac,
+                interrupts.wifi_power,
+            ),
             #[cfg(feature = "wifi-ble-coex")]
             bluetooth_entropy,
         };

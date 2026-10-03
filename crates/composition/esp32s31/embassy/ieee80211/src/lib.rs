@@ -199,6 +199,8 @@ pub use facade::{
 #[cfg(target_arch = "riscv32")]
 pub use interrupts::MacIrqObservation;
 #[cfg(target_arch = "riscv32")]
+pub use interrupts::{mac_interrupt, power_interrupt};
+#[cfg(target_arch = "riscv32")]
 pub use monitor::{
     ESP32S31_MONITOR_CAPTURE_CAPACITY, Esp32s31MonitorBasebandFormat, Esp32s31MonitorPhyInfo,
     MONITOR_CHANNEL_SEQUENCE_CAPACITY, MonitorCapturePolicy, MonitorCaptureStatistics,

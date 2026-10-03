@@ -99,16 +99,15 @@ impl IrqSink for DiagnosticMacIrqSink {
     }
 }
 
-#[esp_hal::handler]
+/// The interrupt-table handler of `MODEM_WIFI_MAC`.
 // The handler must execute while flash access may be unavailable. This is a
-// declarative linker placement at the combined esp-hal/Embassy integration
-// boundary; it performs no raw memory operation.
+// declarative linker placement; it performs no raw memory operation.
 #[allow(
     unsafe_code,
-    reason = "esp-hal requires an unsafe link_section attribute for an IRAM ISR declaration"
+    reason = "an interrupt handler runs from SRAM, which only a link section selects"
 )]
 #[unsafe(link_section = ".rwtext.open_radio_irq")]
-fn mac_interrupt() {
+pub fn mac_interrupt() {
     #[cfg(feature = "task-poll-telemetry")]
     let core0_cycle_started =
         oer_esp32s31_ieee80211_runtime::diagnostics::core0_rx_cycles::cycle_count();
@@ -133,20 +132,20 @@ fn mac_interrupt() {
     }
 }
 
-#[esp_hal::handler]
+/// The interrupt-table handler of `MODEM_WIFI_PWR`.
 #[allow(
     unsafe_code,
-    reason = "esp-hal requires an unsafe link_section attribute for an IRAM ISR declaration"
+    reason = "an interrupt handler runs from SRAM, which only a link section selects"
 )]
 #[unsafe(link_section = ".rwtext.open_radio_irq")]
-fn power_interrupt() {
+pub fn power_interrupt() {
     let _ = service_power_interrupt(&POWER_IRQ_RUNTIME);
 }
 
 /// Construct the reusable interrupt epoch retained by the radio supervisor.
 pub(crate) fn mac_interrupt_epoch(setup: MacInterruptSetup) -> MacInterruptEpoch {
     InterruptEpoch::new(
-        EspHalMacInterruptRoute::new(mac_interrupt, power_interrupt),
+        EspHalMacInterruptRoute::new(),
         setup,
         &IRQ_RUNTIME,
         &POWER_IRQ_RUNTIME,

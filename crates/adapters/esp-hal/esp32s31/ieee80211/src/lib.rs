@@ -9,11 +9,13 @@
 //! CPU interrupt binding and the MAC initializer's platform sources.
 
 use esp_hal::{
-    interrupt::{self, InterruptHandler},
+    interrupt::Priority,
     peripherals::{Interrupt, WIFI},
     rng::Rng,
     system::Cpu,
 };
+use oer_esp32s31_soc_esp_hal::interrupt_table::{self, Route};
+use oer_interrupt_table::Entry;
 
 use oer_esp32s31_hal::coex::CoexPtiTable;
 use oer_esp32s31_phy::PhyTxTargetPowerProfile;
@@ -29,19 +31,46 @@ pub mod mac_interrupt_epoch;
 
 /// Wi-Fi's own MAC platform on the shared radio.
 ///
-/// It retains the virtual `WIFI` singleton, which proves ownership of the
-/// Wi-Fi CPU interrupt lines, and the calibrated TX power profile consumed by
-/// cold MAC initialization. The shared radio-platform singletons belong to
-/// the radio system's `EspHalRadioPlatform`.
+/// It retains the virtual `WIFI` singleton, the routes of its two interrupt
+/// sources in the image's interrupt table and the calibrated TX power profile
+/// consumed by cold MAC initialization. The shared radio-platform singletons
+/// belong to the radio system's `EspHalRadioPlatform`.
 pub struct EspHalWifiPlatform {
     _wifi: WIFI<'static>,
+    mac: Route,
+    power: Route,
     phy_tx_power: Option<PhyTxTargetPowerProfile>,
 }
 
+/// A Wi-Fi interrupt source enabled on another core than the image's
+/// interrupt table routes it to.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WifiInterruptError(pub interrupt_table::Error);
+
 impl EspHalWifiPlatform {
-    pub const fn new(wifi: WIFI<'static>) -> Self {
+    /// `mac` and `power` are the tokens of `MODEM_WIFI_MAC` and
+    /// `MODEM_WIFI_PWR` in the image's interrupt table, whose entries name the
+    /// Wi-Fi system's `mac_interrupt` and `power_interrupt`; another source's
+    /// token does not compile.
+    pub fn new<M, P>(wifi: WIFI<'static>, mac: M, power: P) -> Self
+    where
+        M: Entry<Source = Interrupt, Level = Priority, Core = Cpu>,
+        P: Entry<Source = Interrupt, Level = Priority, Core = Cpu>,
+    {
+        const {
+            assert!(
+                M::SOURCE as u16 == Interrupt::MODEM_WIFI_MAC as u16,
+                "the MAC token is not MODEM_WIFI_MAC's"
+            );
+            assert!(
+                P::SOURCE as u16 == Interrupt::MODEM_WIFI_PWR as u16,
+                "the power token is not MODEM_WIFI_PWR's"
+            );
+        };
         Self {
             _wifi: wifi,
+            mac: Route::new(mac),
+            power: Route::new(power),
             phy_tx_power: None,
         }
     }
@@ -52,23 +81,30 @@ impl EspHalWifiPlatform {
         self.phy_tx_power = Some(profile);
     }
 
-    /// Bind both ESP32-S31 Wi-Fi interrupt lines while this value proves
-    /// ownership of the virtual `WIFI` singleton.
-    pub fn bind_interrupts(&self, mac: InterruptHandler, power: InterruptHandler) {
-        interrupt::bind_handler(Interrupt::MODEM_WIFI_MAC, mac);
-        interrupt::bind_handler(Interrupt::MODEM_WIFI_PWR, power);
+    /// Route both Wi-Fi interrupt sources to their table level on their
+    /// table core.
+    ///
+    /// # Errors
+    ///
+    /// On another core than the table's; nothing is routed then.
+    pub fn enable_interrupts(&self) -> Result<(), WifiInterruptError> {
+        interrupt_table::enable_route(&self.mac).map_err(WifiInterruptError)?;
+        if let Err(error) = interrupt_table::enable_route(&self.power) {
+            interrupt_table::disable_route(&self.mac);
+            return Err(WifiInterruptError(error));
+        }
+        Ok(())
     }
 
-    /// Disable both Wi-Fi CPU interrupt routes on their binding core.
+    /// Silence both Wi-Fi interrupt sources on their table core.
     ///
     /// This closes only the platform routing edge. The caller may retain both
     /// ISR capabilities unchanged for same-epoch resume, or mask/acknowledge
     /// their banks for terminal teardown. It does not establish MAC/DMA or RF
-    /// quiescence. Binding and detachment must occur on the same core.
+    /// quiescence.
     pub fn disable_interrupts(&self) {
-        let cpu = Cpu::current();
-        interrupt::disable(cpu, Interrupt::MODEM_WIFI_MAC);
-        interrupt::disable(cpu, Interrupt::MODEM_WIFI_PWR);
+        interrupt_table::disable_route(&self.mac);
+        interrupt_table::disable_route(&self.power);
     }
 }
 

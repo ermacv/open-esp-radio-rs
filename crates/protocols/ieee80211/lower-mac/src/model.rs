@@ -189,7 +189,7 @@ impl Default for ModelTsf {
         Self {
             set_to: 0,
             set_at: 0,
-            relation: TsfRelation::new(oer_time::Duration::ZERO),
+            relation: TsfRelation::new(0, oer_time::Duration::ZERO),
         }
     }
 }

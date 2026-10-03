@@ -630,6 +630,7 @@ fn connected_runtime_binds_beacon_frontier_but_retains_software_monitor() {
         BSSID,
         false,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     );
     control.enable_beacon_loss(policy);
     control
@@ -683,6 +684,7 @@ fn peer_accepted_explicit_twt_kicks_teardown_into_connected_tx() {
         BSSID,
         false,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     );
     control.enable_individual_twt_requester(
         IndividualTwtRequesterConfig::new(
@@ -961,6 +963,7 @@ fn initial_tx_block_ack_requests_follow_zero_seven_five_and_arm_alarms() {
         BSSID,
         true,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     );
     control.queue_initial_tx_block_ack(2);
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
@@ -1015,6 +1018,7 @@ fn rx_addba_hardware_is_committed_only_after_response_tx_success() {
         BSSID,
         false,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     )
     .with_rx_reorder_commands(reorder_sender);
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
@@ -1106,6 +1110,7 @@ fn failed_rx_addba_response_rolls_back_hardware_and_software() {
         BSSID,
         false,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     )
     .with_rx_reorder_commands(reorder_sender);
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
@@ -1186,6 +1191,7 @@ fn tx_addba_response_and_delba_toggle_he_tid_ownership() {
         BSSID,
         true,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     );
     control.queue_initial_tx_block_ack(1);
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
@@ -1265,6 +1271,7 @@ fn beacon_loss_disconnects_only_after_bounded_active_probes() {
         BSSID,
         true,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     );
     control.enable_beacon_loss(
         StaBeaconLossConfig::new(100, 3, oer_time::Duration::from_micros(307_200)).unwrap(),
@@ -1315,6 +1322,7 @@ fn associated_probe_response_cancels_beacon_loss_recovery() {
         BSSID,
         false,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     );
     control.enable_beacon_loss(
         StaBeaconLossConfig::new(100, 3, oer_time::Duration::from_micros(307_200)).unwrap(),
@@ -1362,6 +1370,7 @@ fn peer_deauthentication_disconnects_with_its_reason_code() {
         BSSID,
         false,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     );
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
@@ -1393,6 +1402,7 @@ fn mailbox_overflow_fails_closed_before_processing_an_incomplete_event_stream() 
         BSSID,
         false,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     );
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
@@ -1433,6 +1443,7 @@ fn shutdown_clears_rx_tx_block_ack_and_discards_late_control_events() {
         BSSID,
         true,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     );
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
@@ -1540,6 +1551,7 @@ fn station_shutdown_preserves_access_point_rx_block_ack_banks() {
         BSSID,
         true,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     );
     control
         .rx_block_ack()
@@ -1583,6 +1595,7 @@ fn beacon_received_on_exact_deadline_refreshes_before_loss_check() {
         BSSID,
         false,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     );
     control.enable_beacon_loss(
         StaBeaconLossConfig::new(100, 3, oer_time::Duration::from_micros(307_200)).unwrap(),
@@ -1631,6 +1644,7 @@ fn connected_beacon_protection_updates_the_tx_bss_facts() {
         BSSID,
         false,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     );
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
@@ -1720,6 +1734,7 @@ fn a_shared_station_leaves_the_air_at_its_slice_end_and_holds_its_frames() {
         BSSID,
         false,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     );
     control.enable_power_management(SleepType::None, join_beacon(), link.bind(&SharedCoex));
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
@@ -1837,6 +1852,7 @@ fn frames_wait_until_the_agent_performed_the_commands_before_them() {
         BSSID,
         false,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     );
     control.enable_power_management(SleepType::None, join_beacon(), link.bind(&SharedCoex));
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
@@ -1867,6 +1883,7 @@ fn a_controlled_stop_wakes_and_sends_one_leaving_deauthentication() {
         BSSID,
         false,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     );
     control.enable_power_management(SleepType::None, join_beacon(), link.bind(&SharedCoex));
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
@@ -1932,6 +1949,7 @@ fn shutdown_stops_power_management_and_hands_the_releases_to_the_agent() {
         BSSID,
         false,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     );
     control.enable_power_management(SleepType::None, join_beacon(), link.bind(&SharedCoex));
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
@@ -2203,6 +2221,7 @@ fn management_protected_control<'a>(
         BSSID,
         false,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     );
     let (supplicant, _ptk) = established_supplicant();
     let group = install_sta_group_ccmp(hardware, 1, &INITIAL_GTK).unwrap();
@@ -2315,6 +2334,7 @@ fn the_station_takes_the_access_point_tsf_at_power_start_and_from_each_beacon() 
         BSSID,
         false,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     );
     // The join beacon arrived 5 ms before power management starts.
     control.enable_power_management(
@@ -2415,6 +2435,7 @@ fn a_beacon_queued_behind_power_inputs_takes_the_next_step() {
         BSSID,
         false,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     );
     control.enable_power_management(SleepType::None, join_beacon(), link.bind(&SharedCoex));
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
@@ -2484,6 +2505,7 @@ fn the_role_writes_the_station_tsf_through_its_owner_at_power_start_and_each_bea
         BSSID,
         false,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     );
     control.enable_power_management(
         SleepType::None,
@@ -2552,4 +2574,57 @@ fn the_role_writes_the_station_tsf_through_its_owner_at_power_start_and_each_bea
     follow(&mut hardware, &mut control, &mut tx, jumped);
     assert_eq!(hardware.station_tsf_writes, 3);
     assert_ne!(control.station_tsf().generation(), started);
+}
+
+/// A MAC local-time counter that holds still.
+#[derive(Clone, Copy)]
+struct HeldCounter(u32);
+
+impl crate::mac_clock::LocalTimeCounter for HeldCounter {
+    fn read(&self) -> u32 {
+        self.0
+    }
+}
+
+#[test]
+fn a_reconnection_starts_a_new_tsf_generation_and_refuses_the_earlier_sample() {
+    use oer_ieee80211_lower_mac::{TsfInstant, TsfProjectionError, TsfSample, VifId, VifTsf};
+    let clock: oer_time_virtual::VirtualClock = oer_time_virtual::VirtualClock::new();
+    let storage = crate::mac_clock::MacClockStorage::<NoopRawMutex, _, _>::new(&clock);
+    let mac = storage.start(HeldCounter(1_000));
+    let connect = |receiver| {
+        ConnectedControl::new(
+            receiver,
+            BSSID,
+            false,
+            StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+            mac.tsf_epoch(),
+        )
+    };
+    let first_resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
+    let (_, first_receiver) = first_resources.split();
+    let first = connect(first_receiver);
+    let earlier = first.station_tsf().generation();
+    let stamp = mac.sample().unwrap().stamp();
+    let sample = TsfSample {
+        tsf: VifTsf::new(VifId(0), TsfInstant::from_micros(1_000_000)),
+        local: stamp,
+        uncertainty: oer_time::Duration::from_micros(1),
+        generation: earlier,
+    };
+    assert!(sample.tsf_at(stamp, earlier).is_ok());
+
+    // The station reconnects: the new association's owner is in a
+    // generation the earlier one never had, and the earlier sample does not
+    // convert in it.
+    drop(first);
+    let second_resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
+    let (_, second_receiver) = second_resources.split();
+    let second = connect(second_receiver);
+    let current = second.station_tsf().generation();
+    assert_ne!(current, earlier);
+    assert_eq!(
+        sample.tsf_at(stamp, current),
+        Err(TsfProjectionError::StaleSample)
+    );
 }

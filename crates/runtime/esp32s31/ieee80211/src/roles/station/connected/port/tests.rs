@@ -292,6 +292,7 @@ fn port_binds_rx_and_control_to_one_validated_peer_plan() {
             receiver,
             reorder_commands: reorder_sender,
             rx_block_ack: &rx_block_ack,
+            tsf_epoch: 1,
             power: None,
         },
     );

@@ -364,6 +364,7 @@ fn install_core(
             station_address: STATION,
             channel: WifiChannel::mhz20(6).unwrap(),
             publication_timeout,
+            tsf_epoch: 1,
         },
     );
     assert!(
@@ -910,6 +911,7 @@ fn install_ampdu(port: &AmpduPort) -> &'static Backings {
             station_address: STATION,
             channel: WifiChannel::mhz20(6).unwrap(),
             publication_timeout: oer_time::Duration::from_micros(250_000),
+            tsf_epoch: 1,
         },
     );
     let tuned = std::boxed::Box::leak(std::boxed::Box::new(std::sync::Mutex::new(Vec::new())));

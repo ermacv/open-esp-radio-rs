@@ -186,10 +186,11 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         peer: [u8; 6],
         he_enabled: bool,
         tx_block_ack: oer_esp32s31_ieee80211_mac::tx::ampdu::StaTxBlockAckSessions,
+        tsf_epoch: u32,
     ) -> Self {
         Self {
             receiver,
-            core: ConnectedControlCore::new(peer, he_enabled, tx_block_ack),
+            core: ConnectedControlCore::new(peer, he_enabled, tx_block_ack, tsf_epoch),
             rx_block_ack: ConnectedRxBlockAck::Local(StaApRxBlockAck::new()),
             rx_reorder_commands: None,
             security: None,
@@ -208,10 +209,11 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         he_enabled: bool,
         tx_block_ack: oer_esp32s31_ieee80211_mac::tx::ampdu::StaTxBlockAckSessions,
         rx_block_ack: &'resources StaApRxBlockAck,
+        tsf_epoch: u32,
     ) -> Self {
         Self {
             receiver,
-            core: ConnectedControlCore::new(peer, he_enabled, tx_block_ack),
+            core: ConnectedControlCore::new(peer, he_enabled, tx_block_ack, tsf_epoch),
             rx_block_ack: ConnectedRxBlockAck::Shared(rx_block_ack),
             rx_reorder_commands: None,
             security: None,

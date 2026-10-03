@@ -649,7 +649,14 @@ pub struct ConnectedControlCore {
 }
 
 impl ConnectedControlCore {
-    pub fn new(peer: [u8; 6], he_enabled: bool, tx_block_ack: StaTxBlockAckSessions) -> Self {
+    /// Control of one association, whose station TSF owner takes
+    /// `tsf_epoch`, a number no other owner took (`MacClockHandle::tsf_epoch`).
+    pub fn new(
+        peer: [u8; 6],
+        he_enabled: bool,
+        tx_block_ack: StaTxBlockAckSessions,
+        tsf_epoch: u32,
+    ) -> Self {
         Self {
             peer,
             he_enabled,
@@ -666,14 +673,15 @@ impl ConnectedControlCore {
             sa_query_random: None,
             sa_query: StationSaQuery::new(),
             left: false,
-            station_tsf: StationTsf::new(),
+            station_tsf: StationTsf::new(tsf_epoch),
             observations: ConnectedControlObservations::default(),
         }
     }
 
     /// The owner of the station TSF writes and its relation. It lives for
     /// one association, whose first write (at the start of power
-    /// management) is a jump.
+    /// management) is a jump; its epoch keeps its generations apart from
+    /// every earlier association's.
     pub const fn station_tsf(&self) -> &StationTsf {
         &self.station_tsf
     }

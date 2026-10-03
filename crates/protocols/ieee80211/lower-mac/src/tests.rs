@@ -825,6 +825,7 @@ fn tsf_values_of_different_interfaces_do_not_combine() {
 
 #[test]
 fn a_tsf_sample_projects_both_ways_with_the_drift_bound() {
+    const CURRENT: TsfGeneration = TsfGeneration { epoch: 2, jump: 7 };
     let sample = TsfSample {
         tsf: VifTsf::new(STATION, TsfInstant::from_micros(10_000_000)),
         local: Ieee80211Stamp {
@@ -832,7 +833,7 @@ fn a_tsf_sample_projects_both_ways_with_the_drift_bound() {
             generation: 3,
         },
         uncertainty: oer_time::Duration::from_micros(2),
-        generation: 7,
+        generation: CURRENT,
     };
     let distance = 1_000_000;
     let drift = (distance * u64::from(TSF_DRIFT_PPM)).div_ceil(1_000_000);
@@ -840,12 +841,12 @@ fn a_tsf_sample_projects_both_ways_with_the_drift_bound() {
         at: Ieee80211Instant::from_micros(500_000 + distance),
         generation: 3,
     };
-    let projected = sample.tsf_at(later).unwrap();
+    let projected = sample.tsf_at(later, CURRENT).unwrap();
     assert_eq!(projected.at.at.as_micros(), 10_000_000 + distance);
     assert_eq!(projected.at.vif, STATION);
     assert_eq!(projected.uncertainty.as_micros(), 2 + drift);
     // The inverse lands on the same radio stamp.
-    let back = sample.local_at(projected.at).unwrap().unwrap();
+    let back = sample.local_at(projected.at, CURRENT).unwrap().unwrap();
     assert_eq!(back.at, later);
     assert_eq!(back.uncertainty.as_micros(), 2 + drift);
     // A stamp of another radio-clock generation, a TSF of another
@@ -854,10 +855,26 @@ fn a_tsf_sample_projects_both_ways_with_the_drift_bound() {
         generation: 4,
         ..later
     };
-    assert_eq!(sample.tsf_at(stale), Err(TsfProjectionError::StaleStamp));
+    assert_eq!(
+        sample.tsf_at(stale, CURRENT),
+        Err(TsfProjectionError::StaleStamp)
+    );
+    // A sample of an earlier generation of the relation does not convert.
+    let later_generation = TsfGeneration {
+        jump: CURRENT.jump + 1,
+        ..CURRENT
+    };
+    assert_eq!(
+        sample.tsf_at(later, later_generation),
+        Err(TsfProjectionError::StaleSample)
+    );
+    assert_eq!(
+        sample.local_at(projected.at, later_generation),
+        Ok(Err(TsfProjectionError::StaleSample))
+    );
     assert!(
         sample
-            .local_at(VifTsf::new(ACCESS_POINT, projected.at.at))
+            .local_at(VifTsf::new(ACCESS_POINT, projected.at.at), CURRENT)
             .is_err()
     );
     let before_start = Ieee80211Stamp {
@@ -869,7 +886,7 @@ fn a_tsf_sample_projects_both_ways_with_the_drift_bound() {
             tsf: VifTsf::new(STATION, TsfInstant::from_micros(10)),
             ..sample
         }
-        .tsf_at(before_start),
+        .tsf_at(before_start, CURRENT),
         Err(TsfProjectionError::OutOfRange)
     );
 }
@@ -897,7 +914,7 @@ fn the_model_tsf_advances_with_its_clock_and_a_jump_starts_a_generation() {
 
 #[test]
 fn a_tsf_relation_keeps_its_generation_through_drift_after_missed_beacons() {
-    let mut relation = TsfRelation::new(oer_time::Duration::from_micros(1));
+    let mut relation = TsfRelation::new(4, oer_time::Duration::from_micros(1));
     let tsf = TsfInstant::from_micros;
     let interval = 102_400;
     assert_eq!(relation.set(tsf(0), tsf(1_000_000)), TsfSetKind::Jump);
@@ -926,7 +943,7 @@ fn a_tsf_relation_keeps_its_generation_through_drift_after_missed_beacons() {
 
 #[test]
 fn a_tsf_relation_starts_a_generation_at_a_jump_between_consecutive_beacons() {
-    let mut relation = TsfRelation::new(oer_time::Duration::from_micros(1));
+    let mut relation = TsfRelation::new(4, oer_time::Duration::from_micros(1));
     let tsf = TsfInstant::from_micros;
     let interval = 102_400;
     relation.set(tsf(0), tsf(1_000_000));
@@ -945,4 +962,18 @@ fn a_tsf_relation_starts_a_generation_at_a_jump_between_consecutive_beacons() {
     relation.break_relation();
     assert_ne!(relation.generation(), after_jump);
     assert_eq!(relation.set(tsf(reading), tsf(reading)), TsfSetKind::Jump);
+}
+
+#[test]
+fn tsf_relations_of_different_epochs_never_share_a_generation() {
+    let first = TsfRelation::new(1, oer_time::Duration::ZERO);
+    let mut second = TsfRelation::new(2, oer_time::Duration::ZERO);
+    assert_ne!(first.generation(), second.generation());
+    // Jumps count within an epoch: the second relation's first jump is not
+    // the first relation's.
+    let mut first_jumped = first;
+    first_jumped.break_relation();
+    second.break_relation();
+    assert_eq!(first_jumped.generation().jump, second.generation().jump);
+    assert_ne!(first_jumped.generation(), second.generation());
 }

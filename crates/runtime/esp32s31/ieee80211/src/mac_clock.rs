@@ -194,6 +194,8 @@ struct StorageState<L> {
     /// That start's counter; `None` before the first start.
     counter: Option<L>,
     clock: ClockState,
+    /// The last TSF epoch handed out ([`MacClockHandle::tsf_epoch`]).
+    tsf_epoch: u32,
 }
 
 const FRESH_CLOCK: ClockState = ClockState {
@@ -212,19 +214,28 @@ impl<M: RawMutex, L: LocalTimeCounter + Copy, C: Clock> MacClockStorage<M, L, C>
                 start: 0,
                 counter: None,
                 clock: FRESH_CLOCK,
+                tsf_epoch: 0,
             })),
         }
     }
 
     /// Start the clock of one radio start on its MAC local-time `counter`:
-    /// a fresh timeline in generation 0. Every handle of an earlier start
+    /// a fresh timeline in a generation no earlier start used, so a stamp
+    /// of an earlier start never converts. Every handle of an earlier start
     /// stops reading.
     pub fn start(&self, counter: L) -> MacClockHandle<'_, M, L, C> {
         let start = self.state.lock(|cell| {
             let mut state = cell.get();
+            let generation = match state.counter {
+                Some(_) => state.clock.generation.wrapping_add(1),
+                None => FRESH_CLOCK.generation,
+            };
             state.start = state.start.wrapping_add(1);
             state.counter = Some(counter);
-            state.clock = FRESH_CLOCK;
+            state.clock = ClockState {
+                generation,
+                ..FRESH_CLOCK
+            };
             cell.set(state);
             state.start
         });
@@ -292,6 +303,19 @@ impl<M: RawMutex, L: LocalTimeCounter + Copy, C: Clock> MacClockHandle<'_, M, L,
         self.update(|state, counter, monotonic| {
             read_fresh(state, counter, monotonic, true);
         });
+    }
+
+    /// A TSF epoch no owner of a TSF relation took before
+    /// ([`TsfRelation::new`](oer_ieee80211_lower_mac::TsfRelation::new)):
+    /// one source for every owner, so two never share a generation, across
+    /// reconnections and radio starts.
+    pub fn tsf_epoch(&self) -> u32 {
+        self.storage.state.lock(|cell| {
+            let mut state = cell.get();
+            state.tsf_epoch = state.tsf_epoch.wrapping_add(1);
+            cell.set(state);
+            state.tsf_epoch
+        })
     }
 
     /// Run `f` on this start's clock; `None` once a later start replaced it.

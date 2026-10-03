@@ -17,6 +17,7 @@ use oer_ieee80211_upper_mac::{
     AmpduRetryError as UpperAmpduRetryError, AmpduRetryState as UpperAmpduRetryState,
     ContentionUpdate, MpduRetryState, RetryDecision, RetryOutcome, retry::RetryStateError,
 };
+use oer_time::{RadioDuration, RadioInstant};
 
 use crate::{
     edca::{EdcaAccessPolicy, EdcaContentionParameters, EdcaParametersError, EdcaQueues},
@@ -747,6 +748,9 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
     /// Start at the first Sequence Control value already consumed by the
     /// encoded aggregate, whose MSDUs were committed at
     /// `committed_at_micros`.
+    ///
+    /// Times here count the core's monotonic microseconds, the epoch the
+    /// ESP32-S31 lower MAC publishes as its radio clock.
     pub fn new(
         first_sequence: SequenceNumber,
         subframes: u8,
@@ -771,8 +775,11 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         UpperAmpduRetryState::new(
             first_sequence,
             subframes,
-            lmac::ampdu_retry_policy(policy.lifetime_micros, policy.retain_single_mpdu),
-            committed_at_micros,
+            lmac::ampdu_retry_policy(
+                RadioDuration::from_micros(policy.lifetime_micros),
+                policy.retain_single_mpdu,
+            ),
+            RadioInstant::from_micros(committed_at_micros),
         )
         .map(|state| Self { state })
         .map_err(Self::error)
@@ -819,7 +826,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
             .observe(
                 result,
                 observed_subframes,
-                now_micros,
+                RadioInstant::from_micros(now_micros),
                 block_ack_operational,
             )
             .map(Self::decision)
@@ -840,7 +847,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
     ) -> AmpduRetryDecision {
         Self::decision(self.state.observe_block_ack_request(
             block_ack.map(|observation| observation.block_ack.report()),
-            now_micros,
+            RadioInstant::from_micros(now_micros),
             block_ack_operational,
         ))
     }
@@ -901,7 +908,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
     /// Whether the aggregate's MSDUs are aged at `now_micros`: less than
     /// one lifetime unit remains.
     pub const fn aged(&self, now_micros: u64) -> bool {
-        self.state.aged(now_micros)
+        self.state.aged(RadioInstant::from_micros(now_micros))
     }
 
     pub const fn current_first_sequence(&self) -> SequenceNumber {

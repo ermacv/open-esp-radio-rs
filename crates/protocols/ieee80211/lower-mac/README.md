@@ -144,7 +144,10 @@ flight until the test ends it (`complete`, `complete_with`), or ends each
 attempt as soon as it is published with the outcomes queued by `respond`
 (success, a given `BlockAckReport`, or a failure status); `submitted` records
 what every admitted attempt carried; `queued_events`, `gate_open`,
-`vif_config`, `channel` and `monitoring` read its state. Packages that drive
+`vif_config`, `channel` and `monitoring` read its state. Its radio clock
+(`now`) reads the `oer_time::Clock` the test passes to `LowerMacModel::new`,
+such as a virtual clock of `oer-time-virtual`, so the model and the code
+under test share one time. Packages that drive
 the port test against it, as `oer-ieee80211-upper-mac-service` and
 `oer-ieee80211-sta-service` do.
 

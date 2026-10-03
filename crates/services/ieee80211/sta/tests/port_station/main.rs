@@ -122,7 +122,7 @@ impl BackoffEntropy for Seeded {
 struct Env<'a>(PhantomData<&'a ()>);
 
 impl<'a> PortStationEnv for Env<'a> {
-    type Port = LowerMacModel;
+    type Port = LowerMacModel<'static>;
     type Budget = ProtectEveryHeTxop;
     type Ladder = FixedRate;
     type Entropy = Seeded;
@@ -177,14 +177,19 @@ fn sae_random() -> u32 {
 
 /// The model, tuned and enabled, its event router and the virtual clock.
 struct World {
-    model: &'static LowerMacModel,
+    model: &'static LowerMacModel<'static>,
     router: &'static PortRouter<'static, Env<'static>>,
-    timer: VirtualTimer,
+    timer: &'static VirtualTimer,
 }
 
 impl World {
     fn new() -> Self {
-        let model = LowerMacModel::new();
+        // The model's radio clock is the station's virtual time.
+        let timer: &'static VirtualTimer = Box::leak(Box::new(VirtualTimer {
+            now: Cell::new(1_000),
+            wanted: Cell::new(None),
+        }));
+        let model = LowerMacModel::new(timer);
         model
             .apply(LowerMacSetting::Channel(channel(1)))
             .unwrap()
@@ -192,14 +197,11 @@ impl World {
         model.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
         // Every published attempt succeeds at once.
         model.respond(core::iter::repeat_n(ModelOutcome::Success, 100_000));
-        let model: &'static LowerMacModel = Box::leak(Box::new(model));
+        let model: &'static LowerMacModel<'static> = Box::leak(Box::new(model));
         Self {
             model,
             router: Box::leak(Box::new(EventRouter::new(model, 1))),
-            timer: VirtualTimer {
-                now: Cell::new(1_000),
-                wanted: Cell::new(None),
-            },
+            timer,
         }
     }
 
@@ -210,8 +212,8 @@ impl World {
                 [EdcaContention::new(4, 10); 4],
                 RetryLimits::IEEE_DEFAULT,
                 AmpduRetryPolicy {
-                    lifetime_micros: 1_000_000,
-                    aged_margin_micros: 1_024,
+                    lifetime: oer_time::RadioDuration::from_micros(1_000_000),
+                    aged_margin: oer_time::RadioDuration::from_micros(1_024),
                     retry_limit: 7,
                     retain_single_mpdu: false,
                 },
@@ -235,7 +237,7 @@ impl World {
     fn station<'a>(&'a self, security: StaAttemptSecurity<'a>) -> PortStation<'a, Env<'a>> {
         PortStation::new(
             self.link().with_beacon_timing(),
-            &self.timer,
+            self.timer,
             RsnSoftwareAes,
             profile(),
             security,
@@ -388,7 +390,7 @@ fn an_active_scan_finds_the_access_point_on_its_channel_body() {
     let mut link = world.link();
     let mut sequences = counters();
     let mut table = ScanTable::<8>::new();
-    let timer = &world.timer;
+    let timer = world.timer;
     let scan = PortScan::new(
         &mut link,
         &timer,

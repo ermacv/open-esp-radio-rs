@@ -19,6 +19,7 @@
 
 use oer_ieee80211_lower_mac::BlockAckReport;
 use oer_ieee80211_mac::sequence::SequenceNumber;
+use oer_time::{RadioDuration, RadioInstant};
 
 /// Subframes one A-MPDU exchange tracks: the width of a 64-bit BlockAck
 /// bitmap.
@@ -78,9 +79,9 @@ pub fn compact<T: Copy>(items: &mut [T], mask: u64) -> usize {
 pub struct AmpduRetryPolicy {
     /// Time from the aggregate's commit after which its MSDUs are aged and
     /// discarded instead of retried.
-    pub lifetime_micros: u32,
+    pub lifetime: RadioDuration,
     /// An MSDU with less than this much lifetime left is already aged.
-    pub aged_margin_micros: u32,
+    pub aged_margin: RadioDuration,
     /// Attempts that end without any BlockAck, and failed protection
     /// exchanges in a row, that the aggregate survives.
     pub retry_limit: u8,
@@ -179,7 +180,7 @@ pub struct AmpduRetryState {
     current_subframes: u8,
     policy: AmpduRetryPolicy,
     /// From this instant on the aggregate's MSDUs are aged.
-    aged_from_micros: u64,
+    aged_from: RadioInstant,
     aggregate_attempts: u8,
     acknowledged: u8,
     block_ack_mpdu_attempts: u16,
@@ -192,14 +193,14 @@ pub struct AmpduRetryState {
 impl AmpduRetryState {
     /// The state of an aggregate of `subframes` consecutive sequence numbers
     /// from `first_sequence`, whose MSDUs were committed at
-    /// `committed_at_micros`, before its first attempt.
+    /// `committed_at` on the backend's radio clock, before its first attempt.
     pub fn new(
         first_sequence: SequenceNumber,
         subframes: u8,
         policy: AmpduRetryPolicy,
-        committed_at_micros: u64,
+        committed_at: RadioInstant,
     ) -> Result<Self, AmpduRetryError> {
-        if policy.lifetime_micros == 0 {
+        if policy.lifetime.as_micros() == 0 {
             return Err(AmpduRetryError::ZeroLifetime);
         }
         if subframes == 0 {
@@ -214,10 +215,13 @@ impl AmpduRetryState {
             missing_original_indices: 0,
             current_subframes: subframes,
             policy,
-            aged_from_micros: committed_at_micros
-                .saturating_add(u64::from(policy.lifetime_micros))
-                .saturating_sub(u64::from(policy.aged_margin_micros))
-                .saturating_add(1),
+            aged_from: RadioInstant::from_micros(
+                committed_at
+                    .as_micros()
+                    .saturating_add(u64::from(policy.lifetime.as_micros()))
+                    .saturating_sub(u64::from(policy.aged_margin.as_micros()))
+                    .saturating_add(1),
+            ),
             aggregate_attempts: 1,
             acknowledged: 0,
             block_ack_mpdu_attempts: 0,
@@ -228,14 +232,14 @@ impl AmpduRetryState {
     }
 
     /// Apply how the attempt carrying `observed_subframes` ended at
-    /// `now_micros`. While the Block Ack agreement is not
+    /// `now`. While the Block Ack agreement is not
     /// `block_ack_operational`, missing subframes leave the aggregate for
     /// individual retries.
     pub fn observe(
         &mut self,
         result: AmpduAttemptResult,
         observed_subframes: u8,
-        now_micros: u64,
+        now: RadioInstant,
         block_ack_operational: bool,
     ) -> Result<AmpduRetryDecision, AmpduRetryError> {
         if observed_subframes != self.current_subframes {
@@ -270,14 +274,14 @@ impl AmpduRetryState {
                 self.count_mpdu_attempts(observed_subframes);
                 self.ack_timeouts = self.ack_timeouts.saturating_add(1);
                 self.missing_original_indices = self.pending_original_indices;
-                if self.ack_timeouts >= self.policy.retry_limit || self.aged(now_micros) {
+                if self.ack_timeouts >= self.policy.retry_limit || self.aged(now) {
                     return Ok(AmpduRetryDecision::Finish { retry_mask: every });
                 }
                 Ok(self.retain_or_unaggregate(every, observed_subframes, block_ack_operational))
             }
             AmpduAttemptResult::Answered(report) => {
                 self.count_mpdu_attempts(observed_subframes);
-                Ok(self.resort(report, now_micros, block_ack_operational))
+                Ok(self.resort(report, now, block_ack_operational))
             }
         }
     }
@@ -288,10 +292,10 @@ impl AmpduRetryState {
     pub fn observe_block_ack_request(
         &mut self,
         block_ack: Option<BlockAckReport>,
-        now_micros: u64,
+        now: RadioInstant,
         block_ack_operational: bool,
     ) -> AmpduRetryDecision {
-        self.resort(block_ack, now_micros, block_ack_operational)
+        self.resort(block_ack, now, block_ack_operational)
     }
 
     fn count_mpdu_attempts(&mut self, subframes: u8) {
@@ -304,7 +308,7 @@ impl AmpduRetryState {
     fn resort(
         &mut self,
         report: Option<BlockAckReport>,
-        now_micros: u64,
+        now: RadioInstant,
         block_ack_operational: bool,
     ) -> AmpduRetryDecision {
         let mut retry_mask = 0_u64;
@@ -323,7 +327,7 @@ impl AmpduRetryState {
         }
         self.missing_original_indices = retry_original_indices;
         let missing = retry_mask.count_ones() as u8;
-        if missing == 0 || self.aged(now_micros) {
+        if missing == 0 || self.aged(now) {
             return AmpduRetryDecision::Finish { retry_mask };
         }
         let decision = self.retain_or_unaggregate(retry_mask, missing, block_ack_operational);
@@ -352,9 +356,9 @@ impl AmpduRetryState {
         self.current_subframes
     }
 
-    /// Whether the aggregate's MSDUs are aged at `now_micros`.
-    pub const fn aged(&self, now_micros: u64) -> bool {
-        now_micros >= self.aged_from_micros
+    /// Whether the aggregate's MSDUs are aged at `now`.
+    pub const fn aged(&self, now: RadioInstant) -> bool {
+        now.as_micros() >= self.aged_from.as_micros()
     }
 
     /// The sequence number of the current aggregate's first subframe.

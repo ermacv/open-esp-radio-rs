@@ -29,7 +29,7 @@ use oer_ieee80211_mac::{
     qos::WmmAccessCategory,
     sequence::SequenceNumber,
 };
-use oer_time::RadioInstant;
+use oer_time::{Clock, RadioInstant};
 
 use crate::*;
 
@@ -193,7 +193,6 @@ struct State {
     /// Events the queue holds, loss markers apart.
     queued: usize,
     poisoned: bool,
-    now: u64,
     responses: VecDeque<ModelOutcome>,
     submitted: Vec<SubmittedAttempt>,
 }
@@ -260,10 +259,11 @@ impl State {
 }
 
 /// The in-memory backend. Every admitted attempt stays in flight until the
-/// test or a queued outcome ends it.
-#[derive(Default)]
-pub struct LowerMacModel {
+/// test or a queued outcome ends it. Its radio clock is the test's
+/// [`Clock`], such as a virtual clock of `oer-time-virtual`.
+pub struct LowerMacModel<'clock> {
     state: RefCell<State>,
+    clock: &'clock dyn Clock,
 }
 
 /// The model was poisoned with [`LowerMacModel::poison`].
@@ -276,9 +276,13 @@ impl PortError for ModelPoisoned {
     }
 }
 
-impl LowerMacModel {
-    pub fn new() -> Self {
-        Self::default()
+impl<'clock> LowerMacModel<'clock> {
+    /// A model whose radio clock reads `clock`.
+    pub fn new(clock: &'clock dyn Clock) -> Self {
+        Self {
+            state: RefCell::default(),
+            clock,
+        }
     }
 
     /// Make the backend's state unknown: the events queued so far are still
@@ -473,9 +477,9 @@ impl LowerMacModel {
 /// The future of [`LowerMacModel::next_event`]: ready while an event or a
 /// loss is queued. It registers no waker; a driver polls it again after the
 /// test changed the model.
-pub struct NextModelEvent<'a>(&'a LowerMacModel);
+pub struct NextModelEvent<'a, 'clock>(&'a LowerMacModel<'clock>);
 
-impl Future for NextModelEvent<'_> {
+impl Future for NextModelEvent<'_, '_> {
     type Output = Result<ModelEvent, EventsLost>;
 
     fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
@@ -488,7 +492,7 @@ impl Future for NextModelEvent<'_> {
     }
 }
 
-impl Ieee80211LowerMacPort for LowerMacModel {
+impl Ieee80211LowerMacPort for LowerMacModel<'_> {
     type Event = ModelEvent;
     type Error = ModelPoisoned;
     type TxBuffer = ModelBuffer;
@@ -714,13 +718,12 @@ impl Ieee80211LowerMacPort for LowerMacModel {
     }
 
     fn now(&self) -> Result<RadioInstant, ModelPoisoned> {
-        let mut state = self.serving()?;
-        state.now += 1;
-        Ok(RadioInstant::from_micros(state.now))
+        self.serving()?;
+        Ok(RadioInstant::from_micros(self.clock.now().as_micros()))
     }
 }
 
-impl LowerMacAmpdu for LowerMacModel {
+impl LowerMacAmpdu for LowerMacModel<'_> {
     type AmpduBuffer = ModelAmpdu;
 
     fn ampdu_capabilities(&self) -> AmpduCapabilities {
@@ -783,7 +786,7 @@ impl LowerMacAmpdu for LowerMacModel {
     }
 }
 
-impl LowerMacBeaconTiming for LowerMacModel {
+impl LowerMacBeaconTiming for LowerMacModel<'_> {
     fn beacon_timing_capabilities(&self) -> BeaconTimingCapabilities {
         let both = VifRoleSet::STATION.union(VifRoleSet::ACCESS_POINT);
         BeaconTimingCapabilities {
@@ -834,7 +837,7 @@ impl LowerMacBeaconTiming for LowerMacModel {
     }
 }
 
-impl LowerMacMonitor for LowerMacModel {
+impl LowerMacMonitor for LowerMacModel<'_> {
     fn monitor_capabilities(&self) -> MonitorCapabilities {
         MonitorCapabilities {
             with_receiving_interfaces: true,
@@ -847,7 +850,7 @@ impl LowerMacMonitor for LowerMacModel {
     }
 }
 
-impl LowerMacCancelPublished for LowerMacModel {
+impl LowerMacCancelPublished for LowerMacModel<'_> {
     fn cancel_published(&self, id: TxId) -> Result<Result<(), CancelError>, ModelPoisoned> {
         let mut state = self.serving()?;
         Ok(

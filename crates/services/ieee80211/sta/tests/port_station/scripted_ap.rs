@@ -165,7 +165,7 @@ impl ScriptedAp {
     }
 
     /// Read every attempt the station submitted since the last read.
-    pub fn absorb(&mut self, model: &LowerMacModel) {
+    pub fn absorb(&mut self, model: &LowerMacModel<'_>) {
         let submitted = model.submitted();
         while self.seen < submitted.len() {
             let attempt = &submitted[self.seen];
@@ -179,7 +179,7 @@ impl ScriptedAp {
     /// One step: read what the station submitted, send the TBTT and beacon
     /// that are due, and deliver one queued frame. Whether anything
     /// happened.
-    pub fn step(&mut self, model: &LowerMacModel, now_micros: u64) -> bool {
+    pub fn step(&mut self, model: &LowerMacModel<'_>, now_micros: u64) -> bool {
         let mut progress = false;
         let submitted = model.submitted();
         while self.seen < submitted.len() {
@@ -212,7 +212,7 @@ impl ScriptedAp {
         progress
     }
 
-    fn observe(&mut self, model: &LowerMacModel, frame: &[u8], key: KeySelector) {
+    fn observe(&mut self, model: &LowerMacModel<'_>, frame: &[u8], key: KeySelector) {
         let frame_control = frame[0];
         match frame_control {
             // Probe Request.
@@ -502,7 +502,7 @@ impl ScriptedAp {
 }
 
 /// The access point hears the station and is heard only on its channel.
-fn on_channel(model: &LowerMacModel) -> bool {
+fn on_channel(model: &LowerMacModel<'_>) -> bool {
     model.channel() == Some(Channel::ghz2_4(AP_CHANNEL, ChannelWidth::Mhz20).unwrap())
 }
 

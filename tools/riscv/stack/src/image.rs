@@ -2,7 +2,7 @@
 //! static RV32 image.
 use crate::TransferKind;
 use object::{Object, ObjectSection, ObjectSymbol, SymbolKind};
-use oer_riscv_analysis::{FunctionInput, PreparedReferences, research};
+use oer_riscv_analysis::{FunctionInput, KnownJump, PreparedReferences, research};
 use oer_riscv_lift::RiscvDecoder;
 use oer_riscv_model::*;
 use oer_riscv_program::ProgramView;
@@ -338,14 +338,18 @@ impl FunctionSink for Observer {
     }
 }
 
-/// Run the bounded value analysis over every function of `elf`.
-pub(crate) fn observe(elf: &[u8], functions: &[Function]) -> Result<BTreeMap<u32, Observation>> {
+/// Run `body` with an observer of `elf`'s functions: `observe(function,
+/// jumps)` runs the bounded value analysis over one function, its control-
+/// flow graph following the indirect jumps whose targets `jumps` names.
+pub(crate) fn observing<R>(
+    elf: &[u8],
+    body: impl FnOnce(&mut dyn FnMut(&Function, &[KnownJump]) -> Result<Observation>) -> Result<R>,
+) -> Result<R> {
     let file = parse(elf)?;
     let memory = WorkingMemory::new(MEMORY_LIMIT)?;
-    let mut control = || Ok(());
-    let view = ProgramView::new(elf, &file, &memory, &mut control)?;
-    let mut observed = BTreeMap::new();
-    for function in functions {
+    let view = ProgramView::new(elf, &file, &memory, &mut || Ok(()))?;
+    let mut observe = |function: &Function, jumps: &[KnownJump]| -> Result<Observation> {
+        let mut control = || Ok(());
         let code = function_bytes(&file, function)?;
         let references =
             PreparedReferences::new(&[], function.section, &RiscvDecoder, &memory, &mut control)?;
@@ -361,6 +365,7 @@ pub(crate) fn observe(elf: &[u8], functions: &[Function]) -> Result<BTreeMap<u32
                 bytes: code,
                 relocations: &references,
                 data_ranges: &[],
+                jumps,
             },
             &RiscvDecoder,
             &memory,
@@ -374,17 +379,14 @@ pub(crate) fn observe(elf: &[u8], functions: &[Function]) -> Result<BTreeMap<u32
             && observer.unexpanded.is_empty()
             && !observer.dynamic;
         let depth = (!observer.dynamic).then_some(observer.deepest.unsigned_abs());
-        observed.insert(
-            function.address,
-            Observation {
-                depth,
-                complete,
-                resolved: observer.transfers,
-                local_jumps: observer.unexpanded,
-                site_depths: observer.site_depths,
-                site_registers: observer.site_registers,
-            },
-        );
-    }
-    Ok(observed)
+        Ok(Observation {
+            depth,
+            complete,
+            resolved: observer.transfers,
+            local_jumps: observer.unexpanded,
+            site_depths: observer.site_depths,
+            site_registers: observer.site_registers,
+        })
+    };
+    body(&mut observe)
 }

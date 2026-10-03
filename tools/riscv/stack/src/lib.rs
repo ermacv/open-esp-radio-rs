@@ -23,6 +23,7 @@
 //! [`Reason`] names the stage that closes it.
 
 mod image;
+mod relocations;
 mod sweep;
 
 use oer_riscv_model::{Error, ErrorCode, Result};
@@ -30,6 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 pub use image::{Function, functions, stack_sizes};
+use oer_riscv_analysis::KnownJump;
 pub use sweep::{TableBase, TargetSource, Transfer, TransferKind};
 
 /// Where a function's frame comes from.
@@ -62,8 +64,8 @@ pub struct FunctionFacts {
 /// Why a reachable site or function leaves a bound unknown.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum Reason {
-    /// An indirect call whose target was spilled to a stack slot
-    /// (`core::hint::black_box`).
+    /// An indirect call through a pointer the frame keeps across calls,
+    /// which the local value analysis does not follow.
     StackSlotCall,
     /// An indirect call through a loaded vtable entry or function pointer.
     LoadedCall,
@@ -88,7 +90,7 @@ impl Reason {
     /// The stage of the stack analysis that resolves this reason.
     pub fn closed_by(self) -> &'static str {
         match self {
-            Reason::StackSlotCall => "1b-2: stack-slot value tracking",
+            Reason::StackSlotCall => "2: MIR call facts",
             Reason::LoadedCall | Reason::RegisterCall => "2: MIR call facts",
             Reason::IndirectJump => "2: MIR call facts",
             Reason::OutsideImage => "1c: ROM companion",
@@ -179,111 +181,174 @@ pub fn analyze(elf: &[u8], companions: &[&[u8]]) -> Result<Analysis> {
 
 /// The facts and executable ranges of one ELF.
 fn analyze_one(elf: &[u8]) -> Result<Analysis> {
+    let relocations = relocations::Relocations::read(elf)?;
     let functions = image::functions(elf)?;
     let sizes = image::stack_sizes(elf)?;
     let code = image::executable_ranges(elf)?;
-    let mut observed = image::observe(elf, &functions)?;
-    let mut facts = BTreeMap::new();
-    for function in functions {
-        let observation = observed
-            .remove(&function.address)
-            .ok_or_else(|| Error::new(ErrorCode::Integrity, "function without observation"))?;
-        let mut transfers = sweep::transfers(elf, &function)?;
-        // Jump tables stay inside the function, whose code the sweep covers.
-        transfers.retain(|t| t.target.is_some() || !observation.local_jumps.contains(&t.site));
-        // A dispatch through a sized table object reaches each of its
-        // entries; the sweep already covers a jump's entries inside the
-        // function.
-        let inside =
-            |target: u32| target >= function.address && target - function.address < function.size;
-        let mut dispatched = Vec::new();
-        for transfer in std::mem::take(&mut transfers) {
-            let address = match transfer.table {
-                Some(TableBase::Address(address)) => Some(address),
-                Some(TableBase::Register(r)) => observation
-                    .site_registers
-                    .get(&transfer.site)
-                    .and_then(|registers| registers[r as usize]),
-                None => None,
-            };
-            let Some(entries) = address.map(|a| image::table(elf, a)).transpose()?.flatten() else {
-                dispatched.push(transfer);
+    let functions = image::observing(elf, |observe| {
+        let mut facts = BTreeMap::new();
+        for function in functions {
+            facts.insert(
+                function.address,
+                function_facts(elf, function, &relocations, &sizes, observe)?,
+            );
+        }
+        Ok(facts)
+    })?;
+    Ok(Analysis { functions, code })
+}
+
+/// The entries of the table a transfer loads its target from, when the
+/// table is a sized object or a compiler jump table the relocations name.
+fn table_entries(
+    elf: &[u8],
+    relocations: &relocations::Relocations,
+    transfer: &Transfer,
+    observation: &image::Observation,
+) -> Result<Option<Vec<u32>>> {
+    let address = match transfer.table {
+        Some(TableBase::Address(address)) => Some(address),
+        Some(TableBase::Register(r)) => observation
+            .site_registers
+            .get(&transfer.site)
+            .and_then(|registers| registers[r as usize]),
+        None => None,
+    };
+    Ok(match address {
+        Some(address) => image::table(elf, address)?.or_else(|| relocations.jump_table(address)),
+        None => None,
+    })
+}
+
+/// One function's facts: its sweep, then the value analysis over a graph
+/// that follows every jump table known so far, again for each table the
+/// analysis's register values newly locate.
+fn function_facts(
+    elf: &[u8],
+    function: Function,
+    relocations: &relocations::Relocations,
+    sizes: &BTreeMap<u32, u64>,
+    observe: &mut dyn FnMut(&Function, &[KnownJump]) -> Result<image::Observation>,
+) -> Result<FunctionFacts> {
+    let swept = sweep::transfers(elf, &function, relocations)?;
+    let inside =
+        |target: u32| target >= function.address && target - function.address < function.size;
+    let known = |site: u32, entries: &[u32]| KnownJump {
+        site: u64::from(site),
+        targets: entries
+            .iter()
+            .filter(|&&entry| entry != 0)
+            .map(|entry| entry & !1)
+            .filter(|&target| inside(target))
+            .map(u64::from)
+            .collect(),
+    };
+    let mut jumps: Vec<KnownJump> = swept
+        .jumps
+        .iter()
+        .map(|(site, entries)| known(*site, entries))
+        .collect();
+    let observation = loop {
+        let observation = observe(&function, &jumps)?;
+        let before = jumps.len();
+        for transfer in &swept.transfers {
+            if transfer.kind != TransferKind::Tail
+                || transfer.target.is_some()
+                || jumps
+                    .iter()
+                    .any(|jump| jump.site == u64::from(transfer.site))
+            {
                 continue;
-            };
-            let mut targets: Vec<u32> = entries
-                .iter()
-                // A Rust function pointer is never null: a zero entry is an
-                // empty `Option<fn>` slot the code tests before calling.
-                .filter(|&&entry| entry != 0)
-                .map(|entry| entry & !1)
-                .filter(|&target| transfer.kind == TransferKind::Call || !inside(target))
-                .collect();
-            targets.sort_unstable();
-            targets.dedup();
-            dispatched.extend(targets.into_iter().map(|target| Transfer {
+            }
+            if let Some(entries) = table_entries(elf, relocations, transfer, &observation)? {
+                jumps.push(known(transfer.site, &entries));
+            }
+        }
+        if jumps.len() == before {
+            break observation;
+        }
+    };
+    let mut transfers = swept.transfers;
+    let mut dispatched = Vec::new();
+    // Sites whose table the link's relocations or a sized object name:
+    // their entries replace whatever the value analysis read.
+    let mut tabled = BTreeSet::new();
+    for transfer in std::mem::take(&mut transfers) {
+        let Some(entries) = table_entries(elf, relocations, &transfer, &observation)? else {
+            dispatched.push(transfer);
+            continue;
+        };
+        tabled.insert(transfer.site);
+        let mut targets: Vec<u32> = entries
+            .iter()
+            // A Rust function pointer is never null: a zero entry is an
+            // empty `Option<fn>` slot the code tests before calling.
+            .filter(|&&entry| entry != 0)
+            .map(|entry| entry & !1)
+            .filter(|&target| transfer.kind == TransferKind::Call || !inside(target))
+            .collect();
+        targets.sort_unstable();
+        targets.dedup();
+        dispatched.extend(targets.into_iter().map(|target| Transfer {
+            target: Some(target),
+            source: None,
+            table: None,
+            ..transfer
+        }));
+    }
+    transfers = dispatched;
+    // A jump whose every target the value analysis found inside the
+    // function stays there: the sweep covers its code.
+    transfers.retain(|t| t.target.is_some() || !observation.local_jumps.contains(&t.site));
+    // The value analysis's targets of a site are a superset of its
+    // runtime targets; a jump's targets inside the function are already
+    // in the sweep.
+    for (site, target, kind) in observation.resolved {
+        if tabled.contains(&site) {
+            continue;
+        }
+        transfers.retain(|t| !(t.site == site && t.target.is_none()));
+        if kind == TransferKind::Tail && inside(target) {
+            continue;
+        }
+        if !transfers
+            .iter()
+            .any(|t| t.site == site && t.target == Some(target))
+        {
+            transfers.push(Transfer {
+                site,
                 target: Some(target),
+                kind,
                 source: None,
                 table: None,
-                ..transfer
-            }));
+            });
         }
-        transfers = dispatched;
-        // The value analysis's targets of a site are a superset of its
-        // runtime targets; a jump's targets inside the function are already
-        // in the sweep.
-        for (site, target, kind) in observation.resolved {
-            transfers.retain(|t| !(t.site == site && t.target.is_none()));
-            if kind == TransferKind::Tail && inside(target) {
-                continue;
-            }
-            if !transfers
-                .iter()
-                .any(|t| t.site == site && t.target == Some(target))
-            {
-                transfers.push(Transfer {
-                    site,
-                    target: Some(target),
-                    kind,
-                    source: None,
-                    table: None,
-                });
-            }
-        }
-        transfers.sort_by_key(|t| (t.site, t.target));
-        let depth = observation.depth;
-        let recorded = sizes.get(&function.address).copied();
-        let (frame, source) = match (recorded, depth) {
-            (Some(recorded), Some(depth)) if depth > recorded => {
-                return Err(Error::new(
-                    ErrorCode::Integrity,
-                    format!(
-                        "{}: observed sp depth {depth} exceeds its .stack_sizes {recorded}",
-                        function.label()
-                    ),
-                ));
-            }
-            (Some(recorded), _) => (Some(recorded), Some(FrameSource::StackSizes)),
-            (None, Some(depth)) if observation.complete => {
-                (Some(depth), Some(FrameSource::Observed))
-            }
-            (None, _) => (None, None),
-        };
-        facts.insert(
-            function.address,
-            FunctionFacts {
-                function,
-                frame,
-                source,
-                observed: depth,
-                complete: observation.complete,
-                transfers,
-                site_depths: observation.site_depths,
-            },
-        );
     }
-    Ok(Analysis {
-        functions: facts,
-        code,
+    transfers.sort_by_key(|t| (t.site, t.target));
+    let depth = observation.depth;
+    let recorded = sizes.get(&function.address).copied();
+    let (frame, source) = match (recorded, depth) {
+        (Some(recorded), Some(depth)) if depth > recorded => {
+            return Err(Error::new(
+                ErrorCode::Integrity,
+                format!(
+                    "{}: observed sp depth {depth} exceeds its .stack_sizes {recorded}",
+                    function.label()
+                ),
+            ));
+        }
+        (Some(recorded), _) => (Some(recorded), Some(FrameSource::StackSizes)),
+        (None, Some(depth)) if observation.complete => (Some(depth), Some(FrameSource::Observed)),
+        (None, _) => (None, None),
+    };
+    Ok(FunctionFacts {
+        function,
+        frame,
+        source,
+        observed: depth,
+        complete: observation.complete,
+        transfers,
+        site_depths: observation.site_depths,
     })
 }
 

@@ -1,6 +1,7 @@
 //! Calls and out-of-function jumps of one function by a linear sweep over its
 //! whole extent, independent of which code its control-flow graph reaches.
 use crate::image::{Function, function_bytes, read_only_word};
+use crate::relocations::Relocations;
 use oer_riscv_decode::{Extension, Extensions, Float, Inst, Instruction, Reg, Register, decode};
 use oer_riscv_model::*;
 use std::collections::BTreeSet;
@@ -163,7 +164,12 @@ fn bounded(entries: u32) -> Option<Fact> {
 }
 
 /// How `instruction` changes the dispatch facts of the register it writes.
-fn fact(instruction: &Instruction, pc: u32, facts: &[Option<Fact>; 32]) -> Option<Fact> {
+fn fact(
+    instruction: &Instruction,
+    pc: u32,
+    facts: &[Option<Fact>; 32],
+    relocations: &Relocations,
+) -> Option<Fact> {
     let get = |r: u8| {
         if r == 0 {
             Some(Fact::Constant(0))
@@ -198,11 +204,26 @@ fn fact(instruction: &Instruction, pc: u32, facts: &[Option<Fact>; 32]) -> Optio
             let (base, entries) = match (get(src1.0), get(src2.0)) {
                 (Some(Fact::Scaled { entries }), _) => (base(src2.0)?, entries),
                 (_, Some(Fact::Scaled { entries })) => (base(src1.0)?, entries),
+                // A compiler jump table indexed however the code likes.
+                (Some(Fact::Constant(table)), _) | (_, Some(Fact::Constant(table)))
+                    if relocations.is_jump_table(table) =>
+                {
+                    (TableBase::Address(table), None)
+                }
                 _ => return None,
             };
             Some(Fact::TableAddress { base, entries })
         }
         Instruction::Base(Inst::Lw { offset, base, .. }) => match get(base.0) {
+            // An index offset by a constant still selects an entry of the
+            // compiler's table.
+            Some(Fact::TableAddress {
+                base: TableBase::Address(table),
+                entries,
+            }) if relocations.is_jump_table(table) => Some(Fact::TableEntry {
+                base: TableBase::Address(table),
+                entries,
+            }),
             Some(Fact::TableAddress {
                 base: TableBase::Address(address),
                 entries,
@@ -292,13 +313,25 @@ fn upper(instruction: &Instruction, pc: u32) -> Option<(u8, u32)> {
 }
 
 /// Every call and out-of-function jump of `function` in `elf`.
-pub fn transfers(elf: &[u8], function: &Function) -> Result<Vec<Transfer>> {
+/// What a sweep finds in one function.
+pub(crate) struct Swept {
+    pub transfers: Vec<Transfer>,
+    /// Indirect jumps through a table of known entries, with every entry.
+    pub jumps: Vec<(u32, Vec<u32>)>,
+}
+
+pub(crate) fn transfers(
+    elf: &[u8],
+    function: &Function,
+    relocations: &Relocations,
+) -> Result<Swept> {
     let file =
         object::File::parse(elf).map_err(|_| Error::new(ErrorCode::Integrity, "invalid ELF"))?;
     let bytes = function_bytes(&file, function)?;
     let (start, end) = (function.address, function.address + function.size);
     let outside = |target: u32| target < start || target >= end;
     let mut transfers = Vec::new();
+    let mut jumps = Vec::new();
     let mut offset = 0usize;
     let mut previous: Option<(u8, u32)> = None;
     let mut writes = [None::<Write>; 32];
@@ -343,11 +376,15 @@ pub fn transfers(elf: &[u8], function: &Function) -> Result<Vec<Transfer>> {
                 dest,
             }) => {
                 let link = matches!(dest.0, 1 | 5);
+                // The link's relocations name a compiler table exactly; a
+                // bounds check or mask only bounds the index.
                 let dispatched = match facts[base.0 as usize] {
                     Some(Fact::TableEntry {
                         base: TableBase::Address(table),
-                        entries: Some(entries),
-                    }) if displacement.as_i32() == 0 => table_words(&file, table, entries),
+                        entries,
+                    }) if displacement.as_i32() == 0 => relocations
+                        .jump_table(table)
+                        .or_else(|| table_words(&file, table, entries?)),
                     _ => None,
                 };
                 let kind = if link {
@@ -368,6 +405,9 @@ pub fn transfers(elf: &[u8], function: &Function) -> Result<Vec<Transfer>> {
                     // call, or a jump out of the function; the sweep
                     // already covers jumps inside it.
                     _ if dispatched.is_some() => {
+                        if !link {
+                            jumps.push((pc, dispatched.clone().unwrap_or_default()));
+                        }
                         let mut targets: Vec<u32> = dispatched
                             .iter()
                             .flatten()
@@ -402,7 +442,7 @@ pub fn transfers(elf: &[u8], function: &Function) -> Result<Vec<Transfer>> {
             _ => {}
         }
         previous = upper(&instruction, pc);
-        let next = fact(&instruction, pc, &facts);
+        let next = fact(&instruction, pc, &facts, relocations);
         if let Some((register, how)) = write(&instruction) {
             writes[register as usize] = Some(how);
             // A fact indexed off this register no longer holds.
@@ -436,5 +476,5 @@ pub fn transfers(elf: &[u8], function: &Function) -> Result<Vec<Transfer>> {
         }
         offset += length;
     }
-    Ok(transfers)
+    Ok(Swept { transfers, jumps })
 }

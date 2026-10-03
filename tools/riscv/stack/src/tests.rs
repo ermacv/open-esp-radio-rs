@@ -41,11 +41,25 @@ fn executable(symbols: &[Symbol]) -> Vec<u8> {
 /// [`executable`] with `rodata` words in a `.rodata` at `RODATA`, covered by
 /// a sized `table` data symbol when `sized`.
 fn image(symbols: &[Symbol], rodata: &[u32], sized: bool) -> Vec<u8> {
-    placed(TEXT, symbols, rodata, sized)
+    placed(TEXT, symbols, rodata, sized, false)
 }
 
-/// [`image`] with its `.text` at `text` instead of `TEXT`.
-fn placed(text_base: u32, symbols: &[Symbol], rodata: &[u32], sized: bool) -> Vec<u8> {
+/// [`image`] whose `.rodata` is a compiler jump table: a `.LJTI0_0` label and
+/// an `R_RISCV_32` relocation for each word, as `--emit-relocs` keeps them.
+fn labelled(symbols: &[Symbol], rodata: &[u32]) -> Vec<u8> {
+    placed(TEXT, symbols, rodata, false, true)
+}
+
+/// [`image`] with its `.text` at `text` instead of `TEXT`, and a labelled
+/// jump table when `labelled`.
+fn placed(
+    text_base: u32,
+    symbols: &[Symbol],
+    rodata_words: &[u32],
+    sized: bool,
+    labelled: bool,
+) -> Vec<u8> {
+    let rodata = rodata_words;
     let rodata: Vec<u8> = rodata.iter().flat_map(|word| word.to_le_bytes()).collect();
     let mut text = Vec::new();
     let mut entries = Vec::new();
@@ -63,6 +77,18 @@ fn placed(text_base: u32, symbols: &[Symbol], rodata: &[u32], sized: bool) -> Ve
     }
     let mut strtab = vec![0u8];
     let mut symtab = vec![0u8; 16];
+    if labelled {
+        entries.push((".LJTI0_0", RODATA, 0));
+    }
+    // Relocations with no symbol: the addend is the address.
+    let mut rela = Vec::new();
+    if labelled {
+        for (i, word) in rodata_words.iter().enumerate() {
+            rela.extend_from_slice(&(RODATA + 4 * i as u32).to_le_bytes());
+            rela.extend_from_slice(&1u32.to_le_bytes()); // R_RISCV_32
+            rela.extend_from_slice(&word.to_le_bytes());
+        }
+    }
     if sized {
         entries.push(("table", RODATA, rodata.len() as u32));
     }
@@ -74,11 +100,16 @@ fn placed(text_base: u32, symbols: &[Symbol], rodata: &[u32], sized: bool) -> Ve
         symtab.extend_from_slice(&address.to_le_bytes());
         symtab.extend_from_slice(&size.to_le_bytes());
         let data = *address == RODATA;
-        symtab.push(if data { 0x11 } else { 0x12 }); // STB_GLOBAL, STT_OBJECT or STT_FUNC
+        // STB_GLOBAL with STT_NOTYPE for a label, STT_OBJECT or STT_FUNC.
+        symtab.push(match (*size, data) {
+            (0, true) => 0x10,
+            (_, true) => 0x11,
+            _ => 0x12,
+        });
         symtab.push(0);
         symtab.extend_from_slice(&(if data { 6u16 } else { 1 }).to_le_bytes()); // .rodata or .text
     }
-    let shstrtab = b"\0.text\0.stack_sizes\0.symtab\0.strtab\0.shstrtab\0.rodata\0";
+    let shstrtab = b"\0.text\0.stack_sizes\0.symtab\0.strtab\0.shstrtab\0.rodata\0.rela.rodata\0";
     // Layout: ELF header, one program header, then the section contents.
     let mut out = vec![0u8; 52 + 2 * 32];
     let place = |out: &mut Vec<u8>, bytes: &[u8]| {
@@ -95,6 +126,7 @@ fn placed(text_base: u32, symbols: &[Symbol], rodata: &[u32], sized: bool) -> Ve
     let strtab_offset = place(&mut out, &strtab);
     let shstrtab_offset = place(&mut out, shstrtab);
     let rodata_offset = place(&mut out, &rodata);
+    let rela_offset = place(&mut out, &rela);
     while !out.len().is_multiple_of(4) {
         out.push(0);
     }
@@ -154,6 +186,8 @@ fn placed(text_base: u32, symbols: &[Symbol], rodata: &[u32], sized: bool) -> Ve
             4,
             0,
         ),
+        // SHT_RELA with SHF_INFO_LINK for .rodata (6), symbols in .symtab (3).
+        header(54, 4, 0x40, 0, rela_offset, rela.len() as u32, 3, 6, 4, 12),
     ];
     for fields in headers {
         for field in fields {
@@ -168,7 +202,7 @@ fn placed(text_base: u32, symbols: &[Symbol], rodata: &[u32], sized: bool) -> Ve
     for word in [1u32, text_base, 52, sections, 0] {
         elf.extend_from_slice(&word.to_le_bytes());
     }
-    for half in [52u16, 32, 2, 40, 7, 5] {
+    for half in [52u16, 32, 2, 40, 8, 5] {
         elf.extend_from_slice(&half.to_le_bytes());
     }
     // PT_LOAD of .text, readable and executable.
@@ -333,7 +367,16 @@ fn a_bounded_jump_table_reads_exactly_its_entries() {
     // Two arms; the word after the table is not an entry.
     let image = image(&[dispatch(true)], &[TEXT + 32, TEXT + 36, 0x5000], false);
     let function = &functions(&image).unwrap()[0];
-    assert_eq!(sweep::transfers(&image, function).unwrap(), []);
+    assert_eq!(
+        sweep::transfers(
+            &image,
+            function,
+            &relocations::Relocations::read(&image).unwrap()
+        )
+        .unwrap()
+        .transfers,
+        []
+    );
     assert_eq!(
         analyze(&image, &[]).unwrap().bound(TEXT).unwrap().bytes,
         Some(0)
@@ -344,11 +387,16 @@ fn a_bounded_jump_table_reads_exactly_its_entries() {
 fn a_bounded_table_entry_out_of_the_function_is_a_jump() {
     let image = image(&[dispatch(true)], &[TEXT + 32, 0x5000], false);
     let function = &functions(&image).unwrap()[0];
-    let transfers: Vec<_> = sweep::transfers(&image, function)
-        .unwrap()
-        .iter()
-        .map(|t| (t.site, t.target, t.kind))
-        .collect();
+    let transfers: Vec<_> = sweep::transfers(
+        &image,
+        function,
+        &relocations::Relocations::read(&image).unwrap(),
+    )
+    .unwrap()
+    .transfers
+    .iter()
+    .map(|t| (t.site, t.target, t.kind))
+    .collect();
     assert_eq!(transfers, [(TEXT + 28, Some(0x5000), TransferKind::Tail)]);
     let bound = analyze(&image, &[]).unwrap().bound(TEXT).unwrap();
     assert_eq!(bound.reasons(), BTreeMap::from([(Reason::OutsideImage, 1)]));
@@ -521,7 +569,7 @@ fn a_call_into_a_companion_runs_below_its_site() {
         &[],
         false,
     );
-    let companion = placed(rom, &[leaf(None)], &[], false);
+    let companion = placed(rom, &[leaf(None)], &[], false, false);
     let alone = analyze(&image, &[]).unwrap().bound(TEXT).unwrap();
     assert_eq!(alone.reasons(), BTreeMap::from([(Reason::OutsideImage, 1)]));
     let with_rom = analyze(&image, &[&companion]).unwrap();
@@ -583,7 +631,7 @@ fn a_global_untyped_code_label_is_a_function() {
     // A companion whose only symbol is an untyped global label, as the ROM's
     // `__call_*` trampolines are, reached by `j` to the real function.
     let rom = 0x9000;
-    let mut companion = placed(rom, &[leaf(None)], &[], false);
+    let mut companion = placed(rom, &[leaf(None)], &[], false, false);
     // Turn the symbol `leaf` into STB_GLOBAL, STT_NOTYPE with no size.
     let mut record = rom.to_le_bytes().to_vec();
     record.extend_from_slice(&12u32.to_le_bytes());
@@ -597,4 +645,47 @@ fn a_global_untyped_code_label_is_a_function() {
     let functions = functions(&companion).unwrap();
     assert_eq!(functions.len(), 1);
     assert_eq!((functions[0].address, functions[0].size), (rom, 12));
+}
+
+#[test]
+fn a_labelled_jump_table_is_read_from_its_relocations() {
+    // No bounds check: the relocations alone name the table's entries.
+    let image = labelled(&[dispatch(false)], &[TEXT + 24, TEXT + 28]);
+    let function = &functions(&image).unwrap()[0];
+    let swept = sweep::transfers(
+        &image,
+        function,
+        &relocations::Relocations::read(&image).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(swept.transfers, []);
+    assert_eq!(swept.jumps, [(TEXT + 20, vec![TEXT + 24, TEXT + 28])]);
+    let bound = analyze(&image, &[]).unwrap().bound(TEXT).unwrap();
+    assert_eq!(bound.bytes, Some(0));
+}
+
+#[test]
+fn a_relocation_that_disagrees_with_its_word_fails() {
+    let mut image = labelled(&[dispatch(false)], &[TEXT + 24, TEXT + 28]);
+    let mut entry = RODATA.to_le_bytes().to_vec();
+    entry.extend_from_slice(&1u32.to_le_bytes());
+    entry.extend_from_slice(&(TEXT + 24).to_le_bytes());
+    let at = image
+        .windows(entry.len())
+        .position(|w| w == entry)
+        .expect("the first entry's relocation");
+    image[at + 8..at + 12].copy_from_slice(&(TEXT + 20).to_le_bytes());
+    let error = analyze(&image, &[]).unwrap_err();
+    assert_eq!(error.code, ErrorCode::Integrity);
+}
+
+#[test]
+fn a_labelled_table_completes_the_control_flow_graph() {
+    // The table's entries become edges of the value analysis's graph, so its
+    // arms are analysed; without them the graph stops at the jump.
+    let table = [TEXT + 24, TEXT + 28];
+    let known = analyze(&labelled(&[dispatch(false)], &table), &[]).unwrap();
+    assert!(known.functions[&TEXT].complete);
+    let unknown = analyze(&image(&[dispatch(false)], &table, false), &[]).unwrap();
+    assert!(!unknown.functions[&TEXT].complete);
 }

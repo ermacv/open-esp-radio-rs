@@ -108,7 +108,7 @@ takes its timer from its owner or caller, a composition passes
 virtual clocks of `oer-time-virtual`. A radio backend's own epoch is an
 `oer_time::RadioInstant<D>` whose domain `D` its port declares
 (`Ieee80211Instant`, `LeInstant`, `Ieee802154Instant`), so two ports'
-instants never mix; the port's `ClockInfo` converts to monotonic time.
+instants never mix; the port's `ClockInfo` converts to monotonic time, exactly for a `Monotonic` epoch and, for an `Affine` one, from a `ClockSample` the backend publishes after each break between its clocks, with a drift-bounded uncertainty. Protocols take every time as a value: deadlines they return are `Instant`s, air-time plans stay in the port's domain.
 An adapter can implement a runtime interface, while a runtime can consume
 an adapter's executor-neutral contract. Cargo still rejects actual dependency
 cycles. Neither layer can depend on the final composition.

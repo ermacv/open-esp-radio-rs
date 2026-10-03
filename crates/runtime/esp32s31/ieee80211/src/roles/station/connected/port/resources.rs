@@ -180,6 +180,9 @@ pub struct ConnectedStaControlResources<'resources, M: RawMutex, const CAPACITY:
     pub receiver: ConnectedControlReceiver<'resources, M, CAPACITY>,
     pub reorder_commands: RxReorderCommandSender<'resources, M>,
     pub rx_block_ack: &'resources StaApRxBlockAck,
+    /// The epoch of the association's station TSF owner, a number no other
+    /// owner took (`MacClockHandle::tsf_epoch`).
+    pub tsf_epoch: u32,
     /// The power agent link of a station running power management.
     pub power: Option<StationPowerBinding<'resources, M>>,
 }

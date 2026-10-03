@@ -186,14 +186,59 @@ fn a_new_radio_start_replaces_the_clock_and_its_handles() {
     assert_eq!(first.sample().unwrap().generation, 1);
     let stamped = counter.raw_at(at(10_000));
 
-    // The radio restarts: the new clock is fresh, the old handle reads
-    // nothing, and a stamp of the earlier start converts only as a reading
-    // of the new counter.
+    // The radio restarts: the new clock is fresh, in a generation the
+    // earlier start never used, the old handle reads nothing, and a stamp
+    // of the earlier start converts only as a reading of the new counter.
     clock.advance_to(at(20_000));
     let second = storage.start(&counter);
     assert_eq!(first.sample(), None);
     assert_eq!(first.received_at(stamped), None);
     let sample = second.sample().unwrap();
-    assert_eq!(sample.generation, 0);
+    assert!(sample.generation > 1);
     assert_eq!(sample.monotonic, at(20_000));
+}
+
+#[test]
+fn tsf_epochs_are_never_reused_across_radio_starts() {
+    let clock = VirtualClock::new();
+    let counter = Counter::new(&clock, 0);
+    let storage = MacClockStorage::<NoopRawMutex, _, _>::new(&clock);
+    let first = storage.start(&counter);
+    let a = first.tsf_epoch();
+    let b = first.tsf_epoch();
+    let second = storage.start(&counter);
+    let c = second.tsf_epoch();
+    assert!(a != b && b != c && a != c);
+}
+
+#[test]
+fn a_tsf_sample_of_an_earlier_radio_start_is_refused_with_its_mac_clock() {
+    use oer_ieee80211_lower_mac::{
+        TsfInstant, TsfProjectionError, TsfRelation, TsfSample, VifId, VifTsf,
+    };
+    let clock = VirtualClock::new();
+    clock.advance_to(at(10_000));
+    let counter = Counter::new(&clock, 0);
+    let storage = MacClockStorage::<NoopRawMutex, _, _>::new(&clock);
+    let first = storage.start(&counter);
+    let relation = TsfRelation::new(first.tsf_epoch(), Duration::from_micros(1));
+    let sample = TsfSample {
+        tsf: VifTsf::new(VifId(0), TsfInstant::from_micros(1_000_000)),
+        local: first.sample().unwrap().stamp(),
+        uncertainty: Duration::from_micros(1),
+        generation: relation.generation(),
+    };
+    let now = first.sample().unwrap().stamp();
+    assert!(sample.tsf_at(now, relation.generation()).is_ok());
+
+    // After a radio restart the MAC clock's stamps are of a new generation,
+    // and the old handle has none: the TSF sample no longer converts.
+    clock.advance_to(at(20_000));
+    let second = storage.start(&counter);
+    assert_eq!(first.sample(), None);
+    let restarted = second.sample().unwrap().stamp();
+    assert_eq!(
+        sample.tsf_at(restarted, relation.generation()),
+        Err(TsfProjectionError::StaleStamp)
+    );
 }

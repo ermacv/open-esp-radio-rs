@@ -196,7 +196,17 @@ pub struct TsfSample {
     /// How far apart the two readings may lie.
     pub uncertainty: Duration,
     /// The TSF relation the sample belongs to.
-    pub generation: u32,
+    pub generation: TsfGeneration,
+}
+
+/// The generation of a TSF relation: the epoch its owner took when it was
+/// created, from a source shared by every owner of one radio start, and the
+/// jumps since. Two owners never share an epoch, so a generation names one
+/// stretch of one relation.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct TsfGeneration {
+    pub epoch: u32,
+    pub jump: u32,
 }
 
 /// The relation of one interface's TSF to the radio clock across TSF sets:
@@ -210,7 +220,7 @@ pub struct TsfSample {
 /// first one, is a jump and starts a new generation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TsfRelation {
-    generation: u32,
+    generation: TsfGeneration,
     last_sample: Option<TsfInstant>,
     sample_uncertainty: Duration,
 }
@@ -225,25 +235,26 @@ pub enum TsfSetKind {
 }
 
 impl TsfRelation {
-    /// A relation without a sample, whose samples are each uncertain by
+    /// A relation without a sample in `epoch`, a number its owner took from
+    /// the shared source, whose samples are each uncertain by
     /// `sample_uncertainty` (the backend's TSF counter resolution).
-    pub const fn new(sample_uncertainty: Duration) -> Self {
+    pub const fn new(epoch: u32, sample_uncertainty: Duration) -> Self {
         Self {
-            generation: 0,
+            generation: TsfGeneration { epoch, jump: 0 },
             last_sample: None,
             sample_uncertainty,
         }
     }
 
     /// The current generation.
-    pub const fn generation(&self) -> u32 {
+    pub const fn generation(&self) -> TsfGeneration {
         self.generation
     }
 
     /// Start a new generation without a sample: the TSF jumped (a new
     /// association, a channel change, a timer restart).
     pub fn break_relation(&mut self) {
-        self.generation = self.generation.wrapping_add(1);
+        self.generation.jump = self.generation.jump.wrapping_add(1);
         self.last_sample = None;
     }
 
@@ -288,6 +299,8 @@ impl TsfRelation {
 pub enum TsfProjectionError {
     /// The radio stamp belongs to another generation of the radio clock.
     StaleStamp,
+    /// The sample belongs to another generation of the TSF relation.
+    StaleSample,
     /// The projected value lies outside the representable range.
     OutOfRange,
 }
@@ -295,11 +308,13 @@ pub enum TsfProjectionError {
 impl TsfSample {
     /// The TSF of this sample's interface when the port's radio clock read
     /// `local`, with the sample's uncertainty plus the drift over the
-    /// distance from the sample.
+    /// distance from the sample; `current` is the relation's generation now.
     pub fn tsf_at(
         &self,
         local: crate::Ieee80211Stamp,
+        current: TsfGeneration,
     ) -> Result<oer_radio_port::Projected<VifTsf>, TsfProjectionError> {
+        self.check(current)?;
         if local.generation != self.local.generation {
             return Err(TsfProjectionError::StaleStamp);
         }
@@ -320,6 +335,7 @@ impl TsfSample {
     pub fn local_at(
         &self,
         tsf: VifTsf,
+        current: TsfGeneration,
     ) -> Result<
         Result<oer_radio_port::Projected<crate::Ieee80211Stamp>, TsfProjectionError>,
         TsfVifMismatch,
@@ -331,6 +347,7 @@ impl TsfSample {
             });
         }
         Ok((|| {
+            self.check(current)?;
             let (at, distance) = shift(
                 self.local.at.as_micros(),
                 self.tsf.at.as_micros(),
@@ -344,6 +361,15 @@ impl TsfSample {
                 uncertainty: drift_bound(self.uncertainty, distance)?,
             })
         })())
+    }
+
+    /// Whether the sample belongs to the relation's `current` generation.
+    fn check(&self, current: TsfGeneration) -> Result<(), TsfProjectionError> {
+        if self.generation == current {
+            Ok(())
+        } else {
+            Err(TsfProjectionError::StaleSample)
+        }
     }
 }
 

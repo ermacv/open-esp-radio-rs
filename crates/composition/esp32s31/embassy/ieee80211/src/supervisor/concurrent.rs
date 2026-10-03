@@ -689,6 +689,7 @@ impl ProductionWifiEpochRunner {
                 receiver: control_receiver,
                 reorder_commands: reorder_sender,
                 rx_block_ack: &super::PRODUCTION_RX_BLOCK_ACK,
+                tsf_epoch: self.mac_clock.tsf_epoch(),
                 power: None,
             },
         );

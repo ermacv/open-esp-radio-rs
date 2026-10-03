@@ -8,7 +8,7 @@
 //! backend implements [`StationTsfHardware`] but no caller writes the timer
 //! around the owner.
 
-use oer_ieee80211_lower_mac::{TsfInstant, TsfRelation, TsfSetKind};
+use oer_ieee80211_lower_mac::{TsfGeneration, TsfInstant, TsfRelation, TsfSetKind};
 use oer_time::Duration;
 
 /// The uncertainty of a station TSF sample: the set value and the reading
@@ -31,27 +31,25 @@ pub trait StationTsfHardware {
 }
 
 /// The owner of the station TSF writes and their relation to the radio
-/// clock.
+/// clock. It lives as long as its user (one association of the role, one
+/// port core); its generations come from an epoch it takes when created
+/// (`MacClockHandle::tsf_epoch` of the radio start), so a later owner's
+/// generations never repeat an earlier one's.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StationTsf {
     relation: TsfRelation,
 }
 
-impl Default for StationTsf {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl StationTsf {
-    pub const fn new() -> Self {
+    /// An owner in `epoch`, a number no other owner took.
+    pub const fn new(epoch: u32) -> Self {
         Self {
-            relation: TsfRelation::new(STATION_TSF_SAMPLE_UNCERTAINTY),
+            relation: TsfRelation::new(epoch, STATION_TSF_SAMPLE_UNCERTAINTY),
         }
     }
 
     /// The generation of the station TSF's relation.
-    pub const fn generation(&self) -> u32 {
+    pub const fn generation(&self) -> TsfGeneration {
         self.relation.generation()
     }
 
@@ -104,7 +102,7 @@ mod tests {
     #[test]
     fn the_owner_writes_the_timer_and_keeps_the_relation_through_drift() {
         let mut timer = Timer::default();
-        let mut owner = StationTsf::new();
+        let mut owner = StationTsf::new(1);
         let tsf = TsfInstant::from_micros;
         assert_eq!(owner.set(&mut timer, tsf(1_000_000)), TsfSetKind::Jump);
         assert_eq!((timer.tsf, timer.writes), (1_000_000, 1));

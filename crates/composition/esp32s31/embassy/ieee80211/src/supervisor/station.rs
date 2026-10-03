@@ -1756,6 +1756,7 @@ pub(crate) async fn run_connected<'state, 'security>(
             receiver: control_receiver,
             reorder_commands: reorder_sender,
             rx_block_ack: &crate::supervisor::PRODUCTION_RX_BLOCK_ACK,
+            tsf_epoch: mac_clock.tsf_epoch(),
             power: Some(power),
         },
     ) {

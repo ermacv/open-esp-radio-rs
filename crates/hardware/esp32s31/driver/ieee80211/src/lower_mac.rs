@@ -77,7 +77,7 @@ use core::pin::Pin;
 use oer_time::Clock;
 
 use oer_esp32s31_hal::types::StaTbttSchedule;
-use oer_ieee80211_lower_mac::TsfRelation;
+use oer_ieee80211_lower_mac::{TsfGeneration, TsfRelation};
 
 use crate::station_tsf::{STATION_TSF_SAMPLE_UNCERTAINTY, StationTsf, StationTsfHardware};
 use oer_esp32s31_ieee80211_mac::{
@@ -324,6 +324,9 @@ pub struct LowerMacConfig {
     pub channel: WifiChannel,
     /// Executor watchdog of one publication.
     pub publication_timeout: oer_time::Duration,
+    /// The epoch of the core's TSF relations, a number no other owner of a
+    /// TSF relation took (`MacClockHandle::tsf_epoch`).
+    pub tsf_epoch: u32,
 }
 
 /// One lent transmit buffer: a whole ordinary TX slot, whose DMA buffer
@@ -580,8 +583,8 @@ where
             gate_open: true,
             monitor: false,
             tbtt: None,
-            station_tsf: StationTsf::new(),
-            access_point_tsf: TsfRelation::new(STATION_TSF_SAMPLE_UNCERTAINTY),
+            station_tsf: StationTsf::new(config.tsf_epoch),
+            access_point_tsf: TsfRelation::new(config.tsf_epoch, STATION_TSF_SAMPLE_UNCERTAINTY),
             queues: [const { None }; LOWER_MAC_TX_QUEUES],
         }
     }
@@ -1545,7 +1548,7 @@ where
         &self,
         hardware: &mut H,
         vif: VifId,
-    ) -> Result<(VifTsf, u32), SettingError> {
+    ) -> Result<(VifTsf, TsfGeneration), SettingError> {
         let role = self.vif(vif).ok_or(SettingError::UnknownVif)?.role;
         if !ESP32S31_BEACON_TIMING_CAPABILITIES.tsf_read.contains(role) {
             return Err(SettingError::Unsupported);

@@ -495,6 +495,7 @@ fn core() -> Core {
             station_address: STATION,
             channel: channel(6),
             publication_timeout: oer_time::Duration::from_micros(TIMEOUT),
+            tsf_epoch: 1,
         },
     )
 }

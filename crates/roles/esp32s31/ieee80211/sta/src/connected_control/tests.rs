@@ -5,6 +5,7 @@ fn core() -> ConnectedControlCore {
         [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
         true,
         StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        1,
     )
 }
 

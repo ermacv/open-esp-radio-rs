@@ -317,6 +317,7 @@ impl ConnectedStaPort {
             plan.link.association_phy == PhyMode::He20,
             tx_block_ack,
             resources.rx_block_ack,
+            resources.tsf_epoch,
         )
         .with_he_trigger_based(plan.config.tx.he_trigger_based)
         .with_rx_block_ack_maximum_window(plan.config.block_ack.rx_block_ack_maximum_window)

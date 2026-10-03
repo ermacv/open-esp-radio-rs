@@ -104,6 +104,21 @@ struct Report<'a> {
     sleeps: &'a [RfSleep],
 }
 
+/// The ICMP probing of a sleeping station.
+fn icmp_config(workload: &StationSleep) -> icmp_latency::Config {
+    icmp_latency::Config {
+        count: workload.count,
+        interval: Duration::from_millis(u64::from(workload.interval_ms)),
+        timeout: Duration::from_millis(u64::from(workload.timeout_ms)),
+        payload_bytes: usize::from(workload.payload_bytes),
+        // Sleep stretches round trips to the DTIM; latency and loss are
+        // recorded, not judged, beyond one reply proving the link.
+        maximum_lost: workload.count - 1,
+        maximum_p95: None,
+        ..Default::default()
+    }
+}
+
 pub fn run(
     workload: &StationSleep,
     output: &Path,
@@ -113,17 +128,7 @@ pub fn run(
     fs::create_dir_all(output)?;
     let mask = RfSleepEntered::CHANNEL.mask() | RfWoke::CHANNEL.mask();
     let entries = icmp_latency::run_observed(
-        icmp_latency::Config {
-            count: workload.count,
-            interval: Duration::from_millis(u64::from(workload.interval_ms)),
-            timeout: Duration::from_millis(u64::from(workload.timeout_ms)),
-            payload_bytes: usize::from(workload.payload_bytes),
-            // Sleep stretches round trips to the DTIM; latency and loss are
-            // recorded, not judged.
-            maximum_lost: workload.count,
-            maximum_p95: None,
-            ..Default::default()
-        },
+        icmp_config(workload),
         output,
         context,
         false,
@@ -186,6 +191,31 @@ mod tests {
             kind,
             t_us: monotonic,
             words: [mac, monotonic],
+        }
+    }
+
+    #[test]
+    fn the_sleep_probing_is_a_valid_icmp_session_for_every_count() {
+        for count in [1, 60, u16::MAX] {
+            let workload = StationSleep {
+                link: crate::scenario::LinkExpectation {
+                    phy: oer_hil_scenario::link::PhyExpectation::He20,
+                    minimum_mcs: None,
+                    guard_interval: Default::default(),
+                    management_frame_protection: Default::default(),
+                    access_point_security: Default::default(),
+                },
+                power_save: oer_hil_protocol::wifi::WifiStationPowerSave::MinModem,
+                access_point_beacon: oer_hil_scenario::link::AccessPointBeacon {
+                    interval_tu: 100,
+                    dtim_period: 3,
+                },
+                count,
+                interval_ms: 500,
+                timeout_ms: 2000,
+                payload_bytes: 56,
+            };
+            assert!(icmp_config(&workload).validate().is_ok());
         }
     }
 

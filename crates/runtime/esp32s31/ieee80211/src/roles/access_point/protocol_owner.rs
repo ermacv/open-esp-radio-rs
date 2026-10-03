@@ -232,27 +232,26 @@ impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize>
         }
     }
 
-    pub const fn beacon_publication_due(&self, now_micros: u32) -> bool {
-        self.mac.beacon_publication_due(now_micros)
+    pub fn beacon_publication_due(&self, now: oer_time::Instant) -> bool {
+        self.mac.beacon_publication_due(now)
     }
 
-    fn next_control_deadline_micros(
-        &self,
-        now_micros: u64,
-    ) -> Result<u64, AccessPointControlError> {
-        let (beacon_tick, _) = self
+    fn next_control_deadline(&self) -> Result<oer_time::Instant, AccessPointControlError> {
+        let beacon = self
             .mac
-            .next_beacon_delay(now_micros as u32)
+            .next_beacon()
             .ok_or(AccessPointControlError::InvalidBeaconSchedule)?;
-        let beacon_deadline = now_micros
-            .saturating_add(u64::from(beacon_tick.wrapping_sub(now_micros as u32)));
         Ok(self
             .mac
             .next_control_deadline()
             .into_iter()
-            .map(oer_time::Instant::as_micros)
-            .chain(self.state.rx_reorder.next_deadline())
-            .fold(beacon_deadline, u64::min))
+            .chain(
+                self.state
+                    .rx_reorder
+                    .next_deadline()
+                    .map(oer_time::Instant::from_micros),
+            )
+            .fold(beacon, core::cmp::min))
     }
 
     pub fn has_operational_tx_block_ack(&self) -> bool {

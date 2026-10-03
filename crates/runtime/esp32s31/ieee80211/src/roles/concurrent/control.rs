@@ -56,7 +56,7 @@ pub enum StaApAccessPointControlProgress {
 pub trait StaApAccessPointControlRole<H, PhysicalTx> {
     type Error: 'static;
 
-    fn beacon_publication_due(&self, now_micros: u32) -> bool;
+    fn beacon_publication_due(&self, now: Instant) -> bool;
 
     fn service_access_point_control(
         &mut self,
@@ -72,10 +72,7 @@ pub trait StaApAccessPointControlRole<H, PhysicalTx> {
         physical_tx: &mut PhysicalTx,
     ) -> Result<DatapathPairedStopProgress, Self::Error>;
 
-    fn next_access_point_control_deadline_micros(
-        &self,
-        now_micros: u64,
-    ) -> Result<u64, Self::Error>;
+    fn next_access_point_control_deadline(&self) -> Result<Instant, Self::Error>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -97,14 +94,14 @@ pub enum StaApControlExit<StationExit> {
 /// and reports the exact role for every resulting hardware TX transaction.
 pub struct StaApControlArbiter<T> {
     timer: T,
-    next_access_point_deadline_micros: u64,
+    next_access_point_deadline: Instant,
 }
 
 impl<T> StaApControlArbiter<T> {
     pub const fn new(timer: T) -> Self {
         Self {
             timer,
-            next_access_point_deadline_micros: 0,
+            next_access_point_deadline: Instant::EPOCH,
         }
     }
 
@@ -166,8 +163,8 @@ where
                     .service_access_point_control(hardware, physical_tx, now, true)
                     .map_err(StaApControlError::AccessPoint)?;
                 if progress == StaApAccessPointControlProgress::Idle {
-                    self.next_access_point_deadline_micros = access_point
-                        .next_access_point_control_deadline_micros(now)
+                    self.next_access_point_deadline = access_point
+                        .next_access_point_control_deadline()
                         .map_err(StaApControlError::AccessPoint)?;
                 }
                 return Ok(Self::map_access_point_progress(progress));
@@ -188,7 +185,7 @@ where
                     )),
                 };
             }
-            if access_point.beacon_publication_due(now as u32) {
+            if access_point.beacon_publication_due(Instant::from_micros(now)) {
                 let progress = access_point
                     .service_access_point_control(hardware, physical_tx, now, false)
                     .map_err(StaApControlError::AccessPoint)?;
@@ -221,8 +218,8 @@ where
                 .service_access_point_control(hardware, physical_tx, now, false)
                 .map_err(StaApControlError::AccessPoint)?;
             if progress == StaApAccessPointControlProgress::Idle {
-                self.next_access_point_deadline_micros = access_point
-                    .next_access_point_control_deadline_micros(now)
+                self.next_access_point_deadline = access_point
+                    .next_access_point_control_deadline()
                     .map_err(StaApControlError::AccessPoint)?;
             }
             Ok(Self::map_access_point_progress(progress))
@@ -231,7 +228,7 @@ where
 
     fn ready(&self, station: &Station, _access_point: &AccessPoint, now_micros: u64) -> bool {
         station.station_control_ready(now_micros)
-            || now_micros >= self.next_access_point_deadline_micros
+            || Instant::from_micros(now_micros) >= self.next_access_point_deadline
     }
 
     fn required_before_stop(&self, station: &Station, _access_point: &AccessPoint) -> bool {
@@ -259,8 +256,7 @@ where
         async move {
             match select(
                 station.wait_station_control_ready(&self.timer),
-                self.timer
-                    .wait_until(Instant::from_micros(self.next_access_point_deadline_micros)),
+                self.timer.wait_until(self.next_access_point_deadline),
             )
             .await
             {

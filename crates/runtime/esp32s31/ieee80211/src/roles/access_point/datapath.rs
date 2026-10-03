@@ -107,7 +107,7 @@ pub(super) struct AccessPointDatapathServices<
     pub(super) tx_pending_since_micros: Option<u64>,
     #[cfg(feature = "diagnostics")]
     pub(super) network_tx_pending: Option<NetworkTxPending>,
-    pub(super) next_control_deadline_micros: u64,
+    pub(super) next_control_deadline: Instant,
 }
 
 impl<
@@ -568,10 +568,7 @@ where
                         turn.finish(self.control.queued_rx_frames() != 0)
                     });
                 }
-                if self
-                    .control
-                    .beacon_publication_due(self.control.now().as_micros() as u32)
-                {
+                if self.control.beacon_publication_due(self.control.now()) {
                     return Ok(if network_backpressured {
                         DatapathRxProgress::NetworkBackpressured
                     } else {
@@ -723,9 +720,9 @@ where
                 .service_control(self.hardware, now_micros)
                 .map_err(AccessPointDatapathError::Control)?;
             if progress == DatapathControlProgress::Idle {
-                self.next_control_deadline_micros = self
+                self.next_control_deadline = self
                     .control
-                    .next_control_deadline_micros(now_micros)
+                    .next_control_deadline()
                     .map_err(AccessPointDatapathError::Control)?;
             }
             self.observe_role_state();
@@ -735,7 +732,7 @@ where
     }
 
     fn control_ready(&self, now_micros: u64) -> bool {
-        now_micros >= self.next_control_deadline_micros
+        Instant::from_micros(now_micros) >= self.next_control_deadline
     }
 
     fn has_active_tx(&self) -> bool {
@@ -766,10 +763,7 @@ where
     }
 
     fn wait_control_ready<'a>(&'a mut self) -> impl Future<Output = ()> + 'a {
-        Timer::wait_until(
-            &**self.control,
-            Instant::from_micros(self.next_control_deadline_micros),
-        )
+        Timer::wait_until(&**self.control, self.next_control_deadline)
     }
 
     fn start_tx<'a, I>(

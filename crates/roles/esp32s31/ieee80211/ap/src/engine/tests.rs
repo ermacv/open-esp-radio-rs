@@ -117,7 +117,11 @@ fn active_epoch_owns_policy_group_key_management_and_stop_frontier() {
             begin_wpa2: false
         }
     );
-    assert!(engine.prepare_beacon(102_400).is_some());
+    assert!(
+        engine
+            .prepare_beacon(oer_time::Instant::from_micros(102_400))
+            .is_some()
+    );
 
     let observation = engine.observation();
     let _stopped = engine.stop(&mut hardware);
@@ -816,7 +820,9 @@ fn non_erp_association_updates_the_advertised_erp_and_ht_protection() {
         let ht = frame.windows(3).position(|w| w == [61, 22, 6]).unwrap();
         (frame[erp + 2], frame[ht + 4])
     };
-    let initial = engine.prepare_beacon(0).unwrap();
+    let initial = engine
+        .prepare_beacon(oer_time::Instant::from_micros(0))
+        .unwrap();
     assert_eq!(protection_fields(initial), (0, 0));
 
     let mut authentication = [0; 30];
@@ -864,7 +870,9 @@ fn non_erp_association_updates_the_advertised_erp_and_ht_protection() {
     assert!(bss.erp.use_protection());
     assert!(bss.erp.long_preamble_required());
     assert_eq!(bss.ht, HtProtectionMode::NonHtMixed);
-    let updated = engine.prepare_beacon(102_400).unwrap();
+    let updated = engine
+        .prepare_beacon(oer_time::Instant::from_micros(102_400))
+        .unwrap();
     assert_eq!(protection_fields(updated), (0x07, 0x03));
 }
 

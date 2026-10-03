@@ -235,7 +235,7 @@ where
             tx_pending_since_micros: Some(services_started_micros),
             #[cfg(feature = "diagnostics")]
             network_tx_pending: None,
-            next_control_deadline_micros: 0,
+            next_control_deadline: oer_time::Instant::EPOCH,
         };
         let mut runner = DatapathRunner::new(
             interrupts.mac_runtime(),

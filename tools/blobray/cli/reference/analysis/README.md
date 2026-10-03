@@ -53,14 +53,16 @@ into a root and a path: a root symbol (named from the function's
 references), an entry register, the entry stack, a call result or a section,
 then one displacement per loaded pointer and the field's own displacement
 last. `sb a4, 148(a5)` after `a5 = *(g_ic + 16)` is `g_ic [16, 148]`;
-additions of constants fold into the current displacement. An access whose
-last displacement is `--offset` (of `--width` bytes, when given) is
-reported with its instruction offset, kind and width. Absolute addresses and
-addresses with an unknown part are not fields and are not reported. The
-JSON document is
-`{"schema":1,"inputs":[...],"offset":N,"width":W,"functions":[...],"blocked":[...],"gaps":N}`;
-`blocked` lists the functions no analysis could read and `gaps` counts the
-code no function covers, whose accesses are unknown.
+additions of constants fold into the current displacement. A base the
+analysis could not resolve is the `unknown` root with its exact
+displacements after it: such an access is a candidate to read, not a proof.
+An access whose last displacement is `--offset` (of `--width` bytes, when
+given) is reported with its instruction offset, kind and width; absolute
+addresses are no field. The JSON document is
+`{"schema":1,"inputs":[...],"offset":N,"width":W,"functions":[...],"blocked":[...],"gaps":N,"unknown_addresses":N}`:
+`blocked` lists the functions no analysis could read, `gaps` counts the code
+no function covers and `unknown_addresses` the accesses whose address is not
+known at all. Any of the three means the list may be incomplete.
 
 Selection takes static and dynamic `STT_FUNC` symbols defined in nonempty
 executable sections of RV32 ET_REL objects or static ET_EXEC images. Aliases

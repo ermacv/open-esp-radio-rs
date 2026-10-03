@@ -21,7 +21,9 @@
 //!   `HeTxopRtsBudget`;
 //! - [`ccmp`]: the transmit packet-number step;
 //! - [`connection_coex`]: the coexistence events and priorities of the
-//!   station's connection frames under the reconnect policy.
+//!   station's connection frames under the reconnect policy;
+//! - [`station_link`]: the station's beacon window and the probes it sends
+//!   a silent access point.
 //!
 //! Where an algorithm is inseparable from the vendor bytes it walks (the
 //! schedule walk and the retry ladder), it lives here beside them.
@@ -33,6 +35,7 @@ pub mod lmac;
 pub mod rate_code;
 pub mod rate_schedule;
 pub mod retry_ladder;
+pub mod station_link;
 
 pub use he_txop::EspressifHeTxopRtsBudget;
 pub use retry_ladder::EspressifRetryLadder;

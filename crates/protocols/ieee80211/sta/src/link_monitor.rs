@@ -168,5 +168,115 @@ impl StaBeaconMonitor {
     }
 }
 
+/// How a station probes the access point once its beacons stop: one probe
+/// every `interval`, at most `attempts` probes before the link is lost; the
+/// first `directed` probes are addressed to the access point and the rest
+/// are broadcast.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaLinkProbePolicy {
+    pub interval: Duration,
+    pub attempts: u8,
+    pub directed: u8,
+}
+
+/// What the link needs from its station now.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaLinkAction {
+    /// Send one probe, then report it with [`StaLinkMonitor::probe_sent`]:
+    /// a Probe Request addressed to the access point when `directed`, a
+    /// broadcast one otherwise.
+    Probe { directed: bool },
+    /// Neither beacons nor probe responses came back: the link is lost.
+    Lost,
+}
+
+/// The connected station's link supervision: beacons keep the link, and
+/// when they stop for the beacon window the station probes the access point
+/// under a [`StaLinkProbePolicy`] before it declares the link lost.
+///
+/// Time enters as a value; the owner sends the probe and ends the link.
+// CAPABILITY: wifi-bounded-wait-owners
+pub struct StaLinkMonitor {
+    beacons: StaBeaconMonitor,
+    probe: StaLinkProbePolicy,
+    probes_sent: u8,
+}
+
+impl StaLinkMonitor {
+    pub const fn new(loss: StaBeaconLossConfig, probe: StaLinkProbePolicy) -> Self {
+        Self {
+            beacons: StaBeaconMonitor::new(loss),
+            probe,
+            probes_sent: 0,
+        }
+    }
+
+    /// The beacon state the link keeps: the last observation and its TIM.
+    pub const fn beacons(&self) -> &StaBeaconMonitor {
+        &self.beacons
+    }
+
+    pub const fn probe_policy(&self) -> StaLinkProbePolicy {
+        self.probe
+    }
+
+    /// Probes sent since the last beacon or probe response.
+    pub const fn probes_sent(&self) -> u8 {
+        self.probes_sent
+    }
+
+    /// When [`Self::due`] next has something to report.
+    pub const fn deadline(&self) -> Option<Instant> {
+        self.beacons.deadline()
+    }
+
+    /// Start the beacon window from the association-complete edge, before
+    /// the first beacon arrives; a running window is kept.
+    pub fn arm(&mut self, now: Instant) -> Result<(), StaBeaconLossConfigError> {
+        self.beacons.arm(now)
+    }
+
+    /// A beacon of the associated access point: the link is alive.
+    pub fn observe_beacon(
+        &mut self,
+        now: Instant,
+        observation: StaBeaconObservation,
+    ) -> Result<(), StaBeaconLossConfigError> {
+        self.probes_sent = 0;
+        self.beacons.observe(now, observation)
+    }
+
+    /// A probe response from the associated access point: the link is
+    /// reachable, without a beacon observation.
+    pub fn observe_probe_response(&mut self, now: Instant) -> Result<(), StaBeaconLossConfigError> {
+        self.probes_sent = 0;
+        self.beacons.observe_reachability(now)
+    }
+
+    /// What the link needs at `now`: nothing while beacons or the last
+    /// probe's response window keep it, a probe while attempts remain, and
+    /// [`StaLinkAction::Lost`] after the last one went unanswered.
+    pub const fn due(&self, now: Instant) -> Option<StaLinkAction> {
+        if !self.beacons.expired(now) {
+            None
+        } else if self.probes_sent < self.probe.attempts {
+            Some(StaLinkAction::Probe {
+                directed: self.probes_sent < self.probe.directed,
+            })
+        } else {
+            Some(StaLinkAction::Lost)
+        }
+    }
+
+    /// The probe [`Self::due`] asked for left at `now`: its response window
+    /// starts.
+    pub fn probe_sent(&mut self, now: Instant) -> Result<(), StaBeaconLossConfigError> {
+        self.beacons
+            .wait_for_reachability(now, self.probe.interval)?;
+        self.probes_sent = self.probes_sent.saturating_add(1);
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests;

@@ -38,6 +38,7 @@ oer-radio = { path = "../../../../radio", default-features = false, features = [
 oer-radio-embassy = { path = "../../../../adapters/embassy/radio" }
 oer-esp32s31-ieee80211 = { path = "../../../../hardware/esp32s31/driver/ieee80211" }
 oer-esp32s31-hal = { path = "../../../../hardware/esp32s31/hal" }
+oer-espressif-ieee80211-policy = { path = "../../../../protocols/espressif/ieee80211/policy" }
 oer-esp32s31-phy = { path = "../../../../hardware/esp32s31/phy" }
 oer-esp32s31-ieee80211-ap = { path = "../../../../roles/esp32s31/ieee80211/ap" }
 oer-esp32s31-ieee80211-dma = { path = "../../../../hardware/esp32s31/driver/ieee80211/dma" }

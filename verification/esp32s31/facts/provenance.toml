@@ -2060,6 +2060,18 @@ code = "d15f3e1c630ae2f30b90f7393bebcdb2485512803fc4ace145a1a09a8162c115"
 [[function]]
 artifact = "libnet80211"
 member = "wl_cnx.o"
+symbol = "mgd_probe_send_timeout_process"
+code = "92f7a98e1ee9052ba803e9626429fd09d6a02f42a402a623a07b7b8b2dee9a4a"
+
+[[function]]
+artifact = "libnet80211"
+member = "wl_cnx.o"
+symbol = "send_ap_probe"
+code = "0f34c89d04d60f42378d749e92218c0a4c6ef437e1902cd28b24b4134e295cb9"
+
+[[function]]
+artifact = "libnet80211"
+member = "wl_cnx.o"
 symbol = "sta_reset_beacon_timeout"
 code = "c10aa5e94d6858ddb0cfd83d248d60793e14c944e39be3306bce4b763a053458"
 

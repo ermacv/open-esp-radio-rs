@@ -5,6 +5,7 @@ name: Nightly
 #   type-checks the two final images on every push), so a stack frame or
 #   placement regression in a diagnostic class is found before it blocks a
 #   run;
+# - every ESP32-S31 example, built and audited (CI type-checks them);
 # - Blobray's workspace, Clippy and tests;
 # - each chip's vendor verification: its probe images, the vendor host
 #   stand, and the provenance of every cited vendor function against the
@@ -68,6 +69,19 @@ jobs:
         run: |
           set -o pipefail
           cargo xtask --verbose check firmware --all 2>&1 | tee "$RUNNER_TEMP/firmware-matrix.log"
+      # Push CI only type-checks the examples; this builds each one as
+      # `cargo xtask build firmware` does, with its stack and placement audit.
+      - name: Build and audit every ESP32-S31 example
+        if: ${{ !cancelled() }}
+        run: |
+          failed=0
+          for example in access-point monitor station thread
+          do
+            echo "::group::$example"
+            cargo xtask --verbose build firmware "$example" || failed=1
+            echo "::endgroup::"
+          done
+          exit "$failed"
       - name: Summarize the classes
         if: always()
         run: |

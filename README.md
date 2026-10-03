@@ -108,7 +108,8 @@ workspaces, every register publication and every qualification program; a
 newer push to the same branch cancels the run it supersedes, except on
 `main`. The [Documentation workflow](.github/workflows/docs.yml) checks the
 guides and API documentation, and the [Nightly workflow](.github/workflows/nightly.yml)
-builds every HIL image class and runs Blobray and each chip's vendor
+builds every HIL image class and every ESP32-S31 example with their audits,
+and runs Blobray and each chip's vendor
 verification, provenance included.
 
 For API changes, run `cargo xtask doc`: one `cargo doc --no-deps` per

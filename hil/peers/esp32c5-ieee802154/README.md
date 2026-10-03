@@ -50,9 +50,10 @@ The peer's USB Serial/JTAG console can wedge with the board still
 enumerated: every write and every control request (RTS, DTR) fails with
 `EPIPE` ("Broken pipe"), the hub lists the device without its string
 descriptors (`[303a:1001]` with no product or serial), and neither an RTS
-nor a JTAG reset nor `espflash` reaches it. A scenario then ends `broken`
-with an infrastructure fault naming the peer console. Firmware is not the
-cause, so reflashing does not help; power-cycling only the peer's own hub
+nor a JTAG reset nor `espflash` reaches it. Before every peer scenario
+the run's preflight sends `SYNC` under the run's lease, so such a console
+fails the scenario's precondition, pointing here, instead of breaking it
+midway. Firmware is not the cause, so reflashing does not help; power-cycling only the peer's own hub
 port does, for example `cargo hil lease --board esp32c5 -- uhubctl -l
 <hub> -p <port> -a cycle`. Never cycle a port that carries a cascaded hub.
 `cargo hil peer send esp32c5 SYNC` answers `@OK SYNC` once it is back.

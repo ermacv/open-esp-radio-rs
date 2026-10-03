@@ -413,6 +413,9 @@ impl SuiteEffects for LiveSuite<'_> {
                 ),
             ));
         }
+        if let Err(error) = self.peer_answers(scenario) {
+            return Some(Failure::new(FailureKind::Precondition, error.to_string()));
+        }
         preflight::scenario_failure(self.lab, scenario)
     }
 
@@ -567,7 +570,36 @@ impl LiveSuite<'_> {
         self.peer_flash = oer_hil_stand::lock::peer_flash(&board, image)?;
         Ok(())
     }
+
+    /// The peer console answers `SYNC` before the scenario starts, under the
+    /// run's lease: a wedged console fails the scenario's precondition with
+    /// its recovery instead of breaking it midway.
+    fn peer_answers(&self, scenario: &Scenario) -> Result<()> {
+        let (Some(peer), Some(_)) = (self.lab.peer.as_ref(), scenario.family.peer_image()) else {
+            return Ok(());
+        };
+        let path = peer.serial()?;
+        let live = oer_hil_link::peer_line::SerialLink::open(&path).and_then(|mut link| {
+            oer_hil_link::peer_line::answers_sync(&mut link, PEER_SYNC_TIMEOUT)
+        });
+        match live {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(format!(
+                "the peer console {} does not answer SYNC; {PEER_WEDGE}",
+                path.display()
+            )
+            .into()),
+            Err(error) => Err(format!("{error}; {PEER_WEDGE}").into()),
+        }
+    }
 }
+
+/// How long one `SYNC` of the preflight waits for the peer's `@READY`.
+const PEER_SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Where a wedged peer console's recovery is described.
+const PEER_WEDGE: &str = "a wedged USB console recovers as \
+    hil/peers/esp32c5-ieee802154/README.md#a-wedged-usb-console describes";
 
 /// `sh -c command` in `root` with the lease's `environment` and the run's
 /// `directory` in `OER_HIL_RUN_DIRECTORY`.

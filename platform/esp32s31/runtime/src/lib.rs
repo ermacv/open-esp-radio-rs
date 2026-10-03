@@ -29,8 +29,16 @@ pub unsafe fn adopt_psram(
     >,
 ) -> esp_hal::psram::Psram {
     oer_esp32s31_soc_esp_hal::interrupt_table::adopt(interrupt_table);
+    let supply = psram_supply();
     unsafe {
         let psram = oer_esp32s31_platform_board::adopt_initialized_psram(peripheral);
+        // Code and stacks already run from PSRAM: adopting the mapping must
+        // leave the PHY supply exactly as the bootstrap configured it.
+        assert_eq!(
+            psram_supply(),
+            supply,
+            "PSRAM adoption reprogrammed the PSRAM PHY supply"
+        );
         esp_hal::interrupt::reinitialize_vectoring_after_handoff();
         stacks::install_current_hart_interrupt_stack();
         unsafe extern "C" {
@@ -39,6 +47,16 @@ pub unsafe fn adopt_psram(
         esp_hal::debugger::set_stack_watchpoint(core::ptr::addr_of!(_stack_end) as usize);
         psram
     }
+}
+
+/// The PMU words that configure the PSRAM PHY supply: the external LDO
+/// (inrush limit, voltage, enable) and the PSRAM power-down control.
+fn psram_supply() -> (u32, u32) {
+    let pmu = esp_hal::peripherals::PMU::regs();
+    (
+        pmu.ext_ldo_ctrl().read().bits(),
+        pmu.psram_cfg().read().bits(),
+    )
 }
 
 /// Hand global interrupt enable (`mstatus.MIE`) to the current hart's executor.

@@ -85,6 +85,7 @@ diagnostics = [
 # ordinary value observers must not change the SRAM-closed interrupt call graph.
 mac-irq-diagnostics = ["diagnostics"]
 tx-wait-probe = ["diagnostics", "oer-esp32s31-ieee80211-runtime/tx-wait-probe"]
+rx-clock-probe = ["diagnostics", "oer-esp32s31-ieee80211-runtime/rx-clock-probe"]
 task-poll-telemetry = [
     "diagnostics",
     "oer-esp32s31-ieee80211-runtime/task-poll-telemetry",

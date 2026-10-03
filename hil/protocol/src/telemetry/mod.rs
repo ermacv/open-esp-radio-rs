@@ -18,6 +18,10 @@ crate::messages! {
     property StationExit = "telemetry/station-exit";
     /// The program-counter profile: a sampling interrupt on each hart.
     property PcProfile = "telemetry/pc-profile";
+    /// The receive-clock probe: frame receive timestamps beside their
+    /// handoff time and paired MAC local-time readings, logged to the
+    /// console.
+    property RxClock = "telemetry/rx-clock";
     /// Bounded Embassy task poll residence.
     property TaskPoll = "telemetry/task-poll";
     /// The intrusive Core0 RX phase and service histograms.

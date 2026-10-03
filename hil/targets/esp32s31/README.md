@@ -273,6 +273,16 @@ and does not by itself measure how long interrupts were disabled. Ordinary
 MAC IRQ, correctness and performance images do not enable this probe.
 The shared `mac_active` field retains the reviewed MAC activity encoding;
 it does not identify CCA/NAV or timestamp the beginning of a transmission.
+
+`diagnostic-rx-clock` (scenario `diagnostic-rx-clock`, station ICMP) carries
+the intrusive `rx-clock-probe` feature and reports the `telemetry/rx-clock`
+property. At the first executor handoff of every 32nd received frame the
+runtime logs `rx_clock_frame` with the frame's receive timestamp from the
+RX-control prefix (a Wi-Fi MAC local-time reading) and the monotonic handoff
+time; every 100 ms the image logs `rx_clock_pair` with a MAC local-time reading
+between two monotonic readings. The pairs relate the two clocks, so the
+counter's unit and drift and each frame's age at handoff follow from the
+console log. Product images do not enable the probe.
 Queue and activity fields are sequential reads, not an atomic hardware capture.
 Hang/panic fields are cumulative hardware counters from the reviewed RX
 statistics decoder, not live receiver-state or channel-busy measurements.

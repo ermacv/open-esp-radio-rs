@@ -38,6 +38,9 @@ pub enum SystemScenario {
         intervals: u16,
         period_millis: u16,
     },
+    /// esp-hal's inter-processor call into each core, core 0 included, on the
+    /// correctness image.
+    IpcCall { calls: u8 },
 }
 
 fn single_frame_batch() -> Vec<u8> {
@@ -95,6 +98,7 @@ impl SystemScenario {
                 bounded(*intervals, 2, 100, "intervals")?;
                 bounded(*period_millis, 1, 1_000, "period_millis")
             }
+            Self::IpcCall { calls } => bounded(*calls, 1, 100, "calls"),
         }
     }
 
@@ -106,6 +110,7 @@ impl SystemScenario {
             Self::PanicReset {} => ImageClass::SystemPanicReset,
             Self::MemoryBenchmark { .. } => ImageClass::DiagnosticMemoryBenchmark,
             Self::Timebase { .. } => ImageClass::Correctness,
+            Self::IpcCall { .. } => ImageClass::Correctness,
         })
     }
 
@@ -145,6 +150,7 @@ impl SystemScenario {
                 output,
                 context,
             ),
+            Self::IpcCall { calls } => system::ipc_call::run(*calls, output, context),
         }
     }
 }
@@ -172,6 +178,7 @@ mod tests {
                 "kind = 'timebase'\nboots = 1\nintervals = 2\nperiod_millis = 10",
                 ImageClass::Correctness,
             ),
+            ("kind = 'ipc-call'\ncalls = 1", ImageClass::Correctness),
         ] {
             let scenario = parse(text);
             scenario.validate().unwrap();

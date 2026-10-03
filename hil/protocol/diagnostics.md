@@ -19,6 +19,14 @@ panics in thread context, the entry records the panic and resets the chip
 through `esp_hal::system::software_reset`, and the next boot reports a
 software reset and the record.
 
+`system::CallAcrossCores` (`IpcCall`, images that run both cores) posts
+functions through esp-hal's inter-processor call: one from core 0 to itself
+and one to core 1, which posts one back to core 0. `CoresCalled` names the
+core each ran on, `None` for one that did not run within 100 ms. The call's
+line enters through the platform's stack-switching vector entry and the
+vectored dispatcher, so the `system-ipc-call` scenario exercises that path on
+both cores.
+
 `system::WatchdogTest` is served only by the dedicated watchdog image.
 The dedicated radio-free image's one-second engineering budget exercises completion, a synchronous
 poll that never returns, cancellation, missing completion and late restoration

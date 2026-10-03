@@ -28,7 +28,7 @@ use oer_hil_protocol::phy::{ControlTracking, ReadAnalogImage, ReadRegisterImage}
 #[cfg(not(feature = "memory-benchmark"))]
 use oer_hil_protocol::system::HangTarget;
 use oer_hil_protocol::system::{
-    GetInterruptStacks, GetStacks, InterruptStacks, ProbeTimebase, Stacks,
+    CallAcrossCores, GetInterruptStacks, GetStacks, InterruptStacks, ProbeTimebase, Stacks,
 };
 #[cfg(not(feature = "memory-benchmark"))]
 use oer_hil_protocol::system::{HangInjected, InjectHang};
@@ -117,6 +117,7 @@ oer_hil_agent::requests! {
         GetStacks(GetStacks),
         GetInterruptStacks(GetInterruptStacks),
         ProbeTimebase(ProbeTimebase),
+        CallAcrossCores(CallAcrossCores),
         #[cfg(feature = "memory-benchmark")]
         RunMemoryBenchmark(oer_hil_protocol::system::RunMemoryBenchmark),
         #[cfg(feature = "ieee802154-diagnostic")]
@@ -1256,6 +1257,17 @@ pub async fn protocol_task() {
                             )
                             .await;
                         }
+                    }
+                    Request::CallAcrossCores(CallAcrossCores) => {
+                        let response =
+                            if crate::image_features::has::<oer_hil_protocol::system::IpcCall>() {
+                                crate::system::ipc_call::call_across_cores()
+                                    .await
+                                    .ok_or(RejectReason::InvalidState)
+                            } else {
+                                Err(RejectReason::Unsupported)
+                            };
+                        respond(session_id, request_id, response).await;
                     }
                     Request::ProbeTimebase(oer_hil_protocol::system::ProbeTimebase(request)) => {
                         let response = if !crate::image_features::has::<

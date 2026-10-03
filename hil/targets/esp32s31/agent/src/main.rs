@@ -399,6 +399,7 @@ extern "C" fn runtime_main() -> ! {
         // The HIL runtime owns both cores until reset. Dropping this guard
         // would park Core 1 while its Embassy executor still owns tasks.
         core::mem::forget(guard);
+        system::ipc_call::install(esp_hal::interrupt::ipc::Ipc::new(peripherals.IPC));
 
         loop {
             let pointer = APP_SEND_SPAWNER_PTR.load(Ordering::Acquire);

@@ -130,6 +130,9 @@ system/hang/inject 2a42c5b154094a25 endpoint
 system/hang/injected ab4b470f0e8147f6 topic
 system/interrupt-stacks cc93bc9290533df4 topic
 system/interrupt-stacks/get 651c27a44d5bc802 endpoint
+system/ipc-call 2d19c0acb90b2ce9 property
+system/ipc/call 89ef451b0d9c998b endpoint
+system/ipc/called c05bc9a934183a5d topic
 system/memory-benchmark 6490d78e1fedac51 property
 system/memory-benchmark/completed 898d77a237a16f8e topic
 system/memory-benchmark/run 9166cc0e5e410a17 endpoint

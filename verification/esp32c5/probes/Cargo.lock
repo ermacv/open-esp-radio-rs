@@ -3,6 +3,12 @@
 version = 4
 
 [[package]]
+name = "bytemuck"
+version = "1.25.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95832e849adfb21180ccb6826a99da14e5d266ae5c2e668e1602cf234f153797"
+
+[[package]]
 name = "critical-section"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -86,6 +92,7 @@ dependencies = [
 name = "oer-espressif-ieee802154-engine"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "oer-espressif-coex",
  "oer-ieee802154",
  "oer-ieee802154-trace",

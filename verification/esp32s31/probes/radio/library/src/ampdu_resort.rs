@@ -68,19 +68,21 @@ const COMMITTED_MICROS: u64 = 0;
 type Pool = PinnedDmaTxPool<FRAME_CAPACITY, 0, 0, SLOTS>;
 type Backing = PinnedDmaTxRadioLease<'static, FRAME_CAPACITY, 0, 0>;
 
+#[derive(bytemuck::Zeroable)]
 struct ProbeCell<T>(core::cell::UnsafeCell<T>);
 
 // SAFETY: Blobray executes this probe image on one thread and invokes its
 // exported entries serially.
 unsafe impl<T> Sync for ProbeCell<T> {}
 
-#[unsafe(link_section = ".dma.bss.ampdu_resort")]
-static POOL: ProbeCell<Pool> = ProbeCell(core::cell::UnsafeCell::new(Pool::new()));
+oer_memory::zeroed_static! {
+    static POOL: ProbeCell<Pool> = zeroed in ".dma.bss.ampdu_resort";
+}
 static METADATA: ProbeCell<HtAmpduTxStorage<SLOTS, 0>> =
     ProbeCell(core::cell::UnsafeCell::new(HtAmpduTxStorage::new()));
-#[unsafe(link_section = ".dma.bss.ampdu_resort")]
-static DMA: ProbeCell<AmpduDmaStorage<SLOTS, 0>> =
-    ProbeCell(core::cell::UnsafeCell::new(AmpduDmaStorage::new()));
+oer_memory::zeroed_static! {
+    static DMA: ProbeCell<AmpduDmaStorage<SLOTS, 0>> = zeroed in ".dma.bss.ampdu_resort";
+}
 static RETENTION: ProbeCell<RetainedAmpduDmaStorage<Backing, SLOTS>> =
     ProbeCell(core::cell::UnsafeCell::new(RetainedAmpduDmaStorage::new()));
 

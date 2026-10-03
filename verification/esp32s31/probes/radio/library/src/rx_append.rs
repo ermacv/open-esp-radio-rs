@@ -45,9 +45,10 @@ struct ProbeCell<T>(core::cell::UnsafeCell<T>);
 // exported entries serially.
 unsafe impl<T> Sync for ProbeCell<T> {}
 
-#[unsafe(link_section = ".dma.bss.rx_append")]
-static STORAGE: RxDmaStorage<RX_APPEND_COUNT, RX_APPEND_CAPACITY, RX_APPEND_STORAGE> =
-    RxDmaStorage::new();
+oer_memory::zeroed_static! {
+    static STORAGE: RxDmaStorage<RX_APPEND_COUNT, RX_APPEND_CAPACITY, RX_APPEND_STORAGE> =
+        zeroed in ".dma.bss.rx_append";
+}
 static ADDRESSES: ProbeCell<RxDmaBufferAddresses<RX_APPEND_COUNT>> =
     ProbeCell(core::cell::UnsafeCell::new([0; RX_APPEND_COUNT]));
 

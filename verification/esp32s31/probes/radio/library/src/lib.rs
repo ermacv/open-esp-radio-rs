@@ -1560,18 +1560,18 @@ struct OrdinaryTxProbeState {
     hardware: OrdinaryTxProbeHardware,
 }
 
+#[derive(bytemuck::Zeroable)]
 struct OrdinaryTxProbeCell<T>(core::cell::UnsafeCell<T>);
 
 // SAFETY: Blobray executes this probe image on one thread and invokes
 // its exported stateful entry serially.
 unsafe impl<T> Sync for OrdinaryTxProbeCell<T> {}
 
-#[unsafe(link_section = ".dma.bss.ordinary_tx")]
-static ORDINARY_TX_DMA: OrdinaryTxProbeCell<
-    oer_esp32s31_ieee80211_dma::tx_storage::TxDmaStorage<ORDINARY_TX_PROBE_BUFFER_SIZE>,
-> = OrdinaryTxProbeCell(core::cell::UnsafeCell::new(
-    oer_esp32s31_ieee80211_dma::tx_storage::TxDmaStorage::new(),
-));
+oer_memory::zeroed_static! {
+    static ORDINARY_TX_DMA: OrdinaryTxProbeCell<
+        oer_esp32s31_ieee80211_dma::tx_storage::TxDmaStorage<ORDINARY_TX_PROBE_BUFFER_SIZE>,
+    > = zeroed in ".dma.bss.ordinary_tx";
+}
 static ORDINARY_TX_SLOT: OrdinaryTxProbeCell<
     core::mem::MaybeUninit<oer_esp32s31_ieee80211_mac::tx::TxSlot<ORDINARY_TX_PROBE_BUFFER_SIZE>>,
 > = OrdinaryTxProbeCell(core::cell::UnsafeCell::new(core::mem::MaybeUninit::uninit()));

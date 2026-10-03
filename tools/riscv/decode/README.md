@@ -9,7 +9,7 @@ RV32 backend decodes through it.
 `decode(bytes, extensions)` returns `None` for an encoding outside the selected
 `Extensions`, a reserved encoding, an encoding longer than 32 bits and a slice
 shorter than the instruction. `Extensions::ALL` is the ESP32-S31's
-`rv32imafc_zba_zbb_zbs_zcb_zcmp` without Zcmt; `Extensions::RV32IMAC` is the
+`rv32imafc_zicsr_zba_zbb_zbs_zcb_zcmp` without Zcmt; `Extensions::RV32IMAC` is the
 base with M, A and C.
 
 rv-asm decodes RV32I with M, A and C (`Instruction::Base`). The crate corrects
@@ -19,7 +19,10 @@ reserved C.ADDI16SP with a zero immediate, which rv-asm decodes, as the
 defines them. The `extensions` module decodes the forms rv-asm lacks
 (`Instruction::Extension`): the Zba, Zbb and Zbs integer forms, the Zcb loads,
 stores and arithmetic, and the Zcmp `cm.push`, `cm.pop`, `cm.popret`,
-`cm.popretz`, `cm.mvsa01` and `cm.mva01s`. It classifies the Zcmp and Zcb
+`cm.popretz`, `cm.mvsa01` and `cm.mva01s`, and the
+[Zicsr](https://docs.riscv.org/reference/isa/unpriv/zicsr.html) `csrrw`,
+`csrrs`, `csrrc` and their immediate forms (`Extension::Csr`; `mret` and
+`wfi` stay undecoded). It classifies the Zcmp and Zcb
 encoding spaces before rv-asm, which would read the Zcmp space as the
 D-extension C.FSDSP. `c.sext.b`, `c.zext.h` and `c.sext.h` also need Zbb, and
 `c.mul` M. Zcmt table jumps need the `jvt` CSR and stay undecoded.

@@ -35,6 +35,27 @@ fn compressed_and_full_instructions_lift_without_display_parsing() {
     assert_eq!(RiscvDecoder.lift(&[0x73, 0, 0, 0]), SemanticOp::Unsupported);
 }
 
+#[test]
+fn csr_accesses_write_only_their_destination() {
+    // csrr a3, mhartid; csrw mscratch, sp; csrrw sp, mscratch, sp (LLVM).
+    for (word, dest) in [(0xf140_26f3u32, 13), (0x3401_1073, 0), (0x3401_1173, 2)] {
+        assert_eq!(
+            RiscvDecoder.lift(&word.to_le_bytes()),
+            SemanticOp::Opaque { dest },
+            "{word:#010x}"
+        );
+    }
+    // mret and wfi are not CSR accesses.
+    assert_eq!(
+        RiscvDecoder.lift(&0x3020_0073u32.to_le_bytes()),
+        SemanticOp::Unsupported
+    );
+    assert_eq!(
+        RiscvDecoder.lift(&0x1050_0073u32.to_le_bytes()),
+        SemanticOp::Unsupported
+    );
+}
+
 /// Encodings and display text from LLVM's assembler.
 const STACK_FORMS: &[(u16, &str)] = &[
     (0xb892, "cm.push {ra, s0-s4}, -32"),

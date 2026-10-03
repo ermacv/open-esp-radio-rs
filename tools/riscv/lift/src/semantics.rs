@@ -18,7 +18,7 @@ impl FunctionSemantics for RiscvDecoder {
     }
 
     fn semantic_identity(&self) -> &'static str {
-        "rv32imafc-zba-zbb-zbs-zcb-zcmp/values-9/rv-asm-0.2.1"
+        "rv32imafc-zicsr-zba-zbb-zbs-zcb-zcmp/values-10/rv-asm-0.2.1"
     }
     fn lift(&self, bytes: &[u8]) -> SemanticOp {
         let inst = match decode_instruction(bytes) {
@@ -422,6 +422,9 @@ fn lift_extension(extension: Extension) -> SemanticOp {
         | Extension::Pop { .. }
         | Extension::MoveToSaved { .. }
         | Extension::MoveFromSaved { .. } => SemanticOp::Unsupported,
+        // A CSR access's only integer-register effect is the old CSR value,
+        // outside the integer model.
+        Extension::Csr { dest, .. } => SemanticOp::Opaque { dest },
     }
 }
 

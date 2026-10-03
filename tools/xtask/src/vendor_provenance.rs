@@ -13,6 +13,14 @@
 //! fingerprint; the registry diff is the review record. `NAME` is a symbol,
 //! or the `artifact[member]::symbol` form the check prints, which narrows it
 //! to that member; a name neither registered nor pinned is an error.
+//!
+//! A bare name cites every pinned copy of the function: the vendor library's
+//! and, where the ROM carries one, the ROM's. A citation in the same
+//! `artifact[member]::symbol` form (`libpp[pm.o]::pm_parse_beacon`,
+//! `rom[]::pm_tbtt_process`) cites only that copy, so a fact reviewed
+//! against one copy does not claim the others; naming a copy no pinned
+//! artifact defines is an error. Accepting a copy no citation names any
+//! longer removes its registration.
 use crate::vendor_fingerprint::Function;
 use crate::{Context, Result};
 use std::collections::{BTreeMap, BTreeSet};
@@ -145,6 +153,53 @@ fn identifiers(text: &str, out: &mut BTreeSet<String>) {
     }
 }
 
+/// The `artifact[member]::symbol` forms of `text`, and the text without
+/// them. Only a form whose `artifact` is a pinned artifact id is a
+/// qualified citation; the survey cites any other's symbol bare.
+fn qualified_citations(text: &str) -> (String, Vec<(String, String, String)>) {
+    let identifier = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let mut bare = String::with_capacity(text.len());
+    let mut copies = vec![];
+    let mut rest = text;
+    while let Some(at) = rest.find("]::") {
+        let before = &rest[..at];
+        let parsed = before.rfind('[').and_then(|open| {
+            let member = &before[open + 1..];
+            let artifact_start = before[..open]
+                .rfind(|c: char| !(identifier(c) || c == '-' || c == '.'))
+                .map_or(0, |i| i + 1);
+            let artifact = &before[artifact_start..open];
+            let after = &rest[at + 3..];
+            let symbol_len = after.find(|c: char| !identifier(c)).unwrap_or(after.len());
+            let symbol = &after[..symbol_len];
+            (!artifact.is_empty() && !symbol.is_empty() && !member.contains(char::is_whitespace))
+                .then(|| {
+                    (
+                        artifact_start,
+                        artifact,
+                        member,
+                        symbol,
+                        at + 3 + symbol_len,
+                    )
+                })
+        });
+        match parsed {
+            Some((start, artifact, member, symbol, end)) => {
+                bare.push_str(&rest[..start]);
+                bare.push(' ');
+                copies.push((artifact.to_owned(), member.to_owned(), symbol.to_owned()));
+                rest = &rest[end..];
+            }
+            None => {
+                bare.push_str(&rest[..at + 3]);
+                rest = &rest[at + 3..];
+            }
+        }
+    }
+    bare.push_str(rest);
+    (bare, copies)
+}
+
 /// Whether `word` has the shape of a code identifier rather than prose: an
 /// underscore, a digit, or an uppercase letter after the first. A plain
 /// lowercase word such as `main` or `abort` is prose even when a vendor
@@ -249,6 +304,10 @@ struct Scan<'a> {
 #[derive(Default)]
 struct Found {
     words: BTreeSet<String>,
+    /// Copies cited by `artifact[member]::symbol`, by symbol.
+    qualified: BTreeMap<String, BTreeSet<(String, String)>>,
+    /// Where each qualified citation was written, for its diagnostics.
+    qualified_at: Vec<(String, String, String, String)>,
     problems: Vec<String>,
     /// Location and identifiers of every neutral block that names no chip.
     uncharted: Vec<(String, BTreeSet<String>)>,
@@ -286,7 +345,23 @@ fn production_words(scan: &Scan<'_>, directory: &Path, found: &mut Found) -> Res
             };
             for block in blocks {
                 match attribute(&block, place, scan.chip, scan.citable) {
-                    Attribution::Cited => identifiers(&block.text, &mut found.words),
+                    Attribution::Cited => {
+                        let (bare, copies) = qualified_citations(&block.text);
+                        identifiers(&bare, &mut found.words);
+                        for (artifact, member, symbol) in copies {
+                            found.qualified_at.push((
+                                format!("{}:{}", relative.display(), block.line),
+                                artifact.clone(),
+                                member.clone(),
+                                symbol.clone(),
+                            ));
+                            found
+                                .qualified
+                                .entry(symbol)
+                                .or_default()
+                                .insert((artifact, member));
+                        }
+                    }
                     Attribution::NotCited => {}
                     Attribution::Uncharted => {
                         let mut words = BTreeSet::new();
@@ -398,9 +473,13 @@ struct Survey {
     registry: Vec<Entry>,
     /// Current definitions: (artifact, member, symbol) -> code.
     current: BTreeMap<(String, String, String), String>,
-    /// Referenced names: cited identifiers that name a current or registered
-    /// function.
+    /// Referenced names: bare cited identifiers that name a current or
+    /// registered function, citing every copy.
     references: BTreeSet<String>,
+    /// Copies cited by `artifact[member]::symbol`, by symbol.
+    qualified: BTreeMap<String, BTreeSet<(String, String)>>,
+    /// Each qualified citation with where it was written.
+    qualified_at: Vec<(String, String, String, String)>,
     /// Every cited identifier, whether or not it names a function.
     words: BTreeSet<String>,
     /// Names the verification decisions cite, with the files citing them.
@@ -445,9 +524,31 @@ fn survey(ctx: &Context, chip: &str) -> Result<Survey> {
     }
     let Found {
         mut words,
+        qualified: forms,
+        qualified_at: forms_at,
         problems: mut citations,
         uncharted,
     } = found;
+    // `libpp[pm.o]::f` names one copy; `libpp.a[pm.o]::f` or any other
+    // form whose artifact is no pinned id cites `f` bare.
+    let mut qualified: BTreeMap<String, BTreeSet<(String, String)>> = BTreeMap::new();
+    for (symbol, copies) in forms {
+        for (artifact, member) in copies {
+            if pinned.contains_key(&artifact) {
+                qualified
+                    .entry(symbol.clone())
+                    .or_default()
+                    .insert((artifact, member));
+            } else {
+                words.insert(symbol.clone());
+            }
+        }
+    }
+    let qualified_at: Vec<_> = forms_at
+        .into_iter()
+        .filter(|(_, artifact, _, _)| pinned.contains_key(artifact))
+        .collect();
+
     for directory in register_directories(chip) {
         register_words(&ctx.root.join(directory), &mut words)?;
     }
@@ -485,11 +586,24 @@ fn survey(ctx: &Context, chip: &str) -> Result<Survey> {
         registry,
         current,
         references,
+        qualified,
+        qualified_at,
         words,
         decisions,
         pinned,
         citations,
     })
+}
+
+impl Survey {
+    /// Whether some citation names this copy: its bare name, or the copy.
+    fn cites(&self, artifact: &str, member: &str, symbol: &str) -> bool {
+        self.references.contains(symbol)
+            || self
+                .qualified
+                .get(symbol)
+                .is_some_and(|copies| copies.contains(&(artifact.to_owned(), member.to_owned())))
+    }
 }
 
 /// Undefined obfuscated symbols of every document under `docs/vendor/<chip>`.
@@ -524,8 +638,22 @@ fn document_symbols(
 
 /// Every provenance violation of `chip`, one line each.
 pub fn violations(ctx: &Context, chip: &str) -> Result<Vec<String>> {
-    let survey = survey(ctx, chip)?;
+    Ok(problems_of(&survey(ctx, chip)?))
+}
+
+/// The provenance problems of one survey.
+fn problems_of(survey: &Survey) -> Vec<String> {
     let mut problems = survey.citations.clone();
+    for (at, artifact, member, symbol) in &survey.qualified_at {
+        if !survey
+            .current
+            .contains_key(&(artifact.clone(), member.clone(), symbol.clone()))
+        {
+            problems.push(format!(
+                "{at}: cites {artifact}[{member}]::{symbol}, which no pinned artifact defines"
+            ));
+        }
+    }
     problems.extend(survey.documents.iter().cloned());
     let registered: BTreeSet<(&str, &str, &str)> = survey
         .registry
@@ -538,10 +666,10 @@ pub fn violations(ctx: &Context, chip: &str) -> Result<Vec<String>> {
             entry.member.clone(),
             entry.symbol.clone(),
         );
-        if !survey.references.contains(&entry.symbol) {
+        if !survey.cites(&entry.artifact, &entry.member, &entry.symbol) {
             problems.push(format!(
-                "{}::{} is registered but no longer cited",
-                entry.artifact, entry.symbol
+                "{}[{}]::{} is registered but no longer cited; `cargo xtask vendor-provenance --accept {}[{}]::{}` removes it",
+                entry.artifact, entry.member, entry.symbol, entry.artifact, entry.member, entry.symbol
             ));
         }
         match survey.current.get(&key) {
@@ -575,7 +703,7 @@ pub fn violations(ctx: &Context, chip: &str) -> Result<Vec<String>> {
         }
     }
     for (artifact, member, symbol) in survey.current.keys() {
-        if survey.references.contains(symbol)
+        if survey.cites(artifact, member, symbol)
             && !registered.contains(&(artifact.as_str(), member.as_str(), symbol.as_str()))
         {
             problems.push(format!(
@@ -583,7 +711,7 @@ pub fn violations(ctx: &Context, chip: &str) -> Result<Vec<String>> {
             ));
         }
     }
-    Ok(problems)
+    problems
 }
 
 /// What a changed function's reviewer re-reads: the exclusions of every
@@ -686,7 +814,7 @@ pub fn update(
         // their facts were observed.
         for (artifact, functions) in &baselines {
             for f in functions {
-                if survey.words.contains(&f.name)
+                if (survey.words.contains(&f.name) || survey.qualified.contains_key(&f.name))
                     && !survey.current.keys().any(|(_, _, name)| *name == f.name)
                 {
                     entries.insert(Entry {
@@ -699,8 +827,16 @@ pub fn update(
                 }
             }
         }
-        for symbol in &survey.references {
-            for entry in current_entries(symbol) {
+        let cited = survey
+            .references
+            .iter()
+            .chain(survey.qualified.keys())
+            .collect::<BTreeSet<_>>();
+        for symbol in cited {
+            for entry in current_entries(symbol)
+                .into_iter()
+                .filter(|e| survey.cites(&e.artifact, &e.member, &e.symbol))
+            {
                 let observed = baselines.get(&entry.artifact).and_then(|functions| {
                     functions
                         .iter()
@@ -722,18 +858,29 @@ pub fn update(
         let previous: Vec<Entry> = entries.iter().filter(|e| selected(e)).cloned().collect();
         let registered = !previous.is_empty();
         entries.retain(|e| !selected(e));
-        let current: Vec<Entry> = current_entries(symbol)
+        let defined: Vec<Entry> = current_entries(symbol)
             .into_iter()
             .filter(|e| selected(e))
             .collect();
+        if defined.is_empty() && !registered {
+            return Err(
+                format!("{accepted}: neither registered nor defined by a pinned artifact").into(),
+            );
+        }
+        let (current, uncited): (Vec<Entry>, Vec<Entry>) = defined
+            .into_iter()
+            .partition(|e| survey.cites(&e.artifact, &e.member, &e.symbol));
         if current.is_empty() {
-            if !registered {
-                return Err(format!(
-                    "{accepted}: neither registered nor defined by a pinned artifact"
-                )
-                .into());
+            if uncited.is_empty() {
+                println!("{accepted}: no pinned definition; its registration is removed");
+            } else {
+                for e in &uncited {
+                    println!(
+                        "{}[{}]::{}: no citation names this copy; its registration is removed",
+                        e.artifact, e.member, e.symbol
+                    );
+                }
             }
-            println!("{accepted}: no pinned definition; its registration is removed");
         }
         if show
             && !current.is_empty()

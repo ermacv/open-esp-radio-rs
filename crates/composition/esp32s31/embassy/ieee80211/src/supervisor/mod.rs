@@ -224,7 +224,7 @@ use role_transition::{
 };
 
 const MAC_HANDSHAKE_SAMPLE_LIMIT: u32 = 100_000;
-const TX_COMPLETION_TIMEOUT_US: u64 = 250_000;
+const TX_COMPLETION_TIMEOUT: oer_time::Duration = oer_time::Duration::from_millis(250);
 
 pub(super) type RxStorage =
     ReceiveDmaStorage<RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE, RX_BUFFER_STORAGE_SIZE>;

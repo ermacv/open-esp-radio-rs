@@ -228,7 +228,7 @@ pub fn make_ordinary<'a, const BUFFER_SIZE: usize>(
                 access_category: WmmAccessCategory::BestEffort,
                 control_schedule:
                     oer_esp32s31_ieee80211_mac::rate::control::DEFAULT_CONTROL_SCHEDULE,
-                publication_timeout_micros: 250_000,
+                publication_timeout: oer_time::Duration::from_micros(250_000),
             },
         },
     )

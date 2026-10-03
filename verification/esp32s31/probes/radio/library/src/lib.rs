@@ -1627,7 +1627,7 @@ fn initialize_ordinary_tx_probe() -> Result<OrdinaryTxProbeState, u32> {
                     access_category: LegacyTxQueue::BestEffort.access_category(),
                     initial_rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),
                     publication_limit: 0x20,
-                    publication_timeout_micros: 1_000,
+                    publication_timeout: oer_time::Duration::from_micros(1_000),
                 },
                 hardware_mic_length: 0,
                 hardware_key_selector: 0,

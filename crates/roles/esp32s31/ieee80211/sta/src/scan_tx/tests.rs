@@ -121,8 +121,8 @@ fn running_scan_tx<'a>(
             timer: ScanTxTimer::default(),
         },
         ControlTxConfig {
-            completion_timeout_us: 10,
-            poll_interval_us: 1,
+            completion_timeout: oer_time::Duration::from_micros(10),
+            poll_interval: oer_time::Duration::from_micros(1),
         },
     ))
 }

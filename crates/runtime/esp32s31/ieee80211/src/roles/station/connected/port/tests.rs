@@ -105,7 +105,7 @@ fn config() -> ConnectedStaConfig {
                 he_guard_interval_and_ltf_override: None,
                 he_dcm_override: None,
             },
-            completion_timeout_us: 250_000,
+            completion_timeout: oer_time::Duration::from_micros(250_000),
             aggregate_frame_limit: 32,
             aggregate_he_txop_limit: HeEdcaTxopLimit::DEFAULT,
             he_trigger_based: None,

@@ -79,7 +79,6 @@ use oer_ieee80211_lower_mac::{
     VifId,
 };
 use oer_ieee80211_mac::channel::WifiChannel;
-use oer_time::Instant;
 
 /// Attempt completions the port owes at most: admitted attempts whose
 /// completion the consumer has not taken yet.
@@ -740,13 +739,13 @@ where
                     installed
                         .borrow()
                         .as_ref()
-                        .map(|installed| installed.core.next_deadline_micros())
+                        .map(|installed| installed.core.next_deadline())
                 })
                 .flatten()
                 .filter(|deadline| Some(*deadline) != serviced);
             let watchdog = async {
                 match deadline {
-                    Some(deadline) => self.timer.wait_until(Instant::from_micros(deadline)).await,
+                    Some(deadline) => self.timer.wait_until(deadline).await,
                     None => core::future::pending().await,
                 }
             };
@@ -966,7 +965,8 @@ where
     }
 
     fn now(&self) -> Result<Ieee80211Instant, Esp32s31LowerMacError> {
-        self.with_core(|core, _, _| Ok(Ieee80211Instant::from_micros(core.now_micros())))
+        // The radio epoch is the monotonic clock (`clock_info`).
+        self.with_core(|core, _, _| Ok(Ieee80211Instant::from_micros(core.now().as_micros())))
     }
 }
 

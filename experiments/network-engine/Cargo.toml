@@ -17,6 +17,7 @@ oer-ieee80211-datapath = { path = "../../crates/protocols/ieee80211/datapath" }
 oer-esp32s31-ieee80211-mac = { path = "../../crates/hardware/esp32s31/driver/ieee80211/mac" }
 oer-esp32s31-ieee80211-runtime = { path = "../../crates/runtime/esp32s31/ieee80211", features = ["test-support"] }
 oer-ieee80211-softmac = { path = "../../crates/protocols/ieee80211/softmac" }
+oer-time = { path = "../../crates/time" }
 
 [lints]
 workspace = true

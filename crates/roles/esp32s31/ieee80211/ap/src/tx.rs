@@ -41,7 +41,7 @@ use oer_ieee80211_softmac::{MacTxPlan, MacTxQueueState};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ApTxConfig {
     /// Watchdog applied independently to each hardware publication.
-    pub publication_timeout_micros: u64,
+    pub publication_timeout: oer_time::Duration,
 }
 
 /// Semantic AP frame class translated into the private ESP32-S31 queue plan.
@@ -200,8 +200,8 @@ where
             .install_bss_protection(protection);
     }
 
-    pub const fn publication_timeout_micros(&self) -> u64 {
-        self.config.publication_timeout_micros
+    pub const fn publication_timeout(&self) -> oer_time::Duration {
+        self.config.publication_timeout
     }
 
     /// Build the AP-specific key/interface/power wrapper around the common
@@ -391,7 +391,7 @@ where
                     initial_rate: select_schedule_retry_rate(schedule, 0)
                         .expect("the control schedule starts with a legacy rate"),
                     publication_limit: schedule_publication_limit(schedule),
-                    publication_timeout_micros: self.config.publication_timeout_micros,
+                    publication_timeout: self.config.publication_timeout,
                 },
                 hardware_mic_length: 0,
                 hardware_key_selector: 0,
@@ -456,7 +456,7 @@ where
                     access_category: queue.access_category(),
                     initial_rate: TxPhyRate::Legacy(initial_rate),
                     publication_limit: class.publication_limit(initial_rate),
-                    publication_timeout_micros: self.config.publication_timeout_micros,
+                    publication_timeout: self.config.publication_timeout,
                 },
                 hardware_mic_length,
                 hardware_key_selector,

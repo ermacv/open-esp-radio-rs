@@ -133,8 +133,8 @@ fn make_tx<'a>(
             timer: Timer::default(),
         },
         ControlTxConfig {
-            completion_timeout_us: 10,
-            poll_interval_us: 1,
+            completion_timeout: oer_time::Duration::from_micros(10),
+            poll_interval: oer_time::Duration::from_micros(1),
         },
     )
 }
@@ -370,7 +370,7 @@ fn connected_handoff_preserves_the_descriptor_and_association_policy() {
                 access_category: LegacyTxQueue::BestEffort.access_category(),
                 control_schedule:
                     oer_esp32s31_ieee80211_mac::rate::control::DEFAULT_CONTROL_SCHEDULE,
-                publication_timeout_micros: 10,
+                publication_timeout: oer_time::Duration::from_micros(10),
             },
         })
         .unwrap_or_else(|_| panic!("idle owner must transfer"));
@@ -404,7 +404,7 @@ fn active_handoff_returns_tx_and_crypto_resources_for_later_retry() {
                     access_category: LegacyTxQueue::Voice.access_category(),
                     initial_rate: TxPhyRate::Legacy(LegacyRate::Dsss1MLong),
                     publication_limit: 1,
-                    publication_timeout_micros: 10,
+                    publication_timeout: oer_time::Duration::from_micros(10),
                 },
                 hardware_mic_length: 0,
                 hardware_key_selector: 0,
@@ -432,7 +432,7 @@ fn active_handoff_returns_tx_and_crypto_resources_for_later_retry() {
             management_protection: false,
             access_category: LegacyTxQueue::BestEffort.access_category(),
             control_schedule: oer_esp32s31_ieee80211_mac::rate::control::DEFAULT_CONTROL_SCHEDULE,
-            publication_timeout_micros: 10,
+            publication_timeout: oer_time::Duration::from_micros(10),
         },
     };
 
@@ -448,7 +448,10 @@ fn active_handoff_returns_tx_and_crypto_resources_for_later_retry() {
 
     hardware.completions[0] = Some(completion(0));
     assert_eq!(
-        crate::test_support::block_on(tx.ordinary.service_polling(&mut hardware, 1)),
+        crate::test_support::block_on(
+            tx.ordinary
+                .service_polling(&mut hardware, oer_time::Duration::from_micros(1))
+        ),
         Ok(WifiTxProgress::Complete)
     );
     assert!(tx.try_into_connected(handoff).is_ok());

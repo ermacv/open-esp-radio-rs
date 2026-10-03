@@ -491,7 +491,7 @@ fn core() -> Core {
         LowerMacConfig {
             station_address: STATION,
             channel: channel(6),
-            publication_timeout_micros: TIMEOUT,
+            publication_timeout: oer_time::Duration::from_micros(TIMEOUT),
         },
     )
 }
@@ -667,7 +667,10 @@ fn an_attempt_is_published_from_the_slot_it_was_written_in() {
     assert_eq!(spare_slots(&core), SPARE - 1);
     assert_eq!(hardware.legacy.len(), 1);
     assert_eq!(hardware.legacy[0].1.interface(), MacInterface::Station);
-    assert_eq!(core.next_deadline_micros(), Some(TIMEOUT));
+    assert_eq!(
+        core.next_deadline(),
+        Some(oer_time::Instant::from_micros(TIMEOUT))
+    );
 
     let completions = complete(&mut core, &mut hardware, 0);
     assert_eq!(
@@ -680,7 +683,7 @@ fn an_attempt_is_published_from_the_slot_it_was_written_in() {
             block_ack: None,
         }]
     );
-    assert_eq!(core.next_deadline_micros(), None);
+    assert_eq!(core.next_deadline(), None);
     assert_eq!(spare_slots(&core), SPARE);
     let next = attempt(&mut core, 2, &frame);
     assert_eq!(submit(&mut core, &mut hardware, next), Ok(Ok(())));
@@ -814,10 +817,10 @@ fn a_hardware_timeout_ends_the_attempt_as_aborted() {
     core.service(&mut hardware, interrupt(EVENT_TX_TIMEOUT), &mut events)
         .unwrap();
     assert!(events.completions.is_empty());
-    let settle = core.next_deadline_micros().unwrap();
+    let settle = core.next_deadline().unwrap();
     core.tx
         .timer
-        .advance_to(oer_time::Instant::from_micros(settle));
+        .advance_to(oer_time::Instant::from_micros(settle.as_micros()));
     core.service(&mut hardware, WifiTxWake::Deadline, &mut events)
         .unwrap();
     assert_eq!(events.completions.len(), 1);
@@ -1698,7 +1701,7 @@ fn a_closed_gate_blocks_the_queues_and_holds_the_attempt_until_it_opens() {
     let request = attempt(&mut core, 1, &frame);
     assert_eq!(submit(&mut core, &mut hardware, request), Ok(Ok(())));
     assert_eq!(hardware.publications(), 0);
-    assert_eq!(core.next_deadline_micros(), None);
+    assert_eq!(core.next_deadline(), None);
     core.apply(&mut hardware, gate(true)).unwrap().unwrap();
     assert!(!hardware.tx_blocked);
     assert_eq!(hardware.publications(), 1);
@@ -1848,7 +1851,10 @@ fn each_queue_holds_one_attempt_and_they_complete_in_any_order() {
     queues.sort_unstable();
     assert_eq!(queues, [0, 1, 2, 3]);
     assert_eq!(spare_slots(&core), 0);
-    assert_eq!(core.next_deadline_micros(), Some(TIMEOUT));
+    assert_eq!(
+        core.next_deadline(),
+        Some(oer_time::Instant::from_micros(TIMEOUT))
+    );
 
     // The last queue completes first; the others stay published.
     hardware.completion[queue_of(Background)] = Some(MacTxCompletionObservation::new_model(0, 0));
@@ -1897,25 +1903,25 @@ fn a_collision_or_timeout_on_one_queue_leaves_the_others_published() {
     // that settle waits for it instead of forcing CCA again.
     hardware.timeout_pending[queue_of(Voice)] = true;
     assert!(service(&mut core, &mut hardware, interrupt(EVENT_TX_TIMEOUT)).is_empty());
-    let settle = core.next_deadline_micros().unwrap();
-    assert_eq!(settle, 16);
+    let settle = core.next_deadline().unwrap();
+    assert_eq!(settle, oer_time::Instant::from_micros(16));
     hardware.timeout_pending[queue_of(Video)] = true;
     assert!(service(&mut core, &mut hardware, interrupt(EVENT_TX_TIMEOUT)).is_empty());
-    assert_eq!(core.next_deadline_micros(), Some(settle));
+    assert_eq!(core.next_deadline(), Some(settle));
 
     core.tx
         .timer
-        .advance_to(oer_time::Instant::from_micros(settle));
+        .advance_to(oer_time::Instant::from_micros(settle.as_micros()));
     let completions = service(&mut core, &mut hardware, WifiTxWake::Deadline);
     assert_eq!(ids(&completions), [1]);
     assert_eq!(completions[0].status, TxStatus::Aborted);
     // The waiting queue's abort began as the first settle ended.
     assert!(hardware.cca_forced);
-    let settle = core.next_deadline_micros().unwrap();
-    assert_eq!(settle, 32);
+    let settle = core.next_deadline().unwrap();
+    assert_eq!(settle, oer_time::Instant::from_micros(32));
     core.tx
         .timer
-        .advance_to(oer_time::Instant::from_micros(settle));
+        .advance_to(oer_time::Instant::from_micros(settle.as_micros()));
     let completions = service(&mut core, &mut hardware, WifiTxWake::Deadline);
     assert_eq!(ids(&completions), [3]);
     assert_eq!(completions[0].status, TxStatus::Aborted);
@@ -1938,7 +1944,7 @@ fn a_closed_gate_holds_every_queue_and_opening_it_publishes_them() {
     let held = aggregate(&mut core, 3, WmmAccessCategory::Video, 2);
     assert_eq!(submit_ampdu(&mut core, &mut hardware, held), Ok(Ok(())));
     assert_eq!(hardware.publications(), 0);
-    assert_eq!(core.next_deadline_micros(), None);
+    assert_eq!(core.next_deadline(), None);
 
     core.apply(&mut hardware, gate(true)).unwrap().unwrap();
     assert_eq!(hardware.legacy.len(), 2);
@@ -2060,7 +2066,10 @@ fn an_aggregate_is_published_once_and_reports_its_block_ack() {
     let published = published_ampdu(&core, BE);
     assert_eq!(published.owner().frame_count(), 3);
     assert_eq!(published.owner().work().backoff_slots, 9);
-    assert_eq!(core.next_deadline_micros(), Some(TIMEOUT));
+    assert_eq!(
+        core.next_deadline(),
+        Some(oer_time::Instant::from_micros(TIMEOUT))
+    );
 
     // A BlockAck arrived: the completion carries its window, and the
     // subframes go back to their source.
@@ -2238,7 +2247,7 @@ fn an_aggregate_shares_the_queues_with_mpdus() {
     assert!(service(&mut core, &mut hardware, interrupt(EVENT_TX_TIMEOUT)).is_empty());
     assert_eq!(ids(&complete(&mut core, &mut hardware, 0)), [1]);
     core.tx.timer.advance_to(oer_time::Instant::from_micros(
-        core.next_deadline_micros().unwrap(),
+        core.next_deadline().unwrap().as_micros(),
     ));
     let completions = service(&mut core, &mut hardware, WifiTxWake::Deadline);
     assert_eq!(ids(&completions), [4]);

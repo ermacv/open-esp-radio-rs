@@ -601,7 +601,7 @@ where
                     access_category: publication.queue.access_category(),
                     initial_rate,
                     publication_limit,
-                    publication_timeout_micros: self.config.completion_timeout_us,
+                    publication_timeout: self.config.completion_timeout,
                 },
                 hardware_mic_length: publication.hardware_mic_length,
                 hardware_key_selector: publication.hardware_key_selector,
@@ -615,7 +615,7 @@ where
         loop {
             if self
                 .ordinary
-                .service_polling(hardware, self.config.poll_interval_us)
+                .service_polling(hardware, self.config.poll_interval)
                 .await?
                 == WifiTxProgress::Pending
             {

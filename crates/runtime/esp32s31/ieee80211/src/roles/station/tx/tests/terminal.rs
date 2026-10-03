@@ -21,7 +21,7 @@ fn exhausted_aggregate_emits_one_terminal_receipt() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            completion_timeout_us: 250_000,
+            completion_timeout: oer_time::Duration::from_micros(250_000),
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
     )

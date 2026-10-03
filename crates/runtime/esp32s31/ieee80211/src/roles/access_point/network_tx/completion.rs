@@ -48,7 +48,7 @@ where
                 .mac
                 .try_aggregate_adapter()
                 .expect("aggregate publication leaves ordinary AP TX idle");
-            oer_time::Timer::wait_until(&*ordinary, oer_time::Instant::from_micros(deadline)).await;
+            oer_time::Timer::wait_until(&*ordinary, deadline).await;
         } else {
             control.wait_tx_deadline().await;
         }
@@ -151,7 +151,7 @@ where
             let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
                 AccessPointDatapathError::Control(AccessPointControlError::Mac(error))
             })?;
-            Ok(oer_time::Clock::now(&*ordinary).as_micros())
+            Ok(oer_time::Clock::now(&*ordinary))
         })?;
         let service_event = match action {
             AggregateServiceAction::Wait => return Ok(WifiTxProgress::Pending),
@@ -230,9 +230,9 @@ where
             })?;
             // Sample after the abort request; no wait future owns this phase.
             self.aggregate_phase = Some(AggregateServicePhase::ResetRequired);
-            self.aggregate_phase = Some(AggregateServicePhase::after_abort(
-                oer_time::Clock::now(&*ordinary).as_micros(),
-            )?);
+            self.aggregate_phase = Some(AggregateServicePhase::after_abort(oer_time::Clock::now(
+                &*ordinary,
+            ))?);
             return Ok(WifiTxProgress::Pending);
         }
 
@@ -393,9 +393,7 @@ where
                     AccessPointDatapathError::Control(AccessPointControlError::Mac(error))
                 })?;
                 self.aggregate_phase = Some(AggregateServicePhase::Published(
-                    oer_time::Clock::now(&*ordinary)
-                        .as_micros()
-                        .saturating_add(ordinary.publication_timeout_micros()),
+                    oer_time::Clock::now(&*ordinary).saturating_add(ordinary.publication_timeout()),
                 ));
                 Ok(WifiTxProgress::Pending)
             }

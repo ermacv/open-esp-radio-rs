@@ -829,7 +829,7 @@ impl ProductionWifiEpochRunner {
             engine,
             ordinary,
             ApTxConfig {
-                publication_timeout_micros: TX_COMPLETION_TIMEOUT_US,
+                publication_timeout: TX_COMPLETION_TIMEOUT,
             },
         );
         let access_point_processor = AccessPointProtocolProcessor::new(

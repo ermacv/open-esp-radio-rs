@@ -891,8 +891,8 @@ impl ProductionWifiEpochRunner {
                     tx_entropy as fn() -> u32,
                     oer_time_embassy::EmbassyClock,
                     ControlTxConfig {
-                        completion_timeout_us: TX_COMPLETION_TIMEOUT_US,
-                        poll_interval_us: 1,
+                        completion_timeout: TX_COMPLETION_TIMEOUT,
+                        poll_interval: oer_time::Duration::from_micros(1),
                     },
                     self.rts_length_threshold,
                 )

@@ -44,7 +44,7 @@ use oer_memory::{PinnedDmaTxRadioLease, StableDmaBacking};
 
 use crate::{
     ampdu_tx::{AmpduTxRoleAdapter, HtAmpduPublicationInputs, ht_ampdu_publication_config},
-    ordinary_tx::{TX_ABORT_SETTLE_US, TX_CCMP_MIC_SIZE, TX_FCS_SIZE},
+    ordinary_tx::{TX_ABORT_SETTLE, TX_CCMP_MIC_SIZE, TX_FCS_SIZE},
     tx::WifiTxWake,
 };
 
@@ -232,13 +232,13 @@ pub(super) struct PublishedAmpdu<'slot, B, const SLOTS: usize> {
     owner: Esp32s31AmpduOwner<'slot, B, SLOTS>,
     cookie: TxCookie,
     /// The publication deadline, or the end of the abort settle.
-    deadline_micros: u64,
+    deadline: oer_time::Instant,
     settling: bool,
 }
 
 impl<B, const SLOTS: usize> PublishedAmpdu<'_, B, SLOTS> {
-    pub const fn deadline_micros(&self) -> u64 {
-        self.deadline_micros
+    pub const fn deadline(&self) -> oer_time::Instant {
+        self.deadline
     }
 
     pub const fn abort_settling(&self) -> bool {
@@ -312,8 +312,8 @@ pub(super) fn publish<'slot, S, H, const SLOTS: usize>(
     hardware: &mut H,
     buffer: Esp32s31AmpduBuffer<'slot, S, SLOTS>,
     plan: AmpduPlan,
-    now_micros: u64,
-    publication_timeout_micros: u64,
+    now: oer_time::Instant,
+    publication_timeout: oer_time::Duration,
 ) -> Result<PublishedAmpdu<'slot, S::Backing, SLOTS>, HtAmpduTxError>
 where
     S: AmpduBacking,
@@ -324,8 +324,8 @@ where
         subframes,
         ..
     } = buffer;
-    let deadline_micros = now_micros
-        .checked_add(publication_timeout_micros)
+    let deadline = now
+        .checked_add(publication_timeout)
         .ok_or(HtAmpduTxError::ResetRequired)?;
     let cookie = owner.begin()?;
     for subframe in subframes.into_iter().flatten() {
@@ -354,7 +354,7 @@ where
     Ok(PublishedAmpdu {
         owner,
         cookie,
-        deadline_micros,
+        deadline,
         settling: false,
     })
 }
@@ -369,7 +369,7 @@ pub(super) fn service<'slot, B, H, const SLOTS: usize>(
     mut published: PublishedAmpdu<'slot, B, SLOTS>,
     wake: WifiTxWake,
     may_begin_timeout_abort: bool,
-    now_micros: u64,
+    now: oer_time::Instant,
 ) -> Result<AmpduProgress<'slot, B, SLOTS>, HtAmpduTxError>
 where
     B: StableDmaBacking,
@@ -379,7 +379,7 @@ where
 
     let cookie = published.cookie;
     if published.settling {
-        if now_micros < published.deadline_micros {
+        if now < published.deadline {
             return Ok(AmpduProgress::Pending(published));
         }
         published.owner.finish_timeout_abort(hardware, cookie)?;
@@ -406,12 +406,12 @@ where
             owner: published.owner,
         });
     }
-    let expired = matches!(wake, WifiTxWake::Deadline) && now_micros >= published.deadline_micros;
+    let expired = matches!(wake, WifiTxWake::Deadline) && now >= published.deadline;
     if (events & EVENT_TX_TIMEOUT != 0 || expired) && may_begin_timeout_abort {
         if published.owner.begin_timeout_abort(hardware, cookie)? {
             published.settling = true;
-            published.deadline_micros = now_micros
-                .checked_add(TX_ABORT_SETTLE_US)
+            published.deadline = now
+                .checked_add(TX_ABORT_SETTLE)
                 .ok_or(HtAmpduTxError::ResetRequired)?;
             return Ok(AmpduProgress::Pending(published));
         }

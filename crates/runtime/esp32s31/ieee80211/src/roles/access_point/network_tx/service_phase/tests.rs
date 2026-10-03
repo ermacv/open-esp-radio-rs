@@ -4,13 +4,21 @@ use super::*;
 
 #[test]
 fn early_deadline_still_observes_completion_without_aborting() {
-    let phase = AggregateServicePhase::Published(100);
+    let phase = AggregateServicePhase::Published(oer_time::Instant::from_micros(100));
     assert_eq!(
-        phase.action(WifiTxWake::Deadline, || Ok(99)).unwrap(),
+        phase
+            .action(WifiTxWake::Deadline, || Ok(oer_time::Instant::from_micros(
+                99
+            )))
+            .unwrap(),
         AggregateServiceAction::Observe(AggregateTxServiceEvent::Pending)
     );
     assert_eq!(
-        phase.action(WifiTxWake::Deadline, || Ok(100)).unwrap(),
+        phase
+            .action(WifiTxWake::Deadline, || Ok(oer_time::Instant::from_micros(
+                100
+            )))
+            .unwrap(),
         AggregateServiceAction::Observe(AggregateTxServiceEvent::ExecutorDeadline)
     );
 }
@@ -23,7 +31,7 @@ fn published_interrupts_do_not_sample_the_clock() {
         (EVENT_COLLISION, AggregateTxServiceEvent::Collision),
     ] {
         assert_eq!(
-            AggregateServicePhase::Published(100)
+            AggregateServicePhase::Published(oer_time::Instant::from_micros(100))
                 .action(WifiTxWake::Interrupt { events }, || panic!(
                     "unneeded clock read"
                 ))
@@ -35,8 +43,8 @@ fn published_interrupts_do_not_sample_the_clock() {
 
 #[test]
 fn every_wake_preserves_abort_until_the_post_request_deadline() {
-    let phase = AggregateServicePhase::after_abort(100).unwrap();
-    assert_eq!(phase.deadline(), 116);
+    let phase = AggregateServicePhase::after_abort(oer_time::Instant::from_micros(100)).unwrap();
+    assert_eq!(phase.deadline(), oer_time::Instant::from_micros(116));
     for wake in [
         WifiTxWake::Deadline,
         WifiTxWake::Interrupt {
@@ -52,12 +60,16 @@ fn every_wake_preserves_abort_until_the_post_request_deadline() {
     ] {
         for now in 100..116 {
             assert_eq!(
-                phase.action(wake, || Ok(now)).unwrap(),
+                phase
+                    .action(wake, || Ok(oer_time::Instant::from_micros(now)))
+                    .unwrap(),
                 AggregateServiceAction::Wait
             );
         }
         assert_eq!(
-            phase.action(wake, || Ok(116)).unwrap(),
+            phase
+                .action(wake, || Ok(oer_time::Instant::from_micros(116)))
+                .unwrap(),
             AggregateServiceAction::FinishAbort
         );
     }
@@ -66,7 +78,7 @@ fn every_wake_preserves_abort_until_the_post_request_deadline() {
 #[test]
 fn conflicting_published_interrupts_fail_closed() {
     assert!(matches!(
-        AggregateServicePhase::Published(100).action(
+        AggregateServicePhase::Published(oer_time::Instant::from_micros(100)).action(
             WifiTxWake::Interrupt {
                 events: EVENT_TX_COMPLETE | EVENT_TX_TIMEOUT
             },
@@ -80,12 +92,17 @@ fn conflicting_published_interrupts_fail_closed() {
 
 #[test]
 fn overflow_cannot_turn_into_a_wrapped_or_successful_abort() {
-    assert!(AggregateServicePhase::after_abort(u64::MAX - 15).is_err());
-    let phase = AggregateServicePhase::after_abort(u64::MAX - 16).unwrap();
-    assert_eq!(phase.deadline(), u64::MAX);
+    assert!(
+        AggregateServicePhase::after_abort(oer_time::Instant::from_micros(u64::MAX - 15)).is_err()
+    );
+    let phase =
+        AggregateServicePhase::after_abort(oer_time::Instant::from_micros(u64::MAX - 16)).unwrap();
+    assert_eq!(phase.deadline(), oer_time::Instant::from_micros(u64::MAX));
     assert_eq!(
         phase
-            .action(WifiTxWake::Deadline, || Ok(u64::MAX - 1))
+            .action(WifiTxWake::Deadline, || Ok(oer_time::Instant::from_micros(
+                u64::MAX - 1
+            )))
             .unwrap(),
         AggregateServiceAction::Wait
     );

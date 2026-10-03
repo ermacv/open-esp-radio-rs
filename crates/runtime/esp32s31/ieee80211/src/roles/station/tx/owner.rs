@@ -715,28 +715,26 @@ where
         })
     }
 
-    pub fn next_deadline_micros(&self) -> Option<u64> {
+    pub fn next_deadline(&self) -> Option<oer_time::Instant> {
         match &self.active {
             ConnectedTxActive::Aggregate(active) => {
                 #[cfg(feature = "tx-wait-probe")]
                 if let Some(probe) = active.wait_probe.deadline() {
-                    return Some(probe.min(active.deadline_micros));
+                    return Some(probe.min(active.deadline));
                 }
-                Some(active.deadline_micros)
+                Some(active.deadline)
             }
-            ConnectedTxActive::AbortSettling(active) => Some(active.deadline_micros),
+            ConnectedTxActive::AbortSettling(active) => Some(active.deadline),
             ConnectedTxActive::Ordinary
             | ConnectedTxActive::Unaggregating(_)
-            | ConnectedTxActive::RequestingBlockAck(_) => self.ordinary.next_deadline_micros(),
+            | ConnectedTxActive::RequestingBlockAck(_) => self.ordinary.next_deadline(),
             ConnectedTxActive::Idle => None,
         }
     }
 
     pub async fn wait_deadline(&mut self) {
-        if let Some(deadline) = self.next_deadline_micros() {
-            self.ordinary
-                .wait_until(oer_time::Instant::from_micros(deadline))
-                .await;
+        if let Some(deadline) = self.next_deadline() {
+            self.ordinary.wait_until(deadline).await;
         }
     }
 }

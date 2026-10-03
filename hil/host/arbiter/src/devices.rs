@@ -179,8 +179,15 @@ impl Arbiter {
                     *field = value;
                 }
             }
-            if update.control.is_some() && (overwrite || device.control.is_none()) {
-                device.control = update.control;
+            // Each path merges on its own: registering one keeps the other.
+            if let Some(update) = update.control {
+                let control = device.control.get_or_insert_with(Default::default);
+                if update.reset.is_some() && (overwrite || control.reset.is_none()) {
+                    control.reset = update.reset;
+                }
+                if update.power.is_some() && (overwrite || control.power.is_none()) {
+                    control.power = update.power;
+                }
             }
             name_by_chip(&mut registry.devices);
             let device = registry.devices[index].clone();
@@ -283,6 +290,45 @@ pub fn normalize_mac(text: &str) -> crate::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn registering_a_reset_path_or_a_hub_port_keeps_the_other() {
+        let reset = crate::ResetControl {
+            via: crate::control::ResetVia::UartRtsDtr,
+            serial: "5B90165754".into(),
+            en: crate::control::Line::Rts,
+            boot: crate::control::Line::Dtr,
+        };
+        let power = crate::control::PowerControl {
+            via: crate::control::PowerVia::Uhubctl,
+            location: "3-8.3".into(),
+            port: 2,
+        };
+        let only = |reset, power| Device {
+            mac: "38:44:BE:AA:25:64".into(),
+            control: Some(crate::Control { reset, power }),
+            ..Device::default()
+        };
+        for order in [
+            [
+                only(Some(reset.clone()), None),
+                only(None, Some(power.clone())),
+            ],
+            [
+                only(None, Some(power.clone())),
+                only(Some(reset.clone()), None),
+            ],
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            let arbiter = crate::Arbiter::at(directory.path()).unwrap();
+            for update in order {
+                arbiter.set_device(update).unwrap();
+            }
+            let control = arbiter.devices().unwrap()[0].control.clone().unwrap();
+            assert_eq!(control.reset.as_ref(), Some(&reset));
+            assert_eq!(control.power.as_ref(), Some(&power));
+        }
+    }
 
     #[test]
     fn a_registered_reset_bridge_is_part_of_its_board() {

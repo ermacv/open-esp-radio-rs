@@ -550,6 +550,7 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, T: Timer, const EVENTS: usize
                 if radio
                     .submit(
                         hardware,
+                        &self.timer,
                         RadioCommand::Sleep { id: PAUSE_REQUEST },
                         &mut sink,
                     )
@@ -617,6 +618,7 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, T: Timer, const EVENTS: usize
                 // receive admission cannot be rejected.
                 let _ = radio.submit(
                     hardware,
+                    &self.timer,
                     RadioCommand::Receive {
                         id: PAUSE_REQUEST,
                         channel,
@@ -653,7 +655,7 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, T: Timer, const EVENTS: usize
     /// no radio is installed.
     pub fn on_interrupt(&self) {
         if let Ok(backoff) = self.with_radio(|radio, port, sink| {
-            radio.isr(port, sink);
+            radio.isr(port, &self.timer, sink);
             radio.take_delay()
         }) {
             self.start_backoff(backoff);
@@ -705,9 +707,10 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, T: Timer, const EVENTS: usize
             let mut sink = QueueSink {
                 events: &self.events,
             };
-            let accepted = installed
-                .radio
-                .submit(&mut installed.hardware, command, &mut sink);
+            let accepted =
+                installed
+                    .radio
+                    .submit(&mut installed.hardware, &self.timer, command, &mut sink);
             Ok((accepted, installed.radio.take_delay()))
         });
         let (accepted, backoff) = submitted?;
@@ -734,7 +737,7 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, T: Timer, const EVENTS: usize
                 Either::First(()) => {
                     self.backoff_until.lock(|backoff| backoff.set(None));
                     if let Ok(backoff) = self.with_radio(|radio, port, sink| {
-                        radio.delay_elapsed(port, sink);
+                        radio.delay_elapsed(port, &self.timer, sink);
                         radio.take_delay()
                     }) {
                         self.start_backoff(backoff);
@@ -919,8 +922,8 @@ where
         };
         self.with_radio(|radio, hardware, sink| {
             let done = match command {
-                LifecycleCommand::Enable => radio.enable(hardware, sink),
-                _ => radio.disable(hardware, sink),
+                LifecycleCommand::Enable => radio.enable(hardware, &self.timer, sink),
+                _ => radio.disable(hardware, &self.timer, sink),
             };
             match done {
                 Ok(()) => {
@@ -949,14 +952,15 @@ where
         self.wait_event().await
     }
 
-    /// The radio clock (`otPlatRadioGetNow`).
+    /// The radio clock (`otPlatRadioGetNow`): the runtime's own clock, the
+    /// one its engine reads at every event.
     fn now(&self) -> Result<Ieee802154Instant, Ieee802154RuntimeError> {
-        self.with_radio(|radio, _, _| radio.now())
+        self.with_radio(|_, _, _| Ieee802154Instant::from_micros(self.timer.now().as_micros()))
     }
 
-    /// The radio clock is the platform's `now_micros`
-    /// ([`Ieee802154Platform`]), `esp_timer_get_time` in ESP-IDF; the
-    /// ESP32-S31 composition binds it to the image's monotonic clock.
+    /// The radio clock is the runtime's clock (`esp_timer_get_time` in
+    /// ESP-IDF), which the ESP32-S31 composition binds to the image's
+    /// monotonic clock.
     fn clock_info(&self) -> ClockInfo {
         ClockInfo::MONOTONIC_MICROS
     }

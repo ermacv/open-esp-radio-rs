@@ -18,6 +18,7 @@ embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
 oer-espressif-ieee802154-runtime = { path = "../../../runtime/espressif/ieee802154", features = ["model"] }
 oer-espressif-ieee802154-engine = { path = "../../../hardware/espressif/ieee802154/engine", features = ["model"] }
+oer-time = { path = "../../../time" }
 oer-time-virtual = { path = "../../../adapters/virtual/time" }
 
 [lints]

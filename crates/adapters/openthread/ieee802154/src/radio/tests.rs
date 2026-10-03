@@ -36,10 +36,11 @@ type Thread = OpenThreadRadio<'static, Runtime, 4>;
 
 static LEVELS: [i8; 3] = [-24, 0, 21];
 
-const PLATFORM: Ieee802154Platform = Ieee802154Platform {
-    now_micros: || 1_000,
-    random: || 21,
-};
+const PLATFORM: Ieee802154Platform = Ieee802154Platform { random: || 21 };
+
+/// The radio clock of the bench: the runtime's clock starts here, and
+/// OpenThread reads the same time.
+const NOW_MICROS: u64 = 1_000;
 
 const DEFAULTS: OpenThreadRadioDefaults = OpenThreadRadioDefaults {
     tx_power_dbm: 21,
@@ -78,7 +79,9 @@ fn live_rssi() -> Option<i8> {
 
 /// An installed runtime, and the OpenThread radio over it.
 fn radio() -> (&'static Runtime, Thread) {
-    let runtime: &'static Runtime = Box::leak(Box::new(Runtime::new(SkipClock::new())));
+    let runtime: &'static Runtime = Box::leak(Box::new(Runtime::new(SkipClock::starting_at(
+        oer_time::Instant::from_micros(NOW_MICROS),
+    ))));
     let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
     let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
     let parts = Ieee802154RuntimeParts {
@@ -92,7 +95,7 @@ fn radio() -> (&'static Runtime, Thread) {
     );
     (
         runtime,
-        OpenThreadRadio::new(runtime, PLATFORM.now_micros, live_rssi, DEFAULTS),
+        OpenThreadRadio::new(runtime, || NOW_MICROS, live_rssi, DEFAULTS),
     )
 }
 

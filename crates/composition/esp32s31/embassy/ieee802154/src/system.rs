@@ -18,8 +18,7 @@ use oer_esp32s31_hal::{
     },
 };
 use oer_esp32s31_ieee802154_esp_hal::{
-    BoundEspHalIeee802154InterruptRoute, EspHalIeee802154InterruptRouteError, bind, now_micros,
-    random,
+    BoundEspHalIeee802154InterruptRoute, EspHalIeee802154InterruptRouteError, bind, random,
 };
 use oer_esp32s31_phy::RomShortDelay;
 use oer_esp32s31_phy::{
@@ -452,7 +451,7 @@ pub async fn start<P, C: PlatformClockProvider>(
         engine,
         hardware: Ieee802154MacOwners::new(task, interrupts),
     };
-    let platform_services = Ieee802154Platform { now_micros, random };
+    let platform_services = Ieee802154Platform { random };
     if let Err(parts) = RUNTIME.install(parts, platform_services, defaults) {
         let (mut task, interrupts) = parts.hardware.into_parts();
         let interrupts = interrupts.deactivate(&mut task);
@@ -536,12 +535,12 @@ impl Ieee802154System {
         || RUNTIME.recent_rssi().ok()
     }
 
-    /// The radio clock the runtime was installed with, the epoch of
-    /// [`Ieee802154RadioPort::now`], as a function for synchronous callers
-    /// such as OpenThread's `otPlatRadioGetNow`. It is the image's
-    /// monotonic clock in microseconds, the one `embassy-time` reads.
+    /// The runtime's clock, the epoch of [`Ieee802154RadioPort::now`], as a
+    /// function for synchronous callers such as OpenThread's
+    /// `otPlatRadioGetNow`: the image's monotonic clock in microseconds,
+    /// the one `embassy-time` reads.
     pub fn radio_clock(&self) -> fn() -> u64 {
-        now_micros
+        oer_time_embassy::now_micros
     }
 
     /// The runtime's runner: CSMA-CA backoffs and retry delays. Poll it

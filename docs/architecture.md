@@ -225,7 +225,7 @@ as `Poisoned`.
 | Port | Lifecycle | Clock epoch (ESP32-S31) |
 | --- | --- | --- |
 | `Ieee80211LowerMacPort` | `lifecycle(Enable / Disable / Quiesce)` and `cancel(TxId)` | `Monotonic`: the core's clock is the image's monotonic clock |
-| `Ieee802154RadioPort` | `lifecycle(Enable / Disable)` with `RadioEvent::Lifecycle` terminals (no quiesce); `RadioCommand::Cancel` | `Monotonic`: the platform `now_micros` the time driver also reads |
+| `Ieee802154RadioPort` | `lifecycle(Enable / Disable)` with `RadioEvent::Lifecycle` terminals (no quiesce); `RadioCommand::Cancel` | `Monotonic`: the runtime's `Clock`, which the engine reads fresh at each event and the time driver also reads |
 | `LeRadioPort` | None: install, quiesce and uninstall move memory and hardware owners and stay the backend's own operations; `RadioRequest::Cancel` | `Unrelated`: the extended controller clock |
 
 **Shared RF path.** Protocols that share one radio name themselves with the

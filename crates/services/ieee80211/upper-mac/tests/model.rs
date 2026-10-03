@@ -29,7 +29,6 @@ use oer_ieee80211_upper_mac::{
 };
 use oer_ieee80211_upper_mac_service::{AmpduFrames, EventRouter, UpperMacTx, UpperMacTxError};
 use oer_time::RadioInstant;
-use oer_time_virtual::VirtualClock;
 
 const STATION: VifId = VifId(0);
 const ADDRESS: MacAddress = [0x02, 0, 0, 0, 0, 1];
@@ -79,13 +78,8 @@ fn run<F: Future>(future: F) -> F::Output {
     panic!("the driver waits for an event the model never produces");
 }
 
-/// A radio clock for one model, standing still until the test moves it.
-fn clock() -> &'static VirtualClock {
-    Box::leak(Box::new(VirtualClock::new()))
-}
-
-fn enabled_station() -> LowerMacModel<'static> {
-    let model = LowerMacModel::new(clock());
+fn enabled_station() -> LowerMacModel {
+    let model = LowerMacModel::new();
     let channel = Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap();
     model
         .apply(LowerMacSetting::Channel(channel))
@@ -116,9 +110,9 @@ const LIMITS: RetryLimits = RetryLimits {
 };
 
 /// The router of a test: four waiting exchanges, four received frames.
-type Router<'m> = EventRouter<'m, LowerMacModel<'static>, 4, 4>;
+type Router<'m> = EventRouter<'m, LowerMacModel, 4, 4>;
 
-type Driver<'r, 'm> = UpperMacTx<'r, 'm, LowerMacModel<'static>, ProtectEveryHeTxop, 4, 4>;
+type Driver<'r, 'm> = UpperMacTx<'r, 'm, LowerMacModel, ProtectEveryHeTxop, 4, 4>;
 
 /// Run `exchange` while the router takes the port's events, as a
 /// composition polls the router beside its exchanges.
@@ -536,7 +530,7 @@ fn a_retry_repeats_its_packet_number_and_the_next_frame_takes_a_higher_one() {
 
 #[test]
 fn a_refused_attempt_releases_its_buffer_and_reports_the_refusal() {
-    let model = LowerMacModel::new(clock());
+    let model = LowerMacModel::new();
     let router = Router::new(&model, 100);
     let mut tx = driver(&router);
     let frame = qos_data(1, [0; 8], 40);
@@ -570,7 +564,7 @@ fn received_frame() -> [u8; 24] {
     frame
 }
 
-fn receive(model: &LowerMacModel<'_>) {
+fn receive(model: &LowerMacModel) {
     model.receive(
         &received_frame(),
         RxMeta::unavailable(Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap()),

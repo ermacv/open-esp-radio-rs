@@ -61,9 +61,14 @@ pub type SharedRadio = oer_esp32s31_radio_runtime::RadioSystem<
     oer_time_embassy::EmbassyClock,
 >;
 
+/// The image hands source 132's route to the adapter once at boot.
+#[cfg(target_arch = "riscv32")]
+pub use oer_esp32s31_ieee802154_esp_hal::{
+    EspHalIeee802154Source as Ieee802154InterruptSource, install as install_interrupt_route,
+};
 #[cfg(target_arch = "riscv32")]
 pub use system::{
     IEEE802154_EVENT_CAPACITY, Ieee802154FailStop, Ieee802154MaintenanceError, Ieee802154Parked,
     Ieee802154StartError, Ieee802154StartFailure, Ieee802154StopError, Ieee802154StopFailure,
-    Ieee802154System, Ieee802154SystemRuntime, start,
+    Ieee802154System, Ieee802154SystemRuntime, ieee802154_interrupt, start,
 };

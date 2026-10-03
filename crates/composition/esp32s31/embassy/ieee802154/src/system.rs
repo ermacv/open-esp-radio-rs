@@ -3,7 +3,6 @@
 use embassy_futures::select::{Either, select};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_time::{Instant, Timer};
-use esp_hal::interrupt::{InterruptHandler, Priority};
 use oer_esp32s31_coex::CoexError;
 use oer_esp32s31_hal::{
     ieee802154::{
@@ -69,7 +68,13 @@ static RUNTIME: Ieee802154SystemRuntime = Ieee802154Runtime::new(EmbassyClock);
 /// only limits how long tracking may hold the shared PHY.
 const TRACKING_WINDOW_MICROS: u64 = 1_000_000;
 
-extern "C" fn ieee802154_interrupt() {
+/// The interrupt-table handler of `MODEM_ZB_MAC`.
+#[allow(
+    unsafe_code,
+    reason = "an interrupt handler runs from SRAM, which only a link section selects"
+)]
+#[unsafe(link_section = ".rwtext.open_radio_irq")]
+pub fn ieee802154_interrupt() {
     RUNTIME.on_interrupt();
 }
 
@@ -464,10 +469,7 @@ pub async fn start<P, C: PlatformClockProvider>(
             ),
         ));
     }
-    match bind(InterruptHandler::new(
-        ieee802154_interrupt,
-        Priority::Priority1,
-    )) {
+    match bind() {
         Ok(bound) => Ok(Ieee802154System {
             route,
             bound: Some(bound),
@@ -704,10 +706,7 @@ impl Ieee802154System {
         if RUNTIME.resume(paused).is_err() {
             unreachable!("the paused runtime has no other radio");
         }
-        match bind(InterruptHandler::new(
-            ieee802154_interrupt,
-            Priority::Priority1,
-        )) {
+        match bind() {
             Ok(bound) => self.bound = Some(bound),
             Err(error) => return Err(Ieee802154MaintenanceError::Route(error)),
         }

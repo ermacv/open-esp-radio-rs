@@ -25,6 +25,8 @@ use oer_esp32s31_hal::{
 #[cfg(feature = "ieee802154-route-probe")]
 use oer_esp32s31_radio_esp_hal::{EspHalRadioClocks, EspHalRadioPlatform};
 #[cfg(feature = "ieee802154-route-probe")]
+pub(crate) use route_probe::route_probe_interrupt;
+#[cfg(feature = "ieee802154-route-probe")]
 pub(super) use route_probe::run_route_probe;
 
 #[cfg(any(

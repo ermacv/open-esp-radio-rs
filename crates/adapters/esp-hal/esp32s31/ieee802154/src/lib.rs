@@ -7,6 +7,9 @@
 //! The MAC owners live in the IEEE 802.15.4 runtime: the handler bound here
 //! calls the runtime's interrupt entry.
 //!
+//! The image's interrupt table names the handler of source 132; the image
+//! hands this adapter the source's route once at boot ([`install`]).
+//!
 //! Bring-up order: activate the HAL interrupt owner, install the runtime,
 //! then `bind`. Teardown reverses it: `BoundEspHalIeee802154InterruptRoute::quiesce`,
 //! uninstall the runtime, then deactivate the HAL interrupt owner. This is
@@ -19,16 +22,12 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-use core::cell::Cell;
+use core::cell::{Cell, RefCell};
 
 use critical_section::Mutex;
-use esp_hal::{
-    interrupt::{self, InterruptHandler, Priority},
-    peripherals::Interrupt,
-    rng::Rng,
-    system::Cpu,
-    time::Instant,
-};
+use esp_hal::{interrupt::Priority, peripherals::Interrupt, rng::Rng, system::Cpu, time::Instant};
+use oer_esp32s31_soc_esp_hal::interrupt_table::{self, Route};
+use oer_interrupt_table::Entry;
 
 const SOURCE: Interrupt = Interrupt::MODEM_ZB_MAC;
 const ROUTE_PRIORITY: Priority = Priority::Priority1;
@@ -48,17 +47,58 @@ pub fn random() -> u32 {
 
 static ROUTE_CLAIMED: Mutex<Cell<bool>> = Mutex::new(Cell::new(false));
 
+/// Source 132's route in the image's interrupt table, once [`install`]ed.
+static ROUTE: Mutex<RefCell<Option<Route>>> = Mutex::new(RefCell::new(None));
+
+/// The route of modem source 132 at the vendor's `Priority1`, from its token
+/// in the image's interrupt table: another source's or another level's token
+/// does not compile.
+pub struct EspHalIeee802154Source(Route);
+
+impl EspHalIeee802154Source {
+    /// The route of `token`'s source.
+    pub fn new<T>(token: T) -> Self
+    where
+        T: Entry<Source = Interrupt, Level = Priority, Core = Cpu>,
+    {
+        const {
+            assert!(
+                T::SOURCE as u16 == SOURCE as u16,
+                "the token is not MODEM_ZB_MAC's"
+            );
+            assert!(
+                T::LEVEL as u8 == ROUTE_PRIORITY as u8,
+                "the vendor routes source 132 at priority one"
+            );
+        };
+        Self(Route::new(token))
+    }
+}
+
+/// Keep source 132's route for every epoch of the boot.
+///
+/// # Errors
+///
+/// The boot installed a route before; `source` returns unchanged.
+pub fn install(source: EspHalIeee802154Source) -> Result<(), EspHalIeee802154Source> {
+    critical_section::with(|critical_section| {
+        let mut route = ROUTE.borrow_ref_mut(critical_section);
+        if route.is_some() {
+            return Err(source);
+        }
+        *route = Some(source.0);
+        Ok(())
+    })
+}
+
 /// Failure to create or quiesce the unique IEEE 802.15.4 CPU route.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EspHalIeee802154InterruptRouteError {
     /// Another live route owner already controls modem source 132.
     AlreadyActive,
-    /// The handler does not use the vendor's priority-one route.
-    WrongPriority {
-        /// Numeric ESP-HAL priority supplied by the handler.
-        observed: u8,
-    },
-    /// Teardown was attempted from a CPU other than the binding CPU.
+    /// The image never [`install`]ed the route of source 132.
+    NotInstalled,
+    /// The route was bound, or torn down, on a CPU other than its table's.
     WrongCore,
 }
 
@@ -71,30 +111,29 @@ pub struct BoundEspHalIeee802154InterruptRoute {
     core: Cpu,
 }
 
-/// Bind `handler` to modem source 132 at the vendor's `Priority1`.
+/// Route modem source 132 to the handler its interrupt-table entry names.
 ///
 /// # Errors
 ///
-/// The handler has another priority, or a route is already bound.
-pub fn bind(
-    handler: InterruptHandler,
-) -> Result<BoundEspHalIeee802154InterruptRoute, EspHalIeee802154InterruptRouteError> {
-    if handler.priority() != ROUTE_PRIORITY {
-        return Err(EspHalIeee802154InterruptRouteError::WrongPriority {
-            observed: handler.priority() as u8,
-        });
-    }
+/// No route is installed, a route is already bound, or the caller runs on
+/// another core than the table's.
+pub fn bind() -> Result<BoundEspHalIeee802154InterruptRoute, EspHalIeee802154InterruptRouteError> {
     critical_section::with(|critical_section| {
+        let route = ROUTE.borrow_ref(critical_section);
+        let route = route
+            .as_ref()
+            .ok_or(EspHalIeee802154InterruptRouteError::NotInstalled)?;
         let claimed = ROUTE_CLAIMED.borrow(critical_section);
         if claimed.get() {
             return Err(EspHalIeee802154InterruptRouteError::AlreadyActive);
         }
+        interrupt_table::enable_route(route)
+            .map_err(|_| EspHalIeee802154InterruptRouteError::WrongCore)?;
         claimed.set(true);
-        Ok(())
-    })?;
-    let core = Cpu::current();
-    interrupt::bind_handler(SOURCE, handler);
-    Ok(BoundEspHalIeee802154InterruptRoute { core })
+        Ok(BoundEspHalIeee802154InterruptRoute {
+            core: Cpu::current(),
+        })
+    })
 }
 
 impl BoundEspHalIeee802154InterruptRoute {
@@ -107,8 +146,10 @@ impl BoundEspHalIeee802154InterruptRoute {
         if Cpu::current() != self.core {
             return Err((EspHalIeee802154InterruptRouteError::WrongCore, self));
         }
-        interrupt::disable(self.core, SOURCE);
         critical_section::with(|critical_section| {
+            if let Some(route) = ROUTE.borrow_ref(critical_section).as_ref() {
+                interrupt_table::disable_route(route);
+            }
             ROUTE_CLAIMED.borrow(critical_section).set(false);
         });
         Ok(())

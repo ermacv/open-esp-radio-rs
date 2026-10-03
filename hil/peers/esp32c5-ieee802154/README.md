@@ -54,8 +54,9 @@ nor a JTAG reset nor `espflash` reaches it. Before every peer scenario
 the run's preflight sends `SYNC` under the run's lease, so such a console
 fails the scenario's precondition, pointing here, instead of breaking it
 midway. Firmware is not the cause, so reflashing does not help; power-cycling only the peer's own hub
-port does, for example `cargo hil lease --board esp32c5 -- uhubctl -l
-<hub> -p <port> -a cycle`. Never cycle a port that carries a cascaded hub.
+port does: `cargo hil board reset esp32c5 --via power`, once the board's hub port is registered
+(`cargo hil devices set MAC --power-uhubctl LOCATION --power-port PORT`, never a port that
+carries a cascaded hub). A lease runs no `uhubctl` itself.
 `cargo hil peer send esp32c5 SYNC` answers `@OK SYNC` once it is back.
 
 A run of `system-watchdog --chip esp32c5` on this board always leaves it

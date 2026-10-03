@@ -8,7 +8,10 @@ Reads the hook input JSON on stdin and blocks (exit 2, one line on stderr):
 - a Bash command that reads such a file whole (cat, head, sed, ...);
 - a foreground Bash build, test, check or HIL run: rerun it with
   run_in_background;
-- `pkill -f` / `pgrep -f` in any mode: wait on a PID or a job instead.
+- `pkill -f` / `pgrep -f` in any mode: wait on a PID or a job instead;
+- `uhubctl` with an action (`-a`, `--action`): a hub port is switched only by
+  `cargo hil board reset BOARD --via power`, a power cycle under the board's
+  lease; reading the hub's state stays allowed.
 
 Everything else exits 0 without output, leaving the normal permission flow.
 Only the Python standard library is used.
@@ -196,6 +199,17 @@ def kills_by_name(words):
     return False
 
 
+def switches_hub_power(words):
+    if not words or os.path.basename(words[0]) != "uhubctl":
+        return False
+    return any(
+        word in {"-a", "--action"}
+        or word.startswith("--action=")
+        or re.fullmatch(r"-a\w+", word) is not None
+        for word in words[1:]
+    )
+
+
 def reads_generated(words):
     if not words:
         return None
@@ -223,6 +237,10 @@ def check_bash(tool_input):
                 block(f"`{words[0]} -f` matches the waiting shell's own command "
                       "line; wait on a PID (`wait`, `tail --pid`) or a job "
                       "(`cargo hil wait JOB|RUN`)")
+            if switches_hub_power(words):
+                block("a hub port is switched only by `cargo hil board reset BOARD "
+                      "--via power`, a power cycle under the board's lease; "
+                      "`uhubctl` without an action only reads the hub")
             path = reads_generated(words)
             if path:
                 block(f"`{path}` {GENERATED_HINT}")

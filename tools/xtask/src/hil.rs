@@ -281,7 +281,7 @@ Stand commands (shared by every checkout of this user):
   cargo hil board flashed --image IMAGE ...   journal a flash made inside a lease
   cargo hil fixtures                  host Wi-Fi radios, Bluetooth adapter and OpenWrt hosts: key, interfaces, channel, CCA busy
   cargo hil devices [--json]          boards: name, chip, port, health, last firmware
-  cargo hil devices set MAC [--chip CHIP] [--name NAME] [--reset-uart SERIAL --en LINE --boot LINE]
+  cargo hil devices set MAC [--chip CHIP] [--name NAME] [--reset-uart SERIAL --en LINE --boot LINE] [--power-uhubctl LOCATION --power-port PORT]
   cargo hil devices reset BOARD [--download]   reset through the registered reset path
   cargo hil [--owner NAME] devices maintenance BOARD|--stand --reason TEXT   only NAME may claim BOARD (or the stand) until release; other runs wait
   cargo hil devices release BOARD [--confirm reset|power-cycle|rom-answers]
@@ -952,6 +952,20 @@ impl FlashedArgs {
 
 /// Run one command, typically a series of HIL commands, under one lease.
 /// Nested `cargo hil` commands join the lease instead of queueing.
+/// Why a lease refuses `command`: a hub port is switched only by a power
+/// cycle of a registered board (`cargo hil board reset BOARD --via power`),
+/// never by `uhubctl` in a leased command, which could leave a port off.
+fn switches_hub_power(command: &[OsString]) -> Option<String> {
+    command
+        .iter()
+        .any(|argument| argument.to_string_lossy().contains("uhubctl"))
+        .then(|| {
+            "a lease runs no `uhubctl`: cycle a board's hub port with \
+             `cargo hil board reset BOARD --via power`"
+                .to_owned()
+        })
+}
+
 fn lease(ctx: &Context, outer: LeaseOptions, args: &[OsString]) -> Result<std::process::ExitCode> {
     use clap::Parser as _;
     let cli = LeaseCli::try_parse_from(args)?;
@@ -962,6 +976,9 @@ fn lease(ctx: &Context, outer: LeaseOptions, args: &[OsString]) -> Result<std::p
         .command
         .split_first()
         .ok_or("cargo hil lease needs a COMMAND after --")?;
+    if let Some(refusal) = switches_hub_power(&cli.command) {
+        return Err(refusal.into());
+    }
     // A mistake in a nested stand command fails now, not after the wait.
     if let Some(nested) = nested_hil(program, arguments) {
         check_hil_arguments(&nested).map_err(|error| format!("not leased: {error}"))?;
@@ -1369,19 +1386,28 @@ fn devices(
             reset_uart,
             en,
             boot,
+            power_uhubctl,
+            power_port,
         }) => {
-            let control = match (reset_uart, en, boot) {
-                (Some(serial), Some(en), Some(boot)) => Some(oer_hil_arbiter::Control {
-                    reset: Some(oer_hil_arbiter::ResetControl {
-                        via: oer_hil_arbiter::control::ResetVia::UartRtsDtr,
-                        serial,
-                        en,
-                        boot,
-                    }),
-                    power: None,
+            let reset = match (reset_uart, en, boot) {
+                (Some(serial), Some(en), Some(boot)) => Some(oer_hil_arbiter::ResetControl {
+                    via: oer_hil_arbiter::control::ResetVia::UartRtsDtr,
+                    serial,
+                    en,
+                    boot,
                 }),
                 _ => None,
             };
+            let power = match (power_uhubctl, power_port) {
+                (Some(location), Some(port)) => Some(oer_hil_arbiter::control::PowerControl {
+                    via: oer_hil_arbiter::control::PowerVia::Uhubctl,
+                    location,
+                    port,
+                }),
+                _ => None,
+            };
+            let control = (reset.is_some() || power.is_some())
+                .then_some(oer_hil_arbiter::Control { reset, power });
             let device = arbiter.set_device(oer_hil_arbiter::Device {
                 mac,
                 chip,
@@ -2356,6 +2382,14 @@ enum DevicesCommand {
         /// The bridge line that pulls the boot strap low.
         #[arg(long, value_name = "rts|dtr", requires = "reset_uart")]
         boot: Option<oer_hil_arbiter::control::Line>,
+        /// The `uhubctl` location of the hub whose port powers the board
+        /// alone (never a port that carries a cascaded hub); needs
+        /// `--power-port`. `cargo hil board reset BOARD --via power` cycles it.
+        #[arg(long, value_name = "LOCATION", requires = "power_port")]
+        power_uhubctl: Option<String>,
+        /// The hub port that powers the board.
+        #[arg(long, value_name = "PORT", requires = "power_uhubctl")]
+        power_port: Option<u32>,
     },
     /// Reset a board through its registered reset path under a lease of
     /// that board, and print the reset reason its ROM reports.
@@ -2397,6 +2431,19 @@ enum DevicesCommand {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_lease_runs_no_hub_power_switch() {
+        let command = |words: &[&str]| words.iter().map(OsString::from).collect::<Vec<_>>();
+        for refused in [
+            command(&["uhubctl", "-l", "3-8.3", "-p", "2", "-a", "off"]),
+            command(&["sh", "-c", "uhubctl -l 3-8.3 -p 2 -a off; sleep 5"]),
+            command(&["/usr/sbin/uhubctl", "-a", "cycle"]),
+        ] {
+            assert!(super::switches_hub_power(&refused).is_some(), "{refused:?}");
+        }
+        assert!(super::switches_hub_power(&command(&["cargo", "hil", "peer", "send"])).is_none());
+    }
+
     use super::{
         OsString, Path, PathBuf, checkout_of_common_dir, has_flag, runs_dirty, source_options,
         with_source_snapshot,

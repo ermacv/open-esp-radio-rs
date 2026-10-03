@@ -3428,7 +3428,6 @@ dependencies = [
  "oer-radio-coex",
  "oer-radio-port",
  "oer-time",
- "oer-time-virtual",
 ]
 
 [[package]]
@@ -3555,7 +3554,6 @@ dependencies = [
  "oer-ieee80211-softmac",
  "oer-ieee80211-upper-mac",
  "oer-time",
- "oer-time-virtual",
 ]
 
 [[package]]

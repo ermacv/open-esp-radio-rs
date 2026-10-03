@@ -19,9 +19,6 @@ oer-radio-coex = { path = "../../../radio/coex" }
 oer-radio-port = { path = "../../../radio/port" }
 oer-time = { path = "../../../time" }
 
-[dev-dependencies]
-oer-time-virtual = { path = "../../../adapters/virtual/time" }
-
 [lints]
 workspace = true
 

@@ -7,10 +7,9 @@ use core::{
     pin::pin,
     task::{Context, Poll, Waker},
 };
-use std::{boxed::Box, vec::Vec};
+use std::vec::Vec;
 
-use oer_time::Duration;
-use oer_time_virtual::VirtualClock;
+use oer_time::RadioInstant;
 
 use oer_ieee80211_mac::{
     phy::{
@@ -29,11 +28,6 @@ use crate::{
     },
     *,
 };
-
-/// A radio clock for one model, standing still until the test moves it.
-fn clock() -> &'static VirtualClock {
-    Box::leak(Box::new(VirtualClock::new()))
-}
 
 /// Take the next event without an executor; `None` when none is ready.
 fn poll_event<P: Ieee80211LowerMacPort>(port: &P) -> Option<Result<P::Event, EventsLost>> {
@@ -79,8 +73,8 @@ fn station_config() -> VifConfig {
     }
 }
 
-fn enabled_station() -> Model<'static> {
-    let model = Model::new(clock());
+fn enabled_station() -> Model {
+    let model = Model::new();
     assert_eq!(
         model.apply(LowerMacSetting::Channel(channel_six())),
         Ok(Ok(()))
@@ -335,7 +329,7 @@ fn an_empty_aggregate_is_refused() {
 
 #[test]
 fn refusal_is_a_value_and_sends_nothing() {
-    let model = Model::new(clock());
+    let model = Model::new();
     let Ok(Err(refused)) = model.submit(mpdu(&model, 1, 1)) else {
         panic!("the port is disabled");
     };
@@ -499,7 +493,7 @@ fn quiesce_ends_with_its_terminal_event_and_stops_admission() {
 
 #[test]
 fn a_failed_enable_is_a_recoverable_terminal_event() {
-    let model = Model::new(clock());
+    let model = Model::new();
     assert_eq!(model.lifecycle(LifecycleCommand::Enable), Ok(Ok(())));
     assert_eq!(
         Model::view(&next(&model)),
@@ -694,7 +688,7 @@ fn a_poisoned_port_reports_its_terminal_event_after_the_earlier_ones() {
 
 #[test]
 fn the_model_clock_has_no_relation_to_monotonic_time() {
-    let model = Model::new(clock());
+    let model = Model::new();
     assert_eq!(model.clock_info().epoch, RadioEpoch::Unrelated);
 }
 
@@ -739,17 +733,24 @@ fn beacon_timing_addresses_configured_interfaces_within_its_roles() {
 }
 
 #[test]
-fn the_radio_clock_is_the_clock_the_model_was_given() {
-    let clock = clock();
-    let model = Model::new(clock);
-    let start = model.now().unwrap();
+fn the_radio_clock_reads_the_time_the_test_sets() {
+    let model = Model::new();
+    assert_eq!(model.now(), Ok(RadioInstant::from_micros(0)));
+    model.set_now(RadioInstant::from_micros(250));
+    assert_eq!(model.now(), Ok(RadioInstant::from_micros(250)));
     assert_eq!(
-        model.now().unwrap(),
-        start,
+        model.now(),
+        Ok(RadioInstant::from_micros(250)),
         "time stands still until the test moves it"
     );
-    clock.advance(Duration::from_micros(250)).unwrap();
-    assert_eq!(model.now().unwrap().as_micros(), start.as_micros() + 250);
+}
+
+#[test]
+#[should_panic(expected = "runs backwards")]
+fn the_radio_clock_never_runs_backwards() {
+    let model = Model::new();
+    model.set_now(RadioInstant::from_micros(250));
+    model.set_now(RadioInstant::from_micros(249));
 }
 
 /// An upper layer that needs a feature names its trait: this compiles only
@@ -762,7 +763,7 @@ where
 
 #[test]
 fn features_are_required_through_their_traits() {
-    requires_every_extension(&Model::new(clock()));
+    requires_every_extension(&Model::new());
 }
 
 #[test]

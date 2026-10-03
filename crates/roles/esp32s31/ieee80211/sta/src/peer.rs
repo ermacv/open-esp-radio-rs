@@ -103,8 +103,9 @@ pub struct StaConnectedLink {
     /// The access point's timestamp in the beacon or probe response the
     /// station joined from; power management places its TBTT from it.
     pub beacon_timestamp_tsf: u64,
-    /// The station's monotonic time when that frame arrived.
-    pub beacon_received_at_micros: u64,
+    /// The station's monotonic time when that frame arrived; `None` when
+    /// its receive timestamp had no place in the clock relation.
+    pub beacon_received_at: Option<oer_time::Instant>,
     pub peer_qos: bool,
     /// The association protects its robust management frames.
     pub management_protection: bool,
@@ -257,7 +258,7 @@ impl StaPeerPort {
             association_id: response.association_id,
             beacon_interval_tu: prepared.access_point.beacon_interval_tu,
             beacon_timestamp_tsf: prepared.access_point.timestamp,
-            beacon_received_at_micros: prepared.access_point.received_at.as_micros(),
+            beacon_received_at: prepared.access_point.received_at,
             peer_qos: plan.peer_qos,
             management_protection: station.management_protection,
             sae: station.sae,

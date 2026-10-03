@@ -26,6 +26,8 @@ pub mod he;
 pub mod init;
 mod interface_address;
 pub mod irq;
+/// The 32-bit MAC local time on a 64-bit timeline.
+pub mod local_time;
 /// Conversions to and from the portable values of the lower-MAC port.
 pub mod portable;
 pub mod rx;

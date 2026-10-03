@@ -176,6 +176,7 @@ fn group_message1(
 #[derive(Default)]
 struct Hardware {
     station_tsf: u64,
+    mac_local_time: u32,
     prepare: bool,
     completion: Option<MacTxCompletionObservation>,
     programmed: Option<S31RxBlockAckAgreement>,
@@ -335,6 +336,10 @@ impl ConnectedControlHardware for Hardware {
 
     fn set_station_tsf(&mut self, value: u64) {
         self.station_tsf = value;
+    }
+
+    fn mac_local_time(&mut self) -> u32 {
+        self.mac_local_time
     }
 
     fn station_beacon_monitor_readback(&mut self) -> Option<MacStaReceivePolicySnapshot> {
@@ -544,7 +549,7 @@ fn beacon_event(observation: StaBeaconObservation) -> ConnectedRxEvent<'static> 
     ConnectedRxEvent::Beacon {
         observation,
         metadata: MacRxMetadata::unavailable(),
-        received_at_micros: None,
+        stamp: None,
     }
 }
 
@@ -579,7 +584,7 @@ fn join_beacon() -> JoinBeacon {
             interval_tu: 100,
             tim: None,
         },
-        received_at_micros: 0,
+        received_at: Some(oer_time::Instant::from_micros(0)),
     }
 }
 
@@ -2306,7 +2311,7 @@ fn the_station_takes_the_access_point_tsf_at_power_start_and_from_each_beacon() 
     control.enable_power_management(
         SleepType::None,
         JoinBeacon {
-            received_at_micros: 1_000,
+            received_at: Some(oer_time::Instant::from_micros(1_000)),
             ..join_beacon()
         },
         link.bind(&SharedCoex),
@@ -2330,15 +2335,16 @@ fn the_station_takes_the_access_point_tsf_at_power_start_and_from_each_beacon() 
     );
     assert_eq!(hardware.station_tsf, 1_000_000 + 5_000);
 
-    // A beacon received at 10 ms and handled at 12 ms carries its own TSF.
-    embassy_futures::block_on(tx.wait_until(oer_time::Instant::from_micros(12_000)));
+    // A beacon stamped at MAC local time 10 000 and followed at 12 000
+    // carries its own TSF, advanced by the counter's difference.
+    hardware.mac_local_time = 12_000;
     publisher.publish(ConnectedRxEvent::Beacon {
         observation: StaBeaconObservation {
             timestamp_tsf: 2_000_000,
             ..idle_beacon()
         },
         metadata: MacRxMetadata::unavailable(),
-        received_at_micros: Some(10_000),
+        stamp: Some(10_000),
     });
     settle(
         &mut control,
@@ -2349,6 +2355,45 @@ fn the_station_takes_the_access_point_tsf_at_power_start_and_from_each_beacon() 
         &mut performed,
     );
     assert_eq!(hardware.station_tsf, 2_000_000 + 2_000);
+
+    // The counter's difference carries across its 32-bit wrap.
+    hardware.mac_local_time = 1_000;
+    publisher.publish(ConnectedRxEvent::Beacon {
+        observation: StaBeaconObservation {
+            timestamp_tsf: 3_000_000,
+            ..idle_beacon()
+        },
+        metadata: MacRxMetadata::unavailable(),
+        stamp: Some(u32::MAX - 999),
+    });
+    settle(
+        &mut control,
+        &link,
+        &mut hardware,
+        &mut tx,
+        DatapathControlContext::IDLE,
+        &mut performed,
+    );
+    assert_eq!(hardware.station_tsf, 3_000_000 + 2_000);
+
+    // A beacon without a receive timestamp leaves the TSF as it is.
+    publisher.publish(ConnectedRxEvent::Beacon {
+        observation: StaBeaconObservation {
+            timestamp_tsf: 9_000_000,
+            ..idle_beacon()
+        },
+        metadata: MacRxMetadata::unavailable(),
+        stamp: None,
+    });
+    settle(
+        &mut control,
+        &link,
+        &mut hardware,
+        &mut tx,
+        DatapathControlContext::IDLE,
+        &mut performed,
+    );
+    assert_eq!(hardware.station_tsf, 3_000_000 + 2_000);
 }
 
 #[test]
@@ -2382,13 +2427,14 @@ fn a_beacon_queued_behind_power_inputs_takes_the_next_step() {
     // Under saturated traffic the TBTT and the beacon after it wait for
     // the same control step, and a new power input waits at every step.
     embassy_futures::block_on(tx.wait_until(oer_time::Instant::from_micros(12_000)));
+    hardware.mac_local_time = 12_000;
     publisher.publish(ConnectedRxEvent::Beacon {
         observation: StaBeaconObservation {
             timestamp_tsf: 2_000_000,
             ..idle_beacon()
         },
         metadata: MacRxMetadata::unavailable(),
-        received_at_micros: Some(10_000),
+        stamp: Some(10_000),
     });
     link.perform_for_test(&mut |command| performed.push(command), None, true);
     // The TBTT goes first; the Null it starts completes before any event.

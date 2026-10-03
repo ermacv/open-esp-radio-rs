@@ -25,7 +25,7 @@ access = "read-only"
 
 [[peripherals.registers.register.fields]]
 name = "VALUE"
-description = "Full-width wrapping counter value; its unit is not established."
+description = "Full-width wrapping counter value in microseconds, at the system timer's rate; receive timestamps are readings of it."
 bitOffset = 0
 bitWidth = 32
 
@@ -47,7 +47,11 @@ completeness = "unknown"
 [[review]]
 entity = "WIFI_MAC_LOCAL_TIME.COUNTER.VALUE"
 naming = "descriptive"
-sources = ["ROM_REV0_PHY_WAIT_I2C_SDM_STABLE", "BLOB_LIBPP_MAC_LOCAL_TIME"]
+sources = [
+    "ROM_REV0_PHY_WAIT_I2C_SDM_STABLE",
+    "BLOB_LIBPP_MAC_LOCAL_TIME",
+    "HIL_OPEN_MAC_LOCAL_TIME_RATE_2026_10_03",
+]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"

@@ -11,10 +11,20 @@ fn a_record_keeps_the_time_of_its_latest_observation() {
     frame[0] = 0x80;
     frame[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
     frame[36..42].copy_from_slice(&[0, 4, b't', b'e', b's', b't']);
-    table.observe_management(&frame, 1, -70, Instant::from_micros(1_000));
-    assert_eq!(table.records()[0].received_at, Instant::from_micros(1_000));
-    table.observe_management(&frame, 1, -60, Instant::from_micros(2_500));
-    assert_eq!(table.records()[0].received_at, Instant::from_micros(2_500));
+    table.observe_management(&frame, 1, -70, Some(Instant::from_micros(1_000)));
+    assert_eq!(
+        table.records()[0].received_at,
+        Some(Instant::from_micros(1_000))
+    );
+    table.observe_management(&frame, 1, -60, Some(Instant::from_micros(2_500)));
+    assert_eq!(
+        table.records()[0].received_at,
+        Some(Instant::from_micros(2_500))
+    );
+    // The record's TSF comes from the latest frame, so does its reception
+    // time, even when the receiver has none for it.
+    table.observe_management(&frame, 1, -60, None);
+    assert_eq!(table.records()[0].received_at, None);
 }
 
 #[test]
@@ -126,16 +136,16 @@ fn table_deduplicates_by_bssid_and_retains_latest_record() {
     frame[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
     frame[36..42].copy_from_slice(&[0, 4, b't', b'e', b's', b't']);
     assert_eq!(
-        table.observe_management(&frame, 1, -70, Instant::EPOCH),
+        table.observe_management(&frame, 1, -70, None),
         ScanObservation::Inserted { index: 0 }
     );
     assert_eq!(
-        table.observe_management(&frame, 1, -30, Instant::EPOCH),
+        table.observe_management(&frame, 1, -30, None),
         ScanObservation::Updated { index: 0 }
     );
     assert_eq!(table.records()[0].rssi, -30);
     assert_eq!(
-        table.observe_management(&frame, 1, -60, Instant::EPOCH),
+        table.observe_management(&frame, 1, -60, None),
         ScanObservation::Updated { index: 0 }
     );
     assert_eq!(table.records()[0].rssi, -60);
@@ -155,14 +165,14 @@ fn weaker_latest_beacon_replaces_stale_ht_protection() {
     ]);
 
     assert_eq!(
-        table.observe_management(&frame, 11, -30, Instant::EPOCH),
+        table.observe_management(&frame, 11, -30, None),
         ScanObservation::Inserted { index: 0 }
     );
     assert_eq!(table.records()[0].ht_operation_ie[4] & 0x03, 1);
 
     frame[49] = 0;
     assert_eq!(
-        table.observe_management(&frame, 11, -60, Instant::EPOCH),
+        table.observe_management(&frame, 11, -60, None),
         ScanObservation::Updated { index: 0 }
     );
     assert_eq!(table.records()[0].ht_operation_ie[4] & 0x03, 0);
@@ -177,7 +187,7 @@ fn latest_hidden_beacon_preserves_probe_response_ssid() {
     probe[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
     probe[36..42].copy_from_slice(&[0, 4, b't', b'e', b's', b't']);
     assert_eq!(
-        table.observe_management(&probe, 1, -40, Instant::EPOCH),
+        table.observe_management(&probe, 1, -40, None),
         ScanObservation::Inserted { index: 0 }
     );
 
@@ -186,7 +196,7 @@ fn latest_hidden_beacon_preserves_probe_response_ssid() {
     beacon[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
     beacon[36..38].copy_from_slice(&[0, 0]);
     assert_eq!(
-        table.observe_management(&beacon, 1, -55, Instant::EPOCH),
+        table.observe_management(&beacon, 1, -55, None),
         ScanObservation::Updated { index: 0 }
     );
     assert_eq!(table.records()[0].ssid_bytes(), b"test");

@@ -177,7 +177,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
             lease,
             _slots: PhantomData,
             metadata,
-            runtime_received_at_micros: None,
+            times: None,
         })
     }}
 
@@ -239,7 +239,17 @@ pub struct NetworkRxFrame<'pool, const SLOTS: usize, const CAPACITY: usize> {
     lease: ExternalRxRadioLease<'pool, CAPACITY>,
     _slots: PhantomData<[(); SLOTS]>,
     metadata: StagedMetadata,
-    runtime_received_at_micros: Option<u64>,
+    times: Option<RxTimes>,
+}
+
+/// When the image saw one received frame.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RxTimes {
+    /// The monotonic time of the frame's first executor-visible handoff.
+    pub handoff: oer_time::Instant,
+    /// The frame's receive timestamp: the raw MAC local time the hardware
+    /// wrote into its RX-control prefix (`rx::decode_rx_local_timestamp`).
+    pub stamp: Option<u32>,
 }
 
 impl<const SLOTS: usize, const CAPACITY: usize> NetworkRxFrame<'_, SLOTS, CAPACITY> {
@@ -257,14 +267,16 @@ impl<const SLOTS: usize, const CAPACITY: usize> NetworkRxFrame<'_, SLOTS, CAPACI
         }
     }
 
-    pub fn mark_runtime_received_at_micros(&mut self, received_at_micros: u64) {
-        if self.runtime_received_at_micros.is_none() {
-            self.runtime_received_at_micros = Some(received_at_micros);
+    /// Record the frame's first handoff; a later handoff keeps it.
+    pub fn mark_handoff(&mut self, times: RxTimes) {
+        if self.times.is_none() {
+            self.times = Some(times);
         }
     }
 
-    pub const fn runtime_received_at_micros(&self) -> Option<u64> {
-        self.runtime_received_at_micros
+    /// The times of the first handoff, once marked.
+    pub const fn times(&self) -> Option<RxTimes> {
+        self.times
     }
 
     pub fn normalized_metadata(&self) -> Option<MacRxMetadata<RxPhyInfo>> {
@@ -300,7 +312,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> NetworkRxFrame<'_, SLOTS, CAPACI
             mut lease,
             _slots: _,
             metadata: _,
-            runtime_received_at_micros: _,
+            times: _,
         } = self;
         lease.with_frame(|raw| {
             raw[frame_offset..frame_offset + 6].copy_from_slice(&destination);

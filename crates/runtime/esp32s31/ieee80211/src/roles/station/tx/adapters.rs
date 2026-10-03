@@ -125,7 +125,7 @@ impl<
     ) -> Result<(), ConnectedHeControlRuntimeRejection> {
         // Recheck at the final owner: control validation and this handoff are
         // separate calls, and neither may extend an expired response window.
-        if self.ordinary.now().as_micros() >= request.response_deadline_micros {
+        if self.ordinary.now() >= request.response_deadline {
             return Err(ConnectedHeControlRuntimeRejection::MissedResponseWindow);
         }
         if self.he_trigger_based != Some(request.queue_policy) {
@@ -175,7 +175,7 @@ impl<
         _hardware: &mut H,
         request: HeNdpaRuntimeRequest,
     ) -> Result<(), ConnectedHeControlRuntimeRejection> {
-        if self.ordinary.now().as_micros() >= request.response_deadline_micros {
+        if self.ordinary.now() >= request.response_deadline {
             return Err(ConnectedHeControlRuntimeRejection::MissedResponseWindow);
         }
         if self.active() {

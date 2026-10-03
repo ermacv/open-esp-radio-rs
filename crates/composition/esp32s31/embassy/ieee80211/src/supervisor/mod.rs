@@ -256,6 +256,35 @@ pub(super) type ProductionStationRuntime<'state> = StationRuntimeResources<
 #[unsafe(link_section = ".dma.bss.open_radio_station")]
 static WIFI_MEMORY: DefaultWifiMemory<CriticalSectionRawMutex> = DefaultWifiMemory::new();
 static SCAN_MEMORY: DefaultScanMemory = DefaultScanMemory::new();
+
+/// The MAC local time with its relation to the monotonic clock.
+pub(crate) type StationMacClock = oer_esp32s31_ieee80211_runtime::mac_clock::MacClock<
+    CriticalSectionRawMutex,
+    oer_esp32s31_hal::root::MacLocalTime,
+    EmbassyClock,
+>;
+
+/// Bound on Wi-Fi's first start, from the partition's MAC local-time
+/// capability, which every start lends alike.
+static MAC_CLOCK: embassy_sync::once_lock::OnceLock<StationMacClock> =
+    embassy_sync::once_lock::OnceLock::new();
+
+/// The MAC clock of the started Wi-Fi.
+pub(crate) fn mac_clock() -> &'static StationMacClock {
+    MAC_CLOCK
+        .try_get()
+        .expect("Wi-Fi start binds the MAC clock before any role runs")
+}
+
+/// A role's monotonic timer paired with the MAC clock.
+pub(crate) fn reception_timer()
+-> oer_esp32s31_ieee80211_runtime::mac_clock::ReceptionTimer<'static, EmbassyClock, StationMacClock>
+{
+    oer_esp32s31_ieee80211_runtime::mac_clock::ReceptionTimer {
+        timer: EmbassyClock,
+        reception: mac_clock(),
+    }
+}
 // This immutable table binds every descriptor index to the final DMA buffer
 // address. RX service validates it on every ownership transfer, so it is
 // safety-critical hot state rather than bulk DMA storage. Keeping the 256-byte
@@ -884,6 +913,12 @@ pub async fn new(
     config: crate::RadioConfig,
 ) -> Result<WifiStarted, NewError> {
     diagnostics_event!("open-radio: Wi-Fi start on the shared radio");
+    MAC_CLOCK.get_or_init(|| {
+        oer_esp32s31_ieee80211_runtime::mac_clock::MacClock::new(
+            partition.mac_local_time(),
+            EmbassyClock,
+        )
+    });
 
     let crate::RadioConfig {
         #[cfg(feature = "rx-ownership-observation")]

@@ -746,6 +746,12 @@ impl<'registers> WifiMacHal<'registers> {
         self.pac_mut().set_station_tsf(value);
     }
 
+    /// The Wi-Fi MAC local time: the free-running microsecond counter whose
+    /// readings receive timestamps carry.
+    pub fn mac_local_time(&self) -> u32 {
+        self.pac().mac_local_time().now()
+    }
+
     /// Start the station TSF, as the vendor does when the station starts.
     pub fn enable_station_tsf(&mut self) {
         self.pac_mut().enable_station_tsf();

@@ -68,11 +68,11 @@ impl<'resources, 'sequence, 'ssid, 'rates, P, H, R, T, W, O, const RECORDS: usiz
         R: ScanReceivePort<H>,
         T: ScanTransmitPort<H>,
         O: ScanFrameObserver,
-        W: oer_time::Clock,
+        W: crate::mac_clock::ReceptionClock,
     {
         let mut context = ScanObservationContext::new(
             channel,
-            oer_time::Clock::now(&self.timer),
+            self.timer.snapshot(),
             self.storage.frame,
             self.storage.table,
             &mut self.storage.observer,

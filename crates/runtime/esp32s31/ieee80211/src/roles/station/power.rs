@@ -343,11 +343,12 @@ mod agent {
     /// dropping it between commands is safe, as the datapath's shutdown stops
     /// power management through the control core first.
     // CAPABILITY: coex-protocol-integration-and-lifetime-coexistence-power-management
-    pub async fn run_station_power_agent<M, IM, P, C, T, R>(
+    pub async fn run_station_power_agent<M, IM, P, C, T, R, K>(
         link: &StationPowerLink<M>,
         radio: &RadioSystem<P, C, T>,
         power_irq: &EmbassyPowerIrqRuntime<IM>,
         rf: &mut R,
+        mac_clock: &K,
     ) -> StationPowerFailure
     where
         M: RawMutex,
@@ -355,6 +356,7 @@ mod agent {
         C: PlatformClockProvider,
         T: oer_time::Timer,
         R: StationRfPower<P, C, T>,
+        K: crate::mac_clock::ReceptionClock + ?Sized,
     {
         loop {
             let event = select3(
@@ -366,7 +368,7 @@ mod agent {
             let mut guard = radio.lock().await;
             match event {
                 Either3::First(command) => {
-                    if let Err(failure) = perform(&mut guard, rf, command).await {
+                    if let Err(failure) = perform(&mut guard, rf, mac_clock, command).await {
                         link.fail(failure);
                         return failure;
                     }
@@ -401,34 +403,38 @@ mod agent {
 
     /// Perform the commands control sent before the association stopped:
     /// the stop's air releases and RF wake.
-    pub async fn finish_station_power<M, P, C, T, R>(
+    pub async fn finish_station_power<M, P, C, T, R, K>(
         link: &StationPowerLink<M>,
         radio: &RadioSystem<P, C, T>,
         rf: &mut R,
+        mac_clock: &K,
     ) -> Result<(), StationPowerFailure>
     where
         M: RawMutex,
         C: PlatformClockProvider,
         T: oer_time::Timer,
         R: StationRfPower<P, C, T>,
+        K: crate::mac_clock::ReceptionClock + ?Sized,
     {
         while let Ok(command) = link.commands.try_receive() {
             let mut guard = radio.lock().await;
-            perform(&mut guard, rf, command).await?;
+            perform(&mut guard, rf, mac_clock, command).await?;
             link.performed.fetch_add(1, Ordering::AcqRel);
         }
         Ok(())
     }
 
-    async fn perform<P, C, T, R>(
+    async fn perform<P, C, T, R, K>(
         radio: &mut RadioGuard<'_, P, C, T>,
         rf: &mut R,
+        mac_clock: &K,
         command: ConnectedPowerCommand,
     ) -> Result<(), StationPowerFailure>
     where
         C: PlatformClockProvider,
         T: oer_time::Timer,
         R: StationRfPower<P, C, T>,
+        K: crate::mac_clock::ReceptionClock + ?Sized,
     {
         match command {
             // The vendor core programs only events with a policy timer; for
@@ -467,7 +473,11 @@ mod agent {
                 rf.sleep(radio).await.map_err(StationPowerFailure::Rf)?
             }
             ConnectedPowerCommand::RfWake => {
-                rf.wake(radio).await.map_err(StationPowerFailure::Rf)?
+                rf.wake(radio).await.map_err(StationPowerFailure::Rf)?;
+                // The MAC local time's relation to the monotonic clock
+                // across the sleep is not established: start a new
+                // generation of it.
+                mac_clock.on_rf_wake();
             }
         }
         Ok(())

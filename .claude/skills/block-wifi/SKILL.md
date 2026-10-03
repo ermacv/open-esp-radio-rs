@@ -30,7 +30,7 @@ Layers and edges: [layer dependencies](../../../docs/architecture.md#layer-depen
 - Every port method but `next_event` is synchronous (`port.rs:74`).
 - `RxEvidence` keeps provenance: never derive a value and report it `HardwareObserved` (`lower-mac/src/rx.rs:13`). `RxMeta.channel` is configuration, not a per-frame observation (`rx.rs:72`).
 - The S31 port's radio epoch is the monotonic clock (`lower_mac.rs:967`).
-- `runtime_received_at_micros` is the executor handoff time (`datapath/rx/dma.rs:402`), not the reception time: the station follows the AP TSF and derives the HE trigger response deadline from it (`roles/esp32s31/ieee80211/sta/src/connected_control.rs:1298`, `:1583`).
+- A received frame carries `RxTimes { handoff, stamp }` (`hardware/esp32s31/driver/ieee80211/mac/src/rx/pool.rs`): the monotonic executor handoff and the raw MAC local-time receive stamp. The RX path never reads a clock; a consumer that needs the reception time converts the stamp: the station's beacon TSF follow in MAC time (`connected_control.rs`, `mac_local_time() - stamp`), the scan through a `MacClockSnapshot` (`runtime/esp32s31/ieee80211/src/mac_clock.rs`). HE Trigger/NDPA deadlines count from the handoff.
 - The station's power-save default is `SleepType::None` (`connected_control/power.rs:181`): RF sleeps only for coexistence, so ordinary HIL runs never exercise modem sleep.
 - The TX completion and publication timeout is one composition constant, 250 ms (`composition/esp32s31/embassy/ieee80211/src/supervisor/mod.rs:227`).
 

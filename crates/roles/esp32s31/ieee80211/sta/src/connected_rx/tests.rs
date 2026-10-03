@@ -11,6 +11,15 @@ const SOURCE: [u8; 6] = [0x30, 0x31, 0x32, 0x33, 0x34, 0x35];
 const TAIL_OFFSET: usize = 0x38;
 const FRAME_OFFSET: usize = 0x40;
 
+/// Receive times of a frame handed off at `handoff_micros`, without a
+/// receive timestamp.
+fn times(handoff_micros: u64) -> Option<oer_esp32s31_ieee80211_mac::rx::pool::RxTimes> {
+    Some(oer_esp32s31_ieee80211_mac::rx::pool::RxTimes {
+        handoff: oer_time::Instant::from_micros(handoff_micros),
+        stamp: None,
+    })
+}
+
 fn replay_resource() -> (StaCcmpRxReplayRxEndpoint, StaCcmpRxReplayControlEndpoint) {
     let resource = std::boxed::Box::leak(std::boxed::Box::new(StaCcmpRxReplayResource::new()));
     resource
@@ -684,11 +693,11 @@ fn open_station_reassembles_only_the_exact_fragment_identity() {
     assert!(!dispatcher.may_publish_ethernet(segment(&first_storage, first_signal)));
     assert!(!dispatcher.may_complete_open_fragment(segment(&first_storage, first_signal)));
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&first_storage, first_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(10),
+            times(10),
             &mut sink,
         ),
         ConnectedRxDispatch::FragmentBuffered {
@@ -702,11 +711,11 @@ fn open_station_reassembles_only_the_exact_fragment_identity() {
     // complete the one-shot PS-Poll delivery lane.
     first_storage[FRAME_OFFSET + 1] |= 0x08;
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&first_storage, first_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(11),
+            times(11),
             &mut sink,
         ),
         ConnectedRxDispatch::Duplicate
@@ -718,11 +727,11 @@ fn open_station_reassembles_only_the_exact_fragment_identity() {
     // still retained.
     first_storage[FRAME_OFFSET + 1] &= !0x04;
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&first_storage, first_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(11),
+            times(11),
             &mut sink,
         ),
         ConnectedRxDispatch::Rejected {
@@ -735,11 +744,11 @@ fn open_station_reassembles_only_the_exact_fragment_identity() {
 
     final_storage[FRAME_OFFSET + 16] ^= 1;
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&final_storage, final_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(11),
+            times(11),
             &mut sink,
         ),
         ConnectedRxDispatch::Rejected {
@@ -753,11 +762,11 @@ fn open_station_reassembles_only_the_exact_fragment_identity() {
     assert!(!dispatcher.may_publish_ethernet(segment(&final_storage, final_signal)));
     assert!(dispatcher.may_complete_open_fragment(segment(&final_storage, final_signal)));
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&final_storage, final_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(12),
+            times(12),
             &mut sink,
         ),
         ConnectedRxDispatch::Data {
@@ -778,11 +787,11 @@ fn open_station_reassembles_only_the_exact_fragment_identity() {
         }]
     );
 
-    let _ = dispatcher.dispatch_with_runtime_received_at(
+    let _ = dispatcher.dispatch_received(
         segment(&first_storage, first_signal),
         &mut mpdu,
         &mut ethernet,
-        Some(20),
+        times(20),
         &mut sink,
     );
     assert_eq!(dispatcher.clear_open_fragmentation(), 1);
@@ -820,11 +829,11 @@ fn station_ccmp_fragments_commit_each_pn_before_one_final_publication() {
     let mut ethernet = [0_u8; 128];
     assert!(!dispatcher.may_publish_ethernet(segment(&first_storage, first_signal)));
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&first_storage, first_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(1),
+            times(1),
             &mut sink,
         ),
         ConnectedRxDispatch::FragmentBuffered {
@@ -836,11 +845,11 @@ fn station_ccmp_fragments_commit_each_pn_before_one_final_publication() {
 
     first_storage[FRAME_OFFSET + 1] |= 0x08;
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&first_storage, first_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(2),
+            times(2),
             &mut sink,
         ),
         ConnectedRxDispatch::Duplicate
@@ -854,11 +863,11 @@ fn station_ccmp_fragments_commit_each_pn_before_one_final_publication() {
         .encode(),
     );
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&first_storage, first_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(3),
+            times(3),
             &mut sink,
         ),
         ConnectedRxDispatch::Rejected {
@@ -879,11 +888,11 @@ fn station_ccmp_fragments_commit_each_pn_before_one_final_publication() {
     );
     first_storage[FRAME_OFFSET + 32] ^= 1;
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&first_storage, first_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(4),
+            times(4),
             &mut sink,
         ),
         ConnectedRxDispatch::Rejected {
@@ -895,11 +904,11 @@ fn station_ccmp_fragments_commit_each_pn_before_one_final_publication() {
     );
     assert!(dispatcher.may_complete_fragment(segment(&final_storage, final_signal)));
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&final_storage, final_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(5),
+            times(5),
             &mut sink,
         ),
         ConnectedRxDispatch::Data {
@@ -919,11 +928,11 @@ fn station_ccmp_fragments_commit_each_pn_before_one_final_publication() {
 
     final_storage[FRAME_OFFSET + 1] |= 0x08;
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&final_storage, final_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(6),
+            times(6),
             &mut sink,
         ),
         ConnectedRxDispatch::Duplicate
@@ -995,11 +1004,11 @@ fn protected_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
     let mut ethernet = [0_u8; 128];
 
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&ordinary_storage, ordinary_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(1),
+            times(1),
             &mut sink,
         ),
         ConnectedRxDispatch::Data {
@@ -1010,11 +1019,11 @@ fn protected_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
     assert_eq!(sink.ethernet.len(), 1);
 
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&retry_first_storage, retry_first_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(2),
+            times(2),
             &mut sink,
         ),
         ConnectedRxDispatch::Duplicate
@@ -1031,11 +1040,11 @@ fn protected_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
     );
 
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&colliding_final_storage, colliding_final_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(3),
+            times(3),
             &mut sink,
         ),
         ConnectedRxDispatch::Rejected {
@@ -1049,11 +1058,11 @@ fn protected_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
     // Retry is not itself a rejection: a fragment-zero sequence absent
     // from ordinary history still starts and completes a normal train.
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&new_first_storage, new_first_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(4),
+            times(4),
             &mut sink,
         ),
         ConnectedRxDispatch::FragmentBuffered {
@@ -1062,11 +1071,11 @@ fn protected_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
         }
     );
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&new_final_storage, new_final_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(5),
+            times(5),
             &mut sink,
         ),
         ConnectedRxDispatch::Data {
@@ -1104,11 +1113,11 @@ fn replay_rejection_cannot_evict_two_durable_ccmp_fragment_trains() {
 
     for (storage, signal, now) in [(&first_a, signal_a, 1), (&first_b, signal_b, 2)] {
         assert!(matches!(
-            dispatcher.dispatch_with_runtime_received_at(
+            dispatcher.dispatch_received(
                 segment(storage, signal),
                 &mut mpdu,
                 &mut ethernet,
-                Some(now),
+                times(now),
                 &mut sink,
             ),
             ConnectedRxDispatch::FragmentBuffered { .. }
@@ -1117,11 +1126,11 @@ fn replay_rejection_cannot_evict_two_durable_ccmp_fragment_trains() {
     assert_eq!(dispatcher.fragments.active_contexts(), 2);
     let pn4 = oer_ieee80211_mac::ccmp::CcmpPacketNumber::new(4).unwrap();
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&replayed, replayed_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(3),
+            times(3),
             &mut sink,
         ),
         ConnectedRxDispatch::Rejected {
@@ -1136,11 +1145,11 @@ fn replay_rejection_cannot_evict_two_durable_ccmp_fragment_trains() {
     );
     assert_eq!(dispatcher.fragments.active_contexts(), 2);
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&final_a, final_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(4),
+            times(4),
             &mut sink,
         ),
         ConnectedRxDispatch::Data {
@@ -1167,11 +1176,11 @@ fn open_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
     let mut ethernet = [0_u8; 128];
 
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&ordinary_storage, ordinary_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(1),
+            times(1),
             &mut sink,
         ),
         ConnectedRxDispatch::Data {
@@ -1182,11 +1191,11 @@ fn open_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
 
     ordinary_storage[FRAME_OFFSET + 1] |= 0x04 | 0x08;
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&ordinary_storage, ordinary_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(2),
+            times(2),
             &mut sink,
         ),
         ConnectedRxDispatch::Duplicate
@@ -1196,11 +1205,11 @@ fn open_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
     let mut final_storage = [0_u8; 192];
     let final_signal = open_fragment(&mut final_storage, 7, 1, false, false, SOURCE, &[2]);
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&final_storage, final_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(3),
+            times(3),
             &mut sink,
         ),
         ConnectedRxDispatch::Rejected {
@@ -1220,11 +1229,11 @@ fn open_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
         &[0; 9],
     );
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&invalid_first_storage, invalid_first_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(4),
+            times(4),
             &mut sink,
         ),
         ConnectedRxDispatch::FragmentBuffered {
@@ -1236,11 +1245,11 @@ fn open_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
     let invalid_final_signal =
         open_fragment(&mut invalid_final_storage, 8, 1, false, false, SOURCE, &[2]);
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&invalid_final_storage, invalid_final_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(5),
+            times(5),
             &mut sink,
         ),
         ConnectedRxDispatch::Rejected {
@@ -1251,11 +1260,11 @@ fn open_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
 
     invalid_first_storage[FRAME_OFFSET + 1] |= 0x08;
     assert_eq!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&invalid_first_storage, invalid_first_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(6),
+            times(6),
             &mut sink,
         ),
         ConnectedRxDispatch::FragmentBuffered {
@@ -1303,11 +1312,11 @@ fn reconfigure_revokes_duplicate_and_fragment_history() {
         ConnectedRxDispatch::Duplicate
     );
     assert!(matches!(
-        dispatcher.dispatch_with_runtime_received_at(
+        dispatcher.dispatch_received(
             segment(&fragment, fragment_signal),
             &mut mpdu,
             &mut ethernet,
-            Some(1),
+            times(1),
             &mut sink,
         ),
         ConnectedRxDispatch::FragmentBuffered { .. }

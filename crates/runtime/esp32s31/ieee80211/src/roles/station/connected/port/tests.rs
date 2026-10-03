@@ -48,7 +48,7 @@ fn peer() -> ConnectedStaPeer {
             association_id: 7,
             beacon_interval_tu: 100,
             beacon_timestamp_tsf: 0,
-            beacon_received_at_micros: 0,
+            beacon_received_at: None,
             peer_qos: true,
             management_protection: false,
             sae: false,

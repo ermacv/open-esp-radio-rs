@@ -98,39 +98,37 @@ const fn timer_index(timer: PmTimer) -> usize {
 }
 
 /// The access point's beacon or probe response a station joined from, with
-/// the station's monotonic time of its reception.
+/// the station's monotonic time of its reception; `None` when its receive
+/// timestamp had no place in the clock relation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct JoinBeacon {
     pub beacon: PmBeacon,
-    pub received_at_micros: u64,
+    pub received_at: Option<oer_time::Instant>,
 }
 
 impl JoinBeacon {
-    /// The access point's TSF at `now_micros`: its timestamp advanced by the
-    /// time since the frame arrived.
+    /// The access point's TSF at `now`: its timestamp advanced by the time
+    /// since the frame arrived; `None` without a reception time, which
+    /// leaves the TSF to the first beacon.
     ///
     /// SOURCE: complete pinned `libpp.a[if_hwctrl.o]::ic_update_sta_tsf`
     /// adds the difference of a free-running microsecond counter between now
     /// and the frame's reception to the node's timestamp and passes the sum
     /// to `hal_set_sta_tsf`; `libnet80211.a[ieee80211_sta.o]::
     /// sta_recv_assoc` calls it with the joined node's timestamp.
-    pub const fn access_point_tsf_at(self, now_micros: u64) -> u64 {
-        access_point_tsf_at(
+    pub fn access_point_tsf_at(self, now: oer_time::Instant) -> Option<u64> {
+        let received_at = self.received_at?;
+        Some(access_point_tsf_after(
             self.beacon.timestamp_tsf,
-            self.received_at_micros,
-            now_micros,
-        )
+            now.saturating_duration_since(received_at).as_micros(),
+        ))
     }
 }
 
-/// The access point TSF `timestamp_tsf`, received at `received_at_micros`,
-/// advanced to `now_micros`.
-pub const fn access_point_tsf_at(
-    timestamp_tsf: u64,
-    received_at_micros: u64,
-    now_micros: u64,
-) -> u64 {
-    timestamp_tsf.wrapping_add(now_micros.saturating_sub(received_at_micros))
+/// The access point TSF `timestamp_tsf` advanced by `elapsed_micros`, the
+/// time since its frame arrived.
+pub const fn access_point_tsf_after(timestamp_tsf: u64, elapsed_micros: u64) -> u64 {
+    timestamp_tsf.wrapping_add(elapsed_micros)
 }
 
 /// Power management of one association and the inputs waiting for it.
@@ -442,7 +440,9 @@ impl ConnectedControlCore {
                 // The TBTT schedule is in the access point's TSF, so the
                 // station takes it before power management places its first
                 // TBTT, as the vendor does on the Association Response.
-                hardware.set_station_tsf(join.access_point_tsf_at(clock.now.as_micros()));
+                if let Some(tsf) = join.access_point_tsf_at(clock.now) {
+                    hardware.set_station_tsf(tsf);
+                }
                 self.power.engine.start(join.beacon, coex, &mut actions);
             }
             PowerInput::Null(power_save) => {

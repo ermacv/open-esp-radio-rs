@@ -137,7 +137,7 @@ impl ScanReceivePort<Hardware> for Receive {
             48, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0, 0,
         ]);
         assert_ne!(
-            context.observe_management_frame(&beacon, -30),
+            context.observe_management_frame(&beacon, -30, None),
             ScanObservation::Ignored
         );
         Ok(ScanRxProgress {
@@ -190,6 +190,18 @@ impl oer_time::Clock for DwellTimer {
     fn now(&self) -> oer_time::Instant {
         oer_time::Clock::now(&self.clock)
     }
+}
+
+impl crate::mac_clock::ReceptionClock for DwellTimer {
+    fn snapshot(&self) -> crate::mac_clock::MacClockSnapshot {
+        crate::mac_clock::MacClock::<embassy_sync::blocking_mutex::raw::NoopRawMutex, _, _>::new(
+            crate::mac_clock::FixedCounter(0),
+            &self.clock,
+        )
+        .snapshot()
+    }
+
+    fn on_rf_wake(&self) {}
 }
 
 impl oer_time::Timer for DwellTimer {

@@ -80,10 +80,11 @@ pub struct ScanRecord {
     pub capability_info: u16,
     /// The access point's TSF when it sent this beacon or probe response.
     pub timestamp: u64,
-    /// The receiver's monotonic time, in microseconds, when this frame was
-    /// received; a station advances `timestamp` by the time since to set
-    /// its own TSF.
-    pub received_at: Instant,
+    /// The receiver's monotonic time of this frame's reception, from its
+    /// receive timestamp; a station advances `timestamp` by the time since
+    /// to set its own TSF. `None` when the receiver had no reception time
+    /// for the frame.
+    pub received_at: Option<Instant>,
     pub beacon_interval_tu: u16,
     pub supported_rates: [u8; 8],
     pub supported_rates_len: u8,
@@ -122,7 +123,7 @@ impl ScanRecord {
         information_elements_truncated: false,
         capability_info: 0,
         timestamp: 0,
-        received_at: Instant::EPOCH,
+        received_at: None,
         beacon_interval_tu: 0,
         supported_rates: [0; 8],
         supported_rates_len: 0,
@@ -333,13 +334,13 @@ impl<const N: usize> ScanTable<N> {
     }
 
     /// Parse and merge one beacon/probe response by BSSID, received at
-    /// `received_at` on the receiver's monotonic clock.
+    /// `received_at` on the receiver's monotonic clock, when known.
     pub fn observe_management(
         &mut self,
         frame: &[u8],
         fallback_channel: u8,
         rssi: i8,
-        received_at: Instant,
+        received_at: Option<Instant>,
     ) -> ScanObservation {
         let Some(mut record) = parse_management(frame, fallback_channel, rssi) else {
             return ScanObservation::Ignored;

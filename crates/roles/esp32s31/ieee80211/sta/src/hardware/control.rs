@@ -59,6 +59,10 @@ pub trait ConnectedControlHardware:
     /// Replace the station TSF with the access point's.
     fn set_station_tsf(&mut self, value: u64);
 
+    /// The Wi-Fi MAC local time: the free-running microsecond counter whose
+    /// readings receive timestamps carry, wrapping in 32 bits.
+    fn mac_local_time(&mut self) -> u32;
+
     /// Close interface-zero RX admission while its descriptor ring is still
     /// live. This is a lifecycle edge, not control cleanup: callers must
     /// perform it before interrupt quiescence or DMA walker stop.
@@ -167,6 +171,10 @@ impl ConnectedControlHardware for CooperativeRadioHardware<'_> {
 
     fn set_station_tsf(&mut self, value: u64) {
         CooperativeRadioHardware::set_station_tsf(self, value);
+    }
+
+    fn mac_local_time(&mut self) -> u32 {
+        CooperativeRadioHardware::mac_local_time(self)
     }
 
     fn disable_station_receive_policy(&mut self) {

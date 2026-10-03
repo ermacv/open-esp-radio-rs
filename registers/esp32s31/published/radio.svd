@@ -5512,7 +5512,7 @@
           <fields>
             <field>
               <name>VALUE</name>
-              <description>Project-assigned name. Full-width wrapping counter value; its unit is not established.</description>
+              <description>Project-assigned name. Full-width wrapping counter value in microseconds, at the system timer's rate; receive timestamps are readings of it.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>

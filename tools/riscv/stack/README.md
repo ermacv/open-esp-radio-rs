@@ -6,6 +6,14 @@ its machine code, over the program model of
 [`oer-riscv-analysis`](../analysis/README.md) and
 [`oer-riscv-lift`](../lift/README.md).
 
+Facts of the build come first. An image linked with `--emit-relocs` keeps
+its relocations, each checked against the word it describes (a mismatch is an
+integrity error): a compiler jump table is the run of relocated words from its
+`.LJTI*` label, however the code indexes it, and its entries inside the
+function become edges of the value analysis's graph, which then also reaches
+the code behind them; a table the analysis's register values locate there is
+added the same way until none is new.
+
 `analyze` takes the image and its companions, such as the chip's ROM ELF
 (`esp32s31_rev0_rom.elf` of the pinned `esp-rom-elfs`): a call from one into
 another reaches the callee like any other, and no two may place code at the

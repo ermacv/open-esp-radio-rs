@@ -201,6 +201,7 @@ fn field_accesses(
     let mut functions = Vec::new();
     let mut blocked = Vec::new();
     let mut gaps = 0_u64;
+    let mut unknown_addresses = 0_u64;
     app::library::analyze_library(
         &executables,
         &blobray_backend_riscv::RiscvDecoder,
@@ -209,6 +210,7 @@ fn field_accesses(
         &mut |outcome, _| {
             match outcome {
                 app::library::LibraryOutcome::Analyzed(analyzed) => {
+                    unknown_addresses += blobray_cli::field::unknown_addresses(analyzed.records);
                     let accesses =
                         blobray_cli::field::field_accesses(analyzed.records, offset, width);
                     if !accesses.is_empty() {
@@ -246,6 +248,7 @@ fn field_accesses(
                 functions,
                 blocked,
                 gaps,
+                unknown_addresses,
             };
             serde_json::to_writer(&mut out, &document).map_err(json_error)?;
             writeln!(out).map_err(io_error)?;
@@ -279,7 +282,7 @@ fn field_accesses(
             }
             writeln!(
                 out,
-                "{} functions access the field; {} functions blocked; {gaps} gaps",
+                "{} functions access the field; {} functions blocked; {gaps} gaps; {unknown_addresses} accesses at unknown addresses",
                 functions.len(),
                 blocked.len()
             )

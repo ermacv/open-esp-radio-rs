@@ -74,6 +74,9 @@ pub struct FieldAccessesDocument {
     pub blocked: Vec<LibraryFunction>,
     /// Code no function covers, whose accesses are unknown too.
     pub gaps: u64,
+    /// Accesses of the analyzed functions whose address is not known at
+    /// all, so no field selection sees them.
+    pub unknown_addresses: u64,
 }
 
 /// One function's accesses of the requested field.

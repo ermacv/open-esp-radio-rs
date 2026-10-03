@@ -6,7 +6,7 @@ use blobray_domain::{
     SymbolId, SymbolTableKind,
 };
 
-use super::{FieldRoot, field_accesses};
+use super::{FieldRoot, field_accesses, unknown_addresses};
 
 fn symbol() -> SymbolId {
     SymbolId {
@@ -140,4 +140,27 @@ fn a_negative_constant_folds_as_a_signed_displacement() {
     assert_eq!(accesses.len(), 1);
     assert_eq!(accesses[0].root, FieldRoot::EntryStack);
     assert_eq!(accesses[0].path, [-8]);
+}
+
+#[test]
+fn an_unresolved_base_keeps_its_exact_displacements() {
+    // `sb 148(a5)` where the analysis lost what `a5` holds.
+    let records = vec![
+        expression(1, add(AbstractValue::Unknown, 148)),
+        store(54, 1, 1),
+        FunctionRecord::MemoryAccess {
+            offset: 60,
+            access: MemoryKind::Load,
+            width: 1,
+            address: AbstractValue::Unknown,
+            value: None,
+            relocation: None,
+        },
+    ];
+    let accesses = field_accesses(&records, 148, Some(1));
+    assert_eq!(accesses.len(), 1);
+    assert_eq!(accesses[0].offset, 54);
+    assert_eq!(accesses[0].root, FieldRoot::Unknown);
+    assert_eq!(accesses[0].path, [148]);
+    assert_eq!(unknown_addresses(&records), 1);
 }

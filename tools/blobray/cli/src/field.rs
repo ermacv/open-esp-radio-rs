@@ -28,6 +28,9 @@ pub enum FieldRoot {
     CallResult { callsite: u64, register: u8 },
     /// A section of the function's object.
     Section { section: u32 },
+    /// A base the analysis could not resolve; the displacements after it are
+    /// still exact, so the access is a candidate, not a proof.
+    Unknown,
 }
 
 /// One memory access of a function, as a field of its root.
@@ -46,7 +49,8 @@ pub struct FieldAccess {
 
 /// The memory accesses of one function's `records` whose address folds to
 /// a root and a path ending at `offset`, and, when given, of `width` bytes.
-/// Absolute addresses and addresses with an unknown part are not fields.
+/// An unresolved base is the [`FieldRoot::Unknown`] root; absolute addresses
+/// are not fields.
 pub fn field_accesses(
     records: &[FunctionRecord],
     offset: i64,
@@ -108,6 +112,23 @@ pub fn field_accesses(
         .collect()
 }
 
+/// The memory accesses of `records` whose address is not known at all:
+/// neither a root nor a displacement, so no field selection can see them.
+pub fn unknown_addresses(records: &[FunctionRecord]) -> u64 {
+    records
+        .iter()
+        .filter(|record| {
+            matches!(
+                record,
+                FunctionRecord::MemoryAccess {
+                    address: AbstractValue::Unknown,
+                    ..
+                }
+            )
+        })
+        .count() as u64
+}
+
 /// The deepest folds a chain may take; the expressions form a DAG of earlier
 /// records, so this only bounds pathological inputs.
 const MAX_DEPTH: usize = 64;
@@ -137,7 +158,7 @@ fn fold(
             Vec::new(),
             *offset,
         )),
-        AbstractValue::Expression { id } => match expressions.get(id)? {
+        AbstractValue::Expression { id } if expressions.contains_key(id) => match expressions[id] {
             Expression::EntryRegister { register } => Some((
                 FieldRoot::EntryRegister {
                     register: *register,
@@ -157,26 +178,29 @@ fn fold(
                 op: IntegerOp::Add,
                 left,
                 right,
-            } => {
-                let (base, constant) = match (left, right) {
-                    (base, AbstractValue::Constant { value })
-                    | (AbstractValue::Constant { value }, base) => (base, *value),
-                    _ => return None,
-                };
-                let (root, path, last) = fold(base, expressions, depth + 1)?;
-                Some((root, path, last + i64::from(constant as i32)))
-            }
+            } => match (left, right) {
+                (base, AbstractValue::Constant { value })
+                | (AbstractValue::Constant { value }, base) => {
+                    let (root, path, last) = fold(base, expressions, depth + 1)?;
+                    Some((root, path, last + i64::from(*value as i32)))
+                }
+                _ => Some((FieldRoot::Unknown, Vec::new(), 0)),
+            },
             Expression::Load { address, .. } => {
                 let (root, mut path, last) = fold(address, expressions, depth + 1)?;
                 path.push(last);
                 Some((root, path, 0))
             }
-            Expression::Integer { .. } => None,
+            Expression::Integer { .. } => Some((FieldRoot::Unknown, Vec::new(), 0)),
         },
-        AbstractValue::Constant { .. }
-        | AbstractValue::ImageAddress { .. }
+        // An expression the records do not define, a base with several
+        // possible values or none known: the displacements after it stay
+        // exact.
+        AbstractValue::Expression { .. }
         | AbstractValue::Alternatives { .. }
-        | AbstractValue::Unknown => None,
+        | AbstractValue::Unknown => Some((FieldRoot::Unknown, Vec::new(), 0)),
+        // A known absolute address is no field of anything.
+        AbstractValue::Constant { .. } | AbstractValue::ImageAddress { .. } => None,
     }
 }
 

@@ -110,6 +110,7 @@ pub fn audit_runtime(elf: &Path, binary: &Path) -> Result<String> {
         return Err("runtime ELF violates the PSRAM/PSRAM placement contract".into());
     }
     audit_psram_stack_entry_instructions(elf)?;
+    audit_interrupt_handlers(elf, &symbols, &in_sram)?;
 
     Ok(format!(
         "profile={}\n\
@@ -157,6 +158,105 @@ fn audit_psram_stack_entry_instructions(elf: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// The prefix of the word the image's interrupt table defines per entry: the
+/// address of the entry's handler function.
+const INTERRUPT_BODY_PREFIX: &str = "__oer_interrupt_body_";
+
+/// Every entry of the image's interrupt table runs from SRAM: the source's
+/// vector-slot symbol and the handler function it calls.
+fn audit_interrupt_handlers(
+    elf: &Path,
+    symbols: &BTreeMap<String, u64>,
+    in_sram: &dyn Fn(u64, u64) -> bool,
+) -> Result<()> {
+    let objdump = || Command::new(program_from_env("LLVM_OBJDUMP", "llvm-objdump"));
+    let output = objdump().arg("-t").arg(elf).supervised_output()?;
+    if !output.status.success() {
+        return Err("llvm-objdump failed while auditing interrupt handlers".into());
+    }
+    let table = String::from_utf8(output.stdout)?;
+    let words = body_words(&table);
+    if words.is_empty() {
+        return Ok(());
+    }
+    let mut dump = objdump();
+    dump.arg("-s");
+    let sections: std::collections::BTreeSet<&str> = words
+        .iter()
+        .map(|(_, _, section)| section.as_str())
+        .collect();
+    for section in sections {
+        dump.arg("-j").arg(section);
+    }
+    let output = dump.arg(elf).supervised_output()?;
+    if !output.status.success() {
+        return Err("llvm-objdump failed while auditing interrupt handlers".into());
+    }
+    let contents = String::from_utf8(output.stdout)?;
+    for (source, word, _) in &words {
+        let slot = *symbols
+            .get(source)
+            .ok_or_else(|| format!("interrupt table entry `{source}` has no handler symbol"))?;
+        let body = dumped_word(&contents, *word)
+            .map(u64::from)
+            .ok_or_else(|| format!("the handler word of `{source}` is not in the image"))?;
+        if !in_sram(slot, slot + 4) || !in_sram(body, body + 4) {
+            return Err(format!(
+                "the interrupt handler of `{source}` ({slot:#010x}, calling {body:#010x}) lies outside SRAM"
+            )
+            .into());
+        }
+    }
+    Ok(())
+}
+
+/// The interrupt table's handler words of an `llvm-objdump -t` symbol table:
+/// source, address and section.
+fn body_words(table: &str) -> Vec<(String, u64, String)> {
+    table
+        .lines()
+        .filter_map(|line| {
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            let name = *fields.last()?;
+            let source = name.strip_prefix(INTERRUPT_BODY_PREFIX)?;
+            let address = u64::from_str_radix(fields.first()?, 16).ok()?;
+            // `address flags... section size name`.
+            let section = fields.get(fields.len().checked_sub(3)?)?;
+            Some((source.to_owned(), address, (*section).to_owned()))
+        })
+        .collect()
+}
+
+/// The little-endian word at `address` of an `llvm-objdump -s` dump.
+fn dumped_word(dump: &str, address: u64) -> Option<u32> {
+    let mut bytes = [None; 4];
+    for line in dump.lines().filter(|line| line.starts_with(' ')) {
+        let mut fields = line.split_whitespace();
+        let Some(row) = fields
+            .next()
+            .and_then(|row| u64::from_str_radix(row, 16).ok())
+        else {
+            continue;
+        };
+        let mut at = row;
+        for group in fields.take(4) {
+            if group.len() % 2 != 0 || !group.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                break;
+            }
+            for pair in (0..group.len()).step_by(2) {
+                if let Some(slot) = at.checked_sub(address).filter(|offset| *offset < 4) {
+                    bytes[slot as usize] = u8::from_str_radix(&group[pair..pair + 2], 16).ok();
+                }
+                at += 1;
+            }
+        }
+    }
+    let [Some(a), Some(b), Some(c), Some(d)] = bytes else {
+        return None;
+    };
+    Some(u32::from_le_bytes([a, b, c, d]))
 }
 
 pub fn audit_application_image(path: &Path) -> Result<()> {

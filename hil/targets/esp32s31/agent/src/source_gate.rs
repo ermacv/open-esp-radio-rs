@@ -16,6 +16,11 @@ static TIMER: Mutex<RefCell<Option<OneShotTimer<'static, Blocking>>>> =
     Mutex::new(RefCell::new(None));
 
 /// The table's handler of `SYSTIMER_TARGET2`: count, then quiet the alarm.
+#[allow(
+    unsafe_code,
+    reason = "an interrupt handler runs from SRAM, which only a link section selects"
+)]
+#[unsafe(link_section = ".rwtext.open_radio_irq")]
 pub(crate) fn on_alarm() {
     FIRED.fetch_add(1, Ordering::Relaxed);
     critical_section::with(|cs| {

@@ -78,6 +78,7 @@ use oer_time::Clock;
 
 use oer_esp32s31_hal::types::StaTbttSchedule;
 use oer_ieee80211_lower_mac::{TsfGeneration, TsfRelation};
+use oer_ieee80211_mac::tsf::TsfInstant;
 
 use crate::station_tsf::{STATION_TSF_SAMPLE_UNCERTAINTY, StationTsf, StationTsfHardware};
 use oer_esp32s31_ieee80211_mac::{
@@ -108,9 +109,9 @@ use oer_ieee80211_lower_mac::{
     KeyInstall, KeyScope, KeySelector, LifecycleCommand, LifecycleError, LifecycleEvent,
     LowerMacCapabilities, LowerMacSetting, MacAddress, MonitorCapabilities, MpduAttempt,
     PhyFormatSet, PhyRate, Protection, RateSupport, ReceiveFilter, Refused, RxBlockAckAgreement,
-    RxMeta, SettingError, SubmitError, TbttEvent, TbttSchedule, TsfInstant, TxBuffer, TxCompletion,
-    TxFault, TxId, TxPayload, TxPower, TxResponse, TxStatus, VifConfig, VifId, VifRole, VifRoleSet,
-    VifTsf, WidthSet,
+    RxMeta, SettingError, SubmitError, TbttEvent, TbttSchedule, TxBuffer, TxCompletion, TxFault,
+    TxId, TxPayload, TxPower, TxResponse, TxStatus, VifConfig, VifId, VifRole, VifRoleSet, VifTsf,
+    WidthSet,
 };
 use oer_ieee80211_mac::{
     channel::{Band, WifiChannel},

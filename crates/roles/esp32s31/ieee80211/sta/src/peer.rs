@@ -105,7 +105,7 @@ pub struct StaConnectedLink {
     pub beacon_interval_tu: u16,
     /// The access point's timestamp in the beacon or probe response the
     /// station joined from; power management places its TBTT from it.
-    pub beacon_timestamp_tsf: u64,
+    pub beacon_timestamp_tsf: oer_ieee80211_mac::tsf::TsfInstant,
     /// The station's monotonic time when that frame arrived; `None` when
     /// its receive timestamp had no place in the clock relation.
     pub beacon_received_at: Option<oer_time::Instant>,

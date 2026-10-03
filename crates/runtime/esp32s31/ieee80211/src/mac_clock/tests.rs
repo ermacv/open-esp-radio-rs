@@ -213,9 +213,8 @@ fn tsf_epochs_are_never_reused_across_radio_starts() {
 
 #[test]
 fn a_tsf_sample_of_an_earlier_radio_start_is_refused_with_its_mac_clock() {
-    use oer_ieee80211_lower_mac::{
-        TsfInstant, TsfProjectionError, TsfRelation, TsfSample, VifId, VifTsf,
-    };
+    use oer_ieee80211_lower_mac::{TsfProjectionError, TsfRelation, TsfSample, VifId, VifTsf};
+    use oer_ieee80211_mac::tsf::TsfInstant;
     let clock = VirtualClock::new();
     clock.advance_to(at(10_000));
     let counter = Counter::new(&clock, 0);

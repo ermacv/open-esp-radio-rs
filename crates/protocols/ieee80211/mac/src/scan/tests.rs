@@ -72,7 +72,7 @@ fn parses_beacon_into_owned_bounded_record() {
     assert_eq!(record.bssid, [1, 2, 3, 4, 5, 6]);
     assert_eq!(record.channel, 11);
     assert_eq!(record.rssi, -42);
-    assert_eq!(record.timestamp, 0x0123_4567_89ab_cdef);
+    assert_eq!(record.timestamp.as_micros(), 0x0123_4567_89ab_cdef);
     assert_eq!(record.beacon_interval_tu, 100);
     assert!(record.privacy);
     assert!(record.rsn);

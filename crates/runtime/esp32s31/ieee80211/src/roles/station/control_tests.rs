@@ -540,7 +540,7 @@ fn finish_tx(
 
 fn idle_beacon() -> StaBeaconObservation {
     StaBeaconObservation {
-        timestamp_tsf: 1_000_000,
+        timestamp_tsf: oer_ieee80211_mac::tsf::TsfInstant::from_micros(1_000_000),
         // The association-owned policy below deliberately differs.
         interval_tu: 500,
         capability_information: 0,
@@ -589,7 +589,7 @@ impl crate::roles::station::power::PowerCoexSource for SharedCoex {
 fn join_beacon() -> JoinBeacon {
     JoinBeacon {
         beacon: PmBeacon {
-            timestamp_tsf: 1_000_000,
+            timestamp_tsf: oer_ieee80211_mac::tsf::TsfInstant::from_micros(1_000_000),
             interval_tu: 100,
             tim: None,
         },
@@ -1613,7 +1613,7 @@ fn beacon_received_on_exact_deadline_refreshes_before_loss_check() {
     );
     embassy_futures::block_on(control.wait_ready(&mut tx));
     publisher.publish(beacon_event(StaBeaconObservation {
-        timestamp_tsf: 123,
+        timestamp_tsf: oer_ieee80211_mac::tsf::TsfInstant::from_micros(123),
         interval_tu: 100,
         capability_information: 0,
         tim: None,
@@ -1661,7 +1661,7 @@ fn connected_beacon_protection_updates_the_tx_bss_facts() {
     tx.policy_mut().install_bss_protection(associated);
 
     publisher.publish(beacon_event(StaBeaconObservation {
-        timestamp_tsf: 123,
+        timestamp_tsf: oer_ieee80211_mac::tsf::TsfInstant::from_micros(123),
         interval_tu: 100,
         capability_information: 0,
         tim: None,
@@ -1687,7 +1687,7 @@ fn connected_beacon_protection_updates_the_tx_bss_facts() {
 
     // The BSS later drops every requirement.
     publisher.publish(beacon_event(StaBeaconObservation {
-        timestamp_tsf: 204_923,
+        timestamp_tsf: oer_ieee80211_mac::tsf::TsfInstant::from_micros(204_923),
         interval_tu: 100,
         capability_information: 0,
         tim: None,
@@ -2369,7 +2369,7 @@ fn the_station_takes_the_access_point_tsf_at_power_start_and_from_each_beacon() 
     hardware.mac_local_time = 12_000;
     publisher.publish(ConnectedRxEvent::Beacon {
         observation: StaBeaconObservation {
-            timestamp_tsf: 2_000_000,
+            timestamp_tsf: oer_ieee80211_mac::tsf::TsfInstant::from_micros(2_000_000),
             ..idle_beacon()
         },
         metadata: MacRxMetadata::unavailable(),
@@ -2389,7 +2389,7 @@ fn the_station_takes_the_access_point_tsf_at_power_start_and_from_each_beacon() 
     hardware.mac_local_time = 1_000;
     publisher.publish(ConnectedRxEvent::Beacon {
         observation: StaBeaconObservation {
-            timestamp_tsf: 3_000_000,
+            timestamp_tsf: oer_ieee80211_mac::tsf::TsfInstant::from_micros(3_000_000),
             ..idle_beacon()
         },
         metadata: MacRxMetadata::unavailable(),
@@ -2408,7 +2408,7 @@ fn the_station_takes_the_access_point_tsf_at_power_start_and_from_each_beacon() 
     // A beacon without a receive timestamp leaves the TSF as it is.
     publisher.publish(ConnectedRxEvent::Beacon {
         observation: StaBeaconObservation {
-            timestamp_tsf: 9_000_000,
+            timestamp_tsf: oer_ieee80211_mac::tsf::TsfInstant::from_micros(9_000_000),
             ..idle_beacon()
         },
         metadata: MacRxMetadata::unavailable(),
@@ -2460,7 +2460,7 @@ fn a_beacon_queued_behind_power_inputs_takes_the_next_step() {
     hardware.mac_local_time = 12_000;
     publisher.publish(ConnectedRxEvent::Beacon {
         observation: StaBeaconObservation {
-            timestamp_tsf: 2_000_000,
+            timestamp_tsf: oer_ieee80211_mac::tsf::TsfInstant::from_micros(2_000_000),
             ..idle_beacon()
         },
         metadata: MacRxMetadata::unavailable(),
@@ -2546,7 +2546,7 @@ fn the_role_writes_the_station_tsf_through_its_owner_at_power_start_and_each_bea
             hardware.mac_local_time = 12_000;
             publisher.publish(ConnectedRxEvent::Beacon {
                 observation: StaBeaconObservation {
-                    timestamp_tsf: at - 2_000,
+                    timestamp_tsf: oer_ieee80211_mac::tsf::TsfInstant::from_micros(at - 2_000),
                     ..idle_beacon()
                 },
                 metadata: MacRxMetadata::unavailable(),
@@ -2588,7 +2588,8 @@ impl crate::mac_clock::LocalTimeCounter for HeldCounter {
 
 #[test]
 fn a_reconnection_starts_a_new_tsf_generation_and_refuses_the_earlier_sample() {
-    use oer_ieee80211_lower_mac::{TsfInstant, TsfProjectionError, TsfSample, VifId, VifTsf};
+    use oer_ieee80211_lower_mac::{TsfProjectionError, TsfSample, VifId, VifTsf};
+    use oer_ieee80211_mac::tsf::TsfInstant;
     let clock: oer_time_virtual::VirtualClock = oer_time_virtual::VirtualClock::new();
     let storage = crate::mac_clock::MacClockStorage::<NoopRawMutex, _, _>::new(&clock);
     let mac = storage.start(HeldCounter(1_000));

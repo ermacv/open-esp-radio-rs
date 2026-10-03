@@ -18,8 +18,9 @@ use oer_esp32s31_ieee80211_mac::{
     },
 };
 use oer_ieee80211_lower_mac::{
-    AmpduPayload, HardwareServices, LowerMacEvent, PhyRate, RxEvidence, TxAttempt, time_units,
+    AmpduPayload, HardwareServices, LowerMacEvent, PhyRate, RxEvidence, TxAttempt,
 };
+use oer_ieee80211_mac::tsf::{TsfInstant, time_units};
 use oer_ieee80211_mac::{
     channel::ChannelWidth,
     phy::{self, FecCoding, HeGiLtf, LegacyRate, PpduBandwidth, SpatialStreams},

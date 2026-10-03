@@ -8,7 +8,8 @@
 //! backend implements [`StationTsfHardware`] but no caller writes the timer
 //! around the owner.
 
-use oer_ieee80211_lower_mac::{TsfGeneration, TsfInstant, TsfRelation, TsfSetKind};
+use oer_ieee80211_lower_mac::{TsfGeneration, TsfRelation, TsfSetKind};
+use oer_ieee80211_mac::tsf::TsfInstant;
 use oer_time::Duration;
 
 /// The uncertainty of a station TSF sample: the set value and the reading

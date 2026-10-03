@@ -58,6 +58,15 @@ port does, for example `cargo hil lease --board esp32c5 -- uhubctl -l
 <hub> -p <port> -a cycle`. Never cycle a port that carries a cascaded hub.
 `cargo hil peer send esp32c5 SYNC` answers `@OK SYNC` once it is back.
 
+A run of `system-watchdog --chip esp32c5` on this board always leaves it
+wedged: the scenario's intentional watchdog reset drops the C5's USB
+30–75 s into the run, and the board comes back half-enumerated as above.
+Until its port is power-cycled, the next peer scenario's restore fails at
+`espflash` ("Failed to connect to the device") or its preflight `SYNC`
+times out. Whoever runs that scenario on the peer board cycles the port
+under the same lease or right after it, before releasing the board to peer
+scenarios.
+
 ## Line protocol
 
 Lines end with `\n`. Every protocol line from the peer starts with `@`; the

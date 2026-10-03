@@ -8,7 +8,7 @@
 //! HIL protocol. Optional timer observations describe only its own execution. Applications supply the ESP-HAL software
 //! interrupt and timer capabilities explicitly, with the tokens of their
 //! sources in the image's interrupt table, whose entries name
-//! [`wake_handler`] and [`timer_interrupt`].
+//! `wake_handler` and `timer_interrupt`.
 
 #[cfg(feature = "esp32s31")]
 mod executor;

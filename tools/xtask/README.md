@@ -117,8 +117,10 @@ host packages only. Host packages are every package of the root workspace and
 host or portable packages of the others. When the change reaches a package
 that builds only for a chip, or a chip or family package whose chip-target
 `cfg` code the host skips, the gate also type-checks the two final HIL
-images (`check firmware --class performance --class correctness
---type-check`), as CI does, since the host checks never compile that code.
+images (`performance`, `correctness`), as CI does, and every other image
+class whose runtime compiles such a package, by the class's Cargo graph
+(`cargo tree` with its features for the chip target), since the host checks
+never compile that code.
 The tests of the dependents, `check docs`, the full HIL image builds, API
 documentation
 and the PHY, network, register and provenance audits are CI's on the pull

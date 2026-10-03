@@ -260,3 +260,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
         BTreeSet::from(["c".to_owned()])
     );
 }
+
+#[test]
+fn chip_code_type_checks_the_final_images_and_each_class_that_compiles_it() {
+    use oer_hil_image_class::ImageClass;
+    let graph = |packages: &[&str]| packages.iter().map(|p| (*p).to_owned()).collect();
+    let graphs = vec![
+        (
+            ImageClass::BluetoothGatt,
+            graph(&["agent", "oer-bluetooth-radio"]),
+        ),
+        (ImageClass::Performance, graph(&["agent", "oer-wifi"])),
+        (ImageClass::Correctness, graph(&["agent", "oer-wifi"])),
+        (
+            ImageClass::DiagnosticIeee802154Thread,
+            graph(&["agent", "oer-ieee802154-radio"]),
+        ),
+    ];
+    assert_eq!(
+        image_classes(&BTreeSet::from(["oer-ieee802154-radio"]), &graphs),
+        [
+            ImageClass::Performance,
+            ImageClass::Correctness,
+            ImageClass::DiagnosticIeee802154Thread
+        ]
+    );
+    assert_eq!(
+        image_classes(&BTreeSet::from(["oer-wifi"]), &graphs),
+        [ImageClass::Performance, ImageClass::Correctness]
+    );
+}

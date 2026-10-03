@@ -306,25 +306,9 @@ pub fn check(root: &Path, class: oer_hil_image_class::ImageClass) -> Result<()> 
     )?;
     let stack_budget =
         oer_memory_report::StackBudget::load(&root.join("hil/targets/esp32s31/stack.toml"))?;
-    let mut command = cargo_command();
+    let mut command = runtime_command(root, "check", class, &target);
     command
-        .current_dir(root)
-        .arg("check")
-        .arg("--manifest-path")
-        .arg(root.join("hil/targets/esp32s31/Cargo.toml"))
-        .args([
-            "-p",
-            RUNTIME_BIN,
-            "--release",
-            "--target",
-            &target,
-            "--locked",
-        ])
-        .args([
-            "--no-default-features",
-            "--features",
-            &class.build_features(NETWORK_FEATURE),
-        ])
+        .arg("--release")
         .env("CARGO_TARGET_DIR", cache.join("runtime"));
     lock.configure(&mut command);
     crate::stack::configure_image_compiler(&mut command, &stack_budget, &target);
@@ -337,6 +321,51 @@ pub fn check(root: &Path, class: oer_hil_image_class::ImageClass) -> Result<()> 
     // child output by default) applies to the type check too.
     oer_process::run(&mut command)
         .map_err(|error| format!("the {} runtime does not type-check: {error}", class.id()).into())
+}
+
+/// A Cargo `subcommand` over `class`'s runtime exactly as its image compiles
+/// it: the agent package, the chip target and the class's features alone.
+fn runtime_command(root: &Path, subcommand: &str, class: ImageClass, target: &str) -> Command {
+    let mut command = cargo_command();
+    command
+        .current_dir(root)
+        .arg(subcommand)
+        .arg("--manifest-path")
+        .arg(root.join("hil/targets/esp32s31/Cargo.toml"))
+        .args(["-p", RUNTIME_BIN, "--target", target, "--locked"])
+        .args([
+            "--no-default-features",
+            "--features",
+            &class.build_features(NETWORK_FEATURE),
+        ]);
+    command
+}
+
+/// The names of the packages `class`'s runtime compiles: the agent's normal
+/// dependency graph for the chip target with the class's features, as
+/// [`check`] type-checks it.
+pub fn packages(root: &Path, class: ImageClass) -> Result<std::collections::BTreeSet<String>> {
+    let target = oer_esp32s31_firmware::target(root)?;
+    let mut command = runtime_command(root, "tree", class, &target);
+    command.args(["-e", "normal", "--prefix", "none"]);
+    let output = command.output()?;
+    if !output.status.success() {
+        return Err(format!(
+            "cargo tree of the {} runtime failed: {}",
+            class.id(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        )
+        .into());
+    }
+    Ok(tree_packages(&String::from_utf8_lossy(&output.stdout)))
+}
+
+/// Package names from `cargo tree --prefix none` lines (`name vX.Y.Z ...`).
+fn tree_packages(tree: &str) -> std::collections::BTreeSet<String> {
+    tree.lines()
+        .filter_map(|line| line.split_whitespace().next())
+        .map(str::to_owned)
+        .collect()
 }
 
 /// Names the host build root instead of the user's cache directory.

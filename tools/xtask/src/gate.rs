@@ -44,7 +44,8 @@ const GLOBAL: &[&str] = &[
     "rustfmt.toml",
 ];
 
-/// The image classes CI type-checks on every pull request.
+/// The image classes CI type-checks on every pull request; the gate
+/// type-checks them whenever chip code changes.
 const FINAL_IMAGES: [oer_hil_image_class::ImageClass; 2] = [
     oer_hil_image_class::ImageClass::Performance,
     oer_hil_image_class::ImageClass::Correctness,
@@ -479,6 +480,25 @@ pub fn chip_code<'a>(tree: &Tree, affected: &'a BTreeSet<Key>) -> BTreeSet<&'a K
         .collect()
 }
 
+/// The image classes to type-check for chip code in `changed` packages:
+/// the final images, and every class whose image's package graph (`graphs`)
+/// compiles one of them, in catalog order.
+pub fn image_classes(
+    changed: &BTreeSet<&str>,
+    graphs: &[(oer_hil_image_class::ImageClass, BTreeSet<String>)],
+) -> Vec<oer_hil_image_class::ImageClass> {
+    graphs
+        .iter()
+        .filter(|(class, packages)| {
+            FINAL_IMAGES.contains(class)
+                || packages
+                    .iter()
+                    .any(|package| changed.contains(package.as_str()))
+        })
+        .map(|(class, _)| *class)
+        .collect()
+}
+
 /// Runs the gate for `selection` at `depth`, with Clippy of the packages of
 /// `affected` the host builds and the tests [`tested`] names.
 pub fn run(
@@ -539,17 +559,27 @@ pub fn run(
                 .any(|p| &p.workspace == workspace && &p.name == name && p.host)
         })
         .collect();
-    let left = chip_code(tree, affected).len();
-    if left > 0 {
+    let chip = chip_code(tree, affected);
+    if !chip.is_empty() {
         // Chip-target code is invisible to the host checks below:
-        // type-check the two final images, as CI does, so an interface
-        // change that code still uses fails here. Their full build, the
-        // other classes and the examples remain CI's.
-        println!("gate: {left} package(s) with chip code; type-checking the final images");
-        step("type-check final images", || {
+        // type-check the final images and every class whose image compiles
+        // a package with that code, so an interface change it still uses
+        // fails here. Full builds and the examples remain CI's.
+        let changed: BTreeSet<&str> = chip.iter().map(|(_, name)| name.as_str()).collect();
+        let mut graphs = Vec::new();
+        for class in oer_hil_image_class::ImageClass::ALL {
+            graphs.push((class, oer_hil_image::packages(&ctx.root, class)?));
+        }
+        let classes = image_classes(&changed, &graphs);
+        println!(
+            "gate: {} package(s) with chip code; type-checking {} image class(es)",
+            chip.len(),
+            classes.len()
+        );
+        step("type-check affected images", || {
             crate::checks::firmware::run(
                 ctx,
-                &FINAL_IMAGES,
+                &classes,
                 crate::checks::firmware::Depth::TypeCheck,
                 crate::checks::firmware::default_jobs(),
             )

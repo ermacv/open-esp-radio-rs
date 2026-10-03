@@ -3822,6 +3822,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-riscv-stack"
+version = "0.1.0"
+dependencies = [
+ "object 0.39.1",
+ "oer-riscv-analysis",
+ "oer-riscv-decode",
+ "oer-riscv-lift",
+ "oer-riscv-model",
+ "oer-riscv-program",
+]
+
+[[package]]
 name = "oer-soc-deadline"
 version = "0.1.0"
 

@@ -1,0 +1,27 @@
+[package]
+name = "oer-riscv-stack"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Worst-case stack bounds of a static RV32 image from its machine code"
+
+[dependencies]
+object = { version = "=0.39.1", default-features = false, features = ["elf", "read", "std"] }
+oer-riscv-analysis = { path = "../analysis" }
+oer-riscv-decode = { path = "../decode" }
+oer-riscv-lift = { path = "../lift" }
+oer-riscv-model = { path = "../model" }
+oer-riscv-program = { path = "../program" }
+
+[dev-dependencies]
+object = { version = "=0.39.1", default-features = false, features = ["elf", "std", "write"] }
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+layer = "tool"
+platform = "host"

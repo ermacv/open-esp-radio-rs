@@ -10,6 +10,7 @@ checks. A utility does not need its own Cargo package.
 | [memory-report](memory-report/README.md) | Generic ELF memory and stack analysis; the consumer supplies placement policy |
 | [riscv/decode](riscv/decode/README.md) | RV32 instruction bytes to typed instructions, lengths and text, for a selected extension set |
 | [riscv/model](riscv/model/README.md), [riscv/program](riscv/program/README.md), [riscv/analysis](riscv/analysis/README.md), [riscv/lift](riscv/lift/README.md) | RV32 program model: identities and contracts, static images, bounded CFG and value analysis, RV32 lifting |
+| [riscv/stack](riscv/stack/README.md) | Worst-case stack bounds of a static RV32 image, failing closed with the unresolved sites by reason |
 | [symbol-lineage](symbol-lineage/README.md) | Source function names carried across obfuscated vendor archive revisions |
 | [process](process/README.md) | Host child-process ownership, cancellation and bounded cleanup shared by xtask and HIL |
 | [firmware](firmware/README.md) | Firmware image operations, flash segment writes and shared serial-device leases |

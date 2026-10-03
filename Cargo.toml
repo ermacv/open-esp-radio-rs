@@ -119,6 +119,7 @@ members = [
     "tools/riscv/lift",
     "tools/riscv/model",
     "tools/riscv/program",
+    "tools/riscv/stack",
     "tools/registers",
     "tools/registers/contracts",
     "tools/registers/model",

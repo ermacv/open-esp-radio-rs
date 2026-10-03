@@ -1,0 +1,307 @@
+//! Worst-case stack bounds of a static RV32 image from its machine code.
+//!
+//! Every function is a defined code symbol of the image. Its frame is the
+//! compiler's `.stack_sizes` entry, cross-checked with the deepest entry-relative
+//! `sp` the bounded value analysis of `oer-riscv-analysis` observes; a function
+//! without an entry takes the observed depth only when its control-flow graph
+//! is complete. Its callees are every direct call and out-of-function jump of a
+//! linear sweep over its whole extent, which also reaches code behind jump
+//! tables the control-flow graph does not expand, plus the transfers whose
+//! target the value analysis resolves. A function's bound is its frame or, if
+//! deeper, a callee's bound below the `sp` of the transfer that reaches it: the
+//! value analysis's depth at that site, or the whole frame at a site it did not
+//! reach. It never underestimates the code it reaches.
+//!
+//! Bounds fail closed: a root has a number only when nothing it reaches is
+//! unresolved. Otherwise [`Bound::reasons`] counts what is, by reason, and
+//! [`Reason`] names the stage that closes it.
+
+mod image;
+mod sweep;
+
+use oer_riscv_model::{Error, ErrorCode, Result};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
+
+pub use image::{Function, functions, stack_sizes};
+pub use sweep::{TargetSource, Transfer, TransferKind};
+
+/// Where a function's frame comes from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FrameSource {
+    /// The compiler's `.stack_sizes` entry, equal to or above the observed depth.
+    StackSizes,
+    /// The deepest observed `sp` of a complete control-flow graph.
+    Observed,
+}
+
+/// What the analysis established about one function.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FunctionFacts {
+    pub function: Function,
+    /// Bytes below the entry `sp`, or `None` when no source establishes it.
+    pub frame: Option<u64>,
+    pub source: Option<FrameSource>,
+    /// The deepest entry-relative `sp` the value analysis observed.
+    pub observed: Option<u64>,
+    /// Whether the control-flow graph covered the function without gaps.
+    pub complete: bool,
+    /// Direct calls and out-of-function jumps, by site.
+    pub transfers: Vec<Transfer>,
+    /// Bytes below the entry `sp` at each transfer the value analysis
+    /// reached; a transfer it did not reach is taken at the whole frame.
+    pub site_depths: BTreeMap<u32, u64>,
+}
+
+/// Why a reachable site or function leaves a bound unknown.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum Reason {
+    /// An indirect call whose target was spilled to a stack slot
+    /// (`core::hint::black_box`).
+    StackSlotCall,
+    /// An indirect call through a loaded vtable entry or function pointer.
+    LoadedCall,
+    /// An indirect call through another register value.
+    RegisterCall,
+    /// An indirect jump out of the function: a jump table the value analysis
+    /// did not expand, or a tail call through a pointer.
+    IndirectJump,
+    /// A transfer to an address outside the image's code: ROM.
+    OutsideImage,
+    /// A transfer into the middle of a function.
+    IntoFunction,
+    /// A function without a frame record and with an incomplete control-flow
+    /// graph: hand-written assembly.
+    Unframed,
+    /// A call-graph cycle.
+    Recursion,
+}
+
+impl Reason {
+    /// The stage of the stack analysis that resolves this reason.
+    pub fn closed_by(self) -> &'static str {
+        match self {
+            Reason::StackSlotCall => "1b-2: stack-slot value tracking",
+            Reason::LoadedCall | Reason::RegisterCall => "2: MIR call facts",
+            Reason::IndirectJump => "1b-2: jump tables from .rodata; 2 for pointer tail calls",
+            Reason::OutsideImage => "1c: ROM companion",
+            Reason::IntoFunction => "review",
+            Reason::Unframed => "1c: assembly frames",
+            Reason::Recursion => "a reviewed recursion bound",
+        }
+    }
+}
+
+impl fmt::Display for Reason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Reason::StackSlotCall => "indirect call through a stack slot",
+            Reason::LoadedCall => "indirect call through a loaded pointer",
+            Reason::RegisterCall => "indirect call through a register",
+            Reason::IndirectJump => "indirect jump out of a function",
+            Reason::OutsideImage => "transfer outside the image",
+            Reason::IntoFunction => "transfer into a function's middle",
+            Reason::Unframed => "function without a frame",
+            Reason::Recursion => "recursion",
+        })
+    }
+}
+
+/// A root's worst-case bound, or why it has none.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Bound {
+    pub root: u32,
+    /// Bytes below the root's entry `sp` on its deepest path; `None` unless
+    /// nothing the root reaches is unresolved.
+    pub bytes: Option<u64>,
+    /// What the root reaches that is unresolved: the site (or, for an
+    /// unframed function or a cycle, the function) and its reason.
+    pub unresolved: Vec<(u32, Reason)>,
+    /// Deepest path over what is resolved, root first, with each function's
+    /// frame. A partial path when [`Self::bytes`] is `None`.
+    pub path: Vec<(u32, u64)>,
+}
+
+impl Bound {
+    /// The unresolved sites and functions, counted by reason.
+    pub fn reasons(&self) -> BTreeMap<Reason, usize> {
+        let mut counts = BTreeMap::new();
+        for (_, reason) in &self.unresolved {
+            *counts.entry(*reason).or_insert(0) += 1;
+        }
+        counts
+    }
+}
+
+/// Frames, transfers and bounds of one image.
+#[derive(Clone, Debug)]
+pub struct Analysis {
+    pub functions: BTreeMap<u32, FunctionFacts>,
+    /// Address ranges of the image's executable sections.
+    pub code: Vec<(u32, u32)>,
+}
+
+/// Analyze every function of the static RV32 executable `elf`.
+pub fn analyze(elf: &[u8]) -> Result<Analysis> {
+    let functions = image::functions(elf)?;
+    let sizes = image::stack_sizes(elf)?;
+    let code = image::executable_ranges(elf)?;
+    let mut observed = image::observe(elf, &functions)?;
+    let mut facts = BTreeMap::new();
+    for function in functions {
+        let observation = observed
+            .remove(&function.address)
+            .ok_or_else(|| Error::new(ErrorCode::Integrity, "function without observation"))?;
+        let mut transfers = sweep::transfers(elf, &function)?;
+        // Jump tables stay inside the function, whose code the sweep covers.
+        transfers.retain(|t| t.target.is_some() || !observation.local_jumps.contains(&t.site));
+        for (site, target, kind) in observation.resolved {
+            if !transfers
+                .iter()
+                .any(|t| t.site == site && t.target == Some(target))
+            {
+                transfers.retain(|t| !(t.site == site && t.target.is_none()));
+                transfers.push(Transfer {
+                    site,
+                    target: Some(target),
+                    kind,
+                    source: None,
+                });
+            }
+        }
+        transfers.sort_by_key(|t| (t.site, t.target));
+        let depth = observation.depth;
+        let recorded = sizes.get(&function.address).copied();
+        let (frame, source) = match (recorded, depth) {
+            (Some(recorded), Some(depth)) if depth > recorded => {
+                return Err(Error::new(
+                    ErrorCode::Integrity,
+                    format!(
+                        "{}: observed sp depth {depth} exceeds its .stack_sizes {recorded}",
+                        function.label()
+                    ),
+                ));
+            }
+            (Some(recorded), _) => (Some(recorded), Some(FrameSource::StackSizes)),
+            (None, Some(depth)) if observation.complete => {
+                (Some(depth), Some(FrameSource::Observed))
+            }
+            (None, _) => (None, None),
+        };
+        facts.insert(
+            function.address,
+            FunctionFacts {
+                function,
+                frame,
+                source,
+                observed: depth,
+                complete: observation.complete,
+                transfers,
+                site_depths: observation.site_depths,
+            },
+        );
+    }
+    Ok(Analysis {
+        functions: facts,
+        code,
+    })
+}
+
+impl Analysis {
+    /// The worst-case bound of the function at `root`.
+    pub fn bound(&self, root: u32) -> Result<Bound> {
+        if !self.functions.contains_key(&root) {
+            return Err(Error::new(
+                ErrorCode::NotFound,
+                format!("{root:#010x} is not a function start"),
+            ));
+        }
+        let mut walk = Walk {
+            analysis: self,
+            memo: BTreeMap::new(),
+            stack: Vec::new(),
+            unresolved: BTreeSet::new(),
+        };
+        let (bytes, path) = walk.visit(root);
+        Ok(Bound {
+            root,
+            bytes: walk.unresolved.is_empty().then_some(bytes),
+            unresolved: walk.unresolved.into_iter().collect(),
+            path,
+        })
+    }
+
+    fn in_code(&self, address: u32) -> bool {
+        self.code
+            .iter()
+            .any(|&(start, end)| address >= start && address < end)
+    }
+}
+
+struct Walk<'a> {
+    analysis: &'a Analysis,
+    memo: BTreeMap<u32, (u64, Vec<(u32, u64)>)>,
+    stack: Vec<u32>,
+    unresolved: BTreeSet<(u32, Reason)>,
+}
+
+impl Walk<'_> {
+    /// The deepest bytes below `address`'s entry `sp` over what is resolved,
+    /// with its path. Unknown frames count as zero; they are reported.
+    fn visit(&mut self, address: u32) -> (u64, Vec<(u32, u64)>) {
+        if let Some(known) = self.memo.get(&address) {
+            return known.clone();
+        }
+        if self.stack.contains(&address) {
+            self.unresolved.insert((address, Reason::Recursion));
+            return (0, Vec::new());
+        }
+        let facts = &self.analysis.functions[&address];
+        let frame = facts.frame.unwrap_or_else(|| {
+            self.unresolved.insert((address, Reason::Unframed));
+            0
+        });
+        self.stack.push(address);
+        // The deepest point of this function alone is its frame.
+        let mut deepest = (frame, Vec::new());
+        for transfer in &facts.transfers {
+            let Some(target) = transfer.target else {
+                let reason = match (transfer.kind, transfer.source) {
+                    (TransferKind::Tail, _) => Reason::IndirectJump,
+                    (TransferKind::Call, Some(TargetSource::StackSlot)) => Reason::StackSlotCall,
+                    (TransferKind::Call, Some(TargetSource::Memory)) => Reason::LoadedCall,
+                    (TransferKind::Call, _) => Reason::RegisterCall,
+                };
+                self.unresolved.insert((transfer.site, reason));
+                continue;
+            };
+            if !self.analysis.functions.contains_key(&target) {
+                let reason = if self.analysis.in_code(target) {
+                    Reason::IntoFunction
+                } else {
+                    Reason::OutsideImage
+                };
+                self.unresolved.insert((transfer.site, reason));
+                continue;
+            }
+            let at = facts
+                .site_depths
+                .get(&transfer.site)
+                .copied()
+                .unwrap_or(frame);
+            let below = self.visit(target);
+            if at + below.0 > deepest.0 {
+                deepest = (at + below.0, below.1);
+            }
+        }
+        self.stack.pop();
+        let mut path = vec![(address, frame)];
+        path.extend(deepest.1);
+        let result = (deepest.0, path);
+        self.memo.insert(address, result.clone());
+        result
+    }
+}
+
+#[cfg(test)]
+mod tests;

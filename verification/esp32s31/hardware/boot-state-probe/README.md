@@ -3,6 +3,8 @@
 A standalone image that reads, on the board, boot state the `ermacv/esp-hal`
 fork relies on but neither ESP-IDF nor the PAC settles:
 
+- **TRNG.** Its LP clock, configuration and interrupt words after
+  `esp_hal::init`, and four output words.
 - **PMA.** Every `pmacfg`/`pmaaddr` pair as the ESP-IDF bootloader left it,
   then after `esp_hal::init`, which programs PMA entry 7 for the 64 MiB
   external-memory aperture. Each line decodes the NAPOT region.

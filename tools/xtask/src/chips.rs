@@ -69,6 +69,12 @@ impl Chip {
         self.verification("evidence/scenarios")
     }
 
+    /// The platform's reviewed summaries of the ROM functions its images
+    /// call, relative to the root.
+    pub fn rom_summaries(&self) -> String {
+        format!("platform/{}/linker/rom/functions.toml", self.0)
+    }
+
     /// The chip's registry of reviewed vendor-function fingerprints.
     pub fn provenance_registry(&self) -> String {
         self.verification("facts/provenance.toml")

@@ -36,9 +36,34 @@ pub struct MalformedMarker {
     pub reason: &'static str,
 }
 
-fn is_comment(line: &str) -> bool {
-    let line = line.trim_start();
-    line.starts_with("//") || line.starts_with("/*") || line.starts_with('*')
+/// The comment syntax of a scanned file.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Syntax {
+    /// `//`, `/*` and `*` lines; `#` begins an attribute.
+    Rust,
+    /// `#` lines, such as a TOML file's.
+    Hash,
+}
+
+impl Syntax {
+    /// The syntax of a file named `name`, if it is scanned.
+    pub fn of(name: &str) -> Option<Self> {
+        if name.ends_with(".rs") {
+            Some(Self::Rust)
+        } else if name.ends_with(".toml") {
+            Some(Self::Hash)
+        } else {
+            None
+        }
+    }
+
+    fn is_comment(self, line: &str) -> bool {
+        let line = line.trim_start();
+        match self {
+            Self::Rust => line.starts_with("//") || line.starts_with("/*") || line.starts_with('*'),
+            Self::Hash => line.starts_with('#'),
+        }
+    }
 }
 
 /// The chip list after the marker on `line`, and the line without it.
@@ -62,13 +87,19 @@ fn marker_chips(line: &str) -> Result<(Option<Vec<String>>, String), &'static st
     Ok((Some(chips), format!("{}{MARKER}{rest}", &line[..at])))
 }
 
-/// Every recovered-fact comment block of `text`, or the first malformed
-/// marker.
+/// Every recovered-fact comment block of Rust `text`, or the first
+/// malformed marker.
 pub fn blocks(text: &str) -> Result<Vec<Block>, MalformedMarker> {
+    blocks_in(text, Syntax::Rust)
+}
+
+/// Every recovered-fact comment block of `text` in `syntax`, or the first
+/// malformed marker.
+pub fn blocks_in(text: &str, syntax: Syntax) -> Result<Vec<Block>, MalformedMarker> {
     let mut blocks: Vec<Block> = vec![];
     let mut open = false;
     for (index, line) in text.lines().enumerate() {
-        if !is_comment(line) {
+        if !syntax.is_comment(line) {
             open = false;
             continue;
         }
@@ -170,6 +201,21 @@ mod tests {
         assert!(blocks[0].text.contains("phy_rf_init"));
         assert_eq!(blocks[1].chips, None);
         assert_eq!(blocks[1].line, 4);
+    }
+
+    #[test]
+    fn hash_comments_carry_blocks_in_toml_but_not_in_rust() {
+        let text = "# SOURCE(esp32s31): rev0 ROM `memset`\n# never writes `sp`\nname = 1\n";
+        let toml = blocks_in(text, Syntax::Hash).unwrap();
+        assert_eq!(toml.len(), 1);
+        assert!(toml[0].text.contains("never writes"));
+        // In Rust a `#` line is an attribute and ends a block.
+        let rust = "// SOURCE(esp32s31): `memset`\n#[inline]\n// unrelated\nfn f() {}\n";
+        let block = &blocks(rust).unwrap()[0];
+        assert!(!block.text.contains("unrelated"));
+        assert_eq!(Syntax::of("functions.toml"), Some(Syntax::Hash));
+        assert_eq!(Syntax::of("lib.rs"), Some(Syntax::Rust));
+        assert_eq!(Syntax::of("README.md"), None);
     }
 
     #[test]

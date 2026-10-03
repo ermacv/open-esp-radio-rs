@@ -12,14 +12,21 @@ const SOFTWARE_INTERRUPT_COUNT: usize = 4;
 const THREAD_MODE_CONTEXT: usize = 16;
 const UNASSIGNED_CORE: usize = usize::MAX;
 
-#[used]
-#[allow(
-    unsafe_code,
-    reason = "board linker owns this exported executor wake-state section"
-)]
-#[unsafe(link_section = ".critical.bss.embassy_executor")]
-static ESP32S31_EMBASSY_WORK_PENDING: [AtomicBool; SOFTWARE_INTERRUPT_COUNT] =
-    [const { AtomicBool::new(false) }; SOFTWARE_INTERRUPT_COUNT];
+/// One wake flag per software interrupt; zero is "no work pending".
+#[repr(transparent)]
+struct WorkPending([AtomicBool; SOFTWARE_INTERRUPT_COUNT]);
+
+#[allow(unsafe_code, reason = "false flags are zero bytes")]
+// SAFETY: `portable_atomic::AtomicBool` has the in-memory representation of
+// `bool` (its documented guarantee), so zero bytes are `false` flags.
+unsafe impl bytemuck::Zeroable for WorkPending {}
+
+oer_memory::zeroed_static! {
+    /// Placement: the board linker owns this exported wake-state section.
+    #[used]
+    static ESP32S31_EMBASSY_WORK_PENDING: WorkPending =
+        zeroed in ".critical.bss.embassy_executor";
+}
 #[used]
 #[allow(
     unsafe_code,
@@ -123,7 +130,7 @@ impl<const SWI: u8> Executor<SWI> {
         init(self.inner.spawner());
 
         loop {
-            ESP32S31_EMBASSY_WORK_PENDING[SWI as usize].store(false, Ordering::Release);
+            ESP32S31_EMBASSY_WORK_PENDING.0[SWI as usize].store(false, Ordering::Release);
             if SWI == 0 {
                 crate::time_driver::dispatch_pending();
             }
@@ -169,7 +176,7 @@ extern "C" fn wake_handler<const SWI: u8>() {
 
 #[inline(always)]
 pub(crate) fn mark_work<const SWI: u8>() {
-    ESP32S31_EMBASSY_WORK_PENDING[SWI as usize].store(true, Ordering::Release);
+    ESP32S31_EMBASSY_WORK_PENDING.0[SWI as usize].store(true, Ordering::Release);
 }
 
 #[inline(always)]
@@ -188,7 +195,7 @@ fn pend<const SWI: u8>() {
 
 fn wait_for_work<const SWI: u8>() {
     riscv::interrupt::free(|| {
-        if !ESP32S31_EMBASSY_WORK_PENDING[SWI as usize].load(Ordering::Acquire) {
+        if !ESP32S31_EMBASSY_WORK_PENDING.0[SWI as usize].load(Ordering::Acquire) {
             esp_hal::interrupt::wait_for_interrupt();
         }
     });

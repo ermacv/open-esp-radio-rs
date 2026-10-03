@@ -25,6 +25,7 @@ secure-gatt = [
 owned-network = ["wifi", "dep:embassy-net-owned", "dep:xarxa-owned"]
 
 [dependencies]
+bytemuck = { version = "1.25.2", default-features = false, features = ["derive", "min_const_generics", "zeroable_atomics", "zeroable_maybe_uninit"] }
 crc = "3.3.0"
 embassy-sync = "0.8.0"
 heapless = "0.9.3"

@@ -33,22 +33,35 @@ const BLOCKING_POLL_LIMIT: u32 = 100_000;
 const TRANSFER_TIMEOUT: Duration = Duration::from_millis(100);
 
 #[repr(C, align(64))]
+#[derive(bytemuck::Zeroable)]
 struct Source([u8; ARENA_CAPACITY]);
 #[repr(C, align(64))]
+#[derive(bytemuck::Zeroable)]
 struct Destination([u8; ARENA_CAPACITY]);
 #[repr(C, align(64))]
+#[derive(bytemuck::Zeroable)]
 struct Descriptors([AxiGdmaDescriptor; MAX_FRAMES * 2]);
 
-#[unsafe(link_section = ".psram.bss.memory_benchmark.source")]
-static mut PSRAM_SOURCE: Source = Source([0; ARENA_CAPACITY]);
-#[unsafe(link_section = ".dma.bss.memory_benchmark.source")]
-static mut SRAM_SOURCE: Source = Source([0; ARENA_CAPACITY]);
-#[unsafe(link_section = ".dma.bss.memory_benchmark.destination")]
-static mut DESTINATION: Destination = Destination([0; ARENA_CAPACITY]);
-#[unsafe(link_section = ".dma.bss.memory_benchmark.rx")]
-static mut RX: Descriptors = Descriptors([AxiGdmaDescriptor::EMPTY; MAX_FRAMES * 2]);
-#[unsafe(link_section = ".dma.bss.memory_benchmark.tx")]
-static mut TX: Descriptors = Descriptors([AxiGdmaDescriptor::EMPTY; MAX_FRAMES * 2]);
+oer_memory::zeroed_static! {
+    static mut PSRAM_SOURCE: Source =
+        zeroed in ".psram.bss.memory_benchmark.source";
+}
+oer_memory::zeroed_static! {
+    static mut SRAM_SOURCE: Source =
+        zeroed in ".dma.bss.memory_benchmark.source";
+}
+oer_memory::zeroed_static! {
+    static mut DESTINATION: Destination =
+        zeroed in ".dma.bss.memory_benchmark.destination";
+}
+oer_memory::zeroed_static! {
+    static mut RX: Descriptors =
+        zeroed in ".dma.bss.memory_benchmark.rx";
+}
+oer_memory::zeroed_static! {
+    static mut TX: Descriptors =
+        zeroed in ".dma.bss.memory_benchmark.tx";
+}
 
 struct Request {
     id: u32,

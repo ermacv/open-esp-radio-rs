@@ -274,6 +274,8 @@ ieee802154-thread = [
 ]
 
 [dependencies]
+bytemuck = { version = "1.25.2", default-features = false, features = ["derive", "min_const_generics", "zeroable_atomics", "zeroable_maybe_uninit"] }
+oer-memory = { path = "../../../../crates/memory" }
 oer-esp32s31-ieee80211-dma = { path = "../../../../crates/hardware/esp32s31/driver/ieee80211/dma", optional = true, features = ["rx-ownership-observation"] }
 oer-ieee80211-softmac = { workspace = true, optional = true }
 oer-esp32s31-ieee80211-mac = { workspace = true, optional = true }

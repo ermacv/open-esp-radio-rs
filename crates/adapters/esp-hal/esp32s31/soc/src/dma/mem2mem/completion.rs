@@ -11,14 +11,22 @@ use core::{
     task::{Context, Poll},
 };
 
-#[unsafe(link_section = ".flash.critical.bss.axi_gdma_mem2mem")]
-static CHANNEL0_WAKER: AtomicWaker = AtomicWaker::new();
+oer_memory::zeroed_static! {
+    /// Channel zero's waker. `AtomicWaker` has no guaranteed zero
+    /// representation, so the zeroed cell holds it uninitialized until the
+    /// first poll writes it; the interrupt, enabled only after that poll
+    /// registered a waker, reads it without waiting.
+    static CHANNEL0_WAKER: oer_memory::zeroed::ZeroedOnce<AtomicWaker> =
+        zeroed in ".flash.critical.bss.axi_gdma_mem2mem";
+}
 
 #[inline(never)]
 #[unsafe(link_section = ".rwtext.axi_gdma_mem2mem")]
 pub(super) extern "C" fn channel0_interrupt() {
     disable_channel_interrupts();
-    CHANNEL0_WAKER.wake();
+    if let Some(waker) = CHANNEL0_WAKER.get() {
+        waker.wake();
+    }
 }
 
 impl Future for AxiGdmaMem2MemTransferOwner<'_, '_, '_> {
@@ -32,7 +40,9 @@ impl Future for AxiGdmaMem2MemTransferOwner<'_, '_, '_> {
             return Poll::Ready(this.finish(status));
         }
 
-        CHANNEL0_WAKER.register(context.waker());
+        CHANNEL0_WAKER
+            .get_or_init(AtomicWaker::new)
+            .register(context.waker());
         enable_channel_interrupts();
 
         // Re-check after publishing the waker and enabling the peripheral

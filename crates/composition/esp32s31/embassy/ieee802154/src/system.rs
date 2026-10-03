@@ -77,13 +77,10 @@ extern "C" fn ieee802154_interrupt() {
 /// ([`IEEE802154_DMA_WINDOW`](oer_esp32s31_hal::ieee802154::IEEE802154_DMA_WINDOW)), so they
 /// live in the platform's DMA-visible section whatever the image's data
 /// placement; one engine takes them.
-#[allow(
-    unsafe_code,
-    reason = "the linker must retain the MAC's DMA frames in DMA-visible SRAM"
-)]
-#[unsafe(link_section = ".dma.bss.open_radio_ieee802154_engine")]
-static ENGINE_BUFFERS: ConstStaticCell<Ieee802154EngineBuffers> =
-    ConstStaticCell::new(Ieee802154EngineBuffers::new());
+oer_memory::zeroed_static! {
+    static ENGINE_BUFFERS: oer_memory::zeroed::ZeroedStatic<Ieee802154EngineBuffers> =
+        zeroed in ".dma.bss.open_radio_ieee802154_engine";
+}
 
 /// The IEEE 802.15.4 partition and MAC engine while the client is stopped.
 pub struct Ieee802154Parked {

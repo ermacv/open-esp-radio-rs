@@ -438,10 +438,13 @@ its initializer says. A static in a zeroed region is declared only through
 `#[ram(zeroed)]` requires (all-zero bytes are a valid value and mean its
 initial state, derived with `#[derive(bytemuck::Zeroable)]` from fields
 that are), and its initializer is `zeroed()`. A value with no zero representation is a
-`ZeroedStatic<MaybeUninit<T>>` written when its owner claims it. The image
-linker (`tools/image-linker`) checks every link input, vendor archives
-included: an input section bound for a zeroed region that holds a non-zero
-byte or a relocation fails the link.
+`ZeroedStatic<MaybeUninit<T>>` written when its owner claims it, or a
+`ZeroedOnce<T>` written once and then shared (an interrupt's waker). Tidy
+refuses a `link_section` literal naming a zeroed region anywhere in Rust
+source, so the macro is the only way to place one. The image linker
+(`tools/image-linker`) is the backstop for what tidy does not read, vendor
+archives included: an input section bound for a zeroed region that holds a
+non-zero byte or a relocation fails the link.
 
 ## HIL and operating-system boundaries
 

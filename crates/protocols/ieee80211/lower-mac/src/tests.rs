@@ -966,6 +966,23 @@ fn a_tsf_relation_starts_a_generation_at_a_jump_between_consecutive_beacons() {
 }
 
 #[test]
+fn a_tsf_crossing_2_pow_64_starts_a_generation() {
+    let mut relation = TsfRelation::new(5, oer_time::Duration::from_micros(1));
+    let tsf = TsfInstant::from_micros;
+    relation.set(tsf(0), tsf(u64::MAX - 100));
+    // A set across 2^64: a few microseconds on the air, a jump in order.
+    let before = relation.generation();
+    assert_eq!(relation.set(tsf(u64::MAX - 10), tsf(20)), TsfSetKind::Jump);
+    assert_ne!(relation.generation(), before);
+    // The counter itself passed 2^64 since the last sample: even a set
+    // within the sample uncertainty of the reading is a jump.
+    relation.set(tsf(30), tsf(u64::MAX - 100));
+    let before = relation.generation();
+    assert_eq!(relation.set(tsf(5), tsf(6)), TsfSetKind::Jump);
+    assert_ne!(relation.generation(), before);
+}
+
+#[test]
 fn tsf_relations_of_different_epochs_never_share_a_generation() {
     let first = TsfRelation::new(1, oer_time::Duration::ZERO);
     let mut second = TsfRelation::new(2, oer_time::Duration::ZERO);

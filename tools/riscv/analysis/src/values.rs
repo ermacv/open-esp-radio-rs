@@ -1371,6 +1371,7 @@ mod tests {
             bytes: &bytes,
             relocations: &PreparedReferences::empty(),
             data_ranges: &[],
+            jumps: &[],
         };
         let memory = WorkingMemory::new(1024 * 1024).unwrap();
         let mut sink = Records::default();
@@ -1503,6 +1504,7 @@ mod tests {
             bytes: &bytes,
             relocations: &PreparedReferences::empty(),
             data_ranges: &[],
+            jumps: &[],
         };
         let memory = WorkingMemory::new(1024 * 1024).unwrap();
         let mut sink = Records::default();
@@ -1543,6 +1545,7 @@ mod tests {
             bytes: &[0; 4],
             relocations: &PreparedReferences::empty(),
             data_ranges: &[],
+            jumps: &[],
         };
         let node = Node {
             offset: 0,
@@ -1637,6 +1640,7 @@ mod tests {
             bytes: &[0; 4],
             relocations: &PreparedReferences::empty(),
             data_ranges: &[],
+            jumps: &[],
         };
         let mut node = Node {
             offset: 0,
@@ -1700,6 +1704,7 @@ mod tests {
             bytes: &bytes,
             relocations: &PreparedReferences::empty(),
             data_ranges: &[],
+            jumps: &[],
         };
         let nodes: Vec<_> = [0, 2]
             .into_iter()
@@ -1766,6 +1771,7 @@ mod tests {
             bytes: &[0; 4],
             relocations: &PreparedReferences::empty(),
             data_ranges: &[],
+            jumps: &[],
         };
         let node = Node {
             offset: 0,

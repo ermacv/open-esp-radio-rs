@@ -4,12 +4,13 @@
 //! input, peripheral assumption, reset and observation relation.
 use blobray_application::in_process::{Executable, Limits};
 use blobray_domain::{
-    ArtifactInventory, CallAbi, ComparisonRelation, DataRequest, DataSelector, DeviceDeclaration,
+    ArtifactInventory, ComparisonRelation, DataRequest, DataSelector, DeviceDeclaration,
     EventChannels, ExecutionCase, ExecutionGoal, ExecutionRegion, Invocation, MemoryPair,
     MemorySeed, MemorySelection, ObjectInventory, RegionLifetime, ReturnWords, SectionRecord,
-    SessionReset, SymbolRecord, TimelineCapture, WorkingMemory,
+    SessionReset, SymbolRecord, TimelineCapture,
 };
 use oer_probe_codegen::Catalog;
+use oer_riscv_model::{CallAbi, WorkingMemory};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, fs, path::Path};
 
@@ -56,7 +57,7 @@ pub struct Budget {
 
 impl Budget {
     /// Working memory of one operation.
-    pub fn memory(&self) -> blobray_domain::Result<WorkingMemory> {
+    pub fn memory(&self) -> oer_riscv_model::Result<WorkingMemory> {
         WorkingMemory::new(self.working_memory_mib << 20)
     }
     /// Work and wall-clock limits of one operation.

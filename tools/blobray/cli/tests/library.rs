@@ -8,6 +8,7 @@ use object::{
     Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope,
     write::{Object, Symbol, SymbolSection},
 };
+use oer_riscv_model::*;
 use std::process::Command;
 
 /// A relocatable object with one function `entry` of `size` bytes over `code`.
@@ -46,7 +47,7 @@ fn accesses(
     let summary = register_accesses(
         inputs,
         ranges,
-        &blobray_backend_riscv::RiscvDecoder,
+        &oer_riscv_lift::RiscvDecoder,
         &memory,
         &mut control,
         &mut |record, _| {

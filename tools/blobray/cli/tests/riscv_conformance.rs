@@ -17,6 +17,7 @@
 use blobray_application as app;
 use blobray_domain::*;
 use object::{Object, ObjectSymbol};
+use oer_riscv_model::*;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 

@@ -1,5 +1,5 @@
 //! Bounded indexes over one saved function. No storage or target-selection authority.
-use blobray_domain::*;
+use oer_riscv_model::*;
 pub struct MemoryObservation<'a> {
     pub record: u64,
     pub offset: u64,

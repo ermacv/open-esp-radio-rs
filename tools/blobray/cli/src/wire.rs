@@ -3,10 +3,10 @@
 //! The renderer emits these shapes and typed clients decode them; payloads are
 //! the application/domain records themselves, not copies of their schemas.
 use blobray_domain::{
-    ArtifactId, CheckVerdict, Error, ForbiddenTargetRange, FunctionCoverage, FunctionRecord,
-    LibraryFunction, RegisterAccess, RegisterAccessSummary, SemanticSummary, TargetAuditRecord,
-    TargetAuditSummary,
+    CheckVerdict, ForbiddenTargetRange, LibraryFunction, RegisterAccess, RegisterAccessSummary,
+    TargetAuditRecord, TargetAuditSummary,
 };
+use oer_riscv_model::{ArtifactId, Error, FunctionCoverage, FunctionRecord, SemanticSummary};
 use serde::{Deserialize, Serialize};
 
 /// Schema of the `audit-targets` document.

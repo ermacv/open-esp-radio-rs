@@ -1,6 +1,7 @@
 #![cfg(target_os = "linux")]
 use blobray_application as app;
 use blobray_domain::*;
+use oer_riscv_model::*;
 use std::time::{Duration, Instant};
 mod support;
 use support::{executable as elf, executable_with_symbols as elf_with_symbols};

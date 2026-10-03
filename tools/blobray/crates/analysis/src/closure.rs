@@ -9,6 +9,7 @@
 //! transfers with neither a static nor an observed target stay unresolved,
 //! and those followed only to observed targets are reported as followed.
 use blobray_domain::*;
+use oer_riscv_model::*;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Executable captured code the walker may decode.

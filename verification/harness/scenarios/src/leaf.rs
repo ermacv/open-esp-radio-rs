@@ -13,11 +13,12 @@ use crate::phy::layout::{layout, radio_aperture};
 use crate::phy::{image_layout, select};
 use crate::session::{Session, image_symbol_id, request};
 use blobray_domain::{
-    ArtifactId, CallBinding, CallBoundary, CallCapture, CallDeclaration, CallRepetition,
-    CallResponse, ComparisonVerdict, EffectDisposition, EffectPattern, EffectRule, EffectSelector,
-    EffectValue, ExecutionCase, ExecutionEvidence, ExecutionGoal, ExecutionTarget, LinkRequest,
-    MemoryPair, ModelStatus, ObjectId, ObjectLocation, RegionLifetime, SessionReset,
+    CallBinding, CallBoundary, CallCapture, CallDeclaration, CallRepetition, CallResponse,
+    ComparisonVerdict, EffectDisposition, EffectPattern, EffectRule, EffectSelector, EffectValue,
+    ExecutionCase, ExecutionEvidence, ExecutionGoal, ExecutionTarget, LinkRequest, MemoryPair,
+    ModelStatus, RegionLifetime, SessionReset,
 };
+use oer_riscv_model::{ArtifactId, ObjectId, ObjectLocation};
 use std::any::Any;
 use std::collections::BTreeMap;
 use std::path::PathBuf;

@@ -1,6 +1,7 @@
 //! Borrowed RV32 static ELF image. No loading, relocation or environment models.
 use blobray_domain::*;
 use object::{Object, ObjectSection, ObjectSegment};
+use oer_riscv_model::*;
 
 pub(crate) struct ProgramView<'a> {
     bytes: &'a [u8],

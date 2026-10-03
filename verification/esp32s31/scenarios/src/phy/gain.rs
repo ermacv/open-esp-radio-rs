@@ -331,7 +331,7 @@ impl Gain {
             "register_chipv7_phy_init_param",
             "phy_wifi_set_tx_gain_new",
         ]);
-        let root = |input: usize, name: &str| -> Result<blobray_domain::SymbolId> {
+        let root = |input: usize, name: &str| -> Result<oer_riscv_model::SymbolId> {
             Ok(symbol(inventory, input, name)?.id.clone())
         };
         let mut link = LinkRequest {

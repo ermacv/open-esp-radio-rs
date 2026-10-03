@@ -6,6 +6,8 @@ mod linker;
 pub use linker::ElfLinker;
 
 use blobray_domain::*;
+
+use oer_riscv_model::*;
 use std::{
     fs::File,
     path::Path,

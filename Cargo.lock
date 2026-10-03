@@ -3782,10 +3782,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-riscv-analysis"
+version = "0.1.0"
+dependencies = [
+ "oer-riscv-model",
+]
+
+[[package]]
 name = "oer-riscv-decode"
 version = "0.1.0"
 dependencies = [
  "rv-asm",
+]
+
+[[package]]
+name = "oer-riscv-lift"
+version = "0.1.0"
+dependencies = [
+ "object 0.39.1",
+ "oer-riscv-decode",
+ "oer-riscv-model",
+]
+
+[[package]]
+name = "oer-riscv-model"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "sha2 0.10.9",
+ "thiserror 2.0.19",
 ]
 
 [[package]]

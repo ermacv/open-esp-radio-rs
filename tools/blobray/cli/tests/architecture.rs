@@ -7,14 +7,24 @@ fn core_obeys_crate_boundaries() {
         .no_deps()
         .exec()
         .unwrap();
+    const MODEL: &str = "oer-riscv-model";
     let allowed: BTreeMap<&str, &[&str]> = BTreeMap::from([
-        ("blobray-domain", [].as_slice()),
-        ("blobray-artifacts", ["blobray-domain"].as_slice()),
-        ("blobray-analysis", ["blobray-domain"].as_slice()),
-        ("blobray-verification", ["blobray-domain"].as_slice()),
+        ("blobray-domain", [MODEL].as_slice()),
+        ("blobray-artifacts", ["blobray-domain", MODEL].as_slice()),
+        (
+            "blobray-analysis",
+            ["blobray-domain", "oer-riscv-analysis", MODEL].as_slice(),
+        ),
+        ("blobray-verification", ["blobray-domain", MODEL].as_slice()),
         (
             "blobray-backend-riscv",
-            ["blobray-domain", "oer-riscv-decode"].as_slice(),
+            [
+                "blobray-domain",
+                "oer-riscv-decode",
+                "oer-riscv-lift",
+                MODEL,
+            ]
+            .as_slice(),
         ),
         (
             "blobray-application",
@@ -23,12 +33,14 @@ fn core_obeys_crate_boundaries() {
                 "blobray-artifacts",
                 "blobray-analysis",
                 "blobray-verification",
+                "oer-riscv-analysis",
+                MODEL,
             ]
             .as_slice(),
         ),
         (
             "blobray-linker",
-            ["blobray-domain", "blobray-application"].as_slice(),
+            ["blobray-domain", "blobray-application", MODEL].as_slice(),
         ),
         (
             "blobray-cli",
@@ -36,6 +48,8 @@ fn core_obeys_crate_boundaries() {
                 "blobray-domain",
                 "blobray-application",
                 "blobray-backend-riscv",
+                "oer-riscv-lift",
+                MODEL,
             ]
             .as_slice(),
         ),

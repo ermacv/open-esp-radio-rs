@@ -14,11 +14,11 @@ use crate::layout::*;
 use crate::phy::image_layout;
 use crate::session::{Artifact, Session, image_symbol, request};
 use blobray_domain::{
-    ArtifactId, CallEndpoint, ComparisonVerdict, DataSelector, DeviceBehavior, DeviceDeclaration,
-    EffectRule, ExecutionCase, ExecutionEvent, ExecutionEvidence, ExecutionGap, ExecutionStop,
-    ExecutionTarget, LinkRequest, MemoryAccess, ModelStatus, ObjectId, ObjectLocation,
-    RegionLifetime, RegisterCell, SessionReset,
+    CallEndpoint, ComparisonVerdict, DataSelector, DeviceBehavior, DeviceDeclaration, EffectRule,
+    ExecutionCase, ExecutionEvent, ExecutionEvidence, ExecutionGap, ExecutionStop, ExecutionTarget,
+    LinkRequest, MemoryAccess, ModelStatus, RegionLifetime, RegisterCell, SessionReset,
 };
+use oer_riscv_model::{ArtifactId, ObjectId, ObjectLocation};
 use std::{collections::BTreeMap, path::PathBuf};
 
 /// Production destination of the initialized 400-byte parameter prefix.
@@ -244,7 +244,7 @@ impl I2c {
                 "phy_set_rfpll_freq_new",
             ]);
         }
-        let select = |input: usize, name: &str| -> Result<blobray_domain::SymbolId> {
+        let select = |input: usize, name: &str| -> Result<oer_riscv_model::SymbolId> {
             Ok(symbol(inventory, input, name)?.id.clone())
         };
         // ROM first; the SDK firmware supplies the crystal-clock and

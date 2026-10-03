@@ -151,7 +151,7 @@ fn report(f: &Fixture, requests: &[ExecutionRequest]) -> Result<CodeCoverageRepo
     app::in_process::coverage(
         &executions,
         &f.inputs,
-        &blobray_backend_riscv::RiscvDecoder,
+        &oer_riscv_lift::RiscvDecoder,
         &WorkingMemory::new(32 * 1024 * 1024).unwrap(),
         &mut || Ok(()),
     )

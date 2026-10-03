@@ -11,6 +11,7 @@ description = "Linux adapters of Blobray's in-process linking: external ELF link
 [dependencies]
 blobray-application = { path = "../application" }
 blobray-domain = { path = "../domain" }
+oer-riscv-model = { path = "../../../riscv/model" }
 sha2 = "=0.10.9"
 libc = "=0.2.189"
 

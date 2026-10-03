@@ -1,6 +1,7 @@
 //! Borrowed ELF function views; no linker or ISA semantics.
 use blobray_domain::*;
 use object::{Object, ObjectSection, ObjectSymbol, ObjectSymbolTable};
+use oer_riscv_model::*;
 
 pub struct FunctionView<'a> {
     pub abi: RiscvAbi,

@@ -1,6 +1,6 @@
 //! One owner for ELF mapping-symbol interpretation and admitted interval storage.
-use blobray_domain::*;
 use object::{Object, ObjectSection, ObjectSymbol};
+use oer_riscv_model::*;
 
 pub(crate) struct DataRanges<'a> {
     pub ranges: Vec<CodeRange>,

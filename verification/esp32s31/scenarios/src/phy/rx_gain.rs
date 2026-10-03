@@ -19,9 +19,10 @@ use crate::phy::delay_calls;
 use crate::phy::{PhyImage, PhyOptions, Right, image_layout, phy_sdk_input, select, start_session};
 use crate::session::request;
 use blobray_domain::{
-    ArtifactId, CommandCell, ComparisonVerdict, DeviceDeclaration, EffectRule, ExecutionCase,
+    CommandCell, ComparisonVerdict, DeviceDeclaration, EffectRule, ExecutionCase,
     ExecutionEvidence, Invocation, LinkRequest, ReadRun, SessionReset,
 };
+use oer_riscv_model::ArtifactId;
 use std::path::Path;
 
 pub type Options = PhyOptions;

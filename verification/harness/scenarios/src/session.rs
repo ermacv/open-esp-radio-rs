@@ -5,13 +5,13 @@ use crate::harness::{Budget, Input, ProbeCatalog, Result, invalid, seed};
 use blobray_application::data::DataExport;
 use blobray_application::in_process::Executable;
 use blobray_domain::{
-    ArtifactId, ArtifactInventory, CallAbi, CallEndpoint, EffectContract, ErrorCode,
-    ExecutionEvidence, ExecutionRequest, ExecutionTarget, ImageManifest, LayoutProjection,
-    LinkRequest, ObjectId, ReviewedCallBoundary, SymbolId, SymbolTableKind,
+    ArtifactInventory, CallEndpoint, EffectContract, ExecutionEvidence, ExecutionRequest,
+    ExecutionTarget, ImageManifest, LayoutProjection, LinkRequest, ReviewedCallBoundary,
 };
 use blobray_linker::ElfLinker;
 use evidence_index::LocationKind;
 use object::{Object, ObjectSection, ObjectSymbol};
+use oer_riscv_model::{ArtifactId, CallAbi, ErrorCode, ObjectId, SymbolId, SymbolTableKind};
 use std::{
     collections::BTreeMap,
     fs,
@@ -175,7 +175,7 @@ impl Session {
                     &mut budget.control(),
                 )
             })
-            .collect::<blobray_domain::Result<Vec<_>>>()?;
+            .collect::<oer_riscv_model::Result<Vec<_>>>()?;
         let probes = ProbeCatalog::capture(&inventory, &inputs, PROBE_INPUT, &budget)?;
         if let Some(rom) = roles.iter().position(|role| *role == "rom") {
             verify_rom_symbols(&inventory, rom)?;
@@ -255,7 +255,7 @@ impl Session {
     /// endpoints name the linked images by content, which changes with any
     /// linked input, so they stay out and the digest changes only with the
     /// reviewed content.
-    fn review_digest(&self, selected: &blobray_domain::ArtifactId) -> Result<String> {
+    fn review_digest(&self, selected: &oer_riscv_model::ArtifactId) -> Result<String> {
         for contract in &self.effects {
             let id = blobray_application::in_process::effect_contract_id(contract)?;
             if &id == selected {
@@ -278,7 +278,7 @@ impl Session {
     /// Digest of the reviewed content of the selected projection: its fields,
     /// branches, applicability and reason, without the endpoints that name
     /// the linked images by content.
-    fn projection_digest(&self, selected: &blobray_domain::ArtifactId) -> Result<String> {
+    fn projection_digest(&self, selected: &oer_riscv_model::ArtifactId) -> Result<String> {
         for projection in &self.projections {
             let id = blobray_application::in_process::projection_id(projection)?;
             if &id == selected {
@@ -340,7 +340,7 @@ impl Session {
     fn verify(
         &self,
         request: &ExecutionRequest,
-    ) -> blobray_domain::Result<blobray_application::in_process::InProcessResult> {
+    ) -> oer_riscv_model::Result<blobray_application::in_process::InProcessResult> {
         let executables = self.executables();
         let memory = self.budget.memory()?;
         blobray_application::in_process::verify(
@@ -350,7 +350,7 @@ impl Session {
                 effects: &self.effects,
                 projections: &self.projections,
                 vendor_results: None,
-                dependence: Some(&blobray_backend_riscv::RiscvDecoder),
+                dependence: Some(&oer_riscv_lift::RiscvDecoder),
                 patches: &self.patches,
             },
             crate::chip().isa.executor(),
@@ -711,7 +711,7 @@ impl Session {
         let report = blobray_application::in_process::coverage(
             &pairs,
             &executables,
-            &blobray_backend_riscv::RiscvDecoder,
+            &oer_riscv_lift::RiscvDecoder,
             &memory,
             &mut self.budget.control(),
         )

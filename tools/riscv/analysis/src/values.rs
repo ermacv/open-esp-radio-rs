@@ -241,7 +241,7 @@ fn integer(op: IntegerOp, a: Value, b: Value) -> Value {
         _ => Value::Unknown,
     }
 }
-pub(super) fn fold_integer(op: IntegerOp, a: u32, b: u32) -> u32 {
+pub fn fold_integer(op: IntegerOp, a: u32, b: u32) -> u32 {
     match integer(op, Value::Constant(a), Value::Constant(b)) {
         Value::Constant(value) => value,
         _ => unreachable!("two RV32 constants always produce a constant"),

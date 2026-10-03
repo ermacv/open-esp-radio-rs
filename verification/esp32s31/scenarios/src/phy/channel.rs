@@ -17,9 +17,10 @@ use crate::phy::delay_calls;
 use crate::phy::{PhyImage, PhyOptions, Right, image_layout, select, start_session};
 use crate::session::request;
 use blobray_domain::{
-    ArtifactId, CommandCell, ComparisonVerdict, DeviceDeclaration, ExecutionCase, ExecutionEvent,
+    CommandCell, ComparisonVerdict, DeviceDeclaration, ExecutionCase, ExecutionEvent,
     ExecutionEvidence, ExecutionStop, Invocation, LinkRequest, SessionReset,
 };
+use oer_riscv_model::ArtifactId;
 
 /// Offsets of the committed channel, temperature, bandwidth, 802.11p
 /// enable/configuration and temperature-sensor index bytes in `phy_param`.

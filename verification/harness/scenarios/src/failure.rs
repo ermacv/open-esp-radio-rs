@@ -9,8 +9,9 @@
 use crate::harness::Result;
 use blobray_domain::{
     ComparisonVerdict, EffectContract, EffectSelection, ExecutionEvent, ExecutionEvidence,
-    ExecutionRequest, Result as DomainResult, RunControl, is_contract_effect,
+    ExecutionRequest, is_contract_effect,
 };
+use oer_riscv_model::{Result as DomainResult, RunControl};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -260,10 +261,10 @@ pub fn write(
 pub(crate) mod tests {
     use super::*;
     use blobray_domain::{
-        ArtifactId, CallEndpoint, EffectClaimCeiling, EffectDisposition, EffectPattern, EffectRule,
-        EffectSelector, EffectValue, ObjectId, ObjectLocation, ReviewedCallBoundary, SymbolId,
-        SymbolTableKind, UnclassifiedEffects,
+        CallEndpoint, EffectClaimCeiling, EffectDisposition, EffectPattern, EffectRule,
+        EffectSelector, EffectValue, ReviewedCallBoundary, UnclassifiedEffects,
     };
+    use oer_riscv_model::{ArtifactId, ObjectId, ObjectLocation, SymbolId, SymbolTableKind};
 
     fn read(address: u32) -> ExecutionEvent {
         ExecutionEvent::Read {

@@ -12,14 +12,14 @@
 //! The pass is intraprocedural and forgets what it knows where control can
 //! enter from elsewhere, so an access through a pointer computed in another
 //! function, or after a join, is not attributed.
-use blobray_backend_riscv::RiscvDecoder;
-use blobray_domain::{
-    DecodedOp, FunctionDecoder, FunctionSemantics, InstructionFlow, IntegerOp, MemoryKind, Operand,
-    SemanticOp,
-};
 use object::{
     Object, ObjectSection, ObjectSymbol, RelocationFlags, RelocationTarget, SectionIndex,
     SymbolKind,
+};
+use oer_riscv_lift::RiscvDecoder;
+use oer_riscv_model::{
+    DecodedOp, FunctionDecoder, FunctionSemantics, InstructionFlow, IntegerOp, MemoryKind, Operand,
+    SemanticOp,
 };
 use oer_vendor_scenario_engine::harness::{Result, invalid};
 use oer_vendor_scenario_engine::registers::Registers;

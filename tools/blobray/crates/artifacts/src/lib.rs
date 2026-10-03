@@ -2,6 +2,7 @@
 //! Archive framing and ELF inspection have one implementation each; consumers
 //! choose storage or presentation through synchronous borrowed-record ports.
 use blobray_domain::*;
+use oer_riscv_model::*;
 mod definition;
 mod image;
 pub use definition::{inspect_link_definition, undefined_names};

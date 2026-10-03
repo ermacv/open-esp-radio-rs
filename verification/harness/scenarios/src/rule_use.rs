@@ -8,9 +8,9 @@
 //! so the contract claims more than the evidence shows.
 use crate::harness::{Result, invalid};
 use blobray_domain::{
-    ArtifactId, EffectContract, EffectSelection, ExecutionEvent, ExecutionEvidence,
-    ExecutionRequest, Result as DomainResult, RunControl,
+    EffectContract, EffectSelection, ExecutionEvent, ExecutionEvidence, ExecutionRequest,
 };
+use oer_riscv_model::{ArtifactId, Result as DomainResult, RunControl};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 

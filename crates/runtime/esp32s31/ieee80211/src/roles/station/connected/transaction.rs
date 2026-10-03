@@ -252,7 +252,14 @@ where
             X,
             I,
             N,
-            ConnectedStaTeardownSuccess<H, R::Parked, A::Resources, A::Aggregate, C::Report>,
+            ConnectedStaTeardownSuccess<
+                H,
+                R::Parked,
+                A::Resources,
+                A::Aggregate,
+                C::Report,
+                C::Released,
+            >,
         >,
         ConnectedServiceTeardownFailure<
             X,

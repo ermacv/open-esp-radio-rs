@@ -286,9 +286,11 @@ fn port_binds_rx_and_control_to_one_validated_peer_plan() {
     let control_resources = ConnectedControlResources::<NoopRawMutex, 8>::new();
     let (_, receiver) = control_resources.split();
     let rx_block_ack = StaApRxBlockAck::with_maximum_window(32).unwrap();
+    let mut control_slot = crate::roles::station::control_slot::ConnectedControlSlot::new();
     let control = ConnectedStaPort::build_control(
         &plan,
         ConnectedStaControlResources {
+            slot: &mut control_slot,
             receiver,
             reorder_commands: reorder_sender,
             rx_block_ack: &rx_block_ack,
@@ -309,7 +311,10 @@ fn port_binds_rx_and_control_to_one_validated_peer_plan() {
             .expect("plan enables beacon loss")
             .config(),
         plan.beacon_loss()
-    );
+    ); // The control was built in the slot; releasing it empties the slot for
+    // the next association.
+    let slot = control.release();
+    assert!(!slot.is_occupied());
 }
 
 #[test]

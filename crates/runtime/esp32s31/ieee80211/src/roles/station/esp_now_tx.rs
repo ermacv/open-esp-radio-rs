@@ -1,8 +1,3 @@
-#![expect(
-    clippy::result_large_err,
-    reason = "bounded TX admission returns the caller-owned 250-byte request"
-)]
-
 //! Connected-station scheduling for plaintext ESP-NOW v1/v2 transmit.
 //!
 //! The shared application mailbox lives in `roles::esp_now::mailbox`. This
@@ -10,6 +5,7 @@
 //! transaction. It never borrows the WPA2 key slots and never manufactures a
 //! PHY rate: the complete typed request is passed to the chip ESP-NOW backend.
 
+use crate::roles::station::control_slot::PlacedConnectedControl;
 use core::future::Future;
 
 use crate::{
@@ -128,7 +124,7 @@ pub struct EspNowConnectedControlStartFailure<
     const PEERS: usize,
 > {
     pub error: EspNowConnectedControlConfigError,
-    pub control: ConnectedControl<'resources, M, CONTROL_CAPACITY>,
+    pub control: PlacedConnectedControl<'resources, M, CONTROL_CAPACITY>,
     pub mailbox: EspNowTxMailboxOwner<'resources, M, TX_CAPACITY>,
     pub protocol: EspNowProtocol<PEERS>,
 }
@@ -154,7 +150,7 @@ pub struct EspNowConnectedControl<
     const TX_CAPACITY: usize,
     const PEERS: usize,
 > {
-    inner: ConnectedControl<'resources, M, CONTROL_CAPACITY>,
+    inner: PlacedConnectedControl<'resources, M, CONTROL_CAPACITY>,
     mailbox: Option<EspNowTxMailboxOwner<'resources, M, TX_CAPACITY>>,
     protocol: Option<EspNowProtocol<PEERS>>,
     active_station: BoundVirtualInterface,
@@ -173,7 +169,7 @@ impl<
 > EspNowConnectedControl<'resources, M, CONTROL_CAPACITY, TX_CAPACITY, PEERS>
 {
     pub fn new(
-        control: ConnectedControl<'resources, M, CONTROL_CAPACITY>,
+        control: PlacedConnectedControl<'resources, M, CONTROL_CAPACITY>,
         mailbox: EspNowTxMailboxOwner<'resources, M, TX_CAPACITY>,
         protocol: EspNowProtocol<PEERS>,
         active_station: BoundVirtualInterface,
@@ -201,7 +197,7 @@ impl<
     /// Infallible half of the opt-in, suitable for the connected assembly's
     /// `map_services` closure after [`EspNowTxBinding::new`] succeeds.
     pub fn from_binding(
-        control: ConnectedControl<'resources, M, CONTROL_CAPACITY>,
+        control: PlacedConnectedControl<'resources, M, CONTROL_CAPACITY>,
         mailbox: EspNowTxMailboxOwner<'resources, M, TX_CAPACITY>,
         protocol: EspNowProtocol<PEERS>,
         binding: EspNowTxBinding,
@@ -220,12 +216,24 @@ impl<
         }
     }
 
-    pub const fn inner(&self) -> &ConnectedControl<'resources, M, CONTROL_CAPACITY> {
+    pub fn inner(&self) -> &ConnectedControl<'resources, M, CONTROL_CAPACITY> {
         &self.inner
     }
 
     pub fn inner_mut(&mut self) -> &mut ConnectedControl<'resources, M, CONTROL_CAPACITY> {
         &mut self.inner
+    }
+
+    /// End the decorator after a complete shutdown: the placed control
+    /// empties its slot and hands it back.
+    pub fn release(
+        self,
+    ) -> crate::roles::station::control_slot::ReleasedConnectedControl<
+        'resources,
+        M,
+        CONTROL_CAPACITY,
+    > {
+        self.inner.release()
     }
 
     pub const fn tx_epoch(&self) -> Option<u32> {
@@ -520,7 +528,7 @@ pub fn attach_esp_now_tx<
     const TX_CAPACITY: usize,
     const PEERS: usize,
 >(
-    services: SingleRoleServices<H, R, X, ConnectedControl<'resources, M, CONTROL_CAPACITY>>,
+    services: SingleRoleServices<H, R, X, PlacedConnectedControl<'resources, M, CONTROL_CAPACITY>>,
     mailbox: EspNowTxMailboxOwner<'resources, M, TX_CAPACITY>,
     protocol: EspNowProtocol<PEERS>,
     binding: EspNowTxBinding,
@@ -625,10 +633,15 @@ where
             // While power management holds frames, a queued ESP-NOW frame
             // waits for the power input that releases them.
             let Some(mailbox) = self.mailbox.as_ref().filter(|_| admits) else {
-                self.inner.wait_ready(tx).await;
+                ConnectedControl::wait_ready(&mut self.inner, tx).await;
                 return;
             };
-            match select(self.inner.wait_ready(tx), mailbox.ready()).await {
+            match select(
+                ConnectedControl::wait_ready(&mut self.inner, tx),
+                mailbox.ready(),
+            )
+            .await
+            {
                 Either::First(()) | Either::Second(()) => {}
             }
         }

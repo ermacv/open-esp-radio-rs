@@ -38,6 +38,10 @@ impl ConnectedStaControlTeardown<Hardware, Tx> for Control {
     ) -> Result<Self::Report, Self::Error> {
         if self.0 { Err(1) } else { Ok(2) }
     }
+
+    type Released = ();
+
+    fn release(self) -> Self::Released {}
 }
 
 struct Rx(bool);

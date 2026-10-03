@@ -520,7 +520,7 @@ type ConnectedDriverStarted = ConnectedEpochStarted<
     ConnectedHardware,
     ConnectedLiveRx,
     RadioAmpduStorage,
-    &'static ControlResources,
+    ConnectedControlStatics,
 >;
 type ReturnedConnectedTxResources = oer_esp32s31_ieee80211_sta::control_tx::WifiTxResources<
     'static,
@@ -551,14 +551,14 @@ pub type ConnectedReconnectedEpoch = ReconnectedStaEpoch<
     ReceiveFrontier<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE>,
     ConnectedRxEpochResources,
     RadioAmpduStorage,
-    &'static ControlResources,
+    ConnectedControlStatics,
 >;
 pub type ConnectedDisconnectedEpoch = DisconnectedStaEpoch<
     RunningStationNetwork<(), NetworkRunner>,
     ConnectedHardware,
     ConnectedParkedRx,
     RadioAmpduStorage,
-    &'static ControlResources,
+    ConnectedControlStatics,
 >;
 // This SRAM object stores only the 32 affine handoff records. Each admitted
 // frame retains its original buffer from the 96-entry DMA ring. The bounded
@@ -632,6 +632,35 @@ static RX_PROTOCOL_RUNTIME: ConstStaticCell<ConnectedRxProtocolStorage> =
     ConstStaticCell::new(ConnectedReceiveStorage::new());
 static CONTROL_RESOURCES: ConstStaticCell<ControlResources> =
     ConstStaticCell::new(ControlResources::new());
+/// The slot each association's connected control is placed in.
+type ProductionControlSlot =
+    oer_esp32s31_ieee80211_runtime::roles::station::control_slot::ConnectedControlStorage<
+        'static,
+        CriticalSectionRawMutex,
+        CONTROL_QUEUE_DEPTH,
+    >;
+// The connected control (BlockAck sessions, power and link-monitor state)
+// lives here for the whole association: the connected services, their
+// teardown and every fault hold a pointer to it, so its size is not copied
+// through the connected epoch's poll frame or its teardown. It is
+// task-context state, not interrupt-shared: it stays in the PSRAM tier where
+// the task stacks and futures that held it by value lived, at no SRAM cost.
+#[allow(
+    unsafe_code,
+    reason = "the connected control slot is explicitly placed in the PSRAM ownership tier"
+)]
+#[unsafe(link_section = ".psram.bss.open_radio_station_connected_control")]
+static CONNECTED_CONTROL_SLOT: ConstStaticCell<ProductionControlSlot> =
+    ConstStaticCell::new(ProductionControlSlot::new());
+
+/// The connected control's statics: its event queue and the slot each
+/// association's control is placed in. Before a control is placed, and once
+/// teardown released it, both travel together; meanwhile the slot is lent to
+/// the connected services.
+pub(crate) struct ConnectedControlStatics {
+    pub(super) queue: &'static ControlResources,
+    pub(super) slot: &'static mut ProductionControlSlot,
+}
 pub(super) static STA_CCMP_RX_REPLAY: StaCcmpRxReplayResource = StaCcmpRxReplayResource::new();
 #[cfg(feature = "diagnostics")]
 static DIAGNOSTIC_LINK_BANDWIDTH_MHZ: AtomicU32 = AtomicU32::new(0);
@@ -667,7 +696,7 @@ type InitialConnectedResources = InitialConnectedEpochResources<
     'static,
     ConnectedRxEpochResources,
     RadioAmpduStorage,
-    &'static ControlResources,
+    ConnectedControlStatics,
 >;
 type ConnectedEpochStartFault = ConnectedEpochStartFailure<
     InitialConnectedResources,
@@ -675,7 +704,7 @@ type ConnectedEpochStartFault = ConnectedEpochStartFailure<
     ConnectedRxFrontier,
     ConnectedRxEpochResources,
     RadioAmpduStorage,
-    &'static ControlResources,
+    ConnectedControlStatics,
     RxFrontierError,
 >;
 
@@ -684,7 +713,7 @@ type ConnectedEpochStartFault = ConnectedEpochStartFailure<
 pub(crate) struct InitialConnectedStaticResources {
     registers: &'static RadioOwnerArena,
     aggregate: Option<RadioAmpduStorage>,
-    control: &'static ControlResources,
+    control: ConnectedControlStatics,
 }
 
 /// Read-only, value-returning diagnostics view of the connected register
@@ -1016,7 +1045,7 @@ impl InitialConnectedStaticResources {
         'static,
         ConnectedRxEpochResources,
         RadioAmpduStorage,
-        &'static ControlResources,
+        ConnectedControlStatics,
     > {
         InitialConnectedEpochResources::new(self.registers, rx, self.take_aggregate(), self.control)
     }
@@ -1181,7 +1210,7 @@ pub enum ConnectedStationFault<'state, 'security> {
     SecurityTeardownMismatch {
         _runtime: ProductionStationRuntime<'state>,
         _network: RunningWifiNetwork,
-        _control_resources: &'static ControlResources,
+        _control_resources: ConnectedControlStatics,
         _outcome: ConnectedStationOutcome,
         _interrupt_drain: oer_esp32s31_ieee80211_runtime::datapath::irq::MacInterruptEpochDrain,
         _hardware: ConnectedHardware,
@@ -1196,7 +1225,7 @@ pub enum ConnectedStationFault<'state, 'security> {
     TxRestore {
         _runtime: ProductionStationRuntime<'state>,
         _network: RunningWifiNetwork,
-        _control_resources: &'static ControlResources,
+        _control_resources: ConnectedControlStatics,
         _outcome: ConnectedStationOutcome,
         _interrupt_drain: oer_esp32s31_ieee80211_runtime::datapath::irq::MacInterruptEpochDrain,
         _hardware: ConnectedHardware,
@@ -1249,7 +1278,10 @@ pub(super) fn initialize_connected_static_resources()
         resources: InitialConnectedStaticResources {
             registers,
             aggregate: Some(aggregate),
-            control: &*CONTROL_RESOURCES.take(),
+            control: ConnectedControlStatics {
+                queue: &*CONTROL_RESOURCES.take(),
+                slot: CONNECTED_CONTROL_SLOT.take(),
+            },
         },
         #[cfg(feature = "diagnostics")]
         diagnostics: DiagnosticSnapshot { registers },
@@ -1698,6 +1730,10 @@ pub(crate) async fn run_connected<'state, 'security>(
 
     let network_rx = network_runner
         .rx_publisher(oer_esp32s31_ieee80211_runtime::datapath::network::STA_NETWORK_INTERFACE_ID);
+    let ConnectedControlStatics {
+        queue: control_resources,
+        slot: control_slot,
+    } = control_resources;
     let (control_publisher, control_receiver) = control_resources.split();
     let rx_sink = EmbassyNetConnectedRxSink::new(network_rx, control_publisher);
     #[cfg(feature = "diagnostics")]
@@ -1753,6 +1789,7 @@ pub(crate) async fn run_connected<'state, 'security>(
             network_domain: ConnectedStaNetworkTxDomain::new(),
         },
         ConnectedStaControlResources {
+            slot: control_slot,
             receiver: control_receiver,
             reorder_commands: reorder_sender,
             rx_block_ack: &crate::supervisor::PRODUCTION_RX_BLOCK_ACK,
@@ -2149,6 +2186,10 @@ pub(crate) async fn run_connected<'state, 'security>(
         );
         let (frame, ethernet, rx_protocol_runtime) = stopped_protocol.into_parts();
         let sequences = teardown.sequences;
+        let control_resources = ConnectedControlStatics {
+            queue: control_resources,
+            slot: teardown.released_control,
+        };
         if matches!(
             teardown.security,
             ConnectedStaSecurityStopReport::ModeMismatchCleared { .. }
@@ -2284,3 +2325,33 @@ pub(crate) async fn run_connected<'state, 'security>(
         ConnectedStationRunExit::Returned(returned)
     })
 }
+
+// Size guards for the connected epoch's owners, interim until the static
+// stack bound (#46) checks the frames that move them. The connected control
+// lives in `CONNECTED_CONTROL_SLOT`; none of these holds it by value. Each
+// limit is the measured size plus 64 bytes.
+const fn returned_size<A, B, C, D, F, R>(_: &F) -> usize
+where
+    F: FnOnce(A, B, C, D) -> R,
+{
+    core::mem::size_of::<R>()
+}
+// Measured 3248 bytes; its largest variant holds no connected control.
+const _: () = assert!(core::mem::size_of::<ConnectedStationFault<'static, 'static>>() <= 3312);
+// Measured 3248 bytes.
+const _: () = assert!(core::mem::size_of::<ConnectedStationRunExit<'static, 'static>>() <= 3312);
+// Measured 1488 bytes (3816 while it held the control by value).
+const _: () = assert!(core::mem::size_of::<ConnectedDriverTeardownFailure>() <= 1552);
+// The connected epoch's future: measured 26072 bytes (33024 while it held
+// the control by value).
+const _: () = assert!(
+    returned_size::<
+        &'static mut StationCommandReceiver<'static, CriticalSectionRawMutex>,
+        &'static crate::SharedRadio,
+        super::StationMacClock,
+        ConnectedStationResources<'static, 'static>,
+        _,
+        _,
+    >(&run_connected)
+        <= 26136
+);

@@ -107,6 +107,10 @@ impl ConnectedStaControlTeardown<TeardownHardware, TeardownTx> for TeardownContr
     ) -> Result<Self::Report, Self::Error> {
         if self.fail { Err(1) } else { Ok(2) }
     }
+
+    type Released = ();
+
+    fn release(self) -> Self::Released {}
 }
 
 struct TeardownRx {

@@ -182,10 +182,10 @@ use crate::{
         RunningWifiNetwork, WifiNetworkResources,
     },
     supervisor::station::{
-        ConnectedDisconnectedEpoch, ConnectedParkedRx, ConnectedReconnectedEpoch,
-        ConnectedRxEpochResources, ConnectedRxProtocolStorage, ConnectedStationEpoch,
-        ConnectedStationFault, ConnectedStationOutcome, ConnectedStationResources,
-        ConnectedStationRunExit, ControlResources, InitialConnectedStaticResources,
+        ConnectedControlStatics, ConnectedDisconnectedEpoch, ConnectedParkedRx,
+        ConnectedReconnectedEpoch, ConnectedRxEpochResources, ConnectedRxProtocolStorage,
+        ConnectedStationEpoch, ConnectedStationFault, ConnectedStationOutcome,
+        ConnectedStationResources, ConnectedStationRunExit, InitialConnectedStaticResources,
         ProductionAccessPointRxConsumer, ProductionAccessPointRxProducer, access_point_rx_pipeline,
         connected_config, initialize_connected_datapath_mailbox,
         initialize_connected_rx_protocol_runtime, initialize_connected_static_resources,
@@ -408,7 +408,7 @@ type ProductionStationStoppedPhase = StationStoppedPhaseResources<
     RunningWifiNetwork,
     ConnectedParkedRx,
     RadioAmpduStorage,
-    &'static ControlResources,
+    ConnectedControlStatics,
     ConnectedRxEpochResources,
 >;
 

@@ -96,7 +96,7 @@ pub type ConnectionTeardownFailure<'resources, M, H, R, S, X, const CONTROL_CAPA
         R,
         S,
         X,
-        super::control::ConnectedControl<'resources, M, CONTROL_CAPACITY>,
+        super::control_slot::PlacedConnectedControl<'resources, M, CONTROL_CAPACITY>,
         super::control::ConnectedControlError,
         RE,
     >;
@@ -107,5 +107,5 @@ pub type ConnectionServices<'resources, M, H, R, P, X, const CONTROL_CAPACITY: u
         H,
         ConnectedStaRxService<R, P>,
         X,
-        super::control::ConnectedControl<'resources, M, CONTROL_CAPACITY>,
+        super::control_slot::PlacedConnectedControl<'resources, M, CONTROL_CAPACITY>,
     >;

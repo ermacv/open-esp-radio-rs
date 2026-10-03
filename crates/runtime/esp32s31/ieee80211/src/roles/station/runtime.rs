@@ -41,7 +41,7 @@ use crate::{
         concurrent::{StaApStationControlRole, StaApStationRxRole},
         station::{
             connected::port::{ConnectedStaDrivers, ConnectedStaReport},
-            control::{ConnectedControl, ConnectedControlError, ConnectedControlHardware},
+            control::{ConnectedControlError, ConnectedControlHardware},
             tx::{AggregateTxError, ConnectedTx, ConnectedTxParked},
         },
     },
@@ -847,7 +847,7 @@ impl<
             >,
             ConnectedTxParked<'ampdu, SLOTS>,
         >,
-        ConnectedControl<'control, M, CONTROL_CAPACITY>,
+        crate::roles::station::control_slot::PlacedConnectedControl<'control, M, CONTROL_CAPACITY>,
     >
 where
     M: RawMutex,

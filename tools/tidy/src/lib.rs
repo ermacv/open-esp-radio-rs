@@ -12,7 +12,9 @@
 //! - [`dependencies`]: every declared dependency is named by its package;
 //! - [`classification`]: every package declares a known layer and platform,
 //!   names an existing chip or family, follows the name rule, and keeps the
-//!   evidence and HIL role edges.
+//!   evidence and HIL role edges;
+//! - [`zeroed`]: no `link_section` names a zeroed region outside
+//!   `oer_memory::zeroed_static!`.
 //!
 //! The same model answers what other tooling would otherwise rediscover:
 //! [`workspaces`] lists every Cargo workspace and [`chips`] every chip
@@ -31,6 +33,7 @@ pub mod records;
 pub mod repo;
 pub mod sources;
 pub mod workspaces;
+pub mod zeroed;
 
 #[cfg(test)]
 mod testing;
@@ -115,6 +118,10 @@ pub fn run(repo: &Repo) -> Result<Vec<Outcome>> {
         Outcome {
             check: "classification",
             problems: classification::check(&context, &chips),
+        },
+        Outcome {
+            check: "zeroed statics",
+            problems: zeroed::check(&context)?,
         },
     ])
 }

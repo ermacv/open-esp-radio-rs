@@ -9,6 +9,7 @@ description = "Fast fail-closed repository integrity checks"
 
 [dependencies]
 oer-chip-profile = { path = "../chip-profile" }
+oer-esp32s31-platform-layout = { path = "../../platform/esp32s31/layout" }
 serde_json = "=1.0.151"
 toml = "=1.1.4"
 

@@ -161,6 +161,8 @@ pub enum RecoveryStep {
     EnReset,
     /// Its switchable hub port was powered off and on.
     PowerCycle,
+    /// Its switchable hub port was off and was powered on.
+    PowerOn,
     /// A system reset through the chip's builtin USB-JTAG (OpenOCD `reset
     /// run`), which clears low-power state an RTS reset leaves.
     JtagReset,

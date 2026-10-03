@@ -28,6 +28,7 @@ pub mod owners;
 pub mod preempt;
 mod process;
 mod queue;
+mod restore;
 pub mod spectrum;
 mod state;
 mod status;

@@ -160,19 +160,52 @@ impl ResetControl {
 }
 
 impl PowerControl {
+    /// Whether the board's hub port is powered.
+    pub fn is_on(&self) -> crate::Result<bool> {
+        let PowerVia::Uhubctl = self.via;
+        let output = oer_process::output(
+            std::process::Command::new("uhubctl")
+                .args(["--location", &self.location, "--ports"])
+                .arg(self.port.to_string()),
+            Some(Duration::from_secs(30)),
+        )?;
+        port_powered(
+            &String::from_utf8_lossy(&output.stdout),
+            &self.location,
+            self.port,
+        )
+        .ok_or_else(|| {
+            format!(
+                "uhubctl reports no port {} of hub {}",
+                self.port, self.location
+            )
+            .into()
+        })
+    }
+
+    /// Power the board's hub port on: only the arbiter does, to return a port
+    /// to its working state when its lease changes hands.
+    pub(crate) fn switch_on(&self) -> crate::Result<()> {
+        self.action("on")
+    }
+
     /// Power the board's hub port off and on again with `uhubctl`.
     pub fn cycle(&self) -> crate::Result<()> {
+        self.action("cycle")
+    }
+
+    fn action(&self, action: &str) -> crate::Result<()> {
         let PowerVia::Uhubctl = self.via;
         let output = oer_process::output(
             std::process::Command::new("uhubctl")
                 .args(["--location", &self.location, "--ports"])
                 .arg(self.port.to_string())
-                .args(["--action", "cycle", "--delay", "2"]),
+                .args(["--action", action, "--delay", "2"]),
             Some(Duration::from_secs(30)),
         )?;
         if !output.status.success() {
             return Err(format!(
-                "uhubctl could not cycle {} port {}: {}",
+                "uhubctl could not {action} {} port {}: {}",
                 self.location,
                 self.port,
                 String::from_utf8_lossy(&output.stderr).trim()
@@ -181,6 +214,18 @@ impl PowerControl {
         }
         Ok(())
     }
+}
+
+/// Whether `uhubctl`'s report shows port `port` of hub `location` powered:
+/// the port line of that hub's section, not its USB 3 companion's.
+fn port_powered(report: &str, location: &str, port: u32) -> Option<bool> {
+    let header = format!("Current status for hub {location} ");
+    let section = report.split(&header).nth(1)?;
+    let section = section.split("Current status for hub").next()?;
+    let line = section
+        .lines()
+        .find(|line| line.trim_start().starts_with(&format!("Port {port}:")))?;
+    Some(line.split_whitespace().any(|word| word == "power"))
 }
 
 /// Names the OpenOCD executable of the ESP-IDF tools; the stand's wrapper
@@ -391,5 +436,26 @@ mod tests {
             Some("rst:0x1 (POWERON),boot:0x18 (SPI_FAST_FLASH_BOOT)")
         );
         assert_eq!(reset_line("garbage"), None);
+    }
+}
+
+#[cfg(test)]
+mod power_tests {
+    use super::port_powered;
+
+    const REPORT: &str =
+        "Current status for hub 4-8.3 [0bda:0411 Generic USB3.2 Hub, USB 3.20, 4 ports, ppps]
+  Port 2: 02a0 power 5gbps Rx.Detect
+Current status for hub 3-8.3 [0bda:5411 Generic USB2.1 Hub, USB 2.10, 4 ports, ppps]
+  Port 1: 0100 power
+  Port 2: 0000 off
+";
+
+    #[test]
+    fn a_port_is_read_from_its_own_hub_not_its_companion() {
+        assert_eq!(port_powered(REPORT, "3-8.3", 2), Some(false));
+        assert_eq!(port_powered(REPORT, "3-8.3", 1), Some(true));
+        assert_eq!(port_powered(REPORT, "4-8.3", 2), Some(true));
+        assert_eq!(port_powered(REPORT, "3-8.3", 4), None);
     }
 }

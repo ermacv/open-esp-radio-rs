@@ -121,6 +121,18 @@ oer_esp32s31_platform_runtime::interrupt_table! {
     #[cfg(any(feature = "memory-benchmark", feature = "gdma-mem2mem-probe"))]
     /// AXI GDMA channel 0's outbound interrupt.
     dma_output: DmaOutput = AXI_PDMA_OUT_CH0 => oer_esp32s31_soc_esp_hal::axi_gdma_mem2mem_interrupt, Priority1, ProCpu;
+    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+    /// The hang watchdog's period (SYSTIMER alarm 0).
+    hang_check: HangWatchdogCheck = SYSTIMER_TARGET0 => hang_watchdog::check, Priority8, ProCpu;
+    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+    /// The hang watchdog's request that core 1 samples its context.
+    hang_sample: HangWatchdogSample = FROM_CPU_INTR2 => hang_watchdog::sample_core1, Priority8, AppCpu;
+    #[cfg(feature = "pc-profile")]
+    /// The PC profiler's period (SYSTIMER alarm 1).
+    profile_sample: ProfileSample = SYSTIMER_TARGET1 => pc_profile::sample_core0, Priority8, ProCpu;
+    #[cfg(feature = "pc-profile")]
+    /// The PC profiler's request that core 1 samples its PC.
+    profile_core1: ProfileCore1Sample = FROM_CPU_INTR3 => pc_profile::sample_core1, Priority8, AppCpu;
     #[cfg(feature = "open-radio-hil")]
     /// Wakes the core-1 Embassy executor.
     app_wake: AppExecutorWake = FROM_CPU_INTR1 => oer_esp32s31_executor_embassy::wake_handler::<1>, Priority1, AppCpu;
@@ -231,16 +243,25 @@ const PROFILE_NAME: &core::ffi::CStr = c"psram-code-psram-data-psram-stack";
 static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 #[cfg(feature = "open-radio-hil")]
 static APP_EXECUTOR: StaticCell<Executor<1>> = StaticCell::new();
-/// Core 1's executor wake token, which core 0 leaves for it before starting it.
+/// Core 1's interrupt tokens, which core 0 leaves for it before starting it.
 #[cfg(feature = "open-radio-hil")]
-static APP_WAKE: critical_section::Mutex<core::cell::RefCell<Option<AppExecutorWake>>> =
+struct AppCoreInterrupts {
+    wake: AppExecutorWake,
+    #[cfg(not(feature = "memory-benchmark"))]
+    hang_sample: HangWatchdogSample,
+    #[cfg(feature = "pc-profile")]
+    profile_sample: ProfileCore1Sample,
+}
+
+#[cfg(feature = "open-radio-hil")]
+static APP_INTERRUPTS: critical_section::Mutex<core::cell::RefCell<Option<AppCoreInterrupts>>> =
     critical_section::Mutex::new(core::cell::RefCell::new(None));
 
-/// Leave core 1 its executor wake token. A function of its own, so that
+/// Leave core 1 its interrupt tokens. A function of its own, so that
 /// `runtime_main`'s closures keep the names the stack coverage reviews.
 #[cfg(feature = "open-radio-hil")]
-fn leave_app_wake(wake: AppExecutorWake) {
-    critical_section::with(|cs| APP_WAKE.borrow_ref_mut(cs).replace(wake));
+fn leave_app_core_interrupts(interrupts: AppCoreInterrupts) {
+    critical_section::with(|cs| APP_INTERRUPTS.borrow_ref_mut(cs).replace(interrupts));
 }
 // The hardware entropy source is a process-lifetime owner. Keeping it in a
 // named static prevents task cancellation or panic cleanup from trying to
@@ -446,9 +467,9 @@ extern "C" fn runtime_main() -> ! {
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     {
         let systimer = esp_hal::timer::systimer::SystemTimer::new(peripherals.SYSTIMER);
-        hang_watchdog::start(systimer.alarm0);
+        hang_watchdog::start(systimer.alarm0, interrupts.hang_check);
         #[cfg(feature = "pc-profile")]
-        pc_profile::init(systimer.alarm1);
+        pc_profile::init(systimer.alarm1, interrupts.profile_sample);
         source_gate::install(OneShotTimer::new(systimer.alarm2), interrupts.source_gate);
     }
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
@@ -456,7 +477,13 @@ extern "C" fn runtime_main() -> ! {
 
     #[cfg(feature = "open-radio-hil")]
     let _app_spawner = {
-        leave_app_wake(interrupts.app_wake);
+        leave_app_core_interrupts(AppCoreInterrupts {
+            wake: interrupts.app_wake,
+            #[cfg(not(feature = "memory-benchmark"))]
+            hang_sample: interrupts.hang_sample,
+            #[cfg(feature = "pc-profile")]
+            profile_sample: interrupts.profile_core1,
+        });
         let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
         let app_interrupt = software_interrupt::executor1(peripherals.FROM_CPU_INTR1);
         let guard = cpu_control
@@ -650,19 +677,19 @@ fn run_app_core(
         psram_task_stack::install_current_hart_interrupt_stack();
     }
     paint_app_core_stack();
+    let interrupts = critical_section::with(|cs| APP_INTERRUPTS.borrow_ref_mut(cs).take())
+        .expect("core 0 leaves core 1 its interrupt tokens");
     #[cfg(not(feature = "memory-benchmark"))]
-    hang_watchdog::bind_core1_sampler();
+    hang_watchdog::enable_core1_sampler(interrupts.hang_sample);
     #[cfg(feature = "pc-profile")]
-    pc_profile::bind_core1_sampler();
+    pc_profile::enable_core1_sampler(interrupts.profile_sample);
     // SAFETY: Core 1 enters directly from ROM rather than through
     // `_runtime_start` with MIE clear; its per-hart vector state and stack
     // ownership are complete, so hand interrupt enable to its executor.
     unsafe { oer_esp32s31_platform_runtime::enable_interrupts_after_handoff() };
-    let wake = critical_section::with(|cs| APP_WAKE.borrow_ref_mut(cs).take())
-        .expect("core 0 leaves core 1 its executor wake token");
     APP_EXECUTOR
         .init(Executor::<1>::new(app_interrupt))
-        .run(wake, |spawner| {
+        .run(interrupts.wake, |spawner| {
             spawner.spawn(stack_evidence::cpu1_sampler().expect("CPU1 stack sampler allocation"));
             #[cfg(not(feature = "memory-benchmark"))]
             {

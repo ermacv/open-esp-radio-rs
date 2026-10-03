@@ -20,7 +20,6 @@ use critical_section::Mutex;
 use embassy_time::Instant;
 use esp_hal::{
     Blocking,
-    interrupt::Priority,
     time::Duration,
     timer::{PeriodicTimer, systimer::Alarm},
 };
@@ -70,17 +69,22 @@ impl ProfileTimer for SystimerProfileTimer {
 }
 
 /// Own the sampling alarm on this core (core 0); it stays idle until armed.
-pub(crate) fn init(alarm: Alarm<'static>) {
-    let mut periodic = PeriodicTimer::new(alarm);
-    periodic.set_interrupt_handler(sample_core0);
+/// `token` is its source's, whose table entry names [`sample_core0`].
+pub(crate) fn init(alarm: Alarm<'static>, token: crate::ProfileSample) {
+    let periodic = PeriodicTimer::new(alarm);
+    if let Err(error) = oer_esp32s31_soc_esp_hal::interrupt_table::enable(&token) {
+        panic!("profile alarm: {error:?}");
+    }
     critical_section::with(|cs| TIMER.borrow_ref_mut(cs).replace(periodic));
 }
 
-/// Bind the core 1 sampling interrupt; call on core 1 before its executor
-/// enables interrupts.
-pub(crate) fn bind_core1_sampler() {
-    let mut interrupt = crate::software_interrupt::profiler();
-    interrupt.set_interrupt_handler(sample_core1);
+/// Enable the core 1 sampling interrupt; call on core 1 before its executor
+/// enables interrupts. `token` is its source's, whose table entry names
+/// [`sample_core1`] on core 1.
+pub(crate) fn enable_core1_sampler(token: crate::ProfileCore1Sample) {
+    if let Err(error) = oer_esp32s31_soc_esp_hal::interrupt_table::enable(&token) {
+        panic!("profile core 1 sampler: {error:?}");
+    }
 }
 
 /// Serve one host profile command.
@@ -144,13 +148,13 @@ fn record(hart: usize) {
     PROFILER.record(hart, mepc as u32, ra as u32);
 }
 
-#[esp_hal::handler(priority = Priority::max())]
+/// An interrupt-table handler of the image.
 #[allow(
     unsafe_code,
-    reason = "esp-hal requires an unsafe link_section attribute for an IRAM ISR declaration"
+    reason = "an interrupt handler runs from SRAM, which only a link section selects"
 )]
 #[unsafe(link_section = ".rwtext.open_radio_irq")]
-fn sample_core0() {
+pub(crate) fn sample_core0() {
     critical_section::with(|cs| {
         if let Some(timer) = TIMER.borrow_ref_mut(cs).as_mut() {
             timer.clear_interrupt();
@@ -162,13 +166,13 @@ fn sample_core0() {
     }
 }
 
-#[esp_hal::handler(priority = Priority::max())]
+/// An interrupt-table handler of the image.
 #[allow(
     unsafe_code,
-    reason = "esp-hal requires an unsafe link_section attribute for an IRAM ISR declaration"
+    reason = "an interrupt handler runs from SRAM, which only a link section selects"
 )]
 #[unsafe(link_section = ".rwtext.open_radio_irq")]
-fn sample_core1() {
+pub(crate) fn sample_core1() {
     crate::software_interrupt::profiler().reset();
     record(1);
 }

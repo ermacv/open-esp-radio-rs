@@ -415,7 +415,8 @@ images have.
 Every image links one `oer-trace` trace in RTC fast memory beside the
 post-mortem record (`runtime/src/trace.rs`): 512 entries, and two 1024-word
 snapshot slots only with the `trace-snapshots` feature. The hang watchdog and
-the panic handler freeze it before the reset; the next boot holds the frozen
+the panic report, which the platform's panic entry calls through its
+`panic-diagnostics` hook, freeze it before the reset; the next boot holds the frozen
 trace for the host, which pages it out through the
 [trace commands](../../protocol/diagnostics.md#event-trace). The
 `station-exit-evidence` feature also enables the station runtime's own trace

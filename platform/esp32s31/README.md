@@ -8,11 +8,20 @@ radio role, executor or network-stack dependency.
 | --- | --- |
 | `board` | Board-specific 16-MiB PSRAM at 250 MHz and 16-MiB Flash configuration; adoption of the live mapping |
 | `bootstrap` | Flash entry, PSRAM initialization, image validation/CRC, relocation, Flash tuning and non-returning handoff |
-| `runtime` | Stage-two entry, SRAM section initialization, mapping adoption, vector handoff and per-core interrupt stacks |
+| `runtime` | Stage-two entry, SRAM section initialization, mapping adoption, vector handoff, per-core interrupt stacks and the image's one panic entry |
 | `layout` | Address map, the stage-two placement and the stage-two header/checksum shared with the host packer and auditor |
 | `linker` | Semantic code, data, DMA and stack sections over the `layout` symbols |
 | `partitions` | Application partition layout |
 | `stack.toml` | Frame budgets for standalone application composition |
+
+The runtime owns every image's `#[panic_handler]`. It writes a bounded record
+of the panic to `.rtc_fast.persistent` without formatting its message (the
+end of the location's file path, line, column, hart and, on an interrupt
+stack, the interrupted PC), so the panic path stays a short leaf in every
+stack bound. A standalone image then resets; its next boot reads and clears
+the record with `panic::take_previous` and prints it. A diagnostic image
+enables `panic-diagnostics` and defines `oer_platform_panic_diagnostics`,
+which the entry calls after the record instead of resetting.
 
 Every image of this platform, standalone or HIL, is compiled with the flags
 of one owner, [`oer-esp32s31-firmware`'s `compiler`

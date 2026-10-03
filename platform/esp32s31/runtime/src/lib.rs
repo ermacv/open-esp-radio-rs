@@ -1,6 +1,7 @@
 #![no_std]
 //! Stage-two entry, relocation and interrupt-stack ownership for ESP32-S31.
 mod entry;
+pub mod panic;
 pub mod stacks;
 
 /// Adopt the board mapping and install the stage-two interrupt context.

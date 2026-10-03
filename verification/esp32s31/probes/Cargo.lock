@@ -760,7 +760,7 @@ dependencies = [
 [[package]]
 name = "esp32c5"
 version = "0.4.0"
-source = "git+https://github.com/esp-rs/esp-pacs.git?rev=c29264b#c29264b4753724b272599181c103a7008e8f49c4"
+source = "git+https://github.com/ermacv/esp-pacs.git?rev=11e8425d6#11e8425d65d66cbfe0491a24ececa2e72d2b4738"
 dependencies = [
  "vcell",
 ]
@@ -2194,7 +2194,7 @@ dependencies = [
 [[package]]
 name = "xtensa-lx-rt"
 version = "0.23.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=42b085e245a67e4a845237520f19704cbdb22776#42b085e245a67e4a845237520f19704cbdb22776"
+source = "git+https://github.com/ermacv/esp-hal?rev=c771deb0fe584ddc9a1522eb2cf05abe955c2053#c771deb0fe584ddc9a1522eb2cf05abe955c2053"
 dependencies = [
  "document-features",
  "xtensa-lx",
@@ -2204,7 +2204,7 @@ dependencies = [
 [[package]]
 name = "xtensa-lx-rt-proc-macros"
 version = "0.5.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=42b085e245a67e4a845237520f19704cbdb22776#42b085e245a67e4a845237520f19704cbdb22776"
+source = "git+https://github.com/ermacv/esp-hal?rev=c771deb0fe584ddc9a1522eb2cf05abe955c2053#c771deb0fe584ddc9a1522eb2cf05abe955c2053"
 dependencies = [
  "proc-macro2",
  "quote",

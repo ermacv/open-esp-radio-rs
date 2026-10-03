@@ -21,7 +21,10 @@ Scenario authors also read the
    `SOURCE(<chip>):` block (a chip-neutral path names its chips). The cited
    function is registered with its reviewed fingerprint in
    `verification/<chip>/facts/provenance.toml`; grep that file by explicit
-   path, never read it whole.
+   path, never read it whole. A bare name cites every pinned copy (the
+   library's and the ROM's); cite only the copy you reviewed as
+   `artifact[member]::symbol` (`libpp[pm.o]::pm_parse_beacon`), the form the
+   check prints. Accepting a copy no citation names removes its registration.
 3. **After a citation change** run `cargo xtask check provenance --chip <chip>`.
    After review, record new fingerprints with
    `cargo xtask vendor-provenance --chip <chip> --accept NAME`.

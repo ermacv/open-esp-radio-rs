@@ -293,3 +293,108 @@ fn rom_summaries_cite_their_functions_whatever_the_name_s_shape() {
     std::fs::write(&path, "[[function]]\naddress = 1\n").unwrap();
     assert!(summary_names(&path).is_err());
 }
+
+#[test]
+fn a_qualified_citation_names_one_copy_and_leaves_the_rest_of_the_text_bare() {
+    let (bare, copies) = qualified_citations(
+        "`libpp[pm.o]::pm_scale_listen_interval` and `rom[]::pm_tbtt_process`; \
+         `pm_parse_beacon` bare, `x[y]` no citation, `libpp.a[pp.o]::sta_input` a file",
+    );
+    assert_eq!(
+        copies,
+        [
+            (
+                "libpp".into(),
+                "pm.o".into(),
+                "pm_scale_listen_interval".into()
+            ),
+            ("rom".into(), String::new(), "pm_tbtt_process".into()),
+            ("libpp.a".into(), "pp.o".into(), "sta_input".into()),
+        ]
+    );
+    let mut words = BTreeSet::new();
+    identifiers(&bare, &mut words);
+    assert!(words.contains("pm_parse_beacon"));
+    assert!(!words.contains("pm_scale_listen_interval"));
+    assert!(!words.contains("pm_tbtt_process"));
+}
+
+/// A survey of one function with a library and a ROM copy, both registered.
+fn two_copies(references: &[&str], qualified: &[(&str, &str)]) -> Survey {
+    let code = |copy: &str| format!("code of {copy}");
+    let entry = |artifact: &str, member: &str| Entry {
+        artifact: artifact.into(),
+        member: member.into(),
+        symbol: "pm_parse_beacon".into(),
+        code: code(artifact),
+        decisions: vec![],
+    };
+    let mut copies: BTreeMap<String, BTreeSet<(String, String)>> = BTreeMap::new();
+    let mut qualified_at = vec![];
+    for (artifact, member) in qualified {
+        copies
+            .entry("pm_parse_beacon".into())
+            .or_default()
+            .insert(((*artifact).into(), (*member).into()));
+        qualified_at.push((
+            "a.rs:1".into(),
+            (*artifact).into(),
+            (*member).into(),
+            "pm_parse_beacon".into(),
+        ));
+    }
+    Survey {
+        citations: vec![],
+        registry: vec![entry("libpp", "pm.o"), entry("rom", "")],
+        current: BTreeMap::from([
+            (
+                ("libpp".into(), "pm.o".into(), "pm_parse_beacon".into()),
+                code("libpp"),
+            ),
+            (
+                ("rom".into(), String::new(), "pm_parse_beacon".into()),
+                code("rom"),
+            ),
+        ]),
+        references: references.iter().map(|r| (*r).into()).collect(),
+        qualified: copies,
+        qualified_at,
+        words: BTreeSet::new(),
+        decisions: BTreeMap::new(),
+        pinned: BTreeMap::new(),
+        documents: vec![],
+    }
+}
+
+#[test]
+fn a_bare_name_cites_every_copy() {
+    let mut survey = two_copies(&["pm_parse_beacon"], &[]);
+    assert!(problems_of(&survey).is_empty());
+    survey.registry.retain(|e| e.artifact == "libpp");
+    let problems = problems_of(&survey);
+    assert_eq!(
+        problems,
+        ["rom[]::pm_parse_beacon is cited but not registered"]
+    );
+}
+
+#[test]
+fn a_qualified_citation_requires_only_its_copy() {
+    let mut survey = two_copies(&[], &[("libpp", "pm.o")]);
+    let problems = problems_of(&survey);
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(problems[0].starts_with("rom[]::pm_parse_beacon is registered but no longer cited"));
+    survey.registry.retain(|e| e.artifact == "libpp");
+    assert!(problems_of(&survey).is_empty());
+}
+
+#[test]
+fn a_qualified_citation_of_no_pinned_copy_is_an_error() {
+    let mut survey = two_copies(&[], &[("libpp", "pm_typo.o")]);
+    survey.registry.clear();
+    let problems = problems_of(&survey);
+    assert_eq!(
+        problems,
+        ["a.rs:1: cites libpp[pm_typo.o]::pm_parse_beacon, which no pinned artifact defines"]
+    );
+}

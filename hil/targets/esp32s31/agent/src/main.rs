@@ -208,9 +208,23 @@ static APP_SEND_SPAWNER: StaticCell<SendSpawner> = StaticCell::new();
 static APP_SEND_SPAWNER_PTR: AtomicPtr<SendSpawner> = AtomicPtr::new(ptr::null_mut());
 #[cfg(feature = "open-radio-hil")]
 static APP_STACK_PAINT_END: AtomicU32 = AtomicU32::new(0);
+oer_memory::zeroed_static! {
+    #[cfg(feature = "open-radio-hil")]
+    static mut APP_CORE_STACK: AppCoreStack =
+        zeroed in ".critical.bss.open_radio_app_core_bootstrap_stack";
+}
+
+/// esp-hal's application-core stack in a zeroed region.
 #[cfg(feature = "open-radio-hil")]
-#[unsafe(link_section = ".critical.bss.open_radio_app_core_bootstrap_stack")]
-static mut APP_CORE_STACK: Stack<APP_CORE_BOOTSTRAP_STACK_BYTES> = Stack::new();
+#[repr(transparent)]
+struct AppCoreStack(Stack<APP_CORE_BOOTSTRAP_STACK_BYTES>);
+
+#[cfg(feature = "open-radio-hil")]
+#[allow(unsafe_code, reason = "esp-hal's stack is uninitialized memory")]
+// SAFETY: at the pinned esp-hal revision `Stack<SIZE>` is
+// `repr(C, align(16))` with one field, `mem: MaybeUninit<[u8; SIZE]>`, valid
+// for any bytes; `Stack::new` leaves it uninitialized.
+unsafe impl bytemuck::Zeroable for AppCoreStack {}
 static mut INITIALIZED_DATA: u32 = DATA_SENTINEL;
 static mut BSS_PROBE: u32 = 0;
 
@@ -223,9 +237,11 @@ static mut CRITICAL_DATA_PROBE: u32 = 0x4352_5431;
 #[used]
 #[unsafe(link_section = ".dma.data.profile_probe")]
 static mut DMA_DATA_PROBE: u32 = 0x444d_4131;
-#[used]
-#[unsafe(link_section = ".dma.bss.profile_probe")]
-static mut DMA_BSS_PROBE: u32 = 0;
+oer_memory::zeroed_static! {
+    #[used]
+    static mut DMA_BSS_PROBE: u32 =
+        zeroed in ".dma.bss.profile_probe";
+}
 
 unsafe extern "C" {
     fn ets_install_usb_printf();
@@ -369,7 +385,7 @@ extern "C" fn runtime_main() -> ! {
         let app_interrupt = software_interrupt::executor1(peripherals.FROM_CPU_INTR1);
         let guard = cpu_control
             .start_app_core(
-                unsafe { &mut *ptr::addr_of_mut!(APP_CORE_STACK) },
+                unsafe { &mut (*ptr::addr_of_mut!(APP_CORE_STACK)).0 },
                 move || {
                     // The ROM/ESP-HAL second-core entry requires its initial
                     // stack in SRAM. Consume the captured zero-drop token,

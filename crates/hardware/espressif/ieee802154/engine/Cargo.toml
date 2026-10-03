@@ -15,6 +15,7 @@ model = []
 trace = ["oer-trace/record"]
 
 [dependencies]
+bytemuck = { version = "1.25.2", default-features = false }
 oer-espressif-coex = { path = "../../coex" }
 oer-ieee802154 = { path = "../../../../protocols/ieee802154" }
 oer-ieee802154-trace = { path = "../../../ieee802154/trace" }

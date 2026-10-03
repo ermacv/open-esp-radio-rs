@@ -28,6 +28,12 @@ const fn dma_window_contains(window: &core::ops::Range<usize>, start: usize, len
 #[repr(C, align(4))]
 pub(crate) struct DmaFrame(UnsafeCell<[u8; FRAME_SIZE]>);
 
+#[allow(unsafe_code, reason = "a frame's zero bytes are the empty frame")]
+// SAFETY: a cell of bytes; zero is the frame `new` builds. Written by hand,
+// not derived: this crate is in the source-only PHY build, which runs no
+// proc macro.
+unsafe impl bytemuck::Zeroable for DmaFrame {}
+
 impl DmaFrame {
     const fn new() -> Self {
         Self(UnsafeCell::new([0; FRAME_SIZE]))
@@ -100,11 +106,16 @@ impl DmaFrame {
 ///
 /// The engine borrows it exclusively for its whole life, so the published
 /// addresses stay valid and no second engine can publish them.
+/// Its zero bytes are the zeroed buffers `new` builds (`bytemuck::Zeroable`).
 pub struct Ieee802154EngineBuffers {
     pub(crate) rx: [DmaFrame; RX_BUFFER_COUNT + 1],
     pub(crate) tx: DmaFrame,
     pub(crate) enhanced_ack: DmaFrame,
 }
+
+#[allow(unsafe_code, reason = "zeroed frames are the zeroed buffers")]
+// SAFETY: every field is a `DmaFrame` array or frame, zero-valid above.
+unsafe impl bytemuck::Zeroable for Ieee802154EngineBuffers {}
 
 impl Default for Ieee802154EngineBuffers {
     fn default() -> Self {

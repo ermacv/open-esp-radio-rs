@@ -15,7 +15,7 @@
 use core::{
     cell::UnsafeCell,
     mem::MaybeUninit,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicU8, Ordering},
 };
 
 pub use bytemuck::Zeroable;
@@ -96,6 +96,95 @@ impl<T> ZeroedStatic<MaybeUninit<T>> {
     }
 }
 
+const ONCE_EMPTY: u8 = 0;
+const ONCE_WRITING: u8 = 1;
+const ONCE_READY: u8 = 2;
+
+/// A shared value in a region the boot zeroes, written once at runtime.
+///
+/// Zero bytes are the empty cell, whatever `T`'s own layout: the value is
+/// `MaybeUninit` until [`Self::get_or_init`] writes it, so a type without a
+/// zero representation (a waker, a mutex) can live in a zeroed static that an
+/// interrupt reads with [`Self::get`].
+pub struct ZeroedOnce<T> {
+    state: AtomicU8,
+    value: UnsafeCell<MaybeUninit<T>>,
+}
+
+#[allow(unsafe_code, reason = "the value is shared only once written")]
+// SAFETY: readers get `&T` only after the `ONCE_READY` publication, so the
+// cell shares a `T` across threads (`T: Sync`) that one thread wrote and
+// others may drop never (`T: Send` for the writer's hand-over).
+unsafe impl<T: Send + Sync> Sync for ZeroedOnce<T> {}
+
+#[allow(unsafe_code, reason = "a zero state and uninitialized storage")]
+// SAFETY: state 0 is `ONCE_EMPTY` and `MaybeUninit` accepts any bytes.
+unsafe impl<T> Zeroable for ZeroedOnce<T> {}
+
+impl<T> ZeroedOnce<T> {
+    /// The empty cell: all zero bytes.
+    pub const fn new() -> Self {
+        Self {
+            state: AtomicU8::new(ONCE_EMPTY),
+            value: UnsafeCell::new(MaybeUninit::uninit()),
+        }
+    }
+
+    /// The value, once written; never waits, so an interrupt may call it.
+    #[inline(always)]
+    #[allow(unsafe_code, reason = "the value is read only after its publication")]
+    pub fn get(&self) -> Option<&T> {
+        if self.state.load(Ordering::Acquire) != ONCE_READY {
+            return None;
+        }
+        // SAFETY: `ONCE_READY` is stored with Release only after the value
+        // was written, and the value is never written again.
+        Some(unsafe { (*self.value.get()).assume_init_ref() })
+    }
+
+    /// The value, writing `init()` first if no one has. The cell has one
+    /// writing context at a time (an interrupt reads with [`Self::get`]); a
+    /// call that finds another write in progress panics rather than wait.
+    #[allow(unsafe_code, reason = "the winning exchange is the only writer")]
+    pub fn get_or_init(&self, init: impl FnOnce() -> T) -> &T {
+        match self.state.compare_exchange(
+            ONCE_EMPTY,
+            ONCE_WRITING,
+            Ordering::Acquire,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => {
+                // SAFETY: the exchange to `ONCE_WRITING` succeeded once; no
+                // reader sees the value before `ONCE_READY`.
+                unsafe { (*self.value.get()).write(init()) };
+                self.state.store(ONCE_READY, Ordering::Release);
+            }
+            Err(state) => assert_eq!(
+                state, ONCE_READY,
+                "a zeroed once cell is written by one context at a time"
+            ),
+        }
+        self.get().expect("a written once cell is ready")
+    }
+}
+
+impl<T> Default for ZeroedOnce<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> Drop for ZeroedOnce<T> {
+    #[allow(unsafe_code, reason = "a ready cell owns its value")]
+    fn drop(&mut self) {
+        if *self.state.get_mut() == ONCE_READY {
+            // SAFETY: `ONCE_READY` means the value was written; `&mut self`
+            // excludes every reader.
+            unsafe { self.value.get_mut().assume_init_drop() };
+        }
+    }
+}
+
 /// Declare statics in a region the boot zeroes: each starts as
 /// [`zeroed`](crate::zeroed::zeroed), so its type must be
 /// [`Zeroable`](crate::zeroed::Zeroable) and no non-zero initializer can be
@@ -139,6 +228,29 @@ mod tests {
     use core::sync::atomic::AtomicU32;
 
     use super::*;
+
+    #[test]
+    fn a_zeroed_once_cell_is_empty_until_written_once() {
+        static CELL: ZeroedOnce<[u8; 4]> = zeroed();
+        assert!(CELL.get().is_none());
+        assert_eq!(CELL.get_or_init(|| [1, 2, 3, 4]), &[1, 2, 3, 4]);
+        // A second initializer does not run.
+        assert_eq!(CELL.get_or_init(|| unreachable!()), &[1, 2, 3, 4]);
+        assert_eq!(CELL.get(), Some(&[1, 2, 3, 4]));
+    }
+
+    #[test]
+    fn dropping_a_written_once_cell_drops_its_value() {
+        extern crate std;
+        use std::rc::Rc;
+        let shared = Rc::new(());
+        {
+            let cell = ZeroedOnce::new();
+            cell.get_or_init(|| Rc::clone(&shared));
+            assert_eq!(Rc::strong_count(&shared), 2);
+        }
+        assert_eq!(Rc::strong_count(&shared), 1);
+    }
 
     #[test]
     fn a_zeroed_static_starts_unclaimed_and_hands_its_zero_value_once() {

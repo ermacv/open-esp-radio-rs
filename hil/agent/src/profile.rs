@@ -38,6 +38,7 @@ pub enum PageRefusal {
 }
 
 /// The samples of up to `N` per hart and the profile's state.
+#[derive(bytemuck::Zeroable)]
 pub struct Profiler<const N: usize> {
     pc: [[AtomicU32; N]; 2],
     ra: [[AtomicU32; N]; 2],

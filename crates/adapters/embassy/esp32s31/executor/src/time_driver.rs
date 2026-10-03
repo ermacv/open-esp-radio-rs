@@ -76,13 +76,11 @@ struct EmbassyTimeDriver {
     state: NonReentrantMutex<State>,
 }
 
-#[used]
-#[allow(
-    unsafe_code,
-    reason = "board linker owns this exported timer interrupt-state section"
-)]
-#[unsafe(link_section = ".critical.bss.embassy_time")]
-static ESP32S31_EMBASSY_TIMER_FIRED: AtomicBool = AtomicBool::new(false);
+oer_memory::zeroed_static! {
+    /// Placement: the board linker owns this exported timer-state section.
+    #[used]
+    static ESP32S31_EMBASSY_TIMER_FIRED: AtomicBool = zeroed in ".critical.bss.embassy_time";
+}
 
 impl EmbassyTimeDriver {
     const fn new() -> Self {

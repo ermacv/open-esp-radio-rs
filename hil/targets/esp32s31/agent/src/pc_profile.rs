@@ -35,12 +35,11 @@ const MINIMUM_PERIOD_MICROS: u32 = 200;
 /// Longest accepted period, within one SYSTIMER alarm period.
 const MAXIMUM_PERIOD_MICROS: u32 = 1_000_000;
 
-#[allow(
-    unsafe_code,
-    reason = "the sample buffers are placed in the PSRAM tier to keep internal SRAM for the measured path"
-)]
-#[unsafe(link_section = ".psram.bss.open_radio_pc_profile")]
-static PROFILER: Profiler<CAPACITY> = Profiler::new();
+oer_memory::zeroed_static! {
+    /// Placement: the sample buffers are placed in the PSRAM tier to keep internal SRAM for the measured path.
+    static PROFILER: Profiler<CAPACITY> =
+        zeroed in ".psram.bss.open_radio_pc_profile";
+}
 static TIMER: Mutex<RefCell<Option<PeriodicTimer<'static, Blocking>>>> =
     Mutex::new(RefCell::new(None));
 

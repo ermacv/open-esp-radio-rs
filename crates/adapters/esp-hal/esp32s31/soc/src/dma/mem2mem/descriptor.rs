@@ -62,7 +62,7 @@ const fn descriptor_flags(bytes: usize, end_of_frame: bool) -> u32 {
 /// S31 requires eight-byte item alignment. Padding the twelve-byte wire
 /// image to sixteen bytes also makes every item in a Rust slice aligned.
 #[repr(C, align(8))]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, bytemuck::Zeroable)]
 pub struct AxiGdmaDescriptor {
     flags: u32,
     buffer: u32,

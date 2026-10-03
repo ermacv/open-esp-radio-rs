@@ -42,63 +42,84 @@ const CACHE_LINE: usize = 64;
 const DESCRIPTOR_COUNT: usize = FRAMES_PER_BATCH;
 
 #[repr(C, align(64))]
+#[derive(bytemuck::Zeroable)]
 struct Batch([u8; SG_STORAGE_SIZE]);
 
 #[repr(C, align(64))]
+#[derive(bytemuck::Zeroable)]
 struct DescriptorBatch([AxiGdmaDescriptor; DESCRIPTOR_COUNT]);
 
 #[repr(C, align(64))]
+#[derive(bytemuck::Zeroable)]
 struct CacheLine([u8; CACHE_LINE]);
 
-#[unsafe(link_section = ".psram.bss.gdma_mem2mem_probe.source")]
-static mut SOURCE: Batch = Batch([0; SG_STORAGE_SIZE]);
+oer_memory::zeroed_static! {
+    static mut SOURCE: Batch =
+        zeroed in ".psram.bss.gdma_mem2mem_probe.source";
+}
 
-#[unsafe(link_section = ".psram.bss.gdma_mem2mem_probe.next")]
-static mut NEXT_SOURCE: Batch = Batch([0; SG_STORAGE_SIZE]);
+oer_memory::zeroed_static! {
+    static mut NEXT_SOURCE: Batch =
+        zeroed in ".psram.bss.gdma_mem2mem_probe.next";
+}
 
-#[unsafe(link_section = ".dma.bss.gdma_mem2mem_probe.destination")]
-static mut DESTINATION: Batch = Batch([0; SG_STORAGE_SIZE]);
+oer_memory::zeroed_static! {
+    static mut DESTINATION: Batch =
+        zeroed in ".dma.bss.gdma_mem2mem_probe.destination";
+}
 
-#[unsafe(link_section = ".dma.bss.gdma_mem2mem_probe.sram_source")]
-static mut SRAM_SOURCE: CacheLine = CacheLine([0; CACHE_LINE]);
+oer_memory::zeroed_static! {
+    static mut SRAM_SOURCE: CacheLine =
+        zeroed in ".dma.bss.gdma_mem2mem_probe.sram_source";
+}
 
 // The runtime's ordinary `.bss` deliberately lives in PSRAM. DMA descriptors
 // are control structures and must remain in uncached internal SRAM even though
 // AXI-GDMA can access the PSRAM payload itself.
-#[unsafe(link_section = ".dma.bss.gdma_mem2mem_probe.rx_descriptors")]
-static mut RX_DESCRIPTORS: DescriptorBatch =
-    DescriptorBatch([AxiGdmaDescriptor::EMPTY; DESCRIPTOR_COUNT]);
+oer_memory::zeroed_static! {
+    static mut RX_DESCRIPTORS: DescriptorBatch =
+        zeroed in ".dma.bss.gdma_mem2mem_probe.rx_descriptors";
+}
 
-#[unsafe(link_section = ".dma.bss.gdma_mem2mem_probe.tx_descriptors")]
-static mut TX_DESCRIPTORS: DescriptorBatch =
-    DescriptorBatch([AxiGdmaDescriptor::EMPTY; DESCRIPTOR_COUNT]);
+oer_memory::zeroed_static! {
+    static mut TX_DESCRIPTORS: DescriptorBatch =
+        zeroed in ".dma.bss.gdma_mem2mem_probe.tx_descriptors";
+}
 
 // Kept in uncached SRAM so JTAG can recover the exact failing frontier even
 // when the diagnostic runs before the asynchronous USB logger makes progress.
-#[unsafe(link_section = ".dma.bss.gdma_mem2mem_probe.status")]
-#[unsafe(no_mangle)]
-#[used]
-pub static OPEN_RADIO_GDMA_PROBE_STATUS: AtomicU32 = AtomicU32::new(0);
+oer_memory::zeroed_static! {
+    #[unsafe(no_mangle)]
+    #[used]
+    pub static OPEN_RADIO_GDMA_PROBE_STATUS: AtomicU32 =
+        zeroed in ".dma.bss.gdma_mem2mem_probe.status";
+}
 
-#[unsafe(link_section = ".dma.bss.gdma_mem2mem_probe.detail")]
-#[unsafe(no_mangle)]
-#[used]
-pub static OPEN_RADIO_GDMA_PROBE_DETAIL: AtomicU32 = AtomicU32::new(0);
+oer_memory::zeroed_static! {
+    #[unsafe(no_mangle)]
+    #[used]
+    pub static OPEN_RADIO_GDMA_PROBE_DETAIL: AtomicU32 =
+        zeroed in ".dma.bss.gdma_mem2mem_probe.detail";
+}
 
 // Total cycles/instructions for 64 iterations of, respectively: CPU copy,
 // blocking GDMA, CPU copy + next-batch preparation, serial GDMA + preparation,
 // overlapped GDMA + preparation, interrupt-driven GDMA, realistic 24-frame
 // scatter copy, realistic 24-frame interrupt-driven scatter GDMA wall time,
 // and the exact task-active subset of that asynchronous transfer.
-#[unsafe(link_section = ".dma.bss.gdma_mem2mem_probe.cycles")]
-#[unsafe(no_mangle)]
-#[used]
-pub static OPEN_RADIO_GDMA_PROBE_CYCLES: [AtomicU32; 9] = [const { AtomicU32::new(0) }; 9];
+oer_memory::zeroed_static! {
+    #[unsafe(no_mangle)]
+    #[used]
+    pub static OPEN_RADIO_GDMA_PROBE_CYCLES: [AtomicU32; 9] =
+        zeroed in ".dma.bss.gdma_mem2mem_probe.cycles";
+}
 
-#[unsafe(link_section = ".dma.bss.gdma_mem2mem_probe.instructions")]
-#[unsafe(no_mangle)]
-#[used]
-pub static OPEN_RADIO_GDMA_PROBE_INSTRUCTIONS: [AtomicU32; 9] = [const { AtomicU32::new(0) }; 9];
+oer_memory::zeroed_static! {
+    #[unsafe(no_mangle)]
+    #[used]
+    pub static OPEN_RADIO_GDMA_PROBE_INSTRUCTIONS: [AtomicU32; 9] =
+        zeroed in ".dma.bss.gdma_mem2mem_probe.instructions";
+}
 
 fn mark(status: u32, detail: u32) {
     OPEN_RADIO_GDMA_PROBE_DETAIL.store(detail, Ordering::Relaxed);

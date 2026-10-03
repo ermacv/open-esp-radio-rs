@@ -1735,11 +1735,13 @@ dependencies = [
 name = "oer-esp32s31-executor-embassy"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "embassy-executor",
  "embassy-time-driver",
  "embassy-time-queue-utils",
  "esp-hal",
  "esp-sync",
+ "oer-memory",
  "portable-atomic",
  "riscv",
 ]
@@ -1951,6 +1953,7 @@ dependencies = [
  "oer-espressif-ieee802154-engine",
  "oer-espressif-ieee802154-runtime",
  "oer-ieee802154",
+ "oer-memory",
  "oer-time-embassy",
  "static_cell",
 ]
@@ -2001,9 +2004,11 @@ version = "0.1.0"
 name = "oer-esp32s31-platform-runtime"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "esp-hal",
  "oer-esp32s31-platform-board",
  "oer-esp32s31-platform-layout",
+ "oer-memory",
 ]
 
 [[package]]
@@ -2046,8 +2051,10 @@ dependencies = [
 name = "oer-esp32s31-soc-esp-hal"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "critical-section",
  "esp-hal",
+ "oer-memory",
  "oer-soc-deadline",
 ]
 
@@ -2073,6 +2080,7 @@ dependencies = [
 name = "oer-espressif-ieee802154-engine"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "oer-espressif-coex",
  "oer-ieee802154",
  "oer-ieee802154-trace",

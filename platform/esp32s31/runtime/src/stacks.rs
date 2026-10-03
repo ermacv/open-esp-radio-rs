@@ -42,13 +42,8 @@ const IRQ_STACK_GUARD_BYTES: usize = 1024;
 const IRQ_STACK_GUARD_TRIGGER: usize = 2;
 
 #[repr(C, align(16))]
+#[derive(bytemuck::Zeroable)]
 struct AlignedStack<const BYTES: usize>(MaybeUninit<[u8; BYTES]>);
-
-impl<const BYTES: usize> AlignedStack<BYTES> {
-    const fn new() -> Self {
-        Self(MaybeUninit::uninit())
-    }
-}
 
 #[used]
 #[unsafe(no_mangle)]
@@ -61,15 +56,19 @@ static mut __open_radio_cpu0_task_stack: Stack<CPU0_TASK_STACK_BYTES> = Stack::n
 #[unsafe(link_section = ".psram.task_stack.cpu1")]
 static mut __open_radio_cpu1_task_stack: Stack<{ CPU1_TASK_STACK_BYTES }> = Stack::new();
 
-#[used]
-#[unsafe(no_mangle)]
-#[unsafe(link_section = ".critical.bss.psram_task_stack.cpu0_irq")]
-static mut __open_radio_cpu0_irq_stack: AlignedStack<IRQ_STACK_BYTES> = AlignedStack::new();
+oer_memory::zeroed_static! {
+    #[used]
+    #[unsafe(no_mangle)]
+    static mut __open_radio_cpu0_irq_stack: AlignedStack<IRQ_STACK_BYTES> =
+        zeroed in ".critical.bss.psram_task_stack.cpu0_irq";
+}
 
-#[used]
-#[unsafe(no_mangle)]
-#[unsafe(link_section = ".critical.bss.psram_task_stack.cpu1_irq")]
-static mut __open_radio_cpu1_irq_stack: AlignedStack<IRQ_STACK_BYTES> = AlignedStack::new();
+oer_memory::zeroed_static! {
+    #[used]
+    #[unsafe(no_mangle)]
+    static mut __open_radio_cpu1_irq_stack: AlignedStack<IRQ_STACK_BYTES> =
+        zeroed in ".critical.bss.psram_task_stack.cpu1_irq";
+}
 
 unsafe extern "C" {
     static _runtime_psram_mtvt_source: [u32; 48];

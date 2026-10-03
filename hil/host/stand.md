@@ -226,7 +226,11 @@ power of the board's registered hub port (off, then on), and prints the reset
 line the ROM reports. A hub port is switched only that way, under the board's
 lease: `cargo hil lease` refuses a command that runs `uhubctl`, and the
 repository's Claude Code hook refuses `uhubctl` with an action, so no port is
-left off. `cargo hil devices set MAC --power-uhubctl LOCATION --power-port
+left off. When a lease of a board with a registered hub port is granted and
+when it is released, the arbiter returns the port to its working state: a port
+that is off is powered, and a powered port whose board is not attached by its
+serial number is cycled; each restoration is a recovery in the board journal.
+The grant restores a board its previous holder left without a release. `cargo hil devices set MAC --power-uhubctl LOCATION --power-port
 PORT` registers the hub port that powers the board alone, never a port that
 carries a cascaded hub. `board check` reports, without resetting, whether the board is
 attached, its last flash, maintenance, its reset paths and whether it answers

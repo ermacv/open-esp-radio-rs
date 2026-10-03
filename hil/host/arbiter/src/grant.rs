@@ -101,6 +101,8 @@ struct Held {
     owner: String,
     work: String,
     scenarios: Vec<String>,
+    /// The boards whose hub ports return to their working state on release.
+    boards: Vec<String>,
     held_since: Instant,
     ending: Arc<Ending>,
     watchdog: Option<(mpsc::Sender<()>, std::thread::JoinHandle<()>)>,
@@ -276,6 +278,9 @@ impl Arbiter {
             );
         }
         self.report_board(&request.owner);
+        let boards = crate::restore::claimed_boards(&claims, &self.devices().unwrap_or_default());
+        // A holder that ended without its release left its boards as they were.
+        crate::restore::restore(self, &boards, &format!("grant of lease #{id}"));
         Ok(Grant {
             held: Some(Held {
                 arbiter: self.clone(),
@@ -284,6 +289,7 @@ impl Arbiter {
                 owner: request.owner.clone(),
                 work: request.work.clone(),
                 scenarios: request.scenarios.clone(),
+                boards,
                 held_since: Instant::now(),
                 ending: Arc::new(Ending::default()),
                 watchdog: None,
@@ -723,6 +729,12 @@ impl Drop for Grant {
             drop(stop);
             let _ = thread.join();
         }
+        // Still held: the next holder gets the boards in their working state.
+        crate::restore::restore(
+            &held.arbiter,
+            &held.boards,
+            &format!("release of lease #{}", held.id),
+        );
         let history_path = held.arbiter.history_path();
         let outcome = held.ending.outcome();
         let released = held.arbiter.transaction(|state| {

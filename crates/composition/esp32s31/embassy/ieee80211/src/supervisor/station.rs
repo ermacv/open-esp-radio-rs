@@ -645,13 +645,18 @@ type ProductionControlSlot =
 // through the connected epoch's poll frame or its teardown. It is
 // task-context state, not interrupt-shared: it stays in the PSRAM tier where
 // the task stacks and futures that held it by value lived, at no SRAM cost.
+//
+// A `.bss` section starts zeroed, and an empty slot is not all-zero bytes
+// (its `None` is a niche value): a const-initialized cell would start as a
+// "placed" control of zeros, which the first placement drops. The cell is
+// uninitialized storage instead, and the one-time claim writes the empty
+// slot.
 #[allow(
     unsafe_code,
     reason = "the connected control slot is explicitly placed in the PSRAM ownership tier"
 )]
 #[unsafe(link_section = ".psram.bss.open_radio_station_connected_control")]
-static CONNECTED_CONTROL_SLOT: ConstStaticCell<ProductionControlSlot> =
-    ConstStaticCell::new(ProductionControlSlot::new());
+static CONNECTED_CONTROL_SLOT: StaticCell<ProductionControlSlot> = StaticCell::new();
 
 /// The connected control's statics: its event queue and the slot each
 /// association's control is placed in. Before a control is placed, and once
@@ -1280,7 +1285,7 @@ pub(super) fn initialize_connected_static_resources()
             aggregate: Some(aggregate),
             control: ConnectedControlStatics {
                 queue: &*CONTROL_RESOURCES.take(),
-                slot: CONNECTED_CONTROL_SLOT.take(),
+                slot: CONNECTED_CONTROL_SLOT.init(ProductionControlSlot::new()),
             },
         },
         #[cfg(feature = "diagnostics")]

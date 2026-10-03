@@ -33,6 +33,10 @@ pub type ReleasedConnectedControl<'resources, M, const CAPACITY: usize> =
     &'resources mut ConnectedControlStorage<'resources, M, CAPACITY>;
 
 /// Storage for one association's control; empty between associations.
+///
+/// An empty slot is [`Self::new`], not zeroed memory: its emptiness is a
+/// niche value of the control, so a slot in a zero-initialized `.bss`
+/// section must be written with [`Self::new`] before its first placement.
 pub struct ConnectedControlSlot<C> {
     control: Option<C>,
 }

@@ -14,6 +14,8 @@
 //! sources to their CPU routes and stable ISR storage.
 
 #[cfg(feature = "esp32s31")]
+mod bluetooth_handlers;
+#[cfg(feature = "esp32s31")]
 mod bluetooth_interrupt;
 
 #[cfg(any(feature = "esp32s31", test))]
@@ -29,14 +31,20 @@ mod esp32s31;
 mod platform_clocks;
 
 #[cfg(feature = "esp32s31")]
+pub use bluetooth_handlers::{
+    bluetooth_modem_lp_timer_interrupt_handler, bluetooth_nrt_default_interrupt_handler,
+    bluetooth_primary_interrupt_handler,
+};
+#[cfg(feature = "esp32s31")]
 pub use bluetooth_interrupt::{
     BoundEspHalBluetoothInterruptEpoch, EspHalBluetoothInterruptDisposition,
-    EspHalBluetoothInterruptRouteDisableFailure, EspHalBluetoothInterruptSource,
-    EspHalBluetoothInterruptStorage, EspHalBluetoothModemLpTimerInterruptStep,
-    EspHalBluetoothModemLpTimerRestoreFailure, EspHalBluetoothModemLpTimerStorageError,
-    EspHalBluetoothNrtInterruptStep, EspHalBluetoothPrimaryInterruptStep,
-    EspHalBluetoothSchedulerRunInterruptError, EspHalBluetoothSharedInterruptDispatchError,
-    PublishedEspHalBluetoothInterruptOwners, RetiredEspHalBluetoothInterruptRegisters,
+    EspHalBluetoothInterruptRouteDisableFailure, EspHalBluetoothInterruptRoutes,
+    EspHalBluetoothInterruptSource, EspHalBluetoothInterruptStorage,
+    EspHalBluetoothModemLpTimerInterruptStep, EspHalBluetoothModemLpTimerRestoreFailure,
+    EspHalBluetoothModemLpTimerStorageError, EspHalBluetoothNrtInterruptStep,
+    EspHalBluetoothPrimaryInterruptStep, EspHalBluetoothSchedulerRunInterruptError,
+    EspHalBluetoothSharedInterruptDispatchError, PublishedEspHalBluetoothInterruptOwners,
+    RetiredEspHalBluetoothInterruptRegisters,
 };
 #[cfg(feature = "esp32s31")]
 pub use bluetooth_route_policy::{

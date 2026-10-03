@@ -124,6 +124,7 @@ wifi-ble-coex = [
     "dep:oer-bluetooth-controller",
     "dep:oer-bluetooth-hci",
     "dep:oer-esp32s31-bluetooth-system",
+    "dep:oer-esp32s31-radio-esp-hal",
     "dep:gatt-application",
     "dep:trouble-host",
 ]

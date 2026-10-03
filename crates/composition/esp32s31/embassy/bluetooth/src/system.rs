@@ -64,11 +64,11 @@ use oer_esp32s31_phy::{
 };
 use oer_esp32s31_radio_esp_hal::{
     BoundEspHalBluetoothInterruptEpoch, EspHalBluetoothInterruptDisposition,
-    EspHalBluetoothInterruptRouteError, EspHalBluetoothInterruptSource,
-    EspHalBluetoothInterruptStorage, EspHalBluetoothInterruptStorageError,
-    EspHalBluetoothModemLpTimerStorageError, EspHalBluetoothNrtInterruptStep,
-    EspHalBluetoothPrimaryInterruptStep, EspHalBluetoothSchedulerRunInterruptError,
-    PublishedEspHalBluetoothInterruptOwners,
+    EspHalBluetoothInterruptRouteError, EspHalBluetoothInterruptRoutes,
+    EspHalBluetoothInterruptSource, EspHalBluetoothInterruptStorage,
+    EspHalBluetoothInterruptStorageError, EspHalBluetoothModemLpTimerStorageError,
+    EspHalBluetoothNrtInterruptStep, EspHalBluetoothPrimaryInterruptStep,
+    EspHalBluetoothSchedulerRunInterruptError, PublishedEspHalBluetoothInterruptOwners,
 };
 use oer_time_embassy::EmbassyClock;
 
@@ -205,13 +205,17 @@ pub struct BluetoothParked {
 
 impl BluetoothParked {
     /// Claim the static controller memory once per boot and park it with
-    /// `partition`.
+    /// `partition`; keep `interrupts`, the routes of the Controller's sources
+    /// in the image's interrupt table, for every epoch of the boot.
     ///
     /// # Errors
     ///
     /// The memory was claimed before, or the linker placement fails its
     /// contract.
-    pub fn new(partition: BluetoothPartition) -> Result<Self, BluetoothMemoryError> {
+    pub fn new(
+        partition: BluetoothPartition,
+        interrupts: EspHalBluetoothInterruptRoutes,
+    ) -> Result<Self, BluetoothMemoryError> {
         let numbers =
             SchedulerAllocationConfig::new((LEGACY + CONNECTABLE) as u16, CONNECTIONS as u16, 0)
                 .expect("the product profile numbers fit their field");
@@ -262,6 +266,13 @@ impl BluetoothParked {
             device_table: LeDeviceTable::bind(claim(DEVICE_TABLE.try_take())?)
                 .map_err(BluetoothMemoryError::DeviceTable)?,
         };
+        // The memory above is claimed once per boot, so are the routes.
+        if EspHalBluetoothInterruptStorage::new()
+            .install_routes(interrupts)
+            .is_err()
+        {
+            unreachable!("the boot claimed the Controller memory, and with it the routes, once");
+        }
         Ok(Self {
             partition,
             memory: ControllerMemory {

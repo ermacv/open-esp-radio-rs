@@ -264,25 +264,18 @@ pub(crate) type StationMacClock = oer_esp32s31_ieee80211_runtime::mac_clock::Mac
     EmbassyClock,
 >;
 
-/// Bound on Wi-Fi's first start, from the partition's MAC local-time
-/// capability, which every start lends alike.
-static MAC_CLOCK: embassy_sync::once_lock::OnceLock<StationMacClock> =
-    embassy_sync::once_lock::OnceLock::new();
-
-/// The MAC clock of the started Wi-Fi.
-pub(crate) fn mac_clock() -> &'static StationMacClock {
-    MAC_CLOCK
-        .try_get()
-        .expect("Wi-Fi start binds the MAC clock before any role runs")
-}
+/// The MAC clock of the one Wi-Fi supervisor this boot runs, made from its
+/// partition's MAC local-time capability.
+static MAC_CLOCK: StaticCell<StationMacClock> = StaticCell::new();
 
 /// A role's monotonic timer paired with the MAC clock.
-pub(crate) fn reception_timer()
--> oer_esp32s31_ieee80211_runtime::mac_clock::ReceptionTimer<'static, EmbassyClock, StationMacClock>
+pub(crate) const fn reception_timer(
+    mac_clock: &'static StationMacClock,
+) -> oer_esp32s31_ieee80211_runtime::mac_clock::ReceptionTimer<'static, EmbassyClock, StationMacClock>
 {
     oer_esp32s31_ieee80211_runtime::mac_clock::ReceptionTimer {
         timer: EmbassyClock,
-        reception: mac_clock(),
+        reception: mac_clock,
     }
 }
 // This immutable table binds every descriptor index to the final DMA buffer
@@ -605,6 +598,8 @@ static RADIO_SUPERVISOR_CONTROL: EmbassyWifiSupervisorControlResources<
 
 struct ProductionWifiEpochRunner {
     radio: &'static SharedRadio,
+    /// The MAC local time and its relation to the monotonic clock.
+    mac_clock: &'static StationMacClock,
     watchdog: &'static crate::WatchdogConfig,
     trng: Trng,
     station_control: &'static StationControlResources<CriticalSectionRawMutex>,
@@ -913,12 +908,16 @@ pub async fn new(
     config: crate::RadioConfig,
 ) -> Result<WifiStarted, NewError> {
     diagnostics_event!("open-radio: Wi-Fi start on the shared radio");
-    MAC_CLOCK.get_or_init(|| {
-        oer_esp32s31_ieee80211_runtime::mac_clock::MacClock::new(
+    // One supervisor runs per boot: a second start finds the clock taken.
+    let Some(mac_clock) =
+        MAC_CLOCK.try_init(oer_esp32s31_ieee80211_runtime::mac_clock::MacClock::new(
             partition.mac_local_time(),
             EmbassyClock,
-        )
-    });
+        ))
+    else {
+        return Err(NewError::SupervisorInUse);
+    };
+    let mac_clock: &'static StationMacClock = mac_clock;
 
     let crate::RadioConfig {
         #[cfg(feature = "rx-ownership-observation")]
@@ -1100,6 +1099,7 @@ pub async fn new(
         configuration,
         ProductionWifiEpochRunner {
             radio,
+            mac_clock,
             watchdog,
             trng,
             // The control storage itself is reusable after a clean station

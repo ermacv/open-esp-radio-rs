@@ -1325,6 +1325,7 @@ pub(super) const fn connected_config(power: StationPowerMode) -> ConnectedStaCon
 pub(crate) async fn run_connected<'state, 'security>(
     station_control: &mut StationCommandReceiver<'_, CriticalSectionRawMutex>,
     radio: &'static crate::SharedRadio,
+    mac_clock: &'static super::StationMacClock,
     resources: ConnectedStationResources<'state, 'security>,
 ) -> ConnectedStationRunExit<'state, 'security> {
     let prepared = match prepare_esp32s31_connected_service::<
@@ -1909,18 +1910,13 @@ pub(crate) async fn run_connected<'state, 'security>(
             radio,
             crate::interrupts::power_irq_runtime(),
             &mut station_rf,
-            super::mac_clock(),
+            mac_clock,
         ),
     ));
     // The stop's air releases and RF wake reach the agent after the
     // datapath returned; perform them before the radio resources leave.
-    let power_stop = finish_station_power(
-        &STATION_POWER_LINK,
-        radio,
-        &mut station_rf,
-        super::mac_clock(),
-    )
-    .await;
+    let power_stop =
+        finish_station_power(&STATION_POWER_LINK, radio, &mut station_rf, mac_clock).await;
     let rf_asleep = station_rf.asleep();
     WifiReconnectPolicy::get().association_lost(radio).await;
     if let Err(failure) = power_stop {

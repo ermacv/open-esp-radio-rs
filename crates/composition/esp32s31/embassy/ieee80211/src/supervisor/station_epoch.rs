@@ -4,6 +4,7 @@ use super::*;
 
 pub(super) struct ProductionStationEnginePort<O> {
     radio: &'static SharedRadio,
+    mac_clock: &'static StationMacClock,
     mode: ProductionStationMode,
     power_mode: StationPowerMode,
     access_point: ProductionAccessPointResources,
@@ -25,12 +26,14 @@ static STATION_PMKSA: oer_esp32s31_ieee80211_sta::attempt::StaSharedPmksa =
 impl<O> ProductionStationEnginePort<O> {
     fn new(
         radio: &'static SharedRadio,
+        mac_clock: &'static StationMacClock,
         power_mode: StationPowerMode,
         access_point: ProductionAccessPointResources,
         monitor: ProductionMonitorResources,
     ) -> Self {
         Self {
             radio,
+            mac_clock,
             mode: ProductionStationMode::Service,
             power_mode,
             access_point,
@@ -41,12 +44,14 @@ impl<O> ProductionStationEnginePort<O> {
 
     fn paired_cutover(
         radio: &'static SharedRadio,
+        mac_clock: &'static StationMacClock,
         power_mode: StationPowerMode,
         access_point: ProductionAccessPointResources,
         monitor: ProductionMonitorResources,
     ) -> Self {
         Self {
             radio,
+            mac_clock,
             mode: ProductionStationMode::PairedCutover,
             power_mode,
             access_point,
@@ -120,7 +125,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 frame,
                 scan_observer: ProductionScanObserver,
                 sequence: security.sequences.non_qos_mut(),
-                timer: super::reception_timer(),
+                timer: super::reception_timer(self.mac_clock),
             },
             scan_request,
         )
@@ -209,6 +214,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         let returned = oer_ieee80211_runtime::await_stack_boundary!(run_connected(
             control,
             self.radio,
+            self.mac_clock,
             ConnectedStationResources::new(
                 runtime,
                 epoch,
@@ -309,7 +315,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 frame,
                 scan_observer: ProductionScanObserver,
                 sequence: security.sequences.non_qos_mut(),
-                timer: super::reception_timer(),
+                timer: super::reception_timer(self.mac_clock),
             },
             scan_request,
         )
@@ -1085,12 +1091,14 @@ impl ProductionWifiEpochRunner {
         let port = match mode {
             ProductionStationMode::Service => ProductionStationEnginePort::new(
                 self.radio,
+                self.mac_clock,
                 power_mode,
                 access_point_resources,
                 monitor_resources,
             ),
             ProductionStationMode::PairedCutover => ProductionStationEnginePort::paired_cutover(
                 self.radio,
+                self.mac_clock,
                 power_mode,
                 access_point_resources,
                 monitor_resources,

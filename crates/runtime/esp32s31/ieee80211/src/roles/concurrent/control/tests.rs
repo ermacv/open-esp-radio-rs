@@ -33,7 +33,7 @@ impl StaApStationControlRole<(), ()> for Station {
         pending()
     }
 
-    fn station_control_ready(&self, _now_micros: u64) -> bool {
+    fn station_control_ready(&self, _now: oer_time::Instant) -> bool {
         false
     }
 
@@ -59,7 +59,7 @@ impl StaApAccessPointControlRole<(), ()> for AccessPoint {
         &mut self,
         _hardware: &mut (),
         _physical_tx: &mut (),
-        _now_micros: u64,
+        _now: oer_time::Instant,
         _retain_physical_tx: bool,
     ) -> Result<StaApAccessPointControlProgress, Self::Error> {
         self.calls += 1;
@@ -231,12 +231,12 @@ fn absolute_access_point_deadline_is_an_o1_readiness_edge() {
         &arbiter,
         &station,
         &access_point,
-        9_999,
+        oer_time::Instant::from_micros(9_999),
     ));
     assert!(DatapathPairedControlService::ready(
         &arbiter,
         &station,
         &access_point,
-        10_000,
+        oer_time::Instant::from_micros(10_000),
     ));
 }

@@ -457,7 +457,7 @@ where
                 // owner merely to prove that its queues are empty. AP has
                 // additional action/reorder readiness, so use the complete
                 // role predicate rather than inspecting only the staged SPSC.
-                if !self.control.rx_work_due(self.control.now().as_micros()) {
+                if !self.control.rx_work_due(self.control.now()) {
                     if turn.dma_service_required() {
                         let progress = self
                             .control
@@ -465,7 +465,7 @@ where
                             .await
                             .map_err(AccessPointDatapathError::Control)?;
                         turn.observe_dma(progress);
-                        if self.control.rx_work_due(self.control.now().as_micros()) {
+                        if self.control.rx_work_due(self.control.now()) {
                             continue;
                         }
                     }
@@ -480,7 +480,7 @@ where
                         AccessPointRxTxDomain::ActiveTransaction,
                         turn.remaining_protocol_frames(),
                         &mut self.security_material,
-                        self.control.now().as_micros(),
+                        self.control.now(),
                         #[cfg(feature = "diagnostics")]
                         self.delivery_observer,
                     )
@@ -581,7 +581,7 @@ where
                 // predicate covers all of those domains, allowing the common
                 // station-style fused turn to skip empty protocol entries
                 // without weakening AP correctness.
-                if !self.control.rx_work_due(self.control.now().as_micros()) {
+                if !self.control.rx_work_due(self.control.now()) {
                     if turn.dma_service_required() {
                         let dma_progress = self
                             .control
@@ -589,7 +589,7 @@ where
                             .await
                             .map_err(AccessPointDatapathError::Control)?;
                         turn.observe_dma(dma_progress);
-                        if self.control.rx_work_due(self.control.now().as_micros()) {
+                        if self.control.rx_work_due(self.control.now()) {
                             continue;
                         }
                     }
@@ -609,7 +609,7 @@ where
                         AccessPointRxTxDomain::IdleBoundary,
                         turn.remaining_protocol_frames(),
                         &mut self.security_material,
-                        self.control.now().as_micros(),
+                        self.control.now(),
                         #[cfg(feature = "diagnostics")]
                         self.delivery_observer,
                     )
@@ -698,7 +698,7 @@ where
     }
 
     fn has_rx_work(&self) -> bool {
-        self.control.rx_work_due(self.control.now().as_micros())
+        self.control.rx_work_due(self.control.now())
     }
 
     fn serviced_rx_frames(&self) -> u64 {
@@ -714,10 +714,10 @@ where
         _context: DatapathControlContext,
     ) -> impl Future<Output = Result<DatapathControlProgress<Self::Exit>, Self::Error>> + 'a {
         async move {
-            let now_micros = self.control.now().as_micros();
+            let now = self.control.now();
             let progress = self
                 .control
-                .service_control(self.hardware, now_micros)
+                .service_control(self.hardware, now)
                 .map_err(AccessPointDatapathError::Control)?;
             if progress == DatapathControlProgress::Idle {
                 self.next_control_deadline = self
@@ -731,8 +731,8 @@ where
         }
     }
 
-    fn control_ready(&self, now_micros: u64) -> bool {
-        Instant::from_micros(now_micros) >= self.next_control_deadline
+    fn control_ready(&self, now: oer_time::Instant) -> bool {
+        now >= self.next_control_deadline
     }
 
     fn has_active_tx(&self) -> bool {

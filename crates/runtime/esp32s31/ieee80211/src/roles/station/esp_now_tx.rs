@@ -572,7 +572,7 @@ where
         EspNowConnectedControl::service_with_context(self, hardware, tx, context)
     }
 
-    fn ready(&self, tx: &X, now_micros: u64) -> bool {
+    fn ready(&self, tx: &X, now: oer_time::Instant) -> bool {
         self.active.is_some()
             || self.pending_inner_terminal.is_some()
             || (self.inner.admits_frames()
@@ -580,7 +580,7 @@ where
             || <ConnectedControl<'resources, M, CONTROL_CAPACITY> as DatapathControlService<
                 H,
                 X,
-            >>::ready(&self.inner, tx, now_micros)
+            >>::ready(&self.inner, tx, now)
     }
 
     fn required_before_network_tx(&self) -> bool {

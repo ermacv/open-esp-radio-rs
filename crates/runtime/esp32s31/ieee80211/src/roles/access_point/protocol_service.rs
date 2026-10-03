@@ -75,20 +75,20 @@ fn observe_ap_rx_peer_activity(
     pending: &mut PendingApBufferedReleases,
     peer: [u8; 6],
     power_state: Option<ApPeerPowerState>,
-    at_micros: u64,
+    at: oer_time::Instant,
 ) -> Result<(), AccessPointControlError> {
     match power_state {
         Some(ApPeerPowerState::Active) => {
             let action =
-                engine.observe_rx_peer_power_state(peer, ApPeerPowerState::Active, oer_time::Instant::from_micros(at_micros))?;
+                engine.observe_rx_peer_power_state(peer, ApPeerPowerState::Active, at)?;
             retain_ap_power_save_action(engine, pending, action)?;
         }
         Some(ApPeerPowerState::Sleeping) => {
             let action =
-                engine.observe_rx_peer_power_state(peer, ApPeerPowerState::Sleeping, oer_time::Instant::from_micros(at_micros))?;
+                engine.observe_rx_peer_power_state(peer, ApPeerPowerState::Sleeping, at)?;
             retain_ap_power_save_action(engine, pending, action)?;
         }
-        None => engine.observe_peer_activity(peer, oer_time::Instant::from_micros(at_micros))?,
+        None => engine.observe_peer_activity(peer, at)?,
     }
     Ok(())
 }
@@ -115,7 +115,7 @@ fn try_service_ap_staged_rx_direct<'storage, F, const DMA_BUFFER_SIZE: usize>(
     rx_batch_used: &mut usize,
     rx_batch_offset: &mut usize,
     staged_frame: &mut Option<F>,
-    now_micros: u64,
+    now: oer_time::Instant,
     #[cfg(any(feature = "diagnostics", test))]
     observation: &mut AccessPointControlObservation,
     #[cfg(feature = "diagnostics")] delivery_observer: Option<&dyn RxNetworkDeliveryObserver>,
@@ -133,7 +133,7 @@ where
     let Some(key) = data_rx.reorder_key(segment) else {
         return Ok(None);
     };
-    let Some(_reorder_progress) = rx_reorder.try_ingest_immediate(key, now_micros)? else {
+    let Some(_reorder_progress) = rx_reorder.try_ingest_immediate(key, now)? else {
         return Ok(None);
     };
 
@@ -201,14 +201,14 @@ where
                 let (admission, activity) = engine.admit_ordinary_pairwise_rx_with_activity(
                     request,
                     power_state,
-                    oer_time::Instant::from_micros(now_micros),
+                    now,
                 );
                 admitted_activity = Some(activity);
                 admission
             },
             key.peer,
             #[cfg(any(feature = "diagnostics", test))]
-            now_micros,
+            now,
             &mut in_place,
             #[cfg(any(feature = "diagnostics", test))]
             observation,
@@ -306,7 +306,7 @@ fn try_service_ap_staged_rx_data<'storage, F, const DMA_BUFFER_SIZE: usize>(
     engine: &mut ApEngine<'_>,
     state: &mut AccessPointProtocolState<'storage, DMA_BUFFER_SIZE>,
     staged_frame: &mut Option<F>,
-    now_micros: u64,
+    now: oer_time::Instant,
     #[cfg(feature = "diagnostics")] delivery_observer: Option<&dyn RxNetworkDeliveryObserver>,
 ) -> Result<Option<AccessPointRxProtocolClass>, AccessPointControlError>
 where
@@ -321,7 +321,7 @@ where
         &mut state.rx_batch_used,
         &mut state.rx_batch_offset,
         staged_frame,
-        now_micros,
+        now,
         #[cfg(any(feature = "diagnostics", test))]
         &mut state.observer.observation,
         #[cfg(feature = "diagnostics")]
@@ -464,7 +464,7 @@ where
                     peer,
                     current_buffer as usize,
                     current_is_amsdu,
-                    now_micros,
+                    now,
                     &mut deferred,
                     &mut in_place,
                     #[cfg(any(feature = "diagnostics", test))]
@@ -488,7 +488,7 @@ where
                     segment,
                     key,
                     ampdu_baseband_format,
-                    now_micros,
+                    now,
                     &mut dispatch,
                 )
             } else {
@@ -557,7 +557,7 @@ where
                     AccessPointRxRejectionReason::ReorderFrameTooLong
                 }
             };
-            observation.record_rx_rejection(reason, segment, now_micros);
+            observation.record_rx_rejection(reason, segment, now.as_micros());
             observation.protected_data_protocol_rejected = observation
                 .protected_data_protocol_rejected
                 .saturating_add(1);
@@ -646,7 +646,7 @@ where
             &mut state.pending_buffered_releases,
             peer,
             power_state,
-            now_micros,
+            now,
         )?;
     }
     #[cfg(feature = "task-poll-telemetry")]
@@ -657,8 +657,8 @@ where
 impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize>
     AccessPointProtocolProcessorParked<'storage, 'beacon, DMA_BUFFER_SIZE>
 {
-    pub(super) fn rx_reorder_work_due(&self, now_micros: u64) -> bool {
-        self.state.rx_reorder.work_due(now_micros)
+    pub(super) fn rx_reorder_work_due(&self, now: oer_time::Instant) -> bool {
+        self.state.rx_reorder.work_due(now)
     }
 
     /// Try the common protected-data RX leaf while the physical ordinary-TX
@@ -668,7 +668,7 @@ impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize>
     pub fn service_routed_rx_while_parked<F>(
         &mut self,
         frame: F,
-        now_micros: u64,
+        now: oer_time::Instant,
         #[cfg(feature = "diagnostics")] delivery_observer: Option<&dyn RxNetworkDeliveryObserver>,
     ) -> Result<
         crate::roles::concurrent::RoutedRxDisposition<F>,
@@ -678,7 +678,7 @@ impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize>
         F: AccessPointStagedRxFrame,
     {
         if self.rx_batch_pending()
-            || self.state.rx_reorder.work_due(now_micros)
+            || self.state.rx_reorder.work_due(now)
             || self.state.protocol_actions.remaining_capacity() < AP_PROTOCOL_ACTIONS_PER_RX_FRAME
         {
             return Ok(crate::roles::concurrent::RoutedRxDisposition::Deferred(frame));
@@ -691,7 +691,7 @@ impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize>
             mac.engine_mut(),
             state,
             &mut frame,
-            now_micros,
+            now,
             #[cfg(feature = "diagnostics")]
             delivery_observer,
         )?;
@@ -849,7 +849,7 @@ where
         hardware: &mut H,
         frame: F,
         security_material: &mut S,
-        now_micros: u64,
+        now: oer_time::Instant,
         #[cfg(feature = "diagnostics")] delivery_observer: Option<&dyn RxNetworkDeliveryObserver>,
     ) -> Result<
         crate::roles::concurrent::RoutedRxDisposition<F>,
@@ -862,7 +862,7 @@ where
     {
         let tx_pending = self.mac.tx_pending();
         self.apply_protocol_actions(hardware)?;
-        if self.rx_batch_pending() || self.service_rx_reorder_expiry(now_micros)? {
+        if self.rx_batch_pending() || self.service_rx_reorder_expiry(now)? {
             return Ok(crate::roles::concurrent::RoutedRxDisposition::Deferred(frame));
         }
 
@@ -884,7 +884,7 @@ where
             rx_protocol_consumer_has_hardware(tx_pending).then_some(hardware),
             frame,
             security_material,
-            now_micros,
+            now,
             #[cfg(feature = "diagnostics")]
             delivery_observer,
         )?;
@@ -967,7 +967,7 @@ where
         &mut self,
         frame: F,
         security_material: &mut S,
-        now_micros: u64,
+        now: oer_time::Instant,
         #[cfg(feature = "diagnostics")] delivery_observer: Option<&dyn RxNetworkDeliveryObserver>,
     ) -> Result<
         crate::roles::concurrent::RoutedRxDisposition<F>,
@@ -997,7 +997,7 @@ where
         if self
             .rx_reorder
             .next_deadline()
-            .is_some_and(|deadline| deadline <= now_micros)
+            .is_some_and(|deadline| deadline <= now)
         {
             return Ok(crate::roles::concurrent::RoutedRxDisposition::Deferred(frame));
         }
@@ -1009,7 +1009,7 @@ where
             None,
             frame,
             security_material,
-            now_micros,
+            now,
             #[cfg(feature = "diagnostics")]
             delivery_observer,
         )?;
@@ -1114,7 +1114,7 @@ where
     fn try_service_staged_rx_data<F>(
         &mut self,
         staged_frame: &mut Option<F>,
-        now_micros: u64,
+        now: oer_time::Instant,
         #[cfg(feature = "diagnostics")] delivery_observer: Option<&dyn RxNetworkDeliveryObserver>,
     ) -> Result<Option<AccessPointRxProtocolClass>, AccessPointControlError>
     where
@@ -1126,7 +1126,7 @@ where
             mac.engine_mut(),
             state,
             staged_frame,
-            now_micros,
+            now,
             #[cfg(feature = "diagnostics")]
             delivery_observer,
         )
@@ -1149,7 +1149,7 @@ where
         mut hardware: Option<&mut H>,
         staged_frame: F,
         security_material: &mut S,
-        now_micros: u64,
+        now: oer_time::Instant,
         #[cfg(feature = "diagnostics")] delivery_observer: Option<&dyn RxNetworkDeliveryObserver>,
     ) -> Result<AccessPointRxProtocolClass, AccessPointControlError>
     where
@@ -1160,7 +1160,7 @@ where
         let mut staged_frame = Some(staged_frame);
         if let Some(protocol_class) = self.try_service_staged_rx_data(
             &mut staged_frame,
-            now_micros,
+            now,
             #[cfg(feature = "diagnostics")]
             delivery_observer,
         )? {
@@ -1226,7 +1226,7 @@ where
             let hardware = hardware
                 .take()
                 .ok_or(AccessPointControlError::ProtocolFrameRequiresHardware)?;
-            if self.service_management(hardware, frame.mpdu, security_material, now_micros)? {
+            if self.service_management(hardware, frame.mpdu, security_material, now)? {
                 observe_access_point!(self, observation, {
                     observation.control_frames_staged =
                         observation.control_frames_staged.saturating_add(1);
@@ -1237,7 +1237,7 @@ where
             let hardware = hardware
                 .take()
                 .ok_or(AccessPointControlError::ProtocolFrameRequiresHardware)?;
-            if self.service_eapol(hardware, frame.mpdu, now_micros)? {
+            if self.service_eapol(hardware, frame.mpdu, now)? {
                 AccessPointRxProtocolClass::Eapol
             } else {
                 observe_access_point!(self, observation, {
@@ -1249,7 +1249,7 @@ where
         } else if let Some(request) = self.state.data_rx.block_ack_request_key(segment) {
             // A client BlockAckReq moves its receive window; the frames it
             // releases leave through the ordered pending-release queue.
-            let _released = self.state.rx_reorder.move_window(request, now_micros);
+            let _released = self.state.rx_reorder.move_window(request, now);
             observe_access_point!(self, observation, {
                 observation.rx_block_ack_requests =
                     observation.rx_block_ack_requests.saturating_add(1);
@@ -1278,13 +1278,13 @@ where
             _ => None,
         };
         if let Some((peer, power_state)) = null_data_activity {
-            self.observe_rx_peer_activity(peer, power_state, now_micros)?;
+            self.observe_rx_peer_activity(peer, power_state, now)?;
         }
         if let Some(observation @ ApPowerSaveObservation::PsPoll { .. }) = power_save_observation {
             let action = self
                 .mac
                 .engine_mut()
-                .observe_power_save(observation, oer_time::Instant::from_micros(now_micros))?;
+                .observe_power_save(observation, now)?;
             self.retain_power_save_action(action)?;
         }
         Ok(protocol_class)
@@ -1321,7 +1321,7 @@ where
         &mut self,
         peer: [u8; 6],
         power_state: Option<ApPeerPowerState>,
-        at_micros: u64,
+        at: oer_time::Instant,
     ) -> Result<(), AccessPointControlError> {
         let mac = &mut self.mac;
         let state = &mut self.state;
@@ -1330,7 +1330,7 @@ where
             &mut state.pending_buffered_releases,
             peer,
             power_state,
-            at_micros,
+            at,
         )
     }
 
@@ -1339,7 +1339,7 @@ where
         hardware: &mut H,
         mpdu: &[u8],
         security_material: &mut S,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<bool, AccessPointControlError>
     where
         H: TxHardware + ApRuntimeHardware + RxBlockAckHardware,
@@ -1400,7 +1400,7 @@ where
                         }
                         Err(error) => return Err(error.into()),
                     };
-                    self.start_rx_addba_response(hardware, activation, now_micros)?;
+                    self.start_rx_addba_response(hardware, activation, now)?;
                     return Ok(true);
                 }
                 BlockAckAction::Delba {
@@ -1411,7 +1411,7 @@ where
                     if let Some(agreement) =
                         self.rx_block_ack.stop(MacInterface::AccessPoint, peer, tid)
                     {
-                        self.release_rx_reorder(agreement.identity(), now_micros)?;
+                        self.release_rx_reorder(agreement.identity(), now)?;
                         hardware.clear_rx_block_ack(agreement.hardware_index)?;
                     }
                     return Ok(false);
@@ -1447,7 +1447,7 @@ where
             mpdu,
             authenticator_nonce,
             initial_replay_counter,
-            oer_time::Instant::from_micros(now_micros),
+            now,
             tx_frame,
         )?;
         if let oer_esp32s31_ieee80211_ap::engine::ApManagementOutcome::PeerRemoved {
@@ -1483,14 +1483,14 @@ where
         &mut self,
         hardware: &mut H,
         activation: RxBlockAckActivation,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<(), AccessPointControlError>
     where
         H: TxHardware + ApRuntimeHardware + RxBlockAckHardware,
     {
         debug_assert!(self.rx_addba_in_flight.is_none());
         if let Some(replaced) = activation.replaced() {
-            if let Err(error) = self.release_rx_reorder(replaced.identity(), now_micros) {
+            if let Err(error) = self.release_rx_reorder(replaced.identity(), now) {
                 self.rx_block_ack.cancel(activation)?;
                 return Err(error);
             }
@@ -1533,7 +1533,7 @@ where
     fn release_rx_reorder(
         &mut self,
         identity: oer_esp32s31_ieee80211_mac::rx::ampdu::RxBlockAckIdentity,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<(), AccessPointControlError> {
         let processor = &mut *self;
         let mac = &mut processor.mac;
@@ -1547,18 +1547,18 @@ where
             let peer = data_rx.reorder_key(segment).map(|key| key.peer);
             let outcome = data_rx.dispatch_at(
                 segment,
-                now_micros,
+                now,
                 |request| mac.engine_mut().admit_rx_data(request),
                 &mut sink,
             );
             #[cfg(any(feature = "diagnostics", test))]
             {
-                report.record_dispatch_rejection(outcome, segment, now_micros);
+                report.record_dispatch_rejection(outcome, segment, now.as_micros());
                 if sink.exhausted {
                     report.record_rx_rejection(
                         AccessPointRxRejectionReason::DeferredOutputCapacity,
                         segment,
-                        now_micros,
+                        now.as_micros(),
                     );
                 }
             }
@@ -1577,7 +1577,7 @@ where
             processor
                 .mac
                 .engine_mut()
-                .observe_peer_activity(peer, oer_time::Instant::from_micros(now_micros))?;
+                .observe_peer_activity(peer, now)?;
         }
         let used = sink.used();
         if used != 0 {
@@ -1607,7 +1607,7 @@ where
 
     pub(super) fn service_rx_reorder_expiry(
         &mut self,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<bool, AccessPointControlError> {
         let processor = &mut *self;
         let mac = &mut processor.mac;
@@ -1621,18 +1621,18 @@ where
             let peer = data_rx.reorder_key(segment).map(|key| key.peer);
             let outcome = data_rx.dispatch_at(
                 segment,
-                now_micros,
+                now,
                 |request| mac.engine_mut().admit_rx_data(request),
                 &mut sink,
             );
             #[cfg(any(feature = "diagnostics", test))]
             {
-                report.record_dispatch_rejection(outcome, segment, now_micros);
+                report.record_dispatch_rejection(outcome, segment, now.as_micros());
                 if sink.exhausted {
                     report.record_rx_rejection(
                         AccessPointRxRejectionReason::DeferredOutputCapacity,
                         segment,
-                        now_micros,
+                        now.as_micros(),
                     );
                 }
             }
@@ -1647,22 +1647,22 @@ where
         let (dispatched, _gap_timeout) = if pending_dispatched {
             (1, false)
         } else {
-            let dispatched = state.rx_reorder.expire_due(now_micros, |segment| {
+            let dispatched = state.rx_reorder.expire_due(now, |segment| {
                 let peer = data_rx.reorder_key(segment).map(|key| key.peer);
                 let outcome = data_rx.dispatch_at(
                     segment,
-                    now_micros,
+                    now,
                     |request| mac.engine_mut().admit_rx_data(request),
                     &mut sink,
                 );
                 #[cfg(any(feature = "diagnostics", test))]
                 {
-                    report.record_dispatch_rejection(outcome, segment, now_micros);
+                    report.record_dispatch_rejection(outcome, segment, now.as_micros());
                     if sink.exhausted {
                         report.record_rx_rejection(
                             AccessPointRxRejectionReason::DeferredOutputCapacity,
                             segment,
-                            now_micros,
+                            now.as_micros(),
                         );
                     }
                 }
@@ -1692,7 +1692,7 @@ where
             processor
                 .mac
                 .engine_mut()
-                .observe_peer_activity(peer, oer_time::Instant::from_micros(now_micros))?;
+                .observe_peer_activity(peer, now)?;
         }
         let used = sink.used();
         if used != 0 {
@@ -1714,8 +1714,8 @@ where
     /// sequence position independently of a fresh MAC interrupt. Treat them
     /// exactly like a due reorder timer so the parked fast path cannot publish
     /// a newer current frame ahead of an older released owner.
-    pub(super) fn rx_reorder_work_due(&self, now_micros: u64) -> bool {
-        self.state.rx_reorder.work_due(now_micros)
+    pub(super) fn rx_reorder_work_due(&self, now: oer_time::Instant) -> bool {
+        self.state.rx_reorder.work_due(now)
     }
 
     #[cfg(any(feature = "diagnostics", test))]

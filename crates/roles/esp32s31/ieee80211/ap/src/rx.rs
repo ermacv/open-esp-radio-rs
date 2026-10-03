@@ -489,7 +489,7 @@ impl ApRxDispatcher {
     pub fn dispatch_at<S, A>(
         &mut self,
         segment: RxSegment<'_>,
-        now_micros: u64,
+        now: oer_time::Instant,
         admit: A,
         sink: &mut S,
     ) -> ApRxDispatch
@@ -497,7 +497,7 @@ impl ApRxDispatcher {
         S: ApRxSink,
         A: FnMut(ApRxAdmissionRequest) -> ApRxAdmission,
     {
-        self.dispatch_inner(segment, Some(now_micros), admit, sink)
+        self.dispatch_inner(segment, Some(now), admit, sink)
     }
 
     /// Dispatch the common complete WPA2 pairwise MPDU without entering the
@@ -617,7 +617,7 @@ impl ApRxDispatcher {
     fn dispatch_inner<S, A>(
         &mut self,
         segment: RxSegment<'_>,
-        now_micros: Option<u64>,
+        now: Option<oer_time::Instant>,
         mut admit: A,
         sink: &mut S,
     ) -> ApRxDispatch
@@ -646,11 +646,9 @@ impl ApRxDispatcher {
         if fragmented {
             self.fragment_admission_active = true;
             return match self.config.security {
-                LinkProtection::Open => {
-                    self.dispatch_open_fragment(segment, now_micros, &mut admit, sink)
-                }
+                LinkProtection::Open => self.dispatch_open_fragment(segment, now, &mut admit, sink),
                 LinkProtection::Ccmp => {
-                    self.dispatch_protected_fragment(segment, now_micros, &mut admit, sink)
+                    self.dispatch_protected_fragment(segment, now, &mut admit, sink)
                 }
             };
         }
@@ -707,7 +705,7 @@ impl ApRxDispatcher {
                         identity,
                         owner.fragmentation_epoch(),
                         retry,
-                        now_micros.map(oer_time::Instant::from_micros),
+                        now,
                     ) {
                         Ok(OpenDataUnfragmentedAdmission::Admitted { .. }) => {}
                         Ok(OpenDataUnfragmentedAdmission::Duplicate { .. }) => {
@@ -767,7 +765,7 @@ impl ApRxDispatcher {
                 identity,
                 duplicate_owner.fragmentation_epoch(),
                 retry,
-                now_micros.map(oer_time::Instant::from_micros),
+                now,
             ) {
                 Ok(OpenDataUnfragmentedAdmission::Admitted { .. }) => {}
                 Ok(OpenDataUnfragmentedAdmission::Duplicate { .. }) => {
@@ -807,7 +805,7 @@ impl ApRxDispatcher {
     fn dispatch_open_fragment<S, A>(
         &mut self,
         segment: RxSegment<'_>,
-        now_micros: Option<u64>,
+        now: Option<oer_time::Instant>,
         admit: &mut A,
         sink: &mut S,
     ) -> ApRxDispatch
@@ -815,7 +813,7 @@ impl ApRxDispatcher {
         S: ApRxSink,
         A: FnMut(ApRxAdmissionRequest) -> ApRxAdmission,
     {
-        let Some(now_micros) = now_micros else {
+        let Some(now) = now else {
             return ApRxDispatch::Rejected(ApRxError::Fragment(
                 OpenDataFragmentError::ClockUnavailable,
             ));
@@ -879,7 +877,7 @@ impl ApRxDispatcher {
         match self.fragments.ingest_in_epoch(
             view.fragment,
             duplicate_owner.fragmentation_epoch(),
-            oer_time::Instant::from_micros(now_micros),
+            now,
             |data| {
                 sink.publish(ApRxEvent {
                     frame: data.ethernet_frame(),
@@ -907,7 +905,7 @@ impl ApRxDispatcher {
     fn dispatch_protected_fragment<S, A>(
         &mut self,
         segment: RxSegment<'_>,
-        now_micros: Option<u64>,
+        now: Option<oer_time::Instant>,
         admit: &mut A,
         sink: &mut S,
     ) -> ApRxDispatch
@@ -915,7 +913,7 @@ impl ApRxDispatcher {
         S: ApRxSink,
         A: FnMut(ApRxAdmissionRequest) -> ApRxAdmission,
     {
-        let Some(now_micros) = now_micros else {
+        let Some(now) = now else {
             return ApRxDispatch::Rejected(ApRxError::Fragment(
                 OpenDataFragmentError::ClockUnavailable,
             ));
@@ -988,11 +986,7 @@ impl ApRxDispatcher {
         let raw = view.raw;
         let metadata = view.metadata;
         let epoch = owner.fragmentation_epoch();
-        let admission = match self.fragments.preflight_in_epoch(
-            fragment,
-            epoch,
-            oer_time::Instant::from_micros(now_micros),
-        ) {
+        let admission = match self.fragments.preflight_in_epoch(fragment, epoch, now) {
             Ok(OpenDataFragmentPreflight::Duplicate { .. }) => {
                 return ApRxDispatch::Duplicate;
             }

@@ -31,7 +31,7 @@ pub trait StaApStationControlRole<H, PhysicalTx> {
         retain_physical_tx: bool,
     ) -> impl Future<Output = Result<DatapathControlProgress<Self::Exit>, Self::Error>> + 'a;
 
-    fn station_control_ready(&self, now_micros: u64) -> bool;
+    fn station_control_ready(&self, now: oer_time::Instant) -> bool;
 
     /// Whether a controlled stop must still run station control, for the
     /// leaving station's Deauthentication.
@@ -62,7 +62,7 @@ pub trait StaApAccessPointControlRole<H, PhysicalTx> {
         &mut self,
         hardware: &mut H,
         physical_tx: &mut PhysicalTx,
-        now_micros: u64,
+        now: oer_time::Instant,
         retain_physical_tx: bool,
     ) -> Result<StaApAccessPointControlProgress, Self::Error>;
 
@@ -157,7 +157,7 @@ where
                     )),
                 };
             }
-            let now = self.timer.now().as_micros();
+            let now = self.timer.now();
             if retained_tx == Some(DatapathPairRole::Second) {
                 let progress = access_point
                     .service_access_point_control(hardware, physical_tx, now, true)
@@ -185,7 +185,7 @@ where
                     )),
                 };
             }
-            if access_point.beacon_publication_due(Instant::from_micros(now)) {
+            if access_point.beacon_publication_due(now) {
                 let progress = access_point
                     .service_access_point_control(hardware, physical_tx, now, false)
                     .map_err(StaApControlError::AccessPoint)?;
@@ -213,7 +213,7 @@ where
                 }
             }
 
-            let now = self.timer.now().as_micros();
+            let now = self.timer.now();
             let progress = access_point
                 .service_access_point_control(hardware, physical_tx, now, false)
                 .map_err(StaApControlError::AccessPoint)?;
@@ -226,9 +226,13 @@ where
         }
     }
 
-    fn ready(&self, station: &Station, _access_point: &AccessPoint, now_micros: u64) -> bool {
-        station.station_control_ready(now_micros)
-            || Instant::from_micros(now_micros) >= self.next_access_point_deadline
+    fn ready(
+        &self,
+        station: &Station,
+        _access_point: &AccessPoint,
+        now: oer_time::Instant,
+    ) -> bool {
+        station.station_control_ready(now) || now >= self.next_access_point_deadline
     }
 
     fn required_before_stop(&self, station: &Station, _access_point: &AccessPoint) -> bool {

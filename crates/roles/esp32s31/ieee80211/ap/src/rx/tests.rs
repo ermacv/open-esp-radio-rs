@@ -146,7 +146,7 @@ fn ordinary_pairwise_fast_path_matches_general_dispatch_and_duplicate_state() {
 
     let general_result = general.dispatch_at(
         segment(&storage, descriptor),
-        1,
+        oer_time::Instant::from_micros(1),
         |_| ApRxAdmission::authorized(owner),
         &mut general_sink,
     );
@@ -172,7 +172,7 @@ fn ordinary_pairwise_fast_path_matches_general_dispatch_and_duplicate_state() {
     assert_eq!(
         general.dispatch_at(
             segment(&storage, descriptor),
-            2,
+            oer_time::Instant::from_micros(2),
             |_| ApRxAdmission::authorized(owner),
             &mut general_sink,
         ),
@@ -206,7 +206,7 @@ fn retransmission_is_removed_as_a_duplicate_before_replay_detection() {
         assert!(matches!(
             dispatcher.dispatch_at(
                 segment(&storage, accepted),
-                1,
+                oer_time::Instant::from_micros(1),
                 |_| ApRxAdmission::authorized(owner),
                 &mut sink,
             ),
@@ -219,7 +219,7 @@ fn retransmission_is_removed_as_a_duplicate_before_replay_detection() {
     assert_eq!(
         general.dispatch_at(
             segment(&storage, retry),
-            2,
+            oer_time::Instant::from_micros(2),
             |_| ApRxAdmission::replayed(owner, replayed),
             &mut sink,
         ),
@@ -242,7 +242,7 @@ fn retransmission_is_removed_as_a_duplicate_before_replay_detection() {
         assert_eq!(
             general.dispatch_at(
                 segment(&storage, descriptor),
-                3,
+                oer_time::Instant::from_micros(3),
                 |_| ApRxAdmission::replayed(owner, replayed),
                 &mut sink,
             ),
@@ -282,7 +282,7 @@ fn ordinary_pairwise_fallback_preserves_fragment_clock() {
     let mut admit = |_: ApRxAdmissionRequest| ApRxAdmission::authorized(owner);
     let general_result = general.dispatch_at(
         segment(&storage, descriptor),
-        77,
+        oer_time::Instant::from_micros(77),
         &mut admit,
         &mut general_sink,
     );
@@ -296,7 +296,7 @@ fn ordinary_pairwise_fallback_preserves_fragment_clock() {
     );
     let fast_result = fast.dispatch_at(
         segment(&storage, descriptor),
-        77,
+        oer_time::Instant::from_micros(77),
         &mut admit,
         &mut fast_sink,
     );
@@ -341,7 +341,7 @@ fn open_ap_reassembly_requires_live_peer_admission_and_copying_publication() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&first_storage, first_descriptor),
-            10,
+            oer_time::Instant::from_micros(10),
             |_| ApRxAdmission::unauthorized(),
             &mut sink,
         ),
@@ -352,7 +352,7 @@ fn open_ap_reassembly_requires_live_peer_admission_and_copying_publication() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&first_storage, first_descriptor),
-            11,
+            oer_time::Instant::from_micros(11),
             |_| ApRxAdmission::authorized(duplicate_owner(1, 1)),
             &mut sink,
         ),
@@ -366,7 +366,7 @@ fn open_ap_reassembly_requires_live_peer_admission_and_copying_publication() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&first_storage, first_descriptor),
-            12,
+            oer_time::Instant::from_micros(12),
             |_| ApRxAdmission::authorized(duplicate_owner(1, 1)),
             &mut sink,
         ),
@@ -379,7 +379,7 @@ fn open_ap_reassembly_requires_live_peer_admission_and_copying_publication() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&final_storage, final_descriptor),
-            13,
+            oer_time::Instant::from_micros(13),
             |_| ApRxAdmission::authorized(duplicate_owner(1, 2)),
             &mut sink,
         ),
@@ -392,7 +392,7 @@ fn open_ap_reassembly_requires_live_peer_admission_and_copying_publication() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&first_storage, first_descriptor),
-            14,
+            oer_time::Instant::from_micros(14),
             |_| ApRxAdmission::authorized(duplicate_owner(1, 2)),
             &mut sink,
         ),
@@ -404,7 +404,7 @@ fn open_ap_reassembly_requires_live_peer_admission_and_copying_publication() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&final_storage, final_descriptor),
-            15,
+            oer_time::Instant::from_micros(15),
             |_| ApRxAdmission::authorized(duplicate_owner(1, 2)),
             &mut sink,
         ),
@@ -421,7 +421,7 @@ fn open_ap_reassembly_requires_live_peer_admission_and_copying_publication() {
 
     let _ = dispatcher.dispatch_at(
         segment(&first_storage, first_descriptor),
-        20,
+        oer_time::Instant::from_micros(20),
         |_| ApRxAdmission::authorized(duplicate_owner(1, 2)),
         &mut sink,
     );
@@ -429,7 +429,7 @@ fn open_ap_reassembly_requires_live_peer_admission_and_copying_publication() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&final_storage, final_descriptor),
-            21,
+            oer_time::Instant::from_micros(21),
             |_| ApRxAdmission::authorized(duplicate_owner(1, 2)),
             &mut sink,
         ),
@@ -509,7 +509,7 @@ fn ap_ccmp_fragments_commit_each_pn_after_exact_bounded_admission() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&first_storage, first_descriptor),
-            1,
+            oer_time::Instant::from_micros(1),
             &mut admit,
             &mut sink,
         ),
@@ -522,7 +522,7 @@ fn ap_ccmp_fragments_commit_each_pn_after_exact_bounded_admission() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&first_storage, first_descriptor),
-            2,
+            oer_time::Instant::from_micros(2),
             &mut admit,
             &mut sink,
         ),
@@ -532,7 +532,7 @@ fn ap_ccmp_fragments_commit_each_pn_after_exact_bounded_admission() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&first_storage, first_descriptor),
-            3,
+            oer_time::Instant::from_micros(3),
             &mut admit,
             &mut sink,
         ),
@@ -543,7 +543,7 @@ fn ap_ccmp_fragments_commit_each_pn_after_exact_bounded_admission() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&final_storage, final_descriptor),
-            4,
+            oer_time::Instant::from_micros(4),
             &mut admit,
             &mut sink,
         ),
@@ -559,7 +559,7 @@ fn ap_ccmp_fragments_commit_each_pn_after_exact_bounded_admission() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&final_storage, final_descriptor),
-            5,
+            oer_time::Instant::from_micros(5),
             &mut admit,
             &mut sink,
         ),
@@ -684,7 +684,7 @@ fn protected_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&ordinary_storage, ordinary_descriptor),
-            1,
+            oer_time::Instant::from_micros(1),
             &mut admit,
             &mut sink,
         ),
@@ -698,7 +698,7 @@ fn protected_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&retry_first_storage, retry_first_descriptor),
-            2,
+            oer_time::Instant::from_micros(2),
             &mut admit,
             &mut sink,
         ),
@@ -715,7 +715,7 @@ fn protected_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&colliding_final_storage, colliding_final_descriptor),
-            3,
+            oer_time::Instant::from_micros(3),
             &mut admit,
             &mut sink,
         ),
@@ -731,7 +731,7 @@ fn protected_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&new_first_storage, new_first_descriptor),
-            4,
+            oer_time::Instant::from_micros(4),
             &mut admit,
             &mut sink,
         ),
@@ -743,7 +743,7 @@ fn protected_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&new_final_storage, new_final_descriptor),
-            5,
+            oer_time::Instant::from_micros(5),
             &mut admit,
             &mut sink,
         ),
@@ -772,7 +772,7 @@ fn open_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&ordinary_storage, ordinary_descriptor),
-            1,
+            oer_time::Instant::from_micros(1),
             |_| ApRxAdmission::authorized(owner),
             &mut sink,
         ),
@@ -786,7 +786,7 @@ fn open_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&ordinary_storage, ordinary_descriptor),
-            2,
+            oer_time::Instant::from_micros(2),
             |_| ApRxAdmission::authorized(owner),
             &mut sink,
         ),
@@ -799,7 +799,7 @@ fn open_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&final_storage, final_descriptor),
-            3,
+            oer_time::Instant::from_micros(3),
             |_| ApRxAdmission::authorized(owner),
             &mut sink,
         ),
@@ -814,7 +814,7 @@ fn open_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&invalid_first_storage, invalid_first_descriptor),
-            4,
+            oer_time::Instant::from_micros(4),
             |_| ApRxAdmission::authorized(owner),
             &mut sink,
         ),
@@ -829,7 +829,7 @@ fn open_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&invalid_final_storage, invalid_final_descriptor),
-            5,
+            oer_time::Instant::from_micros(5),
             |_| ApRxAdmission::authorized(owner),
             &mut sink,
         ),
@@ -840,7 +840,7 @@ fn open_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
     assert_eq!(
         dispatcher.dispatch_at(
             segment(&invalid_first_storage, invalid_first_descriptor),
-            6,
+            oer_time::Instant::from_micros(6),
             |_| ApRxAdmission::authorized(owner),
             &mut sink,
         ),

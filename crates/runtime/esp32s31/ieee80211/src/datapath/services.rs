@@ -100,7 +100,7 @@ pub trait DatapathControlService<H, X> {
     ) -> impl Future<Output = Result<DatapathControlProgress<Self::Exit>, Self::Error>> + 'a;
 
     /// O(1) readiness observation used at a physical TX boundary.
-    fn ready(&self, _tx: &X, _now_micros: u64) -> bool {
+    fn ready(&self, _tx: &X, _now: oer_time::Instant) -> bool {
         true
     }
 
@@ -139,7 +139,7 @@ impl<H, X> DatapathControlService<H, X> for NoDatapathControl {
         ready(Ok(DatapathControlProgress::Idle))
     }
 
-    fn ready(&self, _tx: &X, _now_micros: u64) -> bool {
+    fn ready(&self, _tx: &X, _now: oer_time::Instant) -> bool {
         false
     }
 
@@ -482,8 +482,8 @@ where
         }
     }
 
-    fn control_ready(&self, now_micros: u64) -> bool {
-        self.role.control.ready(&self.role.tx, now_micros)
+    fn control_ready(&self, now: oer_time::Instant) -> bool {
+        self.role.control.ready(&self.role.tx, now)
     }
 
     fn control_required_before_network_tx(&self) -> bool {

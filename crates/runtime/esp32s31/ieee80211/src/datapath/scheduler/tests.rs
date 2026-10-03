@@ -289,7 +289,7 @@ impl<S: SoftwareTxFrame + 'static, P: MaterializedTxFrame + 'static> DatapathSer
         Ok(WifiTxProgress::Complete)
     }
 
-    fn control_ready(&self, _: u64) -> bool {
+    fn control_ready(&self, _: oer_time::Instant) -> bool {
         self.control_pending
     }
 
@@ -508,7 +508,7 @@ impl<S: SoftwareTxFrame + 'static, P: MaterializedTxFrame + 'static> DatapathSer
         Ok(WifiTxProgress::Complete)
     }
 
-    fn control_ready(&self, _: u64) -> bool {
+    fn control_ready(&self, _: oer_time::Instant) -> bool {
         true
     }
 

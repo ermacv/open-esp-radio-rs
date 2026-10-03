@@ -31,7 +31,7 @@ where
     E: WifiTxEntropy,
     T: oer_time::Timer,
 {
-    pub(super) fn rx_work_due(&self, now_micros: u64) -> bool
+    pub(super) fn rx_work_due(&self, now: oer_time::Instant) -> bool
     where
         C: AccessPointRxProtocolConsumer,
     {
@@ -42,7 +42,7 @@ where
             || self
                 .rx_reorder
                 .next_deadline()
-                .is_some_and(|deadline| deadline <= now_micros)
+                .is_some_and(|deadline| deadline <= now)
     }
 
     pub(super) fn queued_rx_frames(&self) -> usize

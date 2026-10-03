@@ -74,7 +74,7 @@ struct PendingReleasedFrame<'storage, const CAPACITY: usize> {
 pub struct AccessPointRxReorder<'storage, const CAPACITY: usize> {
     banks: RxBlockAckReorderBanks<RX_REORDER_SLOT_DOMAIN>,
     pending_hardware_window_reset: [bool; RX_BLOCK_ACK_BANK_COUNT],
-    deadlines: [Option<u64>; RX_BLOCK_ACK_BANK_COUNT],
+    deadlines: [Option<oer_time::Instant>; RX_BLOCK_ACK_BANK_COUNT],
     retained: [Option<RxReorderFrame<'storage, CAPACITY, RX_REORDER_BACKING_SLOT_COUNT>>;
         RX_REORDER_BACKING_SLOT_COUNT],
     pending_released:
@@ -158,7 +158,7 @@ impl<'storage, const CAPACITY: usize> AccessPointRxReorder<'storage, CAPACITY> {
         segment: RxSegment<'_>,
         key: RxBlockAckMpduKey,
         ampdu_baseband_format: Option<u8>,
-        now_micros: u64,
+        now: oer_time::Instant,
         mut dispatch: impl FnMut(RxSegment<'_>),
     ) -> Result<AccessPointRxReorderProgress, AccessPointRxReorderError> {
         let Some(bank) = self
@@ -215,7 +215,7 @@ impl<'storage, const CAPACITY: usize> AccessPointRxReorder<'storage, CAPACITY> {
             .try_ingest_immediate(immediate)?
             .is_some()
         {
-            self.update_deadline(bank, now_micros);
+            self.update_deadline(bank, now);
             dispatch(segment);
             return Ok(AccessPointRxReorderProgress {
                 active: true,
@@ -266,7 +266,7 @@ impl<'storage, const CAPACITY: usize> AccessPointRxReorder<'storage, CAPACITY> {
                 sequence: key.sequence,
                 slot: slot as u8,
             })?;
-        self.update_deadline(bank, now_micros);
+        self.update_deadline(bank, now);
 
         let mut progress = AccessPointRxReorderProgress {
             active: true,
@@ -311,7 +311,7 @@ impl<'storage, const CAPACITY: usize> AccessPointRxReorder<'storage, CAPACITY> {
     pub(super) fn try_ingest_immediate(
         &mut self,
         key: RxBlockAckMpduKey,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Result<Option<AccessPointRxReorderProgress>, AccessPointRxReorderError> {
         let Some(bank) = self
             .banks
@@ -337,7 +337,7 @@ impl<'storage, const CAPACITY: usize> AccessPointRxReorder<'storage, CAPACITY> {
         let Some(_) = admitted else {
             return Ok(None);
         };
-        self.update_deadline(bank, now_micros);
+        self.update_deadline(bank, now);
         Ok(Some(AccessPointRxReorderProgress {
             active: true,
             dispatched: 1,
@@ -348,13 +348,13 @@ impl<'storage, const CAPACITY: usize> AccessPointRxReorder<'storage, CAPACITY> {
     /// Release at most one due gap per finite DATAPATH turn.
     pub(super) fn expire_due(
         &mut self,
-        now_micros: u64,
+        now: oer_time::Instant,
         mut dispatch: impl FnMut(RxSegment<'_>),
     ) -> u8 {
         let Some(bank) = self
             .deadlines
             .iter()
-            .position(|deadline| deadline.is_some_and(|deadline| deadline <= now_micros))
+            .position(|deadline| deadline.is_some_and(|deadline| deadline <= now))
         else {
             return 0;
         };
@@ -368,7 +368,7 @@ impl<'storage, const CAPACITY: usize> AccessPointRxReorder<'storage, CAPACITY> {
             .state_mut(bank)
             .expect("a live gap deadline owns one reorder state")
             .expire_gap();
-        self.update_deadline(bank, now_micros);
+        self.update_deadline(bank, now);
         self.dispatch_retained_release(release, identity, &mut dispatch)
     }
 
@@ -383,7 +383,7 @@ impl<'storage, const CAPACITY: usize> AccessPointRxReorder<'storage, CAPACITY> {
     pub(super) fn move_window(
         &mut self,
         request: RxBlockAckRequestKey,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) -> Option<u8> {
         let bank = self
             .banks
@@ -397,7 +397,7 @@ impl<'storage, const CAPACITY: usize> AccessPointRxReorder<'storage, CAPACITY> {
             .state_mut(bank)
             .expect("a found reorder bank owns one state")
             .move_window_to(request.starting_sequence)?;
-        self.update_deadline(bank, now_micros);
+        self.update_deadline(bank, now);
         let mut released = 0_u8;
         for frame in release.iter() {
             let frame = self.retained[usize::from(frame.slot)]
@@ -429,14 +429,11 @@ impl<'storage, const CAPACITY: usize> AccessPointRxReorder<'storage, CAPACITY> {
     /// Ordered software work visible to the outer RX scheduler without a new
     /// hardware completion. A released frame is ready immediately; a retained
     /// gap becomes ready at its absolute age deadline.
-    pub(super) fn work_due(&self, now_micros: u64) -> bool {
-        self.has_pending_release()
-            || self
-                .next_deadline()
-                .is_some_and(|deadline| deadline <= now_micros)
+    pub(super) fn work_due(&self, now: oer_time::Instant) -> bool {
+        self.has_pending_release() || self.next_deadline().is_some_and(|deadline| deadline <= now)
     }
 
-    pub(super) fn next_deadline(&self) -> Option<u64> {
+    pub(super) fn next_deadline(&self) -> Option<oer_time::Instant> {
         self.deadlines.iter().copied().flatten().min()
     }
 
@@ -484,14 +481,15 @@ impl<'storage, const CAPACITY: usize> AccessPointRxReorder<'storage, CAPACITY> {
         discarded
     }
 
-    fn update_deadline(&mut self, bank: usize, now_micros: u64) {
+    fn update_deadline(&mut self, bank: usize, now: oer_time::Instant) {
         if self
             .banks
             .state(bank)
             .is_some_and(|state| state.occupied() != 0)
         {
-            self.deadlines[bank]
-                .get_or_insert(now_micros.saturating_add(RX_REORDER_GAP_TIMEOUT_MICROS));
+            self.deadlines[bank].get_or_insert(now.saturating_add(
+                oer_time::Duration::from_micros(RX_REORDER_GAP_TIMEOUT_MICROS),
+            ));
         } else {
             self.deadlines[bank] = None;
         }

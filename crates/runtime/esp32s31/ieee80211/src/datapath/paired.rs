@@ -414,7 +414,7 @@ pub trait DatapathPairedControlService<H, PhysicalTx, FirstTx, SecondTx> {
     ) -> impl Future<Output = Result<DatapathPairedControlProgress<Self::Exit>, Self::Error>> + 'a;
 
     /// O(1) readiness observation which borrows no physical TX capability.
-    fn ready(&self, _first_tx: &FirstTx, _second_tx: &SecondTx, _now_micros: u64) -> bool {
+    fn ready(&self, _first_tx: &FirstTx, _second_tx: &SecondTx, _now: oer_time::Instant) -> bool {
         true
     }
 
@@ -791,9 +791,8 @@ where
         }
     }
 
-    fn control_ready(&self, now_micros: u64) -> bool {
-        self.control
-            .ready(&self.first_tx, &self.second_tx, now_micros)
+    fn control_ready(&self, now: oer_time::Instant) -> bool {
+        self.control.ready(&self.first_tx, &self.second_tx, now)
     }
 
     fn control_required_before_stop(&self) -> bool {

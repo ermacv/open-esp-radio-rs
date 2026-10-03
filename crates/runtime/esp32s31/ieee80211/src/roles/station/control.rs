@@ -725,7 +725,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
             );
         }
         #[cfg(feature = "diagnostics")]
-        self.observe_spin(&progress, oer_time::Clock::now(&*tx).as_micros());
+        self.observe_spin(&progress, oer_time::Clock::now(&*tx));
         progress
     }
 
@@ -736,7 +736,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
             DatapathControlProgress<ConnectedDisconnectReason>,
             ConnectedControlError,
         >,
-        now_micros: u64,
+        now: oer_time::Instant,
     ) {
         if !matches!(progress, Ok(DatapathControlProgress::More)) {
             self.more_streak = 0;
@@ -747,7 +747,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
             panic!(
                 "station control spins: now={} deferred={:?} mailbox_empty={} core_tx={} \
                  outstanding={} power={:?}",
-                now_micros,
+                now.as_micros(),
                 self.deferred_control_event,
                 self.receiver.is_empty(),
                 self.core.tx_in_flight(),
@@ -905,12 +905,12 @@ where
         ConnectedControl::service_with_context(self, hardware, tx, context)
     }
 
-    fn ready(&self, tx: &X, now_micros: u64) -> bool {
+    fn ready(&self, tx: &X, now: oer_time::Instant) -> bool {
         self.has_immediate_work()
             || (self.core.power_management().is_started() && tx.has_network_tx_report())
             || self
                 .next_alarm_deadline()
-                .is_some_and(|deadline| deadline.as_micros() <= now_micros)
+                .is_some_and(|deadline| deadline <= now)
     }
 
     fn required_before_network_tx(&self) -> bool {

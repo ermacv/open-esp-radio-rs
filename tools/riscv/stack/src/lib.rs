@@ -26,6 +26,7 @@ mod image;
 mod relocations;
 mod summaries;
 mod sweep;
+mod trap;
 
 use oer_riscv_model::{Error, ErrorCode, Result};
 use std::collections::{BTreeMap, BTreeSet};
@@ -35,6 +36,7 @@ pub use image::{Function, functions, stack_sizes};
 use oer_riscv_analysis::KnownJump;
 pub use summaries::{Summary, parse as parse_summaries};
 pub use sweep::{TableBase, TargetSource, Transfer, TransferKind};
+pub use trap::{TrapEntry, trap_entry, vector_table};
 
 /// Where a function's frame comes from.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

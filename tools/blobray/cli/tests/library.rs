@@ -209,3 +209,47 @@ fn the_command_streams_one_document_of_every_access() {
     assert!(human.status.success(), "{human:?}");
     assert!(String::from_utf8_lossy(&human.stdout).starts_with("2 functions"));
 }
+
+#[test]
+fn the_command_reports_every_record_of_the_named_functions() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("library.a");
+    let library = library();
+    std::fs::write(&path, library.bytes()).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
+        .args(["--format", "json", "function-records", "--input"])
+        .arg(format!("code={}", path.display()))
+        .args(["--function", "entry"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let document: blobray_cli::wire::FunctionRecordsDocument =
+        serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(document.schema, blobray_cli::wire::FUNCTION_RECORDS_SCHEMA);
+    assert_eq!(&document.inputs[0].sha256, library.id());
+    assert!(document.missing.is_empty());
+    // One `entry` in each of the two members, both analyzed to the end of
+    // their nine instructions, with the register load among their records.
+    assert_eq!(document.functions.len(), 2);
+    for function in &document.functions {
+        let blobray_cli::wire::NamedFunction::Analyzed { records, .. } = function else {
+            panic!("`entry` is analyzable: {function:?}");
+        };
+        assert!(
+            records
+                .iter()
+                .any(|record| matches!(record, FunctionRecord::MemoryAccess { .. }))
+        );
+    }
+
+    let absent = Command::new(env!("CARGO_BIN_EXE_blobray"))
+        .args(["function-records", "--input"])
+        .arg(format!("code={}", path.display()))
+        .args(["--function", "entry", "--function", "absent"])
+        .output()
+        .unwrap();
+    assert!(!absent.status.success(), "a name no input defines fails");
+    let human = String::from_utf8_lossy(&absent.stdout);
+    assert!(human.contains("absent: no input defines it"), "{human}");
+    assert!(human.contains("entry (input 0)"), "{human}");
+}

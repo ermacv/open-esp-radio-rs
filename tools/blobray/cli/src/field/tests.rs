@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use blobray_domain::{
+use oer_riscv_model::{
     AbstractValue, ArtifactId, Expression, FunctionRecord, FunctionRelocation, IntegerOp,
     MemoryKind, ObjectId, ObjectLocation, ReferenceKind, ReferenceTarget, SymbolDefinition,
     SymbolId, SymbolTableKind,

@@ -1,5 +1,6 @@
 //! Comparison of explicitly selected concrete observations; no execution/store authority.
 use blobray_domain::*;
+use oer_riscv_model::*;
 mod effects;
 mod projection;
 mod records;

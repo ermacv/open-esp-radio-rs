@@ -1,6 +1,7 @@
 //! Physical external definitions do not acquire a runnable image or its memory view.
 use blobray_domain::*;
 use object::{Object, ObjectSection, ObjectSegment, ObjectSymbol, read::elf::SectionHeader};
+use oer_riscv_model::*;
 
 fn invalid(message: &str) -> Error {
     Error::new(ErrorCode::InvalidRequest, message)

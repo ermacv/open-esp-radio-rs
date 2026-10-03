@@ -1,6 +1,6 @@
 //! Adapt object::ReadRef so delimiter scans have bounded cooperative checkpoints.
-use blobray_domain::*;
 use object::read::ReadRef;
+use oer_riscv_model::*;
 use std::{cell::RefCell, ops::Range};
 
 pub(crate) struct Meter<'a> {

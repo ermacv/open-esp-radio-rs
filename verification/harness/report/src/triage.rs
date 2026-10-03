@@ -9,7 +9,7 @@
 //! addresses, register names and fields an instruction touches. These are
 //! proposals for a reviewer: exclusions stay reviewed decisions.
 use crate::inspect::{Corpus, STACK, Step, ZERO};
-use blobray_domain::{InstructionFlow, MemoryKind, Operand, SemanticOp};
+use oer_riscv_model::{InstructionFlow, MemoryKind, Operand, SemanticOp};
 use oer_vendor_scenario_engine::harness::Result;
 use oer_vendor_scenario_engine::registers::Registers;
 use oer_vendor_scenario_engine::session::evidence_index::{Location, LocationKind};

@@ -1,27 +1,15 @@
 # Blobray domain
 
-`blobray-domain` owns shared identities, records, resource limits, outcomes and
-portable byte/record/control ports. It has no internal crate, filesystem,
-database, backend or frontend dependencies.
+`blobray-domain` owns Blobray's inventory, image, data, audit, execution,
+device and comparison records and its byte/record ports. Identities, errors,
+run control, working memory and the function decoding and lifting contracts
+belong to [`oer-riscv-model`](../../../riscv/model/README.md), its only internal
+dependency. It has no filesystem, database, backend or frontend dependencies.
 
-[Identity types](src/lib.rs) retain content (`ArtifactId`), object and symbol
-identities, lossless names, and the `ArtifactInventory` of one executable with
-its container kind, member completeness, objects and diagnostics. Recorded
-malformed ELF references remain coverage diagnostics.
-
-[Resource ports](src/resources.rs) define `RunControl` with its run position
-and phase, work policy 1 and the default limits (`DEFAULT_WORK_UNITS`,
-`DEFAULT_TIMEOUT_MS`). The application supplies the control; domain values
-enforce nothing.
-
-[Memory contracts](src/memory.rs) provide `WorkingMemory`, RAII reservations,
-fallible `ScratchBytes` and `AdmittedVec`, which admits overlapping buffers
-before growth. Borrowed scratch cannot outlive its authority, and live
-reservations cannot exceed its capacity. These values account requested
-capacity, not resident process pages. `MemoryFailure` carries a rejected
-reservation with the phase, input and member of the run position, without
-requiring memory from the exhausted pool. [`RecordBuffer`](src/record_memory.rs)
-owns function records and their admitted variable capacities.
+[Inventory records](src/lib.rs) retain lossless names and the
+`ArtifactInventory` of one executable with its container kind, member
+completeness, objects and diagnostics. Recorded malformed ELF references
+remain coverage diagnostics.
 
 [Streaming ports](src/stream.rs) separate stable positional byte reads
 (`ByteSource`) from ELF consumers (`ElfSink`). Callbacks borrow records for one
@@ -32,15 +20,6 @@ companion selections, bounded RV32 regions, linker identity, the
 `static-analysis-elf-link-v1` contract, placement/extraction/exit observations
 with raw evidence spans and the `ImageManifest`. `RiscvAbi` records the ELF
 calling convention separately from the RV32 integer-analysis target.
-
-[Function values](src/function.rs) define physical symbol selectors, extents,
-address spaces, per-obligation coverage and the `FunctionDecoder` /
-`FunctionSemantics` ports. Typed operations and abstract values describe local
-effects without granting access to machine state. `ImageMemory` is a borrowed
-immutable-byte port, not a loader or mutable execution bus. Dynamic execution,
-inferred function extents and cross-archive definition selection are not
-implicit in these values. Calls and possible continuations remain distinct
-graph observations.
 
 [Data values](src/data.rs) identify exact captured ranges and their spans; file
 offsets and executable VMAs are distinct values. [Register accesses](src/registers.rs)

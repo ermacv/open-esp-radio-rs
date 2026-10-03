@@ -4,6 +4,7 @@ mod support;
 use blobray_application::captured::inventory;
 use blobray_application::in_process::{Executable, Limits};
 use blobray_domain::*;
+use oer_riscv_model::*;
 
 fn inventory_of(bytes: Vec<u8>) -> (Executable, ArtifactInventory) {
     let executable = Executable::new(bytes);

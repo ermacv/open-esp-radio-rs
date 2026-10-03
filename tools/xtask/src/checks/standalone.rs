@@ -1,4 +1,4 @@
-//! Extract and compile Blobray, with the RV32 decoder it takes by path, without
+//! Extract and compile Blobray, with the RV32 crates it takes by path, without
 //! access to any other repository path dependency.
 
 use std::{
@@ -41,8 +41,8 @@ pub fn run(context: &Context) -> Result<()> {
         .prefix("blobray-standalone-")
         .tempdir()?;
     let root = scratch.path().canonicalize()?;
-    // Members keep their repository paths, so the decoder Blobray takes by
-    // path is extracted beside it and no path dependency is rewritten.
+    // Members keep their repository paths, so the RV32 crates Blobray takes
+    // by path are extracted beside it and no path dependency is rewritten.
     let members = [
         "tools/blobray/cli",
         "tools/blobray/crates/domain",
@@ -52,7 +52,10 @@ pub fn run(context: &Context) -> Result<()> {
         "tools/blobray/crates/analysis",
         "tools/blobray/crates/verification",
         "tools/blobray/crates/riscv",
+        "tools/riscv/analysis",
         "tools/riscv/decode",
+        "tools/riscv/lift",
+        "tools/riscv/model",
     ];
     let files = paths::source_files(context)?;
     for member in members {

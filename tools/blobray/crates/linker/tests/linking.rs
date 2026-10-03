@@ -13,6 +13,7 @@ use object::{
     SymbolScope,
     write::{Object, Relocation, Symbol, SymbolSection},
 };
+use oer_riscv_model::*;
 use std::{
     fs,
     path::{Path, PathBuf},

@@ -8,6 +8,7 @@
 //! and coverage. A MATCH is rejected when a selected observation is unknown
 //! or an execution or model obligation is unmet.
 use blobray_domain::*;
+use oer_riscv_model::*;
 mod calls;
 mod capture;
 mod effects;

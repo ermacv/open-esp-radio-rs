@@ -9,6 +9,7 @@ use object::{
     Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope,
     write::{Object, Symbol, SymbolSection},
 };
+use oer_riscv_model::*;
 
 fn symbol(name: &[u8], section: SymbolSection, size: u64, kind: SymbolKind) -> Symbol {
     Symbol {

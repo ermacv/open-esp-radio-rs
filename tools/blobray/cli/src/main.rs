@@ -1,11 +1,11 @@
 //! Command-line adapter for Blobray operations that run in this process.
 
 use blobray_application as app;
-use blobray_domain::{
-    CheckVerdict, DEFAULT_WORKING_BYTES, Error, ErrorCode, FunctionDecoder, FunctionSemantics,
-    Result,
-};
+use blobray_domain::CheckVerdict;
 use clap::{Parser, Subcommand, ValueEnum};
+use oer_riscv_model::{
+    DEFAULT_WORKING_BYTES, Error, ErrorCode, FunctionDecoder, FunctionSemantics, Result,
+};
 use std::io::Write;
 use std::{ffi::OsString, path::PathBuf, process::ExitCode};
 mod command_tree;
@@ -91,15 +91,15 @@ const MIB: u64 = 1024 * 1024;
 struct InProcessOptions {
     #[arg(long, default_value_t = DEFAULT_WORKING_BYTES / MIB)]
     working_memory_mib: u64,
-    #[arg(long, default_value_t = blobray_domain::DEFAULT_TIMEOUT_MS / 1000)]
+    #[arg(long, default_value_t = oer_riscv_model::DEFAULT_TIMEOUT_MS / 1000)]
     timeout_secs: u64,
-    #[arg(long, default_value_t = blobray_domain::DEFAULT_WORK_UNITS)]
+    #[arg(long, default_value_t = oer_riscv_model::DEFAULT_WORK_UNITS)]
     max_work_units: u64,
 }
 
 impl InProcessOptions {
-    fn memory(&self) -> Result<blobray_domain::WorkingMemory> {
-        blobray_domain::WorkingMemory::new(
+    fn memory(&self) -> Result<oer_riscv_model::WorkingMemory> {
+        oer_riscv_model::WorkingMemory::new(
             self.working_memory_mib
                 .checked_mul(MIB)
                 .ok_or_else(|| invalid("working memory limit overflow"))?,
@@ -204,7 +204,7 @@ fn field_accesses(
     let mut unknown_addresses = 0_u64;
     app::library::analyze_library(
         &executables,
-        &blobray_backend_riscv::RiscvDecoder,
+        &oer_riscv_lift::RiscvDecoder,
         &memory,
         &mut control,
         &mut |outcome, _| {
@@ -323,7 +323,7 @@ fn function_records(
     let mut functions = Vec::new();
     app::library::analyze_library(
         &executables,
-        &blobray_backend_riscv::RiscvDecoder,
+        &oer_riscv_lift::RiscvDecoder,
         &memory,
         &mut control,
         &mut |outcome, _| {
@@ -417,7 +417,7 @@ fn function_records(
 }
 
 fn io_error(e: std::io::Error) -> Error {
-    blobray_domain::storage_io(e)
+    oer_riscv_model::storage_io(e)
 }
 
 fn invalid(message: &str) -> Error {
@@ -495,7 +495,7 @@ fn audit_targets(
     let executable = app::in_process::Executable::new(std::fs::read(&artifact).map_err(io_error)?);
     let memory = limits.memory()?;
     let mut control = limits.control();
-    let decoder = blobray_backend_riscv::RiscvDecoder;
+    let decoder = oer_riscv_lift::RiscvDecoder;
     let mut records = Vec::new();
     let summary = app::audit::audit_targets(
         &executable,
@@ -605,7 +605,7 @@ fn register_accesses(
     let summary = app::library::register_accesses(
         &executables,
         &ranges,
-        &blobray_backend_riscv::RiscvDecoder,
+        &oer_riscv_lift::RiscvDecoder,
         &memory,
         &mut control,
         &mut |record, _| {

@@ -1,5 +1,5 @@
 use super::*;
-use blobray_domain::{FunctionDecoder, InstructionFlow};
+use oer_riscv_model::{FunctionDecoder, InstructionFlow};
 
 #[test]
 fn compressed_and_full_instructions_lift_without_display_parsing() {
@@ -176,7 +176,7 @@ fn zcb_memory_forms_lift_to_loads_and_stores() {
         else {
             panic!("{half:#06x} is not a memory operation");
         };
-        assert_eq!(kind == blobray_domain::MemoryKind::Load, *load);
+        assert_eq!(kind == MemoryKind::Load, *load);
         assert_eq!((b, displacement, w, s), (*base, *offset, *width, *signed));
         assert_eq!(if *load { dest } else { source }, Some(*register));
     }

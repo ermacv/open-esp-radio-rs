@@ -10,6 +10,7 @@ description = "Concrete observation comparison without execution authority"
 
 [dependencies]
 blobray-domain = { path = "../domain" }
+oer-riscv-model = { path = "../../../riscv/model" }
 
 [lints]
 workspace = true

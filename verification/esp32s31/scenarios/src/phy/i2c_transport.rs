@@ -10,10 +10,11 @@ use crate::harness::{Result, case, known, words};
 use crate::i2c::{I2c, models, returned_low, word_writes};
 use crate::layout::*;
 use blobray_domain::{
-    ArtifactId, CommandCell, ComparisonVerdict, DeviceBehavior, DeviceDeclaration, DeviceIssue,
-    ExecutionCase, ExecutionEvent, ExecutionEvidence, ExecutionRegion, ExecutionStop, Invocation,
-    ModelStatus, RegionLifetime, RegisterCell, SessionReset,
+    CommandCell, ComparisonVerdict, DeviceBehavior, DeviceDeclaration, DeviceIssue, ExecutionCase,
+    ExecutionEvent, ExecutionEvidence, ExecutionRegion, ExecutionStop, Invocation, ModelStatus,
+    RegionLifetime, RegisterCell, SessionReset,
 };
+use oer_riscv_model::ArtifactId;
 
 /// Independent `.iram1` +0x44..+0x60 instruction reading.
 const CONFIGURATION: u32 = 0x1237_fa08;

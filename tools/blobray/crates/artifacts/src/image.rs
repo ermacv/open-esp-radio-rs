@@ -1,6 +1,7 @@
 //! Strict RV32 link-input and prepared-image checks over admitted captured bytes.
 use blobray_domain::*;
 use object::{Object, ObjectSection, ObjectSegment, ObjectSymbol};
+use oer_riscv_model::*;
 
 #[derive(Clone, Debug)]
 pub struct LinkRootFacts {

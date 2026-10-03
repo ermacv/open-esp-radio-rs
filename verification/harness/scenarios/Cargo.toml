@@ -10,6 +10,8 @@ publish = false
 description = "Chip-neutral engine of the typed vendor-comparison scenarios: Blobray sessions, comparison harness, coverage, observation, state and evidence shards"
 
 [dependencies]
+oer-riscv-model = { path = "../../../tools/riscv/model" }
+oer-riscv-lift = { path = "../../../tools/riscv/lift" }
 blobray-application = { path = "../../../tools/blobray/crates/application" }
 blobray-backend-riscv = { path = "../../../tools/blobray/crates/riscv" }
 blobray-domain = { path = "../../../tools/blobray/crates/domain" }

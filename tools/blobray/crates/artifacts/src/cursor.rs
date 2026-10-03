@@ -1,5 +1,6 @@
 //! File-range archive cursor. Names are scoped; payloads are never read here.
 use blobray_domain::*;
+use oer_riscv_model::*;
 
 fn malformed(message: &str) -> Error {
     Error::new(ErrorCode::Integrity, message)

@@ -1,10 +1,11 @@
-use blobray_domain::{DiagnosticCode, SymbolTableKind};
+use blobray_domain::DiagnosticCode;
 use object::{
     Architecture, BinaryFormat, Endianness, LittleEndian, SectionKind, SymbolFlags, SymbolKind,
     SymbolScope, elf,
     read::elf::{FileHeader, SectionHeader},
     write::{Object, Symbol, SymbolSection},
 };
+use oer_riscv_model::SymbolTableKind;
 
 fn fixture(architecture: Architecture, endian: Endianness) -> Vec<u8> {
     let mut object = Object::new(BinaryFormat::Elf, architecture, endian);
@@ -28,9 +29,10 @@ fn inventory(bytes: &[u8]) -> blobray_domain::ObjectInventory {
 }
 fn collect(
     bytes: &[u8],
-    control: &mut dyn blobray_domain::RunControl,
-) -> blobray_domain::Result<blobray_domain::ObjectInventory> {
+    control: &mut dyn oer_riscv_model::RunControl,
+) -> oer_riscv_model::Result<blobray_domain::ObjectInventory> {
     use blobray_domain::*;
+    use oer_riscv_model::*;
     #[derive(Default)]
     struct Records {
         sections: Vec<SectionRecord>,
@@ -197,30 +199,30 @@ fn invalid_symbol_section_remains_raw_and_marks_inventory_incomplete() {
 /// A caller stops a selected physical operation; the parser must propagate that
 /// stop instead of publishing a malformed/partial inventory.
 struct StopAt {
-    position: blobray_domain::RunPosition,
+    position: oer_riscv_model::RunPosition,
     member: Option<u64>,
     entry: Option<u64>,
     remaining: u64,
 }
-impl blobray_domain::RunControl for StopAt {
-    fn position(&self) -> blobray_domain::RunPosition {
+impl oer_riscv_model::RunControl for StopAt {
+    fn position(&self) -> oer_riscv_model::RunPosition {
         self.position
     }
-    fn set_position(&mut self, position: blobray_domain::RunPosition) {
+    fn set_position(&mut self, position: oer_riscv_model::RunPosition) {
         self.position = position;
     }
-    fn checkpoint(&mut self, units: u64) -> blobray_domain::Result<()> {
+    fn checkpoint(&mut self, units: u64) -> oer_riscv_model::Result<()> {
         let matches = self.entry.map_or(
-            self.position.phase == blobray_domain::RunPhase::Members,
+            self.position.phase == oer_riscv_model::RunPhase::Members,
             |entry| {
-                self.position.phase == blobray_domain::RunPhase::Elf
+                self.position.phase == oer_riscv_model::RunPhase::Elf
                     && self.position.entry == Some(entry)
             },
         );
         if matches && self.member.is_none_or(|m| self.position.member == Some(m)) {
             if units > self.remaining {
-                return Err(blobray_domain::Error::new(
-                    blobray_domain::ErrorCode::ResourceLimited,
+                return Err(oer_riscv_model::Error::new(
+                    oer_riscv_model::ErrorCode::ResourceLimited,
                     "caller exhausted work",
                 ));
             }
@@ -239,7 +241,7 @@ fn work_stop_in_symbol_table_is_not_a_malformed_object() {
         remaining: 0,
     };
     let error = collect(&bytes, &mut control).unwrap_err();
-    assert_eq!(error.code, blobray_domain::ErrorCode::ResourceLimited);
+    assert_eq!(error.code, oer_riscv_model::ErrorCode::ResourceLimited);
     assert_eq!(control.position.entry, Some(1));
     assert!(control.position.table.is_some());
 }
@@ -247,7 +249,7 @@ fn work_stop_in_symbol_table_is_not_a_malformed_object() {
 fn long_symbol_name_is_interruptible_inside_the_scan() {
     let mut object = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
     object.add_symbol(Symbol {
-        name: vec![b'x'; 8 * blobray_domain::WORK_BLOCK],
+        name: vec![b'x'; 8 * oer_riscv_model::WORK_BLOCK],
         value: 0,
         size: 0,
         kind: SymbolKind::Unknown,
@@ -264,7 +266,7 @@ fn long_symbol_name_is_interruptible_inside_the_scan() {
         remaining: 3,
     };
     let error = collect(&bytes, &mut control).unwrap_err();
-    assert_eq!(error.code, blobray_domain::ErrorCode::ResourceLimited);
+    assert_eq!(error.code, oer_riscv_model::ErrorCode::ResourceLimited);
     assert_eq!(control.position.entry, Some(1));
     assert_eq!(control.remaining, 0);
 }
@@ -286,14 +288,14 @@ fn stopping_member_enumeration_never_returns_partial_success() {
         entry: None,
         remaining: 0,
     };
-    let memory = blobray_domain::WorkingMemory::new(1024).unwrap();
+    let memory = oer_riscv_model::WorkingMemory::new(1024).unwrap();
     let source = bytes.as_slice();
     let mut cursor = blobray_artifacts::MemberCursor::new(&source, &mut control).unwrap();
     assert!(cursor.next(&memory, &mut control).unwrap().is_some());
     assert!(matches!(
         cursor.next(&memory, &mut control),
-        Err(blobray_domain::Error {
-            code: blobray_domain::ErrorCode::ResourceLimited,
+        Err(oer_riscv_model::Error {
+            code: oer_riscv_model::ErrorCode::ResourceLimited,
             ..
         })
     ));
@@ -303,6 +305,7 @@ fn stopping_member_enumeration_never_returns_partial_success() {
 #[test]
 fn stream_consumer_failure_is_not_malformed_elf_coverage() {
     use blobray_domain::*;
+    use oer_riscv_model::*;
     struct Reject;
     impl ElfSink for Reject {
         fn section(&mut self, _: &SectionRecord, _: &mut dyn RunControl) -> Result<()> {

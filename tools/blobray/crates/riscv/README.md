@@ -1,37 +1,13 @@
-# RV32 function decoding and relocation interpretation
+# Concrete RV32 execution
 
-Owns the `FunctionDecoder` and `FunctionSemantics` implementations and RISC-V
-relocation interpretation. It receives bytes and structural facts, never a
-archive path or loader capability. Unsupported encodings remain
-explicit gaps.
+`blobray-backend-riscv` owns Blobray's concrete RV32 executor over the decoding
+and lifting of [`oer-riscv-lift`](../../../riscv/lift/README.md). It receives
+bytes and structural facts, never an archive path or loader capability.
 
-Decoding belongs to [`oer-riscv-decode`](../../../riscv/decode/README.md),
-selected with every extension it decodes: ESP-IDF builds the ESP32-S31 for
-`rv32imafc_zba_zbb_zbs_zcb_zcmp_zcmt`, and only the Zcmt table jumps stay
-undecoded. Integer and Zcb memory forms lift to single operations;
-`IntegerOp::evaluate` in the domain is the one concrete definition that
-analysis and execution share. The Zcmp forms move several registers and lift
-to `Unsupported`, so abstract analysis keeps a gap for them while concrete
-execution runs them: pushes store the listed registers from `s11` down to `ra`
-below `sp`, pops load them back, and the returning forms return through `ra`,
-as the decoded flow states.
-
-The FP register file is not modeled: single-precision loads and stores lift to
-`FloatLoad`/`FloatStore` accesses through their integer base, a form with an
-integer destination (`fmv.x.w`, `fclass.s`, comparisons, `fcvt.w[u].s`) lifts
-to `Opaque`, and every other form to `None`. Neither executor profile runs
-floating point; the Rv32imac profile decodes RV32IMAC alone, and the full
-profile stops at an F form as unsupported.
-
-The decoder, semantic and execution identities (`policy-5`, `values-9` and
-`execution-14`, each over rv-asm 0.2.1) cover every behavior below; any
-change to decoding, lifting or concrete execution changes its identity.
-
-Lifting returns bounded typed operations over RV32 registers. Loads, stores and
-atomics describe effects without reading memory. Compressed instructions use the
-shared normalized operands, including the decoder's signed C.ANDI immediate.
-The backend declares relocation roles;
-analysis validates the flowing address relationship and owns abstract states.
+Neither executor profile runs floating point: the Rv32imac profile decodes
+RV32IMAC alone, and the full profile stops at an F form as unsupported. The
+execution identity (`execution-14`, over rv-asm 0.2.1) covers every behavior
+below; any change to concrete execution changes it.
 
 `RiscvExecutor` owns concrete RV32 register state and the iterative instruction
 loop. It receives an `ExecutionStart` with entry, stack, optional register words
@@ -44,10 +20,8 @@ for any address and for code that later changes. The backend cannot select image
 memory regions, choose models or publish a verdict. See the
 [concrete profile](../../cli/reference/execution/README.md#concrete-execution-and-comparison).
 
-The semantic identity includes typed fence mode/predecessor/successor
-sets. Analysis consumes the typed fence record; it never parses
-instruction display strings. Concrete execution retains its own supported fence-mode
-check and reports unsupported modes explicitly.
+Concrete execution consumes the typed fence record and retains its own
+supported fence-mode check, reporting unsupported modes explicitly.
 
 Execution preserves unspecified argument registers as unknown. Stack argument
 placement belongs to application; the backend observes those words through memory

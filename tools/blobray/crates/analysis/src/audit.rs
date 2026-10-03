@@ -1,5 +1,6 @@
 //! Linear final-image scan with bounded local constant propagation, not a CFG proof.
 use blobray_domain::*;
+use oer_riscv_model::*;
 
 pub fn audit_section(
     view: ExecutableSectionView<'_>,
@@ -164,7 +165,7 @@ pub fn audit_section(
             } => {
                 values[usize::from(dest)] = operand(left)
                     .zip(operand(right))
-                    .map(|(a, b)| super::values::fold_integer(op, a, b))
+                    .map(|(a, b)| oer_riscv_analysis::fold_integer(op, a, b))
             }
             SemanticOp::Memory {
                 dest: Some(dest), ..

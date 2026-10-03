@@ -553,7 +553,7 @@ impl DeviceDeclaration {
                 }
             }
         }
-        Ok(ArtifactId(format!("{:x}", h.finalize())))
+        format!("{:x}", h.finalize()).parse()
     }
 }
 

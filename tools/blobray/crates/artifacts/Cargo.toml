@@ -10,6 +10,7 @@ description = "Filesystem-independent ELF and archive inventory for Blobray"
 
 [dependencies]
 blobray-domain = { path = "../domain" }
+oer-riscv-model = { path = "../../../riscv/model" }
 object = { version = "=0.39.1", default-features = false, features = ["archive", "elf", "read", "std"] }
 
 [dev-dependencies]

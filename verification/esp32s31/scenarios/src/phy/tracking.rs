@@ -23,9 +23,10 @@ use crate::phy::{
 };
 use crate::tx_dc::{self, DETECTOR_READY, PBUS_IDLE, SAR_UNUSED, Samples};
 use blobray_domain::{
-    ArtifactId, CommandCell, ComparisonVerdict, DeviceDeclaration, EffectRule, ExecutionCase,
+    CommandCell, ComparisonVerdict, DeviceDeclaration, EffectRule, ExecutionCase,
     ExecutionEvidence, Invocation, LinkRequest, ReadRun, SessionReset,
 };
+use oer_riscv_model::ArtifactId;
 use std::path::Path;
 
 pub type Options = PhyOptions;

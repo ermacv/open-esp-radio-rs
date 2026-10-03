@@ -1,6 +1,6 @@
 //! Finite, canonical nonrecursive sets interned within one admitted analysis phase.
 use super::values::Value;
-use blobray_domain::*;
+use oer_riscv_model::*;
 use std::hash::{Hash, Hasher};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

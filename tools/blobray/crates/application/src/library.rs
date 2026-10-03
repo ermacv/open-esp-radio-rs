@@ -135,7 +135,7 @@ impl ElfSink for Selection {
 #[allow(clippy::too_many_arguments)]
 fn research_function<'m>(
     object: &mut blobray_artifacts::PreparedObject<'_, '_>,
-    references: &mut AdmittedVec<'m, (u32, blobray_analysis::PreparedReferences<'m>)>,
+    references: &mut AdmittedVec<'m, (u32, oer_riscv_analysis::PreparedReferences<'m>)>,
     symbol: &SymbolId,
     input: u64,
     payload: &ArtifactId,
@@ -143,7 +143,7 @@ fn research_function<'m>(
     memory: &'m WorkingMemory,
     control: &mut dyn RunControl,
     sink: &mut dyn FunctionSink,
-) -> Result<blobray_analysis::AnalysisSummary> {
+) -> Result<oer_riscv_analysis::AnalysisSummary> {
     let mut position = RunPosition {
         phase: RunPhase::AnalyzeFunction,
         input: Some(input),
@@ -163,7 +163,7 @@ fn research_function<'m>(
         {
             index
         } else {
-            let prepared = blobray_analysis::PreparedReferences::new(
+            let prepared = oer_riscv_analysis::PreparedReferences::new(
                 view.relocations,
                 view.section,
                 decoder,
@@ -173,8 +173,8 @@ fn research_function<'m>(
             references.push((view.section, prepared), control.position())?;
             references.len() - 1
         };
-        blobray_analysis::research(
-            blobray_analysis::FunctionInput {
+        oer_riscv_analysis::research(
+            oer_riscv_analysis::FunctionInput {
                 image: view.image,
                 section: view.section,
                 extent: view.extent,

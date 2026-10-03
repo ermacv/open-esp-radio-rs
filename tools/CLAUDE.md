@@ -9,7 +9,7 @@ Repository tooling, grouped by the contract each tool owns: [README](README.md).
 | `registers/` | `oer-register-tool`: register model validation and PAC/SVD publication |
 | `blobray/` | Binary analysis; a separate workspace with its own lock file and target |
 | `memory-report/`, `symbol-lineage/` | ELF memory/stack analysis; vendor symbol names across releases |
-| `riscv/decode/` | `oer-riscv-decode`: RV32 instruction decoding over rv-asm, shared by Blobray |
+| `riscv/` | RV32 layers shared by Blobray: `decode/` (instructions), `model/`, `analysis/` and `lift/` (the program model) |
 | `firmware/`, `process/`, `chip-profile/`, `command-tree/` | Image operations, child processes, chip profiles, CLI command trees |
 
 ## Rules

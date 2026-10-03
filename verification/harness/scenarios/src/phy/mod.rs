@@ -10,13 +10,13 @@ use crate::harness::{Budget, Input, with_stack_fill};
 use crate::harness::{Result, invalid, known, region, selection, symbol, words};
 use crate::session::{Session, image_symbol, request};
 use blobray_domain::{
-    ArtifactId, CallEndpoint, ComparisonVerdict, DataSelector, DeviceDeclaration, ExecutionCase,
+    CallEndpoint, ComparisonVerdict, DataSelector, DeviceDeclaration, ExecutionCase,
     ExecutionEvidence, ExecutionRegion, ExecutionRequest, ExecutionStop, ExecutionTarget,
-    ImageLayout, ImageRegion, Invocation, LinkRequest, MemorySelection, ObjectId, ObjectLocation,
-    RegionLifetime, SymbolId,
+    ImageLayout, ImageRegion, Invocation, LinkRequest, MemorySelection, RegionLifetime,
 };
 use layout::{FILLS, MAX_EVENTS};
 pub use layout::{PhyLayout, layout};
+use oer_riscv_model::{ArtifactId, ObjectId, ObjectLocation, SymbolId};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},

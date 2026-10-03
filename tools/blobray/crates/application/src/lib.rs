@@ -7,6 +7,7 @@
 
 use blobray_artifacts::{MemberCursor, inspect_source};
 use blobray_domain::*;
+use oer_riscv_model::*;
 use std::path::Path;
 
 pub mod audit;

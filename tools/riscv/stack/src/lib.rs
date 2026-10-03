@@ -7,7 +7,12 @@
 //! is complete. Its callees are every direct call and out-of-function jump of a
 //! linear sweep over its whole extent, which also reaches code behind jump
 //! tables the control-flow graph does not expand, plus the transfers whose
-//! target the value analysis resolves. A function's bound is its frame or, if
+//! target the value analysis resolves. A transfer through `table[index]`
+//! reaches each entry of the table when its length is exact: a bounds check
+//! or mask on the index, or the size of a data object the table starts in an
+//! unwritable section, such as an interrupt handler table. The sweep already
+//! covers a jump's entries inside the function; a table of unknown length
+//! stays unresolved. A function's bound is its frame or, if
 //! deeper, a callee's bound below the `sp` of the transfer that reaches it: the
 //! value analysis's depth at that site, or the whole frame at a site it did not
 //! reach. It never underestimates the code it reaches.
@@ -24,7 +29,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 pub use image::{Function, functions, stack_sizes};
-pub use sweep::{TargetSource, Transfer, TransferKind};
+pub use sweep::{TableBase, TargetSource, Transfer, TransferKind};
 
 /// Where a function's frame comes from.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,8 +68,9 @@ pub enum Reason {
     LoadedCall,
     /// An indirect call through another register value.
     RegisterCall,
-    /// An indirect jump out of the function: a jump table the value analysis
-    /// did not expand, or a tail call through a pointer.
+    /// An indirect jump that is not a table of known length: a tail call
+    /// through a pointer, such as `core::fmt::write` to `write_str`, or a
+    /// `match` whose jump table no bounds check limits.
     IndirectJump,
     /// A transfer to an address outside the image's code: ROM.
     OutsideImage,
@@ -83,7 +89,7 @@ impl Reason {
         match self {
             Reason::StackSlotCall => "1b-2: stack-slot value tracking",
             Reason::LoadedCall | Reason::RegisterCall => "2: MIR call facts",
-            Reason::IndirectJump => "1b-2: jump tables from .rodata; 2 for pointer tail calls",
+            Reason::IndirectJump => "2: MIR call facts",
             Reason::OutsideImage => "1c: ROM companion",
             Reason::IntoFunction => "review",
             Reason::Unframed => "1c: assembly frames",
@@ -155,17 +161,58 @@ pub fn analyze(elf: &[u8]) -> Result<Analysis> {
         let mut transfers = sweep::transfers(elf, &function)?;
         // Jump tables stay inside the function, whose code the sweep covers.
         transfers.retain(|t| t.target.is_some() || !observation.local_jumps.contains(&t.site));
+        // A dispatch through a sized table object reaches each of its
+        // entries; the sweep already covers a jump's entries inside the
+        // function.
+        let inside =
+            |target: u32| target >= function.address && target - function.address < function.size;
+        let mut dispatched = Vec::new();
+        for transfer in std::mem::take(&mut transfers) {
+            let address = match transfer.table {
+                Some(TableBase::Address(address)) => Some(address),
+                Some(TableBase::Register(r)) => observation
+                    .site_registers
+                    .get(&transfer.site)
+                    .and_then(|registers| registers[r as usize]),
+                None => None,
+            };
+            let Some(entries) = address.map(|a| image::table(elf, a)).transpose()?.flatten() else {
+                dispatched.push(transfer);
+                continue;
+            };
+            let mut targets: Vec<u32> = entries
+                .iter()
+                .map(|entry| entry & !1)
+                .filter(|&target| transfer.kind == TransferKind::Call || !inside(target))
+                .collect();
+            targets.sort_unstable();
+            targets.dedup();
+            dispatched.extend(targets.into_iter().map(|target| Transfer {
+                target: Some(target),
+                source: None,
+                table: None,
+                ..transfer
+            }));
+        }
+        transfers = dispatched;
+        // The value analysis's targets of a site are a superset of its
+        // runtime targets; a jump's targets inside the function are already
+        // in the sweep.
         for (site, target, kind) in observation.resolved {
+            transfers.retain(|t| !(t.site == site && t.target.is_none()));
+            if kind == TransferKind::Tail && inside(target) {
+                continue;
+            }
             if !transfers
                 .iter()
                 .any(|t| t.site == site && t.target == Some(target))
             {
-                transfers.retain(|t| !(t.site == site && t.target.is_none()));
                 transfers.push(Transfer {
                     site,
                     target: Some(target),
                     kind,
                     source: None,
+                    table: None,
                 });
             }
         }

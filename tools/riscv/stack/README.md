@@ -16,7 +16,17 @@ out-of-function jump of a linear sweep over its whole extent, which also
 reaches code behind jump tables the graph does not expand, plus the indirect
 transfers whose target the value analysis resolves; an indirect jump whose
 targets the analysis finds inside the function is a jump table, not a
-transfer.
+transfer. A call or jump through `table[index]`, whose base is a constant or a
+register the value analysis knows at the transfer, reaches each entry of the
+table when its length is exact: the index's bounds check on the path to the
+dispatch (`bltu limit, index` or `bgeu index, limit` against a constant) or
+mask (`andi`), or the size of a data object the base starts in an unwritable
+section, such as esp-hal's `__EXTERNAL_INTERRUPTS` handler table, against
+which the language bounds-checks the index. Entries of a jump inside its own
+function are already in the sweep. A table of unknown length, such as a
+`match` on an enum whose range no check states, stays unresolved: reading
+until the first word outside the function could stop short of an entry that
+leaves it.
 
 A function's bound is its frame or, if deeper, a callee's bound below the
 `sp` of the transfer that reaches it: the analysis's depth at that site, or the
@@ -28,7 +38,7 @@ unresolved; otherwise `Bound::reasons` counts the unresolved sites and
 functions by `Reason`, and `Reason::closed_by` names the stage of the stack
 analysis that resolves each: indirect calls through a stack slot
 (`core::hint::black_box`), through a loaded pointer or another register,
-indirect jumps out of a function, transfers outside the image (ROM) or into
+indirect tail calls through a pointer, transfers outside the image (ROM) or into
 a function's middle, functions without a frame, and recursion. The partial
 path over what is resolved is diagnostic, never a bound.
 

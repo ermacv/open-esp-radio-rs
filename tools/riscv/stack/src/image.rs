@@ -106,6 +106,47 @@ pub fn functions(elf: &[u8]) -> Result<Vec<Function>> {
     Ok(functions)
 }
 
+/// The little-endian word at `address` of an allocated, unwritable section
+/// with file contents, such as `.rodata`.
+pub(crate) fn read_only_word(file: &object::File<'_>, address: u32) -> Option<u32> {
+    use object::elf::{SHF_ALLOC, SHF_WRITE};
+    let address = u64::from(address);
+    file.sections().find_map(|section| {
+        let object::SectionFlags::Elf { sh_flags } = section.flags() else {
+            return None;
+        };
+        let readonly = sh_flags & u64::from(SHF_ALLOC) != 0 && sh_flags & u64::from(SHF_WRITE) == 0;
+        if !readonly
+            || address < section.address()
+            || address + 4 > section.address() + section.size()
+        {
+            return None;
+        }
+        let data = section.data().ok()?;
+        let at = (address - section.address()) as usize;
+        Some(u32::from_le_bytes(data.get(at..at + 4)?.try_into().ok()?))
+    })
+}
+
+/// The words of the data object that starts at `address` in an unwritable
+/// section: a table whose every entry an index the language bounds-checks
+/// against the object's length may load.
+pub(crate) fn table(elf: &[u8], address: u32) -> Result<Option<Vec<u32>>> {
+    let file = parse(elf)?;
+    let Some(symbol) = file.symbols().find(|symbol| {
+        symbol.kind() == SymbolKind::Data
+            && symbol.address() == u64::from(address)
+            && symbol.size() > 0
+            && symbol.size() % 4 == 0
+    }) else {
+        return Ok(None);
+    };
+    let words: Option<Vec<u32>> = (0..symbol.size() / 4)
+        .map(|i| read_only_word(&file, address.wrapping_add(4 * i as u32)))
+        .collect();
+    Ok(words)
+}
+
 /// Address ranges of the executable sections of `elf`.
 pub(crate) fn executable_ranges(elf: &[u8]) -> Result<Vec<(u32, u32)>> {
     let file = parse(elf)?;
@@ -198,6 +239,8 @@ pub(crate) struct Observation {
     pub local_jumps: Vec<u32>,
     /// Bytes below the entry `sp` at each transfer the analysis reached.
     pub site_depths: BTreeMap<u32, u64>,
+    /// The exact integer registers at each transfer the analysis reached.
+    pub site_registers: BTreeMap<u32, [Option<u32>; 32]>,
 }
 
 #[derive(Default)]
@@ -206,6 +249,7 @@ struct Observer {
     dynamic: bool,
     unexpanded: Vec<u32>,
     site_depths: BTreeMap<u32, u64>,
+    site_registers: BTreeMap<u32, [Option<u32>; 32]>,
     transfers: Vec<(u32, u32, TransferKind)>,
 }
 
@@ -222,17 +266,32 @@ impl FunctionSink for Observer {
             },
             FunctionRecord::Transfer {
                 offset,
-                target: AbstractValue::ImageAddress { address },
+                target,
                 call,
-            } => self.transfers.push((
-                *offset as u32,
-                *address,
-                if *call {
+            } => {
+                let kind = if *call {
                     TransferKind::Call
                 } else {
                     TransferKind::Tail
-                },
-            )),
+                };
+                // Every alternative must be an address for the site to count
+                // as resolved.
+                let addresses: Option<Vec<u32>> = match target {
+                    AbstractValue::ImageAddress { address } => Some(vec![*address]),
+                    AbstractValue::Alternatives { values } => values
+                        .values()
+                        .iter()
+                        .map(|value| match value {
+                            ValueAlternative::ImageAddress { address } => Some(*address),
+                            _ => None,
+                        })
+                        .collect(),
+                    _ => None,
+                };
+                for address in addresses.into_iter().flatten() {
+                    self.transfers.push((*offset as u32, address, kind));
+                }
+            }
             FunctionRecord::SemanticGap {
                 offset,
                 reason: SemanticGapReason::UnexpandedControlFlow,
@@ -241,6 +300,15 @@ impl FunctionSink for Observer {
                 if let Some(AbstractValue::EntryStack { offset: sp }) = registers.get(SP as usize) {
                     self.site_depths.insert(*offset as u32, sp.unsigned_abs());
                 }
+                let mut exact = [None; 32];
+                for (slot, value) in exact.iter_mut().zip(registers) {
+                    *slot = match value {
+                        AbstractValue::Constant { value: v }
+                        | AbstractValue::ImageAddress { address: v } => Some(*v),
+                        _ => None,
+                    };
+                }
+                self.site_registers.insert(*offset as u32, exact);
             }
             _ => {}
         }
@@ -292,6 +360,7 @@ pub(crate) fn observe(elf: &[u8], functions: &[Function]) -> Result<BTreeMap<u32
                 resolved: observer.transfers,
                 local_jumps: observer.unexpanded,
                 site_depths: observer.site_depths,
+                site_registers: observer.site_registers,
             },
         );
     }

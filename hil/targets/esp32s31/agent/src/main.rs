@@ -262,7 +262,7 @@ struct AppCoreStack(Stack<APP_CORE_BOOTSTRAP_STACK_BYTES>);
 
 #[cfg(feature = "open-radio-hil")]
 #[allow(unsafe_code, reason = "esp-hal's stack is uninitialized memory")]
-// REVIEWED-LAYOUT: esp-hal 42b085e2
+// REVIEWED-LAYOUT: esp-hal c771deb0
 // SAFETY: at the pinned esp-hal revision `Stack<SIZE>` is
 // `repr(C, align(16))` with one field, `mem: MaybeUninit<[u8; SIZE]>`, valid
 // for any bytes; `Stack::new` leaves it uninitialized.
@@ -531,6 +531,7 @@ extern "C" fn runtime_main() -> ! {
             ));
         let trng = Trng::try_new()
             .unwrap_or_else(|_| fail(c"OPEN_RADIO_HIL runtime=FAIL reason=trng-ownership\r\n"));
+        check_entropy_source();
         let boot_id = (u64::from(trng.random()) << 32) | u64::from(trng.random());
         transport::CONSOLE.start(boot_id);
         #[cfg(not(feature = "memory-benchmark"))]
@@ -869,6 +870,16 @@ fn stack_minimum_free_bytes(cpu: u8) -> u32 {
     value
         .parse::<u32>()
         .expect("stack headroom policy must be an unsigned byte count")
+}
+
+/// Halt the image unless the TRNG produces health-tested entropy: Wi-Fi and
+/// Thread keys and nonces come from it.
+pub(crate) fn check_entropy_source() {
+    if oer_esp32s31_soc_esp_hal::entropy::source_status().is_healthy() {
+        print(c"OPEN_RADIO_HIL entropy=PASS\r\n");
+    } else {
+        fail(c"OPEN_RADIO_HIL runtime=FAIL reason=entropy-source\r\n");
+    }
 }
 
 fn print(message: &'static CStr) {

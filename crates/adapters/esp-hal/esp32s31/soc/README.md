@@ -36,6 +36,11 @@ These are engineering limits, not measured worst-case reset/RF-off bounds.
   No radio role or PHY epoch supplies its lifetime. Read pacing assumes a
   running CPU cycle counter; this is not a fault-time bound or an entropy
   quality qualification.
+  `source_status` reads whether the TRNG is clocked, sampling in the standard
+  output mode and health-tested without a recorded failure. esp-hal enables
+  it at startup with ESP-IDF's `rng_ll_enable` and keeps it running after a
+  `TrngSource` drops, because `Rng` (MAC sequence numbers, backoff, the Wi-Fi
+  supervisor) reads the same generator.
 - `dma/mem2mem/descriptor.rs`: descriptor images, burst sizing, chain construction,
   and descriptor validation; its host tests live in `descriptor/tests.rs`.
 - `dma/mem2mem/registers.rs`: typed upstream AXI-GDMA register operations,

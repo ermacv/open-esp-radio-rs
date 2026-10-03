@@ -166,10 +166,11 @@ fn interrupted() -> [u32; 5] {
         core::arch::asm!("csrr {0}, mstatus", out(reg) mstatus);
     }
     let context = esp_hal::interrupt::interrupted_context().unwrap_or_default();
+    let sp = oer_esp32s31_platform_runtime::stacks::interrupted_stack_pointer().unwrap_or(0);
     [
         mepc as u32,
         context.ra as u32,
-        context.sp as u32,
+        sp as u32,
         mcause as u32,
         mstatus as u32,
     ]

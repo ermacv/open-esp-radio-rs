@@ -35,11 +35,14 @@ external-memory startup and interrupt handoff mechanisms; the fork's
 `UPSTREAM.md` lists the delta and the last merged upstream revision. The shared board profile in `platform/esp32s31`
 chooses memory sizes and timings; the platform bootstrap owns relocation and the
 transition to the separately linked runtime. HAL PSRAM adoption records an
-existing mapping without resetting the device or remapping live memory.
-`esp_hal::interrupt::interrupted_context()` returns the return address and stack
-pointer of the code the running interrupt handler preempted, from the trap frame
-the vector stub passes to the dispatcher; the HIL hang watchdog reports both
-harts' stalled context with it.
+existing mapping without resetting the device, remapping live memory or
+reprogramming the PSRAM PHY supply.
+`esp_hal::interrupt::interrupted_context()` returns the return address of the
+code the running interrupt handler preempted and the address of the trap frame
+the vector stub passes to the dispatcher. The preempted stack pointer belongs to
+the entry that built that frame: the platform runtime's
+`stacks::interrupted_stack_pointer()` reads it from its own frame. The HIL hang
+watchdog reports both harts' stalled context with them.
 S31 Ethernet is enabled explicitly through HAL's `__ethernet` feature, so a
 radio build does not acquire its network-driver dependencies. The Ethernet implementation remains available in the fork.
 

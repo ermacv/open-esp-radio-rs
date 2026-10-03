@@ -28,6 +28,8 @@ pub(crate) fn start(
     let boot = ((u64::from(rng.random()) << 32) | u64::from(rng.random())).max(1);
     drop(rng);
     drop(entropy);
+    // `Rng` users keep reading the TRNG after its source owner is gone.
+    crate::check_entropy_source();
     CONSOLE.start(boot);
     crate::transport::init_logger();
     executor.run(wake, |spawner| {

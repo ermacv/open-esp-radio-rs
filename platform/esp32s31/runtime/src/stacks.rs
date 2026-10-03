@@ -35,6 +35,26 @@ pub const CPU1_TASK_STACK_BYTES: usize = 16 * 1024;
 pub const CPU0_TASK_STACK_BYTES: usize = layout::CPU0_PSRAM_TASK_STACK_BYTES as usize;
 pub const IRQ_STACK_BYTES: usize = layout::IRQ_STACK_BYTES as usize;
 
+/// Offset in the interrupt entry's trap frame of the stack pointer the
+/// interrupt preempted: the task stack for an outermost entry, the
+/// interrupted handler's SRAM stack for a nested one.
+const INTERRUPTED_SP_OFFSET: usize = 72;
+
+/// The stack pointer the running interrupt handler preempted, read from the
+/// trap frame this runtime's interrupt entry stored; `None` outside an
+/// interrupt handler.
+///
+/// esp-hal reports the frame ([`esp_hal::interrupt::interrupted_context`]),
+/// but only the entry that allocated it knows which stack it moved to and how
+/// large the frame is.
+pub fn interrupted_stack_pointer() -> Option<usize> {
+    let context = esp_hal::interrupt::interrupted_context()?;
+    // SAFETY: `frame` is the 80-byte frame `PSRAM_TRAP_ENTER` stored on this
+    // hart's SRAM interrupt stack; it stays there until the handler that
+    // published it returns, which is after this call.
+    Some(unsafe { ptr::read_volatile((context.frame + INTERRUPTED_SP_OFFSET) as *const usize) })
+}
+
 /// Aligned bytes at the bottom of each interrupt stack whose stores trap.
 const IRQ_STACK_GUARD_BYTES: usize = 1024;
 /// Debug trigger of the interrupt-stack guard. ESP-HAL owns trigger 0 (task
@@ -312,6 +332,10 @@ _runtime_stack_bootstrap:
     // A nested entry swaps sp/t0 back with register-only XOR operations, then
     // both paths allocate an aligned frame on the SRAM stack. During dispatch,
     // mscratch always contains the task sp so deeper nesting is handled alike.
+    //
+    // Frame (80 bytes): ra, t0..t6 and a0..a7 at 0..60 as riscv-rt's
+    // TrapFrame, the outermost flag at 64, the interrupted mstatus at 68 and
+    // the interrupted sp at INTERRUPTED_SP_OFFSET (72).
     .macro PSRAM_TRAP_ENTER
     csrrw sp, mscratch, sp
     csrrw t0, mscratch, t0
@@ -325,6 +349,9 @@ _runtime_stack_bootstrap:
     addi sp, sp, -80
     sw t1, 8(sp)
     sw zero, 64(sp)
+    // The interrupted handler's sp is just above this frame.
+    addi t1, sp, 80
+    sw t1, 72(sp)
     j 91f
 
 90:
@@ -333,6 +360,8 @@ _runtime_stack_bootstrap:
     sw t1, 8(sp)
     li t1, 1
     sw t1, 64(sp)
+    // t0 holds the interrupted task sp.
+    sw t0, 72(sp)
 
 91:
     sw ra, 0(sp)

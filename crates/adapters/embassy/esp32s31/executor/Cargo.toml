@@ -18,6 +18,8 @@ esp32s31 = [
     "dep:esp-sync",
     "dep:portable-atomic",
     "dep:riscv",
+    "dep:oer-esp32s31-soc-esp-hal",
+    "dep:oer-interrupt-table",
 ]
 
 [dependencies]
@@ -29,6 +31,8 @@ embassy-time-queue-utils = { version = "0.3", optional = true }
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "42b085e245a67e4a845237520f19704cbdb22776", default-features = false, features = ["esp32s31", "rt", "unstable"], optional = true }
 esp-sync = { git = "https://github.com/ermacv/esp-hal", rev = "42b085e245a67e4a845237520f19704cbdb22776", features = ["esp32s31"], optional = true }
 portable-atomic = { version = "1.11", default-features = false, optional = true }
+oer-interrupt-table = { path = "../../../../runtime/interrupt-table", optional = true }
+oer-esp32s31-soc-esp-hal = { path = "../../../esp-hal/esp32s31/soc", features = ["esp32s31"], optional = true }
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 riscv = { version = "0.15", optional = true }

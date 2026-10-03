@@ -16,6 +16,7 @@ static TESTS: Channel<CriticalSectionRawMutex, (RequestIdentity, WatchdogTestMod
 
 pub(crate) fn start(
     executor: &'static mut crate::Executor<0>,
+    wake: crate::ExecutorWake,
     usb: esp_hal::peripherals::USB_DEVICE<'static>,
     rng: esp_hal::peripherals::RNG<'static>,
     timer: esp_hal::peripherals::TIMG1<'static>,
@@ -29,7 +30,7 @@ pub(crate) fn start(
     drop(entropy);
     CONSOLE.start(boot);
     crate::transport::init_logger();
-    executor.run(|spawner| {
+    executor.run(wake, |spawner| {
         spawner.spawn(test_watchdog(service).expect("system watchdog test task"));
         spawner.spawn(run(usb, boot).expect("system console task"));
     });

@@ -30,7 +30,12 @@ use oer::systems::esp32s31::embassy::{
 use static_cell::StaticCell;
 
 // The image's peripheral interrupt sources (`oer_esp32s31_platform_runtime::interrupts`).
-oer_esp32s31_platform_runtime::interrupt_table! {}
+oer_esp32s31_platform_runtime::interrupt_table! {
+    /// Wakes the core-0 Embassy executor.
+    wake: ExecutorWake = FROM_CPU_INTR0 => oer_esp32s31_executor_embassy::wake_handler::<0>, Priority1, ProCpu;
+    /// The Embassy time driver's alarm (TIMG0 timer 0).
+    alarm: TimeAlarm = TG0_T0_LEVEL => oer_esp32s31_executor_embassy::timer_interrupt, Priority1, ProCpu;
+}
 
 static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 // The shared radio outlives every client and its periodic PHY tracking task.
@@ -62,7 +67,8 @@ extern "C" fn runtime_main() -> ! {
     static WATCHDOG: StaticCell<DeadlineWatchdog> = StaticCell::new();
     let watchdog = WATCHDOG.init(DeadlineWatchdog::new(peripherals.TIMG1));
     let timer_group = TimerGroup::new(peripherals.TIMG0);
-    platform_executor::init(OneShotTimer::new(timer_group.timer0));
+    let interrupts = Interrupts::take().expect("the image takes its interrupt tokens once");
+    platform_executor::init(OneShotTimer::new(timer_group.timer0), interrupts.alarm);
     TRNG_SOURCE.init(TrngSource::new(peripherals.RNG));
     let trng = Trng::try_new().expect("ESP32-S31 TRNG must have a unique owner");
     let wifi_platform = EspHalWifiPlatform::new(peripherals.WIFI);
@@ -82,7 +88,7 @@ extern "C" fn runtime_main() -> ! {
     // SAFETY: timer and executor handlers are now bound on CPU0, and the staged
     // handoff has kept MIE clear since `adopt_psram`.
     unsafe { oer_esp32s31_platform_runtime::enable_interrupts_after_handoff() };
-    executor.run(|spawner| {
+    executor.run(interrupts.wake, |spawner| {
         spawner.spawn(
             access_point_task(spawner, radio_platform, wifi_platform, trng, watchdog)
                 .expect("access-point task storage must be available once"),

@@ -267,17 +267,20 @@ fn scan_rx_hands_the_exact_live_ring_to_the_next_role() {
     let mut frame = [0_u8; 64];
     let mut observer = FrameObserver::default();
     let monotonic = oer_time_virtual::SkipClock::new();
-    let mut context = ScanObservationContext::new(
-        6,
-        crate::mac_clock::MacClock::<embassy_sync::blocking_mutex::raw::NoopRawMutex, _, _>::new(
-            crate::mac_clock::FixedCounter(0),
-            &monotonic,
-        )
-        .snapshot(),
-        &mut frame,
-        &mut table,
-        &mut observer,
-    );
+    let mut context =
+        ScanObservationContext::new(
+            6,
+            crate::mac_clock::MacClockStorage::<
+                embassy_sync::blocking_mutex::raw::NoopRawMutex,
+                _,
+                _,
+            >::new(&monotonic)
+            .start(crate::mac_clock::FixedCounter(0))
+            .snapshot(),
+            &mut frame,
+            &mut table,
+            &mut observer,
+        );
     let progress = rx.observe_management(&mut hardware, &mut context).unwrap();
     let release = rx.observe_management(&mut hardware, &mut context).unwrap();
 

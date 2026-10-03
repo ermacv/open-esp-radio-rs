@@ -284,12 +284,10 @@ impl oer_time::Timer for ModelTimer {
 const MAC_AT_EPOCH: u32 = 5_000;
 
 impl crate::mac_clock::ReceptionClock for ModelTimer {
-    fn snapshot(&self) -> crate::mac_clock::MacClockSnapshot {
-        crate::mac_clock::MacClock::<embassy_sync::blocking_mutex::raw::NoopRawMutex, _, _>::new(
-            crate::mac_clock::FixedCounter(MAC_AT_EPOCH),
-            ModelTimer,
-        )
-        .snapshot()
+    fn snapshot(&self) -> Option<crate::mac_clock::MacClockSnapshot> {
+        crate::mac_clock::MacClockStorage::<embassy_sync::blocking_mutex::raw::NoopRawMutex, _, _>::new(ModelTimer)
+            .start(crate::mac_clock::FixedCounter(MAC_AT_EPOCH))
+            .snapshot()
     }
 
     fn on_rf_wake(&self) {}

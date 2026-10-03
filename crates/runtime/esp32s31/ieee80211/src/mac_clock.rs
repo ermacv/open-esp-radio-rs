@@ -2,8 +2,11 @@
 //! the station's power agent.
 //!
 //! The MAC local-time counter stamps every received frame
-//! (`oer_esp32s31_ieee80211_mac::rx::decode_rx_local_timestamp`).
-//! [`MacClock`] widens it to a 64-bit timeline
+//! (`oer_esp32s31_ieee80211_mac::rx::decode_rx_local_timestamp`). A
+//! [`MacClockStorage`] lives in static memory, where every task that reads
+//! the clock finds it; each radio start [`starts`](MacClockStorage::start) a
+//! fresh clock in it and receives the only [`MacClockHandle`] that reads
+//! that clock. The clock widens the counter to a 64-bit timeline
 //! ([`MacTimeline`]), pairs it with the image's monotonic clock, and counts
 //! the generations of that relation: each RF wake starts one, since the
 //! counter's relation to the monotonic clock across RF sleep is not
@@ -49,20 +52,23 @@ impl LocalTimeCounter for oer_esp32s31_hal::root::MacLocalTime {
 /// The MAC clock as the owners that convert receive timestamps and the
 /// station's power agent use it.
 pub trait ReceptionClock {
-    /// The clock relation now, as a value ([`MacClock::snapshot`]).
-    fn snapshot(&self) -> MacClockSnapshot;
+    /// The clock relation now, as a value ([`MacClockHandle::snapshot`]);
+    /// `None` for a clock a later radio start replaced.
+    fn snapshot(&self) -> Option<MacClockSnapshot>;
 
-    /// Start a new generation after an RF wake ([`MacClock::on_rf_wake`]).
+    /// Start a new generation after an RF wake ([`MacClockHandle::on_rf_wake`]).
     fn on_rf_wake(&self);
 }
 
-impl<M: RawMutex, L: LocalTimeCounter, C: Clock> ReceptionClock for MacClock<M, L, C> {
-    fn snapshot(&self) -> MacClockSnapshot {
-        MacClock::snapshot(self)
+impl<M: RawMutex, L: LocalTimeCounter + Copy, C: Clock> ReceptionClock
+    for MacClockHandle<'_, M, L, C>
+{
+    fn snapshot(&self) -> Option<MacClockSnapshot> {
+        MacClockHandle::snapshot(self)
     }
 
     fn on_rf_wake(&self) {
-        MacClock::on_rf_wake(self);
+        MacClockHandle::on_rf_wake(self);
     }
 }
 
@@ -122,25 +128,25 @@ impl MacClockSnapshot {
 
 /// A monotonic timer paired with the MAC clock, for owners that wait on the
 /// one and convert receive timestamps with the other.
-pub struct ReceptionTimer<'c, T, K: ?Sized> {
+pub struct ReceptionTimer<T, K> {
     pub timer: T,
-    pub reception: &'c K,
+    pub reception: K,
 }
 
-impl<T: Clock, K: ?Sized> Clock for ReceptionTimer<'_, T, K> {
+impl<T: Clock, K> Clock for ReceptionTimer<T, K> {
     fn now(&self) -> Instant {
         self.timer.now()
     }
 }
 
-impl<T: oer_time::Timer, K: ?Sized> oer_time::Timer for ReceptionTimer<'_, T, K> {
+impl<T: oer_time::Timer, K> oer_time::Timer for ReceptionTimer<T, K> {
     fn wait_until(&self, deadline: Instant) -> impl Future<Output = ()> {
         self.timer.wait_until(deadline)
     }
 }
 
-impl<T, K: ReceptionClock + ?Sized> ReceptionClock for ReceptionTimer<'_, T, K> {
-    fn snapshot(&self) -> MacClockSnapshot {
+impl<T, K: ReceptionClock> ReceptionClock for ReceptionTimer<T, K> {
+    fn snapshot(&self) -> Option<MacClockSnapshot> {
         self.reception.snapshot()
     }
 
@@ -169,62 +175,112 @@ struct ClockState {
     boundary: Option<Boundary>,
 }
 
-/// The MAC local time with its relation to the monotonic clock.
+/// Static memory for the MAC clock of the radio start in progress.
 ///
 /// A fresh reading lands next to the monotonic projection of the latest
 /// sample, so readings may lie any time apart. Outside an RF wake, a
 /// reading that disagrees with that projection by more than the sample's
 /// uncertainty and drift breaks the relation: the timeline continues at the
 /// projection in a new generation, and earlier stamps lose their place.
-pub struct MacClock<M: RawMutex, L, C> {
-    counter: L,
+pub struct MacClockStorage<M: RawMutex, L, C> {
     monotonic: C,
-    state: Mutex<M, Cell<ClockState>>,
+    state: Mutex<M, Cell<StorageState<L>>>,
 }
 
-impl<M: RawMutex, L: LocalTimeCounter, C: Clock> MacClock<M, L, C> {
-    pub const fn new(counter: L, monotonic: C) -> Self {
+#[derive(Clone, Copy)]
+struct StorageState<L> {
+    /// The radio start whose handle reads the clock.
+    start: u32,
+    /// That start's counter; `None` before the first start.
+    counter: Option<L>,
+    clock: ClockState,
+}
+
+const FRESH_CLOCK: ClockState = ClockState {
+    timeline: MacTimeline::new(),
+    generation: 0,
+    current: None,
+    boundary: None,
+};
+
+impl<M: RawMutex, L: LocalTimeCounter + Copy, C: Clock> MacClockStorage<M, L, C> {
+    /// Storage with no clock started.
+    pub const fn new(monotonic: C) -> Self {
         Self {
-            counter,
             monotonic,
-            state: Mutex::new(Cell::new(ClockState {
-                timeline: MacTimeline::new(),
-                generation: 0,
-                current: None,
-                boundary: None,
+            state: Mutex::new(Cell::new(StorageState {
+                start: 0,
+                counter: None,
+                clock: FRESH_CLOCK,
             })),
         }
     }
 
+    /// Start the clock of one radio start on its MAC local-time `counter`:
+    /// a fresh timeline in generation 0. Every handle of an earlier start
+    /// stops reading.
+    pub fn start(&self, counter: L) -> MacClockHandle<'_, M, L, C> {
+        let start = self.state.lock(|cell| {
+            let mut state = cell.get();
+            state.start = state.start.wrapping_add(1);
+            state.counter = Some(counter);
+            state.clock = FRESH_CLOCK;
+            cell.set(state);
+            state.start
+        });
+        MacClockHandle {
+            storage: self,
+            start,
+        }
+    }
+}
+
+/// The MAC clock of one radio start: the MAC local time with its relation to
+/// the monotonic clock. A handle of a start a later one replaced reads
+/// nothing.
+pub struct MacClockHandle<'s, M: RawMutex, L, C> {
+    storage: &'s MacClockStorage<M, L, C>,
+    start: u32,
+}
+
+impl<M: RawMutex, L, C> Clone for MacClockHandle<'_, M, L, C> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<M: RawMutex, L, C> Copy for MacClockHandle<'_, M, L, C> {}
+
+impl<M: RawMutex, L: LocalTimeCounter + Copy, C: Clock> MacClockHandle<'_, M, L, C> {
     /// The MAC local time now.
-    pub fn now(&self) -> Ieee80211Instant {
-        self.update(|state| self.read_fresh(state, false).radio)
+    pub fn now(&self) -> Option<Ieee80211Instant> {
+        self.update(|state, counter, monotonic| read_fresh(state, counter, monotonic, false).radio)
     }
 
     /// The MAC local time and the monotonic time read back to back, in the
     /// current generation.
-    pub fn sample(&self) -> Ieee80211ClockSample {
-        self.update(|state| self.read_fresh(state, false))
+    pub fn sample(&self) -> Option<Ieee80211ClockSample> {
+        self.update(|state, counter, monotonic| read_fresh(state, counter, monotonic, false))
     }
 
     /// The clock relation now, as a value that converts the receive
     /// timestamps of frames received before it.
-    pub fn snapshot(&self) -> MacClockSnapshot {
-        self.update(|state| {
-            let now = self.read_fresh(state, false);
+    pub fn snapshot(&self) -> Option<MacClockSnapshot> {
+        self.update(|state, counter, monotonic| {
+            let now = read_fresh(state, counter, monotonic, false);
             MacClockSnapshot { state: *state, now }
         })
     }
 
     /// The stamp of the raw receive timestamp `raw` ([`MacClockSnapshot::stamp`]).
     pub fn stamp(&self, raw: u32) -> Option<Ieee80211Stamp> {
-        self.snapshot().stamp(raw)
+        self.snapshot()?.stamp(raw)
     }
 
     /// The monotonic time of the reception the raw receive timestamp `raw`
     /// records ([`MacClockSnapshot::received_at`]).
     pub fn received_at(&self, raw: u32) -> Option<Instant> {
-        self.snapshot().received_at(raw)
+        self.snapshot()?.received_at(raw)
     }
 
     /// Start a new generation after an RF wake. A counter that ran on or
@@ -233,85 +289,96 @@ impl<M: RawMutex, L: LocalTimeCounter, C: Clock> MacClock<M, L, C> {
     /// at the monotonic projection of that sample, and earlier stamps lose
     /// their place.
     pub fn on_rf_wake(&self) {
-        self.update(|state| {
-            self.read_fresh(state, true);
+        self.update(|state, counter, monotonic| {
+            read_fresh(state, counter, monotonic, true);
         });
     }
 
-    /// Read both clocks back to back, place the reading and record it as
-    /// the current sample.
-    fn read_fresh(&self, state: &mut ClockState, wake: bool) -> Ieee80211ClockSample {
-        let before = self.monotonic.now();
-        let raw = self.counter.read();
-        let after = self.monotonic.now();
-        let window = after.saturating_duration_since(before);
-        let last = state.current;
-        let (at, continuous) = match last {
-            None => (state.timeline.advance(raw), true),
-            Some(sample) => {
-                let placed = MAC_CLOCK_INFO
-                    .from_monotonic_with(before, &sample)
-                    .ok()
-                    .and_then(|projected| {
-                        let near = projected.at.at.as_micros();
-                        let tolerance = projected
-                            .uncertainty
-                            .as_micros()
-                            .saturating_add(window.as_micros());
-                        state
-                            .timeline
-                            .place_near(raw, near)
-                            .map(|at| (at, near, tolerance))
-                    });
-                match placed {
-                    Some((at, near, tolerance)) => {
-                        // At a wake the counter may have held still for the
-                        // sleep: it then lies anywhere since the last sample.
-                        let low = if wake {
-                            sample.radio.as_micros()
-                        } else {
-                            near.saturating_sub(tolerance)
-                        };
-                        if (low..=near.saturating_add(tolerance)).contains(&at) {
-                            (state.timeline.settle(raw, at), true)
-                        } else {
-                            (state.timeline.settle(raw, near), false)
-                        }
-                    }
-                    None => (state.timeline.settle(raw, sample.radio.as_micros()), false),
-                }
-            }
-        };
-        if wake || !continuous {
-            state.generation = state.generation.wrapping_add(1);
-            state.boundary = Some(Boundary {
-                at,
-                previous: if continuous { last } else { None },
-            });
-        }
-        let sample = Ieee80211ClockSample {
-            radio: Ieee80211Instant::from_micros(at),
-            monotonic: before,
-            uncertainty: window,
-            generation: state.generation,
-        };
-        state.current = Some(sample);
-        sample
-    }
-
-    fn update<R>(&self, f: impl FnOnce(&mut ClockState) -> R) -> R {
-        self.state.lock(|cell| {
+    /// Run `f` on this start's clock; `None` once a later start replaced it.
+    fn update<R>(&self, f: impl FnOnce(&mut ClockState, &L, &C) -> R) -> Option<R> {
+        self.storage.state.lock(|cell| {
             let mut state = cell.get();
-            let result = f(&mut state);
+            if state.start != self.start {
+                return None;
+            }
+            let counter = state.counter?;
+            let result = f(&mut state.clock, &counter, &self.storage.monotonic);
             cell.set(state);
-            result
+            Some(result)
         })
     }
+}
+
+/// Read both clocks back to back, place the reading and record it as the
+/// current sample.
+fn read_fresh<L: LocalTimeCounter, C: Clock>(
+    state: &mut ClockState,
+    counter: &L,
+    monotonic: &C,
+    wake: bool,
+) -> Ieee80211ClockSample {
+    let before = monotonic.now();
+    let raw = counter.read();
+    let after = monotonic.now();
+    let window = after.saturating_duration_since(before);
+    let last = state.current;
+    let (at, continuous) = match last {
+        None => (state.timeline.advance(raw), true),
+        Some(sample) => {
+            let placed = MAC_CLOCK_INFO
+                .from_monotonic_with(before, &sample)
+                .ok()
+                .and_then(|projected| {
+                    let near = projected.at.at.as_micros();
+                    let tolerance = projected
+                        .uncertainty
+                        .as_micros()
+                        .saturating_add(window.as_micros());
+                    state
+                        .timeline
+                        .place_near(raw, near)
+                        .map(|at| (at, near, tolerance))
+                });
+            match placed {
+                Some((at, near, tolerance)) => {
+                    // At a wake the counter may have held still for the
+                    // sleep: it then lies anywhere since the last sample.
+                    let low = if wake {
+                        sample.radio.as_micros()
+                    } else {
+                        near.saturating_sub(tolerance)
+                    };
+                    if (low..=near.saturating_add(tolerance)).contains(&at) {
+                        (state.timeline.settle(raw, at), true)
+                    } else {
+                        (state.timeline.settle(raw, near), false)
+                    }
+                }
+                None => (state.timeline.settle(raw, sample.radio.as_micros()), false),
+            }
+        }
+    };
+    if wake || !continuous {
+        state.generation = state.generation.wrapping_add(1);
+        state.boundary = Some(Boundary {
+            at,
+            previous: if continuous { last } else { None },
+        });
+    }
+    let sample = Ieee80211ClockSample {
+        radio: Ieee80211Instant::from_micros(at),
+        monotonic: before,
+        uncertainty: window,
+        generation: state.generation,
+    };
+    state.current = Some(sample);
+    sample
 }
 
 /// A counter that reads one fixed value, for tests that need a clock
 /// snapshot but no receive timestamps.
 #[cfg(test)]
+#[derive(Clone, Copy)]
 pub(crate) struct FixedCounter(pub u32);
 
 #[cfg(test)]

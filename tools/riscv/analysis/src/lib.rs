@@ -13,6 +13,16 @@ pub struct FunctionInput<'a> {
     pub bytes: &'a [u8],
     pub relocations: &'a PreparedReferences<'a>,
     pub data_ranges: &'a [CodeRange],
+    /// Indirect jumps whose targets the caller knows from the build's facts.
+    pub jumps: &'a [KnownJump],
+}
+/// The targets of one indirect jump that the build's facts name, such as
+/// the entries a jump table's relocations hold: the control-flow graph
+/// follows them as jumps.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KnownJump {
+    pub site: u64,
+    pub targets: Vec<u64>,
 }
 #[derive(Default)]
 pub struct AnalysisSummary {
@@ -317,7 +327,19 @@ fn analyze_with(
                 offset: imm,
                 link,
             } => {
-                if relocated.is_none() && !unknown && !link && matches!(base, 1 | 5) && imm == 0 {
+                let known = (!link)
+                    .then(|| input.jumps.iter().find(|jump| jump.site == offset))
+                    .flatten();
+                if let Some(known) = known {
+                    for &target in &known.targets {
+                        outgoing.push((Some(target), EdgeKind::Jump));
+                    }
+                } else if relocated.is_none()
+                    && !unknown
+                    && !link
+                    && matches!(base, 1 | 5)
+                    && imm == 0
+                {
                     outgoing.push((None, EdgeKind::Return));
                 } else {
                     if relocated.is_none() || unknown {

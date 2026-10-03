@@ -16,6 +16,10 @@ An optional borrowed `ImageMemory` port supplies immutable load bytes. Static
 ELF permissions qualify these constants; writable/unmapped memory stays unknown.
 Image PC-relative values use virtual addresses, and saved transfer records expose
 resolved and unresolved calls/outgoing jumps without expanding the local CFG.
+The one exception is `FunctionInput::jumps`: indirect jumps whose targets the
+caller knows from the build's facts (`KnownJump`, such as the entries of a jump
+table that the link's relocations name), which the CFG follows as jumps.
+Blobray passes none.
 No second analyzer or machine executor is selected for linked code.
 
 The same value solver can emit a flat expression DAG, entry-register values,

@@ -181,6 +181,7 @@ fn research_function<'m>(
                 bytes: view.code,
                 relocations: &references[index].1,
                 data_ranges: view.data_ranges,
+                jumps: &[],
             },
             decoder,
             memory,

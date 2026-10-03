@@ -105,6 +105,7 @@ fn exercise_retention(destination: impl Fn(usize) -> u8) {
         WifiChannel::mhz20(13).unwrap(),
         100,
         2,
+        1,
     )
     .unwrap_or_else(|_| panic!("open AP startup"));
     let identities = [[4; 6], [6; 6]].map(|peer| engine.admit_downlink(peer).unwrap().identity());

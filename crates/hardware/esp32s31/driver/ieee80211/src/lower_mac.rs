@@ -77,10 +77,10 @@ use core::pin::Pin;
 use oer_time::Clock;
 
 use oer_esp32s31_hal::types::StaTbttSchedule;
-use oer_ieee80211_lower_mac::{TsfGeneration, TsfRelation};
+use oer_ieee80211_lower_mac::TsfGeneration;
 use oer_ieee80211_mac::tsf::TsfInstant;
 
-use crate::station_tsf::{STATION_TSF_SAMPLE_UNCERTAINTY, StationTsf, StationTsfHardware};
+use crate::station_tsf::{StationTsf, StationTsfHardware};
 use oer_esp32s31_ieee80211_mac::{
     MacInterface,
     ap_policy::ApRxPolicyHardware,
@@ -520,7 +520,7 @@ pub struct LowerMacCore<
     /// The owner of the station TSF writes and its relation.
     station_tsf: StationTsf,
     /// The relation of the access-point TSF, which only restarts.
-    access_point_tsf: TsfRelation,
+    access_point_tsf: oer_esp32s31_ieee80211_mac::ap_tsf::AccessPointTsf,
     /// The attempt of each ordinary queue, by its hardware index
     /// ([`LegacyTxQueue::hardware_index`]).
     queues: [Option<Attempt<'slot, S, BUFFER_SIZE, AMPDU_SLOTS>>; LOWER_MAC_TX_QUEUES],
@@ -585,7 +585,9 @@ where
             monitor: false,
             tbtt: None,
             station_tsf: StationTsf::new(config.tsf_epoch),
-            access_point_tsf: TsfRelation::new(config.tsf_epoch, STATION_TSF_SAMPLE_UNCERTAINTY),
+            access_point_tsf: oer_esp32s31_ieee80211_mac::ap_tsf::AccessPointTsf::new(
+                config.tsf_epoch,
+            ),
             queues: [const { None }; LOWER_MAC_TX_QUEUES],
         }
     }
@@ -1581,8 +1583,7 @@ where
                 self.station_tsf.set(hardware, tsf.at);
             }
             VifRole::AccessPoint if tsf.at.as_micros() == 0 => {
-                self.access_point_tsf.break_relation();
-                hardware.reset_and_start_access_point_tsf();
+                self.access_point_tsf.restart(hardware);
             }
             VifRole::AccessPoint => return Err(SettingError::Unsupported),
         }

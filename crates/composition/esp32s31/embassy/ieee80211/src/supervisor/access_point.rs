@@ -399,6 +399,7 @@ impl ProductionWifiEpochRunner {
             channel,
             beacon_interval.tu(),
             dtim_period.get(),
+            self.mac_clock.tsf_epoch(),
         ) {
             Ok(engine) => engine,
             Err(engine) => {

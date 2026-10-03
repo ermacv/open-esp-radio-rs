@@ -809,6 +809,7 @@ impl ProductionWifiEpochRunner {
             channel,
             beacon_interval.tu(),
             dtim_period.get(),
+            self.mac_clock.tsf_epoch(),
         )
         .unwrap_or_else(|_| {
             unreachable!("validated paired AP resources must start on the associated channel")

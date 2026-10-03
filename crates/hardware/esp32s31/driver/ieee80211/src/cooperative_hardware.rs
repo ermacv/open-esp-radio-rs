@@ -225,11 +225,17 @@ impl MacRuntimeStopHardware for CooperativeRadioHardware<'_> {
 }
 
 impl ApTsfHardware for CooperativeRadioHardware<'_> {
-    fn reset_and_start_access_point_tsf(&mut self) {
+    fn reset_and_start_access_point_tsf(
+        &mut self,
+        _: oer_esp32s31_ieee80211_mac::ap_tsf::AccessPointTsfWrite,
+    ) {
         self.wifi_mac_hal().reset_and_start_access_point_tsf();
     }
 
-    fn stop_access_point_tsf(&mut self) {
+    fn stop_access_point_tsf(
+        &mut self,
+        _: oer_esp32s31_ieee80211_mac::ap_tsf::AccessPointTsfWrite,
+    ) {
         self.wifi_mac_hal().stop_access_point_tsf();
     }
 }

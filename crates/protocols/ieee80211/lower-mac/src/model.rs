@@ -24,7 +24,7 @@ use core::{
     task::{Context, Poll},
 };
 
-use crate::Ieee80211Instant;
+use crate::{Ieee80211ClockSample, Ieee80211Instant};
 use oer_ieee80211_mac::{
     phy::{HeMcs, HtMcs},
     qos::WmmAccessCategory,
@@ -739,6 +739,18 @@ impl Ieee80211LowerMacPort for LowerMacModel {
     fn now(&self) -> Result<Ieee80211Instant, ModelPoisoned> {
         self.serving()?;
         Ok(self.now.get())
+    }
+
+    /// The model's clock is the monotonic clock: one reading is both, in
+    /// the one generation the model has.
+    fn clock_sample(&self) -> Result<Ieee80211ClockSample, ModelPoisoned> {
+        let radio = self.now()?;
+        Ok(Ieee80211ClockSample {
+            radio,
+            monotonic: oer_time::Instant::from_micros(radio.as_micros()),
+            uncertainty: oer_time::Duration::ZERO,
+            generation: 0,
+        })
     }
 }
 

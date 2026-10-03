@@ -69,7 +69,6 @@ use oer_esp32s31_ieee80211::{
     tx::WifiTxWake,
 };
 use oer_esp32s31_ieee80211_mac::rx::NormalizedRxFrame;
-use oer_ieee80211_lower_mac::Ieee80211Instant;
 use oer_ieee80211_lower_mac::{
     AmpduCapabilities, BeaconTimingCapabilities, CancelError, ClockInfo, EventsLost, FailureClass,
     Ieee80211LowerMacPort, KeyHandle, KeyInstall, LifecycleCommand, LifecycleError, LifecycleEvent,
@@ -78,6 +77,7 @@ use oer_ieee80211_lower_mac::{
     SettingError, SubmitError, SubmitResult, TbttEvent, TbttSchedule, Tsf, TxCompletion, TxId,
     VifId,
 };
+use oer_ieee80211_lower_mac::{Ieee80211ClockSample, Ieee80211Instant};
 use oer_ieee80211_mac::channel::WifiChannel;
 
 /// Attempt completions the port owes at most: admitted attempts whose
@@ -967,6 +967,20 @@ where
     fn now(&self) -> Result<Ieee80211Instant, Esp32s31LowerMacError> {
         // The radio epoch is the monotonic clock (`clock_info`).
         self.with_core(|core, _, _| Ok(Ieee80211Instant::from_micros(core.now().as_micros())))
+    }
+
+    /// The radio epoch is the monotonic clock (`clock_info`): one reading
+    /// is both, in the one generation it has.
+    fn clock_sample(&self) -> Result<Ieee80211ClockSample, Esp32s31LowerMacError> {
+        self.with_core(|core, _, _| {
+            let monotonic = core.now();
+            Ok(Ieee80211ClockSample {
+                radio: Ieee80211Instant::from_micros(monotonic.as_micros()),
+                monotonic,
+                uncertainty: oer_time::Duration::ZERO,
+                generation: 0,
+            })
+        })
     }
 }
 

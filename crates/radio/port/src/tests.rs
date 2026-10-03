@@ -101,6 +101,46 @@ fn unrelated_and_affine_radio_clocks_never_pretend_to_convert() {
     assert_eq!(affine.to_monotonic(radio), Err(EpochError::NeedsSample));
 }
 
+fn stamp(micros: u64, generation: u32) -> RadioStamp<Port> {
+    RadioStamp {
+        at: RadioInstant::from_micros(micros),
+        generation,
+    }
+}
+
+#[test]
+fn an_affine_clock_refuses_a_stamp_of_another_generation() {
+    let affine = ClockInfo {
+        epoch: RadioEpoch::Affine { drift_ppm: 1 },
+        ..ClockInfo::MONOTONIC_MICROS
+    };
+    let sample = ClockSample::<Port> {
+        radio: RadioInstant::from_micros(1_000),
+        monotonic: Instant::from_micros(9_000),
+        uncertainty: Duration::from_micros(2),
+        generation: 4,
+    };
+    assert_eq!(sample.stamp(), stamp(1_000, 4));
+    assert_eq!(
+        affine.to_monotonic_with(stamp(1_500, 3), &sample),
+        Err(EpochError::StaleSample)
+    );
+    assert_eq!(
+        affine.to_monotonic_with(stamp(1_500, 4), &sample),
+        Ok(Projected {
+            at: Instant::from_micros(9_500),
+            uncertainty: Duration::from_micros(3),
+        })
+    );
+    // A projection into the radio clock carries the sample's generation.
+    assert_eq!(
+        affine
+            .from_monotonic_with::<Port>(Instant::from_micros(9_500), &sample)
+            .map(|projected| projected.at),
+        Ok(stamp(1_500, 4))
+    );
+}
+
 #[test]
 fn an_affine_clock_projects_from_its_sample_with_a_drift_bound() {
     let affine = ClockInfo {
@@ -115,7 +155,7 @@ fn an_affine_clock_projects_from_its_sample_with_a_drift_bound() {
     };
     // One second after the sample: 20 ppm of it is 20 us.
     assert_eq!(
-        affine.to_monotonic_with(RadioInstant::from_micros(2_000_000), &sample),
+        affine.to_monotonic_with(stamp(2_000_000, 7), &sample),
         Ok(Projected {
             at: Instant::from_micros(6_000_000),
             uncertainty: Duration::from_micros(23),
@@ -123,7 +163,7 @@ fn an_affine_clock_projects_from_its_sample_with_a_drift_bound() {
     );
     // Before the sample, the distance counts the same way.
     assert_eq!(
-        affine.to_monotonic_with(RadioInstant::from_micros(999_999), &sample),
+        affine.to_monotonic_with(stamp(999_999, 7), &sample),
         Ok(Projected {
             at: Instant::from_micros(4_999_999),
             uncertainty: Duration::from_micros(4),
@@ -132,14 +172,14 @@ fn an_affine_clock_projects_from_its_sample_with_a_drift_bound() {
     assert_eq!(
         affine.from_monotonic_with::<Port>(Instant::from_micros(6_000_000), &sample),
         Ok(Projected {
-            at: RadioInstant::from_micros(2_000_000),
+            at: stamp(2_000_000, 7),
             uncertainty: Duration::from_micros(23),
         })
     );
     // A projection before either epoch is refused, never clamped.
     assert_eq!(
         affine.to_monotonic_with(
-            RadioInstant::from_micros(0),
+            stamp(0, 0),
             &ClockSample::<Port> {
                 radio: RadioInstant::from_micros(10),
                 monotonic: Instant::from_micros(5),
@@ -160,7 +200,7 @@ fn a_monotonic_clock_ignores_the_sample_and_an_unrelated_one_refuses() {
         generation: 1,
     };
     assert_eq!(
-        ClockInfo::MONOTONIC_MICROS.to_monotonic_with(RadioInstant::from_micros(77), &sample),
+        ClockInfo::MONOTONIC_MICROS.to_monotonic_with(stamp(77, 0), &sample),
         Ok(Projected {
             at: Instant::from_micros(77),
             uncertainty: Duration::ZERO,
@@ -171,7 +211,7 @@ fn a_monotonic_clock_ignores_the_sample_and_an_unrelated_one_refuses() {
         ..ClockInfo::MONOTONIC_MICROS
     };
     assert_eq!(
-        unrelated.to_monotonic_with(RadioInstant::from_micros(77), &sample),
+        unrelated.to_monotonic_with(stamp(77, 1), &sample),
         Err(EpochError::Unrelated)
     );
 }

@@ -1,6 +1,6 @@
 //! Receive metadata of one MPDU.
 
-use crate::Ieee80211Instant;
+use crate::Ieee80211Stamp;
 use oer_ieee80211_mac::{channel::Channel, phy::PhyRate};
 
 /// Provenance of one receive value.
@@ -73,8 +73,9 @@ pub struct RxMeta {
     pub rate: RxEvidence<PhyRate>,
     pub rssi_dbm: RxEvidence<i8>,
     pub noise_floor_dbm: RxEvidence<i8>,
-    /// Reception time in the port's radio clock.
-    pub timestamp: RxEvidence<Ieee80211Instant>,
+    /// Reception time in the port's radio clock, with the generation of
+    /// the clock relation it was taken in.
+    pub timestamp: RxEvidence<Ieee80211Stamp>,
     pub crypto: RxEvidence<RxCryptoStatus>,
     /// Whether this is an IEEE VHT/HE S-MPDU: the sole MPDU of an A-MPDU,
     /// its delimiter's EOF bit set. Not a synonym for a non-aggregated MPDU.

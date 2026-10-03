@@ -46,6 +46,14 @@ pub enum Ieee80211Radio {}
 /// An instant on the IEEE 802.11 lower-MAC port's clock.
 pub type Ieee80211Instant = oer_time::RadioInstant<Ieee80211Radio>;
 
+/// An instant on the IEEE 802.11 lower-MAC port's clock with the generation
+/// of its relation to the monotonic clock.
+pub type Ieee80211Stamp = oer_radio_port::RadioStamp<Ieee80211Radio>;
+
+/// A paired reading of the IEEE 802.11 lower-MAC port's clock and the
+/// monotonic clock.
+pub type Ieee80211ClockSample = oer_radio_port::ClockSample<Ieee80211Radio>;
+
 pub use capabilities::{
     BandSet, CoexPrioritySet, HardwareServices, LowerMacCapabilities, PhyFormatSet, RateSupport,
     WidthSet,
@@ -60,8 +68,8 @@ pub use extensions::{
     MonitorCapabilities, TbttEvent, TbttSchedule, Tsf,
 };
 pub use oer_radio_port::{
-    CancelError, ClockInfo, Correlation, CorrelationIds, EventsLost, FailureClass,
-    LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned, PortError, RadioEpoch,
+    CancelError, ClockInfo, Correlation, CorrelationIds, EpochError, EventsLost, FailureClass,
+    LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned, PortError, Projected, RadioEpoch,
 };
 pub use port::{Ieee80211LowerMacPort, LowerMacEvent, MpduAttempt, SubmitResult};
 pub use rx::{RxCryptoStatus, RxEvidence, RxMeta};

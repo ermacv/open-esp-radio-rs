@@ -687,9 +687,20 @@ fn a_poisoned_port_reports_its_terminal_event_after_the_earlier_ones() {
 }
 
 #[test]
-fn the_model_clock_has_no_relation_to_monotonic_time() {
+fn the_model_clock_is_monotonic_and_samples_one_reading() {
     let model = Model::new();
     assert_eq!(model.clock_info().epoch, RadioEpoch::Monotonic);
+    model.set_now(Ieee80211Instant::from_micros(1_234));
+    let sample = model.clock_sample().unwrap();
+    assert_eq!(sample.radio, Ieee80211Instant::from_micros(1_234));
+    assert_eq!(sample.monotonic.as_micros(), 1_234);
+    assert_eq!(
+        model
+            .clock_info()
+            .to_monotonic_with(sample.stamp(), &sample)
+            .map(|projected| projected.at.as_micros()),
+        Ok(1_234)
+    );
 }
 
 #[test]

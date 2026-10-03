@@ -2,7 +2,7 @@
 
 use core::future::Future;
 
-use crate::Ieee80211Instant;
+use crate::{Ieee80211ClockSample, Ieee80211Instant};
 use oer_radio_port::{
     CancelError, ClockInfo, EventsLost, LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned,
     PortError,
@@ -61,7 +61,8 @@ pub type SubmitResult<A, E> = Result<Result<(), Refused<A>>, E>;
 /// - **Lifecycle**: [`Self::lifecycle`] (enable, disable, quiesce) and
 ///   [`Self::cancel`] of one attempt, each with a terminal event.
 /// - **Clock**: [`Self::now`], the radio time of receive timestamps, with
-///   the resolution and epoch relation of [`Self::clock_info`].
+///   the resolution and epoch relation of [`Self::clock_info`];
+///   [`Self::clock_sample`] pairs it with the monotonic clock.
 ///
 /// Optional operations are extension traits over this one:
 /// [`LowerMacAmpdu`](crate::LowerMacAmpdu),
@@ -187,4 +188,10 @@ pub trait Ieee80211LowerMacPort {
 
     /// The radio clock in microseconds: the epoch of receive timestamps.
     fn now(&self) -> Result<Ieee80211Instant, Self::Error>;
+
+    /// The radio clock and the monotonic clock read back to back, in the
+    /// current generation of their relation. A caller converts a receive
+    /// stamp with it ([`ClockInfo::to_monotonic_with`]); a stamp of an
+    /// earlier generation does not convert.
+    fn clock_sample(&self) -> Result<Ieee80211ClockSample, Self::Error>;
 }

@@ -19,7 +19,7 @@ use oer_ieee802154::{
 };
 use openthread_radio::{
     CslConfig, EnhAckProbingConfig, EnhAckProbingInitiator, FrameCounterUpdate as OtCounter,
-    MacKeys as OtKeys, Radio, TxFrame,
+    MacKeys as OtKeys, Radio, RadioClock as _, TxFrame,
 };
 
 use super::super::{OpenThreadRadio, OpenThreadRadioDefaults};
@@ -295,7 +295,7 @@ const PSDU: [u8; 11] = [0x41, 0x98, 0x01, 0x34, 0x12, 0x78, 0x56, 0xaa, 0xbb, 0,
 #[test]
 fn the_adapter_drives_a_host_model_port() {
     let port = ModelPort::new();
-    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, || 1_000, || Some(-71), DEFAULTS);
+    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, DEFAULTS);
 
     let caps = block_on(radio.init()).unwrap();
     assert_eq!(
@@ -328,7 +328,7 @@ fn the_adapter_drives_a_host_model_port() {
             }
         )));
     }
-    assert_eq!(radio.clock()(), 1_000);
+    assert_eq!(super::super::PortClock::new(&port).now_micros(), 1_000);
 
     block_on(radio.set_csl(CslConfig {
         period: 0x1_0005,
@@ -422,7 +422,7 @@ fn the_adapter_drives_a_host_model_port() {
 #[test]
 fn a_port_refusal_is_an_openthread_error() {
     let port = ModelPort::new();
-    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, || 1_000, || None, DEFAULTS);
+    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, DEFAULTS);
     // Not enabled yet: the model refuses receive mode.
     assert_eq!(
         block_on(radio.set_receive(15)),
@@ -437,7 +437,7 @@ fn a_port_refusal_is_an_openthread_error() {
 #[test]
 fn lost_events_are_a_failed_reception() {
     let port = ModelPort::new();
-    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, || 1_000, || None, DEFAULTS);
+    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, DEFAULTS);
     block_on(radio.init()).unwrap();
     block_on(radio.set_receive(15)).unwrap();
     port.arrive(&PSDU[..9], 15);
@@ -457,7 +457,7 @@ fn lost_events_are_a_failed_reception() {
 #[test]
 fn init_takes_the_enable_terminal_event() {
     let port = ModelPort::new();
-    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, || 1_000, || None, DEFAULTS);
+    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, DEFAULTS);
     block_on(radio.init()).unwrap();
     assert!(port.0.borrow().events.is_empty());
     assert_eq!(

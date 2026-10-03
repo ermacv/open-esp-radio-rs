@@ -527,22 +527,6 @@ impl Ieee802154System {
         &RUNTIME
     }
 
-    /// The live RSSI read of [`Ieee802154RadioPort::recent_rssi`] as a
-    /// function, for synchronous callers that hold no system, such as
-    /// OpenThread's `otPlatRadioGetRssi`. It reads `None` while no radio is
-    /// installed.
-    pub fn recent_rssi_reader(&self) -> fn() -> Option<i8> {
-        || RUNTIME.recent_rssi().ok()
-    }
-
-    /// The runtime's clock, the epoch of [`Ieee802154RadioPort::now`], as a
-    /// function for synchronous callers such as OpenThread's
-    /// `otPlatRadioGetNow`: the image's monotonic clock in microseconds,
-    /// the one `embassy-time` reads.
-    pub fn radio_clock(&self) -> fn() -> u64 {
-        oer_time_embassy::now_micros
-    }
-
     /// The runtime's runner: CSMA-CA backoffs and retry delays. Poll it
     /// beside the consumer of the runtime's events for as long as the
     /// client runs; it never ends.

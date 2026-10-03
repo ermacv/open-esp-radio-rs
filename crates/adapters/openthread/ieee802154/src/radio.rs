@@ -78,12 +78,6 @@ impl OpenThreadRadioDefaults {
 // CAPABILITY: ieee802154-product-stacks-thread
 pub struct OpenThreadRadio<'r, P: Ieee802154RadioPort, const QUEUE: usize> {
     port: &'r P,
-    /// The composition's radio clock in microseconds, the port's
-    /// [`Ieee802154RadioPort::now`] epoch, read synchronously
-    /// (`otPlatRadioGetNow`).
-    clock: RadioClock,
-    /// The composition's live RSSI read (`otPlatRadioGetRssi`).
-    rssi: RadioRssi,
     defaults: OpenThreadRadioDefaults,
     /// Received-frame events.
     received: Deque<P::Event, QUEUE>,
@@ -127,21 +121,12 @@ enum Terminal<E> {
 }
 
 impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEUE> {
-    /// Drive `port`, which the composition started. `clock` reads the
-    /// radio clock the composition bound the backend to (the epoch of
-    /// [`Ieee802154RadioPort::now`]) for OpenThread's synchronous
-    /// `otPlatRadioGetNow`; `rssi` reads the port's live RSSI
-    /// ([`Ieee802154RadioPort::recent_rssi`]) for `otPlatRadioGetRssi`.
-    pub const fn new(
-        port: &'r P,
-        clock: RadioClock,
-        rssi: RadioRssi,
-        defaults: OpenThreadRadioDefaults,
-    ) -> Self {
+    /// Drive `port`, which the composition started. OpenThread reads the
+    /// port's clock and live RSSI through [`PortClock`] and [`PortRssi`],
+    /// which the composition passes to its constructor.
+    pub const fn new(port: &'r P, defaults: OpenThreadRadioDefaults) -> Self {
         Self {
             port,
-            clock,
-            rssi,
             defaults,
             received: Deque::new(),
             receive_lost: false,
@@ -177,7 +162,7 @@ impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEU
 
     /// The full radio-clock instant of a 32-bit OpenThread radio time.
     fn radio_timestamp(&self, low: u32) -> Ieee802154Instant {
-        Ieee802154Instant::from_micros(radio_time((self.clock)(), low))
+        Ieee802154Instant::from_micros(radio_time(PortClock::new(self.port).now_micros(), low))
     }
 
     /// A request identifier outside the backend-reserved range (the
@@ -573,14 +558,6 @@ impl<P: Ieee802154RadioPort, const QUEUE: usize> Radio for OpenThreadRadio<'_, P
         result
     }
 
-    fn clock(&self) -> RadioClock {
-        self.clock
-    }
-
-    fn rssi(&self) -> Option<RadioRssi> {
-        Some(self.rssi)
-    }
-
     async fn receive_at(
         &mut self,
         number: u8,
@@ -744,3 +721,48 @@ fn terminal_of(event: RadioEvent<'_>) -> Option<RequestId> {
 
 #[cfg(test)]
 mod tests;
+
+/// The clock of an IEEE 802.15.4 radio port for OpenThread's synchronous
+/// `otPlatRadioGetNow` and `otPlatTimeGet`: the port's
+/// [`Ieee802154RadioPort::now`], the epoch of its scheduled operations and
+/// receive timestamps. Pass it to the OpenThread constructor with the port
+/// [`OpenThreadRadio`] drives.
+pub struct PortClock<'r, P>(&'r P);
+
+impl<'r, P: Ieee802154RadioPort> PortClock<'r, P> {
+    /// The clock of `port`.
+    pub const fn new(port: &'r P) -> Self {
+        Self(port)
+    }
+}
+
+impl<P: Ieee802154RadioPort> RadioClock for PortClock<'_, P> {
+    /// # Panics
+    ///
+    /// When the port's clock fails: a poisoned port is terminal, and
+    /// OpenThread has no way to hear of it, so no time is invented.
+    fn now_micros(&self) -> u64 {
+        match self.0.now() {
+            Ok(now) => now.as_micros(),
+            Err(_) => panic!("the IEEE 802.15.4 radio port's clock failed: the port is terminal"),
+        }
+    }
+}
+
+/// The live RSSI of an IEEE 802.15.4 radio port for OpenThread's synchronous
+/// `otPlatRadioGetRssi`: the port's [`Ieee802154RadioPort::recent_rssi`],
+/// `None` while the port cannot read it.
+pub struct PortRssi<'r, P>(&'r P);
+
+impl<'r, P: Ieee802154RadioPort> PortRssi<'r, P> {
+    /// The live RSSI of `port`.
+    pub const fn new(port: &'r P) -> Self {
+        Self(port)
+    }
+}
+
+impl<P: Ieee802154RadioPort> RadioRssi for PortRssi<'_, P> {
+    fn rssi(&self) -> Option<i8> {
+        self.0.recent_rssi().ok()
+    }
+}

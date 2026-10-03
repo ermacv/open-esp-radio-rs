@@ -4,10 +4,10 @@ use heapless::Deque;
 use oer_ieee802154::{
     AppliedSecurity, Channel, CommandError, Configuration, CorrelationIds, CslReceiver,
     EnergyScanRequest, EnhancedAckGeneration, EventsLost, FrameCounterUpdate, FrameView,
-    Ieee802154RadioPort, Interface, LifecycleCommand, LifecycleError, LifecycleEvent, LinkMetrics,
-    PendingTableHalf, ProbingInitiator, RadioCommand, RadioEvent, RadioInstant, RadioSetting,
-    RadioState, ReceivedFrame, RequestId, ScheduledReceiveRequest, SettingError, TimeSync, TxMode,
-    TxRequest, TxSecurity,
+    Ieee802154Instant, Ieee802154RadioPort, Interface, LifecycleCommand, LifecycleError,
+    LifecycleEvent, LinkMetrics, PendingTableHalf, ProbingInitiator, RadioCommand, RadioEvent,
+    RadioSetting, RadioState, ReceivedFrame, RequestId, ScheduledReceiveRequest, SettingError,
+    TimeSync, TxMode, TxRequest, TxSecurity,
 };
 use openthread_radio::{
     AckSecurity, Capabilities, Config, CslConfig, ENH_ACK_PROBING_CAPACITY, EnhAckProbingConfig,
@@ -176,8 +176,8 @@ impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEU
     }
 
     /// The full radio-clock instant of a 32-bit OpenThread radio time.
-    fn radio_timestamp(&self, low: u32) -> RadioInstant {
-        RadioInstant::from_micros(radio_time((self.clock)(), low))
+    fn radio_timestamp(&self, low: u32) -> Ieee802154Instant {
+        Ieee802154Instant::from_micros(radio_time((self.clock)(), low))
     }
 
     /// A request identifier outside the backend-reserved range (the
@@ -395,7 +395,7 @@ impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEU
                     rssi: Some(ack.metadata.rssi_dbm),
                     lqi: Some(ack.metadata.link_quality),
                     ack: None,
-                    timestamp: ack.metadata.timestamp.map(RadioInstant::as_micros),
+                    timestamp: ack.metadata.timestamp.map(Ieee802154Instant::as_micros),
                 })
             }
             _ => None,
@@ -717,7 +717,7 @@ fn received_meta(
         channel: frame.metadata.channel.get(),
         rssi: Some(frame.metadata.rssi_dbm),
         lqi: Some(frame.metadata.link_quality),
-        timestamp: frame.metadata.timestamp.map(RadioInstant::as_micros),
+        timestamp: frame.metadata.timestamp.map(Ieee802154Instant::as_micros),
         ack: Some(SentAck {
             frame_pending: sent.frame_pending,
             security: sent_ack_security(sent).map(|(frame_counter, key_id)| AckSecurity {

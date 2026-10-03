@@ -7,8 +7,8 @@
 //! test first lets the event in progress leave the schedule.
 
 use oer_bluetooth_radio::{
-    EventId, EventResult, RadioDuration, RadioInstant, RadioOutcome, RadioRequest, RadioTiming,
-    RadioWindow, TestChannel, TestPayloadType, TestPhy, TestReceive, TestReport, TestTransmit,
+    EventId, EventResult, LeInstant, LeWindow, RadioDuration, RadioOutcome, RadioRequest,
+    RadioTiming, TestChannel, TestPayloadType, TestPhy, TestReceive, TestReport, TestTransmit,
     TxPower,
 };
 
@@ -106,7 +106,7 @@ pub struct DtmSession {
     tx_power: TxPower,
     next_id: u32,
     outstanding: Option<EventId>,
-    last: Option<RadioWindow>,
+    last: Option<LeWindow>,
     recurring: bool,
     counters: DtmCounters,
 }
@@ -190,7 +190,7 @@ impl DtmSession {
     /// transmitter request borrows its payload from `payload`.
     pub fn next_request<'payload>(
         &mut self,
-        now: RadioInstant,
+        now: LeInstant,
         timing: RadioTiming,
         payload: &'payload mut [u8; DTM_MAX_PAYLOAD],
     ) -> Option<RadioRequest<'payload>> {
@@ -221,10 +221,10 @@ impl DtmSession {
                         let first = last.start().as_micros() + interval;
                         let reachable = admitted.checked_add(DTM_RECURRING_TRANSMIT_SLACK)?;
                         let late = reachable.as_micros().saturating_sub(first);
-                        RadioInstant::from_micros(first + late.div_ceil(interval) * interval)
+                        LeInstant::from_micros(first + late.div_ceil(interval) * interval)
                     }
                 };
-                let window = RadioWindow::new(anchor, air).ok()?;
+                let window = LeWindow::new(anchor, air).ok()?;
                 let bytes = &mut payload[..usize::from(length)];
                 pattern.fill(bytes);
                 self.last = Some(window);
@@ -244,7 +244,7 @@ impl DtmSession {
                     Some(last) if last.end() > earliest => last.end(),
                     _ => earliest,
                 };
-                let window = RadioWindow::new(anchor, DTM_RECEIVE_WINDOW).ok()?;
+                let window = LeWindow::new(anchor, DTM_RECEIVE_WINDOW).ok()?;
                 self.last = Some(window);
                 let recurring = core::mem::replace(&mut self.recurring, true);
                 RadioRequest::TestReceive(TestReceive {
@@ -307,7 +307,7 @@ fn received(test: DtmTest, counters: DtmCounters) -> u16 {
 }
 
 /// The earliest anchor the backend admits at `now`.
-fn admitted_anchor(now: RadioInstant, timing: RadioTiming) -> Option<RadioInstant> {
+fn admitted_anchor(now: LeInstant, timing: RadioTiming) -> Option<LeInstant> {
     now.checked_add(timing.preparation_lead)?
         .checked_add(timing.admission_guard)
 }

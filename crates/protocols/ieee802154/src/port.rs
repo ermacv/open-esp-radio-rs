@@ -10,7 +10,7 @@
 //! the lifecycle ([`Ieee802154RadioPort::lifecycle`], whose commands end
 //! with a [`RadioEvent::Lifecycle`] terminal, and `Cancel`, which ends a
 //! running operation through its terminal event), and the radio clock in
-//! the [`RadioInstant`] epoch with its [`ClockInfo`]. Failure classes,
+//! the [`Ieee802154Instant`] epoch with its [`ClockInfo`]. Failure classes,
 //! event loss, the terminal [`Poisoned`] event, the lifecycle vocabulary
 //! and the clock relation are the shared ones of `oer-radio-port`. Its
 //! [`RadioSetting`] values carry the state the backend reads from its own
@@ -28,7 +28,7 @@ pub use oer_radio_port::{
 
 use crate::mac::link_metrics::ProbingInitiator;
 use crate::radio::{
-    RadioInstant,
+    Ieee802154Instant,
     capabilities::RadioCapabilities,
     command::RadioCommand,
     event::RadioEvent,
@@ -223,7 +223,7 @@ pub trait Ieee802154RadioPort {
     /// the port (OpenThread's `otPlatRadioGetNow`) takes the clock the
     /// composition binds the backend to, which [`Self::clock_info`]
     /// relates to monotonic time.
-    fn now(&self) -> Result<RadioInstant, Self::Error>;
+    fn now(&self) -> Result<Ieee802154Instant, Self::Error>;
 
     /// The resolution of [`Self::now`] and how its epoch relates to the
     /// image's monotonic time.

@@ -7,10 +7,10 @@ use oer_bluetooth_radio::{
     AcceptListChange, AcceptListDevice, AdvertisingChannel, AdvertisingConfiguration,
     AdvertisingEvent, AdvertisingReception, AdvertisingSetId, ConnectionAllowances,
     ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming, ConnectionId, DataPduKind,
-    EventId, EventResult, LeConnectionCapabilities, LePhys, LeRadioCapabilities,
-    LinkAcknowledgement, RadioDuration, RadioFault, RadioInstant, RadioOutcome, RadioRequest,
-    RadioTiming, ReceivedPdu, RequestError, ScanFilterPolicy, ScanType, ScanWindow,
-    ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestReport, TestTransmit, TxPower,
+    EventId, EventResult, LeConnectionCapabilities, LeInstant, LePhys, LeRadioCapabilities,
+    LinkAcknowledgement, RadioDuration, RadioFault, RadioOutcome, RadioRequest, RadioTiming,
+    ReceivedPdu, RequestError, ScanFilterPolicy, ScanType, ScanWindow, ScannerConfiguration,
+    ScannerId, TestPhy, TestReceive, TestReport, TestTransmit, TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerSchedulerEpoch, ControllerTimeSample,
@@ -157,7 +157,7 @@ struct Slot<Id> {
 /// Connection facts the first event needs.
 #[derive(Clone, Copy)]
 struct ConnectionFacts {
-    created_at: RadioInstant,
+    created_at: LeInstant,
     tx_power: TxPower,
 }
 
@@ -251,17 +251,17 @@ impl RadioClock {
         self.epoch.raw_duration_ticks_for_micros(micros)
     }
 
-    fn instant(&self, raw_capture: u32) -> RadioInstant {
+    fn instant(&self, raw_capture: u32) -> LeInstant {
         let micros = self.epoch.project_capture(raw_capture);
         let delta = micros.wrapping_sub(self.now as u32) as i32;
-        RadioInstant::from_micros(self.now.wrapping_add_signed(i64::from(delta)))
+        LeInstant::from_micros(self.now.wrapping_add_signed(i64::from(delta)))
     }
 
     /// The on-air start of an LE 1M packet from its receive timestamp.
-    fn packet_start(&self, raw_capture: u32) -> RadioInstant {
+    fn packet_start(&self, raw_capture: u32) -> LeInstant {
         let captured = self.instant(raw_capture).as_micros();
         let delay = BlePhyLe1MPacketStartCalibration::le_1m().capture_delay_micros();
-        RadioInstant::from_micros(captured.saturating_sub(u64::from(delay)))
+        LeInstant::from_micros(captured.saturating_sub(u64::from(delay)))
     }
 }
 
@@ -441,8 +441,8 @@ impl<
     }
 
     /// The current radio time.
-    pub const fn now(&self) -> RadioInstant {
-        RadioInstant::from_micros(self.clock.now)
+    pub const fn now(&self) -> LeInstant {
+        LeInstant::from_micros(self.clock.now)
     }
 
     /// Advance the radio time with one live controller-time sample.

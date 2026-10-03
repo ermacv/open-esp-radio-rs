@@ -478,7 +478,7 @@ fn an_attempt_completes_through_the_interrupt_entry_and_the_queue() {
 
     assert_eq!(port.set_tsf(STA, Tsf(7)), Ok(Ok(())));
     assert_eq!(port.tsf(STA), Ok(Ok(Tsf(7))));
-    assert_eq!(port.now(), Ok(RadioInstant::from_micros(0)));
+    assert_eq!(port.now(), Ok(Ieee80211Instant::from_micros(0)));
 }
 
 #[test]

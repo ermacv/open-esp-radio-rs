@@ -3,8 +3,8 @@
 use oer_radio_coex::CoexPriority;
 
 use crate::{
-    AdvertisingChannels, AdvertisingPdu, DataChannel, DataPdu, LePhy, RadioDuration, RadioInstant,
-    RadioWindow, TestChannel, TestPayloadType, channel::AdvertisingChannel,
+    AdvertisingChannels, AdvertisingPdu, DataChannel, DataPdu, LeInstant, LePhy, LeWindow,
+    RadioDuration, TestChannel, TestPayloadType, channel::AdvertisingChannel,
 };
 
 /// Caller-assigned identifier correlating one event with its outcomes.
@@ -190,7 +190,7 @@ pub struct AdvertisingEvent {
     /// The set.
     pub set: AdvertisingSetId,
     /// Air anchor of the first channel.
-    pub anchor: RadioInstant,
+    pub anchor: LeInstant,
     /// Channels used in index order.
     pub channels: AdvertisingChannels,
     /// Time between the anchors of consecutive channels.
@@ -201,10 +201,10 @@ pub struct AdvertisingEvent {
 
 impl AdvertisingEvent {
     /// The channel and its anchor at `position` in channel order.
-    pub fn channel_anchor(&self, position: usize) -> Option<(AdvertisingChannel, RadioInstant)> {
+    pub fn channel_anchor(&self, position: usize) -> Option<(AdvertisingChannel, LeInstant)> {
         let channel = self.channels.iter().nth(position)?;
         let offset = u64::from(self.channel_spacing.as_micros()).checked_mul(position as u64)?;
-        let anchor = RadioInstant::from_micros(self.anchor.as_micros().checked_add(offset)?);
+        let anchor = LeInstant::from_micros(self.anchor.as_micros().checked_add(offset)?);
         Some((channel, anchor))
     }
 }
@@ -274,7 +274,7 @@ pub struct ScanWindow {
     /// Channel listened on.
     pub channel: AdvertisingChannel,
     /// Air window of the listening.
-    pub window: RadioWindow,
+    pub window: LeWindow,
 }
 
 /// Configuration of one peripheral connection.
@@ -288,7 +288,7 @@ pub struct ConnectionConfiguration {
     pub crc_init: CrcInit,
     /// The on-air start of the connection indication; the first reference
     /// point until a valid reception replaces it.
-    pub created_at: RadioInstant,
+    pub created_at: LeInstant,
     /// Transmit power.
     pub tx_power: TxPower,
     /// PHY of the connection in both directions.
@@ -327,7 +327,7 @@ pub struct ConnectionEvent {
     pub channel: DataChannel,
     /// Air window: its start is the earliest anchor, its duration the air
     /// time the event reserves.
-    pub window: RadioWindow,
+    pub window: LeWindow,
     /// Connection interval. A backend may let the event continue past its
     /// air window while it stays within the interval.
     pub interval: RadioDuration,
@@ -349,7 +349,7 @@ pub struct TestTransmit<'payload> {
     /// PHY.
     pub phy: TestPhy,
     /// Air window of the packet.
-    pub window: RadioWindow,
+    pub window: LeWindow,
     /// Transmit power.
     pub tx_power: TxPower,
     /// LE Test packet payload type.
@@ -368,7 +368,7 @@ pub struct TestReceive {
     /// PHY.
     pub phy: TestPhy,
     /// Air window of the listening.
-    pub window: RadioWindow,
+    pub window: LeWindow,
     /// Whether the receiver ran before in the same test.
     pub recurring: bool,
     /// Transmit power retained by the test profile.
@@ -436,7 +436,7 @@ pub struct ConnectionAllowances {
 
 impl RadioTiming {
     /// The reservation of an air window, or `None` before the epoch.
-    pub fn reservation(&self, window: RadioWindow) -> Option<RadioWindow> {
+    pub fn reservation(&self, window: LeWindow) -> Option<LeWindow> {
         let start = window
             .start()
             .as_micros()
@@ -445,8 +445,8 @@ impl RadioTiming {
             .duration()
             .as_micros()
             .checked_add(self.preparation_lead.as_micros())?;
-        RadioWindow::new(
-            RadioInstant::from_micros(start),
+        LeWindow::new(
+            LeInstant::from_micros(start),
             RadioDuration::from_micros(duration),
         )
         .ok()
@@ -526,9 +526,7 @@ mod tests {
         AdvertisingEvent, AdvertisingSetId, CoexPriority, CoexistenceLevel, ConnectionAllowances,
         EventId, IdlePriority, RadioTiming,
     };
-    use crate::{
-        AdvertisingChannel, AdvertisingChannels, RadioDuration, RadioInstant, RadioWindow,
-    };
+    use crate::{AdvertisingChannel, AdvertisingChannels, LeInstant, LeWindow, RadioDuration};
 
     /// Every level keeps its order as a portable priority and returns from
     /// it; the idle priority has no event level.
@@ -557,17 +555,14 @@ mod tests {
         let event = AdvertisingEvent {
             id: EventId::new(1),
             set: AdvertisingSetId::new(0),
-            anchor: RadioInstant::from_micros(1_000),
+            anchor: LeInstant::from_micros(1_000),
             channels: AdvertisingChannels::new(false, true, true).unwrap(),
             channel_spacing: RadioDuration::from_micros(400),
             coexistence: super::CoexistenceLevel::Baseline,
         };
         assert_eq!(
             event.channel_anchor(1),
-            Some((
-                AdvertisingChannel::Channel39,
-                RadioInstant::from_micros(1_400)
-            ))
+            Some((AdvertisingChannel::Channel39, LeInstant::from_micros(1_400)))
         );
         assert!(event.channel_anchor(2).is_none());
     }
@@ -588,16 +583,16 @@ mod tests {
                 first_event_length: RadioDuration::from_micros(0),
             },
         };
-        let air = RadioWindow::new(
-            RadioInstant::from_micros(1_000),
+        let air = LeWindow::new(
+            LeInstant::from_micros(1_000),
             RadioDuration::from_micros(50),
         )
         .unwrap();
         let reserved = timing.reservation(air).unwrap();
-        assert_eq!(reserved.start(), RadioInstant::from_micros(700));
-        assert_eq!(reserved.end(), RadioInstant::from_micros(1_050));
+        assert_eq!(reserved.start(), LeInstant::from_micros(700));
+        assert_eq!(reserved.end(), LeInstant::from_micros(1_050));
         let early =
-            RadioWindow::new(RadioInstant::from_micros(10), RadioDuration::from_micros(5)).unwrap();
+            LeWindow::new(LeInstant::from_micros(10), RadioDuration::from_micros(5)).unwrap();
         assert_eq!(timing.reservation(early), None);
     }
 }

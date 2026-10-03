@@ -402,7 +402,7 @@ fn window(id: u32, on: u8) -> RadioCommand<'static> {
     RadioCommand::ScheduledReceive(crate::ScheduledReceiveRequest {
         id: RequestId::new(id),
         channel: channel(on),
-        start: crate::RadioInstant::from_micros(1_000),
+        start: crate::Ieee802154Instant::from_micros(1_000),
         duration_us: 500,
     })
 }
@@ -678,7 +678,7 @@ fn cancel_ends_a_scheduled_receive_window() {
             crate::ScheduledReceiveRequest {
                 id: ID,
                 channel: channel(12),
-                start: crate::RadioInstant::from_micros(100),
+                start: crate::Ieee802154Instant::from_micros(100),
                 duration_us: 1_000,
             },
         ))

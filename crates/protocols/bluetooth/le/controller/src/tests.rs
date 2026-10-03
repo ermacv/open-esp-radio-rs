@@ -8,7 +8,7 @@ use oer_bluetooth_hci::{
 use oer_bluetooth_radio::{
     AcceptListChange, AdvertisingChannel, AdvertisingChannels, AdvertisingEvent,
     AdvertisingReception, ConnectionAllowances, ConnectionConfiguration, ConnectionEvent,
-    DataPduKind, EventId, EventResult, RadioDuration, RadioInstant, RadioOutcome, RadioRequest,
+    DataPduKind, EventId, EventResult, LeInstant, RadioDuration, RadioOutcome, RadioRequest,
     RadioTiming, ReceivedPdu, RequestError, ScanFilterPolicy, ScanType, ScanWindow,
 };
 
@@ -207,7 +207,7 @@ impl Harness {
         }
         let request = self
             .core
-            .next_request(RadioInstant::from_micros(self.now), TIMING)
+            .next_request(LeInstant::from_micros(self.now), TIMING)
             .map(Request::from);
         if request.is_some() {
             self.core.request_done(result);

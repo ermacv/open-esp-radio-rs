@@ -622,7 +622,9 @@ fn the_clock_and_csl_state_belong_to_the_installed_radio() {
     );
     let runtime = enabled::<4>();
     assert_eq!(
-        runtime.now().map(oer_ieee802154::RadioInstant::as_micros),
+        runtime
+            .now()
+            .map(oer_ieee802154::Ieee802154Instant::as_micros),
         Ok((PLATFORM.now_micros)())
     );
     assert_eq!(

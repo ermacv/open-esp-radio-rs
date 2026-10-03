@@ -48,7 +48,17 @@ pub use oer_radio_port::{
     ClockInfo, Correlation, CorrelationIds, EventsLost, FailureClass, Poisoned, PortError,
     RadioEpoch,
 };
-pub use oer_time::{RadioDuration, RadioInstant, RadioWindow, WindowError};
+pub use oer_time::{RadioDuration, WindowError};
+
+/// The clock domain of the LE radio port: its instants never mix with
+/// another port's.
+pub enum LeRadio {}
+
+/// An instant on the LE radio port's clock.
+pub type LeInstant = oer_time::RadioInstant<LeRadio>;
+
+/// A window reserved on the LE radio port's clock.
+pub type LeWindow = oer_time::RadioWindow<LeRadio>;
 pub use outcome::{EventResult, RadioFault, RadioOutcome, ReceivedPdu, TestReport};
 pub use pdu::{AdvertisingPdu, DataPdu, DataPduKind, PduError, TestPayloadType};
 pub use port::{LeRadioPort, Never, NoRadio};

@@ -20,10 +20,10 @@ use oer_espressif_ieee802154_engine::{
 };
 use oer_ieee802154::{
     AppliedSecurity, AutoPendingMode, CSL_IE_TEMPLATE, CcaMode, Channel, CommandError,
-    Configuration, EnergyScanRequest, FrameAddress, FramePending, FrameView, Interface,
-    InterfaceSetting, MacKeys, PendingTableHalf, RadioCommand, RadioEvent, RadioInstant,
-    RadioState, RequestId, RestingState, ScheduledReceiveRequest, SentAcknowledgement, TxMode,
-    TxRequest, TxSecurity, TxStatus, csl_phase,
+    Configuration, EnergyScanRequest, FrameAddress, FramePending, FrameView, Ieee802154Instant,
+    Interface, InterfaceSetting, MacKeys, PendingTableHalf, RadioCommand, RadioEvent, RadioState,
+    RequestId, RestingState, ScheduledReceiveRequest, SentAcknowledgement, TxMode, TxRequest,
+    TxSecurity, TxStatus, csl_phase,
 };
 
 use super::{
@@ -1001,7 +1001,7 @@ impl Bench {
         self.submit(RadioCommand::ScheduledReceive(ScheduledReceiveRequest {
             id: RequestId::new(id),
             channel: channel(15),
-            start: RadioInstant::from_micros(start),
+            start: Ieee802154Instant::from_micros(start),
             duration_us,
         }))
         .unwrap();
@@ -1112,7 +1112,7 @@ fn a_transmission_ends_a_window() {
 /// `esp_ieee802154_transmit_at` with `cca` does.
 #[test]
 fn a_scheduled_transmission_can_assess_the_channel() {
-    let at = RadioInstant::from_micros(5_000);
+    let at = Ieee802154Instant::from_micros(5_000);
     let mut bench = Bench::enabled();
     bench
         .transmit(6, &DATA, 15, TxMode::Scheduled { at, cca: true })
@@ -1131,7 +1131,7 @@ fn a_scheduled_transmission_can_assess_the_channel() {
 #[test]
 fn the_radio_clock_is_the_platform_clock() {
     let bench = Bench::enabled();
-    assert_eq!(bench.radio.now(), RadioInstant::from_micros(42));
+    assert_eq!(bench.radio.now(), Ieee802154Instant::from_micros(42));
 }
 
 /// A 2015 data frame requesting an ACK, without security.
@@ -1709,7 +1709,7 @@ fn cancelled_measurements_and_windows_report_their_end() {
         .submit(RadioCommand::ScheduledReceive(ScheduledReceiveRequest {
             id: RequestId::new(7),
             channel: channel(12),
-            start: RadioInstant::from_micros(10_000),
+            start: Ieee802154Instant::from_micros(10_000),
             duration_us: 1_000,
         }))
         .unwrap();

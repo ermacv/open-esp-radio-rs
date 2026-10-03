@@ -2,7 +2,7 @@
 
 use oer_radio_port::{LifecycleEvent, Poisoned};
 
-use super::{RadioInstant, RequestId, channel::Channel, interface::Interface};
+use super::{Ieee802154Instant, RequestId, channel::Channel, interface::Interface};
 use crate::mac::frame::FrameView;
 
 /// Backend-to-Host observation.
@@ -144,7 +144,7 @@ pub struct RxMetadata {
     /// Link quality in the portable zero-through-255 domain.
     pub link_quality: u8,
     /// Optional start-of-frame timestamp in the controller monotonic epoch.
-    pub timestamp: Option<RadioInstant>,
+    pub timestamp: Option<Ieee802154Instant>,
     /// FCS validation result.
     pub fcs: FcsStatus,
     /// Security processing already applied to the bytes.

@@ -66,8 +66,8 @@ use oer_bluetooth_ll::{
 };
 use oer_bluetooth_radio::{
     AccessAddress, ConnectionConfiguration, ConnectionEvent, ConnectionId, CrcInit, DataChannel,
-    DataPdu, DataPduKind, EventId, EventResult, LePhy, RadioDuration, RadioInstant, RadioOutcome,
-    RadioRequest, RadioTiming, RadioWindow, TxPower,
+    DataPdu, DataPduKind, EventId, EventResult, LeInstant, LePhy, LeWindow, RadioDuration,
+    RadioOutcome, RadioRequest, RadioTiming, TxPower,
 };
 
 use crate::{advertising::ConnectionIndication, coexistence};
@@ -145,8 +145,8 @@ enum Link {
 #[derive(Clone, Copy, Debug)]
 struct Event {
     id: EventId,
-    reservation: RadioWindow,
-    anchor: RadioInstant,
+    reservation: LeWindow,
+    anchor: LeInstant,
     transmit_window: u32,
 }
 
@@ -159,11 +159,11 @@ struct Closing {
 
 struct Connection {
     request: LeLegacyConnectionRequest,
-    created_at: RadioInstant,
+    created_at: LeInstant,
     link: Link,
     phase: timing::Phase,
     /// The last anchor a received packet established.
-    last_activity: Option<RadioInstant>,
+    last_activity: Option<LeInstant>,
     event: Option<Event>,
     /// The event whose request is at the backend.
     submitting: Option<(LePeripheralConnectionEventPrepared, Event)>,
@@ -172,7 +172,7 @@ struct Connection {
     control: LePeripheralControl,
     security: LePeripheralEncryptionProcedure,
     /// Since when a procedure awaits the central.
-    procedure_since: Option<RadioInstant>,
+    procedure_since: Option<LeInstant>,
     pending: Option<Pending>,
     /// The transmission whose request is at the backend.
     transmitting: Option<(Pending, usize)>,
@@ -384,7 +384,7 @@ impl Peripheral {
     }
 
     /// The reservation of the event in progress.
-    pub(crate) fn busy(&self) -> Option<RadioWindow> {
+    pub(crate) fn busy(&self) -> Option<LeWindow> {
         self.connection
             .as_ref()?
             .event
@@ -393,7 +393,7 @@ impl Peripheral {
 
     /// The reservation of the next event at its nominal anchor, which other
     /// roles leave free.
-    pub(crate) fn planned(&self, timing: RadioTiming) -> Option<RadioWindow> {
+    pub(crate) fn planned(&self, timing: RadioTiming) -> Option<LeWindow> {
         let connection = self.connection.as_ref()?;
         if connection.closing.is_some() {
             return None;
@@ -418,8 +418,8 @@ impl Peripheral {
     pub(crate) fn next_request(
         &mut self,
         ids: &mut u32,
-        now: RadioInstant,
-        earliest: RadioInstant,
+        now: LeInstant,
+        earliest: LeInstant,
         timing: RadioTiming,
         room: bool,
     ) -> Option<RadioRequest<'_>> {
@@ -1023,7 +1023,7 @@ impl Connection {
     }
 
     /// Procedure timeouts, checked before planning.
-    fn check_procedures(&mut self, now: RadioInstant, events: &mut Events) {
+    fn check_procedures(&mut self, now: LeInstant, events: &mut Events) {
         if !self.local_procedure_pending() {
             self.procedure_since = None;
             return;
@@ -1045,7 +1045,7 @@ impl Connection {
 
     /// Whether the supervision timeout passed at `now` since the last anchor a
     /// received packet established.
-    fn supervision_lost(&self, now: RadioInstant) -> bool {
+    fn supervision_lost(&self, now: LeInstant) -> bool {
         let supervision = u64::from(self.request.timing().supervision_timeout_micros());
         self.last_activity
             .is_some_and(|last| now.as_micros().saturating_sub(last.as_micros()) > supervision)
@@ -1125,7 +1125,7 @@ impl Connection {
     /// Plan the next event no earlier than `earliest`.
     fn plan(
         &mut self,
-        earliest: RadioInstant,
+        earliest: LeInstant,
         timing: RadioTiming,
     ) -> Option<(LePeripheralConnectionEventPrepared, Event)> {
         match core::mem::replace(&mut self.link, Link::Moved) {
@@ -1133,8 +1133,8 @@ impl Connection {
                 let prepared = connection.prepare_event();
                 let event = Event {
                     id: EventId::new(0),
-                    reservation: RadioWindow::new(
-                        RadioInstant::from_micros(0),
+                    reservation: LeWindow::new(
+                        LeInstant::from_micros(0),
                         RadioDuration::from_micros(1),
                     )
                     .ok()?,
@@ -1164,7 +1164,7 @@ impl Connection {
     fn plan_recurring(
         &mut self,
         mut completed: LePeripheralConnectionEventCompleted,
-        earliest: RadioInstant,
+        earliest: LeInstant,
         timing: RadioTiming,
     ) -> Option<(LePeripheralConnectionEventPrepared, Event)> {
         let peer_ppm = self.request.sleep_clock_accuracy().worst_case_ppm();
@@ -1239,7 +1239,7 @@ impl Connection {
         &self,
         provisional: &oer_bluetooth_ll::connection::LePeripheralConnectionRecurringEventProvisional,
         delta: u16,
-    ) -> (RadioInstant, u32) {
+    ) -> (LeInstant, u32) {
         let last = provisional.event_counter().wrapping_sub(delta);
         let micros = match provisional.connection_timing_transition() {
             Some(transition) => {
@@ -1259,7 +1259,7 @@ impl Connection {
             None => self.phase.transmit_window,
         };
         (
-            RadioInstant::from_micros(self.phase.anchor.as_micros() + micros),
+            LeInstant::from_micros(self.phase.anchor.as_micros() + micros),
             transmit_window,
         )
     }

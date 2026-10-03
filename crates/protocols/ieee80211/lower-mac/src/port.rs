@@ -2,11 +2,11 @@
 
 use core::future::Future;
 
+use crate::Ieee80211Instant;
 use oer_radio_port::{
     CancelError, ClockInfo, EventsLost, LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned,
     PortError,
 };
-use oer_time::RadioInstant;
 
 use crate::{
     capabilities::LowerMacCapabilities,
@@ -186,5 +186,5 @@ pub trait Ieee80211LowerMacPort {
     fn cancel(&self, id: TxId) -> Result<Result<(), CancelError>, Self::Error>;
 
     /// The radio clock in microseconds: the epoch of receive timestamps.
-    fn now(&self) -> Result<RadioInstant, Self::Error>;
+    fn now(&self) -> Result<Ieee80211Instant, Self::Error>;
 }

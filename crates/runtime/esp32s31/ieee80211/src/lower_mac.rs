@@ -69,6 +69,7 @@ use oer_esp32s31_ieee80211::{
     tx::WifiTxWake,
 };
 use oer_esp32s31_ieee80211_mac::rx::NormalizedRxFrame;
+use oer_ieee80211_lower_mac::Ieee80211Instant;
 use oer_ieee80211_lower_mac::{
     AmpduCapabilities, BeaconTimingCapabilities, CancelError, ClockInfo, EventsLost, FailureClass,
     Ieee80211LowerMacPort, KeyHandle, KeyInstall, LifecycleCommand, LifecycleError, LifecycleEvent,
@@ -79,7 +80,6 @@ use oer_ieee80211_lower_mac::{
 };
 use oer_ieee80211_mac::channel::WifiChannel;
 use oer_time::Instant;
-use oer_time::RadioInstant;
 
 /// Attempt completions the port owes at most: admitted attempts whose
 /// completion the consumer has not taken yet.
@@ -965,8 +965,8 @@ where
         self.with_core(|core, _, sink| Ok(core.cancel(id, sink)))
     }
 
-    fn now(&self) -> Result<RadioInstant, Esp32s31LowerMacError> {
-        self.with_core(|core, _, _| Ok(RadioInstant::from_micros(core.now_micros())))
+    fn now(&self) -> Result<Ieee80211Instant, Esp32s31LowerMacError> {
+        self.with_core(|core, _, _| Ok(Ieee80211Instant::from_micros(core.now_micros())))
     }
 }
 

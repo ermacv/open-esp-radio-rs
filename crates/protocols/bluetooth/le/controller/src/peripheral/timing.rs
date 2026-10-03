@@ -8,17 +8,17 @@
 //! jitter and guards as [`ConnectionAllowances`] describes.
 
 use oer_bluetooth_radio::{
-    ConnectionAllowances, ConnectionEventTiming, RadioDuration, RadioInstant, RadioWindow,
+    ConnectionAllowances, ConnectionEventTiming, LeInstant, LeWindow, RadioDuration,
 };
 
 /// The anchor phase of a connection between events.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct Phase {
     /// Nominal anchor of the last event.
-    pub(crate) anchor: RadioInstant,
+    pub(crate) anchor: LeInstant,
     /// The last anchor a received packet established; drift accumulates from
     /// here.
-    pub(crate) reference: RadioInstant,
+    pub(crate) reference: LeInstant,
     /// Width of the transmit window still uncertain at the anchor, zero once a
     /// packet fixed the anchor.
     pub(crate) transmit_window: u32,
@@ -27,8 +27,8 @@ pub(crate) struct Phase {
 /// One planned connection event.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct Plan {
-    pub(crate) anchor: RadioInstant,
-    pub(crate) window: RadioWindow,
+    pub(crate) anchor: LeInstant,
+    pub(crate) window: LeWindow,
     pub(crate) timing: ConnectionEventTiming,
     pub(crate) transmit_window: u32,
 }
@@ -36,7 +36,7 @@ pub(crate) struct Plan {
 /// The first event, anchored at the start of its transmit window.
 // CAPABILITY: bluetooth-first-peripheral-connection-window
 pub(crate) fn first(
-    anchor: RadioInstant,
+    anchor: LeInstant,
     transmit_window: u32,
     allowances: ConnectionAllowances,
 ) -> Option<Plan> {
@@ -48,8 +48,8 @@ pub(crate) fn first(
     let duration = guard + boundary + transmit_window + allowances.first_event_length.as_micros();
     Some(Plan {
         anchor,
-        window: RadioWindow::new(
-            RadioInstant::from_micros(start),
+        window: LeWindow::new(
+            LeInstant::from_micros(start),
             RadioDuration::from_micros(duration),
         )
         .ok()?,
@@ -64,8 +64,8 @@ pub(crate) fn first(
 /// A later event at `anchor` with `transmit_window` still uncertain.
 // CAPABILITY: bluetooth-recurring-peripheral-events, bluetooth-sleep-clock-accuracy-window-widening
 pub(crate) fn recurring(
-    anchor: RadioInstant,
-    reference: RadioInstant,
+    anchor: LeInstant,
+    reference: LeInstant,
     transmit_window: u32,
     peer_sleep_clock_ppm: u16,
     allowances: ConnectionAllowances,
@@ -91,8 +91,8 @@ pub(crate) fn recurring(
         .checked_add(allowances.receive_tail.as_micros())?;
     Some(Plan {
         anchor,
-        window: RadioWindow::new(
-            RadioInstant::from_micros(start),
+        window: LeWindow::new(
+            LeInstant::from_micros(start),
             RadioDuration::from_micros(duration),
         )
         .ok()?,
@@ -117,7 +117,7 @@ fn widening(elapsed: u64, peer_ppm: u16, allowances: ConnectionAllowances) -> Op
 #[cfg(test)]
 mod tests {
     use oer_bluetooth_radio::{
-        ConnectionAllowances, ConnectionEventTiming, RadioDuration, RadioInstant,
+        ConnectionAllowances, ConnectionEventTiming, LeInstant, RadioDuration,
     };
 
     use super::{first, recurring};
@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn the_first_event_listens_across_its_transmit_window() {
-        let plan = first(RadioInstant::from_micros(100_000), 2_500, S31).unwrap();
+        let plan = first(LeInstant::from_micros(100_000), 2_500, S31).unwrap();
         assert_eq!(plan.window.start().as_micros(), 100_000 - 17);
         assert_eq!(plan.window.end().as_micros(), 100_000 + 2_500 + 5_155);
         assert_eq!(
@@ -149,9 +149,9 @@ mod tests {
 
     #[test]
     fn recurring_events_widen_with_elapsed_time_and_both_clocks() {
-        let reference = RadioInstant::from_micros(100_000);
+        let reference = LeInstant::from_micros(100_000);
         // 50 ms at 500 + 50 ppm: floor(50 * 550 / 1000) = 27 us, plus 63.
-        let anchor = RadioInstant::from_micros(150_000);
+        let anchor = LeInstant::from_micros(150_000);
         let plan = recurring(anchor, reference, 0, 50, S31).unwrap();
         let widening: u32 = 27 + 63;
         assert_eq!(

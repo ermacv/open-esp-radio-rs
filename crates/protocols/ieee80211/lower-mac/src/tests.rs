@@ -9,7 +9,7 @@ use core::{
 };
 use std::vec::Vec;
 
-use oer_time::RadioInstant;
+use crate::Ieee80211Instant;
 
 use oer_ieee80211_mac::{
     phy::{
@@ -689,7 +689,7 @@ fn a_poisoned_port_reports_its_terminal_event_after_the_earlier_ones() {
 #[test]
 fn the_model_clock_has_no_relation_to_monotonic_time() {
     let model = Model::new();
-    assert_eq!(model.clock_info().epoch, RadioEpoch::Unrelated);
+    assert_eq!(model.clock_info().epoch, RadioEpoch::Monotonic);
 }
 
 #[test]
@@ -735,12 +735,12 @@ fn beacon_timing_addresses_configured_interfaces_within_its_roles() {
 #[test]
 fn the_radio_clock_reads_the_time_the_test_sets() {
     let model = Model::new();
-    assert_eq!(model.now(), Ok(RadioInstant::from_micros(0)));
-    model.set_now(RadioInstant::from_micros(250));
-    assert_eq!(model.now(), Ok(RadioInstant::from_micros(250)));
+    assert_eq!(model.now(), Ok(Ieee80211Instant::from_micros(0)));
+    model.set_now(Ieee80211Instant::from_micros(250));
+    assert_eq!(model.now(), Ok(Ieee80211Instant::from_micros(250)));
     assert_eq!(
         model.now(),
-        Ok(RadioInstant::from_micros(250)),
+        Ok(Ieee80211Instant::from_micros(250)),
         "time stands still until the test moves it"
     );
 }
@@ -749,8 +749,8 @@ fn the_radio_clock_reads_the_time_the_test_sets() {
 #[should_panic(expected = "runs backwards")]
 fn the_radio_clock_never_runs_backwards() {
     let model = Model::new();
-    model.set_now(RadioInstant::from_micros(250));
-    model.set_now(RadioInstant::from_micros(249));
+    model.set_now(Ieee80211Instant::from_micros(250));
+    model.set_now(Ieee80211Instant::from_micros(249));
 }
 
 /// An upper layer that needs a feature names its trait: this compiles only

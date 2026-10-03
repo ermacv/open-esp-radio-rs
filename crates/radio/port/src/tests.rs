@@ -70,3 +70,33 @@ fn the_monotonic_clock_counts_microseconds_of_the_image_clock() {
         Duration::from_micros(1)
     );
 }
+
+/// A test port's domain.
+enum Port {}
+
+#[test]
+fn a_monotonic_radio_clock_converts_exactly_both_ways() {
+    let clock = ClockInfo::MONOTONIC_MICROS;
+    let radio = RadioInstant::<Port>::from_micros(1_234);
+    assert_eq!(clock.to_monotonic(radio), Ok(Instant::from_micros(1_234)));
+    assert_eq!(clock.from_monotonic(Instant::from_micros(1_234)), Ok(radio));
+}
+
+#[test]
+fn unrelated_and_affine_radio_clocks_never_pretend_to_convert() {
+    let radio = RadioInstant::<Port>::from_micros(1_234);
+    let unrelated = ClockInfo {
+        epoch: RadioEpoch::Unrelated,
+        ..ClockInfo::MONOTONIC_MICROS
+    };
+    assert_eq!(unrelated.to_monotonic(radio), Err(EpochError::Unrelated));
+    assert_eq!(
+        unrelated.from_monotonic::<Port>(Instant::from_micros(1)),
+        Err(EpochError::Unrelated)
+    );
+    let affine = ClockInfo {
+        epoch: RadioEpoch::Affine { drift_ppm: 20 },
+        ..ClockInfo::MONOTONIC_MICROS
+    };
+    assert_eq!(affine.to_monotonic(radio), Err(EpochError::NeedsSample));
+}

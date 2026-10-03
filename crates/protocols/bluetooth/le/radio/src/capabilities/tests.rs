@@ -1,7 +1,7 @@
 use super::{LeConnectionCapabilities, LePhy, LePhys, LeRadioCapabilities, LinkAcknowledgement};
 use crate::{
     AdvertisingConfiguration, AdvertisingPdu, AdvertisingReception, AdvertisingSetId, DataPdu,
-    DataPduKind, EventId, RadioDuration, RadioInstant, RadioRequest, RadioWindow, ScanFilterPolicy,
+    DataPduKind, EventId, LeInstant, LeWindow, RadioDuration, RadioRequest, ScanFilterPolicy,
     ScanType, ScannerConfiguration, ScannerId, TestChannel, TestPhy, TestReceive, TxPower,
 };
 
@@ -48,8 +48,8 @@ fn test_receive(phy: TestPhy) -> RadioRequest<'static> {
         id: EventId::new(1),
         channel: TestChannel::new(0).unwrap(),
         phy,
-        window: RadioWindow::new(
-            RadioInstant::from_micros(1_000),
+        window: LeWindow::new(
+            LeInstant::from_micros(1_000),
             RadioDuration::from_micros(100),
         )
         .unwrap(),

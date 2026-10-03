@@ -2,7 +2,7 @@
 
 use oer_radio_port::Poisoned;
 
-use crate::{ConnectionId, EventId, RadioInstant};
+use crate::{ConnectionId, EventId, LeInstant};
 
 /// One PDU received during an event.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -12,7 +12,7 @@ pub struct ReceivedPdu<'pdu> {
     /// Receive strength.
     pub rssi_dbm: i8,
     /// The on-air start of the packet, when the backend can project it.
-    pub captured_at: Option<RadioInstant>,
+    pub captured_at: Option<LeInstant>,
 }
 
 /// How a scheduled event ended.
@@ -22,7 +22,7 @@ pub enum EventResult {
     Executed {
         /// The on-air start of the central's first packet of a connection
         /// event, if one arrived.
-        anchor: Option<RadioInstant>,
+        anchor: Option<LeInstant>,
     },
     /// The event left the schedule without executing: it was cancelled,
     /// skipped or its window passed while the radio was stopped.

@@ -42,7 +42,7 @@
 
 use core::ops::RangeInclusive;
 
-pub use oer_time::{Duration, RadioInstant};
+pub use oer_time::{Duration, Instant, RadioInstant};
 
 /// How a failure left the port.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -274,6 +274,39 @@ impl ClockInfo {
         resolution: Duration::from_micros(1),
         epoch: RadioEpoch::Monotonic,
     };
+
+    /// The monotonic instant of the radio instant `at` of this port.
+    ///
+    /// Exact for a [`RadioEpoch::Monotonic`] clock. An affine clock needs a
+    /// paired reading of both clocks, which no port publishes yet, and an
+    /// unrelated clock has no monotonic instant at all.
+    pub const fn to_monotonic<D>(self, at: RadioInstant<D>) -> Result<Instant, EpochError> {
+        match self.epoch {
+            RadioEpoch::Monotonic => Ok(Instant::from_micros(at.as_micros())),
+            RadioEpoch::Affine { .. } => Err(EpochError::NeedsSample),
+            RadioEpoch::Unrelated => Err(EpochError::Unrelated),
+        }
+    }
+
+    /// The radio instant of this port at the monotonic instant `at`; the
+    /// inverse of [`Self::to_monotonic`], with the same errors.
+    pub const fn from_monotonic<D>(self, at: Instant) -> Result<RadioInstant<D>, EpochError> {
+        match self.epoch {
+            RadioEpoch::Monotonic => Ok(RadioInstant::from_micros(at.as_micros())),
+            RadioEpoch::Affine { .. } => Err(EpochError::NeedsSample),
+            RadioEpoch::Unrelated => Err(EpochError::Unrelated),
+        }
+    }
+}
+
+/// Why a port's radio instant has no monotonic counterpart.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum EpochError {
+    /// The port's clock bears no known relation to the monotonic time.
+    Unrelated,
+    /// The port's clock is affine: converting needs a paired reading of
+    /// both clocks, which no port publishes yet.
+    NeedsSample,
 }
 
 #[cfg(test)]

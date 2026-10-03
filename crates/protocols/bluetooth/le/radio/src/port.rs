@@ -5,7 +5,7 @@ use core::future::{Future, pending, ready};
 use oer_radio_port::{ClockInfo, EventsLost, FailureClass, PortError, RadioEpoch};
 
 use crate::{
-    ConnectionAllowances, LeRadioCapabilities, RadioActivity, RadioDuration, RadioInstant,
+    ConnectionAllowances, LeInstant, LeRadioCapabilities, RadioActivity, RadioDuration,
     RadioOutcome, RadioRequest, RadioTiming, RequestError,
 };
 
@@ -74,7 +74,7 @@ pub trait LeRadioPort {
     fn clock_info(&self) -> ClockInfo;
 
     /// A fresh radio time and the radio's admission timing.
-    fn clock(&self) -> impl Future<Output = Result<(RadioInstant, RadioTiming), Self::Error>> + '_;
+    fn clock(&self) -> impl Future<Output = Result<(LeInstant, RadioTiming), Self::Error>> + '_;
 
     /// Submit one request: `Ok(Err(_))` when the radio refused it. A request
     /// the capabilities exclude is refused as [`RequestError::Unsupported`].
@@ -131,9 +131,9 @@ impl LeRadioPort for NoRadio {
         }
     }
 
-    fn clock(&self) -> impl Future<Output = Result<(RadioInstant, RadioTiming), Never>> + '_ {
+    fn clock(&self) -> impl Future<Output = Result<(LeInstant, RadioTiming), Never>> + '_ {
         ready(Ok((
-            RadioInstant::from_micros(0),
+            LeInstant::from_micros(0),
             RadioTiming {
                 preparation_lead: ZERO,
                 admission_guard: ZERO,

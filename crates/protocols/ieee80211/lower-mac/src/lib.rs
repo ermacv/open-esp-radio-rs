@@ -39,6 +39,13 @@ pub use oer_ieee80211_mac::channel::{Band, Channel, ChannelError, ChannelWidth};
 pub use oer_ieee80211_mac::phy::PhyRate;
 pub use oer_radio_coex::CoexPriority;
 
+/// The clock domain of the IEEE 802.11 lower-MAC port: its instants never
+/// mix with another port's.
+pub enum Ieee80211Radio {}
+
+/// An instant on the IEEE 802.11 lower-MAC port's clock.
+pub type Ieee80211Instant = oer_time::RadioInstant<Ieee80211Radio>;
+
 pub use capabilities::{
     BandSet, CoexPrioritySet, HardwareServices, LowerMacCapabilities, PhyFormatSet, RateSupport,
     WidthSet,

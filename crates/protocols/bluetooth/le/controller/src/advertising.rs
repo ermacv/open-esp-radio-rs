@@ -35,8 +35,8 @@ use oer_bluetooth_ll::{
 };
 use oer_bluetooth_radio::{
     AdvertisingChannels, AdvertisingConfiguration, AdvertisingEvent, AdvertisingPdu,
-    AdvertisingReception, AdvertisingSetId, EventId, LePhy, RadioDuration, RadioInstant,
-    RadioOutcome, RadioRequest, RadioTiming, RadioWindow, TxPower,
+    AdvertisingReception, AdvertisingSetId, EventId, LeInstant, LePhy, LeWindow, RadioDuration,
+    RadioOutcome, RadioRequest, RadioTiming, TxPower,
 };
 
 use crate::{
@@ -66,7 +66,7 @@ const HIGH_DUTY_DURATION: RadioDuration = RadioDuration::from_micros(1_280_000);
 pub(crate) struct ConnectionIndication {
     pub(crate) request: LeLegacyConnectionRequest,
     /// On-air start of the indication.
-    pub(crate) at: RadioInstant,
+    pub(crate) at: LeInstant,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -103,7 +103,7 @@ enum SetKind {
 #[derive(Clone, Copy, Debug)]
 struct Outstanding {
     id: EventId,
-    reservation: RadioWindow,
+    reservation: LeWindow,
 }
 
 #[derive(Debug)]
@@ -119,7 +119,7 @@ pub(crate) struct Advertiser {
     advertiser: LeDeviceAddress,
     channels: AdvertisingChannels,
     interval: RadioDuration,
-    next_anchor: Option<RadioInstant>,
+    next_anchor: Option<LeInstant>,
     outstanding: Option<Outstanding>,
     /// Events between raised coexistence levels, from the interval.
     coexistence_period: u16,
@@ -132,7 +132,7 @@ pub(crate) struct Advertiser {
     /// Advertising stops because a connection was created.
     connected: bool,
     /// When high duty cycle directed advertising ends.
-    expires: Option<RadioInstant>,
+    expires: Option<LeInstant>,
     /// High duty cycle directed advertising ended without a connection.
     expired: bool,
     /// The expired set was removed; the Host learns it once.
@@ -445,7 +445,7 @@ impl Advertiser {
     }
 
     /// The next event, when the role needs one.
-    pub(crate) fn proposal(&self, earliest: RadioInstant, timing: RadioTiming) -> Option<Proposal> {
+    pub(crate) fn proposal(&self, earliest: LeInstant, timing: RadioTiming) -> Option<Proposal> {
         if self.phase != Phase::Running || self.outstanding.is_some() || self.expired {
             return None;
         }
@@ -461,7 +461,7 @@ impl Advertiser {
 
     /// The reservation of the next event at its nominal anchor, which other
     /// roles leave free. It is known once the previous event is placed.
-    pub(crate) fn planned(&self, timing: RadioTiming) -> Option<RadioWindow> {
+    pub(crate) fn planned(&self, timing: RadioTiming) -> Option<LeWindow> {
         if self.phase != Phase::Running {
             return None;
         }
@@ -473,7 +473,7 @@ impl Advertiser {
     }
 
     /// The reservation of the event in progress.
-    pub(crate) fn busy(&self) -> Option<RadioWindow> {
+    pub(crate) fn busy(&self) -> Option<LeWindow> {
         self.outstanding.map(|event| event.reservation)
     }
 
@@ -482,7 +482,7 @@ impl Advertiser {
     pub(crate) fn build(
         &mut self,
         id: EventId,
-        anchor: RadioInstant,
+        anchor: LeInstant,
         timing: RadioTiming,
         delay: RadioDuration,
     ) -> RadioRequest<'static> {
@@ -514,12 +514,12 @@ impl Advertiser {
     }
 
     /// Skip the event the arbiter could not place.
-    pub(crate) fn skip(&mut self, earliest: RadioInstant, delay: RadioDuration) {
+    pub(crate) fn skip(&mut self, earliest: LeInstant, delay: RadioDuration) {
         let anchor = self.next_anchor.unwrap_or(earliest);
         self.advance(anchor, delay);
     }
 
-    fn advance(&mut self, anchor: RadioInstant, delay: RadioDuration) {
+    fn advance(&mut self, anchor: LeInstant, delay: RadioDuration) {
         let high_duty = matches!(
             self.kind,
             SetKind::Directed {

@@ -41,8 +41,12 @@ impl oer_radio_port::Correlation for RequestId {
     }
 }
 
+/// The clock domain of the IEEE 802.15.4 radio port: its instants never mix
+/// with another port's.
+pub enum Ieee802154Radio {}
+
 /// Microseconds in the backend's monotonic radio epoch.
 ///
 /// The epoch is deliberately not wall-clock time. An adapter must use one
 /// stable epoch for every timestamp it publishes in a controller instance.
-pub use oer_time::RadioInstant;
+pub type Ieee802154Instant = oer_time::RadioInstant<Ieee802154Radio>;

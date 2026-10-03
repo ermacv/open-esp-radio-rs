@@ -2,8 +2,8 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_bluetooth_radio::{
-    ClockInfo, EventsLost, LeRadioCapabilities, LeRadioPort, RadioActivity, RadioEpoch,
-    RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError,
+    ClockInfo, EventsLost, LeInstant, LeRadioCapabilities, LeRadioPort, RadioActivity, RadioEpoch,
+    RadioOutcome, RadioRequest, RadioTiming, RequestError,
 };
 use oer_time::Timer;
 
@@ -54,7 +54,7 @@ impl<
         }
     }
 
-    async fn clock(&self) -> Result<(RadioInstant, RadioTiming), BluetoothRuntimeError> {
+    async fn clock(&self) -> Result<(LeInstant, RadioTiming), BluetoothRuntimeError> {
         BluetoothRuntime::clock(self).await
     }
 

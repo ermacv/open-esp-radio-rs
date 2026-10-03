@@ -41,6 +41,9 @@ pub enum SystemScenario {
     /// esp-hal's inter-processor call into each core, core 0 included, on the
     /// correctness image.
     IpcCall { calls: u8 },
+    /// An interrupt-table source stays silent until its owner enables it and
+    /// after its owner disables it, on the correctness image.
+    InterruptTable { probes: u8 },
 }
 
 fn single_frame_batch() -> Vec<u8> {
@@ -99,6 +102,7 @@ impl SystemScenario {
                 bounded(*period_millis, 1, 1_000, "period_millis")
             }
             Self::IpcCall { calls } => bounded(*calls, 1, 100, "calls"),
+            Self::InterruptTable { probes } => bounded(*probes, 1, 100, "probes"),
         }
     }
 
@@ -111,6 +115,7 @@ impl SystemScenario {
             Self::MemoryBenchmark { .. } => ImageClass::DiagnosticMemoryBenchmark,
             Self::Timebase { .. } => ImageClass::Correctness,
             Self::IpcCall { .. } => ImageClass::Correctness,
+            Self::InterruptTable { .. } => ImageClass::Correctness,
         })
     }
 
@@ -151,6 +156,9 @@ impl SystemScenario {
                 context,
             ),
             Self::IpcCall { calls } => system::ipc_call::run(*calls, output, context),
+            Self::InterruptTable { probes } => {
+                system::interrupt_table::run(*probes, output, context)
+            }
         }
     }
 }
@@ -179,6 +187,10 @@ mod tests {
                 ImageClass::Correctness,
             ),
             ("kind = 'ipc-call'\ncalls = 1", ImageClass::Correctness),
+            (
+                "kind = 'interrupt-table'\nprobes = 1",
+                ImageClass::Correctness,
+            ),
         ] {
             let scenario = parse(text);
             scenario.validate().unwrap();

@@ -17,6 +17,7 @@ crate::messages! {
     topic WatchdogArmed = "system/watchdog/armed";
     property TimebaseProbe = "system/timebase-probe";
     property IpcCall = "system/ipc-call";
+    property SourceGate = "system/source-gate";
     property MemoryBenchmark = "system/memory-benchmark";
     endpoint InjectHang = "system/hang/inject" => crate::system::HangInjected;
     topic HangInjected = "system/hang/injected";
@@ -30,6 +31,8 @@ crate::messages! {
     topic TimebaseProbed = "system/timebase/probed";
     endpoint CallAcrossCores = "system/ipc/call" => crate::system::CoresCalled;
     topic CoresCalled = "system/ipc/called";
+    endpoint ProbeSourceGate = "system/source-gate/probe" => crate::system::SourceGated;
+    topic SourceGated = "system/source-gate/probed";
     #[cfg(feature = "system")]
     endpoint RunMemoryBenchmark = "system/memory-benchmark/run" => crate::system::MemoryBenchmarkCompleted;
     #[cfg(feature = "system")]
@@ -132,6 +135,19 @@ pub struct CoresCalled {
     pub core0_to_core0: Option<u8>,
     pub core0_to_core1: Option<u8>,
     pub core1_to_core0: Option<u8>,
+}
+
+/// Fire an interrupt-table source three times: silent, after its owner
+/// enables it, and after its owner disables it again.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
+pub struct ProbeSourceGate;
+
+/// How many times the source's handler ran in each phase.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
+pub struct SourceGated {
+    pub before_enable: u32,
+    pub enabled: u32,
+    pub after_disable: u32,
 }
 
 /// `system/memory-benchmark/run`.

@@ -1457,6 +1457,16 @@ impl SerialCapture {
         }
     }
 
+    pub fn probe_source_gate(
+        &self,
+        timeout: Duration,
+    ) -> Result<oer_hil_protocol::system::SourceGated> {
+        match self.call(0, oer_hil_protocol::system::ProbeSourceGate, timeout)? {
+            Ok(gated) => Ok(gated),
+            Err(reason) => Err(format!("device rejected the source-gate probe: {reason:?}").into()),
+        }
+    }
+
     pub fn probe_ieee802154_event_status(
         &self,
         request: Ieee802154EventStatusProbeRequest,

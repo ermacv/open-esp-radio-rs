@@ -89,6 +89,12 @@ use esp_hal::timer::{OneShotTimer, timg::TimerGroup};
 use oer_esp32s31_executor_embassy::Executor;
 use static_cell::StaticCell;
 
+oer_esp32s31_platform_runtime::interrupt_table! {
+    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+    /// System timer alarm 2, the interrupt-table probe's source.
+    source_gate: SourceGateToken = SYSTIMER_TARGET2 => source_gate::on_alarm, Priority1, ProCpu;
+}
+
 #[cfg(any(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
 mod bluetooth;
 #[cfg(all(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
@@ -118,6 +124,8 @@ mod pc_profile;
 #[cfg(feature = "open-radio-hil")]
 mod phy_fault;
 mod software_interrupt;
+#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+mod source_gate;
 #[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
 mod stack_evidence;
 #[cfg(any(
@@ -375,6 +383,8 @@ extern "C" fn runtime_main() -> ! {
         hang_watchdog::start(systimer.alarm0);
         #[cfg(feature = "pc-profile")]
         pc_profile::init(systimer.alarm1);
+        let interrupts = Interrupts::take().expect("the image takes its interrupt tokens once");
+        source_gate::install(OneShotTimer::new(systimer.alarm2), interrupts.source_gate);
     }
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     let watchdog_service = watchdog::init(peripherals.TIMG1);

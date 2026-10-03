@@ -138,6 +138,9 @@ system/memory-benchmark/completed 898d77a237a16f8e topic
 system/memory-benchmark/run 9166cc0e5e410a17 endpoint
 system/panic/inject 4a8069a58696abc1 endpoint
 system/panic/injected 9f469405c60e21be topic
+system/source-gate d05b7b5ab4fd2bc9 property
+system/source-gate/probe 355544731c965096 endpoint
+system/source-gate/probed 90ef30dc91e76718 topic
 system/stacks 415930f2a651bd9c topic
 system/stacks/get 3af83191bf626410 endpoint
 system/timebase-probe 5e565d5e923db7c7 property

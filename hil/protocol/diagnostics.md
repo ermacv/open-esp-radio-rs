@@ -27,6 +27,13 @@ line enters through the platform's stack-switching vector entry and the
 vectored dispatcher, so the `system-ipc-call` scenario exercises that path on
 both cores.
 
+`system::ProbeSourceGate` (`SourceGate`, the radio images that run both
+cores) fires system timer alarm 2, a source of the image's interrupt table,
+three times: before its owner enables the source with its token, after, and
+after it disables the source again. `SourceGated` counts the table handler's
+runs in each phase; the `system-interrupt-table` scenario requires none, one
+and none.
+
 `system::WatchdogTest` is served only by the dedicated watchdog image.
 The dedicated radio-free image's one-second engineering budget exercises completion, a synchronous
 poll that never returns, cancellation, missing completion and late restoration

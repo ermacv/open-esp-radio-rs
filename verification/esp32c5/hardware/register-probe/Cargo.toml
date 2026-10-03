@@ -8,11 +8,11 @@ publish = false
 description = "Board observation of the ESP32-C5 radio register model"
 
 [dependencies]
-esp-backtrace = { git = "https://github.com/ermacv/esp-hal", rev = "42b085e245a67e4a845237520f19704cbdb22776", default-features = false, features = ["esp32c5", "panic-handler", "println"] }
-esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "42b085e245a67e4a845237520f19704cbdb22776", default-features = false, features = ["esp32c5"] }
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "42b085e245a67e4a845237520f19704cbdb22776", default-features = false, features = ["esp32c5", "rt", "unstable"] }
-esp-println = { git = "https://github.com/ermacv/esp-hal", rev = "42b085e245a67e4a845237520f19704cbdb22776", default-features = false, features = ["auto", "esp32c5"] }
-esp32c5 = { git = "https://github.com/esp-rs/esp-pacs", rev = "c29264b", default-features = false }
+esp-backtrace = { git = "https://github.com/ermacv/esp-hal", rev = "c771deb0fe584ddc9a1522eb2cf05abe955c2053", default-features = false, features = ["esp32c5", "panic-handler", "println"] }
+esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "c771deb0fe584ddc9a1522eb2cf05abe955c2053", default-features = false, features = ["esp32c5"] }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "c771deb0fe584ddc9a1522eb2cf05abe955c2053", default-features = false, features = ["esp32c5", "rt", "unstable"] }
+esp-println = { git = "https://github.com/ermacv/esp-hal", rev = "c771deb0fe584ddc9a1522eb2cf05abe955c2053", default-features = false, features = ["auto", "esp32c5"] }
+esp32c5 = { git = "https://github.com/ermacv/esp-pacs", rev = "11e8425d6", default-features = false }
 oer-esp32c5-hal = { path = "../../../../crates/hardware/esp32c5/hal" }
 oer-esp32c5-pac = { path = "../../../../crates/hardware/esp32c5/pac" }
 oer-esp32c5-pac-raw = { path = "../../../../crates/hardware/esp32c5/pac/raw" }

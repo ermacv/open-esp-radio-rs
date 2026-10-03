@@ -89,7 +89,20 @@ fn names(target: HangTarget, hang: &HangFault) -> bool {
         ),
     };
     let hart = &hang.harts[hart];
-    stalled && task && hart.responded && hart.mepc != 0 && !hang.samples.contains(&0)
+    stalled
+        && task
+        && hart.responded
+        && hart.mepc != 0
+        && on_task_stack(hart.sp)
+        && !hang.samples.contains(&0)
+}
+
+/// Whether `sp` lies on a task stack: both harts' task stacks are in PSRAM,
+/// while the watchdog's own handler runs on an SRAM interrupt stack. A stalled
+/// task reported with an SRAM `sp` names the handler's frame, not the task.
+fn on_task_stack(sp: u32) -> bool {
+    let psram = oer_esp32s31_platform_layout::memory::PSRAM;
+    (psram.origin..psram.end()).contains(&sp)
 }
 
 fn scope(target: HangTarget) -> &'static str {
@@ -109,6 +122,7 @@ mod tests {
         let hart = HartState {
             responded: true,
             mepc: 0x4200_0000,
+            sp: 0x5004_0000,
             ..HartState::default()
         };
         HangFault {
@@ -136,5 +150,12 @@ mod tests {
         ));
         assert!(names(HangTarget::ProtocolExecutor, &hang(0b11, None)));
         assert!(!names(HangTarget::NetworkExecutor, &hang(0b01, None)));
+    }
+
+    #[test]
+    fn a_stalled_hart_on_its_interrupt_stack_is_not_named() {
+        let mut fault = hang(0b11, None);
+        fault.harts[0].sp = 0x2f07_0000;
+        assert!(!names(HangTarget::ProtocolExecutor, &fault));
     }
 }

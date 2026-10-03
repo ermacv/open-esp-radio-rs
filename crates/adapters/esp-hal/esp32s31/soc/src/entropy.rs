@@ -36,3 +36,45 @@ impl<'d> Entropy<'d> {
         Ok(bytes)
     }
 }
+
+/// What the LP TRNG's registers say about the entropy source.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SourceStatus {
+    /// The LP peripheral clock and the TRNG's own clock run, and the block is
+    /// out of reset.
+    pub clocked: bool,
+    /// Sampling, the CRC noise conditioner and the standard 256-bit output
+    /// mode are on, as ESP-IDF's `rng_ll_enable` leaves them.
+    pub sampling: bool,
+    /// The health tests run (not bypassed) on the selected noise source.
+    pub health_tested: bool,
+    /// A startup or continuous health test has failed since the last clear.
+    pub health_error: bool,
+}
+
+impl SourceStatus {
+    /// Whether the source produces health-tested entropy.
+    pub const fn is_healthy(self) -> bool {
+        self.clocked && self.sampling && self.health_tested && !self.health_error
+    }
+}
+
+/// Read the LP TRNG's state. esp-hal enables the source at startup and keeps
+/// it running after a `TrngSource` is dropped, because `Rng` reads it too.
+pub fn source_status() -> SourceStatus {
+    let clock = esp_hal::peripherals::LP_PERI::regs().rng_ctrl().read();
+    let trng = RNG::regs();
+    let conf = trng.conf().read();
+    let debug = trng.debug_conf().read();
+    SourceStatus {
+        clocked: clock.lp_rng_clk_en().bit_is_set()
+            && clock.lp_rng_rst_en().bit_is_clear()
+            && trng.date().read().clk_en().bit_is_set(),
+        sampling: conf.sample_enable().bit_is_set()
+            && conf.noise_crc_en().bit_is_set()
+            && conf.random_output_mode().bit_is_set(),
+        health_tested: debug.health_test_bypass().bit_is_clear()
+            && conf.noise_source_sel().bits() != 0,
+        health_error: trng.int_raw().read().error_int_raw().bit_is_set(),
+    }
+}

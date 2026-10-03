@@ -86,4 +86,4 @@ pub use radio::interface::Interface;
 pub use radio::state::{
     AcceptedCommand, CommandError, EventError, RadioState, RadioStateMachine, RestingState,
 };
-pub use radio::{RadioInstant, RequestId};
+pub use radio::{Ieee802154Instant, Ieee802154Radio, RequestId};

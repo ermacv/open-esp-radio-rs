@@ -12,12 +12,13 @@ use oer_ieee80211_mac::qos::{
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_espressif_ieee80211_policy::lmac;
+use oer_ieee80211_lower_mac::Ieee80211Instant;
 use oer_ieee80211_upper_mac::{
     AmpduAttemptResult, AmpduRetryDecision as UpperAmpduRetryDecision,
     AmpduRetryError as UpperAmpduRetryError, AmpduRetryState as UpperAmpduRetryState,
     ContentionUpdate, MpduRetryState, RetryDecision, RetryOutcome, retry::RetryStateError,
 };
-use oer_time::{RadioDuration, RadioInstant};
+use oer_time::RadioDuration;
 
 use crate::{
     edca::{EdcaAccessPolicy, EdcaContentionParameters, EdcaParametersError, EdcaQueues},
@@ -779,7 +780,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
                 RadioDuration::from_micros(policy.lifetime_micros),
                 policy.retain_single_mpdu,
             ),
-            RadioInstant::from_micros(committed_at_micros),
+            Ieee80211Instant::from_micros(committed_at_micros),
         )
         .map(|state| Self { state })
         .map_err(Self::error)
@@ -826,7 +827,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
             .observe(
                 result,
                 observed_subframes,
-                RadioInstant::from_micros(now_micros),
+                Ieee80211Instant::from_micros(now_micros),
                 block_ack_operational,
             )
             .map(Self::decision)
@@ -847,7 +848,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
     ) -> AmpduRetryDecision {
         Self::decision(self.state.observe_block_ack_request(
             block_ack.map(|observation| observation.block_ack.report()),
-            RadioInstant::from_micros(now_micros),
+            Ieee80211Instant::from_micros(now_micros),
             block_ack_operational,
         ))
     }
@@ -908,7 +909,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
     /// Whether the aggregate's MSDUs are aged at `now_micros`: less than
     /// one lifetime unit remains.
     pub const fn aged(&self, now_micros: u64) -> bool {
-        self.state.aged(RadioInstant::from_micros(now_micros))
+        self.state.aged(Ieee80211Instant::from_micros(now_micros))
     }
 
     pub const fn current_first_sequence(&self) -> SequenceNumber {

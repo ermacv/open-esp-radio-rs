@@ -1,7 +1,7 @@
 use std::vec::Vec;
 
 use oer_bluetooth_radio::{
-    ConnectionAllowances, EventId, EventResult, RadioDuration, RadioInstant, RadioOutcome,
+    ConnectionAllowances, EventId, EventResult, LeInstant, RadioDuration, RadioOutcome,
     RadioRequest, RadioTiming, TestChannel, TestPhy, TestReport, TxPower,
 };
 
@@ -75,7 +75,7 @@ fn transmitter_packets_stay_on_the_interval_grid() {
     let mut now = 1_000;
     for _ in 0..3 {
         let Some(RadioRequest::TestTransmit(test)) =
-            session.next_request(RadioInstant::from_micros(now), TIMING, &mut payload)
+            session.next_request(LeInstant::from_micros(now), TIMING, &mut payload)
         else {
             panic!("a transmitter plans its next packet")
         };
@@ -87,7 +87,7 @@ fn transmitter_packets_stay_on_the_interval_grid() {
         let mut other = [0; DTM_MAX_PAYLOAD];
         assert!(
             session
-                .next_request(RadioInstant::from_micros(now), TIMING, &mut other)
+                .next_request(LeInstant::from_micros(now), TIMING, &mut other)
                 .is_none()
         );
         ended(&mut session, id, EventResult::Executed { anchor: None });
@@ -116,7 +116,7 @@ fn a_later_le_2m_packet_takes_the_next_admitted_slot() {
         .unwrap();
     let mut payload = [0; DTM_MAX_PAYLOAD];
     let Some(RadioRequest::TestTransmit(first)) =
-        session.next_request(RadioInstant::from_micros(1_000), TIMING, &mut payload)
+        session.next_request(LeInstant::from_micros(1_000), TIMING, &mut payload)
     else {
         panic!("the first packet")
     };
@@ -132,7 +132,7 @@ fn a_later_le_2m_packet_takes_the_next_admitted_slot() {
     // (150 + 107 + 40 + 100 = 397 us < 433 us): the planning slack of the
     // first packet does not push it one interval later.
     let Some(RadioRequest::TestTransmit(second)) =
-        session.next_request(RadioInstant::from_micros(end + 150), TIMING, &mut payload)
+        session.next_request(LeInstant::from_micros(end + 150), TIMING, &mut payload)
     else {
         panic!("the second packet")
     };
@@ -144,7 +144,7 @@ fn a_later_le_2m_packet_takes_the_next_admitted_slot() {
     );
     // Planned too late for the next slot, the packet takes the one after.
     let Some(RadioRequest::TestTransmit(third)) = session.next_request(
-        RadioInstant::from_micros(start + 625 + 192 + 400),
+        LeInstant::from_micros(start + 625 + 192 + 400),
         TIMING,
         &mut payload,
     ) else {
@@ -170,7 +170,7 @@ fn a_receiver_counts_packets_and_drains_before_it_stops() {
         TestReport::Received { rssi_dbm: -52 },
     ] {
         let Some(RadioRequest::TestReceive(test)) =
-            session.next_request(RadioInstant::from_micros(0), TIMING, &mut payload)
+            session.next_request(LeInstant::from_micros(0), TIMING, &mut payload)
         else {
             panic!("a receiver plans its next window")
         };
@@ -187,7 +187,7 @@ fn a_receiver_counts_packets_and_drains_before_it_stops() {
     }
     assert_eq!(recurring, [false, true, true]);
     let Some(RadioRequest::TestReceive(test)) =
-        session.next_request(RadioInstant::from_micros(0), TIMING, &mut payload)
+        session.next_request(LeInstant::from_micros(0), TIMING, &mut payload)
     else {
         panic!("the receiver keeps listening")
     };
@@ -195,7 +195,7 @@ fn a_receiver_counts_packets_and_drains_before_it_stops() {
     assert_eq!(session.drained(), None);
     assert!(
         session
-            .next_request(RadioInstant::from_micros(0), TIMING, &mut payload)
+            .next_request(LeInstant::from_micros(0), TIMING, &mut payload)
             .is_none()
     );
     ended(&mut session, test.id, EventResult::NotExecuted);
@@ -220,13 +220,13 @@ fn coded_transmitters_are_refused_and_refusals_replan() {
     let mut payload = [0; DTM_MAX_PAYLOAD];
     assert!(
         session
-            .next_request(RadioInstant::from_micros(0), TIMING, &mut payload)
+            .next_request(LeInstant::from_micros(0), TIMING, &mut payload)
             .is_some()
     );
     session.refused();
     assert!(
         session
-            .next_request(RadioInstant::from_micros(0), TIMING, &mut payload)
+            .next_request(LeInstant::from_micros(0), TIMING, &mut payload)
             .is_some()
     );
 }

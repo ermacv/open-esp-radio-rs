@@ -24,6 +24,7 @@
 //! completion back. A retransmission carries the bytes first encoded, so
 //! its sequence number and CCMP packet number repeat.
 
+use oer_ieee80211_lower_mac::Ieee80211Instant;
 use oer_ieee80211_lower_mac::{
     Backoff, BlockAckReport, CoexPriority, TxCompletion, TxPower, TxResponse, TxStatus,
 };
@@ -32,7 +33,6 @@ use oer_ieee80211_softmac::{
     BackoffEntropy, EdcaContention, MacAmpduTxResult, MacAmpduTxStatus, MacIndividualRetries,
     MacTxResult, MacTxStatus,
 };
-use oer_time::RadioInstant;
 
 use crate::{
     ampdu::{
@@ -73,7 +73,7 @@ pub struct AmpduRequest {
     lengths: [u16; MAX_AMPDU_SUBFRAMES as usize],
     /// When the MSDUs were committed: the aggregate's lifetime runs from
     /// here, on the backend's radio clock.
-    pub committed_at: RadioInstant,
+    pub committed_at: Ieee80211Instant,
     /// Whether the Block Ack agreement is operational; while it is not,
     /// missing subframes leave the aggregate.
     pub block_ack_operational: bool,
@@ -87,7 +87,7 @@ impl AmpduRequest {
         tid: u8,
         first_sequence: SequenceNumber,
         lengths: &[u16],
-        committed_at: RadioInstant,
+        committed_at: Ieee80211Instant,
         block_ack_operational: bool,
     ) -> Option<Self> {
         if lengths.is_empty() || lengths.len() > usize::from(MAX_AMPDU_SUBFRAMES) {
@@ -372,7 +372,7 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
         &mut self,
         exchange: &mut TxExchange,
         completion: &TxCompletion,
-        now: RadioInstant,
+        now: Ieee80211Instant,
         ladder: &impl RateLadder,
         entropy: &mut impl BackoffEntropy,
     ) -> TxStep {

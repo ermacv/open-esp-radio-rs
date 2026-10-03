@@ -23,8 +23,8 @@ use oer_bluetooth_ll::{
     },
 };
 use oer_bluetooth_radio::{
-    AdvertisingChannel, EventId, LePhy, RadioDuration, RadioInstant, RadioOutcome, RadioRequest,
-    RadioTiming, RadioWindow, ScanFilterPolicy, ScanType, ScanWindow, ScannerConfiguration,
+    AdvertisingChannel, EventId, LeInstant, LePhy, LeWindow, RadioDuration, RadioOutcome,
+    RadioRequest, RadioTiming, ScanFilterPolicy, ScanType, ScanWindow, ScannerConfiguration,
     ScannerId, TxPower,
 };
 
@@ -49,7 +49,7 @@ enum Phase {
 struct Outstanding {
     id: EventId,
     channel: AdvertisingChannel,
-    reservation: RadioWindow,
+    reservation: LeWindow,
 }
 
 // CAPABILITY: bluetooth-legacy-passive-scanning, bluetooth-active-scanning
@@ -62,7 +62,7 @@ pub(crate) struct Scanner {
     filter_duplicates: bool,
     duplicates: LegacyAdvertisingDuplicateFilter<DUPLICATE_FILTER_CAPACITY>,
     channel: AdvertisingChannel,
-    next_anchor: Option<RadioInstant>,
+    next_anchor: Option<LeInstant>,
     outstanding: Option<Outstanding>,
     completion: Option<Status>,
 }
@@ -195,9 +195,9 @@ impl Scanner {
     pub(crate) fn place(
         &mut self,
         id: EventId,
-        earliest: RadioInstant,
+        earliest: LeInstant,
         timing: RadioTiming,
-        busy: &[Option<RadioWindow>],
+        busy: &[Option<LeWindow>],
     ) -> Option<RadioRequest<'static>> {
         if !self.wants_window() {
             return None;
@@ -238,7 +238,7 @@ impl Scanner {
             self.next_anchor = Some(interval_end);
             return None;
         }
-        let window = RadioWindow::new(start, duration).ok()?;
+        let window = LeWindow::new(start, duration).ok()?;
         self.outstanding = Some(Outstanding {
             id,
             channel: self.channel,
@@ -255,7 +255,7 @@ impl Scanner {
         }))
     }
 
-    pub(crate) fn busy(&self) -> Option<RadioWindow> {
+    pub(crate) fn busy(&self) -> Option<LeWindow> {
         self.outstanding.map(|window| window.reservation)
     }
 

@@ -9,8 +9,8 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use oer_bluetooth_radio::{
     AcceptListChange, AcceptListDevice, AdvertisingChannel, AdvertisingChannels,
     AdvertisingConfiguration, AdvertisingEvent, AdvertisingPdu, AdvertisingReception,
-    AdvertisingSetId, CoexistenceLevel, EventId, EventResult, LePhy, RadioDuration, RadioFault,
-    RadioInstant, RadioOutcome, RadioRequest, RadioWindow, ReceivedPdu, RequestError,
+    AdvertisingSetId, CoexistenceLevel, EventId, EventResult, LeInstant, LePhy, LeWindow,
+    RadioDuration, RadioFault, RadioOutcome, RadioRequest, ReceivedPdu, RequestError,
     ScanFilterPolicy, ScanType, ScannerConfiguration, ScannerId, TestChannel, TestPhy, TestReceive,
     TxPower,
 };
@@ -295,7 +295,7 @@ fn advertise(id: u32, anchor: u64) -> RadioRequest<'static> {
     RadioRequest::Advertise(AdvertisingEvent {
         id: EventId::new(id),
         set: AdvertisingSetId::new(0),
-        anchor: RadioInstant::from_micros(anchor),
+        anchor: LeInstant::from_micros(anchor),
         channels: AdvertisingChannels::single(AdvertisingChannel::Channel37),
         channel_spacing: RadioDuration::from_micros(1_000),
         coexistence: CoexistenceLevel::Baseline,
@@ -444,7 +444,7 @@ fn the_clock_reports_a_fresh_radio_time() {
     model.0.borrow_mut().time = 2_000;
     let (now, timing) = block_on(runtime.clock()).unwrap();
     // Two raw ticks per microsecond.
-    assert_eq!(now, RadioInstant::from_micros(1_000));
+    assert_eq!(now, LeInstant::from_micros(1_000));
     assert_eq!(timing.admission_guard, RadioDuration::from_micros(40));
 }
 
@@ -648,8 +648,8 @@ fn test_receive(id: u32) -> RadioRequest<'static> {
         id: EventId::new(id),
         channel: TestChannel::new(19).unwrap(),
         phy: TestPhy::Le1M,
-        window: RadioWindow::new(
-            RadioInstant::from_micros(10_000),
+        window: LeWindow::new(
+            LeInstant::from_micros(10_000),
             RadioDuration::from_micros(1_000),
         )
         .unwrap(),

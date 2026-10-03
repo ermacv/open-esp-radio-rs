@@ -7,7 +7,7 @@ use oer_bluetooth_radio::{
     AdvertisingConfiguration, AdvertisingEvent, AdvertisingPdu, AdvertisingReception,
     AdvertisingSetId, CoexistenceLevel, ConnectionConfiguration, ConnectionEvent,
     ConnectionEventTiming, ConnectionId, CrcInit, DataChannel, DataPdu, DataPduKind, EventId,
-    EventResult, LePhy, RadioDuration, RadioInstant, RadioOutcome, RadioRequest, RadioWindow,
+    EventResult, LeInstant, LePhy, LeWindow, RadioDuration, RadioOutcome, RadioRequest,
     RequestError, ScanFilterPolicy, ScanType, ScanWindow, ScannerConfiguration, ScannerId,
     TestChannel, TestPhy, TestReceive, TestReport, TxPower,
 };
@@ -32,14 +32,14 @@ type Radio = BluetoothRadio<1, 1, 1, 1, 2, 3, 8>;
 enum Seen {
     Received(EventId, Vec<u8>),
     Ended(EventId, bool),
-    Anchor(EventId, Option<RadioInstant>),
+    Anchor(EventId, Option<LeInstant>),
     Acknowledged(ConnectionId),
     Test(EventId, TestReport),
     Fault,
 }
 
 #[derive(Default)]
-struct Sink(Vec<Seen>, Vec<Option<RadioInstant>>);
+struct Sink(Vec<Seen>, Vec<Option<LeInstant>>);
 
 impl BluetoothRadioSink for Sink {
     fn outcome(&mut self, outcome: RadioOutcome<'_>) {
@@ -82,9 +82,9 @@ fn view(busy: bool) -> SchedulerHardwareView {
     }
 }
 
-fn window(start: u64, duration: u32) -> RadioWindow {
-    RadioWindow::new(
-        RadioInstant::from_micros(start),
+fn window(start: u64, duration: u32) -> LeWindow {
+    LeWindow::new(
+        LeInstant::from_micros(start),
         RadioDuration::from_micros(duration),
     )
     .unwrap()
@@ -113,7 +113,7 @@ fn advertise(id: u32, anchor: u64, channels: AdvertisingChannels) -> RadioReques
     RadioRequest::Advertise(AdvertisingEvent {
         id: EventId::new(id),
         set: AdvertisingSetId::new(0),
-        anchor: RadioInstant::from_micros(anchor),
+        anchor: LeInstant::from_micros(anchor),
         channels,
         channel_spacing: RadioDuration::from_micros(1_000),
         coexistence: CoexistenceLevel::Baseline,
@@ -133,7 +133,7 @@ fn the_timing_follows_the_scheduler_policy() {
     let radio = radio();
     assert_eq!(radio.timing().preparation_lead.as_micros(), 137);
     assert_eq!(radio.timing().admission_guard.as_micros(), 40);
-    assert_eq!(radio.now(), RadioInstant::from_micros(0));
+    assert_eq!(radio.now(), LeInstant::from_micros(0));
     // A recurring event ends 1,074 us after its widened anchor less the lead.
     let connection = radio.timing().connection;
     assert_eq!(connection.local_sleep_clock_ppm, 500);
@@ -383,7 +383,7 @@ fn a_connectable_set_receives_its_requests() {
         RadioRequest::Advertise(AdvertisingEvent {
             id: EventId::new(7),
             set: AdvertisingSetId::new(3),
-            anchor: RadioInstant::from_micros(10_000),
+            anchor: LeInstant::from_micros(10_000),
             channels,
             channel_spacing: RadioDuration::from_micros(600),
             coexistence: CoexistenceLevel::Baseline,
@@ -470,7 +470,7 @@ fn a_connection_reports_its_anchor_receptions_and_acknowledgement() {
                 connection,
                 access_address: AccessAddress([0xd4, 0xc3, 0xb2, 0xa1]),
                 crc_init: CrcInit([0x33, 0x22, 0x11]),
-                created_at: RadioInstant::from_micros(1_000),
+                created_at: LeInstant::from_micros(1_000),
                 tx_power: TxPower::from_dbm(0),
                 phy: LePhy::Le1M,
             }),

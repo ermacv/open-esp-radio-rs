@@ -8,6 +8,7 @@ use core::{
     task::{Context, Poll, Waker},
 };
 
+use oer_ieee80211_lower_mac::Ieee80211Instant;
 use oer_ieee80211_lower_mac::{
     Backoff, BlockAckReport, Channel, ChannelWidth, CoexPriority, Ieee80211LowerMacPort,
     KeySelector, LifecycleCommand, LowerMacSetting, MacAddress, Protection, ReceiveFilter, TxPower,
@@ -28,7 +29,6 @@ use oer_ieee80211_upper_mac::{
     TxReport, TxRequest,
 };
 use oer_ieee80211_upper_mac_service::{AmpduFrames, EventRouter, UpperMacTx, UpperMacTxError};
-use oer_time::RadioInstant;
 
 const STATION: VifId = VifId(0);
 const ADDRESS: MacAddress = [0x02, 0, 0, 0, 0, 1];
@@ -310,7 +310,7 @@ fn ampdu_request(frames: &[Vec<u8>], first_sequence: u16) -> TxRequest {
                 0,
                 SequenceNumber::new(first_sequence).unwrap(),
                 &lengths,
-                RadioInstant::from_micros(0),
+                Ieee80211Instant::from_micros(0),
                 true,
             )
             .unwrap(),

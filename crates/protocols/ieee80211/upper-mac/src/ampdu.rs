@@ -18,8 +18,9 @@
 //! MPDUs.
 
 use oer_ieee80211_lower_mac::BlockAckReport;
+use oer_ieee80211_lower_mac::Ieee80211Instant;
 use oer_ieee80211_mac::sequence::SequenceNumber;
-use oer_time::{RadioDuration, RadioInstant};
+use oer_time::RadioDuration;
 
 /// Subframes one A-MPDU exchange tracks: the width of a 64-bit BlockAck
 /// bitmap.
@@ -180,7 +181,7 @@ pub struct AmpduRetryState {
     current_subframes: u8,
     policy: AmpduRetryPolicy,
     /// From this instant on the aggregate's MSDUs are aged.
-    aged_from: RadioInstant,
+    aged_from: Ieee80211Instant,
     aggregate_attempts: u8,
     acknowledged: u8,
     block_ack_mpdu_attempts: u16,
@@ -198,7 +199,7 @@ impl AmpduRetryState {
         first_sequence: SequenceNumber,
         subframes: u8,
         policy: AmpduRetryPolicy,
-        committed_at: RadioInstant,
+        committed_at: Ieee80211Instant,
     ) -> Result<Self, AmpduRetryError> {
         if policy.lifetime.as_micros() == 0 {
             return Err(AmpduRetryError::ZeroLifetime);
@@ -215,7 +216,7 @@ impl AmpduRetryState {
             missing_original_indices: 0,
             current_subframes: subframes,
             policy,
-            aged_from: RadioInstant::from_micros(
+            aged_from: Ieee80211Instant::from_micros(
                 committed_at
                     .as_micros()
                     .saturating_add(u64::from(policy.lifetime.as_micros()))
@@ -239,7 +240,7 @@ impl AmpduRetryState {
         &mut self,
         result: AmpduAttemptResult,
         observed_subframes: u8,
-        now: RadioInstant,
+        now: Ieee80211Instant,
         block_ack_operational: bool,
     ) -> Result<AmpduRetryDecision, AmpduRetryError> {
         if observed_subframes != self.current_subframes {
@@ -292,7 +293,7 @@ impl AmpduRetryState {
     pub fn observe_block_ack_request(
         &mut self,
         block_ack: Option<BlockAckReport>,
-        now: RadioInstant,
+        now: Ieee80211Instant,
         block_ack_operational: bool,
     ) -> AmpduRetryDecision {
         self.resort(block_ack, now, block_ack_operational)
@@ -308,7 +309,7 @@ impl AmpduRetryState {
     fn resort(
         &mut self,
         report: Option<BlockAckReport>,
-        now: RadioInstant,
+        now: Ieee80211Instant,
         block_ack_operational: bool,
     ) -> AmpduRetryDecision {
         let mut retry_mask = 0_u64;
@@ -357,7 +358,7 @@ impl AmpduRetryState {
     }
 
     /// Whether the aggregate's MSDUs are aged at `now`.
-    pub const fn aged(&self, now: RadioInstant) -> bool {
+    pub const fn aged(&self, now: Ieee80211Instant) -> bool {
         now.as_micros() >= self.aged_from.as_micros()
     }
 

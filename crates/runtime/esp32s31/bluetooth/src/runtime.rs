@@ -13,7 +13,7 @@ use embassy_sync::{
     signal::Signal,
 };
 use oer_bluetooth_radio::{
-    EventsLost, FailureClass, LeRadioCapabilities, PortError, RadioActivity, RadioInstant,
+    EventsLost, FailureClass, LeInstant, LeRadioCapabilities, PortError, RadioActivity,
     RadioOutcome, RadioRequest, RadioTiming, RequestError,
 };
 use oer_esp32s31_bluetooth::{
@@ -495,7 +495,7 @@ impl<
     ///
     /// No radio is installed, the runtime faulted or no time sample could be
     /// taken.
-    pub async fn clock(&self) -> Result<(RadioInstant, RadioTiming), BluetoothRuntimeError> {
+    pub async fn clock(&self) -> Result<(LeInstant, RadioTiming), BluetoothRuntimeError> {
         let mut installed = self.installed.lock().await;
         let installed = installed
             .as_mut()

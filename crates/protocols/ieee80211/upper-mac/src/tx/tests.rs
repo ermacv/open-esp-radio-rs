@@ -81,8 +81,8 @@ fn attempt(step: TxStep) -> TxAttemptPlan {
     }
 }
 
-fn now(micros: u64) -> RadioInstant {
-    RadioInstant::from_micros(micros)
+fn now(micros: u64) -> Ieee80211Instant {
+    Ieee80211Instant::from_micros(micros)
 }
 
 #[test]
@@ -359,7 +359,7 @@ fn an_aggregate_length_counts_delimiters_and_padding() {
         0,
         SequenceNumber::ZERO,
         &[101, 102, 103],
-        RadioInstant::from_micros(0),
+        Ieee80211Instant::from_micros(0),
         true,
     )
     .unwrap();

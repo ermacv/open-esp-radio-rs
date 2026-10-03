@@ -29,8 +29,8 @@ use oer_bluetooth_ll::{
     dtm::DTM_MAX_PAYLOAD,
 };
 use oer_bluetooth_radio::{
-    AcceptListChange, AcceptListDevice, EventId, RadioActivity, RadioDuration, RadioFault,
-    RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError,
+    AcceptListChange, AcceptListDevice, EventId, LeInstant, RadioActivity, RadioDuration,
+    RadioFault, RadioOutcome, RadioRequest, RadioTiming, RequestError,
 };
 
 use crate::{
@@ -981,7 +981,7 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
     /// [`Self::request_done`] before asking again.
     pub fn next_request(
         &mut self,
-        now: RadioInstant,
+        now: LeInstant,
         timing: RadioTiming,
     ) -> Option<RadioRequest<'_>> {
         if self.in_flight.is_some() {

@@ -24,12 +24,12 @@ use core::{
     task::{Context, Poll},
 };
 
+use crate::Ieee80211Instant;
 use oer_ieee80211_mac::{
     phy::{HeMcs, HtMcs},
     qos::WmmAccessCategory,
     sequence::SequenceNumber,
 };
-use oer_time::RadioInstant;
 
 use crate::*;
 
@@ -264,7 +264,7 @@ impl State {
 pub struct LowerMacModel {
     state: RefCell<State>,
     /// The radio clock, as the test last set it.
-    now: Cell<RadioInstant>,
+    now: Cell<Ieee80211Instant>,
 }
 
 impl Default for LowerMacModel {
@@ -288,7 +288,7 @@ impl LowerMacModel {
     pub fn new() -> Self {
         Self {
             state: RefCell::default(),
-            now: Cell::new(RadioInstant::from_micros(0)),
+            now: Cell::new(Ieee80211Instant::from_micros(0)),
         }
     }
 
@@ -298,7 +298,7 @@ impl LowerMacModel {
     ///
     /// When `now` is earlier than the time already set: a radio clock never
     /// runs backwards, so the test has lost track of time.
-    pub fn set_now(&self, now: RadioInstant) {
+    pub fn set_now(&self, now: Ieee80211Instant) {
         assert!(
             now >= self.now.get(),
             "the model's radio clock runs backwards"
@@ -532,12 +532,10 @@ impl Ieee80211LowerMacPort for LowerMacModel {
         MODEL_CAPABILITIES
     }
 
-    /// The model's clock is the time the test sets.
+    /// The model's clock is the time the test sets, which a test sets to
+    /// its own monotonic time.
     fn clock_info(&self) -> ClockInfo {
-        ClockInfo {
-            resolution: oer_time::Duration::from_micros(1),
-            epoch: RadioEpoch::Unrelated,
-        }
+        ClockInfo::MONOTONIC_MICROS
     }
 
     fn tx_buffer(&self, len: usize) -> Result<Option<ModelBuffer>, ModelPoisoned> {
@@ -738,7 +736,7 @@ impl Ieee80211LowerMacPort for LowerMacModel {
         )
     }
 
-    fn now(&self) -> Result<RadioInstant, ModelPoisoned> {
+    fn now(&self) -> Result<Ieee80211Instant, ModelPoisoned> {
         self.serving()?;
         Ok(self.now.get())
     }

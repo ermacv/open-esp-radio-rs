@@ -11,9 +11,9 @@ use embassy_futures::block_on;
 use oer_ieee802154::{
     AcceptedCommand, ClockInfo, CommandError, Configuration, CslReceiver, EnhancedAckGeneration,
     EventsLost, FailureClass, FcsStatus, Frame, FrameCounterUpdate, FramePending,
-    Ieee802154Capabilities, Ieee802154RadioPort, Interface, LifecycleCommand, LifecycleError,
-    LifecycleEvent, LinkMetrics, MacKeys, PortError, ProbingInitiator, RadioCapabilities,
-    RadioCommand, RadioEvent, RadioInstant, RadioSetting, RadioState, RadioStateMachine,
+    Ieee802154Capabilities, Ieee802154Instant, Ieee802154RadioPort, Interface, LifecycleCommand,
+    LifecycleError, LifecycleEvent, LinkMetrics, MacKeys, PortError, ProbingInitiator,
+    RadioCapabilities, RadioCommand, RadioEvent, RadioSetting, RadioState, RadioStateMachine,
     ReceivedFrame, RxMetadata, SecurityStatus, SentAcknowledgement, SettingError, TxSecurity,
     TxStatus,
 };
@@ -102,7 +102,7 @@ impl ModelPort {
             channel: oer_ieee802154::Channel::new(channel).unwrap(),
             rssi_dbm: -48,
             link_quality: 170,
-            timestamp: Some(RadioInstant::from_micros(77)),
+            timestamp: Some(Ieee802154Instant::from_micros(77)),
             fcs: FcsStatus::Valid,
             security: SecurityStatus::Unprocessed,
             frame_pending: FramePending::Unavailable,
@@ -227,8 +227,8 @@ impl Ieee802154RadioPort for ModelPort {
         .await
     }
 
-    fn now(&self) -> Result<RadioInstant, Never> {
-        Ok(RadioInstant::from_micros(1_000))
+    fn now(&self) -> Result<Ieee802154Instant, Never> {
+        Ok(Ieee802154Instant::from_micros(1_000))
     }
 
     fn clock_info(&self) -> ClockInfo {

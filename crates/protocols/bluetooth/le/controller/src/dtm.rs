@@ -10,7 +10,7 @@ use oer_bluetooth_ll::dtm::{
     DTM_MAX_PAYLOAD, DtmPayloadPattern, DtmSession, DtmStartError, DtmStop, DtmTest,
 };
 use oer_bluetooth_radio::{
-    EventId, RadioInstant, RadioOutcome, RadioRequest, RadioTiming, TestChannel, TestPhy, TxPower,
+    EventId, LeInstant, RadioOutcome, RadioRequest, RadioTiming, TestChannel, TestPhy, TxPower,
 };
 
 /// Event identities of the test session start here, apart from the roles.
@@ -161,7 +161,7 @@ impl DtmRole {
     /// The next radio request of the test.
     pub(crate) fn next_request<'s>(
         &mut self,
-        now: RadioInstant,
+        now: LeInstant,
         timing: RadioTiming,
         payload: &'s mut [u8; DTM_MAX_PAYLOAD],
     ) -> DtmRadioWork<'s> {

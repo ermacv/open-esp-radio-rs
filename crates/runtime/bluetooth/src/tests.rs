@@ -18,9 +18,9 @@ use oer_bluetooth_hci_transport::{
     InProcessHciHostTransport, LeControllerHciEndpoints, LeControllerHciResources,
 };
 use oer_bluetooth_radio::{
-    ClockInfo, ConnectionAllowances, EventId, EventResult, EventsLost, FailureClass, LePhys,
-    LeRadioCapabilities, LeRadioPort, NoRadio, PortError, RadioActivity, RadioDuration,
-    RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError,
+    ClockInfo, ConnectionAllowances, EventId, EventResult, EventsLost, FailureClass, LeInstant,
+    LePhys, LeRadioCapabilities, LeRadioPort, NoRadio, PortError, RadioActivity, RadioDuration,
+    RadioOutcome, RadioRequest, RadioTiming, RequestError,
 };
 
 use oer_time::Duration;
@@ -156,9 +156,9 @@ impl LeRadioPort for ModelRadio {
         }
     }
 
-    async fn clock(&self) -> Result<(RadioInstant, RadioTiming), ModelError> {
+    async fn clock(&self) -> Result<(LeInstant, RadioTiming), ModelError> {
         Ok((
-            RadioInstant::from_micros(self.started.elapsed().as_micros() as u64),
+            LeInstant::from_micros(self.started.elapsed().as_micros() as u64),
             RadioTiming {
                 preparation_lead: RadioDuration::from_micros(300),
                 admission_guard: RadioDuration::from_micros(200),
@@ -361,7 +361,7 @@ impl LeRadioPort for PoisonedRadio {
         NoRadio.clock_info()
     }
 
-    async fn clock(&self) -> Result<(RadioInstant, RadioTiming), ModelError> {
+    async fn clock(&self) -> Result<(LeInstant, RadioTiming), ModelError> {
         Err(ModelError)
     }
 

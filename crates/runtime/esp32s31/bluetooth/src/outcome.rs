@@ -1,7 +1,7 @@
 //! Owned copies of the portable outcomes.
 
 use oer_bluetooth_radio::{
-    ConnectionId, EventId, EventResult, RadioFault, RadioInstant, RadioOutcome, ReceivedPdu,
+    ConnectionId, EventId, EventResult, LeInstant, RadioFault, RadioOutcome, ReceivedPdu,
     TestReport,
 };
 use oer_esp32s31_bluetooth_memory::BLUETOOTH_LE_RX_PAYLOAD_CAPACITY;
@@ -19,7 +19,7 @@ pub struct BluetoothReceivedPdu {
     /// Receive strength.
     pub rssi_dbm: i8,
     /// When the backend captured the packet, when it can project it.
-    pub captured_at: Option<RadioInstant>,
+    pub captured_at: Option<LeInstant>,
 }
 
 impl BluetoothReceivedPdu {

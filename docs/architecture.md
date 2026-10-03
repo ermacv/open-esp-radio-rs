@@ -106,7 +106,9 @@ Every lower layer, runtimes included, reads and waits on time through the
 takes its timer from its owner or caller, a composition passes
 `oer_time_embassy::EmbassyClock`, and runtime tests use the per-instance
 virtual clocks of `oer-time-virtual`. A radio backend's own epoch is an
-`oer_time::RadioInstant`.
+`oer_time::RadioInstant<D>` whose domain `D` its port declares
+(`Ieee80211Instant`, `LeInstant`, `Ieee802154Instant`), so two ports'
+instants never mix; the port's `ClockInfo` converts to monotonic time.
 An adapter can implement a runtime interface, while a runtime can consume
 an adapter's executor-neutral contract. Cargo still rejects actual dependency
 cycles. Neither layer can depend on the final composition.

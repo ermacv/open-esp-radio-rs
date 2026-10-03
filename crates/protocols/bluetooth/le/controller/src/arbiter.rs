@@ -6,13 +6,13 @@
 //! reservation. A proposal that cannot start by its latest start is not
 //! placed, and the role skips that event.
 
-use oer_bluetooth_radio::{RadioDuration, RadioInstant, RadioWindow};
+use oer_bluetooth_radio::{LeInstant, LeWindow, RadioDuration};
 
 /// One event a role wants to schedule.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct Proposal {
-    pub(crate) earliest: RadioInstant,
-    pub(crate) latest: RadioInstant,
+    pub(crate) earliest: LeInstant,
+    pub(crate) latest: LeInstant,
     pub(crate) duration: RadioDuration,
 }
 
@@ -21,8 +21,8 @@ pub(crate) struct Proposal {
 pub(crate) fn place(
     proposal: Proposal,
     lead: RadioDuration,
-    busy: &[Option<RadioWindow>],
-) -> Option<RadioInstant> {
+    busy: &[Option<LeWindow>],
+) -> Option<LeInstant> {
     let mut start = proposal.earliest;
     // Each pass either settles or moves past one busy reservation.
     for _ in 0..=busy.len() {
@@ -43,13 +43,13 @@ pub(crate) fn place(
 
 /// The reservation of an air window starting at `start`.
 pub(crate) fn reservation(
-    start: RadioInstant,
+    start: LeInstant,
     duration: RadioDuration,
     lead: RadioDuration,
-) -> Option<RadioWindow> {
+) -> Option<LeWindow> {
     let begin = start.as_micros().checked_sub(u64::from(lead.as_micros()))?;
-    RadioWindow::new(
-        RadioInstant::from_micros(begin),
+    LeWindow::new(
+        LeInstant::from_micros(begin),
         RadioDuration::from_micros(duration.as_micros().checked_add(lead.as_micros())?),
     )
     .ok()
@@ -57,7 +57,7 @@ pub(crate) fn reservation(
 
 #[cfg(test)]
 mod tests {
-    use oer_bluetooth_radio::{RadioDuration, RadioInstant, RadioWindow};
+    use oer_bluetooth_radio::{LeInstant, LeWindow, RadioDuration};
 
     use super::{Proposal, place, reservation};
 
@@ -65,15 +65,15 @@ mod tests {
 
     fn proposal(earliest: u64, latest: u64, duration: u32) -> Proposal {
         Proposal {
-            earliest: RadioInstant::from_micros(earliest),
-            latest: RadioInstant::from_micros(latest),
+            earliest: LeInstant::from_micros(earliest),
+            latest: LeInstant::from_micros(latest),
             duration: RadioDuration::from_micros(duration),
         }
     }
 
-    fn busy(start: u64, duration: u32) -> Option<RadioWindow> {
+    fn busy(start: u64, duration: u32) -> Option<LeWindow> {
         reservation(
-            RadioInstant::from_micros(start),
+            LeInstant::from_micros(start),
             RadioDuration::from_micros(duration),
             LEAD,
         )
@@ -83,7 +83,7 @@ mod tests {
     fn a_free_timeline_keeps_the_earliest_start() {
         assert_eq!(
             place(proposal(1_000, 2_000, 500), LEAD, &[None, busy(5_000, 100)]),
-            Some(RadioInstant::from_micros(1_000))
+            Some(LeInstant::from_micros(1_000))
         );
     }
 
@@ -93,7 +93,7 @@ mod tests {
         let busy = [busy(1_000, 500), busy(1_700, 100)];
         assert_eq!(
             place(proposal(1_000, 5_000, 200), LEAD, &busy),
-            Some(RadioInstant::from_micros(1_900))
+            Some(LeInstant::from_micros(1_900))
         );
         assert_eq!(place(proposal(1_000, 1_800, 200), LEAD, &busy), None);
     }

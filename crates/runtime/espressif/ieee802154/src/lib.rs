@@ -61,10 +61,10 @@ use oer_espressif_ieee802154_radio::{
 };
 use oer_ieee802154::{
     AcceptedCommand, AppliedSecurity, AutoPendingMode, ClockInfo, CommandError, EventsLost,
-    FailureClass, Frame, FrameCounterUpdate, Ieee802154Capabilities, Ieee802154RadioPort,
-    Interface, LifecycleCommand, LifecycleError, LifecycleEvent, MacKeys, PendingTable, Poisoned,
-    PortError, RadioCommand, RadioEvent, RadioFault, RadioInstant, RadioSetting, RadioState,
-    ReceivedFrame, RequestId, RestingState, RxMetadata, SettingError, TxStatus,
+    FailureClass, Frame, FrameCounterUpdate, Ieee802154Capabilities, Ieee802154Instant,
+    Ieee802154RadioPort, Interface, LifecycleCommand, LifecycleError, LifecycleEvent, MacKeys,
+    PendingTable, Poisoned, PortError, RadioCommand, RadioEvent, RadioFault, RadioSetting,
+    RadioState, ReceivedFrame, RequestId, RestingState, RxMetadata, SettingError, TxStatus,
 };
 use oer_ieee802154_trace::{Lease, PauseRefusal};
 use oer_time::{Duration, Instant, Timer};
@@ -950,7 +950,7 @@ where
     }
 
     /// The radio clock (`otPlatRadioGetNow`).
-    fn now(&self) -> Result<RadioInstant, Ieee802154RuntimeError> {
+    fn now(&self) -> Result<Ieee802154Instant, Ieee802154RuntimeError> {
         self.with_radio(|radio, _, _| radio.now())
     }
 

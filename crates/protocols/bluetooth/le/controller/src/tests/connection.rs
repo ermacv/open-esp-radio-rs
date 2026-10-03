@@ -4,8 +4,7 @@ use std::vec::Vec;
 
 use bt_hci::cmd::{Opcode, OpcodeGroup};
 use oer_bluetooth_radio::{
-    ConnectionEventTiming, DataPduKind, EventId, EventResult, RadioInstant, RadioOutcome,
-    ReceivedPdu,
+    ConnectionEventTiming, DataPduKind, EventId, EventResult, LeInstant, RadioOutcome, ReceivedPdu,
 };
 
 use super::{Harness, Request, SET_ADV_ENABLE, SET_EVENT_MASK, SUCCESS};
@@ -70,7 +69,7 @@ impl Harness {
             pdu: ReceivedPdu {
                 pdu: &connect_ind(),
                 rssi_dbm: -50,
-                captured_at: Some(RadioInstant::from_micros(INDICATION_AT)),
+                captured_at: Some(LeInstant::from_micros(INDICATION_AT)),
             },
         });
         let Some(Request::OpenConnection(configuration)) = harness.step() else {
@@ -127,7 +126,7 @@ impl Harness {
             id,
             result: match anchor {
                 Some(anchor) => EventResult::Executed {
-                    anchor: Some(RadioInstant::from_micros(anchor)),
+                    anchor: Some(LeInstant::from_micros(anchor)),
                 },
                 None => EventResult::NotExecuted,
             },
@@ -636,7 +635,7 @@ fn a_scannable_set_answers_scans_but_ignores_connection_indications() {
         pdu: ReceivedPdu {
             pdu: &connect_ind(),
             rssi_dbm: -50,
-            captured_at: Some(RadioInstant::from_micros(INDICATION_AT)),
+            captured_at: Some(LeInstant::from_micros(INDICATION_AT)),
         },
     });
     harness.end(event.id);
@@ -699,7 +698,7 @@ fn low_duty_directed_advertising_connects_only_its_target() {
         pdu: ReceivedPdu {
             pdu: &stranger,
             rssi_dbm: -50,
-            captured_at: Some(RadioInstant::from_micros(INDICATION_AT)),
+            captured_at: Some(LeInstant::from_micros(INDICATION_AT)),
         },
     });
     harness.end(event.id);
@@ -713,7 +712,7 @@ fn low_duty_directed_advertising_connects_only_its_target() {
         pdu: ReceivedPdu {
             pdu: &connect_ind(),
             rssi_dbm: -50,
-            captured_at: Some(RadioInstant::from_micros(INDICATION_AT)),
+            captured_at: Some(LeInstant::from_micros(INDICATION_AT)),
         },
     });
     assert!(matches!(harness.step(), Some(Request::OpenConnection(_))));

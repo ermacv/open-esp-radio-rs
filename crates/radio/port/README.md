@@ -15,7 +15,7 @@ lifecycle alike.
 | `LifecycleCommand`, `LifecycleEvent`, `LifecycleError` | `Enable`, `Disable` and `Quiesce`, each ending with `Enabled`, `Disabled`, `Quiesced` or `Failed { command, class }`; a refusal is `AlreadyInState`, `InvalidState` or `Busy` |
 | `CancelError` | A cancellation named no running work (`NotRunning`) |
 | `Correlation`, `CorrelationIds`, `BACKEND_RESERVED` | Each port keeps its own 32-bit identity type (`TxId`, `RequestId`, `EventId`) and implements `Correlation`; the top 256 raw values are the backend's, and a caller's `CorrelationIds` allocator wraps before them |
-| `ClockInfo`, `RadioEpoch` | The radio clock's resolution and whether its epoch is the image's monotonic time (`Monotonic`), advances at its rate within a drift bound (`Affine`) or has no known relation (`Unrelated`) |
+| `ClockInfo`, `RadioEpoch`, `EpochError` | The radio clock's resolution and whether its epoch is the image's monotonic time (`Monotonic`), advances at its rate within a drift bound (`Affine`) or has no known relation (`Unrelated`); `to_monotonic` and `from_monotonic` convert a `Monotonic` port's instants exactly and refuse the others with `EpochError` (an `Affine` conversion needs a paired reading no port publishes yet) |
 
 Identities stay per port so that a completion of one port cannot be taken
 for another's; the trait gives them one reserved range and one allocator.

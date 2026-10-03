@@ -1,5 +1,5 @@
 use super::*;
-use crate::RadioInstant;
+use crate::Ieee802154Instant;
 
 #[test]
 fn unknown_bits_fail_closed_and_known_sets_round_trip() {
@@ -24,7 +24,7 @@ fn unknown_bits_fail_closed_and_known_sets_round_trip() {
     assert_eq!(RadioCapabilities::from_bits(set.bits()), Ok(set));
     assert!(set.supports_tx_mode(TxMode::CsmaCa { max_backoffs: 4 }));
     assert!(!set.supports_tx_mode(TxMode::Scheduled {
-        at: RadioInstant::from_micros(10),
+        at: Ieee802154Instant::from_micros(10),
         cca: false,
     }));
 }
@@ -32,7 +32,7 @@ fn unknown_bits_fail_closed_and_known_sets_round_trip() {
 /// A scheduled transmission with a CCA needs both capabilities.
 #[test]
 fn a_scheduled_cca_transmission_needs_the_cca_capability() {
-    let at = RadioInstant::from_micros(10);
+    let at = Ieee802154Instant::from_micros(10);
     let scheduled = RadioCapabilities::SCHEDULED_TRANSMIT;
     assert!(scheduled.supports_tx_mode(TxMode::Scheduled { at, cca: false }));
     assert!(!scheduled.supports_tx_mode(TxMode::Scheduled { at, cca: true }));

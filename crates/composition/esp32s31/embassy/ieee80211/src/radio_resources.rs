@@ -210,6 +210,7 @@ struct ZeroedPacketStorage<const COUNT: usize>(PacketPoolStorage<COUNT>);
 
 #[cfg(feature = "owned-network")]
 #[allow(unsafe_code, reason = "xarxa's packet storage accepts any bytes")]
+// REVIEWED-LAYOUT: xarxa-driver 9e0e3293
 // SAFETY: at the pinned xarxa revision `PacketPoolStorage<COUNT>` is
 // `[UnsafeCell<MaybeUninit<Data>>; COUNT]`, valid for any bytes; its `new`
 // builds zero bytes, and the pool writes a slot before reading it.

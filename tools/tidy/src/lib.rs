@@ -14,7 +14,9 @@
 //!   names an existing chip or family, follows the name rule, and keeps the
 //!   evidence and HIL role edges;
 //! - [`zeroed`]: no `link_section` names a zeroed region outside
-//!   `oer_memory::zeroed_static!`.
+//!   `oer_memory::zeroed_static!`;
+//! - [`layouts`]: code relying on a foreign type's layout names the release
+//!   it was reviewed at, and its workspace still locks that release.
 //!
 //! The same model answers what other tooling would otherwise rediscover:
 //! [`workspaces`] lists every Cargo workspace and [`chips`] every chip
@@ -27,6 +29,7 @@ pub mod chips;
 pub mod classification;
 pub mod dependencies;
 pub mod fetch;
+pub mod layouts;
 pub mod manifest;
 pub mod reachability;
 pub mod records;
@@ -122,6 +125,10 @@ pub fn run(repo: &Repo) -> Result<Vec<Outcome>> {
         Outcome {
             check: "zeroed statics",
             problems: zeroed::check(&context)?,
+        },
+        Outcome {
+            check: "reviewed layouts",
+            problems: layouts::check(&context)?,
         },
     ])
 }

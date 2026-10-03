@@ -30,6 +30,7 @@ use crate::{
     unsafe_code,
     reason = "a descriptor's zero words are the empty descriptor"
 )]
+// REVIEWED-LAYOUT: vcell 0.1.3
 // SAFETY: `vcell::VolatileCell<u32>` is `repr(transparent)` over
 // `UnsafeCell<u32>`, so a descriptor's zero bytes are three zero words: the
 // empty, software-owned descriptor `Descriptor::new` builds. (`descriptor.rs`

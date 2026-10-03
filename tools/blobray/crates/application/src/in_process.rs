@@ -219,7 +219,7 @@ pub(crate) fn resolve_goal(
         ));
     }
     let executable = find(executables, &symbol.object.artifact)?;
-    let address = blobray_artifacts::code_symbol_at(
+    let address = oer_riscv_program::code_symbol_at(
         &executable.bytes(),
         symbol.table_section,
         symbol.index,
@@ -311,7 +311,7 @@ fn run(
             for id in &target.executables {
                 let executable = find(input.executables, id)?;
                 for (address, _) in
-                    blobray_artifacts::code_symbols(&executable.bytes(), memory, control)?
+                    oer_riscv_program::code_symbols(&executable.bytes(), memory, control)?
                 {
                     starts.insert(address);
                 }

@@ -56,6 +56,7 @@ pub fn run(context: &Context) -> Result<()> {
         "tools/riscv/decode",
         "tools/riscv/lift",
         "tools/riscv/model",
+        "tools/riscv/program",
     ];
     let files = paths::source_files(context)?;
     for member in members {

@@ -10,7 +10,10 @@ fn core_obeys_crate_boundaries() {
     const MODEL: &str = "oer-riscv-model";
     let allowed: BTreeMap<&str, &[&str]> = BTreeMap::from([
         ("blobray-domain", [MODEL].as_slice()),
-        ("blobray-artifacts", ["blobray-domain", MODEL].as_slice()),
+        (
+            "blobray-artifacts",
+            ["blobray-domain", MODEL, "oer-riscv-program"].as_slice(),
+        ),
         (
             "blobray-analysis",
             ["blobray-domain", "oer-riscv-analysis", MODEL].as_slice(),
@@ -35,6 +38,7 @@ fn core_obeys_crate_boundaries() {
                 "blobray-verification",
                 "oer-riscv-analysis",
                 MODEL,
+                "oer-riscv-program",
             ]
             .as_slice(),
         ),

@@ -2,7 +2,7 @@
 use object::{Object, ObjectSection, ObjectSymbol};
 use oer_riscv_model::*;
 
-pub(crate) struct DataRanges<'a> {
+pub struct DataRanges<'a> {
     pub ranges: Vec<CodeRange>,
     _capacity: MemoryReservation<'a>,
 }
@@ -31,7 +31,7 @@ fn kind(name: &[u8]) -> Result<Option<bool>> {
         Ok(None)
     }
 }
-pub(crate) fn data_ranges<'a>(
+pub fn data_ranges<'a>(
     file: &object::File<'_>,
     section_index: object::SectionIndex,
     memory: &'a WorkingMemory,

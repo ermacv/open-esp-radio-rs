@@ -1,16 +1,6 @@
 //! Portable synthetic image requests and linker evidence. No tool discovery or I/O.
 use crate::*;
 
-/// ELF-declared floating-point calling convention, separate from instruction
-/// coverage and from the integer analysis profile. No execution support implied.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum RiscvAbi {
-    Ilp32,
-    Ilp32f,
-    Ilp32d,
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImageRegion {
@@ -110,15 +100,6 @@ pub const MAX_IMAGE_ROOTS: usize = 64;
 pub const ABSENT_SYMBOL_ADDRESS: u32 = 0xffff_fff0;
 /// Absent names one link request may declare.
 pub const MAX_ABSENT_SYMBOLS: usize = 64;
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ImageSegment {
-    pub address: u64,
-    pub file_offset: u64,
-    pub file_size: u64,
-    pub memory_size: u64,
-    pub flags: u32,
-}
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResolvedRoot {

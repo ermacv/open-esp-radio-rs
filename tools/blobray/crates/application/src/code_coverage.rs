@@ -210,7 +210,7 @@ pub fn report_in_process(
     let mut names: BTreeMap<u32, String> = BTreeMap::new();
     for id in &target.executables {
         let executable = crate::in_process::find(executables, id)?;
-        for (address, name) in blobray_artifacts::code_symbols(&executable.bytes(), memory, c)? {
+        for (address, name) in oer_riscv_program::code_symbols(&executable.bytes(), memory, c)? {
             // The first name in order identifies a start with several names.
             names.entry(address).or_insert(name);
         }

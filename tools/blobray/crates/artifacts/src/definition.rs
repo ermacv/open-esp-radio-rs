@@ -1,5 +1,4 @@
 //! Physical external definitions do not acquire a runnable image or its memory view.
-use blobray_domain::*;
 use object::{Object, ObjectSection, ObjectSegment, ObjectSymbol, read::elf::SectionHeader};
 use oer_riscv_model::*;
 
@@ -54,7 +53,7 @@ pub fn inspect_link_definition(
             "definition carrier must be little-endian RV32 ET_EXEC",
         ));
     }
-    crate::image::abi(&file)?;
+    oer_riscv_program::abi(&file)?;
     let object::File::Elf32(elf) = &file else {
         unreachable!()
     };
@@ -333,7 +332,7 @@ mod tests {
         );
         let file = object::File::parse(source.0.as_slice()).unwrap();
         assert_eq!(
-            crate::program::ProgramView::new(&source.0, &file, &memory, &mut || Ok(()))
+            oer_riscv_program::ProgramView::new(&source.0, &file, &memory, &mut || Ok(()))
                 .err()
                 .unwrap()
                 .code,
@@ -355,7 +354,7 @@ mod tests {
         );
         let file = object::File::parse(source.0.as_slice()).unwrap();
         assert_eq!(
-            crate::program::ProgramView::new(&source.0, &file, &memory, &mut || Ok(()))
+            oer_riscv_program::ProgramView::new(&source.0, &file, &memory, &mut || Ok(()))
                 .err()
                 .unwrap()
                 .code,

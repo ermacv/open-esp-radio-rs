@@ -1,12 +1,30 @@
 //! Borrowed RV32 static ELF image. No loading, relocation or environment models.
-use blobray_domain::*;
+pub mod mapping;
 use object::{Object, ObjectSection, ObjectSegment};
 use oer_riscv_model::*;
 
-pub(crate) struct ProgramView<'a> {
+pub struct ProgramView<'a> {
     bytes: &'a [u8],
     segments: Vec<ImageSegment>,
     _capacity: MemoryReservation<'a>,
+}
+fn bad(message: impl Into<String>) -> Error {
+    Error::new(ErrorCode::LinkBlocked, message)
+}
+/// The ELF-declared floating-point calling convention of an RV32 image.
+pub fn abi(file: &object::File<'_>) -> Result<RiscvAbi> {
+    let object::FileFlags::Elf { e_flags, .. } = file.flags() else {
+        return Err(bad("not an ELF ABI"));
+    };
+    if e_flags & object::elf::EF_RISCV_RVE != 0 {
+        return Err(bad("RV32E is outside the RV32 integer-register profile"));
+    }
+    match e_flags & object::elf::EF_RISCV_FLOAT_ABI {
+        object::elf::EF_RISCV_FLOAT_ABI_SOFT => Ok(RiscvAbi::Ilp32),
+        object::elf::EF_RISCV_FLOAT_ABI_SINGLE => Ok(RiscvAbi::Ilp32f),
+        object::elf::EF_RISCV_FLOAT_ABI_DOUBLE => Ok(RiscvAbi::Ilp32d),
+        _ => Err(bad("unsupported ELF floating-point ABI")),
+    }
 }
 fn invalid(message: &str) -> Error {
     Error::new(ErrorCode::Integrity, message)
@@ -59,7 +77,7 @@ impl<'a> ProgramView<'a> {
                 ));
             }
         }
-        crate::image::abi(file).map_err(|e| Error::new(ErrorCode::Incompatible, e.message))?;
+        abi(file).map_err(|e| Error::new(ErrorCode::Incompatible, e.message))?;
         let capacity = memory.reserve(
             1024 * std::mem::size_of::<ImageSegment>() as u64,
             c.position(),

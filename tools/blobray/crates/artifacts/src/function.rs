@@ -22,7 +22,7 @@ fn parse(error: object::Error) -> Error {
 pub struct PreparedObject<'a, 'm> {
     file: object::File<'a>,
     occurrence: Option<ObjectId>,
-    image: Option<crate::program::ProgramView<'a>>,
+    image: Option<oer_riscv_program::ProgramView<'a>>,
     abi: RiscvAbi,
     memory: &'m WorkingMemory,
     targets: Vec<Option<std::sync::Arc<ReferenceTarget>>>,
@@ -32,7 +32,7 @@ pub struct PreparedObject<'a, 'm> {
 }
 struct PreparedSection<'a> {
     relocations: Vec<FunctionRelocation>,
-    mappings: crate::mapping::DataRanges<'a>,
+    mappings: oer_riscv_program::mapping::DataRanges<'a>,
     _capacity: MemoryReservation<'a>,
 }
 fn reserved<T>(count: usize) -> Result<Vec<T>> {
@@ -97,14 +97,14 @@ pub fn with_prepared_object<T>(
         return Err(invalid("ambiguous physical symbol tables"));
     }
     let image = if file.kind() == object::ObjectKind::Executable {
-        Some(crate::program::ProgramView::new(
+        Some(oer_riscv_program::ProgramView::new(
             &bytes, &file, memory, control,
         )?)
     } else {
         None
     };
-    let abi =
-        crate::image::abi(&file).map_err(|e| Error::new(ErrorCode::Incompatible, e.message))?;
+    let abi = oer_riscv_program::abi(&file)
+        .map_err(|e| Error::new(ErrorCode::Incompatible, e.message))?;
     let object::File::Elf32(elf) = &file else {
         unreachable!()
     };
@@ -380,7 +380,8 @@ impl<'data> PreparedObject<'data, '_> {
                 (count as u64).saturating_mul(u64::from(usize::BITS - count.leading_zeros())),
             )?;
             relocations.sort_unstable_by_key(|r| (r.offset, r.section, r.index));
-            let mappings = crate::mapping::data_ranges(file, section_index, memory, control)?;
+            let mappings =
+                oer_riscv_program::mapping::data_ranges(file, section_index, memory, control)?;
             self.sections[section_index.0] = Some(PreparedSection {
                 relocations,
                 mappings,

@@ -9,6 +9,7 @@ publish = false
 description = "Blobray operations over captured executables inside the calling process"
 
 [dependencies]
+oer-riscv-program = { path = "../../../riscv/program" }
 oer-riscv-analysis = { path = "../../../riscv/analysis" }
 blobray-verification = { path = "../verification" }
 blobray-analysis = { path = "../analysis" }

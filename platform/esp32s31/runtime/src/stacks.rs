@@ -166,6 +166,17 @@ unsafe fn guard_interrupt_stack(bottom: usize) {
     };
 }
 
+/// Whether `sp` lies in `hart`'s dedicated interrupt stack. Reads no memory,
+/// so a panic in any context can ask.
+pub(crate) fn on_interrupt_stack(hart: usize, sp: usize) -> bool {
+    let bottom = match hart {
+        0 => ptr::addr_of!(__open_radio_cpu0_irq_stack) as usize,
+        1 => ptr::addr_of!(__open_radio_cpu1_irq_stack) as usize,
+        _ => return false,
+    };
+    (bottom..=bottom + IRQ_STACK_BYTES).contains(&sp)
+}
+
 /// Observed unused prefix of the current hart's dedicated IRQ stack.
 ///
 /// Call from thread mode only. The function briefly masks local interrupts

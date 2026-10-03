@@ -12,8 +12,6 @@ use embassy_executor::Spawner;
 #[cfg(feature = "owned-network")]
 use embassy_net_owned as embassy_net;
 
-use esp_backtrace as _;
-
 use esp_hal::{
     clock::CpuClock,
     interrupt::software::SoftwareInterrupt,
@@ -59,6 +57,9 @@ const STA_PASSPHRASE: &str = match option_env!("ESP32S31_WIFI_PASSPHRASE") {
 #[unsafe(no_mangle)]
 extern "C" fn runtime_main() -> ! {
     esp_println::logger::init_logger_from_env();
+    if let Some(panic) = oer_esp32s31_platform_runtime::panic::take_previous() {
+        esp_println::println!("open-radio: the previous boot panicked at {panic}");
+    }
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
     // SAFETY: the common stage-two entry runs after the board bootstrap,
     // with global interrupts disabled and the PSRAM mapping intact.

@@ -239,8 +239,10 @@ unsafe extern "C" {
 
 use oer_esp32s31_platform_runtime as _;
 
-#[panic_handler]
-fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
+/// The HIL report of a panic, which the platform's panic entry calls after
+/// writing its retained record (feature `panic-diagnostics`).
+#[unsafe(no_mangle)]
+fn oer_platform_panic_diagnostics(info: &core::panic::PanicInfo<'_>) -> ! {
     // The trace keeps what happened before the panic.
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     oer_trace::freeze(<oer_hil_trace::Panic as oer_trace::Event>::KIND, 0);

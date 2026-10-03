@@ -8,6 +8,9 @@ publish = false
 
 [features]
 multicore = []
+## A diagnostic image's panic report: after the record, call the image's
+## `oer_platform_panic_diagnostics` instead of resetting.
+panic-diagnostics = []
 
 [dependencies]
 oer-esp32s31-platform-layout.workspace = true

@@ -3848,6 +3848,8 @@ dependencies = [
  "oer-riscv-lift",
  "oer-riscv-model",
  "oer-riscv-program",
+ "serde",
+ "toml",
 ]
 
 [[package]]

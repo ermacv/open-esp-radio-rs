@@ -262,7 +262,7 @@ fn a_callee_runs_below_its_call_site_depth() {
         },
         leaf(Some(32)),
     ]);
-    let analysis = analyze(&image, &[]).unwrap();
+    let analysis = analyze(&image, &[], &[]).unwrap();
     let root = &analysis.functions[&TEXT];
     assert_eq!(root.frame, Some(16));
     assert_eq!(root.source, Some(FrameSource::StackSizes));
@@ -283,7 +283,7 @@ fn an_unresolved_call_leaves_the_bound_unknown_with_its_reason() {
         ],
         frame: Some(16),
     }]);
-    let bound = analyze(&image, &[]).unwrap().bound(TEXT).unwrap();
+    let bound = analyze(&image, &[], &[]).unwrap().bound(TEXT).unwrap();
     assert_eq!(bound.bytes, None);
     assert_eq!(bound.unresolved, [(TEXT + 12, Reason::StackSlotCall)]);
     assert_eq!(
@@ -306,7 +306,7 @@ fn recursion_leaves_the_bound_unknown() {
         ],
         frame: Some(16),
     }]);
-    let bound = analyze(&image, &[]).unwrap().bound(TEXT).unwrap();
+    let bound = analyze(&image, &[], &[]).unwrap().bound(TEXT).unwrap();
     assert_eq!(bound.bytes, None);
     assert_eq!(bound.reasons(), BTreeMap::from([(Reason::Recursion, 1)]));
 }
@@ -314,13 +314,13 @@ fn recursion_leaves_the_bound_unknown() {
 #[test]
 fn an_observed_depth_beyond_the_frame_record_fails() {
     let image = executable(&[leaf(Some(16))]);
-    let error = analyze(&image, &[]).unwrap_err();
+    let error = analyze(&image, &[], &[]).unwrap_err();
     assert_eq!(error.code, ErrorCode::Integrity);
 }
 
 #[test]
 fn a_complete_graph_without_a_record_gives_the_observed_frame() {
-    let analysis = analyze(&executable(&[leaf(None)]), &[]).unwrap();
+    let analysis = analyze(&executable(&[leaf(None)]), &[], &[]).unwrap();
     let facts = &analysis.functions[&TEXT];
     assert_eq!(
         (facts.frame, facts.source),
@@ -378,7 +378,11 @@ fn a_bounded_jump_table_reads_exactly_its_entries() {
         []
     );
     assert_eq!(
-        analyze(&image, &[]).unwrap().bound(TEXT).unwrap().bytes,
+        analyze(&image, &[], &[])
+            .unwrap()
+            .bound(TEXT)
+            .unwrap()
+            .bytes,
         Some(0)
     );
 }
@@ -398,7 +402,7 @@ fn a_bounded_table_entry_out_of_the_function_is_a_jump() {
     .map(|t| (t.site, t.target, t.kind))
     .collect();
     assert_eq!(transfers, [(TEXT + 28, Some(0x5000), TransferKind::Tail)]);
-    let bound = analyze(&image, &[]).unwrap().bound(TEXT).unwrap();
+    let bound = analyze(&image, &[], &[]).unwrap().bound(TEXT).unwrap();
     assert_eq!(bound.reasons(), BTreeMap::from([(Reason::OutsideImage, 1)]));
 }
 
@@ -407,7 +411,7 @@ fn an_unbounded_jump_table_stays_unknown() {
     // Without a bound or a sized table object, entries past the readable
     // ones could leave the function.
     let image = image(&[dispatch(false)], &[TEXT + 24, TEXT + 28], false);
-    let bound = analyze(&image, &[]).unwrap().bound(TEXT).unwrap();
+    let bound = analyze(&image, &[], &[]).unwrap().bound(TEXT).unwrap();
     assert_eq!(bound.bytes, None);
     assert_eq!(bound.unresolved, [(TEXT + 20, Reason::IndirectJump)]);
 }
@@ -415,7 +419,7 @@ fn an_unbounded_jump_table_stays_unknown() {
 #[test]
 fn a_jump_through_a_sized_table_object_keeps_only_entries_out_of_the_function() {
     let image = image(&[dispatch(false)], &[TEXT + 24, 0x5000], true);
-    let analysis = analyze(&image, &[]).unwrap();
+    let analysis = analyze(&image, &[], &[]).unwrap();
     let jumps: Vec<_> = analysis.functions[&TEXT]
         .transfers
         .iter()
@@ -465,7 +469,7 @@ fn a_call_through_a_constant_table_object_reaches_every_entry() {
         &[small, large, small],
         true,
     );
-    let analysis = analyze(&image, &[]).unwrap();
+    let analysis = analyze(&image, &[], &[]).unwrap();
     let calls: Vec<_> = analysis.functions[&TEXT]
         .transfers
         .iter()
@@ -503,7 +507,7 @@ fn a_table_base_rewritten_before_the_call_stays_unresolved() {
         &[TEXT, TEXT],
         true,
     );
-    let bound = analyze(&image, &[]).unwrap().bound(TEXT).unwrap();
+    let bound = analyze(&image, &[], &[]).unwrap().bound(TEXT).unwrap();
     assert_eq!(bound.bytes, None);
     assert_eq!(bound.reasons(), BTreeMap::from([(Reason::LoadedCall, 1)]));
 }
@@ -538,7 +542,7 @@ fn analysed_jump_targets_inside_the_function_are_not_transfers() {
         &[TEXT + 36, leaf_address],
         false,
     );
-    let analysis = analyze(&image, &[]).unwrap();
+    let analysis = analyze(&image, &[], &[]).unwrap();
     let jumps: Vec<_> = analysis.functions[&TEXT]
         .transfers
         .iter()
@@ -570,9 +574,9 @@ fn a_call_into_a_companion_runs_below_its_site() {
         false,
     );
     let companion = placed(rom, &[leaf(None)], &[], false, false);
-    let alone = analyze(&image, &[]).unwrap().bound(TEXT).unwrap();
+    let alone = analyze(&image, &[], &[]).unwrap().bound(TEXT).unwrap();
     assert_eq!(alone.reasons(), BTreeMap::from([(Reason::OutsideImage, 1)]));
-    let with_rom = analyze(&image, &[&companion]).unwrap();
+    let with_rom = analyze(&image, &[&companion], &[]).unwrap();
     assert_eq!(with_rom.functions[&rom].source, Some(FrameSource::Observed));
     let bound = with_rom.bound(TEXT).unwrap();
     assert_eq!(bound.bytes, Some(48));
@@ -582,7 +586,7 @@ fn a_call_into_a_companion_runs_below_its_site() {
 #[test]
 fn companions_may_not_overlap() {
     let image = executable(&[leaf(Some(32))]);
-    let error = analyze(&image, &[&image]).unwrap_err();
+    let error = analyze(&image, &[&image], &[]).unwrap_err();
     assert_eq!(error.code, ErrorCode::Integrity);
 }
 
@@ -616,7 +620,7 @@ fn a_zero_table_entry_is_an_empty_slot_not_a_call() {
         &[leaf_address, 0],
         true,
     );
-    let analysis = analyze(&image, &[]).unwrap();
+    let analysis = analyze(&image, &[], &[]).unwrap();
     let calls: Vec<_> = analysis.functions[&TEXT]
         .transfers
         .iter()
@@ -660,7 +664,7 @@ fn a_labelled_jump_table_is_read_from_its_relocations() {
     .unwrap();
     assert_eq!(swept.transfers, []);
     assert_eq!(swept.jumps, [(TEXT + 20, vec![TEXT + 24, TEXT + 28])]);
-    let bound = analyze(&image, &[]).unwrap().bound(TEXT).unwrap();
+    let bound = analyze(&image, &[], &[]).unwrap().bound(TEXT).unwrap();
     assert_eq!(bound.bytes, Some(0));
 }
 
@@ -675,7 +679,7 @@ fn a_relocation_that_disagrees_with_its_word_fails() {
         .position(|w| w == entry)
         .expect("the first entry's relocation");
     image[at + 8..at + 12].copy_from_slice(&(TEXT + 20).to_le_bytes());
-    let error = analyze(&image, &[]).unwrap_err();
+    let error = analyze(&image, &[], &[]).unwrap_err();
     assert_eq!(error.code, ErrorCode::Integrity);
 }
 
@@ -684,8 +688,89 @@ fn a_labelled_table_completes_the_control_flow_graph() {
     // The table's entries become edges of the value analysis's graph, so its
     // arms are analysed; without them the graph stops at the jump.
     let table = [TEXT + 24, TEXT + 28];
-    let known = analyze(&labelled(&[dispatch(false)], &table), &[]).unwrap();
+    let known = analyze(&labelled(&[dispatch(false)], &table), &[], &[]).unwrap();
     assert!(known.functions[&TEXT].complete);
-    let unknown = analyze(&image(&[dispatch(false)], &table, false), &[]).unwrap();
+    let unknown = analyze(&image(&[dispatch(false)], &table, false), &[], &[]).unwrap();
     assert!(!unknown.functions[&TEXT].complete);
+}
+
+/// An image whose `root` calls the companion's function at `ROM`, which
+/// jumps through an unlabelled table it cannot bound.
+const ROM: u32 = 0x9000;
+
+fn calls_rom() -> Vec<u8> {
+    image(
+        &[Symbol {
+            name: "root",
+            words: vec![
+                SP_DOWN_16,
+                SAVE_RA,
+                call(TEXT + 8, ROM),
+                LOAD_RA,
+                SP_UP_16,
+                RET,
+            ],
+            frame: Some(16),
+        }],
+        &[],
+        false,
+    )
+}
+
+fn summary(name: &str, address: u32, frame: u64) -> Summary {
+    Summary {
+        name: name.into(),
+        address,
+        frame,
+        calls: Vec::new(),
+    }
+}
+
+#[test]
+fn a_summary_stands_for_a_companion_function_the_code_does_not_bound() {
+    let rom = placed(ROM, &[dispatch(false)], &[], false, false);
+    let image = calls_rom();
+    let alone = analyze(&image, &[&rom], &[]).unwrap().bound(TEXT).unwrap();
+    assert_eq!(alone.bytes, None);
+    let analysis = analyze(&image, &[&rom], &[summary("dispatch", ROM, 0)]).unwrap();
+    assert_eq!(analysis.functions[&ROM].source, Some(FrameSource::Summary));
+    assert_eq!(analysis.summaries, BTreeSet::from(["dispatch".to_owned()]));
+    assert_eq!(analysis.bound(TEXT).unwrap().bytes, Some(16));
+}
+
+#[test]
+fn a_summary_must_agree_with_code_the_analysis_bounds() {
+    let rom = placed(ROM, &[leaf(None)], &[], false, false);
+    let image = calls_rom();
+    assert!(analyze(&image, &[&rom], &[summary("leaf", ROM, 32)]).is_ok());
+    let error = analyze(&image, &[&rom], &[summary("leaf", ROM, 16)]).unwrap_err();
+    assert_eq!(error.code, ErrorCode::Integrity);
+}
+
+#[test]
+fn a_summary_must_name_its_function_s_address() {
+    let rom = placed(ROM, &[leaf(None)], &[], false, false);
+    let image = calls_rom();
+    for wrong in [summary("leaf", ROM + 4, 32), summary("other", ROM, 32)] {
+        let error = analyze(&image, &[&rom], &[wrong]).unwrap_err();
+        assert_eq!(error.code, ErrorCode::Integrity);
+    }
+}
+
+#[test]
+fn a_summary_the_image_does_not_reach_is_unused() {
+    // Another image of the platform may reach it; the platform's audit
+    // fails on a summary no image uses.
+    let rom = placed(ROM, &[leaf(None)], &[], false, false);
+    let image = executable(&[leaf(Some(32))]);
+    let analysis = analyze(&image, &[&rom], &[summary("leaf", ROM, 32)]).unwrap();
+    assert!(analysis.summaries.is_empty());
+    assert_eq!(analysis.functions[&ROM].source, Some(FrameSource::Observed));
+}
+
+#[test]
+fn the_platform_rom_summaries_parse() {
+    let text = include_str!("../../../../platform/esp32s31/linker/rom/functions.toml");
+    let summaries = parse_summaries(text).unwrap();
+    assert!(summaries.iter().any(|s| s.name == "memset"));
 }

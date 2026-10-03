@@ -81,7 +81,9 @@ unsafe extern "C" {
 /// Global interrupts must be disabled. The caller must execute on hart 0 or 1
 /// in thread mode and must not enable interrupts until this function returns.
 /// The first installation must precede the hart's first IRQ admission.
-/// Reinstallation preserves the original paint.
+/// Reinstallation preserves the original paint. Installation also silences
+/// every source of this hart in the image's interrupt table and checks every
+/// vector slot against it ([`crate::interrupts`]).
 pub unsafe fn install_current_hart_interrupt_stack() {
     let hart: usize;
     unsafe { asm!("csrr {hart}, mhartid", hart = out(reg) hart, options(nomem, nostack)) };
@@ -124,6 +126,7 @@ pub unsafe fn install_current_hart_interrupt_stack() {
             options(nostack),
         )
     };
+    crate::interrupts::install_current_hart();
 }
 
 /// Panic unless the current hart's active MTVT holds the runtime's entries in

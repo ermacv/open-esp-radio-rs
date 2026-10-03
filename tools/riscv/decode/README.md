@@ -34,6 +34,15 @@ uses its aliases (`li`, `mv`, `ret`, `j`, `nop`), and the assembler's for the
 other forms. It is versioned with the crate, not a parsing interface: consumers
 read the typed instruction.
 
+The `llvm_reference` test checks the accepted encoding space against the
+`llvm-objdump` of the pinned toolchain's `llvm-tools`: every 16-bit encoding,
+and every major opcode, `funct3` and bits 31:20 with sampled register fields.
+It names the expected differences: Zicsr, Zifencei and privileged instructions
+are outside `Extensions::ALL`, FENCE decodes with the reserved `rd`, `rs1` and
+`fm` values base implementations ignore, and `cm.mvsa01` with equal registers
+is reserved. The nightly workflow runs it.
+
 ```console
 cargo test -p oer-riscv-decode
+cargo test -p oer-riscv-decode --test llvm_reference -- --ignored
 ```

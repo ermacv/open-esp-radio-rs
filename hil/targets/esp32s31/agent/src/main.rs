@@ -109,6 +109,12 @@ oer_esp32s31_platform_runtime::interrupt_table! {
     #[cfg(any(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
     /// The Bluetooth Controller's NRT interrupt.
     bluetooth_nrt: BluetoothNrt = MODEM_BT_MAC_INT1 => oer_esp32s31_radio_esp_hal::bluetooth_nrt_default_interrupt_handler, Priority3, ProCpu;
+    #[cfg(feature = "ieee802154-radio")]
+    /// The IEEE 802.15.4 MAC's interrupt.
+    ieee802154: Ieee802154Mac = MODEM_ZB_MAC => oer_esp32s31_ieee802154_system::ieee802154_interrupt, Priority1, ProCpu;
+    #[cfg(feature = "ieee802154-route-probe")]
+    /// The IEEE 802.15.4 MAC's interrupt, to the route probe.
+    ieee802154_probe: Ieee802154Probe = MODEM_ZB_MAC => product_hil::route_probe_interrupt, Priority1, ProCpu;
     #[cfg(feature = "open-radio-hil")]
     /// Wakes the core-1 Embassy executor.
     app_wake: AppExecutorWake = FROM_CPU_INTR1 => oer_esp32s31_executor_embassy::wake_handler::<1>, Priority1, AppCpu;
@@ -411,6 +417,24 @@ extern "C" fn runtime_main() -> ! {
     );
 
     let interrupts = Interrupts::take().expect("the image takes its interrupt tokens once");
+    #[cfg(feature = "ieee802154-radio")]
+    assert!(
+        oer_esp32s31_ieee802154_system::install_interrupt_route(
+            oer_esp32s31_ieee802154_system::Ieee802154InterruptSource::new(interrupts.ieee802154),
+        )
+        .is_ok(),
+        "the image installs its IEEE 802.15.4 route once"
+    );
+    #[cfg(feature = "ieee802154-route-probe")]
+    assert!(
+        oer_esp32s31_ieee802154_esp_hal::install(
+            oer_esp32s31_ieee802154_esp_hal::EspHalIeee802154Source::new(
+                interrupts.ieee802154_probe,
+            ),
+        )
+        .is_ok(),
+        "the image installs its IEEE 802.15.4 route once"
+    );
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     oer_esp32s31_executor_embassy::init(OneShotTimer::new(timer_group.timer0), interrupts.alarm);
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]

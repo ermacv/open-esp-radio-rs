@@ -12,11 +12,15 @@ default = []
 esp32s31 = [
     "dep:critical-section",
     "dep:esp-hal",
+    "dep:oer-esp32s31-soc-esp-hal",
+    "dep:oer-interrupt-table",
 ]
 
 [dependencies]
 critical-section = { version = "1.2.0", optional = true }
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "c771deb0fe584ddc9a1522eb2cf05abe955c2053", default-features = false, features = ["esp32s31", "unstable"], optional = true }
+oer-esp32s31-soc-esp-hal = { path = "../soc", features = ["esp32s31"], optional = true }
+oer-interrupt-table = { path = "../../../../runtime/interrupt-table", optional = true }
 
 [lints]
 workspace = true

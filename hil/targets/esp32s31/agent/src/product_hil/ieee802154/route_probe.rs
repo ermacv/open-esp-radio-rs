@@ -12,7 +12,6 @@
 use core::cell::RefCell;
 
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
-use esp_hal::interrupt::{InterruptHandler, Priority};
 use oer_esp32s31_hal::ieee802154::{
     Ieee802154Operational, Ieee802154RouteProbeAction, Ieee802154RouteProbeConfig,
     Ieee802154RouteProbeEntry as HalEntry, Ieee802154RouteProbeStop as HalStop,
@@ -45,8 +44,14 @@ static ROUTED: Mutex<CriticalSectionRawMutex, RefCell<Option<Routed>>> =
     Mutex::new(RefCell::new(None));
 
 /// The validation handler of source 132: the first entry of a phase performs
-/// its action, every later one only consumes its snapshot.
-extern "C" fn route_probe_interrupt() {
+/// its action, every later one only consumes its snapshot. The route-probe
+/// image's interrupt table names it.
+#[allow(
+    unsafe_code,
+    reason = "an interrupt handler runs from SRAM, which only a link section selects"
+)]
+#[unsafe(link_section = ".rwtext.open_radio_irq")]
+pub(crate) fn route_probe_interrupt() {
     ROUTED.lock(|routed| {
         let mut routed = routed.borrow_mut();
         let Some(routed) = routed.as_mut() else {
@@ -135,10 +140,7 @@ fn routed_phase(
             .lock(|routed| routed.borrow_mut().take())
             .map(|routed| (routed.owners, routed.entries))
     };
-    let bound = match bind(InterruptHandler::new(
-        route_probe_interrupt,
-        Priority::Priority1,
-    )) {
+    let bound = match bind() {
         Ok(bound) => bound,
         Err(_) => {
             let (owners, entries) = take().unzip();

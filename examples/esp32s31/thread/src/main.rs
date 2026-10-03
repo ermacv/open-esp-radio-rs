@@ -21,9 +21,9 @@ use esp_hal::{
 };
 use log::{error, info};
 use oer::systems::esp32s31::embassy::ieee802154::{
-    EspHalRadioPlatform, IEEE802154_DEFAULT_TX_POWER_DBM, IEEE802154_RECEIVE_SENSITIVITY_DBM,
-    Ieee802154CoexConfig, Ieee802154CoexLevel, Ieee802154Parked, Ieee802154PibDefaults,
-    Ieee802154System, Ieee802154SystemRuntime,
+    self as ieee802154, EspHalRadioPlatform, IEEE802154_DEFAULT_TX_POWER_DBM,
+    IEEE802154_RECEIVE_SENSITIVITY_DBM, Ieee802154CoexConfig, Ieee802154CoexLevel,
+    Ieee802154Parked, Ieee802154PibDefaults, Ieee802154System, Ieee802154SystemRuntime,
     openthread::{
         OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults, PortClock,
         PortRssi,
@@ -44,6 +44,8 @@ oer_esp32s31_platform_runtime::interrupt_table! {
     wake: ExecutorWake = FROM_CPU_INTR0 => oer_esp32s31_executor_embassy::wake_handler::<0>, Priority1, ProCpu;
     /// The Embassy time driver's alarm (TIMG0 timer 0).
     alarm: TimeAlarm = TG0_T0_LEVEL => oer_esp32s31_executor_embassy::timer_interrupt, Priority1, ProCpu;
+    /// The IEEE 802.15.4 MAC's interrupt.
+    ieee802154: Ieee802154Mac = MODEM_ZB_MAC => oer::systems::esp32s31::embassy::ieee802154::ieee802154_interrupt, Priority1, ProCpu;
 }
 
 /// Frames OpenThread has not taken yet while it transmits or scans.
@@ -111,6 +113,13 @@ extern "C" fn runtime_main() -> ! {
 
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     let interrupts = Interrupts::take().expect("the image takes its interrupt tokens once");
+    assert!(
+        ieee802154::install_interrupt_route(ieee802154::Ieee802154InterruptSource::new(
+            interrupts.ieee802154
+        ))
+        .is_ok(),
+        "the image installs its IEEE 802.15.4 route once"
+    );
     platform_executor::init(OneShotTimer::new(timer_group.timer0), interrupts.alarm);
     TRNG_SOURCE.init(TrngSource::new(peripherals.RNG));
     let trng = Trng::try_new().expect("ESP32-S31 TRNG must have a unique owner");

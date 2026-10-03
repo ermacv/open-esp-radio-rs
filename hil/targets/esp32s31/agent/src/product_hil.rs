@@ -106,6 +106,8 @@ use static_cell::{ConstStaticCell, StaticCell};
 
 mod ap_scheduler;
 mod ieee802154;
+#[cfg(feature = "ieee802154-route-probe")]
+pub(crate) use ieee802154::route_probe_interrupt;
 mod network;
 #[cfg(feature = "rx-ownership-telemetry")]
 mod rx_ownership;

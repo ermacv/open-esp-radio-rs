@@ -1938,6 +1938,8 @@ version = "0.1.0"
 dependencies = [
  "critical-section",
  "esp-hal",
+ "oer-esp32s31-soc-esp-hal",
+ "oer-interrupt-table",
 ]
 
 [[package]]
@@ -1947,7 +1949,6 @@ dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
  "embassy-time",
- "esp-hal",
  "oer-esp32s31-coex",
  "oer-esp32s31-hal",
  "oer-esp32s31-ieee802154-esp-hal",

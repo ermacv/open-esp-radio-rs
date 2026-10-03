@@ -19,7 +19,10 @@ the [runtime](../../../../runtime/espressif/ieee802154/src/lib.rs) and the
    join makes it due;
 4. pulse the MAC reset and configure the masked foundation;
 5. activate the interrupt owner, install the runtime (engine `mac_init`) and
-   bind modem source 132 at priority one.
+   route modem source 132 at priority one to `ieee802154_interrupt`, which
+   the image's interrupt table names; the image hands the source's route to
+   the adapter once at boot (`install_interrupt_route` with an
+   `Ieee802154InterruptSource` from its token).
 
 `Ieee802154System::stop` reverses the steps: quiesce the route, take the MAC
 owners out of the runtime, prove the foundation again, leave the domain and

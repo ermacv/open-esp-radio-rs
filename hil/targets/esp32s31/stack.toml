@@ -70,8 +70,8 @@ reason = "connected epoch future owns the recoverable DMA, VIF-scoped BlockAck i
 [[reviewed_frames]]
 function_contains = "::supervisor::outside_poll_frame::<"
 source_ends_with = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/mod.rs", "oer-esp32s31-ieee80211-system-0.1.0/src/supervisor/mod.rs"]
-max_bytes = 14528
-reason = "a connected epoch's synchronous teardown moves the quiesced services, parked RX, TX resources, network and security material by value into the returned station owner or its fault; it runs outside the connected epoch's poll frame and exists only while it runs (measured 13504 bytes, 14368 bytes once connected control carried the link monitor with its probe policy, and 14496 bytes once the link and its TX owner kept the association's SSID)"
+max_bytes = 14656
+reason = "a connected epoch's synchronous teardown moves the quiesced services, parked RX, TX resources, network and security material by value into the returned station owner or its fault; it runs outside the connected epoch's poll frame and exists only while it runs (measured 13504 bytes, 14368 bytes once connected control carried the link monitor with its probe policy, 14496 bytes once the link and its TX owner kept the association's SSID, and 14624 bytes once connected control owned the station TSF writes and their relation)"
 
 [[reviewed_frames]]
 function_contains = "::actor::run_embassy_wifi_supervisor_actor"

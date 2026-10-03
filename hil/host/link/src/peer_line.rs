@@ -63,6 +63,23 @@ pub fn synchronize_link<L: PeerLink>(
     Ok(None)
 }
 
+/// Whether the peer on `link` answers `SYNC` with an `@READY` line of any
+/// image and protocol: a live console. Every stand peer speaks `SYNC`; the
+/// wait is bounded by `SYNC_ATTEMPTS` waits of `timeout`.
+pub fn answers_sync<L: PeerLink>(link: &mut L, timeout: Duration) -> Result<bool> {
+    let answer = |line: &str| {
+        let line = line.trim_start();
+        if line.starts_with("@READY") {
+            SyncAnswer::Ready(0)
+        } else if line.starts_with("@ERR") {
+            SyncAnswer::Rejected
+        } else {
+            SyncAnswer::Other
+        }
+    };
+    Ok(synchronize_link(link, timeout, answer)?.is_some())
+}
+
 /// Line transport to the peer.
 pub trait PeerLink {
     fn send(&mut self, line: &str) -> Result<()>;
@@ -274,5 +291,50 @@ mod console_error_tests {
         );
         let source = std::error::Error::source(&error).expect("an I/O cause");
         assert!(source.is::<std::io::Error>());
+    }
+}
+
+#[cfg(test)]
+mod sync_tests {
+    use super::*;
+    use std::collections::VecDeque;
+
+    struct Scripted(VecDeque<String>, Vec<String>);
+
+    impl PeerLink for Scripted {
+        fn send(&mut self, line: &str) -> Result<()> {
+            self.1.push(line.to_owned());
+            Ok(())
+        }
+        fn receive(&mut self, _deadline: Instant) -> Result<Option<String>> {
+            Ok(self.0.pop_front())
+        }
+    }
+
+    fn scripted(lines: &[&str]) -> Scripted {
+        Scripted(
+            lines.iter().map(|line| format!("{line}\n")).collect(),
+            vec![],
+        )
+    }
+
+    #[test]
+    fn any_ready_line_is_a_live_console() {
+        let mut link = scripted(&[
+            "boot noise",
+            "@READY protocol=1 target=esp32c5 stack=openthread",
+        ]);
+        assert!(answers_sync(&mut link, Duration::from_millis(1)).unwrap());
+        assert!(link.1.contains(&"SYNC".to_owned()));
+    }
+
+    #[test]
+    fn a_silent_console_is_not_live_after_every_attempt() {
+        let mut link = scripted(&[]);
+        assert!(!answers_sync(&mut link, Duration::from_millis(1)).unwrap());
+        assert_eq!(
+            link.1.iter().filter(|line| *line == "SYNC").count(),
+            SYNC_ATTEMPTS
+        );
     }
 }

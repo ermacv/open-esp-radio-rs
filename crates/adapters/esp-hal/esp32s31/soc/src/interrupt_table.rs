@@ -8,10 +8,8 @@
 //! again before it enables interrupts ([`verify_current_hart`]). An owner routes
 //! its source with [`enable`] and its token, and silences it with [`disable`].
 
-use core::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
-
 use esp_hal::{interrupt::Priority, peripherals::Interrupt, system::Cpu};
-use oer_interrupt_table::{Binding, Entry, Matrix, MatrixError, Table};
+use oer_interrupt_table::{Adopted, Binding, Entry, Matrix, MatrixError, Table};
 
 /// The ESP32-S31 interrupt matrix, as esp-hal drives it.
 pub struct EspHalMatrix;
@@ -61,29 +59,30 @@ const _: () = {
 /// An ESP32-S31 table error.
 pub type Error = MatrixError<EspHalMatrix>;
 
-/// The image's table, which [`adopt`] stores once: its first entry and length.
-static TABLE: AtomicPtr<Binding<Interrupt, Priority, Cpu>> = AtomicPtr::new(core::ptr::null_mut());
-static TABLE_LENGTH: AtomicUsize = AtomicUsize::new(0);
+/// The image's table, which [`adopt`] stores once.
+static TABLE: Adopted<Binding<Interrupt, Priority, Cpu>> = Adopted::new();
 
 /// Keep the image's `INTERRUPT_TABLE` for both harts; the platform runtime
 /// calls this once, before either hart installs its interrupt stack.
+///
+/// # Panics
+///
+/// On a second call: the image has one table.
 pub fn adopt(table: &'static Table<EspHalMatrix>) {
-    TABLE_LENGTH.store(table.len(), Ordering::Relaxed);
-    TABLE.store(table.as_ptr().cast_mut(), Ordering::Release);
+    if TABLE.adopt(table).is_err() {
+        panic!("the image's interrupt table is adopted twice");
+    }
 }
 
-/// The image's interrupt table; empty before [`adopt`].
+/// The image's interrupt table.
+///
+/// # Panics
+///
+/// Before [`adopt`]: no core reaches its sources without the table.
 pub fn table() -> &'static Table<EspHalMatrix> {
-    let first = TABLE.load(Ordering::Acquire);
-    if first.is_null() {
-        return &[];
-    }
-    // SAFETY: `adopt` stored the start of a `&'static` slice and, before it,
-    // that slice's length; nothing writes either again.
-    #[allow(unsafe_code, reason = "the stored table is a `&'static` slice")]
-    unsafe {
-        core::slice::from_raw_parts(first, TABLE_LENGTH.load(Ordering::Relaxed))
-    }
+    TABLE
+        .get()
+        .unwrap_or_else(|| panic!("the image's interrupt table is not adopted"))
 }
 
 /// Route the token's source to its table level; on its table core only.
@@ -91,6 +90,10 @@ pub fn table() -> &'static Table<EspHalMatrix> {
 /// # Errors
 ///
 /// [`oer_interrupt_table::Error::WrongCore`] on another core.
+///
+/// # Panics
+///
+/// Before [`adopt`].
 pub fn enable<E>(token: &E) -> Result<(), Error>
 where
     E: Entry<Source = Interrupt, Level = Priority, Core = Cpu>,
@@ -106,11 +109,32 @@ where
     oer_interrupt_table::disable(&mut EspHalMatrix, token);
 }
 
+/// A source's token with its type erased ([`oer_interrupt_table::Route`]).
+pub type Route = oer_interrupt_table::MatrixRoute<EspHalMatrix>;
+
+/// [`enable`] by a route.
+///
+/// # Errors
+///
+/// As [`enable`].
+///
+/// # Panics
+///
+/// Before [`adopt`].
+pub fn enable_route(route: &Route) -> Result<(), Error> {
+    oer_interrupt_table::enable_route(&mut EspHalMatrix, table(), route)
+}
+
+/// [`disable`] by a route.
+pub fn disable_route(route: &Route) {
+    oer_interrupt_table::disable_route(&mut EspHalMatrix, route);
+}
+
 /// Silence the current hart's sources and check every vector slot.
 ///
 /// # Panics
 ///
-/// When the matrix disagrees with the table.
+/// Before [`adopt`], or when the matrix disagrees with the table.
 pub fn install_current_hart() {
     if let Err(error) = oer_interrupt_table::install(&mut EspHalMatrix, table()) {
         panic!("the interrupt matrix disagrees with the image's table: {error:?}");
@@ -121,7 +145,7 @@ pub fn install_current_hart() {
 ///
 /// # Panics
 ///
-/// When the matrix disagrees with the table.
+/// Before [`adopt`], or when the matrix disagrees with the table.
 pub fn verify_current_hart() {
     if let Err(error) = oer_interrupt_table::verify(&EspHalMatrix, table()) {
         panic!("the interrupt matrix disagrees with the image's table: {error:?}");

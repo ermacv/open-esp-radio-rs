@@ -26,6 +26,12 @@ The table is `INTERRUPT_TABLE`, a slice of `#[repr(C)]` bindings exported as
 `__OER_INTERRUPT_TABLE` for the tools that read the image; the image hands it
 to its platform's runtime as a typed value.
 
+A `Route` is a token with its type erased: only consuming a token creates
+one, it is neither `Copy` nor `Clone`, and `enable_route`/`disable_route`
+check it as `enable`/`disable` check the token; an owner keeps its sources'
+routes behind a concrete type. `Adopted` holds the image's table for every
+core: adopted once (a second adoption is an error), absent before.
+
 `install` silences every source of the current core's entries and checks each
 vector slot against the table; `verify` checks again that every slot holds its
 handler and every source is silent or routed to its level. `Matrix` is the

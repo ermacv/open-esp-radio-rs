@@ -55,6 +55,9 @@
 
 use core::fmt::Debug;
 
+mod adopted;
+pub use adopted::{Adopted, AlreadyAdopted};
+
 /// A chip's interrupt matrix, as an image's interrupt table drives it.
 pub trait Matrix {
     /// A peripheral interrupt source.
@@ -152,21 +155,7 @@ where
     M: Matrix,
     E: Entry<Source = M::Source, Level = M::Level, Core = M::Core>,
 {
-    if !present(table).any(|(binding, _)| {
-        binding.source == E::SOURCE && binding.level == E::LEVEL && binding.core == E::CORE
-    }) {
-        return Err(Error::NotInTable { source: E::SOURCE });
-    }
-    let current = matrix.current_core();
-    if current != E::CORE {
-        return Err(Error::WrongCore {
-            source: E::SOURCE,
-            core: E::CORE,
-            current,
-        });
-    }
-    matrix.route(E::SOURCE, E::LEVEL);
-    Ok(())
+    route(matrix, table, E::SOURCE, E::LEVEL, E::CORE)
 }
 
 /// Silence the token's source on its table core.
@@ -176,6 +165,81 @@ where
     E: Entry<Source = M::Source, Level = M::Level, Core = M::Core>,
 {
     matrix.silence(E::CORE, E::SOURCE);
+}
+
+/// A token whose type is erased: an owner that keeps several sources, or
+/// keeps them behind a concrete type, holds their routes. Only consuming a
+/// token creates one, and a route is neither `Copy` nor `Clone`.
+#[derive(Debug)]
+#[must_use = "a dropped route can never enable or disable its source again"]
+pub struct Route<S, L, C> {
+    source: S,
+    level: L,
+    core: C,
+}
+
+impl<S: Copy, L: Copy, C: Copy> Route<S, L, C> {
+    /// The route of `token`'s source.
+    pub fn new<E: Entry<Source = S, Level = L, Core = C>>(token: E) -> Self {
+        let _ = token;
+        Self {
+            source: E::SOURCE,
+            level: E::LEVEL,
+            core: E::CORE,
+        }
+    }
+
+    /// The route's source.
+    pub fn source(&self) -> S {
+        self.source
+    }
+}
+
+/// The [`Route`] of a matrix.
+pub type MatrixRoute<M> = Route<<M as Matrix>::Source, <M as Matrix>::Level, <M as Matrix>::Core>;
+
+/// [`enable`] by a route.
+///
+/// # Errors
+///
+/// As [`enable`].
+pub fn enable_route<M: Matrix>(
+    matrix: &mut M,
+    table: &Table<M>,
+    route: &MatrixRoute<M>,
+) -> Result<(), MatrixError<M>> {
+    self::route(matrix, table, route.source, route.level, route.core)
+}
+
+/// [`disable`] by a route.
+pub fn disable_route<M: Matrix>(matrix: &mut M, route: &MatrixRoute<M>) {
+    matrix.silence(route.core, route.source);
+}
+
+/// Route `source` to `level` on the current core, which must be `core`, when
+/// the table lists it so.
+fn route<M: Matrix>(
+    matrix: &mut M,
+    table: &Table<M>,
+    source: M::Source,
+    level: M::Level,
+    core: M::Core,
+) -> Result<(), MatrixError<M>> {
+    if !present(table).any(|(binding, _)| {
+        binding.source == source && binding.level == level && binding.core == core
+    }) {
+        return Err(Error::NotInTable { source });
+    }
+    let current = matrix.current_core();
+    if current != core {
+        return Err(Error::WrongCore {
+            source,
+            core,
+            current,
+        });
+    }
+    matrix.route(source, level);
+    Ok(())
 }
 
 /// Silence every source of the current core's entries, then [`verify`].

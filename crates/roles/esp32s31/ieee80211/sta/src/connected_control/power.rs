@@ -23,6 +23,8 @@ use crate::{
     },
 };
 
+use oer_ieee80211_lower_mac::TsfInstant;
+
 use super::{
     ConnectedControlCore, ConnectedControlError, ConnectedControlTx, ConnectedDisconnectReason,
     ControlInFlight,
@@ -441,7 +443,7 @@ impl ConnectedControlCore {
                 // station takes it before power management places its first
                 // TBTT, as the vendor does on the Association Response.
                 if let Some(tsf) = join.access_point_tsf_at(clock.now) {
-                    hardware.set_station_tsf(tsf);
+                    self.station_tsf.set(hardware, TsfInstant::from_micros(tsf));
                 }
                 self.power.engine.start(join.beacon, coex, &mut actions);
             }

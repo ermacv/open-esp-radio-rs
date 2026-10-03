@@ -77,6 +77,9 @@ use core::pin::Pin;
 use oer_time::Clock;
 
 use oer_esp32s31_hal::types::StaTbttSchedule;
+use oer_ieee80211_lower_mac::TsfRelation;
+
+use crate::station_tsf::{STATION_TSF_SAMPLE_UNCERTAINTY, StationTsf, StationTsfHardware};
 use oer_esp32s31_ieee80211_mac::{
     MacInterface,
     ap_policy::ApRxPolicyHardware,
@@ -105,9 +108,9 @@ use oer_ieee80211_lower_mac::{
     KeyInstall, KeyScope, KeySelector, LifecycleCommand, LifecycleError, LifecycleEvent,
     LowerMacCapabilities, LowerMacSetting, MacAddress, MonitorCapabilities, MpduAttempt,
     PhyFormatSet, PhyRate, Protection, RateSupport, ReceiveFilter, Refused, RxBlockAckAgreement,
-    RxMeta, SettingError, SubmitError, TSF_DRIFT_PPM, TbttEvent, TbttSchedule, TsfInstant,
-    TxBuffer, TxCompletion, TxFault, TxId, TxPayload, TxPower, TxResponse, TxStatus, VifConfig,
-    VifId, VifRole, VifRoleSet, VifTsf, WidthSet,
+    RxMeta, SettingError, SubmitError, TbttEvent, TbttSchedule, TsfInstant, TxBuffer, TxCompletion,
+    TxFault, TxId, TxPayload, TxPower, TxResponse, TxStatus, VifConfig, VifId, VifRole, VifRoleSet,
+    VifTsf, WidthSet,
 };
 use oer_ieee80211_mac::{
     channel::{Band, WifiChannel},
@@ -237,12 +240,6 @@ pub const ESP32S31_BEACON_TIMING_CAPABILITIES: BeaconTimingCapabilities =
 pub const ESP32S31_MONITOR_CAPABILITIES: MonitorCapabilities = MonitorCapabilities {
     with_receiving_interfaces: false,
 };
-
-/// The station TSF of the MAC's interface-zero timer.
-pub trait StationTsfHardware {
-    fn station_tsf(&mut self) -> u64;
-    fn set_station_tsf(&mut self, value: u64);
-}
 
 /// The station TBTT schedule of the MAC's interface-zero timer, whose event
 /// fires on the power interrupt (`MacPowerWakeCause::StaTbtt`).
@@ -459,57 +456,6 @@ struct Attempt<'slot, S: AmpduBacking, const BUFFER_SIZE: usize, const AMPDU_SLO
     work: Work<'slot, S, BUFFER_SIZE, AMPDU_SLOTS>,
 }
 
-/// The generation of an interface's TSF relation and its last sample: the
-/// value the TSF was last set to within it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct TsfRelation {
-    generation: u32,
-    last_set: Option<u64>,
-}
-
-/// The uncertainty of a station TSF sample the core keeps: the set value
-/// and the reading beside it are each a count of the station TSF counter's
-/// microseconds.
-const STATION_TSF_SAMPLE_UNCERTAINTY_MICROS: u64 = 1;
-
-impl TsfRelation {
-    const NEW: Self = Self {
-        generation: 0,
-        last_set: None,
-    };
-
-    /// Start a new generation: the TSF jumped.
-    fn break_relation(&mut self) {
-        self.generation = self.generation.wrapping_add(1);
-        self.last_set = None;
-    }
-
-    /// Record a station TSF set from `current` to `value`. A set within
-    /// what the relation predicts since its last sample (the drift over the
-    /// time since then plus the sample's uncertainty) keeps the generation:
-    /// a follow after missed beacons drifts further but stays within it.
-    /// Any other set, and the first, breaks it.
-    fn station_set(&mut self, current: u64, value: u64) {
-        let within = self.last_set.is_some_and(|last| {
-            value.abs_diff(current) <= tsf_set_tolerance(current.saturating_sub(last))
-        });
-        if !within {
-            self.break_relation();
-        }
-        self.last_set = Some(value);
-    }
-}
-
-/// How far a station TSF set may move the TSF `elapsed` µs after the
-/// relation's last sample without breaking it: [`TSF_DRIFT_PPM`] of the
-/// elapsed time, rounded up, plus the sample's uncertainty.
-fn tsf_set_tolerance(elapsed: u64) -> u64 {
-    let drift = (u128::from(elapsed) * u128::from(TSF_DRIFT_PPM)).div_ceil(1_000_000);
-    u64::try_from(drift)
-        .unwrap_or(u64::MAX)
-        .saturating_add(STATION_TSF_SAMPLE_UNCERTAINTY_MICROS)
-}
-
 /// The running station TBTT schedule.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct StationTbtt {
@@ -567,9 +513,10 @@ pub struct LowerMacCore<
     gate_open: bool,
     monitor: bool,
     tbtt: Option<StationTbtt>,
-    /// The relation of each interface's TSF to the radio clock, by
-    /// interface.
-    tsf: [TsfRelation; LOWER_MAC_VIFS as usize],
+    /// The owner of the station TSF writes and its relation.
+    station_tsf: StationTsf,
+    /// The relation of the access-point TSF, which only restarts.
+    access_point_tsf: TsfRelation,
     /// The attempt of each ordinary queue, by its hardware index
     /// ([`LegacyTxQueue::hardware_index`]).
     queues: [Option<Attempt<'slot, S, BUFFER_SIZE, AMPDU_SLOTS>>; LOWER_MAC_TX_QUEUES],
@@ -633,7 +580,8 @@ where
             gate_open: true,
             monitor: false,
             tbtt: None,
-            tsf: [TsfRelation::NEW; LOWER_MAC_VIFS as usize],
+            station_tsf: StationTsf::new(),
+            access_point_tsf: TsfRelation::new(STATION_TSF_SAMPLE_UNCERTAINTY),
             queues: [const { None }; LOWER_MAC_TX_QUEUES],
         }
     }
@@ -1267,9 +1215,8 @@ where
             return Err(SettingError::Busy);
         }
         if self.channel != channel {
-            for relation in &mut self.tsf {
-                relation.break_relation();
-            }
+            self.break_tsf_relation(VifRole::Station);
+            self.break_tsf_relation(VifRole::AccessPoint);
         }
         self.channel = channel;
         Ok(())
@@ -1319,7 +1266,7 @@ where
         self.vifs[index] = Some(config);
         // A new association, a reassociation or a roam: the interface
         // follows another TSF.
-        self.tsf[index].break_relation();
+        self.break_tsf_relation(config.role);
         Ok(())
     }
 
@@ -1329,7 +1276,7 @@ where
         let Some(previous) = self.vifs[usize::from(vif.0)].take() else {
             return;
         };
-        self.tsf[usize::from(vif.0)].break_relation();
+        self.break_tsf_relation(previous.role);
         for slot in &mut self.keys {
             if slot.as_ref().is_some_and(|key| key.vif == vif) {
                 slot.take().expect("checked above").token.clear(hardware);
@@ -1603,11 +1550,17 @@ where
         if !ESP32S31_BEACON_TIMING_CAPABILITIES.tsf_read.contains(role) {
             return Err(SettingError::Unsupported);
         }
-        let at = TsfInstant::from_micros(hardware.station_tsf());
-        Ok((
-            VifTsf::new(vif, at),
-            self.tsf[usize::from(vif.0)].generation,
-        ))
+        let at = self.station_tsf.read(hardware);
+        Ok((VifTsf::new(vif, at), self.station_tsf.generation()))
+    }
+
+    /// Start a new generation of the TSF relation of the interface with
+    /// `role`.
+    fn break_tsf_relation(&mut self, role: VifRole) {
+        match role {
+            VifRole::Station => self.station_tsf.break_relation(),
+            VifRole::AccessPoint => self.access_point_tsf.break_relation(),
+        }
     }
 
     /// Set an interface's TSF: the station timer to any value, the
@@ -1619,18 +1572,12 @@ where
         hardware: &mut H,
         tsf: VifTsf,
     ) -> Result<(), SettingError> {
-        let value = tsf.at.as_micros();
-        let relation = &mut self.tsf[usize::from(tsf.vif.0)];
-        match self.vifs[usize::from(tsf.vif.0)]
-            .ok_or(SettingError::UnknownVif)?
-            .role
-        {
+        match self.vif(tsf.vif).ok_or(SettingError::UnknownVif)?.role {
             VifRole::Station => {
-                relation.station_set(hardware.station_tsf(), value);
-                hardware.set_station_tsf(value);
+                self.station_tsf.set(hardware, tsf.at);
             }
-            VifRole::AccessPoint if value == 0 => {
-                relation.break_relation();
+            VifRole::AccessPoint if tsf.at.as_micros() == 0 => {
+                self.access_point_tsf.break_relation();
                 hardware.reset_and_start_access_point_tsf();
             }
             VifRole::AccessPoint => return Err(SettingError::Unsupported),
@@ -1705,7 +1652,8 @@ where
         sink: &mut K,
     ) {
         if let Some(tbtt) = self.tbtt {
-            let at = TsfInstant::from_micros(tbtt.announced(hardware.station_tsf()));
+            let now = self.station_tsf.read(hardware).as_micros();
+            let at = TsfInstant::from_micros(tbtt.announced(now));
             sink.tbtt(TbttEvent {
                 tbtt: VifTsf::new(tbtt.vif, at),
             });

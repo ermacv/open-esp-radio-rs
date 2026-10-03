@@ -176,6 +176,11 @@ impl ConnectedRxBlockAck<'_> {
 }
 
 impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources, M, CAPACITY> {
+    /// The owner of the station TSF writes of this association.
+    pub const fn station_tsf(&self) -> &oer_esp32s31_ieee80211::station_tsf::StationTsf {
+        self.core.station_tsf()
+    }
+
     pub fn new(
         receiver: ConnectedControlReceiver<'resources, M, CAPACITY>,
         peer: [u8; 6],

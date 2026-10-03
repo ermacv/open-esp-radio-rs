@@ -175,12 +175,23 @@ struct InFlight {
 }
 
 /// An interface's TSF: it advances with the model's radio clock from the
-/// value it was set to.
-#[derive(Clone, Copy, Default)]
+/// value it was set to. The model's counters are exact, so its samples
+/// carry no uncertainty.
+#[derive(Clone, Copy)]
 struct ModelTsf {
     set_to: u64,
     set_at: u64,
-    generation: u32,
+    relation: TsfRelation,
+}
+
+impl Default for ModelTsf {
+    fn default() -> Self {
+        Self {
+            set_to: 0,
+            set_at: 0,
+            relation: TsfRelation::new(oer_time::Duration::ZERO),
+        }
+    }
 }
 
 impl ModelTsf {
@@ -198,7 +209,7 @@ struct State {
     channel: Option<Channel>,
     vifs: [Option<VifConfig>; 2],
     /// Each interface's TSF as the value it was last set to, the model's
-    /// radio clock then and the generation of its relation.
+    /// radio clock then and its relation.
     tsf: [ModelTsf; 2],
     keys: [bool; 4],
     rx_block_ack: Vec<RxBlockAckAgreement>,
@@ -871,7 +882,8 @@ impl LowerMacBeaconTiming for LowerMacModel {
     }
 
     /// The model's radio clock is the monotonic clock of one generation;
-    /// the TSF relation's generation advances with every TSF set.
+    /// the TSF relation's generation advances with every jump
+    /// ([`TsfRelation`]).
     fn tsf_sample(&self, vif: VifId) -> Result<Result<TsfSample, SettingError>, ModelPoisoned> {
         let now = self.now.get();
         let state = self.serving()?;
@@ -885,7 +897,7 @@ impl LowerMacBeaconTiming for LowerMacModel {
                         generation: 0,
                     },
                     uncertainty: oer_time::Duration::ZERO,
-                    generation: tsf.generation,
+                    generation: tsf.relation.generation(),
                 })
             }
             None => Err(SettingError::UnknownVif),
@@ -898,11 +910,10 @@ impl LowerMacBeaconTiming for LowerMacModel {
         Ok(match state.vif(tsf.vif) {
             Some(_) => {
                 let current = &mut state.tsf[usize::from(tsf.vif.0)];
-                *current = ModelTsf {
-                    set_to: tsf.at.as_micros(),
-                    set_at: now.as_micros(),
-                    generation: current.generation.wrapping_add(1),
-                };
+                let reading = current.at(now);
+                current.relation.set(reading, tsf.at);
+                current.set_to = tsf.at.as_micros();
+                current.set_at = now.as_micros();
                 Ok(())
             }
             None => Err(SettingError::UnknownVif),

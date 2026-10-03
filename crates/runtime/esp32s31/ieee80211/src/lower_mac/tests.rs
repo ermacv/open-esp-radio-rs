@@ -11,8 +11,9 @@ use oer_esp32s31_hal::types::{
 };
 use oer_esp32s31_ieee80211::lower_mac::{AmpduBacking, AmpduBackingSource, Esp32s31AmpduOwner};
 use oer_esp32s31_ieee80211::{
-    lower_mac::{LowerMacConfig, StationTbttHardware, StationTsfHardware, TxGateHardware},
+    lower_mac::{LowerMacConfig, StationTbttHardware, TxGateHardware},
     ordinary_tx::{OrdinaryTxOwner, WifiTxPowerPair, WifiTxResources},
+    station_tsf::{StationTsfHardware, StationTsfWrite},
 };
 use oer_esp32s31_ieee80211_mac::{
     ap_policy::ApRxPolicyHardware,
@@ -248,7 +249,7 @@ impl StationTsfHardware for Hardware {
         self.station_tsf
     }
 
-    fn set_station_tsf(&mut self, value: u64) {
+    fn set_station_tsf(&mut self, _: StationTsfWrite, value: u64) {
         self.station_tsf = value;
     }
 }

@@ -66,7 +66,7 @@ pub use extensions::{
     AmpduAttempt, AmpduBuffer, AmpduCapabilities, AmpduPayload, BeaconTimingCapabilities,
     Ieee80211Tsf, LowerMacAmpdu, LowerMacBeaconTiming, LowerMacCancelPublished, LowerMacMonitor,
     MonitorCapabilities, TSF_DRIFT_PPM, TbttEvent, TbttSchedule, TsfInstant, TsfProjectionError,
-    TsfSample, TsfVifMismatch, VifTsf, time_units,
+    TsfRelation, TsfSample, TsfSetKind, TsfVifMismatch, VifTsf, time_units,
 };
 pub use oer_radio_port::{
     CancelError, ClockInfo, Correlation, CorrelationIds, EpochError, EventsLost, FailureClass,

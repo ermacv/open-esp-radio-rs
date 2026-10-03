@@ -875,7 +875,7 @@ fn a_tsf_sample_projects_both_ways_with_the_drift_bound() {
 }
 
 #[test]
-fn the_model_tsf_advances_with_its_clock_and_each_set_starts_a_generation() {
+fn the_model_tsf_advances_with_its_clock_and_a_jump_starts_a_generation() {
     let model = enabled_station();
     model.set_now(Ieee80211Instant::from_micros(100));
     let first = model.tsf_sample(STATION).unwrap().unwrap();
@@ -893,4 +893,56 @@ fn the_model_tsf_advances_with_its_clock_and_each_set_starts_a_generation() {
         Model::tbtt(&next(&model)).map(|event| event.tbtt),
         Some(sample.tsf)
     );
+}
+
+#[test]
+fn a_tsf_relation_keeps_its_generation_through_drift_after_missed_beacons() {
+    let mut relation = TsfRelation::new(oer_time::Duration::from_micros(1));
+    let tsf = TsfInstant::from_micros;
+    let interval = 102_400;
+    assert_eq!(relation.set(tsf(0), tsf(1_000_000)), TsfSetKind::Jump);
+    let generation = relation.generation();
+    // Ten missed beacons later the follow corrects ten intervals of drift:
+    // more than one interval allows, within what ten allow.
+    let ten = relation
+        .tolerance(oer_time::Duration::from_micros(10 * interval))
+        .as_micros();
+    let one = relation
+        .tolerance(oer_time::Duration::from_micros(interval))
+        .as_micros();
+    assert!(ten > one);
+    let reading = 1_000_000 + 10 * interval;
+    assert_eq!(
+        relation.set(tsf(reading), tsf(reading + ten)),
+        TsfSetKind::Drift
+    );
+    assert_eq!(relation.generation(), generation);
+    // Each bound is the drift of its span plus the sample's microsecond.
+    assert_eq!(
+        one,
+        (interval * u64::from(TSF_DRIFT_PPM)).div_ceil(1_000_000) + 1
+    );
+}
+
+#[test]
+fn a_tsf_relation_starts_a_generation_at_a_jump_between_consecutive_beacons() {
+    let mut relation = TsfRelation::new(oer_time::Duration::from_micros(1));
+    let tsf = TsfInstant::from_micros;
+    let interval = 102_400;
+    relation.set(tsf(0), tsf(1_000_000));
+    let generation = relation.generation();
+    let one = relation
+        .tolerance(oer_time::Duration::from_micros(interval))
+        .as_micros();
+    let reading = 1_000_000 + interval;
+    assert_eq!(
+        relation.set(tsf(reading), tsf(reading + one + 1)),
+        TsfSetKind::Jump
+    );
+    assert_ne!(relation.generation(), generation);
+    // A break forgets the sample: the next set is a jump again.
+    let after_jump = relation.generation();
+    relation.break_relation();
+    assert_ne!(relation.generation(), after_jump);
+    assert_eq!(relation.set(tsf(reading), tsf(reading)), TsfSetKind::Jump);
 }

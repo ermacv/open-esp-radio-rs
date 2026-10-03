@@ -5,6 +5,7 @@
 //! TX-complete, so a single-task Rust runtime needs to let its RX bottom half
 //! borrow the same register owner between finite TX hardware transactions.
 
+use crate::station_tsf::StationTsfWrite;
 use oer_esp32s31_hal::{
     ieee80211::{
         arena::{PublishedRadioOwner, RadioAccess, RadioOwnerArenaError, ReclaimedRadioOwner},
@@ -510,13 +511,17 @@ impl RxDma for CooperativeRadioHardware<'_> {
     }
 }
 
-impl crate::lower_mac::StationTsfHardware for CooperativeRadioHardware<'_> {
+/// The facade's only station TSF write, which [`StationTsf`] alone can call
+/// ([`StationTsfWrite`]).
+///
+/// [`StationTsf`]: crate::station_tsf::StationTsf
+impl crate::station_tsf::StationTsfHardware for CooperativeRadioHardware<'_> {
     fn station_tsf(&mut self) -> u64 {
         CooperativeRadioHardware::station_tsf(self)
     }
 
-    fn set_station_tsf(&mut self, value: u64) {
-        CooperativeRadioHardware::set_station_tsf(self, value);
+    fn set_station_tsf(&mut self, _: StationTsfWrite, value: u64) {
+        self.wifi_mac_hal().set_station_tsf(value);
     }
 }
 
@@ -539,11 +544,6 @@ impl crate::lower_mac::TxGateHardware for CooperativeRadioHardware<'_> {
 impl CooperativeRadioHardware<'_> {
     pub fn station_tsf(&mut self) -> u64 {
         self.wifi_mac_hal().station_tsf()
-    }
-
-    /// Replace the station TSF.
-    pub fn set_station_tsf(&mut self, value: u64) {
-        self.wifi_mac_hal().set_station_tsf(value);
     }
 
     /// The Wi-Fi MAC local time, the counter of receive timestamps.

@@ -24,9 +24,11 @@ pub use oer_interrupt_table as __interrupt_table;
 /// application's timer and executor handlers have been bound.
 pub unsafe fn adopt_psram(
     peripheral: esp_hal::peripherals::PSRAM<'static>,
-    interrupt_table: &'static oer_interrupt_table::Table<interrupts::EspHalMatrix>,
+    interrupt_table: &'static oer_interrupt_table::Table<
+        oer_esp32s31_soc_esp_hal::interrupt_table::EspHalMatrix,
+    >,
 ) -> esp_hal::psram::Psram {
-    interrupts::adopt(interrupt_table);
+    oer_esp32s31_soc_esp_hal::interrupt_table::adopt(interrupt_table);
     unsafe {
         let psram = oer_esp32s31_platform_board::adopt_initialized_psram(peripheral);
         esp_hal::interrupt::reinitialize_vectoring_after_handoff();
@@ -56,7 +58,7 @@ pub unsafe fn adopt_psram(
 /// interrupt table ([`interrupts`]).
 pub unsafe fn enable_interrupts_after_handoff() {
     stacks::verify_current_hart_vectors();
-    interrupts::verify_current_hart();
+    oer_esp32s31_soc_esp_hal::interrupt_table::verify_current_hart();
     // SAFETY: the caller guarantees that every handler this hart can dispatch
     // is bound; setting MIE touches no memory and leaves the stack unchanged.
     unsafe { core::arch::asm!("csrsi mstatus, 8", options(nomem, nostack)) };

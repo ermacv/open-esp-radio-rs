@@ -1036,6 +1036,7 @@ dependencies = [
  "esp-hal",
  "oer-esp32s31-platform-board",
  "oer-esp32s31-platform-layout",
+ "oer-esp32s31-soc-esp-hal",
  "oer-interrupt-table",
  "oer-memory",
 ]
@@ -1047,6 +1048,7 @@ dependencies = [
  "bytemuck",
  "critical-section",
  "esp-hal",
+ "oer-interrupt-table",
  "oer-memory",
  "oer-soc-deadline",
 ]

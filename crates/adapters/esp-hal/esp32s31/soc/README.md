@@ -25,6 +25,12 @@ These are engineering limits, not measured worst-case reset/RF-off bounds.
   composition owns the failure policy and retains any live resources; this
   mechanism has no radio dependency and does not arm a watchdog or establish
   a reset-latency bound.
+- `interrupt_table.rs`: the ESP32-S31 interrupt matrix the image's interrupt
+  table (`oer-interrupt-table`) drives. The platform runtime `adopt`s the
+  image's table, silences each hart's sources when it installs the hart's
+  interrupt stack and verifies them before it enables interrupts; an owner
+  routes its source with `enable` and its token and silences it with
+  `disable`. Compile-time assertions keep the table's 12-byte entry layout.
 - `entropy.rs`: owns RNG and the independent LP TRNG source. Fixed-size reads
   borrow that owner and release their temporary HAL reader before returning.
   No radio role or PHY epoch supplies its lifetime. Read pacing assumes a

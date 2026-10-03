@@ -194,6 +194,9 @@ impl RadioHardware {
             bluetooth_interrupts,
             shared_radio,
             ieee802154,
+            // The radio PHY holds its own copy; the reassembly below takes it
+            // back from there.
+            mac_local_time: _,
         } = self.partitions;
         (
             SharedRadio::new(
@@ -259,9 +262,11 @@ impl RadioHardware {
             bluetooth,
             ieee802154,
         } = partitions;
+        let mac_local_time = radio_phy.mac_local_time();
         Ok((
             Self::returned(
                 RadioPartitions {
+                    mac_local_time,
                     wifi_mac: wifi.mac,
                     wifi_interrupts: wifi.interrupts,
                     radio_phy,

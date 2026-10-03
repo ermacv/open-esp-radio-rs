@@ -131,9 +131,9 @@ reason = "live state: baseband watchdog status"
 excluded = true
 reason = "live state: varies between production boots with the running AGC"
 
-[registers."PHY_COLD_DEADLINE_ORACLE.DEADLINE_COUNTER_OPAQUE"]
+[registers."WIFI_MAC_LOCAL_TIME.COUNTER"]
 excluded = true
-reason = "live state: a free-running deadline counter"
+reason = "live state: the free-running MAC local-time counter"
 
 [registers."LP_TSENS.CTRL"]
 excluded = true

@@ -253,7 +253,7 @@ pub use ownership::{
     BluetoothControllerPartition, BluetoothInterruptRegisters, BluetoothInterruptSetup,
     BluetoothTaskRegisters, CoexistencePartition, Ieee802154InterruptRegisters,
     Ieee802154InterruptSetup, Ieee802154Partition, Ieee802154TaskRegisters, MacInterruptEvents,
-    MacInterruptObservation, MacInterruptSnapshot, MacPowerInterruptObservation,
+    MacInterruptObservation, MacInterruptSnapshot, MacLocalTime, MacPowerInterruptObservation,
     MacPowerInterruptSnapshot, RadioPartitions, RadioPhyRegisters, SharedRadioPartition,
     SharedRadioParts, SharedRadioRegisters, WifiMacPartition, WifiRadioRegisters,
 };

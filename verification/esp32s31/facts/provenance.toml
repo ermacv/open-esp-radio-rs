@@ -4009,6 +4009,12 @@ code = "7977f505f00db6803d3e06ecaffc35542ed612400dac6940447595e1aafd5d92"
 [[function]]
 artifact = "libpp"
 member = "lmac.o"
+symbol = "lmacAdjustTimestamp"
+code = "16da0bfb0e2577cd82545b420226d25cb9e06d035f86dd42a90eb450447734fd"
+
+[[function]]
+artifact = "libpp"
+member = "lmac.o"
 symbol = "lmacEndFrameExchangeSequence"
 code = "8972f91be0d3ae2a9e5a73326cb933392b938a344579bd748c3c2f55d532b17d"
 
@@ -4233,6 +4239,12 @@ code = "5adb9aa1f970158dfcf5fd8651ada417adbf8b89972d5e90034d25a736e8e796"
 [[function]]
 artifact = "libpp"
 member = "pm_coex.o"
+symbol = "pm_coex_recalculate_wifi_time_slice"
+code = "ca9ea86bd484a70e3510dfb32d0b26b3033f6ce108293f10d67ea2585e615851"
+
+[[function]]
+artifact = "libpp"
+member = "pm_coex.o"
 symbol = "pm_coex_reconnect_policy"
 code = "d8104bf7a06cb718a640483a606199e53bb81c4dd6a9bd6a200fcca2049f5c98"
 
@@ -4250,6 +4262,12 @@ code = "691a63dcd367cda33f4f8541075dda8bd69a481effcfa611d3b86a5f7fd705eb"
 
 [[function]]
 artifact = "libpp"
+member = "pm_coex.o"
+symbol = "pm_get_null_max_tx_time"
+code = "d9bd7507f8e30b8f20237d2202519e790fe4b7b479621a68f70451b7c4bc1e99"
+
+[[function]]
+artifact = "libpp"
 member = "pm_twt.o"
 symbol = "pm_on_isr_twt_wake"
 code = "fec0d70fce79f25808a9cce596a9aa752844fc4cc71a7c623da7bde4a557cd6f"
@@ -4259,6 +4277,12 @@ artifact = "libpp"
 member = "pm_twt.o"
 symbol = "pm_twt_set_target_tsf"
 code = "25be7a296146fdd57258729a7220926f9e0b1957934cbc6ec5f6fc0e70aa25e4"
+
+[[function]]
+artifact = "libpp"
+member = "pm_twt.o"
+symbol = "pm_twt_set_target_wdev_time"
+code = "4f3fc60e54e4bcd4453b337712ae101024f36b694c337464695726a2e764a81b"
 
 [[function]]
 artifact = "libpp"
@@ -5133,6 +5157,12 @@ member = ""
 symbol = "is_use_muedca"
 code = "a5e2fbee1e9bd8a351df7d73afe0db39a9205027f61572cf244325b72ccda548"
 decisions = ["coverage.toml"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "lmacAdjustTimestamp"
+code = "6afeb50dd4243339ac89ba14cead06c6deb9fe8db36a7efceaa0e2847012e4a0"
 
 [[function]]
 artifact = "rom"
@@ -6306,6 +6336,18 @@ code = "f1acb79b7a0ce22a05069e9ae7e9dd192b8e35f95c764cedffcfc769ad2f4d1d"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "pm_coex_recalculate_wifi_time_slice"
+code = "4b2b25e22cf4a274ef130fa79dc0ffbd77a85f2a87373e7ef487e65d1562e9c4"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "pm_get_null_max_tx_time"
+code = "95ca78a9ef67b364e787752a5485db499e2b1b101d6e31f9786b7267aed6991e"
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "pm_on_isr_twt_wake"
 code = "2cd1163707f162174df9581af932f647e3f66033fc92b162980b94ccf2fac6c8"
 
@@ -6320,6 +6362,12 @@ artifact = "rom"
 member = ""
 symbol = "pm_twt_set_target_tsf"
 code = "ea31a60204d92f4fe1b99bfad5390f1cc5d85686bc672f11468ab2bd31192d2a"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "pm_twt_set_target_wdev_time"
+code = "b57aa49a947c852d42ceee3f05626fcbd479c78eba635ee66194c22d58cef4b7"
 
 [[function]]
 artifact = "rom"

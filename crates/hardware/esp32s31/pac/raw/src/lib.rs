@@ -12661,51 +12661,50 @@ pub mod phy_rx_dco_oracle {
         }
     }
 }
-#[doc = "Free-running word sampled by the complete rev0 ROM SDM-stability deadline. The instruction body proves its address and unsigned wraparound consumer, but not its hardware clock source."]
-pub type PhyColdDeadlineOracle =
-    crate::Periph<phy_cold_deadline_oracle::RegisterBlock, 0x2010_d800>;
-impl core::fmt::Debug for PhyColdDeadlineOracle {
+#[doc = "Free-running Wi-Fi MAC local-time counter, read-only and without read side effects. Complete lmacAdjustTimestamp subtracts the receive timestamp a received frame carries from this word as the frame's age and, while the station slept, rewrites that timestamp as this word minus a TU-scaled sleep interval; pm_twt_set_target_wdev_time, pm_get_null_max_tx_time and pm_coex_recalculate_wifi_time_slice read it as the MAC's current time. The PHY SDM deadline samples the same word. Its unit and rate against the system timer are not established."]
+pub type WifiMacLocalTime = crate::Periph<wifi_mac_local_time::RegisterBlock, 0x2010_d800>;
+impl core::fmt::Debug for WifiMacLocalTime {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("PhyColdDeadlineOracle").finish()
+        f.debug_struct("WifiMacLocalTime").finish()
     }
 }
-#[doc = "Free-running word sampled by the complete rev0 ROM SDM-stability deadline. The instruction body proves its address and unsigned wraparound consumer, but not its hardware clock source."]
-pub mod phy_cold_deadline_oracle {
+#[doc = "Free-running Wi-Fi MAC local-time counter, read-only and without read side effects. Complete lmacAdjustTimestamp subtracts the receive timestamp a received frame carries from this word as the frame's age and, while the station slept, rewrites that timestamp as this word minus a TU-scaled sleep interval; pm_twt_set_target_wdev_time, pm_get_null_max_tx_time and pm_coex_recalculate_wifi_time_slice read it as the MAC's current time. The PHY SDM deadline samples the same word. Its unit and rate against the system timer are not established."]
+pub mod wifi_mac_local_time {
     #[repr(C)]
     #[doc = "Register block"]
     pub struct RegisterBlock {
-        deadline_counter_opaque: DeadlineCounterOpaque,
+        counter: Counter,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - Opaque: meaning not established. Complete phy_wait_i2c_sdm_stable samples this full word before and after each independently completed PHY-I2C read."]
+        #[doc = "0x00 - Project-assigned name. The MAC local-time counter. Complete phy_wait_i2c_sdm_stable samples it before and after each independently completed PHY-I2C read."]
         #[inline(always)]
-        pub const fn deadline_counter_opaque(&self) -> &DeadlineCounterOpaque {
-            &self.deadline_counter_opaque
+        pub const fn counter(&self) -> &Counter {
+            &self.counter
         }
     }
-    #[doc = "DEADLINE_COUNTER_OPAQUE (r) register accessor: Opaque: meaning not established. Complete phy_wait_i2c_sdm_stable samples this full word before and after each independently completed PHY-I2C read.\n\nYou can [`read`](crate::Reg::read) this register and get [`deadline_counter_opaque::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@deadline_counter_opaque`] module"]
-    #[doc(alias = "DEADLINE_COUNTER_OPAQUE")]
-    pub type DeadlineCounterOpaque = crate::Reg<deadline_counter_opaque::DeadlineCounterOpaqueSpec>;
-    #[doc = "Opaque: meaning not established. Complete phy_wait_i2c_sdm_stable samples this full word before and after each independently completed PHY-I2C read."]
-    pub mod deadline_counter_opaque {
-        #[doc = "Register `DEADLINE_COUNTER_OPAQUE` reader"]
-        pub type R = crate::R<DeadlineCounterOpaqueSpec>;
-        #[doc = "Field `VALUE` reader - Project-assigned name. Full-width wrapping deadline value."]
+    #[doc = "COUNTER (r) register accessor: Project-assigned name. The MAC local-time counter. Complete phy_wait_i2c_sdm_stable samples it before and after each independently completed PHY-I2C read.\n\nYou can [`read`](crate::Reg::read) this register and get [`counter::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@counter`] module"]
+    #[doc(alias = "COUNTER")]
+    pub type Counter = crate::Reg<counter::CounterSpec>;
+    #[doc = "Project-assigned name. The MAC local-time counter. Complete phy_wait_i2c_sdm_stable samples it before and after each independently completed PHY-I2C read."]
+    pub mod counter {
+        #[doc = "Register `COUNTER` reader"]
+        pub type R = crate::R<CounterSpec>;
+        #[doc = "Field `VALUE` reader - Project-assigned name. Full-width wrapping counter value; its unit is not established."]
         pub type ValueR = crate::FieldReader<u32>;
         impl R {
-            #[doc = "Bits 0:31 - Project-assigned name. Full-width wrapping deadline value."]
+            #[doc = "Bits 0:31 - Project-assigned name. Full-width wrapping counter value; its unit is not established."]
             #[inline(always)]
             pub fn value(&self) -> ValueR {
                 ValueR::new(self.bits)
             }
         }
-        #[doc = "Opaque: meaning not established. Complete phy_wait_i2c_sdm_stable samples this full word before and after each independently completed PHY-I2C read.\n\nYou can [`read`](crate::Reg::read) this register and get [`deadline_counter_opaque::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct DeadlineCounterOpaqueSpec;
-        impl crate::RegisterSpec for DeadlineCounterOpaqueSpec {
+        #[doc = "Project-assigned name. The MAC local-time counter. Complete phy_wait_i2c_sdm_stable samples it before and after each independently completed PHY-I2C read.\n\nYou can [`read`](crate::Reg::read) this register and get [`counter::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct CounterSpec;
+        impl crate::RegisterSpec for CounterSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`deadline_counter_opaque::R`](R) reader structure"]
-        impl crate::Readable for DeadlineCounterOpaqueSpec {}
+        #[doc = "`read()` method returns [`counter::R`](R) reader structure"]
+        impl crate::Readable for CounterSpec {}
     }
 }
 #[doc = "OPAQUE PHY clock-gate registers recovered from complete no-call ROM/blob leaves."]
@@ -58620,8 +58619,8 @@ pub struct Peripherals {
     pub phy_iq_estimator_oracle: PhyIqEstimatorOracle,
     #[doc = "PHY_RX_DCO_ORACLE"]
     pub phy_rx_dco_oracle: PhyRxDcoOracle,
-    #[doc = "PHY_COLD_DEADLINE_ORACLE"]
-    pub phy_cold_deadline_oracle: PhyColdDeadlineOracle,
+    #[doc = "WIFI_MAC_LOCAL_TIME"]
+    pub wifi_mac_local_time: WifiMacLocalTime,
     #[doc = "PHY_CLOCK_ORACLE"]
     pub phy_clock_oracle: PhyClockOracle,
     #[doc = "PMU_RADIO"]
@@ -58845,7 +58844,7 @@ impl Peripherals {
             phy_baseband_config_oracle: unsafe { PhyBasebandConfigOracle::steal() },
             phy_iq_estimator_oracle: unsafe { PhyIqEstimatorOracle::steal() },
             phy_rx_dco_oracle: unsafe { PhyRxDcoOracle::steal() },
-            phy_cold_deadline_oracle: unsafe { PhyColdDeadlineOracle::steal() },
+            wifi_mac_local_time: unsafe { WifiMacLocalTime::steal() },
             phy_clock_oracle: unsafe { PhyClockOracle::steal() },
             pmu_radio: unsafe { PmuRadio::steal() },
             hp_sys_clkrst_radio: unsafe { HpSysClkrstRadio::steal() },
@@ -59522,6 +59521,11 @@ pub mod peripheral_ownership {
         pub wifi_mac_power_interrupt: crate::WifiMacPowerInterrupt,
     }
 
+    /// The free-running Wi-Fi MAC local-time counter. Reading it has no side effect and no partition writes it; the restricted PAC consumes this owner once and issues a copyable read-only capability that the radio PHY and the Wi-Fi MAC both hold.
+    pub struct MacLocalTimePeripherals {
+        pub wifi_mac_local_time: crate::WifiMacLocalTime,
+    }
+
     /// Role-neutral RF and PHY register views serialized by the shared radio lifecycle.
     pub struct RadioPhyPeripherals {
         pub hp_sys_clkrst_radio: crate::HpSysClkrstRadio,
@@ -59534,7 +59538,6 @@ pub mod peripheral_ownership {
         pub phy_brx_recovered_gaps: crate::PhyBrxRecoveredGaps,
         pub phy_btagc_recovered: crate::PhyBtagcRecovered,
         pub phy_clock_oracle: crate::PhyClockOracle,
-        pub phy_cold_deadline_oracle: crate::PhyColdDeadlineOracle,
         pub phy_fectrl_recovered: crate::PhyFectrlRecovered,
         pub phy_fedata_recovered: crate::PhyFedataRecovered,
         pub phy_fedata_wifi_recovered: crate::PhyFedataWifiRecovered,
@@ -59616,6 +59619,8 @@ pub mod peripheral_ownership {
         pub wifi_mac: WifiMacPeripherals,
         /// Wi-Fi interrupt banks transferred from cold setup to the hard interrupt handlers.
         pub wifi_interrupts: WifiInterruptPeripherals,
+        /// The free-running Wi-Fi MAC local-time counter. Reading it has no side effect and no partition writes it; the restricted PAC consumes this owner once and issues a copyable read-only capability that the radio PHY and the Wi-Fi MAC both hold.
+        pub mac_local_time: MacLocalTimePeripherals,
         /// Role-neutral RF and PHY register views serialized by the shared radio lifecycle.
         pub radio_phy: RadioPhyPeripherals,
         /// Shared coexistence arbitration register views owned by the radio arbitration service rather than any protocol role; per-protocol priority configuration belongs to that protocol's partition.
@@ -59657,7 +59662,7 @@ pub mod peripheral_ownership {
             phy_baseband_config_oracle,
             phy_iq_estimator_oracle,
             phy_rx_dco_oracle,
-            phy_cold_deadline_oracle,
+            wifi_mac_local_time,
             phy_clock_oracle,
             pmu_radio,
             hp_sys_clkrst_radio,
@@ -59810,6 +59815,9 @@ pub mod peripheral_ownership {
                 wifi_mac_interrupt,
                 wifi_mac_power_interrupt,
             },
+            mac_local_time: MacLocalTimePeripherals {
+                wifi_mac_local_time,
+            },
             radio_phy: RadioPhyPeripherals {
                 hp_sys_clkrst_radio,
                 pmu_radio,
@@ -59821,7 +59829,6 @@ pub mod peripheral_ownership {
                 phy_brx_recovered_gaps,
                 phy_btagc_recovered,
                 phy_clock_oracle,
-                phy_cold_deadline_oracle,
                 phy_fectrl_recovered,
                 phy_fedata_recovered,
                 phy_fedata_wifi_recovered,
@@ -60435,10 +60442,10 @@ pub mod field_read {
             .bits()
     }
 
-    /// Read `PHY_COLD_DEADLINE_ORACLE`.`DEADLINE_COUNTER_OPAQUE`.`VALUE` without exposing its register block.
+    /// Read `WIFI_MAC_LOCAL_TIME`.`COUNTER`.`VALUE` without exposing its register block.
     #[inline]
-    pub fn sample_phy_sdm_deadline_counter(registers: &crate::PhyColdDeadlineOracle) -> u32 {
-        registers.deadline_counter_opaque().read().value().bits()
+    pub fn read_mac_local_time(registers: &crate::WifiMacLocalTime) -> u32 {
+        registers.counter().read().value().bits()
     }
 
     /// Read `PMU_RADIO`.`HP_ACTIVE_ICG_MODEM`.`HP_ACTIVE_DIG_ICG_MODEM_CODE` without exposing its register block.
@@ -62727,7 +62734,7 @@ pub mod register_image_write {
 pub mod partition_image_read {
 
     /// Registers of `RadioPhyPeripherals` that [`radio_phy_register_image`] observes.
-    pub const RADIO_PHY_REGISTER_IMAGE_LEN: usize = 210;
+    pub const RADIO_PHY_REGISTER_IMAGE_LEN: usize = 209;
 
     /// Read register `index` of the `RadioPhyPeripherals` image; `None` past its end.
     pub fn radio_phy_register_image(
@@ -63515,56 +63522,51 @@ pub mod partition_image_read {
             181 => registers.modem_syscon_radio.clk_conf1().read().bits(),
             182 => registers.modem_syscon_radio.wifi_bb_cfg().read().bits(),
             183 => registers
-                .phy_cold_deadline_oracle
-                .deadline_counter_opaque()
-                .read()
-                .bits(),
-            184 => registers
                 .modem_lpcon_shared_clock
                 .lp_timer_conf()
                 .read()
                 .bits(),
-            185 => registers
+            184 => registers
                 .modem_lpcon_shared_clock
                 .coex_lp_clk_conf()
                 .read()
                 .bits(),
-            186 => registers
+            185 => registers
                 .modem_lpcon_shared_clock
                 .wifi_lp_clk_conf()
                 .read()
                 .bits(),
-            187 => registers
+            186 => registers
                 .modem_lpcon_shared_clock
                 .modem_32k_clk_conf()
                 .read()
                 .bits(),
-            188 => registers
+            187 => registers
                 .modem_lpcon_shared_clock
                 .clk_conf_power_st()
                 .read()
                 .bits(),
-            189 => registers.modem_lpcon_phy_tick.tick_conf().read().bits(),
-            190 => registers.i2c_ana_mst.i2c0_ctrl().read().bits(),
-            191 => registers.i2c_ana_mst.i2c1_ctrl().read().bits(),
-            192 => registers.i2c_ana_mst.ana_conf0().read().bits(),
-            193 => registers.i2c_ana_mst.ana_conf1().read().bits(),
-            194 => registers.i2c_ana_mst.ana_conf2().read().bits(),
-            195 => registers.i2c_ana_mst.i2c0_ctrl1().read().bits(),
-            196 => registers.i2c_ana_mst.i2c1_ctrl1().read().bits(),
-            197 => registers.i2c_ana_mst.hw_i2c_ctrl().read().bits(),
-            198 => registers.hp_sys_clkrst_radio.modem_ctrl0().read().bits(),
-            199 => registers.hp_sys_clkrst_radio.modem_conf().read().bits(),
-            200 => registers.lp_aon_clkrst.root_clk_conf().read().bits(),
-            201 => registers.lp_aon_clkrst.rtc_sar2_pwdet_cct().read().bits(),
-            202 => registers.pmu_radio.hp_active_icg_modem().read().bits(),
-            203 => registers.pmu_radio.hp_active_hp_ck_power().read().bits(),
-            204 => registers.pmu_radio.imm_hp_ck_power_0().read().bits(),
-            205 => registers.pmu_radio.rf_pwc().read().bits(),
-            206 => registers.pmu_radio.ana_peri_pwr_ctrl().read().bits(),
-            207 => registers.lp_periclkrst.tsens_ctrl().read().bits(),
-            208 => registers.lp_tsens.ctrl().read().bits(),
-            209 => registers.lp_tsens.clk_conf().read().bits(),
+            188 => registers.modem_lpcon_phy_tick.tick_conf().read().bits(),
+            189 => registers.i2c_ana_mst.i2c0_ctrl().read().bits(),
+            190 => registers.i2c_ana_mst.i2c1_ctrl().read().bits(),
+            191 => registers.i2c_ana_mst.ana_conf0().read().bits(),
+            192 => registers.i2c_ana_mst.ana_conf1().read().bits(),
+            193 => registers.i2c_ana_mst.ana_conf2().read().bits(),
+            194 => registers.i2c_ana_mst.i2c0_ctrl1().read().bits(),
+            195 => registers.i2c_ana_mst.i2c1_ctrl1().read().bits(),
+            196 => registers.i2c_ana_mst.hw_i2c_ctrl().read().bits(),
+            197 => registers.hp_sys_clkrst_radio.modem_ctrl0().read().bits(),
+            198 => registers.hp_sys_clkrst_radio.modem_conf().read().bits(),
+            199 => registers.lp_aon_clkrst.root_clk_conf().read().bits(),
+            200 => registers.lp_aon_clkrst.rtc_sar2_pwdet_cct().read().bits(),
+            201 => registers.pmu_radio.hp_active_icg_modem().read().bits(),
+            202 => registers.pmu_radio.hp_active_hp_ck_power().read().bits(),
+            203 => registers.pmu_radio.imm_hp_ck_power_0().read().bits(),
+            204 => registers.pmu_radio.rf_pwc().read().bits(),
+            205 => registers.pmu_radio.ana_peri_pwr_ctrl().read().bits(),
+            206 => registers.lp_periclkrst.tsens_ctrl().read().bits(),
+            207 => registers.lp_tsens.ctrl().read().bits(),
+            208 => registers.lp_tsens.clk_conf().read().bits(),
             _ => return None,
         })
     }

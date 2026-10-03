@@ -100,6 +100,15 @@ oer_esp32s31_platform_runtime::interrupt_table! {
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     /// The Wi-Fi power interrupt.
     wifi_power: WifiPower = MODEM_WIFI_PWR => oer_esp32s31_ieee80211_system::power_interrupt, Priority1, ProCpu;
+    #[cfg(any(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
+    /// The Bluetooth Controller's primary interrupt.
+    bluetooth_primary: BluetoothPrimary = MODEM_BT_MAC => oer_esp32s31_radio_esp_hal::bluetooth_primary_interrupt_handler, Priority3, ProCpu;
+    #[cfg(any(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
+    /// The modem low-power timer, the Controller's deadline source.
+    bluetooth_timer: BluetoothTimer = MODEM_LP_TIMER => oer_esp32s31_radio_esp_hal::bluetooth_modem_lp_timer_interrupt_handler, Priority3, ProCpu;
+    #[cfg(any(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
+    /// The Bluetooth Controller's NRT interrupt.
+    bluetooth_nrt: BluetoothNrt = MODEM_BT_MAC_INT1 => oer_esp32s31_radio_esp_hal::bluetooth_nrt_default_interrupt_handler, Priority3, ProCpu;
     #[cfg(feature = "open-radio-hil")]
     /// Wakes the core-1 Embassy executor.
     app_wake: AppExecutorWake = FROM_CPU_INTR1 => oer_esp32s31_executor_embassy::wake_handler::<1>, Priority1, AppCpu;
@@ -463,6 +472,11 @@ extern "C" fn runtime_main() -> ! {
     bluetooth::start(
         executor,
         interrupts.wake,
+        oer_esp32s31_radio_esp_hal::EspHalBluetoothInterruptRoutes::new(
+            interrupts.bluetooth_primary,
+            interrupts.bluetooth_timer,
+            interrupts.bluetooth_nrt,
+        ),
         oer_esp32s31_radio_esp_hal::EspHalRadioPlatform::new(
             peripherals.MODEM_SYSCON,
             peripherals.MODEM_LPCON,
@@ -538,6 +552,12 @@ extern "C" fn runtime_main() -> ! {
             ),
             #[cfg(feature = "wifi-ble-coex")]
             bluetooth_entropy,
+            #[cfg(feature = "wifi-ble-coex")]
+            bluetooth_interrupts: oer_esp32s31_radio_esp_hal::EspHalBluetoothInterruptRoutes::new(
+                interrupts.bluetooth_primary,
+                interrupts.bluetooth_timer,
+                interrupts.bluetooth_nrt,
+            ),
         };
         let usb = peripherals.USB_DEVICE;
         executor.run(interrupts.wake, |spawner| {

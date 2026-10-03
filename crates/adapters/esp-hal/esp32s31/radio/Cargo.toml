@@ -10,7 +10,7 @@ readme = "README.md"
 
 [features]
 default = []
-esp32s31 = ["dep:esp-hal"]
+esp32s31 = ["dep:esp-hal", "dep:oer-esp32s31-soc-esp-hal", "dep:oer-interrupt-table"]
 
 [dependencies]
 critical-section = "1.2.0"
@@ -19,6 +19,8 @@ oer-bluetooth-hci = { path = "../../../../protocols/bluetooth/hci" }
 oer-esp32s31-bluetooth = { path = "../../../../hardware/esp32s31/driver/bluetooth" }
 oer-esp32s31-hal = { path = "../../../../hardware/esp32s31/hal" }
 oer-esp32s31-phy = { path = "../../../../hardware/esp32s31/phy" }
+oer-esp32s31-soc-esp-hal = { path = "../soc", features = ["esp32s31"], optional = true }
+oer-interrupt-table = { path = "../../../../runtime/interrupt-table", optional = true }
 
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }

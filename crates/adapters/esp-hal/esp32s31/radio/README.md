@@ -33,15 +33,20 @@ The pinned ESP32-S31 PAC names all three Controller sources as `MODEM_BT_MAC`,
 for the reviewed source-124/source-127/source-133 policies and contains one
 same-core, level-three bind/disable set. `bind_routes` borrows the
 stable publication and returns one affine
-`BoundEspHalBluetoothInterruptEpoch`. The adapter owns the exact three ESP-HAL
-handlers; integration publishes one full-controller dispatcher that receives
+`BoundEspHalBluetoothInterruptEpoch`. The adapter owns the exact three
+handlers, public SRAM fns each Bluetooth image's interrupt table names at
+level three on core 0; `EspHalBluetoothInterruptRoutes`, made from the three
+sources' tokens (another source's token does not compile), reaches the
+adapter once per boot through `BluetoothParked::new`, and every epoch enables
+and disables the three routes. Integration publishes one full-controller
+dispatcher that receives
 a fixed `Primary`, `ModemLpTimer`, or `NrtDefault` role. The roles therefore
 cannot be exchanged by passing handlers in the wrong order. Full dispatcher
 state must be stable before bind. The callback/live marker is installed before
 the first route is enabled, so even an immediately pending interrupt observes
 the complete dispatcher. Successful same-core disable closes all three routes
 and clears the dispatcher while the epoch ends its borrow; dropping the epoch
-is fail-stop and cannot globally remint another live route. The three private
+is fail-stop and cannot globally remint another live route. The three
 bound-service entries first check the live epoch marker and otherwise perform
 no register access. They run only the finite primary classifier, opaque
 default NRT acknowledgement or timer register disposition. The chip Controller

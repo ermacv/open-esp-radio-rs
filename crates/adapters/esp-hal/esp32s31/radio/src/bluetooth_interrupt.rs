@@ -22,12 +22,10 @@ use crate::bluetooth_route_policy::{
 };
 
 use critical_section::Mutex;
+use oer_esp32s31_soc_esp_hal::interrupt_table::{self, Route};
+use oer_interrupt_table::Entry;
 
-use esp_hal::{
-    interrupt::{self, InterruptHandler, Priority},
-    peripherals::Interrupt,
-    system::Cpu,
-};
+use esp_hal::{interrupt::Priority, peripherals::Interrupt, system::Cpu};
 
 use oer_esp32s31_bluetooth::{
     interrupt::{
@@ -51,7 +49,60 @@ use oer_esp32s31_hal::bluetooth::{
 pub(crate) const PRIMARY_INTERRUPT: Interrupt = Interrupt::MODEM_BT_MAC;
 pub(crate) const MODEM_LP_TIMER_INTERRUPT: Interrupt = Interrupt::MODEM_LP_TIMER;
 pub(crate) const NRT_INTERRUPT: Interrupt = Interrupt::MODEM_BT_MAC_INT1;
-const ROUTE_PRIORITY: Priority = Priority::Priority3;
+
+/// The routes of the Controller's three interrupt sources in the image's
+/// interrupt table, which the adapter keeps for every epoch of the boot.
+static ROUTES: Mutex<RefCell<Option<EspHalBluetoothInterruptRoutes>>> =
+    Mutex::new(RefCell::new(None));
+
+/// The routes of `MODEM_BT_MAC`, `MODEM_LP_TIMER` and `MODEM_BT_MAC_INT1`,
+/// from their tokens in the image's interrupt table, whose entries name
+/// `bluetooth_primary_interrupt_handler`,
+/// `bluetooth_modem_lp_timer_interrupt_handler` and
+/// `bluetooth_nrt_default_interrupt_handler`.
+pub struct EspHalBluetoothInterruptRoutes {
+    primary: Route,
+    modem_lp_timer: Route,
+    nrt: Route,
+}
+
+impl EspHalBluetoothInterruptRoutes {
+    /// Another source's token does not compile.
+    pub fn new<P, T, N>(primary: P, modem_lp_timer: T, nrt: N) -> Self
+    where
+        P: Entry<Source = Interrupt, Level = Priority, Core = Cpu>,
+        T: Entry<Source = Interrupt, Level = Priority, Core = Cpu>,
+        N: Entry<Source = Interrupt, Level = Priority, Core = Cpu>,
+    {
+        const {
+            assert!(
+                P::SOURCE as u16 == PRIMARY_INTERRUPT as u16,
+                "the primary token is not MODEM_BT_MAC's"
+            );
+            assert!(
+                T::SOURCE as u16 == MODEM_LP_TIMER_INTERRUPT as u16,
+                "the timer token is not MODEM_LP_TIMER's"
+            );
+            assert!(
+                N::SOURCE as u16 == NRT_INTERRUPT as u16,
+                "the NRT token is not MODEM_BT_MAC_INT1's"
+            );
+        };
+        Self {
+            primary: Route::new(primary),
+            modem_lp_timer: Route::new(modem_lp_timer),
+            nrt: Route::new(nrt),
+        }
+    }
+
+    fn route(&self, source: EspHalBluetoothInterruptSource) -> &Route {
+        match source {
+            EspHalBluetoothInterruptSource::Primary => &self.primary,
+            EspHalBluetoothInterruptSource::ModemLpTimer => &self.modem_lp_timer,
+            EspHalBluetoothInterruptSource::NrtDefault => &self.nrt,
+        }
+    }
+}
 
 static INTERRUPT_REGISTERS: Mutex<RefCell<Option<InterruptRegistersOwner>>> =
     Mutex::new(RefCell::new(None));
@@ -100,7 +151,7 @@ struct BoundRouteDispatch {
     live: bool,
 }
 
-fn dispatch_bound_source(source: EspHalBluetoothInterruptSource) {
+pub(crate) fn dispatch_bound_source(source: EspHalBluetoothInterruptSource) {
     let bound = critical_section::with(|critical_section| {
         BOUND_ROUTE_DISPATCH
             .borrow_ref(critical_section)
@@ -118,30 +169,14 @@ fn dispatch_bound_source(source: EspHalBluetoothInterruptSource) {
                 .as_ref()
                 .is_some_and(|route| route.live && route.core == core)
             {
-                interrupt::disable(core, source.interrupt());
+                let _ = core;
+                if let Some(routes) = ROUTES.borrow_ref(critical_section).as_ref() {
+                    interrupt_table::disable_route(routes.route(source));
+                }
             }
         });
     }
 }
-
-extern "C" fn bluetooth_primary_interrupt_handler() {
-    dispatch_bound_source(EspHalBluetoothInterruptSource::Primary);
-}
-
-extern "C" fn bluetooth_modem_lp_timer_interrupt_handler() {
-    dispatch_bound_source(EspHalBluetoothInterruptSource::ModemLpTimer);
-}
-
-extern "C" fn bluetooth_nrt_default_interrupt_handler() {
-    dispatch_bound_source(EspHalBluetoothInterruptSource::NrtDefault);
-}
-
-const PRIMARY_HANDLER: InterruptHandler =
-    InterruptHandler::new(bluetooth_primary_interrupt_handler, ROUTE_PRIORITY);
-const MODEM_LP_TIMER_HANDLER: InterruptHandler =
-    InterruptHandler::new(bluetooth_modem_lp_timer_interrupt_handler, ROUTE_PRIORITY);
-const NRT_HANDLER: InterruptHandler =
-    InterruptHandler::new(bluetooth_nrt_default_interrupt_handler, ROUTE_PRIORITY);
 
 type StoredBluetoothModemLpTimerOwner = crate::bluetooth_route_policy::StoredModemTimerOwner<
     ModemLpTimerInterruptReadyOwner,
@@ -159,6 +194,25 @@ impl EspHalBluetoothInterruptStorage {
     /// Construct an unclaimed reference to the process-wide storage boundary.
     pub const fn new() -> Self {
         Self
+    }
+
+    /// Keep the Controller's interrupt routes for every epoch of this boot.
+    ///
+    /// # Errors
+    ///
+    /// The boot installed its routes before; `routes` returns unchanged.
+    pub fn install_routes(
+        &self,
+        routes: EspHalBluetoothInterruptRoutes,
+    ) -> Result<(), EspHalBluetoothInterruptRoutes> {
+        critical_section::with(|critical_section| {
+            let mut slot = ROUTES.borrow_ref_mut(critical_section);
+            if slot.is_some() {
+                return Err(routes);
+            }
+            *slot = Some(routes);
+            Ok(())
+        })
     }
 }
 
@@ -687,14 +741,25 @@ impl PublishedEspHalBluetoothInterruptOwners {
                 INTERRUPT_REGISTERS.borrow_ref(critical_section).is_some(),
                 MODEM_LP_TIMER.borrow_ref(critical_section).is_some(),
             )?;
+            let routes = ROUTES.borrow_ref(critical_section);
+            let routes = routes
+                .as_ref()
+                .expect("the Controller's interrupt routes are installed before its first bind");
             *live_route = Some(BoundRouteDispatch {
                 core,
                 dispatch,
                 live: true,
             });
-            interrupt::bind_handler(PRIMARY_INTERRUPT, PRIMARY_HANDLER);
-            interrupt::bind_handler(MODEM_LP_TIMER_INTERRUPT, MODEM_LP_TIMER_HANDLER);
-            interrupt::bind_handler(NRT_INTERRUPT, NRT_HANDLER);
+            let enabled = [&routes.primary, &routes.modem_lp_timer, &routes.nrt]
+                .into_iter()
+                .try_for_each(interrupt_table::enable_route);
+            if enabled.is_err() {
+                for route in [&routes.modem_lp_timer, &routes.nrt, &routes.primary] {
+                    interrupt_table::disable_route(route);
+                }
+                *live_route = None;
+                return Err(EspHalBluetoothInterruptRouteError::WrongCore);
+            }
             Ok::<(), EspHalBluetoothInterruptRouteError>(())
         })?;
         Ok(BoundEspHalBluetoothInterruptEpoch {
@@ -750,9 +815,13 @@ impl<'published> BoundEspHalBluetoothInterruptEpoch<'published> {
                 .as_mut()
                 .expect("a live route state retains its dispatcher")
                 .live = false;
-            interrupt::disable(self.core, MODEM_LP_TIMER_INTERRUPT);
-            interrupt::disable(self.core, NRT_INTERRUPT);
-            interrupt::disable(self.core, PRIMARY_INTERRUPT);
+            let routes = ROUTES.borrow_ref(critical_section);
+            let routes = routes
+                .as_ref()
+                .expect("a bound epoch's routes stay installed");
+            interrupt_table::disable_route(&routes.modem_lp_timer);
+            interrupt_table::disable_route(&routes.nrt);
+            interrupt_table::disable_route(&routes.primary);
             *live_route = None;
             Ok::<(), EspHalBluetoothInterruptRouteError>(())
         });

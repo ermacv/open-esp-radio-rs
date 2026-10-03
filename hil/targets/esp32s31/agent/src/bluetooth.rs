@@ -62,6 +62,7 @@ static ENTROPY: StaticCell<BluetoothEntropy<'static>> = StaticCell::new();
 pub(super) fn start(
     executor: &'static mut super::Executor<0>,
     wake: crate::ExecutorWake,
+    interrupts: oer_esp32s31_radio_esp_hal::EspHalBluetoothInterruptRoutes,
     platform: EspHalRadioPlatform,
     usb: esp_hal::peripherals::USB_DEVICE<'static>,
     rng: esp_hal::peripherals::RNG<'static>,
@@ -84,6 +85,7 @@ pub(super) fn start(
                 spawner,
                 radio,
                 partitions,
+                interrupts,
                 public_address,
                 entropy,
                 usb,
@@ -104,6 +106,7 @@ async fn main(
     spawner: embassy_executor::Spawner,
     radio: &'static Radio,
     partitions: ConcurrentPartitions,
+    interrupts: oer_esp32s31_radio_esp_hal::EspHalBluetoothInterruptRoutes,
     public_address: oer_bluetooth_hci::BluetoothPublicDeviceAddress,
     entropy: &'static BluetoothEntropy<'static>,
     usb: esp_hal::peripherals::USB_DEVICE<'static>,
@@ -114,7 +117,7 @@ async fn main(
         bluetooth,
         ieee802154: _ieee802154,
     } = partitions;
-    let Ok(parked) = BluetoothParked::new(bluetooth) else {
+    let Ok(parked) = BluetoothParked::new(bluetooth, interrupts) else {
         super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-memory\r\n");
     };
     let system = match oer_esp32s31_bluetooth_system::start(radio, parked, public_address).await {

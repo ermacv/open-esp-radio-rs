@@ -2027,6 +2027,8 @@ dependencies = [
  "oer-esp32s31-bluetooth",
  "oer-esp32s31-hal",
  "oer-esp32s31-phy",
+ "oer-esp32s31-soc-esp-hal",
+ "oer-interrupt-table",
 ]
 
 [[package]]

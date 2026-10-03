@@ -1624,6 +1624,9 @@ pub(crate) struct RadioPlatforms {
     /// source the Wi-Fi client also reads.
     #[cfg(feature = "wifi-ble-coex")]
     pub(crate) bluetooth_entropy: &'static oer_esp32s31_bluetooth_system::BluetoothEntropy<'static>,
+    /// The Bluetooth client's interrupt routes.
+    #[cfg(feature = "wifi-ble-coex")]
+    pub(crate) bluetooth_interrupts: oer_esp32s31_radio_esp_hal::EspHalBluetoothInterruptRoutes,
 }
 
 type SharedRadio = oer_esp32s31_ieee80211_system::SharedRadio;
@@ -1858,6 +1861,8 @@ pub async fn run(
         wifi: wifi_platform,
         #[cfg(feature = "wifi-ble-coex")]
         bluetooth_entropy,
+        #[cfg(feature = "wifi-ble-coex")]
+        bluetooth_interrupts,
     } = platforms;
     // The radio start consumes the platform.
     #[cfg(feature = "wifi-ble-coex")]
@@ -1887,6 +1892,7 @@ pub async fn run(
         spawner,
         radio,
         partitions.bluetooth,
+        bluetooth_interrupts,
         bluetooth_address,
         bluetooth_entropy,
     );

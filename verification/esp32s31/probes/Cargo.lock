@@ -627,6 +627,7 @@ source = "git+https://github.com/ermacv/esp-hal?rev=42b085e245a67e4a845237520f19
 dependencies = [
  "bitfield",
  "bytemuck",
+ "critical-section",
  "delegate",
  "digest 0.10.7",
  "digest 0.11.3",
@@ -650,6 +651,17 @@ dependencies = [
  "esp-riscv-rt",
  "esp-rom-sys",
  "esp-sync",
+ "esp32",
+ "esp32c2",
+ "esp32c3",
+ "esp32c5",
+ "esp32c6",
+ "esp32c61",
+ "esp32h2",
+ "esp32h4",
+ "esp32p4",
+ "esp32s2",
+ "esp32s3",
  "esp32s31",
  "fugit",
  "instability",
@@ -666,6 +678,7 @@ dependencies = [
  "strum",
  "ufmt-write",
  "xtensa-lx",
+ "xtensa-lx-rt",
 ]
 
 [[package]]
@@ -718,6 +731,95 @@ dependencies = [
  "esp-metadata-generated",
  "riscv",
  "xtensa-lx",
+]
+
+[[package]]
+name = "esp32"
+version = "0.42.0"
+source = "git+https://github.com/esp-rs/esp-pacs.git?rev=c29264b#c29264b4753724b272599181c103a7008e8f49c4"
+dependencies = [
+ "vcell",
+]
+
+[[package]]
+name = "esp32c2"
+version = "0.31.0"
+source = "git+https://github.com/esp-rs/esp-pacs.git?rev=c29264b#c29264b4753724b272599181c103a7008e8f49c4"
+dependencies = [
+ "vcell",
+]
+
+[[package]]
+name = "esp32c3"
+version = "0.34.0"
+source = "git+https://github.com/esp-rs/esp-pacs.git?rev=c29264b#c29264b4753724b272599181c103a7008e8f49c4"
+dependencies = [
+ "vcell",
+]
+
+[[package]]
+name = "esp32c5"
+version = "0.4.0"
+source = "git+https://github.com/esp-rs/esp-pacs.git?rev=c29264b#c29264b4753724b272599181c103a7008e8f49c4"
+dependencies = [
+ "vcell",
+]
+
+[[package]]
+name = "esp32c6"
+version = "0.25.0"
+source = "git+https://github.com/esp-rs/esp-pacs.git?rev=c29264b#c29264b4753724b272599181c103a7008e8f49c4"
+dependencies = [
+ "vcell",
+]
+
+[[package]]
+name = "esp32c61"
+version = "0.5.0"
+source = "git+https://github.com/esp-rs/esp-pacs.git?rev=c29264b#c29264b4753724b272599181c103a7008e8f49c4"
+dependencies = [
+ "vcell",
+]
+
+[[package]]
+name = "esp32h2"
+version = "0.21.0"
+source = "git+https://github.com/esp-rs/esp-pacs.git?rev=c29264b#c29264b4753724b272599181c103a7008e8f49c4"
+dependencies = [
+ "vcell",
+]
+
+[[package]]
+name = "esp32h4"
+version = "0.1.0"
+source = "git+https://github.com/esp-rs/esp-pacs.git?rev=c29264b#c29264b4753724b272599181c103a7008e8f49c4"
+dependencies = [
+ "vcell",
+]
+
+[[package]]
+name = "esp32p4"
+version = "0.4.0"
+source = "git+https://github.com/esp-rs/esp-pacs.git?rev=c29264b#c29264b4753724b272599181c103a7008e8f49c4"
+dependencies = [
+ "critical-section",
+ "vcell",
+]
+
+[[package]]
+name = "esp32s2"
+version = "0.33.0"
+source = "git+https://github.com/esp-rs/esp-pacs.git?rev=c29264b#c29264b4753724b272599181c103a7008e8f49c4"
+dependencies = [
+ "vcell",
+]
+
+[[package]]
+name = "esp32s3"
+version = "0.37.0"
+source = "git+https://github.com/esp-rs/esp-pacs.git?rev=c29264b#c29264b4753724b272599181c103a7008e8f49c4"
+dependencies = [
+ "vcell",
 ]
 
 [[package]]
@@ -1274,6 +1376,8 @@ dependencies = [
  "oer-esp32s31-bluetooth",
  "oer-esp32s31-hal",
  "oer-esp32s31-phy",
+ "oer-esp32s31-soc-esp-hal",
+ "oer-interrupt-table",
 ]
 
 [[package]]
@@ -1285,6 +1389,18 @@ dependencies = [
  "oer-esp32s31-hal",
  "oer-esp32s31-phy",
  "oer-time",
+]
+
+[[package]]
+name = "oer-esp32s31-soc-esp-hal"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "critical-section",
+ "esp-hal",
+ "oer-interrupt-table",
+ "oer-memory",
+ "oer-soc-deadline",
 ]
 
 [[package]]
@@ -1484,6 +1600,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-interrupt-table"
+version = "0.1.0"
+
+[[package]]
 name = "oer-memory"
 version = "0.1.0"
 dependencies = [
@@ -1539,6 +1659,10 @@ version = "0.1.0"
 dependencies = [
  "oer-time",
 ]
+
+[[package]]
+name = "oer-soc-deadline"
+version = "0.1.0"
 
 [[package]]
 name = "oer-time"
@@ -2065,6 +2189,26 @@ version = "0.13.0"
 source = "git+https://github.com/ermacv/esp-hal?rev=42b085e245a67e4a845237520f19704cbdb22776#42b085e245a67e4a845237520f19704cbdb22776"
 dependencies = [
  "critical-section",
+]
+
+[[package]]
+name = "xtensa-lx-rt"
+version = "0.23.0"
+source = "git+https://github.com/ermacv/esp-hal?rev=42b085e245a67e4a845237520f19704cbdb22776#42b085e245a67e4a845237520f19704cbdb22776"
+dependencies = [
+ "document-features",
+ "xtensa-lx",
+ "xtensa-lx-rt-proc-macros",
+]
+
+[[package]]
+name = "xtensa-lx-rt-proc-macros"
+version = "0.5.0"
+source = "git+https://github.com/ermacv/esp-hal?rev=42b085e245a67e4a845237520f19704cbdb22776#42b085e245a67e4a845237520f19704cbdb22776"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]

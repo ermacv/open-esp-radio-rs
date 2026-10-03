@@ -57,14 +57,14 @@ pub(super) enum ProductionStationReturnedPhase {
     Disconnected {
         network: RunningWifiNetwork,
         rx: Option<ConnectedRxEpochResources>,
-        control: &'static ControlResources,
+        control: ConnectedControlStatics,
         station: StaAttemptStation,
         registers: RadioOwnerRepublish<'static>,
     },
     Reconnected {
         network: WifiNetworkResources,
         rx: Option<ConnectedRxEpochResources>,
-        control: &'static ControlResources,
+        control: ConnectedControlStatics,
         station: StaAttemptStation,
         registers: RadioOwnerRepublish<'static>,
     },

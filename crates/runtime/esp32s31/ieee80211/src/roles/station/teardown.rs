@@ -70,8 +70,14 @@ impl<H, R> ConnectedStaRxPark<H> for AlreadyParkedRx<R> {
 pub trait ConnectedStaControlTeardown<H, X> {
     type Report;
     type Error;
+    /// What the control's owner gets back once teardown completed: nothing
+    /// for a control held by value, the empty slot for a placed one.
+    type Released;
 
     fn shutdown(&mut self, hardware: &mut H, tx: &mut X) -> Result<Self::Report, Self::Error>;
+
+    /// End the control after a complete teardown.
+    fn release(self) -> Self::Released;
 }
 
 impl<'resources, M, H, X, const CAPACITY: usize> ConnectedStaControlTeardown<H, X>
@@ -83,10 +89,13 @@ where
 {
     type Report = ConnectedControlShutdown;
     type Error = ConnectedControlError;
+    type Released = ();
 
     fn shutdown(&mut self, hardware: &mut H, tx: &mut X) -> Result<Self::Report, Self::Error> {
         ConnectedControl::shutdown(self, hardware, tx)
     }
+
+    fn release(self) -> Self::Released {}
 }
 
 impl<
@@ -112,9 +121,18 @@ where
 {
     type Report = crate::roles::station::esp_now_tx::EspNowConnectedControlShutdown<PEERS>;
     type Error = crate::roles::station::esp_now_tx::EspNowConnectedControlError;
+    type Released = crate::roles::station::control_slot::ReleasedConnectedControl<
+        'resources,
+        M,
+        CONTROL_CAPACITY,
+    >;
 
     fn shutdown(&mut self, hardware: &mut H, tx: &mut X) -> Result<Self::Report, Self::Error> {
         crate::roles::station::esp_now_tx::EspNowConnectedControl::shutdown(self, hardware, tx)
+    }
+
+    fn release(self) -> Self::Released {
+        crate::roles::station::esp_now_tx::EspNowConnectedControl::release(self)
     }
 }
 
@@ -238,13 +256,15 @@ where
 }
 
 /// Complete successful driver frontier after one connected epoch.
-pub struct ConnectedStaTeardownSuccess<H, R, T, A, C> {
+pub struct ConnectedStaTeardownSuccess<H, R, T, A, C, L> {
     pub hardware: H,
     pub parked_rx: R,
     pub tx_resources: T,
     pub sequences: StaTxSequenceCounters,
     pub aggregate: A,
     pub control: C,
+    /// What the control's owner gets back ([`ConnectedStaControlTeardown::release`]).
+    pub released_control: L,
     pub security: ConnectedStaSecurityStopReport,
 }
 
@@ -315,7 +335,14 @@ impl ConnectedStaTeardownPort {
         services: SingleRoleServices<H, R, X, C>,
         group_security: ConnectedStaGroupSecurity,
     ) -> Result<
-        ConnectedStaTeardownSuccess<H, R::Parked, X::Resources, X::Aggregate, C::Report>,
+        ConnectedStaTeardownSuccess<
+            H,
+            R::Parked,
+            X::Resources,
+            X::Aggregate,
+            C::Report,
+            C::Released,
+        >,
         ConnectedStaTeardownFailure<H, R, R::Parked, X, C, C::Error, R::Error>,
     >
     where
@@ -408,7 +435,6 @@ impl ConnectedStaTeardownPort {
                 }
             }
         };
-        drop(control);
         Ok(ConnectedStaTeardownSuccess {
             hardware,
             parked_rx,
@@ -416,6 +442,7 @@ impl ConnectedStaTeardownPort {
             sequences: returned_tx.sequences,
             aggregate: returned_tx.aggregate,
             control: control_observation,
+            released_control: control.release(),
             security,
         })
     }

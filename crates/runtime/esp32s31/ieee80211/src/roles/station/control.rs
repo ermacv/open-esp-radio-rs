@@ -252,18 +252,14 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         self.security.as_ref()
     }
 
-    pub fn with_rx_reorder_commands(
-        mut self,
-        commands: RxReorderCommandSender<'resources, M>,
-    ) -> Self {
+    pub fn set_rx_reorder_commands(&mut self, commands: RxReorderCommandSender<'resources, M>) {
         self.rx_reorder_commands = Some(commands);
-        self
     }
 
-    pub fn with_rx_block_ack_maximum_window(
-        mut self,
+    pub fn set_rx_block_ack_maximum_window(
+        &mut self,
         maximum_window: u16,
-    ) -> Result<Self, oer_esp32s31_ieee80211_mac::rx::ampdu::RxBlockAckSessionsError> {
+    ) -> Result<(), oer_esp32s31_ieee80211_mac::rx::ampdu::RxBlockAckSessionsError> {
         match &mut self.rx_block_ack {
             ConnectedRxBlockAck::Local(sessions) => {
                 *sessions = StaApRxBlockAck::with_maximum_window(maximum_window)?;
@@ -278,7 +274,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
                 }
             }
         }
-        Ok(self)
+        Ok(())
     }
 
     pub fn enable_beacon_loss(&mut self, config: StaBeaconLossConfig) {
@@ -369,12 +365,11 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
             .queue_individual_twt_teardown(hardware, flow_id, now)
     }
 
-    pub fn with_he_trigger_based(
-        mut self,
+    pub fn set_he_trigger_based(
+        &mut self,
         config: Option<oer_esp32s31_ieee80211_mac::tx::HeTriggerBasedTxConfig>,
-    ) -> Self {
-        self.core = self.core.with_he_trigger_based(config);
-        self
+    ) {
+        self.core.set_he_trigger_based(config);
     }
 
     pub fn queue_initial_tx_block_ack(&mut self, attempt_limit: u8) {

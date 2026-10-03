@@ -105,7 +105,14 @@ where
         ConnectedEpochTeardown<
             I,
             N,
-            ConnectedStaTeardownSuccess<H, R::Parked, X::Resources, X::Aggregate, C::Report>,
+            ConnectedStaTeardownSuccess<
+                H,
+                R::Parked,
+                X::Resources,
+                X::Aggregate,
+                C::Report,
+                C::Released,
+            >,
         >,
         ConnectedEpochTeardownFailure<
             I,

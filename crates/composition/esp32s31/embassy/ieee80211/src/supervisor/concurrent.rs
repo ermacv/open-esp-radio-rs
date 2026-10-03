@@ -648,6 +648,10 @@ impl ProductionWifiEpochRunner {
             #[cfg(feature = "diagnostics")]
             diagnostics,
         } = board;
+        let super::station::ConnectedControlStatics {
+            queue: control_resources,
+            slot: control_slot,
+        } = control_resources;
         let (control_publisher, control_receiver) = control_resources.split();
         let station_sink = StaApStationRxSink::new(sta_ap_rx_batch, control_publisher);
         let (reorder_sender, reorder_receiver) = RX_REORDER_COMMANDS.split();
@@ -686,6 +690,7 @@ impl ProductionWifiEpochRunner {
         let mut station_control = ConnectedStaPort::build_control(
             &plan,
             ConnectedStaControlResources {
+                slot: control_slot,
                 receiver: control_receiver,
                 reorder_commands: reorder_sender,
                 rx_block_ack: &super::PRODUCTION_RX_BLOCK_ACK,
@@ -1117,7 +1122,10 @@ impl ProductionWifiEpochRunner {
                 teardown.hardware,
                 ConnectedParkedRx::from_live(teardown.parked_rx),
                 teardown.aggregate,
-                control_resources,
+                super::station::ConnectedControlStatics {
+                    queue: control_resources,
+                    slot: teardown.released_control,
+                },
             );
             let station_security = match station_security_material {
                 StaAttemptSecurityMaterial::Open => StaAttemptSecurity::open(teardown.sequences),

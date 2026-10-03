@@ -111,6 +111,15 @@ implementation.
 The [packet ownership contract](../../../../../docs/wifi-egress.md) defines
 adapter and physical scheduler boundaries. Static dimensions and the one-time
 resource claim belong to this crate; reusable adapters supply storage types.
+
+Multi-kilobyte connected owners live in static storage, so the connected
+epoch's futures and teardown frames move pointers to them, never their bytes:
+the RX protocol runtime, and the connected control, placed for each
+association in a slot in the PSRAM tier
+(`.psram.bss.open_radio_station_connected_control`) and released back to the
+supervisor by teardown. Interim `size_of` guards in `supervisor/station.rs`
+bound the connected faults, exits, teardown failure and the connected
+epoch's future until the static stack bound (#46) checks the frames.
 A library feature does not establish that every application role has been
 qualified.
 

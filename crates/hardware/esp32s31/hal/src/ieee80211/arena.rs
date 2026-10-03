@@ -458,6 +458,14 @@ impl<'arena> PublishedRadioOwner<'arena> {
         RadioAccess { arena: self.arena }
     }
 
+    /// Replace the station TSF in one serialized MAC transaction. Only the
+    /// unique lease writes it, never a copyable [`RadioAccess`] or the
+    /// arena: the station TSF has one writer above the HAL.
+    pub fn set_station_tsf(&mut self, value: u64) -> Result<(), RadioOwnerArenaError> {
+        self.arena.try_wifi_mac_hal()?.set_station_tsf(value);
+        Ok(())
+    }
+
     /// Return the exact PAC owner only while no synchronous register
     /// transaction is borrowed.
     pub fn try_reclaim(self) -> Result<RadioRuntimeOwner, (Self, RadioOwnerArenaError)> {

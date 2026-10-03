@@ -521,7 +521,9 @@ impl crate::station_tsf::StationTsfHardware for CooperativeRadioHardware<'_> {
     }
 
     fn set_station_tsf(&mut self, _: StationTsfWrite, value: u64) {
-        self.wifi_mac_hal().set_station_tsf(value);
+        self.registers.set_station_tsf(value).expect(
+            "a synchronous Wi-Fi MAC transaction must not overlap another MMIO transaction",
+        );
     }
 }
 

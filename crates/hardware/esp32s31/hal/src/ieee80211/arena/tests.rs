@@ -149,3 +149,23 @@ fn stale_access_cannot_mutate_a_reset_required_arena() {
         Err(RadioOwnerArenaError::ResetRequired)
     ));
 }
+
+#[test]
+fn the_unique_lease_writes_the_station_tsf_in_one_serialized_transaction() {
+    let (_shared, owner, _interrupt_setup) = running();
+    let arena = RadioOwnerArena::new();
+    let mut published = arena
+        .publish(owner)
+        .unwrap_or_else(|_| panic!("an empty arena must accept the runtime owner"));
+    let access = published.access();
+    let wifi_mac = access
+        .try_wifi_mac_hal()
+        .unwrap_or_else(|_| panic!("published registers must yield a Wi-Fi MAC capability"));
+    // The write is one serialized transaction: a live one refuses it
+    // before any register access.
+    assert_eq!(
+        published.set_station_tsf(1_000_000),
+        Err(RadioOwnerArenaError::Borrowed)
+    );
+    drop(wifi_mac);
+}

@@ -66,6 +66,9 @@ pub struct Package {
     /// platform, and host or portable packages elsewhere. Other packages
     /// build only for a chip, which CI covers.
     pub host: bool,
+    /// Whether it is a chip or family package, whose code under the chip
+    /// target's `cfg` the host never compiles even when it builds the rest.
+    pub chip: bool,
     /// Patterns of repository files outside the package its tests read.
     pub inputs: Vec<String>,
 }
@@ -106,6 +109,7 @@ impl Tree {
                 workspace: workspace.clone(),
                 host: workspace == "Cargo.toml"
                     || matches!(platform, Ok(Platform::Host | Platform::Portable)),
+                chip: matches!(platform, Ok(Platform::Chip(_) | Platform::Family(_))),
                 inputs,
             });
         }
@@ -460,16 +464,17 @@ pub fn tested<'a>(
         .collect()
 }
 
-/// The packages of `affected` that build only for a chip, which the host
-/// checks of the gate never compile.
-pub fn chip_only<'a>(tree: &Tree, affected: &'a BTreeSet<Key>) -> BTreeSet<&'a Key> {
+/// The packages of `affected` with code the host checks of the gate never
+/// compile: those built only for a chip, and chip or family packages the
+/// host builds without their chip-target `cfg` code.
+pub fn chip_code<'a>(tree: &Tree, affected: &'a BTreeSet<Key>) -> BTreeSet<&'a Key> {
     affected
         .iter()
         .filter(|(workspace, name)| {
             !tree
                 .packages
                 .iter()
-                .any(|p| &p.workspace == workspace && &p.name == name && p.host)
+                .any(|p| &p.workspace == workspace && &p.name == name && p.host && !p.chip)
         })
         .collect()
 }
@@ -534,13 +539,13 @@ pub fn run(
                 .any(|p| &p.workspace == workspace && &p.name == name && p.host)
         })
         .collect();
-    let left = chip_only(tree, affected).len();
+    let left = chip_code(tree, affected).len();
     if left > 0 {
-        // Packages built only for a chip are invisible to the host checks
-        // below: type-check the two final images, as CI does, so an interface
-        // change their chip-only code still uses fails here. Their full
-        // build, the other classes and the examples remain CI's.
-        println!("gate: {left} chip-only package(s); type-checking the final images");
+        // Chip-target code is invisible to the host checks below:
+        // type-check the two final images, as CI does, so an interface
+        // change that code still uses fails here. Their full build, the
+        // other classes and the examples remain CI's.
+        println!("gate: {left} package(s) with chip code; type-checking the final images");
         step("type-check final images", || {
             crate::checks::firmware::run(
                 ctx,

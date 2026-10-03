@@ -29,6 +29,9 @@ use oer::systems::esp32s31::embassy::{
 
 use static_cell::StaticCell;
 
+// The image's peripheral interrupt sources (`oer_esp32s31_platform_runtime::interrupts`).
+oer_esp32s31_platform_runtime::interrupt_table! {}
+
 static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 // The shared radio outlives every client and its periodic PHY tracking task.
 static TRNG_SOURCE: StaticCell<TrngSource<'static>> = StaticCell::new();

@@ -1,8 +1,12 @@
 #![no_std]
 //! Stage-two entry, relocation and interrupt-stack ownership for ESP32-S31.
 mod entry;
+pub mod interrupts;
 pub mod panic;
 pub mod stacks;
+
+#[doc(hidden)]
+pub use oer_interrupt_table as __interrupt_table;
 
 /// Adopt the board mapping and install the stage-two interrupt context.
 ///
@@ -43,9 +47,11 @@ pub unsafe fn adopt_psram(
 ///
 /// # Panics
 /// When a hardware-vector slot of the hart's active MTVT is not the runtime's
-/// stack-switching entry.
+/// stack-switching entry, or the interrupt matrix disagrees with the image's
+/// interrupt table ([`interrupts`]).
 pub unsafe fn enable_interrupts_after_handoff() {
     stacks::verify_current_hart_vectors();
+    interrupts::verify_current_hart();
     // SAFETY: the caller guarantees that every handler this hart can dispatch
     // is bound; setting MIE touches no memory and leaves the stack unchanged.
     unsafe { core::arch::asm!("csrsi mstatus, 8", options(nomem, nostack)) };

@@ -38,6 +38,9 @@ use static_cell::{ConstStaticCell, StaticCell};
 
 use tinyrlibc as _;
 
+// The image's peripheral interrupt sources (`oer_esp32s31_platform_runtime::interrupts`).
+oer_esp32s31_platform_runtime::interrupt_table! {}
+
 /// Frames OpenThread has not taken yet while it transmits or scans.
 const RX_QUEUE: usize = 8;
 type ThreadRadio = OpenThreadRadio<'static, Ieee802154SystemRuntime, RX_QUEUE>;

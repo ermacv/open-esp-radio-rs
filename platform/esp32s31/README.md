@@ -67,7 +67,21 @@ inter-processor call's line (CLINT software interrupt 3) and runs the posted
 function from that dispatcher, instead of writing its own handler into the
 slot; `enable_interrupts_after_handoff` panics when any hardware-vector slot
 differs from the runtime's entries, so a later direct binding cannot run on
-the interrupted stack. HIL's `system-ipc-call` calls each core. esp-hal's PMP region setup
+the interrupted stack. HIL's `system-ipc-call` calls each core.
+
+Each image declares its peripheral interrupt sources once with
+`oer_esp32s31_platform_runtime::interrupt_table!` (source, handler, level,
+core; see [`oer-interrupt-table`](../../crates/runtime/interrupt-table/README.md)):
+the macro links each handler into its source's slot of esp-hal's
+`__EXTERNAL_INTERRUPTS` and creates one token per source. Installing a hart's
+interrupt stack silences every source of that hart's entries and checks the
+slots; `enable_interrupts_after_handoff` checks again that every slot holds its
+handler and every table source is silent or routed to its level. An owner
+routes its source with `interrupts::enable` and its token, on the table's core
+only, and silences it with `interrupts::disable`. The stack analysis does not
+yet fail a table entry whose `enable` no root of the image reaches. HIL's
+`system-interrupt-table` checks that a source stays silent until enabled and
+after it is disabled. esp-hal's PMP region setup
 (`ESP_HAL_CONFIG_ENABLE_PMP`) is off in the root Cargo configuration, because
 its single no-execute data region would span stage two's PSRAM code.
 

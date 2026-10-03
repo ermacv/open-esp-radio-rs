@@ -38,7 +38,7 @@ fn runtime_command(
     lock: &oer_esp32s31_firmware::network::BuildLock,
     (features, no_default_features): (&[String], bool),
     budget: &oer_memory_report::StackBudget,
-) -> std::process::Command {
+) -> Result<std::process::Command> {
     let mut command = ctx.cargo();
     command
         .args([
@@ -60,8 +60,8 @@ fn runtime_command(
     if !features.is_empty() {
         command.arg("--features").arg(features.join(","));
     }
-    oer_esp32s31_firmware::compiler::configure_image_compiler(&mut command, budget, target);
-    command
+    oer_esp32s31_firmware::compiler::configure_image_compiler(&mut command, budget, target)?;
+    Ok(command)
 }
 
 /// Type-check an example's runtime exactly as its image build compiles it
@@ -94,7 +94,7 @@ pub fn type_check(
         &lock,
         (features, no_default_features),
         &budget,
-    ))?;
+    )?)?;
     lock.validate()?;
     println!("{name}: the runtime type-checks with the image flags");
     Ok(())
@@ -133,7 +133,7 @@ pub fn build(
         &runtime_lock,
         (features, no_default_features),
         &budget,
-    );
+    )?;
     process::run(&mut command)?;
     runtime_lock.validate()?;
     let runtime = workspace.snapshot(
@@ -163,7 +163,7 @@ pub fn build(
         &bootstrap_target,
     );
     command.arg("--locked");
-    oer_esp32s31_firmware::compiler::configure_image_compiler(&mut command, &budget, &target);
+    oer_esp32s31_firmware::compiler::configure_image_compiler(&mut command, &budget, &target)?;
     process::run(&mut command)?;
     let bootstrap = workspace.snapshot(
         &bootstrap_target

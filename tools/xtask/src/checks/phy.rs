@@ -11,6 +11,18 @@ use oer_process as process;
 
 const PHY: &str = "crates/hardware/esp32s31/phy/Cargo.toml";
 const PHY_PACKAGES: &[&str] = &[
+    // The zero-valid marker `oer-memory`'s zeroed statics use (the one
+    // esp-hal's `#[ram(zeroed)]` requires); a no-std trait crate, without its
+    // derive here.
+    "bytemuck",
+    // bytemuck's derive, which the Wi-Fi DMA, MAC and composition crates
+    // enable; the workspace-wide feature resolution carries it into this
+    // graph. A host proc macro: it adds no code to the PHY artifact.
+    "bytemuck_derive",
+    "proc-macro2",
+    "quote",
+    "syn",
+    "unicode-ident",
     "critical-section",
     "oer-memory",
     "oer-esp32s31-hal",

@@ -11,6 +11,7 @@ Repository tooling, grouped by the contract each tool owns: [README](README.md).
 | `memory-report/`, `symbol-lineage/` | ELF memory/stack analysis; vendor symbol names across releases |
 | `riscv/` | RV32 layers shared by Blobray: `decode/` (instructions), `model/`, `program/`, `analysis/` and `lift/` (the program model); `stack/` (stack bounds) |
 | `firmware/`, `process/`, `chip-profile/`, `command-tree/` | Image operations, child processes, chip profiles, CLI command trees |
+| `image-linker/` | `oer-image-linker`: every image's linker; refuses an input section bound for a zeroed region (the platform layout's list) that holds a non-zero byte or a relocation, then runs `rust-lld` unchanged |
 
 ## Rules
 

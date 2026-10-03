@@ -2,8 +2,8 @@ pub fn configure_image_compiler(
     command: &mut std::process::Command,
     budget: &oer_memory_report::StackBudget,
     target: &str,
-) {
-    oer_esp32s31_firmware::compiler::configure_image_compiler(command, budget, target);
+) -> crate::Result<()> {
+    oer_esp32s31_firmware::compiler::configure_image_compiler(command, budget, target)?;
     command
         .env(
             "OPEN_RADIO_CPU0_STACK_MINIMUM_FREE_BYTES",
@@ -17,6 +17,7 @@ pub fn configure_image_compiler(
             "OPEN_RADIO_IRQ_STACK_MINIMUM_FREE_BYTES",
             budget.runtime_irq_minimum_free_bytes.to_string(),
         );
+    Ok(())
 }
 pub fn analyze_elf_stack(
     elf: &std::path::Path,

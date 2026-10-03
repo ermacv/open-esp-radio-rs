@@ -1,4 +1,4 @@
-use crate::{Error, Matrix, disable, enable, install, verify};
+use crate::{Error, Matrix, Route, disable, disable_route, enable, enable_route, install, verify};
 
 crate::__fake_matrix!();
 
@@ -53,6 +53,19 @@ fn a_token_routes_its_source_to_its_level_on_its_core_alone() {
         })
     );
     assert_eq!(matrix.routed(Core::Zero, Source::Timer), None);
+
+    // A route enables and disables as its token did.
+    let timer = Route::new(tokens.timer);
+    assert_eq!(timer.source(), Source::Timer);
+    enable_route(&mut matrix, INTERRUPT_TABLE, &timer).unwrap();
+    assert_eq!(matrix.routed(Core::Zero, Source::Timer), Some(Level::One));
+    disable_route(&mut matrix, &timer);
+    assert_eq!(matrix.routed(Core::Zero, Source::Timer), None);
+    let radio = Route::new(tokens.radio);
+    assert!(matches!(
+        enable_route(&mut matrix, INTERRUPT_TABLE, &radio),
+        Err(Error::WrongCore { .. })
+    ));
 }
 
 #[test]

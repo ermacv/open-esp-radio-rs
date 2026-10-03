@@ -274,3 +274,22 @@ fn accepting_reports_how_the_fingerprint_moves() {
         "libpp[pp.o]::ppTxPkt: a -> b"
     );
 }
+
+#[test]
+fn rom_summaries_cite_their_functions_whatever_the_name_s_shape() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("functions.toml");
+    assert!(summary_names(&path).unwrap().is_empty());
+    std::fs::write(
+        &path,
+        "[[function]]\nname = \"memset\"\naddress = 1\nframe = 0\n",
+    )
+    .unwrap();
+    // A plain lowercase word is prose in a SOURCE block, a citation here.
+    assert_eq!(
+        summary_names(&path).unwrap(),
+        BTreeSet::from(["memset".to_owned()])
+    );
+    std::fs::write(&path, "[[function]]\naddress = 1\n").unwrap();
+    assert!(summary_names(&path).is_err());
+}

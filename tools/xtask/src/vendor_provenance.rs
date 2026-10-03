@@ -32,8 +32,9 @@ fn register_directories(chip: &str) -> [String; 2] {
     ]
 }
 
-/// Production sources scanned for `SOURCE:` blocks.
-const PRODUCTION: &str = "crates";
+/// Production sources scanned for `SOURCE:` blocks: Rust files and, with
+/// `#` comments, TOML files such as the platform's ROM function summaries.
+const PRODUCTION: [&str; 2] = ["crates", "platform"];
 /// The chip's reviewed verification decisions, relative to its
 /// verification directory: the coverage decisions' data and the scenario
 /// crate's decision modules.
@@ -254,7 +255,7 @@ struct Found {
 }
 
 fn production_words(scan: &Scan<'_>, directory: &Path, found: &mut Found) -> Result<()> {
-    use crate::source_citation::{Attribution, attribute, blocks, place};
+    use crate::source_citation::{Attribution, Syntax, attribute, blocks_in, place};
     for entry in std::fs::read_dir(directory)? {
         let path = entry?.path();
         let name = path
@@ -265,13 +266,13 @@ fn production_words(scan: &Scan<'_>, directory: &Path, found: &mut Found) -> Res
             if name != "target" && !name.starts_with('.') {
                 production_words(scan, &path, found)?;
             }
-        } else if name.ends_with(".rs") {
+        } else if let Some(syntax) = Syntax::of(name) {
             let relative = path.strip_prefix(scan.base).unwrap_or(&path);
             let Some(place) = place(relative, scan.chip, scan.supported) else {
                 continue;
             };
             let text = std::fs::read_to_string(&path)?;
-            let blocks = match blocks(&text) {
+            let blocks = match blocks_in(&text, syntax) {
                 Ok(blocks) => blocks,
                 Err(malformed) => {
                     found.problems.push(format!(
@@ -304,6 +305,31 @@ fn production_words(scan: &Scan<'_>, directory: &Path, found: &mut Found) -> Res
         }
     }
     Ok(())
+}
+
+/// The function names of the platform's ROM summaries at `path`: each one
+/// cites its function whatever the name's shape (`memset` is code there, not
+/// prose). No file, no names.
+fn summary_names(path: &Path) -> Result<BTreeSet<String>> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Ok(BTreeSet::new());
+    };
+    let table: toml::Table =
+        toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut names = BTreeSet::new();
+    for function in table
+        .get("function")
+        .and_then(|f| f.as_array())
+        .into_iter()
+        .flatten()
+    {
+        let name = function
+            .get("name")
+            .and_then(|n| n.as_str())
+            .ok_or_else(|| format!("{}: a [[function]] without a name", path.display()))?;
+        names.insert(name.to_owned());
+    }
+    Ok(names)
 }
 
 /// Identifiers of every `description` in `value`, at any depth.
@@ -405,16 +431,18 @@ fn survey(ctx: &Context, chip: &str) -> Result<Survey> {
     let scanned = crate::chips::Chip::new(&ctx.root, chip)?;
     let citable = citable_chips(&ctx.root, &supported);
     let mut found = Found::default();
-    production_words(
-        &Scan {
-            base: &ctx.root,
-            chip: scanned.name(),
-            supported: &supported,
-            citable: &citable,
-        },
-        &ctx.root.join(PRODUCTION),
-        &mut found,
-    )?;
+    for directory in PRODUCTION {
+        production_words(
+            &Scan {
+                base: &ctx.root,
+                chip: scanned.name(),
+                supported: &supported,
+                citable: &citable,
+            },
+            &ctx.root.join(directory),
+            &mut found,
+        )?;
+    }
     let Found {
         mut words,
         problems: mut citations,
@@ -430,6 +458,7 @@ fn survey(ctx: &Context, chip: &str) -> Result<Survey> {
         }
     }
     words.extend(decisions.keys().cloned());
+    words.extend(summary_names(&ctx.root.join(scanned.rom_summaries()))?);
     let known: BTreeSet<&str> = current
         .keys()
         .map(|(_, _, name)| name.as_str())

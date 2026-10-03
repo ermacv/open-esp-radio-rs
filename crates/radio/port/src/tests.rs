@@ -100,3 +100,78 @@ fn unrelated_and_affine_radio_clocks_never_pretend_to_convert() {
     };
     assert_eq!(affine.to_monotonic(radio), Err(EpochError::NeedsSample));
 }
+
+#[test]
+fn an_affine_clock_projects_from_its_sample_with_a_drift_bound() {
+    let affine = ClockInfo {
+        epoch: RadioEpoch::Affine { drift_ppm: 20 },
+        ..ClockInfo::MONOTONIC_MICROS
+    };
+    let sample = ClockSample::<Port> {
+        radio: RadioInstant::from_micros(1_000_000),
+        monotonic: Instant::from_micros(5_000_000),
+        uncertainty: Duration::from_micros(3),
+        generation: 7,
+    };
+    // One second after the sample: 20 ppm of it is 20 us.
+    assert_eq!(
+        affine.to_monotonic_with(RadioInstant::from_micros(2_000_000), &sample),
+        Ok(Projected {
+            at: Instant::from_micros(6_000_000),
+            uncertainty: Duration::from_micros(23),
+        })
+    );
+    // Before the sample, the distance counts the same way.
+    assert_eq!(
+        affine.to_monotonic_with(RadioInstant::from_micros(999_999), &sample),
+        Ok(Projected {
+            at: Instant::from_micros(4_999_999),
+            uncertainty: Duration::from_micros(4),
+        })
+    );
+    assert_eq!(
+        affine.from_monotonic_with::<Port>(Instant::from_micros(6_000_000), &sample),
+        Ok(Projected {
+            at: RadioInstant::from_micros(2_000_000),
+            uncertainty: Duration::from_micros(23),
+        })
+    );
+    // A projection before either epoch is refused, never clamped.
+    assert_eq!(
+        affine.to_monotonic_with(
+            RadioInstant::from_micros(0),
+            &ClockSample::<Port> {
+                radio: RadioInstant::from_micros(10),
+                monotonic: Instant::from_micros(5),
+                uncertainty: Duration::ZERO,
+                generation: 0,
+            }
+        ),
+        Err(EpochError::OutOfRange)
+    );
+}
+
+#[test]
+fn a_monotonic_clock_ignores_the_sample_and_an_unrelated_one_refuses() {
+    let sample = ClockSample::<Port> {
+        radio: RadioInstant::from_micros(1),
+        monotonic: Instant::from_micros(1_000),
+        uncertainty: Duration::from_micros(50),
+        generation: 1,
+    };
+    assert_eq!(
+        ClockInfo::MONOTONIC_MICROS.to_monotonic_with(RadioInstant::from_micros(77), &sample),
+        Ok(Projected {
+            at: Instant::from_micros(77),
+            uncertainty: Duration::ZERO,
+        })
+    );
+    let unrelated = ClockInfo {
+        epoch: RadioEpoch::Unrelated,
+        ..ClockInfo::MONOTONIC_MICROS
+    };
+    assert_eq!(
+        unrelated.to_monotonic_with(RadioInstant::from_micros(77), &sample),
+        Err(EpochError::Unrelated)
+    );
+}

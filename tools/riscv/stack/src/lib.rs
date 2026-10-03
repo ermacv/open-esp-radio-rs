@@ -1,4 +1,5 @@
-//! Worst-case stack bounds of a static RV32 image from its machine code.
+//! Worst-case stack bounds of a static RV32 image from its machine code,
+//! with the companions it calls into, such as the chip's ROM ELF.
 //!
 //! Every function is a defined code symbol of the image. Its frame is the
 //! compiler's `.stack_sizes` entry, cross-checked with the deepest entry-relative
@@ -139,16 +140,45 @@ impl Bound {
     }
 }
 
-/// Frames, transfers and bounds of one image.
+/// Frames, transfers and bounds of one image and its companions.
 #[derive(Clone, Debug)]
 pub struct Analysis {
     pub functions: BTreeMap<u32, FunctionFacts>,
-    /// Address ranges of the image's executable sections.
+    /// Address ranges of the executable sections of every analysed ELF.
     pub code: Vec<(u32, u32)>,
 }
 
-/// Analyze every function of the static RV32 executable `elf`.
-pub fn analyze(elf: &[u8]) -> Result<Analysis> {
+/// Analyze every function of the static RV32 executable `elf` and of the
+/// `companions` it calls into, such as the chip's ROM ELF: a transfer from
+/// one into another reaches the callee's frame like any other call. No two
+/// ELFs may place code at the same address.
+pub fn analyze(elf: &[u8], companions: &[&[u8]]) -> Result<Analysis> {
+    let mut analysis = Analysis {
+        functions: BTreeMap::new(),
+        code: Vec::new(),
+    };
+    for elf in std::iter::once(elf).chain(companions.iter().copied()) {
+        let Analysis { functions, code } = analyze_one(elf)?;
+        for &(start, end) in &code {
+            if analysis
+                .code
+                .iter()
+                .any(|&(other_start, other_end)| start < other_end && other_start < end)
+            {
+                return Err(Error::new(
+                    ErrorCode::Integrity,
+                    format!("code at {start:#010x}..{end:#010x} overlaps another ELF's"),
+                ));
+            }
+        }
+        analysis.code.extend(code);
+        analysis.functions.extend(functions);
+    }
+    Ok(analysis)
+}
+
+/// The facts and executable ranges of one ELF.
+fn analyze_one(elf: &[u8]) -> Result<Analysis> {
     let functions = image::functions(elf)?;
     let sizes = image::stack_sizes(elf)?;
     let code = image::executable_ranges(elf)?;
@@ -182,6 +212,9 @@ pub fn analyze(elf: &[u8]) -> Result<Analysis> {
             };
             let mut targets: Vec<u32> = entries
                 .iter()
+                // A Rust function pointer is never null: a zero entry is an
+                // empty `Option<fn>` slot the code tests before calling.
+                .filter(|&&entry| entry != 0)
                 .map(|entry| entry & !1)
                 .filter(|&target| transfer.kind == TransferKind::Call || !inside(target))
                 .collect();

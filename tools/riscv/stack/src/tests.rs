@@ -41,12 +41,17 @@ fn executable(symbols: &[Symbol]) -> Vec<u8> {
 /// [`executable`] with `rodata` words in a `.rodata` at `RODATA`, covered by
 /// a sized `table` data symbol when `sized`.
 fn image(symbols: &[Symbol], rodata: &[u32], sized: bool) -> Vec<u8> {
+    placed(TEXT, symbols, rodata, sized)
+}
+
+/// [`image`] with its `.text` at `text` instead of `TEXT`.
+fn placed(text_base: u32, symbols: &[Symbol], rodata: &[u32], sized: bool) -> Vec<u8> {
     let rodata: Vec<u8> = rodata.iter().flat_map(|word| word.to_le_bytes()).collect();
     let mut text = Vec::new();
     let mut entries = Vec::new();
     let mut sizes = Vec::new();
     for symbol in symbols {
-        let address = TEXT + text.len() as u32;
+        let address = text_base + text.len() as u32;
         for word in &symbol.words {
             text.extend_from_slice(&word.to_le_bytes());
         }
@@ -110,7 +115,18 @@ fn image(symbols: &[Symbol], rodata: &[u32], sized: bool) -> Vec<u8> {
     };
     let headers = [
         [0; 10],
-        header(1, 1, 6, TEXT, text_offset, text.len() as u32, 0, 0, 4, 0),
+        header(
+            1,
+            1,
+            6,
+            text_base,
+            text_offset,
+            text.len() as u32,
+            0,
+            0,
+            4,
+            0,
+        ),
         header(7, 1, 0, 0, sizes_offset, sizes.len() as u32, 0, 0, 1, 0),
         header(20, 2, 0, 0, symtab_offset, symtab.len() as u32, 4, 1, 4, 16),
         header(28, 3, 0, 0, strtab_offset, strtab.len() as u32, 0, 0, 1, 0),
@@ -149,7 +165,7 @@ fn image(symbols: &[Symbol], rodata: &[u32], sized: bool) -> Vec<u8> {
     elf.extend_from_slice(b"\x7fELF\x01\x01\x01\0\0\0\0\0\0\0\0\0");
     elf.extend_from_slice(&2u16.to_le_bytes());
     elf.extend_from_slice(&243u16.to_le_bytes());
-    for word in [1u32, TEXT, 52, sections, 0] {
+    for word in [1u32, text_base, 52, sections, 0] {
         elf.extend_from_slice(&word.to_le_bytes());
     }
     for half in [52u16, 32, 2, 40, 7, 5] {
@@ -159,8 +175,8 @@ fn image(symbols: &[Symbol], rodata: &[u32], sized: bool) -> Vec<u8> {
     for word in [
         1u32,
         text_offset,
-        TEXT,
-        TEXT,
+        text_base,
+        text_base,
         text.len() as u32,
         text.len() as u32,
         5,
@@ -212,7 +228,7 @@ fn a_callee_runs_below_its_call_site_depth() {
         },
         leaf(Some(32)),
     ]);
-    let analysis = analyze(&image).unwrap();
+    let analysis = analyze(&image, &[]).unwrap();
     let root = &analysis.functions[&TEXT];
     assert_eq!(root.frame, Some(16));
     assert_eq!(root.source, Some(FrameSource::StackSizes));
@@ -233,7 +249,7 @@ fn an_unresolved_call_leaves_the_bound_unknown_with_its_reason() {
         ],
         frame: Some(16),
     }]);
-    let bound = analyze(&image).unwrap().bound(TEXT).unwrap();
+    let bound = analyze(&image, &[]).unwrap().bound(TEXT).unwrap();
     assert_eq!(bound.bytes, None);
     assert_eq!(bound.unresolved, [(TEXT + 12, Reason::StackSlotCall)]);
     assert_eq!(
@@ -256,7 +272,7 @@ fn recursion_leaves_the_bound_unknown() {
         ],
         frame: Some(16),
     }]);
-    let bound = analyze(&image).unwrap().bound(TEXT).unwrap();
+    let bound = analyze(&image, &[]).unwrap().bound(TEXT).unwrap();
     assert_eq!(bound.bytes, None);
     assert_eq!(bound.reasons(), BTreeMap::from([(Reason::Recursion, 1)]));
 }
@@ -264,13 +280,13 @@ fn recursion_leaves_the_bound_unknown() {
 #[test]
 fn an_observed_depth_beyond_the_frame_record_fails() {
     let image = executable(&[leaf(Some(16))]);
-    let error = analyze(&image).unwrap_err();
+    let error = analyze(&image, &[]).unwrap_err();
     assert_eq!(error.code, ErrorCode::Integrity);
 }
 
 #[test]
 fn a_complete_graph_without_a_record_gives_the_observed_frame() {
-    let analysis = analyze(&executable(&[leaf(None)])).unwrap();
+    let analysis = analyze(&executable(&[leaf(None)]), &[]).unwrap();
     let facts = &analysis.functions[&TEXT];
     assert_eq!(
         (facts.frame, facts.source),
@@ -318,7 +334,10 @@ fn a_bounded_jump_table_reads_exactly_its_entries() {
     let image = image(&[dispatch(true)], &[TEXT + 32, TEXT + 36, 0x5000], false);
     let function = &functions(&image).unwrap()[0];
     assert_eq!(sweep::transfers(&image, function).unwrap(), []);
-    assert_eq!(analyze(&image).unwrap().bound(TEXT).unwrap().bytes, Some(0));
+    assert_eq!(
+        analyze(&image, &[]).unwrap().bound(TEXT).unwrap().bytes,
+        Some(0)
+    );
 }
 
 #[test]
@@ -331,7 +350,7 @@ fn a_bounded_table_entry_out_of_the_function_is_a_jump() {
         .map(|t| (t.site, t.target, t.kind))
         .collect();
     assert_eq!(transfers, [(TEXT + 28, Some(0x5000), TransferKind::Tail)]);
-    let bound = analyze(&image).unwrap().bound(TEXT).unwrap();
+    let bound = analyze(&image, &[]).unwrap().bound(TEXT).unwrap();
     assert_eq!(bound.reasons(), BTreeMap::from([(Reason::OutsideImage, 1)]));
 }
 
@@ -340,7 +359,7 @@ fn an_unbounded_jump_table_stays_unknown() {
     // Without a bound or a sized table object, entries past the readable
     // ones could leave the function.
     let image = image(&[dispatch(false)], &[TEXT + 24, TEXT + 28], false);
-    let bound = analyze(&image).unwrap().bound(TEXT).unwrap();
+    let bound = analyze(&image, &[]).unwrap().bound(TEXT).unwrap();
     assert_eq!(bound.bytes, None);
     assert_eq!(bound.unresolved, [(TEXT + 20, Reason::IndirectJump)]);
 }
@@ -348,7 +367,7 @@ fn an_unbounded_jump_table_stays_unknown() {
 #[test]
 fn a_jump_through_a_sized_table_object_keeps_only_entries_out_of_the_function() {
     let image = image(&[dispatch(false)], &[TEXT + 24, 0x5000], true);
-    let analysis = analyze(&image).unwrap();
+    let analysis = analyze(&image, &[]).unwrap();
     let jumps: Vec<_> = analysis.functions[&TEXT]
         .transfers
         .iter()
@@ -398,7 +417,7 @@ fn a_call_through_a_constant_table_object_reaches_every_entry() {
         &[small, large, small],
         true,
     );
-    let analysis = analyze(&image).unwrap();
+    let analysis = analyze(&image, &[]).unwrap();
     let calls: Vec<_> = analysis.functions[&TEXT]
         .transfers
         .iter()
@@ -436,7 +455,7 @@ fn a_table_base_rewritten_before_the_call_stays_unresolved() {
         &[TEXT, TEXT],
         true,
     );
-    let bound = analyze(&image).unwrap().bound(TEXT).unwrap();
+    let bound = analyze(&image, &[]).unwrap().bound(TEXT).unwrap();
     assert_eq!(bound.bytes, None);
     assert_eq!(bound.reasons(), BTreeMap::from([(Reason::LoadedCall, 1)]));
 }
@@ -471,7 +490,7 @@ fn analysed_jump_targets_inside_the_function_are_not_transfers() {
         &[TEXT + 36, leaf_address],
         false,
     );
-    let analysis = analyze(&image).unwrap();
+    let analysis = analyze(&image, &[]).unwrap();
     let jumps: Vec<_> = analysis.functions[&TEXT]
         .transfers
         .iter()
@@ -479,4 +498,103 @@ fn analysed_jump_targets_inside_the_function_are_not_transfers() {
         .collect();
     assert_eq!(jumps, [(TEXT + 32, Some(leaf_address), TransferKind::Tail)]);
     assert_eq!(analysis.bound(TEXT).unwrap().bytes, Some(32));
+}
+
+#[test]
+fn a_call_into_a_companion_runs_below_its_site() {
+    // root calls a function of a ROM-like companion ELF at 0x9000, which
+    // has no .stack_sizes: its frame is the observed one.
+    let rom = 0x9000;
+    let image = image(
+        &[Symbol {
+            name: "root",
+            words: vec![
+                SP_DOWN_16,
+                SAVE_RA,
+                call(TEXT + 8, rom),
+                LOAD_RA,
+                SP_UP_16,
+                RET,
+            ],
+            frame: Some(16),
+        }],
+        &[],
+        false,
+    );
+    let companion = placed(rom, &[leaf(None)], &[], false);
+    let alone = analyze(&image, &[]).unwrap().bound(TEXT).unwrap();
+    assert_eq!(alone.reasons(), BTreeMap::from([(Reason::OutsideImage, 1)]));
+    let with_rom = analyze(&image, &[&companion]).unwrap();
+    assert_eq!(with_rom.functions[&rom].source, Some(FrameSource::Observed));
+    let bound = with_rom.bound(TEXT).unwrap();
+    assert_eq!(bound.bytes, Some(48));
+    assert_eq!(bound.path, [(TEXT, 16), (rom, 32)]);
+}
+
+#[test]
+fn companions_may_not_overlap() {
+    let image = executable(&[leaf(Some(32))]);
+    let error = analyze(&image, &[&image]).unwrap_err();
+    assert_eq!(error.code, ErrorCode::Integrity);
+}
+
+#[test]
+fn a_zero_table_entry_is_an_empty_slot_not_a_call() {
+    // The sized table holds `leaf` and an empty `Option<fn>` slot.
+    let leaf_address = TEXT + 48 + 4;
+    let image = image(
+        &[
+            Symbol {
+                name: "root",
+                words: vec![
+                    SP_DOWN_16,
+                    SAVE_RA,
+                    0x0000_2db7,
+                    0x000d_8d93,
+                    BRANCH_NEXT,
+                    0x0025_1513,
+                    0x01b5_0533,
+                    0x0005_2503,
+                    0x0005_00e7,
+                    LOAD_RA,
+                    SP_UP_16,
+                    RET,
+                    RET,
+                ],
+                frame: Some(16),
+            },
+            leaf(Some(32)),
+        ],
+        &[leaf_address, 0],
+        true,
+    );
+    let analysis = analyze(&image, &[]).unwrap();
+    let calls: Vec<_> = analysis.functions[&TEXT]
+        .transfers
+        .iter()
+        .map(|t| (t.site, t.target))
+        .collect();
+    assert_eq!(calls, [(TEXT + 32, Some(leaf_address))]);
+    assert_eq!(analysis.bound(TEXT).unwrap().bytes, Some(48));
+}
+
+#[test]
+fn a_global_untyped_code_label_is_a_function() {
+    // A companion whose only symbol is an untyped global label, as the ROM's
+    // `__call_*` trampolines are, reached by `j` to the real function.
+    let rom = 0x9000;
+    let mut companion = placed(rom, &[leaf(None)], &[], false);
+    // Turn the symbol `leaf` into STB_GLOBAL, STT_NOTYPE with no size.
+    let mut record = rom.to_le_bytes().to_vec();
+    record.extend_from_slice(&12u32.to_le_bytes());
+    record.push(0x12);
+    let symtab = companion
+        .windows(record.len())
+        .position(|w| w == record)
+        .expect("leaf's symbol entry");
+    companion[symtab + 4..symtab + 8].copy_from_slice(&0u32.to_le_bytes());
+    companion[symtab + 8] = 0x10;
+    let functions = functions(&companion).unwrap();
+    assert_eq!(functions.len(), 1);
+    assert_eq!((functions[0].address, functions[0].size), (rom, 12));
 }

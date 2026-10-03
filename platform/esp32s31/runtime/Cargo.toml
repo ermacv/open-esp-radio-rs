@@ -18,6 +18,7 @@ oer-memory = { path = "../../../crates/memory" }
 oer-esp32s31-platform-layout.workspace = true
 esp-hal = { workspace = true, features = ["esp32s31", "rt", "unstable"] }
 oer-esp32s31-platform-board = { path = "../board" }
+oer-interrupt-table = { path = "../../../crates/runtime/interrupt-table" }
 
 [package.metadata.open-radio]
 layer = "platform"

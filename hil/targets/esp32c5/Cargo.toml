@@ -31,9 +31,9 @@ oer-hil-image-keys = { path = "../../image-keys" }
 static_cell = "2.1.1"
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-time = "0.5.1"
-esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "81b820d5f611d6aa6c4ceada63d65bf7e0be101f", default-features = false, features = ["esp32c5"] }
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "81b820d5f611d6aa6c4ceada63d65bf7e0be101f", default-features = false, features = ["esp32c5", "unstable"] }
-esp-rtos = { git = "https://github.com/ermacv/esp-hal", rev = "81b820d5f611d6aa6c4ceada63d65bf7e0be101f", default-features = false, features = ["esp32c5", "embassy"] }
+esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "42b085e245a67e4a845237520f19704cbdb22776", default-features = false, features = ["esp32c5"] }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "42b085e245a67e4a845237520f19704cbdb22776", default-features = false, features = ["esp32c5", "unstable"] }
+esp-rtos = { git = "https://github.com/ermacv/esp-hal", rev = "42b085e245a67e4a845237520f19704cbdb22776", default-features = false, features = ["esp32c5", "embassy"] }
 
 [profile.release]
 debug = 2

@@ -12,7 +12,7 @@ use oer_esp32s31_firmware::flash::{
     ota0_selector_image,
 };
 use oer_hil_board::{
-    Board, Companions, FlashImage, Result, espflash, reset, run, with_flash_retries,
+    Board, Companions, FlashImage, Flashed, Result, espflash, reset, run, with_flash_retries,
 };
 
 /// The esp32s31's staged flow, reading the partition tables of the
@@ -33,7 +33,7 @@ impl Board for Staged {
     /// partition table. It comes from the same `espflash` encoding of the
     /// image's bootstrap ELF that standalone firmware flashes; without an ELF
     /// the board's bootloader stays.
-    fn flash(&self, image: &FlashImage, port: &Path) -> Result<()> {
+    fn flash(&self, image: &FlashImage, port: &Path) -> Result<Flashed> {
         let Companions::Staged { bootstrap_elf } = &image.companions else {
             return Err("a staged chip takes its bootstrap ELF, not an ESP-IDF bootloader".into());
         };
@@ -80,7 +80,8 @@ impl Board for Staged {
                 .map_err(|error| {
                     format!("flash the HIL image through {}: {error}", port.display()).into()
                 })
-        })
+        })?;
+        Ok(Flashed::Started)
     }
 }
 

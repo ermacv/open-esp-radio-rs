@@ -119,9 +119,10 @@ pub(crate) fn flash_archived_artifacts(
     session: &mut RunSession,
 ) -> Result<Option<Failure>> {
     let failure = flash_archived_build(class, artifacts, session, |artifacts| {
-        crate::board::for_chip(root, &artifacts.chip)?.flash(
+        crate::board::flash_dut(
+            &*crate::board::for_chip(root, &artifacts.chip)?,
             &crate::board::built(artifacts),
-            &crate::board::flashable_port(lab)?,
+            lab,
         )
     })?;
     if failure.is_none() {
@@ -159,8 +160,11 @@ pub(crate) fn reflash_replayed(
         archived.image,
     )
     .and_then(|image| {
-        crate::board::for_chip(root, &archived.target)?
-            .flash(&image, &crate::board::flashable_port(lab)?)
+        crate::board::flash_dut(
+            &*crate::board::for_chip(root, &archived.target)?,
+            &image,
+            lab,
+        )
     }) {
         oer_process::check_cancelled()?;
         session.record_event(
@@ -258,8 +262,11 @@ fn prepare_replayed_image(
     let failure = import_and_flash_replay(archived, session, |application| {
         let image =
             crate::board::archived(root, &archived.target, application, &run_id, archived.image)?;
-        crate::board::for_chip(root, &archived.target)?
-            .flash(&image, &crate::board::flashable_port(lab)?)?;
+        crate::board::flash_dut(
+            &*crate::board::for_chip(root, &archived.target)?,
+            &image,
+            lab,
+        )?;
         flashed = Some(application.to_owned());
         Ok(())
     })?;

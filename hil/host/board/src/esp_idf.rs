@@ -3,7 +3,7 @@
 
 use std::{fs, path::Path};
 
-use crate::{Board, Companions, FlashImage, Result, espflash, reset, run, with_flash_retries};
+use crate::{Board, Companions, FlashImage, Flashed, Result, espflash, run, with_flash_retries};
 
 /// The flow of a chip the ESP-IDF second-stage bootloader starts.
 #[derive(Clone, Debug)]
@@ -34,8 +34,9 @@ impl Board for EspIdf {
     /// offset, the gaps erased (`0xff`), and written by one `espflash
     /// write-bin` that resets the chip through its USB Serial/JTAG. That
     /// write ends in the ROM bootloader, since the stub's own reset can leave
-    /// an esp32c5 in download mode; an RTS reset starts the application.
-    fn flash(&self, image: &FlashImage, port: &Path) -> Result<()> {
+    /// an esp32c5 in download mode; the caller starts the application
+    /// ([`Flashed::AwaitsStart`]).
+    fn flash(&self, image: &FlashImage, port: &Path) -> Result<Flashed> {
         let Companions::EspIdf {
             bootloader,
             partition_table,
@@ -71,8 +72,7 @@ impl Board for EspIdf {
                 .arg(&path);
             run(&mut write, "write the HIL image")
         })?;
-        drop(reset::reset_into_application(port)?);
-        Ok(())
+        Ok(Flashed::AwaitsStart)
     }
 }
 

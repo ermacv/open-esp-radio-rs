@@ -42,12 +42,23 @@ pub struct FlashImage {
     pub work: PathBuf,
 }
 
+/// Where a flash leaves the board.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Flashed {
+    /// The flow reset the board into the image it wrote.
+    Started,
+    /// The ROM still waits in download mode: the caller starts the image,
+    /// with a power-on reset where the board has one. An RTS reset out of
+    /// download mode starts an esp32c5's image with its USB console silent.
+    AwaitsStart,
+}
+
 /// One chip's boot flow.
 pub trait Board {
-    /// Write `image` into the flash of the board at `port` and start it.
-    /// A failure of the serial link is retried; a failure of the image is
-    /// not.
-    fn flash(&self, image: &FlashImage, port: &Path) -> Result<()>;
+    /// Write `image` into the flash of the board at `port`, and say whether
+    /// the image runs. A failure of the serial link is retried; a failure of
+    /// the image is not.
+    fn flash(&self, image: &FlashImage, port: &Path) -> Result<Flashed>;
 }
 
 /// How many times a flash is attempted when espflash's link to the chip

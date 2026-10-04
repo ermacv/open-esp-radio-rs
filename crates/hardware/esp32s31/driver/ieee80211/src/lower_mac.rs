@@ -223,7 +223,8 @@ pub const fn esp32s31_lower_mac_capabilities(buffer_size: usize) -> LowerMacCapa
             .union(CoexPrioritySet::only(CoexPriority::Elevated)),
         individual_no_ack: PhyFormatSet::NON_HT,
         station_receive_filters: STATION_RECEIVE_FILTERS,
-        access_point_receive_filters: ReceiveFilter::BSS_MEMBER,
+        access_point_receive_filters: ReceiveFilter::BSS_MEMBER
+            .union(ReceiveFilter::PROBE_REQUESTS),
         key_slots: LOWER_MAC_KEY_SLOTS as u8,
         rx_block_ack_agreements: RESOURCES.rx_block_ack_entries,
         rx_block_ack_max_tid: RESOURCES.rx_block_ack_max_tid,
@@ -2066,7 +2067,8 @@ enum ReceivePolicy {
         bssid: MacAddress,
     },
     AccessPointDisabled,
-    /// Access-point policy eight: the BSS-member rules.
+    /// Access-point policy eight: the BSS-member rules and the Probe
+    /// Requests the access point answers, wildcard ones included.
     AccessPoint {
         address: MacAddress,
     },

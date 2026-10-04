@@ -824,7 +824,7 @@ fn unwind_powered(
 )]
 #[allow(
     large_assignments,
-    reason = "the powered owner graph crosses the PHY poll boundaries once; the linked-image stack-frame audit independently bounds this future"
+    reason = "the powered owner graph crosses the PHY poll boundaries once; the linked image's stack gate and runtime stack painting check its stack use"
 )]
 // CAPABILITY: controller-initialization, bluetooth-same-storage-powered-restart
 pub async fn start<P, C: PlatformClockProvider>(

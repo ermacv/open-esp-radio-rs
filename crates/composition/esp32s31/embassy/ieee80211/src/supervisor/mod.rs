@@ -904,7 +904,7 @@ mod role_dispatch;
 /// returned [`WifiInitialization::phy`] reports what this bring-up did.
 #[allow(
     large_assignments,
-    reason = "radio start returns one unique typed owner graph; the post-LTO stack-frame audit rejects any actual oversized live frame"
+    reason = "radio start returns one unique typed owner graph; the post-LTO stack gate and runtime stack painting check its stack use"
 )]
 pub async fn new(
     radio: &'static SharedRadio,

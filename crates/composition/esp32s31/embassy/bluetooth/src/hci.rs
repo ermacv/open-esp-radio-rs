@@ -164,7 +164,7 @@ impl BluetoothHciService {
 #[inline(never)]
 #[allow(
     large_assignments,
-    reason = "the Controller core is rebuilt once per Host epoch in its static place; the linked-image stack-frame audit bounds this frame"
+    reason = "the Controller core is rebuilt once per Host epoch in its static place; the linked image's stack gate and runtime stack painting check its stack use"
 )]
 fn reset_core(
     core: &mut LeController<'static, OUTPUT>,
@@ -184,7 +184,7 @@ fn reset_core(
 #[inline(never)]
 #[allow(
     large_assignments,
-    reason = "the Controller core moves once into its static cell; the linked-image stack-frame audit bounds this frame"
+    reason = "the Controller core moves once into its static cell; the linked image's stack gate and runtime stack painting check its stack use"
 )]
 // CAPABILITY: bluetooth-trouble-host-integration, trouble-host-integration
 pub fn start_bluetooth_hci(

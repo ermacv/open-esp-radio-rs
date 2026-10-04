@@ -1348,7 +1348,7 @@ pub(super) const fn connected_config(power: StationPowerMode) -> ConnectedStaCon
 /// Enter the real connected PAC/Embassy owner graph.
 #[allow(
     large_assignments,
-    reason = "the connected teardown result is a unique owner graph returned in place; the post-LTO stack-frame audit remains authoritative for live stack use"
+    reason = "the connected teardown result is a unique owner graph returned in place; the post-LTO stack gate and runtime stack painting remain authoritative for live stack use"
 )]
 pub(crate) async fn run_connected<'state, 'security>(
     station_control: &mut StationCommandReceiver<'_, CriticalSectionRawMutex>,

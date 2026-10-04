@@ -204,7 +204,7 @@ async fn access_point_task(
 #[embassy_executor::task]
 #[allow(
     large_assignments,
-    reason = "the sole radio runner enters its static task arena once; the final ELF frame audit bounds CPU stack use"
+    reason = "the sole radio runner enters its static task arena once; the final ELF's stack gate and runtime stack painting check CPU stack use"
 )]
 async fn radio_task(spawner: embassy_executor::Spawner, runner: integration::SystemRunner) {
     runner.run(spawner).await;

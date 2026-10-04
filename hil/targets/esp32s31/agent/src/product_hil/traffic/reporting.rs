@@ -1296,7 +1296,7 @@ async fn log_open_radio_task_poll(task: &str, poll: TaskPollSnapshot) {
 /// the interval.
 #[allow(
     large_assignments,
-    reason = "the generic wrapper pins the already owner-rich future inside the final static Embassy task arena; linked-frame and runtime watermark audits remain authoritative"
+    reason = "the generic wrapper pins the already owner-rich future inside the final static Embassy task arena; the linked-image stack gate and runtime watermark audits remain authoritative"
 )]
 pub(in crate::product_hil) async fn observe_open_radio_task_polls<F: Future>(
     future: F,

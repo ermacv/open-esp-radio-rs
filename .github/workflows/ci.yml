@@ -71,6 +71,14 @@ jobs:
       - run: cargo xtask --verbose lock --check
       - run: cargo xtask --verbose check metadata
       - run: cargo xtask --verbose check network
+      # The MIR fact driver links the compiler (`rustc-dev`, about 1.6 GB
+      # installed): only this job installs it, for the driver's own checks.
+      - name: MIR fact driver
+        working-directory: tools/mir-facts
+        run: |
+          rustup component add rustc-dev
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --locked --no-fail-fast
 
   # Clippy for every production feature profile on the chip target, plus the
   # layer, facade, unsafe-code and PAC-access boundaries.

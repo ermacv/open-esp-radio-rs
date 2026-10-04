@@ -6,10 +6,12 @@ facts its MIR states. The stack analysis (`tools/riscv/stack`) resolves the
 indirect sites of an image's machine code with them, without anything in the
 image changing.
 
-It links the toolchain's `rustc_driver` through `rustc_private` (the
-`rustc-dev` component of the pinned toolchain), so it is a workspace of its
-own, built with `RUSTC_BOOTSTRAP=1` and run with the toolchain's `lib/` on
-`LD_LIBRARY_PATH`. A toolchain update can change the `rustc_public` API it
+It links the toolchain's `rustc_driver` through `rustc_private`, so it is a
+workspace of its own, built with `RUSTC_BOOTSTRAP=1` (its `.cargo/config.toml`)
+and run with the toolchain's `lib/` on `LD_LIBRARY_PATH`. It needs the pinned
+toolchain's `rustc-dev` component, about 1.6 GB installed, which
+`rust-toolchain.toml` leaves out so that no other checkout or CI job pays
+for it: `rustup component add rustc-dev` where the driver runs. A toolchain update can change the `rustc_public` API it
 uses; the driver changes with it.
 
 ## Running it

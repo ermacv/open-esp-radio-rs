@@ -62,7 +62,11 @@ impl Walk {
     }
 
     fn instance(&mut self, instance: Instance) {
-        if !self.seen.insert(instance.mangled_name()) || !instance.has_body() {
+        if !self.seen.insert(instance.mangled_name()) {
+            return;
+        }
+        // A precompiled crate's own functions carry no MIR.
+        if !instance.has_body() {
             return;
         }
         let Some(body) = instance.body() else {

@@ -73,6 +73,48 @@ pub(crate) fn archived(
     })
 }
 
+/// Flash `image` into the device under test with `board`'s flow and start
+/// it: an image the flow leaves waiting in the ROM's download mode starts
+/// by a power-on reset where the board resets by power, else by RTS.
+pub(crate) fn flash_dut(
+    board: &dyn oer_hil_board::Board,
+    image: &oer_hil_board::FlashImage,
+    lab: &oer_hil_stand::config::LabConfig,
+) -> Result<()> {
+    let port = flashable_port(lab)?;
+    if board.flash(image, &port)? == oer_hil_board::Flashed::Started {
+        return Ok(());
+    }
+    let control = oer_hil_stand::control::BoardControl::of_board(&port, &lab.dut_mac()?)?;
+    match start_after_flash(control.power_on().is_some()) {
+        Start::PowerOn => control
+            .power_on()
+            .ok_or("the board lost its power control")?(),
+        Start::Rts => {
+            drop(oer_hil_board::reset::reset_into_application(&port)?);
+            Ok(())
+        }
+    }
+}
+
+/// How the runner starts an image its flash left in download mode.
+#[derive(Debug, Eq, PartialEq)]
+enum Start {
+    /// A power-on reset: an RTS reset out of download mode starts an
+    /// esp32c5's image with its USB console silent.
+    PowerOn,
+    /// The only reset a board without power control has.
+    Rts,
+}
+
+fn start_after_flash(resets_by_power: bool) -> Start {
+    if resets_by_power {
+        Start::PowerOn
+    } else {
+        Start::Rts
+    }
+}
+
 /// The device under test's port, ready for a flash: a board that is not on
 /// USB, because its image switched its USB Serial/JTAG off, is put into its
 /// ROM's download mode first through its hub port's power.
@@ -103,6 +145,12 @@ pub(crate) fn flashable_port(lab: &oer_hil_stand::config::LabConfig) -> Result<s
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_image_left_in_download_mode_starts_by_power_where_the_board_has_it() {
+        assert_eq!(start_after_flash(true), Start::PowerOn);
+        assert_eq!(start_after_flash(false), Start::Rts);
+    }
 
     #[test]
     fn an_archive_keeps_each_boot_flow_s_companions_and_its_chip_s_replay() {

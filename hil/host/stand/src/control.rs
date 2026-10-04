@@ -166,6 +166,35 @@ impl BoardControl {
             .unwrap_or_default()
     }
 
+    /// Power the board off and on and wait until its port is back and open
+    /// to the stand's user: a power-on reset into the image in its flash.
+    /// Only a board that resets by power has it.
+    pub fn power_on(&self) -> Option<impl Fn() -> crate::Result<()> + '_> {
+        let power = self.power.as_ref()?;
+        Some(move || {
+            let mac = self.mac.clone();
+            power
+                .cycle_observed(&|| {
+                    oer_hil_arbiter::attached_ports()
+                        .iter()
+                        .any(|port| port.mac.as_deref() == Some(mac.as_str()))
+                })?
+                .verdict()?;
+            let port = post_mortem::current_port(&self.port, Some(&self.mac), REATTACH)
+                .ok_or("the board's port did not return after its power")?;
+            // udev hands the returned port to the stand's group a moment
+            // after it appears.
+            let started = std::time::Instant::now();
+            while oer_hil_board::reset::open_without_reset(&port).is_err() {
+                if started.elapsed() > PORT_ACCESS {
+                    return Err(format!("{} stayed closed after its power", port.display()).into());
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Ok(())
+        })
+    }
+
     /// Power the board off and on and, as soon as its USB returns, reset it
     /// into its ROM's download mode through the USB Serial/JTAG; the
     /// console the ROM printed. Only a board that resets by power has it.

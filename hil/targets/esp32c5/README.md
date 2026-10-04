@@ -13,7 +13,12 @@ scheduler runs, and `OPEN_RADIO_HIL boot-smoke=PASS timer=PASS` after one
 timer wake, on the USB Serial/JTAG console. It does not speak the HIL wire
 protocol. The runner builds it for the `boot-smoke` scenario, flashes
 it with the catalog bootloader and partition table at the offsets of the chip
-profile's `[flash]` table, and archives all three with the runtime ELF:
+profile's `[flash]` table, and archives all three with the runtime ELF.
+The write leaves the ROM in download mode, and an RTS reset out of it starts
+the image with its USB console silent (the host reads EOF); the runner starts
+it with a power-on reset instead, cycling the board's hub port and waiting
+for its port to return, so the board's stand file entry needs `power` in its
+`reset` ladder:
 
 ```console
 cargo hil run --chip esp32c5 boot-smoke

@@ -13,13 +13,15 @@ use oer_ieee80211_ap::{
     ApPeerPhase,
 };
 use oer_ieee80211_ap_service::port::{
-    PortAccessPoint, PortApBuildError, PortApClient, PortApEnv, PortApProfile, PortApRouter,
+    PortAccessPoint, PortApAuthenticator, PortApBuildError, PortApClient, PortApEnv, PortApProfile,
+    PortApRouter,
 };
 use oer_ieee80211_lower_mac::{
-    CoexPriority, Ieee80211LowerMacPort, LifecycleCommand, LowerMacBeaconTiming, MacAddress,
-    PhyRate, ReceiveFilter, RxMeta, TxPower, VifId, VifRole,
+    CoexPriority, Ieee80211LowerMacPort, KeyScope, LifecycleCommand, LowerMacBeaconTiming,
+    MacAddress, PhyRate, ReceiveFilter, RxMeta, TxPower, VifId, VifRole,
     model::{LowerMacModel, ModelOutcome},
 };
+use oer_ieee80211_mac::security::rsn::Akm;
 use oer_ieee80211_mac::{
     ap::profile::{Advertisement, LegacyRates, WmmParameters},
     beacon::{AP_BEACON_CAPACITY, dtim},
@@ -29,6 +31,10 @@ use oer_ieee80211_mac::{
     phy::LegacyRate,
     qos::WmmAccessCategory,
     ssid::WifiSsid,
+};
+use oer_ieee80211_rsn::{
+    Pmk, Ptk, PtkContext,
+    frames::{OwnedAssociationSecurityIes, OwnedRsnIe, RsnGtk, RsnIgtk, RsnTxFrame},
 };
 use oer_ieee80211_softmac::{BackoffEntropy, EdcaContention};
 use oer_ieee80211_upper_mac::{
@@ -127,6 +133,19 @@ impl PortClientEnv for Env<'_> {
 
 impl<'a> PortApEnv for Env<'a> {
     type Timer = &'a VirtualTimer;
+    type Authenticator = FixedMaterial;
+}
+
+/// The nonce and replay counter every handshake starts from.
+const ANONCE: [u8; 32] = [0x33; 32];
+const REPLAY_COUNTER: u64 = 9;
+
+struct FixedMaterial;
+
+impl PortApAuthenticator for FixedMaterial {
+    fn handshake_material(&mut self) -> ([u8; 32], u64) {
+        (ANONCE, REPLAY_COUNTER)
+    }
 }
 
 fn channel() -> WifiChannel {
@@ -281,6 +300,7 @@ fn the_access_point_starts_its_bss_and_beacons_at_every_tbtt() {
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
         client(&router),
         &timer,
+        FixedMaterial,
         profile(&ssid),
         service(),
         &mut storage,
@@ -353,6 +373,7 @@ fn a_probe_request_for_the_bss_or_any_ssid_is_answered_once_per_interval() {
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
         client(&router),
         &timer,
+        FixedMaterial,
         profile(&ssid),
         service(),
         &mut storage,
@@ -478,6 +499,7 @@ fn an_open_station_authenticates_associates_and_leaves() {
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
         client(&router),
         &timer,
+        FixedMaterial,
         profile(&ssid),
         service(),
         &mut storage,
@@ -549,6 +571,7 @@ fn an_inactive_peer_is_disassociated_and_deauthenticated() {
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
         client(&router),
         &timer,
+        FixedMaterial,
         profile(&ssid),
         service(),
         &mut storage,
@@ -576,18 +599,16 @@ fn an_inactive_peer_is_disassociated_and_deauthenticated() {
 }
 
 #[test]
-fn a_protected_bss_is_refused_until_its_handshake_is_served() {
+fn a_wpa3_bss_is_refused_until_its_sae_is_served() {
     let model = model();
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = [0; AP_BEACON_CAPACITY];
-    let pmk = oer_ieee80211_rsn::Pmk::from_bytes([7; 32]);
-    let gtk = oer_ieee80211_rsn::frames::RsnGtk::new(1, true, [9; 16]).unwrap();
-    let wpa2 = AccessPointService::new(
+    let wpa3 = AccessPointService::new_wpa3(
         ADDRESS,
-        pmk,
-        gtk,
+        RsnGtk::new(1, true, [9; 16]).unwrap(),
+        RsnIgtk::new(4, [0; 6], [0x66; 16]).unwrap(),
         AccessPointClientLimit::new(4).unwrap(),
         AccessPointInactiveTimeout::new(10).unwrap(),
         Box::leak(Box::new(AccessPointPeerStorage::new())),
@@ -596,10 +617,201 @@ fn a_protected_bss_is_refused_until_its_handshake_is_served() {
         PortAccessPoint::<Env<'_>>::new(
             client(&router),
             &timer,
+            FixedMaterial,
             profile(&ssid),
-            wpa2,
+            wpa3,
             &mut storage
         ),
         Err(PortApBuildError::SecurityUnsupported)
     ));
+}
+
+/// The RSN element of a WPA2-Personal station: CCMP, PSK.
+const RSN: [u8; 22] = [
+    0x30, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0, 0,
+];
+const PASSPHRASE: &[u8] = b"port-ap-password";
+const SNONCE: [u8; 32] = [0x44; 32];
+
+/// An Association Request of a WPA2-Personal station.
+fn rsn_association() -> Vec<u8> {
+    let mut body = vec![0x31, 0x04, 10, 0];
+    body.extend_from_slice(&[0, SSID.len() as u8]);
+    body.extend_from_slice(SSID);
+    body.extend_from_slice(&[1, 8, 0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24]);
+    body.extend_from_slice(&RSN);
+    management(0, false, &body)
+}
+
+/// An EAPOL frame of the station to the access point, in a data MPDU.
+fn eapol(frame: &[u8]) -> Vec<u8> {
+    let mut mpdu = vec![0x08, 0x01, 0, 0];
+    mpdu.extend_from_slice(&ADDRESS);
+    mpdu.extend_from_slice(&STATION);
+    mpdu.extend_from_slice(&ADDRESS);
+    mpdu.extend_from_slice(&[0x10, 0]);
+    mpdu.extend_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x88, 0x8e]);
+    mpdu.extend_from_slice(frame);
+    mpdu
+}
+
+fn ptk() -> Ptk {
+    Pmk::derive(PASSPHRASE, SSID).unwrap().derive_ptk(
+        Akm::Psk,
+        PtkContext {
+            authenticator_address: ADDRESS,
+            supplicant_address: STATION,
+            authenticator_nonce: ANONCE,
+            supplicant_nonce: SNONCE,
+        },
+    )
+}
+
+#[test]
+fn a_wpa2_station_completes_the_four_way_handshake_and_gets_its_key() {
+    let model = model();
+    let timer = VirtualTimer::default();
+    let router = PortApRouter::<Env<'_>>::new(&model, 1);
+    let ssid = WifiSsid::new(SSID).unwrap();
+    let mut storage = [0; AP_BEACON_CAPACITY];
+    let wpa2 = AccessPointService::new(
+        ADDRESS,
+        Pmk::derive(PASSPHRASE, SSID).unwrap(),
+        RsnGtk::new(1, true, [0x55; 16]).unwrap(),
+        AccessPointClientLimit::new(4).unwrap(),
+        AccessPointInactiveTimeout::new(10).unwrap(),
+        Box::leak(Box::new(AccessPointPeerStorage::new())),
+    );
+    let mut access_point = PortAccessPoint::<Env<'_>>::new(
+        client(&router),
+        &timer,
+        FixedMaterial,
+        profile(&ssid),
+        wpa2,
+        &mut storage,
+    )
+    .unwrap();
+    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    // The group key is the port's from the start.
+    assert_eq!(model.installed_keys(), [KeyScope::Group { key_id: 1 }]);
+
+    let ptk = ptk();
+    let rsn_ie = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
+    let security_ies = OwnedAssociationSecurityIes::<128>::try_copy(&rsn_ie, &[]).unwrap();
+    let message2 = RsnTxFrame::<512>::message2_with_security_ies(
+        Akm::Psk,
+        ADDRESS,
+        REPLAY_COUNTER,
+        SNONCE,
+        &security_ies,
+    )
+    .unwrap()
+    .authenticate(&ptk);
+    let message4 = RsnTxFrame::<512>::message4(Akm::Psk, ADDRESS, REPLAY_COUNTER + 1)
+        .unwrap()
+        .authenticate(&ptk);
+    let start = timer.now.get();
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[
+            (start + 1_000, authentication(false)),
+            (start + 2_000, rsn_association()),
+            (start + 3_000, eapol(message2.as_bytes())),
+            (start + 4_000, eapol(message4.as_bytes())),
+        ],
+        start + 5_000,
+    );
+    // Message 1 followed the association, Message 3 Message 2: EAPOL data
+    // MPDUs from the DS to the station.
+    let eapol_sent: Vec<_> = model
+        .submitted()
+        .into_iter()
+        .map(|attempt| attempt.frames[0].clone())
+        .filter(|frame| frame[0] == 0x08 && frame[4..10] == STATION)
+        .collect();
+    assert_eq!(eapol_sent.len(), 2);
+    assert!(
+        eapol_sent
+            .iter()
+            .all(|frame| frame[1] & 0x02 != 0 && frame[30..32] == [0x88, 0x8e])
+    );
+    assert_eq!(access_point.counters().handshakes, 1);
+    assert_eq!(
+        access_point.service().peer_status(STATION).unwrap().phase,
+        ApPeerPhase::Authorized
+    );
+    // The pairwise key was installed before the peer was authorized.
+    assert_eq!(
+        model.installed_keys(),
+        [
+            KeyScope::Group { key_id: 1 },
+            KeyScope::Pairwise { peer: STATION }
+        ]
+    );
+
+    // The station leaves: its pairwise key goes with it.
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[(start + 6_000, management(12, false, &[3, 0]))],
+        start + 7_000,
+    );
+    assert_eq!(model.installed_keys(), [KeyScope::Group { key_id: 1 }]);
+}
+
+#[test]
+fn a_silent_station_gets_message_1_again_and_is_closed_when_its_retries_run_out() {
+    let model = model();
+    let timer = VirtualTimer::default();
+    let router = PortApRouter::<Env<'_>>::new(&model, 1);
+    let ssid = WifiSsid::new(SSID).unwrap();
+    let mut storage = [0; AP_BEACON_CAPACITY];
+    let wpa2 = AccessPointService::new(
+        ADDRESS,
+        Pmk::derive(PASSPHRASE, SSID).unwrap(),
+        RsnGtk::new(1, true, [0x55; 16]).unwrap(),
+        AccessPointClientLimit::new(4).unwrap(),
+        AccessPointInactiveTimeout::new(60).unwrap(),
+        Box::leak(Box::new(AccessPointPeerStorage::new())),
+    );
+    let mut access_point = PortAccessPoint::<Env<'_>>::new(
+        client(&router),
+        &timer,
+        FixedMaterial,
+        profile(&ssid),
+        wpa2,
+        &mut storage,
+    )
+    .unwrap();
+    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    let start = timer.now.get();
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[
+            (start + 1_000, authentication(false)),
+            (start + 2_000, rsn_association()),
+        ],
+        start + 6_000_000,
+    );
+    // Message 1 and its three retransmissions, then the close: a
+    // Disassociation and a Deauthentication, both for an authentication no
+    // longer valid.
+    assert_eq!(access_point.counters().eapol_sent, 4);
+    let teardown: Vec<_> = model
+        .submitted()
+        .into_iter()
+        .map(|attempt| attempt.frames[0].clone())
+        .filter(|frame| frame[4..10] == STATION && matches!(frame[0], 0xa0 | 0xc0))
+        .map(|frame| (frame[0], u16::from_le_bytes([frame[24], frame[25]])))
+        .collect();
+    assert_eq!(teardown, [(0xa0, 2), (0xc0, 2)]);
+    assert!(access_point.service().peer_status(STATION).is_none());
 }

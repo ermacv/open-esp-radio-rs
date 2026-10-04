@@ -415,12 +415,18 @@ images have.
 Every image links one `oer-trace` trace in RTC fast memory beside the
 post-mortem record (`runtime/src/trace.rs`): 512 entries, and two 1024-word
 snapshot slots only with the `trace-snapshots` feature. The hang watchdog and
-the panic report, which the platform's panic entry calls through its
-`panic-diagnostics` hook, freeze it before the reset; every image but
-`system-panic-reset` has that hook (the agent's `panic-diagnostics` feature,
-which each image's base feature enables), and that image runs the product
-panic entry alone, so the `system-panic-reset` scenario exercises the
-product's record-and-reset path; the next boot holds the frozen
+the agent's panic hook, which the platform's panic entry calls through its
+`panic-hook` feature, freeze it before the reset; every image but
+`system-panic-reset` has that hook (the agent's `panic-hook` feature, which
+each image's base feature enables), and that image runs the product panic
+entry alone, so the `system-panic-reset` scenario exercises the product's
+record-and-reset path. The hook, the exception entry and the hang watchdog
+format nothing: they record the post-mortem fault and the hart's trap
+registers, the vector it took and the sources pending and routed to it
+(`agent/src/fatal.rs`) in RTC fast memory and reset, and the next boot prints
+`OPEN_RADIO_HIL runtime=PANIC boot=previous` or `runtime=EXCEPTION
+boot=previous` with that state before anything else. A panic message with
+arguments is not kept, only a static one. The next boot also holds the frozen
 trace for the host, which pages it out through the
 [trace commands](../../protocol/diagnostics.md#event-trace). The
 `station-exit-evidence` feature also enables the station runtime's own trace

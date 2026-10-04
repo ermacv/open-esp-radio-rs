@@ -41,8 +41,7 @@ pub enum PreInitializationRequest {
 
 /// Queues one best-effort diagnostic line on the runtime USB transport.
 ///
-/// Unlike [`emergency_log`], this path is serialized by the console task with
-/// binary protocol frames. Runtime code must use this function so a ROM write
+/// This path is serialized by the console task with binary protocol frames. Runtime code must use this function so a ROM write
 /// cannot overtake a USB packet that the asynchronous HAL has only submitted.
 pub fn runtime_log(args: Arguments<'_>) {
     CONSOLE.line(args);

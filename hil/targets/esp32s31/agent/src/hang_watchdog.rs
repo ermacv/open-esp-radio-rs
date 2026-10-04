@@ -293,19 +293,6 @@ pub(crate) fn check() {
     // The trace keeps what happened before the hang.
     oer_trace::freeze(<oer_hil_trace::Hang as oer_trace::Event>::KIND, 0);
     crate::system::postmortem::record_hang(&hang);
-    crate::console::emergency_log(format_args!(
-        "hil-postmortem: hang stalled={stalled:#04b} task={:?} core0 mepc={:08x} ra={:08x} sp={:08x} \
-         core1 responded={} mepc={:08x} ra={:08x} sp={:08x} samples={:08x?}",
-        task.map(|stall| stall.slot.id()),
-        hang.harts[0].mepc,
-        hang.harts[0].ra,
-        hang.harts[0].sp,
-        hang.harts[1].responded,
-        hang.harts[1].mepc,
-        hang.harts[1].ra,
-        hang.harts[1].sp,
-        hang.samples,
-    ));
     esp_hal::system::software_reset()
 }
 

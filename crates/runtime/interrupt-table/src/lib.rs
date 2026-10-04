@@ -396,7 +396,10 @@ macro_rules! interrupt_table {
             }
         }
 
-        /// The image's interrupt table.
+        /// The image's interrupt table. `#[used]` keeps the exported slice
+        /// in the image: reads of an immutable static are folded into their
+        /// uses, which would leave the tools no symbol to find it by.
+        #[used]
         #[unsafe(export_name = "__OER_INTERRUPT_TABLE")]
         pub static INTERRUPT_TABLE: &[$crate::Binding<$source_ty, $level_ty, $core_ty>] = &[
             $($crate::Binding {

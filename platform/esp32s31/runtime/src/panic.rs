@@ -1,19 +1,24 @@
 //! The image's one panic entry.
 //!
 //! The handler records the panic in `.rtc_fast.persistent`, RTC fast memory no
-//! reset entry initializes, without formatting its message: the location's file
-//! bytes (the last [`FILE_BYTES`]), line and column, the hart, whether it ran on
-//! the interrupt stack and, there, the interrupted PC. Every step is a bounded
-//! copy, so the path stays a short leaf in every context's stack bound.
+//! reset entry initializes, without formatting: the location's file bytes (the
+//! last [`FILE_BYTES`]), line and column, the message when it is a static
+//! string (its first [`MESSAGE_BYTES`]; a formatted message is only marked),
+//! the hart, whether it ran on the interrupt stack and, there, the interrupted
+//! PC. Every step is a bounded copy, so the path stays a short leaf in every
+//! context's stack bound.
 //!
-//! A product image then resets the chip; the next boot takes the record with
-//! [`take_previous`] and reports it in thread context. A diagnostic image
-//! (feature `panic-diagnostics`) instead calls
-//! `oer_platform_panic_diagnostics`, which it defines, to report and halt.
+//! An image with the `panic-hook` feature defines `oer_platform_panic_hook`,
+//! which the entry calls after the record: it records more of the image's
+//! state the same way, without formatting, and returns. The chip then resets;
+//! the next boot takes the record with [`take_previous`] and reports it in
+//! thread context.
 use core::cell::UnsafeCell;
 
 /// Bytes of the location's file path kept: its end, which names the file.
 pub const FILE_BYTES: usize = 48;
+/// Bytes of a static panic message kept: its start.
+pub const MESSAGE_BYTES: usize = 64;
 const MAGIC: u32 = 0x5045_524f; // "OREP"
 
 /// One panic, as the next boot reads it.
@@ -28,6 +33,16 @@ pub struct PanicRecord {
     pub column: u32,
     file: [u8; FILE_BYTES],
     file_length: u8,
+    message: Message,
+}
+
+/// A panic's message as recorded.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Message {
+    /// The start of a static message.
+    Static([u8; MESSAGE_BYTES], u8),
+    /// A message with arguments, which the entry does not format.
+    Formatted,
 }
 
 impl PanicRecord {
@@ -41,6 +56,21 @@ impl PanicRecord {
             .unwrap_or(bytes.len());
         core::str::from_utf8(&bytes[start..]).unwrap_or("")
     }
+
+    /// The start of the panic's message when it was a static string; `None`
+    /// for a formatted one.
+    pub fn message(&self) -> Option<&str> {
+        let Message::Static(bytes, length) = &self.message else {
+            return None;
+        };
+        let bytes = &bytes[..usize::from(*length)];
+        // The kept prefix may end inside a UTF-8 sequence; drop that part.
+        let end = (0..=bytes.len())
+            .rev()
+            .find(|&i| core::str::from_utf8(&bytes[..i]).is_ok())
+            .unwrap_or(0);
+        Some(core::str::from_utf8(&bytes[..end]).unwrap_or(""))
+    }
 }
 
 impl core::fmt::Display for PanicRecord {
@@ -53,9 +83,12 @@ impl core::fmt::Display for PanicRecord {
             self.column,
             self.hart
         )?;
-        match self.interrupted_pc {
-            Some(pc) => write!(f, " in an interrupt of {pc:#010x}"),
-            None => Ok(()),
+        if let Some(pc) = self.interrupted_pc {
+            write!(f, " in an interrupt of {pc:#010x}")?;
+        }
+        match self.message() {
+            Some(message) => write!(f, ": {message}"),
+            None => write!(f, " (formatted message not kept)"),
         }
     }
 }
@@ -71,6 +104,9 @@ struct Slot {
     column: u32,
     file_length: u32,
     file: [u8; FILE_BYTES],
+    /// A static message's length plus one; zero for a formatted message.
+    message_length: u32,
+    message: [u8; MESSAGE_BYTES],
     checksum: u32,
 }
 
@@ -84,6 +120,8 @@ impl Slot {
         column: 0,
         file_length: 0,
         file: [0; FILE_BYTES],
+        message_length: 0,
+        message: [0; MESSAGE_BYTES],
         checksum: 0,
     };
 
@@ -98,10 +136,11 @@ impl Slot {
             self.line,
             self.column,
             self.file_length,
+            self.message_length,
         ] {
             mix(word);
         }
-        for byte in self.file {
+        for byte in self.file.into_iter().chain(self.message) {
             mix(u32::from(byte));
         }
         sum
@@ -126,7 +165,8 @@ pub fn take_previous() -> Option<PanicRecord> {
     let slot = unsafe { &mut *SLOT.0.get() };
     let valid = slot.magic == MAGIC
         && slot.checksum == slot.sum()
-        && slot.file_length as usize <= FILE_BYTES;
+        && slot.file_length as usize <= FILE_BYTES
+        && slot.message_length as usize <= MESSAGE_BYTES + 1;
     let record = valid.then(|| PanicRecord {
         hart: slot.hart as u8,
         in_interrupt: slot.in_interrupt != 0,
@@ -135,6 +175,10 @@ pub fn take_previous() -> Option<PanicRecord> {
         column: slot.column,
         file: slot.file,
         file_length: slot.file_length as u8,
+        message: match slot.message_length {
+            0 => Message::Formatted,
+            length => Message::Static(slot.message, (length - 1) as u8),
+        },
     });
     slot.magic = 0;
     record
@@ -165,6 +209,13 @@ fn record(info: &core::panic::PanicInfo<'_>) {
         .location()
         .map_or(("", 0, 0), |l| (l.file(), l.line(), l.column()));
     (slot.file, slot.file_length) = file_tail(file);
+    (slot.message, slot.message_length) = match info.message().as_str() {
+        Some(message) => {
+            let (kept, length) = message_head(message);
+            (kept, length + 1)
+        }
+        None => ([0; MESSAGE_BYTES], 0),
+    };
     slot.hart = hart as u32;
     slot.in_interrupt = u32::from(in_interrupt);
     slot.interrupted_pc = if in_interrupt { mepc as u32 } else { 0 };
@@ -174,22 +225,23 @@ fn record(info: &core::panic::PanicInfo<'_>) {
     slot.checksum = slot.sum();
 }
 
-#[cfg(feature = "panic-diagnostics")]
+#[cfg(feature = "panic-hook")]
 unsafe extern "Rust" {
-    /// The diagnostic image's report after the record is written.
-    fn oer_platform_panic_diagnostics(info: &core::panic::PanicInfo<'_>) -> !;
+    /// The image's record of its own state after the platform's record. It
+    /// formats nothing, like the entry: it runs in every context's stack
+    /// bound.
+    fn oer_platform_panic_hook(info: &core::panic::PanicInfo<'_>);
 }
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
     record(info);
-    #[cfg(feature = "panic-diagnostics")]
-    // SAFETY: the diagnostic image defines this function with the declared
-    // signature; the link fails without it.
+    #[cfg(feature = "panic-hook")]
+    // SAFETY: the image defines this function with the declared signature;
+    // the link fails without it.
     unsafe {
-        oer_platform_panic_diagnostics(info)
-    }
-    #[cfg(not(feature = "panic-diagnostics"))]
+        oer_platform_panic_hook(info)
+    };
     esp_hal::system::software_reset()
 }
 
@@ -211,6 +263,18 @@ fn file_tail(file: &str) -> ([u8; FILE_BYTES], u32) {
     (kept, length)
 }
 
+/// The first [`MESSAGE_BYTES`] of `message`, zero-padded, and how many there
+/// are; like [`file_tail`], without an index.
+fn message_head(message: &str) -> ([u8; MESSAGE_BYTES], u32) {
+    let mut kept = [0; MESSAGE_BYTES];
+    let mut length = 0;
+    for (to, from) in kept.iter_mut().zip(message.as_bytes()) {
+        *to = *from;
+        length += 1;
+    }
+    (kept, length)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,7 +290,28 @@ mod tests {
             column: 1,
             file: stored,
             file_length: file.len() as u8,
+            message: Message::Formatted,
         }
+    }
+
+    #[test]
+    fn a_static_message_keeps_its_start_and_a_formatted_one_is_marked() {
+        let (kept, length) = message_head("index out of range");
+        let record = PanicRecord {
+            message: Message::Static(kept, length as u8),
+            ..record_with(b"src/lib.rs")
+        };
+        assert_eq!(record.message(), Some("index out of range"));
+        // "é" is 0xc3 0xa9; a kept prefix may end after its first byte.
+        let long = "a".repeat(MESSAGE_BYTES - 1) + "é";
+        let (kept, length) = message_head(&long);
+        assert_eq!(length as usize, MESSAGE_BYTES);
+        let record = PanicRecord {
+            message: Message::Static(kept, length as u8),
+            ..record_with(b"src/lib.rs")
+        };
+        assert_eq!(record.message(), Some(&long[..MESSAGE_BYTES - 1]));
+        assert_eq!(record_with(b"src/lib.rs").message(), None);
     }
 
     #[test]
@@ -256,6 +341,9 @@ mod tests {
         assert_ne!(slot.sum(), empty);
         slot.file[FILE_BYTES - 1] = 0;
         slot.line = 7;
+        assert_ne!(slot.sum(), empty);
+        slot.line = 0;
+        slot.message[0] = 1;
         assert_ne!(slot.sum(), empty);
     }
 }

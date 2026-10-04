@@ -149,6 +149,8 @@ pub struct HartState {
 pub struct PanicFault {
     pub file: heapless::String<48>,
     pub line: u32,
+    /// The panic's message when it is a static string; empty for a message
+    /// with arguments, which the panic path does not format.
     pub message: heapless::String<96>,
 }
 

@@ -15,13 +15,14 @@ radio role, executor or network-stack dependency.
 | `stack.toml` | Frame budgets for standalone application composition |
 
 The runtime owns every image's `#[panic_handler]`. It writes a bounded record
-of the panic to `.rtc_fast.persistent` without formatting its message (the
-end of the location's file path, line, column, hart and, on an interrupt
-stack, the interrupted PC), so the panic path stays a short leaf in every
-stack bound. A standalone image then resets; its next boot reads and clears
-the record with `panic::take_previous` and prints it. A diagnostic image
-enables `panic-diagnostics` and defines `oer_platform_panic_diagnostics`,
-which the entry calls after the record instead of resetting.
+of the panic to `.rtc_fast.persistent` without formatting (the end of the
+location's file path, line, column, the start of the message when it is a
+static string, hart and, on an interrupt stack, the interrupted PC), so the
+panic path stays a short leaf in every stack bound. An image with
+`panic-hook` defines `oer_platform_panic_hook`, which the entry calls after
+the record to record more of its own state the same way; it returns. Every
+image then resets, and its next boot reads and clears the record with
+`panic::take_previous` and prints it.
 
 Every image of this platform, standalone or HIL, is compiled with the flags
 of one owner, [`oer-esp32s31-firmware`'s `compiler`

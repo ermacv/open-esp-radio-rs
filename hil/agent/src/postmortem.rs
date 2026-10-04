@@ -343,14 +343,18 @@ impl Record {
     }
 }
 
-/// `text` as a zero-padded array, cut at a character boundary.
+/// `text` as a zero-padded array, cut at a character boundary. It copies
+/// through iterators, without an index whose bounds check could fail: the
+/// panic path records through it, and a panic there would re-enter it.
 fn bytes<const N: usize>(text: &str) -> [u8; N] {
     let mut end = text.len().min(N);
     while !text.is_char_boundary(end) {
-        end -= 1;
+        end = end.saturating_sub(1);
     }
     let mut raw = [0; N];
-    raw[..end].copy_from_slice(&text.as_bytes()[..end]);
+    for (to, from) in raw.iter_mut().zip(text.as_bytes().iter().take(end)) {
+        *to = *from;
+    }
     raw
 }
 

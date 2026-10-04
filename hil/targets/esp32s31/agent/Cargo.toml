@@ -18,10 +18,10 @@ phy-trace = ["oer-esp32s31-phy?/trace", "trace-snapshots"]
 phy-rx-hot-sram = ["oer-esp32s31-phy?/rx-gain-hot-sram", "oer-esp32s31-ieee80211-system?/phy-rx-hot-sram"]
 # The HIL report of a panic instead of the product's record-and-reset; every
 # image but `system-panic-reset` has it.
-panic-diagnostics = ["oer-esp32s31-platform-runtime/panic-diagnostics"]
-boot-smoke = ["panic-diagnostics"]
+panic-hook = ["oer-esp32s31-platform-runtime/panic-hook"]
+boot-smoke = ["panic-hook"]
 system-watchdog = [
-    "panic-diagnostics",
+    "panic-hook",
     "dep:oer-hil-protocol",
     "oer-hil-protocol?/system",
     "dep:embassy-futures",
@@ -53,7 +53,7 @@ owned-network = ["dep:embassy-net-owned", "dep:oer-embassy-net-owned", "dep:xarx
 # Direct Test Mode image serves the `bluetooth-dtm-*` scenarios; the GATT
 # images run the Trouble Host and the GATT application.
 bluetooth-radio = [
-    "panic-diagnostics",
+    "panic-hook",
     "oer-hil-protocol?/bluetooth",
     "dep:oer-bluetooth-controller",
     "dep:oer-bluetooth-hci",
@@ -88,7 +88,7 @@ bluetooth-secure-gatt = [
     "oer-hil-agent/secure-gatt",
 ]
 open-radio-hil = [
-    "panic-diagnostics",
+    "panic-hook",
     "oer-hil-protocol?/wifi",
     "oer-hil-agent?/wifi",
     "dep:oer-ieee80211-softmac",

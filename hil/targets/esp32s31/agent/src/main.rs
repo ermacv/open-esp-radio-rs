@@ -37,7 +37,7 @@ compile_error!("system-watchdog requires an exclusive radio-free image");
 #[cfg(all(
     feature = "system-panic-reset",
     any(
-        feature = "panic-diagnostics",
+        feature = "panic-hook",
         feature = "boot-smoke",
         feature = "system-watchdog",
         feature = "open-radio-hil",
@@ -158,6 +158,7 @@ mod boot_smoke_console;
 #[cfg(feature = "open-radio-hil")]
 mod console;
 mod exception;
+mod fatal;
 #[cfg(feature = "gdma-mem2mem-probe")]
 mod gdma_mem2mem_probe;
 #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
@@ -303,7 +304,7 @@ struct AppCoreStack(Stack<APP_CORE_BOOTSTRAP_STACK_BYTES>);
 
 #[cfg(feature = "open-radio-hil")]
 #[allow(unsafe_code, reason = "esp-hal's stack is uninitialized memory")]
-// REVIEWED-LAYOUT: esp-hal 96397fa0
+// REVIEWED-LAYOUT: esp-hal d61af210
 // SAFETY: at the pinned esp-hal revision `Stack<SIZE>` is
 // `repr(C, align(16))` with one field, `mem: MaybeUninit<[u8; SIZE]>`, valid
 // for any bytes; `Stack::new` leaves it uninitialized.
@@ -355,11 +356,14 @@ unsafe extern "C" {
 
 use oer_esp32s31_platform_runtime as _;
 
-/// The HIL report of a panic, which the platform's panic entry calls after
-/// writing its retained record (feature `panic-diagnostics`).
-#[cfg(feature = "panic-diagnostics")]
+/// The image's record of a panic, which the platform's panic entry calls
+/// after its own record and before it resets the chip (feature `panic-hook`):
+/// it freezes the trace and records the post-mortem fault and the machine
+/// state, formatting nothing, so the panic path stays a leaf in every stack
+/// bound. The next boot reports what it recorded.
+#[cfg(feature = "panic-hook")]
 #[unsafe(no_mangle)]
-fn oer_platform_panic_diagnostics(info: &core::panic::PanicInfo<'_>) -> ! {
+fn oer_platform_panic_hook(info: &core::panic::PanicInfo<'_>) {
     // The trace keeps what happened before the panic.
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     oer_trace::freeze(<oer_hil_trace::Panic as oer_trace::Event>::KIND, 0);
@@ -369,46 +373,17 @@ fn oer_platform_panic_diagnostics(info: &core::panic::PanicInfo<'_>) -> ! {
         feature = "bluetooth-radio"
     ))]
     system::postmortem::record_panic(info);
-    #[cfg(not(feature = "open-radio-hil"))]
+    #[cfg(not(any(
+        feature = "system-watchdog",
+        feature = "open-radio-hil",
+        feature = "bluetooth-radio"
+    )))]
     let _ = info;
-    #[cfg(feature = "open-radio-hil")]
-    {
-        console::panic_origin(info);
-        #[cfg(not(feature = "memory-benchmark"))]
-        {
-            let (stage, action) = product_hil::diagnostic_snapshot();
-            console::emergency_log(format_args!(
-                "OPEN_RADIO_HIL panic stage={stage} action={action} info={info}"
-            ));
-        }
-        #[cfg(feature = "memory-benchmark")]
-        console::emergency_log(format_args!(
-            "OPEN_RADIO_HIL panic image=memory-benchmark info={info}"
-        ));
-        let (mcause, mepc, mtval, hart_id): (usize, usize, usize, usize);
-        unsafe {
-            asm!("csrr {0}, mcause", out(reg) mcause);
-            asm!("csrr {0}, mepc", out(reg) mepc);
-            asm!("csrr {0}, mtval", out(reg) mtval);
-            asm!("csrr {0}, mhartid", out(reg) hart_id);
-        }
-        let pending = esp_hal::interrupt::InterruptStatus::current();
-        let mut pending_words = [0_u32; 6];
-        for interrupt in pending.iterator() {
-            pending_words[usize::from(interrupt) / 32] |= 1 << (interrupt % 32);
-            console::panic_interrupt_source(interrupt);
-            console::panic_interrupt_route(interrupt);
-            if interrupt == esp_hal::peripherals::Interrupt::MODEM_WIFI_MAC_NMI as u8 {
-                console::panic_wifi_rx_frontier();
-            }
-        }
-        console::panic_interrupt_dispatch_context(mcause, hart_id, pending_words);
-        console::panic_report(mcause, mepc, mtval);
-    }
-    #[cfg(feature = "boot-smoke")]
-    let _ = info;
-    print(c"OPEN_RADIO_HIL runtime=PANIC\r\n");
-    halt()
+    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+    let stage = product_hil::diagnostic_snapshot().0;
+    #[cfg(not(all(feature = "open-radio-hil", not(feature = "memory-benchmark"))))]
+    let stage = 0;
+    fatal::record_panic(stage);
 }
 
 #[unsafe(no_mangle)]
@@ -417,6 +392,8 @@ extern "C" fn runtime_main() -> ! {
     print(c"OPEN_RADIO_HIL runtime=START profile=");
     print(PROFILE_NAME);
     print(c"\r\n");
+    // Before anything can fail and overwrite it.
+    fatal::report_previous();
 
     validate_runtime_layout();
 

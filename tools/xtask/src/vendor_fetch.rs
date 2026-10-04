@@ -20,19 +20,11 @@ use std::process::Command;
 /// the host-wide store.
 pub const CACHE: &str = "target/vendor";
 /// Overrides the host-wide store of fetched artifacts.
-pub const STORE_ENV: &str = "OER_VENDOR_CACHE";
+pub const STORE_ENV: &str = oer_esp32s31_firmware::interrupt_stack::VENDOR_STORE_ENV;
 
-/// The host-wide store of fetched artifacts.
+/// The host-wide store of fetched artifacts, as the image builders resolve it.
 pub fn store() -> Result<PathBuf> {
-    match std::env::var_os(STORE_ENV).filter(|value| !value.is_empty()) {
-        Some(store) => Ok(PathBuf::from(store)),
-        None => Ok(std::env::var_os("XDG_CACHE_HOME")
-            .filter(|value| !value.is_empty())
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
-            .ok_or("HOME is required to locate the vendor artifact store")?
-            .join("open-esp-radio/vendor")),
-    }
+    oer_esp32s31_firmware::interrupt_stack::vendor_store()
 }
 
 /// Makes `root`'s `target/vendor` a link to `store`, merging a former

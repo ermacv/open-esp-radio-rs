@@ -20,7 +20,26 @@ const ARTIFACTS: &str = "verification/esp32s31/artifacts.toml";
 /// The reviewed summaries of ROM functions.
 const ROM_SUMMARIES: &str = "platform/esp32s31/linker/rom/functions.toml";
 
-/// The pinned ROM ELF in `root`'s vendor store, checked against its pin.
+/// Overrides the host-wide store of fetched vendor artifacts.
+pub const VENDOR_STORE_ENV: &str = "OER_VENDOR_CACHE";
+
+/// The host-wide store of fetched vendor artifacts, which every checkout and
+/// source snapshot shares: `OER_VENDOR_CACHE`, else
+/// `$XDG_CACHE_HOME/open-esp-radio/vendor`, else `~/.cache/open-esp-radio/vendor`.
+pub fn vendor_store() -> Result<PathBuf> {
+    match std::env::var_os(VENDOR_STORE_ENV).filter(|value| !value.is_empty()) {
+        Some(store) => Ok(PathBuf::from(store)),
+        None => Ok(std::env::var_os("XDG_CACHE_HOME")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
+            .ok_or("HOME is required to locate the vendor artifact store")?
+            .join("open-esp-radio/vendor")),
+    }
+}
+
+/// The pinned ROM ELF of the repository at `root` in the vendor store,
+/// checked against its pin.
 pub fn rom_elf(root: &Path) -> Result<PathBuf> {
     use sha2::Digest as _;
     let manifest: toml::Table = toml::from_str(&std::fs::read_to_string(root.join(ARTIFACTS))?)?;
@@ -51,11 +70,7 @@ pub fn rom_elf(root: &Path) -> Result<PathBuf> {
     let revision = text(&source, "revision").ok_or("the ROM's source pins no revision")?;
     let path = text(&artifact, "path").ok_or("the `rom` artifact has no path")?;
     let sha256 = text(&artifact, "sha256").ok_or("the `rom` artifact has no sha256")?;
-    let elf = root
-        .join("target/vendor")
-        .join(&source_id)
-        .join(&revision)
-        .join(&path);
+    let elf = vendor_store()?.join(&source_id).join(&revision).join(&path);
     let bytes = std::fs::read(&elf).map_err(|_| {
         format!(
             "the pinned ROM ELF {} is missing: run `cargo xtask vendor-fetch esp32s31 --artifact rom`",

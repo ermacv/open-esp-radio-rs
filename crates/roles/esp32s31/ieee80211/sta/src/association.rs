@@ -35,6 +35,10 @@ pub struct StaAssociationProfile {
 pub enum StaAssociationProfileError {
     PowerCapability(StaPowerCapabilityError),
     HeUlMuPower(HeUlMuPowerCapabilityError),
+    /// The access point has no HT Capabilities. The S31 connected station
+    /// does not yet serve a legacy association, so the attempt fails here
+    /// rather than after the join.
+    LegacyUnsupported,
 }
 
 /// Select an Association PHY and derive every HE power field from calibration.
@@ -44,6 +48,9 @@ pub fn esp32s31_sta_association_profile<P: WifiTxPowerProfile>(
     power: &P,
 ) -> Result<StaAssociationProfile, StaAssociationProfileError> {
     let phy = crate::profile::select_association(access_point, preference).phy;
+    if phy == PhyMode::Legacy {
+        return Err(StaAssociationProfileError::LegacyUnsupported);
+    }
     if phy != PhyMode::He20 {
         return Ok(StaAssociationProfile {
             phy,

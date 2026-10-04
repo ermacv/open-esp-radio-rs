@@ -11,7 +11,7 @@ use oer_ieee80211_lower_mac::{
     AmpduCapabilities, Channel, CoexPriority, EventsLost, FailureClass, Ieee80211LowerMacPort,
     KeySelector, LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacAmpdu,
     LowerMacBeaconTiming, LowerMacEvent, LowerMacSetting, MacAddress, PhyRate, ReceiveFilter,
-    RxMeta, SettingError, TbttEvent, TbttSchedule, TxPower, VifConfig, VifId, VifRole, VifTsf,
+    RxMeta, SettingError, TbttEvent, TxPower, VifConfig, VifId, VifRole,
 };
 use oer_ieee80211_mac::{
     ccmp::CcmpTxPacketNumberError,
@@ -43,8 +43,9 @@ use oer_time::{Instant, Timer};
 /// entropy of the backoff draw, the timer and the key-data unwrap once, in a
 /// marker type, instead of on every station item.
 pub trait PortStationEnv {
-    /// The lower-MAC backend.
-    type Port: Ieee80211LowerMacPort;
+    /// The lower-MAC backend. A station needs its TBTTs and TSF: its power
+    /// manager runs for every association.
+    type Port: LowerMacBeaconTiming;
     /// The HE TXOP RTS budget of the transmit planner.
     type Budget: HeTxopRtsBudget;
     /// The rate of each retry of an MPDU.
@@ -276,39 +277,6 @@ pub enum PortLinkError<E> {
     Coexistence,
 }
 
-/// The outcome of a port setting call: the port's own failure outside, the
-/// setting's refusal inside.
-type SettingOutcome<P> = Result<Result<(), SettingError>, <P as Ieee80211LowerMacPort>::Error>;
-
-/// The beacon-timing operations of a port that implements
-/// [`LowerMacBeaconTiming`], kept as values so the station stays generic
-/// over the base port.
-pub struct BeaconTimingOps<P: Ieee80211LowerMacPort> {
-    pub(crate) tbtt: fn(&P::Event) -> Option<TbttEvent>,
-    pub(crate) set_tbtt: fn(&P, TbttSchedule) -> SettingOutcome<P>,
-    pub(crate) stop_tbtt: fn(&P, VifId) -> SettingOutcome<P>,
-    pub(crate) set_tsf: fn(&P, VifTsf) -> SettingOutcome<P>,
-}
-
-impl<P: Ieee80211LowerMacPort> Clone for BeaconTimingOps<P> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<P: Ieee80211LowerMacPort> Copy for BeaconTimingOps<P> {}
-
-impl<P: LowerMacBeaconTiming> BeaconTimingOps<P> {
-    pub fn of_port() -> Self {
-        Self {
-            tbtt: P::tbtt,
-            set_tbtt: P::set_tbtt,
-            stop_tbtt: P::stop_tbtt,
-            set_tsf: P::set_tsf,
-        }
-    }
-}
-
 /// The station's client of the port.
 ///
 /// The port's one event consumer is its [`PortRouter`]; the link reads the
@@ -329,7 +297,6 @@ pub struct PortLink<'p, X: PortStationEnv> {
     ladder: X::Ladder,
     entropy: X::Entropy,
     config: PortStationConfig,
-    beacon_timing: Option<BeaconTimingOps<X::Port>>,
     coex: X::Coex,
     counters: PortLinkCounters,
 }
@@ -351,20 +318,9 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
             ladder,
             entropy,
             config,
-            beacon_timing: None,
             coex,
             counters: PortLinkCounters::default(),
         }
-    }
-
-    /// Report TBTTs of the station's interface as [`PortInput::Tbtt`]; the
-    /// power-save driver needs them.
-    pub fn with_beacon_timing(mut self) -> Self
-    where
-        X::Port: LowerMacBeaconTiming,
-    {
-        self.beacon_timing = Some(BeaconTimingOps::of_port());
-        self
     }
 
     /// The coexistence schedule of the station's radio system.
@@ -390,10 +346,6 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
 
     pub const fn counters(&self) -> PortLinkCounters {
         self.counters
-    }
-
-    pub(crate) const fn beacon_timing(&self) -> Option<BeaconTimingOps<X::Port>> {
-        self.beacon_timing
     }
 
     pub fn tx_mut(
@@ -506,21 +458,18 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
     fn poll_input(&mut self, context: &mut core::task::Context<'_>) -> Poll<Option<PortInput>> {
         loop {
             let router = self.router;
-            let tbtt = self.beacon_timing.map(|ops| ops.tbtt);
-            if let Some(view) = tbtt {
-                match pin!(router.extension()).poll(context) {
-                    Poll::Ready(Some(Ok(event))) => {
-                        if let Some(tbtt) = view(&event) {
-                            return Poll::Ready(Some(PortInput::Tbtt(tbtt)));
-                        }
-                        continue;
+            match pin!(router.extension()).poll(context) {
+                Poll::Ready(Some(Ok(event))) => {
+                    if let Some(tbtt) = <X::Port as LowerMacBeaconTiming>::tbtt(&event) {
+                        return Poll::Ready(Some(PortInput::Tbtt(tbtt)));
                     }
-                    Poll::Ready(Some(Err(EventsLost))) => {
-                        return Poll::Ready(Some(self.lost()));
-                    }
-                    Poll::Ready(None) => return Poll::Ready(Some(PortInput::Poisoned)),
-                    Poll::Pending => {}
+                    continue;
                 }
+                Poll::Ready(Some(Err(EventsLost))) => {
+                    return Poll::Ready(Some(self.lost()));
+                }
+                Poll::Ready(None) => return Poll::Ready(Some(PortInput::Poisoned)),
+                Poll::Pending => {}
             }
             return match pin!(router.received()).poll(context) {
                 Poll::Ready(Some(Ok(event))) => match self.frame(&event) {

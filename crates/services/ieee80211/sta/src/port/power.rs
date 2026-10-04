@@ -1,8 +1,10 @@
 //! Station power save over the lower-MAC port.
 
+use core::marker::PhantomData;
+
 use oer_ieee80211_lower_mac::{
-    Ieee80211LowerMacPort, KeySelector, LowerMacSetting, MacAddress, RxBeaconPriority,
-    TbttSchedule, VifTsf,
+    KeySelector, LowerMacBeaconTiming, LowerMacSetting, MacAddress, RxBeaconPriority, TbttSchedule,
+    VifTsf,
 };
 use oer_ieee80211_mac::{
     qos::WmmAccessCategory,
@@ -18,9 +20,7 @@ use oer_ieee80211_upper_mac::TxReport;
 use oer_ieee80211_upper_mac_service::UpperMacTxError;
 use oer_time::{Clock, Duration, Instant};
 
-use super::link::{
-    BeaconTimingOps, PortCoexistence, PortError, PortLink, PortLinkError, PortStationEnv,
-};
+use super::link::{PortCoexistence, PortError, PortLink, PortLinkError, PortStationEnv};
 
 /// Effect lists one input of the power manager may chain through Null
 /// completions.
@@ -63,20 +63,20 @@ const fn timer_index(timer: PmTimer) -> usize {
 /// Each beacon of the access point also sets the
 /// station TSF to the beacon's timestamp, so the TBTTs follow the access
 /// point.
-pub struct PortPowerSave<P: Ieee80211LowerMacPort> {
+pub struct PortPowerSave<P: LowerMacBeaconTiming> {
     modem: ModemSleep,
-    ops: BeaconTimingOps<P>,
+    port: PhantomData<fn(&P)>,
     deadlines: [Option<Instant>; 5],
     schedule: Option<PmTbttSchedule>,
     gate_open: bool,
     release: bool,
 }
 
-impl<P: Ieee80211LowerMacPort> PortPowerSave<P> {
-    pub(crate) const fn new(sleep_type: SleepType, ops: BeaconTimingOps<P>) -> Self {
+impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
+    pub(crate) const fn new(sleep_type: SleepType) -> Self {
         Self {
             modem: ModemSleep::new(sleep_type),
-            ops,
+            port: PhantomData,
             deadlines: [None; 5],
             schedule: None,
             gate_open: true,
@@ -125,7 +125,7 @@ impl<X: PortStationEnv> PowerContext<'_, '_, X> {
     }
 }
 
-impl<P: Ieee80211LowerMacPort> PortPowerSave<P> {
+impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
     /// Start power management of the association; `join_beacon` is the
     /// access point's beacon or Probe Response the station joined from.
     pub(crate) async fn start<X: PortStationEnv<Port = P>>(
@@ -173,7 +173,10 @@ impl<P: Ieee80211LowerMacPort> PortPowerSave<P> {
     ) -> Result<(), PortLinkError<PortError<X>>> {
         let vif = context.link.config().vif;
         // The station TSF follows the access point's.
-        let _ = (self.ops.set_tsf)(context.link.port(), VifTsf::new(vif, beacon.timestamp_tsf))
+        let _ = context
+            .link
+            .port()
+            .set_tsf(VifTsf::new(vif, beacon.timestamp_tsf))
             .map_err(PortLinkError::Port)?;
         let mut actions = PmActions::new();
         self.modem.beacon(
@@ -299,19 +302,16 @@ impl<P: Ieee80211LowerMacPort> PortPowerSave<P> {
     ) -> Result<(), PortLinkError<PortError<X>>> {
         let vif = link.config().vif;
         let outcome = match self.schedule {
-            Some(schedule) => (self.ops.set_tbtt)(
-                link.port(),
-                TbttSchedule {
-                    next: VifTsf::new(vif, schedule.first_tbtt),
-                    beacon_interval: Duration::from_micros(u64::from(schedule.interval_micros)),
-                    lead: Duration::from_micros(u64::from(
-                        schedule
-                            .ahead_micros
-                            .saturating_add(schedule.wake_ahead_micros),
-                    )),
-                },
-            ),
-            None => (self.ops.stop_tbtt)(link.port(), vif),
+            Some(schedule) => link.port().set_tbtt(TbttSchedule {
+                next: VifTsf::new(vif, schedule.first_tbtt),
+                beacon_interval: Duration::from_micros(u64::from(schedule.interval_micros)),
+                lead: Duration::from_micros(u64::from(
+                    schedule
+                        .ahead_micros
+                        .saturating_add(schedule.wake_ahead_micros),
+                )),
+            }),
+            None => link.port().stop_tbtt(vif),
         };
         outcome
             .map_err(PortLinkError::Port)?

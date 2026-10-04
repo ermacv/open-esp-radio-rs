@@ -22,7 +22,7 @@
 //! trait are candidates of every site whose ABI they fit. Calling a function
 //! through a pointer of another calling convention or argument count is
 //! undefined behavior, so those two are what fitting means; a vtable
-//! function, whose signature the facts do not give, fits every site. A site
+//! function fits by the signature the facts record for it. A site
 //! of a leaked trait's `dyn` also reaches the same entry of every leaked
 //! trait's vtables and every leaked function. A leak whose contents the
 //! driver could not enumerate leaks every function made a pointer and every
@@ -60,6 +60,7 @@ struct CrateFacts {
     leaked_functions: BTreeMap<String, String>,
     edges: BTreeMap<String, BTreeSet<String>>,
     leaked_traits: BTreeSet<String>,
+    signatures: BTreeMap<String, String>,
     trait_contents: BTreeMap<String, Contents>,
     unknown_leak: bool,
 }
@@ -126,10 +127,12 @@ pub struct MirFacts {
     leaked_functions: BTreeMap<String, String>,
     edges: BTreeMap<String, BTreeSet<String>>,
     leaked_traits: BTreeSet<String>,
+    signatures: BTreeMap<String, String>,
     trait_contents: BTreeMap<String, Contents>,
     unknown_leak: bool,
     /// Every leaked function with the key of the pointer type it leaked as
-    /// (`None`: a vtable function); computed once every crate is read.
+    /// (`None`: a vtable function of no recorded signature); computed once
+    /// every crate is read.
     leaked: BTreeSet<(Option<String>, String)>,
 }
 
@@ -213,6 +216,7 @@ impl MirFacts {
             self.edges.entry(target).or_default().extend(sources);
         }
         self.leaked_traits.extend(crate_facts.leaked_traits);
+        self.signatures.extend(crate_facts.signatures);
         for (name, contents) in crate_facts.trait_contents {
             let into = self.trait_contents.entry(name).or_default();
             into.keys.extend(contents.keys);
@@ -258,7 +262,12 @@ impl MirFacts {
         }
         for (name, entries) in &self.vtables {
             if self.unknown_leak || self.leaked_traits.contains(name) {
-                leaked.extend(entries.values().flatten().map(|f| (None, f.clone())));
+                leaked.extend(
+                    entries
+                        .values()
+                        .flatten()
+                        .map(|f| (self.signatures.get(f).cloned(), f.clone())),
+                );
             }
         }
         self.leaked = leaked;

@@ -1471,7 +1471,8 @@ fn hook_facts(elf: &[u8], call: &str, extra: &str) -> MirFacts {
                              "fn(u8, u8)": ["{}"]}},
             "vtables": {{}},
             "leaked_types": [], "leaked_functions": {{}}, "edges": {{}},
-            "leaked_traits": [], "trait_contents": {{}}, "unknown_leak": false}}"#,
+            "leaked_traits": [], "signatures": {{}}, "trait_contents": {{}},
+            "unknown_leak": false}}"#,
         symbol("shallow"),
         symbol("twice"),
         symbol("negate"),
@@ -1554,8 +1555,8 @@ fn the_mir_facts_resolve_a_site_by_its_instance_s_calls() {
         targets(r#"{"leaked_functions": {"NEGATE": "fn(i32) -> i32", "DEEP": "fn(u8, u8)"}}"#),
         BTreeSet::from([shallow, twice, negate])
     );
-    // A leaked trait leaks its vtable functions, of unknown signature, and
-    // what its implementors carry.
+    // A leaked trait leaks its vtable functions, by their signatures (of
+    // none recorded: every site), and what its implementors carry.
     assert_eq!(
         targets(
             r#"{"vtables": {"main::Job": {"3": ["DEEP"]}},
@@ -1563,6 +1564,14 @@ fn the_mir_facts_resolve_a_site_by_its_instance_s_calls() {
                 "trait_contents": {"main::Job": {"keys": ["fn(i32) -> i32"], "traits": [], "unknown": false}}}"#
         ),
         BTreeSet::from([shallow, twice, negate, deep])
+    );
+    assert_eq!(
+        targets(
+            r#"{"vtables": {"main::Job": {"3": ["DEEP"]}},
+                "leaked_traits": ["main::Job"],
+                "signatures": {"DEEP": "fn(&main::Job, u8)"}}"#
+        ),
+        BTreeSet::from([shallow, twice])
     );
     // A leak of unknown contents leaks every function made a pointer.
     assert_eq!(

@@ -30,10 +30,17 @@ pub unsafe fn adopt_psram(
 ) -> esp_hal::psram::Psram {
     oer_esp32s31_soc_esp_hal::interrupt_table::adopt(interrupt_table);
     let supply = psram_supply();
+    let started = esp_hal::time::Instant::now();
     unsafe {
         let psram = oer_esp32s31_platform_board::adopt_initialized_psram(peripheral);
+        // Bringing the PHY LDO up waits 1 ms for its rail, so an adoption
+        // that takes half of that rewrote the supply even with equal values.
+        assert!(
+            started.elapsed() < esp_hal::time::Duration::from_micros(500),
+            "PSRAM adoption reprogrammed the PSRAM PHY LDO"
+        );
         // Code and stacks already run from PSRAM: adopting the mapping must
-        // leave the PHY supply exactly as the bootstrap configured it.
+        // leave the PHY supply's configuration as the bootstrap left it.
         assert_eq!(
             psram_supply(),
             supply,

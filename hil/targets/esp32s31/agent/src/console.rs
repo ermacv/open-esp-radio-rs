@@ -2897,6 +2897,6 @@ pub fn emergency_log(args: Arguments<'_>) {
 
 /// The product image's console: the base module and the legacy commands.
 #[embassy_executor::task]
-pub async fn console_task(usb: USB_DEVICE<'static>, boot: u64) {
+pub async fn console_task(usb: crate::transport::Usb, boot: u64) {
     crate::transport::serve::<Request>(usb, boot, crate::limits::MAXIMUM_PAYLOAD_BYTES, serve).await
 }

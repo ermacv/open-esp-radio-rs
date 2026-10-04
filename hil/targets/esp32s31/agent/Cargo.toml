@@ -289,7 +289,7 @@ embassy-net-owned = { workspace = true, optional = true }
 embassy-sync = { workspace = true, optional = true }
 embassy-time.workspace = true
 embedded-io-async = { workspace = true, optional = true }
-esp-hal = { workspace = true, features = ["esp32s31", "rt", "unstable"] }
+esp-hal = { workspace = true, features = ["esp32s31", "static-interrupts", "rt", "unstable"] }
 log = { workspace = true, optional = true }
 heapless = { workspace = true, optional = true }
 critical-section = { version = "1.2.0", optional = true }

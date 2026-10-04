@@ -67,11 +67,7 @@ impl console::Profile for Profile {
 
 #[cfg(feature = "bluetooth-gatt")]
 #[embassy_executor::task]
-pub(super) async fn task(
-    host: BluetoothHostTransport,
-    usb: esp_hal::peripherals::USB_DEVICE<'static>,
-    boot: u64,
-) {
+pub(super) async fn task(host: BluetoothHostTransport, usb: crate::transport::Usb, boot: u64) {
     let stack = build(host);
     let mut runner = stack.runner();
     let profile = Profile(Cell::new(BluetoothGattEvidence::default()));

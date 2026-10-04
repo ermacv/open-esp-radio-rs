@@ -1,4 +1,7 @@
-use crate::{Error, Matrix, Route, disable, disable_route, enable, enable_route, install, verify};
+use crate::{
+    Error, Matrix, Route, disable, disable_route, enable, enable_route, install, verify,
+    verify_required,
+};
 
 crate::__fake_matrix!();
 
@@ -66,6 +69,36 @@ fn a_token_routes_its_source_to_its_level_on_its_core_alone() {
         enable_route(&mut matrix, INTERRUPT_TABLE, &radio),
         Err(Error::WrongCore { .. })
     ));
+}
+
+#[test]
+fn a_required_source_must_be_listed_and_routed_on_its_core() {
+    let mut matrix = FakeMatrix::new(Core::Zero);
+    install(&mut matrix, INTERRUPT_TABLE).unwrap();
+    // Installed, the timer is silent until its owner routes it.
+    assert_eq!(
+        verify_required(&matrix, INTERRUPT_TABLE, [Source::Timer]),
+        Err(Error::NotRouted {
+            source: Source::Timer
+        })
+    );
+    matrix.route(Source::Timer, Level::One);
+    assert_eq!(
+        verify_required(&matrix, INTERRUPT_TABLE, [Source::Timer]),
+        Ok(())
+    );
+    // Core one's radio is checked on core one.
+    matrix.silence(Core::One, Source::Radio);
+    assert_eq!(
+        verify_required(&matrix, INTERRUPT_TABLE, [Source::Radio]),
+        Ok(())
+    );
+    assert_eq!(
+        verify_required(&matrix, INTERRUPT_TABLE, [Source::Absent]),
+        Err(Error::NotInTable {
+            source: Source::Absent
+        })
+    );
 }
 
 #[test]

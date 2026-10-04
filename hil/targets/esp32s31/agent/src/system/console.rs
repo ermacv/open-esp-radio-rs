@@ -17,7 +17,7 @@ static TESTS: Channel<CriticalSectionRawMutex, (RequestIdentity, WatchdogTestMod
 pub(crate) fn start(
     executor: &'static mut crate::Executor<0>,
     wake: crate::ExecutorWake,
-    usb: esp_hal::peripherals::USB_DEVICE<'static>,
+    usb: crate::transport::Usb,
     rng: esp_hal::peripherals::RNG<'static>,
     timer: esp_hal::peripherals::TIMG1<'static>,
 ) -> ! {
@@ -39,7 +39,7 @@ pub(crate) fn start(
 }
 
 #[embassy_executor::task]
-async fn run(usb: esp_hal::peripherals::USB_DEVICE<'static>, boot: u64) {
+async fn run(usb: crate::transport::Usb, boot: u64) {
     crate::transport::serve(
         usb,
         boot,

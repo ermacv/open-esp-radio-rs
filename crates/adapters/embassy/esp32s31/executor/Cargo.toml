@@ -28,8 +28,8 @@ oer-memory = { path = "../../../../memory" }
 embassy-executor = { version = "0.10.0", default-features = false, optional = true }
 embassy-time-driver = { version = "0.2", features = ["tick-hz-1_000_000"], optional = true }
 embassy-time-queue-utils = { version = "0.3", optional = true }
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "c771deb0fe584ddc9a1522eb2cf05abe955c2053", default-features = false, features = ["esp32s31", "rt", "unstable"], optional = true }
-esp-sync = { git = "https://github.com/ermacv/esp-hal", rev = "c771deb0fe584ddc9a1522eb2cf05abe955c2053", features = ["esp32s31"], optional = true }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "96397fa0e435878f2682a32e76435bf40fa16449", default-features = false, features = ["esp32s31", "static-interrupts", "rt", "unstable"], optional = true }
+esp-sync = { git = "https://github.com/ermacv/esp-hal", rev = "96397fa0e435878f2682a32e76435bf40fa16449", features = ["esp32s31"], optional = true }
 portable-atomic = { version = "1.11", default-features = false, optional = true }
 oer-interrupt-table = { path = "../../../../runtime/interrupt-table", optional = true }
 oer-esp32s31-soc-esp-hal = { path = "../../../esp-hal/esp32s31/soc", features = ["esp32s31"], optional = true }

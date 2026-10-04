@@ -16,7 +16,7 @@ panic-diagnostics = []
 bytemuck = { version = "1.25.2", default-features = false, features = ["derive", "zeroable_maybe_uninit"] }
 oer-memory = { path = "../../../crates/memory" }
 oer-esp32s31-platform-layout.workspace = true
-esp-hal = { workspace = true, features = ["esp32s31", "rt", "unstable"] }
+esp-hal = { workspace = true, features = ["esp32s31", "static-interrupts", "rt", "unstable"] }
 oer-esp32s31-platform-board = { path = "../board" }
 oer-interrupt-table = { path = "../../../crates/runtime/interrupt-table" }
 oer-esp32s31-soc-esp-hal.workspace = true

@@ -53,7 +53,7 @@ pub(super) async fn respond<M: Message>(request: RequestIdentity, reply: Result<
 /// Serve the host over `usb`, handing the image's requests to its queue;
 /// [`serve_requests`] serves them, in a task of its own.
 pub(super) async fn serve_console<P: Profile>(
-    usb: esp_hal::peripherals::USB_DEVICE<'static>,
+    usb: crate::transport::Usb,
     boot: u64,
     profile: &P,
 ) -> ! {

@@ -18,6 +18,8 @@ pub struct Dependency {
     pub table: String,
     /// The repository path of a path dependency's directory.
     pub path: Option<String>,
+    /// The features it enables in its own spec.
+    pub features: Vec<String>,
 }
 
 /// One package manifest.
@@ -39,6 +41,8 @@ pub struct Package {
     pub dependencies: Vec<Dependency>,
     /// Dependency keys that `[features]` forward features to (`key/feature`).
     pub feature_forwarded: Vec<String>,
+    /// Every entry of every `[features]` list, such as `esp-hal?/esp32s31`.
+    pub feature_entries: Vec<String>,
     /// The `[package.metadata.open-radio]` table, when declared.
     pub open_radio: Option<Table>,
 }
@@ -268,10 +272,12 @@ fn package(repo: &Repo, manifest: &str, directory: &str, table: &Table) -> Resul
                     .and_then(|spec| spec.get("path"))
                     .and_then(Value::as_str)
                     .and_then(|path| join(directory, path));
+                let features = strings(value.as_table().and_then(|spec| spec.get("features")));
                 dependencies.push(Dependency {
                     key: key.clone(),
                     table: format!("{prefix}{kind}"),
                     path,
+                    features,
                 });
             }
         }
@@ -286,11 +292,13 @@ fn package(repo: &Repo, manifest: &str, directory: &str, table: &Table) -> Resul
     }
 
     let mut feature_forwarded = vec![];
+    let mut feature_entries = vec![];
     if let Some(features) = table.get("features").and_then(Value::as_table) {
         for enabled in features.values().flat_map(|v| strings(Some(v))) {
             if let Some((key, _)) = enabled.split_once('/') {
                 feature_forwarded.push(key.trim_end_matches('?').to_owned());
             }
+            feature_entries.push(enabled);
         }
     }
 
@@ -307,6 +315,7 @@ fn package(repo: &Repo, manifest: &str, directory: &str, table: &Table) -> Resul
         missing_roots,
         dependencies,
         feature_forwarded,
+        feature_entries,
         open_radio: section
             .get("metadata")
             .and_then(|metadata| metadata.get("open-radio"))

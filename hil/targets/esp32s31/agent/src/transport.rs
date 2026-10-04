@@ -62,12 +62,29 @@ impl Platform for Chip {
     }
 }
 
+/// The USB Serial/JTAG peripheral with the token of its table entry, whose
+/// handler is esp-hal's async driver's.
+pub(crate) struct Usb {
+    device: esp_hal::peripherals::USB_DEVICE<'static>,
+    route: crate::ConsoleUsb,
+}
+
+impl Usb {
+    pub(crate) fn new(
+        device: esp_hal::peripherals::USB_DEVICE<'static>,
+        route: crate::ConsoleUsb,
+    ) -> Self {
+        Self { device, route }
+    }
+}
+
 /// Serves the host over `usb` until the chip resets: the base module here,
 /// the image's own requests through `serve`, which must not block. The boot
 /// must have started the console (`CONSOLE.start`) before any task
-/// publishes.
+/// publishes. It routes the console's source before the driver turns async,
+/// which requires the route.
 pub(crate) async fn serve<C: Requests>(
-    usb: esp_hal::peripherals::USB_DEVICE<'static>,
+    usb: Usb,
     boot: u64,
     maximum_payload_bytes: u16,
     serve: impl FnMut(RequestIdentity, C),
@@ -77,6 +94,8 @@ pub(crate) async fn serve<C: Requests>(
         ImageKeySet::new(crate::image_features::keys()),
         maximum_payload_bytes,
     );
-    let (rx, tx) = UsbSerialJtag::new(usb).into_async().split();
+    oer_esp32s31_soc_esp_hal::interrupt_table::enable(&usb.route)
+        .unwrap_or_else(|error| panic!("the console's USB route: {error:?}"));
+    let (rx, tx) = UsbSerialJtag::new(usb.device).into_async().split();
     CONSOLE.run(rx, tx, intake, &Chip, serve).await
 }

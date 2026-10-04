@@ -69,10 +69,18 @@ jobs:
         run: cargo xtask --verbose vendor-fetch esp32s31 --artifact rom
       # The log lives outside the checkout: the image builder's source
       # snapshot refuses untracked files in the tree.
+      # The classes build in a root of their own, removed before the examples:
+      # the runner's disk holds the classes' compile caches or the examples',
+      # not both.
       - name: Build and audit every image class
+        env:
+          OER_BUILD_ROOT: ${{ runner.temp }}/oer-build
         run: |
           set -o pipefail
           cargo xtask --verbose check firmware --all 2>&1 | tee "$RUNNER_TEMP/firmware-matrix.log"
+      - name: Free the classes' compile caches
+        if: ${{ !cancelled() }}
+        run: rm -rf "$RUNNER_TEMP/oer-build"
       # Push CI only type-checks the examples; this builds each one as
       # `cargo xtask build firmware` does, with its stack and placement audit.
       - name: Build and audit every ESP32-S31 example
@@ -83,6 +91,8 @@ jobs:
           do
             echo "::group::$example"
             cargo xtask --verbose build firmware "$example" || failed=1
+            # Keep the example's audit outputs, drop its compile cache.
+            rm -rf "target/firmware/esp32s31-$example/cargo"
             echo "::endgroup::"
           done
           exit "$failed"

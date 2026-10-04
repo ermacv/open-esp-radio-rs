@@ -6,6 +6,7 @@
 //! before a timer is awaited.
 
 use core::future::Future;
+use oer_espressif_ieee80211_policy::rate_control::DEFAULT_CONTROL_SCHEDULE;
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_esp32s31_ieee80211::{
@@ -20,10 +21,7 @@ use oer_esp32s31_ieee80211::{
 
 use oer_esp32s31_ieee80211_mac::{
     crypto::{CcmpTxPacketNumberError, StaPairwiseCcmpSlot},
-    rate::{
-        control::DEFAULT_CONTROL_SCHEDULE,
-        schedule::{RateScheduleRef, schedule_publication_limit},
-    },
+    rate::schedule::{RateScheduleRef, schedule_publication_limit},
     tx::{
         LegacyTxQueue, TxControlFrame, TxError, TxHardware, TxPhyRate,
         protection::{ProtectedPpdu, TxProtectionDecision},

@@ -370,7 +370,7 @@ fn connected_handoff_preserves_the_descriptor_and_association_policy() {
                 management_protection: false,
                 access_category: LegacyTxQueue::BestEffort.access_category(),
                 control_schedule:
-                    oer_esp32s31_ieee80211_mac::rate::control::DEFAULT_CONTROL_SCHEDULE,
+                    oer_espressif_ieee80211_policy::rate_control::DEFAULT_CONTROL_SCHEDULE,
                 publication_timeout: oer_time::Duration::from_micros(10),
             },
         })
@@ -433,7 +433,8 @@ fn active_handoff_returns_tx_and_crypto_resources_for_later_retry() {
             peer_qos: true,
             management_protection: false,
             access_category: LegacyTxQueue::BestEffort.access_category(),
-            control_schedule: oer_esp32s31_ieee80211_mac::rate::control::DEFAULT_CONTROL_SCHEDULE,
+            control_schedule:
+                oer_espressif_ieee80211_policy::rate_control::DEFAULT_CONTROL_SCHEDULE,
             publication_timeout: oer_time::Duration::from_micros(10),
         },
     };

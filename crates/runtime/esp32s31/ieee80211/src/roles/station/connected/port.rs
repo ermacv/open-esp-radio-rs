@@ -14,7 +14,7 @@ use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile};
 use oer_esp32s31_ieee80211_mac::{
     capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
     init::{StaEspNowRxPolicyHardware, configure_sta_esp_now_receive_policy},
-    rate::control::{StaRateControlAssociation, StaTxRatePolicy},
+    rate::control::{StaRateControlTx, StaTxRatePolicy},
     rx::{
         RxIngressConfig,
         ampdu::{RxBlockAckSessions, RxBlockAckSessionsError},
@@ -26,6 +26,7 @@ use oer_esp32s31_ieee80211_mac::{
         select_esp32s31_ht_duplicate_tx,
     },
 };
+use oer_espressif_ieee80211_policy::rate_control::StaRateControlAssociation;
 
 use oer_esp32s31_ieee80211_sta::{
     connected_control::JoinBeacon,

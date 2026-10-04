@@ -25,9 +25,8 @@ use oer_esp32s31_ieee80211_mac::tx::{
     select_esp32s31_ht_duplicate_tx,
 };
 
-use oer_esp32s31_ieee80211_mac::rate::{
-    control::DEFAULT_CONTROL_SCHEDULE, schedule::schedule_publication_limit,
-};
+use oer_esp32s31_ieee80211_mac::rate::schedule::schedule_publication_limit;
+use oer_espressif_ieee80211_policy::rate_control::DEFAULT_CONTROL_SCHEDULE;
 use oer_ieee80211_mac::{
     block_ack::BLOCK_ACK_REQUEST_LEN,
     channel::{WifiChannel, WifiChannelWidth},

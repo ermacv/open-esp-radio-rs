@@ -1859,3 +1859,36 @@ fn a_trap_entry_must_not_lower_the_level_before_its_handler() {
         "{error:?}"
     );
 }
+
+#[test]
+fn a_bound_assumes_what_the_resolutions_it_takes_assume() {
+    // `caller` calls through a5; the site resolves to `callee`.
+    let caller = Symbol {
+        name: "caller",
+        words: vec![SP_DOWN_16, SAVE_RA, CALL_A5, LOAD_RA, SP_UP_16, RET],
+        frame: Some(16),
+    };
+    let callee = Symbol {
+        name: "callee",
+        words: vec![RET],
+        frame: Some(0),
+    };
+    let elf = executable(&[caller, callee]);
+    let analysis = analyze(&elf, &[], &[]).unwrap();
+    let (caller, callee, site) = (TEXT, TEXT + 24, TEXT + 8);
+    let assumed = |fact| {
+        let mut resolutions = Resolutions::new();
+        resolutions.add(site, fact, [callee]);
+        analysis
+            .bound_with(caller, &resolutions)
+            .unwrap()
+            .assumptions
+    };
+    // The interrupt table lists its handlers outright; a waker vtable found
+    // from the image's types rests on the executor invariant.
+    assert_eq!(assumed(Fact::InterruptTable), BTreeSet::new());
+    assert_eq!(
+        assumed(Fact::WakerVtables),
+        BTreeSet::from([Assumption::ExecutorInvariant])
+    );
+}

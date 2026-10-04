@@ -21,7 +21,53 @@ pub enum Fact {
     FieldType,
 }
 
+/// What a resolution takes for granted that the analysis does not prove: a
+/// bound resting on one is conditional, and names it.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Assumption {
+    /// The executor invariant: a task header's `poll_fn` matches the storage
+    /// it heads, and a pointer erased to `()` or to bytes is read back as its
+    /// own type. Every fact found from the image's types rests on it: a waker
+    /// vtable, an IPC callback or a field's function reaches a site only if
+    /// no reinterpreted memory puts another function there. The points-to
+    /// analysis of the interrupt-reachable sites (#121) is to prove it.
+    ExecutorInvariant,
+    /// The level rule's configuration half: each interrupt line's CLIC level
+    /// is the level its table entry names, and nothing changes it at run
+    /// time. The sum over levels rests on it with the other half, that no
+    /// handler lowers the running level, which the analysis checks
+    /// ([`crate::LevelDrop`]).
+    TableLevels,
+}
+
+impl std::fmt::Display for Assumption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::ExecutorInvariant => {
+                "the executor invariant (a task header's poll_fn matches its storage, and an \
+                 erased pointer is read back as its own type)"
+            }
+            Self::TableLevels => {
+                "the table levels (each interrupt line's CLIC level is its table entry's, \
+                 unchanged at run time)"
+            }
+        })
+    }
+}
+
 impl Fact {
+    /// What a resolution from this fact assumes: the interrupt table lists
+    /// every handler outright; the facts found from types rest on the
+    /// executor invariant.
+    pub fn assumption(self) -> Option<Assumption> {
+        match self {
+            Self::InterruptTable => None,
+            Self::IpcPosts | Self::WakerVtables | Self::FieldType => {
+                Some(Assumption::ExecutorInvariant)
+            }
+        }
+    }
+
     /// Whether an empty set from this fact proves the site reaches nothing:
     /// the interrupt table lists every handler, and the IPC posts are every
     /// call of the one function that posts. Waker vtables and field types

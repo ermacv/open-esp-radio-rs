@@ -158,8 +158,19 @@ level in. Only an instruction that lowers `mil` can (`LevelDrop`): a trap
 return (`mret`, `sret`, `dret`), or a write of `mnxti` or `mintstatus`. The
 trap-entry check refuses one before the handler call; each bound lists those
 its root reaches (`Bound::level_drops`, over what is resolved), and
-`HartStack::level_drops` gathers a hart's. A hart with none has its nesting
-checked; one with any is conditional on the rule those sites may break.
+`HartStack::level_drops` gathers a hart's. A hart with none has that half of
+the nesting rule checked; one with any is conditional on the rule those
+sites may break.
+
+A bound also names what it assumes (`Bound::assumptions`, `Assumption`): the
+facts found from the image's types (waker vtables, IPC posts, field types)
+rest on the executor invariant, that a task header's `poll_fn` matches its
+storage and an erased pointer is read back as its own type; the interrupt
+table assumes nothing. `HartStack::assumptions` adds the table levels, the
+nesting rule's unchecked half: each interrupt line's CLIC level is its table
+entry's, unchanged at run time. A hart with a bound and no assumption is
+proven; with some, conditional on them. The firmware gate admits exactly the
+named ones, each until a change proves it.
 
 ```console
 cargo test -p oer-riscv-stack

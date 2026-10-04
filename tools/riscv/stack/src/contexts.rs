@@ -17,8 +17,10 @@
 //! write of `mnxti` or `mintstatus`) can. The trap-entry check refuses one on
 //! the way to the handler, and each level's bound lists those its handlers
 //! reach ([`Bound::level_drops`]): a hart with none is checked, one with any
-//! holds only under the nesting rule those sites may break.
-use crate::{Analysis, Bound, Fact, LevelDrop, Resolutions, TableEntry, TrapEntry};
+//! holds only under the nesting rule those sites may break. The rule's other
+//! half, that each line's CLIC level is its table entry's and stays so, is
+//! not checked: every hart assumes it ([`Assumption::TableLevels`]).
+use crate::{Analysis, Assumption, Bound, Fact, LevelDrop, Resolutions, TableEntry, TrapEntry};
 use oer_riscv_model::Result;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -82,6 +84,20 @@ impl HartStack {
         drops.sort_unstable();
         drops.dedup();
         drops
+    }
+
+    /// What the sum assumes: the table levels, which no check covers yet,
+    /// and what the bounds of its levels and the exception assume. A hart
+    /// with a bound and none is proven, with some conditional on them.
+    pub fn assumptions(&self) -> BTreeSet<Assumption> {
+        let mut assumptions = BTreeSet::from([Assumption::TableLevels]);
+        assumptions.extend(
+            self.levels
+                .iter()
+                .chain([&self.exception])
+                .flat_map(|level| level.bound.assumptions.iter().copied()),
+        );
+        assumptions
     }
 }
 

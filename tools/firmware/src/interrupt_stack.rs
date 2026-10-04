@@ -103,12 +103,17 @@ pub struct InterruptStacks {
     pub handlers: Vec<(u32, Vec<u32>)>,
     /// Function names by address, for the report.
     names: BTreeMap<u32, String>,
+    /// Copies of a CLIC level or route writer outside the functions it may
+    /// run inside ([`contract::LEVEL_WRITERS`]), or a writer of which the
+    /// DWARF shows no copy: where a source may take a level other than its
+    /// table entry's. Empty when the table levels are checked.
+    pub level_writers: Vec<String>,
 }
 
 /// The assumptions the gate admits in a bound, each by name: a bound resting
 /// on one is conditional and passes with a warning; any other fails. Each
 /// leaves this list in the pull request that proves it (#119).
-const ADMITTED: &[Assumption] = &[Assumption::TableLevels, Assumption::ExecutorInvariant];
+const ADMITTED: &[Assumption] = &[Assumption::ExecutorInvariant];
 
 /// What an image's interrupt stacks must reach: the gate's policy, apart
 /// from the analysis, which always reports all it can.
@@ -131,6 +136,14 @@ impl InterruptStacks {
             oer_esp32s31_platform_layout::memory::SRAM
                 .contains_range(u64::from(address), u64::from(address) + 4)
         };
+        // The sum over levels needs each source at its table level.
+        if !self.level_writers.is_empty() {
+            return Err(format!(
+                "the table levels are not checked: {}",
+                self.level_writers.join("; ")
+            )
+            .into());
+        }
         for (slot, calls) in &self.handlers {
             if let Some(outside) = std::iter::once(slot)
                 .chain(calls)
@@ -230,6 +243,17 @@ impl InterruptStacks {
     pub fn render(&self) -> String {
         let name = |address: u32| self.name(address);
         let mut out = String::new();
+        if self.level_writers.is_empty() {
+            let _ = writeln!(
+                out,
+                "levels: checked, every CLIC level and route writer runs in start-up or the table"
+            );
+        } else {
+            let _ = writeln!(out, "levels: not checked");
+            for problem in &self.level_writers {
+                let _ = writeln!(out, "  {problem}");
+            }
+        }
         for hart in &self.harts {
             let _ = writeln!(
                 out,
@@ -387,6 +411,7 @@ pub fn interrupt_stacks(root: &Path, elf: &Path) -> Result<InterruptStacks> {
             (slot, calls)
         })
         .collect();
+    let level_writers = level_writers(&elf, &dwarf)?;
     let sources = source_table(&elf)?;
     let harts = oer_riscv_stack::interrupt_stacks(
         &analysis,
@@ -405,7 +430,39 @@ pub fn interrupt_stacks(root: &Path, elf: &Path) -> Result<InterruptStacks> {
         handlers,
         summaries: analysis.summaries.clone(),
         names,
+        level_writers,
     })
+}
+
+/// Where a CLIC level or route writer runs outside the functions it may run
+/// inside, or a writer of which the DWARF shows no copy. Each copy's inline
+/// chain must hold one of the writer's contexts.
+fn level_writers(elf: &[u8], dwarf: &Dwarf) -> Result<Vec<String>> {
+    let writers: Vec<&str> = contract::LEVEL_WRITERS
+        .iter()
+        .map(|(writer, _)| *writer)
+        .collect();
+    let copies = oer_riscv_stack::instances(elf, &writers)?;
+    let mut problems = Vec::new();
+    for (writer, contexts) in contract::LEVEL_WRITERS {
+        let starts = &copies[writer];
+        if starts.is_empty() {
+            problems.push(format!("the DWARF shows no copy of `{writer}`"));
+        }
+        for &start in starts {
+            let chain = dwarf.inline_chain(start)?;
+            if !chain
+                .iter()
+                .any(|function| contexts.contains(&function.as_str()))
+            {
+                problems.push(format!(
+                    "`{writer}` at {start:#010x} runs inside {}",
+                    chain.last().map_or("no function", String::as_str)
+                ));
+            }
+        }
+    }
+    Ok(problems)
 }
 
 /// The targets of the IPC dispatch's call of the posted callback: the
@@ -460,6 +517,7 @@ mod tests {
             summaries: BTreeSet::new(),
             handlers,
             names: BTreeMap::from([(0x2f00_1000, "TIMER".to_owned())]),
+            level_writers: Vec::new(),
         }
     }
 
@@ -491,6 +549,7 @@ mod tests {
             summaries: BTreeSet::new(),
             handlers: Vec::new(),
             names: BTreeMap::new(),
+            level_writers: Vec::new(),
         }
     }
 
@@ -525,7 +584,7 @@ mod tests {
     fn a_partial_bound_passes_only_where_the_policy_allows_it_and_its_part_fits() {
         assert!(partial(1000).check(Required::Proven).is_err());
         let warnings = partial(1000).check(Required::Partial).unwrap();
-        assert_eq!(warnings.len(), 2);
+        assert_eq!(warnings.len(), 1);
         assert!(
             warnings.iter().any(|warning| warning.contains("1000 + ?")),
             "{warnings:?}"
@@ -537,20 +596,18 @@ mod tests {
 
     #[test]
     fn a_bound_on_an_admitted_assumption_passes_conditional() {
-        // Every hart assumes the table levels, which no check covers yet.
         let mut stacks = partial(1000);
         stacks.harts[0].bytes = Some(1000);
-        assert!(stacks.render().contains("1000 of"));
-        assert!(stacks.render().contains("conditional"));
-        assert!(stacks.render().contains("assumes the table levels"));
+        assert!(stacks.render().contains(", proven"));
         stacks.harts[0]
             .exception
             .bound
             .assumptions
             .insert(Assumption::ExecutorInvariant);
-        // The gate names each in a warning and the report.
+        // The gate names it in a warning and the report.
+        assert!(stacks.render().contains("conditional"));
         let warnings = stacks.check(Required::Proven).unwrap();
-        assert_eq!(warnings.len(), 2);
+        assert_eq!(warnings.len(), 1);
         assert!(
             warnings
                 .iter()
@@ -576,6 +633,20 @@ mod tests {
         let warnings = stacks.check(Required::Partial).unwrap();
         assert!(warnings[0].contains("nesting rule"), "{warnings:?}");
         assert!(stacks.render().contains("a trap return at 0x2f001000"));
+    }
+
+    #[test]
+    fn a_level_writer_outside_its_contexts_fails_every_policy() {
+        let mut stacks = partial(1000);
+        stacks.harts[0].bytes = Some(1000);
+        assert!(stacks.render().contains("levels: checked"));
+        stacks.level_writers =
+            vec!["`esp_hal::interrupt::map_raw` at 0x2f001000 runs inside main".into()];
+        for required in [Required::Proven, Required::Partial] {
+            let error = stacks.check(required).unwrap_err().to_string();
+            assert!(error.contains("table levels are not checked"), "{error}");
+        }
+        assert!(stacks.render().contains("levels: not checked"));
     }
 
     #[test]

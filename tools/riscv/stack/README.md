@@ -166,11 +166,15 @@ A bound also names what it assumes (`Bound::assumptions`, `Assumption`): the
 facts found from the image's types (waker vtables, IPC posts, field types)
 rest on the executor invariant, that a task header's `poll_fn` matches its
 storage and an erased pointer is read back as its own type; the interrupt
-table assumes nothing. `HartStack::assumptions` adds the table levels, the
-nesting rule's unchecked half: each interrupt line's CLIC level is its table
-entry's, unchanged at run time. A hart with a bound and no assumption is
-proven; with some, conditional on them. The firmware gate admits exactly the
-named ones, each until a change proves it.
+table assumes nothing. `HartStack::assumptions` gathers a hart's. A hart with
+a bound and no assumption is proven; with some, conditional on them. The
+firmware gate admits exactly the named ones, each until a change proves it.
+
+The nesting rule's other half, each source at its table level for good, is
+the image's configuration. `instances` finds every copy of a function in the
+DWARF, out of line or inlined; the firmware gate requires each copy of the
+CLIC level and route writers to run inside the functions its contract
+allows (start-up, the IPC line's install, the table's routes).
 
 ```console
 cargo test -p oer-riscv-stack

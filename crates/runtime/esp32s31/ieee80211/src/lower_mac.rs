@@ -99,7 +99,7 @@ use oer_ieee80211_lower_mac::{
     AmpduCapabilities, BeaconTimingCapabilities, CancelError, ClockInfo, EventsLost, FailureClass,
     Ieee80211LowerMacPort, Ieee80211Stamp, KeyHandle, KeyInstall, LifecycleCommand, LifecycleError,
     LifecycleEvent, LowerMacAmpdu, LowerMacBeaconTiming, LowerMacCapabilities, LowerMacEvent,
-    LowerMacMonitor, LowerMacSetting, MonitorCapabilities, Poisoned, PortError, Refused,
+    LowerMacMonitor, LowerMacSetting, MonitorCapabilities, Poisoned, PortError, Refused, RxBuffer,
     RxEvidence, RxMeta, SettingError, SubmitError, SubmitResult, TbttEvent, TbttSchedule,
     TsfSample, TxCompletion, TxId, VifId, VifTsf,
 };
@@ -129,13 +129,26 @@ pub trait LowerMacRetune {
     fn retune(&mut self, channel: WifiChannel) -> impl Future<Output = bool>;
 }
 
+/// A received MPDU the port lends: its first `length` bytes in `frame`, the
+/// port's copy of the receive buffer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Esp32s31RxBuffer<const FRAME: usize> {
+    frame: [u8; FRAME],
+    length: usize,
+}
+
+impl<const FRAME: usize> RxBuffer for Esp32s31RxBuffer<FRAME> {
+    fn bytes(&self) -> &[u8] {
+        &self.frame[..self.length]
+    }
+}
+
 /// One owned event of the port.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Esp32s31LowerMacEvent<const FRAME: usize> {
-    /// A received MPDU, its first `length` bytes in `frame`.
+    /// A received MPDU.
     Received {
-        frame: [u8; FRAME],
-        length: usize,
+        frame: Esp32s31RxBuffer<FRAME>,
         meta: RxMeta,
     },
     /// A received MPDU longer than `FRAME` was dropped.
@@ -154,12 +167,8 @@ impl<const FRAME: usize> Esp32s31LowerMacEvent<FRAME> {
     /// Lend the event as a portable value.
     pub fn portable(&self) -> LowerMacEvent<'_> {
         match self {
-            Self::Received {
-                frame,
-                length,
-                meta,
-            } => LowerMacEvent::Received {
-                frame: &frame[..*length],
+            Self::Received { frame, meta } => LowerMacEvent::Received {
+                frame: frame.bytes(),
                 meta: *meta,
             },
             Self::RxTooLong { length } => LowerMacEvent::RxTooLong { length: *length },
@@ -722,8 +731,10 @@ where
                     Some(prefix) => {
                         prefix.copy_from_slice(bytes);
                         Esp32s31LowerMacEvent::Received {
-                            frame: owned,
-                            length: bytes.len(),
+                            frame: Esp32s31RxBuffer {
+                                frame: owned,
+                                length: bytes.len(),
+                            },
                             meta,
                         }
                     }
@@ -904,9 +915,19 @@ where
     type Event = Esp32s31LowerMacEvent<FRAME>;
     type Error = Esp32s31LowerMacError;
     type TxBuffer = Esp32s31TxBuffer<'slot, BUFFER_SIZE>;
+    type RxBuffer = Esp32s31RxBuffer<FRAME>;
 
     fn view(event: &Esp32s31LowerMacEvent<FRAME>) -> LowerMacEvent<'_> {
         event.portable()
+    }
+
+    fn into_received(
+        event: Esp32s31LowerMacEvent<FRAME>,
+    ) -> Result<(Esp32s31RxBuffer<FRAME>, RxMeta), Esp32s31LowerMacEvent<FRAME>> {
+        match event {
+            Esp32s31LowerMacEvent::Received { frame, meta } => Ok((frame, meta)),
+            event => Err(event),
+        }
     }
 
     fn capabilities(&self) -> LowerMacCapabilities {

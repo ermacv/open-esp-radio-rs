@@ -58,6 +58,20 @@ pub enum RxCryptoStatus {
     DecryptedAndIntegrityVerified,
 }
 
+/// The backend's memory of one received MPDU, lent with its event: the MPDU
+/// from its header to the end of its body, without the FCS.
+///
+/// The consumer keeps it for as long as it needs the frame and drops it to
+/// return the memory to the backend; a backend whose receive DMA buffer
+/// is the frame (the ESP32-S31 staging pool) lends that buffer, so the
+/// frame is never copied on its way up. Memory a consumer keeps is memory
+/// the backend cannot receive into: a consumer that holds a frame for
+/// longer than one step (an out-of-order MPDU in a reorder window) copies
+/// it and drops the buffer.
+pub trait RxBuffer {
+    fn bytes(&self) -> &[u8];
+}
+
 /// Portable metadata of one received MPDU.
 ///
 /// The backend publishes the physical fields it observed and leaves the

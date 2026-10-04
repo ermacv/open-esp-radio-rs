@@ -152,6 +152,13 @@ or legacy for an access point without HT. An HT40 association tunes the
 primary channel with its secondary above or below (`ChannelWidth::Mhz40Above`
 or `Mhz40Below`), and its rate control sends at 40 MHz.
 
+A received frame stays in the port's `RxBuffer`: the station reads it in
+place and drops it after one step, so on a backend whose buffer is a DMA
+credit it holds none. A Block Ack window releases an in-order MPDU at once,
+from that buffer; only an MPDU it keeps behind a gap is copied into the
+storage's slots (one longer than `PORT_FRAME_CAPACITY` is counted in
+`unbuffered` and dropped).
+
 A receive reorder window that buffers an MPDU behind a missing one waits
 the profile's `rx_reorder_gap` from the first MPDU it retained (the
 Espressif stack's 300 ms), then releases the buffered run past the gap and

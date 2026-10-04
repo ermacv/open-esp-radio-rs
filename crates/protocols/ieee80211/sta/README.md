@@ -24,6 +24,9 @@ Module map:
 - `sa_query`: the SA Query procedure of an association under management
   frame protection;
 - `link_monitor`: beacon-loss decisions;
+- `rate_control`: the station's data-rate seam (`StaRateControl`), one
+  controller per association that gives the rate of an MPDU and an A-MPDU
+  and learns from their exchanges, and `StaFixedRateControl`;
 - `pmksa`: the SAE PMKSA cache a reconnect resumes, and its shared owner;
 - `ftm`, `twt`: bounded requester state and deadlines; their presence does not
   establish a chip timestamp or wake-schedule implementation. The TWT wake

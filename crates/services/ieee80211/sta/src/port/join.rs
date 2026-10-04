@@ -1,6 +1,6 @@
 //! Authentication and Association over the lower-MAC port.
 
-use oer_ieee80211_lower_mac::{KeySelector, MacAddress, ReceiveFilter};
+use oer_ieee80211_lower_mac::{KeySelector, MacAddress, ReceiveFilter, RxMeta};
 use oer_ieee80211_mac::{
     qos::WmmAccessCategory,
     scan::ScanRecord,
@@ -59,6 +59,9 @@ pub struct PortJoin<'a, 'p, X: PortStationEnv> {
     link: &'a mut PortLink<'p, X>,
     bssid: MacAddress,
     association: Option<PortAssociation<'a>>,
+    /// Where the access point's Association Response's receive metadata
+    /// goes.
+    response_meta: Option<&'a mut Option<RxMeta>>,
 }
 
 impl<'a, 'p, X: PortStationEnv> PortJoin<'a, 'p, X> {
@@ -68,7 +71,16 @@ impl<'a, 'p, X: PortStationEnv> PortJoin<'a, 'p, X> {
             link,
             bssid,
             association: None,
+            response_meta: None,
         }
+    }
+
+    /// Keep the receive metadata of the access point's Association
+    /// Response in `slot`: its signal and noise floor start the
+    /// association's rate control.
+    pub fn with_response_meta(mut self, slot: &'a mut Option<RxMeta>) -> Self {
+        self.response_meta = Some(slot);
+        self
     }
 
     /// Association with the access point `association` names.
@@ -187,6 +199,13 @@ impl<X: PortStationEnv> StaJoinBackend for PortJoin<'_, '_, X> {
             };
             let bytes = frame.bytes();
             let management = wire::is_management(bytes).then_some(bytes);
+            // An (Re)Association Response of the access point.
+            if matches!(bytes.first(), Some(0x10 | 0x30))
+                && wire::address2(bytes) == Some(self.bssid)
+                && let Some(slot) = self.response_meta.as_deref_mut()
+            {
+                *slot = Some(frame.meta());
+            }
             if observer.observe_completed(management) == StaJoinRxDirective::Stop {
                 break;
             }

@@ -12,7 +12,14 @@
 //! report-rate registers.
 
 use crate::rate_schedule::{RateScheduleKind, RateScheduleRef, schedule_state};
-use oer_ieee80211_mac::phy::HeMcs;
+use oer_ieee80211_mac::{
+    channel::WifiChannelWidth,
+    he::{He20Capabilities, He20PeerState, HeDcmConstellation, HeMcsNssSupport},
+    phy::{FecCoding, HeGiLtf, HeMcs, HeRate, HtMcs, HtRate, LegacyRate, PhyRate, PpduBandwidth},
+    station::association::PhyMode,
+};
+use oer_ieee80211_sta::{association::StaAssociatedPeer, rate_control::StaRateControl};
+use oer_time::Instant;
 
 /// Instruction-evidenced fields of one 12-byte rate schedule record.
 ///
@@ -1207,6 +1214,163 @@ pub const fn beamforming_report_rate_for_metric(
             ersu: false,
             ersu_ack: false,
         }
+    }
+}
+
+/// The Espressif controller behind the station's rate-control seam: the
+/// vendor's per-association rate control, its schedules decoded as
+/// portable rates within what the association negotiated.
+///
+/// A schedule's HT rate takes the association's width, and its short guard
+/// interval only where the access point supports one at that width; an HE
+/// rate takes 0.8 us with one HE-LTF where the access point supports it,
+/// two otherwise, and LDPC where the access point receives it. A schedule
+/// without a portable rate (the vendor's Long Range modes) sends at the
+/// vendor station's fallback: 54 Mb/s legacy, or HT MCS 7 with the long
+/// guard interval.
+pub struct EspressifRateControl {
+    association: StaRateControlAssociation,
+    decode: RateDecode,
+}
+
+/// What turns a schedule into a rate the association can send.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RateDecode {
+    high_throughput: bool,
+    ht_bandwidth: PpduBandwidth,
+    ht_short_gi: bool,
+    he_800ns_gi_ltf: HeGiLtf,
+    he_ldpc: bool,
+}
+
+impl RateDecode {
+    fn rate(self, schedule: RateScheduleRef) -> PhyRate {
+        let code = schedule_state(schedule).rate;
+        match crate::rate_code::phy_rate(
+            schedule.kind,
+            code,
+            self.ht_bandwidth,
+            self.he_800ns_gi_ltf,
+        ) {
+            Some(PhyRate::Ht(rate)) if rate.short_gi() && !self.ht_short_gi => PhyRate::Ht(
+                HtRate::new(rate.mcs(), rate.bandwidth(), false)
+                    .expect("an HT rate at its own width"),
+            ),
+            Some(PhyRate::He(rate)) if self.he_ldpc => PhyRate::He(
+                HeRate::new(
+                    rate.mcs(),
+                    rate.spatial_streams(),
+                    rate.bandwidth(),
+                    rate.gi_ltf(),
+                    FecCoding::Ldpc,
+                    rate.dcm(),
+                )
+                .expect("an HE rate with LDPC"),
+            ),
+            Some(rate) => rate,
+            None if self.high_throughput => PhyRate::Ht(
+                HtRate::new(HtMcs::new(7).expect("HT MCS 7"), self.ht_bandwidth, false)
+                    .expect("HT MCS 7 at the association's width"),
+            ),
+            None => PhyRate::Legacy(LegacyRate::Ofdm54M),
+        }
+    }
+}
+
+impl StaRateControl for EspressifRateControl {
+    type Config = ();
+
+    fn associate((): (), peer: &StaAssociatedPeer, link_metric: Option<i8>) -> Self {
+        let he = peer.he_capabilities;
+        let phy = match peer.phy {
+            PhyMode::Legacy => StaRateControlPhy::Dot11G,
+            PhyMode::Ht20 | PhyMode::Ht40 => StaRateControlPhy::Ht,
+            PhyMode::He20 => StaRateControlPhy::He,
+        };
+        // As the vendor station: an HE access point's maximum one-stream MCS,
+        // capped at MCS 9.
+        let peer_highest_rate = he
+            .filter(|_| peer.phy == PhyMode::He20)
+            .and_then(|capability| match capability.receive_nss1 {
+                HeMcsNssSupport::Mcs0To7 => HeMcs::new(7),
+                HeMcsNssSupport::Mcs0To9 | HeMcsNssSupport::Mcs0To11 => HeMcs::new(9),
+                HeMcsNssSupport::NotSupported => None,
+            })
+            .map(StaRateControlPeerHighestRate::he20_one_spatial_stream);
+        let association = StaRateControlAssociation::new(StaRateControlAssociationInput {
+            phy,
+            // An unknown metric is the weakest link: the selection starts at
+            // the format's slowest schedule and adaptation raises it.
+            link_metric: StaLinkMetric::from_estimator(link_metric.unwrap_or(i8::MIN)),
+            p2p: false,
+            peer_highest_rate,
+            long_range_rates_present: false,
+            he_low_metric_report: HeLowMetricReportFeatures {
+                dcm_receive_supported: he.is_some_and(|capability| {
+                    capability.dcm_receive_constellation() != HeDcmConstellation::NotSupported
+                }),
+                extended_range_single_user_permitted: peer
+                    .he_peer_state
+                    .is_some_and(He20PeerState::extended_range_single_user_permitted),
+            },
+        });
+        let (ht_bandwidth, width) = if peer.phy == PhyMode::Ht40 {
+            (PpduBandwidth::Mhz40, WifiChannelWidth::Mhz40Above)
+        } else {
+            (PpduBandwidth::Mhz20, WifiChannelWidth::Mhz20)
+        };
+        Self {
+            association,
+            decode: RateDecode {
+                high_throughput: peer.phy != PhyMode::Legacy,
+                ht_bandwidth,
+                ht_short_gi: peer
+                    .ht_capabilities
+                    .is_some_and(|capability| capability.supports_short_guard_interval(width)),
+                he_800ns_gi_ltf: if he.is_some_and(He20Capabilities::supports_one_ltf_800ns_gi) {
+                    HeGiLtf::Ltf1xGi800Ns
+                } else {
+                    HeGiLtf::Ltf2xGi800Ns
+                },
+                he_ldpc: he.is_some_and(He20Capabilities::supports_ldpc_coding_in_payload),
+            },
+        }
+    }
+
+    fn mpdu_rate(&self) -> PhyRate {
+        self.decode.rate(self.association.current_schedule())
+    }
+
+    fn ampdu_rate(&self) -> PhyRate {
+        self.decode.rate(
+            self.association
+                .current_ampdu_schedule()
+                .unwrap_or_else(|| self.association.current_schedule()),
+        )
+    }
+
+    fn observe_mpdu(&mut self, attempts: u8, acknowledged: bool, ack_snr_db: Option<i8>) {
+        if acknowledged && let Some(sample) = ack_snr_db {
+            self.association.update_ack_snr(sample);
+        }
+        self.association
+            .update_tx_per(u32::from(attempts.saturating_sub(1)));
+    }
+
+    fn observe_ampdu(&mut self, now: Instant, attempted: u16, acknowledged: u16) {
+        // The vendor's wrapping 32-bit microsecond clock.
+        let _ = self.association.observe_ampdu_block_ack(
+            now.as_micros() as u32,
+            attempted,
+            acknowledged,
+        );
+    }
+}
+
+impl EspressifRateControl {
+    /// The association's rate control, as the vendor holds it.
+    pub const fn association(&self) -> &StaRateControlAssociation {
+        &self.association
     }
 }
 

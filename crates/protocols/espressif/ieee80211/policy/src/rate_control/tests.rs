@@ -507,3 +507,83 @@ fn non_data_frames_use_the_association_control_schedule() {
         DEFAULT_CONTROL_SCHEDULE
     );
 }
+
+mod seam {
+    use oer_ieee80211_mac::{
+        ht::ht_peer_capabilities,
+        phy::{HtMcs, HtRate, PhyRate, PpduBandwidth},
+        station::association::PhyMode,
+    };
+    use oer_ieee80211_sta::{association::StaAssociatedPeer, rate_control::StaRateControl};
+    use oer_ieee80211_upper_mac::BssProtection;
+
+    use super::super::{EspressifRateControl, RateScheduleKind, RateScheduleRef, schedule_state};
+
+    /// An HT20 access point, with or without the 20 MHz short guard
+    /// interval.
+    fn ht20_peer(short_gi: bool) -> StaAssociatedPeer {
+        let mut element = [0_u8; 28];
+        element[..6].copy_from_slice(&[45, 26, if short_gi { 0x20 } else { 0 }, 0, 0x17, 0xff]);
+        StaAssociatedPeer {
+            phy: PhyMode::Ht20,
+            ht_capabilities: ht_peer_capabilities(&element),
+            ht_ampdu_parameters: 0x17,
+            he_capabilities: None,
+            he_peer_state: None,
+            he_bss_color: 0,
+            protection: BssProtection::UNPROTECTED,
+        }
+    }
+
+    #[test]
+    fn an_unknown_link_metric_starts_at_the_weakest_link_s_rate() {
+        let peer = ht20_peer(true);
+        let unknown = EspressifRateControl::associate((), &peer, None);
+        let weakest = EspressifRateControl::associate((), &peer, Some(i8::MIN));
+        let strong = EspressifRateControl::associate((), &peer, Some(60));
+        assert_eq!(unknown.mpdu_rate(), weakest.mpdu_rate());
+        assert!(unknown.mpdu_rate().nominal_kbps() < strong.mpdu_rate().nominal_kbps());
+    }
+
+    #[test]
+    fn a_short_guard_interval_is_used_only_where_the_peer_supports_it() {
+        let with = EspressifRateControl::associate((), &ht20_peer(true), Some(60)).decode;
+        let without = EspressifRateControl::associate((), &ht20_peer(false), Some(60)).decode;
+        let mut short = 0;
+        for index in 0..14 {
+            let Some(schedule) = RateScheduleRef::new(RateScheduleKind::Dot11N, index) else {
+                continue;
+            };
+            let raw = crate::rate_code::phy_rate(
+                schedule.kind,
+                schedule_state(schedule).rate,
+                PpduBandwidth::Mhz20,
+                oer_ieee80211_mac::phy::HeGiLtf::Ltf2xGi800Ns,
+            );
+            if let Some(raw @ PhyRate::Ht(rate)) = raw {
+                assert_eq!(with.rate(schedule), raw);
+                let PhyRate::Ht(qualified) = without.rate(schedule) else {
+                    panic!("an HT schedule decodes to HT");
+                };
+                assert!(!qualified.short_gi());
+                assert_eq!(qualified.mcs(), rate.mcs());
+                short += usize::from(rate.short_gi());
+            }
+        }
+        // The 802.11n schedules do name short-GI rates.
+        assert!(short > 0);
+        let _ = (HtMcs::new(0), HtRate::new);
+    }
+
+    #[test]
+    fn retry_pressure_lowers_the_rate() {
+        let mut control = EspressifRateControl::associate((), &ht20_peer(true), Some(60));
+        let before = control.mpdu_rate().nominal_kbps();
+        // Exchanges of ten attempts each add two to the retry pressure; past
+        // six the controller moves to the next, slower schedule.
+        for _ in 0..4 {
+            control.observe_mpdu(10, false, None);
+        }
+        assert!(control.mpdu_rate().nominal_kbps() < before);
+    }
+}

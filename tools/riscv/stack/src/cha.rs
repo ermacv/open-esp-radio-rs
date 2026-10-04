@@ -21,7 +21,7 @@
 //! the debuginfo name is computed from the type's path and generic arguments
 //! by one rule. A test holds the toolchain to it across crates and codegen
 //! units. A site whose load address or field is unknown stays unresolved.
-use crate::{Analysis, Resolutions, TransferKind};
+use crate::{Analysis, Fact, Resolutions, TransferKind};
 use gimli::Reader as _;
 use object::{Object, ObjectSection, ObjectSymbol, SymbolKind};
 use oer_riscv_model::{Error, ErrorCode, Result};
@@ -535,7 +535,7 @@ pub fn function_pointer_resolutions(
                 continue;
             };
             if let Some(targets) = types.candidates(field, &taken) {
-                resolutions.insert(transfer.site, targets);
+                resolutions.add(transfer.site, Fact::FieldType, targets);
             }
         }
     }

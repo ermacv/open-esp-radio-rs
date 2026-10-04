@@ -8,7 +8,7 @@
 //! the entry's frame below the interrupt stack's position plus the bound of
 //! the handler it calls, where the dispatcher's calls through the source
 //! table reach only the handlers the table routes to that hart at that level.
-use crate::{Analysis, Bound, Resolutions, TableEntry, TrapEntry};
+use crate::{Analysis, Bound, Fact, Resolutions, TableEntry, TrapEntry};
 use oer_riscv_model::Result;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -36,6 +36,9 @@ pub struct LevelStack {
     pub level: u32,
     /// Bytes the level adds; `None` when its bound is unknown.
     pub bytes: Option<u64>,
+    /// Bytes the level adds over what is resolved (`partial + ?` when
+    /// [`Self::bytes`] is unknown).
+    pub partial: u64,
     /// The worst entry's frame and its handler's bound.
     pub frame: u64,
     pub bound: Bound,
@@ -50,6 +53,9 @@ pub struct HartStack {
     pub exception: LevelStack,
     /// The sum of every level and the exception; `None` when one is unknown.
     pub bytes: Option<u64>,
+    /// The sum over what is resolved (`partial + ?` when [`Self::bytes`] is
+    /// unknown).
+    pub partial: u64,
 }
 
 /// The interrupt stack of each hart.
@@ -80,7 +86,7 @@ pub fn interrupt_stacks(analysis: &Analysis, stacks: &Stacks<'_>) -> Result<Vec<
                 .collect();
             let mut resolutions = stacks.resolutions.clone();
             for &site in &dispatch_sites {
-                resolutions.insert(site, handlers.clone());
+                resolutions.add(site, Fact::InterruptTable, handlers.iter().copied());
             }
             level_stacks.push(worst(analysis, level, stacks.vectors, &resolutions)?);
         }
@@ -90,11 +96,17 @@ pub fn interrupt_stacks(analysis: &Analysis, stacks: &Stacks<'_>) -> Result<Vec<
             .chain([&exception])
             .map(|level| level.bytes)
             .sum::<Option<u64>>();
+        let partial = level_stacks
+            .iter()
+            .chain([&exception])
+            .map(|level| level.partial)
+            .sum();
         harts.push(HartStack {
             core,
             levels: level_stacks,
             exception,
             bytes,
+            partial,
         });
     }
     Ok(harts)
@@ -122,15 +134,19 @@ fn worst(
         let candidate = LevelStack {
             level,
             bytes: bound.bytes.map(|bytes| entry.frame + bytes),
+            partial: entry.frame + bound.partial,
             frame: entry.frame,
             bound,
         };
-        let deeper = match (&worst, candidate.bytes) {
-            (None, _) => true,
-            (Some(current), bytes) => match (current.bytes, bytes) {
+        // An unknown entry is the worst; among unknown ones, the deepest
+        // resolved part.
+        let deeper = match &worst {
+            None => true,
+            Some(current) => match (current.bytes, candidate.bytes) {
                 (Some(_), None) => true,
                 (Some(current), Some(bytes)) => bytes > current,
-                (None, _) => false,
+                (None, None) => candidate.partial > current.partial,
+                (None, Some(_)) => false,
             },
         };
         if deeper {

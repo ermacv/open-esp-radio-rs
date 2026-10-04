@@ -65,8 +65,12 @@ functions by `Reason`, and `Reason::closed_by` names the stage of the stack
 analysis that resolves each: indirect calls through a stack slot
 (`core::hint::black_box`), through a loaded pointer or another register,
 indirect tail calls through a pointer, transfers outside the image (ROM) or into
-a function's middle, functions without a frame, and recursion. The partial
-path over what is resolved is diagnostic, never a bound.
+a function's middle, functions without a frame, recursion, and indirect
+sites whose facts found no target. `Bound::partial` is the deepest path over
+what is resolved: the bound when nothing is unresolved, otherwise `partial +
+?`, neither an upper nor a lower bound, since a hole may reach deeper and a
+path may be infeasible. Interrupt contexts (`LevelStack`, `HartStack`) carry
+the same `partial`.
 
 Traps run on the hart's interrupt stack. `vector_table` reads a vector
 table's entries from the words its relocations name (an empty slot holds
@@ -84,7 +88,12 @@ beside its handler's bound.
 
 Facts outside the machine code close indirect sites through
 `Analysis::bound_with` and its `Resolutions`, which apply only where the
-analysis left a target unresolved:
+analysis left a target unresolved. Each site's targets carry the `Fact`s that
+gave them; the facts of one site unite, each being a superset of what the
+site reaches. An empty set resolves a site only where its fact is complete
+for it (`Fact::proves_empty`: the interrupt table, the IPC posts); an empty
+set of found facts (waker vtables, field types) is a hole,
+`Reason::NoCandidate`, never a site that reaches nothing:
 
 - `interrupt_table` reads an image's interrupt table (the slice an exported
   symbol holds, its pointer word and every non-zero handler word carrying the

@@ -28,6 +28,7 @@ mod dwarf;
 mod image;
 mod interrupts;
 mod relocations;
+mod resolutions;
 mod summaries;
 mod sweep;
 mod trap;
@@ -44,6 +45,7 @@ pub use image::{Function, functions, stack_sizes};
 pub use interrupts::{Field, TableEntry, TableLayout, interrupt_table};
 use oer_riscv_analysis::KnownJump;
 pub use relocations::{address_taken, taken_addresses};
+pub use resolutions::{Fact, Resolution, Resolutions};
 pub use summaries::{Summary, parse as parse_summaries};
 pub use sweep::{Load, TableBase, TargetSource, Transfer, TransferKind};
 pub use trap::{TrapEntry, trap_entry, vector_table};
@@ -111,6 +113,9 @@ pub enum Reason {
     Unframed,
     /// A call-graph cycle.
     Recursion,
+    /// An indirect site whose facts found no target and do not prove it
+    /// reaches none: a waker call without vtables, a field without candidates.
+    NoCandidate,
 }
 
 impl Reason {
@@ -124,6 +129,7 @@ impl Reason {
             Reason::IntoFunction => "review",
             Reason::Unframed => "1c: assembly frames",
             Reason::Recursion => "a reviewed recursion bound",
+            Reason::NoCandidate => "2: MIR call facts",
         }
     }
 }
@@ -139,6 +145,7 @@ impl fmt::Display for Reason {
             Reason::IntoFunction => "transfer into a function's middle",
             Reason::Unframed => "function without a frame",
             Reason::Recursion => "recursion",
+            Reason::NoCandidate => "indirect site whose facts found no target",
         })
     }
 }
@@ -150,6 +157,11 @@ pub struct Bound {
     /// Bytes below the root's entry `sp` on its deepest path; `None` unless
     /// nothing the root reaches is unresolved.
     pub bytes: Option<u64>,
+    /// Bytes on the deepest path over what is resolved: the bound when
+    /// nothing is unresolved, otherwise neither an upper nor a lower bound
+    /// (`partial + ?`), since a hole may reach deeper and a path may be
+    /// infeasible.
+    pub partial: u64,
     /// What the root reaches that is unresolved: the site (or, for an
     /// unframed function or a cycle, the function) and its reason.
     pub unresolved: Vec<(u32, Reason)>,
@@ -420,12 +432,6 @@ fn function_facts(
     })
 }
 
-/// Targets that facts outside the machine code give indirect sites, by site:
-/// a context's dispatcher targets from the interrupt table, a waker call's
-/// from the waker vtables. They apply only where the analysis left the
-/// target unresolved.
-pub type Resolutions = BTreeMap<u32, BTreeSet<u32>>;
-
 impl Analysis {
     /// The worst-case bound of the function at `root`.
     pub fn bound(&self, root: u32) -> Result<Bound> {
@@ -452,6 +458,7 @@ impl Analysis {
         Ok(Bound {
             root,
             bytes: walk.unresolved.is_empty().then_some(bytes),
+            partial: bytes,
             unresolved: walk.unresolved.into_iter().collect(),
             path,
         })
@@ -522,9 +529,15 @@ impl Walk<'_> {
         // The deepest point of this function alone is its frame.
         let mut deepest = (frame, Vec::new());
         for transfer in &facts.transfers {
-            let targets: Vec<u32> = match (transfer.target, self.resolutions.get(&transfer.site)) {
+            let targets: Vec<u32> = match (transfer.target, self.resolutions.get(transfer.site)) {
                 (Some(target), _) => vec![target],
-                (None, Some(resolved)) => resolved.iter().copied().collect(),
+                (None, Some(resolved)) if resolved.resolves() => {
+                    resolved.targets.iter().copied().collect()
+                }
+                (None, Some(_)) => {
+                    self.unresolved.insert((transfer.site, Reason::NoCandidate));
+                    continue;
+                }
                 (None, None) => {
                     let reason = match (transfer.kind, transfer.source) {
                         (TransferKind::Tail, _) => Reason::IndirectJump,

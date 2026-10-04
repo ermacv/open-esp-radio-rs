@@ -146,7 +146,7 @@ pub fn build(
         output.join("interrupt-stack.txt"),
         interrupt_stacks.render(),
     )?;
-    interrupt_stacks.check()?;
+    interrupt_stacks.check(oer_esp32s31_firmware::interrupt_stack::Required::Proven)?;
     audit_stack(&runtime, &output.join("runtime-stack.txt"), &budget)?;
     let packed = output.join("runtime.bin");
     process::run(

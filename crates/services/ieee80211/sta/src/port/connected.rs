@@ -180,24 +180,61 @@ pub struct PortTxCounters {
     pub failed: u32,
 }
 
-/// The connected station's state over the port.
-pub struct PortConnection<P: LowerMacBeaconTiming, R> {
+/// The buffers of a connection: its receive reordering windows and the
+/// MPDUs they hold, the frames waiting to be sent and the encoded subframes
+/// of the A-MPDU being sent.
+///
+/// They are most of a station's memory, so the composition places them
+/// (in [`PortStationStorage`](super::PortStationStorage)) and each
+/// connection borrows them for its association; the connection itself
+/// stays small and is built without staging them on the stack.
+pub struct PortConnectionBuffers {
+    /// The reorder window of each TID with a receive Block Ack agreement.
+    reorder: [Option<RxReorderBuffer<PORT_REORDER_WINDOW, PORT_REORDER_SLOTS>>; TIDS],
+    slots: [Option<PortFrame>; PORT_REORDER_SLOTS],
+    queue: TxQueue,
+    subframes: [[u8; PORT_FRAME_CAPACITY + 64]; PORT_TX_QUEUE],
+}
+
+impl PortConnectionBuffers {
+    pub const fn new() -> Self {
+        Self {
+            reorder: [const { None }; TIDS],
+            slots: [const { None }; PORT_REORDER_SLOTS],
+            queue: TxQueue::new(),
+            subframes: [[0; PORT_FRAME_CAPACITY + 64]; PORT_TX_QUEUE],
+        }
+    }
+
+    /// Empty the buffers for a new association.
+    fn reset(&mut self) {
+        self.reorder.iter_mut().for_each(|window| *window = None);
+        self.slots.iter_mut().for_each(|slot| *slot = None);
+        self.queue.clear();
+    }
+}
+
+impl Default for PortConnectionBuffers {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The connected station's state over the port, with the frame buffers it
+/// borrows for its association.
+pub struct PortConnection<'b, P: LowerMacBeaconTiming, R> {
     config: PortConnectionConfig,
     keys: Option<PortKeys>,
     packet_number: CcmpTxPacketNumber,
     pairwise_replay: CcmpRxReplayState,
     group_replay: CcmpRxReplayState,
     duplicates: RxDuplicateFilter,
-    reorder: [Option<RxReorderBuffer<PORT_REORDER_WINDOW, PORT_REORDER_SLOTS>>; TIDS],
-    slots: [Option<PortFrame>; PORT_REORDER_SLOTS],
     /// When each window that buffers an MPDU releases past its gap.
     reorder_gaps: [Option<Instant>; TIDS],
     sa_query: StationSaQuery,
     power: Option<PortPowerSave<P>>,
-    /// Frames waiting to be sent.
-    queue: TxQueue,
-    /// The encoded subframes of the A-MPDU being sent.
-    subframes: [[u8; PORT_FRAME_CAPACITY + 64]; PORT_TX_QUEUE],
+    /// Reorder windows and their MPDUs, queued frames and A-MPDU subframes.
+    buffers: &'b mut PortConnectionBuffers,
     tx_counters: PortTxCounters,
     /// An EAPOL frame the access point sent under the pairwise key, awaiting
     /// the Group Key Handshake.
@@ -215,6 +252,14 @@ pub struct PortConnection<P: LowerMacBeaconTiming, R> {
     /// what its exchanges teach it.
     rate: R,
     counters: PortRxCounters,
+}
+
+/// The keys a connection starts with: the pairwise and group keys, the
+/// CCMP packet number the handshake left and the BIP receive state.
+pub(crate) struct PortConnectionSecurity {
+    pub keys: Option<PortKeys>,
+    pub packet_number: CcmpTxPacketNumber,
+    pub bip: Option<BipReceiver>,
 }
 
 /// A connected station's supervision of its link: the monitor of its
@@ -261,16 +306,21 @@ pub(crate) struct ConnectionContext<'a, 'p, X: PortStationEnv> {
     pub key_unwrap: &'a mut X::KeyUnwrap,
 }
 
-impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
+impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
     pub(crate) fn new(
         config: PortConnectionConfig,
-        keys: Option<PortKeys>,
-        packet_number: CcmpTxPacketNumber,
+        security: PortConnectionSecurity,
         tx_block_ack: Option<StaTxBlockAckOriginator>,
-        bip: Option<BipReceiver>,
         supervision: PortLinkSupervisor,
         rate: R,
+        buffers: &'b mut PortConnectionBuffers,
     ) -> Self {
+        let PortConnectionSecurity {
+            keys,
+            packet_number,
+            bip,
+        } = security;
+        buffers.reset();
         let PortLinkSupervisor {
             monitor: link,
             probe,
@@ -287,13 +337,10 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
             pairwise_replay: CcmpRxReplayState::default(),
             group_replay,
             duplicates: RxDuplicateFilter::new(),
-            reorder: [const { None }; TIDS],
-            slots: [const { None }; PORT_REORDER_SLOTS],
             reorder_gaps: [None; TIDS],
             sa_query: StationSaQuery::new(),
             power: None,
-            queue: TxQueue::new(),
-            subframes: [[0; PORT_FRAME_CAPACITY + 64]; PORT_TX_QUEUE],
+            buffers,
             tx_counters: PortTxCounters::default(),
             eapol: None,
             tx_block_ack,
@@ -303,6 +350,11 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
             rate,
             counters: PortRxCounters::default(),
         }
+    }
+
+    /// End the connection and return the buffers it borrowed.
+    pub(crate) fn into_buffers(self) -> &'b mut PortConnectionBuffers {
+        self.buffers
     }
 
     /// Start the beacon window at the association-complete edge.
@@ -328,7 +380,7 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
 
     /// Whether the transmit queue takes another frame.
     pub const fn can_queue(&self) -> bool {
-        !self.queue.is_full()
+        !self.buffers.queue.is_full()
     }
 
     /// The station's TX Block Ack agreements, when it originates any.
@@ -354,7 +406,8 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
 
     /// Whether a receive Block Ack agreement of `tid` runs.
     pub fn block_ack(&self, tid: u8) -> bool {
-        self.reorder
+        self.buffers
+            .reorder
             .get(usize::from(tid))
             .is_some_and(Option::is_some)
     }
@@ -377,7 +430,7 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
 
     fn traffic(&self) -> PmTraffic {
         PmTraffic {
-            tx_pending: !self.queue.is_empty(),
+            tx_pending: !self.buffers.queue.is_empty(),
             connection_pending: false,
         }
     }
@@ -445,7 +498,7 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
         let priority = WmmUserPriority::new(user_priority).ok_or(PortLinkError::Frame(
             StationFrameError::UserPriorityOutOfRange,
         ))?;
-        Ok(if self.queue.push(ethernet, priority) {
+        Ok(if self.buffers.queue.push(ethernet, priority) {
             PortSend::Queued
         } else {
             PortSend::Full
@@ -464,7 +517,7 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
         if let Some(power) = &mut self.power {
             power.take_release();
         }
-        while let Some(head) = self.queue.get(0) {
+        while let Some(head) = self.buffers.queue.get(0) {
             let priority = head.priority;
             let traffic = self.traffic();
             if let Some(power) = &mut self.power
@@ -482,7 +535,11 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
             let sent = if run >= 2 {
                 self.transmit_aggregate(context, priority, run).await
             } else {
-                let frame = self.queue.pop().ok_or(PortLinkError::MissingState)?;
+                let frame = self
+                    .buffers
+                    .queue
+                    .pop()
+                    .ok_or(PortLinkError::MissingState)?;
                 self.transmit(context, frame.ethernet(), frame.priority)
                     .await
                     .map(|report| (report, 1))
@@ -581,8 +638,8 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
         let rate = self.rate.ampdu_rate();
         let mut length = 0_u32;
         let mut run = 0;
-        for index in 0..self.queue.head_run(limit) {
-            let Some(frame) = self.queue.get(index) else {
+        for index in 0..self.buffers.queue.head_run(limit) {
+            let Some(frame) = self.buffers.queue.get(index) else {
                 break;
             };
             // Delimiter, MAC header, CCMP header, LLC/SNAP, MIC, FCS and
@@ -617,7 +674,11 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
         let mut first_sequence = None;
         let mut key = KeySelector::Plaintext;
         for (index, on_air) in lengths.iter_mut().enumerate().take(run) {
-            let frame = self.queue.pop().ok_or(PortLinkError::MissingState)?;
+            let frame = self
+                .buffers
+                .queue
+                .pop()
+                .ok_or(PortLinkError::MissingState)?;
             let sequence = context.sequences.take_qos(tid).ok_or(PortLinkError::Frame(
                 StationFrameError::UserPriorityOutOfRange,
             ))?;
@@ -625,7 +686,7 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
             let mut out = [0_u8; PORT_FRAME_CAPACITY + 64];
             let (length, selector) =
                 self.encode_data(context, frame.ethernet(), priority, sequence, &mut out)?;
-            self.subframes[index][..length].copy_from_slice(&out[..length]);
+            self.buffers.subframes[index][..length].copy_from_slice(&out[..length]);
             key = selector;
             let mic = if matches!(selector, KeySelector::Key(_)) {
                 8
@@ -656,7 +717,7 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
                 0
             };
             let length = usize::from(lengths[index]) - 4 - mic;
-            *slice = &self.subframes[index][..length];
+            *slice = &self.buffers.subframes[index][..length];
         }
         let frames = AmpduFrames {
             subframes: &slices[..run],
@@ -1038,7 +1099,7 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
                 let accepted = usize::from(tid) < TIDS
                     && window != 0
                     && tid <= capabilities.rx_block_ack_max_tid
-                    && self.reorder[usize::from(tid)].is_none();
+                    && self.buffers.reorder[usize::from(tid)].is_none();
                 let window = window
                     .min(capabilities.rx_block_ack_max_window)
                     .min(PORT_REORDER_WINDOW as u16);
@@ -1058,7 +1119,7 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
                         .is_ok();
                 let mut response = [0_u8; ADDBA_ACTION_BODY_LEN];
                 if installed {
-                    self.reorder[usize::from(tid)] = buffer;
+                    self.buffers.reorder[usize::from(tid)] = buffer;
                     write_successful_addba_response(&mut response, dialog_token, tid, window)
                 } else {
                     write_declined_addba_response(&mut response, dialog_token, tid & 0x0f, window)
@@ -1079,6 +1140,7 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
             }
             Some(BlockAckAction::Delba { tid, .. }) => {
                 if let Some(mut buffer) = self
+                    .buffers
                     .reorder
                     .get_mut(usize::from(tid))
                     .and_then(Option::take)
@@ -1116,6 +1178,7 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
         let starting_sequence =
             SequenceNumber::from_sequence_control(u16::from_le_bytes([bytes[18], bytes[19]]));
         let Some(buffer) = self
+            .buffers
             .reorder
             .get_mut(usize::from(tid))
             .and_then(Option::as_mut)
@@ -1267,14 +1330,14 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
         for tid in 0..TIDS {
             if self.reorder_gaps[tid].is_some_and(|due| due <= now) {
                 self.reorder_gaps[tid] = None;
-                if let Some(buffer) = self.reorder[tid].as_mut() {
+                if let Some(buffer) = self.buffers.reorder[tid].as_mut() {
                     let release = buffer.expire_gap();
                     self.counters.reorder_gap_timeouts =
                         self.counters.reorder_gap_timeouts.saturating_add(1);
                     self.release(&release, deliver);
                 }
             }
-            let buffers = self.reorder[tid]
+            let buffers = self.buffers.reorder[tid]
                 .as_ref()
                 .is_some_and(|buffer| buffer.occupied() != 0);
             self.reorder_gaps[tid] = if buffers {
@@ -1292,24 +1355,24 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
     /// Buffer one MPDU of an agreement and deliver what its window releases.
     fn reorder_mpdu(&mut self, tid: u8, frame: PortFrame, deliver: &mut impl FnMut(&[u8])) {
         let sequence = SequenceNumber::from_sequence_control(wire::sequence_control(frame.bytes()));
-        let slot = match self.slots.iter().position(Option::is_none) {
+        let slot = match self.buffers.slots.iter().position(Option::is_none) {
             Some(slot) => slot,
             None => {
                 // Every slot is taken: release the oldest run to make room.
-                let Some(buffer) = self.reorder[usize::from(tid)].as_mut() else {
+                let Some(buffer) = self.buffers.reorder[usize::from(tid)].as_mut() else {
                     return;
                 };
                 let release = buffer.expire_gap();
                 self.release(&release, deliver);
-                match self.slots.iter().position(Option::is_none) {
+                match self.buffers.slots.iter().position(Option::is_none) {
                     Some(slot) => slot,
                     None => return,
                 }
             }
         };
-        self.slots[slot] = Some(frame);
-        let Some(buffer) = self.reorder[usize::from(tid)].as_mut() else {
-            self.slots[slot] = None;
+        self.buffers.slots[slot] = Some(frame);
+        let Some(buffer) = self.buffers.reorder[usize::from(tid)].as_mut() else {
+            self.buffers.slots[slot] = None;
             return;
         };
         match buffer.ingest(RxReorderMpdu {
@@ -1318,16 +1381,16 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
         }) {
             Ok(release) => {
                 if release.rejected.is_some() {
-                    self.slots[slot] = None;
+                    self.buffers.slots[slot] = None;
                     self.counters.behind_window = self.counters.behind_window.saturating_add(1);
                 }
                 self.release(&release, deliver);
             }
             Err(RxReorderError::DuplicateSequence(_)) => {
-                self.slots[slot] = None;
+                self.buffers.slots[slot] = None;
                 self.counters.duplicates = self.counters.duplicates.saturating_add(1);
             }
-            Err(_) => self.slots[slot] = None,
+            Err(_) => self.buffers.slots[slot] = None,
         }
     }
 
@@ -1338,6 +1401,7 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
     ) {
         for mpdu in release.iter() {
             if let Some(frame) = self
+                .buffers
                 .slots
                 .get_mut(usize::from(mpdu.slot))
                 .and_then(Option::take)
@@ -1350,7 +1414,7 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
     /// Drop the MPDUs an ended agreement released.
     fn recycle(&mut self, release: &RxReorderRelease<PORT_REORDER_WINDOW>) {
         for mpdu in release.iter() {
-            if let Some(slot) = self.slots.get_mut(usize::from(mpdu.slot)) {
+            if let Some(slot) = self.buffers.slots.get_mut(usize::from(mpdu.slot)) {
                 *slot = None;
             }
         }
@@ -1568,9 +1632,9 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
             )
             .await?;
         }
-        self.queue.clear();
+        self.buffers.queue.clear();
         for tid in 0..TIDS as u8 {
-            if let Some(mut buffer) = self.reorder[usize::from(tid)].take() {
+            if let Some(mut buffer) = self.buffers.reorder[usize::from(tid)].take() {
                 let release = buffer.stop();
                 self.recycle(&release);
                 context.link.apply(LowerMacSetting::RemoveRxBlockAck {

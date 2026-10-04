@@ -53,8 +53,8 @@ use crate::{
 
 use super::{
     connected::{
-        ConnectionContext, PortConnection, PortConnectionConfig, PortDisconnect, PortLinkProbe,
-        PortLinkSupervisor, PortSend,
+        ConnectionContext, PortConnection, PortConnectionBuffers, PortConnectionConfig,
+        PortConnectionSecurity, PortDisconnect, PortLinkProbe, PortLinkSupervisor, PortSend,
     },
     join::{PortAssociation, PortHePower, PortJoin},
     link::{PORT_FRAME_CAPACITY, PortError, PortLink, PortLinkError, PortStationEnv},
@@ -201,13 +201,38 @@ type StepResult<X> = Result<(), StaAttemptStepError<PortAttemptError<X>>>;
 /// station sends and receives Ethernet frames, keeps its Block Ack
 /// agreements and its SA Query, dozes under power save and reports how its
 /// association ended.
+/// The memory of one port station that the composition places: the scan
+/// table and the frame buffers its connections borrow. Most of a
+/// station's size is here, so a `static` (or a placement the target
+/// chooses, such as external RAM) keeps it off the stack; the station
+/// itself holds only protocol state.
+pub struct PortStationStorage {
+    table: ScanTable,
+    connection: PortConnectionBuffers,
+}
+
+impl PortStationStorage {
+    pub const fn new() -> Self {
+        Self {
+            table: ScanTable::new(),
+            connection: PortConnectionBuffers::new(),
+        }
+    }
+}
+
+impl Default for PortStationStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct PortStation<'p, X: PortStationEnv> {
     link: PortLink<'p, X>,
     timer: X::Timer,
     key_unwrap: X::KeyUnwrap,
     profile: PortStationProfile<'p>,
     security: StaAttemptSecurity<'p>,
-    table: ScanTable,
+    table: &'p mut ScanTable,
     refresh: bool,
     candidate: Option<ScanRecord>,
     selected: Option<SelectedRsn>,
@@ -222,13 +247,15 @@ pub struct PortStation<'p, X: PortStationEnv> {
     /// management frames.
     bip: Option<oer_ieee80211_rsn::bip::BipReceiver>,
     packet_number: Option<CcmpTxPacketNumber>,
-    connection: Option<PortConnection<X::Port, X::RateControl>>,
+    /// The frame buffers a connection borrows; `None` while one holds them.
+    buffers: Option<&'p mut PortConnectionBuffers>,
+    connection: Option<PortConnection<'p, X::Port, X::RateControl>>,
     report: PortAttemptReport,
 }
 
 /// A connected station's connection and the context its phases run in.
 type ConnectionParts<'a, 'p, X> = (
-    &'a mut PortConnection<<X as PortStationEnv>::Port, <X as PortStationEnv>::RateControl>,
+    &'a mut PortConnection<'p, <X as PortStationEnv>::Port, <X as PortStationEnv>::RateControl>,
     ConnectionContext<'a, 'p, X>,
 );
 
@@ -239,14 +266,16 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         key_unwrap: X::KeyUnwrap,
         profile: PortStationProfile<'p>,
         security: StaAttemptSecurity<'p>,
+        storage: &'p mut PortStationStorage,
     ) -> Self {
+        let PortStationStorage { table, connection } = storage;
         Self {
             link,
             timer,
             key_unwrap,
             profile,
             security,
-            table: ScanTable::new(),
+            table,
             refresh: true,
             candidate: None,
             selected: None,
@@ -257,6 +286,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             keys: None,
             bip: None,
             packet_number: None,
+            buffers: Some(connection),
             connection: None,
             report: PortAttemptReport::default(),
         }
@@ -285,7 +315,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
 
     /// The scan table of the last scan.
     pub const fn scan_table(&self) -> &ScanTable {
-        &self.table
+        self.table
     }
 
     /// Scan again before the next attempt, or join the current candidate.
@@ -298,7 +328,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
     }
 
     /// The connection of a connected station.
-    pub const fn connection(&self) -> Option<&PortConnection<X::Port, X::RateControl>> {
+    pub const fn connection(&self) -> Option<&PortConnection<'p, X::Port, X::RateControl>> {
         self.connection.as_ref()
     }
 
@@ -372,6 +402,13 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         self.end_connection(true).await
     }
 
+    /// Drop the connection and take its frame buffers back.
+    fn release_connection(&mut self) {
+        if let Some(connection) = self.connection.take() {
+            self.buffers = Some(connection.into_buffers());
+        }
+    }
+
     async fn end_connection(
         &mut self,
         send_deauthentication: bool,
@@ -382,7 +419,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             }
             Err(_) => Ok(()),
         };
-        self.connection = None;
+        self.release_connection();
         self.keys = None;
         self.association = None;
         self.response_meta = None;
@@ -897,6 +934,13 @@ impl<'p, X: PortStationEnv> StaAttemptPort for PortAttemptPort<'p, X> {
             .packet_number
             .take()
             .unwrap_or(CcmpTxPacketNumber::new(owner.profile.ccmp_step));
+        let Some(buffers) = owner.buffers.take() else {
+            return Err(StaConnectedEntryFailure::new(
+                owner,
+                StaFailureDisposition::Terminal,
+                PortStationError::Link(PortLinkError::MissingState),
+            ));
+        };
         let bip = owner.bip.take();
         let rate = <X::RateControl as StaRateControl>::associate(
             owner.link.rate_config(),
@@ -905,15 +949,18 @@ impl<'p, X: PortStationEnv> StaAttemptPort for PortAttemptPort<'p, X> {
         );
         owner.connection = Some(PortConnection::new(
             config,
-            owner.keys,
-            packet_number,
+            PortConnectionSecurity {
+                keys: owner.keys,
+                packet_number,
+                bip,
+            },
             tx_block_ack,
-            bip,
             PortLinkSupervisor {
                 monitor: link,
                 probe,
             },
             rate,
+            buffers,
         ));
         if let Some(connection) = owner.connection.as_mut() {
             connection.arm_link(owner.timer.now());
@@ -926,7 +973,7 @@ impl<'p, X: PortStationEnv> StaAttemptPort for PortAttemptPort<'p, X> {
             Err(error) => Err(error),
         };
         if let Err(error) = started {
-            owner.connection = None;
+            owner.release_connection();
             return Err(StaConnectedEntryFailure::new(
                 owner,
                 StaFailureDisposition::RetryCurrentCandidate,

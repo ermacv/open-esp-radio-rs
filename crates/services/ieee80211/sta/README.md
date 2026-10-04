@@ -57,6 +57,15 @@ attempt and either receives the completion or ends with
 in the gap ends with `PortLinkError::LifecycleLost`. Received frames in the
 gap are gone and the connection goes on.
 
+The composition places the station's memory: `PortStation::new` borrows a
+`PortStationStorage` (the scan table and the `PortConnectionBuffers`: the
+receive reorder windows and the MPDUs they hold, the transmit queue and the
+encoded A-MPDU subframes), usually a `static` in the memory the target
+chooses. Each connection borrows those buffers for its association, empties
+them as it starts and returns them when it ends, so the station and its
+connection are protocol state of a few kilobytes and nothing large is built
+on a stack.
+
 The station reads a protected MPDU the backend reports as
 `DecryptedAndIntegrityVerified` with its CCMP header kept and without the
 MIC, the mirror of what it hands the backend for transmission.

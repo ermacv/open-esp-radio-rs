@@ -549,7 +549,7 @@ failure was resolved.
 A run bundle stays in ignored output, in the run store every checkout of the
 user shares (see [find and compare runs](../hil/host/runs.md#find-and-compare-runs)),
 and qualifies only for a checkout whose sources it binds. The evaluator reads
-the store only through the checkout's `target/hil/<target>/runs` link, which
+the store only through the checkout's `target/hil/runs` link, which
 any `cargo hil` command creates.
 The runner's observer proof names the build its executable was compiled from,
 several megabytes that most runs share. A run's manifest names that build by
@@ -606,7 +606,7 @@ directories. Commit the shards. `INPUT` reports `hil-shards` and `hil-current-sh
 
 ### Bundle validation and attempt seals
 
-The HIL runner writes bundles below `target/hil/<target>/runs/<run-id>/`.
+The HIL runner writes bundles below `target/hil/runs/<run-id>/`.
 Qualification independently checks `integrity.json`, every indexed file hash,
 manifest/suite identity, current source applicability,
 scenario outcome and repetition count. Markdown reports are not proof inputs.
@@ -653,7 +653,7 @@ per-obligation decisions still enforce checks, repetitions and failures.
 source bindings independently of dirty state.
 
 A declared evidence directory that does not exist (the vendor evidence index,
-the HIL evidence directory, or the checkout's `target/hil/<chip>/runs` link
+the HIL evidence directory, or the checkout's `target/hil/runs` link
 before its first run) holds no evidence: the evaluator prints
 `EVIDENCE-DIR absent kind=… path=… shards=0` (`bundles=0` for runs), and
 every obligation it would serve stays `missing`. A path that an existing

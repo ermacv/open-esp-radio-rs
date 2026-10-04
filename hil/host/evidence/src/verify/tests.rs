@@ -24,7 +24,7 @@ fn fixture() -> (PathBuf, PathBuf) {
         std::process::id(),
         TEST_COUNTER.fetch_add(1, Ordering::Relaxed)
     ));
-    let run = root.join("target/hil/esp32s31/runs/run-1");
+    let run = root.join("target/hil/runs/run-1");
     let artifact_path = PathBuf::from("scenarios/icmp/repetition-001/evidence.log");
     let application_path = PathBuf::from("firmware/correctness/application.bin");
     fs::create_dir_all(run.join(artifact_path.parent().unwrap())).unwrap();
@@ -280,7 +280,7 @@ fn add_lab_provenance(run: &Path, device_id: &str) {
 #[test]
 fn verifies_firmware_and_attachment_content() {
     let (root, _) = fixture();
-    let completion = verify(&root, "esp32s31", None, &TestRecipe).unwrap();
+    let completion = verify(&root, Some("esp32s31"), None, &TestRecipe).unwrap();
     assert_eq!(completion.status, "verified");
     assert_eq!(completion.runs, 1);
     assert_eq!(completion.attachments, 1);
@@ -311,10 +311,10 @@ fn lab_provenance_without_a_scope_or_with_the_old_peer_key_is_rejected() {
 fn verifies_typed_lab_provenance_and_rejects_wrong_device_binding() {
     let (root, run) = fixture();
     add_lab_provenance(&run, "dut-1");
-    verify(&root, "esp32s31", Some("run-1"), &TestRecipe).unwrap();
+    verify(&root, Some("esp32s31"), Some("run-1"), &TestRecipe).unwrap();
 
     add_lab_provenance(&run, "another-dut");
-    let error = verify(&root, "esp32s31", Some("run-1"), &TestRecipe)
+    let error = verify(&root, Some("esp32s31"), Some("run-1"), &TestRecipe)
         .expect_err("reject lab snapshot for another device");
     assert!(error.to_string().contains("not bound"));
     fs::remove_dir_all(root).unwrap();
@@ -441,7 +441,7 @@ fn selects_only_verified_archived_firmware_for_replay() {
 fn verifies_complete_build_provenance_and_all_firmware_subjects() {
     let (root, run) = fixture();
     add_build_provenance(&run);
-    let completion = verify(&root, "esp32s31", Some("run-1"), &TestRecipe).unwrap();
+    let completion = verify(&root, Some("esp32s31"), Some("run-1"), &TestRecipe).unwrap();
     assert_eq!(completion.firmware_artifacts, 1);
     fs::remove_dir_all(root).unwrap();
 }
@@ -454,7 +454,7 @@ fn a_manifest_seed_must_be_the_build_records_seed() {
     manifest.firmware[0].layout_seed = std::num::NonZeroU32::new(7);
     atomic_json(&run.join("manifest.json"), &manifest).unwrap();
     write_integrity_index(&run, "run-1").unwrap();
-    let error = verify(&root, "esp32s31", Some("run-1"), &TestRecipe).unwrap_err();
+    let error = verify(&root, Some("esp32s31"), Some("run-1"), &TestRecipe).unwrap_err();
     assert!(
         error.to_string().contains("build provenance inconsistent"),
         "{error}"
@@ -471,7 +471,7 @@ fn rejects_tampered_archived_runtime_elf() {
     let (root, run) = fixture();
     add_build_provenance(&run);
     fs::write(run.join("firmware/correctness/runtime.elf"), b"runtime elF").unwrap();
-    let error = verify(&root, "esp32s31", Some("run-1"), &TestRecipe).unwrap_err();
+    let error = verify(&root, Some("esp32s31"), Some("run-1"), &TestRecipe).unwrap_err();
     assert!(error.to_string().contains("SHA-256"));
     fs::remove_dir_all(root).unwrap();
 }
@@ -490,7 +490,7 @@ fn rejects_replay_origin_not_bound_to_the_firmware_build() {
     });
     atomic_json(&run.join("manifest.json"), &manifest).unwrap();
     write_integrity_index(&run, "run-1").unwrap();
-    let error = verify(&root, "esp32s31", Some("run-1"), &TestRecipe).unwrap_err();
+    let error = verify(&root, Some("esp32s31"), Some("run-1"), &TestRecipe).unwrap_err();
     assert!(error.to_string().contains("inconsistent replay origin"));
     fs::remove_dir_all(root).unwrap();
 }
@@ -503,7 +503,7 @@ fn rejects_tampered_attachment() {
         b"serial evidencE",
     )
     .unwrap();
-    let error = verify(&root, "esp32s31", Some("run-1"), &TestRecipe).unwrap_err();
+    let error = verify(&root, Some("esp32s31"), Some("run-1"), &TestRecipe).unwrap_err();
     assert!(error.to_string().contains("SHA-256"));
     fs::remove_dir_all(root).unwrap();
 }
@@ -514,7 +514,7 @@ fn rejects_paths_escaping_the_run_bundle() {
     let mut suite: SuiteResult = read_json(&run.join("suite.json")).unwrap();
     suite.scenarios[0].repetitions[0].attachments[0].path = PathBuf::from("../outside");
     atomic_json(&run.join("suite.json"), &suite).unwrap();
-    let error = verify(&root, "esp32s31", None, &TestRecipe).unwrap_err();
+    let error = verify(&root, Some("esp32s31"), None, &TestRecipe).unwrap_err();
     assert!(
         error
             .to_string()
@@ -527,7 +527,7 @@ fn rejects_paths_escaping_the_run_bundle() {
 fn rejects_unindexed_files() {
     let (root, run) = fixture();
     fs::write(run.join("injected.log"), b"not sealed").unwrap();
-    let error = verify(&root, "esp32s31", None, &TestRecipe).unwrap_err();
+    let error = verify(&root, Some("esp32s31"), None, &TestRecipe).unwrap_err();
     assert!(error.to_string().contains("sealed file inventory"));
     fs::remove_dir_all(root).unwrap();
 }
@@ -536,7 +536,7 @@ fn rejects_unindexed_files() {
 fn rejects_tampered_derived_report() {
     let (root, run) = fixture();
     fs::write(run.join("report.html"), b"tampered report").unwrap();
-    let error = verify(&root, "esp32s31", None, &TestRecipe).unwrap_err();
+    let error = verify(&root, Some("esp32s31"), None, &TestRecipe).unwrap_err();
     assert!(error.to_string().contains("sealed file inventory"));
     fs::remove_dir_all(root).unwrap();
 }
@@ -546,23 +546,26 @@ fn the_runs_link_to_the_shared_store_is_followed() {
     let directory = tempfile::tempdir().unwrap();
     let store = directory.path().join("store/runs");
     fs::create_dir_all(&store).unwrap();
-    let target = directory.path().join("checkout/target/hil/esp32s31");
+    let target = directory.path().join("checkout/target/hil");
     fs::create_dir_all(&target).unwrap();
     std::os::unix::fs::symlink(&store, target.join("runs")).unwrap();
     assert_eq!(
-        runs_directory(&target).unwrap(),
+        runs_directory(&target.join("runs")).unwrap(),
         fs::canonicalize(&store).unwrap()
     );
     let plain = directory.path().join("plain");
     fs::create_dir_all(plain.join("runs")).unwrap();
-    assert_eq!(runs_directory(&plain).unwrap(), plain.join("runs"));
+    assert_eq!(
+        runs_directory(&plain.join("runs")).unwrap(),
+        plain.join("runs")
+    );
 }
 
 #[test]
 fn a_referenced_observer_build_must_be_stored_under_its_digest() {
     use oer_hil_schema::observer_store;
     let (root, run) = fixture();
-    let store = root.join("target/hil/esp32s31");
+    let store = root.join("target/hil");
     let build = serde_json::json!({"schema": 2, "resolved": {"nodes": []}});
     let embedded = serde_json::json!({
         "schema": observer_store::EMBEDDED,
@@ -577,20 +580,20 @@ fn a_referenced_observer_build_must_be_stored_under_its_digest() {
     atomic_json(&run.join("manifest.json"), &manifest).unwrap();
     write_integrity_index(&run, "run-1").unwrap();
     assert!(
-        verify(&root, "esp32s31", None, &TestRecipe).is_err(),
+        verify(&root, Some("esp32s31"), None, &TestRecipe).is_err(),
         "a manifest embedding its observer build"
     );
     manifest["runner"]["observer"] = reference.clone();
     atomic_json(&run.join("manifest.json"), &manifest).unwrap();
     write_integrity_index(&run, "run-1").unwrap();
-    verify(&root, "esp32s31", None, &TestRecipe).unwrap();
+    verify(&root, Some("esp32s31"), None, &TestRecipe).unwrap();
 
     let file =
         observer_store::path(&store, observer_store::build_digest(&reference).unwrap()).unwrap();
     let stored = fs::read(&file).unwrap();
     fs::remove_file(&file).unwrap();
     assert!(
-        verify(&root, "esp32s31", None, &TestRecipe).is_err(),
+        verify(&root, Some("esp32s31"), None, &TestRecipe).is_err(),
         "a missing build"
     );
     fs::write(&file, stored).unwrap();
@@ -602,7 +605,7 @@ fn a_referenced_observer_build_must_be_stored_under_its_digest() {
     )
     .unwrap();
     assert!(
-        verify(&root, "esp32s31", None, &TestRecipe).is_err(),
+        verify(&root, Some("esp32s31"), None, &TestRecipe).is_err(),
         "a build that does not hash to its name"
     );
     fs::remove_dir_all(root).unwrap();

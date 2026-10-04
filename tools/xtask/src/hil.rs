@@ -61,10 +61,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         None | Some("help" | "--help" | "-h") => println!("{STAND_HELP}"),
         Some("queue") => return queue(&args[1..]),
         Some("dashboard") => {
-            return crate::hil_dashboard::serve(
-                &crate::hil_store::shared_runs(HIL_TARGET)?,
-                &args[1..],
-            );
+            return crate::hil_dashboard::serve(&crate::hil_store::shared_runs()?, &args[1..]);
         }
         Some("lease") => return lease(ctx, options, &args[1..]),
         Some("board") => return board(ctx, &options, &args[1..]),
@@ -101,7 +98,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         Some("wait") if args.get(1).is_some_and(|arg| arg == "--service") => {
             return wait_for_service(&args[2..]);
         }
-        Some("wait") => return wait(ctx, &args[1..]),
+        Some("wait") => return wait(&args[1..]),
         Some("ab") => return ab(ctx, &options.owner(ctx)?, args),
         Some("bisect") => return crate::hil_bisect::run(ctx, &options.owner(ctx)?, &args[1..]),
         _ => {}
@@ -199,26 +196,17 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             .map(str::to_owned)
             .collect::<Vec<_>>();
         forward_run_receipt(&run_ids)?;
-        // A run lies in the store of the chip it ran on.
-        let stores = oer_chip_profile::supported(&ctx.root)?
-            .iter()
-            .map(|chip| crate::hil_store::shared_runs(chip))
-            .collect::<Result<Vec<_>>>()?;
+        let store = crate::hil_store::shared_runs()?;
         if let Some(job) = job.as_mut() {
             job.finish(
                 &run_ids,
                 &run_ids
                     .iter()
-                    .map(|id| {
-                        stores
-                            .iter()
-                            .find_map(|store| crate::hil_runs::load(&store.join(id)))
-                            .and_then(|run| run.outcome)
-                    })
+                    .map(|id| crate::hil_runs::load(&store.join(id)).and_then(|run| run.outcome))
                     .collect::<Vec<_>>(),
             )?;
         }
-        let created = runs_dirty(&stores, &run_ids);
+        let created = runs_dirty(&store, &run_ids);
         if std::env::var_os(oer_hil_evidence::experiment::EXPERIMENT_ENV).is_some() {
             eprintln!("hil: an A/B experiment run is diagnostic: no evidence recorded");
         } else {
@@ -687,7 +675,7 @@ fn ab(ctx: &Context, owner: &str, args: &[OsString]) -> Result<std::process::Exi
 /// `cargo hil wait ID`: block until the job or run ID names ends, and exit
 /// with its outcome. A job is waited for through its record, a run by
 /// following its bundle.
-fn wait(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
+fn wait(args: &[OsString]) -> Result<std::process::ExitCode> {
     let [id] = args else {
         return Err("usage: cargo hil wait JOB|RUN, or cargo hil wait --service [BOARD...]".into());
     };
@@ -695,13 +683,8 @@ fn wait(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     if crate::hil_jobs::Jobs::open()?.read(text).is_ok() {
         return crate::hil_jobs::wait_command(args);
     }
-    // A run lies in the store of the chip it ran on.
-    let stores = oer_chip_profile::supported(&ctx.root)?
-        .iter()
-        .map(|chip| crate::hil_store::shared_runs(chip))
-        .collect::<Result<Vec<_>>>()?;
-    let run = crate::hil_runs::find_in(&stores, text)
-        .ok_or_else(|| format!("{text} is neither a job nor a run of any chip"))?;
+    let run = crate::hil_runs::load(&crate::hil_store::shared_runs()?.join(text))
+        .ok_or_else(|| format!("{text} is neither a job nor a run"))?;
     Ok(std::process::ExitCode::from(crate::hil_runs::wait(
         &run.directory,
     )?))
@@ -1109,11 +1092,11 @@ fn perf(
 ) -> Result<std::process::ExitCode> {
     use crate::hil_perf;
     use clap::Parser as _;
-    let store = crate::hil_store::shared_runs(HIL_TARGET)?
+    let store = crate::hil_store::shared_runs()?
         .parent()
         .ok_or("the run store has no parent")?
         .to_owned();
-    let directory = crate::hil_store::shared_runs(HIL_TARGET)?;
+    let directory = crate::hil_store::shared_runs()?;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_millis() as u64;
@@ -1182,31 +1165,23 @@ fn runs(
 ) -> Result<std::process::ExitCode> {
     use crate::hil_runs;
     use clap::Parser as _;
-    // Each chip's runs lie in its own store; this checkout's runs directory
-    // of a chip stands for that chip's store.
-    let runs_of = |chip: &str| -> Result<PathBuf> {
-        let local = ctx.root.join("target/hil").join(chip).join("runs");
-        if local.exists() {
-            Ok(local)
-        } else {
-            crate::hil_store::shared_runs(chip)
-        }
+    // This checkout's runs directory stands for the store every checkout
+    // shares.
+    let local = ctx.root.join(oer_hil_evidence::run::RUNS);
+    let directory = if local.exists() {
+        local
+    } else {
+        crate::hil_store::shared_runs()?
     };
-    let directory = runs_of(HIL_TARGET)?;
-    let stores = oer_chip_profile::supported(&ctx.root)?
-        .iter()
-        .map(|chip| runs_of(chip))
-        .collect::<Result<Vec<_>>>()?;
-    // Pins and pruning stay with the esp32s31 store.
-    let store = crate::hil_store::shared_runs(HIL_TARGET)?
+    let store = crate::hil_store::shared_runs()?
         .parent()
         .ok_or("the run store has no parent")?
         .to_owned();
     let parsed = RunsCli::try_parse_from(args)?;
     // Reading every run takes long; commands about one run read only it.
-    let all = || hil_runs::all_in(&stores);
+    let all = || hil_runs::all(&directory);
     let find = |id: &str| {
-        hil_runs::find_in(&stores, id).ok_or_else(|| format!("no run {id} in any chip's run store"))
+        hil_runs::load(&directory.join(id)).ok_or_else(|| format!("no run {id} in the run store"))
     };
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
@@ -1564,16 +1539,22 @@ fn collect_objects(ctx: &Context) -> oer_hil_evidence::build::CollectedObjects {
     checkouts.dedup();
     let mut total = oer_hil_evidence::build::CollectedObjects::default();
     for checkout in checkouts {
-        let target = checkout.join("target/hil").join(HIL_TARGET);
-        match oer_hil_evidence::build::collect_objects(&target) {
-            Ok(collected) => {
-                total.objects += collected.objects;
-                total.bytes += collected.bytes;
+        // Build objects stay per chip.
+        let chips = oer_chip_profile::supported(&checkout).unwrap_or_default();
+        for target in chips
+            .iter()
+            .map(|chip| checkout.join("target/hil").join(chip))
+        {
+            match oer_hil_evidence::build::collect_objects(&target) {
+                Ok(collected) => {
+                    total.objects += collected.objects;
+                    total.bytes += collected.bytes;
+                }
+                Err(error) => eprintln!(
+                    "hil: cannot collect the firmware objects of {}: {error}",
+                    target.display()
+                ),
             }
-            Err(error) => eprintln!(
-                "hil: cannot collect the firmware objects of {}: {error}",
-                checkout.display()
-            ),
         }
     }
     total
@@ -1604,7 +1585,7 @@ const RUN_STORE_BUDGET_GIB: u64 = 40;
 
 fn prune_automatically(ctx: &Context) -> Result<()> {
     use crate::hil_runs;
-    let runs = crate::hil_store::shared_runs(HIL_TARGET)?;
+    let runs = crate::hil_store::shared_runs()?;
     let store = runs.parent().ok_or("the run store has no parent")?;
     let marker = store.join("last-prune");
     if std::fs::metadata(&marker)
@@ -1681,18 +1662,14 @@ fn prune_automatically(ctx: &Context) -> Result<()> {
     Ok(())
 }
 
-/// Make this checkout's run directory of every supported chip a link to the
-/// shared store.
+/// Make this checkout's run directory a link to the shared store.
 fn use_shared_store(ctx: &Context) -> Result<()> {
-    for chip in oer_chip_profile::supported(&ctx.root)? {
-        let local = ctx.root.join("target/hil").join(&chip).join("runs");
-        crate::hil_store::link_runs(&local, &crate::hil_store::shared_runs(&chip)?)?;
-    }
+    crate::hil_store::link_runs(
+        &ctx.root.join(oer_hil_evidence::run::RUNS),
+        &crate::hil_store::shared_runs()?,
+    )?;
     Ok(())
 }
-
-/// The HIL target the runner executes on.
-pub(crate) const HIL_TARGET: &str = "esp32s31";
 
 /// Check an enqueued `run`'s scenarios and options with the runner now, so
 /// a mistake shows in the terminal instead of in a job that ends no-run
@@ -1792,7 +1769,7 @@ fn checkout_of_common_dir(common: &Path) -> Option<PathBuf> {
 /// Leave quarantined scenarios out of a `run-all`, and warn of a `run` that
 /// names one.
 fn apply_quarantine(args: &mut Vec<OsString>) -> Result<()> {
-    let store = crate::hil_store::shared_runs(HIL_TARGET)?
+    let store = crate::hil_store::shared_runs()?
         .parent()
         .ok_or("the run store has no parent")?
         .to_owned();
@@ -1893,16 +1870,14 @@ fn forward_run_receipt(run_ids: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// Whether each of `run_ids` was built from a dirty tree. A run lies in the
-/// store of the chip it ran on; one whose manifest no store holds counts as
-/// dirty.
-fn runs_dirty(stores: &[PathBuf], run_ids: &[String]) -> Vec<bool> {
+/// Whether each of `run_ids` in `store` was built from a dirty tree; one
+/// whose manifest the store does not hold counts as dirty.
+fn runs_dirty(store: &Path, run_ids: &[String]) -> Vec<bool> {
     run_ids
         .iter()
         .map(|id| {
-            stores
-                .iter()
-                .find_map(|store| std::fs::read(store.join(id).join("manifest.json")).ok())
+            std::fs::read(store.join(id).join("manifest.json"))
+                .ok()
                 .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
                 .and_then(|manifest| manifest["repository"]["dirty"].as_bool())
                 .unwrap_or(true)
@@ -1939,7 +1914,7 @@ fn evidence_skip_reason(inputs: RunInputs, created_dirty: &[bool]) -> Option<&'s
 /// Note clean runs as pending evidence of this checkout: a run never writes
 /// tracked files.
 fn remember_pending(ctx: &Context, owner: String, run_ids: &[String]) -> Result<()> {
-    let store = crate::hil_store::shared_runs(HIL_TARGET)?;
+    let store = crate::hil_store::shared_runs()?;
     let pending = run_ids
         .iter()
         .map(|run| crate::hil_evidence::Pending {
@@ -1961,6 +1936,25 @@ fn remember_pending(ctx: &Context, owner: String, run_ids: &[String]) -> Result<
         );
     }
     Ok(())
+}
+
+/// `run_ids` grouped by the chip their manifest in `store` names; a run
+/// without a readable manifest has no evidence to record.
+fn runs_by_chip(
+    store: &Path,
+    run_ids: &[String],
+) -> std::collections::BTreeMap<String, Vec<String>> {
+    let mut grouped = std::collections::BTreeMap::<String, Vec<String>>::new();
+    for id in run_ids {
+        let chip = std::fs::read(store.join(id).join("manifest.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|manifest| manifest["target"].as_str().map(str::to_owned));
+        if let Some(chip) = chip {
+            grouped.entry(chip).or_default().push(id.clone());
+        }
+    }
+    grouped
 }
 
 /// Commands that execute scenarios and write run bundles.
@@ -2014,16 +2008,27 @@ pub(crate) fn record_evidence(
     } else {
         ctx.command("cargo")
     };
-    let status = command
-        .args(["qualification", "hil-evidence", "--hil-target", HIL_TARGET])
-        .args(run_ids.iter().flat_map(|id| ["--run", id.as_str()]))
-        .env("OER_OBSERVER_RECEIPT", receipt)
-        .status()?;
-    if !status.success() {
-        return Err(format!(
-            "recording the HIL evidence shards failed (it runs under {EVIDENCE_MEMORY_MAX})"
-        )
-        .into());
+    // The evaluator records one chip's evidence at a time: each run's
+    // manifest names its chip.
+    let store = crate::hil_store::shared_runs()?;
+    for (chip, runs) in runs_by_chip(&store, run_ids) {
+        let status = command
+            .args([
+                "qualification",
+                "hil-evidence",
+                "--hil-target",
+                chip.as_str(),
+            ])
+            .args(runs.iter().flat_map(|id| ["--run", id.as_str()]))
+            .env("OER_OBSERVER_RECEIPT", receipt)
+            .status()?;
+        if !status.success() {
+            return Err(format!(
+                "recording the HIL evidence shards of {chip} failed (it runs under \
+                 {EVIDENCE_MEMORY_MAX})"
+            )
+            .into());
+        }
     }
     Ok(())
 }
@@ -2137,7 +2142,7 @@ fn profile_report_path(root: &Path, run: &str, scenario: &str, relative: &Path) 
 fn profile(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     use clap::Parser as _;
     let cli = ProfileCli::try_parse_from(args)?;
-    let run = crate::hil_store::shared_runs(HIL_TARGET)?.join(&cli.run);
+    let run = crate::hil_store::shared_runs()?.join(&cli.run);
     if !run.is_dir() {
         return Err(format!("no run {} in the store", cli.run).into());
     }
@@ -2428,10 +2433,9 @@ mod tests {
     };
 
     #[test]
-    fn a_run_is_found_clean_in_the_store_of_the_chip_it_ran_on() {
-        let esp32s31 = tempfile::tempdir().unwrap();
-        let esp32c5 = tempfile::tempdir().unwrap();
-        for (store, id, dirty) in [(&esp32s31, "a", true), (&esp32c5, "b", false)] {
+    fn a_run_is_clean_only_when_its_manifest_says_so() {
+        let store = tempfile::tempdir().unwrap();
+        for (id, dirty) in [("a", true), ("b", false)] {
             let run = store.path().join(id);
             std::fs::create_dir(&run).unwrap();
             std::fs::write(
@@ -2440,9 +2444,8 @@ mod tests {
             )
             .unwrap();
         }
-        let stores = [esp32s31.path().to_owned(), esp32c5.path().to_owned()];
         let ids = ["a", "b", "missing"].map(String::from);
-        assert_eq!(runs_dirty(&stores, &ids), [true, false, true]);
+        assert_eq!(runs_dirty(store.path(), &ids), [true, false, true]);
     }
 
     #[test]
@@ -2539,7 +2542,7 @@ mod tests {
             report,
             Path::new("/checkout/target/hil/profiles/run-1/udp/repetition-001/profile.txt")
         );
-        assert!(!report.starts_with(root.join("target/hil/esp32s31/runs")));
+        assert!(!report.starts_with(root.join("target/hil/runs")));
     }
 
     #[test]

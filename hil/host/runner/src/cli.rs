@@ -250,8 +250,7 @@ pub(crate) enum ReportCommand {
     /// Verify one run bundle, or every bundle when RUN_ID is omitted.
     Verify {
         run_id: Option<String>,
-        /// Chip whose runs to read; default: the chip of RUN_ID, or every chip
-        /// with runs.
+        /// Only this chip's runs; default: every chip's.
         #[arg(long, value_name = "CHIP")]
         chip: Option<String>,
     },

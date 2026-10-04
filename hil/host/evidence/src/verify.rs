@@ -25,7 +25,8 @@ use crate::{
 #[derive(Debug, Serialize)]
 pub struct VerificationCompletion {
     pub schema: u16,
-    pub target: String,
+    /// The chips of the verified runs.
+    pub chips: BTreeSet<String>,
     pub status: &'static str,
     pub runs: usize,
     pub attachments: usize,
@@ -66,51 +67,25 @@ pub struct ArchivedFirmware {
     pub(super) build_provenance: Option<BuildProvenance>,
 }
 
+/// Verify the run `run_id`, or every run, of the checkout at `root`; with
+/// `chip`, only that chip's runs, and `run_id` must be one of them.
 pub fn verify(
     root: &Path,
-    target: &str,
+    chip: Option<&str>,
     run_id: Option<&str>,
     recipe: &dyn FirmwareRecipe,
 ) -> Result<VerificationCompletion> {
-    verify_at(
-        &root.join("target/hil").join(target),
-        target,
-        run_id,
-        recipe,
-    )
+    verify_at(&root.join(crate::run::RUNS), chip, run_id, recipe)
 }
 
-/// The supported chips, sorted, that have a run directory in this checkout.
-pub fn chips_with_runs(root: &Path) -> Result<Vec<String>> {
-    Ok(oer_chip_profile::supported(root)
-        .map_err(|error| error.to_string())?
-        .into_iter()
-        .filter(|chip| root.join("target/hil").join(chip).join("runs").exists())
-        .collect())
-}
-
-/// The chip whose runs hold `run_id`.
-pub fn chip_of_run(root: &Path, run_id: &str) -> Result<String> {
-    for chip in chips_with_runs(root)? {
-        if runs_directory(&root.join("target/hil").join(&chip))?
-            .join(run_id)
-            .is_dir()
-        {
-            return Ok(chip);
-        }
+/// The run directory a checkout's `runs` resolves to. A checkout links it to
+/// the run store shared by every checkout; the link itself is followed,
+/// while links inside bundles stay refused.
+fn runs_directory(runs: &Path) -> Result<std::path::PathBuf> {
+    if fs::symlink_metadata(runs).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+        return Ok(fs::canonicalize(runs)?);
     }
-    Err(format!("no chip's runs hold run `{run_id}`").into())
-}
-
-/// The run directory below `target_directory`. A checkout links it to the
-/// run store shared by every checkout; the link itself is followed, while
-/// links inside bundles stay refused.
-fn runs_directory(target_directory: &Path) -> Result<std::path::PathBuf> {
-    let runs = target_directory.join("runs");
-    if fs::symlink_metadata(&runs).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
-        return Ok(fs::canonicalize(&runs)?);
-    }
-    Ok(runs)
+    Ok(runs.to_owned())
 }
 
 pub fn archived_firmware(
@@ -120,8 +95,8 @@ pub fn archived_firmware(
     image: oer_hil_image_class::ImageClass,
     recipe: &dyn FirmwareRecipe,
 ) -> Result<ArchivedFirmware> {
-    verify(root, target, Some(run_id), recipe)?;
-    let run_directory = runs_directory(&root.join("target/hil").join(target))?.join(run_id);
+    verify(root, Some(target), Some(run_id), recipe)?;
+    let run_directory = runs_directory(&root.join(crate::run::RUNS))?.join(run_id);
     let manifest: RunManifest = read_json(&run_directory.join("manifest.json"))?;
     let artifact = manifest
         .firmware
@@ -154,22 +129,32 @@ pub fn archived_firmware(
 }
 
 pub fn verify_at(
-    target_directory: &Path,
-    target: &str,
+    runs: &Path,
+    chip: Option<&str>,
     run_id: Option<&str>,
     recipe: &dyn FirmwareRecipe,
 ) -> Result<VerificationCompletion> {
-    let runs_directory = runs_directory(target_directory)?;
+    let runs_directory = runs_directory(runs)?;
     let run_directories = select_run_directories(&runs_directory, run_id)?;
     let mut attachments = 0;
     let mut firmware_artifacts = 0;
     let mut verified_run_ids = Vec::with_capacity(run_directories.len());
+    let mut chips = BTreeSet::new();
 
     for run_directory in run_directories {
         let manifest_path = run_directory.join("manifest.json");
         require_regular_file(&manifest_path)?;
         let manifest: RunManifest = read_json(&manifest_path)?;
-        validate_manifest(&manifest, target, &run_directory)?;
+        // Every chip's runs share the store: a chip filter skips the others,
+        // and refuses a named run of another chip.
+        if let Some(chip) = chip
+            && run_id.is_none()
+            && manifest.target != chip
+        {
+            continue;
+        }
+        let target = chip.unwrap_or(&manifest.target).to_owned();
+        validate_manifest(&manifest, &target, &run_directory)?;
         if manifest.state == RunState::Running {
             return Err(format!(
                 "HIL run `{}` is still running and has no immutable integrity seal",
@@ -190,13 +175,14 @@ pub fn verify_at(
         }
         validate_integrity_index(&run_directory, &manifest)?;
         validate_observer(&runs_directory, &manifest)?;
+        chips.insert(target);
         verified_run_ids.push(manifest.run_id);
     }
     validate_observer_store(&runs_directory)?;
 
     Ok(VerificationCompletion {
         schema: RUN_SCHEMA,
-        target: target.to_owned(),
+        chips,
         status: "verified",
         runs: verified_run_ids.len(),
         attachments,

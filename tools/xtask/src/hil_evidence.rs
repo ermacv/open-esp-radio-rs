@@ -99,7 +99,7 @@ fn record(ctx: &Context, args: &[&str]) -> Result<()> {
         println!("hil: no runs to record");
         return Ok(());
     }
-    let store = crate::hil_store::shared_runs(crate::hil::HIL_TARGET)?;
+    let store = crate::hil_store::shared_runs()?;
     if let Some(missing) = runs.iter().find(|run| !store.join(run).is_dir()) {
         return Err(format!("run {missing} is not in the run store").into());
     }
@@ -200,7 +200,7 @@ fn load(root: &Path) -> Result<Vec<Pending>> {
 
 /// The pending runs still in the run store; pruned runs cannot be recorded.
 fn live(pending: &[Pending]) -> Result<Vec<Pending>> {
-    let store = crate::hil_store::shared_runs(crate::hil::HIL_TARGET)?;
+    let store = crate::hil_store::shared_runs()?;
     Ok(pending
         .iter()
         .filter(|entry| store.join(&entry.run).is_dir())

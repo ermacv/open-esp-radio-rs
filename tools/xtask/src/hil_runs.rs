@@ -383,22 +383,7 @@ fn exit_status(outcome: Option<Outcome>) -> u8 {
     }
 }
 
-/// The runs of every store in `stores`, oldest first: each chip keeps its
-/// runs in its own store.
-pub fn all_in(stores: &[PathBuf]) -> Result<Vec<Run>> {
-    let mut found = Vec::new();
-    for store in stores {
-        found.extend(all(store)?);
-    }
-    found.sort_by_key(|run| (run.started_millis, run.id.clone()));
-    Ok(found)
-}
-
-/// The run `id` from whichever store in `stores` holds it.
-pub fn find_in(stores: &[PathBuf], id: &str) -> Option<Run> {
-    stores.iter().find_map(|store| load(&store.join(id)))
-}
-
+/// The runs of the store `runs`, every chip's, oldest first.
 pub fn all(runs: &Path) -> Result<Vec<Run>> {
     let mut found = Vec::new();
     let Ok(entries) = fs::read_dir(runs) else {
@@ -1289,34 +1274,6 @@ mod tests {
         // goes (60) and the store fits.
         assert_eq!(deleted, ["1-a", "3-c"]);
         assert!(over_budget(&runs, &kept, &sizes, 100).is_empty());
-    }
-
-    #[test]
-    fn every_chips_store_answers_for_its_own_runs() {
-        let esp32s31 = tempfile::tempdir().unwrap();
-        let esp32c5 = tempfile::tempdir().unwrap();
-        let sealed = |store: &Path, id: &str, started: u64| {
-            let directory = store.join(id);
-            fs::create_dir_all(&directory).unwrap();
-            fs::write(
-                directory.join("manifest.json"),
-                serde_json::json!({"state": "completed", "started_unix_millis": started})
-                    .to_string(),
-            )
-            .unwrap();
-        };
-        sealed(esp32s31.path(), "20-00000001", 20);
-        sealed(esp32c5.path(), "10-00000002", 10);
-        let stores = [esp32s31.path().to_owned(), esp32c5.path().to_owned()];
-        let found = find_in(&stores, "10-00000002").unwrap();
-        assert!(found.directory.starts_with(esp32c5.path()));
-        assert!(find_in(&stores, "30-00000003").is_none());
-        let ids = all_in(&stores)
-            .unwrap()
-            .into_iter()
-            .map(|run| run.id)
-            .collect::<Vec<_>>();
-        assert_eq!(ids, ["10-00000002", "20-00000001"]);
     }
 
     #[test]

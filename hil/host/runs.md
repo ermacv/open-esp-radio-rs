@@ -8,8 +8,8 @@ The bundle contract is in the [architecture](architecture.md).
 
 ## Find and compare runs
 
-Every checkout's `target/hil/esp32s31/runs` is a link to one store shared by
-all checkouts of this user, `~/.local/share/open-esp-radio/hil/esp32s31/runs`
+Every checkout's `target/hil/runs` is a link to one store shared by
+all checkouts of this user, `~/.local/share/open-esp-radio/hil/runs`
 (`$XDG_DATA_HOME`, or `$OER_HIL_STORE/<target>/runs`). `cargo hil` creates the
 link, and refuses a checkout whose own run directory holds runs. Qualification reads the store from any checkout and still decides
 per bundle whether it applies to that checkout's sources.

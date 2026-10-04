@@ -1,9 +1,10 @@
 //! The run store shared by every checkout of this user.
 //!
 //! HIL run bundles are self-contained and sealed, and the stand is shared by
-//! all checkouts, so their runs live in one store. A checkout's
-//! `target/hil/<target>/runs` is a symbolic link to it; everything else below
-//! `target/hil` (build caches, snapshots) stays per checkout. Qualification
+//! all checkouts, so their runs, every chip's, live in one store; a run's
+//! manifest names its chip. A checkout's `target/hil/runs` is a symbolic link
+//! to it; everything else below `target/hil` (build caches, snapshots) stays
+//! per checkout. Qualification
 //! still decides per bundle whether it applies to the checkout's sources.
 use std::{
     fs,
@@ -15,8 +16,8 @@ use crate::Result;
 /// Overrides the store's root directory.
 pub const STORE_ENV: &str = "OER_HIL_STORE";
 
-/// `$OER_HIL_STORE/<target>/runs`, or the user's data directory.
-pub fn shared_runs(target: &str) -> Result<PathBuf> {
+/// `$OER_HIL_STORE/runs`, or the user's data directory's.
+pub fn shared_runs() -> Result<PathBuf> {
     let root = match std::env::var_os(STORE_ENV).filter(|value| !value.is_empty()) {
         Some(root) => PathBuf::from(root),
         None => std::env::var_os("XDG_DATA_HOME")
@@ -28,7 +29,7 @@ pub fn shared_runs(target: &str) -> Result<PathBuf> {
             .ok_or("HOME is required to locate the shared HIL run store")?
             .join("open-esp-radio/hil"),
     };
-    Ok(root.join(target).join("runs"))
+    Ok(root.join("runs"))
 }
 
 #[derive(Debug, PartialEq)]
@@ -75,15 +76,15 @@ mod tests {
     fn a_checkout_links_to_the_store_and_refuses_runs_of_its_own() {
         let directory = tempfile::tempdir().unwrap();
         let shared = directory.path().join("store/esp32s31/runs");
-        let first = directory.path().join("first/target/hil/esp32s31/runs");
+        let first = directory.path().join("first/target/hil/runs");
         assert_eq!(link_runs(&first, &shared).unwrap(), Linked::Created);
         assert_eq!(link_runs(&first, &shared).unwrap(), Linked::Existing);
 
-        let empty = directory.path().join("empty/target/hil/esp32s31/runs");
+        let empty = directory.path().join("empty/target/hil/runs");
         fs::create_dir_all(&empty).unwrap();
         assert_eq!(link_runs(&empty, &shared).unwrap(), Linked::Created);
 
-        let own = directory.path().join("own/target/hil/esp32s31/runs");
+        let own = directory.path().join("own/target/hil/runs");
         fs::create_dir_all(own.join("a-run")).unwrap();
         assert!(link_runs(&own, &shared).is_err());
         assert!(own.join("a-run").is_dir());

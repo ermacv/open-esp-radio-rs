@@ -101,5 +101,5 @@ evidence-index = "verification/esp32s31/evidence/scenarios"
 [hil]
 target = "esp32s31"
 catalog = "hil/scenarios"
-runs = "target/hil/esp32s31/runs"
+runs = "target/hil/runs"
 evidence = "hil/evidence/esp32s31"

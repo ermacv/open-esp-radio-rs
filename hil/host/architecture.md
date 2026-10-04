@@ -235,7 +235,7 @@ and retain only transport, external-fixture and stack evidence. AP IP policy
 belongs to HIL, not to the radio driver request.
 
 Each invocation creates an immutable directory under
-`target/hil/esp32s31/runs/<run-id>/`. The runner never deletes or reuses an old
+`target/hil/runs/<run-id>/`. The runner never deletes or reuses an old
 run. Its canonical records are:
 
 ```text

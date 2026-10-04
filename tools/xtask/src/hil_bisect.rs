@@ -449,7 +449,7 @@ impl Bisection<'_> {
             .env(oer_hil_arbiter::OWNER_ENV, self.owner)
             .env_remove(oer_hil_arbiter::LEASE_ENV)
             .status()?;
-        let runs = crate::hil_store::shared_runs(crate::hil::HIL_TARGET)?;
+        let runs = crate::hil_store::shared_runs()?;
         let checkout = self.worktree.file_name().and_then(|name| name.to_str());
         match hil_runs::newest_of(&runs, checkout).filter(|run| run.started_millis >= started) {
             Some(run) => self.judge_run(&run.id),
@@ -464,7 +464,7 @@ impl Bisection<'_> {
     }
 
     fn judge_run(&self, id: &str) -> Result<Verdict> {
-        let runs = crate::hil_store::shared_runs(crate::hil::HIL_TARGET)?;
+        let runs = crate::hil_store::shared_runs()?;
         let run =
             hil_runs::load(&runs.join(id)).ok_or_else(|| format!("run {id} is unreadable"))?;
         Ok(judge(&run)?)

@@ -31,11 +31,7 @@ const WORDS: usize = 0;
 static RETAINED: Retained<ENTRIES, SLOTS, WORDS> = Retained::new();
 static TRACE: Trace = Trace::new(&RETAINED);
 
-/// The trace's clock, which every record calls directly.
-#[unsafe(no_mangle)]
-fn oer_trace_now_micros() -> u64 {
-    oer_time_embassy::now_micros()
-}
+oer_trace::clock!(oer_time_embassy::now_micros);
 
 /// Every channel records until the host chooses its own.
 const DEFAULT_MASK: u64 = u64::MAX;

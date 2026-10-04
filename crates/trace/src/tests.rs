@@ -15,11 +15,11 @@ fn trace<const E: usize, const S: usize, const W: usize>() -> (&'static Retained
 
 /// The test binary's clock; records these tests write carry explicit stamps.
 #[cfg(feature = "record")]
-#[allow(unsafe_code, reason = "the clock the trace links to")]
-#[unsafe(no_mangle)]
-fn oer_trace_now_micros() -> u64 {
+fn no_clock() -> u64 {
     0
 }
+#[cfg(feature = "record")]
+crate::clock!(no_clock);
 
 fn record(trace: &Trace, step: u32) -> bool {
     trace.record(STEP, [step, 0], step * 10)

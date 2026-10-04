@@ -24,6 +24,7 @@ use oer_ieee80211_rsn_service::runner::{
     RsnHandshakeRunner, RsnKeyInstallRunner, RsnPendingKeyInstall,
 };
 use oer_ieee80211_sta::{
+    association::{StaAssociatedPeer, StaAssociatedPeerError},
     attempt::{
         AssociationAttemptOutcome, StaAttemptPort, StaAttemptSecurity, StaAttemptStateError,
         StaAttemptStepError, StaConnectedEntryFailure,
@@ -51,7 +52,7 @@ use super::{
     connected::{
         ConnectionContext, PortConnection, PortConnectionConfig, PortDisconnect, PortSend,
     },
-    join::{PortAssociation, PortJoin},
+    join::{PortAssociation, PortHePower, PortJoin},
     link::{PORT_FRAME_CAPACITY, PortError, PortLink, PortLinkError, PortStationEnv},
     rsn::{BorrowedUnwrap, PortHandshake, PortKeyInstall, PortKeys},
     scan::{PortProbe, PortScan, PortScanTarget},
@@ -75,6 +76,12 @@ pub struct PortStationProfile<'a> {
     pub probe: Option<PortProbe<'a>>,
     /// The station's HT, HE and WMM elements.
     pub capabilities: &'a AssociationCapabilities,
+    /// The station's HE power elements; an HE association needs them.
+    pub he_power: Option<PortHePower>,
+    /// The nominal packet padding of an access point's HE Capabilities
+    /// element, an integrator's policy (the Espressif stack's is
+    /// `oer-espressif-ieee80211-policy::he_txop::packet_padding`).
+    pub he_packet_padding: fn(&[u8]) -> oer_ieee80211_upper_mac::HePacketPadding,
     pub phy: PhyMode,
     pub listen_interval: u16,
     /// The step between the station's CCMP packet numbers: one in the
@@ -97,6 +104,8 @@ pub enum PortStationError<E, U> {
     SaeCommit(SaeError),
     Join(StaJoinError<PortLinkError<E>>),
     Handshake(RsnHandshakeError<PortLinkError<E>, U>),
+    /// The access point's elements give no associated peer.
+    Peer(StaAssociatedPeerError),
     KeyInstall(RsnKeyInstallError<PortLinkError<E>>),
     State(StaAttemptStateError),
 }
@@ -141,6 +150,8 @@ pub struct PortStation<'p, X: PortStationEnv> {
     candidate: Option<ScanRecord>,
     selected: Option<SelectedRsn>,
     association: Option<AssociationResponse>,
+    /// The access point as the association left it.
+    peer: Option<StaAssociatedPeer>,
     pending: Option<RsnPendingKeyInstall>,
     keys: Option<PortKeys>,
     packet_number: Option<CcmpTxPacketNumber>,
@@ -173,6 +184,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             candidate: None,
             selected: None,
             association: None,
+            peer: None,
             pending: None,
             keys: None,
             packet_number: None,
@@ -490,6 +502,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             phy: profile.phy,
             capabilities: profile.capabilities,
             listen_interval: profile.listen_interval,
+            he_power: profile.he_power,
         });
         let success = StaJoinRunner::new(join, &*timer)
             .associate(
@@ -517,6 +530,30 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
                 StaAttemptStepError::retry_current(PortStationError::Link(error))
             })?;
         }
+        let candidate =
+            self.candidate
+                .ok_or(StaAttemptStepError::terminal(PortStationError::State(
+                    StaAttemptStateError::MissingPreparedPeer,
+                )))?;
+        let association =
+            self.association
+                .ok_or(StaAttemptStepError::terminal(PortStationError::State(
+                    StaAttemptStateError::MissingPreparedPeer,
+                )))?;
+        let peer = StaAssociatedPeer::derive(
+            &candidate,
+            &association,
+            self.profile.phy,
+            self.profile.he_packet_padding,
+        )
+        .map_err(|error| StaAttemptStepError::refresh_candidate(PortStationError::Peer(error)))?;
+        // The planner protects every exchange as the BSS requires.
+        self.link
+            .tx_mut()
+            .planner_mut()
+            .protection_mut()
+            .install_bss(peer.protection);
+        self.peer = Some(peer);
         self.link
             .configure(Some(bssid), ReceiveFilter::BSS_MEMBER)
             .map_err(|error| StaAttemptStepError::retry_current(PortStationError::Link(error)))
@@ -613,7 +650,9 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         let candidate = self.candidate?;
         let association = self.association?;
         let selected = self.selected?;
+        let peer = self.peer?;
         Some(PortConnectionConfig {
+            peer,
             bssid: candidate.bssid,
             association_id: StaAssociationId::new(association.association_id & 0x3fff)?,
             peer_qos: association.wmm,

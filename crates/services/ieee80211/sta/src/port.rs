@@ -40,7 +40,7 @@ pub use connected::{
     PORT_REORDER_SLOTS, PORT_REORDER_WINDOW, PortConnection, PortConnectionConfig, PortDisconnect,
     PortRxCounters, PortSend,
 };
-pub use join::{PortAssociation, PortJoin};
+pub use join::{PortAssociation, PortHePower, PortJoin};
 pub use link::{
     BeaconTimingOps, EventRouter, PORT_BACKLOG, PORT_EXCHANGES, PORT_FRAME_CAPACITY, PortError,
     PortFrame, PortInput, PortLink, PortLinkCounters, PortLinkError, PortRouter, PortStationConfig,

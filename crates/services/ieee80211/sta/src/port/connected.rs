@@ -70,6 +70,9 @@ const REASON_LEAVING: u16 = 3;
 #[derive(Clone, Copy, Debug)]
 pub struct PortConnectionConfig {
     pub bssid: MacAddress,
+    /// The access point as the association left it: its PHY, HT and HE
+    /// facts and the protection the planner applies.
+    pub peer: oer_ieee80211_sta::association::StaAssociatedPeer,
     pub association_id: StaAssociationId,
     /// The access point takes QoS data frames.
     pub peer_qos: bool,

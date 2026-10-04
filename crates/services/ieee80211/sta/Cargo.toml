@@ -22,6 +22,7 @@ oer-ieee80211-upper-mac-service = { path = "../upper-mac" }
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }
 oer-ieee80211-lower-mac = { path = "../../../protocols/ieee80211/lower-mac", features = ["model"] }
+oer-espressif-ieee80211-policy = { path = "../../../protocols/espressif/ieee80211/policy" }
 
 [lints]
 workspace = true

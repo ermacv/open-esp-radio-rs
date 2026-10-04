@@ -30,6 +30,16 @@ pub struct PortAssociation<'a> {
     /// The station's HT, HE and WMM elements.
     pub capabilities: &'a AssociationCapabilities,
     pub listen_interval: u16,
+    /// The HE power elements an HE association carries.
+    pub he_power: Option<PortHePower>,
+}
+
+/// The station's HE power elements, from its calibrated transmit power:
+/// an HE Association Request needs both.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PortHePower {
+    pub power_capability: oer_ieee80211_mac::station::association::StaPowerCapability,
+    pub ul_mu: oer_ieee80211_mac::station::association::HeUlMuPowerCapability,
 }
 
 /// Octets of the longest management frame the station sends while joining.
@@ -124,8 +134,16 @@ impl<X: PortStationEnv> StaJoinBackend for PortJoin<'_, '_, X> {
             listen_interval: association.listen_interval,
             phy: association.phy,
             security: association.security,
-            power_capability: None,
-            he_ul_mu_power: None,
+            // Only an HE association carries them; the encoder refuses an HE
+            // request without them.
+            power_capability: association
+                .he_power
+                .filter(|_| association.phy == PhyMode::He20)
+                .map(|power| power.power_capability),
+            he_ul_mu_power: association
+                .he_power
+                .filter(|_| association.phy == PhyMode::He20)
+                .map(|power| power.ul_mu),
         }
         .encode(&mut frame, association.capabilities)
         .map_err(PortLinkError::Association)?;

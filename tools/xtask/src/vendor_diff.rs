@@ -221,7 +221,7 @@ pub fn run(
 ) -> Result<()> {
     let pairs: Vec<(String, PathBuf, PathBuf)> = match (old, new, baseline) {
         (Some(old), Some(new), None) => vec![(new.display().to_string(), old, new)],
-        (None, None, Some(baseline)) => crate::vendor_fetch::pinned(ctx, chip)?
+        (None, None, Some(baseline)) => oer_vendor_artifacts::pinned(&ctx.root, chip)?
             .into_iter()
             .filter(|a| !a.local)
             .filter_map(|a| {

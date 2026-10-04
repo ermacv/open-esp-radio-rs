@@ -13,7 +13,8 @@ hil/
 ├── scenarios/         versioned, non-secret host workloads and criteria
 ├── evidence/          recorded evidence shards per chip
 ├── host/
-│   ├── runner/        CLI, run orchestration and workload dispatch
+│   ├── cli/           stand CLI: stand commands, jobs, run store, runner launch
+│   ├── runner/        runner CLI, run orchestration and workload dispatch
 │   ├── execution/     repetition context, failure classification, cleanup evidence
 │   ├── stand/         laboratory config and locks, recovery, post-mortem
 │   ├── link/          UART session, protocol, transports, measurements, peer console
@@ -47,12 +48,15 @@ not HIL scenarios or runner commands.
 The ownership map and bundle contract are in the
 [execution and evidence architecture](architecture.md).
 
-`cargo hil` builds the observer through xtask using Cargo's actual artifact
+`cargo hil` is the binary of [`oer-hil-cli`](cli/README.md), apart from
+xtask, so a change to the repository checks never rebuilds it. It handles the
+stand's commands itself and forwards every other command to the runner: it
+builds the observer using Cargo's actual artifact
 messages, saves its executable receipt, and atomically publishes
 `target/hil/current-observer.json`. Cargo uses `--locked` and, like every Cargo
 command in this repository, runs offline (`.cargo/config.toml`); `cargo tidy
 fetch` downloads what a changed lock file needs. Cancellation of
-xtask is forwarded to its owned runner process group, with up to five minutes
+`cargo hil` is forwarded to its owned runner process group, with up to five minutes
 for fixture cleanup and evidence sealing; this does not limit campaign runtime.
 The wrapper returns the runner's exit code (or `128 + signal` on Unix).
 

@@ -451,7 +451,7 @@ fn pinned_functions(
 ) -> Result<(BTreeMap<String, (PathBuf, Vec<Function>)>, BTreeSet<String>)> {
     let mut out = BTreeMap::new();
     let mut symbols = BTreeSet::new();
-    for artifact in crate::vendor_fetch::pinned(ctx, chip)? {
+    for artifact in oer_vendor_artifacts::pinned(&ctx.root, chip)? {
         if artifact.local {
             continue;
         }

@@ -152,8 +152,8 @@ fn heavy(ctx: &Context, files: &[String], affected: &BTreeSet<gate::Key>) -> Res
             {
                 continue;
             }
-            if !crate::vendor_fetch::unfetched(ctx, &chip)?.is_empty() {
-                crate::vendor_fetch::fetch_vendor_sources(ctx, &chip)?;
+            if !oer_vendor_artifacts::unfetched(&ctx.root, &chip)?.is_empty() {
+                oer_vendor_artifacts::fetch_vendor_sources(&ctx.root, &chip)?;
             }
             crate::vendor_provenance::check(ctx, &chip)?;
         }

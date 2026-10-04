@@ -5,7 +5,7 @@
 //! encoded as an ESP application with `espflash save-image`. The chip's
 //! catalog bootloader and its partition table come from the ESP-IDF build of
 //! `hil/bootloaders/<chip>`, which only the `cargo hil` wrapper can run: the
-//! runner asks it back through [`XTASK_ENV`]. That build's
+//! runner asks it back through [`CLI_ENV`]. That build's
 //! `flasher_args.json` must place them at the chip profile's offsets.
 
 use std::{
@@ -24,7 +24,7 @@ use crate::Result;
 
 /// Names the `cargo hil` wrapper's own executable, which builds a chip's
 /// catalog bootloader for the runner.
-pub const XTASK_ENV: &str = "OER_HIL_XTASK";
+pub const CLI_ENV: &str = "OER_HIL_CLI";
 
 /// Whether `chip`'s HIL agent at `root` builds `class`: the agent declares
 /// every feature the class selects.
@@ -131,14 +131,14 @@ pub fn build(
 /// The ESP-IDF build directory of `chip`'s catalog bootloader, built by the
 /// `cargo hil` wrapper this runner was started from.
 fn catalog_bootloader(chip: &str) -> Result<PathBuf> {
-    let xtask = std::env::var_os(XTASK_ENV).ok_or_else(|| {
+    let cli = std::env::var_os(CLI_ENV).ok_or_else(|| {
         format!(
             "{chip} images need the chip's catalog bootloader, which only `cargo hil` builds; \
              run the runner through `cargo hil`"
         )
     })?;
     let output = oer_process::output(
-        Command::new(xtask).args(["hil", "firmware", "bootloader", chip]),
+        Command::new(cli).args(["firmware", "bootloader", chip]),
         Some(std::time::Duration::from_secs(1800)),
     )?;
     if !output.status.success() {

@@ -3071,6 +3071,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-hil-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "fs2",
+ "oer-chip-profile",
+ "oer-command-tree",
+ "oer-esp32s31-firmware",
+ "oer-hil-arbiter",
+ "oer-hil-board",
+ "oer-hil-evidence",
+ "oer-hil-execution",
+ "oer-hil-image",
+ "oer-hil-image-class",
+ "oer-hil-schema",
+ "oer-hil-source-snapshot",
+ "oer-hil-stand",
+ "oer-hil-stand-schema",
+ "oer-process",
+ "oer-vendor-artifacts",
+ "rustix",
+ "serde",
+ "serde_json",
+ "serialport",
+ "sha2 0.10.9",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
 name = "oer-hil-durable"
 version = "0.1.0"
 dependencies = [
@@ -3933,6 +3963,17 @@ name = "oer-trace"
 version = "0.1.0"
 
 [[package]]
+name = "oer-vendor-artifacts"
+version = "0.1.0"
+dependencies = [
+ "oer-chip-profile",
+ "oer-esp32s31-firmware",
+ "sha2 0.10.9",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
 name = "oer-xtask"
 version = "0.1.0"
 dependencies = [
@@ -3945,23 +3986,18 @@ dependencies = [
  "oer-command-tree",
  "oer-esp32s31-firmware",
  "oer-hil-arbiter",
- "oer-hil-board",
- "oer-hil-evidence",
- "oer-hil-execution",
+ "oer-hil-cli",
  "oer-hil-image",
  "oer-hil-image-class",
- "oer-hil-schema",
  "oer-hil-source-snapshot",
- "oer-hil-stand",
- "oer-hil-stand-schema",
  "oer-probe-codegen",
  "oer-process",
  "oer-register-model",
  "oer-tidy",
+ "oer-vendor-artifacts",
  "pulldown-cmark",
  "roxmltree",
  "rustc-demangle",
- "rustix",
  "serde",
  "serde_json",
  "serialport",

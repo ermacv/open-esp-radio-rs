@@ -19,7 +19,7 @@ use sha2::{Digest, Sha256};
 use oer_hil_image_class::{FeatureDelta, ImageClass};
 
 pub mod esp_idf;
-pub use esp_idf::XTASK_ENV;
+pub use esp_idf::CLI_ENV;
 pub mod frozen;
 pub mod record;
 pub mod source_inputs;

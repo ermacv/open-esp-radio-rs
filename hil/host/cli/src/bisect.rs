@@ -28,7 +28,7 @@ use std::{
 use oer_hil_schema::run::{FailureKind, Outcome};
 use serde::{Deserialize, Serialize};
 
-use crate::{Context, Result, hil_runs};
+use crate::{Context, Result, runs};
 
 /// The file naming a revision's HIL wire: revisions with equal locks speak
 /// the same protocol.
@@ -50,7 +50,7 @@ pub(crate) struct BisectCli {
     #[arg(long, value_name = "SEED")]
     layout_seed: Option<NonZeroU32>,
     #[command(flatten)]
-    boards: crate::hil_jobs::BoardChoiceArgs,
+    boards: crate::jobs::BoardChoiceArgs,
 }
 
 /// What one tested revision showed.
@@ -200,7 +200,7 @@ fn build_failure(log: &str) -> Broken {
 }
 
 /// The verdict of a finished run of the scenario, or why it judged nothing.
-fn judge(run: &hil_runs::Run) -> std::result::Result<Verdict, String> {
+fn judge(run: &runs::Run) -> std::result::Result<Verdict, String> {
     let id = run.id.clone();
     match run.outcome {
         Some(Outcome::Passed) => return Ok(Verdict::Good { run: id }),
@@ -228,7 +228,7 @@ fn judge(run: &hil_runs::Run) -> std::result::Result<Verdict, String> {
         }
         None => Err(format!(
             "run {id} ended {} without judging the revision",
-            hil_runs::status(run)
+            runs::status(run)
         )),
     }
 }
@@ -345,7 +345,7 @@ struct Bisection<'a> {
     layout_seed: Option<NonZeroU32>,
     /// The boards every run uses; a revision's own runner from before the
     /// stand file does not know these flags.
-    boards: &'a crate::hil_jobs::BoardChoiceArgs,
+    boards: &'a crate::jobs::BoardChoiceArgs,
     current: String,
     worktree: PathBuf,
     arbiter: PathBuf,
@@ -459,9 +459,9 @@ impl Bisection<'_> {
             .env(oer_hil_arbiter::OWNER_ENV, self.owner)
             .env_remove(oer_hil_arbiter::LEASE_ENV)
             .status()?;
-        let runs = crate::hil_store::shared_runs()?;
+        let runs = crate::store::shared_runs()?;
         let checkout = self.worktree.file_name().and_then(|name| name.to_str());
-        match hil_runs::newest_of(&runs, checkout).filter(|run| run.started_millis >= started) {
+        match runs::newest_of(&runs, checkout).filter(|run| run.started_millis >= started) {
             Some(run) => self.judge_run(&run.id),
             None => {
                 eprintln!("hil: the revision's runner created no run ({status})");
@@ -474,9 +474,8 @@ impl Bisection<'_> {
     }
 
     fn judge_run(&self, id: &str) -> Result<Verdict> {
-        let runs = crate::hil_store::shared_runs()?;
-        let run =
-            hil_runs::load(&runs.join(id)).ok_or_else(|| format!("run {id} is unreadable"))?;
+        let runs = crate::store::shared_runs()?;
+        let run = runs::load(&runs.join(id)).ok_or_else(|| format!("run {id} is unreadable"))?;
         Ok(judge(&run)?)
     }
 }

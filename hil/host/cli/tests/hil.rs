@@ -48,11 +48,10 @@ while :; do sleep 0.1; done
     directory
 }
 fn wrapper(root: &Path) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_oer-xtask"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_oer-hil-cli"));
     command
         .arg("--root")
         .arg(root)
-        .arg("hil")
         .env("CARGO", root.join("cargo"))
         .env("OER_HIL_STORE", root.join("store"))
         // The wrapper is a real binary, not a test harness: keep its arbiter
@@ -114,4 +113,21 @@ fn cancellation_of_wrapper_pid_reaches_runner_and_waits_for_cleanup_status() {
         fs::read_to_string(root.join("cleaned")).unwrap(),
         "cleaned\n"
     );
+}
+/// `cargo hil` is this package's binary: the workspace alias runs it and
+/// hands it every argument unchanged, with nothing between `--` and them.
+#[test]
+fn the_cargo_hil_alias_runs_this_binary_with_the_arguments_unchanged() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let config: toml::Table =
+        toml::from_str(&fs::read_to_string(root.join(".cargo/config.toml")).unwrap()).unwrap();
+    let alias = config["alias"]["hil"].as_str().unwrap();
+    let words = alias.split_whitespace().collect::<Vec<_>>();
+    let package = words
+        .iter()
+        .position(|word| *word == "-p")
+        .map(|at| words[at + 1]);
+    assert_eq!(words.first(), Some(&"run"), "{alias}");
+    assert_eq!(package, Some(env!("CARGO_PKG_NAME")), "{alias}");
+    assert_eq!(words.last(), Some(&"--"), "{alias}");
 }

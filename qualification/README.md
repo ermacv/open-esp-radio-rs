@@ -681,7 +681,7 @@ recorded build projects the selected direct dependency groups and their
 transitive dependencies, including shared feature unification: edges come from
 `cargo tree`, package features and unit profiles from Cargo's
 `compiler-artifact` messages, and emitted build-script flags are bound with
-output directories normalized. `cargo hil` builds the runner through xtask,
+output directories normalized. `cargo hil` builds the runner,
 keeps a receipt under `target/hil/observers/` and launches a copy identified by
 executable hash; a direct Cargo build has no receipt and cannot establish
 current observer compatibility. The registry's `build.profile` selects the

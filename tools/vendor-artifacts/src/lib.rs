@@ -1,4 +1,5 @@
-//! Fetch the pinned vendor artifacts of a chip into the target cache.
+//! The pinned vendor artifacts of a chip: its `artifacts.toml`, the
+//! host-wide store and fetching into it.
 //!
 //! The chip's tracked `artifacts.toml` is the only pin. Git artifacts come
 //! from the upstream repository at the pinned revision, release members from
@@ -11,10 +12,17 @@
 //! `~/.cache/open-esp-radio/vendor`): each checkout's `target/vendor` is a link
 //! to it, and a new checkout or worktree finds everything another one fetched.
 //! A checkout's former `target/vendor` directory is merged into the store.
-use crate::{Context, Result};
+//!
+//! `cargo xtask vendor-fetch` and the vendor checks read the pins here, and
+//! so does the HIL stand's pinned ESP-IDF build (`oer-hil-cli`).
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+/// Directory of every chip's verification project, relative to the root.
+const VERIFICATION: &str = "verification";
 
 /// Cache of fetched artifacts, relative to the repository root; a link to
 /// the host-wide store.
@@ -69,9 +77,22 @@ fn merge_into(from: &Path, into: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Tracked manifest of `chip`, relative to the repository root.
+/// The pin of `chip`'s vendor artifacts, relative to the repository root,
+/// whether or not the chip has one.
+pub fn manifest(chip: &str) -> String {
+    format!("{VERIFICATION}/{chip}/artifacts.toml")
+}
+
+/// Tracked manifest of `chip`, relative to the repository root: an error
+/// that lists the supported chips for an unsupported one, or names the
+/// missing manifest of a chip without a vendor verification project.
 pub fn manifest_path(root: &Path, chip: &str) -> Result<String> {
-    Ok(crate::chips::Chip::new(root, chip)?.artifacts())
+    let profile = oer_chip_profile::Profile::load(root, chip)?;
+    let manifest = manifest(&profile.id);
+    if !root.join(&manifest).is_file() {
+        return Err(format!("chip {chip} has no vendor verification project ({manifest})").into());
+    }
+    Ok(manifest)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -160,7 +181,8 @@ fn parse(text: &str) -> Result<(Vec<Source>, Vec<Artifact>)> {
     Ok((sources, artifacts))
 }
 
-pub(crate) fn sha256(path: &Path) -> Result<String> {
+/// The SHA-256 of the file at `path`, as lowercase hex.
+pub fn sha256(path: &Path) -> Result<String> {
     let bytes = std::fs::read(path)?;
     Ok(Sha256::digest(&bytes)
         .iter()
@@ -309,8 +331,8 @@ pub struct Pinned {
 /// Every pinned artifact of `chip` at its verified path; fails when one is
 /// missing or differs, naming `cargo xtask vendor-fetch` for fetched ones.
 /// Local builds are skipped when absent: they are not vendor sources.
-pub fn pinned(ctx: &Context, chip: &str) -> Result<Vec<Pinned>> {
-    let resolved = resolve(ctx, chip)?;
+pub fn pinned(root: &Path, chip: &str) -> Result<Vec<Pinned>> {
+    let resolved = resolve(root, chip)?;
     match resolved.unfetched.first() {
         None => Ok(resolved.pinned),
         Some(id) => Err(format!(
@@ -322,10 +344,10 @@ pub fn pinned(ctx: &Context, chip: &str) -> Result<Vec<Pinned>> {
 
 /// Fetches every pinned vendor artifact of `chip` into the shared store,
 /// leaving local builds alone; fails when one cannot be fetched as pinned.
-pub fn fetch_vendor_sources(ctx: &Context, chip: &str) -> Result<()> {
-    link_store(&ctx.root, &store()?)?;
-    let manifest = manifest_path(&ctx.root, chip)?;
-    let (sources, artifacts) = parse(&std::fs::read_to_string(ctx.root.join(manifest))?)?;
+pub fn fetch_vendor_sources(root: &Path, chip: &str) -> Result<()> {
+    link_store(root, &store()?)?;
+    let manifest = manifest_path(root, chip)?;
+    let (sources, artifacts) = parse(&std::fs::read_to_string(root.join(manifest))?)?;
     let mut failures = vec![];
     for artifact in &artifacts {
         let source = sources
@@ -335,7 +357,7 @@ pub fn fetch_vendor_sources(ctx: &Context, chip: &str) -> Result<()> {
         if source.kind == Kind::Local {
             continue;
         }
-        if let Err(error) = fetch(&ctx.root, source, artifact) {
+        if let Err(error) = fetch(root, source, artifact) {
             failures.push(format!("{}: {error}", artifact.id));
         }
     }
@@ -352,8 +374,8 @@ pub fn fetch_vendor_sources(ctx: &Context, chip: &str) -> Result<()> {
 
 /// The fetched vendor artifacts of `chip` that are missing or differ from
 /// their pin; empty when every citation can be checked.
-pub fn unfetched(ctx: &Context, chip: &str) -> Result<Vec<String>> {
-    Ok(resolve(ctx, chip)?.unfetched)
+pub fn unfetched(root: &Path, chip: &str) -> Result<Vec<String>> {
+    Ok(resolve(root, chip)?.unfetched)
 }
 
 struct Resolved {
@@ -361,12 +383,9 @@ struct Resolved {
     unfetched: Vec<String>,
 }
 
-fn resolve(ctx: &Context, chip: &str) -> Result<Resolved> {
-    let manifest = manifest_path(&ctx.root, chip)?;
-    resolve_manifest(
-        &ctx.root,
-        &std::fs::read_to_string(ctx.root.join(manifest))?,
-    )
+fn resolve(root: &Path, chip: &str) -> Result<Resolved> {
+    let manifest = manifest_path(root, chip)?;
+    resolve_manifest(root, &std::fs::read_to_string(root.join(manifest))?)
 }
 
 fn resolve_manifest(root: &Path, manifest: &str) -> Result<Resolved> {
@@ -413,9 +432,9 @@ pub struct GitPin {
 }
 
 /// Every pinned git source of `chip`.
-pub fn git_pins(ctx: &Context, chip: &str) -> Result<Vec<GitPin>> {
-    let manifest = manifest_path(&ctx.root, chip)?;
-    let (sources, artifacts) = parse(&std::fs::read_to_string(ctx.root.join(manifest))?)?;
+pub fn git_pins(root: &Path, chip: &str) -> Result<Vec<GitPin>> {
+    let manifest = manifest_path(root, chip)?;
+    let (sources, artifacts) = parse(&std::fs::read_to_string(root.join(manifest))?)?;
     sources
         .into_iter()
         .filter(|s| s.kind == Kind::Git)
@@ -440,10 +459,10 @@ pub fn git_pins(ctx: &Context, chip: &str) -> Result<Vec<GitPin>> {
 
 /// Fetch and verify every artifact of `chip`; report local builds that are
 /// missing or differ. Fails when any artifact is not available as pinned.
-pub fn run(ctx: &Context, chip: &str, only: &[String]) -> Result<()> {
-    link_store(&ctx.root, &store()?)?;
-    let manifest = manifest_path(&ctx.root, chip)?;
-    let (sources, artifacts) = parse(&std::fs::read_to_string(ctx.root.join(manifest))?)?;
+pub fn run(root: &Path, chip: &str, only: &[String]) -> Result<()> {
+    link_store(root, &store()?)?;
+    let manifest = manifest_path(root, chip)?;
+    let (sources, artifacts) = parse(&std::fs::read_to_string(root.join(manifest))?)?;
     let artifacts = selected(artifacts, only)?;
     let mut failures = vec![];
     for artifact in &artifacts {
@@ -452,7 +471,7 @@ pub fn run(ctx: &Context, chip: &str, only: &[String]) -> Result<()> {
             .find(|s| s.id == artifact.source)
             .expect("parsed sources");
         let result = if source.kind == Kind::Local {
-            let path = ctx.root.join(&artifact.path);
+            let path = root.join(&artifact.path);
             match local_build(&path, &artifact.sha256)? {
                 LocalBuild::Pinned => Ok(path),
                 // Local builds are optional: a host without one skips it.
@@ -469,7 +488,7 @@ pub fn run(ctx: &Context, chip: &str, only: &[String]) -> Result<()> {
                 }
             }
         } else {
-            fetch(&ctx.root, source, artifact)
+            fetch(root, source, artifact)
         };
         match result {
             Ok(path) => println!("{:<16} {}", artifact.id, path.display()),

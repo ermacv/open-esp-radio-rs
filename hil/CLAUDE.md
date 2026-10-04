@@ -7,7 +7,7 @@ it never decides readiness. Routes for every task: [README](README.md#choose-a-r
 | --- | --- |
 | `protocol/`, `schema/` | Host/target wire protocol; evidence contract shared with qualification |
 | `scenarios/` | Versioned scenario documents and their [roles](scenarios/README.md#roles) |
-| `host/` | Runner, arbiter, image builder, fixtures ([host guide](host/README.md)) |
+| `host/` | `cargo hil` (`cli/`), runner, arbiter, image builder, fixtures ([host guide](host/README.md)) |
 | `targets/<chip>/`, `agent/` | Target firmware workspaces; chip-independent agent logic |
 | `evidence/<chip>/` | Tracked evidence shards (`cargo hil evidence record`) |
 

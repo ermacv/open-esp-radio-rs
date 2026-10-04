@@ -40,26 +40,26 @@ fn a_variant_is_a_revision_and_its_dependency_overrides() {
     }
 }
 
-fn run(id: &str, throughput: &[f64], counter: f64) -> hil_runs::Run {
-    let measurement = |name: &str, value, threshold| hil_runs::Measurement {
+fn run(id: &str, throughput: &[f64], counter: f64) -> runs::Run {
+    let measurement = |name: &str, value, threshold| runs::Measurement {
         name: name.into(),
         value: Some(value),
         unit: MeasurementUnit::BitsPerSecond,
         threshold,
         verdict: None,
     };
-    hil_runs::Run {
+    runs::Run {
         id: id.into(),
         directory: PathBuf::new(),
         started_millis: 0,
-        state: hil_runs::State::Completed,
+        state: runs::State::Completed,
         outcome: Some(Outcome::Passed),
         commit: None,
         dirty: false,
         checkout: None,
         images: Vec::new(),
         replayed: Vec::new(),
-        scenarios: vec![hil_runs::ScenarioRun {
+        scenarios: vec![runs::ScenarioRun {
             id: String::from("udp-rx"),
             image: String::from("diagnostic-task-residence"),
             outcome: Outcome::Passed,
@@ -67,7 +67,7 @@ fn run(id: &str, throughput: &[f64], counter: f64) -> hil_runs::Run {
             repetitions: throughput
                 .iter()
                 .enumerate()
-                .map(|(index, value)| hil_runs::Repetition {
+                .map(|(index, value)| runs::Repetition {
                     number: index as u64 + 1,
                     outcome: Outcome::Passed,
                     failure: None,
@@ -113,7 +113,7 @@ fn each_run_contributes_its_mean_and_the_gate_sets_the_direction() {
     // Two runs per arm are too few to judge.
     assert_eq!(
         rx.comparison.verdict,
-        hil_perf::AbVerdict::InsufficientRepetitions
+        perf::AbVerdict::InsufficientRepetitions
     );
     let counter = comparisons
         .iter()

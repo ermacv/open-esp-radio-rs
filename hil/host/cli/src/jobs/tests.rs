@@ -24,7 +24,7 @@ fn job(id: &str, state: JobState) -> Job {
 #[test]
 fn a_job_names_what_it_was_fixed_with_and_older_records_still_read() {
     let frozen = Frozen {
-        xtask: PathBuf::from("/c/target/hil/jobs/xtask/1/oer-xtask"),
+        cli: PathBuf::from("/c/target/hil/jobs/cli/1/oer-hil-cli"),
         runner: PathBuf::from("/c/target/hil/observers/2/runner"),
         receipt: PathBuf::from("/c/target/hil/observers/2/receipt-3.json"),
         snapshot: Some(PathBuf::from("/c/target/hil/esp32s31/source-snapshots/4")),

@@ -70,28 +70,24 @@ fn a_link_failure_is_told_from_a_compile_failure() {
 
 #[test]
 fn this_tree_names_its_wire_and_an_older_tree_none() {
-    let lock = messages_lock(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."));
+    let lock = messages_lock(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.."));
     assert!(lock.is_some_and(|lock| lock.contains("\nframing ")));
     assert_eq!(messages_lock(tempfile::tempdir().unwrap().path()), None);
 }
 
-fn run_with(
-    outcome: Outcome,
-    failure: Option<(FailureKind, &str)>,
-    directory: &Path,
-) -> hil_runs::Run {
-    hil_runs::Run {
+fn run_with(outcome: Outcome, failure: Option<(FailureKind, &str)>, directory: &Path) -> runs::Run {
+    runs::Run {
         id: String::from("7"),
         directory: directory.to_owned(),
         started_millis: 0,
-        state: hil_runs::State::Completed,
+        state: runs::State::Completed,
         outcome: Some(outcome),
         commit: None,
         dirty: false,
         checkout: None,
         images: Vec::new(),
         replayed: Vec::new(),
-        scenarios: vec![hil_runs::ScenarioRun {
+        scenarios: vec![runs::ScenarioRun {
             id: String::from("s"),
             image: String::from("correctness"),
             outcome,

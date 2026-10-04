@@ -40,7 +40,7 @@ pub struct Candidate {
 
 /// The files that queued or running HIL jobs were fixed with.
 fn held_by_jobs() -> Result<Vec<PathBuf>> {
-    Ok(crate::hil_jobs::Jobs::open()?
+    Ok(oer_hil_cli::jobs::Jobs::open()?
         .unfinished()
         .into_iter()
         .flat_map(|job| job.fixed)
@@ -245,12 +245,12 @@ mod tests {
             path: PathBuf::from(path),
             reason: String::from("idle"),
         };
-        let held = [PathBuf::from("/c/target/hil/jobs/xtask/ab/oer-xtask")];
+        let held = [PathBuf::from("/c/target/hil/jobs/cli/ab/oer-hil-cli")];
         assert_eq!(
             unheld(
                 vec![
                     candidate("/c/target"),
-                    candidate("/c/target/hil/jobs/xtask/ab/oer-xtask"),
+                    candidate("/c/target/hil/jobs/cli/ab/oer-hil-cli"),
                     candidate("/c/target/debug/incremental/x"),
                     candidate("/d/target"),
                 ],

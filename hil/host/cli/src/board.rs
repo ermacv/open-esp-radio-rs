@@ -15,7 +15,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{Context, Result, hil_flash};
+use crate::{Context, Result, flash};
 
 /// How long a reset's ROM banner is read.
 const BANNER: Duration = Duration::from_secs(3);
@@ -184,8 +184,8 @@ pub(crate) fn board(
                 .join(target.mac.replace(':', ""));
             std::fs::create_dir_all(&log)?;
             let log = log.join(format!("console-{}.log", unix_seconds()));
-            let lines = hil_flash::serial_lines(hil_flash::open_without_reset(&target.port)?);
-            let seen = hil_flash::capture(lines, duration, until.as_deref(), &log)?;
+            let lines = flash::serial_lines(flash::open_without_reset(&target.port)?);
+            let seen = flash::capture(lines, duration, until.as_deref(), &log)?;
             eprintln!("hil: console of {board} written to {}", log.display());
             if until.is_some() && !seen {
                 return Ok(std::process::ExitCode::FAILURE);
@@ -295,9 +295,9 @@ fn soak(
                             .join(target.mac.replace(':', ""))
                             .join(format!("soak-failure-{}.log", unix_seconds()));
                         std::fs::create_dir_all(log.parent().ok_or("no parent")?)?;
-                        if let Ok(serial) = hil_flash::open_without_reset(&target.port) {
-                            let lines = hil_flash::serial_lines(serial);
-                            let _ = hil_flash::capture(lines, Duration::from_secs(5), None, &log);
+                        if let Ok(serial) = flash::open_without_reset(&target.port) {
+                            let lines = flash::serial_lines(serial);
+                            let _ = flash::capture(lines, Duration::from_secs(5), None, &log);
                             eprintln!("hil: console after the failure in {}", log.display());
                         }
                         failure = Some(format!("cycle {cycle} via {name}: {why}"));
@@ -341,10 +341,10 @@ pub(crate) fn peer(owner: String, args: &[OsString]) -> Result<std::process::Exi
     }
     let target = target(&board)?;
     let _grant = lease(&target, owner, format!("peer send {board} {line}"), true)?;
-    let mut serial = hil_flash::open_without_reset(&target.port)?;
+    let mut serial = flash::open_without_reset(&target.port)?;
     // A fresh line ends whatever the peer's parser held.
     serial.write_all(format!("\n{line}\n").as_bytes())?;
-    let lines = hil_flash::serial_lines(serial);
+    let lines = flash::serial_lines(serial);
     let command = line.split_whitespace().next().unwrap_or_default();
     let answered = answer(&lines, command, duration, &mut |text| println!("{text}"));
     Ok(match answered {
@@ -389,17 +389,14 @@ fn answer(
 /// again when the reset made the port re-enumerate.
 fn reset(target: &Target, via: Via) -> Result<Option<String>> {
     let lines = match via {
-        Via::Rts => hil_flash::serial_lines(retrying(|| {
-            hil_flash::reset_into_application(&target.port)
-        })?),
+        Via::Rts => flash::serial_lines(retrying(|| flash::reset_into_application(&target.port))?),
         Via::Jtag => {
-            let lines =
-                hil_flash::serial_lines(retrying(|| hil_flash::open_without_reset(&target.port))?);
+            let lines = flash::serial_lines(retrying(|| flash::open_without_reset(&target.port))?);
             let chip = target
                 .chip
                 .as_deref()
                 .ok_or("the board is not in the stand file")?;
-            crate::hil_jtag::reset(chip, &target.mac)?;
+            crate::jtag::reset(chip, &target.mac)?;
             lines
         }
         Via::Download => {
@@ -437,8 +434,8 @@ fn reset(target: &Target, via: Via) -> Result<Option<String>> {
 fn reattached_rom_line(target: &Target, within: Duration) -> Option<String> {
     let deadline = Instant::now() + within;
     while Instant::now() < deadline {
-        if let Ok(serial) = hil_flash::open_without_reset(&target.port) {
-            return rom_line(&hil_flash::serial_lines(serial), BANNER);
+        if let Ok(serial) = flash::open_without_reset(&target.port) {
+            return rom_line(&flash::serial_lines(serial), BANNER);
         }
         std::thread::sleep(Duration::from_millis(200));
     }
@@ -522,9 +519,9 @@ fn check(target: &Target, board: &str) -> Result<()> {
     );
     // A text-protocol peer answers SYNC; a HIL runtime answers only its binary
     // protocol, which the runner speaks.
-    let mut serial = hil_flash::open_without_reset(&target.port)?;
+    let mut serial = flash::open_without_reset(&target.port)?;
     serial.write_all(b"\nSYNC\n")?;
-    let lines = hil_flash::serial_lines(serial);
+    let lines = flash::serial_lines(serial);
     let mut heard = Vec::new();
     let answered = answer(&lines, "SYNC", Duration::from_secs(2), &mut |text| {
         heard.push(text.to_owned())

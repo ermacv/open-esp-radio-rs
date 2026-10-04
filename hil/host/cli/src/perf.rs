@@ -20,7 +20,7 @@ use oer_hil_schema::run::{Comparison, MeasurementUnit, Threshold};
 
 use crate::{
     Result,
-    hil_runs::{self, Run, State},
+    runs::{self, Run, State},
 };
 
 /// Which way a gated measurement improves.
@@ -673,7 +673,7 @@ pub fn summaries_since(
         let summary = match reused {
             Some(summary) => summary,
             None => {
-                let Some(run) = hil_runs::load(&entry.path()) else {
+                let Some(run) = runs::load(&entry.path()) else {
                     continue;
                 };
                 let computed = summary(&run);
@@ -694,7 +694,7 @@ pub fn summaries_since(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hil_runs::{Measurement, Repetition, ScenarioRun};
+    use crate::runs::{Measurement, Repetition, ScenarioRun};
     use oer_hil_schema::run::{MeasurementVerdict, Outcome};
 
     fn run(id: &str, commit: &str, dirty: bool, values: &[f64]) -> Run {

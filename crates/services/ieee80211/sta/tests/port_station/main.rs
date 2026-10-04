@@ -56,7 +56,7 @@ use oer_ieee80211_sta_service::{
     port::{
         EventRouter, PORT_FRAME_CAPACITY, PORT_TX_QUEUE, PortCoexistence, PortCoexistenceRefused,
         PortConnection, PortConnectionFrame, PortDisconnect, PortLink, PortLinkError,
-        PortLinkSupervision, PortMsdu, PortProbe, PortRouter, PortScan, PortScanTarget, PortSend,
+        PortLinkSupervision, PortProbe, PortRouter, PortScan, PortScanTarget, PortSend,
         PortStation, PortStationApplication, PortStationConfig, PortStationEnv,
         PortStationLifecycle, PortStationProfile, PortStationStorage,
     },
@@ -67,6 +67,7 @@ use oer_ieee80211_upper_mac::{
     AmpduRetryPolicy, FixedRate, ProtectEveryHeTxop, ProtectionPolicy, RetryLimits, TxPlanner,
 };
 use oer_ieee80211_upper_mac_service::UpperMacTxError;
+use oer_ieee80211_upper_mac_service::client::{PortClientEnv, PortMsdu};
 use oer_time::{Clock, Duration, Instant, RadioInstant, Timer};
 
 use scripted_ap::{AP, AP_CHANNEL, ApSecurity, PASSPHRASE, RATES, SNONCE, SSID, STA, ScriptedAp};
@@ -212,11 +213,14 @@ impl PortCoexistence for &ScriptedCoex {
     }
 }
 
-impl<'a> PortStationEnv for Env<'a> {
+impl PortClientEnv for Env<'_> {
     type Port = LowerMacModel;
     type Budget = ProtectEveryHeTxop;
     type Ladder = FixedRate;
     type Entropy = Seeded;
+}
+
+impl<'a> PortStationEnv for Env<'a> {
     type Timer = &'a VirtualTimer;
     type KeyUnwrap = RsnSoftwareAes;
     type Aggregation = oer_ieee80211_sta_service::port::PortAmpduAggregation;
@@ -2041,7 +2045,7 @@ fn the_station_holds_no_frame_buffer_of_its_own() {
     type Station = PortStation<'static, Env<'static>>;
     type Connection = PortConnection<
         'static,
-        <Env<'static> as PortStationEnv>::Port,
+        <Env<'static> as PortClientEnv>::Port,
         <Env<'static> as PortStationEnv>::RateControl,
     >;
     // The scan table and every frame buffer are in the composition's

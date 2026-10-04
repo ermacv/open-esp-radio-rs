@@ -28,7 +28,10 @@ use oer_ieee80211_upper_mac::{
     ProtectionPolicy, RateLadder, RetryLimits, RtsLengthThreshold, TxBody, TxPlanner, TxReceiver,
     TxReport, TxRequest,
 };
-use oer_ieee80211_upper_mac_service::{AmpduFrames, EventRouter, UpperMacTx, UpperMacTxError};
+use oer_ieee80211_upper_mac_service::{
+    AmpduFrames, EventRouter, UpperMacTx, UpperMacTxError,
+    client::{PortClient, PortClientConfig, PortClientEnv, PortClientError},
+};
 
 const STATION: VifId = VifId(0);
 const ADDRESS: MacAddress = [0x02, 0, 0, 0, 0, 1];
@@ -775,4 +778,83 @@ fn a_poisoned_port_ends_every_exchange() {
         poll_once(send.as_mut()),
         Poll::Ready(Err(UpperMacTxError::Poisoned))
     );
+}
+
+/// The client test's environment over the model.
+struct ClientEnv;
+
+impl PortClientEnv for ClientEnv {
+    type Port = LowerMacModel;
+    type Budget = ProtectEveryHeTxop;
+    type Ladder = Ladder;
+    type Entropy = Seeded;
+}
+
+fn client<'r>(router: &'r Router<'r>, role: VifRole) -> PortClient<'r, ClientEnv, 4, 4> {
+    PortClient::new(
+        router,
+        TxPlanner::new(
+            [EdcaContention::new(4, 7); 4],
+            LIMITS,
+            AmpduRetryPolicy {
+                lifetime: oer_time::RadioDuration::from_micros(1_000_000),
+                aged_margin: oer_time::RadioDuration::from_micros(1_024),
+                retry_limit: 7,
+                retain_single_mpdu: false,
+            },
+            ProtectionPolicy::new(None),
+            ProtectEveryHeTxop,
+        ),
+        Ladder,
+        Seeded(0x1357_9bdf),
+        PortClientConfig {
+            vif: STATION,
+            address: ADDRESS,
+            role,
+            power: TxPower::Calibrated,
+            retry_limit: 7,
+        },
+    )
+}
+
+#[test]
+fn a_client_configures_its_interface_in_its_role() {
+    let model = enabled_station();
+    let router = Router::new(&model, 1);
+    let client = client(&router, VifRole::AccessPoint);
+    assert_eq!(
+        client.configure(Some(ADDRESS), ReceiveFilter::BSS_MEMBER),
+        Ok(())
+    );
+    assert_eq!(
+        model.vif_config(STATION),
+        Some(VifConfig {
+            address: ADDRESS,
+            role: VifRole::AccessPoint,
+            bssid: Some(ADDRESS),
+            receive: ReceiveFilter::BSS_MEMBER,
+        })
+    );
+}
+
+#[test]
+fn a_frame_without_its_first_address_is_refused_before_the_port() {
+    let model = enabled_station();
+    let router = Router::new(&model, 1);
+    let mut client = client(&router, VifRole::Station);
+    let short = [0x08, 0, 0, 0, 0x02, 0];
+    assert_eq!(
+        run(exchange(
+            &router,
+            client.transmit(
+                &short,
+                KeySelector::Plaintext,
+                WmmAccessCategory::Voice,
+                OFDM24,
+                CoexPriority::Normal,
+            ),
+        )),
+        Err(PortClientError::FrameTooShort)
+    );
+    assert!(model.submitted().is_empty());
 }

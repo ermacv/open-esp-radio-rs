@@ -28,7 +28,7 @@ submission per attempt.
 
 | Item | Port it implements | Over the lower-MAC port |
 | --- | --- | --- |
-| `PortLink` | The station's client of the port's `PortRouter` | Reads the router's receive, extension (TBTT) and lifecycle queues and transmits through `UpperMacTx` over the router; a loss is a `PortInput::EventsLost` input, the terminal poisoned event ends every phase with `PortLinkError::Poisoned` |
+| `PortLink` | The station's `PortClient` (`oer-ieee80211-upper-mac-service::client`) over the port's `PortRouter` | The client's input, transmission, settings and lifecycle, with the station's coexistence schedule (connection frames at `Elevated`) and rate-control configuration; a loss is a `PortInput::EventsLost` input, the terminal poisoned event ends every phase with `PortLinkError::Poisoned` |
 | `PortScan` | `StaScanPort` | `LowerMacSetting::Channel` (a backend that retunes only while disabled answers `Busy` and is disabled, tuned and enabled again), the station filter `OTHER_BSS_MANAGEMENT` (or `LowerMacMonitor` through `with_monitor` when the filters lack it), a Probe Request per channel, beacons and Probe Responses into a `ScanTable` |
 | `PortJoin` | `StaJoinBackend` | Open System and SAE Authentication and Association Requests; receive is the station filter `BSS_MEMBER` with the access point's BSSID |
 | `PortHandshake`, `PortKeyInstall` | `RsnHandshakeBackend`, `RsnKeyInstallBackend` | EAPOL in data MPDUs; the pairwise and group CCMP-128 keys through `install_key` (`PortKeys`), removed again on a failed install; Message 4 in the clear or under the pairwise key |

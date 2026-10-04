@@ -14,9 +14,10 @@ use oer_ieee80211_sta::join::{
     StaJoinBackend, StaJoinRxDirective, StaJoinRxObserver, association::StaAssociationAttempt,
     authentication::StaAuthenticationAttempt, sae::StaSaeTransmission,
 };
+use oer_ieee80211_upper_mac_service::client::{PortError, PortInput};
 
 use super::{
-    link::{PortConnectionFrame, PortError, PortInput, PortLink, PortLinkError, PortStationEnv},
+    link::{PortConnectionFrame, PortLink, PortLinkError, PortStationEnv},
     wire,
 };
 

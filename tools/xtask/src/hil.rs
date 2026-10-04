@@ -277,12 +277,11 @@ Stand commands (shared by every checkout of this user):
       --stand                         claim the whole stand instead; blocks every other owner
       --air shared|exclusive|none     radio environment; exclusive for RF measurements, none without radio
       --flashed IMAGE (--application FILE | --sha256 HASH) (--port PORT | --device MAC)
-      [--chip CHIP] [--commit REV]    journal CMD's flash when it succeeds
+      [--commit REV]                  journal CMD's flash when it succeeds
   cargo hil board flashed --image IMAGE ...   journal a flash made inside a lease
   cargo hil fixtures                  host Wi-Fi radios, Bluetooth adapter and OpenWrt hosts: key, interfaces, channel, CCA busy
-  cargo hil devices [--json]          boards: name, chip, port, health, last firmware
-  cargo hil devices set MAC [--chip CHIP] [--name NAME] [--reset-uart SERIAL --en LINE --boot LINE] [--power-uhubctl LOCATION --power-port PORT]
-  cargo hil devices reset BOARD [--download]   reset through the registered reset path
+  cargo hil devices [--json]          the stand file's boards: name, chip, port, health, last firmware
+  cargo hil devices reset BOARD [--download]   reset through the board's UART bridge
   cargo hil [--owner NAME] devices maintenance BOARD|--stand --reason TEXT   only NAME may claim BOARD (or the stand) until release; other runs wait
   cargo hil devices release BOARD [--confirm reset|power-cycle|rom-answers]
   cargo hil runs list [--scenario S] [--outcome O] [--image I] [--since 3d]
@@ -886,9 +885,6 @@ struct FlashedArgs {
     /// MAC of the flashed board.
     #[arg(long, requires = "image")]
     device: Option<String>,
-    /// Chip of the flashed board, registered when still unknown.
-    #[arg(long, requires = "image")]
-    chip: Option<String>,
     /// Source commit of the image.
     #[arg(long, requires = "image")]
     commit: Option<String>,
@@ -927,13 +923,6 @@ impl FlashedArgs {
             })?,
             _ => return Err("a recorded flash needs --port or --device".into()),
         };
-        if let Some(chip) = &self.chip {
-            arbiter.register_device(oer_hil_arbiter::Device {
-                mac: device.clone(),
-                chip: Some(chip.clone()),
-                ..oer_hil_arbiter::Device::default()
-            })?;
-        }
         arbiter.record_board_by(
             owner,
             Some(device.clone()),
@@ -951,10 +940,10 @@ impl FlashedArgs {
 }
 
 /// Why a lease refuses `command`: a hub port is switched only by a power
-/// cycle of a registered board (`cargo hil board reset BOARD --via power`),
-/// never by `uhubctl` in a leased command, which could leave a port off. The
-/// program is matched, directly or as a command of a shell's `-c` script; an
-/// argument that only names it (`devices set --power-uhubctl`) passes.
+/// cycle of a board of the stand file (`cargo hil board reset BOARD --via
+/// power`), never by `uhubctl` in a leased command, which could leave a port
+/// off. The program is matched, directly or as a command of a shell's `-c`
+/// script; an argument that only names it (`grep uhubctl`) passes.
 fn switches_hub_power(command: &[OsString]) -> Option<String> {
     let is_uhubctl = |word: &str| {
         Path::new(word)
@@ -1399,7 +1388,7 @@ enum ConfirmArg {
     RomAnswers,
 }
 
-/// `cargo hil devices [--json]` and `cargo hil devices set MAC ...`.
+/// `cargo hil devices [--json]` and its board commands.
 fn devices(
     ctx: &Context,
     options: &LeaseOptions,
@@ -1409,45 +1398,6 @@ fn devices(
     let cli = DevicesCli::try_parse_from(args)?;
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
     match cli.command {
-        Some(DevicesCommand::Set {
-            mac,
-            chip,
-            name,
-            reset_uart,
-            en,
-            boot,
-            power_uhubctl,
-            power_port,
-        }) => {
-            let reset = match (reset_uart, en, boot) {
-                (Some(serial), Some(en), Some(boot)) => Some(oer_hil_arbiter::ResetControl {
-                    via: oer_hil_arbiter::control::ResetVia::UartRtsDtr,
-                    serial,
-                    en,
-                    boot,
-                }),
-                _ => None,
-            };
-            let power = match (power_uhubctl, power_port) {
-                (Some(location), Some(port)) => Some(oer_hil_arbiter::control::PowerControl {
-                    via: oer_hil_arbiter::control::PowerVia::Uhubctl,
-                    location,
-                    port,
-                }),
-                _ => None,
-            };
-            let control = (reset.is_some() || power.is_some())
-                .then_some(oer_hil_arbiter::Control { reset, power });
-            let device = arbiter.set_device(oer_hil_arbiter::Device {
-                mac,
-                chip,
-                name,
-                control,
-                unknown: Default::default(),
-            })?;
-            println!("{} {}", device.mac, device.label());
-            return Ok(std::process::ExitCode::SUCCESS);
-        }
         Some(DevicesCommand::Reset { board, download }) => {
             let devices = arbiter.devices()?;
             let mac = oer_hil_arbiter::board_mac(&devices, &board)?;
@@ -1456,7 +1406,7 @@ fn devices(
                 .find(|device| device.mac == mac)
                 .and_then(|device| device.control.as_ref()?.reset.clone())
                 .ok_or_else(|| {
-                    format!("board `{board}` has no reset path; see `cargo hil devices set --reset-uart`")
+                    format!("board `{board}` has no reset path; give it a `uart-bridge` in the stand file")
                 })?;
             let request = oer_hil_arbiter::Request {
                 owner: options.owner(ctx)?,
@@ -2395,34 +2345,8 @@ struct DevicesCli {
 }
 #[derive(clap::Subcommand)]
 enum DevicesCommand {
-    /// Register or change a board's chip, name and reset path.
-    Set {
-        mac: String,
-        #[arg(long)]
-        chip: Option<String>,
-        #[arg(long)]
-        name: Option<String>,
-        /// USB serial number of a USB-to-UART bridge whose modem lines
-        /// drive the chip's EN and BOOT; needs `--en` and `--boot`.
-        #[arg(long, value_name = "USB_SERIAL", requires_all = ["en", "boot"])]
-        reset_uart: Option<String>,
-        /// The bridge line that pulls EN low.
-        #[arg(long, value_name = "rts|dtr", requires = "reset_uart")]
-        en: Option<oer_hil_arbiter::control::Line>,
-        /// The bridge line that pulls the boot strap low.
-        #[arg(long, value_name = "rts|dtr", requires = "reset_uart")]
-        boot: Option<oer_hil_arbiter::control::Line>,
-        /// The `uhubctl` location of the hub whose port powers the board
-        /// alone (never a port that carries a cascaded hub); needs
-        /// `--power-port`. `cargo hil board reset BOARD --via power` cycles it.
-        #[arg(long, value_name = "LOCATION", requires = "power_port")]
-        power_uhubctl: Option<String>,
-        /// The hub port that powers the board.
-        #[arg(long, value_name = "PORT", requires = "power_uhubctl")]
-        power_port: Option<u32>,
-    },
-    /// Reset a board through its registered reset path under a lease of
-    /// that board, and print the reset reason its ROM reports.
+    /// Reset a board through its UART bridge under a lease of that board,
+    /// and print the reset reason its ROM reports.
     Reset {
         #[arg(value_name = "NAME|MAC")]
         board: String,
@@ -2759,8 +2683,6 @@ mod tests {
             &"AB".repeat(32),
             "--device",
             "38:44:be:aa:25:64",
-            "--chip",
-            "esp32c5",
             "--",
             "idf.py",
             "flash",
@@ -2788,10 +2710,6 @@ mod tests {
             oer_hil_arbiter::BoardEventKind::Flashed { application_sha256, .. }
                 if *application_sha256 == "ab".repeat(32)
         ));
-        assert_eq!(
-            arbiter.devices().unwrap()[0].chip.as_deref(),
-            Some("esp32c5")
-        );
         let incomplete = FlashedArgs {
             image: Some("x".into()),
             sha256: Some("ab".repeat(32)),

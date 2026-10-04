@@ -377,7 +377,7 @@ flowchart LR
     V[Vendor project and caller artifacts] --> B[Blobray comparison]
     C --> B
     D --> H[HIL target and runner]
-    S[Scenario catalog and lab configuration] --> H
+    S[Scenario catalog and stand file] --> H
     B --> I[Vendor evidence index]
     H --> U[Sealed run bundle]
     I --> Q[Qualification evaluator]

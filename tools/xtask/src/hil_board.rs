@@ -375,9 +375,10 @@ fn reset(target: &Target, via: Via, download: bool) -> Result<Option<String>> {
         Via::Jtag => {
             let lines =
                 hil_flash::serial_lines(retrying(|| hil_flash::open_without_reset(&target.port))?);
-            let chip = target.chip.as_deref().ok_or(
-                "the board has no registered chip; `cargo hil devices set MAC --chip CHIP`",
-            )?;
+            let chip = target
+                .chip
+                .as_deref()
+                .ok_or("the board is not in the stand file")?;
             crate::hil_jtag::reset(chip, &target.mac)?;
             lines
         }
@@ -388,7 +389,7 @@ fn reset(target: &Target, via: Via, download: bool) -> Result<Option<String>> {
                 .into_iter()
                 .find(|device| device.mac == target.mac)
                 .and_then(|device| device.control?.reset)
-                .ok_or("the board has no reset path; `cargo hil devices set --reset-uart`")?;
+                .ok_or("the board has no reset path; give it a `uart-bridge` in the stand file")?;
             let mode = if download {
                 oer_hil_arbiter::BootMode::Download
             } else {
@@ -405,7 +406,7 @@ fn reset(target: &Target, via: Via, download: bool) -> Result<Option<String>> {
                 .find(|device| device.mac == target.mac)
                 .and_then(|device| device.control?.power)
                 .ok_or(
-                    "the board has no registered hub port; `cargo hil devices set --power-uhubctl`",
+                    "the board does not reset by power; add `power` to its `reset` in the stand file",
                 )?;
             power.cycle()?;
             return Ok(reattached_rom_line(target, POWER_REATTACH));

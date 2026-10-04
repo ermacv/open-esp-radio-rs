@@ -140,8 +140,12 @@ pub struct Arguments {
     /// Boot only the vendor firmware.
     #[arg(long)]
     vendor_only: bool,
+    /// The stand file (`~/.config/open-esp-radio/stand.toml` by default).
     #[arg(long)]
-    lab_config: Option<PathBuf>,
+    stand_file: Option<PathBuf>,
+    /// The ESP32-S31 board, by its stand-file id, when the pool has several.
+    #[arg(long)]
+    board: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -511,11 +515,15 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         return Err("vendor windows and transmission need an IEEE 802.15.4 point".into());
     }
     let windows = window_registers(&arguments.vendor_windows);
-    let lab_path = match &arguments.lab_config {
+    let lab_path = match &arguments.stand_file {
         Some(path) => path.clone(),
         None => LabConfig::default_path()?,
     };
-    let lab = LabConfig::load(&lab_path, "esp32s31")?;
+    let choice = oer_hil_stand::config::BoardChoice {
+        dut: arguments.board.clone(),
+        peer: None,
+    };
+    let lab = LabConfig::load(&lab_path, "esp32s31", &choice)?;
     let port = lab.dut.serial.clone();
     let (vendor_project, production_image) = arguments.lifecycle.images();
     let vendor_project = arguments

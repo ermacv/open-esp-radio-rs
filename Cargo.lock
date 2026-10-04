@@ -3047,6 +3047,7 @@ name = "oer-hil-arbiter"
 version = "0.1.0"
 dependencies = [
  "fs2",
+ "oer-hil-stand-schema",
  "oer-process",
  "rustix",
  "serde",
@@ -3403,6 +3404,7 @@ dependencies = [
  "oer-hil-link",
  "oer-hil-protocol",
  "oer-hil-scenario",
+ "oer-hil-stand-schema",
  "oer-hil-trace",
  "oer-ieee80211-trace",
  "oer-ieee802154-trace",

@@ -129,7 +129,7 @@ pub(crate) fn scenario_precondition(lab: &LabConfig, selected: &Scenario) -> Opt
     if let Some(preflight) = adapter_preflight {
         let result = lab
             .bluetooth_adapter
-            .ok_or_else(|| "missing [bluetooth] adapter in lab config".into())
+            .ok_or_else(|| "missing [bluetooth] adapter in the stand file".into())
             .and_then(preflight);
         if let Err(error) = result {
             return Some(Failure::new(FailureKind::Precondition, error.to_string()));
@@ -137,10 +137,12 @@ pub(crate) fn scenario_precondition(lab: &LabConfig, selected: &Scenario) -> Opt
     }
     let plan = selected.plan();
     if let Some(image) = selected.family.peer_image()
-        && let Some(peer) = &lab.peer
-        && let Err(error) = peer.serial().and_then(|serial| {
-            oer_hil_stand::lock::require_board_image(&serial, image.name, image.reflash)
-        })
+        && let Err(error) = lab
+            .peer_for_image(image.name)
+            .and_then(|peer| peer.serial())
+            .and_then(|serial| {
+                oer_hil_stand::lock::require_board_image(&serial, image.name, image.reflash)
+            })
     {
         return Some(Failure::new(FailureKind::Precondition, error.to_string()));
     }

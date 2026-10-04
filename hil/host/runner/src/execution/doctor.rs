@@ -82,7 +82,7 @@ pub(crate) fn run(root: &Path, lab: &LabConfig, scenarios: &[&Scenario]) -> Resu
             "status": if checks.passed() { "passed" } else { "failed" },
             "cell_id": lab.cell_id(),
             "device_id": lab.dut.id,
-            "lab_config": lab.path(),
+            "stand_file": lab.path(),
             "requirements": required,
             "checks": checks.checks,
         }),

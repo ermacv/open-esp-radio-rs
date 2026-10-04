@@ -2,7 +2,7 @@
 
 This tutorial exercises existing production policy and a synthetic research
 fixture. You need Rust basics, Linux for Blobray, Git and access to public Cargo
-dependencies. No board, lab configuration or private vendor binary is needed.
+dependencies. No board, stand file or private vendor binary is needed.
 Read [the end-to-end explanation](binary-to-station.md) alongside this exercise.
 
 ## Prepare the checkout

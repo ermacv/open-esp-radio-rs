@@ -244,8 +244,8 @@ it: `run --source-snapshot DIR` builds the revision's firmware from a snapshot
 of the worktree and runs this checkout's host code and scenario. A commit with
 another wire, or none named, runs its own
 runner, built in the worktree, while the bisection holds a whole-stand lease;
-that runner uses a private arbiter directory with a copy of the stand's
-`devices.json`.
+that runner uses a private arbiter directory with a copy of the stand file
+(and of the older `devices.json` registry, for revisions before it).
 
 A passed run makes the commit good and a failed one bad. A commit whose image
 does not compile or does not link (told apart from the run's archived build

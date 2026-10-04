@@ -93,7 +93,7 @@ pub fn run(
     let board = crate::firmware_catalog::resolve_board(&arbiter, &cli.board)?;
     let chip = board.chip.clone().ok_or_else(|| {
         format!(
-            "board `{}` has no registered chip; run `cargo hil devices set {} --chip CHIP`",
+            "board `{}` ({}) is not in the stand file",
             cli.board, board.mac
         )
     })?;

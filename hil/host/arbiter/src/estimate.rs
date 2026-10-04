@@ -198,7 +198,7 @@ mod tests {
     fn a_new_series_is_estimated_from_its_scenarios_single_leases() {
         let single = |scenario: &str, seconds| LeaseRecord {
             scenarios: vec![scenario.to_owned()],
-            work: format!("run {scenario} --lab-config /x"),
+            work: format!("run {scenario} --stand-file /x"),
             ..record("", seconds, LeaseOutcome::Released)
         };
         let history = [single("a", 100), single("a", 200), single("b", 50)];

@@ -87,7 +87,7 @@ fn definition(lab: &LabConfig) -> LabDefinition {
             cell_id: lab.cell_id().to_owned(),
             device_id: lab.dut.id.clone(),
             bluetooth_adapter: lab.bluetooth_adapter.map(|adapter| adapter.to_string()),
-            peer: lab.peer.as_ref().map(|peer| peer.id.clone()),
+            peer: lab.peer().ok().map(|peer| peer.id),
             station_ipv4,
             access_point: AccessPointDefinition {
                 channel: lab.access_point.channel(),

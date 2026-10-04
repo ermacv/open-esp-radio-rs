@@ -7,9 +7,9 @@
 //! with the revision's firmware, built from a source snapshot of the
 //! worktree. A revision with another protocol version runs its own runner,
 //! built in the worktree, inside this bisection's whole-stand lease: its
-//! runner gets a private arbiter directory holding a copy of the stand's
-//! devices, so it neither waits for nor disturbs the shared arbiter, whose
-//! schema it may not read.
+//! runner gets a private arbiter directory holding a copy of the stand file
+//! (and of an older device registry), so it neither waits for nor disturbs
+//! the shared arbiter, whose schema it may not read.
 //!
 //! A revision whose image does not build or does not link, or whose own
 //! runner cannot run, is broken: it is neither good nor bad, and the search
@@ -420,10 +420,14 @@ impl Bisection<'_> {
     }
 
     /// The revision's own runner, inside a whole-stand lease of the shared
-    /// arbiter, with a private arbiter holding a copy of the stand's devices.
+    /// arbiter, with a private arbiter holding a copy of the stand file.
     fn with_revision_runner(&self) -> Result<Verdict> {
         let arbiter = oer_hil_arbiter::Arbiter::open()?;
         fs::create_dir_all(&self.arbiter)?;
+        // The revision's runner reads the boards from the stand file beside
+        // its arbiter's state, or, before the stand file, from the arbiter's
+        // device registry the shared directory may still hold.
+        fs::copy(arbiter.stand_file(), self.arbiter.join("stand.toml"))?;
         let devices = arbiter.directory().join("devices.json");
         if devices.exists() {
             fs::copy(&devices, self.arbiter.join("devices.json"))?;

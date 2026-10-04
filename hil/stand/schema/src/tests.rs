@@ -21,7 +21,9 @@ fn edited(from: &str, to: &str) -> Result<StandFile> {
 fn rejected(from: &str, to: &str, reason: &str) {
     let message = edited(from, to).err().map(|error| error.to_string());
     assert!(
-        message.as_deref().is_some_and(|message| message.contains(reason)),
+        message
+            .as_deref()
+            .is_some_and(|message| message.contains(reason)),
         "{from} → {to}: {message:?}"
     );
 }
@@ -35,24 +37,42 @@ fn the_example_is_a_valid_stand_file() {
     assert_eq!(file.hub("rsh-mid").unwrap().button(3), Some(6));
     let board = file.board_by_serial("30:ed:a0:00:00:01").unwrap();
     assert_eq!(board.id, "s31-a");
-    assert_eq!(board.reset, [ResetStep::UsbJtagRts, ResetStep::Jtag, ResetStep::Power]);
-    for section in FIXTURE_SECTIONS.into_iter().filter(|section| *section != "air_observer") {
+    assert_eq!(
+        board.reset,
+        [ResetStep::UsbJtagRts, ResetStep::Jtag, ResetStep::Power]
+    );
+    for section in FIXTURE_SECTIONS
+        .into_iter()
+        .filter(|section| *section != "air_observer")
+    {
         assert!(file.fixture(section).is_some(), "{section}");
     }
 }
 
 #[test]
 fn identities_are_unique() {
-    rejected("id = \"c5-a\"", "id = \"s31-a\"", "board `s31-a` is described twice");
+    rejected(
+        "id = \"c5-a\"",
+        "id = \"s31-a\"",
+        "board `s31-a` is described twice",
+    );
     rejected(
         "usb-serial = \"38:44:BE:00:00:01\"",
         "usb-serial = \"30:ed:a0:00:00:01\"",
         "another board's",
     );
-    rejected("id = \"rsh-bottom\"", "id = \"rsh-mid\"", "hub `rsh-mid` is described twice");
+    rejected(
+        "id = \"rsh-bottom\"",
+        "id = \"rsh-mid\"",
+        "hub `rsh-mid` is described twice",
+    );
     rejected("usb2 = \"3-8.3.4\"", "usb2 = \"3-8.3\"", "another hub's");
     rejected("4 = 10 }", "4 = 9 }", "button 9 is zero or another port's");
-    rejected("id = \"s31-a\"", "id = \"S31\"", "must start with a lowercase letter");
+    rejected(
+        "id = \"s31-a\"",
+        "id = \"S31\"",
+        "must start with a lowercase letter",
+    );
 }
 
 #[test]
@@ -77,7 +97,11 @@ fn a_board_hangs_on_a_switchable_board_port_of_a_described_hub() {
         "port = { hub = \"rsh-side\", port = 3 }",
         "hub `rsh-side` is not described",
     );
-    rejected("protected = [4]", "protected = [3]", "port 3 is both protected and switchable");
+    rejected(
+        "protected = [4]",
+        "protected = [3]",
+        "port 3 is both protected and switchable",
+    );
     // Without the power step, an unswitchable port is enough.
     edited(
         "reset = [\"usb-jtag-rts\", \"jtag\", \"power\"]\n",
@@ -93,9 +117,21 @@ fn a_board_carries_only_its_chips_radios() {
         "radios = [\"wifi-2g4\", \"wifi-5g\"]",
         "an esp32s31 has no wifi-5g radio",
     );
-    rejected("chip = \"esp32s31\"", "chip = \"esp32c6\"", "chip `esp32c6` has no profile");
-    rejected("roles = [\"dut\", \"peer\"]", "roles = [\"dut\", \"dut\"]", "roles repeats a value");
-    rejected("roles = [\"dut\", \"peer\"]", "roles = []", "roles is empty");
+    rejected(
+        "chip = \"esp32s31\"",
+        "chip = \"esp32c6\"",
+        "chip `esp32c6` has no profile",
+    );
+    rejected(
+        "roles = [\"dut\", \"peer\"]",
+        "roles = [\"dut\", \"dut\"]",
+        "roles repeats a value",
+    );
+    rejected(
+        "roles = [\"dut\", \"peer\"]",
+        "roles = []",
+        "roles is empty",
+    );
 }
 
 #[test]
@@ -106,7 +142,11 @@ fn a_uart_bridge_is_its_own_device_with_two_lines() {
         )
     };
     edited("reset = [\"jtag\", \"power\"]", &bridge("B0001", "dtr")).unwrap();
-    rejected("reset = [\"jtag\", \"power\"]", &bridge("B0001", "rts"), "different EN and BOOT");
+    rejected(
+        "reset = [\"jtag\", \"power\"]",
+        &bridge("B0001", "rts"),
+        "different EN and BOOT",
+    );
     rejected(
         "reset = [\"jtag\", \"power\"]",
         &bridge("30:ED:A0:00:00:01", "dtr"),
@@ -116,7 +156,11 @@ fn a_uart_bridge_is_its_own_device_with_two_lines() {
 
 #[test]
 fn the_file_has_only_its_sections_and_its_schema() {
-    rejected("schema = 1", "schema = 2", "stand file schema 2; this build reads schema 1");
+    rejected(
+        "schema = 1",
+        "schema = 2",
+        "stand file schema 2; this build reads schema 1",
+    );
     rejected("[legacy_bss]", "[duts.esp32s31]", "unknown section [duts]");
     assert!(
         StandFile::parse(&EXAMPLE.replacen("air = \"exclusive\"", "air = \"ranges\"", 1)).is_err(),
@@ -127,7 +171,12 @@ fn the_file_has_only_its_sections_and_its_schema() {
 #[test]
 fn a_run_names_its_board_only_when_the_pool_has_several() {
     let file = example();
-    assert_eq!(file.select_board("esp32s31", BoardRole::Dut, None, None).unwrap().id, "s31-a");
+    assert_eq!(
+        file.select_board("esp32s31", BoardRole::Dut, None, None)
+            .unwrap()
+            .id,
+        "s31-a"
+    );
     let second = EXAMPLE.replacen(
         "[[board]]\nid = \"c5-a\"",
         "[[board]]\nid = \"s31-b\"\nusb-serial = \"30:ED:A0:00:00:02\"\nchip = \"esp32s31\"\n\
@@ -137,15 +186,21 @@ fn a_run_names_its_board_only_when_the_pool_has_several() {
     );
     let file = StandFile::parse(&second).unwrap();
     file.validate().unwrap();
-    let several = file.select_board("esp32s31", BoardRole::Dut, None, None).unwrap_err();
+    let several = file
+        .select_board("esp32s31", BoardRole::Dut, None, None)
+        .unwrap_err();
     assert!(several.to_string().contains("s31-a, s31-b"), "{several}");
     assert_eq!(
-        file.select_board("esp32s31", BoardRole::Dut, Some("s31-b"), None).unwrap().id,
+        file.select_board("esp32s31", BoardRole::Dut, Some("s31-b"), None)
+            .unwrap()
+            .id,
         "s31-b"
     );
     // The peer is another board than the device under test.
     assert_eq!(
-        file.select_board("esp32s31", BoardRole::Peer, None, Some("s31-b")).unwrap().id,
+        file.select_board("esp32s31", BoardRole::Peer, None, Some("s31-b"))
+            .unwrap()
+            .id,
         "s31-a"
     );
     assert!(
@@ -154,7 +209,10 @@ fn a_run_names_its_board_only_when_the_pool_has_several() {
             .to_string()
             .contains("no esp32s31 board for peer besides `s31-a`")
     );
-    assert!(file.select_board("esp32c5", BoardRole::Dut, Some("s31-b"), None).is_err());
+    assert!(
+        file.select_board("esp32c5", BoardRole::Dut, Some("s31-b"), None)
+            .is_err()
+    );
 }
 
 #[cfg(unix)]
@@ -165,7 +223,12 @@ fn the_stand_file_is_private_to_its_owner() {
     let path = directory.path().join("stand.toml");
     fs::write(&path, EXAMPLE).unwrap();
     fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
-    assert!(StandFile::load(&path).unwrap_err().to_string().contains("chmod 600"));
+    assert!(
+        StandFile::load(&path)
+            .unwrap_err()
+            .to_string()
+            .contains("chmod 600")
+    );
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
     StandFile::load(&path).unwrap();
 }

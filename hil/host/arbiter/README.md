@@ -61,13 +61,14 @@ by reflashing and never quarantined.
 
 The arbiter reports board changes but never restores board state. A board is
 identified by the USB serial number of its port, which Espressif USB
-Serial/JTAG ports set to the chip's MAC address. The runner registers the
-board it flashes as `esp32s31` when its chip is unknown; other chips are registered by `cargo hil devices set` or a
-recorded flash with `--chip`.
+Serial/JTAG ports set to the chip's MAC address. The arbiter reads the
+stand's boards, their chips, hub ports and UART bridges from the stand file
+(`oer-hil-stand-schema`) and never writes it; `Arbiter::at` reads the
+`stand.toml` beside its own state.
 
 Checkouts of different versions share the directory. Readers ignore journal
-fields they do not know and skip lines they cannot parse; a state or registry
-with a newer schema is refused rather than rewritten.
+fields they do not know and skip lines they cannot parse; a state with a
+newer schema is refused rather than rewritten.
 
 ## State
 
@@ -79,7 +80,6 @@ Every change happens under `arbiter.lock`:
 | `state.json` | Schema 3: queue tickets and holders with their claims, each with PID and kernel start time, every recently active owner's balance and the time they were last advanced. Another schema is refused, never converted: a newer one asks for a newer checkout; for an older one, let its holders and waiters finish and remove the file |
 | `history.jsonl` | Completed leases: owner, work, scenarios, duration, the time charged, the owner's balance at release, the grant's reason and `released`, `yielded-to-balance`, `hard-limit`, `preempted-on-request` (with who preempted it and why) or `abandoned` |
 | `board.jsonl` | Flashes, startup-artifact uploads and writes, automatic recoveries, quarantine releases and soaks, with owner, checkout and board MAC |
-| `devices.json` | Schema 1: board MAC to chip and name; boards have no fixed role |
 | `owners.json` | Schema 1: checkout directory to registered owner; the innermost registered directory decides |
 | `maintenance.json` | Schema 1: boards out of service, each with its owner or quarantine, reason, trigger and evidence path |
 

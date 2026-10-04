@@ -165,9 +165,11 @@ hard limit; to stop a lease that is stuck, use `cargo hil preempt`.
 The stand holds several equal boards, currently an ESP32-S31 and an ESP32-C5.
 No board has a fixed role: a scenario or other consumer chooses which board it
 uses as its device under test or as a peer, and may flash its own firmware.
-The lab configuration names the boards the runner uses. Each board is
-identified by the MAC address its USB Serial/JTAG port reports as USB serial
-number, independent of `/dev/ttyACM*` numbering. Every board is part of the
+The stand file (`~/.config/open-esp-radio/stand.toml`,
+[`oer-hil-stand-schema`](../stand/schema/README.md)) describes the hubs and
+the boards: each board's id, chip, radios, roles, hub port and reset ladder.
+Each board is identified by the MAC address its USB Serial/JTAG port reports
+as USB serial number, independent of `/dev/ttyACM*` numbering. Every board is part of the
 stand: flash and use any board only under a lease.
 
 ## Boards
@@ -193,22 +195,16 @@ health from the stand's own records, without touching the board: `ok`,
 many of those recoveries were hardware-level), `maintenance`, `QUARANTINED`
 or `not attached`.
 
-A board is named by its full chip name (`esp32s31`, `esp32c5`). The registry
-names boards itself: the only board of a chip is the chip, and once a chip has
-several boards each becomes the chip with the last four hexadecimal digits of
-its MAC (`esp32c5-2564`); write the same on the board. A name set with
-`cargo hil devices set --name` that follows neither form is kept. Wherever a
-board is expected (`--board`, `board =` in the lab configuration), its
-registered name, its MAC, or its chip when it is the only registered board of
-that chip selects it; a chip with several registered boards is refused with
-their names.
+A board is named by its stand-file id, written on the board (`s31-a`,
+`c5-a`). Wherever a board is expected (a command's `--board` or `BOARD`), its
+id, its MAC, or its chip when it is the stand file's only board of that chip
+selects it; a chip with several boards is refused with their ids.
 
 A board may also have a reset path that does not depend on its USB
 Serial/JTAG port: a DevKit's USB-to-UART bridge whose modem lines drive the
-chip's EN and BOOT pins. `cargo hil devices set MAC --reset-uart USB_SERIAL
---en rts --boot dtr` records it, with the lines named explicitly, in the
-registry's `control.reset`; `control.power` is reserved for a switchable hub
-port. Both are absent unless registered. `cargo hil devices reset BOARD`
+chip's EN and BOOT pins. The board's `uart-bridge = { serial = "…", en =
+"rts", boot = "dtr" }` in the stand file names it, with the lines named
+explicitly; it is absent unless one is wired. `cargo hil devices reset BOARD`
 resets the chip through EN under a lease of the board, as its RST button does,
 and prints the reset reason and boot mode the ROM reports on the bridge;
 `--download` holds the boot strap low so the ROM waits for a download, and is
@@ -221,18 +217,19 @@ the board while they use it; a script or terminal that opens a board or
 bridge port itself can reset the chip or pull its boot strap.
 `cargo hil board reset BOARD` resets through the USB Serial/JTAG RTS line
 (default), `--via jtag` through OpenOCD and the chip's debug module,
-`--via en` through the registered bridge, or `--via power` by cycling the
-power of the board's registered hub port (off, then on), and prints the reset
+`--via en` through the board's UART bridge, or `--via power` by cycling the
+power of the board's hub port (off, then on), and prints the reset
 line the ROM reports. A hub port is switched only that way, under the board's
 lease: `cargo hil lease` refuses a command that runs `uhubctl`, and the
 repository's Claude Code hook refuses `uhubctl` with an action, so no port is
-left off. When a lease of a board with a registered hub port is granted and
+left off. When a lease of a board that resets by power is granted and
 when it is released, the arbiter returns the port to its working state: a port
 that is off is powered, and a powered port whose board is not attached by its
 serial number is cycled; each restoration is a recovery in the board journal.
-The grant restores a board its previous holder left without a release. `cargo hil devices set MAC --power-uhubctl LOCATION --power-port
-PORT` registers the hub port that powers the board alone, never a port that
-carries a cascaded hub. `board check` reports, without resetting, whether the board is
+The grant restores a board its previous holder left without a release. The
+stand file's `[[hub]]` lists each hub's switchable ports and the protected
+ones a cascaded hub hangs on: a board never hangs on a protected port, and
+resets by `power` only on a switchable one. `board check` reports, without resetting, whether the board is
 attached, its last flash, maintenance, its reset paths and whether it answers
 the peer text protocol. `board console --for DUR [--until TEXT]` prints and
 saves the console under `target/hil/console/<mac>/`. `board soak --cycles N
@@ -251,9 +248,7 @@ opens the port through the same library functions,
 reset_into_application}`, never through `serialport` itself.
 
 ```console
-cargo hil devices                     # boards: label, port, last firmware
-cargo hil devices set 38:44:BE:AA:25:64 --chip esp32c5 --name esp32c5
-cargo hil devices set 38:44:BE:AA:25:64 --reset-uart 5B90165754 --en rts --boot dtr
+cargo hil devices                     # the stand file's boards: label, port, last firmware
 cargo hil devices reset esp32c5       # rst:0x1 (POWERON),boot:0x18 (SPI_FAST_FLASH_BOOT)
 cargo hil board check esp32c5
 cargo hil board reset esp32c5 --via jtag
@@ -263,7 +258,7 @@ cargo hil board soak esp32c5 --for 8h --via rts,jtag,en
 cargo hil peer send esp32c5 SYNC
 cargo hil lease --board esp32c5 --flashed ieee802154-peer --application build/peer.bin \
     --port /dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_38:44:BE:AA:25:64-if00 \
-    --chip esp32c5 -- idf.py -p /dev/ttyACM1 flash
+    -- idf.py -p /dev/ttyACM1 flash
 cargo hil board flashed --image NAME --sha256 HASH --device MAC   # inside a lease
 ```
 
@@ -323,7 +318,7 @@ waits for such a process to finish.
 
 ## Host fixtures
 
-`cargo hil fixtures` probes the host fixtures the lab configuration names:
+`cargo hil fixtures` probes the host fixtures the stand file names:
 this host's Wi-Fi radios and Bluetooth adapter and the OpenWrt station fixture
 and air observer over SSH. It prints each one's lease key (the claim a run
 takes it by), whether it answers, its model and firmware, and each

@@ -16,6 +16,7 @@ test-support = []
 oer-chip-profile = { path = "../../../tools/chip-profile" }
 oer-esp32s31-firmware = { path = "../../../tools/firmware" }
 oer-hil-arbiter = { path = "../arbiter" }
+oer-hil-stand-schema = { path = "../../stand/schema" }
 oer-hil-board = { path = "../board" }
 oer-hil-durable = { path = "../durable" }
 oer-hil-evidence = { path = "../evidence" }

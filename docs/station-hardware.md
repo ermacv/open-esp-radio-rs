@@ -63,7 +63,7 @@ qualification observation.
 
 Read [HIL host setup](../hil/host/README.md) and the
 [ESP32-S31 target guide](../hil/targets/esp32s31/README.md) before running a
-scenario. They own board ports, fixture access, lab configuration, observer
+scenario. They own board ports, fixture access, stand file, observer
 requirements and image selection. Select the scenario corresponding to the
 claim in [the scenario catalog](../hil/scenarios/README.md); do not substitute
 an unrelated passing experiment. Hardware commands can flash the board and

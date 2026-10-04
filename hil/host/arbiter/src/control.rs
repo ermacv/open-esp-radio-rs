@@ -2,7 +2,7 @@
 //! the stand file has when its reset ladder includes `power`, and the
 //! OpenOCD reset through the chip's builtin USB-JTAG.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -63,6 +63,21 @@ impl PowerControl {
         self.action_delayed("cycle", off.as_secs().max(1))
     }
 
+    /// Power the port off and on again while watching the board on it:
+    /// `attached` says whether the board's own USB device is present. The
+    /// board must leave once the port is off and come back once it is on;
+    /// its own USB device leaving shows that the board, not only the hub,
+    /// lost power.
+    pub fn cycle_observed(&self, attached: &dyn Fn() -> bool) -> crate::Result<PowerCycle> {
+        self.action("off")?;
+        let left = wait_until(POWER_LEAVE, &|| !attached());
+        // From the moment the port is told to power on.
+        let started = Instant::now();
+        self.action("on")?;
+        let returned = wait_until(POWER_RETURN, attached).then(|| started.elapsed());
+        Ok(PowerCycle { left, returned })
+    }
+
     fn action(&self, action: &str) -> crate::Result<()> {
         self.action_delayed(action, 2)
     }
@@ -87,6 +102,50 @@ impl PowerControl {
             .into());
         }
         Ok(())
+    }
+}
+
+/// How long a board may take to leave USB once its port is off.
+const POWER_LEAVE: Duration = Duration::from_secs(5);
+/// How long a board may take to come back once its port is on.
+const POWER_RETURN: Duration = Duration::from_secs(10);
+
+/// What a watched power cycle of a board's port showed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PowerCycle {
+    /// The board's own USB device left once the port was off.
+    pub left: bool,
+    /// How long after the port was on the board came back, if it did.
+    pub returned: Option<Duration>,
+}
+
+impl PowerCycle {
+    /// Whether the board lost its power and came back, or why not.
+    pub fn verdict(self) -> Result<Duration, String> {
+        match (self.left, self.returned) {
+            (true, Some(after)) => Ok(after),
+            (false, _) => Err(String::from(
+                "the board stayed on USB while its port was off: the port does not cut its power",
+            )),
+            (true, None) => Err(format!(
+                "the board left USB but did not return within {} s of its port's power",
+                POWER_RETURN.as_secs()
+            )),
+        }
+    }
+}
+
+/// Poll `condition` until it holds or `within` passes.
+fn wait_until(within: Duration, condition: &dyn Fn() -> bool) -> bool {
+    let deadline = Instant::now() + within;
+    loop {
+        if condition() {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(100));
     }
 }
 
@@ -314,5 +373,44 @@ Current status for hub 3-8.3 [0bda:5411 Generic USB2.1 Hub, USB 2.10, 4 ports, p
         assert_eq!(port_powered(REPORT, "3-8.3", 1), Some(true));
         assert_eq!(port_powered(REPORT, "4-8.3", 2), Some(true));
         assert_eq!(port_powered(REPORT, "3-8.3", 4), None);
+    }
+}
+
+#[cfg(test)]
+mod cycle_tests {
+    use super::*;
+
+    #[test]
+    fn a_power_cycle_needs_the_board_to_leave_and_return() {
+        let after = Duration::from_millis(3100);
+        assert_eq!(
+            PowerCycle {
+                left: true,
+                returned: Some(after)
+            }
+            .verdict(),
+            Ok(after)
+        );
+        let stayed = PowerCycle {
+            left: false,
+            returned: Some(after),
+        };
+        assert!(
+            stayed
+                .verdict()
+                .unwrap_err()
+                .contains("does not cut its power")
+        );
+        let gone = PowerCycle {
+            left: true,
+            returned: None,
+        };
+        assert!(gone.verdict().unwrap_err().contains("did not return"));
+    }
+
+    #[test]
+    fn waiting_ends_when_the_condition_holds_or_the_time_is_up() {
+        assert!(wait_until(Duration::ZERO, &|| true));
+        assert!(!wait_until(Duration::from_millis(150), &|| false));
     }
 }

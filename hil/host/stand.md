@@ -184,7 +184,9 @@ the file. `--blink HUB:PORT` switches a switchable port off for five seconds
 under a lease of the port and of its board, to see which button it is; a
 protected port, which a cascaded hub hangs on, and a port `uhubctl` cannot
 cut are refused. `--verify-power BOARD` cycles the board's port under its
-lease and requires the ROM to report a power-on reset.
+lease and requires the board's own USB device to leave while the port is off
+and to return once it is on: the ROM prints its power-on reset reason before
+the board's USB enumerates, so the board's own port never shows it.
 
 `cargo hil stand doctor` checks the host around the stand file: the file
 (private, valid, every board's chip and radios against its profile), the

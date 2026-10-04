@@ -198,17 +198,32 @@ pub(crate) fn board(
     Ok(std::process::ExitCode::SUCCESS)
 }
 
-/// Cycle `board`'s hub port under its lease and return the reset line its
-/// ROM reports (`cargo hil stand discover --verify-power`).
-pub(crate) fn power_reset_line(owner: String, board: &str) -> Result<Option<String>> {
+/// Cycle `board`'s hub port under its lease, watching the board leave USB
+/// and return (`cargo hil stand discover --verify-power`).
+pub(crate) fn watched_power_cycle(
+    owner: String,
+    board: &str,
+) -> Result<oer_hil_arbiter::control::PowerCycle> {
     let target = target(board)?;
+    let power = target
+        .arbiter
+        .devices()?
+        .into_iter()
+        .find(|device| device.mac == target.mac)
+        .and_then(|device| device.power)
+        .ok_or("the board does not reset by power; add `power` to its `reset` in the stand file")?;
     let _grant = lease(
         &target,
         owner,
         format!("stand discover --verify-power {board}"),
         false,
     )?;
-    reset(&target, Via::Power)
+    let mac = target.mac.clone();
+    power.cycle_observed(&|| {
+        oer_hil_arbiter::attached_ports()
+            .iter()
+            .any(|port| port.mac.as_deref() == Some(mac.as_str()))
+    })
 }
 
 /// Whether a reset's ROM line shows the board booting from flash, or why not.

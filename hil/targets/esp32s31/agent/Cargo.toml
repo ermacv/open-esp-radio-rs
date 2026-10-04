@@ -32,6 +32,9 @@ system-watchdog = [
     "dep:heapless",
     "dep:critical-section",
 ]
+# The system image that, on request, switches its USB Serial/JTAG off its
+# pads: the board leaves USB, as a stand recovery must handle.
+usb-jtag-off = ["system-watchdog"]
 # The product panic entry alone: a panic records itself and resets the chip,
 # and the next boot reports the record.
 system-panic-reset = [

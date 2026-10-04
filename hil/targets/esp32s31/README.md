@@ -400,8 +400,8 @@ with `--source-include` as described in the [host guide](../../host/README.md).
 Each image enables only the HIL protocol families it serves
 ([radio families](../../protocol/README.md#radio-families)), so its build, and
 the evidence bound to its sources, reads only their protocol modules: the
-Bluetooth images the `bluetooth` family, the radio-free `system-watchdog`
-and `system-panic-reset` images the `system` family, and the Wi-Fi images the `wifi` family, each with
+Bluetooth images the `bluetooth` family, the radio-free `system-watchdog`,
+`diagnostic-usb-jtag-off` and `system-panic-reset` images the `system` family, and the Wi-Fi images the `wifi` family, each with
 the shared core. The IEEE 802.15.4 images and the memory benchmark image are
 built on the Wi-Fi runtime (`product_hil`, its console and `oer-hil-agent`'s
 `wifi` modules), so they also compile the `wifi` family and about thirty

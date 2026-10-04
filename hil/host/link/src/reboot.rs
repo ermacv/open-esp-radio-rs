@@ -71,6 +71,18 @@ impl SerialCapture {
         });
         Ok(())
     }
+    /// Accept the end of the target's stream as its departure from USB, which
+    /// the next request asks for: the capture then closes without a failure.
+    pub fn expect_detach(&self) -> Result<()> {
+        self.check_link()?;
+        self.protocol
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expected_detach = true;
+        Ok(())
+    }
+
     pub fn wait_expected_reboot(&self) -> Result<RebootObservation> {
         let mut state = self
             .protocol

@@ -19,6 +19,15 @@ panics in thread context, the entry records the panic and resets the chip
 through `esp_hal::system::software_reset`, and the next boot reports a
 software reset and the record.
 
+`system::DisableUsb` is served only by the `diagnostic-usb-jtag-off` image
+(the system watchdog image with the agent's `usb-jtag-off` feature): it
+acknowledges with `UsbDisabled`, then drops the USB Serial/JTAG's D+ and D-
+pull-ups and takes it off its pads. Off its pads alone, the device stops
+answering but the host keeps it enumerated; without the pull-up the host sees
+it disconnect. Only a reset of the chip brings it back. The host arms
+`SerialCapture::expect_detach` before the request, so the end of the stream
+that follows closes the capture without a failure.
+
 `system::CallAcrossCores` (`IpcCall`, images that run both cores) posts
 functions through esp-hal's inter-processor call: one from core 0 to itself
 and one to core 1, which posts one back to core 0. `CoresCalled` names the

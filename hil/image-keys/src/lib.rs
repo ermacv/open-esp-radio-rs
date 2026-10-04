@@ -51,6 +51,8 @@ pub fn image_keys(enabled: &dyn Fn(&str) -> bool) -> ImageKeys {
     if enabled("system-watchdog") {
         add(system::WatchdogTest::KEY, true);
         add(system::WatchdogArmed::KEY, true);
+        add(system::DisableUsb::KEY, enabled("usb-jtag-off"));
+        add(system::UsbDisabled::KEY, enabled("usb-jtag-off"));
         return sorted(keys);
     }
     if enabled("system-panic-reset") {
@@ -162,6 +164,7 @@ fn sorted(mut keys: ImageKeys) -> ImageKeys {
 pub const READ_FEATURES: &[&str] = &[
     "system-watchdog",
     "system-panic-reset",
+    "usb-jtag-off",
     "bluetooth-radio",
     "open-radio-hil",
     "bluetooth-secure-gatt",
@@ -207,6 +210,9 @@ mod tests {
         assert!(has::<system::WatchdogTest>(&watchdog) && !has::<network::Udp>(&watchdog));
         let panic = with(&["system-panic-reset"]);
         assert!(has::<system::InjectPanic>(&panic) && !has::<system::WatchdogTest>(&panic));
+        assert!(!has::<system::DisableUsb>(&watchdog));
+        let usb_off = with(&["system-watchdog", "usb-jtag-off"]);
+        assert!(has::<system::DisableUsb>(&usb_off) && has::<system::WatchdogTest>(&usb_off));
         let dtm = with(&["bluetooth-radio"]);
         assert!(has::<bluetooth::Dtm>(&dtm) && has::<bluetooth::Hci>(&dtm));
         assert!(!has::<network::Udp>(&dtm));

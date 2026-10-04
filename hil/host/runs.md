@@ -104,6 +104,14 @@ without a reset, names the code addresses from the image's ELF and writes them
 to `post-mortem/jtag.json`, so the place it stopped survives the resets below.
 The read never changes the repetition's outcome.
 
+The `stand-recovery` scenario (`hil/scenarios/system/`, image
+`diagnostic-usb-jtag-off`) exercises this ladder on a board that really left
+USB: its image switches the USB Serial/JTAG off on request, the ladder's RTS
+and JTAG rungs cannot reach it and the power rung must bring it back; then,
+off USB again, the download entry must put its ROM into download mode and an
+RTS reset boot the image again. `stand-recovery.json` keeps each step, how
+long the board took to leave USB and how long the ladder and the entry took.
+
 Every flash of the device under test addresses the board by its
 `/dev/serial/by-id` link, which a power cycle does not change; when the board
 is not on USB at all, because its image switched its USB Serial/JTAG off, the

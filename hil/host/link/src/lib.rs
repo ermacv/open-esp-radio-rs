@@ -87,6 +87,9 @@ struct ProtocolState {
     health: ProtocolHealth,
     failure: Option<LinkError>,
     closed: bool,
+    /// The target was asked to leave USB: the end of its stream is that
+    /// departure, not a transport failure.
+    expected_detach: bool,
 }
 
 /// A command the host sent: its identity and when, never its payload, which
@@ -113,7 +116,9 @@ impl ProtocolState {
         if let Some(error) = &self.failure {
             return Err(error.clone().into());
         }
-        if self.closed {
+        // After an expected detach, the messages received before it still
+        // answer their requests.
+        if self.closed && !self.expected_detach {
             return Err(LinkError::transport("serial capture is closed").into());
         }
         Ok(())
@@ -131,7 +136,9 @@ impl ProtocolEvents {
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(error) = error {
+        if let Some(error) = error
+            && !state.expected_detach
+        {
             state.fail(error);
         }
         state.closed = true;

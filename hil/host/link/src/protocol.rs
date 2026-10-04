@@ -1359,6 +1359,19 @@ impl SerialCapture {
         }
     }
 
+    /// Ask the USB Serial/JTAG-off image to switch its USB off its pads; it
+    /// acknowledges first.
+    pub fn disable_usb(&self) -> Result<()> {
+        match self.call(
+            0,
+            oer_hil_protocol::system::DisableUsb,
+            Duration::from_secs(5),
+        )? {
+            Ok(oer_hil_protocol::system::UsbDisabled) => Ok(()),
+            response => Err(format!("USB switch-off rejected: {response:?}").into()),
+        }
+    }
+
     /// Console bytes captured so far: a mark for
     /// [`Self::console_shows_boot_since`].
     pub fn console_length(&self) -> usize {

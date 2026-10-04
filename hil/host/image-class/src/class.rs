@@ -45,6 +45,10 @@ pub enum ImageClass {
     /// The IEEE 802.15.4 same-bit and level-retrigger route probe.
     DiagnosticIeee802154Route,
     DiagnosticMemoryBenchmark,
+    /// The system watchdog image that, on request, switches its USB
+    /// Serial/JTAG off its pads: the board leaves USB, for the stand's
+    /// recovery scenario.
+    DiagnosticUsbJtagOff,
 }
 
 impl ImageClass {
@@ -56,6 +60,7 @@ impl ImageClass {
             self,
             Self::SystemWatchdog
                 | Self::SystemPanicReset
+                | Self::DiagnosticUsbJtagOff
                 | Self::BluetoothGatt
                 | Self::BluetoothSecureGatt
                 | Self::BluetoothDtm
@@ -66,7 +71,7 @@ impl ImageClass {
         }
     }
 
-    pub const ALL: [Self; 27] = [
+    pub const ALL: [Self; 28] = [
         Self::BluetoothSecureGatt,
         Self::BluetoothGatt,
         Self::SystemWatchdog,
@@ -94,6 +99,7 @@ impl ImageClass {
         Self::DiagnosticIeee802154Thread,
         Self::DiagnosticIeee802154Route,
         Self::DiagnosticMemoryBenchmark,
+        Self::DiagnosticUsbJtagOff,
     ];
 
     /// Whether the image adds observers or probes that the product does
@@ -119,6 +125,7 @@ impl ImageClass {
                 | Self::DiagnosticIeee802154Thread
                 | Self::DiagnosticIeee802154Route
                 | Self::DiagnosticMemoryBenchmark
+                | Self::DiagnosticUsbJtagOff
         )
     }
 
@@ -151,6 +158,7 @@ impl ImageClass {
             Self::DiagnosticIeee802154Thread => "diagnostic-ieee802154-thread",
             Self::DiagnosticIeee802154Route => "diagnostic-ieee802154-route",
             Self::DiagnosticMemoryBenchmark => "diagnostic-memory-benchmark",
+            Self::DiagnosticUsbJtagOff => "diagnostic-usb-jtag-off",
         }
     }
 
@@ -169,6 +177,7 @@ impl ImageClass {
             Self::BluetoothSecureGatt => "bluetooth-secure-gatt",
             Self::SystemWatchdog => "system-watchdog",
             Self::SystemPanicReset => "system-panic-reset",
+            Self::DiagnosticUsbJtagOff => "system-watchdog,usb-jtag-off",
             Self::BluetoothDtm => "bluetooth-hil,phy-rx-hot-sram",
             Self::BootSmoke => "boot-smoke",
             Self::Performance => "open-radio-hil",
@@ -213,6 +222,7 @@ impl ImageClass {
             self,
             Self::SystemWatchdog
                 | Self::SystemPanicReset
+                | Self::DiagnosticUsbJtagOff
                 | Self::BluetoothGatt
                 | Self::BluetoothSecureGatt
                 | Self::BluetoothDtm

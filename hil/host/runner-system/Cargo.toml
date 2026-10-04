@@ -14,6 +14,8 @@ oer-hil-scenario = { path = "../scenario" }
 oer-hil-durable = { path = "../durable" }
 oer-hil-image-class = { path = "../image-class" }
 oer-hil-execution = { path = "../execution" }
+oer-hil-stand = { path = "../stand" }
+oer-hil-arbiter = { path = "../arbiter" }
 oer-process = { path = "../../../tools/process" }
 oer-hil-protocol = { path = "../../protocol" }
 oer-hil-trace = { path = "../../trace" }

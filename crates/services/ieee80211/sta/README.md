@@ -32,7 +32,7 @@ submission per attempt.
 | `PortScan` | `StaScanPort` | `LowerMacSetting::Channel` (a backend that retunes only while disabled answers `Busy` and is disabled, tuned and enabled again), the station filter `OTHER_BSS_MANAGEMENT` (or `LowerMacMonitor` through `with_monitor` when the filters lack it), a Probe Request per channel, beacons and Probe Responses into a `ScanTable` |
 | `PortJoin` | `StaJoinBackend` | Open System and SAE Authentication and Association Requests; receive is the station filter `BSS_MEMBER` with the access point's BSSID |
 | `PortHandshake`, `PortKeyInstall` | `RsnHandshakeBackend`, `RsnKeyInstallBackend` | EAPOL in data MPDUs; the pairwise and group CCMP-128 keys through `install_key` (`PortKeys`), removed again on a failed install; Message 4 in the clear or under the pairwise key |
-| `PortConnection` | The connected data plane | QoS or non-QoS data with per-TID sequence numbers and a CCMP header from `CcmpTxPacketNumber`, at the access category of the user priority; receive duplicate filter, Block Ack reordering (ADDBA, DELBA, BlockAckReq) into the station's slots, CCMP replay check per lane after reordering, A-MSDU deaggregation; SA Query under management frame protection; Deauthentication and Disassociation |
+| `PortConnection` | The connected data plane | QoS or non-QoS data with per-TID sequence numbers and a CCMP header from `CcmpTxPacketNumber`, at the access category of the user priority; receive duplicate filter, Block Ack reordering (ADDBA, DELBA, BlockAckReq) into the station's slots, CCMP replay check per lane after reordering, A-MSDU deaggregation; SA Query under management frame protection; Deauthentication and Disassociation; the Group Key Handshake under the pairwise key |
 | `PortPowerSave` | `oer_ieee80211_sta::modem_sleep` | TBTTs and TSF of `LowerMacBeaconTiming`, doze as `TxGate { open: false }`, Null frames with the Power Management bit, the frame held while the station dozes |
 | `PortStation`, `PortAttemptPort` | `StaAttemptPort` | Scan when the candidate must be refreshed, tune, authenticate (Open System, SAE, or Open System resuming a cached SAE PMKSA), associate, program the BSS filter, handshake, install keys, enter the connection |
 | `PortStationLifecycle` | `StaLifecycleBackend` | Attempts through `StaAttempt`, the connection served for a `PortStationApplication`, backoff |
@@ -59,8 +59,18 @@ gap are gone and the connection goes on.
 
 The station reads a protected MPDU the backend reports as
 `DecryptedAndIntegrityVerified` with its CCMP header kept and without the
-MIC, the mirror of what it hands the backend for transmission. It does not
-yet do: the group key handshake (rekeying), BIP for group-addressed robust
+MIC, the mirror of what it hands the backend for transmission.
+
+A WPA2 connection answers the access point's group rekeys. An EAPOL frame
+under the pairwise key goes to the connected supplicant, never to the
+caller: a new Group Message 1 installs its group key through `install_key`,
+removes the old one, restarts the group replay window at the frame's receive
+sequence counter and is answered with Group Message 2 under the pairwise
+key; a repeat of the last one is answered again with no key change. An
+unprotected one is dropped with the other unprotected data, and a rejected
+frame counts in `eapol_rejected`.
+
+It does not yet do: BIP for group-addressed robust
 management frames, beacon-loss monitoring (`link_monitor`), the reorder gap
 timer (a full slot store releases the oldest run instead), WMM EDCA
 parameters from the access point, HT/HE association capabilities beyond the

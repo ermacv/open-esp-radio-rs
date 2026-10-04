@@ -256,6 +256,21 @@ impl StaAttemptSecurity<'_> {
         }
     }
 
+    /// The sequence counters and, after a WPA2 handshake, the connected
+    /// supplicant that answers the access point's group rekeys.
+    pub fn connected_parts(
+        &mut self,
+    ) -> (
+        &mut StaTxSequenceCounters,
+        Option<&mut RsnConnectedSupplicant>,
+    ) {
+        let connected = match &mut self.material {
+            StaAttemptSecurityMaterial::Open => None,
+            StaAttemptSecurityMaterial::Personal { connected, .. } => connected.as_mut(),
+        };
+        (&mut self.sequences, connected)
+    }
+
     pub const fn has_connected_wpa2(&self) -> bool {
         matches!(
             &self.material,

@@ -29,7 +29,7 @@ use super::{
 };
 
 /// The EtherType of EAPOL in transmission order, as the MPDU carries it.
-const EAPOL_ETHER_TYPE: u16 = 0x888e;
+pub(crate) const EAPOL_ETHER_TYPE: u16 = 0x888e;
 /// Octets of the longest EAPOL MPDU the station sends.
 const EAPOL_FRAME_CAPACITY: usize = RSN_HANDSHAKE_EAPOL_CAPACITY + 64;
 
@@ -249,37 +249,56 @@ impl<X: PortStationEnv> RsnKeyInstallBackend for PortKeyInstall<'_, '_, X> {
                 send_eapol(self.link, self.bssid, sequence_number, frame.as_bytes()).await
             }
             Wpa2Message4Protection::PairwiseCcmp => {
-                let config = *self.link.config();
-                let ccmp_header = self
-                    .packet_number
-                    .next_header(CcmpKeyId::new(0).expect("key identifier zero"))
-                    .map_err(PortLinkError::PacketNumber)?;
-                let mut mpdu = [0_u8; EAPOL_FRAME_CAPACITY];
-                let length = StaProtectedDataFrame {
-                    source: config.address,
-                    bssid: self.bssid,
-                    destination: self.bssid,
+                send_protected_eapol(
+                    self.link,
+                    self.bssid,
                     sequence_number,
-                    user_priority: 7,
-                    peer_qos: false,
-                    ccmp_header,
-                    ether_type: EAPOL_ETHER_TYPE,
-                    payload: frame.as_bytes(),
-                }
-                .encode(&mut mpdu)
-                .map_err(PortLinkError::Frame)?;
-                self.link
-                    .transmit(
-                        &mpdu[..length],
-                        KeySelector::Key(keys.pairwise),
-                        WmmAccessCategory::Voice,
-                        config.management_rate,
-                    )
-                    .await
-                    .map(|_| ())
+                    self.packet_number,
+                    keys.pairwise,
+                    frame.as_bytes(),
+                )
+                .await
             }
         }
     }
+}
+
+/// Send one EAPOL frame to `bssid` in a data MPDU under the pairwise key,
+/// with a CCMP header from its packet-number allocator.
+pub(crate) async fn send_protected_eapol<X: PortStationEnv>(
+    link: &mut PortLink<'_, X>,
+    bssid: MacAddress,
+    sequence_number: SequenceNumber,
+    packet_number: &mut CcmpTxPacketNumber,
+    pairwise: KeyHandle,
+    eapol: &[u8],
+) -> Result<(), PortLinkError<PortError<X>>> {
+    let config = *link.config();
+    let ccmp_header = packet_number
+        .next_header(CcmpKeyId::new(0).expect("key identifier zero"))
+        .map_err(PortLinkError::PacketNumber)?;
+    let mut mpdu = [0_u8; EAPOL_FRAME_CAPACITY];
+    let length = StaProtectedDataFrame {
+        source: config.address,
+        bssid,
+        destination: bssid,
+        sequence_number,
+        user_priority: 7,
+        peer_qos: false,
+        ccmp_header,
+        ether_type: EAPOL_ETHER_TYPE,
+        payload: eapol,
+    }
+    .encode(&mut mpdu)
+    .map_err(PortLinkError::Frame)?;
+    link.transmit(
+        &mpdu[..length],
+        KeySelector::Key(pairwise),
+        WmmAccessCategory::Voice,
+        config.management_rate,
+    )
+    .await
+    .map(|_| ())
 }
 
 /// An [`AsyncRsnKeyUnwrap`] borrowed for one handshake.

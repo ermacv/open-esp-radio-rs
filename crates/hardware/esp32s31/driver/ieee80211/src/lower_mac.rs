@@ -216,7 +216,8 @@ pub const fn esp32s31_lower_mac_capabilities(buffer_size: usize) -> LowerMacCapa
         },
         max_backoff_slots: MAX_SINGLE_ATTEMPT_BACKOFF_SLOTS,
         tx_power_ceiling_min_dbm: Some(0),
-        coex_priorities: CoexPrioritySet::only(CoexPriority::Normal),
+        coex_priorities: CoexPrioritySet::only(CoexPriority::Normal)
+            .union(CoexPrioritySet::only(CoexPriority::Elevated)),
         individual_no_ack: PhyFormatSet::NON_HT,
         station_receive_filters: STATION_RECEIVE_FILTERS,
         access_point_receive_filters: ReceiveFilter::BSS_MEMBER,
@@ -264,11 +265,33 @@ pub trait RxBeaconPriorityHardware {
     fn clear_rx_beacon_pti(&mut self);
 }
 
-/// The radio system's coexistence priority of its beacon-window event
-/// (`coex_pti_get(0)`), which beacon reception asks for the air with.
-pub trait BeaconWindowPriority {
+/// The coexistence priorities of the radio system the core shares its RF
+/// with, as it last published them.
+pub trait RadioCoexPriorities {
+    /// The priority of the beacon-window event (`coex_pti_get(0)`), which
+    /// beacon reception asks for the air with.
     fn beacon_window_pti(&self) -> MacPti;
+
+    /// The priorities a connection frame carries under the reconnect
+    /// policy (`CoexPriority::Elevated`): event 46's as the packet
+    /// priority, and the lesser of it and the slice event's as the
+    /// scheduler priority.
+    ///
+    /// SOURCE(esp32s31): complete pinned `libpp.a[pp.o]::pp_coex_tx_request`
+    /// and `libpp.a[hal_mac.o]::mac_tx_set_pti`.
+    fn connection_frame_priorities(&self) -> ConnectionFramePriorities;
 }
+
+/// The packet and scheduler priorities of a connection frame.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ConnectionFramePriorities {
+    pub packet: u8,
+    pub scheduler: u8,
+}
+
+/// The priority count the vendor publishes beside a connection frame's
+/// priority under the reconnect policy.
+pub const CONNECTION_FRAME_PRIORITY_COUNT: u16 = 4_000;
 
 /// Every register seam the core drives; [`HtAmpduHardware`] includes the
 /// ordinary queues' `TxHardware`.
@@ -542,9 +565,9 @@ pub struct LowerMacCore<
     /// The attempt of each ordinary queue, by its hardware index
     /// ([`LegacyTxQueue::hardware_index`]).
     queues: [Option<Attempt<'slot, S, BUFFER_SIZE, AMPDU_SLOTS>>; LOWER_MAC_TX_QUEUES],
-    /// The radio system's beacon-window priority, which beacon reception
-    /// asks for the air with.
-    beacon_window: &'slot dyn BeaconWindowPriority,
+    /// The radio system's coexistence priorities: the beacon window's and
+    /// a connection frame's.
+    coex: &'slot dyn RadioCoexPriorities,
 }
 
 impl<'slot, P, E, T, const BUFFER_SIZE: usize, const TX_BUFFERS: usize>
@@ -556,15 +579,15 @@ where
 {
     /// A disabled core without aggregates over an idle ordinary TX owner
     /// and the idle slots it lends as transmit buffers.
-    /// `beacon_window` is the radio system the core shares its RF with:
-    /// beacon reception asks for the air at its beacon-window priority.
+    /// `coex` is the radio system the core shares its RF with: beacon
+    /// reception and connection frames ask for the air at its priorities.
     pub fn new(
         tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
         spare: [Pin<&'slot mut TxSlot<BUFFER_SIZE>>; TX_BUFFERS],
         config: LowerMacConfig,
-        beacon_window: &'slot dyn BeaconWindowPriority,
+        coex: &'slot dyn RadioCoexPriorities,
     ) -> Self {
-        Self::build(tx, spare, [], None, config, beacon_window)
+        Self::build(tx, spare, [], None, config, coex)
     }
 }
 
@@ -591,7 +614,7 @@ where
         ampdu: [Esp32s31AmpduOwner<'slot, S::Backing, AMPDU_SLOTS>; AMPDU_BUFFERS],
         ampdu_source: Option<&'slot S>,
         config: LowerMacConfig,
-        beacon_window: &'slot dyn BeaconWindowPriority,
+        coex: &'slot dyn RadioCoexPriorities,
     ) -> Self {
         Self {
             tx,
@@ -614,7 +637,7 @@ where
                 config.tsf_epoch,
             ),
             queues: [const { None }; LOWER_MAC_TX_QUEUES],
-            beacon_window,
+            coex,
         }
     }
 
@@ -943,6 +966,24 @@ where
         };
 
         let queue = common.queue;
+        let (scheduler_priority, packet_priority, priority_count) = match attempt.coex {
+            // A connection frame under the radio system's reconnect policy.
+            CoexPriority::Elevated => {
+                let connection = self.coex.connection_frame_priorities();
+                (
+                    connection.scheduler,
+                    connection.packet,
+                    CONNECTION_FRAME_PRIORITY_COUNT,
+                )
+            }
+            // The static priority vendor data encapsulation assigns the
+            // access category.
+            _ => (
+                queue.vendor_data_scheduler_priority(),
+                queue.vendor_data_packet_priority(),
+                1,
+            ),
+        };
         let plan = OrdinaryTxPlan {
             frame_length: length,
             descriptor_capacity: None,
@@ -958,11 +999,9 @@ where
                 VifRole::Station => OrdinaryTxInterface::Station,
                 VifRole::AccessPoint => OrdinaryTxInterface::AccessPoint,
             },
-            // `CoexPriority::Normal`: the static priority vendor data
-            // encapsulation assigns the access category.
-            scheduler_priority: queue.vendor_data_scheduler_priority(),
-            packet_priority: queue.vendor_data_packet_priority(),
-            priority_count: 1,
+            scheduler_priority,
+            packet_priority,
+            priority_count,
         };
         Ok(Admission {
             queue,
@@ -1271,7 +1310,7 @@ where
     ) -> Result<(), SettingError> {
         match priority {
             RxBeaconPriority::BeaconWindow => {
-                hardware.set_rx_beacon_pti(self.beacon_window.beacon_window_pti());
+                hardware.set_rx_beacon_pti(self.coex.beacon_window_pti());
             }
             RxBeaconPriority::Zero => hardware
                 .set_rx_beacon_pti(MacPti::new(0).expect("priority zero is a valid MAC priority")),
@@ -1779,16 +1818,16 @@ where
     S: AmpduBackingSource,
 {
     /// A disabled core that also lends `ampdu` idle aggregate owners, whose
-    /// subframes `source` backs. `beacon_window` is as for [`Self::new`].
+    /// subframes `source` backs. `coex` is as for [`Self::new`].
     pub fn with_ampdu(
         tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
         spare: [Pin<&'slot mut TxSlot<BUFFER_SIZE>>; TX_BUFFERS],
         ampdu: [Esp32s31AmpduOwner<'slot, S::Backing, AMPDU_SLOTS>; AMPDU_BUFFERS],
         source: &'slot S,
         config: LowerMacConfig,
-        beacon_window: &'slot dyn BeaconWindowPriority,
+        coex: &'slot dyn RadioCoexPriorities,
     ) -> Self {
-        Self::build(tx, spare, ampdu, Some(source), config, beacon_window)
+        Self::build(tx, spare, ampdu, Some(source), config, coex)
     }
 
     /// Lend an idle aggregate owner; `None` without aggregate owners or
@@ -1863,6 +1902,10 @@ where
             attempt.backoff,
             attempt.coex,
         )?;
+        // Connection frames are single MPDUs: an aggregate is ordinary data.
+        if attempt.coex != CoexPriority::Normal {
+            return Err(SubmitError::Unsupported);
+        }
         let capabilities = self.ampdu_capabilities();
         let buffer = &mut attempt.payload.subframes;
         let count = buffer.subframes();

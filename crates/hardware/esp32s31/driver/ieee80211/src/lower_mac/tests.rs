@@ -371,12 +371,20 @@ impl RxBeaconPriorityHardware for Hardware {
     }
 }
 
-/// A radio system whose beacon-window event has priority 9.
-struct BeaconWindowNine;
+/// A radio system whose beacon-window event has priority 9, its connection
+/// event 6 and its slice event 4.
+struct RadioNine;
 
-impl BeaconWindowPriority for BeaconWindowNine {
+impl RadioCoexPriorities for RadioNine {
     fn beacon_window_pti(&self) -> MacPti {
         MacPti::new(9).unwrap()
+    }
+
+    fn connection_frame_priorities(&self) -> ConnectionFramePriorities {
+        ConnectionFramePriorities {
+            packet: 6,
+            scheduler: 4,
+        }
     }
 }
 
@@ -525,7 +533,7 @@ fn core() -> Core {
             publication_timeout: oer_time::Duration::from_micros(TIMEOUT),
             tsf_epoch: 1,
         },
-        &BeaconWindowNine,
+        &RadioNine,
     )
 }
 
@@ -675,7 +683,8 @@ fn capabilities_are_the_s31_limits_on_2_4_ghz() {
     );
     assert_eq!(caps.max_backoff_slots, 1023);
     assert!(caps.coex_priorities.contains(CoexPriority::Normal));
-    assert!(!caps.coex_priorities.contains(CoexPriority::Elevated));
+    assert!(caps.coex_priorities.contains(CoexPriority::Elevated));
+    assert!(!caps.coex_priorities.contains(CoexPriority::Critical));
     assert!(
         caps.individual_no_ack
             .contains_rate(PhyRate::Legacy(LegacyRate::Ofdm6M))
@@ -1030,7 +1039,7 @@ fn submissions_outside_the_limits_are_refused_without_publication() {
         ),
         (
             &frame,
-            |request| request.coex = CoexPriority::Elevated,
+            |request| request.coex = CoexPriority::Critical,
             SubmitError::Unsupported,
         ),
         (&group, |_| {}, SubmitError::Unsupported),
@@ -2225,6 +2234,39 @@ fn wmm_with_best_effort_txop(
             category(2, 47),
         ],
     )
+}
+
+#[test]
+fn an_elevated_mpdu_carries_the_radio_system_s_connection_priorities() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    assert!(
+        core.capabilities()
+            .coex_priorities
+            .contains(CoexPriority::Elevated)
+    );
+    let frame = data_frame(BSSID);
+    let mut request = attempt(&mut core, 1, &frame);
+    request.coex = CoexPriority::Elevated;
+    let admission = core.admit(&mut request).unwrap();
+    assert_eq!(
+        (
+            admission.plan.scheduler_priority,
+            admission.plan.packet_priority,
+            admission.plan.priority_count
+        ),
+        (4, 6, CONNECTION_FRAME_PRIORITY_COUNT)
+    );
+    let mut normal = attempt(&mut core, 2, &frame);
+    normal.coex = CoexPriority::Normal;
+    assert_eq!(core.admit(&mut normal).unwrap().plan.priority_count, 1);
+    // An aggregate is ordinary data.
+    let mut aggregate = aggregate(&mut core, 3, WmmAccessCategory::BestEffort, 2);
+    aggregate.coex = CoexPriority::Elevated;
+    assert_eq!(
+        submit_ampdu(&mut core, &mut hardware, aggregate),
+        Ok(Err(SubmitError::Unsupported))
+    );
 }
 
 #[test]

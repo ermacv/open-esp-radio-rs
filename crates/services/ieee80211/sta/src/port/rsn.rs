@@ -25,7 +25,7 @@ use oer_ieee80211_rsn::{
 use oer_ieee80211_sta::attempt::Wpa2Message4Protection;
 
 use super::{
-    link::{PortError, PortInput, PortLink, PortLinkError, PortStationEnv},
+    link::{PortConnectionFrame, PortError, PortInput, PortLink, PortLinkError, PortStationEnv},
     wire,
 };
 
@@ -114,7 +114,8 @@ async fn send_eapol<X: PortStationEnv>(
     }
     .encode(&mut frame)
     .map_err(PortLinkError::Frame)?;
-    link.transmit(
+    link.transmit_connection_frame(
+        PortConnectionFrame::Eapol,
         &frame[..length],
         KeySelector::Plaintext,
         WmmAccessCategory::Voice,
@@ -308,7 +309,8 @@ pub(crate) async fn send_protected_eapol<X: PortStationEnv>(
     }
     .encode(&mut mpdu)
     .map_err(PortLinkError::Frame)?;
-    link.transmit(
+    link.transmit_connection_frame(
+        PortConnectionFrame::Eapol,
         &mpdu[..length],
         KeySelector::Key(pairwise),
         WmmAccessCategory::Voice,

@@ -76,6 +76,21 @@ pub trait PortCoexistence {
 
     /// Perform one coexistence effect of the power manager.
     fn perform(&mut self, action: PmCoexAction) -> Result<(), PortCoexistenceRefused>;
+
+    /// Ask the air for one connection frame the station is about to send,
+    /// as the radio system's reconnect policy does after a lost
+    /// association; `true` when the frame then carries
+    /// [`CoexPriority::Elevated`]. A Probe Request only asks for the air.
+    fn connection_frame(&mut self, frame: PortConnectionFrame) -> impl Future<Output = bool>;
+}
+
+/// A frame a station sends to (re)join its access point.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PortConnectionFrame {
+    ProbeRequest,
+    Authentication,
+    Association,
+    Eapol,
 }
 
 /// The radio system refused a coexistence effect; its integrator keeps the
@@ -93,6 +108,10 @@ impl PortCoexistence for NoCoexistence {
 
     fn perform(&mut self, _action: PmCoexAction) -> Result<(), PortCoexistenceRefused> {
         Ok(())
+    }
+
+    async fn connection_frame(&mut self, _frame: PortConnectionFrame) -> bool {
+        false
     }
 }
 
@@ -363,6 +382,39 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         access_category: WmmAccessCategory,
         rate: PhyRate,
     ) -> Result<TxReport, PortLinkError<PortError<X>>> {
+        let coex = self.config.coex;
+        self.transmit_at(frame, key, access_category, rate, coex)
+            .await
+    }
+
+    /// Send a connection frame: the radio system is asked for the air
+    /// first, and under its reconnect policy the frame carries
+    /// [`CoexPriority::Elevated`].
+    pub async fn transmit_connection_frame(
+        &mut self,
+        connection: PortConnectionFrame,
+        frame: &[u8],
+        key: KeySelector,
+        access_category: WmmAccessCategory,
+        rate: PhyRate,
+    ) -> Result<TxReport, PortLinkError<PortError<X>>> {
+        let coex = if self.coex.connection_frame(connection).await {
+            CoexPriority::Elevated
+        } else {
+            self.config.coex
+        };
+        self.transmit_at(frame, key, access_category, rate, coex)
+            .await
+    }
+
+    async fn transmit_at(
+        &mut self,
+        frame: &[u8],
+        key: KeySelector,
+        access_category: WmmAccessCategory,
+        rate: PhyRate,
+        coex: CoexPriority,
+    ) -> Result<TxReport, PortLinkError<PortError<X>>> {
         let address1: [u8; 6] = frame
             .get(4..10)
             .and_then(|address| address.try_into().ok())
@@ -379,7 +431,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
             initial_rate: rate,
             receiver,
             power: self.config.power,
-            coex: self.config.coex,
+            coex,
             mpdu_retry_limit: self.config.retry_limit,
             body: TxBody::Mpdu(MpduRequest {
                 length: frame.len() as u32 + FCS_LEN + mic,

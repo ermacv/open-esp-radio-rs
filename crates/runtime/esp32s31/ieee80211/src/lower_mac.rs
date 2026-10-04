@@ -71,17 +71,28 @@ use oer_esp32s31_ieee80211::{
 };
 use oer_esp32s31_ieee80211_mac::rx::NormalizedRxFrame;
 
-/// The radio system's beacon-window priority, as its last released guard
-/// left it: the source a core receives beacons at when the station asks
+/// The radio system's coexistence priorities, as its last released guard
+/// left them: the source a core asks for the air with
 /// ([`LowerMacCore::new`]).
 #[cfg(target_arch = "riscv32")]
-pub struct RadioBeaconWindow<'a>(pub &'a oer_esp32s31_radio_runtime::WifiCoexViewCell);
+pub struct RadioCoex<'a>(pub &'a oer_esp32s31_radio_runtime::WifiCoexViewCell);
 
 #[cfg(target_arch = "riscv32")]
-impl oer_esp32s31_ieee80211::lower_mac::BeaconWindowPriority for RadioBeaconWindow<'_> {
+impl oer_esp32s31_ieee80211::lower_mac::RadioCoexPriorities for RadioCoex<'_> {
     fn beacon_window_pti(&self) -> oer_esp32s31_hal::types::MacPti {
         oer_esp32s31_hal::types::MacPti::new(u32::from(self.0.get().beacon_pti.value()))
             .expect("coexistence priorities are four-bit values")
+    }
+
+    fn connection_frame_priorities(
+        &self,
+    ) -> oer_esp32s31_ieee80211::lower_mac::ConnectionFramePriorities {
+        let view = self.0.get();
+        let packet = view.connection_pti.value();
+        oer_esp32s31_ieee80211::lower_mac::ConnectionFramePriorities {
+            packet,
+            scheduler: packet.min(view.slice_pti.value()),
+        }
     }
 }
 use oer_ieee80211_lower_mac::{

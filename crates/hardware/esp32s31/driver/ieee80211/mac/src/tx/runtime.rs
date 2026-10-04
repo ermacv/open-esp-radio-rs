@@ -74,33 +74,44 @@ impl WifiTxTraffic {
         self,
         configured_ceiling: HeEdcaTxopLimit,
     ) -> Result<HeEdcaTxopLimit, WmmTxopUnsupported> {
-        let Some(negotiated) = HeEdcaTxopLimit::from_units_32_us(self.txop_limit_units_32_us)
-        else {
-            return Err(WmmTxopUnsupported::AdvertisedLimitTooWide {
-                units_32_us: self.txop_limit_units_32_us,
-            });
-        };
-        if negotiated.is_default() {
-            return Ok(configured_ceiling);
-        }
-        if configured_ceiling.is_default()
-            || negotiated.units_32_us() <= configured_ceiling.units_32_us()
-        {
-            Ok(negotiated)
-        } else {
-            Ok(configured_ceiling)
-        }
+        he_txop_limit(self.txop_limit_units_32_us, configured_ceiling)
     }
 
     /// HT aggregation has no reviewed negotiated-TXOP duration calculator.
     pub const fn require_ht_txop_support(self) -> Result<(), WmmTxopUnsupported> {
-        if self.txop_limit_units_32_us == 0 {
-            Ok(())
-        } else {
-            Err(WmmTxopUnsupported::HtAggregateDurationBudget {
-                units_32_us: self.txop_limit_units_32_us,
-            })
-        }
+        require_ht_txop_support(self.txop_limit_units_32_us)
+    }
+}
+
+/// The HE duration budget of an access category whose advertised TXOP
+/// limit is `units_32_us`, under an optional integration ceiling, widening
+/// neither.
+pub const fn he_txop_limit(
+    units_32_us: u16,
+    configured_ceiling: HeEdcaTxopLimit,
+) -> Result<HeEdcaTxopLimit, WmmTxopUnsupported> {
+    let Some(negotiated) = HeEdcaTxopLimit::from_units_32_us(units_32_us) else {
+        return Err(WmmTxopUnsupported::AdvertisedLimitTooWide { units_32_us });
+    };
+    if negotiated.is_default() {
+        return Ok(configured_ceiling);
+    }
+    if configured_ceiling.is_default()
+        || negotiated.units_32_us() <= configured_ceiling.units_32_us()
+    {
+        Ok(negotiated)
+    } else {
+        Ok(configured_ceiling)
+    }
+}
+
+/// An HT aggregate keeps no TXOP limit: it is sent only in an access
+/// category without one.
+pub const fn require_ht_txop_support(units_32_us: u16) -> Result<(), WmmTxopUnsupported> {
+    if units_32_us == 0 {
+        Ok(())
+    } else {
+        Err(WmmTxopUnsupported::HtAggregateDurationBudget { units_32_us })
     }
 }
 

@@ -941,6 +941,40 @@ fn an_ht40_access_point_is_joined_on_its_40_mhz_channel_body() {
 }
 
 #[test]
+fn an_he_association_sets_the_bss_color_of_its_access_point() {
+    on_large_stack(an_he_association_sets_the_bss_color_of_its_access_point_body);
+}
+
+fn an_he_association_sets_the_bss_color_of_its_access_point_body() {
+    use oer_ieee80211_mac::station::{
+        AssociationCapabilities,
+        association::{HeUlMuPowerCapability, StaPowerCapability},
+    };
+    use oer_ieee80211_sta_service::port::PortHePower;
+    static HE: AssociationCapabilities = AssociationCapabilities {
+        ht20: scripted_ap::HT_CAPABILITIES,
+        he20_ht: scripted_ap::HT_CAPABILITIES,
+        he20: scripted_ap::HE_CAPABILITIES,
+        ..CAPABILITIES
+    };
+    let world = World::new();
+    let mut profile = profile();
+    profile.capabilities = &HE;
+    profile.preference = Preference::PreferHe20;
+    profile.he_power = Some(PortHePower {
+        power_capability: StaPowerCapability::new(-11, 20).unwrap(),
+        ul_mu: HeUlMuPowerCapability::from_rate_power_indices([20; 10]).unwrap(),
+    });
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    ap.he_bss_color = Some(0x2a);
+    let station = connect(&world, &mut ap, world.station_with(open(), profile));
+    let peer = station.connection().unwrap().config().peer;
+    assert_eq!(peer.phy, PhyMode::He20);
+    assert_eq!(peer.he_bss_color, 0x2a);
+    assert_eq!(world.model.he_bss_color(), Some((VifId(0), 0x2a)));
+}
+
+#[test]
 fn power_save_dozes_and_wakes_for_buffered_traffic_at_a_tbtt() {
     on_large_stack(power_save_dozes_and_wakes_for_buffered_traffic_at_a_tbtt_body);
 }

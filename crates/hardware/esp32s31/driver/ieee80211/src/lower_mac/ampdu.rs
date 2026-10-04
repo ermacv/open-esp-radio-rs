@@ -29,11 +29,12 @@
 use core::fmt;
 
 use oer_esp32s31_ieee80211_mac::tx::{
-    HtAmpduDensity, HtChannelWidth, HtGuardInterval, HtMcs, HtProtectionSpacing, HtRate,
-    LegacyTxQueue, TxCookie,
+    HeAmpduTxConfig, HtAmpduDensity, HtChannelWidth, HtGuardInterval, HtMcs, HtProtectionSpacing,
+    HtRate, LegacyTxQueue, TxControlFrame, TxCookie,
     ampdu::{
-        AmpduFrameLayout, AmpduFrameSize, HtAmpduFrameRequest, HtAmpduHardware,
-        HtAmpduTxCompletion, HtAmpduTxError, RetainedDmaAmpduTx, TX_AMPDU_METADATA_SIZE,
+        AmpduFrameLayout, AmpduFrameSize, HeAmpduFrameRequest, HeAmpduPolicy, HtAmpduFrameRequest,
+        HtAmpduHardware, HtAmpduTxCompletion, HtAmpduTxError, RetainedDmaAmpduTx,
+        TX_AMPDU_METADATA_SIZE,
     },
 };
 use oer_ieee80211_lower_mac::{
@@ -72,7 +73,7 @@ pub const fn esp32s31_ampdu_capabilities(slots: usize) -> AmpduCapabilities {
         } else {
             slots as u16
         },
-        formats: PhyFormatSet::HT,
+        formats: PhyFormatSet::HT.union(PhyFormatSet::HE),
         max_length: ESP32S31_AMPDU_MAX_LENGTH as u32,
     }
 }
@@ -211,12 +212,39 @@ pub type Esp32s31AmpduAttempt<'slot, S, const SLOTS: usize> =
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct AmpduPlan {
     pub queue: LegacyTxQueue,
-    pub rate: HtRate,
+    pub format: AmpduFormat,
     pub role: AmpduTxRoleAdapter,
     pub hardware_mic_length: u8,
     /// Everything but the aggregate's length and subframe count, which the
     /// owner computes as the subframes are committed.
-    pub inputs: HtAmpduPublicationInputs,
+    pub publication: AmpduPublication,
+}
+
+/// The PPDU format of an aggregate and what it alone needs.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum AmpduFormat {
+    Ht {
+        rate: HtRate,
+        protection_spacing: HtProtectionSpacing,
+    },
+    /// An HE SU aggregate: its rate, recipient density and TXOP limit, and
+    /// the BSS color every HE PPDU of the station carries.
+    He {
+        policy: HeAmpduPolicy,
+        bss_color: u8,
+    },
+}
+
+/// What an aggregate's publication shares in both formats.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct AmpduPublication {
+    pub data_power_primary: u8,
+    pub data_power_alternate: u8,
+    pub control: TxControlFrame,
+    pub aifsn: u8,
+    pub contention_window: u16,
+    pub scheduler_priority: u8,
+    pub packet_priority: u8,
 }
 
 /// The owner's protection spacing for a recipient's Minimum MPDU Start
@@ -334,23 +362,68 @@ where
             AmpduFrameSize::new(subframe.len, plan.hardware_mic_length),
         )
         .ok_or(HtAmpduTxError::FrameTooLong)?;
-        owner.commit_ht(
-            cookie,
-            subframe.backing,
-            HtAmpduFrameRequest::new(layout, 0, plan.rate),
-        )?;
+        match plan.format {
+            AmpduFormat::Ht { rate, .. } => owner.commit_ht(
+                cookie,
+                subframe.backing,
+                HtAmpduFrameRequest::new(layout, 0, rate),
+            )?,
+            AmpduFormat::He { policy, .. } => owner.commit_he(
+                cookie,
+                subframe.backing,
+                HeAmpduFrameRequest::new(layout, policy),
+            )?,
+        }
     }
     let aggregate = owner.prepared_aggregate(cookie)?;
-    let config = ht_ampdu_publication_config(
-        plan.role,
-        HtAmpduPublicationInputs {
-            aggregate_length: aggregate.bytes,
-            subframes: aggregate.subframes,
-            ..plan.inputs
-        },
-    )
-    .ok_or(HtAmpduTxError::AggregateConfigurationMismatch)?;
-    owner.submit(hardware, cookie, plan.queue, config)?;
+    let publication = plan.publication;
+    match plan.format {
+        AmpduFormat::Ht {
+            rate,
+            protection_spacing,
+        } => {
+            let config = ht_ampdu_publication_config(
+                plan.role,
+                HtAmpduPublicationInputs {
+                    rate,
+                    aggregate_length: aggregate.bytes,
+                    subframes: aggregate.subframes,
+                    protection_spacing,
+                    data_power_primary: publication.data_power_primary,
+                    data_power_alternate: publication.data_power_alternate,
+                    control: publication.control,
+                    aifsn: publication.aifsn,
+                    contention_window: publication.contention_window,
+                    scheduler_priority: publication.scheduler_priority,
+                    packet_priority: publication.packet_priority,
+                },
+            )
+            .ok_or(HtAmpduTxError::AggregateConfigurationMismatch)?;
+            owner.submit(hardware, cookie, plan.queue, config)?;
+        }
+        AmpduFormat::He { policy, bss_color } => {
+            let mut config = HeAmpduTxConfig::new_with_txop(
+                policy.rate(),
+                bss_color,
+                aggregate.bytes,
+                aggregate.subframes,
+                policy.density(),
+                policy.txop_limit(),
+            )
+            .ok_or(HtAmpduTxError::AggregateConfigurationMismatch)?;
+            config.data_power_primary = publication.data_power_primary;
+            config.data_power_alternate = publication.data_power_alternate;
+            config.control = publication.control;
+            config.aifsn = publication.aifsn;
+            config.contention_window = publication.contention_window;
+            config.interface = plan.role.interface;
+            config.scheduler_priority = publication.scheduler_priority;
+            config.pti = publication.packet_priority;
+            config.pti_count = 1;
+            config.hardware_key_selector = plan.role.hardware_key_selector;
+            owner.submit_he(hardware, cookie, plan.queue, config)?;
+        }
+    }
     Ok(PublishedAmpdu {
         owner,
         cookie,

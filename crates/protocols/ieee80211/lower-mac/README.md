@@ -18,7 +18,7 @@ unless the backend reports them in its `HardwareServices`.
 | --- | --- |
 | Submission | `tx_buffer(len)` lends a `TxBuffer` (`Ok(None)` when none is free, `Err` when the port cannot serve); the caller encodes the MPDU into it and submits `TxAttempt<TxPayload<TxBuffer>>`: caller `TxId`, `VifId`, `WmmAccessCategory`, the buffer with its `TxResponse`, `PhyRate`, `Protection` (none, RTS/CTS, CTS-to-self), `KeySelector`, `TxPower`, `Backoff` and the attempt's `CoexPriority`. A refusal is `Refused { error: SubmitError, attempt }`: nothing is sent and the attempt comes back with its buffer. An unsubmitted buffer goes back through `release_tx_buffer` |
 | Events | `next_event` yields owned events viewed as `LowerMacEvent`: `Received { frame, RxMeta }`, `TxCompleted(TxCompletion)` with `TxStatus`, ACK RSSI and SNR and the `BlockAckReport` (starting sequence, bitmap) of a BlockAckReq or A-MPDU, lifecycle terminals, `RxTooLong { length }` for a received MPDU longer than the backend's receive buffer, `Extension` for an event an extension trait views, and the terminal `Poisoned`. A loss is reported once as `EventsLost`, in place of the first dropped event |
-| Controls | `apply(LowerMacSetting)`: `Channel`, interface configuration (`VifConfig`: address, `VifRole`, BSSID, `ReceiveFilter`), key removal, receive Block Ack agreements, the `Edca` parameter set, the global `TxGate` and the beacon receive priority (`RxBeaconPriority`). `install_key` returns the `KeyHandle` attempts select |
+| Controls | `apply(LowerMacSetting)`: `Channel`, interface configuration (`VifConfig`: address, `VifRole`, BSSID, `ReceiveFilter`), key removal, receive Block Ack agreements, the `Edca` parameter set, the global `TxGate`, the beacon receive priority (`RxBeaconPriority`) and an interface's HE BSS color (`HeBssColor`). `install_key` returns the `KeyHandle` attempts select |
 | Capabilities | `LowerMacCapabilities`, the parametric limits: bands, widths, rates, `HardwareServices`, interfaces, transmit queues, longest MPDU, largest backoff, lowest power ceiling, coexistence levels, the PPDU formats of unicast no-ACK frames, each role's receive rules, key slots and receive Block Ack limits |
 | Lifecycle | `lifecycle(Enable / Disable / Quiesce)`, each with a terminal `LifecycleEvent`, and `cancel(TxId)`, whose terminal event is the attempt's completion; a failed command ends with `LifecycleEvent::Failed { command, class: FailureClass }` |
 | Clock | `now()` is the `Ieee80211Instant` (`oer_time::RadioInstant` of the port's `Ieee80211Radio` domain) of receive timestamps; `clock_info()` states its resolution and `RadioEpoch` and converts to monotonic time; `clock_sample()` reads both clocks back to back in the current generation, and `RxMeta::timestamp` is an `Ieee80211Stamp` that converts with a sample of its generation |
@@ -71,6 +71,9 @@ Rules a caller relies on:
   (`BeaconWindow`, `Zero`, `Cleared`); the value of `BeaconWindow` is the
   radio system's priority of its beacon-window event, which only the
   backend sharing the RF with that system knows.
+- **HE BSS color.** `HeBssColor { vif, color }` sets the color (0-63) an
+  interface's HE PPDUs carry, from the access point's HE Operation and
+  again whenever the BSS changes it.
 - **Cancel.** `cancel(TxId)` guarantees the attempt's terminal event:
   `Aborted` for an attempt not yet published, and for a published one
   whatever it ends with, which may be its natural completion. Ending a
@@ -146,7 +149,7 @@ from.
 | Backend | Base port | `LowerMacAmpdu` | `LowerMacBeaconTiming` | `LowerMacMonitor` | `LowerMacCancelPublished` |
 | --- | --- | --- | --- | --- | --- |
 | Host model (`model` feature, `LowerMacModel`) | Yes, four queues | Yes | Yes | Yes | Yes |
-| ESP32-S31 (`Esp32s31LowerMac`) | Yes, four queues | HT only, when built with aggregate owners | Station TSF and TBTT; access-point TSF restart only | Yes, without receiving interfaces | No |
+| ESP32-S31 (`Esp32s31LowerMac`) | Yes, four queues | HT and HE SU, when built with aggregate owners | Station TSF and TBTT; access-point TSF restart only | Yes, without receiving interfaces | No |
 
 The `model` module (built for the crate's tests and with the `model` feature)
 implements the port and every extension with an in-memory backend to show
@@ -190,7 +193,7 @@ operations map onto the S31 seams as follows:
 | `tx_buffer`, `TxBuffer` | A whole ordinary TX slot (`TxSlot`, pinned descriptor and DMA buffer); the MPDU is written after the metadata word. The attempt publishes that slot, so the frame is published where it was written, and the slot is lent again after the completion. `TX_BUFFERS` spare slots are lent |
 | `submit` of one MPDU | `OrdinaryTxOwner::start_queued_single_attempt` in `src/ordinary_tx.rs`: one `TxHardware` publication at the submitted rate with the caller's protection, backoff (the queue's ten-bit contention-window field) and power ceiling; the owner's retry ladder, rate fallback, backoff draw and BSS protection selection are not applied |
 | Queues | The four ordinary EDCA queues (voice, video, best effort, background), each with its own descriptor, completion bank and latched completion, timeout and collision state; one attempt per queue. Every MAC interrupt edge is offered to every published queue, which claims only its own state. A timeout abort forces the MAC-wide CCA for 16 µs, so aborts run one at a time and a queue timing out meanwhile aborts when that settle ends |
-| `LowerMacAmpdu` | One `RetainedDmaAmpduTx` per lent aggregate, in single-attempt mode: `begin`, `commit_ht` of every subframe, one `submit`; never `retain_for_ampdu_retry`. Subframes are `StableDmaBacking` leases of the integrator's `AmpduBackingSource` (as the station and access-point aggregate paths publish from), released to it on completion. HT only, at most the owner's slots and 6490 octets (the vendor's MCS 0 ceiling, `rx11NRate2AMPDULimit`); `min_mpdu_start_spacing` selects the queue's `HtProtectionSpacing`; the publication follows `ht_ampdu_publication_config` with the caller's protection, backoff and power ceiling. The completion's `BlockAckReport` is the BlockAck the hardware marks received (`HtAmpduTxCompletion::valid_block_ack`); without one the attempt failed |
+| `LowerMacAmpdu` | One `RetainedDmaAmpduTx` per lent aggregate, in single-attempt mode: `begin`, `commit_ht` (or `commit_he`) of every subframe, one `submit` (or `submit_he`); never `retain_for_ampdu_retry`. Subframes are `StableDmaBacking` leases of the integrator's `AmpduBackingSource` (as the station and access-point aggregate paths publish from), released to it on completion. HT and HE SU, at most the owner's slots (32 for HE) and 6490 octets (the vendor's MCS 0 ceiling, `rx11NRate2AMPDULimit`); `min_mpdu_start_spacing` selects the queue's `HtProtectionSpacing`; an HT publication follows `ht_ampdu_publication_config` and is refused in an access category with a TXOP limit (as the station's are); an HE one is an `HeAmpduTxConfig` within its access category's TXOP limit (`he_length_budget`, the empty delimiters of the recipient density) with the station's BSS color; both with the caller's protection, backoff and power ceiling. The completion's `BlockAckReport` is the BlockAck the hardware marks received (`HtAmpduTxCompletion::valid_block_ack`); without one the attempt failed |
 | `Backoff` | `Slots` up to 1023; `HardwareDraw` is refused: the S31 draws in software and the hardware only counts down |
 | `TxPower::MaxDbm` | The smaller of the calibrated pair and the ceiling, for the data and the RTS/CTS control frame, down to 0 dBm. S31 power codes follow the vendor's quarter-dBm target shifted right by two (`phy/src/tx/power.rs`), not a measured radiated power |
 | `coex` | `Normal` only: the static per-access-category priority of vendor data encapsulation (events 10-13 through `coex_pti_tab`). Other levels are refused; their event mapping is a pending policy decision |
@@ -202,6 +205,7 @@ operations map onto the S31 seams as follows:
 | `Vif`, `ReceiveFilter` | The smallest superset policy: station link policy six (`StaLinkRxPolicyHardware`) for the `BSS_MEMBER` rules, station ESP-NOW policy six mode two (`StaEspNowRxPolicyHardware`) when `OTHER_BSS_MANAGEMENT` is requested (the broadcast BSSID outside a BSS), access-point policy eight (`ApRxPolicyHardware`) for the `BSS_MEMBER` rules. Refused: other BSSs' management for the access point. One station and one access point; the station address is the one the cold start published |
 | `Edca` | `WifiTxRuntimePolicy::install_wmm`: all four records validated before any is installed; every attempt's AIFSN comes from its queue's record |
 | `TxGate` | `set_power_save_tx_block` on every ordinary queue; closing is refused (`Busy`) while an attempt is published, and an attempt admitted behind the closed gate is held and published when it opens |
+| `HeBssColor` | `WifiTxRuntimePolicy::install_he_bss_color` for the station interface, which every HE PPDU then carries; the access point has no HE |
 | `RxBeaconPriority` | `hal_set_rx_beacon_pti` with the beacon-window priority of the core's `BeaconWindowPriority` (the runtime's `RadioBeaconWindow` over the radio system's coexistence view), or zero, as both priorities; `hal_clear_rx_beacon_pti` for `Cleared` |
 | `install_key`, `RemoveKey` | CCMP-128 through `CcmpKeyHardware`: the station's pairwise and group slots, the access point's pairwise slots (lowest free association slot) and group slot |
 | `AddRxBlockAck`, `RemoveRxBlockAck` | The eight ordinary banks of `RxBlockAckHardware` |
@@ -212,7 +216,7 @@ operations map onto the S31 seams as follows:
 A published attempt cannot be withdrawn: the S31 abort path needs the
 queue's hardware timeout edge, so `cancel` ends a held attempt as `Aborted`
 and a published one with its own completion. What the ESP32-S31 lacks and
-why (HE and Trigger-based A-MPDU, the access-point TBTT schedule, the
+why (Trigger-based A-MPDU, the access-point TBTT schedule, the
 access-point TSF read and arbitrary set, on-air cancel, unicast no-ACK at HT
 and HE rates, coexistence levels other than `Normal`, 5 GHz) is recorded in
 the

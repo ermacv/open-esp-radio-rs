@@ -99,8 +99,9 @@ use oer_esp32s31_ieee80211_mac::{
     },
     sta_ap_registers::StaApRegisterHardware,
     tx::{
-        LegacyTxQueue, TxError, TxPhyRate, TxSlot, TxSlotState,
-        ampdu::{HtAmpduHardware, HtAmpduTxError},
+        HeEdcaTxopLimit, HtAmpduDensity, LegacyTxQueue, TxError, TxPhyRate, TxSlot, TxSlotState,
+        ampdu::{HeAmpduPolicy, HtAmpduHardware, HtAmpduTxError},
+        runtime::{he_txop_limit, require_ht_txop_support},
     },
 };
 use oer_ieee80211_lower_mac::{
@@ -122,7 +123,7 @@ use oer_ieee80211_mac::{
 use oer_ieee80211_softmac::MacTxPlan;
 
 use crate::{
-    ampdu_tx::{AmpduTxRoleAdapter, HtAmpduPublicationInputs},
+    ampdu_tx::AmpduTxRoleAdapter,
     ordinary_tx::{
         MAX_SINGLE_ATTEMPT_BACKOFF_SLOTS, OrdinaryTxError, OrdinaryTxInterface, OrdinaryTxOutcome,
         OrdinaryTxOwner, OrdinaryTxPlan, QueuedSingleAttempt, QueuedSingleAttemptProgress,
@@ -138,7 +139,7 @@ pub use ampdu::{
     AmpduBacking, AmpduBackingSource, ESP32S31_AMPDU_MAX_LENGTH, Esp32s31AmpduAttempt,
     Esp32s31AmpduBuffer, Esp32s31AmpduOwner, NoAmpdu, esp32s31_ampdu_capabilities,
 };
-use ampdu::{AmpduPlan, AmpduProgress, PublishedAmpdu};
+use ampdu::{AmpduFormat, AmpduPlan, AmpduProgress, AmpduPublication, PublishedAmpdu};
 
 /// The ordinary EDCA queues, each holding one attempt in flight.
 pub const LOWER_MAC_TX_QUEUES: usize = 4;
@@ -1241,7 +1242,23 @@ where
             LowerMacSetting::RxBeaconPriority(priority) => {
                 Ok(self.set_rx_beacon_priority(hardware, priority))
             }
+            LowerMacSetting::HeBssColor { vif, color } => Ok(self.set_he_bss_color(vif, color)),
         }
+    }
+
+    /// The station's HE BSS color, which every HE PPDU it sends carries:
+    /// the access point has no HE on the S31.
+    fn set_he_bss_color(&mut self, vif: VifId, color: u8) -> Result<(), SettingError> {
+        match self.vifs.get(usize::from(vif.0)).copied().flatten() {
+            Some(config) if config.role == VifRole::Station => {}
+            Some(_) => return Err(SettingError::UnsupportedRole),
+            None => return Err(SettingError::UnknownVif),
+        }
+        if color > 63 {
+            return Err(SettingError::Unsupported);
+        }
+        self.tx.policy_mut().install_he_bss_color(color);
+        Ok(())
     }
 
     // SOURCE(esp32s31): complete pinned `libpp.a[pm_coex.o]::pm_coex_update_rx_beacon_pti`
@@ -1847,11 +1864,6 @@ where
             attempt.coex,
         )?;
         let capabilities = self.ampdu_capabilities();
-        // HE aggregates need the recipient's HE TXOP and Trigger policy,
-        // which the port does not carry: outside the declared formats.
-        let TxPhyRate::Ht(rate) = common.rate else {
-            return Err(SubmitError::Unsupported);
-        };
         let buffer = &mut attempt.payload.subframes;
         let count = buffer.subframes();
         if count == 0 {
@@ -1869,51 +1881,97 @@ where
         if buffer.first_mpdu().is_none_or(|first| first[4] & 1 != 0) {
             return Err(SubmitError::Unsupported);
         }
-        // The owner's own length rule: the rate's ceiling and the declared
-        // maximum it was configured with when lent.
-        let mut budget = buffer
-            .owner
-            .ht_length_budget(rate)
-            .map_err(|_| SubmitError::Unsupported)?;
-        for len in buffer.lengths() {
-            let psdu = len + common.hardware_mic_length + TX_FCS_SIZE;
-            let psdu = u32::try_from(psdu).map_err(|_| SubmitError::Unsupported)?;
-            budget.push(psdu, 0).map_err(|_| SubmitError::Unsupported)?;
-        }
 
         let queue = common.queue;
         let ceiling = common.single.power_ceiling_dbm;
-        let data_power = self
+        let txop_limit = self
             .tx
-            .single_attempt_power_pair(rate.power_lookup_code(), ceiling);
+            .policy()
+            .access_policy(queue)
+            .txop_limit_units_32_us();
+        let density = HtAmpduDensity::from_ampdu_parameters(
+            (attempt.payload.min_mpdu_start_spacing & 0x07) << 2,
+        );
+        let psdu_lengths = buffer
+            .lengths()
+            .map(|len| len + common.hardware_mic_length + TX_FCS_SIZE);
+        let (power_code, format) = match common.rate {
+            TxPhyRate::Ht(rate) => {
+                // An HT aggregate keeps no TXOP limit, as the S31 station's
+                // aggregates do not.
+                require_ht_txop_support(txop_limit).map_err(|_| SubmitError::Unsupported)?;
+                // The owner's own length rule: the rate's ceiling and the
+                // declared maximum it was configured with when lent.
+                let mut budget = buffer
+                    .owner
+                    .ht_length_budget(rate)
+                    .map_err(|_| SubmitError::Unsupported)?;
+                for psdu in psdu_lengths {
+                    let psdu = u32::try_from(psdu).map_err(|_| SubmitError::Unsupported)?;
+                    budget.push(psdu, 0).map_err(|_| SubmitError::Unsupported)?;
+                }
+                (rate.power_lookup_code(), None)
+            }
+            TxPhyRate::He(rate) => {
+                // The access category's advertised TXOP limit bounds the
+                // aggregate's duration; the core sets no ceiling of its own.
+                let txop = he_txop_limit(txop_limit, HeEdcaTxopLimit::DEFAULT)
+                    .map_err(|_| SubmitError::Unsupported)?;
+                let policy = HeAmpduPolicy::new(rate, density, txop);
+                let mut budget = buffer
+                    .owner
+                    .he_length_budget(policy)
+                    .map_err(|_| SubmitError::Unsupported)?;
+                for psdu in psdu_lengths {
+                    let psdu = u16::try_from(psdu).map_err(|_| SubmitError::Unsupported)?;
+                    let delimiters = rate
+                        .ampdu_empty_delimiters(psdu, density)
+                        .ok_or(SubmitError::Unsupported)?;
+                    budget
+                        .push(u32::from(psdu), delimiters)
+                        .map_err(|_| SubmitError::Unsupported)?;
+                }
+                (rate.power_lookup_code(), Some(policy))
+            }
+            TxPhyRate::Legacy(_) => return Err(SubmitError::Unsupported),
+        };
+        let data_power = self.tx.single_attempt_power_pair(power_code, ceiling);
+        let publication = AmpduPublication {
+            data_power_primary: data_power.primary as u8,
+            data_power_alternate: data_power.alternate as u8,
+            control: self.tx.single_attempt_control_frame(
+                common.rate,
+                common.single.protection,
+                ceiling,
+            ),
+            aifsn: self.tx.policy().contention_parameters(queue).aifsn(),
+            contention_window: common.single.backoff_slots,
+            // `CoexPriority::Normal`, as for an MPDU.
+            scheduler_priority: queue.vendor_data_scheduler_priority(),
+            packet_priority: queue.vendor_data_packet_priority(),
+        };
+        let format = match (common.rate, format) {
+            (TxPhyRate::Ht(rate), _) => AmpduFormat::Ht {
+                rate,
+                protection_spacing: ampdu::protection_spacing(
+                    attempt.payload.min_mpdu_start_spacing,
+                ),
+            },
+            (_, Some(policy)) => AmpduFormat::He {
+                policy,
+                bss_color: self.tx.policy().he_bss_color(),
+            },
+            (_, None) => return Err(SubmitError::Unsupported),
+        };
         Ok(AmpduPlan {
             queue,
-            rate,
+            format,
             role: AmpduTxRoleAdapter {
                 interface: mac_interface(common.role),
                 hardware_key_selector: common.hardware_key_selector,
             },
             hardware_mic_length: common.hardware_mic_length as u8,
-            inputs: HtAmpduPublicationInputs {
-                rate,
-                aggregate_length: 0,
-                subframes: 0,
-                protection_spacing: ampdu::protection_spacing(
-                    attempt.payload.min_mpdu_start_spacing,
-                ),
-                data_power_primary: data_power.primary as u8,
-                data_power_alternate: data_power.alternate as u8,
-                control: self.tx.single_attempt_control_frame(
-                    TxPhyRate::Ht(rate),
-                    common.single.protection,
-                    ceiling,
-                ),
-                aifsn: self.tx.policy().contention_parameters(queue).aifsn(),
-                contention_window: common.single.backoff_slots,
-                // `CoexPriority::Normal`, as for an MPDU.
-                scheduler_priority: queue.vendor_data_scheduler_priority(),
-                packet_priority: queue.vendor_data_packet_priority(),
-            },
+            publication,
         })
     }
 }

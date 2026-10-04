@@ -991,7 +991,10 @@ fn attempts_on_different_queues_complete_by_their_identity() {
     assert_eq!(port.capabilities().tx_queues, 4);
     let capabilities = port.ampdu_capabilities();
     assert_eq!(capabilities.max_subframes, 2);
-    assert_eq!(capabilities.formats, PhyFormatSet::HT);
+    assert_eq!(
+        capabilities.formats,
+        PhyFormatSet::HT.union(PhyFormatSet::HE)
+    );
 
     // An MPDU on the voice queue.
     let mut buffer = port.tx_buffer(26).unwrap().unwrap();

@@ -107,6 +107,10 @@ pub struct ScriptedAp {
     /// Its BSS is 40 MHz wide with the secondary channel above: its HT
     /// Capabilities admit 40 MHz and an HT Operation names the offset.
     pub ht40: bool,
+    /// Its BSS is HE with this BSS color: its beacons and Probe Responses
+    /// carry HT Capabilities, HE Capabilities admitting MCS 0-9 and an HE
+    /// Operation.
+    pub he_bss_color: Option<u8>,
     /// The WMM Parameter Element of its Association Response, in place of
     /// the WMM Information element.
     pub wmm_association: Option<Vec<u8>>,
@@ -143,6 +147,7 @@ impl ScriptedAp {
             wmm_beacon: None,
             ht: false,
             ht40: false,
+            he_bss_color: None,
             wmm_association: None,
             replay_counter: 0,
         }
@@ -470,8 +475,14 @@ impl ScriptedAp {
             let mut operation = [0_u8; 24];
             operation[..4].copy_from_slice(&[61, 22, AP_CHANNEL, 0x05]);
             frame.extend_from_slice(&operation);
-        } else if self.ht {
+        } else if self.ht || self.he_bss_color.is_some() {
             frame.extend_from_slice(&HT_CAPABILITIES);
+        }
+        if let Some(color) = self.he_bss_color {
+            frame.extend_from_slice(&HE_CAPABILITIES);
+            // HE Operation: no parameters, the BSS color, HE-MCS 0-9 on one
+            // stream.
+            frame.extend_from_slice(&[255, 7, 36, 0, 0, 0, color, 0xfd, 0xff]);
         }
         if let Some(wmm) = &self.wmm_beacon {
             frame.extend_from_slice(wmm);
@@ -612,6 +623,13 @@ pub fn wmm_parameter_element(count: u8, records: [(u8, u8, u8, u16); 4]) -> Vec<
     }
     element
 }
+
+/// An HE Capabilities element admitting HE-MCS 0-9 both ways on one
+/// stream at 20 MHz.
+pub const HE_CAPABILITIES: [u8; 24] = [
+    255, 22, 35, 0x03, 0x18, 0x9c, 0xca, 0x10, 0x80, 0x00, 0x10, 0x8a, 0x1b, 0x0d, 0xc0, 0x1f,
+    0x00, 0x02, 0x82, 0x01, 0xfd, 0xff, 0xfd, 0xff,
+];
 
 /// An HT Capabilities element: MCS 0-7, A-MPDU up to 64 KiB.
 pub const HT_CAPABILITIES: [u8; 28] = [

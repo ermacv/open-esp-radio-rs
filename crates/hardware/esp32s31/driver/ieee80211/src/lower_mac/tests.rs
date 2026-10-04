@@ -2188,6 +2188,124 @@ fn an_aggregate_is_published_once_and_reports_its_block_ack() {
     assert_eq!(source.free(), BACKINGS);
 }
 
+fn he_rate() -> PhyRate {
+    PhyRate::He(
+        phy::HeRate::new(
+            phy::HeMcs::new(7).unwrap(),
+            SpatialStreams::new(1).unwrap(),
+            PpduBandwidth::Mhz20,
+            HeGiLtf::Ltf2xGi800Ns,
+            FecCoding::Ldpc,
+            false,
+        )
+        .unwrap(),
+    )
+}
+
+/// The WMM set of an access point whose best-effort category has a TXOP
+/// limit of `txop_units_32_us`.
+fn wmm_with_best_effort_txop(
+    txop_units_32_us: u16,
+) -> oer_ieee80211_mac::extensions::wmm::WmmParameterSet {
+    use oer_ieee80211_mac::extensions::wmm::WmmAcParameters;
+    let category = |aifsn, txop| WmmAcParameters {
+        admission_control_mandatory: false,
+        aifsn,
+        ecw_min: 4,
+        ecw_max: 10,
+        txop_limit_units_32_us: txop,
+    };
+    oer_ieee80211_mac::extensions::wmm::WmmParameterSet::new(
+        0,
+        false,
+        [
+            category(3, txop_units_32_us),
+            category(7, 0),
+            category(2, 94),
+            category(2, 47),
+        ],
+    )
+}
+
+#[test]
+fn he_aggregates_publish_an_he_program_with_the_station_bss_color() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    let source = core.ampdu_source.unwrap();
+    assert!(core.ampdu_capabilities().formats.contains_rate(he_rate()));
+    core.apply(
+        &mut hardware,
+        LowerMacSetting::HeBssColor {
+            vif: STA,
+            color: 0x2a,
+        },
+    )
+    .unwrap()
+    .unwrap();
+
+    let mut request = aggregate(&mut core, 1, WmmAccessCategory::BestEffort, 3);
+    request.rate = he_rate();
+    let plan = core.admit_ampdu(&mut request).unwrap();
+    assert!(matches!(
+        plan.format,
+        AmpduFormat::He {
+            bss_color: 0x2a,
+            ..
+        }
+    ));
+    assert_eq!(submit_ampdu(&mut core, &mut hardware, request), Ok(Ok(())));
+    assert_eq!(hardware.he.len(), 1);
+    assert_eq!(usize::from(hardware.he[0].0), BE);
+    assert!(hardware.ht.is_empty());
+    assert_eq!(published_ampdu(&core, BE).owner().frame_count(), 3);
+
+    hardware.block_ack_completion[BE] = Some(block_ack_completion(0, 100, 0b111, true));
+    let completions = service(&mut core, &mut hardware, interrupt(EVENT_TX_COMPLETE));
+    assert_eq!(completions.len(), 1);
+    assert_eq!(completions[0].status, TxStatus::Success);
+    assert_eq!(source.free(), BACKINGS);
+}
+
+#[test]
+fn an_access_category_with_a_txop_limit_takes_he_aggregates_but_not_ht_ones() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    core.apply(
+        &mut hardware,
+        LowerMacSetting::Edca(wmm_with_best_effort_txop(94)),
+    )
+    .unwrap()
+    .unwrap();
+    // An HT aggregate keeps no TXOP limit.
+    let request = aggregate(&mut core, 1, WmmAccessCategory::BestEffort, 2);
+    assert_eq!(
+        submit_ampdu(&mut core, &mut hardware, request),
+        Ok(Err(SubmitError::Unsupported))
+    );
+    // An HE aggregate keeps it.
+    let mut request = aggregate(&mut core, 2, WmmAccessCategory::BestEffort, 2);
+    request.rate = he_rate();
+    assert_eq!(submit_ampdu(&mut core, &mut hardware, request), Ok(Ok(())));
+    assert_eq!(hardware.he.len(), 1);
+}
+
+#[test]
+fn the_he_bss_color_is_the_station_interface_s_and_at_most_63() {
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    let color = |vif, color| LowerMacSetting::HeBssColor { vif, color };
+    assert_eq!(
+        core.apply(&mut hardware, color(STA, 64)),
+        Ok(Err(SettingError::Unsupported))
+    );
+    assert_eq!(
+        core.apply(&mut hardware, color(VifId(3), 1)),
+        Ok(Err(SettingError::UnknownVif))
+    );
+    core.apply(&mut hardware, color(STA, 63)).unwrap().unwrap();
+    assert_eq!(core.tx.policy().he_bss_color(), 63);
+}
+
 #[test]
 fn aggregates_outside_the_limits_are_refused_with_their_subframes() {
     let mut hardware = Hardware::default();
@@ -2206,7 +2324,7 @@ fn aggregates_outside_the_limits_are_refused_with_their_subframes() {
     );
 
     let refusals: [AmpduRefusal; 4] = [
-        // HE aggregates are outside the declared formats, as are non-HT.
+        // Non-HT aggregates are outside the declared formats.
         (
             |request| request.rate = PhyRate::Legacy(LegacyRate::Ofdm24M),
             SubmitError::Unsupported,
@@ -2229,12 +2347,9 @@ fn aggregates_outside_the_limits_are_refused_with_their_subframes() {
             Ok(Err(expected))
         );
     }
-    let mut request = aggregate(&mut core, 1, WmmAccessCategory::BestEffort, 2);
-    request.rate = he;
-    assert_eq!(
-        submit_ampdu(&mut core, &mut hardware, request),
-        Ok(Err(SubmitError::Unsupported))
-    );
+    // An HE aggregate of more subframes than an HE publication holds is
+    // refused as an HT one would be: the owner lends only `SUBFRAMES`.
+    let _ = he;
 
     // An empty aggregate, a group receiver and one longer than the declared
     // maximum length.

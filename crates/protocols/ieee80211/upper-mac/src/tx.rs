@@ -559,6 +559,11 @@ impl<B: HeTxopRtsBudget> TxPlanner<B> {
             aggregate_attempts: exchange.aggregate_attempts,
             aggregate_rate: exchange.request.initial_rate,
             block_acknowledged_subframes: u16::from(state.acknowledged()),
+            ack_snr_db: if state.acknowledged() > 0 {
+                exchange.ack_snr_db
+            } else {
+                None
+            },
             individual_retries: exchange.individual,
         });
         exchange.phase = Phase::Done;

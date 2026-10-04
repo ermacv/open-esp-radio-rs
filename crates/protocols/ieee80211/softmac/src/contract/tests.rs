@@ -137,6 +137,7 @@ fn ampdu_status_joins_block_ack_and_individual_retries() {
         aggregate_rate: 7_u8,
         block_acknowledged_subframes: 2,
         individual_retries: MacIndividualRetries::NONE,
+        ack_snr_db: None,
     };
     assert_eq!(status.delivered_subframes(), 2);
     assert!(!status.fully_delivered());

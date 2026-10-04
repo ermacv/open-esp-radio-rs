@@ -1357,7 +1357,18 @@ impl StaRateControl for EspressifRateControl {
             .update_tx_per(u32::from(attempts.saturating_sub(1)));
     }
 
-    fn observe_ampdu(&mut self, now: Instant, attempted: u16, acknowledged: u16) {
+    fn observe_ampdu(
+        &mut self,
+        now: Instant,
+        attempted: u16,
+        acknowledged: u16,
+        ack_snr_db: Option<i8>,
+    ) {
+        // As the S31 station: the BlockAck's ACK SNR feeds the filter the
+        // aggregate thresholds read, before the window is evaluated.
+        if let Some(sample) = ack_snr_db {
+            self.association.update_ack_snr(sample);
+        }
         // The vendor's wrapping 32-bit microsecond clock.
         let _ = self.association.observe_ampdu_block_ack(
             now.as_micros() as u32,

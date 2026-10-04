@@ -586,4 +586,12 @@ mod seam {
         }
         assert!(control.mpdu_rate().nominal_kbps() < before);
     }
+
+    #[test]
+    fn a_block_ack_s_ack_snr_feeds_the_filter() {
+        let mut control = EspressifRateControl::associate((), &ht20_peer(true), Some(60));
+        assert_eq!(control.association().filtered_ack_snr(), None);
+        control.observe_ampdu(oer_time::Instant::from_micros(1_000), 4, 4, Some(30));
+        assert!(control.association().filtered_ack_snr().is_some());
+    }
 }

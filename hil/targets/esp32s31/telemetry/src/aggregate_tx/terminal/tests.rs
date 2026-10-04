@@ -9,6 +9,7 @@ fn status(result: MacAmpduTxResult, acknowledged: u16) -> MacAmpduTxStatus<()> {
         aggregate_rate: (),
         block_acknowledged_subframes: acknowledged,
         individual_retries: MacIndividualRetries::NONE,
+        ack_snr_db: None,
     }
 }
 

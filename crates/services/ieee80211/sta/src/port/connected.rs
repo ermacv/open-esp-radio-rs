@@ -57,6 +57,13 @@ use super::{
     wire,
 };
 
+/// The SIFS and the compressed BlockAck that answers an aggregate, at the
+/// lowest mandatory ERP-OFDM rate (6 Mb/s): the response a TXOP holds after
+/// the aggregate.
+const BLOCK_ACK_RESPONSE_MICROS: u32 = 10
+    + oer_ieee80211_mac::phy::PhyRate::Legacy(oer_ieee80211_mac::phy::LegacyRate::Ofdm6M)
+        .max_ppdu_duration_micros(32);
+
 /// MPDUs the reorder buffers of all agreements hold together.
 pub const PORT_REORDER_SLOTS: usize = 8;
 /// The widest receive Block Ack window the station accepts.
@@ -81,6 +88,9 @@ pub struct PortConnectionConfig {
     pub association_id: StaAssociationId,
     /// The access point takes QoS data frames.
     pub peer_qos: bool,
+    /// The EDCA parameters the station contends with: the Association
+    /// Response's set, else the one the access point advertised.
+    pub edca: Option<oer_ieee80211_mac::extensions::wmm::WmmParameterSet>,
     /// The association protects its robust management frames.
     pub management_protection: bool,
     /// The random source of the first SA Query transaction identifier.
@@ -443,6 +453,17 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
     /// How many queued frames of `priority` from the head one A-MPDU
     /// carries: those its operational agreement's window, the port's and
     /// the peer's limits admit; one where no A-MPDU applies.
+    /// The TXOP limit of `priority`'s access category in microseconds;
+    /// `None` without one.
+    fn txop_limit_micros(&self, priority: WmmUserPriority) -> Option<u32> {
+        let units = self
+            .config
+            .edca?
+            .access_category(priority.access_category())
+            .txop_limit_units_32_us;
+        (units != 0).then_some(u32::from(units) * 32)
+    }
+
     fn aggregate_run<X: PortStationEnv<Port = P>>(
         &self,
         context: &ConnectionContext<'_, '_, X>,
@@ -473,6 +494,8 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
         let peer_length =
             (1_u32 << (13 + u32::from(self.config.peer.ht_ampdu_parameters & 0x03))) - 1;
         let maximum = peer_length.min(capabilities.max_length);
+        let txop = self.txop_limit_micros(priority);
+        let rate = context.link.config().data_rate;
         let mut length = 0_u32;
         let mut run = 0;
         for index in 0..self.queue.head_run(limit) {
@@ -483,6 +506,13 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
             // padding to four octets: a bound of the encoded subframe.
             let subframe = (4 + 26 + 8 + 8 + frame.ethernet().len() as u32 + 8 + 4 + 3) & !3;
             if length + subframe > maximum {
+                break;
+            }
+            // The aggregate and its BlockAck stay within the access
+            // category's TXOP limit; a single MPDU may exceed it.
+            if txop.is_some_and(|txop| {
+                rate.max_ppdu_duration_micros(length + subframe) + BLOCK_ACK_RESPONSE_MICROS > txop
+            }) {
                 break;
             }
             length += subframe;

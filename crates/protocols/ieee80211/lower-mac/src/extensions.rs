@@ -53,7 +53,10 @@ pub struct AmpduCapabilities {
     pub formats: PhyFormatSet,
     /// The longest A-MPDU in octets, delimiters and padding included, that
     /// the backend sends at every rate of `formats`. The recipient's own
-    /// Maximum A-MPDU Length stays the caller's to respect.
+    /// Maximum A-MPDU Length stays the caller's to respect, as does the
+    /// TXOP limit of the attempt's access category: the caller keeps the
+    /// aggregate and its BlockAck within it, and a backend refuses no
+    /// aggregate by it.
     pub max_length: u32,
 }
 

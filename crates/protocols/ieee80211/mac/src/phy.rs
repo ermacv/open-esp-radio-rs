@@ -294,6 +294,15 @@ impl HeRate {
     /// 27.5.1), for the full-bandwidth resource unit; DCM halves the data
     /// subcarriers.
     pub const fn nominal_kbps(self) -> u32 {
+        let symbol_ns = 12_800 + self.gi_ltf.guard_interval_ns() as u64;
+        let (numerator, denominator) = self.data_bits_per_symbol();
+        (numerator * 1_000_000 / (denominator * symbol_ns)) as u32
+    }
+
+    /// Data bits per OFDM symbol (N_DBPS) of the full-bandwidth resource
+    /// unit, as a fraction: data subcarriers times coded bits, coding rate
+    /// and spatial streams; DCM halves the data subcarriers.
+    const fn data_bits_per_symbol(self) -> (u64, u64) {
         // Data subcarriers of the 242-, 484-, 996- and 2x996-tone RUs.
         let subcarriers: u64 = match self.bandwidth {
             PpduBandwidth::Mhz20 => 234,
@@ -317,11 +326,11 @@ impl HeRate {
             (10, 5, 6),
         ];
         let (bits, rate_numerator, rate_denominator) = MODULATION[self.mcs.0 as usize];
-        let symbol_ns = 12_800 + self.gi_ltf.guard_interval_ns() as u64;
         let dcm = if self.dcm { 2 } else { 1 };
-        let kbps = subcarriers * bits * rate_numerator * self.spatial_streams.0 as u64 * 1_000_000
-            / (rate_denominator * dcm * symbol_ns);
-        kbps as u32
+        (
+            subcarriers * bits * rate_numerator * self.spatial_streams.0 as u64,
+            rate_denominator * dcm,
+        )
     }
 }
 
@@ -349,6 +358,75 @@ impl PhyRate {
             Self::Legacy(rate) => rate.kbps(),
             Self::Ht(rate) => rate.nominal_kbps(),
             Self::He(rate) => rate.nominal_kbps(),
+        }
+    }
+
+    /// An upper bound of the time on air, in microseconds, of a 2.4 GHz
+    /// PPDU carrying `psdu_octets` at this rate (TXTIME, IEEE Std
+    /// 802.11-2020 15.4.3, 17.4.3, 19.4.3 and 802.11ax-2021 27.4.3): the
+    /// preamble, every data symbol with the BCC tail bits, the 6 us signal
+    /// extension of an OFDM PPDU, and for HE the longest packet extension
+    /// (16 us). A caller keeping an exchange within a TXOP limit stays
+    /// within the limit by this bound.
+    pub const fn max_ppdu_duration_micros(self, psdu_octets: u32) -> u32 {
+        const SIGNAL_EXTENSION: u64 = 6;
+        let psdu_bits = 8 * psdu_octets as u64;
+        match self {
+            Self::Legacy(rate) if !rate.is_ofdm() => {
+                let preamble = match rate {
+                    LegacyRate::Dsss2M(DsssPreamble::Short)
+                    | LegacyRate::Cck5M5(DsssPreamble::Short)
+                    | LegacyRate::Cck11M(DsssPreamble::Short) => 96,
+                    _ => 192,
+                };
+                (preamble + (psdu_bits * 1_000).div_ceil(rate.kbps() as u64)) as u32
+            }
+            Self::Legacy(rate) => {
+                // N_DBPS: the rate times the 4 us symbol.
+                let bits_per_symbol = rate.kbps() as u64 * 4 / 1_000;
+                let symbols = (16 + psdu_bits + 6).div_ceil(bits_per_symbol);
+                (20 + 4 * symbols + SIGNAL_EXTENSION) as u32
+            }
+            Self::Ht(rate) => {
+                // N_DBPS of the long-GI rate times its 4 us symbol; the
+                // short GI shortens the symbol, not its bits.
+                let long_gi = HtRate {
+                    short_gi: false,
+                    ..rate
+                };
+                let bits_per_symbol = long_gi.nominal_kbps() as u64 * 4 / 1_000;
+                let streams = rate.mcs.spatial_streams() as u64;
+                // One BCC encoder per 300 Mb/s.
+                let encoders = (rate.nominal_kbps() as u64).div_ceil(300_000);
+                let symbols = (16 + psdu_bits + 6 * encoders).div_ceil(bits_per_symbol);
+                let data = if rate.short_gi {
+                    // 3.6 us symbols, the PPDU rounded up to 4 us.
+                    4 * (symbols * 9).div_ceil(10)
+                } else {
+                    4 * symbols
+                };
+                // L-STF, L-LTF, L-SIG, HT-SIG, HT-STF and the HT-LTFs.
+                let ltfs = if streams > 2 { 4 } else { streams };
+                (36 + 4 * (ltfs - 1) + data + SIGNAL_EXTENSION) as u32
+            }
+            Self::He(rate) => {
+                let (numerator, denominator) = rate.data_bits_per_symbol();
+                let streams = rate.spatial_streams.0 as u64;
+                let encoders = (rate.nominal_kbps() as u64).div_ceil(600_000);
+                // Symbols: the bits over N_DBPS, rounded up.
+                let symbols = ((16 + psdu_bits + 6 * encoders) * denominator).div_ceil(numerator);
+                let guard_ns = rate.gi_ltf.guard_interval_ns() as u64;
+                let ltf_ns = match rate.gi_ltf {
+                    HeGiLtf::Ltf1xGi800Ns => 3_200,
+                    HeGiLtf::Ltf2xGi800Ns | HeGiLtf::Ltf2xGi1600Ns => 6_400,
+                    HeGiLtf::Ltf4xGi3200Ns => 12_800,
+                } + guard_ns;
+                let ltfs = if streams > 2 { 4 } else { streams };
+                // L-STF, L-LTF, L-SIG, RL-SIG, HE-SIG-A, HE-STF, then the
+                // HE-LTFs and the data symbols.
+                let ns = 36_000 + ltfs * ltf_ns + symbols * (12_800 + guard_ns);
+                (ns.div_ceil(1_000) + 16 + SIGNAL_EXTENSION) as u32
+            }
         }
     }
 }

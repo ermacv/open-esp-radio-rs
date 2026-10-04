@@ -975,6 +975,65 @@ fn an_he_association_sets_the_bss_color_of_its_access_point_body() {
 }
 
 #[test]
+fn an_aggregate_and_its_block_ack_stay_within_the_txop_limit() {
+    on_large_stack(an_aggregate_and_its_block_ack_stay_within_the_txop_limit_body);
+}
+
+fn an_aggregate_and_its_block_ack_stay_within_the_txop_limit_body() {
+    use oer_ieee80211_mac::phy::{HtMcs, HtRate, PpduBandwidth};
+    static PMKSA: StaSharedPmksa = StaSharedPmksa::new();
+    let ht = PhyRate::Ht(HtRate::new(HtMcs::new(7).unwrap(), PpduBandwidth::Mhz20, true).unwrap());
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Wpa2Psk);
+    ap.ht = true;
+    // Best effort may hold the air for 160 us: at HT20 MCS 7 with the
+    // short GI three of the four frames and the BlockAck fit, four do not.
+    ap.wmm_association = Some(scripted_ap::wmm_parameter_element(
+        1,
+        [(3, 4, 10, 5), (7, 4, 10, 0), (2, 3, 4, 94), (2, 2, 3, 47)],
+    ));
+    let mut station = connect(
+        &world,
+        &mut ap,
+        world.station_at(wpa2(&PMKSA), block_ack_profile(), ht),
+    );
+    let mut delivered = Vec::new();
+    world.run_for(&mut ap, &mut station, 5, &mut delivered);
+    ap.absorb(world.model);
+    let request = ap
+        .actions
+        .iter()
+        .find(|action| action.starts_with(&[3, 0]))
+        .unwrap()
+        .clone();
+    let mut response = ap.management(0xd0, STA);
+    response.extend_from_slice(&scripted_ap::addba_response(request[2], 0, 0, 16));
+    ap.queue(response);
+    world.run_for(&mut ap, &mut station, 5, &mut delivered);
+    let before = world.model.submitted().len();
+
+    for payload in [b"a".as_slice(), b"b", b"c", b"d"] {
+        assert_eq!(
+            station.send(&ethernet(PEER, IPV4, payload), 0),
+            Ok(PortSend::Queued)
+        );
+    }
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 5, &mut delivered),
+        None
+    );
+    let submitted = world.model.submitted();
+    let data: Vec<_> = submitted[before..]
+        .iter()
+        .filter(|attempt| attempt.frames[0][0] == 0x88)
+        .collect();
+    assert_eq!(data.len(), 2);
+    assert!(data[0].ampdu && data[0].frames.len() == 3);
+    assert!(!data[1].ampdu);
+    assert!(station.connection().is_some());
+}
+
+#[test]
 fn power_save_dozes_and_wakes_for_buffered_traffic_at_a_tbtt() {
     on_large_stack(power_save_dozes_and_wakes_for_buffered_traffic_at_a_tbtt_body);
 }

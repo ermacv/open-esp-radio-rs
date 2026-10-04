@@ -2267,7 +2267,7 @@ fn he_aggregates_publish_an_he_program_with_the_station_bss_color() {
 }
 
 #[test]
-fn an_access_category_with_a_txop_limit_takes_he_aggregates_but_not_ht_ones() {
+fn an_access_category_with_a_txop_limit_takes_ht_and_he_aggregates() {
     let mut hardware = Hardware::default();
     let mut core = enabled(&mut hardware);
     core.apply(
@@ -2276,13 +2276,13 @@ fn an_access_category_with_a_txop_limit_takes_he_aggregates_but_not_ht_ones() {
     )
     .unwrap()
     .unwrap();
-    // An HT aggregate keeps no TXOP limit.
+    // The caller keeps an aggregate within the limit: the core refuses
+    // neither format by it.
     let request = aggregate(&mut core, 1, WmmAccessCategory::BestEffort, 2);
-    assert_eq!(
-        submit_ampdu(&mut core, &mut hardware, request),
-        Ok(Err(SubmitError::Unsupported))
-    );
-    // An HE aggregate keeps it.
+    assert_eq!(submit_ampdu(&mut core, &mut hardware, request), Ok(Ok(())));
+    assert_eq!(hardware.ht.len(), 1);
+    hardware.block_ack_completion[BE] = Some(block_ack_completion(0, 100, 0b11, true));
+    service(&mut core, &mut hardware, interrupt(EVENT_TX_COMPLETE));
     let mut request = aggregate(&mut core, 2, WmmAccessCategory::BestEffort, 2);
     request.rate = he_rate();
     assert_eq!(submit_ampdu(&mut core, &mut hardware, request), Ok(Ok(())));

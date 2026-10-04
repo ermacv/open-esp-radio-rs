@@ -16,8 +16,8 @@ use oer_ieee80211_mac::{
         CcmpTxPacketNumber,
     },
     data::{
-        DataInterfaceRole, ETHERNET_HEADER_LEN, RxDuplicateFilter, decapsulate_data_frames,
-        plan_data_encapsulation,
+        DataDecapError, DataInterfaceRole, ETHERNET_HEADER_LEN, RxDuplicateFilter,
+        decapsulate_data_frames, plan_data_decapsulation, plan_data_encapsulation,
     },
     management::{BROADCAST_ADDRESS, ProbeRequest},
     management_protection::{SA_QUERY_CATEGORY, SaQuery, is_robust_action_category},
@@ -52,7 +52,7 @@ use oer_time::{Clock, Duration, Instant};
 use super::{
     link::{
         PORT_FRAME_CAPACITY, PortConnectionFrame, PortError, PortFrame, PortInput, PortLink,
-        PortLinkError, PortStationEnv,
+        PortLinkError, PortMsdu, PortStationEnv,
     },
     power::{PortPowerSave, PowerContext, acknowledged},
     rsn::{EAPOL_ETHER_TYPE, PortKeys, send_protected_eapol},
@@ -162,6 +162,15 @@ pub struct PortRxCounters {
     /// Out-of-order MPDUs longer than [`PORT_FRAME_CAPACITY`], which the
     /// reorder storage cannot hold.
     pub unbuffered: u32,
+}
+
+/// Where one checked data MPDU's payload lies, and whether it came under
+/// the pairwise key.
+#[derive(Clone, Copy)]
+struct MpduPayload {
+    offset: usize,
+    length: usize,
+    pairwise: bool,
 }
 
 /// An out-of-order MPDU a reorder window keeps: a copy, so that the port's
@@ -850,7 +859,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         deadline: Instant,
-        deliver: &mut impl FnMut(&[u8]),
+        deliver: &mut impl FnMut(PortMsdu<'_, P::RxBuffer>),
     ) -> Result<Option<PortDisconnect>, PortLinkError<PortError<X>>> {
         loop {
             if let Some(disconnect) = self.expire(context).await? {
@@ -950,7 +959,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         input: PortInput<P::RxBuffer>,
-        deliver: &mut impl FnMut(&[u8]),
+        deliver: &mut impl FnMut(PortMsdu<'_, P::RxBuffer>),
     ) -> Result<Option<PortDisconnect>, PortLinkError<PortError<X>>> {
         let frame = match input {
             PortInput::Frame(frame) => frame,
@@ -1203,7 +1212,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
     }
 
     /// A BlockAckReq moves its agreement's window.
-    fn control(&mut self, bytes: &[u8], deliver: &mut impl FnMut(&[u8])) {
+    fn control(&mut self, bytes: &[u8], deliver: &mut impl FnMut(PortMsdu<'_, P::RxBuffer>)) {
         if wire::subtype(bytes) != BLOCK_ACK_REQUEST_SUBTYPE || bytes.len() < 20 {
             return;
         }
@@ -1227,7 +1236,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         frame: PortFrame<P::RxBuffer>,
-        deliver: &mut impl FnMut(&[u8]),
+        deliver: &mut impl FnMut(PortMsdu<'_, P::RxBuffer>),
     ) -> Result<(), PortLinkError<PortError<X>>> {
         let bytes = frame.bytes();
         let Some(receiver) = wire::address1(bytes) else {
@@ -1270,7 +1279,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
         }
         match tid.filter(|_| !group) {
             Some(tid) if self.block_ack(tid) => self.reorder_mpdu(tid, frame, deliver),
-            _ => self.deliver(frame.bytes(), deliver),
+            _ => self.deliver_mpdu(frame, deliver),
         }
         if let Some(eapol) = self.eapol.take() {
             self.group_rekey(context, eapol).await?;
@@ -1359,7 +1368,11 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
     /// Release the buffered run of every window whose gap timed out, then
     /// time the gap of every window that buffers an MPDU from the first one
     /// it retained (a window that buffers nothing has no gap).
-    fn expire_reorder_gaps(&mut self, now: Instant, deliver: &mut impl FnMut(&[u8])) {
+    fn expire_reorder_gaps(
+        &mut self,
+        now: Instant,
+        deliver: &mut impl FnMut(PortMsdu<'_, P::RxBuffer>),
+    ) {
         for tid in 0..TIDS {
             if self.reorder_gaps[tid].is_some_and(|due| due <= now) {
                 self.reorder_gaps[tid] = None;
@@ -1393,7 +1406,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
         &mut self,
         tid: u8,
         frame: PortFrame<P::RxBuffer>,
-        deliver: &mut impl FnMut(&[u8]),
+        deliver: &mut impl FnMut(PortMsdu<'_, P::RxBuffer>),
     ) {
         let sequence = SequenceNumber::from_sequence_control(wire::sequence_control(frame.bytes()));
         let Some(window) = self.buffers.reorder[usize::from(tid)].as_ref() else {
@@ -1407,7 +1420,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
             }
             Err(_) => return,
         };
-        let slot = if kept {
+        let (slot, current) = if kept {
             let Some(slot) = self.free_slot(tid, deliver) else {
                 return;
             };
@@ -1416,9 +1429,10 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
                 return;
             };
             self.buffers.slots[slot] = Some(stored);
-            slot as u8
+            // The copy is kept; the port's buffer goes back now.
+            (slot as u8, None)
         } else {
-            CURRENT_SLOT
+            (CURRENT_SLOT, Some(frame))
         };
         let Some(window) = self.buffers.reorder[usize::from(tid)].as_mut() else {
             self.clear_slot(slot);
@@ -1430,7 +1444,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
                     self.clear_slot(slot);
                     self.counters.behind_window = self.counters.behind_window.saturating_add(1);
                 }
-                self.release(&release, Some(&frame), deliver);
+                self.release(&release, current, deliver);
             }
             Err(RxReorderError::DuplicateSequence(_)) => {
                 self.clear_slot(slot);
@@ -1442,7 +1456,11 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
 
     /// A free storage slot, releasing the oldest run of `tid`'s window
     /// to make room when every slot is taken.
-    fn free_slot(&mut self, tid: u8, deliver: &mut impl FnMut(&[u8])) -> Option<usize> {
+    fn free_slot(
+        &mut self,
+        tid: u8,
+        deliver: &mut impl FnMut(PortMsdu<'_, P::RxBuffer>),
+    ) -> Option<usize> {
         if let Some(slot) = self.buffers.slots.iter().position(Option::is_none) {
             return Some(slot);
         }
@@ -1464,13 +1482,13 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
     fn release(
         &mut self,
         release: &RxReorderRelease<PORT_REORDER_WINDOW>,
-        current: Option<&PortFrame<P::RxBuffer>>,
-        deliver: &mut impl FnMut(&[u8]),
+        mut current: Option<PortFrame<P::RxBuffer>>,
+        deliver: &mut impl FnMut(PortMsdu<'_, P::RxBuffer>),
     ) {
         for mpdu in release.iter() {
             if mpdu.slot == CURRENT_SLOT {
-                if let Some(frame) = current {
-                    self.deliver(frame.bytes(), deliver);
+                if let Some(frame) = current.take() {
+                    self.deliver_mpdu(frame, deliver);
                 }
             } else if let Some(stored) = self
                 .buffers
@@ -1478,7 +1496,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
                 .get_mut(usize::from(mpdu.slot))
                 .and_then(Option::take)
             {
-                self.deliver(stored.bytes(), deliver);
+                self.deliver_stored(stored.bytes(), deliver);
             }
         }
     }
@@ -1492,8 +1510,63 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
         }
     }
 
-    /// Check one in-order MPDU's packet number and hand its MSDUs on.
-    fn deliver(&mut self, bytes: &[u8], deliver: &mut impl FnMut(&[u8])) {
+    /// Check one in-order MPDU's packet number and hand its MSDUs on: the
+    /// only MSDU of an MPDU in the port's buffer, the MSDUs of an A-MSDU
+    /// as parts.
+    fn deliver_mpdu(
+        &mut self,
+        frame: PortFrame<P::RxBuffer>,
+        deliver: &mut impl FnMut(PortMsdu<'_, P::RxBuffer>),
+    ) {
+        let bytes = frame.bytes();
+        let Some(payload) = self.checked_payload(bytes) else {
+            return;
+        };
+        match plan_data_decapsulation(
+            DataInterfaceRole::Station,
+            bytes,
+            payload.offset,
+            payload.length,
+        ) {
+            Ok(plan) => {
+                let range = plan.payload_offset..plan.payload_offset + plan.payload_length;
+                let Some(body) = bytes.get(range.clone()) else {
+                    self.counters.malformed = self.counters.malformed.saturating_add(1);
+                    return;
+                };
+                if payload.pairwise && plan.ether_type == EAPOL_ETHER_TYPE {
+                    self.keep_eapol(body);
+                    return;
+                }
+                self.counters.delivered = self.counters.delivered.saturating_add(1);
+                deliver(PortMsdu::Buffer {
+                    buffer: frame.into_buffer(),
+                    destination: plan.destination,
+                    source: plan.source,
+                    ether_type: plan.ether_type,
+                    payload: range,
+                });
+            }
+            Err(DataDecapError::AmsduUnsupported) => self.deliver_parts(bytes, payload, deliver),
+            Err(_) => self.counters.malformed = self.counters.malformed.saturating_add(1),
+        }
+    }
+
+    /// Check one MPDU a reorder window kept and hand its MSDUs on as
+    /// parts.
+    fn deliver_stored(
+        &mut self,
+        bytes: &[u8],
+        deliver: &mut impl FnMut(PortMsdu<'_, P::RxBuffer>),
+    ) {
+        if let Some(payload) = self.checked_payload(bytes) {
+            self.deliver_parts(bytes, payload, deliver);
+        }
+    }
+
+    /// The payload of one in-order data MPDU after its CCMP replay check;
+    /// `None` for a replay or a malformed frame, which it counts.
+    fn checked_payload(&mut self, bytes: &[u8]) -> Option<MpduPayload> {
         let header = wire::data_header_len(bytes);
         let protected = wire::is_protected(bytes);
         if protected {
@@ -1501,7 +1574,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
                 wire::ccmp_header(bytes, header).and_then(|ccmp| CcmpHeader::parse(ccmp).ok())
             else {
                 self.counters.malformed = self.counters.malformed.saturating_add(1);
-                return;
+                return None;
             };
             let lane = match wire::tid(bytes) {
                 Some(tid) => CcmpReplayLane::Tid(tid),
@@ -1515,50 +1588,61 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
             };
             if replay.commit_immediate(lane, ccmp.packet_number()).is_err() {
                 self.counters.replayed = self.counters.replayed.saturating_add(1);
-                return;
+                return None;
             }
         }
         let offset = header + if protected { CCMP_HEADER_LEN } else { 0 };
         let Some(length) = bytes.len().checked_sub(offset) else {
             self.counters.malformed = self.counters.malformed.saturating_add(1);
-            return;
+            return None;
         };
-        let Ok(frames) = decapsulate_data_frames(DataInterfaceRole::Station, bytes, offset, length)
-        else {
+        Some(MpduPayload {
+            offset,
+            length,
+            pairwise: protected && !wire::address1(bytes).is_some_and(wire::is_group),
+        })
+    }
+
+    /// Hand every MSDU of one checked MPDU on as parts.
+    fn deliver_parts(
+        &mut self,
+        bytes: &[u8],
+        payload: MpduPayload,
+        deliver: &mut impl FnMut(PortMsdu<'_, P::RxBuffer>),
+    ) {
+        let Ok(frames) = decapsulate_data_frames(
+            DataInterfaceRole::Station,
+            bytes,
+            payload.offset,
+            payload.length,
+        ) else {
             self.counters.malformed = self.counters.malformed.saturating_add(1);
             return;
         };
-        let pairwise = protected && !wire::address1(bytes).is_some_and(wire::is_group);
-        let mut ethernet = [0_u8; PORT_FRAME_CAPACITY];
         for parts in frames {
-            match parts.and_then(|parts| parts.copy_to(&mut ethernet)) {
-                // The access point's EAPOL after the handshake belongs to the
-                // Group Key Handshake, never to the caller.
-                Ok(length)
-                    if pairwise
-                        && length >= ETHERNET_HEADER_LEN
-                        && u16::from_be_bytes([ethernet[12], ethernet[13]]) == EAPOL_ETHER_TYPE =>
-                {
-                    match OwnedEapolFrame::try_copy(
-                        RsnInterface::Station,
-                        self.config.bssid,
-                        &ethernet[ETHERNET_HEADER_LEN..length],
-                    ) {
-                        Ok(eapol) => self.eapol = Some(eapol),
-                        Err(_) => {
-                            self.counters.eapol_rejected =
-                                self.counters.eapol_rejected.saturating_add(1);
-                        }
-                    }
+            match parts {
+                Ok(parts) if payload.pairwise && parts.ether_type == EAPOL_ETHER_TYPE => {
+                    self.keep_eapol(parts.payload);
                 }
-                Ok(length) => {
+                Ok(parts) => {
                     self.counters.delivered = self.counters.delivered.saturating_add(1);
-                    deliver(&ethernet[..length]);
+                    deliver(PortMsdu::Parts(parts));
                 }
                 Err(_) => {
                     self.counters.malformed = self.counters.malformed.saturating_add(1);
                     return;
                 }
+            }
+        }
+    }
+
+    /// The access point's EAPOL after the handshake belongs to the Group Key
+    /// Handshake, never to the caller.
+    fn keep_eapol(&mut self, body: &[u8]) {
+        match OwnedEapolFrame::try_copy(RsnInterface::Station, self.config.bssid, body) {
+            Ok(eapol) => self.eapol = Some(eapol),
+            Err(_) => {
+                self.counters.eapol_rejected = self.counters.eapol_rejected.saturating_add(1);
             }
         }
     }

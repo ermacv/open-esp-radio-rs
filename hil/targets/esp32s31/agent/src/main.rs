@@ -304,7 +304,7 @@ struct AppCoreStack(Stack<APP_CORE_BOOTSTRAP_STACK_BYTES>);
 
 #[cfg(feature = "open-radio-hil")]
 #[allow(unsafe_code, reason = "esp-hal's stack is uninitialized memory")]
-// REVIEWED-LAYOUT: esp-hal 9b59fce8
+// REVIEWED-LAYOUT: esp-hal 8930609f
 // SAFETY: at the pinned esp-hal revision `Stack<SIZE>` is
 // `repr(C, align(16))` with one field, `mem: MaybeUninit<[u8; SIZE]>`, valid
 // for any bytes; `Stack::new` leaves it uninitialized.

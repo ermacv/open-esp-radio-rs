@@ -2,12 +2,17 @@
 //! instance its monomorphic items reach through direct calls, coercions and
 //! constants, reading each instance's MIR.
 use crate::facts::{Facts, IndirectCall, fn_pointer_key, function_key};
+use rustc_middle::ty::TyCtxt;
+use rustc_middle::ty::print::{
+    with_no_trimmed_paths, with_no_visible_paths, with_resolve_crate_name,
+};
 use rustc_public::mir::alloc::{AllocId, GlobalAlloc};
 use rustc_public::mir::mono::{Instance, InstanceKind, StaticDef};
 use rustc_public::mir::visit::{Location, MirVisitor};
 use rustc_public::mir::{
     Body, CastKind, LocalDecl, PointerCoercion, Rvalue, Terminator, TerminatorKind,
 };
+use rustc_public::rustc_internal;
 use rustc_public::ty::{
     Allocation, ClosureKind, ConstantKind, ExistentialPredicate, ExistentialTraitRef,
     GenericArgKind, MirConst, RigidTy, Ty, TyKind, VtblEntry,
@@ -15,9 +20,28 @@ use rustc_public::ty::{
 use rustc_public::{CrateDef, CrateItem, ItemKind};
 use std::collections::BTreeSet;
 
+/// A type as rustc prints it with every definition by its full path: from
+/// its crate's name (the local crate's too), not trimmed to a unique name
+/// nor shortened to a re-export, so that every crate prints one type alike.
+fn canonical_type(tcx: TyCtxt<'_>, ty: Ty) -> String {
+    let internal = rustc_internal::internal(tcx, ty);
+    with_resolve_crate_name!(with_no_trimmed_paths!(with_no_visible_paths!(
+        internal.to_string()
+    )))
+}
+
+/// A trait's full path, as [`canonical_type`] prints definitions.
+fn canonical_trait(tcx: TyCtxt<'_>, principal: &ExistentialTraitRef) -> String {
+    let def_id = rustc_internal::internal(tcx, principal.def_id.def_id());
+    with_resolve_crate_name!(with_no_trimmed_paths!(with_no_visible_paths!(
+        tcx.def_path_str(def_id)
+    )))
+}
+
 /// Every fact of the crate the compiler analysed.
-pub fn crate_facts() -> Facts {
+pub fn crate_facts(tcx: TyCtxt<'_>) -> Facts {
     let mut walk = Walk {
+        tcx,
         facts: Facts {
             schema: 1,
             krate: rustc_public::local_crate().name,
@@ -45,14 +69,15 @@ pub fn crate_facts() -> Facts {
     walk.facts
 }
 
-struct Walk {
+struct Walk<'tcx> {
+    tcx: TyCtxt<'tcx>,
     facts: Facts,
     queue: Vec<Instance>,
     seen: BTreeSet<String>,
     allocations: BTreeSet<String>,
 }
 
-impl Walk {
+impl Walk<'_> {
     fn root(&mut self, item: CrateItem) {
         // Generic items have no instance of their own: their instances come
         // from the calls and coercions that name them.
@@ -92,7 +117,7 @@ impl Walk {
     fn reified(&mut self, pointer: Ty, function: Instance) {
         self.facts
             .fn_pointers
-            .entry(fn_pointer_key(&pointer.to_string()))
+            .entry(fn_pointer_key(&canonical_type(self.tcx, pointer)))
             .or_default()
             .insert(function_key(&function.mangled_name()));
         self.queue.push(function);
@@ -100,7 +125,7 @@ impl Walk {
 
     /// The vtable of `concrete` as a `dyn principal`.
     fn vtable(&mut self, concrete: Ty, principal: &ExistentialTraitRef) {
-        let name = principal.def_id.name();
+        let name = canonical_trait(self.tcx, principal);
         let entries = principal.with_self_ty(concrete).vtable_entries();
         let drop = Instance::resolve_drop_in_place(concrete);
         let mut methods = vec![(0, drop)];
@@ -149,13 +174,13 @@ impl Walk {
     }
 }
 
-struct BodyVisitor<'a> {
-    walk: &'a mut Walk,
+struct BodyVisitor<'a, 'tcx> {
+    walk: &'a mut Walk<'tcx>,
     locals: Vec<LocalDecl>,
     symbol: String,
 }
 
-impl MirVisitor for BodyVisitor<'_> {
+impl MirVisitor for BodyVisitor<'_, '_> {
     fn visit_terminator(&mut self, terminator: &Terminator, location: Location) {
         if let TerminatorKind::Call { func, .. } = &terminator.kind
             && let Ok(ty) = func.ty(&self.locals)
@@ -166,7 +191,7 @@ impl MirVisitor for BodyVisitor<'_> {
                         Ok(callee) => match callee.kind {
                             InstanceKind::Virtual { idx } => Some(match dyn_principal(&args) {
                                 Some(principal) => IndirectCall::Dyn {
-                                    r#trait: principal.def_id.name(),
+                                    r#trait: canonical_trait(self.walk.tcx, &principal),
                                     entry: idx,
                                 },
                                 None => IndirectCall::Unknown,
@@ -185,7 +210,7 @@ impl MirVisitor for BodyVisitor<'_> {
                 }
                 TyKind::RigidTy(RigidTy::FnPtr(_)) => self.walk.call(
                     &self.symbol,
-                    IndirectCall::FnPointer(fn_pointer_key(&ty.to_string())),
+                    IndirectCall::FnPointer(fn_pointer_key(&canonical_type(self.walk.tcx, ty))),
                 ),
                 _ => {}
             }
@@ -222,7 +247,7 @@ impl MirVisitor for BodyVisitor<'_> {
                     self.walk
                         .facts
                         .polluted
-                        .insert(fn_pointer_key(&target.to_string()));
+                        .insert(fn_pointer_key(&canonical_type(self.walk.tcx, *target)));
                 }
                 _ => {}
             }

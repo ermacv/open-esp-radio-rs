@@ -66,7 +66,7 @@ fn symbols_containing<'a>(set: &'a serde_json::Value, part: &str) -> Vec<&'a str
 
 #[test]
 fn a_crate_s_facts_name_the_candidates_of_its_pointer_and_dyn_calls() {
-    let facts = facts(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/sample.rs"));
+    let facts = facts(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sample.rs"));
     let calls = facts["calls"].as_object().unwrap();
     let field = calls
         .iter()
@@ -94,4 +94,92 @@ fn a_crate_s_facts_name_the_candidates_of_its_pointer_and_dyn_calls() {
             .len(),
         2
     );
+}
+
+/// Run the driver on one crate of `directory`, with `extra` arguments.
+fn compile(directory: &Path, source: &Path, extra: &[&std::ffi::OsStr]) {
+    let sysroot = sysroot();
+    let status = Command::new(env!("CARGO_BIN_EXE_oer-mir-facts"))
+        .arg(sysroot.join("bin/rustc"))
+        .args([
+            "--crate-type",
+            "lib",
+            "--edition",
+            "2024",
+            "-O",
+            "--emit",
+            "metadata",
+        ])
+        .args(["--target", "riscv32imafc-unknown-none-elf"])
+        .arg("--out-dir")
+        .arg(directory)
+        .args(extra)
+        .arg(source)
+        .env("OER_MIR_FACTS_DIR", directory)
+        .env("OER_MIR_FACTS_TARGET", "riscv32imafc-unknown-none-elf")
+        .env("LD_LIBRARY_PATH", sysroot.join("lib"))
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+fn crate_facts(directory: &Path, krate: &str) -> serde_json::Value {
+    let file = std::fs::read_dir(directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| {
+                    name.starts_with(&format!("{krate}-")) && name.ends_with(".json")
+                })
+        })
+        .unwrap();
+    serde_json::from_slice(&std::fs::read(file).unwrap()).unwrap()
+}
+
+/// A type and a trait print alike in the crate that defines them and in a
+/// crate that names them through a re-export: their full defining paths.
+#[test]
+fn a_type_and_a_trait_key_alike_in_every_crate() {
+    let tests = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let directory = std::env::temp_dir().join(format!("oer-mir-facts-two-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    compile(&directory, &tests.join("defining.rs"), &[]);
+    let mut extern_defining = std::ffi::OsString::from("defining=");
+    extern_defining.push(directory.join("libdefining.rmeta"));
+    compile(
+        &directory,
+        &tests.join("using.rs"),
+        &["--extern".as_ref(), extern_defining.as_os_str()],
+    );
+    let defining = crate_facts(&directory, "defining");
+    let using = crate_facts(&directory, "using");
+    let call = |name: &str| {
+        using["calls"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .find(|(symbol, _)| symbol.ends_with(name))
+            .unwrap()
+            .1[0]
+            .clone()
+    };
+    let pointer = call("drop_packet")["fn_pointer"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        defining["fn_pointers"].get(&pointer).is_some(),
+        "{pointer} not among {}",
+        defining["fn_pointers"]
+    );
+    let trait_name = call("send")["dyn"]["trait"].as_str().unwrap().to_owned();
+    assert_eq!(trait_name, "defining::api::Driver");
+    assert!(
+        defining["vtables"].get(&trait_name).is_some(),
+        "{}",
+        defining["vtables"]
+    );
+    let _ = std::fs::remove_dir_all(&directory);
 }

@@ -54,8 +54,8 @@ fn main() {
     };
     // The in-process compiler takes its own name first, as `rustc` would.
     args[0] = "rustc".to_owned();
-    let result = run!(&args, || {
-        let facts = collect::crate_facts();
+    let result = run_with_tcx!(&args, |tcx| {
+        let facts = collect::crate_facts(tcx);
         if let Err(error) = facts::write(&directory, &facts) {
             eprintln!("oer-mir-facts: {error}");
             std::process::exit(1);

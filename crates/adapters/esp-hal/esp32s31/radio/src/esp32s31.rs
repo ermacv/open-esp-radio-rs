@@ -69,13 +69,14 @@ impl EspHalRadioPlatform {
         if core::mem::replace(&mut self.analog_bus_handed_out, true) {
             return None;
         }
-        // SAFETY: this platform owns the `I2C_ANA_MST` singleton for the rest
-        // of the program and hands the ownership out only this once.
         #[allow(
             unsafe_code,
             reason = "the held I2C_ANA_MST singleton is the analog bus ownership the token asserts"
         )]
-        Some(unsafe { AnalogBusOwnership::assume_exclusive() })
+        // SAFETY: this platform owns the `I2C_ANA_MST` singleton for the rest
+        // of the program and hands the ownership out only this once.
+        let ownership = unsafe { AnalogBusOwnership::assume_exclusive() };
+        Some(ownership)
     }
 
     /// Derive the common-PHY calibration identity from the chip.

@@ -114,8 +114,9 @@ use oer_hil_protocol::{
     feature = "ieee802154-ed-event-probe",
     feature = "ieee802154-route-probe"
 ))]
-fn ieee802154_foundation(_radio: EspHalRadioPlatform) -> Option<Ieee802154FoundationConfigured> {
-    let (shared, partitions) = RadioHardware::take()?.into_concurrent(());
+fn ieee802154_foundation(mut radio: EspHalRadioPlatform) -> Option<Ieee802154FoundationConfigured> {
+    let (shared, partitions) =
+        RadioHardware::take(radio.analog_bus_ownership()?)?.into_concurrent(());
     let mut lease = shared.try_acquire().ok()?;
     let powered = Ieee802154Cold::from_partition(partitions.ieee802154)
         .power_up(&mut lease, &mut EspHalRadioClocks::new())

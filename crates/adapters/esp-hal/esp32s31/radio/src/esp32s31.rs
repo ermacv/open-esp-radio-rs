@@ -8,6 +8,7 @@ use esp_hal::{
     },
 };
 use oer_bluetooth_hci::BluetoothPublicDeviceAddress;
+use oer_esp32s31_hal::root::AnalogBusOwnership;
 use oer_esp32s31_phy::{PhyCalibrationIdentity, phy_get_rf_cal_version};
 
 use crate::bluetooth_address::bluetooth_public_address_from_base;
@@ -28,6 +29,8 @@ pub struct EspHalRadioPlatform {
     _lp_peri: LP_PERI<'static>,
     _lp_tsens: LP_TSENS<'static>,
     _i2c_ana_mst: I2C_ANA_MST<'static>,
+    /// Whether the analog bus ownership was handed to the radio root.
+    analog_bus_handed_out: bool,
 }
 
 impl EspHalRadioPlatform {
@@ -55,7 +58,24 @@ impl EspHalRadioPlatform {
             _lp_peri: lp_peri,
             _lp_tsens: lp_tsens,
             _i2c_ana_mst: i2c_ana_mst,
+            analog_bus_handed_out: false,
         }
+    }
+
+    /// The analog-I2C bus ownership the radio root requires
+    /// (`RadioHardware::take`), handed out once: this platform holds the
+    /// `I2C_ANA_MST` singleton for the rest of the program.
+    pub fn analog_bus_ownership(&mut self) -> Option<AnalogBusOwnership> {
+        if core::mem::replace(&mut self.analog_bus_handed_out, true) {
+            return None;
+        }
+        // SAFETY: this platform owns the `I2C_ANA_MST` singleton for the rest
+        // of the program and hands the ownership out only this once.
+        #[allow(
+            unsafe_code,
+            reason = "the held I2C_ANA_MST singleton is the analog bus ownership the token asserts"
+        )]
+        Some(unsafe { AnalogBusOwnership::assume_exclusive() })
     }
 
     /// Derive the common-PHY calibration identity from the chip.

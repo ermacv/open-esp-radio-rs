@@ -68,7 +68,6 @@ The workspace is licensed under [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACH
 | `registers/` | Reviewed hardware descriptions and PAC publication inputs |
 | `verification/` | Chip knowledge and concrete vendor comparison projects |
 | `tools/` | Blobray, memory analysis and `cargo xtask` repository operations |
-| `experiments/` | Experimental engines and their host compositions |
 | `docs/` | Cross-component contracts and documentation conventions |
 
 Applications own board startup, credentials, network stacks, DHCP and sockets.

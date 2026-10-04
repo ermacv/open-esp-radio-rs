@@ -26,7 +26,6 @@ members = [
     "crates/radio/coex",
     "crates/radio/port",
     "crates/adapters/embassy-net/owned",
-    "experiments/network-engine",
     "crates/runtime/bluetooth",
     "crates/runtime/ieee80211",
     "crates/runtime/interrupt-table",

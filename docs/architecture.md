@@ -12,7 +12,6 @@ reading route through these boundaries.
 | Owner | Responsibility | Boundary |
 | --- | --- | --- |
 | [Radio libraries](../crates/README.md) | Portable protocols, typed hardware access, adapters, execution and final composition | Internal libraries depend on specific contracts; only applications depend on the public facade |
-| [Network experiments](../experiments/network-engine/README.md) | Experimental synchronous networking and ownership models | Allowed in host test composition; excluded from production dependencies |
 | [Registers](../registers/README.md) | Reviewed hardware model, API/ownership policy, provenance and publication inputs | Defines what may enter the production PAC |
 | [Blobray](../tools/blobray/README.md) | Binary analysis, reviewed research and bounded comparisons | Generic engine; target facts are selected through providers and projects |
 | [Memory tools](../tools/memory-report/README.md) | ELF memory and linked-code analysis | The consumer chooses the image budget and acceptance policy |

@@ -10,7 +10,6 @@ const OWNED: &str = "oer-embassy-net-owned";
 pub enum Boundary {
     Neutral,
     Owned,
-    Research,
     Datapath,
     RadioCore,
     OwnedProduct,
@@ -20,7 +19,6 @@ impl Boundary {
         match self {
             Self::Neutral => "neutral",
             Self::Owned => "owned",
-            Self::Research => "research",
             Self::Datapath => "datapath",
             Self::RadioCore => "radio-core",
             Self::OwnedProduct => "owned-product",
@@ -101,7 +99,7 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
                             .starts_with(repository.join("crates/hardware"))
                     })
             }
-            Boundary::Research | Boundary::Datapath => stack(name),
+            Boundary::Datapath => stack(name),
             _ => false,
         };
         if forbidden {
@@ -166,17 +164,15 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
                 "owned adapter acquired physical radio ownership",
             )?;
         }
-        Boundary::Research | Boundary::Datapath => {
+        Boundary::Datapath => {
             reject(
                 &|p| stack(p.name.as_str()),
                 "portable contract acquired an executor or network stack",
             )?;
-            if boundary == Boundary::Datapath {
-                reject(
-                    &|p| physical(p, repository),
-                    "radio-native datapath acquired a chip dependency",
-                )?;
-            }
+            reject(
+                &|p| physical(p, repository),
+                "radio-native datapath acquired a chip dependency",
+            )?;
         }
         Boundary::RadioCore => reject(
             &optimized,
@@ -233,7 +229,7 @@ pub struct Profile {
     pub manifest: &'static str,
     pub features: &'static [&'static str],
 }
-pub fn profiles() -> [Profile; 10] {
+pub fn profiles() -> [Profile; 8] {
     use Boundary::*;
     let product = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml";
     [
@@ -260,16 +256,6 @@ pub fn profiles() -> [Profile; 10] {
             boundary: Owned,
             manifest: "crates/adapters/embassy-net/owned/Cargo.toml",
             features: &[],
-        },
-        Profile {
-            boundary: Research,
-            manifest: "experiments/network-engine/Cargo.toml",
-            features: &[],
-        },
-        Profile {
-            boundary: Research,
-            manifest: "experiments/network-engine/Cargo.toml",
-            features: &["--all-features"],
         },
         Profile {
             boundary: Datapath,

@@ -17,12 +17,10 @@ For the network stack's sources, selection names and platform overrides, see
 | `crates/adapters/embassy-net/owned` | Owned `PacketBuf` handoff and stack wake registration | Radio scheduling or DMA descriptors |
 | `crates/protocols/ieee80211/datapath` | Software/physical ownership traits and selected-burst contracts | Concrete allocator, stack or executor |
 | `crates/runtime/esp32s31/ieee80211` | Physical radio runner, SRAM promotion, completion and executor waits | Application sockets or a second network stack |
-| `experiments/network-engine` | Synchronous bounded protocol engine and selected-work construction | Production network integration or hardware qualification |
 
 The ESP32-S31 product uses the owned Xarxa/Embassy stack (`owned-network`),
 composed with the physical radio runner and the product's finite SRAM TX
-horizon. The research engine is a separate
-library, not a selectable product feature.
+horizon.
 
 The radio owns VIF/peer-generation state, power-save eligibility, rate and
 retry state, BA sessions, DMA descriptors, physical credits and terminal TX
@@ -34,7 +32,6 @@ DHCP and sockets. Stack APIs do not expose radio peer slots or airtime grants.
 | Integration | Stack-facing contract | Dependency guarantee |
 | --- | --- | --- |
 | `owned-network` | Unique Xarxa `PacketBuf` owners, explicit packet allocators and bounded stack polling | Pinned Embassy/Xarxa Git sources with a maintained patchset |
-| Research library | Bounded synchronous IPv4 work and physical batch emission | No Embassy or Xarxa dependency |
 
 The owned integration uses an upstream Git API baseline with maintained
 changes for explicit packet pools, credit-return wakes, bounded polling and
@@ -563,36 +560,7 @@ resource exhaustion waits for its credit-return edge. RX availability, general
 packet-pool availability and Core0-local SRAM completion are distinct domains.
 SRAM completion does not govern Core1 packet-pool admission.
 
-## Research boundary and limits
-
-The research engine implements resolved-route IPv4 UDP transmission,
-synchronous UDP reception, ARP requests/replies and ICMP echo replies with
-bounded canonical work storage. Its domain code is allocation-free and
-synchronous, without PAC, executor or network-stack dependencies. The
-[research component reference](../experiments/network-engine/README.md) defines
-its payload ownership APIs and copying boundaries. `receive_parts` accepts
-decoded Ethernet addresses, EtherType and borrowed payload without assembling
-an Ethernet frame. UDP callbacks borrow the caller's receive storage for the
-synchronous call; queued ARP/ICMP replies own independent work. EAPOL remains
-with the radio security owner. ARP caching and unresolved datagram retention,
-fragments, IPv6, DHCP and TCP are not implemented there.
-
-For deferred TX, the research engine's own `SelectedTxSource` (with its
-`EgressWorkProvider` and `ReservedTxBatch` contracts) connects bounded network
-work to physical takes after the radio reserves a batch. These deferred-egress
-types live in `experiments/network-engine`, not in the production datapath. It consumes only the requested prefix
-under the selected frame and byte budgets. Construction reports and physical
-credit return are separate from transmission receipts. Selection matches the
-complete flow identity, but current epoch and peer eligibility validation
-remain the caller's radio responsibility.
-
-Research physical batches use the production DMA ownership primitives and
-STA frame interface. That shared interface does not make the research engine
-a selectable production network adapter or establish its on-air performance.
-There is no product supervisor connecting this engine to the fused hardware
-runner, no native HIL composition and no split-core batch transport. The shared
-physical interface exposes Ethernet geometry; it is not a general
-native-MSDU or scatter-gather contract.
+## Checks
 
 Check dependency boundaries with `cargo xtask check network`; CI compiles the
 network profiles.

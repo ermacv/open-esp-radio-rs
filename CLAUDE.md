@@ -39,7 +39,7 @@ Each directory's `CLAUDE.md` holds its layout, local rules and commands.
 | `qualification/` | Capability catalogs, programs and the evaluator: [qualification/CLAUDE.md](qualification/CLAUDE.md) |
 | `tools/` | xtask, tidy, Blobray, register tool, memory report: [tools/CLAUDE.md](tools/CLAUDE.md) |
 | `platform/` | Board boot, staged runtime entry, linker placement, chip profiles: [platform/esp32s31/README.md](platform/esp32s31/README.md) |
-| `examples/`, `experiments/` | Buildable applications; the experimental network engine no production package uses |
+| `examples/` | Buildable applications |
 | `docs/` | Cross-owner contracts: [architecture](docs/architecture.md), [documentation](docs/documentation.md), [verification and qualification](docs/verification-and-qualification.md) |
 
 Task workflows live in `.claude/skills/`: `protocol-change`,

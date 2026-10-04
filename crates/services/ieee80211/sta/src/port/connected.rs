@@ -3,7 +3,7 @@
 
 use oer_ieee80211_lower_mac::{
     Cipher, KeyInstall, KeyScope, KeySelector, LowerMacBeaconTiming, LowerMacSetting, MacAddress,
-    RxBlockAckAgreement, RxCryptoStatus, RxEvidence,
+    RxBlockAckAgreement, RxCryptoStatus, RxEvidence, RxMeta,
 };
 use oer_ieee80211_mac::{
     block_ack::{
@@ -71,6 +71,12 @@ const BLOCK_ACK_RESPONSE_MICROS: u32 = 10
 pub const PORT_REORDER_SLOTS: usize = 8;
 /// The widest receive Block Ack window the station accepts.
 pub const PORT_REORDER_WINDOW: usize = 64;
+/// The reorder identity of the MPDU being received, which the window
+/// releases at once and the station delivers from the port's buffer; the
+/// storage slots are the identities below it.
+const CURRENT_SLOT: u8 = PORT_REORDER_SLOTS as u8;
+/// Every reorder identity: the storage slots and the current MPDU.
+const REORDER_IDENTITIES: usize = PORT_REORDER_SLOTS + 1;
 const TIDS: usize = 8;
 const MANAGEMENT_HEADER_LEN: usize = 24;
 const PROBE_RESPONSE_SUBTYPE: u8 = 5;
@@ -153,6 +159,32 @@ pub struct PortRxCounters {
     /// Buffered runs a reorder window released past a missing MPDU after
     /// the gap timeout.
     pub reorder_gap_timeouts: u32,
+    /// Out-of-order MPDUs longer than [`PORT_FRAME_CAPACITY`], which the
+    /// reorder storage cannot hold.
+    pub unbuffered: u32,
+}
+
+/// An out-of-order MPDU a reorder window keeps: a copy, so that the port's
+/// buffer goes back at once.
+#[derive(Clone)]
+struct StoredFrame {
+    bytes: [u8; PORT_FRAME_CAPACITY],
+    len: usize,
+}
+
+impl StoredFrame {
+    fn copy(frame: &[u8]) -> Option<Self> {
+        let mut bytes = [0; PORT_FRAME_CAPACITY];
+        bytes.get_mut(..frame.len())?.copy_from_slice(frame);
+        Some(Self {
+            bytes,
+            len: frame.len(),
+        })
+    }
+
+    fn bytes(&self) -> &[u8] {
+        &self.bytes[..self.len]
+    }
 }
 
 /// The outcome of offering one frame for transmission.
@@ -190,8 +222,9 @@ pub struct PortTxCounters {
 /// stays small and is built without staging them on the stack.
 pub struct PortConnectionBuffers {
     /// The reorder window of each TID with a receive Block Ack agreement.
-    reorder: [Option<RxReorderBuffer<PORT_REORDER_WINDOW, PORT_REORDER_SLOTS>>; TIDS],
-    slots: [Option<PortFrame>; PORT_REORDER_SLOTS],
+    reorder: [Option<RxReorderBuffer<PORT_REORDER_WINDOW, REORDER_IDENTITIES>>; TIDS],
+    /// Copies of the out-of-order MPDUs the windows keep.
+    slots: [Option<StoredFrame>; PORT_REORDER_SLOTS],
     queue: TxQueue,
     subframes: [[u8; PORT_FRAME_CAPACITY + 64]; PORT_TX_QUEUE],
 }
@@ -916,7 +949,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
     async fn input<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
-        input: PortInput,
+        input: PortInput<P::RxBuffer>,
         deliver: &mut impl FnMut(&[u8]),
     ) -> Result<Option<PortDisconnect>, PortLinkError<PortError<X>>> {
         let frame = match input {
@@ -959,12 +992,12 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
     async fn management<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
-        frame: &PortFrame,
+        frame: &PortFrame<P::RxBuffer>,
     ) -> Result<Option<PortDisconnect>, PortLinkError<PortError<X>>> {
         let bytes = frame.bytes();
         let address = context.link.config().address;
         let protected = wire::is_protected(bytes);
-        if protected && !decrypted(frame) {
+        if protected && !decrypted(frame.meta()) {
             self.counters.undecrypted = self.counters.undecrypted.saturating_add(1);
             return Ok(None);
         }
@@ -1186,14 +1219,14 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
             return;
         };
         if let Some(release) = buffer.move_window_to(starting_sequence) {
-            self.release(&release, deliver);
+            self.release(&release, None, deliver);
         }
     }
 
     async fn data<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
-        frame: PortFrame,
+        frame: PortFrame<P::RxBuffer>,
         deliver: &mut impl FnMut(&[u8]),
     ) -> Result<(), PortLinkError<PortError<X>>> {
         let bytes = frame.bytes();
@@ -1206,7 +1239,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
         }
         let more_data = wire::more_data(bytes);
         if wire::is_protected(bytes) {
-            if self.keys.is_none() || !decrypted(&frame) {
+            if self.keys.is_none() || !decrypted(frame.meta()) {
                 self.counters.undecrypted = self.counters.undecrypted.saturating_add(1);
                 return Ok(());
             }
@@ -1237,7 +1270,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
         }
         match tid.filter(|_| !group) {
             Some(tid) if self.block_ack(tid) => self.reorder_mpdu(tid, frame, deliver),
-            _ => self.deliver(&frame, deliver),
+            _ => self.deliver(frame.bytes(), deliver),
         }
         if let Some(eapol) = self.eapol.take() {
             self.group_rekey(context, eapol).await?;
@@ -1334,7 +1367,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
                     let release = buffer.expire_gap();
                     self.counters.reorder_gap_timeouts =
                         self.counters.reorder_gap_timeouts.saturating_add(1);
-                    self.release(&release, deliver);
+                    self.release(&release, None, deliver);
                 }
             }
             let buffers = self.buffers.reorder[tid]
@@ -1353,60 +1386,99 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
     }
 
     /// Buffer one MPDU of an agreement and deliver what its window releases.
-    fn reorder_mpdu(&mut self, tid: u8, frame: PortFrame, deliver: &mut impl FnMut(&[u8])) {
+    /// Offer one MPDU of a Block Ack agreement to its reorder window. An
+    /// MPDU the window releases at once is delivered from the port's
+    /// buffer; only one it keeps is copied into the storage.
+    fn reorder_mpdu(
+        &mut self,
+        tid: u8,
+        frame: PortFrame<P::RxBuffer>,
+        deliver: &mut impl FnMut(&[u8]),
+    ) {
         let sequence = SequenceNumber::from_sequence_control(wire::sequence_control(frame.bytes()));
-        let slot = match self.buffers.slots.iter().position(Option::is_none) {
-            Some(slot) => slot,
-            None => {
-                // Every slot is taken: release the oldest run to make room.
-                let Some(buffer) = self.buffers.reorder[usize::from(tid)].as_mut() else {
-                    return;
-                };
-                let release = buffer.expire_gap();
-                self.release(&release, deliver);
-                match self.buffers.slots.iter().position(Option::is_none) {
-                    Some(slot) => slot,
-                    None => return,
-                }
-            }
-        };
-        self.buffers.slots[slot] = Some(frame);
-        let Some(buffer) = self.buffers.reorder[usize::from(tid)].as_mut() else {
-            self.buffers.slots[slot] = None;
+        let Some(window) = self.buffers.reorder[usize::from(tid)].as_ref() else {
             return;
         };
-        match buffer.ingest(RxReorderMpdu {
-            sequence,
-            slot: slot as u8,
-        }) {
+        let kept = match window.retains_on_ingest(sequence) {
+            Ok(kept) => kept,
+            Err(RxReorderError::DuplicateSequence(_)) => {
+                self.counters.duplicates = self.counters.duplicates.saturating_add(1);
+                return;
+            }
+            Err(_) => return,
+        };
+        let slot = if kept {
+            let Some(slot) = self.free_slot(tid, deliver) else {
+                return;
+            };
+            let Some(stored) = StoredFrame::copy(frame.bytes()) else {
+                self.counters.unbuffered = self.counters.unbuffered.saturating_add(1);
+                return;
+            };
+            self.buffers.slots[slot] = Some(stored);
+            slot as u8
+        } else {
+            CURRENT_SLOT
+        };
+        let Some(window) = self.buffers.reorder[usize::from(tid)].as_mut() else {
+            self.clear_slot(slot);
+            return;
+        };
+        match window.ingest(RxReorderMpdu { sequence, slot }) {
             Ok(release) => {
                 if release.rejected.is_some() {
-                    self.buffers.slots[slot] = None;
+                    self.clear_slot(slot);
                     self.counters.behind_window = self.counters.behind_window.saturating_add(1);
                 }
-                self.release(&release, deliver);
+                self.release(&release, Some(&frame), deliver);
             }
             Err(RxReorderError::DuplicateSequence(_)) => {
-                self.buffers.slots[slot] = None;
+                self.clear_slot(slot);
                 self.counters.duplicates = self.counters.duplicates.saturating_add(1);
             }
-            Err(_) => self.buffers.slots[slot] = None,
+            Err(_) => self.clear_slot(slot),
         }
     }
 
+    /// A free storage slot, releasing the oldest run of `tid`'s window
+    /// to make room when every slot is taken.
+    fn free_slot(&mut self, tid: u8, deliver: &mut impl FnMut(&[u8])) -> Option<usize> {
+        if let Some(slot) = self.buffers.slots.iter().position(Option::is_none) {
+            return Some(slot);
+        }
+        let release = self.buffers.reorder[usize::from(tid)]
+            .as_mut()?
+            .expire_gap();
+        self.release(&release, None, deliver);
+        self.buffers.slots.iter().position(Option::is_none)
+    }
+
+    fn clear_slot(&mut self, slot: u8) {
+        if let Some(stored) = self.buffers.slots.get_mut(usize::from(slot)) {
+            *stored = None;
+        }
+    }
+
+    /// Deliver a released run in order: stored MPDUs from the storage, the
+    /// current one from the port's buffer.
     fn release(
         &mut self,
         release: &RxReorderRelease<PORT_REORDER_WINDOW>,
+        current: Option<&PortFrame<P::RxBuffer>>,
         deliver: &mut impl FnMut(&[u8]),
     ) {
         for mpdu in release.iter() {
-            if let Some(frame) = self
+            if mpdu.slot == CURRENT_SLOT {
+                if let Some(frame) = current {
+                    self.deliver(frame.bytes(), deliver);
+                }
+            } else if let Some(stored) = self
                 .buffers
                 .slots
                 .get_mut(usize::from(mpdu.slot))
                 .and_then(Option::take)
             {
-                self.deliver(&frame, deliver);
+                self.deliver(stored.bytes(), deliver);
             }
         }
     }
@@ -1421,8 +1493,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
     }
 
     /// Check one in-order MPDU's packet number and hand its MSDUs on.
-    fn deliver(&mut self, frame: &PortFrame, deliver: &mut impl FnMut(&[u8])) {
-        let bytes = frame.bytes();
+    fn deliver(&mut self, bytes: &[u8], deliver: &mut impl FnMut(&[u8])) {
         let header = wire::data_header_len(bytes);
         let protected = wire::is_protected(bytes);
         if protected {
@@ -1657,9 +1728,9 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
 }
 
 /// Whether the backend decrypted and verified a protected frame.
-fn decrypted(frame: &PortFrame) -> bool {
+fn decrypted(meta: RxMeta) -> bool {
     matches!(
-        frame.meta().crypto,
+        meta.crypto,
         RxEvidence::HardwareObserved(RxCryptoStatus::DecryptedAndIntegrityVerified)
             | RxEvidence::ProtocolValidated(RxCryptoStatus::DecryptedAndIntegrityVerified)
     )

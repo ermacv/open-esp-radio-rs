@@ -16,7 +16,8 @@ use oer_ieee80211_upper_mac_service::UpperMacTxError;
 use oer_time::{Clock, Duration, Instant};
 
 use super::link::{
-    PortConnectionFrame, PortError, PortFrame, PortInput, PortLink, PortLinkError, PortStationEnv,
+    PortConnectionFrame, PortError, PortFrame, PortInput, PortLink, PortLinkError, PortRxBuffer,
+    PortStationEnv,
 };
 
 /// The Probe Request of an active scan.
@@ -102,7 +103,7 @@ impl<'a, 'p, X: PortStationEnv, const N: usize> PortScan<'a, 'p, X, N> {
         self
     }
 
-    fn observe(&mut self, frame: &PortFrame) {
+    fn observe(&mut self, frame: &PortFrame<PortRxBuffer<X>>) {
         let rssi = match frame.meta().rssi_dbm {
             RxEvidence::HardwareObserved(rssi) | RxEvidence::ProtocolValidated(rssi) => rssi,
             RxEvidence::Unavailable => UNKNOWN_RSSI_DBM,

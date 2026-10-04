@@ -203,7 +203,7 @@ mod agent {
     use oer_esp32s31_hal::{shared_radio::PlatformClockProvider, types::MacPti};
     use oer_esp32s31_ieee80211_sta::{
         connected_control::{ConnectedPowerCommand, PowerCoexSnapshot},
-        modem_sleep::{CoexPhaseView, CoexView, PmCoexEvent},
+        modem_sleep::{CoexPhaseView, CoexView, PmCoexAction, PmCoexEvent},
     };
     use oer_esp32s31_radio_runtime::{
         CoexPreemptionEnd, RadioGuard, RadioSystem, WifiCoexViewCell,
@@ -444,13 +444,13 @@ mod agent {
             //
             // SOURCE: complete pinned `libcoexist.a[coexist_core.o]::
             // coex_core_request` and `coex_core_timer_idx_get`.
-            ConnectedPowerCommand::CoexRequest { event, .. }
-            | ConnectedPowerCommand::CoexRelease(event)
+            ConnectedPowerCommand::Coex(PmCoexAction::Request { event, .. })
+            | ConnectedPowerCommand::Coex(PmCoexAction::Release(event))
                 if timer_index(event.coex_event()).is_none() => {}
-            ConnectedPowerCommand::CoexRequest {
+            ConnectedPowerCommand::Coex(PmCoexAction::Request {
                 event,
                 duration_micros,
-            } => {
+            }) => {
                 radio
                     .request_wifi_coex(CoexClientRequest {
                         event: event.coex_event(),
@@ -459,14 +459,16 @@ mod agent {
                     })
                     .map_err(StationPowerFailure::Coex)?;
             }
-            ConnectedPowerCommand::CoexRelease(event) => {
+            ConnectedPowerCommand::Coex(PmCoexAction::Release(event)) => {
                 radio
                     .release_coex(event.coex_event())
                     .map_err(StationPowerFailure::Coex)?;
             }
-            ConnectedPowerCommand::SetCoexInterval(interval) => radio.set_coex_interval(interval),
-            ConnectedPowerCommand::RestartCoexPhases => radio.restart_coex_phases(),
-            ConnectedPowerCommand::SetCoexFlexiblePeriod(period) => {
+            ConnectedPowerCommand::Coex(PmCoexAction::SetInterval(interval)) => {
+                radio.set_coex_interval(interval)
+            }
+            ConnectedPowerCommand::Coex(PmCoexAction::RestartPhases) => radio.restart_coex_phases(),
+            ConnectedPowerCommand::Coex(PmCoexAction::SetFlexiblePeriod(period)) => {
                 radio.set_coex_flexible_period(period)
             }
             ConnectedPowerCommand::RfSleep => {

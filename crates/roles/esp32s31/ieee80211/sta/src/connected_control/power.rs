@@ -18,7 +18,7 @@ use oer_ieee80211_trace::{NetworkTxPowerTrace, PowerInputKind, PowerInputTrace};
 use crate::{
     hardware::control::ConnectedControlHardware,
     modem_sleep::{
-        CoexPhaseView, CoexView, ModemSleep, PmAction, PmActions, PmBeacon, PmClock, PmCoexEvent,
+        CoexPhaseView, CoexView, ModemSleep, PmAction, PmActions, PmBeacon, PmClock, PmCoexAction,
         PmState, PmTimer, PmTraffic, SleepType,
     },
 };
@@ -37,19 +37,8 @@ pub const POWER_COMMAND_CAPACITY: usize = 16;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 // CAPABILITY: coex-protocol-integration-and-lifetime-live-wifi-requests
 pub enum ConnectedPowerCommand {
-    /// Request the air for a coexistence event.
-    CoexRequest {
-        event: PmCoexEvent,
-        duration_micros: u32,
-    },
-    /// Withdraw a coexistence event request.
-    CoexRelease(PmCoexEvent),
-    /// Set the coexistence schedule interval, in 100 µs units.
-    SetCoexInterval(u32),
-    /// Restart the coexistence phases at phase 0.
-    RestartCoexPhases,
-    /// Set the coexistence flexible period.
-    SetCoexFlexiblePeriod(u8),
+    /// A coexistence effect, which the shared radio system performs.
+    Coex(PmCoexAction),
     /// Put the station's RF to sleep, keeping its registration.
     RfSleep,
     /// Wake the station's RF.
@@ -580,27 +569,9 @@ impl ConnectedControlCore {
                         .ok_or(ConnectedControlError::PowerCommandOverflow)?;
                     *slot = Some(power_save);
                 }
-                PmAction::CoexRequest {
-                    event,
-                    duration_micros,
-                } => self
+                PmAction::Coex(action) => self
                     .power
-                    .push_command(ConnectedPowerCommand::CoexRequest {
-                        event,
-                        duration_micros,
-                    })?,
-                PmAction::CoexRelease(event) => self
-                    .power
-                    .push_command(ConnectedPowerCommand::CoexRelease(event))?,
-                PmAction::SetCoexInterval(interval) => self
-                    .power
-                    .push_command(ConnectedPowerCommand::SetCoexInterval(interval))?,
-                PmAction::RestartCoexPhases => self
-                    .power
-                    .push_command(ConnectedPowerCommand::RestartCoexPhases)?,
-                PmAction::SetCoexFlexiblePeriod(period) => self
-                    .power
-                    .push_command(ConnectedPowerCommand::SetCoexFlexiblePeriod(period))?,
+                    .push_command(ConnectedPowerCommand::Coex(action))?,
                 PmAction::RfSleep => self.power.push_command(ConnectedPowerCommand::RfSleep)?,
                 PmAction::RfWake => self.power.push_command(ConnectedPowerCommand::RfWake)?,
                 PmAction::BlockTx => {

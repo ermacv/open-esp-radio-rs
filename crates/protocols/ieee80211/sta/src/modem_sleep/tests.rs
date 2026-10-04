@@ -70,7 +70,7 @@ fn start_places_the_first_tbtt_on_the_last_beacon_boundary() {
         wake_ahead_micros: TBTT_WAKE_WINDOW_MICROS + TBTT_AHEAD_MICROS,
     })));
     assert!(actions.contains(&PmAction::RxBeaconPriority(true)));
-    assert!(actions.contains(&PmAction::SetCoexFlexiblePeriod(1)));
+    assert!(actions.contains(&PmAction::Coex(PmCoexAction::SetFlexiblePeriod(1))));
     // Without modem sleep there is no active timer.
     assert!(!actions.iter().any(|action| matches!(
         action,
@@ -85,7 +85,7 @@ fn start_places_the_first_tbtt_on_the_last_beacon_boundary() {
 fn a_shared_start_sets_the_schedule_interval_from_the_beacon_interval() {
     let mut pm = ModemSleep::new(SleepType::None);
     let actions = run(|actions| pm.start(beacon(0, None), shared(), actions));
-    assert!(actions.contains(&PmAction::SetCoexInterval(BI / 100)));
+    assert!(actions.contains(&PmAction::Coex(PmCoexAction::SetInterval(BI / 100))));
     assert!(actions.iter().any(|action| matches!(
         action,
         PmAction::StartTbtt(PmTbttSchedule {
@@ -107,10 +107,10 @@ fn a_wifi_phase_requests_the_slice_and_its_end_arms_the_slice_timer() {
     let actions = run(|actions| pm.coex_phase(phase, clock(1_000_000), coex, actions));
     assert_eq!(
         actions[0],
-        PmAction::CoexRequest {
+        PmAction::Coex(PmCoexAction::Request {
             event: PmCoexEvent::Slice,
             duration_micros: slice as u32,
-        }
+        })
     );
     assert!(actions.contains(&PmAction::UnblockTx));
     assert!(actions.contains(&PmAction::Arm {
@@ -166,9 +166,9 @@ fn an_acknowledged_power_save_null_leads_to_rf_sleep_after_the_sleep_delay() {
     assert_eq!(
         actions,
         [
-            PmAction::CoexRelease(PmCoexEvent::Slice),
-            PmAction::CoexRelease(PmCoexEvent::GroupTraffic),
-            PmAction::CoexRelease(PmCoexEvent::BeaconWindow),
+            PmAction::Coex(PmCoexAction::Release(PmCoexEvent::Slice)),
+            PmAction::Coex(PmCoexAction::Release(PmCoexEvent::GroupTraffic)),
+            PmAction::Coex(PmCoexAction::Release(PmCoexEvent::BeaconWindow)),
             PmAction::ClearRxBeaconPriority,
             PmAction::RfSleep,
         ]
@@ -197,12 +197,12 @@ fn a_shared_tbtt_restarts_the_phases_requests_the_beacon_window_and_wakes() {
     let now = u64::from(BI) * 9;
     let actions = run(|actions| pm.tbtt(clock(now), coex, PmTraffic::IDLE, actions));
     assert!(actions.contains(&PmAction::RfWake));
-    assert!(actions.contains(&PmAction::SetCoexInterval(BI / 100)));
-    assert!(actions.contains(&PmAction::RestartCoexPhases));
-    assert!(actions.contains(&PmAction::CoexRequest {
+    assert!(actions.contains(&PmAction::Coex(PmCoexAction::SetInterval(BI / 100))));
+    assert!(actions.contains(&PmAction::Coex(PmCoexAction::RestartPhases)));
+    assert!(actions.contains(&PmAction::Coex(PmCoexAction::Request {
         event: PmCoexEvent::BeaconWindow,
         duration_micros: BEACON_WINDOW_MICROS,
-    }));
+    })));
     // The station counts its cycle from this TBTT and, inside its slice,
     // announces that it is awake again.
     assert!(actions.contains(&PmAction::SendNull { power_save: false }));

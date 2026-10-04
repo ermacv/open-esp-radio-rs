@@ -43,9 +43,10 @@ pub use connected::{
 };
 pub use join::{PortAssociation, PortHePower, PortJoin};
 pub use link::{
-    BeaconTimingOps, EventRouter, NoAggregation, PORT_BACKLOG, PORT_EXCHANGES, PORT_FRAME_CAPACITY,
-    PortAggregation, PortAmpduAggregation, PortError, PortFrame, PortInput, PortLink,
-    PortLinkCounters, PortLinkError, PortRouter, PortStationConfig, PortStationEnv,
+    BeaconTimingOps, EventRouter, NoAggregation, NoCoexistence, PORT_BACKLOG, PORT_EXCHANGES,
+    PORT_FRAME_CAPACITY, PortAggregation, PortAmpduAggregation, PortCoexistence,
+    PortCoexistenceRefused, PortError, PortFrame, PortInput, PortLink, PortLinkCounters,
+    PortLinkError, PortRouter, PortStationConfig, PortStationEnv,
 };
 pub use power::PortPowerSave;
 pub use rsn::{PortHandshake, PortKeyInstall, PortKeys};

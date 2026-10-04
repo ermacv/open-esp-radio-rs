@@ -164,24 +164,34 @@ pub struct PmTbttSchedule {
     pub wake_ahead_micros: u16,
 }
 
+/// One coexistence effect of the power manager. The coexistence schedule
+/// belongs to the radio system every radio protocol shares, not to the
+/// Wi-Fi MAC, so its owner performs these.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PmCoexAction {
+    /// Request the air for a coexistence event.
+    Request {
+        event: PmCoexEvent,
+        duration_micros: u32,
+    },
+    /// Withdraw a coexistence event request.
+    Release(PmCoexEvent),
+    /// Set the coexistence schedule interval, in 100 µs units.
+    SetInterval(u32),
+    /// Restart the coexistence phases at phase 0.
+    RestartPhases,
+    /// Set the coexistence flexible period.
+    SetFlexiblePeriod(u8),
+}
+
 /// One effect of the power manager, performed in order.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PmAction {
     /// Send a Null Data frame advertising (`true`) or leaving power save.
     SendNull { power_save: bool },
-    /// Request the air for a coexistence event.
-    CoexRequest {
-        event: PmCoexEvent,
-        duration_micros: u32,
-    },
-    /// Withdraw a coexistence event request.
-    CoexRelease(PmCoexEvent),
-    /// Set the coexistence schedule interval, in 100 µs units.
-    SetCoexInterval(u32),
-    /// Restart the coexistence phases at phase 0.
-    RestartCoexPhases,
-    /// Set the coexistence flexible period.
-    SetCoexFlexiblePeriod(u8),
+    /// A coexistence effect, which the radio system shared by every radio
+    /// protocol performs.
+    Coex(PmCoexAction),
     /// Block the MAC TX queues, as the slice end does.
     BlockTx,
     /// Unblock the MAC TX queues.
@@ -585,9 +595,9 @@ impl ModemSleep {
             u32::from(join_beacon.interval_tu) << 10
         };
         if coex.active {
-            actions.push(PmAction::SetCoexInterval(
+            actions.push(PmAction::Coex(PmCoexAction::SetInterval(
                 self.beacon_interval_micros / SCHEDULE_INTERVAL_UNIT_MICROS,
-            ));
+            )));
         }
         self.dtim_period = 1;
         self.scale_listen_interval(coex, actions);
@@ -641,7 +651,7 @@ impl ModemSleep {
     /// `pm_coex_pwr_update` with the vendor default coexistence power
     /// configuration off: the flexible period is one.
     fn coex_pwr_update(&mut self, coex: CoexView, actions: &mut PmActions) {
-        actions.push(PmAction::SetCoexFlexiblePeriod(1));
+        actions.push(PmAction::Coex(PmCoexAction::SetFlexiblePeriod(1)));
         let coex = CoexView {
             flexible_period: 1,
             ..coex
@@ -872,7 +882,7 @@ impl ModemSleep {
             PmCoexEvent::GroupTraffic,
             PmCoexEvent::BeaconWindow,
         ] {
-            actions.push(PmAction::CoexRelease(event));
+            actions.push(PmAction::Coex(PmCoexAction::Release(event)));
         }
         actions.push(PmAction::ClearRxBeaconPriority);
         actions.push(PmAction::RfSleep);
@@ -1035,15 +1045,15 @@ impl ModemSleep {
             self.slice_deadline = clock.now.as_micros().wrapping_add(
                 u64::from(coex.overall_period()) * u64::from(self.beacon_interval_micros),
             );
-            actions.push(PmAction::SetCoexInterval(
+            actions.push(PmAction::Coex(PmCoexAction::SetInterval(
                 self.beacon_interval_micros / SCHEDULE_INTERVAL_UNIT_MICROS,
-            ));
-            actions.push(PmAction::RestartCoexPhases);
+            )));
+            actions.push(PmAction::Coex(PmCoexAction::RestartPhases));
             actions.push(PmAction::RxBeaconPriority(true));
-            actions.push(PmAction::CoexRequest {
+            actions.push(PmAction::Coex(PmCoexAction::Request {
                 event: PmCoexEvent::BeaconWindow,
                 duration_micros: self.beacon_window_micros,
-            });
+            }));
             self.activity = 0;
             if !self.is_sleeping() {
                 actions.push(PmAction::UnblockTx);
@@ -1138,7 +1148,9 @@ impl ModemSleep {
             traffic,
             actions,
         );
-        actions.push(PmAction::CoexRelease(PmCoexEvent::BeaconWindow));
+        actions.push(PmAction::Coex(PmCoexAction::Release(
+            PmCoexEvent::BeaconWindow,
+        )));
         actions.push(PmAction::ClearRxBeaconPriority);
     }
 
@@ -1157,9 +1169,9 @@ impl ModemSleep {
             self.dtim_period = dtim_period;
             self.scale_listen_interval(coex, actions);
             if coex.active {
-                actions.push(PmAction::SetCoexInterval(
+                actions.push(PmAction::Coex(PmCoexAction::SetInterval(
                     interval / SCHEDULE_INTERVAL_UNIT_MICROS,
-                ));
+                )));
             }
             self.beacon_parsed = true;
             self.update_tbtt_at_next_beacon = true;
@@ -1169,9 +1181,9 @@ impl ModemSleep {
             self.beacon_interval_micros = interval;
             self.scale_listen_interval(coex, actions);
             if coex.active {
-                actions.push(PmAction::SetCoexInterval(
+                actions.push(PmAction::Coex(PmCoexAction::SetInterval(
                     interval / SCHEDULE_INTERVAL_UNIT_MICROS,
-                ));
+                )));
             }
             self.update_tbtt_at_next_beacon = true;
         }
@@ -1316,10 +1328,10 @@ impl ModemSleep {
                         let now = clock.now.as_micros();
                         if now < self.slice_end {
                             let remaining = u32::try_from(self.slice_end - now).unwrap_or(u32::MAX);
-                            actions.push(PmAction::CoexRequest {
+                            actions.push(PmAction::Coex(PmCoexAction::Request {
                                 event: PmCoexEvent::GroupTraffic,
                                 duration_micros: remaining.min(self.beacon_window_micros),
-                            });
+                            }));
                         }
                     }
                 } else {
@@ -1456,10 +1468,10 @@ impl ModemSleep {
             * u64::from(coex.current_period);
         let slice_end = now.wrapping_add(slice);
         if phase.wifi & CoexPhaseView::WIFI_SLICE != 0 {
-            actions.push(PmAction::CoexRequest {
+            actions.push(PmAction::Coex(PmCoexAction::Request {
                 event: PmCoexEvent::Slice,
                 duration_micros: u32::try_from(slice).unwrap_or(u32::MAX),
-            });
+            }));
             self.in_slice = true;
             self.slice_end = slice_end;
             self.cycle_remainder = coex.cycle_micros().wrapping_sub(slice);
@@ -1482,10 +1494,10 @@ impl ModemSleep {
         }
         if phase.wifi & CoexPhaseView::SHARED != 0 {
             if !self.is_sleeping() {
-                actions.push(PmAction::CoexRequest {
+                actions.push(PmAction::Coex(PmCoexAction::Request {
                     event: PmCoexEvent::Slice,
                     duration_micros: u32::try_from(slice).unwrap_or(u32::MAX),
-                });
+                }));
             }
             actions.push(PmAction::BlockTx);
         }
@@ -1623,10 +1635,10 @@ impl ModemSleep {
     /// Request the slice until its end when it has not ended.
     fn request_slice_until_end(&mut self, now: u64, actions: &mut PmActions) {
         if now < self.slice_end {
-            actions.push(PmAction::CoexRequest {
+            actions.push(PmAction::Coex(PmCoexAction::Request {
                 event: PmCoexEvent::Slice,
                 duration_micros: u32::try_from(self.slice_end - now).unwrap_or(u32::MAX),
-            });
+            }));
         }
     }
 }

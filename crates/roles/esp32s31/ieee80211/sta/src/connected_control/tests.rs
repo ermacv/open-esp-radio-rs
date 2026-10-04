@@ -1,4 +1,5 @@
 use super::*;
+use crate::modem_sleep::PmCoexAction;
 
 fn core() -> ConnectedControlCore {
     ConnectedControlCore::new(
@@ -109,7 +110,9 @@ fn power_commands_leave_in_order_and_overflow_is_an_error() {
     let mut core = core();
     for interval in 0..POWER_COMMAND_CAPACITY as u32 {
         core.power
-            .push_command(ConnectedPowerCommand::SetCoexInterval(interval))
+            .push_command(ConnectedPowerCommand::Coex(PmCoexAction::SetInterval(
+                interval,
+            )))
             .unwrap();
     }
     assert_eq!(
@@ -119,7 +122,9 @@ fn power_commands_leave_in_order_and_overflow_is_an_error() {
     for interval in 0..POWER_COMMAND_CAPACITY as u32 {
         assert_eq!(
             core.take_power_command(),
-            Some(ConnectedPowerCommand::SetCoexInterval(interval))
+            Some(ConnectedPowerCommand::Coex(PmCoexAction::SetInterval(
+                interval
+            )))
         );
     }
     assert_eq!(core.take_power_command(), None);

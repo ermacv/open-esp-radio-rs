@@ -111,6 +111,7 @@ pub(crate) fn apply(
                         kind: TransferKind::Call,
                         source: None,
                         table: None,
+                        load: None,
                     })
                     .collect();
             }

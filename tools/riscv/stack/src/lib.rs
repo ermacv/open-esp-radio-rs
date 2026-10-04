@@ -22,6 +22,7 @@
 //! unresolved. Otherwise [`Bound::reasons`] counts what is, by reason, and
 //! [`Reason`] names the stage that closes it.
 
+mod cha;
 mod contexts;
 mod dwarf;
 mod image;
@@ -36,14 +37,15 @@ use oer_riscv_model::{Error, ErrorCode, Result};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+pub use cha::{TypeFacts, function_pointer_resolutions};
 pub use contexts::{HartStack, LevelStack, Stacks, interrupt_stacks};
 pub use dwarf::Dwarf;
 pub use image::{Function, functions, stack_sizes};
 pub use interrupts::{Field, TableEntry, TableLayout, interrupt_table};
 use oer_riscv_analysis::KnownJump;
-pub use relocations::address_taken;
+pub use relocations::{address_taken, taken_addresses};
 pub use summaries::{Summary, parse as parse_summaries};
-pub use sweep::{TableBase, TargetSource, Transfer, TransferKind};
+pub use sweep::{Load, TableBase, TargetSource, Transfer, TransferKind};
 pub use trap::{TrapEntry, trap_entry, vector_table};
 pub use wakers::{waker_resolutions, waker_vtables};
 
@@ -81,6 +83,9 @@ pub struct FunctionFacts {
     /// The base of the table each unresolved transfer loads its target
     /// from as `table[index]`, where it is known, by site.
     pub table_bases: BTreeMap<u32, u32>,
+    /// The exact integer registers at each unresolved transfer the value
+    /// analysis reached, by site.
+    pub unresolved_registers: BTreeMap<u32, [Option<u32>; 32]>,
 }
 
 /// Why a reachable site or function leaves a bound unknown.
@@ -314,6 +319,11 @@ fn function_facts(
         .filter(|t| t.target.is_none())
         .filter_map(|t| Some((t.site, table_base(t, &observation)?)))
         .collect();
+    let unresolved_registers = transfers
+        .iter()
+        .filter(|t| t.target.is_none())
+        .filter_map(|t| Some((t.site, *observation.site_registers.get(&t.site)?)))
+        .collect();
     let mut dispatched = Vec::new();
     // Sites whose table the link's relocations or a sized object name:
     // their entries replace whatever the value analysis read.
@@ -338,6 +348,7 @@ fn function_facts(
             target: Some(target),
             source: None,
             table: None,
+            load: None,
             ..transfer
         }));
     }
@@ -366,6 +377,7 @@ fn function_facts(
                 kind,
                 source: None,
                 table: None,
+                load: None,
             });
         }
     }
@@ -401,6 +413,7 @@ fn function_facts(
         observed: depth,
         call_arguments,
         table_bases,
+        unresolved_registers,
         complete: observation.complete,
         transfers,
         site_depths: observation.site_depths,

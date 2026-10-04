@@ -105,10 +105,23 @@ pub struct InterruptStacks {
     names: BTreeMap<u32, String>,
 }
 
+/// What an image's interrupt stacks must reach: the gate's policy, apart
+/// from the analysis, which always reports all it can.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Required {
+    /// Every hart's bound is proven: product images.
+    Proven,
+    /// A hart may be `partial + ?` with its holes named, as long as the part
+    /// it proves fits: images whose observers the product does not carry.
+    Partial,
+}
+
 impl InterruptStacks {
-    /// The gate: every hart's bound is known and, with the margin, fits the
-    /// usable interrupt stack, and every entry's handler runs from SRAM.
-    pub fn check(&self) -> Result<()> {
+    /// The gate under `required`: every entry's handler runs from SRAM, and
+    /// each hart's bound, or under [`Required::Partial`] its proven part, fits
+    /// the usable interrupt stack with the margin. Returns a warning for each
+    /// hart left `partial + ?`.
+    pub fn check(&self, required: Required) -> Result<Vec<String>> {
         let in_sram = |address: u32| {
             oer_esp32s31_platform_layout::memory::SRAM
                 .contains_range(u64::from(address), u64::from(address) + 4)
@@ -126,14 +139,25 @@ impl InterruptStacks {
                 .into());
             }
         }
+        let mut warnings = Vec::new();
         for hart in &self.harts {
-            let Some(bytes) = hart.bytes else {
-                return Err(format!(
-                    "hart {}'s interrupt stack has no bound:\n{}",
-                    hart.core,
-                    self.render()
-                )
-                .into());
+            let bytes = match (hart.bytes, required) {
+                (Some(bytes), _) => bytes,
+                (None, Required::Proven) => {
+                    return Err(format!(
+                        "hart {}'s interrupt stack has no bound:\n{}",
+                        hart.core,
+                        self.render()
+                    )
+                    .into());
+                }
+                (None, Required::Partial) => {
+                    warnings.push(format!(
+                        "hart {}'s interrupt stack is {} + ? bytes: its holes are in the report",
+                        hart.core, hart.partial
+                    ));
+                    hart.partial
+                }
             };
             if with_margin(bytes) > u64::from(contract::IRQ_STACK_USABLE_BYTES) {
                 return Err(format!(
@@ -147,7 +171,7 @@ impl InterruptStacks {
                 .into());
             }
         }
-        Ok(())
+        Ok(warnings)
     }
 
     fn name(&self, address: u32) -> String {
@@ -167,7 +191,7 @@ impl InterruptStacks {
                 "hart {}: {} of {} usable bytes",
                 hart.core,
                 hart.bytes
-                    .map_or("unknown".to_owned(), |bytes| bytes.to_string()),
+                    .map_or(format!("{} + ?", hart.partial), |bytes| bytes.to_string()),
                 contract::IRQ_STACK_USABLE_BYTES
             );
             for level in hart.levels.iter().chain([&hart.exception]) {
@@ -181,7 +205,7 @@ impl InterruptStacks {
                     "  {label}: {} (entry frame {})",
                     level
                         .bytes
-                        .map_or("unknown".to_owned(), |bytes| bytes.to_string()),
+                        .map_or(format!("{} + ?", level.partial), |bytes| bytes.to_string()),
                     level.frame
                 );
                 for (function, frame) in &level.bound.path {
@@ -264,9 +288,7 @@ pub fn interrupt_stacks(root: &Path, elf: &Path) -> Result<InterruptStacks> {
     // its type: the diagnostic observers' `OnceCell<fn(..)>`.
     let types = TypeFacts::read(&elf)?;
     let taken = taken_addresses(&elf)?;
-    for (site, targets) in function_pointer_resolutions(&analysis, &types, &taken) {
-        resolutions.entry(site).or_insert(targets);
-    }
+    resolutions.extend(function_pointer_resolutions(&analysis, &types, &taken));
     // The handler a slot calls is a direct call of the slot's own code: a
     // call site no inlined function owns. Calls from a handler inlined into
     // the slot are the handler's.
@@ -335,7 +357,11 @@ fn ipc_resolutions(
         for function in address_of(dispatch) {
             for transfer in &analysis.functions[&function].transfers {
                 if transfer.target.is_none() {
-                    resolutions.insert(transfer.site, targets.clone());
+                    resolutions.add(
+                        transfer.site,
+                        oer_riscv_stack::Fact::IpcPosts,
+                        targets.iter().copied(),
+                    );
                 }
             }
         }
@@ -366,19 +392,71 @@ mod tests {
         }
     }
 
+    fn partial(partial: u64) -> InterruptStacks {
+        let bound = oer_riscv_stack::Bound {
+            root: 0,
+            bytes: None,
+            partial,
+            unresolved: Vec::new(),
+            path: Vec::new(),
+        };
+        let level = oer_riscv_stack::LevelStack {
+            level: 0,
+            bytes: None,
+            partial,
+            frame: 0,
+            bound,
+        };
+        InterruptStacks {
+            harts: vec![HartStack {
+                core: 0,
+                levels: Vec::new(),
+                exception: level,
+                bytes: None,
+                partial,
+            }],
+            summaries: BTreeSet::new(),
+            handlers: Vec::new(),
+            names: BTreeMap::new(),
+        }
+    }
+
     #[test]
     fn a_handler_called_from_outside_sram_fails_the_gate() {
         let sram = oer_esp32s31_platform_layout::memory::SRAM.origin + 0x1000;
         let psram = oer_esp32s31_platform_layout::memory::PSRAM.origin;
         // A slot whose handler was inlined into it calls nothing itself.
-        assert!(stacks(vec![(sram, Vec::new())]).check().is_ok());
-        assert!(stacks(vec![(sram, vec![sram + 0x40])]).check().is_ok());
+        assert!(
+            stacks(vec![(sram, Vec::new())])
+                .check(Required::Proven)
+                .is_ok()
+        );
+        assert!(
+            stacks(vec![(sram, vec![sram + 0x40])])
+                .check(Required::Proven)
+                .is_ok()
+        );
         let error = stacks(vec![(sram, vec![psram])])
-            .check()
+            .check(Required::Proven)
             .unwrap_err()
             .to_string();
         assert!(error.contains("`TIMER`"), "{error}");
-        assert!(stacks(vec![(psram, Vec::new())]).check().is_err());
+        assert!(
+            stacks(vec![(psram, Vec::new())])
+                .check(Required::Proven)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn a_partial_bound_passes_only_where_the_policy_allows_it_and_its_part_fits() {
+        assert!(partial(1000).check(Required::Proven).is_err());
+        let warnings = partial(1000).check(Required::Partial).unwrap();
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("1000 + ?"), "{warnings:?}");
+        // The proven part alone must fit the usable stack with the margin.
+        let over = u64::from(contract::IRQ_STACK_USABLE_BYTES);
+        assert!(partial(over).check(Required::Partial).is_err());
     }
 
     #[test]

@@ -9,7 +9,7 @@
 use crate::dwarf::Dwarf;
 use crate::image::read_only_word;
 use crate::relocations::Relocations;
-use crate::{Analysis, Resolutions, TransferKind};
+use crate::{Analysis, Fact, Resolutions, TransferKind};
 use oer_riscv_model::{Error, ErrorCode, Result};
 use std::collections::BTreeSet;
 
@@ -76,7 +76,7 @@ pub fn waker_resolutions(
                 continue;
             };
             let targets: BTreeSet<u32> = vtables.iter().map(|vtable| vtable[slot]).collect();
-            resolutions.insert(transfer.site, targets);
+            resolutions.add(transfer.site, Fact::WakerVtables, targets);
         }
     }
     Ok(resolutions)

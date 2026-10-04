@@ -353,16 +353,47 @@ fn a_resolution_gives_an_unresolved_site_each_of_its_targets() {
     let small = TEXT + 7 * 4;
     let large = small + 3 * 4;
     assert_eq!(analysis.bound(TEXT).unwrap().bytes, None);
-    let resolutions = Resolutions::from([(site, BTreeSet::from([small, large]))]);
+    let mut resolutions = Resolutions::new();
+    resolutions.add(site, Fact::FieldType, [small, large]);
     let bound = analysis.bound_with(TEXT, &resolutions).unwrap();
     assert_eq!(bound.bytes, Some(16 + 32));
     assert_eq!(bound.path.last(), Some(&(large, 32)));
     // A site the analysis resolved keeps its own target.
-    let only_small = Resolutions::from([(site, BTreeSet::from([small]))]);
+    let mut only_small = Resolutions::new();
+    only_small.add(site, Fact::FieldType, [small]);
     assert_eq!(
         analysis.bound_with(TEXT, &only_small).unwrap().bytes,
         Some(32)
     );
+}
+
+/// An empty set resolves a site only where its fact proves the site reaches
+/// nothing; otherwise the site is a hole, and the bound keeps the resolved
+/// part as `partial + ?`.
+#[test]
+fn an_empty_candidate_set_is_a_hole_unless_its_fact_proves_it() {
+    let root = Symbol {
+        name: "root",
+        words: vec![
+            SP_DOWN_16, SAVE_RA, LOAD_SLOT, CALL_A5, LOAD_RA, SP_UP_16, RET,
+        ],
+        frame: Some(16),
+    };
+    let elf = executable(&[root]);
+    let analysis = analyze(&elf, &[], &[]).unwrap();
+    let site = TEXT + 12;
+    let mut found = Resolutions::new();
+    found.add(site, Fact::WakerVtables, []);
+    let hole = analysis.bound_with(TEXT, &found).unwrap();
+    assert_eq!(hole.bytes, None);
+    assert_eq!(hole.partial, 16);
+    assert_eq!(hole.unresolved, [(site, Reason::NoCandidate)]);
+    let mut proven = Resolutions::new();
+    proven.add(site, Fact::IpcPosts, []);
+    assert_eq!(analysis.bound_with(TEXT, &proven).unwrap().bytes, Some(16));
+    // Facts unite: a field type's candidate joins a found-empty waker set.
+    found.add(site, Fact::FieldType, [TEXT]);
+    assert_eq!(found.get(site).unwrap().targets, BTreeSet::from([TEXT]));
 }
 
 #[test]
@@ -1307,7 +1338,10 @@ fn a_type_named_in_another_crate_or_unit_still_matches() {
         .find(|transfer| transfer.target.is_none())
         .unwrap()
         .site;
-    let candidates = resolutions.get(&site).expect("resolved");
+    let candidates = resolutions
+        .get(site)
+        .map(|resolution| &resolution.targets)
+        .expect("resolved");
     assert!(
         candidates.is_superset(&BTreeSet::from([consume, replace])),
         "{resolutions:x?} consume={consume:#x} replace={replace:#x}"
@@ -1402,7 +1436,8 @@ fn a_merged_function_of_another_type_stays_a_candidate() {
     for site in sites {
         assert!(
             resolutions
-                .get(&site)
+                .get(site)
+                .map(|resolution| &resolution.targets)
                 .is_some_and(|targets| targets.contains(&signed.address)),
             "{site:#x}: {resolutions:x?}"
         );
@@ -1475,7 +1510,10 @@ fn a_waker_call_reaches_its_slot_of_every_waker_vtable() {
         .find(|transfer| transfer.target.is_none())
         .unwrap()
         .site;
-    assert_eq!(resolutions[&site], BTreeSet::from([vtables[0][2]]));
+    assert_eq!(
+        resolutions.get(site).unwrap().targets,
+        BTreeSet::from([vtables[0][2]])
+    );
     let bound = analysis.bound_with(start, &resolutions).unwrap();
     assert!(bound.unresolved.is_empty(), "{bound:?}");
     assert!(bound.bytes.is_some());
@@ -1668,7 +1706,7 @@ fn a_call_through_a_static_s_function_pointer_reaches_the_taken_functions_of_its
     // `negate` and `halve` have the sizes of `fn(u32) -> u32` but `i32`, and
     // `deep`'s parameter count differs: none can be the field's.
     assert_eq!(
-        resolutions.get(&site),
+        resolutions.get(site).map(|resolution| &resolution.targets),
         Some(&BTreeSet::from([shallow, twice])),
         "{resolutions:x?} negate={negate:#x}"
     );

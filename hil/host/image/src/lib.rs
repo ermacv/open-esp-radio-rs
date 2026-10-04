@@ -639,9 +639,19 @@ fn build_resolved(
     let interrupt_stack_path = output.join("interrupt-stack.txt");
     fs::write(&interrupt_stack_path, interrupt_stacks.render())?;
     eprintln!("interrupt_stack_report={}", interrupt_stack_path.display());
-    interrupt_stacks
-        .check()
-        .map_err(|error| log.failed("interrupt-stack gate", error))?;
+    // A diagnostic image's observers are not the product's: its interrupt
+    // stacks may be `partial + ?`, with their holes named.
+    let required = if class.diagnostic() {
+        oer_esp32s31_firmware::interrupt_stack::Required::Partial
+    } else {
+        oer_esp32s31_firmware::interrupt_stack::Required::Proven
+    };
+    for warning in interrupt_stacks
+        .check(required)
+        .map_err(|error| log.failed("interrupt-stack gate", error))?
+    {
+        eprintln!("warning: {warning}");
+    }
 
     let stack_report = crate::stack::analyze_elf_stack(&runtime_elf, &stack_budget)?;
     let stack_report_path = output.join("runtime-stack.txt");

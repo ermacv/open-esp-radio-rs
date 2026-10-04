@@ -9,8 +9,9 @@ use std::path::{Path, PathBuf};
 
 use oer_esp32s31_platform_layout::interrupts as contract;
 use oer_riscv_stack::{
-    Analysis, Dwarf, Field, HartStack, Stacks, TableLayout, address_taken, analyze, functions,
-    interrupt_table, parse_summaries, trap_entry, vector_table, waker_resolutions, waker_vtables,
+    Analysis, Dwarf, Field, HartStack, Stacks, TableLayout, TypeFacts, address_taken, analyze,
+    function_pointer_resolutions, functions, interrupt_table, parse_summaries, taken_addresses,
+    trap_entry, vector_table, waker_resolutions, waker_vtables,
 };
 
 use crate::Result;
@@ -228,6 +229,13 @@ pub fn interrupt_stacks(root: &Path, elf: &Path) -> Result<InterruptStacks> {
     let vtables = waker_vtables(&elf, &dwarf, &analysis)?;
     let mut resolutions = waker_resolutions(&analysis, &dwarf, &vtables)?;
     resolutions.extend(ipc_resolutions(&elf, &analysis, &address_of)?);
+    // Calls through a static's function pointer reach the taken functions of
+    // its type: the diagnostic observers' `OnceCell<fn(..)>`.
+    let types = TypeFacts::read(&elf)?;
+    let taken = taken_addresses(&elf)?;
+    for (site, targets) in function_pointer_resolutions(&analysis, &types, &taken) {
+        resolutions.entry(site).or_insert(targets);
+    }
     let sources = source_table(&elf)?;
     let harts = oer_riscv_stack::interrupt_stacks(
         &analysis,

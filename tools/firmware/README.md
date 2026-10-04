@@ -7,6 +7,16 @@ OTA selector, and configures bootstrap/image/flash commands.
 ELF inspection tools run under the shared process supervisor, with cancellation,
 owned descendants and a two-minute deadline per invocation.
 
+Its `interrupt_stack` module is the interrupt-stack gate every image build
+runs before the task-stack audit: it bounds each hart's interrupt stack from
+the runtime ELF, the pinned ROM ELF (`rom` of
+`verification/esp32s31/artifacts.toml`, from the vendor store: `cargo xtask
+vendor-fetch esp32s31 --artifact rom`; a missing or changed ROM is an error)
+and its reviewed summaries, with the platform's interrupt contract
+(`oer-esp32s31-platform-layout`'s `interrupts`), and fails unless every bound
+is known and, with the contract's margin, fits the usable stack. It writes
+each hart's levels and their critical paths to `interrupt-stack.txt`.
+
 The default `device` feature provides serial-device selection, a lease shared
 by xtask and HIL, and `write_segments`, which writes every flash segment
 through one connection to the ROM stub and skips a segment whose flash contents

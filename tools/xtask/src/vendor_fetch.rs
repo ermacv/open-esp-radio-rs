@@ -448,10 +448,11 @@ pub fn git_pins(ctx: &Context, chip: &str) -> Result<Vec<GitPin>> {
 
 /// Fetch and verify every artifact of `chip`; report local builds that are
 /// missing or differ. Fails when any artifact is not available as pinned.
-pub fn run(ctx: &Context, chip: &str) -> Result<()> {
+pub fn run(ctx: &Context, chip: &str, only: &[String]) -> Result<()> {
     link_store(&ctx.root, &store()?)?;
     let manifest = manifest_path(&ctx.root, chip)?;
     let (sources, artifacts) = parse(&std::fs::read_to_string(ctx.root.join(manifest))?)?;
+    let artifacts = selected(artifacts, only)?;
     let mut failures = vec![];
     for artifact in &artifacts {
         let source = sources
@@ -493,6 +494,21 @@ pub fn run(ctx: &Context, chip: &str) -> Result<()> {
     }
 }
 
+/// The artifacts `only` names, or all when it names none; an id the
+/// manifest lacks is an error.
+fn selected(artifacts: Vec<Artifact>, only: &[String]) -> Result<Vec<Artifact>> {
+    if let Some(unknown) = only
+        .iter()
+        .find(|id| !artifacts.iter().any(|artifact| &artifact.id == *id))
+    {
+        return Err(format!("no artifact `{unknown}` in artifacts.toml").into());
+    }
+    Ok(artifacts
+        .into_iter()
+        .filter(|artifact| only.is_empty() || only.contains(&artifact.id))
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -507,6 +523,24 @@ mod tests {
         assert_eq!(local_build(&path, &pin).unwrap(), LocalBuild::Differs);
         let actual = sha256(&path).unwrap();
         assert_eq!(local_build(&path, &actual).unwrap(), LocalBuild::Pinned);
+    }
+
+    #[test]
+    fn an_artifact_selection_keeps_only_the_named_artifacts() {
+        let artifact = |id: &str| Artifact {
+            id: id.to_owned(),
+            source: "s".to_owned(),
+            path: "p".to_owned(),
+            sha256: "h".to_owned(),
+        };
+        let all = || vec![artifact("rom"), artifact("phy")];
+        assert_eq!(selected(all(), &[]).unwrap().len(), 2);
+        let rom = selected(all(), &["rom".to_owned()]).unwrap();
+        assert_eq!(
+            rom.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(),
+            ["rom"]
+        );
+        assert!(selected(all(), &["missing".to_owned()]).is_err());
     }
 
     #[test]

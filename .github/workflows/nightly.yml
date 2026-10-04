@@ -64,6 +64,9 @@ jobs:
           echo "$(rustc --print sysroot)/lib/rustlib/$host/bin" >> "$GITHUB_PATH"
       - name: Fetch every workspace
         run: cargo tidy fetch
+      # The interrupt-stack gate bounds every image with the pinned ROM ELF.
+      - name: Pinned ESP32-S31 ROM ELF
+        run: cargo xtask --verbose vendor-fetch esp32s31 --artifact rom
       # The log lives outside the checkout: the image builder's source
       # snapshot refuses untracked files in the tree.
       - name: Build and audit every image class

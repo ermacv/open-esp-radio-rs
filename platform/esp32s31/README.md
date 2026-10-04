@@ -149,6 +149,9 @@ can sample only their current hart through
 for the bounded SRAM scan and restores their prior enable state. It rejects
 sampling from the IRQ stack or before initialization. Measurements describe
 observed writes, not the maximum possible depth or unwritten stack reservations.
+The maximum is the image build's interrupt-stack gate: a static bound per hart
+from the image's interrupt table ([firmware tooling](../../tools/firmware/README.md)),
+under the contract `layout`'s `interrupts` module states.
 
 From the repository root:
 

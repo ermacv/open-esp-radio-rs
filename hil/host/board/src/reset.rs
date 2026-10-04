@@ -38,6 +38,26 @@ pub fn reset_into_application(port: &Path) -> serialport::Result<Box<dyn serialp
     Ok(serial)
 }
 
+/// Reset the board at `port` into its ROM's download mode through its USB
+/// Serial/JTAG and return its open console: espflash's `usb-reset` into
+/// download, DTR holding the boot strap across RTS's edge. The ROM serves the
+/// USB Serial/JTAG in that mode, so the stand can load firmware even when the
+/// flashed image switches the USB Serial/JTAG off once it runs.
+pub fn reset_into_download(port: &Path) -> serialport::Result<Box<dyn serialport::SerialPort>> {
+    let mut serial = serialport::new(port.to_string_lossy(), BAUD_RATE)
+        .timeout(READ_TIMEOUT)
+        .open()?;
+    download_sequence(
+        |step| match step {
+            Step::Dtr(level) => serial.write_data_terminal_ready(level),
+            Step::Rts(level) => serial.write_request_to_send(level),
+            Step::ClearInput => serial.clear(serialport::ClearBuffer::Input),
+        },
+        || thread::sleep(Duration::from_millis(100)),
+    )?;
+    Ok(serial)
+}
+
 #[derive(Clone, Copy)]
 enum Step {
     Dtr(bool),
@@ -75,6 +95,26 @@ fn sequence<E>(
     apply(Step::Dtr(false))?;
     apply(Step::Rts(true))?;
     settle();
+    apply(Step::Rts(false))
+}
+
+/// espflash's USB Serial/JTAG reset into download mode: the boot strap
+/// (DTR) held while RTS resets the chip, then both released.
+fn download_sequence<E>(
+    mut apply: impl FnMut(Step) -> Result<(), E>,
+    mut settle: impl FnMut(),
+) -> Result<(), E> {
+    apply(Step::Rts(false))?;
+    apply(Step::Dtr(false))?;
+    settle();
+    apply(Step::Dtr(true))?;
+    apply(Step::Rts(false))?;
+    settle();
+    apply(Step::Rts(true))?;
+    apply(Step::Dtr(false))?;
+    apply(Step::Rts(true))?;
+    settle();
+    apply(Step::Dtr(false))?;
     apply(Step::Rts(false))
 }
 

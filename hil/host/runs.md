@@ -87,15 +87,15 @@ When the image preflight gets no hello and the console ends in a boot loop
 (at least two consecutive ROM resets of the same kind, such as `rst:0x7
 (HP_SYS_HP_WDT0_RESET)` right after the second-stage bootloader), the RTS
 reset and the reflash have not cleared it: firmware can leave low-power and
-PMU state (a powered-down MPLL) that survives both. The runner escalates: a
-system reset through the chip's builtin USB-JTAG (OpenOCD `reset run`, whose
-executable the `cargo hil` wrapper passes to the runner), then EN and the hub
-port's power when the board has them, and after each step asks the image for
-its image keys again; the first step after which it answers clears the loop
-and the repetition continues. Every step and its ROM line are recorded in the
-repetition's `reset-escalation.json` and a clearing step in the board journal.
-When no step clears it, the board is quarantined with trigger `boot-loop` for
-a person, and runs and `cargo hil wait --service` wait for its release.
+PMU state (a powered-down MPLL) that survives both. The runner escalates
+through the board's recovery ladder (below) without its RTS rung, and after
+each step asks the image for its image keys again; the first step after which
+it answers clears the loop and the repetition continues. Every step and its
+ROM line are recorded in the repetition's `reset-escalation.json` and a
+clearing step in the board journal. When no step clears it and the ROM stays
+silent, the board is quarantined with trigger `boot-loop` for a person, and
+runs and `cargo hil wait --service` wait for its release; a ROM that answers
+leaves the board serving, since firmware can be loaded into it.
 
 A target that does not answer within those 20 s is first read through its
 JTAG, where the stand's OpenOCD reaches it: the runner halts the current hart,
@@ -104,22 +104,26 @@ without a reset, names the code addresses from the image's ELF and writes them
 to `post-mortem/jtag.json`, so the place it stopped survives the resets below.
 The read never changes the repetition's outcome.
 
-A target that does not answer within those 20 s climbs the recovery ladder:
-an EN pulse through the board's registered reset path, or an RTS pulse on its
-own USB Serial/JTAG port when it has none, then the same query again. The
-ladder does not cycle power: a board neither reset brings back needs
-`cargo hil board reset BOARD --via power` when its hub port is registered,
-otherwise a person. The failure then names where core 0 was when the reset hit, from the
-ROM banner's saved program counter symbolized like a hang: stuck in code, or
-idle in its executor. A step that brings it back is journaled as a recovery, `hardware` when
+A target that does not answer within those 20 s climbs the recovery ladder
+(`oer_hil_stand::control::climb`): the resets of its stand-file `reset`
+ladder in order (an RTS pulse on its USB Serial/JTAG port, a system reset
+through its builtin USB-JTAG with OpenOCD, whose executable the `cargo hil`
+wrapper passes to the runner, its hub port's power), each followed by the
+same query, then, for a board that resets by power, the automatic entry into
+its ROM's download mode: its port is powered off and on and, as soon as its
+USB returns, it is reset into download through the USB Serial/JTAG, before a
+flashed image that switches the USB Serial/JTAG off can run. Every step is
+kept in `post-mortem/recovery.json`. The failure then names where core 0 was
+when the first reset hit, from the ROM banner's saved program counter
+symbolized like a hang: stuck in code, or idle in its executor. A step that brings it back is journaled as a recovery, `hardware` when
 the port had vanished or the ROM waited for a download. When the ROM answers
 a reset, booting from flash or waiting for a download, but the firmware does
 not, the failure names a firmware or host fault: the stand can reflash the
 board, so it goes on serving. The run then records its remaining repetitions of that
 image class as `blocked` without touching the board, so a broken image frees
 the lease within about a minute instead of repeating the wait. Only a board whose ROM stays silent after every
-reset path the stand has (EN, then RTS), which no script can bring back to a
-state where firmware can be loaded, is quarantined; frequent recoveries are
+step of its ladder, the download entry included, which no script can bring
+back to a state where firmware can be loaded, is quarantined; frequent recoveries are
 shown as its health, never a quarantine. A cancelled run judges no board. On a
 quarantine the repetition and the run's remaining repetitions end
 `board-quarantined`,

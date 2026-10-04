@@ -1,19 +1,22 @@
 //! Bringing back a device under test that stopped answering.
 //!
 //! When a failed repetition's target does not answer the post-mortem query,
-//! the runner climbs a ladder: it pulses EN through the board's registered
-//! reset path, or RTS on the chip's own USB port for a board without one, and
-//! asks again. A step that brings the board back is journaled as a recovery;
-//! it counts as hardware-level when the port had vanished or the ROM was
-//! waiting for a download, which firmware cannot cause.
+//! or its bootloader resets in a loop, the runner climbs the board's ladder
+//! ([`crate::control::climb`]): the resets of its stand-file `reset` ladder
+//! in order, then, for a board that resets by power, the automatic entry into
+//! its ROM's download mode. The first step after which the firmware answers
+//! is journaled as a recovery; it counts as hardware-level when the port had
+//! vanished or the ROM was waiting for a download, which firmware cannot
+//! cause. Every step is kept in the repetition's `post-mortem/recovery.json`
+//! or `reset-escalation.json`.
 //!
-//! A board is quarantined only when no script can bring it back to a state
-//! in which firmware can be loaded: its ROM stays silent after the reset. A
-//! ROM that answers, booting from flash or waiting for a download, means the
-//! stand can reflash the board, however bad its firmware; such a board is
-//! never quarantined, however often it needed recovering. A quarantined board
-//! serves nobody until a person resets or power-cycles it. What the stand saw
-//! is kept in the repetition's `post-mortem/`, which the quarantine names.
+//! A board is quarantined only when no step brings it back to a state in
+//! which firmware can be loaded: its ROM stays silent. A ROM that answers,
+//! booting from flash or waiting for a download, means the stand can reflash
+//! the board, however bad its firmware; such a board is never quarantined.
+//! A quarantined board serves nobody until a person resets or power-cycles
+//! it. What the stand saw is kept in the repetition's `post-mortem/`, which
+//! the quarantine names.
 
 use std::{
     path::{Path, PathBuf},
@@ -103,75 +106,103 @@ pub fn recover(
     let evidence = output.join("post-mortem");
     let hardware = post_mortem::current_port(port, Some(&mac), Duration::ZERO).is_none()
         || console_waits_for_download(output);
-    let rts = || {
-        post_mortem::current_port(port, Some(&mac), Duration::from_secs(5))
-            .and_then(|port| rts_reset(&port).ok())
+    let control = match crate::control::BoardControl::of_board(port, &mac) {
+        Ok(control) => control,
+        Err(error) => {
+            eprintln!("hil: the board {mac} cannot be recovered: {error}");
+            return None;
+        }
     };
-    let line_of = |banner: &Option<String>| {
-        banner
-            .as_deref()
-            .and_then(oer_hil_arbiter::control::reset_line)
-            .map(str::to_owned)
-    };
-    let (step, banner) = (RecoveryStep::RtsReset, rts());
-    let reset_line = line_of(&banner);
-    let core0 = banner.as_deref().and_then(saved_pc).map(|address| {
-        let symbols = elf.and_then(|elf| addr2line::Loader::new(elf).ok());
-        post_mortem::symbol(symbols.as_ref(), address)
-    });
-    let _ = std::fs::create_dir_all(&evidence);
-    let _ = std::fs::write(
-        evidence.join(format!("{step:?}-banner.txt").to_lowercase()),
-        banner.as_deref().unwrap_or_default(),
+    let finding = std::cell::RefCell::new(None);
+    let download_entry = control.download_entry();
+    let ladder = crate::control::climb(
+        &control.rungs(),
+        download_entry
+            .as_ref()
+            .map(|entry| entry as &dyn Fn() -> crate::Result<String>),
+        &|| control.console(BANNER_WATCH),
+        &mut || {
+            let found = post_mortem::inspect(port, Some(&mac), output, elf);
+            let answered = found.is_some();
+            *finding.borrow_mut() = found;
+            answered
+        },
     );
-    let finding = post_mortem::inspect(port, Some(&mac), output, elf);
-    let Some(finding) = finding else {
-        if !judges_board(oer_process::cancellation_requested()) {
+    let _ = std::fs::create_dir_all(&evidence);
+    let _ = oer_hil_durable::atomic_json(&evidence.join(RECOVERY_FILE), &ladder);
+    let last = ladder.steps.last()?;
+    let reset_line = last.outcome.clone().ok().flatten();
+    match (ladder.end.clone(), finding.into_inner()) {
+        (crate::control::LadderEnd::Cleared, Some(finding)) => {
+            let hardware = hardware
+                || reset_line
+                    .as_deref()
+                    .is_some_and(|line| line.contains("DOWNLOAD"));
+            // The earliest banner that named where core 0 was: the first
+            // reset's, before later ones restart the core elsewhere.
+            let core0 = ladder
+                .steps
+                .iter()
+                .find_map(|step| step.saved_pc)
+                .map(|address| {
+                    let symbols = elf.and_then(|elf| addr2line::Loader::new(elf).ok());
+                    post_mortem::symbol(symbols.as_ref(), address)
+                });
+            let _ = arbiter.record_board_by(
+                String::from("stand"),
+                Some(mac.clone()),
+                oer_hil_arbiter::BoardEventKind::Recovered {
+                    step: last.step,
+                    hardware,
+                    reset_line: reset_line.clone(),
+                    origin: origin.to_owned(),
+                },
+            );
+            Some(Recovery::Recovered {
+                step: last.step,
+                hardware,
+                reset_line,
+                core0,
+                finding: Box::new(finding),
+            })
+        }
+        _ if !judges_board(oer_process::cancellation_requested()) => {
             eprintln!(
                 "hil: the run was cancelled while the board was recovering; it is not \
                  quarantined"
             );
-            return None;
+            None
         }
         // A ROM that answers can be reflashed: only a silent one needs a person.
-        if let Some(line) = reset_line.as_deref().filter(|line| rom_answers(line)) {
-            return Some(Recovery::BootedSilent {
-                step,
-                reset_line: line.to_owned(),
-            });
-        }
-        return quarantine(
+        (crate::control::LadderEnd::Loadable { reset_line }, _) => Some(Recovery::BootedSilent {
+            step: last.step,
+            reset_line,
+        }),
+        _ => quarantine(
             &arbiter,
             &mac,
             QuarantineTrigger::Unreachable,
             format!(
-                "it did not answer after {step:?} ({})",
-                reset_line.as_deref().unwrap_or("no ROM line")
+                "neither its firmware nor its ROM answered after {}",
+                describe_steps(&ladder)
             ),
             &evidence,
-        );
-    };
-    let hardware = hardware
-        || reset_line
-            .as_deref()
-            .is_some_and(|line| line.contains("DOWNLOAD"));
-    let _ = arbiter.record_board_by(
-        String::from("stand"),
-        Some(mac.clone()),
-        oer_hil_arbiter::BoardEventKind::Recovered {
-            step,
-            hardware,
-            reset_line: reset_line.clone(),
-            origin: origin.to_owned(),
-        },
-    );
-    Some(Recovery::Recovered {
-        step,
-        hardware,
-        reset_line,
-        core0,
-        finding: Box::new(finding),
-    })
+        ),
+    }
+}
+
+/// The file a recovery records its ladder in, in the repetition's
+/// `post-mortem/`.
+pub const RECOVERY_FILE: &str = "recovery.json";
+
+/// The steps of `ladder`, as a list for a sentence.
+fn describe_steps(ladder: &crate::control::Ladder) -> String {
+    ladder
+        .steps
+        .iter()
+        .map(|step| format!("{:?}", step.step))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// A bootloader that keeps resetting the same way: the ROM answers, but no
@@ -212,109 +243,75 @@ pub fn boot_loop(console: &str) -> Option<BootLoop> {
     })
 }
 
-/// One reset the stand tried against a boot loop.
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct EscalationStep {
-    pub step: RecoveryStep,
-    /// The ROM line after it, or why the step could not run.
-    pub outcome: std::result::Result<Option<String>, String>,
-    /// Whether the console stopped looping after it.
-    pub cleared: bool,
-}
-
 /// What the stand did about a boot loop, recorded as the repetition's
 /// `reset-escalation.json`.
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ResetEscalation {
     pub boot_loop: BootLoop,
-    pub steps: Vec<EscalationStep>,
-    /// Whether a step cleared the loop; when none did, the board is
-    /// quarantined for a person.
-    pub cleared: bool,
+    pub ladder: crate::control::Ladder,
 }
 
 /// The file a repetition records its reset escalation in.
 pub const RESET_ESCALATION_FILE: &str = "reset-escalation.json";
 
-/// How long the console is read for the ROM's line after an escalation step
-/// that does not return one itself.
+/// How long the console is read for the ROM's line after a step that does
+/// not return one itself.
 const BANNER_WATCH: Duration = Duration::from_secs(2);
 
-/// Climb past the RTS reset that did not clear `found`: a system reset
-/// through the builtin USB-JTAG, then EN and the hub port's power when the
-/// board has them, stopping at the first step after which `boots` sees the
-/// image answer. When none clears it the board is quarantined for a person.
+/// Climb past the RTS reset that did not clear `found`: the board's ladder
+/// without its RTS rung, then its download entry, stopping at the first step
+/// after which `boots` sees the image answer. A board whose ROM stays silent
+/// after them all is quarantined for a person.
 pub fn escalate_boot_loop(
     port: &Path,
     mac: Option<&str>,
-    chip: &str,
     found: BootLoop,
     output: &Path,
     origin: &str,
     mut boots: impl FnMut() -> bool,
 ) -> ResetEscalation {
     let mac = mac.map(str::to_owned).or_else(|| board_mac(port));
-    let arbiter = Arbiter::open().ok();
-    let power = mac.as_deref().and_then(|mac| {
-        arbiter
-            .as_ref()?
-            .devices()
-            .ok()?
-            .into_iter()
-            .find(|device| device.mac == mac)?
-            .power
-    });
-    let mut steps = Vec::new();
-    let mut try_step = |step: RecoveryStep, reset: &dyn Fn() -> crate::Result<Option<String>>| {
-        let outcome = reset().map_err(|error| error.to_string());
-        let console = match &outcome {
-            Ok(None) => post_mortem::current_port(port, mac.as_deref(), Duration::from_secs(10))
-                .and_then(|port| read_console(&port, BANNER_WATCH).ok())
-                .unwrap_or_default(),
-            _ => String::new(),
-        };
-        let reset_line = outcome.clone().map(|banner| {
-            banner
-                .as_deref()
-                .and_then(oer_hil_arbiter::control::reset_line)
-                .or_else(|| oer_hil_arbiter::control::reset_line(&console))
-                .map(str::to_owned)
-        });
-        // Only an image that answers shows the loop is gone: a console read
-        // across the port's re-enumeration may simply have missed it.
-        let cleared = outcome.is_ok() && boots();
-        steps.push(EscalationStep {
-            step,
-            outcome: reset_line,
-            cleared,
-        });
-        cleared
+    let control = mac
+        .as_deref()
+        .map(|mac| crate::control::BoardControl::of_board(port, mac));
+    let ladder = match &control {
+        Some(Ok(control)) => {
+            let rungs = control
+                .rungs()
+                .into_iter()
+                .filter(|rung| rung.step() != RecoveryStep::RtsReset)
+                .collect::<Vec<_>>();
+            let download_entry = control.download_entry();
+            crate::control::climb(
+                &rungs,
+                download_entry
+                    .as_ref()
+                    .map(|entry| entry as &dyn Fn() -> crate::Result<String>),
+                &|| control.console(BANNER_WATCH),
+                &mut boots,
+            )
+        }
+        Some(Err(error)) => crate::control::Ladder {
+            steps: Vec::new(),
+            end: {
+                eprintln!("hil: the boot loop cannot be escalated: {error}");
+                crate::control::LadderEnd::Silent
+            },
+        },
+        None => crate::control::Ladder {
+            steps: Vec::new(),
+            end: crate::control::LadderEnd::Silent,
+        },
     };
-    let openocd = oer_hil_arbiter::control::Openocd::from_environment();
-    let mut cleared = match (&openocd, mac.as_deref()) {
-        (Some(openocd), Some(mac)) => try_step(RecoveryStep::JtagReset, &|| {
-            openocd.reset(chip, mac, Duration::from_secs(60))?;
-            Ok(None)
-        }),
-        _ => try_step(RecoveryStep::JtagReset, &|| {
-            Err("no OpenOCD was passed to the runner or the board's MAC is unknown".into())
-        }),
-    };
-    if !cleared && let Some(power) = power.clone() {
-        cleared = try_step(RecoveryStep::PowerCycle, &|| {
-            power.cycle()?;
-            Ok(None)
-        });
-    }
     let escalation = ResetEscalation {
         boot_loop: found,
-        steps,
-        cleared,
+        ladder,
     };
     let _ = oer_hil_durable::atomic_json(&output.join(RESET_ESCALATION_FILE), &escalation);
+    let arbiter = Arbiter::open().ok();
     if let (Some(arbiter), Some(mac)) = (&arbiter, mac.as_deref()) {
-        match escalation.steps.iter().find(|step| step.cleared) {
-            Some(step) => {
+        match (&escalation.ladder.end, escalation.ladder.steps.last()) {
+            (crate::control::LadderEnd::Cleared, Some(step)) => {
                 let _ = arbiter.record_board_by(
                     String::from("stand"),
                     Some(mac.to_owned()),
@@ -326,20 +323,17 @@ pub fn escalate_boot_loop(
                     },
                 );
             }
-            None => {
+            // A ROM that answers can be reflashed.
+            (crate::control::LadderEnd::Loadable { .. }, _) => {}
+            _ => {
                 let _ = quarantine(
                     arbiter,
                     mac,
                     QuarantineTrigger::BootLoop,
                     format!(
-                        "its bootloader resets in a loop ({}) that {} did not clear",
+                        "its bootloader resets in a loop ({}) that {} did not clear, and its ROM stays silent",
                         escalation.boot_loop.reset_line,
-                        escalation
-                            .steps
-                            .iter()
-                            .map(|step| format!("{:?}", step.step))
-                            .collect::<Vec<_>>()
-                            .join(", ")
+                        describe_steps(&escalation.ladder)
                     ),
                     output,
                 );
@@ -347,33 +341,6 @@ pub fn escalate_boot_loop(
         }
     }
     escalation
-}
-
-/// Read the console at `port` for `watch` without resetting the chip.
-fn read_console(port: &Path, watch: Duration) -> crate::Result<String> {
-    use std::io::Read as _;
-    let mut serial = serialport::new(port.to_string_lossy(), 115_200)
-        .timeout(Duration::from_millis(100))
-        .open()?;
-    serial.write_data_terminal_ready(false)?;
-    serial.write_request_to_send(false)?;
-    let started = std::time::Instant::now();
-    let mut console = Vec::new();
-    let mut buffer = [0_u8; 1024];
-    while started.elapsed() < watch {
-        match serial.read(&mut buffer) {
-            Ok(read) => console.extend_from_slice(&buffer[..read]),
-            Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
-            Err(_) => break,
-        }
-    }
-    Ok(String::from_utf8_lossy(&console).into_owned())
-}
-
-/// Whether a ROM reset line shows a ROM that answers, booting from flash or
-/// waiting for a download: the stand can load firmware into the board.
-fn rom_answers(line: &str) -> bool {
-    line.starts_with("rst:") && line.contains("boot:")
 }
 
 /// Whether an unanswered query after a reset judges the board. A cancelled
@@ -431,30 +398,6 @@ fn quarantine(
     Some(Recovery::Quarantined { trigger, reason })
 }
 
-/// Pulse RTS on the chip's USB Serial/JTAG port with the boot strap released
-/// and return what the console printed within two seconds.
-fn rts_reset(port: &Path) -> crate::Result<String> {
-    use std::io::Read as _;
-    let mut serial = serialport::new(port.to_string_lossy(), 115_200)
-        .timeout(Duration::from_millis(100))
-        .open()?;
-    serial.write_data_terminal_ready(false)?;
-    serial.write_request_to_send(true)?;
-    std::thread::sleep(Duration::from_millis(200));
-    serial.write_request_to_send(false)?;
-    let started = std::time::Instant::now();
-    let mut banner = Vec::new();
-    let mut buffer = [0_u8; 1024];
-    while started.elapsed() < Duration::from_secs(2) {
-        match serial.read(&mut buffer) {
-            Ok(read) => banner.extend_from_slice(&buffer[..read]),
-            Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
-            Err(_) => break,
-        }
-    }
-    Ok(String::from_utf8_lossy(&banner).into_owned())
-}
-
 /// The MAC of the board at `port`, or of the board whose port it was.
 fn board_mac(port: &Path) -> Option<String> {
     oer_hil_arbiter::port_mac(port).or_else(|| {
@@ -462,15 +405,6 @@ fn board_mac(port: &Path) -> Option<String> {
         let name = port.file_name()?.to_string_lossy().into_owned();
         let mac = name.rsplit('_').next()?.strip_suffix("-if00")?;
         oer_hil_arbiter::normalize_mac(mac).ok()
-    })
-}
-
-/// The program counter the ROM reports core 0 was at when the reset hit
-/// (`Core0 Saved PC:0x...`), the last one printed.
-fn saved_pc(banner: &str) -> Option<u32> {
-    banner.lines().rev().find_map(|line| {
-        let value = line.split_once("Core0 Saved PC:")?.1.trim();
-        u32::from_str_radix(value.strip_prefix("0x")?, 16).ok()
     })
 }
 
@@ -495,13 +429,13 @@ mod tests {
     #[test]
     fn only_a_board_whose_rom_stays_silent_is_quarantined() {
         // A ROM that answers can be reflashed, whatever the firmware does.
-        assert!(rom_answers(
+        assert!(crate::control::rom_answers(
             "rst:0x17 (CHIP_USB_UART_RESET),boot:0x5f (SPI_FAST_FLASH_BOOT)"
         ));
-        assert!(rom_answers(
+        assert!(crate::control::rom_answers(
             "rst:0x1 (POWERON),boot:0x4 (DOWNLOAD(USB/UART0))"
         ));
-        assert!(!rom_answers("garbled output"));
+        assert!(!crate::control::rom_answers("garbled output"));
     }
 
     #[test]
@@ -570,26 +504,28 @@ mod tests {
                 reset_line: String::from("rst:0x7 (HP_SYS_HP_WDT0_RESET),boot:0x58"),
                 resets: 3,
             },
-            steps: vec![EscalationStep {
-                step: RecoveryStep::JtagReset,
-                outcome: Ok(Some(String::from("rst:0x3 (SW_SYS_RESET),boot:0x58"))),
-                cleared: true,
-            }],
-            cleared: true,
+            ladder: crate::control::Ladder {
+                steps: vec![crate::control::LadderStep {
+                    step: RecoveryStep::JtagReset,
+                    outcome: Ok(Some(String::from("rst:0x3 (SW_SYS_RESET),boot:0x58"))),
+                    saved_pc: None,
+                    cleared: true,
+                }],
+                end: crate::control::LadderEnd::Cleared,
+            },
         };
         let json = serde_json::to_value(&escalation).unwrap();
-        assert_eq!(json["steps"][0]["step"], "jtag-reset");
-        assert_eq!(
-            serde_json::from_value::<ResetEscalation>(json).unwrap(),
-            escalation
-        );
+        assert_eq!(json["ladder"]["steps"][0]["step"], "jtag-reset");
+        assert_eq!(json["ladder"]["end"]["end"], "cleared");
+        let back = serde_json::from_value::<ResetEscalation>(json).unwrap();
+        assert_eq!(back.ladder, escalation.ladder);
     }
 
     #[test]
     fn the_rom_banner_names_where_core_zero_was() {
         let banner = "ESP-ROM:esp32s31-20251218\nrst:0x17 (CHIP_USB_UART_RESET),boot:0x5f (SPI_FAST_FLASH_BOOT)\nCore0 Saved PC:0x50050cd4\nSPI mode:DIO\n";
-        assert_eq!(saved_pc(banner), Some(0x5005_0cd4));
-        assert_eq!(saved_pc("rst:0x1 (POWERON)\n"), None);
+        assert_eq!(crate::control::saved_pc(banner), Some(0x5005_0cd4));
+        assert_eq!(crate::control::saved_pc("rst:0x1 (POWERON)\n"), None);
     }
 
     #[test]

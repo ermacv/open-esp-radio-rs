@@ -91,7 +91,10 @@ use oer_esp32s31_ieee80211_mac::{
         StaPairwiseCcmpSlot, install_ap_group_ccmp, install_ap_pairwise_ccmp,
         install_sta_group_ccmp, install_sta_pairwise_ccmp,
     },
-    init::{MacSnifferHardware, StaEspNowRxPolicyHardware, StaLinkRxPolicyHardware},
+    init::{
+        MacSnifferHardware, StaEspNowRxPolicyHardware, StaLinkRxPolicyHardware,
+        StaNoiseFloorHardware,
+    },
     portable,
     rx::{
         NormalizedRxFrame,
@@ -110,9 +113,9 @@ use oer_ieee80211_lower_mac::{
     KeyInstall, KeyScope, KeySelector, LifecycleCommand, LifecycleError, LifecycleEvent,
     LowerMacCapabilities, LowerMacSetting, MacAddress, MonitorCapabilities, MpduAttempt,
     PhyFormatSet, PhyRate, Protection, RateSupport, ReceiveFilter, Refused, RxBeaconPriority,
-    RxBlockAckAgreement, RxMeta, SettingError, SubmitError, TbttEvent, TbttSchedule, TxBuffer,
-    TxCompletion, TxFault, TxId, TxPayload, TxPower, TxResponse, TxStatus, VifConfig, VifId,
-    VifRole, VifRoleSet, VifTsf, WidthSet,
+    RxBlockAckAgreement, RxEvidence, RxMeta, SettingError, SubmitError, TbttEvent, TbttSchedule,
+    TxBuffer, TxCompletion, TxFault, TxId, TxPayload, TxPower, TxResponse, TxStatus, VifConfig,
+    VifId, VifRole, VifRoleSet, VifTsf, WidthSet,
 };
 use oer_ieee80211_mac::{
     channel::{Band, WifiChannel},
@@ -301,6 +304,7 @@ pub trait LowerMacHardware:
     + RxBlockAckHardware
     + StaApRegisterHardware
     + StaLinkRxPolicyHardware
+    + StaNoiseFloorHardware
     + StaEspNowRxPolicyHardware
     + MacSnifferHardware
     + ApRxPolicyHardware
@@ -318,6 +322,7 @@ impl<H> LowerMacHardware for H where
         + RxBlockAckHardware
         + StaApRegisterHardware
         + StaLinkRxPolicyHardware
+        + StaNoiseFloorHardware
         + StaEspNowRxPolicyHardware
         + MacSnifferHardware
         + ApRxPolicyHardware
@@ -1132,16 +1137,20 @@ where
     /// The owned view of one received MPDU, or `None` while the port does
     /// not receive or no receive rule admits it. The hardware policies pass
     /// a superset of the requested rules; this narrows it to them.
-    pub fn received<'frame>(
+    ///
+    /// The receive prefix carries no noise floor; the frame's is the PHY's
+    /// noise-floor estimate when it is received, the value the S31 station
+    /// reads for its rate control (`StaNoiseFloorHardware`).
+    pub fn received<'frame, H: StaNoiseFloorHardware>(
         &self,
+        hardware: &H,
         frame: &NormalizedRxFrame<'frame>,
     ) -> Option<(&'frame [u8], RxMeta)> {
         let admitted = self.monitor || self.vifs.iter().flatten().any(|vif| vif.admits(frame.mpdu));
         (self.receiving() && admitted).then(|| {
-            (
-                frame.mpdu,
-                portable::rx_meta(frame.metadata, self.channel()),
-            )
+            let mut meta = portable::rx_meta(frame.metadata, self.channel());
+            meta.noise_floor_dbm = RxEvidence::HardwareObserved(hardware.read_noise_floor_dbm());
+            (frame.mpdu, meta)
         })
     }
 

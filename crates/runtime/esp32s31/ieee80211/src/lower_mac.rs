@@ -714,8 +714,8 @@ where
             .stamp
             .and_then(|raw| self.timer.snapshot()?.stamp(raw))
             .map_or(RxEvidence::Unavailable, RxEvidence::HardwareObserved);
-        let _ = self.with_core(|core, _, sink| {
-            if let Some((bytes, mut meta)) = core.received(frame) {
+        let _ = self.with_core(|core, hardware, sink| {
+            if let Some((bytes, mut meta)) = core.received(&*hardware, frame) {
                 meta.timestamp = stamp;
                 let mut owned = [0; FRAME];
                 let event = match owned.get_mut(..bytes.len()) {

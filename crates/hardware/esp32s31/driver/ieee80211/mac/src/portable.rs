@@ -276,8 +276,10 @@ impl RxPhyInfo {
 /// `channel`.
 ///
 /// The S31 prefix fields this driver has proven carry no noise floor or
-/// timestamp, so those stay unavailable; a rate without a portable meaning
-/// ([`RxPhyInfo::phy_rate`]) becomes unavailable with it.
+/// timestamp, so those stay unavailable here (the lower-MAC core adds the
+/// PHY's noise-floor estimate and the port its timestamp); a rate without
+/// a portable meaning ([`RxPhyInfo::phy_rate`]) becomes unavailable with
+/// it.
 pub fn rx_meta(metadata: MacRxMetadata<RxPhyInfo>, channel: Channel) -> RxMeta {
     let metadata = metadata.map_rate(RxPhyInfo::phy_rate);
     RxMeta {

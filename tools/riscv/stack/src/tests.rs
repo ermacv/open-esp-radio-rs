@@ -59,8 +59,47 @@ fn placed(
     sized: bool,
     labelled: bool,
 ) -> Vec<u8> {
-    let rodata = rodata_words;
-    let rodata: Vec<u8> = rodata.iter().flat_map(|word| word.to_le_bytes()).collect();
+    let mut objects = Vec::new();
+    if labelled {
+        objects.push((".LJTI0_0", 0, 0));
+    }
+    if sized {
+        objects.push(("table", 0, 4 * rodata_words.len() as u32));
+    }
+    let relocated: Vec<usize> = if labelled {
+        (0..rodata_words.len()).collect()
+    } else {
+        Vec::new()
+    };
+    built(
+        text_base,
+        symbols,
+        &Rodata {
+            words: rodata_words,
+            relocated: &relocated,
+            objects: &objects,
+        },
+    )
+}
+
+/// `.rodata` words at `RODATA`: which of them carry an `R_RISCV_32`
+/// relocation (by index), and its symbols as (name, byte offset, size); a
+/// size of zero is a label.
+struct Rodata<'a> {
+    words: &'a [u32],
+    relocated: &'a [usize],
+    objects: &'a [(&'static str, u32, u32)],
+}
+
+/// An executable of `symbols` at `text_base` and `rodata`.
+fn built(text_base: u32, symbols: &[Symbol], rodata: &Rodata<'_>) -> Vec<u8> {
+    let rodata_words = rodata.words;
+    let objects = rodata.objects;
+    let relocated = rodata.relocated;
+    let rodata: Vec<u8> = rodata_words
+        .iter()
+        .flat_map(|word| word.to_le_bytes())
+        .collect();
     let mut text = Vec::new();
     let mut entries = Vec::new();
     let mut sizes = Vec::new();
@@ -77,29 +116,25 @@ fn placed(
     }
     let mut strtab = vec![0u8];
     let mut symtab = vec![0u8; 16];
-    if labelled {
-        entries.push((".LJTI0_0", RODATA, 0));
+    let code_symbols = entries.len();
+    for &(name, offset, size) in objects {
+        entries.push((name, RODATA + offset, size));
     }
     // Relocations with no symbol: the addend is the address.
     let mut rela = Vec::new();
-    if labelled {
-        for (i, word) in rodata_words.iter().enumerate() {
-            rela.extend_from_slice(&(RODATA + 4 * i as u32).to_le_bytes());
-            rela.extend_from_slice(&1u32.to_le_bytes()); // R_RISCV_32
-            rela.extend_from_slice(&word.to_le_bytes());
-        }
+    for &i in relocated {
+        rela.extend_from_slice(&(RODATA + 4 * i as u32).to_le_bytes());
+        rela.extend_from_slice(&1u32.to_le_bytes()); // R_RISCV_32
+        rela.extend_from_slice(&rodata_words[i].to_le_bytes());
     }
-    if sized {
-        entries.push(("table", RODATA, rodata.len() as u32));
-    }
-    for (name, address, size) in &entries {
+    for (index, (name, address, size)) in entries.iter().enumerate() {
         let offset = strtab.len() as u32;
         strtab.extend_from_slice(name.as_bytes());
         strtab.push(0);
         symtab.extend_from_slice(&offset.to_le_bytes());
         symtab.extend_from_slice(&address.to_le_bytes());
         symtab.extend_from_slice(&size.to_le_bytes());
-        let data = *address == RODATA;
+        let data = index >= code_symbols;
         // STB_GLOBAL with STT_NOTYPE for a label, STT_OBJECT or STT_FUNC.
         symtab.push(match (*size, data) {
             (0, true) => 0x10,
@@ -289,6 +324,44 @@ fn an_unresolved_call_leaves_the_bound_unknown_with_its_reason() {
     assert_eq!(
         bound.reasons(),
         BTreeMap::from([(Reason::StackSlotCall, 1)])
+    );
+}
+
+#[test]
+fn a_resolution_gives_an_unresolved_site_each_of_its_targets() {
+    // root: frame 16, an indirect call through a5 at offset 8.
+    let root = Symbol {
+        name: "root",
+        words: vec![
+            SP_DOWN_16, SAVE_RA, LOAD_SLOT, CALL_A5, LOAD_RA, SP_UP_16, RET,
+        ],
+        frame: Some(16),
+    };
+    let small = Symbol {
+        name: "small",
+        words: vec![SP_DOWN_16, SP_UP_16, RET],
+        frame: Some(16),
+    };
+    let large = Symbol {
+        name: "large",
+        words: vec![SP_DOWN_32, SP_UP_32, RET],
+        frame: Some(32),
+    };
+    let elf = executable(&[root, small, large]);
+    let analysis = analyze(&elf, &[], &[]).unwrap();
+    let site = TEXT + 12;
+    let small = TEXT + 7 * 4;
+    let large = small + 3 * 4;
+    assert_eq!(analysis.bound(TEXT).unwrap().bytes, None);
+    let resolutions = Resolutions::from([(site, BTreeSet::from([small, large]))]);
+    let bound = analysis.bound_with(TEXT, &resolutions).unwrap();
+    assert_eq!(bound.bytes, Some(16 + 32));
+    assert_eq!(bound.path.last(), Some(&(large, 32)));
+    // A site the analysis resolved keeps its own target.
+    let only_small = Resolutions::from([(site, BTreeSet::from([small]))]);
+    assert_eq!(
+        analysis.bound_with(TEXT, &only_small).unwrap().bytes,
+        Some(32)
     );
 }
 
@@ -913,4 +986,331 @@ fn a_vector_table_names_its_entries_by_relocations() {
         [Some(TEXT), Some(TEXT)]
     );
     assert!(vector_table(&elf, "missing").is_err());
+}
+
+fn binding(source: u16, level: u8, core: u32) -> [u32; 2] {
+    [u32::from(source) | u32::from(level) << 16, core]
+}
+
+/// An image whose `__OER_INTERRUPT_TABLE` lists `entries` (source, level,
+/// core, handler symbol index or none) in the ESP32-S31 binding layout.
+fn table_image(entries: &[(u16, u8, u32, Option<u32>)], relocate_handlers: bool) -> Vec<u8> {
+    let handler = Symbol {
+        name: "handler",
+        words: vec![SP_DOWN_16, SP_UP_16, RET],
+        frame: Some(16),
+    };
+    let mut words = vec![RODATA + 8, entries.len() as u32];
+    let mut relocated = vec![0];
+    for &(source, level, core, target) in entries {
+        words.extend(binding(source, level, core));
+        if target.is_some() && relocate_handlers {
+            relocated.push(words.len());
+        }
+        words.push(target.unwrap_or(0));
+    }
+    built(
+        TEXT,
+        &[handler],
+        &Rodata {
+            words: &words,
+            relocated: &relocated,
+            objects: &[
+                ("__OER_INTERRUPT_TABLE", 0, 8),
+                ("entries", 8, 12 * entries.len() as u32),
+            ],
+        },
+    )
+}
+
+const S31_TABLE: TableLayout = TableLayout {
+    entry: 12,
+    source: Field { offset: 0, size: 2 },
+    level: Field { offset: 2, size: 1 },
+    core: Field { offset: 4, size: 4 },
+    handler: 8,
+};
+
+#[test]
+fn the_interrupt_table_reads_each_binding_and_its_relocated_handler() {
+    let elf = table_image(&[(25, 1, 0, Some(TEXT)), (67, 8, 1, None)], true);
+    let entries = interrupt_table(&elf, "__OER_INTERRUPT_TABLE", &S31_TABLE).unwrap();
+    assert_eq!(
+        entries,
+        [
+            TableEntry {
+                source: 25,
+                level: 1,
+                core: 0,
+                handler: Some(TEXT)
+            },
+            TableEntry {
+                source: 67,
+                level: 8,
+                core: 1,
+                handler: None
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_handler_word_without_its_relocation_fails() {
+    let elf = table_image(&[(25, 1, 0, Some(TEXT))], false);
+    assert!(interrupt_table(&elf, "__OER_INTERRUPT_TABLE", &S31_TABLE).is_err());
+    assert!(interrupt_table(&elf, "__MISSING", &S31_TABLE).is_err());
+}
+
+/// `lui a1, upper` then `addi a1, a1, lower`: `a1 = value`.
+fn load_a1(value: u32) -> [u32; 2] {
+    let lower = value & 0xfff;
+    let upper = value.wrapping_add(0x800) & 0xffff_f000;
+    [
+        upper | (11 << 7) | 0x37,
+        (lower << 20) | (11 << 15) | (11 << 7) | 0x13,
+    ]
+}
+
+#[test]
+fn constant_arguments_collect_a_register_at_every_direct_call() {
+    let callee = TEXT + 4 * 12;
+    let [lui, addi] = load_a1(0x1234);
+    let [lui2, addi2] = load_a1(0x5678);
+    let caller = Symbol {
+        name: "caller",
+        words: vec![
+            SP_DOWN_16,
+            SAVE_RA,
+            lui,
+            addi,
+            call(TEXT + 16, callee),
+            lui2,
+            addi2,
+            call(TEXT + 28, callee),
+            LOAD_RA,
+            SP_UP_16,
+            RET,
+            BRANCH_NEXT,
+        ],
+        frame: Some(16),
+    };
+    let elf = executable(&[
+        caller,
+        Symbol {
+            name: "callee",
+            words: vec![RET],
+            frame: Some(0),
+        },
+    ]);
+    let analysis = analyze(&elf, &[], &[]).unwrap();
+    assert_eq!(
+        analysis.constant_arguments(callee, 1).unwrap(),
+        BTreeSet::from([0x1234, 0x5678])
+    );
+    // a2 is never set: not exact.
+    assert!(analysis.constant_arguments(callee, 2).is_err());
+    assert!(!address_taken(&elf, callee).unwrap());
+}
+
+#[test]
+fn a_relocated_data_word_takes_a_function_s_address() {
+    let elf = labelled(&[leaf(Some(32))], &[TEXT]);
+    assert!(address_taken(&elf, TEXT).unwrap());
+    assert!(!address_taken(&elf, TEXT + 4).unwrap());
+}
+
+/// `source`, a `no_std` program with an `_start`, compiled and linked for
+/// RV32 by the repository's `rustc` with debug information and the link's
+/// relocations kept, as images are.
+fn compiled(source: &str) -> Vec<u8> {
+    let directory = std::env::temp_dir().join(format!(
+        "oer-riscv-stack-{}-{}",
+        std::process::id(),
+        source.len()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let input = directory.join("main.rs");
+    let output = directory.join("main.elf");
+    std::fs::write(&input, source).unwrap();
+    let status = std::process::Command::new("rustc")
+        // Frames come from `.stack_sizes`, as for images.
+        .env("RUSTC_BOOTSTRAP", "1")
+        .args(["-Z", "emit-stack-sizes"])
+        .args(["--edition", "2024", "--crate-type", "bin"])
+        .args(["--target", "riscv32imafc-unknown-none-elf"])
+        .args([
+            "-C",
+            "opt-level=s",
+            "-C",
+            "debuginfo=2",
+            "-C",
+            "panic=abort",
+        ])
+        .args(["-C", "link-arg=--emit-relocs", "-C", "link-arg=-e_start"])
+        // `keep`, which a program defines to hold what `_start` does not
+        // reach, survives the link's garbage collection.
+        .args(["-C", "link-arg=--undefined=keep"])
+        .arg("-o")
+        .arg(&output)
+        .arg(&input)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let elf = std::fs::read(&output).unwrap();
+    let _ = std::fs::remove_dir_all(&directory);
+    elf
+}
+
+const WAKER_PROGRAM: &str = r#"
+#![no_std]
+#![no_main]
+use core::task::{RawWaker, RawWakerVTable, Waker};
+
+static VTABLE: RawWakerVTable = RawWakerVTable::new(clone, wake, by_ref, drop);
+
+fn mark(value: u32) {
+    unsafe { core::ptr::write_volatile(0x1000 as *mut u32, value) }
+}
+unsafe fn clone(data: *const ()) -> RawWaker {
+    mark(1);
+    RawWaker::new(data, &VTABLE)
+}
+unsafe fn wake(_: *const ()) {
+    let mut buffer = [0_u32; 32];
+    for (i, word) in buffer.iter_mut().enumerate() {
+        unsafe { core::ptr::write_volatile(word, i as u32) };
+    }
+    mark(buffer[3]);
+}
+unsafe fn by_ref(_: *const ()) {
+    mark(3);
+}
+unsafe fn drop(_: *const ()) {
+    mark(4);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn _start(waker: &Waker) {
+    waker.wake_by_ref();
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn keep() -> *const RawWakerVTable {
+    &VTABLE
+}
+
+#[panic_handler]
+fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
+    loop {}
+}
+"#;
+
+#[test]
+fn a_waker_call_reaches_its_slot_of_every_waker_vtable() {
+    let elf = compiled(WAKER_PROGRAM);
+    let analysis = analyze(&elf, &[], &[]).unwrap();
+    let dwarf = Dwarf::read(&elf).unwrap();
+    let vtables = waker_vtables(&elf, &dwarf, &analysis).unwrap();
+    assert_eq!(vtables.len(), 1, "{vtables:x?}");
+    let start = functions(&elf)
+        .unwrap()
+        .into_iter()
+        .find(|function| function.names.iter().any(|name| name == "_start"))
+        .unwrap()
+        .address;
+    assert_eq!(analysis.bound(start).unwrap().bytes, None);
+    let resolutions = waker_resolutions(&analysis, &dwarf, &vtables).unwrap();
+    // `_start`'s `wake_by_ref` reaches `by_ref` (slot 2), not `wake`.
+    let site = analysis.functions[&start]
+        .transfers
+        .iter()
+        .find(|transfer| transfer.target.is_none())
+        .unwrap()
+        .site;
+    assert_eq!(resolutions[&site], BTreeSet::from([vtables[0][2]]));
+    let bound = analysis.bound_with(start, &resolutions).unwrap();
+    assert!(bound.unresolved.is_empty(), "{bound:?}");
+    assert!(bound.bytes.is_some());
+}
+
+#[test]
+fn a_hart_stacks_one_interrupt_per_level_and_an_exception() {
+    // lui a5, 3 (the source table at 0x3000); add a5, a5, a0; lw a5, 0(a5).
+    const LUI_SOURCES: u32 = (3 << 12) | (15 << 7) | 0x37;
+    const ADD_INDEX: u32 = (10 << 20) | (15 << 15) | (15 << 7) | 0x33;
+    const LOAD_ENTRY: u32 = (15 << 15) | (2 << 12) | (15 << 7) | 0x03;
+    // slli a0, a0, 2: the source number scaled to a word index.
+    const SCALE_INDEX: u32 = (2 << 20) | (10 << 15) | (1 << 12) | (10 << 7) | 0x13;
+    let dispatcher = Symbol {
+        name: "dispatcher",
+        words: vec![
+            SP_DOWN_16,
+            SAVE_RA,
+            LUI_SOURCES,
+            SCALE_INDEX,
+            ADD_INDEX,
+            LOAD_ENTRY,
+            CALL_A5,
+            LOAD_RA,
+            SP_UP_16,
+            RET,
+        ],
+        frame: Some(16),
+    };
+    let small = Symbol {
+        name: "small",
+        words: vec![SP_DOWN_16, SP_UP_16, RET],
+        frame: Some(16),
+    };
+    let large = Symbol {
+        name: "large",
+        words: vec![SP_DOWN_32, SP_UP_32, RET],
+        frame: Some(32),
+    };
+    let elf = executable(&[dispatcher, small, large]);
+    let analysis = analyze(&elf, &[], &[]).unwrap();
+    let (dispatcher, small, large) = (TEXT, TEXT + 40, TEXT + 52);
+    let entry = |level, core, handler| TableEntry {
+        source: 0,
+        level,
+        core,
+        handler: Some(handler),
+    };
+    let table = [entry(1, 0, small), entry(8, 0, large), entry(1, 1, small)];
+    let vector = TrapEntry {
+        entry: 0x100,
+        frame: 80,
+        handler: dispatcher,
+    };
+    let exception = TrapEntry {
+        entry: 0x200,
+        frame: 80,
+        handler: small,
+    };
+    let harts = interrupt_stacks(
+        &analysis,
+        &Stacks {
+            table: &table,
+            cores: &[0, 1],
+            always: &[1],
+            vectors: &[vector],
+            exception,
+            sources: 0x3000,
+            resolutions: &Resolutions::new(),
+        },
+    )
+    .unwrap();
+    // Level 1: 80 + 16 + 16; level 8: 80 + 16 + 32; the exception 80 + 16.
+    let levels = |hart: &HartStack| {
+        hart.levels
+            .iter()
+            .map(|level| (level.level, level.bytes))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(levels(&harts[0]), [(1, Some(112)), (8, Some(128))]);
+    assert_eq!(harts[0].exception.bytes, Some(96));
+    assert_eq!(harts[0].bytes, Some(112 + 128 + 96));
+    // Hart 1 has no level-8 entry; its level 1 reaches the small handler only.
+    assert_eq!(levels(&harts[1]), [(1, Some(112))]);
+    assert_eq!(harts[1].bytes, Some(112 + 96));
 }

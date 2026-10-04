@@ -82,6 +82,35 @@ different paths fail. `TrapEntry::frame` is the deepest `sp` below the
 interrupt stack's position at the handler call: what every nesting level adds
 beside its handler's bound.
 
+Facts outside the machine code close indirect sites through
+`Analysis::bound_with` and its `Resolutions`, which apply only where the
+analysis left a target unresolved:
+
+- `interrupt_table` reads an image's interrupt table (the slice an exported
+  symbol holds, its pointer word and every non-zero handler word carrying the
+  relocation that names it) in the chip's `TableLayout`.
+- `Dwarf` reads the chain of functions inlined at an address and the
+  qualified type each function returns. `waker_vtables` finds every
+  `RawWakerVTable`: four relocated function pointers in data neither writable
+  nor executable whose first function returns `core::task::wake::RawWaker`.
+  A `&'static RawWakerVTable` points at immutable data, so every vtable a
+  `const` or `static` builds is found; one built at run time in writable
+  memory (a leaked allocation) is not. `waker_resolutions` sends an
+  unresolved call inside `Waker::wake`, `wake_by_ref`, `drop` or `clone` to
+  that slot of every vtable.
+- `Analysis::constant_arguments` reads an argument register's exact value at
+  every direct call of a function, complete when `address_taken` finds no
+  relocation that takes the function's address other than a transfer: how
+  the ESP32-S31 image reads every function `Ipc::call_function` posts, the
+  targets of the IPC dispatch.
+
+`interrupt_stacks` bounds each hart's interrupt stack (`Stacks`): one
+interrupt per level the hart takes (its table entries' levels and the levels
+it always uses), each the worst hardware-vector entry's frame plus its
+handler's bound, where the dispatcher's calls through the source table reach
+only the handlers the table routes to that hart at that level; an exception
+on top. A level's bound is unknown when its handler's is.
+
 ```console
 cargo test -p oer-riscv-stack
 ```

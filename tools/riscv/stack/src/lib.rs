@@ -22,21 +22,30 @@
 //! unresolved. Otherwise [`Bound::reasons`] counts what is, by reason, and
 //! [`Reason`] names the stage that closes it.
 
+mod contexts;
+mod dwarf;
 mod image;
+mod interrupts;
 mod relocations;
 mod summaries;
 mod sweep;
 mod trap;
+mod wakers;
 
 use oer_riscv_model::{Error, ErrorCode, Result};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+pub use contexts::{HartStack, LevelStack, Stacks, interrupt_stacks};
+pub use dwarf::Dwarf;
 pub use image::{Function, functions, stack_sizes};
+pub use interrupts::{Field, TableEntry, TableLayout, interrupt_table};
 use oer_riscv_analysis::KnownJump;
+pub use relocations::address_taken;
 pub use summaries::{Summary, parse as parse_summaries};
 pub use sweep::{TableBase, TargetSource, Transfer, TransferKind};
 pub use trap::{TrapEntry, trap_entry, vector_table};
+pub use wakers::{waker_resolutions, waker_vtables};
 
 /// Where a function's frame comes from.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -66,6 +75,12 @@ pub struct FunctionFacts {
     /// Bytes below the entry `sp` at each transfer the value analysis
     /// reached; a transfer it did not reach is taken at the whole frame.
     pub site_depths: BTreeMap<u32, u64>,
+    /// The exact argument registers `a0..a7` at each direct call the value
+    /// analysis reached, by site; `None` where a value is not exact.
+    pub call_arguments: BTreeMap<u32, [Option<u32>; 8]>,
+    /// The base of the table each unresolved transfer loads its target
+    /// from as `table[index]`, where it is known, by site.
+    pub table_bases: BTreeMap<u32, u32>,
 }
 
 /// Why a reachable site or function leaves a bound unknown.
@@ -218,6 +233,18 @@ fn analyze_one(elf: &[u8]) -> Result<Analysis> {
     })
 }
 
+/// The base of the table a transfer loads its target from, when known.
+fn table_base(transfer: &Transfer, observation: &image::Observation) -> Option<u32> {
+    match transfer.table {
+        Some(TableBase::Address(address)) => Some(address),
+        Some(TableBase::Register(r)) => observation
+            .site_registers
+            .get(&transfer.site)
+            .and_then(|registers| registers[r as usize]),
+        None => None,
+    }
+}
+
 /// The entries of the table a transfer loads its target from, when the
 /// table is a sized object or a compiler jump table the relocations name.
 fn table_entries(
@@ -226,14 +253,7 @@ fn table_entries(
     transfer: &Transfer,
     observation: &image::Observation,
 ) -> Result<Option<Vec<u32>>> {
-    let address = match transfer.table {
-        Some(TableBase::Address(address)) => Some(address),
-        Some(TableBase::Register(r)) => observation
-            .site_registers
-            .get(&transfer.site)
-            .and_then(|registers| registers[r as usize]),
-        None => None,
-    };
+    let address = table_base(transfer, observation);
     Ok(match address {
         Some(address) => image::table(elf, address)?.or_else(|| relocations.jump_table(address)),
         None => None,
@@ -289,6 +309,11 @@ fn function_facts(
         }
     };
     let mut transfers = swept.transfers;
+    let table_bases = transfers
+        .iter()
+        .filter(|t| t.target.is_none())
+        .filter_map(|t| Some((t.site, table_base(t, &observation)?)))
+        .collect();
     let mut dispatched = Vec::new();
     // Sites whose table the link's relocations or a sized object name:
     // their entries replace whatever the value analysis read.
@@ -345,6 +370,14 @@ fn function_facts(
         }
     }
     transfers.sort_by_key(|t| (t.site, t.target));
+    let call_arguments = transfers
+        .iter()
+        .filter(|t| t.kind == TransferKind::Call && t.target.is_some())
+        .filter_map(|t| {
+            let registers = observation.site_registers.get(&t.site)?;
+            Some((t.site, core::array::from_fn(|i| registers[10 + i])))
+        })
+        .collect();
     let depth = observation.depth;
     let recorded = sizes.get(&function.address).copied();
     let (frame, source) = match (recorded, depth) {
@@ -366,15 +399,29 @@ fn function_facts(
         frame,
         source,
         observed: depth,
+        call_arguments,
+        table_bases,
         complete: observation.complete,
         transfers,
         site_depths: observation.site_depths,
     })
 }
 
+/// Targets that facts outside the machine code give indirect sites, by site:
+/// a context's dispatcher targets from the interrupt table, a waker call's
+/// from the waker vtables. They apply only where the analysis left the
+/// target unresolved.
+pub type Resolutions = BTreeMap<u32, BTreeSet<u32>>;
+
 impl Analysis {
     /// The worst-case bound of the function at `root`.
     pub fn bound(&self, root: u32) -> Result<Bound> {
+        self.bound_with(root, &Resolutions::new())
+    }
+
+    /// [`Self::bound`] with `resolutions` for the indirect sites the
+    /// analysis left unresolved: such a site reaches each of its targets.
+    pub fn bound_with(&self, root: u32, resolutions: &Resolutions) -> Result<Bound> {
         if !self.functions.contains_key(&root) {
             return Err(Error::new(
                 ErrorCode::NotFound,
@@ -383,6 +430,7 @@ impl Analysis {
         }
         let mut walk = Walk {
             analysis: self,
+            resolutions,
             memo: BTreeMap::new(),
             stack: Vec::new(),
             unresolved: BTreeSet::new(),
@@ -396,6 +444,36 @@ impl Analysis {
         })
     }
 
+    /// The exact values argument register `a{register}` holds at every
+    /// direct call of `callee`, or the first call site where it is not
+    /// exact. Complete only for a callee whose address nothing takes
+    /// ([`address_taken`]): every call of it is then a direct one.
+    pub fn constant_arguments(&self, callee: u32, register: usize) -> Result<BTreeSet<u32>> {
+        let mut values = BTreeSet::new();
+        for facts in self.functions.values() {
+            for transfer in &facts.transfers {
+                if transfer.kind != TransferKind::Call || transfer.target != Some(callee) {
+                    continue;
+                }
+                let value = facts
+                    .call_arguments
+                    .get(&transfer.site)
+                    .and_then(|arguments| arguments.get(register).copied().flatten())
+                    .ok_or_else(|| {
+                        Error::new(
+                            ErrorCode::Unavailable,
+                            format!(
+                                "a{register} at the call of {callee:#010x} at {:#010x} is not exact",
+                                transfer.site
+                            ),
+                        )
+                    })?;
+                values.insert(value);
+            }
+        }
+        Ok(values)
+    }
+
     fn in_code(&self, address: u32) -> bool {
         self.code
             .iter()
@@ -405,6 +483,7 @@ impl Analysis {
 
 struct Walk<'a> {
     analysis: &'a Analysis,
+    resolutions: &'a Resolutions,
     memo: BTreeMap<u32, (u64, Vec<(u32, u64)>)>,
     stack: Vec<u32>,
     unresolved: BTreeSet<(u32, Reason)>,
@@ -430,33 +509,41 @@ impl Walk<'_> {
         // The deepest point of this function alone is its frame.
         let mut deepest = (frame, Vec::new());
         for transfer in &facts.transfers {
-            let Some(target) = transfer.target else {
-                let reason = match (transfer.kind, transfer.source) {
-                    (TransferKind::Tail, _) => Reason::IndirectJump,
-                    (TransferKind::Call, Some(TargetSource::StackSlot)) => Reason::StackSlotCall,
-                    (TransferKind::Call, Some(TargetSource::Memory)) => Reason::LoadedCall,
-                    (TransferKind::Call, _) => Reason::RegisterCall,
-                };
-                self.unresolved.insert((transfer.site, reason));
-                continue;
+            let targets: Vec<u32> = match (transfer.target, self.resolutions.get(&transfer.site)) {
+                (Some(target), _) => vec![target],
+                (None, Some(resolved)) => resolved.iter().copied().collect(),
+                (None, None) => {
+                    let reason = match (transfer.kind, transfer.source) {
+                        (TransferKind::Tail, _) => Reason::IndirectJump,
+                        (TransferKind::Call, Some(TargetSource::StackSlot)) => {
+                            Reason::StackSlotCall
+                        }
+                        (TransferKind::Call, Some(TargetSource::Memory)) => Reason::LoadedCall,
+                        (TransferKind::Call, _) => Reason::RegisterCall,
+                    };
+                    self.unresolved.insert((transfer.site, reason));
+                    continue;
+                }
             };
-            if !self.analysis.functions.contains_key(&target) {
-                let reason = if self.analysis.in_code(target) {
-                    Reason::IntoFunction
-                } else {
-                    Reason::OutsideImage
-                };
-                self.unresolved.insert((transfer.site, reason));
-                continue;
-            }
             let at = facts
                 .site_depths
                 .get(&transfer.site)
                 .copied()
                 .unwrap_or(frame);
-            let below = self.visit(target);
-            if at + below.0 > deepest.0 {
-                deepest = (at + below.0, below.1);
+            for target in targets {
+                if !self.analysis.functions.contains_key(&target) {
+                    let reason = if self.analysis.in_code(target) {
+                        Reason::IntoFunction
+                    } else {
+                        Reason::OutsideImage
+                    };
+                    self.unresolved.insert((transfer.site, reason));
+                    continue;
+                }
+                let below = self.visit(target);
+                if at + below.0 > deepest.0 {
+                    deepest = (at + below.0, below.1);
+                }
             }
         }
         self.stack.pop();

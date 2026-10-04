@@ -307,12 +307,11 @@ impl ConnectedStaPort {
         plan: &ConnectedStaPlan,
         resources: ConnectedStaControlResources<'resources, M, CAPACITY>,
     ) -> PlacedConnectedControl<'resources, M, CAPACITY> {
-        let tx_block_ack = StaTxBlockAckSessions::new(
-            plan.config.block_ack.tx_block_ack_window,
-            plan.config.block_ack.tx_block_ack_negotiation_timeout,
-            plan.config.block_ack.tid0_amsdu,
-        )
-        .expect("connected STA plan validated TX BlockAck policy");
+        let tx_block_ack = plan
+            .config
+            .block_ack
+            .tx_block_ack_originator()
+            .expect("connected STA plan validated TX BlockAck policy");
         let mut control = resources.slot.place(ConnectedControl::new_shared(
             resources.receiver,
             plan.link.bssid,

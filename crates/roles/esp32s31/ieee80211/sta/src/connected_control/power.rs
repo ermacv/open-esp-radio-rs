@@ -362,9 +362,8 @@ impl ConnectedControlCore {
         context: DatapathControlContext,
         control_event_pending: bool,
     ) -> PmTraffic {
-        let control = self.in_flight.is_some()
-            || control_event_pending
-            || self.initial_tx_block_ack.into_iter().any(|pending| pending);
+        let control =
+            self.in_flight.is_some() || control_event_pending || self.tx_block_ack.has_pending();
         PmTraffic {
             tx_pending: context.network_tx_pending || control,
             connection_pending: control,

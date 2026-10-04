@@ -128,7 +128,8 @@ not, the failure names a firmware or host fault: the stand can reflash the
 board, so it goes on serving. Once that scenario ends, the runner flashes the
 chip's recovery image, `boot-smoke` built from the run's sources, checks that
 it answers as itself and journals a `Reflash` recovery, so the board is left
-working, once per image class and run. The run then records its remaining repetitions of that
+working, once per image class and run; a board that does not answer even its
+recovery image is quarantined, since nothing else the stand can do remains. The run then records its remaining repetitions of that
 image class as `blocked` without touching the board, so a broken image frees
 the lease within about a minute instead of repeating the wait. Only a board whose ROM stays silent after every
 step of its ladder, the download entry included, which no script can bring

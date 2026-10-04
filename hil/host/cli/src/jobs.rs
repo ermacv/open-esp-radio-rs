@@ -18,9 +18,9 @@ use crate::{Context, Result};
 
 /// Names the job a `cargo hil` process runs as.
 pub const JOB_ENV: &str = "OER_HIL_JOB";
-/// The xtask, runner and runner receipt a job runs with, fixed when it was
-/// enqueued (or, for an experiment, when it started).
-pub const FROZEN_XTASK_ENV: &str = "OER_HIL_JOB_XTASK";
+/// The `cargo hil` binary, runner and runner receipt a job runs with, fixed
+/// when it was enqueued (or, for an experiment, when it started).
+pub const FROZEN_CLI_ENV: &str = "OER_HIL_JOB_CLI";
 pub const FROZEN_RUNNER_ENV: &str = "OER_HIL_JOB_RUNNER";
 pub const FROZEN_RECEIPT_ENV: &str = "OER_HIL_JOB_RECEIPT";
 /// The source snapshot an enqueued `run` builds from, captured when it was
@@ -386,31 +386,31 @@ fn unix_millis() -> u64 {
         .map_or(0, |elapsed| elapsed.as_millis() as u64)
 }
 
-/// What a job runs with, fixed before it waits: a copy of this xtask, the
+/// What a job runs with, fixed before it waits: a copy of this binary, the
 /// checkout's runner with its receipt, and for a `run` the source snapshot.
 /// Edits, pulls and rebuilds of the checkout after that do not reach the job,
 /// which otherwise built them in the middle of an experiment.
 #[derive(Clone, Debug)]
 pub struct Frozen {
-    pub xtask: PathBuf,
+    pub cli: PathBuf,
     pub runner: PathBuf,
     pub receipt: PathBuf,
     pub snapshot: Option<PathBuf>,
 }
 
 impl Frozen {
-    /// This xtask and the checkout's runner as they are now.
+    /// This binary and the checkout's runner as they are now.
     pub fn capture(ctx: &Context) -> Result<Self> {
         use sha2::{Digest as _, Sha256};
-        let (runner, receipt) = crate::hil::prepare(ctx)?;
+        let (runner, receipt) = crate::observer::prepare(ctx)?;
         let bytes = fs::read(std::env::current_exe()?)?;
         let directory = ctx
             .root
-            .join("target/hil/jobs/xtask")
+            .join("target/hil/jobs/cli")
             .join(format!("{:x}", Sha256::digest(&bytes)));
         fs::create_dir_all(&directory)?;
-        let xtask = directory.join("oer-xtask");
-        if !xtask.is_file() {
+        let cli = directory.join("oer-hil-cli");
+        if !cli.is_file() {
             let mut copy = tempfile::NamedTempFile::new_in(&directory)?;
             std::io::Write::write_all(&mut copy, &bytes)?;
             #[cfg(unix)]
@@ -419,10 +419,10 @@ impl Frozen {
                 copy.as_file()
                     .set_permissions(fs::Permissions::from_mode(0o755))?;
             }
-            copy.persist(&xtask)?;
+            copy.persist(&cli)?;
         }
         Ok(Self {
-            xtask,
+            cli,
             runner,
             receipt,
             snapshot: None,
@@ -432,14 +432,14 @@ impl Frozen {
     /// The parts this process's job was fixed with, if it is such a job.
     pub fn inherited() -> Result<Option<Self>> {
         let variable = |name| std::env::var_os(name).map(PathBuf::from);
-        let (Some(xtask), Some(runner), Some(receipt)) = (
-            variable(FROZEN_XTASK_ENV),
+        let (Some(cli), Some(runner), Some(receipt)) = (
+            variable(FROZEN_CLI_ENV),
             variable(FROZEN_RUNNER_ENV),
             variable(FROZEN_RECEIPT_ENV),
         ) else {
             return Ok(None);
         };
-        for path in [&xtask, &runner, &receipt] {
+        for path in [&cli, &runner, &receipt] {
             if !path.is_file() {
                 return Err(format!(
                     "{} was fixed for this job when it was enqueued and is gone; enqueue it again",
@@ -449,7 +449,7 @@ impl Frozen {
             }
         }
         Ok(Some(Self {
-            xtask,
+            cli,
             runner,
             receipt,
             snapshot: variable(FROZEN_SNAPSHOT_ENV),
@@ -458,22 +458,21 @@ impl Frozen {
 
     /// Every file or directory the job needs to stay.
     pub fn paths(&self) -> Vec<PathBuf> {
-        [&self.xtask, &self.runner, &self.receipt]
+        [&self.cli, &self.runner, &self.receipt]
             .into_iter()
             .cloned()
             .chain(self.snapshot.clone())
             .collect()
     }
 
-    /// A command running this frozen xtask's `hil` in `ctx`'s checkout, with
+    /// A command running this frozen `cargo hil` in `ctx`'s checkout, with
     /// the frozen parts in its environment.
     pub fn hil_command(&self, ctx: &Context) -> std::process::Command {
-        let mut command = ctx.command(&self.xtask);
+        let mut command = ctx.command(&self.cli);
         command
             .arg("--root")
             .arg(&ctx.root)
-            .arg("hil")
-            .env(FROZEN_XTASK_ENV, &self.xtask)
+            .env(FROZEN_CLI_ENV, &self.cli)
             .env(FROZEN_RUNNER_ENV, &self.runner)
             .env(FROZEN_RECEIPT_ENV, &self.receipt);
         match &self.snapshot {

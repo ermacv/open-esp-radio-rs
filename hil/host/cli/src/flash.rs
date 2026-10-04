@@ -113,7 +113,7 @@ pub fn run(
             .arg(&elf)
             .arg(&application),
     )?;
-    let application_sha256 = crate::vendor_fetch::sha256(&application)?;
+    let application_sha256 = oer_vendor_artifacts::sha256(&application)?;
     // JTAG writes one image from offset 0: bootloader, partition table and
     // application merged.
     let merged = output.join("merged.bin");
@@ -163,7 +163,7 @@ pub fn run(
         }
         Via::Jtag => {
             let serial = open_without_reset(&board.port)?;
-            crate::hil_jtag::program(&chip, &board.mac, &[(0, merged.clone())])?;
+            crate::jtag::program(&chip, &board.mac, &[(0, merged.clone())])?;
             Some(serial)
         }
     };

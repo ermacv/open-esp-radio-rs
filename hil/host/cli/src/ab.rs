@@ -15,7 +15,7 @@
 //! work goes between rounds. Every run records its arm and variant in its
 //! manifest ([`oer_hil_evidence::experiment`]) and no evidence. The
 //! report compares, per scenario and measurement, the arms' run means with
-//! [`crate::hil_perf::compare`] and is written to `ab-report.json`.
+//! [`crate::perf::compare`] and is written to `ab-report.json`.
 
 use oer_hil_image_class::FeatureDelta;
 use std::{
@@ -32,8 +32,8 @@ use serde::Serialize;
 
 use crate::{
     Context, Result,
-    hil_perf::{self, AbComparison, Better},
-    hil_runs,
+    perf::{self, AbComparison, Better},
+    runs,
 };
 
 const REPORT_SCHEMA: u16 = 1;
@@ -57,7 +57,7 @@ pub(crate) struct AbCli {
     #[arg(long, default_value_t = 1)]
     layout_seeds: u32,
     #[command(flatten)]
-    boards: crate::hil_jobs::BoardChoiceArgs,
+    boards: crate::jobs::BoardChoiceArgs,
 }
 
 /// A variant as written on the command line, before its revision and
@@ -154,7 +154,7 @@ type Samples = BTreeMap<(String, String), (String, Option<Better>, Vec<f64>, Vec
 
 /// Each arm's run means of every scenario's measurements: one value per run,
 /// the mean over the run's repetitions that measured it.
-fn samples(runs: &[(Arm, hil_runs::Run)]) -> Samples {
+fn samples(runs: &[(Arm, runs::Run)]) -> Samples {
     let mut samples = BTreeMap::new();
     for (arm, run) in runs {
         for scenario in &run.scenarios {
@@ -197,11 +197,11 @@ fn samples(runs: &[(Arm, hil_runs::Run)]) -> Samples {
 }
 
 /// The comparison of every measurement both arms measured.
-pub fn compare(runs: &[(Arm, hil_runs::Run)]) -> Vec<MeasurementComparison> {
+pub fn compare(runs: &[(Arm, runs::Run)]) -> Vec<MeasurementComparison> {
     samples(runs)
         .into_iter()
         .filter_map(|((scenario, measurement), (unit, better, a, b))| {
-            let comparison = hil_perf::compare(better, &a, &b)?;
+            let comparison = perf::compare(better, &a, &b)?;
             Some(MeasurementComparison {
                 scenario,
                 measurement,
@@ -217,7 +217,7 @@ pub fn compare(runs: &[(Arm, hil_runs::Run)]) -> Vec<MeasurementComparison> {
 pub(crate) fn run(
     ctx: &Context,
     owner: &str,
-    frozen: &crate::hil_jobs::Frozen,
+    frozen: &crate::jobs::Frozen,
     args: &[OsString],
 ) -> Result<Vec<(String, Option<oer_hil_schema::run::Outcome>)>> {
     use clap::Parser as _;
@@ -231,7 +231,7 @@ pub(crate) fn run(
     let directory = ctx.root.join("target/hil/ab").join(&id);
     fs::create_dir_all(&directory)?;
     let current =
-        crate::hil_bisect::messages_lock(&ctx.root).ok_or("this checkout names no HIL wire")?;
+        crate::bisect::messages_lock(&ctx.root).ok_or("this checkout names no HIL wire")?;
     let arms = [
         (Arm::A, cli.a.parse::<VariantSpec>()?),
         (Arm::B, cli.b.parse::<VariantSpec>()?),
@@ -310,7 +310,7 @@ pub(crate) fn run(
     report.comparisons = compare(
         &loaded
             .iter()
-            .map(|(arm, run): &(Arm, hil_runs::Run)| (*arm, run.clone()))
+            .map(|(arm, run): &(Arm, runs::Run)| (*arm, run.clone()))
             .collect::<Vec<_>>(),
     );
     write_report(&path, &report)?;
@@ -343,13 +343,13 @@ fn round_work(scenarios: &[String]) -> String {
 /// Add the run `id` of `arm` to the report and to the loaded runs.
 fn record(
     report: &mut Report,
-    loaded: &mut Vec<(Arm, hil_runs::Run)>,
+    loaded: &mut Vec<(Arm, runs::Run)>,
     arm: Arm,
     seed: NonZeroU32,
     id: String,
 ) -> Result<()> {
-    let runs = crate::hil_store::shared_runs()?;
-    let run = hil_runs::load(&runs.join(&id)).ok_or_else(|| format!("run {id} is unreadable"))?;
+    let runs = crate::store::shared_runs()?;
+    let run = runs::load(&runs.join(&id)).ok_or_else(|| format!("run {id} is unreadable"))?;
     report.runs.push(ArmRun {
         arm,
         seed,
@@ -362,7 +362,7 @@ fn record(
 
 /// The scenarios of the run `id`, grouped by the image class each ran on:
 /// a replay flashes one class.
-fn classes_of(loaded: &[(Arm, hil_runs::Run)], id: &str) -> BTreeMap<String, Vec<String>> {
+fn classes_of(loaded: &[(Arm, runs::Run)], id: &str) -> BTreeMap<String, Vec<String>> {
     let mut classes: BTreeMap<String, Vec<String>> = BTreeMap::new();
     if let Some((_, run)) = loaded.iter().find(|(_, run)| run.id == id) {
         for scenario in &run.scenarios {
@@ -390,10 +390,10 @@ struct Session<'a> {
     owner: &'a str,
     id: &'a str,
     directory: &'a Path,
-    /// The xtask and runner every round runs.
-    frozen: &'a crate::hil_jobs::Frozen,
+    /// The `cargo hil` binary and runner every round runs.
+    frozen: &'a crate::jobs::Frozen,
     /// The boards every run uses.
-    boards: &'a crate::hil_jobs::BoardChoiceArgs,
+    boards: &'a crate::jobs::BoardChoiceArgs,
 }
 
 struct PreparedArm {
@@ -434,7 +434,7 @@ fn prepare(
             &commit,
         ],
     )?;
-    if crate::hil_bisect::messages_lock(&worktree).as_deref() != Some(current) {
+    if crate::bisect::messages_lock(&worktree).as_deref() != Some(current) {
         return Err(format!(
             "arm {arm} ({}) speaks another HIL wire than this checkout (its \
              hil/protocol/messages.lock differs); an A/B comparison runs both arms on this \
@@ -528,7 +528,7 @@ impl PreparedArm {
             )
             .env(RUN_RECEIPT_ENV, receipt)
             // Each arm run is a job of its own, not the comparison's.
-            .env_remove(crate::hil_jobs::JOB_ENV)
+            .env_remove(crate::jobs::JOB_ENV)
             .stdout(log.try_clone()?)
             .stderr(log);
         Ok(command)
@@ -582,16 +582,14 @@ pub fn summary(report: &Report) -> String {
     for entry in &report.comparisons {
         let c = &entry.comparison;
         let verdict = match c.verdict {
-            hil_perf::AbVerdict::Significant { better } => {
+            perf::AbVerdict::Significant { better } => {
                 format!("significant, {better:?} better")
             }
-            hil_perf::AbVerdict::Changed { higher } => {
+            perf::AbVerdict::Changed { higher } => {
                 format!("significant change, {higher:?} higher (ungated)")
             }
-            hil_perf::AbVerdict::WithinNoise => String::from("within noise"),
-            hil_perf::AbVerdict::InsufficientRepetitions => {
-                String::from("insufficient repetitions")
-            }
+            perf::AbVerdict::WithinNoise => String::from("within noise"),
+            perf::AbVerdict::InsufficientRepetitions => String::from("insufficient repetitions"),
         };
         text.push_str(&format!(
             "  {} {}: A {:.3} ±{:.3} (n={}), B {:.3} ±{:.3} (n={}) {}; B−A {:+.3} ±{:.3}: {verdict}{}\n",

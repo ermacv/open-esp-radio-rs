@@ -19,18 +19,18 @@ use std::{
 
 use serde_json::{Value, json};
 
-use crate::{Result, hil_runs};
+use crate::{Result, runs};
 
 /// The port the page is bookmarked at; `--port` overrides it.
 const DEFAULT_PORT: u16 = 8765;
 const RECENT_LEASES: usize = 30;
 const RECENT_RUNS: usize = 25;
-const PAGE: &str = include_str!("hil_dashboard.html");
+const PAGE: &str = include_str!("dashboard.html");
 /// How often the host fixtures are probed again.
 const FIXTURE_REFRESH: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// The host fixtures as last probed, refreshed by a background thread.
-static FIXTURES: std::sync::Mutex<Vec<crate::hil_fixtures::Fixture>> =
+static FIXTURES: std::sync::Mutex<Vec<crate::fixtures::Fixture>> =
     std::sync::Mutex::new(Vec::new());
 
 /// Probe the host fixtures now and every [`FIXTURE_REFRESH`] after.
@@ -40,7 +40,7 @@ fn watch_fixtures() {
     };
     std::thread::spawn(move || {
         loop {
-            let fixtures = crate::hil_fixtures::probe(&lab);
+            let fixtures = crate::fixtures::probe(&lab);
             *FIXTURES
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = fixtures;
@@ -267,7 +267,7 @@ fn job_log(rest: &str) -> Option<String> {
     if !plain_id(id) {
         return None;
     }
-    let log = crate::hil_jobs::Jobs::open().ok()?.read(id).ok()?.log?;
+    let log = crate::jobs::Jobs::open().ok()?.read(id).ok()?.log?;
     let bytes = std::fs::read(log).ok()?;
     let start = bytes.len().saturating_sub(JOB_LOG_TAIL);
     Some(String::from_utf8_lossy(&bytes[start..]).into_owned())
@@ -277,7 +277,7 @@ fn job_log(rest: &str) -> Option<String> {
 fn snapshot(runs: &Path) -> Result<Value> {
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
     let status = arbiter.status()?;
-    let jobs = crate::hil_jobs::Jobs::open()?.unfinished();
+    let jobs = crate::jobs::Jobs::open()?.unfinished();
     let mut history = arbiter.history()?;
     history.reverse();
     history.truncate(RECENT_LEASES);
@@ -293,7 +293,7 @@ fn snapshot(runs: &Path) -> Result<Value> {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner),
         "maintenance": status.maintenance,
-        "jobs": crate::hil_jobs::views(&jobs, &status),
+        "jobs": crate::jobs::views(&jobs, &status),
         "leases": history,
         "runs": newest_runs(runs, RECENT_RUNS),
     }))
@@ -313,7 +313,7 @@ fn newest_runs(runs: &Path, count: usize) -> Vec<Value> {
     names.sort_unstable_by(|a, b| b.cmp(a));
     names
         .into_iter()
-        .filter_map(|name| hil_runs::load(&runs.join(name)))
+        .filter_map(|name| runs::load(&runs.join(name)))
         .take(count)
         .map(|run| {
             json!({
@@ -328,13 +328,13 @@ fn newest_runs(runs: &Path, count: usize) -> Vec<Value> {
                     "id": scenario.id,
                     "outcome": scenario.outcome,
                 })).collect::<Vec<_>>(),
-                "progress": (run.state == hil_runs::State::Running)
+                "progress": (run.state == runs::State::Running)
                     .then(|| progress(&run.directory))
                     .flatten(),
                 // A run still marked running whose runner is gone ended
                 // without sealing its bundle.
-                "abandoned": run.state == hil_runs::State::Running
-                    && !hil_runs::runner_alive(&run.directory, run.started_millis),
+                "abandoned": run.state == runs::State::Running
+                    && !runs::runner_alive(&run.directory, run.started_millis),
                 "report": run.directory.join("report.html").is_file(),
                 "experiment_arm": std::fs::read(run.directory.join("manifest.json"))
                     .ok()

@@ -97,6 +97,24 @@ fn route(command: &mut Command) -> Result<()> {
     Ok(())
 }
 
+/// The exit code a wrapper returns for its child's `status`: the child's
+/// own code, or `128 + signal` for a child a signal ended (on Unix).
+pub fn exit_code(status: std::process::ExitStatus) -> std::process::ExitCode {
+    #[cfg(unix)]
+    use std::os::unix::process::ExitStatusExt;
+    let code = status.code().unwrap_or_else(|| {
+        #[cfg(unix)]
+        {
+            128 + status.signal().unwrap_or(1)
+        }
+        #[cfg(not(unix))]
+        {
+            1
+        }
+    });
+    std::process::ExitCode::from(code as u8)
+}
+
 pub fn run(command: &mut Command) -> Result<()> {
     run_with_shutdown_grace(command, std::time::Duration::from_secs(1))
 }

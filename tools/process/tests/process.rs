@@ -254,3 +254,20 @@ fn background_deadline_includes_time_before_waiting() {
     assert!(error.is::<owned::DeadlineExceeded>());
     assert_stopped(&pids);
 }
+
+#[test]
+fn a_wrapper_exits_with_its_childs_code_or_128_plus_the_signal() {
+    let status = owned::Child::spawn(Command::new("sh").args(["-c", "exit 37"]))
+        .unwrap()
+        .wait_forwarding_cancellation()
+        .unwrap();
+    assert_eq!(process::exit_code(status), std::process::ExitCode::from(37));
+    let status = Command::new("sh")
+        .args(["-c", "kill -TERM $$"])
+        .status()
+        .unwrap();
+    assert_eq!(
+        process::exit_code(status),
+        std::process::ExitCode::from(128 + 15)
+    );
+}

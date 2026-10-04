@@ -19,12 +19,6 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Task {
-    /// Build an observer with its Cargo receipt, then forward HIL arguments.
-    #[command(disable_help_flag = true)]
-    Hil {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<std::ffi::OsString>,
-    },
     /// Prepare the current observer configuration without running HIL.
     HilObserver,
     /// Build Blobray and the typed vendor scenarios, then run one scenario with
@@ -155,8 +149,9 @@ enum Task {
         #[command(subcommand)]
         worktree: Worktree,
     },
-    /// Build the xtask of origin/main once and install `oer-stand`, which
-    /// runs the operational HIL stand commands without building this tree.
+    /// Build the `cargo hil` binary of origin/main once and install
+    /// `oer-stand`, which runs the HIL stand commands without building this
+    /// tree.
     StandInstall,
     /// List, or with --apply remove, this checkout's rebuildable build caches
     /// unused for a while (incremental data, HIL image caches); running
@@ -393,22 +388,21 @@ fn dispatch(ctx: &Context, command: Task) -> Result<std::process::ExitCode> {
     let ctx = ctx.clone();
     match command {
         Task::HilObserver => {
-            oer_xtask::hil::prepare(&ctx)?;
+            oer_hil_cli::observer::prepare(&oer_hil_cli::Context::new(&ctx.root)?)?;
             println!(
                 "{}",
                 ctx.root.join("target/hil/current-observer.json").display()
             );
             Ok(())
         }
-        Task::Hil { args } => return oer_xtask::hil::run(&ctx, &args),
         Task::VendorScenario { chip, args } => {
             return oer_xtask::vendor_scenario::run(&ctx, &chip, &args);
         }
         Task::VendorFetch { chip, artifacts } => {
-            oer_xtask::vendor_fetch::run(&ctx, &chip, &artifacts)
+            oer_vendor_artifacts::run(&ctx.root, &chip, &artifacts)
         }
         Task::VendorFirmware { chip, project } => {
-            oer_xtask::vendor_firmware::run(&ctx, &chip, project.as_deref())
+            oer_hil_cli::vendor_firmware::run(&ctx.root, &chip, project.as_deref())
         }
         Task::VendorDiff {
             chip,

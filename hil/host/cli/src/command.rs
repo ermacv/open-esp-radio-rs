@@ -1,57 +1,13 @@
-//! Build and launch the HIL observer with a receipt from Cargo's actual artifacts.
+//! The `cargo hil` command: stand commands handled here, every other command
+//! forwarded to the runner this crate builds.
 use crate::{Context, Result};
-use oer_hil_schema::{artifacts, compile::compile};
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 use std::{
     ffi::OsString,
     fs,
     path::{Path, PathBuf},
     process::Command,
 };
-
-pub fn prepare(ctx: &Context) -> Result<(std::path::PathBuf, std::path::PathBuf)> {
-    let compilation = compile(&ctx.root)?;
-    let executable = &compilation.executable;
-    let artifacts = &compilation.artifacts;
-    let bytes = fs::read(executable)?;
-    let hash = format!("{:x}", Sha256::digest(&bytes));
-    let directory = ctx.root.join("target/hil/observers").join(&hash);
-    fs::create_dir_all(&directory)?;
-    let runner = directory.join("runner");
-    // A private copy prevents concurrent Cargo rebuilds from replacing this run's inode.
-    if !runner.exists() {
-        fs::write(&runner, &bytes)?;
-        fs::set_permissions(&runner, fs::metadata(executable)?.permissions())?;
-    }
-    if fs::read(&runner)? != bytes {
-        return Err("observer executable identity conflict".into());
-    }
-    let output = oer_process::output(Command::new(&runner).arg("--observer-build"), None)?;
-    if !output.status.success() {
-        return Err("cannot read executable's embedded build".into());
-    }
-    let mut build: serde_json::Value = serde_json::from_slice(&output.stdout)?;
-    artifacts::apply(&mut build["resolved"], artifacts)?;
-    build["resolved"]["selected_profile"] = serde_json::json!(compilation.profile);
-    let receipt = serde_json::json!({"executable_sha256":hash,"build":build,"artifacts":artifacts,"profile":compilation.profile});
-    // Each invocation owns its receipt, including concurrent launches of the same binary.
-    let mut file = tempfile::NamedTempFile::new_in(&directory)?;
-    use std::io::Write;
-    let bytes = serde_json::to_vec(&receipt)?;
-    file.write_all(&bytes)?;
-    let receipt_path = directory.join(format!("receipt-{:x}.json", Sha256::digest(&bytes)));
-    if !receipt_path.exists() {
-        file.persist(&receipt_path)?;
-    }
-    if fs::read(&receipt_path)? != bytes {
-        return Err("observer receipt identity conflict".into());
-    }
-    let mut current = tempfile::NamedTempFile::new_in(ctx.root.join("target/hil"))?;
-    current.write_all(&bytes)?;
-    current.persist(ctx.root.join("target/hil/current-observer.json"))?;
-    drop(compilation);
-    Ok((runner, receipt_path))
-}
 
 pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     use_shared_store(ctx)?;
@@ -61,23 +17,23 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         None | Some("help" | "--help" | "-h") => println!("{STAND_HELP}"),
         Some("queue") => return queue(&args[1..]),
         Some("dashboard") => {
-            return crate::hil_dashboard::serve(&crate::hil_store::shared_runs()?, &args[1..]);
+            return crate::dashboard::serve(&crate::store::shared_runs()?, &args[1..]);
         }
         Some("lease") => return lease(ctx, options, &args[1..]),
         Some("board") => return board(ctx, &options, &args[1..]),
-        Some("peer") => return crate::hil_board::peer(options.owner(ctx)?, &args[1..]),
+        Some("peer") => return crate::board::peer(options.owner(ctx)?, &args[1..]),
         Some("preempt") => return preempt(&options.owner(ctx)?, &args[1..]),
         Some("owner") => return owner(ctx, &args[1..]),
         Some("__command-tree") => return command_tree(ctx),
         Some("devices") => return devices(ctx, &options, &args[1..]),
         Some("stand") => {
-            return crate::hil_stand::stand(ctx, || options.owner(ctx), &args[1..]);
+            return crate::stand::stand(ctx, || options.owner(ctx), &args[1..]);
         }
         Some("fixtures") => {
             let lab = oer_hil_stand::config::LabConfig::default_path()?;
             print!(
                 "{}",
-                crate::hil_fixtures::describe(&crate::hil_fixtures::probe(&lab))
+                crate::fixtures::describe(&crate::fixtures::probe(&lab))
             );
             return Ok(std::process::ExitCode::SUCCESS);
         }
@@ -89,10 +45,10 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
                 scenarios: Vec::new(),
                 claims: Vec::new(),
             };
-            return crate::hil_flash::run(ctx, request, &args[1..]);
+            return crate::flash::run(ctx, request, &args[1..]);
         }
         Some("runs") => return runs(ctx, &options, &args[1..]),
-        Some("evidence") => return crate::hil_evidence::command(ctx, &args[1..]),
+        Some("evidence") => return crate::evidence::command(ctx, &args[1..]),
         Some("perf") => return perf(ctx, &options, &args[1..]),
         Some("profile") => return profile(ctx, &args[1..]),
         Some("wait") if args.get(1).is_some_and(|arg| arg == "--service") => {
@@ -100,19 +56,19 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         }
         Some("wait") => return wait(&args[1..]),
         Some("ab") => return ab(ctx, &options.owner(ctx)?, args),
-        Some("bisect") => return crate::hil_bisect::run(ctx, &options.owner(ctx)?, &args[1..]),
+        Some("bisect") => return crate::bisect::run(ctx, &options.owner(ctx)?, &args[1..]),
         _ => {}
     }
     // The runner has no lease options: take them from after the command
     // too, before the runner is built.
     let (options, args) = options.with_late(args)?;
-    let (enqueue, after, args) = crate::hil_jobs::take(args)?;
+    let (enqueue, after, args) = crate::jobs::take(args)?;
     if (enqueue || after.is_some()) && !produces_runs(&args) {
         return Err("--enqueue and --after apply to run and run-all".into());
     }
     if enqueue {
         let frozen = freeze_enqueued(ctx, &args)?;
-        let id = crate::hil_jobs::enqueue(ctx, &options.owner(ctx)?, &args, after, &frozen)?;
+        let id = crate::jobs::enqueue(ctx, &options.owner(ctx)?, &args, after, &frozen)?;
         eprintln!("hil: enqueued job {id}; `cargo hil wait {id}` blocks until it ends");
         println!("{id}");
         return Ok(std::process::ExitCode::SUCCESS);
@@ -122,7 +78,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         .unwrap_or_else(|_| String::from("unregistered"));
     // Only a command that produces runs is a job; a read-only one is not.
     let mut job = if produces_runs(&args) {
-        Some(crate::hil_jobs::Running::begin(
+        Some(crate::jobs::Running::begin(
             ctx,
             &owner,
             &args,
@@ -134,10 +90,10 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     let args = args.as_slice();
     // An enqueued job runs the runner and sources fixed when it was
     // enqueued; the evidence decision below still reads its own arguments.
-    let frozen = crate::hil_jobs::Frozen::inherited()?;
+    let frozen = crate::jobs::Frozen::inherited()?;
     let (runner, receipt_path) = match &frozen {
         Some(frozen) => (frozen.runner.clone(), frozen.receipt.clone()),
-        None => prepare(ctx)?,
+        None => crate::observer::prepare(ctx)?,
     };
     let mut runner_args = match frozen
         .as_ref()
@@ -177,14 +133,14 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         .env(RUN_RECEIPT_ENV, run_receipt.path());
     // The runner escalates a bootloader loop to a JTAG reset, through the
     // OpenOCD of the ESP-IDF tools only this wrapper can locate.
-    if let Ok((program, scripts)) = crate::hil_jtag::openocd() {
+    if let Ok((program, scripts)) = crate::jtag::openocd() {
         command
             .env(oer_hil_arbiter::control::OPENOCD_ENV, program)
             .env(oer_hil_arbiter::control::OPENOCD_SCRIPTS_ENV, scripts);
     }
     // An ESP-IDF application is flashed with its chip's catalog bootloader,
     // which only this wrapper builds; the runner asks it back.
-    command.env(oer_hil_image::XTASK_ENV, std::env::current_exe()?);
+    command.env(oer_hil_image::CLI_ENV, std::env::current_exe()?);
     let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
         &mut command,
         std::time::Duration::from_secs(300),
@@ -196,13 +152,13 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             .map(str::to_owned)
             .collect::<Vec<_>>();
         forward_run_receipt(&run_ids)?;
-        let store = crate::hil_store::shared_runs()?;
+        let store = crate::store::shared_runs()?;
         if let Some(job) = job.as_mut() {
             job.finish(
                 &run_ids,
                 &run_ids
                     .iter()
-                    .map(|id| crate::hil_runs::load(&store.join(id)).and_then(|run| run.outcome))
+                    .map(|id| crate::runs::load(&store.join(id)).and_then(|run| run.outcome))
                     .collect::<Vec<_>>(),
             )?;
         }
@@ -238,7 +194,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             eprintln!("hil: automatic pruning of the run store failed: {error}");
         }
     }
-    Ok(exit_code(status))
+    Ok(oer_process::exit_code(status))
 }
 
 /// Stand commands handled here, printed before the runner's own help.
@@ -459,7 +415,7 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
         flags: flags.iter().map(|word| word.to_string()).collect(),
         forwards: false,
     };
-    let (runner, _) = prepare(ctx)?;
+    let (runner, _) = crate::observer::prepare(ctx)?;
     let output = std::process::Command::new(&runner)
         .arg("__command-tree")
         .output()?;
@@ -522,12 +478,12 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
         ("runs", RunsCli::command()),
         ("firmware", FirmwareCli::command()),
         ("devices", DevicesCli::command()),
-        ("stand", crate::hil_stand::StandCli::command()),
-        ("peer", crate::hil_board::PeerCli::command()),
-        ("flash", crate::hil_flash::FlashCli::command()),
+        ("stand", crate::stand::StandCli::command()),
+        ("peer", crate::board::PeerCli::command()),
+        ("flash", crate::flash::FlashCli::command()),
         ("profile", ProfileCli::command()),
-        ("bisect", crate::hil_bisect::BisectCli::command()),
-        ("ab", crate::hil_ab::AbCli::command()),
+        ("bisect", crate::bisect::BisectCli::command()),
+        ("ab", crate::ab::AbCli::command()),
     ] {
         nodes.extend(walk(&command, &path(&["hil", name])));
     }
@@ -631,18 +587,18 @@ fn queue(args: &[OsString]) -> Result<std::process::ExitCode> {
         _ => return Err("usage: cargo hil queue [--json]".into()),
     };
     let status = oer_hil_arbiter::Arbiter::open()?.status()?;
-    let store = crate::hil_jobs::Jobs::open()?;
+    let store = crate::jobs::Jobs::open()?;
     let jobs = store.unfinished();
     let ended = store.recently_ended_unjudged(std::time::Duration::from_secs(3600), 5);
     if json {
         let mut value = serde_json::to_value(&status)?;
-        value["jobs"] = serde_json::to_value(crate::hil_jobs::views(&jobs, &status))?;
+        value["jobs"] = serde_json::to_value(crate::jobs::views(&jobs, &status))?;
         value["ended_jobs"] = serde_json::to_value(&ended)?;
         println!("{}", serde_json::to_string_pretty(&value)?);
     } else {
         println!("{status}");
-        print!("{}", crate::hil_jobs::describe(&jobs, &status));
-        print!("{}", crate::hil_jobs::describe_ended(&ended));
+        print!("{}", crate::jobs::describe(&jobs, &status));
+        print!("{}", crate::jobs::describe_ended(&ended));
     }
     Ok(std::process::ExitCode::SUCCESS)
 }
@@ -650,22 +606,22 @@ fn queue(args: &[OsString]) -> Result<std::process::ExitCode> {
 /// `cargo hil ab ...`, a job like a run: `--enqueue` starts it detached and
 /// prints its id for `cargo hil wait`, and `--after JOB` orders it.
 fn ab(ctx: &Context, owner: &str, args: &[OsString]) -> Result<std::process::ExitCode> {
-    let (enqueue, after, args) = crate::hil_jobs::take(args.to_vec())?;
+    let (enqueue, after, args) = crate::jobs::take(args.to_vec())?;
     if enqueue {
-        let frozen = crate::hil_jobs::Frozen::capture(ctx)?;
-        let id = crate::hil_jobs::enqueue(ctx, owner, &args, after, &frozen)?;
+        let frozen = crate::jobs::Frozen::capture(ctx)?;
+        let id = crate::jobs::enqueue(ctx, owner, &args, after, &frozen)?;
         eprintln!("hil: enqueued job {id}; `cargo hil wait {id}` blocks until it ends");
         println!("{id}");
         return Ok(std::process::ExitCode::SUCCESS);
     }
-    let mut job = crate::hil_jobs::Running::begin(ctx, owner, &args, after.as_ref())?;
-    // Every round runs the xtask and runner of the experiment's start: a pull
+    let mut job = crate::jobs::Running::begin(ctx, owner, &args, after.as_ref())?;
+    // Every round runs the `cargo hil` binary and runner of the experiment's start: a pull
     // into the checkout meanwhile must not change the arms' protocol.
-    let frozen = match crate::hil_jobs::Frozen::inherited()? {
+    let frozen = match crate::jobs::Frozen::inherited()? {
         Some(frozen) => frozen,
-        None => crate::hil_jobs::Frozen::capture(ctx)?,
+        None => crate::jobs::Frozen::capture(ctx)?,
     };
-    let runs = crate::hil_ab::run(ctx, owner, &frozen, &args[1..])?;
+    let runs = crate::ab::run(ctx, owner, &frozen, &args[1..])?;
     let (ids, outcomes): (Vec<_>, Vec<_>) = runs.into_iter().unzip();
     job.finish(&ids, &outcomes)?;
     Ok(std::process::ExitCode::SUCCESS)
@@ -679,12 +635,12 @@ fn wait(args: &[OsString]) -> Result<std::process::ExitCode> {
         return Err("usage: cargo hil wait JOB|RUN, or cargo hil wait --service [BOARD...]".into());
     };
     let text = id.to_str().ok_or("an id is text")?;
-    if crate::hil_jobs::Jobs::open()?.read(text).is_ok() {
-        return crate::hil_jobs::wait_command(args);
+    if crate::jobs::Jobs::open()?.read(text).is_ok() {
+        return crate::jobs::wait_command(args);
     }
-    let run = crate::hil_runs::load(&crate::hil_store::shared_runs()?.join(text))
+    let run = crate::runs::load(&crate::store::shared_runs()?.join(text))
         .ok_or_else(|| format!("{text} is neither a job nor a run"))?;
-    Ok(std::process::ExitCode::from(crate::hil_runs::wait(
+    Ok(std::process::ExitCode::from(crate::runs::wait(
         &run.directory,
     )?))
 }
@@ -812,8 +768,8 @@ fn check_hil_arguments(args: &[OsString]) -> Result<()> {
         "firmware" => FirmwareCli::try_parse_from(rest).map(drop),
         "devices" => DevicesCli::try_parse_from(rest).map(drop),
         "profile" => ProfileCli::try_parse_from(rest).map(drop),
-        "flash" => crate::hil_flash::FlashCli::try_parse_from(rest).map(drop),
-        "peer" => crate::hil_board::PeerCli::try_parse_from(rest).map(drop),
+        "flash" => crate::flash::FlashCli::try_parse_from(rest).map(drop),
+        "peer" => crate::board::PeerCli::try_parse_from(rest).map(drop),
         _ => return Ok(()),
     };
     parsed.map_err(|error| {
@@ -1035,7 +991,8 @@ fn supervise(
     child: &mut oer_process::owned::Child,
     limit: std::time::Duration,
 ) -> Result<(std::process::ExitCode, bool)> {
-    let finished = |status: std::process::ExitStatus| (exit_code(status), status.success());
+    let finished =
+        |status: std::process::ExitStatus| (oer_process::exit_code(status), status.success());
     if grant.is_nested() {
         return Ok(finished(child.wait_forwarding_cancellation()?));
     }
@@ -1067,7 +1024,7 @@ fn board(
     let flashed = match BoardCli::try_parse_from(args)? {
         BoardCli::Flashed(flashed) => flashed,
         BoardCli::Access(command) => {
-            return crate::hil_board::board(ctx, options.owner(ctx)?, command);
+            return crate::board::board(ctx, options.owner(ctx)?, command);
         }
     };
     if flashed.image.is_none() {
@@ -1089,36 +1046,36 @@ fn perf(
     options: &LeaseOptions,
     args: &[OsString],
 ) -> Result<std::process::ExitCode> {
-    use crate::hil_perf;
+    use crate::perf;
     use clap::Parser as _;
-    let store = crate::hil_store::shared_runs()?
+    let store = crate::store::shared_runs()?
         .parent()
         .ok_or("the run store has no parent")?
         .to_owned();
-    let directory = crate::hil_store::shared_runs()?;
+    let directory = crate::store::shared_runs()?;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_millis() as u64;
-    let find = |id: &str| -> Result<hil_perf::RunSummary> {
-        crate::hil_runs::load(&directory.join(id))
-            .map(|run| hil_perf::summary(&run))
+    let find = |id: &str| -> Result<perf::RunSummary> {
+        crate::runs::load(&directory.join(id))
+            .map(|run| perf::summary(&run))
             .ok_or_else(|| format!("no run {id} in {}", directory.display()).into())
     };
-    let baselines = hil_perf::load_baselines(&store)?;
+    let baselines = perf::load_baselines(&store)?;
     match PerfCli::try_parse_from(args)? {
         PerfCli::Report {
             scenarios,
             measurement,
             since,
         } => {
-            let runs = hil_perf::summaries_since(
+            let runs = perf::summaries_since(
                 &directory,
                 &store.join("perf-cache"),
                 now.saturating_sub(since.as_millis() as u64),
             )?;
             print!(
                 "{}",
-                hil_perf::report(&runs, &scenarios, measurement.as_deref(), &baselines)
+                perf::report(&runs, &scenarios, measurement.as_deref(), &baselines)
             );
         }
         PerfCli::Baseline {
@@ -1132,18 +1089,12 @@ fn perf(
             } else {
                 format!("{reason} [network {}]", run.networks.join(","))
             };
-            let set = hil_perf::set_baseline(
-                &store,
-                &run,
-                &scenarios,
-                &reason,
-                &options.owner(ctx)?,
-                now,
-            )?;
+            let set =
+                perf::set_baseline(&store, &run, &scenarios, &reason, &options.owner(ctx)?, now)?;
             println!("baseline {} for {}", run.id, set.join(", "));
         }
         PerfCli::Check { run } => {
-            let regressions = hil_perf::regressions(&find(&run)?, &baselines);
+            let regressions = perf::regressions(&find(&run)?, &baselines);
             if regressions.is_empty() {
                 println!("no gated measurement of {run} regressed against its baseline");
             } else {
@@ -1162,7 +1113,7 @@ fn runs(
     options: &LeaseOptions,
     args: &[OsString],
 ) -> Result<std::process::ExitCode> {
-    use crate::hil_runs;
+    use crate::runs;
     use clap::Parser as _;
     // This checkout's runs directory stands for the store every checkout
     // shares.
@@ -1170,17 +1121,17 @@ fn runs(
     let directory = if local.exists() {
         local
     } else {
-        crate::hil_store::shared_runs()?
+        crate::store::shared_runs()?
     };
-    let store = crate::hil_store::shared_runs()?
+    let store = crate::store::shared_runs()?
         .parent()
         .ok_or("the run store has no parent")?
         .to_owned();
     let parsed = RunsCli::try_parse_from(args)?;
     // Reading every run takes long; commands about one run read only it.
-    let all = || hil_runs::all(&directory);
+    let all = || runs::all(&directory);
     let find = |id: &str| {
-        hil_runs::load(&directory.join(id)).ok_or_else(|| format!("no run {id} in the run store"))
+        runs::load(&directory.join(id)).ok_or_else(|| format!("no run {id} in the run store"))
     };
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
@@ -1193,7 +1144,7 @@ fn runs(
             since,
             limit,
         } => {
-            let filter = hil_runs::Filter {
+            let filter = runs::Filter {
                 scenario,
                 outcome,
                 image,
@@ -1205,14 +1156,14 @@ fn runs(
                 .filter(|run| filter.matches(run))
                 .collect::<Vec<_>>();
             for run in &matching[matching.len().saturating_sub(limit)..] {
-                println!("{}", hil_runs::list_line(run));
+                println!("{}", runs::list_line(run));
             }
         }
-        RunsCli::Show { run } => print!("{}", hil_runs::show(&find(&run)?)),
-        RunsCli::Why { run, tail } => print!("{}", hil_runs::why(&find(&run)?, tail)),
+        RunsCli::Show { run } => print!("{}", runs::show(&find(&run)?)),
+        RunsCli::Why { run, tail } => print!("{}", runs::why(&find(&run)?, tail)),
         RunsCli::Compare { a, b, measurement } => print!(
             "{}",
-            hil_runs::compare(&find(&a)?, &find(&b)?, measurement.as_deref())
+            runs::compare(&find(&a)?, &find(&b)?, measurement.as_deref())
         ),
         RunsCli::History {
             scenario,
@@ -1228,14 +1179,14 @@ fn runs(
             let start = containing.len().saturating_sub(limit);
             print!(
                 "{}{}",
-                hil_runs::stability(&containing, &scenario),
-                hil_runs::history(&containing[start..], &scenario, measurement.as_deref())
+                runs::stability(&containing, &scenario),
+                runs::history(&containing[start..], &scenario, measurement.as_deref())
             );
         }
         RunsCli::Pin { run, reason } => {
-            hil_runs::load(&directory.join(&run))
+            runs::load(&directory.join(&run))
                 .ok_or_else(|| format!("no run {run} in {}", directory.display()))?;
-            hil_runs::set_pin(
+            runs::set_pin(
                 &store,
                 &run,
                 Some(
@@ -1243,7 +1194,7 @@ fn runs(
                 ),
             )?;
         }
-        RunsCli::Unpin { run } => hil_runs::set_pin(&store, &run, None)?,
+        RunsCli::Unpin { run } => runs::set_pin(&store, &run, None)?,
         RunsCli::Flaky { since, minimum } => {
             let recent = now.saturating_sub(since.as_millis() as u64);
             let runs = all()?
@@ -1252,53 +1203,53 @@ fn runs(
                 .collect::<Vec<_>>();
             print!(
                 "{}",
-                hil_runs::flaky_report(
-                    &hil_runs::stabilities(&runs),
+                runs::flaky_report(
+                    &runs::stabilities(&runs),
                     minimum,
-                    &hil_runs::quarantined(&store)
+                    &runs::quarantined(&store)
                 )
             );
         }
-        RunsCli::Quarantine { scenario, reason } => hil_runs::set_quarantine(
+        RunsCli::Quarantine { scenario, reason } => runs::set_quarantine(
             &store,
             &scenario,
             Some(
                 serde_json::json!({"by": options.owner(ctx)?, "reason": reason, "unix_millis": now}),
             ),
         )?,
-        RunsCli::Release { scenario } => hil_runs::set_quarantine(&store, &scenario, None)?,
+        RunsCli::Release { scenario } => runs::set_quarantine(&store, &scenario, None)?,
         RunsCli::Prune {
             days,
             keep_failed,
             apply,
         } => {
-            let all = hil_runs::all(&directory)?;
-            let pinned = hil_runs::pins(&store).into_keys().collect();
-            let keep = hil_runs::retained(
+            let all = runs::all(&directory)?;
+            let pinned = runs::pins(&store).into_keys().collect();
+            let keep = runs::retained(
                 &all,
-                &hil_runs::Retention {
+                &runs::Retention {
                     keep_days: days,
                     keep_failed,
                 },
                 now,
                 &pinned,
-                &hil_runs::cited_by_shards(&ctx.root),
+                &runs::cited_by_shards(&ctx.root),
             );
             let mut freed = 0;
             let mut removed = 0;
             for run in all.iter().filter(|run| !keep.contains_key(&run.id)) {
-                let bytes = hil_runs::exclusive_bytes(&run.directory);
+                let bytes = runs::exclusive_bytes(&run.directory);
                 freed += bytes;
                 removed += 1;
                 if apply {
                     std::fs::remove_dir_all(&run.directory)?;
                     println!("deleted {} ({} MiB)", run.id, bytes >> 20);
                 } else {
-                    println!("would delete {}", hil_runs::list_line(run));
+                    println!("would delete {}", runs::list_line(run));
                 }
             }
             if apply {
-                let observers = hil_runs::collect_observers(&directory)?;
+                let observers = runs::collect_observers(&directory)?;
                 if observers > 0 {
                     println!("deleted {observers} observer builds no kept run names");
                 }
@@ -1449,7 +1400,7 @@ fn devices(
                 };
                 let answer =
                     arbiter.release_quarantine(&mac, &options.owner(ctx)?, confirmation, || {
-                        crate::hil_board::boots(&board)
+                        crate::board::boots(&board)
                     })?;
                 println!("{board} ({mac}) is back in service; it booted: {answer}");
                 return Ok(std::process::ExitCode::SUCCESS);
@@ -1546,8 +1497,8 @@ const RUN_STORE_BUDGET_ENV: &str = "OER_HIL_RUN_STORE_BUDGET_GIB";
 const RUN_STORE_BUDGET_GIB: u64 = 40;
 
 fn prune_automatically(ctx: &Context) -> Result<()> {
-    use crate::hil_runs;
-    let runs = crate::hil_store::shared_runs()?;
+    use crate::runs;
+    let runs = crate::store::shared_runs()?;
     let store = runs.parent().ok_or("the run store has no parent")?;
     let marker = store.join("last-prune");
     if std::fs::metadata(&marker)
@@ -1559,23 +1510,23 @@ fn prune_automatically(ctx: &Context) -> Result<()> {
         return Ok(());
     }
     std::fs::write(&marker, b"")?;
-    let all = hil_runs::all(&runs)?;
+    let all = runs::all(&runs)?;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_millis() as u64;
-    let keep = hil_runs::retained(
+    let keep = runs::retained(
         &all,
-        &hil_runs::Retention {
+        &runs::Retention {
             keep_days: PRUNE_DAYS,
             keep_failed: PRUNE_KEEP_FAILED,
         },
         now,
-        &hil_runs::pins(store).into_keys().collect(),
-        &hil_runs::cited_by_shards(&ctx.root),
+        &runs::pins(store).into_keys().collect(),
+        &runs::cited_by_shards(&ctx.root),
     );
     let (mut removed, mut freed) = (0, 0);
     for run in all.iter().filter(|run| !keep.contains_key(&run.id)) {
-        freed += hil_runs::exclusive_bytes(&run.directory);
+        freed += runs::exclusive_bytes(&run.directory);
         std::fs::remove_dir_all(&run.directory)?;
         removed += 1;
     }
@@ -1588,20 +1539,20 @@ fn prune_automatically(ctx: &Context) -> Result<()> {
         .collect::<Vec<_>>();
     let sizes = remaining
         .iter()
-        .map(|run| (run.id.clone(), hil_runs::exclusive_bytes(&run.directory)))
+        .map(|run| (run.id.clone(), runs::exclusive_bytes(&run.directory)))
         .collect();
-    let kept = hil_runs::retained(
+    let kept = runs::retained(
         &remaining,
-        &hil_runs::Retention {
+        &runs::Retention {
             keep_days: 0,
             keep_failed: PRUNE_KEEP_FAILED,
         },
         now,
-        &hil_runs::pins(store).into_keys().collect(),
-        &hil_runs::cited_by_shards(&ctx.root),
+        &runs::pins(store).into_keys().collect(),
+        &runs::cited_by_shards(&ctx.root),
     );
     let budget = run_store_budget()?;
-    for run in hil_runs::over_budget(&remaining, &kept, &sizes, budget) {
+    for run in runs::over_budget(&remaining, &kept, &sizes, budget) {
         freed += sizes[&run.id];
         std::fs::remove_dir_all(&run.directory)?;
         removed += 1;
@@ -1615,7 +1566,7 @@ fn prune_automatically(ctx: &Context) -> Result<()> {
         );
     }
     if removed > 0 {
-        hil_runs::collect_observers(&runs)?;
+        runs::collect_observers(&runs)?;
         eprintln!(
             "hil: pruned {removed} runs ({} MiB) no rule keeps; see `cargo hil runs prune`",
             freed >> 20
@@ -1626,9 +1577,9 @@ fn prune_automatically(ctx: &Context) -> Result<()> {
 
 /// Make this checkout's run directory a link to the shared store.
 fn use_shared_store(ctx: &Context) -> Result<()> {
-    crate::hil_store::link_runs(
+    crate::store::link_runs(
         &ctx.root.join(oer_hil_evidence::run::RUNS),
-        &crate::hil_store::shared_runs()?,
+        &crate::store::shared_runs()?,
     )?;
     Ok(())
 }
@@ -1636,11 +1587,11 @@ fn use_shared_store(ctx: &Context) -> Result<()> {
 /// Check an enqueued `run`'s scenarios and options with the runner now, so
 /// a mistake shows in the terminal instead of in a job that ends no-run
 /// minutes later.
-/// Check an enqueued command and fix what it runs with: this xtask, the
+/// Check an enqueued command and fix what it runs with: this binary, the
 /// runner and, for a `run` that builds, a source snapshot of the checkout
 /// taken now with the run's own source options.
-fn freeze_enqueued(ctx: &Context, args: &[OsString]) -> Result<crate::hil_jobs::Frozen> {
-    let mut frozen = crate::hil_jobs::Frozen::capture(ctx)?;
+fn freeze_enqueued(ctx: &Context, args: &[OsString]) -> Result<crate::jobs::Frozen> {
+    let mut frozen = crate::jobs::Frozen::capture(ctx)?;
     if args.first().and_then(|arg| arg.to_str()) != Some("run") {
         return Ok(frozen);
     }
@@ -1695,7 +1646,7 @@ fn freeze_enqueued(ctx: &Context, args: &[OsString]) -> Result<crate::hil_jobs::
 /// after the queue.
 fn build_before_queue(
     ctx: &Context,
-    frozen: &crate::hil_jobs::Frozen,
+    frozen: &crate::jobs::Frozen,
     run_args: &[OsString],
 ) -> Result<()> {
     eprintln!("hil: building the run's images before it queues");
@@ -1731,11 +1682,11 @@ fn checkout_of_common_dir(common: &Path) -> Option<PathBuf> {
 /// Leave quarantined scenarios out of a `run-all`, and warn of a `run` that
 /// names one.
 fn apply_quarantine(args: &mut Vec<OsString>) -> Result<()> {
-    let store = crate::hil_store::shared_runs()?
+    let store = crate::store::shared_runs()?
         .parent()
         .ok_or("the run store has no parent")?
         .to_owned();
-    let quarantined = crate::hil_runs::quarantined(&store);
+    let quarantined = crate::runs::quarantined(&store);
     match args.first().and_then(|arg| arg.to_str()) {
         Some("run-all") => {
             for scenario in quarantined.keys() {
@@ -1876,16 +1827,16 @@ fn evidence_skip_reason(inputs: RunInputs, created_dirty: &[bool]) -> Option<&'s
 /// Note clean runs as pending evidence of this checkout: a run never writes
 /// tracked files.
 fn remember_pending(ctx: &Context, owner: String, run_ids: &[String]) -> Result<()> {
-    let store = crate::hil_store::shared_runs()?;
+    let store = crate::store::shared_runs()?;
     let pending = run_ids
         .iter()
-        .map(|run| crate::hil_evidence::Pending {
+        .map(|run| crate::evidence::Pending {
             run: run.clone(),
-            scenarios: crate::hil_evidence::passed_scenarios(&store.join(run)),
+            scenarios: crate::evidence::passed_scenarios(&store.join(run)),
             owner: owner.clone(),
         })
         .collect::<Vec<_>>();
-    crate::hil_evidence::remember(&ctx.root, &pending)?;
+    crate::evidence::remember(&ctx.root, &pending)?;
     let passed = pending
         .iter()
         .filter(|run| !run.scenarios.is_empty())
@@ -1972,7 +1923,7 @@ pub(crate) fn record_evidence(
     };
     // The evaluator records one chip's evidence at a time: each run's
     // manifest names its chip.
-    let store = crate::hil_store::shared_runs()?;
+    let store = crate::store::shared_runs()?;
     for (chip, runs) in runs_by_chip(&store, run_ids) {
         let status = command
             .args([
@@ -2015,22 +1966,6 @@ fn hands_off_terminal(args: &[OsString]) -> bool {
         && !args.iter().any(|arg| arg == "--dry-run")
 }
 
-pub(crate) fn exit_code(status: std::process::ExitStatus) -> std::process::ExitCode {
-    #[cfg(unix)]
-    use std::os::unix::process::ExitStatusExt;
-    let code = status.code().unwrap_or_else(|| {
-        #[cfg(unix)]
-        {
-            128 + status.signal().unwrap_or(1)
-        }
-        #[cfg(not(unix))]
-        {
-            1
-        }
-    });
-    std::process::ExitCode::from(code as u8)
-}
-
 // The clap parsers of the stand commands, walked by `__command-tree`.
 #[derive(clap::Parser)]
 #[command(name = "cargo hil board", no_binary_name = true)]
@@ -2038,7 +1973,7 @@ enum BoardCli {
     /// Record a flash performed outside the HIL runner.
     Flashed(FlashedArgs),
     #[command(flatten)]
-    Access(crate::hil_board::BoardCommand),
+    Access(crate::board::BoardCommand),
 }
 
 #[derive(clap::Parser)]
@@ -2104,7 +2039,7 @@ fn profile_report_path(root: &Path, run: &str, scenario: &str, relative: &Path) 
 fn profile(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     use clap::Parser as _;
     let cli = ProfileCli::try_parse_from(args)?;
-    let run = crate::hil_store::shared_runs()?.join(&cli.run);
+    let run = crate::store::shared_runs()?.join(&cli.run);
     if !run.is_dir() {
         return Err(format!("no run {} in the store", cli.run).into());
     }
@@ -2519,15 +2454,6 @@ mod tests {
     }
 
     use super::*;
-    #[test]
-    fn forwards_nonzero_runner_status() {
-        let status = oer_process::owned::Child::spawn(Command::new("sh").args(["-c", "exit 37"]))
-            .unwrap()
-            .wait_forwarding_cancellation()
-            .unwrap();
-        assert_eq!(exit_code(status), std::process::ExitCode::from(37));
-    }
-
     #[test]
     fn only_executing_commands_record_evidence() {
         let args = |values: &[&str]| values.iter().map(OsString::from).collect::<Vec<_>>();

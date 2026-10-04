@@ -16,6 +16,7 @@ checks. A utility does not need its own Cargo package.
 | [firmware](firmware/README.md) | Firmware image operations, flash segment writes and shared serial-device leases |
 | `command-tree` | The command tree every repository tool prints for `__command-tree`, which `cargo xtask check docs` holds the documented commands to |
 | `chip-profile` | Supported chips resolved from `platform/<chip>/chip.toml`: Rust target, boot flow, `espflash` chip name, silicon revisions |
+| [vendor-artifacts](vendor-artifacts/README.md) | A chip's pinned vendor artifacts (`verification/<chip>/artifacts.toml`), the host-wide store and fetching into it, for xtask and the HIL stand's ESP-IDF builds |
 | [registers](registers/README.md) | Register model contracts, publication and generated SVD/bindings |
 | [tidy](tidy/README.md) | Fast fail-closed text checks of the whole tree: orphan sources, record paths, anchors, workspaces and unused dependencies |
 | [xtask](xtask/README.md) | Cargo/source/architecture checks and their regression tests |

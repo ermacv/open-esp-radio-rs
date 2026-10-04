@@ -14,6 +14,7 @@ Separate Cargo packages bound the privilege and radio-family scopes:
 
 | Package | Binaries | Role |
 | --- | --- | --- |
+| `cli/` (`oer-hil-cli`) | `oer-hil-cli` (`cargo hil`) | The stand's commands (leases, boards, owners, devices, jobs, the shared run store, evidence records, performance, A/B and bisection, the ESP-IDF firmware catalog and its pinned ESP-IDF builds) and the launch of the runner it builds, with the observer receipt; xtask uses it as a library for `hil-observer`, `vendor-firmware` and `sweep` |
 | `runner/` (`oer-hil-runner`) | `oer-hil-runner` | Unprivileged CLI, run orchestration, workload dispatch and the cross-family fixture preflight |
 | `execution/` (`oer-hil-execution`) | none | The repetition context, failure classification, per-repetition fixture cleanup evidence, profile reports and the workload operations shared by radio families |
 | `stand/` (`oer-hil-stand`) | none | Stand operation: laboratory configuration and locks, the cell's pre-run observation, fixture software leases, recovery and post-mortem; implements the link's `Dut` and `StationNetwork` ports |
@@ -527,7 +528,9 @@ depends on the family packages and the image builder, each family on
 evidence
 packages, never the reverse. The stand depends on the link to implement its
 ports, never the reverse. The image builder depends on evidence, never the
-reverse, and nothing but the binary and `xtask` depends on the builder. The `test-support` features of `oer-hil-execution`, `oer-hil-stand`,
+reverse, and nothing but the binary, `oer-hil-cli` and `xtask` depends on the builder.
+The runner never depends on `oer-hil-cli`: it reaches it only as a process,
+named by `OER_HIL_CLI`, to build a chip's catalog bootloader. The `test-support` features of `oer-hil-execution`, `oer-hil-stand`,
 `oer-hil-scenario`, `oer-hil-evidence` and `oer-hil-source-snapshot` expose
 their test doubles and fixtures to the other packages' tests.
 

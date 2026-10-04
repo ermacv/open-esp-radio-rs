@@ -17,8 +17,8 @@
 //! change under it. A checkout's former `target/vendor-firmware/esp-idf` and
 //! `idf-tools` are removed on its first build from the cache. Outputs land in `target/vendor-firmware/<chip>/<app>/` with a
 //! `build.json` recording the pins and the image digest.
-use crate::vendor_fetch::{self, GitPin};
-use crate::{Context, Result};
+use crate::Result;
+use oer_vendor_artifacts::{self, GitPin};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -187,7 +187,7 @@ fn prepare_tree(cache: &Path, pins: &[GitPin]) -> Result<(PathBuf, Vec<Override>
         )?;
         git(&tree, &["submodule", "init", "--quiet", path])?;
         for (artifact, sha256) in &pin.artifacts {
-            let actual = vendor_fetch::sha256(&directory.join(artifact))?;
+            let actual = oer_vendor_artifacts::sha256(&directory.join(artifact))?;
             if &actual != sha256 {
                 return Err(format!("{path}/{artifact}: sha256 {actual}, pinned {sha256}").into());
             }
@@ -327,7 +327,7 @@ fn unpinned_archives(map: &str, tree: &Path, pins: &[GitPin]) -> Result<Vec<Stri
             .map(|(_, sha256)| sha256.as_str())
             .collect::<Vec<_>>();
         if !digests.is_empty()
-            && !digests.contains(&vendor_fetch::sha256(Path::new(&archive))?.as_str())
+            && !digests.contains(&oer_vendor_artifacts::sha256(Path::new(&archive))?.as_str())
         {
             unpinned.push(archive);
         }
@@ -364,8 +364,8 @@ pub fn output(root: &Path, project: &Project) -> PathBuf {
 }
 
 /// The vendor firmware projects of `chip`, by name.
-pub fn projects(ctx: &Context, chip: &str) -> Result<Vec<String>> {
-    let directory = ctx.root.join("verification").join(chip).join(PROJECTS);
+pub fn projects(root: &Path, chip: &str) -> Result<Vec<String>> {
+    let directory = root.join("verification").join(chip).join(PROJECTS);
     let mut names = vec![];
     for entry in std::fs::read_dir(&directory)? {
         let entry = entry?;
@@ -379,8 +379,8 @@ pub fn projects(ctx: &Context, chip: &str) -> Result<Vec<String>> {
 
 /// Build the vendor firmware `project` of `chip`, or every project; prints
 /// each application image.
-pub fn run(ctx: &Context, chip: &str, project: Option<&str>) -> Result<()> {
-    let available = projects(ctx, chip)?;
+pub fn run(root: &Path, chip: &str, project: Option<&str>) -> Result<()> {
+    let available = projects(root, chip)?;
     let selected: Vec<&str> = match project {
         Some(name) if available.iter().any(|p| p == name) => vec![name],
         Some(name) => {
@@ -396,8 +396,7 @@ pub fn run(ctx: &Context, chip: &str, project: Option<&str>) -> Result<()> {
         .into_iter()
         .map(|name| Project {
             name: name.to_owned(),
-            source: ctx
-                .root
+            source: root
                 .join("verification")
                 .join(chip)
                 .join(PROJECTS)
@@ -405,7 +404,7 @@ pub fn run(ctx: &Context, chip: &str, project: Option<&str>) -> Result<()> {
             chip: chip.to_owned(),
         })
         .collect::<Vec<_>>();
-    for (project, build) in projects.iter().zip(build(ctx, chip, &projects)?) {
+    for (project, build) in projects.iter().zip(build(root, chip, &projects)?) {
         println!("{:<16} {}", project.name, build.application);
     }
     Ok(())
@@ -444,8 +443,8 @@ fn remove_if_present(path: &Path) -> Result<()> {
     }
 }
 
-pub fn build(ctx: &Context, pins: &str, projects: &[Project]) -> Result<Vec<Build>> {
-    let pins = vendor_fetch::git_pins(ctx, pins)?;
+pub fn build(root: &Path, pins: &str, projects: &[Project]) -> Result<Vec<Build>> {
+    let pins = oer_vendor_artifacts::git_pins(root, pins)?;
     let cache = cache_directory()?;
     std::fs::create_dir_all(&cache)?;
     let lock = std::fs::OpenOptions::new()
@@ -463,12 +462,12 @@ pub fn build(ctx: &Context, pins: &str, projects: &[Project]) -> Result<Vec<Buil
         tools = install_tools(&cache, &tree, &project.chip, &revision)?;
     }
     fs2::FileExt::lock_shared(&lock)?;
-    remove_checkout_copies(&ctx.root);
+    remove_checkout_copies(root);
     let mut builds = Vec::with_capacity(projects.len());
     for project in projects {
         let name = &project.name;
         let chip = &project.chip;
-        let output = output(&ctx.root, project);
+        let output = output(root, project);
         let build = output.join("build");
         if configured_by_another_tree(&output, &revision, &tree) {
             remove_if_present(&build)?;
@@ -514,7 +513,7 @@ idf.py --preview -C "$OER_PROJECT" -B "$OER_BUILD" -DIDF_TARGET="$OER_CHIP" -DSD
             idf_revision: revision.clone(),
             idf_tree: Some(tree.clone()),
             overrides: overrides.clone(),
-            application_sha256: vendor_fetch::sha256(&application)?,
+            application_sha256: oer_vendor_artifacts::sha256(&application)?,
             application: application.display().to_string(),
             elf: elf.display().to_string(),
         };
@@ -665,7 +664,7 @@ mod tests {
         let digest = |bytes: &[u8]| {
             let path = tree.join("digest");
             std::fs::write(&path, bytes).unwrap();
-            vendor_fetch::sha256(&path).unwrap()
+            oer_vendor_artifacts::sha256(&path).unwrap()
         };
         let pins = [GitPin {
             id: "esp-phy-lib".into(),

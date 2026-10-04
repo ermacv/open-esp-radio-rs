@@ -45,7 +45,7 @@ pub fn add(ctx: &Context, path: &Path, branch: &str, from: &str) -> Result<()> {
     )?;
     // Fetched vendor artifacts live in the host-wide store; link it first so
     // vendor scenarios and captures find them in the new worktree.
-    crate::vendor_fetch::link_store(path, &crate::vendor_fetch::store()?)?;
+    oer_vendor_artifacts::link_store(path, &oer_vendor_artifacts::store()?)?;
     let source = ctx.root.join("target");
     if !source.is_dir() {
         println!("worktree: this checkout has no target/ to seed from");

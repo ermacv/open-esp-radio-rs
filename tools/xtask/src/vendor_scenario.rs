@@ -71,7 +71,9 @@ pub fn run(ctx: &Context, chip: &str, args: &[OsString]) -> Result<std::process:
     let label = format!("scenario {}", scenario.to_string_lossy());
     crate::phase::timed(&label, || {
         let mut child = oer_process::owned::Child::spawn(&mut command)?;
-        Ok(crate::hil::exit_code(child.wait_forwarding_cancellation()?))
+        Ok(oer_process::exit_code(
+            child.wait_forwarding_cancellation()?,
+        ))
     })
 }
 

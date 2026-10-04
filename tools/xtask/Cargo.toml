@@ -8,21 +8,17 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-oer-hil-stand = { path = "../../hil/host/stand" }
 oer-hil-image = { path = "../../hil/host/image" }
-oer-hil-evidence = { path = "../../hil/host/evidence" }
 oer-hil-source-snapshot = { path = "../../hil/host/source-snapshot" }
 oer-hil-image-class = { path = "../../hil/host/image-class" }
 oer-chip-profile = { path = "../chip-profile" }
 oer-command-tree = { path = "../command-tree", features = ["clap"] }
 oer-hil-arbiter = { path = "../../hil/host/arbiter" }
-oer-hil-stand-schema = { path = "../../hil/stand/schema" }
-oer-hil-board = { path = "../../hil/host/board" }
-oer-hil-execution = { path = "../../hil/host/execution" }
-oer-hil-schema = { path = "../../hil/schema", features = ["producer"] }
+oer-hil-cli = { path = "../../hil/host/cli" }
 oer-probe-codegen = { path = "../../verification/harness/codegen" }
 oer-process = { path = "../process" }
 oer-tidy = { path = "../tidy" }
+oer-vendor-artifacts = { path = "../vendor-artifacts" }
 oer-register-model = { path = "../registers/model" }
 fs2 = "0.4"
 roxmltree = "=0.20.0"
@@ -36,7 +32,6 @@ pulldown-cmark = { version = "=0.13.0", default-features = false }
 rustc-demangle = "=0.1.28"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
-rustix = { version = "=1.1.4", features = ["process"] }
 tempfile = "=3.27.0"
 toml = "=1.1.4"
 

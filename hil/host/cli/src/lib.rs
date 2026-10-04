@@ -1,4 +1,8 @@
-//! Repository orchestration; policies remain separate from Cargo/process mechanics.
+//! The `cargo hil` command line: the stand's operations (leases, boards,
+//! owners, jobs, the shared run store, evidence, performance, A/B and
+//! bisection, the ESP-IDF firmware catalog) and the launch of the HIL runner
+//! it builds, with that runner's observer receipt.
+#![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
 use std::{
     ffi::OsString,
@@ -6,33 +10,28 @@ use std::{
     process::Command,
 };
 
-pub mod blobray;
-pub mod cargo;
-pub mod checks;
-pub mod chips;
-pub mod ci_status;
-pub mod compare_images;
-pub mod doc;
+pub mod ab;
+pub mod bisect;
+pub mod board;
+pub mod command;
+pub mod dashboard;
 pub mod evidence;
-pub mod evidence_diff;
-pub mod firmware;
-pub mod gate;
-pub mod graph;
-pub mod paths;
-pub mod phase;
-pub mod push;
-pub mod register_inventory;
-pub mod report;
-pub mod source_citation;
-pub mod stand_install;
-pub mod sweep;
-pub mod vendor_diff;
-pub mod vendor_fingerprint;
-pub mod vendor_provenance;
-pub mod vendor_scenario;
-pub mod worktree;
+pub mod firmware_catalog;
+pub mod fixtures;
+pub mod flash;
+pub mod jobs;
+pub mod jtag;
+pub mod observer;
+pub mod perf;
+pub mod runs;
+pub mod stand;
+pub mod store;
+pub mod vendor_firmware;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+/// This package's directory, relative to the repository root.
+const PACKAGE: &str = "hil/host/cli";
 
 #[derive(Clone, Debug)]
 pub struct Context {
@@ -57,7 +56,7 @@ impl Context {
     /// from a different checkout of this repository is refused instead of
     /// silently acting on the tree it was built from.
     pub fn discover() -> Result<Self> {
-        let built = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let built = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
         if let Some(invoked) = std::env::current_dir()
             .ok()
             .and_then(|directory| checkout_of(&directory))
@@ -65,7 +64,7 @@ impl Context {
             && invoked != built
         {
             return Err(format!(
-                "this xtask was built from {} but runs in {}; rebuild it there or pass --root",
+                "this cargo hil was built from {} but runs in {}; rebuild it there or pass --root",
                 built.display(),
                 invoked.display()
             )
@@ -86,10 +85,18 @@ impl Context {
 }
 
 /// The top directory of the checkout of this repository containing
-/// `directory`: the nearest ancestor with an xtask package of its own.
+/// `directory`: the nearest ancestor with this package of its own.
 fn checkout_of(directory: &Path) -> Option<PathBuf> {
     directory
         .ancestors()
-        .find(|candidate| candidate.join("tools/xtask/Cargo.toml").is_file())
+        .find(|candidate| candidate.join(PACKAGE).join("Cargo.toml").is_file())
         .and_then(|candidate| candidate.canonicalize().ok())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_package_directory_is_this_crate() {
+        assert!(env!("CARGO_MANIFEST_DIR").ends_with(super::PACKAGE));
+    }
 }

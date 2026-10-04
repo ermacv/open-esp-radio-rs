@@ -150,7 +150,7 @@ pub fn list(ctx: &Context) -> Result<()> {
                 let digest = match entry.kind {
                     Kind::Image => Some(build.application_sha256),
                     Kind::Bootloader => {
-                        crate::vendor_fetch::sha256(&bootloader_path(ctx, &entry)).ok()
+                        oer_vendor_artifacts::sha256(&bootloader_path(ctx, &entry)).ok()
                     }
                 };
                 digest.map_or_else(
@@ -177,7 +177,7 @@ pub fn list(ctx: &Context) -> Result<()> {
 pub fn build(ctx: &Context, image: &str) -> Result<vendor_firmware::Build> {
     let entries = entries(&ctx.root)?;
     let entry = entry(&entries, image)?;
-    let build = vendor_firmware::build(ctx, &entry.pins, &[entry.project(&ctx.root)])?
+    let build = vendor_firmware::build(&ctx.root, &entry.pins, &[entry.project(&ctx.root)])?
         .pop()
         .ok_or("the build produced no image")?;
     let (digest, path) = match entry.kind {
@@ -185,7 +185,7 @@ pub fn build(ctx: &Context, image: &str) -> Result<vendor_firmware::Build> {
         Kind::Bootloader => {
             let path = bootloader_path(ctx, entry);
             (
-                crate::vendor_fetch::sha256(&path)?,
+                oer_vendor_artifacts::sha256(&path)?,
                 path.display().to_string(),
             )
         }
@@ -211,7 +211,7 @@ pub fn bootloader(ctx: &Context, chip: &str) -> Result<(PathBuf, String)> {
         })?;
     build(ctx, &entry.image)?;
     let path = bootloader_path(ctx, entry);
-    let sha256 = crate::vendor_fetch::sha256(&path)?;
+    let sha256 = oer_vendor_artifacts::sha256(&path)?;
     Ok((path, sha256))
 }
 
@@ -314,7 +314,7 @@ pub fn flash(
                 Ok((offset, file.clone()))
             })
             .collect::<Result<Vec<_>>>()?;
-        crate::hil_jtag::program(&entry.chip, &mac, &files)?;
+        crate::jtag::program(&entry.chip, &mac, &files)?;
     } else {
         for (address, file) in &files {
             let mut command =
@@ -334,7 +334,7 @@ pub fn flash(
         }
         // espflash's reset leaves an esp32c5 in its ROM download mode; an
         // RTS reset starts the application.
-        drop(crate::hil_flash::reset_into_application(&port)?);
+        drop(crate::flash::reset_into_application(&port)?);
     }
     let (commit, dirty) = source_revision(&ctx.root, &entry.directory);
     arbiter.record_board_by(
@@ -469,7 +469,7 @@ mod tests {
 
     #[test]
     fn the_tracked_catalog_names_its_projects() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
         let entries = entries(&root).unwrap();
         for image in ["ieee802154-peer", "vendor-calibration"] {
             assert!(entries.iter().any(|entry| entry.image == image), "{image}");

@@ -156,12 +156,13 @@ ROM answered: the same RTS check must show the ROM booting.
 
 ## Operational commands without a rebuild
 
-`cargo hil` builds this xtask from the caller's working tree before every
-command. For the operational commands (`queue`, `lease`, `devices`, `board`,
-`runs`, `perf`, `dashboard`) use the installed tool instead:
+`cargo hil` builds its binary, [`oer-hil-cli`](cli/README.md), from the
+caller's working tree before every command, so an edit of a HIL host package
+rebuilds it. For the operational commands (`queue`, `lease`, `devices`,
+`board`, `runs`, `perf`, `dashboard`) use the installed tool instead:
 
 ```console
-cargo xtask stand-install      # build origin/main's xtask once, install oer-stand
+cargo xtask stand-install      # build origin/main's oer-hil-cli once, install oer-stand
 oer-stand queue
 oer-stand runs why <run-id>
 ```
@@ -228,8 +229,8 @@ so a broken chain stops at its first link. `--after-any JOB` starts it
 whatever the outcome. `--enqueue` first has the runner check a `run`'s
 scenarios, target and options (`run --validate-only`), so a mistake such as
 an unknown scenario fails in the terminal instead of in the job. It also
-fixes what the job runs with before it waits: a copy of the xtask below
-`target/hil/jobs/xtask/`, the runner built now and, for a `run` that builds,
+fixes what the job runs with before it waits: a copy of the `cargo hil`
+binary below `target/hil/jobs/cli/`, the runner built now and, for a `run` that builds,
 a source snapshot of the checkout taken now with the run's own
 `--source-include` and `--include-untracked`. It then builds the run's images
 from that snapshot and runs their audits (`run --build-only`), so a failing
@@ -308,7 +309,7 @@ round from the rounds before it. Every run records `experiment` (its id, arm and
 commit and each override's path, commit and dirtiness) in its manifest and
 no evidence. A comparison takes hours, so like a run it is a job: `--enqueue`
 starts it detached and prints the job id for `cargo hil wait`, and `--after
-JOB` orders it after another job. Every round runs the xtask and runner fixed
+JOB` orders it after another job. Every round runs the `cargo hil` binary and runner fixed
 when the comparison was enqueued or started, so a pull into the checkout
 meanwhile cannot change the protocol the arms are run with. A job enqueued
 from a worktree without an owner of its own runs for the owner of the

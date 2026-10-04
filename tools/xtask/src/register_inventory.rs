@@ -357,7 +357,7 @@ fn sha256(bytes: &[u8]) -> String {
 /// applications linked from these binaries, and sources are not code.
 fn inputs(ctx: &Context, chip: &str) -> Result<Vec<Input>> {
     let mut inputs = vec![];
-    for pinned in crate::vendor_fetch::pinned(ctx, chip)? {
+    for pinned in oer_vendor_artifacts::pinned(&ctx.root, chip)? {
         if pinned.local {
             continue;
         }

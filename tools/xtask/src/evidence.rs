@@ -527,7 +527,7 @@ fn stand_shard(ctx: &Context, chip: &str, stand: &Stand) -> Result<scenario_evid
             state: None,
         });
     }
-    let inputs = crate::vendor_fetch::pinned(ctx, chip)?
+    let inputs = oer_vendor_artifacts::pinned(&ctx.root, chip)?
         .into_iter()
         .filter(|a| a.source == stand.source)
         .map(|a| {

@@ -65,7 +65,7 @@ pub(crate) fn stand(
         } => {
             // The ROM prints its reset reason before the board's own USB
             // enumerates, so the board leaving USB and returning is the proof.
-            let after = crate::hil_board::watched_power_cycle(owner()?, &board)?
+            let after = crate::board::watched_power_cycle(owner()?, &board)?
                 .verdict()
                 .map_err(|why| format!("{board}: {why}"))?;
             println!(

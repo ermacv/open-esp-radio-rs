@@ -20,6 +20,8 @@ Captured stdout and stderr are drained concurrently. Background captures should
 set `Child::with_timeout` from the workload duration; waiting later does not
 restart that lifetime. `run` preserves the caller's unlimited runtime, with
 bounded shutdown. A nested supervisor can request a longer shutdown grace.
+`exit_code` maps a child's status to the code a wrapper exits with: the
+child's own code, or `128 + signal` for one a signal ended.
 
 `cleanup` temporarily permits restoration despite cancellation. Its 30-second
 budget is shared by nested cleanup scopes and limits subprocesses started there.

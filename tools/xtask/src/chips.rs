@@ -11,9 +11,6 @@ use std::path::Path;
 /// Directory of every chip's verification project, relative to the root.
 const VERIFICATION: &str = "verification";
 
-/// The pin every verification project has.
-const ARTIFACTS: &str = "artifacts.toml";
-
 /// Every supported chip, sorted: the chips with a profile.
 pub fn supported(root: &Path) -> Result<Vec<String>> {
     oer_chip_profile::supported(root)
@@ -61,7 +58,7 @@ impl Chip {
 
     /// The single pin of the chip's vendor artifacts.
     pub fn artifacts(&self) -> String {
-        self.verification(ARTIFACTS)
+        oer_vendor_artifacts::manifest(&self.0)
     }
 
     /// Directory of the chip's scenario evidence shards.

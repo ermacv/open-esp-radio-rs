@@ -32,10 +32,6 @@ pub(super) enum TreeSource {
     File(&'static str),
 }
 
-/// Commands that hand their arguments to another tree: `cargo xtask hil`
-/// runs `cargo hil`.
-const REBASED: [(&[&str], &[&str]); 1] = [(&["xtask", "hil"], &["hil"])];
-
 /// The command trees of every tool, keyed by command path.
 pub(super) struct Trees {
     nodes: BTreeMap<Vec<String>, CommandNode>,
@@ -83,9 +79,6 @@ impl Trees {
             if !node.subcommands.is_empty() && !positional {
                 if node.subcommands.contains(word) {
                     path.push(word.clone());
-                    if let Some((_, target)) = REBASED.iter().find(|(from, _)| *from == path) {
-                        path = target.iter().map(|word| word.to_string()).collect();
-                    }
                     node = self.nodes.get(&path)?;
                     value_pending = false;
                     continue;
@@ -232,14 +225,13 @@ mod tests {
         Trees::new([
             node(
                 &["xtask"],
-                &["check", "hil", "vendor-scenario"],
+                &["check", "vendor-scenario"],
                 &["--root"],
                 false,
             ),
             node(&["xtask", "check"], &["docs", "phy"], &[], false),
             node(&["xtask", "check", "docs"], &[], &[], false),
             node(&["xtask", "check", "phy"], &[], &["--chip"], false),
-            node(&["xtask", "hil"], &[], &[], true),
             node(&["xtask", "vendor-scenario"], &[], &["--chip"], true),
             node(&["hil"], &["run", "queue"], &["--owner"], false),
             node(&["hil", "run"], &[], &["--repeat"], false),
@@ -261,7 +253,10 @@ mod tests {
         assert!(check("cargo xtask --root . check docs").is_empty());
         assert!(check("cargo hil --owner wifi run boot-smoke --repeat 3").is_empty());
         assert!(check("$ cargo hil queue --json | jq . && cargo xtask check docs").is_empty());
-        assert!(check("cargo xtask hil queue --json").is_empty());
+        assert_eq!(
+            check("cargo xtask hil queue --json"),
+            ["`cargo xtask` has no subcommand hil"]
+        );
         assert!(check("cargo hil run <scenario> [--repeat N]").is_empty());
         assert!(check("cargo xtask vendor-scenario --chip c gain --library lib.a").is_empty());
         assert!(check("cargo hil run x -- --anything").is_empty());
@@ -278,7 +273,7 @@ mod tests {
             ["`cargo hil queue` has no flag --details"]
         );
         assert_eq!(
-            check("cargo xtask hil run --repeats=2"),
+            check("cargo hil run --repeats=2"),
             ["`cargo hil run` has no flag --repeats"]
         );
         assert_eq!(

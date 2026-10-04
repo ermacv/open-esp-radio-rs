@@ -1,14 +1,14 @@
 //! Install the stand's operational commands as a prebuilt tool from `main`.
 //!
 //! `cargo hil queue`, `lease`, `devices` and the other operational commands
-//! otherwise build this xtask from the caller's working tree first: minutes
-//! after every edit, unavailable while the tree does not compile, and six
-//! checkouts on six commits writing the one shared arbiter state with six
-//! different binaries. `cargo xtask stand-install` builds the xtask of
-//! `origin/main` once, in its own clone, and installs `oer-stand` on the
-//! user's PATH: a wrapper that runs that binary against the caller's checkout
-//! (`--root` is the caller's Git top level, so owners and local paths stay the
-//! caller's).
+//! otherwise build `oer-hil-cli` from the caller's working tree first: a
+//! rebuild after every edit of a HIL host package, unavailable while that
+//! code does not compile, and six checkouts on six commits writing the one
+//! shared arbiter state with six different binaries. `cargo xtask
+//! stand-install` builds the `oer-hil-cli` of `origin/main` once, in its own
+//! clone, and installs `oer-stand` on the user's PATH: a wrapper that runs
+//! that binary against the caller's checkout (`--root` is the caller's Git
+//! top level, so owners and local paths stay the caller's).
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -16,6 +16,9 @@ use std::{
 
 use crate::{Context, Result};
 use oer_process as process;
+
+/// The package, and binary, the tool installs: `cargo hil`.
+const PACKAGE: &str = "oer-hil-cli";
 
 fn home() -> Result<PathBuf> {
     std::env::var_os("HOME")
@@ -39,7 +42,7 @@ pub fn wrapper(binary: &Path, fallback_root: &Path) -> String {
          # Installed by `cargo xtask stand-install`; operational HIL stand commands\n\
          # without building the caller's tree. Runs against the caller's checkout.\n\
          root=$(git rev-parse --show-toplevel 2>/dev/null) || root='{}'\n\
-         exec '{}' --root \"$root\" hil \"$@\"\n",
+         exec '{}' --root \"$root\" \"$@\"\n",
         fallback_root.display(),
         binary.display()
     )
@@ -82,7 +85,7 @@ pub fn run(ctx: &Context) -> Result<()> {
     let commit = git_text(&["rev-parse", "HEAD"])?;
     let short = &commit[..12.min(commit.len())];
     let bin = tool.join("bin");
-    let installed = bin.join("oer-xtask");
+    let installed = bin.join(PACKAGE);
     let previous = fs::read_to_string(tool.join("installed-commit")).ok();
     if installed.is_file()
         && let Some(previous) = previous.as_deref().map(str::trim)
@@ -102,11 +105,11 @@ pub fn run(ctx: &Context) -> Result<()> {
     process::run(
         ctx.cargo()
             .current_dir(&source)
-            .args(["build", "--locked", "-p", "oer-xtask"]),
+            .args(["build", "--locked", "-p", PACKAGE]),
     )?;
     fs::create_dir_all(&bin)?;
-    let staged = bin.join(".oer-xtask.new");
-    fs::copy(source.join("target/debug/oer-xtask"), &staged)?;
+    let staged = bin.join(format!(".{PACKAGE}.new"));
+    fs::copy(source.join("target/debug").join(PACKAGE), &staged)?;
     fs::rename(&staged, &installed)?;
     let script_directory = home()?.join(".local/bin");
     fs::create_dir_all(&script_directory)?;
@@ -127,7 +130,7 @@ pub fn run(ctx: &Context) -> Result<()> {
 
 /// The files the tool is built from, relative to its clone: the workspace
 /// manifest, lock file and toolchain, and the directory of every path
-/// package `oer-xtask` depends on.
+/// package the tool's package depends on.
 fn build_inputs(ctx: &Context, source: &Path) -> Result<Vec<String>> {
     let output = process::capture(ctx.cargo().current_dir(source).args([
         "metadata",
@@ -136,7 +139,7 @@ fn build_inputs(ctx: &Context, source: &Path) -> Result<Vec<String>> {
         "--locked",
     ]))?;
     let metadata: serde_json::Value = serde_json::from_slice(&output.stdout)?;
-    let mut inputs = path_package_closure(&metadata, "oer-xtask", source)?;
+    let mut inputs = path_package_closure(&metadata, PACKAGE, source)?;
     inputs.extend(["Cargo.toml", "Cargo.lock", "rust-toolchain.toml", ".cargo"].map(String::from));
     Ok(inputs)
 }
@@ -204,8 +207,8 @@ mod tests {
         let root = root.canonicalize().unwrap();
         let metadata = serde_json::json!({
             "packages": [
-                {"name": "oer-xtask", "id": "x", "source": null,
-                 "manifest_path": root.join("tools/xtask/Cargo.toml")},
+                {"name": "oer-hil-cli", "id": "x", "source": null,
+                 "manifest_path": root.join("hil/host/cli/Cargo.toml")},
                 {"name": "oer-hil-arbiter", "id": "a", "source": null,
                  "manifest_path": root.join("hil/host/arbiter/Cargo.toml")},
                 {"name": "serde", "id": "s", "source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -218,18 +221,18 @@ mod tests {
                 {"id": "a", "deps": []},
             ]},
         });
-        let mut inputs = path_package_closure(&metadata, "oer-xtask", &root).unwrap();
+        let mut inputs = path_package_closure(&metadata, PACKAGE, &root).unwrap();
         inputs.sort();
-        assert_eq!(inputs, ["hil/host/arbiter", "tools/xtask"]);
+        assert_eq!(inputs, ["hil/host/arbiter", "hil/host/cli"]);
     }
 
     #[test]
     fn the_wrapper_runs_the_installed_binary_against_the_callers_checkout() {
-        let text = wrapper(Path::new("/tool/bin/oer-xtask"), Path::new("/tool/src"));
+        let text = wrapper(Path::new("/tool/bin/oer-hil-cli"), Path::new("/tool/src"));
         assert!(text.starts_with("#!/bin/sh\n"));
         assert!(
             text.contains("root=$(git rev-parse --show-toplevel 2>/dev/null) || root='/tool/src'")
         );
-        assert!(text.contains("exec '/tool/bin/oer-xtask' --root \"$root\" hil \"$@\""));
+        assert!(text.contains("exec '/tool/bin/oer-hil-cli' --root \"$root\" \"$@\""));
     }
 }

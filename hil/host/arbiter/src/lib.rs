@@ -37,9 +37,9 @@ mod unknown;
 
 pub use balance::HARD_LIMIT;
 pub use board::{BoardEvent, BoardEventKind, RecoveryStep, ResetPath};
-pub use control::{BootMode, Control, ResetControl};
 pub use devices::{
-    AttachedPort, Device, attached_ports, board_mac, device_label, normalize_mac, port_mac,
+    AttachedPort, Device, attached_ports, board_mac, device_label, devices_of, normalize_mac,
+    port_mac,
 };
 pub use estimate::{DEFAULT_ESTIMATE, EstimateSource, format_duration, parse_duration};
 pub use grant::{Grant, LEASE_ENV, OWNER_ENV, Request, default_owner};

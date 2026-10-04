@@ -46,11 +46,7 @@ pub(crate) fn restore(arbiter: &crate::Arbiter, macs: &[String], origin: &str) {
 }
 
 fn restore_one(arbiter: &crate::Arbiter, device: &Device, origin: &str) -> crate::Result<()> {
-    let Some(power) = device
-        .control
-        .as_ref()
-        .and_then(|control| control.power.as_ref())
-    else {
+    let Some(power) = device.power.as_ref() else {
         return Ok(());
     };
     if attached(&device.mac) {
@@ -111,9 +107,9 @@ mod tests {
     fn a_lease_restores_its_claimed_boards_or_every_board_of_the_stand() {
         let device = |mac: &str| Device {
             mac: mac.to_owned(),
-            chip: None,
-            name: None,
-            control: None,
+            name: mac.to_lowercase(),
+            chip: "esp32s31".into(),
+            power: None,
         };
         let devices = [device("AA"), device("BB")];
         let claims = [Claim::exclusive("board:AA"), Claim::exclusive(crate::AIR)];

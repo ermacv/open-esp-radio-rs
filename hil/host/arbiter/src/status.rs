@@ -131,13 +131,7 @@ impl Arbiter {
         let events = self.board_events()?;
         let (flashes, startup_artifacts) = latest(&events);
         let registered = self.devices()?;
-        // A registered board's reset bridge is part of that board, not one.
-        let mut attached = crate::attached_ports();
-        attached.retain(|port| {
-            port.mac
-                .as_deref()
-                .is_none_or(|serial| !crate::devices::is_reset_bridge(serial, &registered))
-        });
+        let attached = crate::attached_ports();
         let mut macs: Vec<Option<String>> = registered
             .iter()
             .map(|device| Some(device.mac.clone()))

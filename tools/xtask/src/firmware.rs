@@ -324,9 +324,9 @@ fn select_board(
     attached: &[oer_hil_arbiter::AttachedPort],
 ) -> Option<std::path::PathBuf> {
     let mut matches = attached.iter().filter(|port| {
-        devices.iter().any(|device| {
-            Some(&device.mac) == port.mac.as_ref() && device.chip.as_deref() == Some(chip)
-        })
+        devices
+            .iter()
+            .any(|device| Some(&device.mac) == port.mac.as_ref() && device.chip == chip)
     });
     match (matches.next(), matches.next()) {
         (Some(port), None) => Some(std::path::PathBuf::from(&port.port)),
@@ -342,8 +342,9 @@ mod tests {
     fn automatic_flashing_picks_the_only_attached_board_of_the_chip() {
         let device = |mac: &str, chip: &str| oer_hil_arbiter::Device {
             mac: mac.into(),
-            chip: Some(chip.into()),
-            ..oer_hil_arbiter::Device::default()
+            name: mac.to_lowercase(),
+            chip: chip.into(),
+            power: None,
         };
         let port = |port: &str, mac: &str| oer_hil_arbiter::AttachedPort {
             port: port.into(),

@@ -61,12 +61,9 @@ pub fn with_flash_retries(port: &Path, mut write: impl FnMut() -> Result<()>) ->
     retry_transient(FLASH_ATTEMPTS, &mut write, |attempt, error| {
         eprintln!(
             "hil: flash attempt {attempt} of {FLASH_ATTEMPTS} through {} failed: {error}; \
-             retrying after a power-on reset",
+             retrying",
             port.display()
         );
-        if let Err(error) = reset::power_on_reset(port) {
-            eprintln!("hil: the power-on reset before the next flash attempt failed: {error}");
-        }
     })
 }
 

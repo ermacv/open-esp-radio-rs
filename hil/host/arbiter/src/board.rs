@@ -76,8 +76,6 @@ pub enum ResetPath {
     Rts,
     /// The CPU reset through the chip's JTAG.
     Jtag,
-    /// EN through the board's registered UART bridge.
-    En,
     /// A power cycle of the board's registered hub port.
     Power,
 }
@@ -154,11 +152,8 @@ impl std::fmt::Display for BoardEvent {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RecoveryStep {
-    /// A pulse on RTS of the chip's own USB Serial/JTAG port, for a board
-    /// without an EN path.
+    /// A pulse on RTS of the chip's own USB Serial/JTAG port.
     RtsReset,
-    /// A pulse on EN through the board's registered reset path.
-    EnReset,
     /// Its switchable hub port was powered off and on.
     PowerCycle,
     /// Its switchable hub port was off and was powered on.
@@ -287,13 +282,13 @@ mod tests {
         assert_eq!(artifacts, [&artifact, &other_checkout]);
         let devices = [crate::Device {
             mac: "38:44:BE:AA:25:64".into(),
-            chip: Some("esp32c5".into()),
-            name: None,
-            control: None,
+            name: "c5-a".into(),
+            chip: "esp32c5".into(),
+            power: None,
         }];
         assert_eq!(
             device_label(Some("38:44:BE:AA:25:64"), &devices),
-            "38:44:BE:AA:25:64 (esp32c5)"
+            "c5-a (esp32c5)"
         );
         assert_eq!(device_label(Some("AA"), &devices), "AA");
         assert_eq!(device_label(None, &devices), "unidentified board");

@@ -13,9 +13,11 @@ extern crate rustc_interface;
 extern crate rustc_middle;
 #[macro_use]
 extern crate rustc_public;
+extern crate rustc_span;
 
 mod collect;
 mod facts;
+mod leaks;
 
 use std::path::PathBuf;
 use std::process::Command;

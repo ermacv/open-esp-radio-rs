@@ -31,9 +31,25 @@ pub struct Facts {
     pub calls: BTreeMap<String, BTreeSet<IndirectCall>>,
     /// The functions made function pointers of each type, by symbol.
     pub fn_pointers: BTreeMap<String, BTreeSet<String>>,
-    /// Function-pointer types a value reaches by a transmute: their calls
-    /// may reach any function.
-    pub polluted: BTreeSet<String>,
+    /// Function-pointer types whose values leave the type somewhere: cast
+    /// to a pointer or an integer, transmuted to something else, a union's
+    /// field, or read through a pointer of another type. Every function made
+    /// a pointer of such a type is a candidate of every site of its ABI.
+    pub leaked_types: BTreeSet<String>,
+    /// Functions a constant holds where its type gives no function-pointer
+    /// type, by the key of their own signature's pointer type.
+    pub leaked_functions: BTreeMap<String, String>,
+    /// Transmutes between function-pointer types: each target's sources.
+    pub edges: BTreeMap<String, BTreeSet<String>>,
+    /// Principal traits of `dyn` values that leave their type: every
+    /// function of their vtables, and everything their implementors carry
+    /// (`trait_contents`), leaks.
+    pub leaked_traits: BTreeSet<String>,
+    /// What every type made a `dyn` of each trait carries.
+    pub trait_contents: BTreeMap<String, crate::leaks::Contents>,
+    /// A value whose contents cannot be enumerated left its type: every
+    /// function made a pointer is a candidate of every site of its ABI.
+    pub unknown_leak: bool,
     /// Each trait's vtable entries, by entry index, by symbol.
     pub vtables: BTreeMap<String, BTreeMap<usize, BTreeSet<String>>>,
 }

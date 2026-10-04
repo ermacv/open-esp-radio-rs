@@ -207,3 +207,47 @@ fn drop_glue_and_pointer_shims_name_their_indirect_calls() {
     assert!(calls.get("core::ptr::drop_glue::<fn() -> u32>").is_none());
     let _ = std::fs::remove_dir_all(&directory);
 }
+
+/// Each way out of a function-pointer type leaks it: a union, a cast to a
+/// pointer, a transmute to an address, a pointer cast over bytes and an
+/// `AtomicPtr<()>`. A pointer kept in its type does not leak; a transmute to
+/// another function-pointer type is an edge, and one that changes only
+/// lifetimes is nothing.
+#[test]
+fn the_ways_out_of_a_function_pointer_type_leak_it() {
+    let tests = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let directory =
+        std::env::temp_dir().join(format!("oer-mir-facts-leaks-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    compile(&directory, &tests.join("leaks.rs"), &[]);
+    let facts = crate_facts(&directory, "leaks");
+    let leaked: Vec<&str> = facts["leaked_types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|key| key.as_str().unwrap())
+        .collect();
+    for way_out in [
+        "fn() -> u8",
+        "fn() -> u16",
+        "fn() -> u32",
+        "fn(u32) -> u32",
+        "fn() -> u64",
+    ] {
+        assert!(leaked.contains(&way_out), "{way_out} in {leaked:?}");
+    }
+    assert!(!leaked.contains(&"fn() -> i8"), "{leaked:?}");
+    assert!(!leaked.contains(&"fn() -> i16"), "{leaked:?}");
+    assert_eq!(facts["edges"]["fn() -> u16"][0], "fn() -> i16");
+    assert!(facts["edges"].get("fn(&u8) -> u32").is_none());
+    assert_eq!(facts["unknown_leak"], false);
+    // A `dyn` leaks its trait, and the trait records what its implementors
+    // carry; a transparent wrapper leaks nothing.
+    assert_eq!(facts["leaked_traits"][0], "leaks::Hidden");
+    assert_eq!(
+        facts["trait_contents"]["leaks::Hidden"]["keys"][0],
+        "fn(u8) -> u8"
+    );
+    assert!(!leaked.contains(&"fn(u8) -> u8"), "{leaked:?}");
+    let _ = std::fs::remove_dir_all(&directory);
+}

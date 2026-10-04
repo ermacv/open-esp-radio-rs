@@ -2,6 +2,7 @@
 //! instance its monomorphic items reach through direct calls, coercions and
 //! constants, reading each instance's MIR.
 use crate::facts::{Facts, IndirectCall, fn_pointer_key, function_key};
+use crate::leaks;
 use rustc_middle::ty::TyCtxt;
 use rustc_middle::ty::print::{
     with_no_trimmed_paths, with_no_visible_paths, with_resolve_crate_name,
@@ -43,13 +44,16 @@ pub fn crate_facts(tcx: TyCtxt<'_>) -> Facts {
     let mut walk = Walk {
         tcx,
         facts: Facts {
-            schema: 1,
+            schema: 2,
             krate: rustc_public::local_crate().name,
             ..Facts::default()
         },
         queue: Vec::new(),
         seen: BTreeSet::new(),
         allocations: BTreeSet::new(),
+        unions: Default::default(),
+        implementors: Default::default(),
+        leaked: Default::default(),
     };
     for item in rustc_public::all_local_items() {
         match item.kind() {
@@ -57,7 +61,8 @@ pub fn crate_facts(tcx: TyCtxt<'_>) -> Facts {
                 if let Ok(definition) = StaticDef::try_from(item)
                     && let Ok(initializer) = definition.eval_initializer()
                 {
-                    walk.allocation(&initializer);
+                    let ty = rustc_internal::internal(tcx, definition.ty());
+                    walk.allocation(&initializer, Some(ty));
                 }
             }
             _ => walk.root(item),
@@ -75,9 +80,63 @@ struct Walk<'tcx> {
     queue: Vec<Instance>,
     seen: BTreeSet<String>,
     allocations: BTreeSet<String>,
+    /// Types whose unions were already checked.
+    unions: std::collections::HashSet<rustc_middle::ty::Ty<'tcx>>,
+    /// Types whose contents a trait's `dyn` already records.
+    implementors: std::collections::HashSet<(String, rustc_middle::ty::Ty<'tcx>)>,
+    /// Types whose contents already leaked.
+    leaked: std::collections::HashSet<rustc_middle::ty::Ty<'tcx>>,
 }
 
-impl Walk<'_> {
+impl<'tcx> Walk<'tcx> {
+    /// The function-pointer types a value of `ty` carries leave their type.
+    fn leak(&mut self, ty: rustc_middle::ty::Ty<'tcx>) {
+        if !self.leaked.insert(ty) {
+            return;
+        }
+        let contents = leaks::contents(self.tcx, ty);
+        self.facts.leaked_types.extend(contents.keys);
+        self.facts.leaked_traits.extend(contents.traits);
+        self.facts.unknown_leak |= contents.unknown;
+    }
+
+    /// A value of `source` becomes one of `target` by a transmute or a
+    /// pointer cast: an edge between function-pointer types, nothing when
+    /// the two are one type, and otherwise a leak of what `source` carries.
+    fn reinterpret(
+        &mut self,
+        source: rustc_middle::ty::Ty<'tcx>,
+        target: rustc_middle::ty::Ty<'tcx>,
+    ) {
+        let (source_key, target_key) = (leaks::key(source), leaks::key(target));
+        if leaks::shape(self.tcx, source) == leaks::shape(self.tcx, target) {
+            return;
+        }
+        if source.is_fn_ptr() && target.is_fn_ptr() {
+            self.facts
+                .edges
+                .entry(target_key)
+                .or_default()
+                .insert(source_key);
+            return;
+        }
+        // A reinterpreted pointer reaches one memory as both types: what
+        // either writes there, the other reads untyped.
+        self.leak(source);
+        self.leak(target);
+    }
+
+    /// The function pointers the unions of `ty` hold leave their type.
+    fn unions_of(&mut self, ty: rustc_middle::ty::Ty<'tcx>) {
+        if !self.unions.insert(ty) {
+            return;
+        }
+        let contents = leaks::union_contents(self.tcx, ty);
+        self.facts.leaked_types.extend(contents.keys);
+        self.facts.leaked_traits.extend(contents.traits);
+        self.facts.unknown_leak |= contents.unknown;
+    }
+
     fn root(&mut self, item: CrateItem) {
         // Generic items have no instance of their own: their instances come
         // from the calls and coercions that name them.
@@ -111,6 +170,11 @@ impl Walk<'_> {
             return;
         };
 
+        // A union local reinterprets what its fields hold.
+        for local in body.locals() {
+            let ty = rustc_internal::internal(self.tcx, local.ty);
+            self.unions_of(ty);
+        }
         let mut visitor = BodyVisitor {
             walk: self,
             locals: body.locals().to_vec(),
@@ -140,6 +204,13 @@ impl Walk<'_> {
     /// The vtable of `concrete` as a `dyn principal`.
     fn vtable(&mut self, concrete: Ty, principal: &ExistentialTraitRef) {
         let name = canonical_trait(self.tcx, principal);
+        // What a `dyn` of the trait can carry, should one leak.
+        let internal = rustc_internal::internal(self.tcx, concrete);
+        if self.implementors.insert((name.clone(), internal)) {
+            let contents = leaks::contents(self.tcx, internal);
+            let entry = self.facts.trait_contents.entry(name.clone()).or_default();
+            entry.merge(contents);
+        }
         let entries = principal.with_self_ty(concrete).vtable_entries();
         let drop = Instance::resolve_drop_in_place(concrete);
         let mut methods = vec![(0, drop)];
@@ -160,29 +231,50 @@ impl Walk<'_> {
         }
     }
 
-    /// The functions and vtables a constant's memory points to.
-    fn allocation(&mut self, allocation: &Allocation) {
-        for (_, provenance) in &allocation.provenance.ptrs {
-            self.global(provenance.0);
+    /// The functions and vtables a constant's memory of type `ty` points
+    /// to. A function in a field of a function-pointer type is a pointer of
+    /// that type; one where the type gives none (unknown, an integer, an
+    /// erased pointer) leaves its type.
+    fn allocation(&mut self, allocation: &Allocation, ty: Option<rustc_middle::ty::Ty<'tcx>>) {
+        for (offset, provenance) in &allocation.provenance.ptrs {
+            let slot = ty.and_then(|ty| leaks::type_at(self.tcx, ty, *offset as u64));
+            self.global(provenance.0, slot);
         }
     }
 
-    fn global(&mut self, id: AllocId) {
-        if !self.allocations.insert(format!("{id:?}")) {
+    fn global(&mut self, id: AllocId, slot: Option<rustc_middle::ty::Ty<'tcx>>) {
+        if !self.allocations.insert(format!("{id:?} {slot:?}")) {
             return;
         }
         match GlobalAlloc::from(id) {
-            GlobalAlloc::Function(function) => {
-                // A function in a constant is a pointer of its own signature.
-                if let Some(signature) = function.ty().kind().fn_sig() {
-                    let pointer = Ty::from_rigid_kind(RigidTy::FnPtr(signature));
-                    self.reified(pointer, function);
+            GlobalAlloc::Function(function) => match slot {
+                Some(pointer) if pointer.is_fn_ptr() => {
+                    self.facts
+                        .fn_pointers
+                        .entry(leaks::key(pointer))
+                        .or_default()
+                        .insert(function_key(&function.mangled_name()));
+                    self.queue.push(function);
                 }
-            }
+                _ => {
+                    if let Some(signature) = function.ty().kind().fn_sig() {
+                        let pointer = Ty::from_rigid_kind(RigidTy::FnPtr(signature));
+                        self.facts.leaked_functions.insert(
+                            function_key(&function.mangled_name()),
+                            fn_pointer_key(&canonical_type(self.tcx, pointer)),
+                        );
+                    }
+                    self.queue.push(function);
+                }
+            },
             GlobalAlloc::VTable(concrete, Some(principal)) => {
                 self.vtable(concrete, &principal.skip_binder());
             }
-            GlobalAlloc::Memory(memory) => self.allocation(&memory),
+            GlobalAlloc::Memory(memory) => {
+                // The memory a pointer field points to has its pointee type.
+                let pointee = slot.and_then(|slot| slot.builtin_deref(true));
+                self.allocation(&memory, pointee);
+            }
             GlobalAlloc::VTable(_, None) | GlobalAlloc::Static(_) | GlobalAlloc::TypeId { .. } => {}
         }
     }
@@ -279,11 +371,17 @@ impl MirVisitor for BodyVisitor<'_, '_> {
                         self.walk.vtable(concrete, &principal);
                     }
                 }
-                CastKind::Transmute if is_fn_pointer(*target) && source != *target => {
-                    self.walk
-                        .facts
-                        .polluted
-                        .insert(fn_pointer_key(&canonical_type(self.walk.tcx, *target)));
+                CastKind::FnPtrToPtr | CastKind::PointerExposeAddress => {
+                    let source = rustc_internal::internal(self.walk.tcx, source);
+                    if source.is_fn_ptr() {
+                        self.walk.leak(source);
+                    }
+                }
+                CastKind::Transmute | CastKind::PtrToPtr => {
+                    let tcx = self.walk.tcx;
+                    let source = rustc_internal::internal(tcx, source);
+                    let target = rustc_internal::internal(tcx, *target);
+                    self.walk.reinterpret(source, target);
                 }
                 _ => {}
             }
@@ -293,7 +391,8 @@ impl MirVisitor for BodyVisitor<'_, '_> {
 
     fn visit_mir_const(&mut self, constant: &MirConst, location: Location) {
         if let ConstantKind::Allocated(allocation) = constant.kind() {
-            self.walk.allocation(allocation);
+            let ty = rustc_internal::internal(self.walk.tcx, constant.ty());
+            self.walk.allocation(allocation, Some(ty));
         }
         self.super_mir_const(constant, location);
     }

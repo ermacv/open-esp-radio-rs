@@ -44,8 +44,37 @@ Each crate writes `<crate>-<hash>.json`:
 - `vtables`: each trait's vtable entries, by index, from every unsizing
   coercion to a `dyn` and every vtable a constant holds; entry 0 is the
   type's drop glue.
-- `polluted`: function-pointer types a transmute produces from another type:
-  a call through one may reach any function.
+- `leaked_types`: function-pointer types whose values leave the type: cast
+  to a pointer or an address (`f as *const ()`, an `AtomicPtr<()>`),
+  transmuted to anything but another function-pointer type, a union's field,
+  or behind a pointer cast to another pointee (`ptr::write` into bytes). A
+  pointer cast reaches one memory as both types, so both sides leak. Every
+  function made a pointer of a leaked type is a candidate of every site whose
+  ABI it fits: a function leaves the candidates of other types' sites only
+  when no address-taking of its type loses the type.
+- `leaked_functions`: functions a constant holds where the type at that
+  offset is no function-pointer type (an address, an erased pointer, a field
+  the layout does not single out), by the key of their own signature's
+  pointer type; they leak like a leaked type's functions.
+- `edges`: transmutes between function-pointer types, each target type's
+  source types: a site of the target type also reaches the sources'
+  functions. A transmute that changes only lifetimes keys both sides alike
+  and records nothing.
+- `leaked_traits`: principal traits of `dyn` values a leak carries: every
+  function of their vtables leaks, and so does what their implementors carry.
+- `trait_contents`: for each trait, what the types made a `dyn` of it carry
+  (`keys`: function-pointer types, `traits`: nested `dyn` traits, `unknown`),
+  for the leak's closure over every crate.
+- `unknown_leak`: a reinterpreted value carries a part whose contents the
+  driver cannot enumerate (a `dyn` without a principal trait, an opaque
+  type): every function made a pointer leaks.
+
+A reinterpretation between two views of one shape leaks nothing: a
+`#[repr(transparent)]` wrapper (`UnsafeCell`, `MaybeUninit`, `NonNull`,
+`Pin`) views memory as its one field of non-zero size does, every reference
+and raw pointer is one pointer kind, and a pointer to a slice or an array
+views memory as a pointer to its element. A union reinterprets only when its
+fields of non-zero size have more than one shape (`MaybeUninit` does not).
 
 A function is keyed by its symbol demangled without the crate hashes a
 compilation gives it (`core::fmt::write`, `<sample::A as sample::Speak>::speak`),
@@ -58,5 +87,9 @@ The walk starts at every monomorphic item of the crate and its statics, and
 follows direct calls, coercions and constants to every instance with a body,
 generic instances included. A precompiled crate (`core` from the toolchain)
 gives facts only for the generic code another crate instantiates; its own
-functions' indirect sites stay holes. Memory reinterpretations other than a
-transmute (a union field, a pointer read through another type) are not seen.
+functions' indirect sites stay holes, and its own reinterpretations are not
+seen: a precompiled crate's leaks come from compiling it apart.
+
+A constant's function pointer is typed by the field at its offset in the
+constant's type, through structs, tuples, closures, arrays and enum variants
+that agree; a pointer field's memory takes the field's pointee type.

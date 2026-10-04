@@ -32,8 +32,8 @@ pub(crate) enum StandCli {
         /// seconds under a lease, to see which button it is.
         #[arg(long, value_name = "HUB:PORT", conflicts_with = "verify_power")]
         blink: Option<String>,
-        /// Cycle BOARD's hub port under its lease and require the ROM to
-        /// report a power-on reset.
+        /// Cycle BOARD's hub port under its lease and require the board to
+        /// leave USB while the port is off and to return once it is on.
         #[arg(long, value_name = "BOARD")]
         verify_power: Option<String>,
     },
@@ -63,19 +63,15 @@ pub(crate) fn stand(
             verify_power: Some(board),
             ..
         } => {
-            let line = crate::hil_board::power_reset_line(owner()?, &board)?;
-            match line.as_deref() {
-                Some(line) if line.contains("POWERON") => {
-                    println!("{board} lost its power: {line}");
-                }
-                other => {
-                    return Err(format!(
-                        "{board}'s hub port cycled, but its ROM reported no power-on reset: {}",
-                        other.unwrap_or("no reset line")
-                    )
-                    .into());
-                }
-            }
+            // The ROM prints its reset reason before the board's own USB
+            // enumerates, so the board leaving USB and returning is the proof.
+            let after = crate::hil_board::watched_power_cycle(owner()?, &board)?
+                .verdict()
+                .map_err(|why| format!("{board}: {why}"))?;
+            println!(
+                "{board} lost its power: it left USB and returned {:.1} s after its port's power",
+                after.as_secs_f64()
+            );
         }
         StandCli::Discover { .. } => {
             let stand = StandFile::load(&path)?;

@@ -54,10 +54,11 @@ use oer_ieee80211_sta::{
 };
 use oer_ieee80211_sta_service::{
     port::{
-        EventRouter, PortCoexistence, PortCoexistenceRefused, PortConnectionFrame, PortDisconnect,
-        PortLink, PortLinkError, PortLinkSupervision, PortProbe, PortRouter, PortScan,
-        PortScanTarget, PortSend, PortStation, PortStationApplication, PortStationConfig,
-        PortStationEnv, PortStationLifecycle, PortStationProfile,
+        EventRouter, PORT_TX_QUEUE, PortCoexistence, PortCoexistenceRefused, PortConnection,
+        PortConnectionFrame, PortDisconnect, PortFrame, PortLink, PortLinkError,
+        PortLinkSupervision, PortProbe, PortRouter, PortScan, PortScanTarget, PortSend,
+        PortStation, PortStationApplication, PortStationConfig, PortStationEnv,
+        PortStationLifecycle, PortStationProfile, PortStationStorage,
     },
     scan::{StaCandidateScanService, StaScanBackend},
     station::StaLifecycleService,
@@ -71,7 +72,7 @@ use oer_time::{Clock, Duration, Instant, RadioInstant, Timer};
 use scripted_ap::{AP, AP_CHANNEL, ApSecurity, PASSPHRASE, RATES, SNONCE, SSID, STA, ScriptedAp};
 
 /// Run `body` on a thread whose stack holds the station's unoptimized
-/// futures, whose frames and scan table are inline.
+/// futures.
 fn on_large_stack(body: fn()) {
     std::thread::Builder::new()
         .stack_size(256 << 20)
@@ -372,6 +373,7 @@ impl World {
             RsnSoftwareAes,
             profile,
             security,
+            Box::leak(Box::new(PortStationStorage::new())),
         )
     }
 
@@ -1997,4 +1999,45 @@ fn group_robust_management_counts_only_when_it_verifies_under_the_igtk_body() {
         Some(PortDisconnect::Deauthenticated { reason_code: 3 })
     );
     assert!(station.connection().is_none());
+}
+
+#[test]
+fn a_new_connection_takes_the_storage_s_buffers_back_empty() {
+    on_large_stack(a_new_connection_takes_the_storage_s_buffers_back_empty_body);
+}
+
+fn a_new_connection_takes_the_storage_s_buffers_back_empty_body() {
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    let mut station = connect(&world, &mut ap, world.station(open()));
+    // Fill the transmit queue without sending it.
+    for _ in 0..PORT_TX_QUEUE {
+        assert_eq!(
+            station.send(&ethernet(PEER, IPV4, b"data"), 0),
+            Ok(PortSend::Queued)
+        );
+    }
+    assert!(!station.connection().unwrap().can_queue());
+    assert_eq!(world.drive(&mut ap, station.disconnect()), Ok(()));
+    assert!(station.connection().is_none());
+
+    // The next association borrows the same buffers, emptied.
+    let station = connect(&world, &mut ap, station);
+    assert!(station.connection().unwrap().can_queue());
+}
+
+#[test]
+fn the_station_holds_no_frame_buffer_of_its_own() {
+    type Station = PortStation<'static, Env<'static>>;
+    type Connection = PortConnection<
+        'static,
+        <Env<'static> as PortStationEnv>::Port,
+        <Env<'static> as PortStationEnv>::RateControl,
+    >;
+    // The scan table and every frame buffer are in the composition's
+    // storage; the station and its connection are protocol state.
+    let frame = core::mem::size_of::<PortFrame>();
+    assert!(core::mem::size_of::<Connection>() < frame);
+    assert!(core::mem::size_of::<Station>() < 2 * frame);
+    assert!(core::mem::size_of::<PortStationStorage>() > 20 * frame);
 }

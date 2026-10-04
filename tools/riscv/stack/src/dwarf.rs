@@ -37,7 +37,7 @@ fn load(elf: &[u8]) -> Result<gimli::Dwarf<Reader>> {
 
 /// A demangled name without the crate disambiguators v0 symbols carry
 /// (`core[1a2b]::task` reads `core::task`).
-fn plain(name: &str) -> String {
+pub(crate) fn plain(name: &str) -> String {
     let mut out = String::with_capacity(name.len());
     let mut depth = 0_u32;
     for c in name.chars() {
@@ -81,6 +81,22 @@ impl Dwarf {
             }
         }
         Ok(chain)
+    }
+
+    /// The linkage name, the mangled symbol, of the innermost function the
+    /// DWARF places at `address`; `None` where it names none.
+    pub fn innermost_symbol(&self, address: u32) -> Result<Option<String>> {
+        let mut frames = self
+            .context
+            .find_frames(u64::from(address))
+            .skip_all_loads()
+            .map_err(|error| invalid(format!("DWARF at {address:#010x}: {error}")))?;
+        let frame = frames
+            .next()
+            .map_err(|error| invalid(format!("DWARF at {address:#010x}: {error}")))?;
+        Ok(frame
+            .and_then(|frame| frame.function)
+            .and_then(|function| function.raw_name().ok().map(|name| name.into_owned())))
     }
 
     /// The qualified name of the type the function entered at `function`

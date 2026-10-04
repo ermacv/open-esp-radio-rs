@@ -136,6 +136,17 @@ and one without a subprogram makes it a candidate whatever the field. A site who
 address or field is unknown stays unresolved; a function put into the field
 through a transmute is not seen.
 
+`MirFacts` reads the facts `oer-mir-facts` (`tools/mir-facts`) records from
+each crate's MIR, and `mir_resolutions` sends an unresolved site to the
+candidates of the innermost function the DWARF inlines at it (by its linkage
+name, demangled without crate hashes, `mir::function_key`): the functions
+made pointers of each of its calls' types and the vtable entries of each of
+its `dyn` calls (`Fact::Mir`). An instance without facts, with a call the MIR
+names no type for, or with a call through a type a transmute produces leaves
+the site unresolved. The facts of an image's crates and of the toolchain's
+`core` and `alloc` compiled apart from its sources unite: the precompiled
+`core` carries no MIR for its own functions.
+
 `interrupt_stacks` bounds each hart's interrupt stack (`Stacks`): one
 interrupt per level the hart takes (its table entries' levels and the levels
 it always uses), each the worst hardware-vector entry's frame plus its

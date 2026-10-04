@@ -3890,6 +3890,7 @@ dependencies = [
  "oer-riscv-model",
  "oer-riscv-program",
  "serde",
+ "serde_json",
  "toml",
 ]
 

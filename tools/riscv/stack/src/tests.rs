@@ -1154,10 +1154,12 @@ fn a_relocated_data_word_takes_a_function_s_address() {
 /// RV32 by the repository's `rustc` with debug information and the link's
 /// relocations kept, as images are.
 fn compiled(source: &str) -> Vec<u8> {
+    // One directory per call: tests compile the same program in parallel.
+    static CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let directory = std::env::temp_dir().join(format!(
         "oer-riscv-stack-{}-{}",
         std::process::id(),
-        source.len()
+        CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     std::fs::create_dir_all(&directory).unwrap();
     let input = directory.join("main.rs");
@@ -1442,6 +1444,80 @@ fn a_merged_function_of_another_type_stays_a_candidate() {
             "{site:#x}: {resolutions:x?}"
         );
     }
+}
+
+/// The MIR facts of the hook program's crate: `_start` calls through a
+/// `fn(u32) -> u32`, and the crate makes `shallow` and `twice` such pointers.
+fn hook_facts(elf: &[u8], call: &str, polluted: &str) -> MirFacts {
+    let symbol = |part: &str| {
+        functions(elf)
+            .unwrap()
+            .into_iter()
+            .flat_map(|function| function.names)
+            .find(|name| name.contains(part))
+            .map(|name| crate::mir::function_key(&name))
+            .unwrap()
+    };
+    let text = format!(
+        r#"{{"schema": 1, "krate": "main",
+            "calls": {{"_start": [{call}]}},
+            "fn_pointers": {{"fn(u32) -> u32": ["{}", "{}"]}},
+            "polluted": [{polluted}],
+            "vtables": {{}}}}"#,
+        symbol("shallow"),
+        symbol("twice"),
+    );
+    MirFacts::from_json(&[&text]).unwrap()
+}
+
+#[test]
+fn the_mir_facts_resolve_a_site_by_its_instance_s_calls() {
+    let elf = compiled(HOOK_PROGRAM);
+    let analysis = analyze(&elf, &[], &[]).unwrap();
+    let dwarf = Dwarf::read(&elf).unwrap();
+    let named = |name: &str| {
+        functions(&elf)
+            .unwrap()
+            .into_iter()
+            .find(|function| {
+                function
+                    .names
+                    .iter()
+                    .any(|candidate| candidate.contains(name))
+            })
+            .unwrap()
+            .address
+    };
+    let (start, shallow, twice) = (named("_start"), named("shallow"), named("twice"));
+    let site = analysis.functions[&start]
+        .transfers
+        .iter()
+        .find(|transfer| transfer.target.is_none())
+        .unwrap()
+        .site;
+    let pointer = r#"{"fn_pointer": "fn(u32) -> u32"}"#;
+    let resolved =
+        mir_resolutions(&elf, &analysis, &dwarf, &hook_facts(&elf, pointer, "")).unwrap();
+    let resolution = resolved.get(site).expect("resolved");
+    assert_eq!(resolution.targets, BTreeSet::from([shallow, twice]));
+    assert_eq!(resolution.facts, BTreeSet::from([Fact::Mir]));
+    // A call the MIR names no type for, or a type a transmute produces,
+    // leaves the site a hole.
+    let unknown = format!(r#"{pointer}, "unknown""#);
+    let facts = hook_facts(&elf, &unknown, "");
+    assert!(
+        mir_resolutions(&elf, &analysis, &dwarf, &facts)
+            .unwrap()
+            .get(site)
+            .is_none()
+    );
+    let facts = hook_facts(&elf, pointer, r#""fn(u32) -> u32""#);
+    assert!(
+        mir_resolutions(&elf, &analysis, &dwarf, &facts)
+            .unwrap()
+            .get(site)
+            .is_none()
+    );
 }
 
 const WAKER_PROGRAM: &str = r#"

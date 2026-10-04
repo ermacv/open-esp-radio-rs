@@ -19,6 +19,8 @@ pub enum Fact {
     WakerVtables,
     /// The functions whose type can be a static field's function pointer.
     FieldType,
+    /// The indirect calls each instance's MIR states (`oer-mir-facts`).
+    Mir,
 }
 
 impl Fact {

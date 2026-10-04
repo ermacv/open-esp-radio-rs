@@ -23,7 +23,7 @@
 //! units. A site whose load address or field is unknown stays unresolved.
 use crate::{Analysis, Resolutions, TransferKind};
 use gimli::Reader as _;
-use object::{Object, ObjectSection};
+use object::{Object, ObjectSection, ObjectSymbol, SymbolKind};
 use oer_riscv_model::{Error, ErrorCode, Result};
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
@@ -104,6 +104,15 @@ pub struct TypeFacts {
     signatures: BTreeMap<usize, Signature>,
     /// Each function's entry and the DIE that states its signature.
     functions: BTreeMap<u32, usize>,
+    /// Subprograms by their symbol: the linkage name, or the name of one
+    /// without (`#[no_mangle]`). A function merged into another keeps only
+    /// such an entry, without an address.
+    named: BTreeMap<String, Vec<usize>>,
+    /// Addresses that several functions share, with their symbols: function
+    /// merging aliases a merged function to the one it keeps, with that
+    /// function's size. A symbol of size zero (a linker script's or an
+    /// assembly label) names no function of its own.
+    merged: BTreeMap<u32, Vec<String>>,
 }
 
 fn invalid(message: impl Into<String>) -> Error {
@@ -129,6 +138,19 @@ impl TypeFacts {
         .map_err(|error| invalid(format!("DWARF: {error}")))?;
         let error = |error: gimli::Error| invalid(format!("DWARF: {error}"));
         let mut facts = Self::default();
+        let mut sized: BTreeMap<u32, Vec<String>> = BTreeMap::new();
+        for symbol in file.symbols() {
+            if symbol.kind() == SymbolKind::Text
+                && symbol.size() > 0
+                && let (Ok(address), Ok(name)) = (u32::try_from(symbol.address()), symbol.name())
+            {
+                sized.entry(address & !1).or_default().push(name.to_owned());
+            }
+        }
+        facts.merged = sized
+            .into_iter()
+            .filter(|(_, symbols)| symbols.len() > 1)
+            .collect();
         // A function's entry and the DIEs that may state its signature: its
         // own, then its abstract origin or specification.
         let mut entries: Vec<(u32, usize, Option<usize>)> = Vec::new();
@@ -236,6 +258,17 @@ impl TypeFacts {
                     }
                     gimli::DW_TAG_subprogram => {
                         owners.push((depth, offset, tag));
+                        let symbol = entry
+                            .attr_value(gimli::DW_AT_linkage_name)
+                            .or_else(|| entry.attr_value(gimli::DW_AT_MIPS_linkage_name))
+                            .and_then(|value| dwarf.attr_string(&unit, value).ok())
+                            .and_then(|name| {
+                                name.to_string_lossy().ok().map(|name| name.into_owned())
+                            })
+                            .or_else(|| name.clone());
+                        if let Some(symbol) = symbol {
+                            facts.named.entry(symbol).or_default().push(offset);
+                        }
                         facts.signatures.insert(
                             offset,
                             Signature {
@@ -430,6 +463,33 @@ impl TypeFacts {
         Some(self.shape(self.signatures.get(die)?))
     }
 
+    /// Whether the function at `entry` can be the field's: one of its shapes
+    /// matches. Function merging puts several functions, perhaps of other
+    /// types, at one address, so an address several functions share has the
+    /// shape of each one's subprograms too, and a function without any is a
+    /// candidate whatever the field.
+    fn can_be(&self, entry: u32, wanted: &Shape, field: Field) -> bool {
+        let names = !field.foreign;
+        let own = self.function_shape(entry);
+        let Some(symbols) = self.merged.get(&entry) else {
+            return match own {
+                Some(shape) => shape_matches(&shape, wanted, names),
+                None => field.foreign,
+            };
+        };
+        if own.is_some_and(|shape| shape_matches(&shape, wanted, names)) {
+            return true;
+        }
+        symbols.iter().any(|symbol| match self.named.get(symbol) {
+            None => true,
+            Some(dies) => dies.iter().any(|die| {
+                self.signatures
+                    .get(die)
+                    .is_some_and(|signature| shape_matches(&self.shape(signature), wanted, names))
+            }),
+        })
+    }
+
     /// The candidates of a call through the field: every taken function
     /// whose shape nothing known contradicts (another parameter count, or a
     /// parameter or result of another known size or name) and, for a foreign
@@ -440,10 +500,7 @@ impl TypeFacts {
             taken
                 .iter()
                 .copied()
-                .filter(|&function| match self.function_shape(function) {
-                    Some(shape) => shape_matches(&shape, &wanted, !field.foreign),
-                    None => field.foreign,
-                })
+                .filter(|&function| self.can_be(function, &wanted, field))
                 .collect(),
         )
     }

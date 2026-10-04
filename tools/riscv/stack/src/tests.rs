@@ -1314,6 +1314,101 @@ fn a_type_named_in_another_crate_or_unit_still_matches() {
     );
 }
 
+const MERGED_PROGRAM: &str = r#"
+#![no_std]
+#![no_main]
+
+static mut UNSIGNED: Option<fn(u32) -> u32> = None;
+static mut SIGNED: Option<fn(i32) -> i32> = None;
+
+#[inline(never)]
+#[unsafe(no_mangle)]
+fn step_unsigned(value: u32) -> u32 {
+    value.wrapping_mul(3).wrapping_add(1)
+}
+
+#[inline(never)]
+#[unsafe(no_mangle)]
+fn step_signed(value: i32) -> i32 {
+    value.wrapping_mul(3).wrapping_add(1)
+}
+
+#[inline(never)]
+fn halve_signed(value: i32) -> i32 {
+    value / 2
+}
+
+#[inline(never)]
+fn halve_unsigned(value: u32) -> u32 {
+    value >> 1
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn keep(on: bool) {
+    unsafe {
+        UNSIGNED = Some(if on { step_unsigned } else { halve_unsigned });
+        SIGNED = Some(if on { step_signed } else { halve_signed });
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn _start() -> ! {
+    if let Some(signed) = unsafe { SIGNED } {
+        core::hint::black_box(signed(1));
+    }
+    if let Some(unsigned) = unsafe { UNSIGNED } {
+        core::hint::black_box(unsigned(1));
+    }
+    loop {}
+}
+
+#[panic_handler]
+fn panic(_: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
+"#;
+
+/// Function merging puts `step_signed` and `step_unsigned` at one address,
+/// whose own subprogram is one of theirs; a field of either type still
+/// reaches it, by the merged symbol's subprogram.
+#[test]
+fn a_merged_function_of_another_type_stays_a_candidate() {
+    let elf = compiled(MERGED_PROGRAM);
+    let analysis = analyze(&elf, &[], &[]).unwrap();
+    let types = TypeFacts::read(&elf).unwrap();
+    let taken = taken_addresses(&elf).unwrap();
+    let named = |name: &str| {
+        functions(&elf)
+            .unwrap()
+            .into_iter()
+            .find(|function| function.names.iter().any(|candidate| candidate == name))
+            .unwrap()
+    };
+    let (start, signed) = (named("_start").address, named("step_signed"));
+    // The precondition: the two bodies were merged into one address.
+    assert!(
+        signed.names.iter().any(|name| name == "step_unsigned"),
+        "not merged: {:?}",
+        signed.names
+    );
+    let resolutions = function_pointer_resolutions(&analysis, &types, &taken);
+    let sites: Vec<u32> = analysis.functions[&start]
+        .transfers
+        .iter()
+        .filter(|transfer| transfer.target.is_none())
+        .map(|transfer| transfer.site)
+        .collect();
+    assert_eq!(sites.len(), 2, "{sites:x?}");
+    for site in sites {
+        assert!(
+            resolutions
+                .get(&site)
+                .is_some_and(|targets| targets.contains(&signed.address)),
+            "{site:#x}: {resolutions:x?}"
+        );
+    }
+}
+
 const WAKER_PROGRAM: &str = r#"
 #![no_std]
 #![no_main]

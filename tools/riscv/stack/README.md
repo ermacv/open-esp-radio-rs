@@ -117,7 +117,13 @@ contradicts. For a Rust-ABI pointer a fact is a byte size or a type name;
 for a foreign-ABI pointer only a byte size, since C and Rust name one type
 differently, and a taken function the DWARF does not describe is a candidate
 too. Excluding by name rests on rustc naming one type identically in every
-crate and codegen unit, which a test holds the toolchain to. A site whose
+crate and codegen unit, which a test holds the toolchain to. Function merging puts
+functions of identical bodies, perhaps of other types, at one address, each
+an ELF function symbol with the kept body's size (a symbol of size zero, a
+linker script's or an assembly label, names no function of its own): an
+address several such functions share matches by the subprogram of any of
+them (a merged function keeps one without an address, by its linkage name),
+and one without a subprogram makes it a candidate whatever the field. A site whose
 address or field is unknown stays unresolved; a function put into the field
 through a transmute is not seen.
 

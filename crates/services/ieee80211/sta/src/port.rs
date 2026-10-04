@@ -38,8 +38,8 @@ mod tx_queue;
 mod wire;
 
 pub use connected::{
-    PORT_REORDER_SLOTS, PORT_REORDER_WINDOW, PortConnection, PortConnectionConfig, PortDisconnect,
-    PortRxCounters, PortSend, PortTxCounters,
+    PORT_REORDER_SLOTS, PORT_REORDER_WINDOW, PortConnection, PortConnectionBuffers,
+    PortConnectionConfig, PortDisconnect, PortRxCounters, PortSend, PortTxCounters,
 };
 pub use join::{PortAssociation, PortHePower, PortJoin};
 pub use link::{
@@ -54,6 +54,6 @@ pub use scan::{PortProbe, PortScan, PortScanTarget};
 pub use station::{
     LinkSupervisionError, PortAttemptError, PortAttemptPort, PortAttemptReport,
     PortLinkSupervision, PortStation, PortStationApplication, PortStationError,
-    PortStationLifecycle, PortStationProfile, PortTxBlockAck, PortUnwrapError,
+    PortStationLifecycle, PortStationProfile, PortStationStorage, PortTxBlockAck, PortUnwrapError,
 };
 pub use tx_queue::PORT_TX_QUEUE;

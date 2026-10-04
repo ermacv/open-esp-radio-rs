@@ -10,13 +10,19 @@
 //! identified by a bare number.
 //!
 //! The image places one [`Retained`] in memory that survives the resets it
-//! cares about and builds one [`Trace`] over it, with the function that reads
-//! the image's monotonic time in microseconds:
+//! cares about and builds one [`Trace`] over it; with the `record` feature it
+//! defines the function that reads its monotonic time in microseconds, which
+//! every record calls directly:
 //!
 //! ```ignore
 //! #[unsafe(link_section = ".rtc_fast.persistent")]
 //! static RETAINED: oer_trace::Retained<512, 2, 1024> = oer_trace::Retained::new();
-//! static TRACE: oer_trace::Trace = oer_trace::Trace::new(&RETAINED, now_micros);
+//! static TRACE: oer_trace::Trace = oer_trace::Trace::new(&RETAINED);
+//!
+//! #[unsafe(no_mangle)]
+//! fn oer_trace_now_micros() -> u64 {
+//!     now_micros()
+//! }
 //!
 //! let boot = oer_trace::install(&TRACE); // holds what the previous boot left
 //! // ... drain `boot.previous` if it matters ...

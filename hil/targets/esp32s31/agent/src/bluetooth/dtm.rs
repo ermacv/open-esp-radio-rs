@@ -83,7 +83,7 @@ static QUEUE: Mutex<CriticalSectionRawMutex, RefCell<Queue>> = Mutex::new(RefCel
 pub(super) async fn run(
     spawner: embassy_executor::Spawner,
     host: BluetoothHostTransport,
-    usb: esp_hal::peripherals::USB_DEVICE<'static>,
+    usb: crate::transport::Usb,
     boot: u64,
 ) -> ! {
     spawner.spawn(tester(host).expect("Bluetooth HCI task"));

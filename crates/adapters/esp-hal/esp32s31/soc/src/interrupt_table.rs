@@ -7,12 +7,31 @@
 //! installs that hart's interrupt stack ([`install_current_hart`]) and checks
 //! again before it enables interrupts ([`verify_current_hart`]). An owner routes
 //! its source with [`enable`] and its token, and silences it with [`disable`].
+//!
+//! esp-hal's `static-interrupts` feature leaves the table the only owner of
+//! routes: [`adopt`] takes esp-hal's one routing capability, and a driver that
+//! needs its interrupt (`into_async`) only requires the image's route, which
+//! [`verify_current_hart`] checks is routed before interrupts are enabled.
 
-use esp_hal::{interrupt::Priority, peripherals::Interrupt, system::Cpu};
+use esp_hal::{
+    interrupt::{InterruptRoutes, Priority},
+    peripherals::Interrupt,
+    system::Cpu,
+};
 use oer_interrupt_table::{Adopted, Binding, Entry, Matrix, MatrixError, Table};
 
 /// The ESP32-S31 interrupt matrix, as esp-hal drives it.
 pub struct EspHalMatrix;
+
+/// esp-hal's routing capability, which [`adopt`] takes once.
+static ROUTES: Adopted<InterruptRoutes> = Adopted::new();
+
+fn routes() -> &'static InterruptRoutes {
+    match ROUTES.get() {
+        Some([routes]) => routes,
+        _ => panic!("the image's interrupt table is not adopted"),
+    }
+}
 
 impl Matrix for EspHalMatrix {
     type Source = Interrupt;
@@ -24,11 +43,11 @@ impl Matrix for EspHalMatrix {
     }
 
     fn route(&mut self, source: Interrupt, level: Priority) {
-        esp_hal::interrupt::enable(source, level);
+        routes().enable(Cpu::current(), source, level);
     }
 
     fn silence(&mut self, core: Cpu, source: Interrupt) {
-        esp_hal::interrupt::disable(core, source);
+        routes().disable(core, source);
     }
 
     fn routed(&self, core: Cpu, source: Interrupt) -> Option<Priority> {
@@ -67,11 +86,16 @@ static TABLE: Adopted<Binding<Interrupt, Priority, Cpu>> = Adopted::new();
 ///
 /// # Panics
 ///
-/// On a second call: the image has one table.
+/// On a second call: the image has one table, which alone holds esp-hal's
+/// routing capability.
 pub fn adopt(table: &'static Table<EspHalMatrix>) {
     if TABLE.adopt(table).is_err() {
         panic!("the image's interrupt table is adopted twice");
     }
+    let routes = InterruptRoutes::take()
+        .unwrap_or_else(|| panic!("esp-hal's interrupt routes are taken outside the table"));
+    // The table is adopted once, so its routes are too.
+    let _ = ROUTES.adopt(core::slice::from_ref(routes));
 }
 
 /// The image's interrupt table.
@@ -141,13 +165,24 @@ pub fn install_current_hart() {
     }
 }
 
-/// Check the current hart's sources and every vector slot against the table.
+/// Check the current hart's sources and every vector slot against the table,
+/// and that each source an esp-hal driver required so far is routed.
 ///
 /// # Panics
 ///
-/// Before [`adopt`], or when the matrix disagrees with the table.
+/// Before [`adopt`], when the matrix disagrees with the table, or when a
+/// driver's required source has no entry or, on its table core, no route.
 pub fn verify_current_hart() {
     if let Err(error) = oer_interrupt_table::verify(&EspHalMatrix, table()) {
         panic!("the interrupt matrix disagrees with the image's table: {error:?}");
+    }
+    let required = esp_hal::interrupt::required_routes().map(|number| {
+        u8::try_from(number)
+            .ok()
+            .and_then(|number| Interrupt::try_from(number).ok())
+            .unwrap_or_else(|| panic!("esp-hal required source {number}, which the PAC lacks"))
+    });
+    if let Err(error) = oer_interrupt_table::verify_required(&EspHalMatrix, table(), required) {
+        panic!("an esp-hal driver's source is not routed by the image's table: {error:?}");
     }
 }

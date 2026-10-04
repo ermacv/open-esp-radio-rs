@@ -34,9 +34,21 @@ core: adopted once (a second adoption is an error), absent before.
 
 `install` silences every source of the current core's entries and checks each
 vector slot against the table; `verify` checks again that every slot holds its
-handler and every source is silent or routed to its level. `Matrix` is the
+handler and every source is silent or routed to its level; `verify_required`
+checks that each source a driver waits on has an entry and, on its entry's
+core, is routed. `Matrix` is the
 chip's interrupt matrix as the table drives it; `__fake_matrix!` is a host
 model for tests.
+
+On the ESP32-S31 the table is the only owner of routes: every esp-hal build
+for the chip enables the fork's `static-interrupts` (a tidy check), under
+which esp-hal has no API that binds a handler or maps a source at run time.
+The platform's table adopts esp-hal's one routing capability; an esp-hal
+driver that needs its interrupt (`into_async`) panics unless the image's
+table holds the source's handler and its owner has already routed it, and
+records the source for `verify_required` before interrupts are enabled. An
+owner therefore routes its source with its token before it hands the driver
+its interrupt.
 
 ```console
 cargo test -p oer-interrupt-table

@@ -64,7 +64,7 @@ pub(super) fn start(
     wake: crate::ExecutorWake,
     interrupts: oer_esp32s31_radio_esp_hal::EspHalBluetoothInterruptRoutes,
     platform: EspHalRadioPlatform,
-    usb: esp_hal::peripherals::USB_DEVICE<'static>,
+    usb: crate::transport::Usb,
     rng: esp_hal::peripherals::RNG<'static>,
 ) -> ! {
     let entropy = Entropy::new(rng);
@@ -109,7 +109,7 @@ async fn main(
     interrupts: oer_esp32s31_radio_esp_hal::EspHalBluetoothInterruptRoutes,
     public_address: oer_bluetooth_hci::BluetoothPublicDeviceAddress,
     entropy: &'static BluetoothEntropy<'static>,
-    usb: esp_hal::peripherals::USB_DEVICE<'static>,
+    usb: crate::transport::Usb,
     boot: u64,
 ) {
     let ConcurrentPartitions {
@@ -140,7 +140,7 @@ async fn main(
 async fn image(
     spawner: embassy_executor::Spawner,
     host: BluetoothHostTransport,
-    usb: esp_hal::peripherals::USB_DEVICE<'static>,
+    usb: crate::transport::Usb,
     boot: u64,
 ) -> ! {
     dtm::run(spawner, host, usb, boot).await
@@ -150,7 +150,7 @@ async fn image(
 async fn image(
     spawner: embassy_executor::Spawner,
     host: BluetoothHostTransport,
-    usb: esp_hal::peripherals::USB_DEVICE<'static>,
+    usb: crate::transport::Usb,
     boot: u64,
 ) {
     spawner.spawn(gatt::task(host, usb, boot).expect("Bluetooth GATT task"));

@@ -119,7 +119,7 @@ pub(super) async fn run(
     system: BluetoothSystem,
     hci: BluetoothHci,
     public_address: BluetoothPublicDeviceAddress,
-    usb: esp_hal::peripherals::USB_DEVICE<'static>,
+    usb: crate::transport::Usb,
     boot: u64,
 ) -> ! {
     let state: &'static State = STATE.init_with(State::new);

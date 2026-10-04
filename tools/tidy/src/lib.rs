@@ -29,6 +29,7 @@ pub mod chips;
 pub mod classification;
 pub mod dependencies;
 pub mod fetch;
+pub mod interrupts;
 pub mod layouts;
 pub mod manifest;
 pub mod reachability;
@@ -129,6 +130,10 @@ pub fn run(repo: &Repo) -> Result<Vec<Outcome>> {
         Outcome {
             check: "reviewed layouts",
             problems: layouts::check(&context)?,
+        },
+        Outcome {
+            check: "static interrupts",
+            problems: interrupts::check(&context),
         },
     ])
 }

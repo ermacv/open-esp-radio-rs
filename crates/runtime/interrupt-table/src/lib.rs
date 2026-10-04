@@ -136,8 +136,11 @@ pub enum Error<S, L, C> {
     WrongLevel { source: S, level: L },
     /// The table lists the source twice.
     Duplicate { source: S },
-    /// The table does not list the source with the token's level and core.
+    /// The table does not list the source with the token's level and core,
+    /// or does not list a source a driver requires.
     NotInTable { source: S },
+    /// A source a driver requires is the current core's but not routed.
+    NotRouted { source: S },
 }
 
 /// The [`Error`] of a matrix.
@@ -288,6 +291,31 @@ pub fn verify<M: Matrix>(matrix: &M, table: &Table<M>) -> Result<(), MatrixError
                 });
             }
             _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Check that each `required` source, one a driver waits on, has an entry in
+/// `table` and, when that entry is the current core's, is routed: a driver
+/// whose interrupt nobody routes would wait forever.
+///
+/// # Errors
+///
+/// [`Error::NotInTable`] or [`Error::NotRouted`] for the first such source.
+pub fn verify_required<M: Matrix>(
+    matrix: &M,
+    table: &Table<M>,
+    required: impl IntoIterator<Item = M::Source>,
+) -> Result<(), MatrixError<M>> {
+    let current = matrix.current_core();
+    for source in required {
+        let Some((binding, _)) = present(table).find(|(binding, _)| binding.source == source)
+        else {
+            return Err(Error::NotInTable { source });
+        };
+        if binding.core == current && matrix.routed(current, source).is_none() {
+            return Err(Error::NotRouted { source });
         }
     }
     Ok(())

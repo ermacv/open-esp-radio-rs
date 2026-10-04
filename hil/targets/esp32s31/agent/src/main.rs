@@ -136,6 +136,14 @@ oer_esp32s31_platform_runtime::interrupt_table! {
     #[cfg(feature = "open-radio-hil")]
     /// Wakes the core-1 Embassy executor.
     app_wake: AppExecutorWake = FROM_CPU_INTR1 => oer_esp32s31_executor_embassy::wake_handler::<1>, Priority1, AppCpu;
+    #[cfg(any(
+        feature = "system-watchdog",
+        feature = "system-panic-reset",
+        feature = "open-radio-hil",
+        feature = "bluetooth-radio"
+    ))]
+    /// The USB Serial/JTAG console, to esp-hal's async driver.
+    console_usb: ConsoleUsb = USB_DEVICE => esp_hal::usb::usb_serial_jtag::handle_async_interrupt, Priority1, ProCpu;
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     /// System timer alarm 2, the interrupt-table probe's source.
     source_gate: SourceGateToken = SYSTIMER_TARGET2 => source_gate::on_alarm, Priority1, ProCpu;
@@ -295,7 +303,7 @@ struct AppCoreStack(Stack<APP_CORE_BOOTSTRAP_STACK_BYTES>);
 
 #[cfg(feature = "open-radio-hil")]
 #[allow(unsafe_code, reason = "esp-hal's stack is uninitialized memory")]
-// REVIEWED-LAYOUT: esp-hal c771deb0
+// REVIEWED-LAYOUT: esp-hal 96397fa0
 // SAFETY: at the pinned esp-hal revision `Stack<SIZE>` is
 // `repr(C, align(16))` with one field, `mem: MaybeUninit<[u8; SIZE]>`, valid
 // for any bytes; `Stack::new` leaves it uninitialized.
@@ -544,7 +552,7 @@ extern "C" fn runtime_main() -> ! {
             peripherals.LP_TSENS,
             peripherals.I2C_ANA_MST,
         ),
-        peripherals.USB_DEVICE,
+        transport::Usb::new(peripherals.USB_DEVICE, interrupts.console_usb),
         peripherals.RNG,
     );
 
@@ -552,7 +560,7 @@ extern "C" fn runtime_main() -> ! {
     system::panic_reset::start(
         executor,
         interrupts.wake,
-        peripherals.USB_DEVICE,
+        transport::Usb::new(peripherals.USB_DEVICE, interrupts.console_usb),
         peripherals.RNG,
     );
 
@@ -560,7 +568,7 @@ extern "C" fn runtime_main() -> ! {
     system::console::start(
         executor,
         interrupts.wake,
-        peripherals.USB_DEVICE,
+        transport::Usb::new(peripherals.USB_DEVICE, interrupts.console_usb),
         peripherals.RNG,
         peripherals.TIMG1,
     );
@@ -617,7 +625,7 @@ extern "C" fn runtime_main() -> ! {
                 interrupts.bluetooth_nrt,
             ),
         };
-        let usb = peripherals.USB_DEVICE;
+        let usb = transport::Usb::new(peripherals.USB_DEVICE, interrupts.console_usb);
         executor.run(interrupts.wake, |spawner| {
             let Ok(logger) = console::console_task(usb, boot_id) else {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=logger-allocation\r\n");

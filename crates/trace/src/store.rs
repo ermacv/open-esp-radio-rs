@@ -174,20 +174,26 @@ pub struct Trace {
     /// Entries still recorded after a freeze; [`RUNNING_WINDOW`] before one.
     remaining: AtomicU32,
     snapshot_sequence: AtomicU32,
-    /// The image's monotonic time in microseconds, which stamps records.
-    #[cfg_attr(
-        not(feature = "record"),
-        expect(dead_code, reason = "only a recording image stamps records")
-    )]
-    clock: fn() -> u64,
+}
+
+#[cfg(feature = "record")]
+#[allow(unsafe_code, reason = "the image's clock is a link-time function")]
+// SAFETY: the declaration matches the definition every recording image must
+// provide (`fn() -> u64`, no preconditions), so calling it is safe; the link
+// fails without one.
+unsafe extern "Rust" {
+    /// The image's monotonic time in microseconds, which stamps records:
+    /// every image that records defines it once (`#[unsafe(no_mangle)] fn
+    /// oer_trace_now_micros() -> u64`). A direct call, so a record made in
+    /// an interrupt has a stack bound.
+    safe fn oer_trace_now_micros() -> u64;
 }
 
 impl Trace {
-    /// A trace over `retained` whose records `clock` stamps with the image's
-    /// monotonic time in microseconds.
+    /// A trace over `retained`, whose records the image's
+    /// `oer_trace_now_micros` stamps.
     pub const fn new<const ENTRIES: usize, const SLOTS: usize, const WORDS: usize>(
         retained: &'static Retained<ENTRIES, SLOTS, WORDS>,
-        clock: fn() -> u64,
     ) -> Self {
         Self {
             header: &retained.header,
@@ -199,7 +205,6 @@ impl Trace {
             sequence: AtomicU32::new(0),
             remaining: AtomicU32::new(RUNNING_WINDOW),
             snapshot_sequence: AtomicU32::new(0),
-            clock,
         }
     }
 
@@ -209,7 +214,7 @@ impl Trace {
     #[cfg(feature = "record")]
     #[inline(always)]
     pub(crate) fn now_us(&self) -> u32 {
-        (self.clock)() as u32
+        oer_trace_now_micros() as u32
     }
 
     pub fn geometry(&self) -> Geometry {

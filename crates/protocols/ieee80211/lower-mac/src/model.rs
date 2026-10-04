@@ -72,7 +72,7 @@ pub const MODEL_CAPABILITIES: LowerMacCapabilities = LowerMacCapabilities {
         .union(CoexPrioritySet::only(CoexPriority::Elevated)),
     individual_no_ack: PhyFormatSet::NON_HT,
     station_receive_filters: ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
-    access_point_receive_filters: ReceiveFilter::BSS_MEMBER,
+    access_point_receive_filters: ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::PROBE_REQUESTS),
     key_slots: 4,
     rx_block_ack_agreements: 2,
     rx_block_ack_max_tid: 7,

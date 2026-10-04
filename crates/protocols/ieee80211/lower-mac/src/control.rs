@@ -68,6 +68,9 @@ impl ReceiveFilter {
     pub const OTHER_BSS_MANAGEMENT: Self = Self(1 << 3);
     /// Control frames addressed to the interface (BlockAckReq, PS-Poll).
     pub const OWN_CONTROL: Self = Self(1 << 4);
+    /// Probe Requests to the interface or broadcast, carrying its BSSID or
+    /// the wildcard BSSID: what an access point answers.
+    pub const PROBE_REQUESTS: Self = Self(1 << 5);
 
     /// What a station or access point needs for its own BSS.
     pub const BSS_MEMBER: Self = Self(
@@ -110,7 +113,9 @@ const TYPE_MANAGEMENT: u8 = 0;
 const TYPE_CONTROL: u8 = 1;
 /// Frame Control type of data frames.
 const TYPE_DATA: u8 = 2;
+const SUBTYPE_PROBE_REQUEST: u8 = 4;
 const SUBTYPE_PROBE_RESPONSE: u8 = 5;
+const BROADCAST: MacAddress = [0xff; 6];
 const SUBTYPE_BEACON: u8 = 8;
 
 impl VifConfig {
@@ -143,6 +148,14 @@ impl VifConfig {
             && filter.contains(ReceiveFilter::OTHER_BSS_MANAGEMENT)
         {
             return true;
+        }
+        if management
+            && subtype == SUBTYPE_PROBE_REQUEST
+            && filter.contains(ReceiveFilter::PROBE_REQUESTS)
+        {
+            let bssid = frame_bssid(frame);
+            return (address1 == self.address || address1 == BROADCAST)
+                && (bssid == Some(BROADCAST) || bssid == self.bss() && bssid.is_some());
         }
         if filter.contains(ReceiveFilter::OWN_UNICAST) && address1 == self.address {
             return true;

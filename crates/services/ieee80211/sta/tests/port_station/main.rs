@@ -1169,6 +1169,42 @@ fn connection_frames_carry_the_elevated_priority_under_the_reconnect_policy_body
 }
 
 #[test]
+fn triggers_and_sounding_announcements_are_not_answered() {
+    on_large_stack(triggers_and_sounding_announcements_are_not_answered_body);
+}
+
+fn triggers_and_sounding_announcements_are_not_answered_body() {
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    let mut station = connect(&world, &mut ap, world.station(open()));
+    let before = world.model.submitted().len();
+    let counters = station.connection().unwrap().counters();
+
+    // A Basic Trigger for every station and an HE NDP Announcement naming
+    // this one: the station has no HE-TB or beamformee path (#153, #154)
+    // and answers neither.
+    let mut trigger = vec![0x24, 0x00, 0, 0];
+    trigger.extend_from_slice(&[0xff; 6]);
+    trigger.extend_from_slice(&AP);
+    trigger.extend_from_slice(&[0; 8]);
+    trigger.extend_from_slice(&[1, 0, 0, 0, 0]);
+    ap.queue(trigger);
+    let mut announcement = vec![0x54, 0x00, 0, 0];
+    announcement.extend_from_slice(&STA);
+    announcement.extend_from_slice(&AP);
+    announcement.extend_from_slice(&[0x02, 1, 0, 0, 0]);
+    ap.queue(announcement);
+    let mut delivered = Vec::new();
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 5, &mut delivered),
+        None
+    );
+    assert_eq!(world.model.submitted().len(), before);
+    assert!(delivered.is_empty());
+    assert_eq!(station.connection().unwrap().counters(), counters);
+}
+
+#[test]
 fn power_save_dozes_and_wakes_for_buffered_traffic_at_a_tbtt() {
     on_large_stack(power_save_dozes_and_wakes_for_buffered_traffic_at_a_tbtt_body);
 }

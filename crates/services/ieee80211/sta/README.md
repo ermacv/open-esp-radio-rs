@@ -162,6 +162,11 @@ sends the probes of `STATION_LINK_PROBE`, three addressed to the access
 point and two broadcast, 500 ms apart, and leaves with
 `PortDisconnect::BeaconLoss` after the last goes unanswered.
 
+It answers no Trigger frame and no NDP Announcement: HE Trigger-based
+response and beamformee feedback have no verified path on any backend, so
+the port has no extension for them (#153, #154) and a profile advertises
+neither (the S31 station's HE elements clear both).
+
 It does not yet do: a data rate bound
 by the peer's capabilities (and with it 40 MHz transmission), PS-Poll, the hardware beacon receive time
 (`PmAction::RxBeaconTime`: the S31 register model leaves the meaning of its

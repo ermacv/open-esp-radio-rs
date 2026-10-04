@@ -45,7 +45,7 @@ pub use image::{Function, functions, stack_sizes};
 pub use interrupts::{Field, TableEntry, TableLayout, interrupt_table};
 use oer_riscv_analysis::KnownJump;
 pub use relocations::{address_taken, taken_addresses};
-pub use resolutions::{Fact, Resolution, Resolutions};
+pub use resolutions::{Assumption, Fact, Resolution, Resolutions};
 pub use summaries::{Summary, parse as parse_summaries};
 pub use sweep::{LevelDrop, Load, TableBase, TargetSource, Transfer, TransferKind};
 pub use trap::{TrapEntry, trap_entry, vector_table};
@@ -173,6 +173,9 @@ pub struct Bound {
     /// Instructions that can lower the interrupt level in every function the
     /// root reaches over what is resolved.
     pub level_drops: Vec<(u32, LevelDrop)>,
+    /// What the resolutions the root's walk took assume: a bound with any
+    /// is conditional on them.
+    pub assumptions: BTreeSet<Assumption>,
 }
 
 impl Bound {
@@ -459,6 +462,7 @@ impl Analysis {
             memo: BTreeMap::new(),
             stack: Vec::new(),
             unresolved: BTreeSet::new(),
+            assumptions: BTreeSet::new(),
         };
         let (bytes, path) = walk.visit(root);
         // Every function the walk entered has its memo entry.
@@ -474,6 +478,7 @@ impl Analysis {
             unresolved: walk.unresolved.into_iter().collect(),
             path,
             level_drops,
+            assumptions: walk.assumptions,
         })
     }
 
@@ -520,6 +525,7 @@ struct Walk<'a> {
     memo: BTreeMap<u32, (u64, Vec<(u32, u64)>)>,
     stack: Vec<u32>,
     unresolved: BTreeSet<(u32, Reason)>,
+    assumptions: BTreeSet<Assumption>,
 }
 
 impl Walk<'_> {
@@ -545,6 +551,8 @@ impl Walk<'_> {
             let targets: Vec<u32> = match (transfer.target, self.resolutions.get(transfer.site)) {
                 (Some(target), _) => vec![target],
                 (None, Some(resolved)) if resolved.resolves() => {
+                    self.assumptions
+                        .extend(resolved.facts.iter().filter_map(|fact| fact.assumption()));
                     resolved.targets.iter().copied().collect()
                 }
                 (None, Some(_)) => {

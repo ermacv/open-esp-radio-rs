@@ -9,9 +9,9 @@ use std::path::{Path, PathBuf};
 
 use oer_esp32s31_platform_layout::interrupts as contract;
 use oer_riscv_stack::{
-    Analysis, Dwarf, Field, HartStack, Stacks, TableLayout, TypeFacts, address_taken, analyze,
-    function_pointer_resolutions, functions, interrupt_table, parse_summaries, taken_addresses,
-    trap_entry, vector_table, waker_resolutions, waker_vtables,
+    Analysis, Assumption, Dwarf, Field, HartStack, Stacks, TableLayout, TypeFacts, address_taken,
+    analyze, function_pointer_resolutions, functions, interrupt_table, parse_summaries,
+    taken_addresses, trap_entry, vector_table, waker_resolutions, waker_vtables,
 };
 
 use crate::Result;
@@ -105,6 +105,11 @@ pub struct InterruptStacks {
     names: BTreeMap<u32, String>,
 }
 
+/// The assumptions the gate admits in a bound, each by name: a bound resting
+/// on one is conditional and passes with a warning; any other fails. Each
+/// leaves this list in the pull request that proves it (#119).
+const ADMITTED: &[Assumption] = &[Assumption::TableLevels, Assumption::ExecutorInvariant];
+
 /// What an image's interrupt stacks must reach: the gate's policy, apart
 /// from the analysis, which always reports all it can.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -162,6 +167,25 @@ impl InterruptStacks {
                     )),
                 }
             }
+            let assumptions = hart.assumptions();
+            if let Some(assumption) = assumptions
+                .iter()
+                .find(|assumption| !ADMITTED.contains(assumption))
+            {
+                return Err(format!(
+                    "hart {}'s interrupt stack assumes {assumption}, which the gate does not \
+                     admit:\n{}",
+                    hart.core,
+                    self.render()
+                )
+                .into());
+            }
+            for assumption in &assumptions {
+                warnings.push(format!(
+                    "hart {}'s interrupt stack is conditional on {assumption}",
+                    hart.core
+                ));
+            }
             let bytes = match (hart.bytes, required) {
                 (Some(bytes), _) => bytes,
                 (None, Required::Proven) => {
@@ -209,12 +233,22 @@ impl InterruptStacks {
         for hart in &self.harts {
             let _ = writeln!(
                 out,
-                "hart {}: {} of {} usable bytes",
+                "hart {}: {} of {} usable bytes, {}",
                 hart.core,
                 hart.bytes
                     .map_or(format!("{} + ?", hart.partial), |bytes| bytes.to_string()),
-                contract::IRQ_STACK_USABLE_BYTES
+                contract::IRQ_STACK_USABLE_BYTES,
+                match hart.bytes {
+                    None => "partial",
+                    Some(_) if hart.assumptions().is_empty() && hart.level_drops().is_empty() => {
+                        "proven"
+                    }
+                    Some(_) => "conditional",
+                }
             );
+            for assumption in hart.assumptions() {
+                let _ = writeln!(out, "  assumes {assumption}");
+            }
             let drops = hart.level_drops();
             if drops.is_empty() {
                 let _ = writeln!(
@@ -437,6 +471,7 @@ mod tests {
             unresolved: Vec::new(),
             path: Vec::new(),
             level_drops: Vec::new(),
+            assumptions: BTreeSet::new(),
         };
         let level = oer_riscv_stack::LevelStack {
             level: 0,
@@ -490,11 +525,39 @@ mod tests {
     fn a_partial_bound_passes_only_where_the_policy_allows_it_and_its_part_fits() {
         assert!(partial(1000).check(Required::Proven).is_err());
         let warnings = partial(1000).check(Required::Partial).unwrap();
-        assert_eq!(warnings.len(), 1);
-        assert!(warnings[0].contains("1000 + ?"), "{warnings:?}");
+        assert_eq!(warnings.len(), 2);
+        assert!(
+            warnings.iter().any(|warning| warning.contains("1000 + ?")),
+            "{warnings:?}"
+        );
         // The proven part alone must fit the usable stack with the margin.
         let over = u64::from(contract::IRQ_STACK_USABLE_BYTES);
         assert!(partial(over).check(Required::Partial).is_err());
+    }
+
+    #[test]
+    fn a_bound_on_an_admitted_assumption_passes_conditional() {
+        // Every hart assumes the table levels, which no check covers yet.
+        let mut stacks = partial(1000);
+        stacks.harts[0].bytes = Some(1000);
+        assert!(stacks.render().contains("1000 of"));
+        assert!(stacks.render().contains("conditional"));
+        assert!(stacks.render().contains("assumes the table levels"));
+        stacks.harts[0]
+            .exception
+            .bound
+            .assumptions
+            .insert(Assumption::ExecutorInvariant);
+        // The gate names each in a warning and the report.
+        let warnings = stacks.check(Required::Proven).unwrap();
+        assert_eq!(warnings.len(), 2);
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| warning.contains("executor invariant")),
+            "{warnings:?}"
+        );
+        assert!(stacks.render().contains("assumes the executor invariant"));
     }
 
     #[test]
@@ -502,7 +565,7 @@ mod tests {
         // A bound with no instruction that lowers the level is checked.
         let mut stacks = partial(1000);
         stacks.harts[0].bytes = Some(1000);
-        assert!(stacks.check(Required::Proven).unwrap().is_empty());
+        assert!(stacks.check(Required::Proven).is_ok());
         assert!(stacks.render().contains("nesting: checked"));
         // One such instruction breaks the sum over levels: no proof, and a
         // warning under the partial policy.

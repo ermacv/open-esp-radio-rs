@@ -1161,6 +1161,159 @@ fn compiled(source: &str) -> Vec<u8> {
     elf
 }
 
+/// `program` linked against the library crate `shared` built from `library`,
+/// with several codegen units each, as images are.
+fn compiled_with_library(library: &str, program: &str) -> Vec<u8> {
+    let directory = std::env::temp_dir().join(format!(
+        "oer-riscv-stack-{}-{}-library",
+        std::process::id(),
+        program.len()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let rustc = |arguments: &[&std::ffi::OsStr]| {
+        let status = std::process::Command::new("rustc")
+            .env("RUSTC_BOOTSTRAP", "1")
+            .args(["-Z", "emit-stack-sizes"])
+            .args(["--edition", "2024"])
+            .args(["--target", "riscv32imafc-unknown-none-elf"])
+            .args([
+                "-C",
+                "opt-level=s",
+                "-C",
+                "debuginfo=2",
+                "-C",
+                "panic=abort",
+            ])
+            .args(["-C", "codegen-units=4"])
+            .args(arguments)
+            .status()
+            .unwrap();
+        assert!(status.success());
+    };
+    let library_source = directory.join("shared.rs");
+    let program_source = directory.join("main.rs");
+    let output = directory.join("main.elf");
+    std::fs::write(&library_source, library).unwrap();
+    std::fs::write(&program_source, program).unwrap();
+    rustc(&[
+        "--crate-type".as_ref(),
+        "rlib".as_ref(),
+        "--crate-name".as_ref(),
+        "shared".as_ref(),
+        "--out-dir".as_ref(),
+        directory.as_os_str(),
+        library_source.as_os_str(),
+    ]);
+    let rlib = directory.join("libshared.rlib");
+    let mut extern_shared = std::ffi::OsString::from("shared=");
+    extern_shared.push(&rlib);
+    rustc(&[
+        "--crate-type".as_ref(),
+        "bin".as_ref(),
+        "--extern".as_ref(),
+        extern_shared.as_os_str(),
+        "-C".as_ref(),
+        "link-arg=--emit-relocs".as_ref(),
+        "-C".as_ref(),
+        "link-arg=-e_start".as_ref(),
+        "-C".as_ref(),
+        "link-arg=--undefined=keep".as_ref(),
+        "-o".as_ref(),
+        output.as_os_str(),
+        program_source.as_os_str(),
+    ]);
+    let elf = std::fs::read(&output).unwrap();
+    let _ = std::fs::remove_dir_all(&directory);
+    elf
+}
+
+const SHARED_LIBRARY: &str = r#"
+#![no_std]
+pub struct Payload<T> {
+    pub value: T,
+    pub tag: u16,
+}
+
+#[inline(never)]
+pub fn consume(payload: &mut Payload<u32>, extra: Option<&u8>) -> u32 {
+    payload.tag = payload.tag.wrapping_add(1);
+    payload.value + extra.map_or(0, |extra| u32::from(*extra))
+}
+"#;
+
+const SHARED_PROGRAM: &str = r#"
+#![no_std]
+#![no_main]
+use shared::Payload;
+
+static mut HOOK: Option<fn(&mut Payload<u32>, Option<&u8>) -> u32> = None;
+
+mod local {
+    #[inline(never)]
+    pub fn replace(payload: &mut shared::Payload<u32>, _: Option<&u8>) -> u32 {
+        payload.value = 0;
+        1
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn keep(on: bool) {
+    unsafe { HOOK = Some(if on { shared::consume } else { local::replace }) };
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn _start() -> ! {
+    let mut payload = Payload { value: 7, tag: 0 };
+    if let Some(hook) = unsafe { HOOK } {
+        core::hint::black_box(hook(&mut payload, None));
+    }
+    loop {}
+}
+
+#[panic_handler]
+fn panic(_: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
+"#;
+
+/// The soundness of matching Rust-ABI fields by type name rests on rustc
+/// naming one type identically in every crate and codegen unit: a field
+/// typed in one crate reaches a function of another crate and one of
+/// another unit.
+#[test]
+fn a_type_named_in_another_crate_or_unit_still_matches() {
+    let elf = compiled_with_library(SHARED_LIBRARY, SHARED_PROGRAM);
+    let analysis = analyze(&elf, &[], &[]).unwrap();
+    let types = TypeFacts::read(&elf).unwrap();
+    let taken = taken_addresses(&elf).unwrap();
+    let named = |name: &str| {
+        functions(&elf)
+            .unwrap()
+            .into_iter()
+            .find(|function| {
+                function
+                    .names
+                    .iter()
+                    .any(|candidate| candidate.contains(name))
+            })
+            .unwrap()
+            .address
+    };
+    let (start, consume, replace) = (named("_start"), named("consume"), named("replace"));
+    let resolutions = function_pointer_resolutions(&analysis, &types, &taken);
+    let site = analysis.functions[&start]
+        .transfers
+        .iter()
+        .find(|transfer| transfer.target.is_none())
+        .unwrap()
+        .site;
+    let candidates = resolutions.get(&site).expect("resolved");
+    assert!(
+        candidates.is_superset(&BTreeSet::from([consume, replace])),
+        "{resolutions:x?} consume={consume:#x} replace={replace:#x}"
+    );
+}
+
 const WAKER_PROGRAM: &str = r#"
 #![no_std]
 #![no_main]

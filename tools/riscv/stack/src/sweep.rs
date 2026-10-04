@@ -481,9 +481,10 @@ pub(crate) fn transfers(
         };
         if let Some((register, how)) = write(&instruction) {
             writes[register as usize] = Some(how);
-            // A load based on this register no longer names its address.
+            // A load based on this register no longer names its address,
+            // unless the address was known when it loaded.
             for entry in &mut loads {
-                if entry.is_some_and(|load| load.base == register) {
+                if entry.is_some_and(|load| load.base == register && load.address.is_none()) {
                     *entry = None;
                 }
             }

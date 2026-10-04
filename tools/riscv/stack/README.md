@@ -107,17 +107,19 @@ analysis left a target unresolved:
 `TypeFacts` reads the image's types, global variables and function
 signatures from its DWARF, and `function_pointer_resolutions` sends a call
 through a function pointer a static's field holds (the load's address from
-the sweep or the value analysis's registers, the field from the global at that
-address, merged and split globals included, down to a pointer to a subroutine
-type) to its candidates, matched per parameter and result, never by a
-signature's spelling: every function whose address `taken_addresses` lists,
-with the field's parameter count, whose parameters and result no known byte
-size or type name contradicts. rustc names each type once, so no function of
-the pointer's Rust type is excluded; an unknown size or name excludes
-nothing, and for a pointer of a foreign ABI a taken function the DWARF does
-not describe is a candidate too. A site whose address or field is unknown
-stays unresolved; a function put into the field through a transmute is not
-seen.
+the sweep, kept when the load's base register is later reused, or from the
+value analysis's registers; the field from the global at that address, merged
+and split globals included, down to a pointer to a subroutine type) to its
+candidates, matched per parameter and result, never by a signature's
+spelling: every function whose address `taken_addresses` lists, with the
+field's parameter count, whose parameters and result no known fact
+contradicts. For a Rust-ABI pointer a fact is a byte size or a type name;
+for a foreign-ABI pointer only a byte size, since C and Rust name one type
+differently, and a taken function the DWARF does not describe is a candidate
+too. Excluding by name rests on rustc naming one type identically in every
+crate and codegen unit, which a test holds the toolchain to. A site whose
+address or field is unknown stays unresolved; a function put into the field
+through a transmute is not seen.
 
 `interrupt_stacks` bounds each hart's interrupt stack (`Stacks`): one
 interrupt per level the hart takes (its table entries' levels and the levels

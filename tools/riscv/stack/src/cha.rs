@@ -9,14 +9,18 @@
 //! candidates are matched per parameter and result, never by a signature's
 //! spelling: every function a relocation names other than as a call or jump
 //! target (an address taken) with the subroutine type's parameter count whose
-//! parameters and result no known fact contradicts, a known byte size or a
-//! known type name (behind typedefs and qualifiers) that differs. rustc names
-//! each type once, so a function of the pointer's Rust type is never
-//! excluded; an unknown size or name excludes nothing. For a pointer of a
-//! foreign ABI (`extern "C"`), a taken function the DWARF does not describe is
-//! a candidate too; a Rust-ABI pointer cannot hold a function of another ABI
-//! without `unsafe`, nor any function through a transmute, which is not seen.
-//! A site whose load address or field is unknown stays unresolved.
+//! parameters and result no known fact contradicts. For a Rust-ABI pointer a
+//! fact is a byte size or a type name (behind typedefs and qualifiers); for a
+//! pointer of a foreign ABI (`extern "C"`) only a byte size, since C and Rust
+//! name one type differently, and a taken function the DWARF does not
+//! describe is a candidate too. An unknown size or name excludes nothing.
+//!
+//! A Rust-ABI pointer holds only Rust functions (another ABI's needs `unsafe`,
+//! as does a transmute, which is not seen), and the soundness of excluding by
+//! name rests on rustc naming one type identically in every unit and crate:
+//! the debuginfo name is computed from the type's path and generic arguments
+//! by one rule. A test holds the toolchain to it across crates and codegen
+//! units. A site whose load address or field is unknown stays unresolved.
 use crate::{Analysis, Resolutions, TransferKind};
 use gimli::Reader as _;
 use object::{Object, ObjectSection};
@@ -66,14 +70,19 @@ fn slot_matches(function: &Slot, field: &Slot) -> bool {
     agree(&function.0, &field.0) && agree(&function.1, &field.1)
 }
 
-fn shape_matches(function: &Shape, field: &Shape) -> bool {
+/// Whether a function's shape can be a field's; `names` compares type names
+/// too, as only a Rust-ABI field may.
+fn shape_matches(function: &Shape, field: &Shape, names: bool) -> bool {
+    let slot = |function: &Slot, field: &Slot| {
+        if names {
+            slot_matches(function, field)
+        } else {
+            slot_matches(&(function.0, None), &(field.0, None))
+        }
+    };
     function.0.len() == field.0.len()
-        && function
-            .0
-            .iter()
-            .zip(&field.0)
-            .all(|(a, b)| slot_matches(a, b))
-        && slot_matches(&function.1, &field.1)
+        && function.0.iter().zip(&field.0).all(|(a, b)| slot(a, b))
+        && slot(&function.1, &field.1)
 }
 
 /// A function-pointer field: its subroutine type and whether its ABI is
@@ -432,7 +441,7 @@ impl TypeFacts {
                 .iter()
                 .copied()
                 .filter(|&function| match self.function_shape(function) {
-                    Some(shape) => shape_matches(&shape, &wanted),
+                    Some(shape) => shape_matches(&shape, &wanted, !field.foreign),
                     None => field.foreign,
                 })
                 .collect(),
@@ -493,11 +502,15 @@ mod tests {
         let renamed: Shape = (vec![slot(Some(4), Some("i32"))], unit());
         let resized: Shape = (vec![slot(Some(8), None)], unit());
         let arity: Shape = (vec![], unit());
-        assert!(shape_matches(&field, &field));
-        assert!(shape_matches(&unknown, &field));
-        assert!(shape_matches(&unnamed, &field));
-        assert!(!shape_matches(&renamed, &field));
-        assert!(!shape_matches(&resized, &field));
-        assert!(!shape_matches(&arity, &field));
+        assert!(shape_matches(&field, &field, true));
+        assert!(shape_matches(&unknown, &field, true));
+        assert!(shape_matches(&unnamed, &field, true));
+        assert!(!shape_matches(&renamed, &field, true));
+        assert!(!shape_matches(&resized, &field, true));
+        assert!(!shape_matches(&arity, &field, true));
+        // A foreign-ABI field compares sizes only: C names `u32` otherwise.
+        assert!(shape_matches(&renamed, &field, false));
+        assert!(!shape_matches(&resized, &field, false));
+        assert!(!shape_matches(&arity, &field, false));
     }
 }

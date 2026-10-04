@@ -420,9 +420,7 @@ macro_rules! interrupt_table {
     };
 }
 
-/// The strong symbol of one source, whose name its vector slot links to, and
-/// `__oer_interrupt_body_<source>`, the address of the handler it calls, for
-/// the tools that check where the handler lies.
+/// The strong symbol of one source, whose name its vector slot links to.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __interrupt_handler {
@@ -433,12 +431,6 @@ macro_rules! __interrupt_handler {
         extern "C" fn $source() {
             $handler()
         }
-
-        const _: () = {
-            #[used]
-            #[unsafe(export_name = concat!("__oer_interrupt_body_", stringify!($source)))]
-            static BODY: fn() = $handler;
-        };
     };
 }
 

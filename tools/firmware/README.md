@@ -14,8 +14,11 @@ the runtime ELF, the pinned ROM ELF (`rom` of
 vendor-fetch esp32s31 --artifact rom`; a missing or changed ROM is an error)
 and its reviewed summaries, with the platform's interrupt contract
 (`oer-esp32s31-platform-layout`'s `interrupts`), and fails unless every bound
-is known and, with the contract's margin, fits the usable stack. It writes
-each hart's levels and their critical paths to `interrupt-stack.txt`.
+is known and, with the contract's margin, fits the usable stack, and unless
+every table entry's slot symbol and the handler it calls lie in SRAM (the
+slot's own direct calls: a call site no inlined function owns, by the DWARF).
+It writes each hart's levels and their critical paths to
+`interrupt-stack.txt`.
 
 The default `device` feature provides serial-device selection, a lease shared
 by xtask and HIL, and `write_segments`, which writes every flash segment

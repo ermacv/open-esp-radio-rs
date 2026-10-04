@@ -210,6 +210,12 @@ impl StaApRegisterHardware for Hardware {
     fn disable_all_role_receive_registers(&mut self) {}
 }
 
+impl oer_esp32s31_ieee80211_mac::init::StaNoiseFloorHardware for Hardware {
+    fn read_noise_floor_dbm(&self) -> i8 {
+        -96
+    }
+}
+
 impl StaLinkRxPolicyHardware for Hardware {
     fn apply_sta_link_policy(&mut self, _bssid: [u8; 6]) {}
 }

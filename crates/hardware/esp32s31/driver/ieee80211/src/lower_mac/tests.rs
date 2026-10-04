@@ -285,6 +285,12 @@ impl StaApRegisterHardware for Hardware {
     }
 }
 
+impl StaNoiseFloorHardware for Hardware {
+    fn read_noise_floor_dbm(&self) -> i8 {
+        -96
+    }
+}
+
 impl StaLinkRxPolicyHardware for Hardware {
     fn apply_sta_link_policy(&mut self, bssid: [u8; 6]) {
         self.station_policy = Some(StationPolicy::Link(bssid));
@@ -1360,7 +1366,7 @@ fn received_frames_are_narrowed_to_the_requested_rules() {
     let beacon = management(8, [0xff; 6], BSSID);
     let other_beacon = management(8, [0xff; 6], OTHER_BSS);
 
-    assert!(core.received(&normalized(&unicast)).is_none());
+    assert!(core.received(&hardware, &normalized(&unicast)).is_none());
     // Unicast only: the link policy passes the BSS's beacons as well.
     core.apply(
         &mut hardware,
@@ -1376,14 +1382,15 @@ fn received_frames_are_narrowed_to_the_requested_rules() {
     .unwrap();
     core.lifecycle(LifecycleCommand::Enable, &mut Events::default())
         .unwrap();
-    let (bytes, meta) = core.received(&normalized(&unicast)).unwrap();
+    let (bytes, meta) = core.received(&hardware, &normalized(&unicast)).unwrap();
+    // The frame carries the PHY's noise-floor estimate.
+    assert_eq!(meta.noise_floor_dbm, RxEvidence::HardwareObserved(-96));
     assert_eq!(bytes, unicast);
     assert_eq!(meta.channel, Channel::from_wifi_channel(channel(6)));
     assert_eq!(meta.rssi_dbm, RxEvidence::HardwareObserved(-42));
-    assert_eq!(meta.noise_floor_dbm, RxEvidence::Unavailable);
     let view = LowerMacEvent::Received { frame: bytes, meta };
     assert!(matches!(view, LowerMacEvent::Received { .. }));
-    assert!(core.received(&normalized(&beacon)).is_none());
+    assert!(core.received(&hardware, &normalized(&beacon)).is_none());
 
     // Scanning while joined: the ESP-NOW policy passes everything the
     // filter names, and nothing else is delivered.
@@ -1399,9 +1406,12 @@ fn received_frames_are_narrowed_to_the_requested_rules() {
     )
     .unwrap()
     .unwrap();
-    assert!(core.received(&normalized(&beacon)).is_some());
-    assert!(core.received(&normalized(&other_beacon)).is_some());
-    assert!(core.received(&normalized(&unicast)).is_none());
+    assert!(core.received(&hardware, &normalized(&beacon)).is_some());
+    assert!(
+        core.received(&hardware, &normalized(&other_beacon))
+            .is_some()
+    );
+    assert!(core.received(&hardware, &normalized(&unicast)).is_none());
 }
 
 #[test]
@@ -1425,7 +1435,10 @@ fn monitor_reception_runs_only_while_no_interface_receives() {
     core.apply(&mut hardware, quiet).unwrap().unwrap();
     assert_eq!(core.set_monitor(&mut hardware, true), Ok(()));
     assert!(hardware.promiscuous);
-    assert!(core.received(&normalized(&other_beacon)).is_some());
+    assert!(
+        core.received(&hardware, &normalized(&other_beacon))
+            .is_some()
+    );
     // An interface cannot start receiving under the promiscuous policy.
     assert_eq!(
         core.apply(
@@ -1439,7 +1452,10 @@ fn monitor_reception_runs_only_while_no_interface_receives() {
     );
     assert_eq!(core.set_monitor(&mut hardware, false), Ok(()));
     assert!(!hardware.promiscuous);
-    assert!(core.received(&normalized(&other_beacon)).is_none());
+    assert!(
+        core.received(&hardware, &normalized(&other_beacon))
+            .is_none()
+    );
 }
 
 #[test]

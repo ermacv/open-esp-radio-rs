@@ -51,5 +51,5 @@ pub use rsn::{PortHandshake, PortKeyInstall, PortKeys};
 pub use scan::{PortProbe, PortScan, PortScanTarget};
 pub use station::{
     PortAttemptError, PortAttemptPort, PortAttemptReport, PortStation, PortStationApplication,
-    PortStationError, PortStationLifecycle, PortStationProfile, PortUnwrapError,
+    PortStationError, PortStationLifecycle, PortStationProfile, PortTxBlockAck, PortUnwrapError,
 };

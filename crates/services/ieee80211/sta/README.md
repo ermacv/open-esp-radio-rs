@@ -90,10 +90,19 @@ calibrated transmit power; without them the HE Association Request is
 refused. The data rate is still the profile's: the peer's capabilities do
 not yet bound it.
 
+A QoS HT or HE association under CCMP negotiates the TX Block Ack
+agreements of `PortStationProfile::tx_block_ack` once connected, through
+`StaTxBlockAckOriginator` of `oer-ieee80211-sta`: an ADDBA Request per TID
+of the policy, in order, each from that TID's next sequence number, while the
+station is awake. A request that is not acknowledged or not answered within
+the negotiation timeout uses one of the TID's attempts and is sent again
+while attempts remain; the access point's answer ends them, and its DELBA as
+recipient ends the agreement. The agreements carry no aggregates yet.
+
 It does not yet do: BIP for group-addressed robust
 management frames, beacon-loss monitoring (`link_monitor`), the reorder gap
 timer (a full slot store releases the oldest run instead), a data rate bound
-by the peer's capabilities, A-MPDU transmission and TX Block Ack agreements, PS-Poll,
+by the peer's capabilities, A-MPDU transmission, PS-Poll,
 coexistence (the power manager runs with `CoexView::INACTIVE`), 40 MHz
 channels and roaming.
 

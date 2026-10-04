@@ -241,11 +241,19 @@ impl World {
     }
 
     fn station<'a>(&'a self, security: StaAttemptSecurity<'a>) -> PortStation<'a, Env<'a>> {
+        self.station_with(security, profile())
+    }
+
+    fn station_with<'a>(
+        &'a self,
+        security: StaAttemptSecurity<'a>,
+        profile: PortStationProfile<'a>,
+    ) -> PortStation<'a, Env<'a>> {
         PortStation::new(
             self.link().with_beacon_timing(),
             &self.timer,
             RsnSoftwareAes,
-            profile(),
+            profile,
             security,
         )
     }
@@ -328,6 +336,7 @@ fn profile() -> PortStationProfile<'static> {
         capabilities: &CAPABILITIES,
         he_power: None,
         he_packet_padding: oer_espressif_ieee80211_policy::he_txop::packet_padding,
+        tx_block_ack: None,
         phy: PhyMode::Legacy,
         listen_interval: 3,
         ccmp_step: CcmpPacketNumberStep::new(1).unwrap(),
@@ -1122,4 +1131,101 @@ fn the_station_contends_with_the_access_point_s_edca_parameters_body() {
             .aifsn,
         5
     );
+}
+
+#[test]
+fn the_station_negotiates_its_tx_block_ack_agreements() {
+    on_large_stack(the_station_negotiates_its_tx_block_ack_agreements_body);
+}
+
+fn the_station_negotiates_its_tx_block_ack_agreements_body() {
+    use oer_ieee80211_mac::station::AssociationCapabilities;
+    use oer_ieee80211_sta::block_ack::{StaTxBlockAckConfig, StaTxBlockAckPolicy};
+    use oer_ieee80211_sta_service::port::PortTxBlockAck;
+    static HT: AssociationCapabilities = AssociationCapabilities {
+        ht20: scripted_ap::HT_CAPABILITIES,
+        ..CAPABILITIES
+    };
+    static PMKSA: StaSharedPmksa = StaSharedPmksa::new();
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Wpa2Psk);
+    ap.ht = true;
+    let mut profile = profile();
+    profile.capabilities = &HT;
+    profile.phy = PhyMode::Ht20;
+    profile.tx_block_ack = Some(PortTxBlockAck {
+        policy: StaTxBlockAckPolicy {
+            tids: &oer_espressif_ieee80211_policy::block_ack::STA_TX_BLOCK_ACK_TIDS,
+            first_dialog_token: oer_espressif_ieee80211_policy::block_ack::FIRST_DIALOG_TOKEN,
+            next_dialog_token: oer_espressif_ieee80211_policy::block_ack::next_dialog_token,
+        },
+        config: StaTxBlockAckConfig {
+            window: 32,
+            negotiation_timeout: Duration::from_millis(100),
+            amsdu_tids: 0,
+        },
+        attempt_limit: 2,
+    });
+    let mut station = connect(&world, &mut ap, world.station_with(wpa2(&PMKSA), profile));
+    let requests = |ap: &ScriptedAp| {
+        ap.actions
+            .iter()
+            .filter(|action| action.starts_with(&[3, 0]))
+            .map(|action| {
+                (
+                    action[2],
+                    (u16::from_le_bytes([action[3], action[4]]) >> 2) as u8 & 0x0f,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut delivered = Vec::new();
+
+    // Connected, the station asks for TID 0 first.
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 5, &mut delivered),
+        None
+    );
+    ap.absorb(world.model);
+    let first = requests(&ap);
+    assert_eq!(first.first().map(|request| request.1), Some(0));
+
+    // The access point agrees; the station then asks for TID 7.
+    let mut response = ap.management(0xd0, STA);
+    response.extend_from_slice(&scripted_ap::addba_response(first[0].0, 0, 0, 16));
+    ap.queue(response);
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 5, &mut delivered),
+        None
+    );
+    ap.absorb(world.model);
+    let originator = station.connection().unwrap().tx_block_ack().unwrap();
+    assert_eq!(
+        originator.operational(0).map(|agreement| agreement.window),
+        Some(16)
+    );
+    assert!(requests(&ap).iter().any(|request| request.1 == 7));
+
+    // Unanswered, TID 7 is asked again once after its timeout, then given up.
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 1_000, &mut delivered),
+        None
+    );
+    ap.absorb(world.model);
+    let tid7 = requests(&ap)
+        .iter()
+        .filter(|request| request.1 == 7)
+        .count();
+    assert_eq!(tid7, 2);
+
+    // A DELBA of the access point, as recipient, ends the TID 0 agreement.
+    let mut delba = ap.management(0xd0, STA);
+    delba.extend_from_slice(&[3, 2, 0x00, 0x00, 1, 0]);
+    ap.queue(delba);
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 5, &mut delivered),
+        None
+    );
+    let originator = station.connection().unwrap().tx_block_ack().unwrap();
+    assert_eq!(originator.operational(0), None);
 }

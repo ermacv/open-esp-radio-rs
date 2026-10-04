@@ -102,6 +102,8 @@ pub struct ScriptedAp {
     ptk: Option<Ptk>,
     /// The WMM Parameter Element of its beacons and Probe Responses.
     pub wmm_beacon: Option<Vec<u8>>,
+    /// Its beacons and Probe Responses carry HT Capabilities.
+    pub ht: bool,
     /// The WMM Parameter Element of its Association Response, in place of
     /// the WMM Information element.
     pub wmm_association: Option<Vec<u8>>,
@@ -136,6 +138,7 @@ impl ScriptedAp {
             },
             ptk: None,
             wmm_beacon: None,
+            ht: false,
             wmm_association: None,
             replay_counter: 0,
         }
@@ -453,6 +456,9 @@ impl ScriptedAp {
         if let Some(rsn) = self.rsn() {
             frame.extend_from_slice(rsn);
         }
+        if self.ht {
+            frame.extend_from_slice(&HT_CAPABILITIES);
+        }
         if let Some(wmm) = &self.wmm_beacon {
             frame.extend_from_slice(wmm);
         }
@@ -563,6 +569,22 @@ pub fn wmm_parameter_element(count: u8, records: [(u8, u8, u8, u16); 4]) -> Vec<
         element.extend_from_slice(&txop.to_le_bytes());
     }
     element
+}
+
+/// An HT Capabilities element: MCS 0-7, A-MPDU up to 64 KiB.
+pub const HT_CAPABILITIES: [u8; 28] = [
+    45, 26, 0x00, 0x00, 0x17, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0,
+];
+
+/// An ADDBA Response body to `dialog_token` for `tid` with `status`.
+pub fn addba_response(dialog_token: u8, tid: u8, status: u16, window: u16) -> Vec<u8> {
+    let parameters: u16 = (1 << 1) | (u16::from(tid) << 2) | (window << 6);
+    let mut body = vec![3, 1, dialog_token];
+    body.extend_from_slice(&status.to_le_bytes());
+    body.extend_from_slice(&parameters.to_le_bytes());
+    body.extend_from_slice(&0_u16.to_le_bytes());
+    body
 }
 
 pub fn meta(protected: bool) -> RxMeta {

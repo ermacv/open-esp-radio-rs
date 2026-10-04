@@ -36,6 +36,7 @@ use oer_ieee80211_rsn::{
 };
 use oer_ieee80211_rsn_service::supplicant::{RsnGroupMessage1Step, process_group_message1};
 use oer_ieee80211_sta::{
+    block_ack::{StaTxBlockAckOriginator, StaTxBlockAckResponseDisposition},
     modem_sleep::{PmBeacon, PmTraffic, SleepType},
     sa_query::{SaQueryStep, StationSaQuery},
 };
@@ -121,6 +122,8 @@ pub struct PortRxCounters {
     /// EAPOL frames after the handshake that were not an authentic Group
     /// Message 1 of the access point, or whose group key did not install.
     pub eapol_rejected: u32,
+    /// ADDBA Responses that named no live negotiation.
+    pub stale_addba_responses: u32,
 }
 
 /// The outcome of offering one frame for transmission.
@@ -154,6 +157,8 @@ pub struct PortConnection<P: Ieee80211LowerMacPort> {
     /// An EAPOL frame the access point sent under the pairwise key, awaiting
     /// the Group Key Handshake.
     eapol: Option<OwnedEapolFrame<RSN_HANDSHAKE_EAPOL_CAPACITY>>,
+    /// The station's TX Block Ack agreements with the access point.
+    tx_block_ack: Option<StaTxBlockAckOriginator>,
     counters: PortRxCounters,
 }
 
@@ -173,6 +178,7 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
         config: PortConnectionConfig,
         keys: Option<PortKeys>,
         packet_number: CcmpTxPacketNumber,
+        tx_block_ack: Option<StaTxBlockAckOriginator>,
     ) -> Self {
         let group_replay = keys
             .and_then(|keys| {
@@ -192,8 +198,14 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
             power: None,
             held: None,
             eapol: None,
+            tx_block_ack,
             counters: PortRxCounters::default(),
         }
+    }
+
+    /// The station's TX Block Ack agreements, when it originates any.
+    pub const fn tx_block_ack(&self) -> Option<&StaTxBlockAckOriginator> {
+        self.tx_block_ack.as_ref()
     }
 
     pub const fn config(&self) -> &PortConnectionConfig {
@@ -221,12 +233,16 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
 
     /// The earliest instant the connection needs its owner without input.
     pub(crate) fn next_deadline(&self) -> Option<Instant> {
-        let sa_query = self.sa_query.next_deadline();
-        let power = self.power.as_ref().and_then(PortPowerSave::next_deadline);
-        match (sa_query, power) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        }
+        [
+            self.sa_query.next_deadline(),
+            self.power.as_ref().and_then(PortPowerSave::next_deadline),
+            self.tx_block_ack
+                .as_ref()
+                .and_then(StaTxBlockAckOriginator::earliest_alarm_deadline),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
     }
 
     fn traffic(&self) -> PmTraffic {
@@ -450,7 +466,43 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
                 ))
                 .await?;
         }
+        self.negotiate_tx_block_ack(context, now).await?;
         Ok(None)
+    }
+
+    /// Expire overdue ADDBA negotiations and send the next one that waits,
+    /// unless the station dozes.
+    async fn negotiate_tx_block_ack<X: PortStationEnv<Port = P>>(
+        &mut self,
+        context: &mut ConnectionContext<'_, '_, X>,
+        now: Instant,
+    ) -> Result<(), PortLinkError<PortError<X>>> {
+        let Some(originator) = self.tx_block_ack.as_mut() else {
+            return Ok(());
+        };
+        while originator.expire_next(now).is_some() {}
+        if self.power.as_ref().is_some_and(|power| !power.awake()) {
+            return Ok(());
+        }
+        let Some(tid) = originator.take_pending() else {
+            return Ok(());
+        };
+        let starting_sequence = context
+            .sequences
+            .peek_qos(tid)
+            .ok_or(PortLinkError::MissingState)?;
+        let request = originator
+            .begin(tid, starting_sequence, now)
+            .map_err(|_| PortLinkError::MissingState)?;
+        let report = self
+            .send_management(context, StaManagementSubtype::Action, &request.body)
+            .await?;
+        if !acknowledged(&report)
+            && let Some(originator) = self.tx_block_ack.as_mut()
+        {
+            originator.transmit_failed(tid);
+        }
+        Ok(())
     }
 
     async fn input<X: PortStationEnv<Port = P>>(
@@ -628,6 +680,17 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
                 .map_err(|_| PortLinkError::MissingState)?;
                 self.send_action(context, &response).await
             }
+            // The access point ends one of the station's TX agreements.
+            Some(BlockAckAction::Delba {
+                tid,
+                initiator: false,
+                ..
+            }) => {
+                if let Some(originator) = self.tx_block_ack.as_mut() {
+                    originator.stop(tid);
+                }
+                Ok(())
+            }
             Some(BlockAckAction::Delba { tid, .. }) => {
                 if let Some(mut buffer) = self
                     .reorder
@@ -644,7 +707,17 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
                 }
                 Ok(())
             }
-            Some(BlockAckAction::AddbaResponse { .. }) | None => Ok(()),
+            Some(action @ BlockAckAction::AddbaResponse { .. }) => {
+                if let Some(originator) = self.tx_block_ack.as_mut()
+                    && let Ok(StaTxBlockAckResponseDisposition::StaleDialogToken(_)) =
+                        originator.on_response_action(action)
+                {
+                    self.counters.stale_addba_responses =
+                        self.counters.stale_addba_responses.saturating_add(1);
+                }
+                Ok(())
+            }
+            None => Ok(()),
         }
     }
 
@@ -950,6 +1023,7 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
     ) -> Result<(), PortLinkError<PortError<X>>> {
         self.send_management(context, StaManagementSubtype::Action, body)
             .await
+            .map(|_| ())
     }
 
     async fn send_management<X: PortStationEnv<Port = P>>(
@@ -957,7 +1031,7 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
         context: &mut ConnectionContext<'_, '_, X>,
         subtype: StaManagementSubtype,
         body: &[u8],
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<TxReport, PortLinkError<PortError<X>>> {
         let config = *context.link.config();
         let sequence_number = context.sequences.take_non_qos();
         let mut frame = [0_u8; MANAGEMENT_HEADER_LEN + CCMP_HEADER_LEN + 64];
@@ -1007,7 +1081,6 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
                 config.management_rate,
             )
             .await
-            .map(|_| ())
     }
 
     /// Leave the association: send a Deauthentication while the station

@@ -24,6 +24,8 @@ crate::messages! {
     property Thread = "ieee802154/thread";
     /// Same-bit arrival and level retrigger of the source-132 route.
     property RouteProbe = "ieee802154/route-probe";
+    /// The MAC trace: a failure's post-mortem holds the last MAC events.
+    property MacTrace = "ieee802154/mac-trace";
     #[cfg(feature = "ieee802154")]
     endpoint ProbeEventStatus = "ieee802154/event-status/probe" => crate::ieee802154::EventStatusProbed;
     #[cfg(feature = "ieee802154")]

@@ -148,6 +148,7 @@ pub fn image_keys(enabled: &dyn Fn(&str) -> bool) -> ImageKeys {
         ieee802154::RouteProbe::KEY,
         enabled("ieee802154-route-probe"),
     );
+    add(ieee802154::MacTrace::KEY, enabled("ieee802154-trace"));
     sorted(keys)
 }
 
@@ -185,6 +186,7 @@ pub const READ_FEATURES: &[&str] = &[
     "ieee802154-radio",
     "ieee802154-thread",
     "ieee802154-route-probe",
+    "ieee802154-trace",
 ];
 
 #[cfg(test)]

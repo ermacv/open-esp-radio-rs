@@ -272,11 +272,14 @@ impl Ieee802154Scenario {
             Self::EventStatus(_) => ImageClass::DiagnosticIeee802154EventStatus,
             Self::EdEvent(_) => ImageClass::DiagnosticIeee802154EdEvent,
             Self::RouteProbe(_) => ImageClass::DiagnosticIeee802154Route,
-            Self::AirCheck(_)
-            | Self::PeerExchange(_)
-            | Self::BackgroundMaintenance(_)
-            | Self::ChannelEnergy(_)
-            | Self::LiveRssi(_) => ImageClass::DiagnosticIeee802154Radio,
+            Self::AirCheck(_) | Self::BackgroundMaintenance(_) => {
+                ImageClass::DiagnosticIeee802154Radio
+            }
+            // Against the reference peer a failure's post-mortem holds the
+            // MAC trace.
+            Self::PeerExchange(_) | Self::ChannelEnergy(_) | Self::LiveRssi(_) => {
+                ImageClass::DiagnosticIeee802154RadioTrace
+            }
             Self::ThreadExchange(_) => ImageClass::DiagnosticIeee802154Thread,
         });
         plan.requirements.peer = self.peer_image().is_some();
@@ -414,7 +417,7 @@ mod tests {
         let scenario: Ieee802154Scenario = toml::from_str(table).unwrap();
         scenario.validate().unwrap();
         let plan = scenario.plan();
-        assert_eq!(plan.image, ImageClass::DiagnosticIeee802154Radio);
+        assert_eq!(plan.image, ImageClass::DiagnosticIeee802154RadioTrace);
         assert!(plan.requirements.peer);
         for invalid in ["frames = 0", "frames = 17"] {
             let scenario: Ieee802154Scenario =
@@ -429,7 +432,7 @@ mod tests {
         let scenario: Ieee802154Scenario = toml::from_str(table).unwrap();
         scenario.validate().unwrap();
         let plan = scenario.plan();
-        assert_eq!(plan.image, ImageClass::DiagnosticIeee802154Radio);
+        assert_eq!(plan.image, ImageClass::DiagnosticIeee802154RadioTrace);
         assert!(plan.requirements.peer);
         for invalid in ["channel = 27", "frames = 0", "low_power_dbm = 20"] {
             let key = invalid.split(' ').next().unwrap();
@@ -446,7 +449,7 @@ mod tests {
         let scenario: Ieee802154Scenario = toml::from_str(table).unwrap();
         scenario.validate().unwrap();
         let plan = scenario.plan();
-        assert_eq!(plan.image, ImageClass::DiagnosticIeee802154Radio);
+        assert_eq!(plan.image, ImageClass::DiagnosticIeee802154RadioTrace);
         assert!(plan.requirements.peer);
         for invalid in [
             "far_channel = 18",

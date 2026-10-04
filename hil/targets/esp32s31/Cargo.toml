@@ -33,9 +33,9 @@ embassy-time = "0.5.1"
 embassy-time-driver = { version = "0.2", features = ["tick-hz-1_000_000"] }
 embassy-time-queue-utils = "0.3"
 embedded-io-async = "0.7.0"
-esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "d61af210475ed9268806765d4940565371c75c80", default-features = false }
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "d61af210475ed9268806765d4940565371c75c80", default-features = false }
-esp-sync = { git = "https://github.com/ermacv/esp-hal", rev = "d61af210475ed9268806765d4940565371c75c80" }
+esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "9b59fce828af156cef0521a4b5c0f311efcfb1e8", default-features = false }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "9b59fce828af156cef0521a4b5c0f311efcfb1e8", default-features = false }
+esp-sync = { git = "https://github.com/ermacv/esp-hal", rev = "9b59fce828af156cef0521a4b5c0f311efcfb1e8" }
 log = { version = "0.4.27", features = ["max_level_trace", "release_max_level_info"] }
 heapless = "0.9.3"
 oer = { package = "open-esp-radio", path = "../../../crates/oer", default-features = false, features = ["wifi"] }

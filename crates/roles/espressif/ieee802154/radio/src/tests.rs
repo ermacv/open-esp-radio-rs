@@ -28,12 +28,19 @@ use oer_ieee802154::{
 
 use super::{
     IEEE802154_ENHANCED_ACK_IE_CAPACITY, Ieee802154Csl, Ieee802154EnhancedAckGenerator,
-    Ieee802154EnhancedAckIeTooLong, Ieee802154Platform, Ieee802154Radio, Ieee802154RadioSink,
+    Ieee802154EnhancedAckIeTooLong, Ieee802154Radio, Ieee802154RadioSink, Ieee802154Random,
 };
 
 static LEVELS: [i8; 3] = [-9, 0, 10];
 
-const PLATFORM: Ieee802154Platform = Ieee802154Platform { random: || 21 };
+/// A random source that always draws 21.
+struct FixedRandom;
+
+impl Ieee802154Random for FixedRandom {
+    fn random(&mut self) -> u32 {
+        21
+    }
+}
 
 /// A radio clock that stands at 42 us.
 struct FixedClock(u64);
@@ -135,41 +142,46 @@ fn channel(number: u8) -> Channel {
     Channel::new(number).unwrap()
 }
 
-struct Bench {
-    radio: Ieee802154Radio<'static>,
+struct Bench<R = FixedRandom> {
+    radio: Ieee802154Radio<'static, R>,
     hw: Ieee802154LlModel,
     sink: Sink,
 }
 
 impl Bench {
     fn enabled() -> Self {
-        let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
-        let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
-        Self::with_engine(Ieee802154Engine::new(
-            buffers,
-            levels,
-            Ieee802154PibDefaults::default(),
-        ))
+        Self::with_engine(engine(), FixedRandom)
     }
 
     /// An enabled radio over an engine built with multi-PAN.
     fn multipan(interfaces: u8) -> Self {
         let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
         let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
-        Self::with_engine(Ieee802154Engine::new_multipan(
-            buffers,
-            levels,
-            Ieee802154PibDefaults::default(),
-            Ieee802154Interfaces::new(interfaces).unwrap(),
-        ))
+        Self::with_engine(
+            Ieee802154Engine::new_multipan(
+                buffers,
+                levels,
+                Ieee802154PibDefaults::default(),
+                Ieee802154Interfaces::new(interfaces).unwrap(),
+            ),
+            FixedRandom,
+        )
     }
+}
 
-    fn with_engine(mut engine: Ieee802154Engine<'static>) -> Self {
+fn engine() -> Ieee802154Engine<'static> {
+    let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
+    let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
+    Ieee802154Engine::new(buffers, levels, Ieee802154PibDefaults::default())
+}
+
+impl<R: Ieee802154Random> Bench<R> {
+    fn with_engine(mut engine: Ieee802154Engine<'static>, random: R) -> Self {
         let mut hw = Ieee802154LlModel::default();
         engine.enable();
         engine.mac_init(&mut hw, Ieee802154PibDefaults::default());
         let mut bench = Self {
-            radio: Ieee802154Radio::new(engine, PLATFORM),
+            radio: Ieee802154Radio::new(engine, random),
             hw,
             sink: Sink::default(),
         };
@@ -220,7 +232,7 @@ fn admission_needs_enable() {
     let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
     let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
     let engine = Ieee802154Engine::new(buffers, levels, Ieee802154PibDefaults::default());
-    let mut radio = Ieee802154Radio::new(engine, PLATFORM);
+    let mut radio = Ieee802154Radio::new(engine, FixedRandom);
     assert_eq!(
         radio.submit(
             &mut Ieee802154LlModel::default(),
@@ -607,7 +619,7 @@ fn header_ies_are_bounded_by_the_port_capacity() {
     );
 }
 
-impl Bench {
+impl<R: Ieee802154Random> Bench<R> {
     fn tx_abort(&mut self, reason: Ieee802154TxAbortReason) {
         self.hw.tx_abort = Ieee802154TxAbortReasonObservation::Named(reason);
         self.interrupt(&[Ieee802154Event::TxAbort]);
@@ -660,6 +672,47 @@ fn a_csma_ca_transmission_backs_off_before_each_cca_attempt() {
     );
     assert_eq!(bench.hw.channel().unwrap().number(), 15);
     assert_eq!(bench.radio.take_delay(), None);
+}
+
+/// Random words in order, counting the draws.
+struct Words {
+    words: Vec<u32>,
+    drawn: std::rc::Rc<core::cell::Cell<usize>>,
+}
+
+impl Ieee802154Random for Words {
+    fn random(&mut self) -> u32 {
+        let index = self.drawn.get();
+        self.drawn.set(index + 1);
+        self.words[index]
+    }
+}
+
+/// Each backoff draws one word from the radio's own source, the next backoff
+/// the next word.
+#[test]
+fn each_backoff_draws_one_word_from_the_random_source() {
+    let drawn = std::rc::Rc::new(core::cell::Cell::new(0));
+    let mut bench = Bench::with_engine(
+        engine(),
+        Words {
+            words: vec![3, 6],
+            drawn: drawn.clone(),
+        },
+    );
+    bench
+        .transmit(3, &DATA, 20, TxMode::CsmaCa { max_backoffs: 4 })
+        .unwrap();
+    // 3 % 2^3 unit periods of 320 us.
+    assert_eq!(bench.radio.take_delay(), Some(3 * 320));
+    assert_eq!(drawn.get(), 1);
+    bench
+        .radio
+        .delay_elapsed(&mut bench.hw, &CLOCK, &mut bench.sink);
+    bench.tx_abort(Ieee802154TxAbortReason::CcaBusy);
+    // 6 % 2^4.
+    assert_eq!(bench.radio.take_delay(), Some(6 * 320));
+    assert_eq!(drawn.get(), 2);
 }
 
 /// A busy channel, an abort and a coexistence rejection are channel-access

@@ -232,12 +232,13 @@ impl Ieee802154EnhancedAckGenerator {
     }
 }
 
-/// Platform services the engine calls during an entry.
-#[derive(Clone, Copy)]
-pub struct Ieee802154Platform {
-    /// A uniform random word for each CSMA-CA backoff, as OpenThread draws
-    /// one from its non-cryptographic generator.
-    pub random: fn() -> u32,
+/// The radio's random words: one for each CSMA-CA backoff and each delay
+/// before a retry, as OpenThread draws one from its non-cryptographic
+/// generator. The radio holds its source by value and calls it directly, so
+/// the interrupt path's call graph names the one implementation.
+pub trait Ieee802154Random {
+    /// A uniform random word.
+    fn random(&mut self) -> u32;
 }
 
 /// Why a transmission waits before its next attempt.
@@ -759,21 +760,21 @@ fn received_frame<'image>(
 }
 
 /// The radio role: the engine behind the portable state machine.
-pub struct Ieee802154Radio<'storage> {
+pub struct Ieee802154Radio<'storage, R> {
     engine: Ieee802154Engine<'storage>,
     machine: RadioStateMachine,
-    platform: Ieee802154Platform,
+    random: R,
     enhanced_ack: Option<Ieee802154EnhancedAckGenerator>,
     transmission: Option<Transmission>,
     next_security: Option<ArmedSecurity>,
     security: RadioSecurity,
 }
 
-impl<'storage> Ieee802154Radio<'storage> {
+impl<'storage, R: Ieee802154Random> Ieee802154Radio<'storage, R> {
     /// Admit portable commands to an engine the composition has enabled and
     /// initialized. The role starts `Disabled` until [`Self::enable`].
     /// An engine built with multi-PAN gives the radio its interfaces.
-    pub const fn new(engine: Ieee802154Engine<'storage>, platform: Ieee802154Platform) -> Self {
+    pub const fn new(engine: Ieee802154Engine<'storage>, random: R) -> Self {
         let machine = match engine.multipan() {
             Some(interfaces) => RadioStateMachine::with_interfaces(
                 IEEE802154_RADIO_CAPABILITIES.union(RadioCapabilities::MULTI_PAN),
@@ -784,7 +785,7 @@ impl<'storage> Ieee802154Radio<'storage> {
         Self {
             engine,
             machine,
-            platform,
+            random,
             enhanced_ack: None,
             transmission: None,
             next_security: None,
@@ -1201,7 +1202,7 @@ impl<'storage> Ieee802154Radio<'storage> {
             return None;
         };
         transmission.phase = Phase::Delaying(delay);
-        let random = (self.platform.random)();
+        let random = self.random.random();
         Some(match delay {
             Delay::CsmaBackoff => transmission.csma.backoff_micros(random).unwrap_or(0),
             Delay::Retransmission(start) => start.delay_micros(random),

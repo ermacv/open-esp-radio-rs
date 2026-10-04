@@ -14,7 +14,7 @@ use oer_espressif_ieee802154_engine::{
     types::Ieee802154Event,
 };
 use oer_espressif_ieee802154_runtime::{
-    Ieee802154Platform, Ieee802154Runtime, Ieee802154RuntimeParts,
+    Ieee802154Random, Ieee802154Runtime, Ieee802154RuntimeParts,
 };
 use oer_ieee802154::{Ieee802154RadioPort, Interface};
 use openthread_radio::{
@@ -33,12 +33,20 @@ mod model;
 
 use oer_time_virtual::SkipClock;
 
-type Runtime = Ieee802154Runtime<'static, NoopRawMutex, Ieee802154LlModel, SkipClock, 16>;
+type Runtime =
+    Ieee802154Runtime<'static, NoopRawMutex, Ieee802154LlModel, SkipClock, FixedRandom, 16>;
 type Thread = OpenThreadRadio<'static, Runtime, 4>;
 
 static LEVELS: [i8; 3] = [-24, 0, 21];
 
-const PLATFORM: Ieee802154Platform = Ieee802154Platform { random: || 21 };
+/// A random source that always draws 21.
+struct FixedRandom;
+
+impl Ieee802154Random for FixedRandom {
+    fn random(&mut self) -> u32 {
+        21
+    }
+}
 
 /// The radio clock of the bench: the runtime's clock starts here, and
 /// OpenThread reads the same time.
@@ -88,7 +96,7 @@ fn radio() -> (&'static Runtime, Thread) {
     };
     assert!(
         runtime
-            .install(parts, PLATFORM, Ieee802154PibDefaults::default())
+            .install(parts, FixedRandom, Ieee802154PibDefaults::default())
             .is_ok()
     );
     (runtime, OpenThreadRadio::new(runtime, DEFAULTS))

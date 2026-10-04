@@ -39,7 +39,7 @@ use oer_espressif_ieee802154_engine::{
     pib::Ieee802154PibDefaults,
 };
 use oer_espressif_ieee802154_runtime::{
-    Ieee802154Platform, Ieee802154Runtime, Ieee802154RuntimeError, Ieee802154RuntimeParts,
+    Ieee802154Random, Ieee802154Runtime, Ieee802154RuntimeError, Ieee802154RuntimeParts,
 };
 use oer_ieee802154::Ieee802154RadioPort;
 use oer_time_embassy::EmbassyClock;
@@ -58,8 +58,18 @@ pub type Ieee802154SystemRuntime = Ieee802154Runtime<
     CriticalSectionRawMutex,
     Ieee802154MacOwners,
     EmbassyClock,
+    HardwareRandom,
     IEEE802154_EVENT_CAPACITY,
 >;
+
+/// The radio's random words from the hardware generator.
+pub struct HardwareRandom;
+
+impl Ieee802154Random for HardwareRandom {
+    fn random(&mut self) -> u32 {
+        random()
+    }
+}
 
 static RUNTIME: Ieee802154SystemRuntime = Ieee802154Runtime::new(EmbassyClock);
 
@@ -453,8 +463,7 @@ pub async fn start<P, C: PlatformClockProvider>(
         engine,
         hardware: Ieee802154MacOwners::new(task, interrupts),
     };
-    let platform_services = Ieee802154Platform { random };
-    if let Err(parts) = RUNTIME.install(parts, platform_services, defaults) {
+    if let Err(parts) = RUNTIME.install(parts, HardwareRandom, defaults) {
         let (mut task, interrupts) = parts.hardware.into_parts();
         let interrupts = interrupts.deactivate(&mut task);
         return Err(fail_stop(

@@ -1,36 +1,44 @@
-//! The connected station's transmit queue: Ethernet frames in the order the
-//! caller sent them, each with its user priority, until the receive loop
-//! sends them one by one or as an A-MPDU.
+//! A service's transmit queue: Ethernet frames in the order the caller sent
+//! them, each with its user priority, until the service sends them one by
+//! one or as an A-MPDU.
 
 use oer_ieee80211_mac::qos::WmmUserPriority;
 
-use super::link::PORT_FRAME_CAPACITY;
+/// Octets of one frame a service keeps: a received MPDU, or a queued
+/// Ethernet frame.
+pub const PORT_FRAME_CAPACITY: usize = 2_352;
 
 /// Frames the queue holds; also the most subframes of one A-MPDU.
 pub const PORT_TX_QUEUE: usize = 8;
 
 /// One queued Ethernet-II frame.
-pub(crate) struct QueuedFrame {
+pub struct QueuedFrame {
     ethernet: [u8; PORT_FRAME_CAPACITY],
     len: usize,
-    pub(crate) priority: WmmUserPriority,
+    pub priority: WmmUserPriority,
 }
 
 impl QueuedFrame {
-    pub(crate) fn ethernet(&self) -> &[u8] {
+    pub fn ethernet(&self) -> &[u8] {
         &self.ethernet[..self.len]
     }
 }
 
 /// A first-in first-out ring of [`PORT_TX_QUEUE`] frames.
-pub(crate) struct TxQueue {
+pub struct TxQueue {
     frames: [Option<QueuedFrame>; PORT_TX_QUEUE],
     head: usize,
     len: usize,
 }
 
+impl Default for TxQueue {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TxQueue {
-    pub(crate) const fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             frames: [const { None }; PORT_TX_QUEUE],
             head: 0,
@@ -38,17 +46,17 @@ impl TxQueue {
         }
     }
 
-    pub(crate) const fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.len == 0
     }
 
-    pub(crate) const fn is_full(&self) -> bool {
+    pub const fn is_full(&self) -> bool {
         self.len == PORT_TX_QUEUE
     }
 
     /// Queue `ethernet` at `priority`; `false` when the queue is full or
     /// the frame exceeds [`PORT_FRAME_CAPACITY`].
-    pub(crate) fn push(&mut self, ethernet: &[u8], priority: WmmUserPriority) -> bool {
+    pub fn push(&mut self, ethernet: &[u8], priority: WmmUserPriority) -> bool {
         if self.is_full() || ethernet.len() > PORT_FRAME_CAPACITY {
             return false;
         }
@@ -64,14 +72,14 @@ impl TxQueue {
     }
 
     /// Frame `index` from the head.
-    pub(crate) fn get(&self, index: usize) -> Option<&QueuedFrame> {
+    pub fn get(&self, index: usize) -> Option<&QueuedFrame> {
         if index >= self.len {
             return None;
         }
         self.frames[(self.head + index) % PORT_TX_QUEUE].as_ref()
     }
 
-    pub(crate) fn pop(&mut self) -> Option<QueuedFrame> {
+    pub fn pop(&mut self) -> Option<QueuedFrame> {
         if self.len == 0 {
             return None;
         }
@@ -83,7 +91,7 @@ impl TxQueue {
 
     /// The frames from the head, at most `limit`, whose user priority is
     /// the head's: the run one A-MPDU may carry.
-    pub(crate) fn head_run(&self, limit: usize) -> usize {
+    pub fn head_run(&self, limit: usize) -> usize {
         let Some(head) = self.get(0) else {
             return 0;
         };
@@ -95,7 +103,7 @@ impl TxQueue {
             .count()
     }
 
-    pub(crate) fn clear(&mut self) {
+    pub fn clear(&mut self) {
         while self.pop().is_some() {}
     }
 }

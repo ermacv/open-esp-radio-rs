@@ -3,6 +3,7 @@
 
 use core::{convert::Infallible, marker::PhantomData};
 use oer_ieee80211_upper_mac_service::client::{PortClientEnv, PortError, PortMsdu, PortRxBuffer};
+use oer_ieee80211_upper_mac_service::queue::PORT_FRAME_CAPACITY;
 
 use oer_ieee80211_lower_mac::{
     Channel, ChannelWidth, Ieee80211LowerMacPort, ReceiveFilter, RxEvidence, RxMeta,
@@ -58,7 +59,7 @@ use super::{
         PortConnectionSecurity, PortDisconnect, PortLinkProbe, PortLinkSupervisor, PortSend,
     },
     join::{PortAssociation, PortHePower, PortJoin},
-    link::{PORT_FRAME_CAPACITY, PortLink, PortLinkError, PortStationEnv},
+    link::{PortLink, PortLinkError, PortStationEnv},
     rsn::{BorrowedUnwrap, PortHandshake, PortKeyInstall, PortKeys},
     scan::{PortProbe, PortScan, PortScanTarget},
 };

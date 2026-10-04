@@ -32,8 +32,11 @@ and extension queues as `PortInput`s (`Frame(PortFrame)` in the port's own
 through its `UpperMacTx`, and applies settings, the BSS's EDCA parameters,
 its interface configuration, retunes and lifecycle commands, with every
 failure a `PortClientError`. `PortMsdu` is the MSDU a service hands its
-application: the port's buffer, or parts to copy. The station service
-(`oer-ieee80211-sta-service`) builds on it.
+application: the port's buffer, or parts to copy. `queue::TxQueue` is a
+service's first-in first-out ring of `PORT_TX_QUEUE` Ethernet frames of at
+most `PORT_FRAME_CAPACITY` octets, each with its user priority, whose
+`head_run` is the run of one priority an A-MPDU may carry. The station and
+access-point services build on both.
 
 `UpperMacTx::new(&router, vif, planner)` binds one interface; the router
 allocates attempt identities outside the backend-reserved range.

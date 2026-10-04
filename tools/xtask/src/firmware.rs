@@ -140,6 +140,13 @@ pub fn build(
         &runtime_target.join(&target).join("release").join(binary),
         "runtime.elf",
     )?;
+    let interrupt_stacks =
+        oer_esp32s31_firmware::interrupt_stack::interrupt_stacks(&ctx.root, &runtime)?;
+    fs::write(
+        output.join("interrupt-stack.txt"),
+        interrupt_stacks.render(),
+    )?;
+    interrupt_stacks.check()?;
     audit_stack(&runtime, &output.join("runtime-stack.txt"), &budget)?;
     let packed = output.join("runtime.bin");
     process::run(

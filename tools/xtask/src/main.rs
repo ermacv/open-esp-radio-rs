@@ -41,6 +41,9 @@ enum Task {
     VendorFetch {
         #[arg()]
         chip: String,
+        /// Only these artifacts of `artifacts.toml`, by id (such as `rom`).
+        #[arg(long = "artifact", value_name = "ID")]
+        artifacts: Vec<String>,
     },
     /// Build the chip's tracked vendor firmware against the pinned ESP-IDF
     /// and pinned vendor archives into `target/vendor-firmware`.
@@ -401,7 +404,9 @@ fn dispatch(ctx: &Context, command: Task) -> Result<std::process::ExitCode> {
         Task::VendorScenario { chip, args } => {
             return oer_xtask::vendor_scenario::run(&ctx, &chip, &args);
         }
-        Task::VendorFetch { chip } => oer_xtask::vendor_fetch::run(&ctx, &chip),
+        Task::VendorFetch { chip, artifacts } => {
+            oer_xtask::vendor_fetch::run(&ctx, &chip, &artifacts)
+        }
         Task::VendorFirmware { chip, project } => {
             oer_xtask::vendor_firmware::run(&ctx, &chip, project.as_deref())
         }

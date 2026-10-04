@@ -64,6 +64,7 @@ pub struct ArtifactReport<'a> {
     partition_table: Option<String>,
     application_image: String,
     application_sha256: String,
+    interrupt_stack_audit: &'a str,
     stack_frame_audit: &'a str,
     move_size_audit: &'a str,
     placement_audit: &'a str,
@@ -112,6 +113,7 @@ pub fn artifact_report(
         partition_table: esp_idf.map(|boot| boot.partition_table.display().to_string()),
         application_image: artifacts.application_image.display().to_string(),
         application_sha256: sha256_file(&artifacts.application_image)?,
+        interrupt_stack_audit: "PASS",
         stack_frame_audit: "PASS",
         move_size_audit: "PASS",
         placement_audit: "PASS",
@@ -627,6 +629,17 @@ fn build_resolved(
         runtime_lock.validate()?;
     }
 
+    // Interrupt contexts first: their bound comes from the whole image.
+    let interrupt_stacks =
+        oer_esp32s31_firmware::interrupt_stack::interrupt_stacks(root, &runtime_elf)
+            .map_err(|error| log.failed("interrupt-stack bound", error))?;
+    let interrupt_stack_path = output.join("interrupt-stack.txt");
+    fs::write(&interrupt_stack_path, interrupt_stacks.render())?;
+    eprintln!("interrupt_stack_report={}", interrupt_stack_path.display());
+    interrupt_stacks
+        .check()
+        .map_err(|error| log.failed("interrupt-stack gate", error))?;
+
     let stack_report = crate::stack::analyze_elf_stack(&runtime_elf, &stack_budget)?;
     let stack_report_path = output.join("runtime-stack.txt");
     fs::write(
@@ -723,6 +736,9 @@ fn build_resolved(
         ],
         &[
             Path::new("hil/targets/esp32s31/stack.toml"),
+            // The interrupt-stack gate's ROM pin and summaries.
+            Path::new("verification/esp32s31/artifacts.toml"),
+            Path::new("platform/esp32s31/linker/rom/functions.toml"),
             Path::new(oer_esp32s31_firmware::PARTITION_TABLE),
         ],
     )?;
@@ -731,6 +747,7 @@ fn build_resolved(
 
     eprintln!("runtime_crc32={crc:08x}");
     eprintln!("placement_audit=PASS");
+    eprintln!("interrupt_stack_audit=PASS");
     eprintln!("stack_frame_audit=PASS");
     eprintln!("autonomous_source_graph=PASS");
     Ok(Artifacts {

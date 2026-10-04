@@ -56,7 +56,8 @@ pub fn interrupted_stack_pointer() -> Option<usize> {
 }
 
 /// Aligned bytes at the bottom of each interrupt stack whose stores trap.
-const IRQ_STACK_GUARD_BYTES: usize = 1024;
+const IRQ_STACK_GUARD_BYTES: usize =
+    oer_esp32s31_platform_layout::interrupts::IRQ_STACK_GUARD_BYTES as usize;
 /// Debug trigger of the interrupt-stack guard. ESP-HAL owns trigger 0 (task
 /// stack guard) and trigger 1 (trap-section guard).
 const IRQ_STACK_GUARD_TRIGGER: usize = 2;

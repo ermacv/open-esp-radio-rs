@@ -16,6 +16,10 @@ image = [
     "dep:oer-esp32s31-platform-layout",
     "dep:oer-memory-report",
     "dep:oer-process",
+    "dep:oer-riscv-model",
+    "dep:oer-riscv-stack",
+    "dep:object",
+    "dep:rustc-demangle",
     "dep:sha2",
 ]
 
@@ -31,6 +35,10 @@ oer-chip-profile = { path = "../chip-profile", optional = true }
 oer-esp32s31-platform-layout = { path = "../../platform/esp32s31/layout", optional = true }
 oer-memory-report = { path = "../memory-report", optional = true }
 oer-process = { path = "../process", optional = true }
+oer-riscv-model = { path = "../riscv/model", optional = true }
+oer-riscv-stack = { path = "../riscv/stack", optional = true }
+object = { version = "=0.39.1", default-features = false, features = ["elf", "read", "std"], optional = true }
+rustc-demangle = { version = "=0.1.28", optional = true }
 
 [lints]
 workspace = true

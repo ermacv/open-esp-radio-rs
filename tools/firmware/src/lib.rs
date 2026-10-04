@@ -12,6 +12,8 @@ pub mod flash;
 #[cfg(feature = "image")]
 mod image;
 #[cfg(feature = "image")]
+pub mod interrupt_stack;
+#[cfg(feature = "image")]
 pub mod network;
 #[cfg(feature = "image")]
 mod payload;

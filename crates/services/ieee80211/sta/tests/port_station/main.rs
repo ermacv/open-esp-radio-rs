@@ -53,9 +53,9 @@ use oer_ieee80211_sta::{
 use oer_ieee80211_sta_service::{
     port::{
         EventRouter, PortCoexistence, PortCoexistenceRefused, PortDisconnect, PortLink,
-        PortLinkError, PortProbe, PortRouter, PortScan, PortScanTarget, PortSend, PortStation,
-        PortStationApplication, PortStationConfig, PortStationEnv, PortStationLifecycle,
-        PortStationProfile,
+        PortLinkError, PortLinkSupervision, PortProbe, PortRouter, PortScan, PortScanTarget,
+        PortSend, PortStation, PortStationApplication, PortStationConfig, PortStationEnv,
+        PortStationLifecycle, PortStationProfile,
     },
     scan::{StaCandidateScanService, StaScanBackend},
     station::StaLifecycleService,
@@ -385,6 +385,12 @@ fn profile() -> PortStationProfile<'static> {
         he_power: None,
         he_packet_padding: oer_espressif_ieee80211_policy::he_txop::packet_padding,
         tx_block_ack: None,
+        link: PortLinkSupervision {
+            timeout: oer_espressif_ieee80211_policy::station_link::STATION_INACTIVE_TIME,
+            miss_limit: 10,
+            probe: oer_espressif_ieee80211_policy::station_link::STATION_LINK_PROBE,
+            supported_rates: &RATES,
+        },
         sleep_type: SleepType::None,
         rx_reorder_gap: Duration::from_micros(
             oer_espressif_ieee80211_policy::block_ack::RX_REORDER_GAP_TIMEOUT_MICROS,
@@ -1031,6 +1037,61 @@ fn an_aggregate_and_its_block_ack_stay_within_the_txop_limit_body() {
     assert!(data[0].ampdu && data[0].frames.len() == 3);
     assert!(!data[1].ampdu);
     assert!(station.connection().is_some());
+}
+
+#[test]
+fn a_silent_access_point_is_probed_and_then_left() {
+    on_large_stack(a_silent_access_point_is_probed_and_then_left_body);
+}
+
+fn a_silent_access_point_is_probed_and_then_left_body() {
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    let mut station = connect(&world, &mut ap, world.station(open()));
+    ap.answers_probes = false;
+    let probes_before = ap.probe_destinations.len();
+    let mut delivered = Vec::new();
+
+    // No beacon for 6 s: nothing yet.
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 5_900, &mut delivered),
+        None
+    );
+    assert_eq!(ap.probe_destinations.len(), probes_before);
+    // Then five probes 500 ms apart, three to the access point and two
+    // broadcast, and the station leaves after the last.
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 3_000, &mut delivered),
+        Some(PortDisconnect::BeaconLoss)
+    );
+    ap.absorb(world.model);
+    assert_eq!(
+        ap.probe_destinations[probes_before..],
+        [AP, AP, AP, [0xff; 6], [0xff; 6]]
+    );
+    assert!(station.connection().is_none());
+}
+
+#[test]
+fn an_answered_probe_keeps_the_link() {
+    on_large_stack(an_answered_probe_keeps_the_link_body);
+}
+
+fn an_answered_probe_keeps_the_link_body() {
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    let mut station = connect(&world, &mut ap, world.station(open()));
+    let probes_before = ap.probe_destinations.len();
+    let mut delivered = Vec::new();
+    // The access point sends no beacon but answers the first probe; the
+    // link holds and probing starts over only after another window.
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 6_400, &mut delivered),
+        None
+    );
+    ap.absorb(world.model);
+    assert_eq!(ap.probe_destinations[probes_before..], [AP]);
+    assert_eq!(station.connection().unwrap().link().probes_sent(), 0);
 }
 
 #[test]

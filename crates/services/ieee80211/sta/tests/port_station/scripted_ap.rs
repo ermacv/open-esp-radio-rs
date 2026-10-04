@@ -80,6 +80,10 @@ pub struct ScriptedAp {
     pub outbox: VecDeque<(Vec<u8>, RxMeta)>,
     sequence: u16,
     pub probe_requests: Vec<u8>,
+    /// The destination of every Probe Request.
+    pub probe_destinations: Vec<[u8; 6]>,
+    /// It answers Probe Requests.
+    pub answers_probes: bool,
     pub authentications: usize,
     pub associations: usize,
     pub eapol_from_station: Vec<EapolKeyMessage>,
@@ -125,6 +129,8 @@ impl ScriptedAp {
             outbox: VecDeque::new(),
             sequence: 0,
             probe_requests: Vec::new(),
+            probe_destinations: Vec::new(),
+            answers_probes: true,
             authentications: 0,
             associations: 0,
             eapol_from_station: Vec::new(),
@@ -268,7 +274,12 @@ impl ScriptedAp {
             0x40 => {
                 self.probe_requests
                     .push(model.channel().map_or(0, |channel| channel.number()));
-                if on_channel(model) {
+                self.probe_destinations.push(
+                    frame[4..10]
+                        .try_into()
+                        .expect("a Probe Request's address 1"),
+                );
+                if on_channel(model) && self.answers_probes {
                     let response = self.beacon(0x50, STA, 0);
                     self.outbox.push_back((response, meta(false)));
                 }

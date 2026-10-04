@@ -50,7 +50,8 @@ use crate::{
 
 use super::{
     connected::{
-        ConnectionContext, PortConnection, PortConnectionConfig, PortDisconnect, PortSend,
+        ConnectionContext, PortConnection, PortConnectionConfig, PortDisconnect, PortLinkProbe,
+        PortSend,
     },
     join::{PortAssociation, PortHePower, PortJoin},
     link::{PORT_FRAME_CAPACITY, PortError, PortLink, PortLinkError, PortStationEnv},
@@ -85,6 +86,8 @@ pub struct PortStationProfile<'a> {
     /// The TX Block Ack agreements the station originates; `None`
     /// originates none.
     pub tx_block_ack: Option<PortTxBlockAck>,
+    /// How the station supervises its link once connected.
+    pub link: PortLinkSupervision<'a>,
     /// The power manager's sleep type for each association: the Espressif
     /// station's default is `SleepType::None`, which sleeps only for
     /// coexistence.
@@ -105,6 +108,32 @@ pub struct PortStationProfile<'a> {
     pub ccmp_step: CcmpPacketNumberStep,
     /// The random source of the first SA Query transaction identifier.
     pub sa_query_random: fn() -> u32,
+}
+
+/// How a connected station supervises its link: beacons keep it; after
+/// `timeout` without one it probes the access point under `probe`
+/// (`oer_ieee80211_sta::link_monitor`), and it leaves after the last
+/// probe goes unanswered. The Espressif station's values are
+/// `oer-espressif-ieee80211-policy::station_link`'s `STATION_INACTIVE_TIME`
+/// and `STATION_LINK_PROBE`, with a miss limit of 10.
+#[derive(Clone, Copy, Debug)]
+pub struct PortLinkSupervision<'a> {
+    pub timeout: Duration,
+    /// The consecutive misses a hardware beacon monitor would allow.
+    pub miss_limit: u8,
+    pub probe: oer_ieee80211_sta::link_monitor::StaLinkProbePolicy,
+    /// The supported rates of the station's Probe Requests.
+    pub supported_rates: &'a [u8],
+}
+
+/// Why a station could not supervise its link.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LinkSupervisionError {
+    /// The beacon interval, miss limit or timeout is not one a monitor
+    /// keeps.
+    BeaconLoss(oer_ieee80211_sta::link_monitor::StaBeaconLossConfigError),
+    /// The SSID or rate set is longer than a Probe Request carries.
+    Probe,
 }
 
 /// The TX Block Ack agreements a station originates once connected.
@@ -132,6 +161,8 @@ pub enum PortStationError<E, U> {
     Handshake(RsnHandshakeError<PortLinkError<E>, U>),
     /// The access point's elements give no associated peer.
     Peer(StaAssociatedPeerError),
+    /// The profile's link supervision does not fit the association.
+    LinkSupervision(LinkSupervisionError),
     /// The profile's TX Block Ack policy is not one an originator takes.
     TxBlockAck(oer_ieee80211_sta::block_ack::StaTxBlockAckError),
     KeyInstall(RsnKeyInstallError<PortLinkError<E>>),
@@ -826,6 +857,31 @@ impl<'p, X: PortStationEnv> StaAttemptPort for PortAttemptPort<'p, X> {
             }
             None => None,
         };
+        let supervision = owner.profile.link;
+        let link = match oer_ieee80211_sta::link_monitor::StaBeaconLossConfig::new(
+            config.beacon_interval_tu,
+            supervision.miss_limit,
+            supervision.timeout,
+        ) {
+            Ok(loss) => {
+                oer_ieee80211_sta::link_monitor::StaLinkMonitor::new(loss, supervision.probe)
+            }
+            Err(error) => {
+                return Err(StaConnectedEntryFailure::new(
+                    owner,
+                    StaFailureDisposition::Terminal,
+                    PortStationError::LinkSupervision(LinkSupervisionError::BeaconLoss(error)),
+                ));
+            }
+        };
+        let Some(probe) = PortLinkProbe::new(owner.profile.ssid, supervision.supported_rates)
+        else {
+            return Err(StaConnectedEntryFailure::new(
+                owner,
+                StaFailureDisposition::Terminal,
+                PortStationError::LinkSupervision(LinkSupervisionError::Probe),
+            ));
+        };
         let packet_number = owner
             .packet_number
             .take()
@@ -837,7 +893,12 @@ impl<'p, X: PortStationEnv> StaAttemptPort for PortAttemptPort<'p, X> {
             packet_number,
             tx_block_ack,
             bip,
+            link,
+            probe,
         ));
+        if let Some(connection) = owner.connection.as_mut() {
+            connection.arm_link(owner.timer.now());
+        }
         // The power manager runs for every association: it decides when the
         // station dozes and when it asks its radio system for the air.
         let sleep_type = owner.profile.sleep_type;

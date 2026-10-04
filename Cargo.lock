@@ -3420,6 +3420,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-hil-stand-schema"
+version = "0.1.0"
+dependencies = [
+ "oer-chip-profile",
+ "serde",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
 name = "oer-hil-trace"
 version = "0.1.0"
 dependencies = [

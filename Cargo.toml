@@ -95,6 +95,7 @@ members = [
     "crates/hardware/esp32c5/hal",
     "crates/adapters/esp-hal/esp32s31/soc",
     "crates/adapters/esp-hal/esp32c5/soc",
+    "hil/stand/schema",
     "hil/host/arbiter",
     "hil/host/board",
     "hil/host/board/esp32s31",

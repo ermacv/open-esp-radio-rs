@@ -550,6 +550,31 @@ impl ScriptedAp {
         frame.extend_from_slice(&reason.to_le_bytes());
         frame
     }
+
+    /// A broadcast Deauthentication protected with BIP under the IGTK of
+    /// Message 3, its IPN the transmitter's next.
+    pub fn bip_deauthentication(
+        &mut self,
+        bip: &mut oer_ieee80211_rsn::bip::BipTransmitter,
+        reason: u16,
+    ) -> Vec<u8> {
+        let mut frame = self.management(0xc0, [0xff; 6]);
+        frame.extend_from_slice(&reason.to_le_bytes());
+        let length = frame.len();
+        frame.resize(
+            length + oer_ieee80211_rsn::bip::MANAGEMENT_MIC_ELEMENT_LEN,
+            0,
+        );
+        let protected = bip.protect(&mut frame, length).unwrap();
+        frame.truncate(protected);
+        frame
+    }
+}
+
+/// The BIP transmitter of the access point's IGTK, the one an SAE
+/// association's Message 3 delivers.
+pub fn bip_transmitter() -> oer_ieee80211_rsn::bip::BipTransmitter {
+    oer_ieee80211_rsn::bip::BipTransmitter::new(&RsnIgtk::new(4, [0; 6], IGTK).unwrap())
 }
 
 /// The access point hears the station and is heard only on its channel.

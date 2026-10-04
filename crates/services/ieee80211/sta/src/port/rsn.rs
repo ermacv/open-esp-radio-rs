@@ -14,6 +14,7 @@ use oer_ieee80211_mac::{
 use oer_ieee80211_rsn::{
     OwnedEapolFrame, RsnInterface,
     aes::{AsyncRsnKeyUnwrap, RsnUnwrappedKeyData},
+    bip::BipReceiver,
     frames::RsnTxFrame,
     keys::{RsnKeyInstall, RsnKeyKind},
     runner::{
@@ -43,6 +44,14 @@ pub struct PortKeys {
     pub group_key_id: u8,
     /// The group key's receive sequence counter from Message 3.
     pub group_receive_sequence: [u8; 8],
+}
+
+/// What a completed handshake installed: the port's keys and, for an
+/// association that protects its management frames, the BIP receive state
+/// of Message 3's IGTK, which the station keeps in software.
+pub struct PortInstalledKeys {
+    pub keys: PortKeys,
+    pub bip: Option<BipReceiver>,
 }
 
 /// The EAPOL payload of an unprotected data MPDU `bssid` sent.
@@ -210,9 +219,12 @@ impl<'a, 'p, X: PortStationEnv> PortKeyInstall<'a, 'p, X> {
 
 impl<X: PortStationEnv> RsnKeyInstallBackend for PortKeyInstall<'_, '_, X> {
     type Error = PortLinkError<PortError<X>>;
-    type InstalledKeys = PortKeys;
+    type InstalledKeys = PortInstalledKeys;
 
-    fn install_keys(&mut self, request: &RsnStaKeyInstallRequest) -> Result<PortKeys, Self::Error> {
+    fn install_keys(
+        &mut self,
+        request: &RsnStaKeyInstallRequest,
+    ) -> Result<PortInstalledKeys, Self::Error> {
         let RsnKeyKind::Group { key_id, .. } = request.group().kind() else {
             return Err(PortLinkError::MissingState);
         };
@@ -224,15 +236,19 @@ impl<X: PortStationEnv> RsnKeyInstallBackend for PortKeyInstall<'_, '_, X> {
                 return Err(error);
             }
         };
-        Ok(PortKeys {
-            pairwise,
-            group,
-            group_key_id: key_id,
-            group_receive_sequence: *request.group().receive_sequence(),
+        Ok(PortInstalledKeys {
+            keys: PortKeys {
+                pairwise,
+                group,
+                group_key_id: key_id,
+                group_receive_sequence: *request.group().receive_sequence(),
+            },
+            bip: request.igtk().map(BipReceiver::new),
         })
     }
 
-    fn rollback_keys(&mut self, keys: PortKeys) -> Result<(), Self::Error> {
+    fn rollback_keys(&mut self, installed: PortInstalledKeys) -> Result<(), Self::Error> {
+        let keys = installed.keys;
         let group = self.link.apply(LowerMacSetting::RemoveKey(keys.group));
         self.link.apply(LowerMacSetting::RemoveKey(keys.pairwise))?;
         group
@@ -241,8 +257,9 @@ impl<X: PortStationEnv> RsnKeyInstallBackend for PortKeyInstall<'_, '_, X> {
     async fn transmit_message4<'b>(
         &'b mut self,
         frame: &'b RsnTxFrame<RSN_HANDSHAKE_EAPOL_CAPACITY>,
-        keys: &'b mut PortKeys,
+        installed: &'b mut PortInstalledKeys,
     ) -> Result<(), Self::Error> {
+        let keys = installed.keys;
         let sequence_number = self.sequences.take_non_qos();
         match self.protection {
             Wpa2Message4Protection::Unprotected => {

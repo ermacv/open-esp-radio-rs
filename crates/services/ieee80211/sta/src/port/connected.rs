@@ -31,8 +31,8 @@ use oer_ieee80211_mac::{
     station_power_save::StaAssociationId,
 };
 use oer_ieee80211_rsn::{
-    OwnedEapolFrame, RsnInterface, keys::RsnKeyKind, runner::RSN_HANDSHAKE_EAPOL_CAPACITY,
-    supplicant::RsnConnectedSupplicant,
+    OwnedEapolFrame, RsnInterface, bip::BipReceiver, keys::RsnKeyKind,
+    runner::RSN_HANDSHAKE_EAPOL_CAPACITY, supplicant::RsnConnectedSupplicant,
 };
 use oer_ieee80211_rsn_service::supplicant::{RsnGroupMessage1Step, process_group_message1};
 use oer_ieee80211_sta::{
@@ -128,6 +128,9 @@ pub struct PortRxCounters {
     pub eapol_rejected: u32,
     /// ADDBA Responses that named no live negotiation.
     pub stale_addba_responses: u32,
+    /// Group-addressed robust management frames that did not verify under
+    /// the IGTK, or arrived without one.
+    pub bip_rejected: u32,
 }
 
 /// The outcome of offering one frame for transmission.
@@ -177,6 +180,8 @@ pub struct PortConnection<P: Ieee80211LowerMacPort> {
     eapol: Option<OwnedEapolFrame<RSN_HANDSHAKE_EAPOL_CAPACITY>>,
     /// The station's TX Block Ack agreements with the access point.
     tx_block_ack: Option<StaTxBlockAckOriginator>,
+    /// The BIP receive state under the association's IGTK.
+    bip: Option<BipReceiver>,
     counters: PortRxCounters,
 }
 
@@ -197,6 +202,7 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
         keys: Option<PortKeys>,
         packet_number: CcmpTxPacketNumber,
         tx_block_ack: Option<StaTxBlockAckOriginator>,
+        bip: Option<BipReceiver>,
     ) -> Self {
         let group_replay = keys
             .and_then(|keys| {
@@ -219,6 +225,7 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
             tx_counters: PortTxCounters::default(),
             eapol: None,
             tx_block_ack,
+            bip,
             counters: PortRxCounters::default(),
         }
     }
@@ -761,6 +768,12 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
             self.counters.undecrypted = self.counters.undecrypted.saturating_add(1);
             return Ok(None);
         }
+        if self.config.management_protection
+            && wire::address1(bytes).is_some_and(wire::is_group)
+            && robust_management(bytes)
+        {
+            return Ok(self.group_management(bytes));
+        }
         match wire::subtype(bytes) {
             BEACON_SUBTYPE => {
                 if let Ok(beacon) =
@@ -834,6 +847,30 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
             }
             _ => Ok(None),
         }
+    }
+
+    /// A group-addressed robust management frame of an association that
+    /// protects its management frames: it counts only when it verifies
+    /// under the IGTK, and then a Deauthentication or Disassociation ends the
+    /// association; a group Action carries nothing the station answers.
+    fn group_management(&mut self, bytes: &[u8]) -> Option<PortDisconnect> {
+        if !self
+            .bip
+            .as_mut()
+            .is_some_and(|bip| bip.verify(bytes).is_ok())
+        {
+            self.counters.bip_rejected = self.counters.bip_rejected.saturating_add(1);
+            return None;
+        }
+        let disconnect = parse_sta_disconnect(bytes, [0xff; 6], self.config.bssid)?;
+        Some(match disconnect.kind {
+            StaDisconnectKind::Deauthentication => PortDisconnect::Deauthenticated {
+                reason_code: disconnect.reason_code,
+            },
+            StaDisconnectKind::Disassociation => PortDisconnect::Disassociated {
+                reason_code: disconnect.reason_code,
+            },
+        })
     }
 
     async fn block_ack_action<X: PortStationEnv<Port = P>>(
@@ -1022,6 +1059,12 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
                     return Err(PortLinkError::MissingState);
                 };
                 let receive_sequence = *request.group().receive_sequence();
+                if let Some(igtk) = request.igtk() {
+                    match &mut self.bip {
+                        Some(bip) => bip.rekey(igtk),
+                        None => self.bip = Some(BipReceiver::new(igtk)),
+                    }
+                }
                 let installed = context.link.port().install_key(KeyInstall {
                     vif: context.link.config().vif,
                     cipher: Cipher::Ccmp128,
@@ -1345,6 +1388,18 @@ fn decrypted(frame: &PortFrame) -> bool {
 
 /// A Deauthentication or Disassociation of `bssid` to `local`, its CCMP
 /// header skipped when protected.
+/// A robust management frame: a Deauthentication, a Disassociation or an
+/// Action of a robust category.
+fn robust_management(frame: &[u8]) -> bool {
+    match wire::subtype(frame) {
+        DISASSOCIATION_SUBTYPE | DEAUTHENTICATION_SUBTYPE => true,
+        ACTION_SUBTYPE => wire::management_body(frame)
+            .and_then(|body| body.first().copied())
+            .is_some_and(is_robust_action_category),
+        _ => false,
+    }
+}
+
 fn parse_disconnect(frame: &[u8], local: MacAddress, bssid: MacAddress) -> Option<StaDisconnect> {
     if !wire::is_protected(frame) {
         return parse_sta_disconnect(frame, local, bssid);

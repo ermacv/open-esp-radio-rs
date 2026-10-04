@@ -1373,3 +1373,56 @@ fn queued_frames_of_an_agreed_tid_leave_as_one_a_mpdu_body() {
         .collect();
     assert!(sequences.windows(2).all(|pair| pair[1] == pair[0] + 1));
 }
+
+#[test]
+fn group_robust_management_counts_only_when_it_verifies_under_the_igtk() {
+    on_large_stack(group_robust_management_counts_only_when_it_verifies_under_the_igtk_body);
+}
+
+fn group_robust_management_counts_only_when_it_verifies_under_the_igtk_body() {
+    static PMKSA: StaSharedPmksa = StaSharedPmksa::new();
+    let world = World::new();
+    let commit = SaeCommit::new(
+        SaePasswordElement::hunting_and_pecking(PASSPHRASE, AP, STA).unwrap(),
+        [0x40; 32],
+        [0x41; 32],
+    )
+    .unwrap();
+    let mut ap = ScriptedAp::new(ApSecurity::Sae).with_sae_commit(commit);
+    let security = StaAttemptSecurity::new(
+        StaPersonalCredentials::wpa3(SaePassword::new(PASSPHRASE).unwrap(), sae_random, &PMKSA),
+        SNONCE,
+        counters(),
+        Wpa2Message4Protection::Unprotected,
+    );
+    let mut station = connect(&world, &mut ap, world.station(security));
+    assert!(station.connection().unwrap().config().management_protection);
+    let mut bip = scripted_ap::bip_transmitter();
+    let mut delivered = Vec::new();
+
+    // A broadcast Deauthentication without a Management MIC element, one
+    // whose MIC fails and a group SA Query without one are all dropped.
+    let mut plain = ap.management(0xc0, [0xff; 6]);
+    plain.extend_from_slice(&7_u16.to_le_bytes());
+    ap.queue(plain);
+    let mut forged = ap.bip_deauthentication(&mut bip, 7);
+    *forged.last_mut().unwrap() ^= 1;
+    ap.queue(forged);
+    let mut action = ap.management(0xd0, [0xff; 6]);
+    action.extend_from_slice(&[8, 0, 1, 2]);
+    ap.queue(action);
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 5, &mut delivered),
+        None
+    );
+    assert_eq!(station.connection().unwrap().counters().bip_rejected, 3);
+
+    // A verified one ends the association.
+    let verified = ap.bip_deauthentication(&mut bip, 3);
+    ap.queue(verified);
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 5, &mut delivered),
+        Some(PortDisconnect::Deauthenticated { reason_code: 3 })
+    );
+    assert!(station.connection().is_none());
+}

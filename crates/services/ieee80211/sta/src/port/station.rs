@@ -170,6 +170,9 @@ pub struct PortStation<'p, X: PortStationEnv> {
     peer: Option<StaAssociatedPeer>,
     pending: Option<RsnPendingKeyInstall>,
     keys: Option<PortKeys>,
+    /// The BIP receive state of an association that protects its
+    /// management frames.
+    bip: Option<oer_ieee80211_rsn::bip::BipReceiver>,
     packet_number: Option<CcmpTxPacketNumber>,
     connection: Option<PortConnection<X::Port>>,
     report: PortAttemptReport,
@@ -203,6 +206,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             peer: None,
             pending: None,
             keys: None,
+            bip: None,
             packet_number: None,
             connection: None,
             report: PortAttemptReport::default(),
@@ -656,9 +660,10 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         .await
         .map_err(|error| StaAttemptStepError::retry_current(PortStationError::KeyInstall(error)))?;
         self.report.keys = Some(established.metadata());
-        let (keys, connected) = established.into_parts();
+        let (installed, connected) = established.into_parts();
         self.security.set_connected(connected);
-        self.keys = Some(keys);
+        self.keys = Some(installed.keys);
+        self.bip = installed.bip;
         self.packet_number = Some(packet_number);
         Ok(())
     }
@@ -780,11 +785,13 @@ impl<'p, X: PortStationEnv> StaAttemptPort for PortAttemptPort<'p, X> {
             .packet_number
             .take()
             .unwrap_or(CcmpTxPacketNumber::new(owner.profile.ccmp_step));
+        let bip = owner.bip.take();
         owner.connection = Some(PortConnection::new(
             config,
             owner.keys,
             packet_number,
             tx_block_ack,
+            bip,
         ));
         Ok(owner)
     }

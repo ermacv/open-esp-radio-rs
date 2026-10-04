@@ -244,7 +244,8 @@ struct State {
     /// Each interface's TSF as the value it was last set to, the model's
     /// radio clock then and its relation.
     tsf: [ModelTsf; 2],
-    keys: [bool; 4],
+    /// The scope of the key each slot holds.
+    keys: [Option<KeyScope>; 4],
     rx_block_ack: Vec<RxBlockAckAgreement>,
     /// The EDCA parameter set last applied, if any.
     edca: Option<oer_ieee80211_mac::extensions::wmm::WmmParameterSet>,
@@ -361,6 +362,11 @@ impl LowerMacModel {
             rx_lent: Rc::new(Cell::new(0)),
             now: Cell::new(Ieee80211Instant::from_micros(0)),
         }
+    }
+
+    /// The scopes of the keys installed, in slot order.
+    pub fn installed_keys(&self) -> Vec<KeyScope> {
+        self.state.borrow().keys.iter().flatten().copied().collect()
     }
 
     /// Receive buffers the model lent, queued or with the consumer, and not
@@ -545,7 +551,12 @@ impl LowerMacModel {
             return Err(SubmitError::UnknownVif);
         }
         if let KeySelector::Key(KeyHandle(slot)) = attempt.key
-            && !state.keys.get(usize::from(slot)).copied().unwrap_or(false)
+            && state
+                .keys
+                .get(usize::from(slot))
+                .copied()
+                .flatten()
+                .is_none()
         {
             return Err(SubmitError::UnknownKey);
         }
@@ -726,8 +737,8 @@ impl Ieee80211LowerMacPort for LowerMacModel {
             },
             LowerMacSetting::RemoveKey(KeyHandle(slot)) => {
                 match state.keys.get_mut(usize::from(slot)) {
-                    Some(installed @ true) => {
-                        *installed = false;
+                    Some(installed @ Some(_)) => {
+                        *installed = None;
                         Ok(())
                     }
                     _ => Err(SettingError::UnknownKey),
@@ -827,10 +838,10 @@ impl Ieee80211LowerMacPort for LowerMacModel {
         if key.key.len() != 16 {
             return Ok(Err(SettingError::InvalidKey));
         }
-        let Some(slot) = state.keys.iter().position(|installed| !installed) else {
+        let Some(slot) = state.keys.iter().position(Option::is_none) else {
             return Ok(Err(SettingError::NoKeySlot));
         };
-        state.keys[slot] = true;
+        state.keys[slot] = Some(key.scope);
         Ok(Ok(KeyHandle(slot as u8)))
     }
 

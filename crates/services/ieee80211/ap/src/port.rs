@@ -18,36 +18,52 @@
 //!   repeated request answered again without resetting the peer;
 //! - removes a peer that disassociates or deauthenticates, and closes one
 //!   whose authentication or association went inactive with a
-//!   Disassociation (when it was associated) and a Deauthentication.
+//!   Disassociation (when it was associated) and a Deauthentication;
+//! - in a WPA2-Personal BSS, runs the four-way handshake as the
+//!   authenticator: Message 1 after a successful association, Message 3 on
+//!   a verified Message 2, their retransmissions, and on a verified
+//!   Message 4 the peer's pairwise key installed in the port before the
+//!   peer is authorized. [`PortAccessPoint::start`] installs the group key.
+//!   A peer's pairwise key is removed whenever the peer is.
 //!
-//! An RSN BSS (its WPA2 handshake and pairwise keys) and SAE are not served
-//! yet: [`PortAccessPoint::new`] refuses an RSN service. The composition
-//! enables the port and polls the router beside the access point.
+//! WPA3 (SAE and the IGTK) is not served yet: [`PortAccessPoint::new`]
+//! refuses a WPA3 service. The composition enables the port and polls the
+//! router beside the access point.
 
 use oer_ieee80211_ap::{
-    AccessPointService, ApAssociationCapabilities, ApMlmeAction, ApPeerClose, ApPeerCloseKind,
-    ApPeerPhase, ApServiceError, beacon::ApBeacon, limits::AP_TIM_VIRTUAL_BITMAP_OCTETS,
+    AP_MAX_CLIENTS, AccessPointService, ApAssociationCapabilities, ApMlmeAction, ApPeerClose,
+    ApPeerCloseKind, ApPeerPhase, ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
+    beacon::ApBeacon, limits::AP_TIM_VIRTUAL_BITMAP_OCTETS,
 };
 use oer_ieee80211_lower_mac::{
-    Channel, CoexPriority, KeySelector, LowerMacBeaconTiming, PhyRate, ReceiveFilter, SettingError,
+    Channel, Cipher, CoexPriority, Ieee80211LowerMacPort, KeyHandle, KeyInstall, KeyScope,
+    KeySelector, LowerMacBeaconTiming, LowerMacSetting, PhyRate, ReceiveFilter, SettingError,
     VifTsf,
 };
 use oer_ieee80211_mac::{
     ap::{
-        ApAssociationResponseError, ApManagementRequest, ApPeerDisconnectKind,
-        parse_ap_management_request, probe, probe::ResponseError, profile::Advertisement,
-        write_ap_peer_disconnect, write_ht_association_response_frame_for_security,
-        write_open_authentication_response,
+        ApAssociationResponseError, ApDataFrame, ApDataFrameError, ApManagementRequest,
+        ApPeerDisconnectKind, parse_ap_management_request, probe, probe::ResponseError,
+        profile::Advertisement, write_ap_peer_disconnect,
+        write_ht_association_response_frame_for_security, write_open_authentication_response,
     },
     beacon::{AP_BEACON_CAPACITY, ApBeaconBuildError, TimBitmapError, TimVirtualBitmap},
     channel::WifiChannel,
+    data::{
+        DataInterfaceRole, IEEE80211_LEGACY_DATA_HEADER_LEN, IEEE80211_QOS_DATA_HEADER_LEN,
+        plan_data_decapsulation,
+    },
     protection::ApBssProtection,
     qos::WmmAccessCategory,
-    security::LinkProtection,
+    security::{ApSecurityPolicy, LinkProtection},
     sequence::SequenceNumber,
     ssid::WifiSsid,
     tsf::TsfInstant,
 };
+use oer_ieee80211_rsn::{
+    OwnedEapolFrame, RsnInterface, frames::RsnTxFrame, runner::RSN_HANDSHAKE_EAPOL_CAPACITY,
+};
+use oer_ieee80211_upper_mac::TxReport;
 use oer_ieee80211_upper_mac_service::{
     EventRouter,
     client::{PortClient, PortClientEnv, PortClientError, PortError, PortInput},
@@ -69,6 +85,10 @@ const REASON_INACTIVITY: u16 = 4;
 /// The reason of every other access-point teardown: the previous
 /// authentication is no longer valid.
 const REASON_AUTHENTICATION_INVALID: u16 = 2;
+/// The EtherType of EAPOL.
+const EAPOL_ETHER_TYPE: u16 = 0x888e;
+/// An EAPOL-Key frame of the four-way handshake.
+type EapolFrame = RsnTxFrame<RSN_HANDSHAKE_EAPOL_CAPACITY>;
 
 /// The event router of an access point's port.
 pub type PortApRouter<'p, X> =
@@ -78,9 +98,19 @@ pub type PortApRouter<'p, X> =
 pub type PortApClient<'p, X> = PortClient<'p, X, PORT_AP_EXCHANGES, PORT_AP_BACKLOG>;
 
 /// The types an access point over the port is built from: its port and
-/// transmit policy ([`PortClientEnv`]) and the image's monotonic time.
+/// transmit policy ([`PortClientEnv`]), the image's monotonic time and the
+/// source of each handshake's authenticator material.
 pub trait PortApEnv: PortClientEnv {
     type Timer: Timer;
+    type Authenticator: PortApAuthenticator;
+}
+
+/// The fresh material of each WPA2 four-way handshake the access point
+/// starts.
+pub trait PortApAuthenticator {
+    /// The authenticator's nonce, unpredictable, and the initial EAPOL-Key
+    /// replay counter.
+    fn handshake_material(&mut self) -> ([u8; 32], u64);
 }
 
 /// The BSS an access point runs; its security is its service's.
@@ -117,6 +147,10 @@ pub struct PortApCounters {
     /// Management requests the access point does not serve yet (SAE,
     /// Block Ack actions).
     pub unserved: u32,
+    /// EAPOL-Key frames sent, retransmissions included.
+    pub eapol_sent: u32,
+    /// Peers authorized by a completed four-way handshake.
+    pub handshakes: u32,
 }
 
 /// Why an access point could not be built.
@@ -125,8 +159,8 @@ pub enum PortApBuildError {
     Beacon(ApBeaconBuildError),
     /// The service's address is not the client's interface address.
     AddressMismatch,
-    /// The service's BSS is protected; the access point serves an Open BSS
-    /// only.
+    /// The service's BSS is WPA3-Personal, whose SAE and IGTK the access
+    /// point does not serve yet.
     SecurityUnsupported,
 }
 
@@ -140,8 +174,26 @@ pub enum PortApError<E> {
     Probe(ResponseError),
     Response(ApAssociationResponseError),
     Service(ApServiceError),
+    Wpa2(ApWpa2Error),
+    Data(ApDataFrameError),
     /// The port refused the interface's TSF restart.
     Tsf(SettingError),
+    /// The port refused a key or its removal.
+    Key(SettingError),
+    /// The port holds the keys of no more peers.
+    KeysFull,
+}
+
+impl<E> From<ApWpa2Error> for PortApError<E> {
+    fn from(error: ApWpa2Error) -> Self {
+        Self::Wpa2(error)
+    }
+}
+
+impl<E> From<ApDataFrameError> for PortApError<E> {
+    fn from(error: ApDataFrameError) -> Self {
+        Self::Data(error)
+    }
 }
 
 impl<E> From<PortClientError<E>> for PortApError<E> {
@@ -166,9 +218,14 @@ impl<E> From<ApServiceError> for PortApError<E> {
 pub struct PortAccessPoint<'p, X: PortApEnv> {
     client: PortApClient<'p, X>,
     timer: X::Timer,
+    authenticator: X::Authenticator,
     profile: PortApProfile<'p>,
     beacon: ApBeacon<'p>,
     service: AccessPointService<'p>,
+    /// The group key the port holds, in a protected BSS.
+    group_key: Option<KeyHandle>,
+    /// The pairwise key the port holds for each authorized peer.
+    pairwise_keys: [Option<([u8; 6], KeyHandle)>; AP_MAX_CLIENTS],
     /// The protection the beacon template carries.
     advertised: ApBssProtection,
     /// Before it no Probe Response goes out.
@@ -182,6 +239,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     pub fn new(
         client: PortApClient<'p, X>,
         timer: X::Timer,
+        authenticator: X::Authenticator,
         profile: PortApProfile<'p>,
         service: AccessPointService<'p>,
         storage: &'p mut [u8; AP_BEACON_CAPACITY],
@@ -189,7 +247,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         if service.address() != client.config().address {
             return Err(PortApBuildError::AddressMismatch);
         }
-        if service.link_protection() != LinkProtection::Open {
+        if service.security_policy() == ApSecurityPolicy::Wpa3Personal {
             return Err(PortApBuildError::SecurityUnsupported);
         }
         let beacon = ApBeacon::new(
@@ -207,9 +265,12 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         Ok(Self {
             client,
             timer,
+            authenticator,
             profile,
             beacon,
             service,
+            group_key: None,
+            pairwise_keys: [None; AP_MAX_CLIENTS],
             advertised: ApBssProtection::default(),
             next_probe_response: Instant::EPOCH,
             counters: PortApCounters::default(),
@@ -230,7 +291,8 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     }
 
     /// Tune to the BSS's channel, receive the BSS and the Probe Requests
-    /// the access point answers, and restart the interface's TSF.
+    /// the access point answers, restart the interface's TSF and, in a
+    /// protected BSS, install the group key.
     pub async fn start(&mut self) -> Result<(), PortApError<PortError<X>>> {
         self.client
             .retune(Channel::from_wifi_channel(self.profile.channel))
@@ -247,7 +309,57 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 at: TsfInstant::from_micros(0),
             })
             .map_err(PortClientError::Port)?
-            .map_err(PortApError::Tsf)
+            .map_err(PortApError::Tsf)?;
+        if self.service.link_protection() == LinkProtection::Ccmp && self.group_key.is_none() {
+            let gtk = self.service.gtk()?;
+            let (key_id, key) = (gtk.key_id(), *gtk.key());
+            self.group_key = Some(self.install_key(KeyScope::Group { key_id }, &key)?);
+        }
+        Ok(())
+    }
+
+    fn install_key(
+        &self,
+        scope: KeyScope,
+        key: &[u8],
+    ) -> Result<KeyHandle, PortApError<PortError<X>>> {
+        self.client
+            .port()
+            .install_key(KeyInstall {
+                vif: self.client.config().vif,
+                cipher: Cipher::Ccmp128,
+                scope,
+                key,
+            })
+            .map_err(PortClientError::Port)?
+            .map_err(PortApError::Key)
+    }
+
+    /// Remove `peer`'s pairwise key from the port, if it holds one.
+    fn remove_pairwise_key(&mut self, peer: [u8; 6]) -> Result<(), PortApError<PortError<X>>> {
+        let Some(slot) = self
+            .pairwise_keys
+            .iter_mut()
+            .find(|slot| slot.is_some_and(|(address, _)| address == peer))
+        else {
+            return Ok(());
+        };
+        let Some((_, handle)) = slot.take() else {
+            return Ok(());
+        };
+        self.client
+            .apply(LowerMacSetting::RemoveKey(handle))
+            .map_err(|error| match error {
+                PortClientError::Setting(error) => PortApError::Key(error),
+                error => PortApError::Client(error),
+            })
+    }
+
+    /// Forget a peer: its pairwise key, then its state.
+    fn remove_peer(&mut self, peer: [u8; 6]) -> Result<(), PortApError<PortError<X>>> {
+        self.remove_pairwise_key(peer)?;
+        self.service.remove_peer(peer)?;
+        Ok(())
     }
 
     /// Serve the BSS until `deadline`: a beacon at every TBTT, a response
@@ -264,12 +376,27 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 self.close_peer(close).await?;
                 continue;
             }
+            match self
+                .service
+                .take_due_wpa2_retry::<RSN_HANDSHAKE_EAPOL_CAPACITY>(now)?
+            {
+                ApWpa2RetryProgress::Transmit { peer, frame } => {
+                    self.send_eapol(peer, &frame, true).await?;
+                    continue;
+                }
+                ApWpa2RetryProgress::Close(close) => {
+                    self.close_peer(close).await?;
+                    continue;
+                }
+                ApWpa2RetryProgress::None => {}
+            }
             if now >= deadline {
                 return Ok(());
             }
             let wake = [
                 self.beacon.next_publication(),
                 self.service.next_peer_deadline(),
+                self.service.next_wpa2_retry_deadline(),
             ]
             .into_iter()
             .flatten()
@@ -364,6 +491,13 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         {
             self.service.observe_activity(sender, now)?;
         }
+        // Data: only EAPOL of a peer in its handshake is served yet.
+        if frame
+            .first()
+            .is_some_and(|control| (control >> 2) & 0b11 == 2)
+        {
+            return self.receive_eapol(frame, now).await;
+        }
         let address = self.client.config().address;
         let retry = frame.get(1).is_some_and(|flags| flags & 0x08 != 0);
         match parse_ap_management_request(self.profile.advertisement, frame, address) {
@@ -398,7 +532,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                     .peer_status(peer)
                     .is_some_and(|status| status.phase != ApPeerPhase::Closing)
                 {
-                    self.service.remove_peer(peer)?;
+                    self.remove_peer(peer)?;
                     self.counters.peers_left = self.counters.peers_left.saturating_add(1);
                 }
                 Ok(())
@@ -458,6 +592,9 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         let status = if repeated {
             0
         } else {
+            // A new authentication ends the peer's earlier pairwise-key
+            // epoch before the service starts it over.
+            self.remove_pairwise_key(peer)?;
             let ApMlmeAction::AuthenticationResponse { status, .. } =
                 self.service.authenticate_open(peer, now)
             else {
@@ -480,7 +617,10 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     }
 
     /// Answer an association of an authenticated peer; a repeated request
-    /// of an associated peer is answered again with its association.
+    /// of an associated peer (in its handshake, or authorized in an Open
+    /// BSS) is answered again with its association and starts no second
+    /// handshake. A successful association in a protected BSS begins the
+    /// four-way handshake.
     async fn associate(
         &mut self,
         peer: [u8; 6],
@@ -491,18 +631,32 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         let Some(status) = self.service.peer_status(peer) else {
             return Ok(());
         };
-        let (result, association_id, ht) = if status.phase == ApPeerPhase::Authorized
-            && self.service.matches_association_security(security)
-        {
+        let protected = self.service.link_protection() == LinkProtection::Ccmp;
+        let repeated = self.service.matches_association_security(security)
+            && (status.phase == ApPeerPhase::Securing
+                || (!protected && status.phase == ApPeerPhase::Authorized));
+        let (result, association_id, ht) = if repeated {
             (0, status.association_id, status.ht)
         } else if status.phase == ApPeerPhase::Authenticated {
+            let action = if protected {
+                let (nonce, replay_counter) = self.authenticator.handshake_material();
+                self.service.associate_rsn(
+                    peer,
+                    security,
+                    capabilities,
+                    nonce,
+                    replay_counter,
+                    now,
+                )?
+            } else {
+                self.service
+                    .associate_open(peer, security, capabilities, now)?
+            };
             let ApMlmeAction::AssociationResponse {
                 status,
                 association_id,
                 ..
-            } = self
-                .service
-                .associate_open(peer, security, capabilities, now)?
+            } = action
             else {
                 return Err(PortApError::Service(ApServiceError::WrongPeerPhase));
             };
@@ -527,6 +681,118 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         )?;
         self.send_management(&response[..length]).await?;
         self.counters.associations = self.counters.associations.saturating_add(1);
+        if protected && !repeated && association_id != 0 {
+            let message1: EapolFrame = self.service.begin_wpa2_frame(peer)?;
+            self.send_eapol(peer, &message1, false).await?;
+        }
+        Ok(())
+    }
+
+    /// Send one EAPOL-Key frame to a peer in its handshake, unprotected and
+    /// acknowledged, and arm its retransmission.
+    async fn send_eapol(
+        &mut self,
+        peer: [u8; 6],
+        frame: &EapolFrame,
+        retransmission: bool,
+    ) -> Result<(), PortApError<PortError<X>>> {
+        let mut mpdu = [0; RSN_HANDSHAKE_EAPOL_CAPACITY + 64];
+        let sequence_number = self.service.current_data_sequence();
+        let length = ApDataFrame {
+            access_point: self.service.address(),
+            destination: peer,
+            sequence_number,
+            ether_type: EAPOL_ETHER_TYPE,
+            payload: frame.as_bytes(),
+        }
+        .encode(&mut mpdu)?;
+        // The sequence number is spent only once the frame encoded.
+        self.service.next_data_sequence();
+        let report = self
+            .client
+            .transmit(
+                &mpdu[..length],
+                KeySelector::Plaintext,
+                WmmAccessCategory::Voice,
+                self.profile.management_rate,
+                self.profile.coex,
+            )
+            .await?;
+        let acknowledged =
+            matches!(report, TxReport::Mpdu(status) if status.acknowledged == Some(true));
+        self.counters.eapol_sent = self.counters.eapol_sent.saturating_add(1);
+        self.service
+            .observe_wpa2_transmit(peer, retransmission, acknowledged, self.timer.now())?;
+        Ok(())
+    }
+
+    /// Serve one EAPOL-Key frame of a peer in its handshake: answer
+    /// Message 2 with Message 3; on Message 4 install the peer's pairwise
+    /// key and authorize it; close a peer the handshake rejected. Every
+    /// other data frame, and EAPOL of a peer outside its handshake, is
+    /// ignored.
+    async fn receive_eapol(
+        &mut self,
+        mpdu: &[u8],
+        now: Instant,
+    ) -> Result<(), PortApError<PortError<X>>> {
+        let header = if mpdu[0] & 0x80 != 0 {
+            IEEE80211_QOS_DATA_HEADER_LEN
+        } else {
+            IEEE80211_LEGACY_DATA_HEADER_LEN
+        };
+        let Some(length) = mpdu.len().checked_sub(header) else {
+            return Ok(());
+        };
+        let Ok(plan) =
+            plan_data_decapsulation(DataInterfaceRole::AccessPoint, mpdu, header, length)
+        else {
+            return Ok(());
+        };
+        let peer = plan.source;
+        if plan.ether_type != EAPOL_ETHER_TYPE
+            || plan.destination != self.service.address()
+            || !self
+                .service
+                .peer_status(peer)
+                .is_some_and(|status| status.phase == ApPeerPhase::Securing)
+        {
+            return Ok(());
+        }
+        let Some(payload) =
+            mpdu.get(plan.payload_offset..plan.payload_offset + plan.payload_length)
+        else {
+            return Ok(());
+        };
+        let Ok(frame) = OwnedEapolFrame::<RSN_HANDSHAKE_EAPOL_CAPACITY>::try_copy(
+            RsnInterface::AccessPoint,
+            peer,
+            payload,
+        ) else {
+            return Ok(());
+        };
+        match self.service.on_eapol(peer, frame)? {
+            ApWpa2Progress::None => Ok(()),
+            ApWpa2Progress::Transmit(frame) => self.send_eapol(peer, &frame, false).await,
+            ApWpa2Progress::AuthorizePeer => self.authorize(peer, now),
+            ApWpa2Progress::DeauthenticatePeer => {
+                let close = self.service.begin_wpa2_failure_close(peer)?;
+                self.close_peer(close).await
+            }
+        }
+    }
+
+    /// Install the verified handshake's pairwise key in the port, then open
+    /// the peer's controlled port.
+    fn authorize(&mut self, peer: [u8; 6], now: Instant) -> Result<(), PortApError<PortError<X>>> {
+        let Some(slot) = self.pairwise_keys.iter().position(Option::is_none) else {
+            return Err(PortApError::KeysFull);
+        };
+        let key = *self.service.pending_ptk(peer)?.temporal_key();
+        let handle = self.install_key(KeyScope::Pairwise { peer }, &key)?;
+        self.pairwise_keys[slot] = Some((peer, handle));
+        self.service.authorize(peer, now)?;
+        self.counters.handshakes = self.counters.handshakes.saturating_add(1);
         Ok(())
     }
 
@@ -548,7 +814,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             REASON_AUTHENTICATION_INVALID,
         )
         .await?;
-        self.service.remove_peer(close.peer)?;
+        self.remove_peer(close.peer)?;
         self.counters.peers_closed = self.counters.peers_closed.saturating_add(1);
         Ok(())
     }

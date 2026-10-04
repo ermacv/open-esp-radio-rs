@@ -37,7 +37,7 @@ fn load(elf: &[u8]) -> Result<gimli::Dwarf<Reader>> {
 
 /// A demangled name without the crate disambiguators v0 symbols carry
 /// (`core[1a2b]::task` reads `core::task`).
-fn plain(name: &str) -> String {
+pub(crate) fn plain(name: &str) -> String {
     let mut out = String::with_capacity(name.len());
     let mut depth = 0_u32;
     for c in name.chars() {

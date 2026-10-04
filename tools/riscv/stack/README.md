@@ -132,7 +132,14 @@ an ELF function symbol with the kept body's size (a symbol of size zero, a
 linker script's or an assembly label, names no function of its own): an
 address several such functions share matches by the subprogram of any of
 them (a merged function keeps one without an address, by its linkage name),
-and one without a subprogram makes it a candidate whatever the field. A site whose
+and one without a subprogram makes it a candidate whatever the field. A unit that
+states no types at all, such as the precompiled `core` and `alloc` built with
+limited debuginfo, names its functions without their parameters or result:
+their shape is unknown, and they are candidates whatever the field, except
+a trait method (`<Type as Trait>::method`) whose parameter count, which the
+trait fixes whatever the type, the image's typed implementations of the same
+method state, and which differs from the field's. A unit's `partial + ?`
+interrupt stack then names such a function's site as a hole. A site whose
 address or field is unknown stays unresolved; a function put into the field
 through a transmute is not seen.
 

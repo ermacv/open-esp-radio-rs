@@ -113,6 +113,58 @@ pub struct TypeFacts {
     /// function's size. A symbol of size zero (a linker script's or an
     /// assembly label) names no function of its own.
     merged: BTreeMap<u32, Vec<String>>,
+    /// Subprograms of units that state no types at all, such as the
+    /// precompiled `core` built with limited debuginfo: their parameters are
+    /// unknown, not absent.
+    untyped: BTreeSet<usize>,
+    /// The ELF function symbols of each address, those of size zero left out.
+    symbols: BTreeMap<u32, Vec<String>>,
+    /// The parameter counts of each trait method, `(trait, method)`, that the
+    /// typed implementations in the image state. A trait fixes its methods'
+    /// parameter count whatever the implementing type.
+    trait_arities: BTreeMap<(String, String), BTreeSet<usize>>,
+}
+
+/// The trait and method of a trait implementation's symbol,
+/// `<Type as path::Trait>::method`, by its demangled name.
+fn trait_method(symbol: &str) -> Option<(String, String)> {
+    let demangled = addr2line::demangle_auto(symbol.into(), None);
+    let name = crate::dwarf::plain(&demangled);
+    // A legacy symbol ends in its hash.
+    let name = match name.rsplit_once("::h") {
+        Some((head, hash))
+            if hash.len() == 16 && hash.bytes().all(|byte| byte.is_ascii_hexdigit()) =>
+        {
+            head
+        }
+        _ => name.as_str(),
+    };
+    let inner = name.strip_prefix('<')?;
+    let mut depth = 0_i32;
+    let mut close = None;
+    let mut split = None;
+    for (at, character) in inner.char_indices() {
+        match character {
+            '<' | '(' | '[' => depth += 1,
+            '>' if depth == 0 => {
+                close = Some(at);
+                break;
+            }
+            '>' | ')' | ']' => depth -= 1,
+            ' ' if depth == 0 && inner[at..].starts_with(" as ") => split = Some(at),
+            _ => {}
+        }
+    }
+    let (close, split) = (close?, split?);
+    let method = inner[close + 1..].strip_prefix("::")?;
+    if method.is_empty() || method.contains(':') {
+        return None;
+    }
+    let trait_path: String = inner[split + 4..close]
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect();
+    Some((trait_path, method.to_owned()))
 }
 
 fn invalid(message: impl Into<String>) -> Error {
@@ -139,6 +191,8 @@ impl TypeFacts {
         let error = |error: gimli::Error| invalid(format!("DWARF: {error}"));
         let mut facts = Self::default();
         let mut sized: BTreeMap<u32, Vec<String>> = BTreeMap::new();
+        // Typed subprograms by their symbol, for the trait methods' arities.
+        let mut typed_symbols: Vec<(usize, String)> = Vec::new();
         for symbol in file.symbols() {
             if symbol.kind() == SymbolKind::Text
                 && symbol.size() > 0
@@ -148,9 +202,11 @@ impl TypeFacts {
             }
         }
         facts.merged = sized
-            .into_iter()
+            .iter()
             .filter(|(_, symbols)| symbols.len() > 1)
+            .map(|(&address, symbols)| (address, symbols.clone()))
             .collect();
+        facts.symbols = sized;
         // A function's entry and the DIEs that may state its signature: its
         // own, then its abstract origin or specification.
         let mut entries: Vec<(u32, usize, Option<usize>)> = Vec::new();
@@ -169,6 +225,11 @@ impl TypeFacts {
             };
             // The type, subprogram or subroutine type each depth belongs to.
             let mut owners: Vec<(isize, usize, gimli::DwTag)> = Vec::new();
+            // Whether the unit states any type: a unit with limited debuginfo
+            // names its functions without their parameters or result.
+            let mut typed = false;
+            let mut subprograms = Vec::new();
+            let mut unit_symbols: BTreeMap<usize, String> = BTreeMap::new();
             let mut entries_cursor = unit.entries();
             while let Some(entry) = entries_cursor.next_dfs().map_err(error)? {
                 let entry = entry.clone();
@@ -202,6 +263,7 @@ impl TypeFacts {
                     | gimli::DW_TAG_reference_type
                     | gimli::DW_TAG_rvalue_reference_type
                     | gimli::DW_TAG_class_type => {
+                        typed = true;
                         facts.types.insert(
                             offset,
                             Type {
@@ -258,6 +320,7 @@ impl TypeFacts {
                     }
                     gimli::DW_TAG_subprogram => {
                         owners.push((depth, offset, tag));
+                        subprograms.push(offset);
                         let symbol = entry
                             .attr_value(gimli::DW_AT_linkage_name)
                             .or_else(|| entry.attr_value(gimli::DW_AT_MIPS_linkage_name))
@@ -267,6 +330,7 @@ impl TypeFacts {
                             })
                             .or_else(|| name.clone());
                         if let Some(symbol) = symbol {
+                            unit_symbols.insert(offset, symbol.clone());
                             facts.named.entry(symbol).or_default().push(offset);
                         }
                         facts.signatures.insert(
@@ -289,6 +353,7 @@ impl TypeFacts {
                         }
                     }
                     gimli::DW_TAG_formal_parameter => {
+                        typed = true;
                         if let Some(&(
                             _,
                             owner,
@@ -302,6 +367,27 @@ impl TypeFacts {
                     }
                     _ => {}
                 }
+            }
+            if typed {
+                for offset in subprograms {
+                    if let Some(symbols) = unit_symbols.remove(&offset) {
+                        typed_symbols.push((offset, symbols));
+                    }
+                }
+            } else {
+                facts.untyped.extend(subprograms);
+            }
+        }
+        for (offset, symbol) in typed_symbols {
+            if let (Some(method), Some(signature)) =
+                (trait_method(&symbol), facts.signatures.get(&offset))
+                && !signature.parameters.is_empty()
+            {
+                facts
+                    .trait_arities
+                    .entry(method)
+                    .or_default()
+                    .insert(signature.parameters.len());
             }
         }
         // A concrete instance lists its parameters through its abstract
@@ -470,6 +556,13 @@ impl TypeFacts {
     /// candidate whatever the field.
     fn can_be(&self, entry: u32, wanted: &Shape, field: Field) -> bool {
         let names = !field.foreign;
+        if self
+            .functions
+            .get(&entry)
+            .is_some_and(|die| self.untyped.contains(die))
+        {
+            return self.untyped_can_be(entry, wanted.0.len());
+        }
         let own = self.function_shape(entry);
         let Some(symbols) = self.merged.get(&entry) else {
             return match own {
@@ -483,10 +576,27 @@ impl TypeFacts {
         symbols.iter().any(|symbol| match self.named.get(symbol) {
             None => true,
             Some(dies) => dies.iter().any(|die| {
-                self.signatures
-                    .get(die)
-                    .is_some_and(|signature| shape_matches(&self.shape(signature), wanted, names))
+                self.untyped.contains(die)
+                    || self.signatures.get(die).is_some_and(|signature| {
+                        shape_matches(&self.shape(signature), wanted, names)
+                    })
             }),
+        })
+    }
+
+    /// Whether a function of a unit without types, whose parameters the DWARF
+    /// leaves unknown, can take `arity` parameters: only a trait method's
+    /// count, which the trait fixes and the image's typed implementations of
+    /// the same method state, excludes it.
+    fn untyped_can_be(&self, entry: u32, arity: usize) -> bool {
+        let Some(symbols) = self.symbols.get(&entry) else {
+            return true;
+        };
+        symbols.iter().any(|symbol| {
+            match trait_method(symbol).and_then(|method| self.trait_arities.get(&method)) {
+                Some(arities) if arities.len() == 1 => arities.contains(&arity),
+                _ => true,
+            }
         })
     }
 
@@ -548,6 +658,28 @@ mod tests {
 
     fn slot(size: Option<u64>, name: Option<&str>) -> Slot {
         (size, name.map(String::from))
+    }
+
+    #[test]
+    fn a_trait_implementation_names_its_trait_and_method() {
+        let method = |trait_path: &str, method: &str| Some((trait_path.into(), method.into()));
+        assert_eq!(
+            trait_method("<u32 as core::fmt::Display>::fmt"),
+            method("core::fmt::Display", "fmt")
+        );
+        assert_eq!(
+            trait_method("<alloc::vec::Vec<u8> as core::ops::index::Index<usize>>::index"),
+            method("core::ops::index::Index<usize>", "index")
+        );
+        assert_eq!(
+            trait_method(
+                "<core::fmt::builders::PadAdapter as core::fmt::Write>::write_str::h0123456789abcdef"
+            ),
+            method("core::fmt::Write", "write_str")
+        );
+        // An inherent method or a free function names no trait.
+        assert_eq!(trait_method("<core::fmt::Formatter>::pad"), None);
+        assert_eq!(trait_method("core::fmt::write"), None);
     }
 
     #[test]

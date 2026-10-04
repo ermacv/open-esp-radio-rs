@@ -250,6 +250,13 @@ pub enum LowerMacSetting {
     /// ([`TxStatus::Aborted`](crate::TxStatus::Aborted)). Per-peer
     /// power-save buffering is software policy above the port.
     TxGate { open: bool },
+    /// The EDCA parameters of the four access categories, as the access
+    /// point's WMM Parameter Element advertises them: the AIFSN and TXOP
+    /// limit each queue's attempts contend with, and `CWmin`/`CWmax` for a
+    /// backend that draws its own backoff. The set applies whole: a record
+    /// outside the backend's limits is `SettingError::Unsupported` and
+    /// changes nothing. A backend starts with its own defaults.
+    Edca(oer_ieee80211_mac::extensions::wmm::WmmParameterSet),
 }
 
 /// Why the backend refused a setting; nothing changed.

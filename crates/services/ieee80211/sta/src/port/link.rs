@@ -441,6 +441,30 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
             .map_err(PortLinkError::Setting)
     }
 
+    /// Contend with the access point's EDCA parameters: the port's queues
+    /// take their AIFSN and TXOP limits, the transmit planner each access
+    /// category's contention window.
+    pub fn install_edca(
+        &mut self,
+        parameters: oer_ieee80211_mac::extensions::wmm::WmmParameterSet,
+    ) -> Result<(), PortLinkError<PortError<X>>> {
+        self.apply(LowerMacSetting::Edca(parameters))?;
+        for category in [
+            WmmAccessCategory::BestEffort,
+            WmmAccessCategory::Background,
+            WmmAccessCategory::Video,
+            WmmAccessCategory::Voice,
+        ] {
+            self.tx.planner_mut().set_contention(
+                category,
+                oer_ieee80211_softmac::EdcaContention::from_wmm(
+                    parameters.access_category(category),
+                ),
+            );
+        }
+        Ok(())
+    }
+
     /// Configure the station interface with `bssid` and `receive`.
     pub fn configure(
         &self,

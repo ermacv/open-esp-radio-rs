@@ -1206,6 +1206,13 @@ where
                 self.remove_rx_block_ack(hardware, vif, peer, tid)
             }
             LowerMacSetting::TxGate { open } => self.set_tx_gate(hardware, open),
+            // The policy reads each attempt's AIFSN from the set; it
+            // validates all four records before installing any.
+            LowerMacSetting::Edca(parameters) => Ok(self
+                .tx
+                .policy_mut()
+                .install_wmm(parameters)
+                .map_err(|_| SettingError::Unsupported)),
         }
     }
 

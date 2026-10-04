@@ -70,10 +70,18 @@ key; a repeat of the last one is answered again with no key change. An
 unprotected one is dropped with the other unprotected data, and a rejected
 frame counts in `eapol_rejected`.
 
+The station contends with the access point's EDCA parameters as the vendor
+station does: the advertised WMM Parameter Element from its scan record once
+the station is tuned, so Authentication and Association already use it, and
+the Association Response's set in its place when the response carries one.
+Each goes whole to the port (`LowerMacSetting::Edca`: AIFSN and TXOP limit)
+and to the transmit planner (each access category's contention window). An
+access point without the element leaves the backend's defaults; a later
+change of the set in its beacons is not followed.
+
 It does not yet do: BIP for group-addressed robust
 management frames, beacon-loss monitoring (`link_monitor`), the reorder gap
-timer (a full slot store releases the oldest run instead), WMM EDCA
-parameters from the access point, HT/HE association capabilities beyond the
+timer (a full slot store releases the oldest run instead), HT/HE association capabilities beyond the
 caller's elements, A-MPDU transmission and TX Block Ack agreements, PS-Poll,
 coexistence (the power manager runs with `CoexView::INACTIVE`), 40 MHz
 channels and roaming.

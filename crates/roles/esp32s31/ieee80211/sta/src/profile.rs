@@ -5,7 +5,6 @@
 //! it does not choose hardware capabilities or S31 channel encodings.
 
 use {
-    oer_ieee80211_mac::he::parse_he20_capabilities, oer_ieee80211_mac::he::parse_he20_operation,
     oer_ieee80211_mac::scan::HtSecondaryChannel, oer_ieee80211_mac::scan::ScanRecord,
     oer_ieee80211_mac::station::AssociationCapabilities,
     oer_ieee80211_mac::station::association::PhyMode,
@@ -165,21 +164,17 @@ pub struct Selection {
 /// HT Capabilities and HT Operation agree on a usable secondary channel. HE
 /// remains 20-MHz-only because the complete ESP32-S31 vendor HE capability
 /// builder advertises a zero HE Channel Width Set. Otherwise the selection is
-/// HE20 MCS9 or the conservative HT20 fallback.
+/// HE20 MCS9 or the conservative HT20 fallback, and legacy for an access
+/// point without HT Capabilities (`select_association_phy` of
+/// `oer-ieee80211-sta`).
 ///
 /// SOURCE: complete `libnet80211.a[ieee80211_he.o]::
 /// ieee80211_add_hecap` and the complete HT Capabilities/Operation IEs retained
 /// by [`ScanRecord::ht40_secondary_channel`]. The above/below CBW values are
 /// independently recovered from rev0 ROM `phy_bb_bss_cbw40`.
 pub fn select_association(access_point: &ScanRecord, preference: Preference) -> Selection {
-    let he20_supported = parse_he20_capabilities(access_point.he_capability_ie_bytes())
-        .is_ok_and(|capability| capability.supports_bidirectional_mcs9())
-        && parse_he20_operation(access_point.he_operation_ie_bytes()).is_ok();
-    let phy = oer_ieee80211_sta::association::select_phy(
-        preference,
-        access_point.ht40_secondary_channel().is_some(),
-        he20_supported,
-    );
+    let phy =
+        oer_ieee80211_sta::association::select_association_phy(access_point, preference, true);
 
     let primary_frequency = 2_407 + u16::from(access_point.channel) * 5;
     let (channel_or_frequency, cbw) = if phy == PhyMode::Ht40 {

@@ -7,9 +7,17 @@
 pub use oer_ieee80211_mac::station::association::{PhyMode, Preference};
 
 /// Choose a mode after the caller has intersected local and peer capabilities.
-/// HT20 is the baseline; a later association encoder may still reject the peer.
-pub fn select_phy(preference: Preference, ht40_available: bool, he20_available: bool) -> PhyMode {
-    if preference == Preference::PreferHe20 && he20_available {
+/// A peer without HT is legacy; HT20 is the baseline of one with HT; a later
+/// association encoder may still reject the peer.
+pub fn select_phy(
+    preference: Preference,
+    ht_available: bool,
+    ht40_available: bool,
+    he20_available: bool,
+) -> PhyMode {
+    if !ht_available {
+        PhyMode::Legacy
+    } else if preference == Preference::PreferHe20 && he20_available {
         PhyMode::He20
     } else if preference == Preference::ForceHt20 {
         PhyMode::Ht20
@@ -20,6 +28,30 @@ pub fn select_phy(preference: Preference, ht40_available: bool, he20_available: 
     } else {
         PhyMode::Ht20
     }
+}
+
+/// The mode a station associates with `access_point` in under `preference`:
+/// HE20 when the access point's HE Capabilities admit bidirectional MCS 9
+/// and its HE Operation parses, HT40 when its HT Capabilities and HT
+/// Operation agree on a usable secondary channel and the station tunes
+/// 40 MHz (`ht40_capable`), HT20 otherwise, and legacy for an access point
+/// without HT Capabilities.
+pub fn select_association_phy(
+    access_point: &oer_ieee80211_mac::scan::ScanRecord,
+    preference: Preference,
+    ht40_capable: bool,
+) -> PhyMode {
+    let he20_available =
+        oer_ieee80211_mac::he::parse_he20_capabilities(access_point.he_capability_ie_bytes())
+            .is_ok_and(|capability| capability.supports_bidirectional_mcs9())
+            && oer_ieee80211_mac::he::parse_he20_operation(access_point.he_operation_ie_bytes())
+                .is_ok();
+    select_phy(
+        preference,
+        access_point.ht_capability_ie_present,
+        ht40_capable && access_point.ht40_secondary_channel().is_some(),
+        he20_available,
+    )
 }
 
 /// What an associated station knows of its access point: the PHY it

@@ -15,7 +15,7 @@
 use std::{collections::VecDeque, vec, vec::Vec};
 
 use oer_ieee80211_lower_mac::{
-    Channel, ChannelWidth, KeySelector, RxCryptoStatus, RxEvidence, RxMeta, VifId,
+    Band, Channel, ChannelWidth, KeySelector, RxCryptoStatus, RxEvidence, RxMeta, VifId,
     model::LowerMacModel,
 };
 use oer_ieee80211_mac::{
@@ -104,6 +104,9 @@ pub struct ScriptedAp {
     pub wmm_beacon: Option<Vec<u8>>,
     /// Its beacons and Probe Responses carry HT Capabilities.
     pub ht: bool,
+    /// Its BSS is 40 MHz wide with the secondary channel above: its HT
+    /// Capabilities admit 40 MHz and an HT Operation names the offset.
+    pub ht40: bool,
     /// The WMM Parameter Element of its Association Response, in place of
     /// the WMM Information element.
     pub wmm_association: Option<Vec<u8>>,
@@ -139,6 +142,7 @@ impl ScriptedAp {
             ptk: None,
             wmm_beacon: None,
             ht: false,
+            ht40: false,
             wmm_association: None,
             replay_counter: 0,
         }
@@ -456,7 +460,17 @@ impl ScriptedAp {
         if let Some(rsn) = self.rsn() {
             frame.extend_from_slice(rsn);
         }
-        if self.ht {
+        if self.ht40 {
+            let mut capabilities = HT_CAPABILITIES;
+            // Supported Channel Width Set: 20 and 40 MHz.
+            capabilities[2] |= 1 << 1;
+            frame.extend_from_slice(&capabilities);
+            // HT Operation: the primary channel, the secondary above and
+            // any channel width allowed.
+            let mut operation = [0_u8; 24];
+            operation[..4].copy_from_slice(&[61, 22, AP_CHANNEL, 0x05]);
+            frame.extend_from_slice(&operation);
+        } else if self.ht {
             frame.extend_from_slice(&HT_CAPABILITIES);
         }
         if let Some(wmm) = &self.wmm_beacon {
@@ -577,9 +591,12 @@ pub fn bip_transmitter() -> oer_ieee80211_rsn::bip::BipTransmitter {
     oer_ieee80211_rsn::bip::BipTransmitter::new(&RsnIgtk::new(4, [0; 6], IGTK).unwrap())
 }
 
-/// The access point hears the station and is heard only on its channel.
+/// The access point hears the station and is heard only on its primary
+/// channel, at 20 or 40 MHz.
 fn on_channel(model: &LowerMacModel) -> bool {
-    model.channel() == Some(Channel::ghz2_4(AP_CHANNEL, ChannelWidth::Mhz20).unwrap())
+    model
+        .channel()
+        .is_some_and(|channel| channel.band() == Band::Ghz2_4 && channel.number() == AP_CHANNEL)
 }
 
 /// Metadata of a frame the backend received; a protected one was

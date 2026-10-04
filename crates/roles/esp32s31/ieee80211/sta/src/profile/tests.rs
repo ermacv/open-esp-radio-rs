@@ -157,6 +157,13 @@ fn association_selection_owns_phy_and_center_channel_policy() {
     assert_eq!(ht20.phy, PhyMode::Ht20);
     assert_eq!(ht20.channel_or_frequency, 6);
     assert_eq!(ht20.cbw, 0);
+
+    // An access point without HT Capabilities is joined legacy at 20 MHz.
+    record.ht_capability_ie_present = false;
+    let legacy = select_association(&record, Preference::Automatic);
+    assert_eq!(legacy.phy, PhyMode::Legacy);
+    assert_eq!(legacy.channel_or_frequency, 6);
+    assert_eq!(legacy.cbw, 0);
 }
 
 #[test]

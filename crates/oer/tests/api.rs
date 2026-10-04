@@ -24,7 +24,7 @@ fn association_policy_and_wire_codec_share_the_same_types() {
     use oer::ieee80211::sta::association::{PhyMode, Preference, select_phy};
 
     let preference: mac::station::association::Preference = Preference::PreferHe20;
-    let mode: mac::station::association::PhyMode = select_phy(preference, true, true);
+    let mode: mac::station::association::PhyMode = select_phy(preference, true, true, true);
     assert_eq!(mode, PhyMode::He20);
 }
 

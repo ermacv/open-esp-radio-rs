@@ -3,10 +3,10 @@
 
 use core::{convert::Infallible, marker::PhantomData};
 
-use oer_ieee80211_lower_mac::{Channel, ChannelWidth, ReceiveFilter};
+use oer_ieee80211_lower_mac::{Channel, ChannelWidth, Ieee80211LowerMacPort, ReceiveFilter};
 use oer_ieee80211_mac::{
     ccmp::{CcmpPacketNumberStep, CcmpTxPacketNumber},
-    scan::{ScanRecord, ScanTable},
+    scan::{HtSecondaryChannel, ScanRecord, ScanTable},
     security::{AssociationAkm, AssociationSecurity, Pmkid, RsnAssociation},
     station::{
         AssociationCapabilities, AssociationResponse, SelectedRsn, StaSecurityError,
@@ -24,7 +24,7 @@ use oer_ieee80211_rsn_service::runner::{
     RsnHandshakeRunner, RsnKeyInstallRunner, RsnPendingKeyInstall,
 };
 use oer_ieee80211_sta::{
-    association::{StaAssociatedPeer, StaAssociatedPeerError},
+    association::{Preference, StaAssociatedPeer, StaAssociatedPeerError, select_association_phy},
     attempt::{
         AssociationAttemptOutcome, StaAttemptPort, StaAttemptSecurity, StaAttemptStateError,
         StaAttemptStepError, StaConnectedEntryFailure,
@@ -94,7 +94,10 @@ pub struct PortStationProfile<'a> {
     /// (the Espressif stack's is
     /// `oer-espressif-ieee80211-policy::block_ack::RX_REORDER_GAP_TIMEOUT_MICROS`).
     pub rx_reorder_gap: Duration,
-    pub phy: PhyMode,
+    /// Which mode the station prefers among those it and each access point
+    /// admit (`oer_ieee80211_sta::association::select_association_phy`):
+    /// HT40 needs a port that tunes 40 MHz.
+    pub preference: Preference,
     pub listen_interval: u16,
     /// The step between the station's CCMP packet numbers: one in the
     /// standard, the integrator's choice otherwise (the Espressif stack's
@@ -405,16 +408,33 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         }
     }
 
+    /// The mode the station associates with `candidate` in.
+    fn phy(&self, candidate: &ScanRecord) -> PhyMode {
+        let ht40_capable = self
+            .link
+            .port()
+            .capabilities()
+            .widths
+            .contains(ChannelWidth::Mhz40Above);
+        select_association_phy(candidate, self.profile.preference, ht40_capable)
+    }
+
     async fn select_channel(&mut self) -> StepResult<X> {
         let candidate =
             self.candidate
                 .ok_or(StaAttemptStepError::terminal(PortStationError::State(
                     StaAttemptStateError::MissingPreparedPeer,
                 )))?;
+        // An HT40 association tunes its access point's secondary channel too.
+        let width = match (self.phy(&candidate), candidate.ht40_secondary_channel()) {
+            (PhyMode::Ht40, Some(HtSecondaryChannel::Above)) => ChannelWidth::Mhz40Above,
+            (PhyMode::Ht40, Some(HtSecondaryChannel::Below)) => ChannelWidth::Mhz40Below,
+            _ => ChannelWidth::Mhz20,
+        };
         let channel = if candidate.channel <= 14 {
-            Channel::ghz2_4(candidate.channel, ChannelWidth::Mhz20)
+            Channel::ghz2_4(candidate.channel, width)
         } else {
-            Channel::ghz5(candidate.channel, ChannelWidth::Mhz20)
+            Channel::ghz5(candidate.channel, width)
         }
         .map_err(|_| StaAttemptStepError::refresh_candidate(PortStationError::NoCandidate))?;
         self.link
@@ -518,6 +538,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
                     StaAttemptStateError::MissingSelectedRsn,
                 )))?;
         let address = self.link.config().address;
+        let phy = self.phy(&candidate);
         let Self {
             link,
             timer,
@@ -528,7 +549,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         let join = PortJoin::new(link, bssid).with_association(PortAssociation {
             access_point: &candidate,
             security: &selected,
-            phy: profile.phy,
+            phy,
             capabilities: profile.capabilities,
             listen_interval: profile.listen_interval,
             he_power: profile.he_power,
@@ -572,7 +593,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         let peer = StaAssociatedPeer::derive(
             &candidate,
             &association,
-            self.profile.phy,
+            self.phy(&candidate),
             self.profile.he_packet_padding,
         )
         .map_err(|error| StaAttemptStepError::refresh_candidate(PortStationError::Peer(error)))?;

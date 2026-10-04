@@ -29,7 +29,10 @@ use oer_ieee80211_mac::{
     phy::{LegacyRate, PhyRate},
     scan::ScanTable,
     sequence::SequenceNumber,
-    station::{AssociationCapabilities, StaTxSequenceCounters, association::PhyMode},
+    station::{
+        AssociationCapabilities, StaTxSequenceCounters,
+        association::{PhyMode, Preference},
+    },
 };
 use oer_ieee80211_rsn::{
     Pmk,
@@ -386,7 +389,7 @@ fn profile() -> PortStationProfile<'static> {
         rx_reorder_gap: Duration::from_micros(
             oer_espressif_ieee80211_policy::block_ack::RX_REORDER_GAP_TIMEOUT_MICROS,
         ),
-        phy: PhyMode::Legacy,
+        preference: Preference::Automatic,
         listen_interval: 3,
         ccmp_step: CcmpPacketNumberStep::new(1).unwrap(),
         sa_query_random,
@@ -878,6 +881,62 @@ fn a_refused_coexistence_effect_fails_the_power_manager_body() {
     assert_eq!(
         world.drive(&mut ap, station.set_sleep_type(SleepType::MinModem)),
         Err(PortLinkError::Coexistence)
+    );
+}
+
+#[test]
+fn an_ht40_access_point_is_joined_on_its_40_mhz_channel() {
+    on_large_stack(an_ht40_access_point_is_joined_on_its_40_mhz_channel_body);
+}
+
+fn an_ht40_access_point_is_joined_on_its_40_mhz_channel_body() {
+    use oer_ieee80211_mac::station::AssociationCapabilities;
+    static HT40: AssociationCapabilities = AssociationCapabilities {
+        ht20: scripted_ap::HT_CAPABILITIES,
+        ht40: scripted_ap::HT_CAPABILITIES,
+        ..CAPABILITIES
+    };
+    let world = World::new();
+    let mut profile = profile();
+    profile.capabilities = &HT40;
+
+    // A 20 MHz HT access point is joined in HT20 on its primary channel.
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    ap.ht = true;
+    let station = connect(&world, &mut ap, world.station_with(open(), profile));
+    let peer = station.connection().unwrap().config().peer;
+    assert_eq!(peer.phy, PhyMode::Ht20);
+    assert_eq!(
+        world.model.channel().map(|channel| channel.width()),
+        Some(ChannelWidth::Mhz20)
+    );
+
+    // A 40 MHz one is joined in HT40, tuned with its secondary channel.
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    ap.ht40 = true;
+    let station = connect(&world, &mut ap, world.station_with(open(), profile));
+    let peer = station.connection().unwrap().config().peer;
+    assert_eq!(peer.phy, PhyMode::Ht40);
+    assert_eq!(
+        world.model.channel().map(|channel| channel.width()),
+        Some(ChannelWidth::Mhz40Above)
+    );
+
+    // A station that prefers HT20 stays at 20 MHz.
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    ap.ht40 = true;
+    let mut ht20 = profile;
+    ht20.preference = Preference::ForceHt20;
+    let station = connect(&world, &mut ap, world.station_with(open(), ht20));
+    assert_eq!(
+        station.connection().unwrap().config().peer.phy,
+        PhyMode::Ht20
+    );
+    assert_eq!(
+        world.model.channel().map(|channel| channel.width()),
+        Some(ChannelWidth::Mhz20)
     );
 }
 
@@ -1438,7 +1497,7 @@ fn block_ack_profile() -> PortStationProfile<'static> {
     };
     let mut profile = profile();
     profile.capabilities = &HT;
-    profile.phy = PhyMode::Ht20;
+    profile.preference = Preference::ForceHt20;
     profile.tx_block_ack = Some(PortTxBlockAck {
         policy: StaTxBlockAckPolicy {
             tids: &oer_espressif_ieee80211_policy::block_ack::STA_TX_BLOCK_ACK_TIDS,

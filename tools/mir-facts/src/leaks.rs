@@ -160,7 +160,19 @@ fn strip<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>, depth: u32) -> Ty<'tcx> {
             }
             Ty::new_imm_ptr(tcx, strip(tcx, pointee, depth + 1))
         }
+        // A pattern type (`NonNull`'s non-null pointer) has its base's layout.
+        ty::Pat(inner, _) => strip(tcx, *inner, depth + 1),
         _ => ty,
+    }
+}
+
+/// Whether `ty` is a thin pointer (or a transparent wrapper of one).
+pub fn is_thin_pointer<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> bool {
+    let typing = TypingEnv::fully_monomorphized();
+    let stripped = strip(tcx, ty, 0);
+    match stripped.kind() {
+        ty::RawPtr(pointee, _) => pointee.is_sized(tcx, typing),
+        _ => false,
     }
 }
 

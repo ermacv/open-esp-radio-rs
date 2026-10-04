@@ -47,6 +47,17 @@ pub struct Facts {
     pub leaked_traits: BTreeSet<String>,
     /// The function-pointer type each vtable function is called as.
     pub signatures: BTreeMap<String, String>,
+    /// Where each leaked function-pointer type and trait leaked (at most a
+    /// few places each): the instance and the reinterpretation, for the
+    /// report's hints.
+    pub leak_origins: BTreeMap<String, BTreeSet<String>>,
+    /// What the pointers whose addresses were exposed (`p as usize`) carry.
+    pub exposed: crate::leaks::Contents,
+    /// Where a pointer is made from an integer (`a as *const T`): any such
+    /// place in an image leaks every exposed content.
+    pub reads_exposed: BTreeSet<String>,
+    /// Where contents of unknown parts leaked.
+    pub unknown_origins: BTreeSet<String>,
     /// What every type made a `dyn` of each trait carries.
     pub trait_contents: BTreeMap<String, crate::leaks::Contents>,
     /// A value whose contents cannot be enumerated left its type: every

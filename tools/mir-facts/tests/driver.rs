@@ -259,5 +259,13 @@ fn the_ways_out_of_a_function_pointer_type_leak_it() {
         "fn(u8) -> u8"
     );
     assert!(!leaked.contains(&"fn(u8) -> u8"), "{leaked:?}");
+    // `NonNull` and an address without provenance keep `fn() -> i8`; an
+    // exposed address joins the exposed, and a pointer made from an integer
+    // leaks its type.
+    assert!(!leaked.contains(&"fn() -> i8"), "{leaked:?}");
+    assert_eq!(facts["exposed"]["keys"][0], "fn() -> u128");
+    assert!(!leaked.contains(&"fn() -> u128"), "{leaked:?}");
+    assert!(leaked.contains(&"fn() -> i128"), "{leaked:?}");
+    assert_eq!(facts["reads_exposed"].as_array().unwrap().len(), 1);
     let _ = std::fs::remove_dir_all(&directory);
 }

@@ -105,3 +105,23 @@ pub fn by_dyn(slot: &mut [usize; 2]) {
 pub fn by_wrapper(cell: &core::cell::UnsafeCell<fn() -> i8>) -> *mut fn() -> i8 {
     cell.get()
 }
+
+/// `NonNull` is a view of its pointer: no leak.
+#[inline(never)]
+pub fn by_non_null(slot: &mut fn() -> i8) -> core::ptr::NonNull<fn() -> i8> {
+    core::ptr::NonNull::from(slot)
+}
+
+/// An address without provenance accesses nothing: no leak.
+#[inline(never)]
+pub fn by_address(slot: &fn() -> i8) -> usize {
+    (slot as *const fn() -> i8).addr()
+}
+
+/// An exposed address joins the exposed contents; a pointer made from an
+/// integer leaks its own type.
+#[inline(never)]
+pub fn by_exposure(slot: &fn() -> u128, address: usize) -> *const fn() -> i128 {
+    let _ = slot as *const fn() -> u128 as usize;
+    address as *const fn() -> i128
+}

@@ -68,6 +68,15 @@ Each crate writes `<crate>-<hash>.json`:
 - `trait_contents`: for each trait, what the types made a `dyn` of it carry
   (`keys`: function-pointer types, `traits`: nested `dyn` traits, `unknown`),
   for the leak's closure over every crate.
+- `exposed` and `reads_exposed`: what the pointers whose addresses a crate
+  exposes (`p as usize`) carry, and where a pointer is made from an integer
+  (`a as *const T`, which leaks `T`). When any crate of an image makes such
+  a pointer, every exposed content leaks. A transmute between a pointer and
+  an integer (`addr`, `without_provenance`) keeps no provenance, and a
+  pointer without provenance accesses no memory: it reinterprets nothing.
+- `leak_origins` and `unknown_origins`: up to 16 places each leaked type or
+  trait (and an unknown part) leaked, as `instance: source as target`, `a
+  union in T` or `fn(..) as an address`: the firmware sites a report names.
 - `unknown_leak`: a reinterpreted value carries a part whose contents the
   driver cannot enumerate (a `dyn` without a principal trait, an opaque
   type): every function made a pointer leaks.

@@ -54,6 +54,7 @@ pub fn crate_facts(tcx: TyCtxt<'_>) -> Facts {
         unions: Default::default(),
         implementors: Default::default(),
         leaked: Default::default(),
+        current: String::new(),
     };
     for item in rustc_public::all_local_items() {
         match item.kind() {
@@ -84,17 +85,39 @@ struct Walk<'tcx> {
     unions: std::collections::HashSet<rustc_middle::ty::Ty<'tcx>>,
     /// Types whose contents a trait's `dyn` already records.
     implementors: std::collections::HashSet<(String, rustc_middle::ty::Ty<'tcx>)>,
-    /// Types whose contents already leaked.
-    leaked: std::collections::HashSet<rustc_middle::ty::Ty<'tcx>>,
+    /// The contents of each type that leaked.
+    leaked: std::collections::HashMap<rustc_middle::ty::Ty<'tcx>, leaks::Contents>,
+    /// The function key of the instance being walked.
+    current: String,
 }
 
+/// Origins recorded for one leaked type or trait.
+const ORIGINS: usize = 16;
+
 impl<'tcx> Walk<'tcx> {
-    /// The function-pointer types a value of `ty` carries leave their type.
-    fn leak(&mut self, ty: rustc_middle::ty::Ty<'tcx>) {
-        if !self.leaked.insert(ty) {
-            return;
+    /// The function-pointer types a value of `ty` carries leave their type,
+    /// at `origin`.
+    fn leak(&mut self, ty: rustc_middle::ty::Ty<'tcx>, origin: &str) {
+        let tcx = self.tcx;
+        let contents = self
+            .leaked
+            .entry(ty)
+            .or_insert_with(|| leaks::contents(tcx, ty))
+            .clone();
+        self.record(contents, origin);
+    }
+
+    fn record(&mut self, contents: leaks::Contents, origin: &str) {
+        let origin = format!("{}: {origin}", self.current);
+        for key in contents.keys.iter().chain(&contents.traits) {
+            let origins = self.facts.leak_origins.entry(key.clone()).or_default();
+            if origins.len() < ORIGINS {
+                origins.insert(origin.clone());
+            }
         }
-        let contents = leaks::contents(self.tcx, ty);
+        if contents.unknown && self.facts.unknown_origins.len() < ORIGINS {
+            self.facts.unknown_origins.insert(origin);
+        }
         self.facts.leaked_types.extend(contents.keys);
         self.facts.leaked_traits.extend(contents.traits);
         self.facts.unknown_leak |= contents.unknown;
@@ -112,6 +135,15 @@ impl<'tcx> Walk<'tcx> {
         if leaks::shape(self.tcx, source) == leaks::shape(self.tcx, target) {
             return;
         }
+        // A transmute between a pointer and an integer keeps no provenance
+        // (`addr`, `without_provenance`): a pointer without provenance
+        // accesses no memory, so nothing is reinterpreted.
+        let integer = |ty: rustc_middle::ty::Ty<'tcx>| ty.is_integral();
+        if (integer(source) && leaks::is_thin_pointer(self.tcx, target))
+            || (leaks::is_thin_pointer(self.tcx, source) && integer(target))
+        {
+            return;
+        }
         if source.is_fn_ptr() && target.is_fn_ptr() {
             self.facts
                 .edges
@@ -122,8 +154,9 @@ impl<'tcx> Walk<'tcx> {
         }
         // A reinterpreted pointer reaches one memory as both types: what
         // either writes there, the other reads untyped.
-        self.leak(source);
-        self.leak(target);
+        let origin = format!("{source_key} as {target_key}");
+        self.leak(source, &origin);
+        self.leak(target, &origin);
     }
 
     /// The function pointers the unions of `ty` hold leave their type.
@@ -132,9 +165,8 @@ impl<'tcx> Walk<'tcx> {
             return;
         }
         let contents = leaks::union_contents(self.tcx, ty);
-        self.facts.leaked_types.extend(contents.keys);
-        self.facts.leaked_traits.extend(contents.traits);
-        self.facts.unknown_leak |= contents.unknown;
+        let origin = format!("a union in {}", leaks::key(ty));
+        self.record(contents, &origin);
     }
 
     fn root(&mut self, item: CrateItem) {
@@ -170,6 +202,7 @@ impl<'tcx> Walk<'tcx> {
             return;
         };
 
+        self.current = function_key(&instance.mangled_name());
         // A union local reinterprets what its fields hold.
         for local in body.locals() {
             let ty = rustc_internal::internal(self.tcx, local.ty);
@@ -376,10 +409,31 @@ impl MirVisitor for BodyVisitor<'_, '_> {
                         self.walk.vtable(concrete, &principal);
                     }
                 }
-                CastKind::FnPtrToPtr | CastKind::PointerExposeAddress => {
+                CastKind::FnPtrToPtr => {
                     let source = rustc_internal::internal(self.walk.tcx, source);
-                    if source.is_fn_ptr() {
-                        self.walk.leak(source);
+                    let origin = format!("{} as a pointer", leaks::key(source));
+                    self.walk.leak(source, &origin);
+                }
+                // An exposed address lets any later pointer made from an
+                // integer reach the memory: its contents join the exposed.
+                CastKind::PointerExposeAddress => {
+                    let source = rustc_internal::internal(self.walk.tcx, source);
+                    let contents = leaks::contents(self.walk.tcx, source);
+                    self.walk.facts.exposed.merge(contents);
+                }
+                // A pointer made from an integer reaches any exposed memory as
+                // its own type.
+                CastKind::PointerWithExposedProvenance => {
+                    let tcx = self.walk.tcx;
+                    let target = rustc_internal::internal(tcx, *target);
+                    let origin = format!("an integer as {}", leaks::key(target));
+                    self.walk.leak(target, &origin);
+                    let current = self.walk.current.clone();
+                    if self.walk.facts.reads_exposed.len() < 16 {
+                        self.walk
+                            .facts
+                            .reads_exposed
+                            .insert(format!("{current}: {origin}"));
                     }
                 }
                 CastKind::Transmute | CastKind::PtrToPtr => {

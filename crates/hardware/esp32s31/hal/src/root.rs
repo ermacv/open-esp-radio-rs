@@ -21,6 +21,39 @@ use crate::{
     shared_radio::{SharedRadio, SharedRadioReleaseError},
 };
 
+/// Proof that its holder owns the chip's analog-I2C master (regi2c) for the
+/// rest of the program, as [`RadioHardware::take`] requires.
+///
+/// The platform that owns the master hands it out once: on ESP-HAL, the radio
+/// platform holding the `I2C_ANA_MST` singleton. Without it there is no radio
+/// root:
+///
+/// ```compile_fail
+/// use oer_esp32s31_hal::root::RadioHardware;
+///
+/// let _hardware = RadioHardware::take();
+/// ```
+#[derive(Debug)]
+#[must_use = "the radio root needs the analog bus ownership"]
+pub struct AnalogBusOwnership(());
+
+impl AnalogBusOwnership {
+    /// Assert ownership of the analog-I2C master.
+    ///
+    /// # Safety
+    ///
+    /// Call at most once per program. The caller owns the analog-I2C master
+    /// exclusively from now on and never releases it: no other code writes
+    /// analog registers.
+    #[allow(
+        unsafe_code,
+        reason = "exclusive ownership of the analog bus is a platform guarantee the type cannot check"
+    )]
+    pub const unsafe fn assume_exclusive() -> Self {
+        Self(())
+    }
+}
+
 /// Unique protocol-neutral owner of every reviewed ESP32-S31 radio region.
 ///
 /// This is the sole production acquisition root. It can be consumed by
@@ -32,7 +65,9 @@ use crate::{
 /// ```compile_fail
 /// use oer_esp32s31_hal::root::RadioHardware;
 ///
-/// let hardware = RadioHardware::take().unwrap();
+/// # use oer_esp32s31_hal::root::AnalogBusOwnership;
+/// // SAFETY: a doctest that never runs on hardware.
+/// let hardware = RadioHardware::take(unsafe { AnalogBusOwnership::assume_exclusive() }).unwrap();
 /// let _first = hardware.into_concurrent(());
 /// let _second = hardware.into_concurrent(());
 /// ```
@@ -57,7 +92,11 @@ impl RadioHardware {
     }
 
     /// Acquire the radio register singleton once.
-    pub fn take() -> Option<Self> {
+    ///
+    /// `analog_bus` proves the caller owns the analog-I2C master: the PHY
+    /// writes analog registers through transactions split across executor
+    /// polls, which no other writer may interleave.
+    pub fn take(_analog_bus: AnalogBusOwnership) -> Option<Self> {
         RadioPartitions::take().map(|partitions| Self {
             partitions,
             phy_registration: PhyRegistration::new(),

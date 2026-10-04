@@ -103,10 +103,13 @@ impl From<SpawnError> for RadioStartError {
 /// radio hardware stays claimed in both cases.
 pub fn start(
     spawner: Spawner,
-    platform: EspHalRadioPlatform,
+    mut platform: EspHalRadioPlatform,
     options: RadioStart,
 ) -> Result<(&'static SharedRadio, ConcurrentPartitions), RadioStartError> {
-    let hardware = RadioHardware::take().ok_or(RadioStartError::AlreadyStarted)?;
+    let analog_bus = platform
+        .analog_bus_ownership()
+        .ok_or(RadioStartError::AlreadyStarted)?;
+    let hardware = RadioHardware::take(analog_bus).ok_or(RadioStartError::AlreadyStarted)?;
     let identity = platform.phy_calibration_identity();
     let (radio, partitions) = SharedRadio::new(
         hardware,

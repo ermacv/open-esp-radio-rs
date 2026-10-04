@@ -25,11 +25,13 @@ matching ESP-HAL release. The provider is a zero-size capability and a
 guard does not borrow it, because ESP-HAL's counts are global.
 
 `EspHalRadioPlatform` holds the `I2C_ANA_MST` singleton, and that singleton
-is the ownership of the analog-I2C bus: ESP-HAL code that writes analog
-registers after `init` (`rtc_cntl::brownout::configure`) borrows it, so while
-the radio holds it the PHY's split analog transactions are the bus's only
-writer, with no lock between them and ESP-HAL. Configure the brownout
-detector before the singleton moves into the platform.
+is the ownership of the analog-I2C bus. The platform hands it out once as the
+HAL's `AnalogBusOwnership`, without which `RadioHardware::take` gives no radio
+root, so the PHY's analog transactions, split across executor polls, run only
+under it. ESP-HAL code that writes analog registers after `init`
+(`rtc_cntl::brownout::configure`) borrows the singleton too: configure the
+brownout detector before the singleton moves into the platform. No lock is
+shared with ESP-HAL.
 
 Every protocol composition reaches these singletons through the one shared
 radio system that owns this platform; the Wi-Fi ESP-HAL adapter owns only the

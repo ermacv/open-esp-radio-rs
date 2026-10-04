@@ -134,28 +134,6 @@ pub struct Board {
     pub reset: Vec<ResetStep>,
     /// An image the board's startup flash holds, when it needs one.
     pub startup_artifact: Option<PathBuf>,
-    /// A USB-to-UART bridge whose modem lines drive the chip's EN and BOOT
-    /// pins, when one is wired.
-    pub uart_bridge: Option<UartBridge>,
-}
-
-/// A USB-to-UART bridge wired to a board's EN and BOOT pins.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct UartBridge {
-    /// The bridge's USB serial number.
-    pub serial: String,
-    /// The modem line that pulls EN low.
-    pub en: ModemLine,
-    /// The modem line that pulls the boot strap low.
-    pub boot: ModemLine,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum ModemLine {
-    Rts,
-    Dtr,
 }
 
 impl Board {
@@ -433,15 +411,6 @@ impl StandFile {
                 return Err(error(format!(
                     "board `{name}`: resets by power, but port {port} of hub `{}` is not switchable",
                     hub.id
-                )));
-            }
-            if let Some(bridge) = &board.uart_bridge
-                && (bridge.en == bridge.boot
-                    || bridge.serial.is_empty()
-                    || self.board_by_serial(&bridge.serial).is_some())
-            {
-                return Err(error(format!(
-                    "board `{name}`: the UART bridge needs its own serial and different EN and BOOT lines"
                 )));
             }
             if !ports.insert((hub.id.as_str(), port)) {

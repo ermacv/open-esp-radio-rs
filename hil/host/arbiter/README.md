@@ -62,7 +62,7 @@ by reflashing and never quarantined.
 The arbiter reports board changes but never restores board state. A board is
 identified by the USB serial number of its port, which Espressif USB
 Serial/JTAG ports set to the chip's MAC address. The arbiter reads the
-stand's boards, their chips, hub ports and UART bridges from the stand file
+stand's boards, their chips and hub ports from the stand file
 (`oer-hil-stand-schema`) and never writes it; `Arbiter::at` reads the
 `stand.toml` beside its own state.
 

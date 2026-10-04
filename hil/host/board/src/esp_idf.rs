@@ -34,9 +34,7 @@ impl Board for EspIdf {
     /// offset, the gaps erased (`0xff`), and written by one `espflash
     /// write-bin` that resets the chip through its USB Serial/JTAG. That
     /// write ends in the ROM bootloader, since the stub's own reset can leave
-    /// an esp32c5 in download mode; a power-on reset through the board's EN
-    /// path starts the application ([`reset::power_on_reset`]), an RTS reset
-    /// one without.
+    /// an esp32c5 in download mode; an RTS reset starts the application.
     fn flash(&self, image: &FlashImage, port: &Path) -> Result<()> {
         let Companions::EspIdf {
             bootloader,
@@ -73,9 +71,7 @@ impl Board for EspIdf {
                 .arg(&path);
             run(&mut write, "write the HIL image")
         })?;
-        if !reset::power_on_reset(port)? {
-            drop(reset::reset_into_application(port)?);
-        }
+        drop(reset::reset_into_application(port)?);
         Ok(())
     }
 }

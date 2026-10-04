@@ -135,26 +135,6 @@ fn a_board_carries_only_its_chips_radios() {
 }
 
 #[test]
-fn a_uart_bridge_is_its_own_device_with_two_lines() {
-    let bridge = |serial: &str, boot: &str| {
-        format!(
-            "reset = [\"jtag\", \"power\"]\nuart-bridge = {{ serial = \"{serial}\", en = \"rts\", boot = \"{boot}\" }}"
-        )
-    };
-    edited("reset = [\"jtag\", \"power\"]", &bridge("B0001", "dtr")).unwrap();
-    rejected(
-        "reset = [\"jtag\", \"power\"]",
-        &bridge("B0001", "rts"),
-        "different EN and BOOT",
-    );
-    rejected(
-        "reset = [\"jtag\", \"power\"]",
-        &bridge("30:ED:A0:00:00:01", "dtr"),
-        "needs its own serial",
-    );
-}
-
-#[test]
 fn the_file_has_only_its_sections_and_its_schema() {
     rejected(
         "schema = 1",

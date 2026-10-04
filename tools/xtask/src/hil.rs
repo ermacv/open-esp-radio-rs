@@ -257,7 +257,7 @@ Stand commands (shared by every checkout of this user):
   cargo hil board reset BOARD [--via rts|jtag|en] [--download]   reset under a lease; prints the ROM reset line
   cargo hil board check BOARD         attached, firmware, maintenance, reset paths, whether it answers; no reset
   cargo hil board console BOARD [--for 10s] [--until TEXT]       the console without a reset, under a lease
-  cargo hil board soak BOARD --cycles N|--for 8h [--via rts,jtag,en]   reset again and again; journal the result
+  cargo hil board soak BOARD --cycles N|--for 8h [--via rts,jtag,power]   reset again and again; journal the result
   cargo hil peer send BOARD LINE... [--for 5s]                   one peer text-protocol command and its answer
   cargo hil owner [set NAME]          this checkout's owner: stand, wifi, phy, bluetooth, bluetooth-hil, blobray, infra, 802154, esp32c5, network
   cargo hil preempt ID --reason TEXT   stop another owner's lease: charged no longer, SIGTERM with
@@ -274,7 +274,6 @@ Stand commands (shared by every checkout of this user):
   cargo hil devices [--json]          the stand file's boards: name, chip, port, health, last firmware
   cargo hil stand discover [--blink HUB:PORT | --verify-power BOARD]   attached boards against the stand file
   cargo hil stand doctor              the stand file, uhubctl without sudo, NetworkManager leaving wlan0
-  cargo hil devices reset BOARD [--download]   reset through the board's UART bridge
   cargo hil [--owner NAME] devices maintenance BOARD|--stand --reason TEXT   only NAME may claim BOARD (or the stand) until release; other runs wait
   cargo hil devices release BOARD [--confirm reset|power-cycle|rom-answers]
   cargo hil runs list [--scenario S] [--outcome O] [--image I] [--since 3d]
@@ -1380,43 +1379,6 @@ fn devices(
     let cli = DevicesCli::try_parse_from(args)?;
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
     match cli.command {
-        Some(DevicesCommand::Reset { board, download }) => {
-            let devices = arbiter.devices()?;
-            let mac = oer_hil_arbiter::board_mac(&devices, &board)?;
-            let reset = devices
-                .iter()
-                .find(|device| device.mac == mac)
-                .and_then(|device| device.control.as_ref()?.reset.clone())
-                .ok_or_else(|| {
-                    format!("board `{board}` has no reset path; give it a `uart-bridge` in the stand file")
-                })?;
-            let request = oer_hil_arbiter::Request {
-                owner: options.owner(ctx)?,
-                work: format!(
-                    "devices reset {board}{}",
-                    if download { " --download" } else { "" }
-                ),
-                scenarios: Vec::new(),
-                claims: vec![oer_hil_arbiter::Claim::board(&mac)],
-            };
-            let _grant = arbiter.acquire(&request)?;
-            let mode = if download {
-                oer_hil_arbiter::BootMode::Download
-            } else {
-                oer_hil_arbiter::BootMode::Normal
-            };
-            let banner = reset.reset(mode)?;
-            match oer_hil_arbiter::control::reset_line(&banner) {
-                Some(line) => println!("{board} ({mac}) reset: {line}"),
-                None => {
-                    return Err(format!(
-                        "{board} ({mac}) printed no ROM reset line after the reset: {banner:?}"
-                    )
-                    .into());
-                }
-            }
-            return Ok(std::process::ExitCode::SUCCESS);
-        }
         Some(DevicesCommand::Maintenance {
             board,
             stand,
@@ -2357,15 +2319,6 @@ struct DevicesCli {
 }
 #[derive(clap::Subcommand)]
 enum DevicesCommand {
-    /// Reset a board through its UART bridge under a lease of that board,
-    /// and print the reset reason its ROM reports.
-    Reset {
-        #[arg(value_name = "NAME|MAC")]
-        board: String,
-        /// Hold the boot strap low: the ROM waits for a download.
-        #[arg(long)]
-        download: bool,
-    },
     /// Take a board out of service: until `release`, only this owner
     /// (`--owner`, else the checkout) may claim it. Leases already held
     /// run on.
@@ -2655,8 +2608,9 @@ mod tests {
         use oer_hil_arbiter::{AIR, Claim, Mode};
         let devices = [oer_hil_arbiter::Device {
             mac: "38:44:BE:AA:25:64".into(),
-            name: Some("esp32c5".into()),
-            ..oer_hil_arbiter::Device::default()
+            name: "esp32c5".into(),
+            chip: "esp32c5".into(),
+            power: None,
         }];
         assert_eq!(
             lease_claims(&[], None, true, &devices).unwrap(),

@@ -30,9 +30,7 @@ pub(crate) enum Via {
     Rts,
     /// Reset the CPU through the chip's JTAG with OpenOCD.
     Jtag,
-    /// Pulse EN through the board's registered UART bridge.
-    En,
-    /// Cycle the power of the board's registered hub port: off, then on. The
+    /// Cycle the power of the board's hub port: off, then on. The
     /// stand's only way to switch a hub port; a lease runs no `uhubctl`.
     Power,
 }
@@ -46,9 +44,6 @@ pub(crate) enum BoardCommand {
         board: String,
         #[arg(long, value_enum, default_value = "rts")]
         via: Via,
-        /// Hold the boot strap low: the ROM waits for a download (`--via en`).
-        #[arg(long)]
-        download: bool,
     },
     /// Report whether a board is attached and answers, what it runs and how
     /// the stand reaches it, without resetting it.
@@ -150,22 +145,15 @@ pub(crate) fn board(
     command: BoardCommand,
 ) -> Result<std::process::ExitCode> {
     match command {
-        BoardCommand::Reset {
-            board,
-            via,
-            download,
-        } => {
+        BoardCommand::Reset { board, via } => {
             let target = target(&board)?;
-            if download && via != Via::En {
-                return Err("--download needs --via en: only EN holds the boot strap".into());
-            }
             let _grant = lease(
                 &target,
                 owner,
                 format!("board reset {board} --via {via:?}"),
                 false,
             )?;
-            let line = reset(&target, via, download)?;
+            let line = reset(&target, via)?;
             println!(
                 "{board} ({}) reset via {}: {}",
                 target.mac,
@@ -220,7 +208,7 @@ pub(crate) fn power_reset_line(owner: String, board: &str) -> Result<Option<Stri
         format!("stand discover --verify-power {board}"),
         false,
     )?;
-    reset(&target, Via::Power, false)
+    reset(&target, Via::Power)
 }
 
 /// Whether a reset's ROM line shows the board booting from flash, or why not.
@@ -238,7 +226,6 @@ fn reset_path(via: Via) -> oer_hil_arbiter::ResetPath {
     match via {
         Via::Rts => oer_hil_arbiter::ResetPath::Rts,
         Via::Jtag => oer_hil_arbiter::ResetPath::Jtag,
-        Via::En => oer_hil_arbiter::ResetPath::En,
         Via::Power => oer_hil_arbiter::ResetPath::Power,
     }
 }
@@ -275,7 +262,7 @@ fn soak(
             cycle += 1;
             for &path in via {
                 resets += 1;
-                let line = reset(&target, path, false)?;
+                let line = reset(&target, path)?;
                 let name = format!("{path:?}").to_lowercase();
                 match booted(line.as_deref()) {
                     Ok(()) => println!("{cycle} {name}: {}", line.unwrap_or_default()),
@@ -380,7 +367,7 @@ fn answer(
 
 /// Reset the target and return its ROM's `rst:` line, reading the console
 /// again when the reset made the port re-enumerate.
-fn reset(target: &Target, via: Via, download: bool) -> Result<Option<String>> {
+fn reset(target: &Target, via: Via) -> Result<Option<String>> {
     let lines = match via {
         Via::Rts => hil_flash::serial_lines(retrying(|| {
             hil_flash::reset_into_application(&target.port)
@@ -395,29 +382,13 @@ fn reset(target: &Target, via: Via, download: bool) -> Result<Option<String>> {
             crate::hil_jtag::reset(chip, &target.mac)?;
             lines
         }
-        Via::En => {
-            let control = target
-                .arbiter
-                .devices()?
-                .into_iter()
-                .find(|device| device.mac == target.mac)
-                .and_then(|device| device.control?.reset)
-                .ok_or("the board has no reset path; give it a `uart-bridge` in the stand file")?;
-            let mode = if download {
-                oer_hil_arbiter::BootMode::Download
-            } else {
-                oer_hil_arbiter::BootMode::Normal
-            };
-            let banner = control.reset(mode)?;
-            return Ok(oer_hil_arbiter::control::reset_line(&banner).map(str::to_owned));
-        }
         Via::Power => {
             let power = target
                 .arbiter
                 .devices()?
                 .into_iter()
                 .find(|device| device.mac == target.mac)
-                .and_then(|device| device.control?.power)
+                .and_then(|device| device.power)
                 .ok_or(
                     "the board does not reset by power; add `power` to its `reset` in the stand file",
                 )?;
@@ -464,8 +435,8 @@ fn retrying<T, E>(
 /// else can hold.
 pub(crate) fn boots(board: &str) -> Result<String> {
     let target = target(board)?;
-    let line = reset(&target, Via::Rts, false)?
-        .ok_or("no ROM reset line on its console after an RTS reset")?;
+    let line =
+        reset(&target, Via::Rts)?.ok_or("no ROM reset line on its console after an RTS reset")?;
     if line.contains("DOWNLOAD") {
         return Err(format!("its ROM waits for a download: {line}").into());
     }
@@ -512,11 +483,10 @@ fn check(target: &Target, board: &str) -> Result<()> {
             maintenance.owner, maintenance.reason
         );
     }
-    let control = device.and_then(|device| device.control.as_ref());
     println!(
         "  reset paths: rts, jtag{}",
-        if control.is_some_and(|control| control.reset.is_some()) {
-            ", en (UART bridge)"
+        if device.is_some_and(|device| device.power.is_some()) {
+            ", power (hub port)"
         } else {
             ""
         }
@@ -620,7 +590,7 @@ mod tests {
     }
 
     #[test]
-    fn a_download_reset_needs_the_en_path() {
+    fn a_reset_names_its_path() {
         use clap::Parser as _;
         #[derive(clap::Parser)]
         struct Wrap {
@@ -630,11 +600,8 @@ mod tests {
         let parsed = Wrap::try_parse_from(["x", "reset", "esp32c5", "--via", "jtag"]).unwrap();
         assert!(matches!(
             parsed.command,
-            BoardCommand::Reset {
-                via: Via::Jtag,
-                download: false,
-                ..
-            }
+            BoardCommand::Reset { via: Via::Jtag, .. }
         ));
+        assert!(Wrap::try_parse_from(["x", "reset", "esp32c5", "--via", "en"]).is_err());
     }
 }

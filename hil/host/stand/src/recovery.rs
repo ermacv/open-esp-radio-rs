@@ -103,12 +103,6 @@ pub fn recover(
     let evidence = output.join("post-mortem");
     let hardware = post_mortem::current_port(port, Some(&mac), Duration::ZERO).is_none()
         || console_waits_for_download(output);
-    let reset = arbiter
-        .devices()
-        .ok()?
-        .into_iter()
-        .find(|device| device.mac == mac)
-        .and_then(|device| device.control?.reset);
     let rts = || {
         post_mortem::current_port(port, Some(&mac), Duration::from_secs(5))
             .and_then(|port| rts_reset(&port).ok())
@@ -119,20 +113,7 @@ pub fn recover(
             .and_then(oer_hil_arbiter::control::reset_line)
             .map(str::to_owned)
     };
-    let (mut step, mut banner) = match &reset {
-        Some(reset) => (
-            RecoveryStep::EnReset,
-            reset.reset(oer_hil_arbiter::BootMode::Normal).ok(),
-        ),
-        None => (RecoveryStep::RtsReset, rts()),
-    };
-    // Every path is tried before a silent ROM is taken for a lost board.
-    if line_of(&banner).is_none() && reset.is_some() {
-        let retried = rts();
-        if line_of(&retried).is_some() {
-            (step, banner) = (RecoveryStep::RtsReset, retried);
-        }
-    }
+    let (step, banner) = (RecoveryStep::RtsReset, rts());
     let reset_line = line_of(&banner);
     let core0 = banner.as_deref().and_then(saved_pc).map(|address| {
         let symbols = elf.and_then(|elf| addr2line::Loader::new(elf).ok());
@@ -274,14 +255,14 @@ pub fn escalate_boot_loop(
 ) -> ResetEscalation {
     let mac = mac.map(str::to_owned).or_else(|| board_mac(port));
     let arbiter = Arbiter::open().ok();
-    let control = mac.as_deref().and_then(|mac| {
+    let power = mac.as_deref().and_then(|mac| {
         arbiter
             .as_ref()?
             .devices()
             .ok()?
             .into_iter()
             .find(|device| device.mac == mac)?
-            .control
+            .power
     });
     let mut steps = Vec::new();
     let mut try_step = |step: RecoveryStep, reset: &dyn Fn() -> crate::Result<Option<String>>| {
@@ -319,12 +300,7 @@ pub fn escalate_boot_loop(
             Err("no OpenOCD was passed to the runner or the board's MAC is unknown".into())
         }),
     };
-    if !cleared && let Some(reset) = control.as_ref().and_then(|control| control.reset.clone()) {
-        cleared = try_step(RecoveryStep::EnReset, &|| {
-            Ok(Some(reset.reset(oer_hil_arbiter::BootMode::Normal)?))
-        });
-    }
-    if !cleared && let Some(power) = control.as_ref().and_then(|control| control.power.clone()) {
+    if !cleared && let Some(power) = power.clone() {
         cleared = try_step(RecoveryStep::PowerCycle, &|| {
             power.cycle()?;
             Ok(None)

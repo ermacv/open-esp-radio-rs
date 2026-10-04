@@ -332,12 +332,9 @@ pub fn flash(
                 .arg(file);
             oer_process::run(&mut command)?;
         }
-        // espflash's reset leaves an esp32c5 in its ROM download mode, and
-        // an RTS reset after it leaves its USB console silent: a board with
-        // an EN path starts through a power-on reset.
-        if !oer_hil_board::reset::power_on_reset(&port)? {
-            drop(crate::hil_flash::reset_into_application(&port)?);
-        }
+        // espflash's reset leaves an esp32c5 in its ROM download mode; an
+        // RTS reset starts the application.
+        drop(crate::hil_flash::reset_into_application(&port)?);
     }
     let (commit, dirty) = source_revision(&ctx.root, &entry.directory);
     arbiter.record_board_by(
@@ -375,14 +372,15 @@ pub struct Board {
     pub chip: Option<String>,
 }
 
-/// The attached board `board` names: a registered name or a MAC.
+/// The attached board `board` names: a stand-file id, its only chip or a
+/// MAC.
 pub fn resolve_board(arbiter: &oer_hil_arbiter::Arbiter, board: &str) -> Result<Board> {
     let devices = arbiter.devices()?;
     let mac = oer_hil_arbiter::board_mac(&devices, board)?;
     let chip = devices
         .iter()
         .find(|device| device.mac == mac)
-        .and_then(|device| device.chip.clone());
+        .map(|device| device.chip.clone());
     let port = oer_hil_arbiter::attached_ports()
         .into_iter()
         .find(|port| port.mac.as_deref() == Some(mac.as_str()))

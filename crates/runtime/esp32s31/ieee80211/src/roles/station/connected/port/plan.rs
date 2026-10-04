@@ -47,6 +47,33 @@ pub struct ConnectedStaBlockAckPolicy {
     pub request_initial_tx_block_ack: bool,
 }
 
+impl ConnectedStaBlockAckPolicy {
+    /// The station's TX Block Ack originator: the Espressif TIDs and Dialog
+    /// Tokens, its window bounded by the S31 TX queue geometry.
+    pub fn tx_block_ack_originator(
+        &self,
+    ) -> Result<StaTxBlockAckOriginator, ConnectedStaConfigError> {
+        if self.tx_block_ack_window > TX_BLOCK_ACK_MAX_WINDOW {
+            return Err(ConnectedStaConfigError::TxBlockAckWindow(
+                self.tx_block_ack_window,
+            ));
+        }
+        StaTxBlockAckOriginator::new(
+            StaTxBlockAckPolicy {
+                tids: &oer_espressif_ieee80211_policy::block_ack::STA_TX_BLOCK_ACK_TIDS,
+                first_dialog_token: oer_espressif_ieee80211_policy::block_ack::FIRST_DIALOG_TOKEN,
+                next_dialog_token: oer_espressif_ieee80211_policy::block_ack::next_dialog_token,
+            },
+            StaTxBlockAckConfig {
+                window: self.tx_block_ack_window,
+                negotiation_timeout: self.tx_block_ack_negotiation_timeout,
+                amsdu_tids: u8::from(self.tid0_amsdu),
+            },
+        )
+        .map_err(ConnectedStaConfigError::TxBlockAck)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ConnectedStaRxPolicy {
     pub ingress: RxIngressConfig,
@@ -86,7 +113,9 @@ pub enum ConnectedStaConfigError {
         data_tid: u8,
     },
     PeerDoesNotSupportQos,
-    TxBlockAck(TxBlockAckError),
+    TxBlockAck(StaTxBlockAckError),
+    /// The TX Block Ack window exceeds the S31 TX queue geometry.
+    TxBlockAckWindow(u16),
     RxBlockAck(RxBlockAckSessionsError),
     BeaconLoss(StaBeaconLossConfigError),
 }
@@ -466,15 +495,8 @@ impl ConnectedStaPort {
                 peer,
             });
         }
-        if let Err(error) = StaTxBlockAckSessions::new(
-            config.block_ack.tx_block_ack_window,
-            config.block_ack.tx_block_ack_negotiation_timeout,
-            config.block_ack.tid0_amsdu,
-        ) {
-            return Err(ConnectedStaPrepareFailure {
-                error: ConnectedStaConfigError::TxBlockAck(error),
-                peer,
-            });
+        if let Err(error) = config.block_ack.tx_block_ack_originator() {
+            return Err(ConnectedStaPrepareFailure { error, peer });
         }
         if let Err(error) = RxBlockAckSessions::<1>::with_maximum_window(
             config.block_ack.rx_block_ack_maximum_window,

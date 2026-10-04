@@ -4,7 +4,19 @@ fn core() -> ConnectedControlCore {
     ConnectedControlCore::new(
         [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
         true,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
+        oer_ieee80211_sta::block_ack::StaTxBlockAckOriginator::new(
+            oer_ieee80211_sta::block_ack::StaTxBlockAckPolicy {
+                tids: &STA_TX_BLOCK_ACK_TIDS,
+                first_dialog_token: oer_espressif_ieee80211_policy::block_ack::FIRST_DIALOG_TOKEN,
+                next_dialog_token: oer_espressif_ieee80211_policy::block_ack::next_dialog_token,
+            },
+            oer_ieee80211_sta::block_ack::StaTxBlockAckConfig {
+                window: 32,
+                negotiation_timeout: oer_time::Duration::from_micros(100_000),
+                amsdu_tids: 1,
+            },
+        )
+        .unwrap(),
         1,
     )
 }
@@ -15,8 +27,7 @@ fn readiness_combines_owned_state_with_external_event_state() {
     assert!(!core.has_immediate_work(false));
     assert!(core.has_immediate_work(true));
 
-    core.initial_tx_block_ack[1] = true;
-    core.tx_block_ack_attempts_remaining[1] = 1;
+    core.tx_block_ack.queue_initial(1);
     assert!(core.has_immediate_work(false));
 }
 
@@ -84,8 +95,7 @@ fn connected_ftm_request_is_consumed_at_hardware_frontier() {
 #[test]
 fn frames_of_blocked_tx_queues_are_not_immediate_work() {
     let mut core = core();
-    core.initial_tx_block_ack[1] = true;
-    core.tx_block_ack_attempts_remaining[1] = 1;
+    core.tx_block_ack.queue_initial(1);
     core.power.tx_blocked = true;
     assert!(core.power_blocks_tx());
     assert!(!core.admits_network_tx());

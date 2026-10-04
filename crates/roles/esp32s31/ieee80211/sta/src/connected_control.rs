@@ -36,11 +36,7 @@ use oer_esp32s31_ieee80211_mac::{
     },
     tx::{
         HeTriggerBasedTxConfig, HeTriggerScheduledRate, HeTriggerScheduledRateError, TxHardware,
-        ampdu::{
-            BlockAckAction, STA_TX_BLOCK_ACK_TIDS, StaTxBlockAckResponse,
-            StaTxBlockAckResponseDisposition, StaTxBlockAckSessions, StaTxBlockAckSessionsError,
-            TxBlockAckResponse,
-        },
+        ampdu::{BlockAckAction, TxBlockAckResponse},
         protection::{BssProtection, HeTxopDurationRtsThreshold},
     },
 };
@@ -54,6 +50,11 @@ use oer_ieee80211_mac::{
     twt::{INDIVIDUAL_TWT_FLOW_CAPACITY, IndividualTwtAction, IndividualTwtFlowId},
 };
 
+use oer_espressif_ieee80211_policy::block_ack::STA_TX_BLOCK_ACK_TIDS;
+use oer_ieee80211_sta::block_ack::{
+    StaTxBlockAckError, StaTxBlockAckOriginator, StaTxBlockAckResponse,
+    StaTxBlockAckResponseDisposition,
+};
 use oer_ieee80211_sta::{
     ftm::{
         FtmRequester, FtmRequesterConfig, FtmRequesterError, FtmRequesterEvent, FtmRequesterService,
@@ -522,7 +523,7 @@ pub struct ConnectedControlCoreShutdown {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectedControlError {
     RxSession(RxBlockAckSessionsError),
-    TxSession(StaTxBlockAckSessionsError),
+    TxSession(StaTxBlockAckError),
     Hardware(S31RxBlockAckAgreementError),
     Tx(SingleMpduTxError),
     MissingTxOutcome,
@@ -551,8 +552,8 @@ impl From<RxBlockAckSessionsError> for ConnectedControlError {
     }
 }
 
-impl From<StaTxBlockAckSessionsError> for ConnectedControlError {
-    fn from(error: StaTxBlockAckSessionsError) -> Self {
+impl From<StaTxBlockAckError> for ConnectedControlError {
+    fn from(error: StaTxBlockAckError) -> Self {
         Self::TxSession(error)
     }
 }
@@ -627,9 +628,7 @@ pub struct ConnectedControlCore {
     peer: [u8; 6],
     he_enabled: bool,
     he_trigger_based: Option<HeTriggerBasedTxConfig>,
-    tx_block_ack: StaTxBlockAckSessions,
-    initial_tx_block_ack: [bool; 3],
-    tx_block_ack_attempts_remaining: [u8; 3],
+    tx_block_ack: StaTxBlockAckOriginator,
     in_flight: Option<ControlInFlight>,
     beacon_monitor: Option<StaLinkMonitor>,
     beacon_lost: bool,
@@ -670,7 +669,7 @@ impl ConnectedControlCore {
     pub fn new(
         peer: [u8; 6],
         he_enabled: bool,
-        tx_block_ack: StaTxBlockAckSessions,
+        tx_block_ack: StaTxBlockAckOriginator,
         tsf_epoch: u32,
     ) -> Self {
         Self {
@@ -678,8 +677,6 @@ impl ConnectedControlCore {
             he_enabled,
             he_trigger_based: None,
             tx_block_ack,
-            initial_tx_block_ack: [false; 3],
-            tx_block_ack_attempts_remaining: [0; 3],
             in_flight: None,
             beacon_monitor: None,
             beacon_lost: false,
@@ -797,11 +794,10 @@ impl ConnectedControlCore {
     /// and leaves the next one pending; an explicit peer response is terminal.
     pub fn queue_initial_tx_block_ack(&mut self, attempt_limit: u8) {
         debug_assert!(attempt_limit != 0);
-        self.initial_tx_block_ack.fill(true);
-        self.tx_block_ack_attempts_remaining.fill(attempt_limit);
+        self.tx_block_ack.queue_initial(attempt_limit);
     }
 
-    pub const fn tx_block_ack(&self) -> &StaTxBlockAckSessions {
+    pub const fn tx_block_ack(&self) -> &StaTxBlockAckOriginator {
         &self.tx_block_ack
     }
 
@@ -890,8 +886,7 @@ impl ConnectedControlCore {
     }
 
     pub fn has_immediate_work(&self, control_event_pending: bool) -> bool {
-        let transmit_work = self.individual_twt_kick
-            || self.initial_tx_block_ack.into_iter().any(|pending| pending);
+        let transmit_work = self.individual_twt_kick || self.tx_block_ack.has_pending();
         self.in_flight.is_some()
             || control_event_pending
             || (transmit_work && !self.power.blocks_tx())
@@ -982,21 +977,13 @@ impl ConnectedControlCore {
         }
         rx_block_ack.prepare_interface(MacInterface::Station)?;
 
-        let mut tx_block_ack_sessions = 0_u8;
+        let tx_block_ack_sessions = self.tx_block_ack.stop_all();
         for tid in STA_TX_BLOCK_ACK_TIDS {
-            if self.tx_block_ack.operational(tid).is_some()
-                || self.tx_block_ack.alarm(tid).is_some()
-            {
-                tx_block_ack_sessions = tx_block_ack_sessions.saturating_add(1);
-            }
-            self.tx_block_ack.stop(tid);
             tx.set_tx_block_ack_agreement(tid, None);
             if self.he_enabled {
                 hardware.set_he_tid_enabled(tid, false)?;
             }
         }
-        self.initial_tx_block_ack.fill(false);
-        self.tx_block_ack_attempts_remaining.fill(0);
         if let Some(requester) = self.individual_twt.as_mut() {
             for value in 0..INDIVIDUAL_TWT_FLOW_CAPACITY as u8 {
                 let flow_id = IndividualTwtFlowId::new(value)
@@ -1079,15 +1066,8 @@ impl ConnectedControlCore {
                 }
                 ControlInFlight::TxAddba { .. } if success => {}
                 ControlInFlight::TxAddba { tid } => {
-                    self.tx_block_ack.stop(tid);
+                    self.tx_block_ack.transmit_failed(tid);
                     tx.set_tx_block_ack_agreement(tid, None);
-                    if let Some(index) = STA_TX_BLOCK_ACK_TIDS
-                        .into_iter()
-                        .position(|candidate| candidate == tid)
-                        && self.tx_block_ack_attempts_remaining[index] != 0
-                    {
-                        self.initial_tx_block_ack[index] = true;
-                    }
                 }
                 ControlInFlight::BeaconProbe
                 | ControlInFlight::SaQuery
@@ -1157,13 +1137,6 @@ impl ConnectedControlCore {
         if let Some(tid) = self.tx_block_ack.expire_next(now) {
             tx.set_tx_block_ack_agreement(tid, None);
             self.observations.last_expired_tid = Some(tid);
-            if let Some(index) = STA_TX_BLOCK_ACK_TIDS
-                .into_iter()
-                .position(|candidate| candidate == tid)
-                && self.tx_block_ack_attempts_remaining[index] != 0
-            {
-                self.initial_tx_block_ack[index] = true;
-            }
             return Ok(DatapathControlProgress::More);
         }
         // The SA Query timeout runs whether or not frames may leave.
@@ -1203,14 +1176,7 @@ impl ConnectedControlCore {
             None => {}
         }
 
-        if let Some(index) = self
-            .initial_tx_block_ack
-            .iter()
-            .position(|pending| *pending)
-        {
-            self.initial_tx_block_ack[index] = false;
-            self.tx_block_ack_attempts_remaining[index] -= 1;
-            let tid = STA_TX_BLOCK_ACK_TIDS[index];
+        if let Some(tid) = self.tx_block_ack.take_pending() {
             return self.start_tx_addba(hardware, tx, tid);
         }
 
@@ -1443,13 +1409,6 @@ impl ConnectedControlCore {
                     }
                 };
                 let StaTxBlockAckResponse { tid, response } = response;
-                if let Some(index) = STA_TX_BLOCK_ACK_TIDS
-                    .into_iter()
-                    .position(|candidate| candidate == tid)
-                {
-                    self.tx_block_ack_attempts_remaining[index] = 0;
-                    self.initial_tx_block_ack[index] = false;
-                }
                 let negotiated_agreement = match response {
                     TxBlockAckResponse::Operational(agreement) => {
                         trace_link(LinkEvent::BlockAckOperational {

@@ -182,7 +182,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         receiver: ConnectedControlReceiver<'resources, M, CAPACITY>,
         peer: [u8; 6],
         he_enabled: bool,
-        tx_block_ack: oer_esp32s31_ieee80211_mac::tx::ampdu::StaTxBlockAckSessions,
+        tx_block_ack: oer_ieee80211_sta::block_ack::StaTxBlockAckOriginator,
         tsf_epoch: u32,
     ) -> Self {
         Self {
@@ -204,7 +204,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         receiver: ConnectedControlReceiver<'resources, M, CAPACITY>,
         peer: [u8; 6],
         he_enabled: bool,
-        tx_block_ack: oer_esp32s31_ieee80211_mac::tx::ampdu::StaTxBlockAckSessions,
+        tx_block_ack: oer_ieee80211_sta::block_ack::StaTxBlockAckOriginator,
         rx_block_ack: &'resources StaApRxBlockAck,
         tsf_epoch: u32,
     ) -> Self {
@@ -377,9 +377,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         self.rx_block_ack.sessions()
     }
 
-    pub const fn tx_block_ack(
-        &self,
-    ) -> &oer_esp32s31_ieee80211_mac::tx::ampdu::StaTxBlockAckSessions {
+    pub const fn tx_block_ack(&self) -> &oer_ieee80211_sta::block_ack::StaTxBlockAckOriginator {
         self.core.tx_block_ack()
     }
 

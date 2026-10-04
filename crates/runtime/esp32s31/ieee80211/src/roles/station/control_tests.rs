@@ -31,8 +31,7 @@ use oer_esp32s31_ieee80211_mac::{
         hardware::{RxBlockAckHardware, S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
     },
     tx::{
-        HardwareOwnedTxDma, PreparedTxDma, TxHardware, TxSlot,
-        ampdu::{BlockAckAction, STA_TX_BLOCK_ACK_TIDS, StaTxBlockAckSessions},
+        HardwareOwnedTxDma, PreparedTxDma, TxHardware, TxSlot, ampdu::BlockAckAction,
         runtime::WifiTxRuntimePolicy,
     },
 };
@@ -82,6 +81,25 @@ const RSN: [u8; 22] = [
     0x30, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0, 0,
 ];
 const INITIAL_GTK: [u8; 16] = [0x11; 16];
+
+use oer_espressif_ieee80211_policy::block_ack::STA_TX_BLOCK_ACK_TIDS;
+
+/// The station's originator as the connected plan builds it.
+fn tx_block_ack() -> oer_ieee80211_sta::block_ack::StaTxBlockAckOriginator {
+    oer_ieee80211_sta::block_ack::StaTxBlockAckOriginator::new(
+        oer_ieee80211_sta::block_ack::StaTxBlockAckPolicy {
+            tids: &STA_TX_BLOCK_ACK_TIDS,
+            first_dialog_token: oer_espressif_ieee80211_policy::block_ack::FIRST_DIALOG_TOKEN,
+            next_dialog_token: oer_espressif_ieee80211_policy::block_ack::next_dialog_token,
+        },
+        oer_ieee80211_sta::block_ack::StaTxBlockAckConfig {
+            window: 32,
+            negotiation_timeout: oer_time::Duration::from_micros(100_000),
+            amsdu_tids: 1,
+        },
+    )
+    .unwrap()
+}
 
 fn ptk_context() -> PtkContext {
     PtkContext {
@@ -625,13 +643,7 @@ fn connected_runtime_binds_beacon_frontier_but_retains_software_monitor() {
     let (_publisher, receiver) = resources.split();
     let policy =
         StaBeaconLossConfig::new(100, 10, oer_time::Duration::from_micros(1_024_000)).unwrap();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        false,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, false, tx_block_ack(), 1);
     control.enable_beacon_loss(policy);
     control
         .enable_hardware_beacon_monitor_frontier(
@@ -679,13 +691,7 @@ fn connected_runtime_binds_beacon_frontier_but_retains_software_monitor() {
 fn peer_accepted_explicit_twt_kicks_teardown_into_connected_tx() {
     let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
     let (mut publisher, receiver) = resources.split();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        false,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, false, tx_block_ack(), 1);
     control.enable_individual_twt_requester(
         IndividualTwtRequesterConfig::new(
             oer_time::Duration::from_micros(1_000),
@@ -958,13 +964,7 @@ fn duplicate_message3_reuses_connected_key_and_pn_while_forged_frames_are_ignore
 fn initial_tx_block_ack_requests_follow_zero_seven_five_and_arm_alarms() {
     let resources = ConnectedControlResources::<NoopRawMutex, 8>::new();
     let (_publisher, receiver) = resources.split();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        true,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, true, tx_block_ack(), 1);
     control.queue_initial_tx_block_ack(2);
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
@@ -1013,13 +1013,7 @@ fn rx_addba_hardware_is_committed_only_after_response_tx_success() {
     let (mut publisher, receiver) = resources.split();
     let reorder_resources = RxReorderCommandResources::<NoopRawMutex>::new();
     let (reorder_sender, reorder_receiver) = reorder_resources.split();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        false,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, false, tx_block_ack(), 1);
     control.set_rx_reorder_commands(reorder_sender);
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
@@ -1105,13 +1099,7 @@ fn failed_rx_addba_response_rolls_back_hardware_and_software() {
     let (mut publisher, receiver) = resources.split();
     let reorder_resources = RxReorderCommandResources::<NoopRawMutex>::new();
     let (reorder_sender, reorder_receiver) = reorder_resources.split();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        false,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, false, tx_block_ack(), 1);
     control.set_rx_reorder_commands(reorder_sender);
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
@@ -1186,13 +1174,7 @@ fn failed_rx_addba_response_rolls_back_hardware_and_software() {
 fn tx_addba_response_and_delba_toggle_he_tid_ownership() {
     let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
     let (mut publisher, receiver) = resources.split();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        true,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, true, tx_block_ack(), 1);
     control.queue_initial_tx_block_ack(1);
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
@@ -1266,13 +1248,7 @@ fn tx_addba_response_and_delba_toggle_he_tid_ownership() {
 fn beacon_loss_disconnects_only_after_bounded_active_probes() {
     let resources = ConnectedControlResources::<NoopRawMutex, 8>::new();
     let (_publisher, receiver) = resources.split();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        true,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, true, tx_block_ack(), 1);
     control.enable_beacon_loss(
         StaBeaconLossConfig::new(100, 3, oer_time::Duration::from_micros(307_200)).unwrap(),
     );
@@ -1317,13 +1293,7 @@ fn beacon_loss_disconnects_only_after_bounded_active_probes() {
 fn associated_probe_response_cancels_beacon_loss_recovery() {
     let resources = ConnectedControlResources::<NoopRawMutex, 8>::new();
     let (mut publisher, receiver) = resources.split();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        false,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, false, tx_block_ack(), 1);
     control.enable_beacon_loss(
         StaBeaconLossConfig::new(100, 3, oer_time::Duration::from_micros(307_200)).unwrap(),
     );
@@ -1365,13 +1335,7 @@ fn associated_probe_response_cancels_beacon_loss_recovery() {
 fn peer_deauthentication_disconnects_with_its_reason_code() {
     let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
     let (mut publisher, receiver) = resources.split();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        false,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, false, tx_block_ack(), 1);
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
         prepare: true,
@@ -1397,13 +1361,7 @@ fn peer_deauthentication_disconnects_with_its_reason_code() {
 fn mailbox_overflow_fails_closed_before_processing_an_incomplete_event_stream() {
     let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
     let (mut publisher, receiver) = resources.split();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        false,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, false, tx_block_ack(), 1);
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
         prepare: true,
@@ -1438,13 +1396,7 @@ fn mailbox_overflow_fails_closed_before_processing_an_incomplete_event_stream() 
 fn shutdown_clears_rx_tx_block_ack_and_discards_late_control_events() {
     let resources = ConnectedControlResources::<NoopRawMutex, 8>::new();
     let (mut publisher, receiver) = resources.split();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        true,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, true, tx_block_ack(), 1);
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
         prepare: true,
@@ -1546,13 +1498,7 @@ fn shutdown_clears_rx_tx_block_ack_and_discards_late_control_events() {
 fn station_shutdown_preserves_access_point_rx_block_ack_banks() {
     let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
     let (_publisher, receiver) = resources.split();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        true,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, true, tx_block_ack(), 1);
     control
         .rx_block_ack()
         .offer(RxBlockAckRequest {
@@ -1590,13 +1536,7 @@ fn station_shutdown_preserves_access_point_rx_block_ack_banks() {
 fn beacon_received_on_exact_deadline_refreshes_before_loss_check() {
     let resources = ConnectedControlResources::<NoopRawMutex, 8>::new();
     let (mut publisher, receiver) = resources.split();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        false,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, false, tx_block_ack(), 1);
     control.enable_beacon_loss(
         StaBeaconLossConfig::new(100, 3, oer_time::Duration::from_micros(307_200)).unwrap(),
     );
@@ -1639,13 +1579,7 @@ fn connected_beacon_protection_updates_the_tx_bss_facts() {
 
     let resources = ConnectedControlResources::<NoopRawMutex, 8>::new();
     let (mut publisher, receiver) = resources.split();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        false,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, false, tx_block_ack(), 1);
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
         prepare: true,
@@ -1729,13 +1663,7 @@ fn a_shared_station_leaves_the_air_at_its_slice_end_and_holds_its_frames() {
     let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
     let (_publisher, receiver) = resources.split();
     let link = StationPowerLink::<NoopRawMutex>::new();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        false,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, false, tx_block_ack(), 1);
     control.enable_power_management(SleepType::None, join_beacon(), link.bind(&SharedCoex));
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
@@ -1847,13 +1775,7 @@ fn frames_wait_until_the_agent_performed_the_commands_before_them() {
     let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
     let (_publisher, receiver) = resources.split();
     let link = StationPowerLink::<NoopRawMutex>::new();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        false,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, false, tx_block_ack(), 1);
     control.enable_power_management(SleepType::None, join_beacon(), link.bind(&SharedCoex));
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
@@ -1878,13 +1800,7 @@ fn a_controlled_stop_wakes_and_sends_one_leaving_deauthentication() {
     let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
     let (_publisher, receiver) = resources.split();
     let link = StationPowerLink::<NoopRawMutex>::new();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        false,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, false, tx_block_ack(), 1);
     control.enable_power_management(SleepType::None, join_beacon(), link.bind(&SharedCoex));
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
@@ -1944,13 +1860,7 @@ fn shutdown_stops_power_management_and_hands_the_releases_to_the_agent() {
     let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
     let (_publisher, receiver) = resources.split();
     let link = StationPowerLink::<NoopRawMutex>::new();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        false,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, false, tx_block_ack(), 1);
     control.enable_power_management(SleepType::None, join_beacon(), link.bind(&SharedCoex));
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
@@ -2216,13 +2126,7 @@ fn management_protected_control<'a>(
     }
 
     let (publisher, receiver) = resources.split();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        false,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, false, tx_block_ack(), 1);
     let (supplicant, _ptk) = established_supplicant();
     let group = install_sta_group_ccmp(hardware, 1, &INITIAL_GTK).unwrap();
     let group_material = StaGroupCcmpKeyMaterial::new(1, INITIAL_GTK).unwrap();
@@ -2329,13 +2233,7 @@ fn the_station_takes_the_access_point_tsf_at_power_start_and_from_each_beacon() 
     let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
     let (mut publisher, receiver) = resources.split();
     let link = StationPowerLink::<NoopRawMutex>::new();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        false,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, false, tx_block_ack(), 1);
     // The join beacon arrived 5 ms before power management starts.
     control.enable_power_management(
         SleepType::None,
@@ -2430,13 +2328,7 @@ fn a_beacon_queued_behind_power_inputs_takes_the_next_step() {
     let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
     let (mut publisher, receiver) = resources.split();
     let link = StationPowerLink::<NoopRawMutex>::new();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        false,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, false, tx_block_ack(), 1);
     control.enable_power_management(SleepType::None, join_beacon(), link.bind(&SharedCoex));
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
@@ -2500,13 +2392,7 @@ fn the_role_writes_the_station_tsf_through_its_owner_at_power_start_and_each_bea
     let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
     let (mut publisher, receiver) = resources.split();
     let link = StationPowerLink::<NoopRawMutex>::new();
-    let mut control = ConnectedControl::new(
-        receiver,
-        BSSID,
-        false,
-        StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-        1,
-    );
+    let mut control = ConnectedControl::new(receiver, BSSID, false, tx_block_ack(), 1);
     control.enable_power_management(
         SleepType::None,
         JoinBeacon {
@@ -2593,15 +2479,8 @@ fn a_reconnection_starts_a_new_tsf_generation_and_refuses_the_earlier_sample() {
     let clock: oer_time_virtual::VirtualClock = oer_time_virtual::VirtualClock::new();
     let storage = crate::mac_clock::MacClockStorage::<NoopRawMutex, _, _>::new(&clock);
     let mac = storage.start(HeldCounter(1_000));
-    let connect = |receiver| {
-        ConnectedControl::new(
-            receiver,
-            BSSID,
-            false,
-            StaTxBlockAckSessions::new(32, oer_time::Duration::from_micros(100_000), true).unwrap(),
-            mac.tsf_epoch(),
-        )
-    };
+    let connect =
+        |receiver| ConnectedControl::new(receiver, BSSID, false, tx_block_ack(), mac.tsf_epoch());
     let first_resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
     let (_, first_receiver) = first_resources.split();
     let first = connect(first_receiver);

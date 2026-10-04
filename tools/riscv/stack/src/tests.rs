@@ -1472,7 +1472,9 @@ fn hook_facts(elf: &[u8], call: &str, extra: &str) -> MirFacts {
             "vtables": {{}},
             "leaked_types": [], "leaked_functions": {{}}, "edges": {{}},
             "leaked_traits": [], "signatures": {{}}, "trait_contents": {{}},
-            "unknown_leak": false}}"#,
+            "leak_origins": {{}}, "unknown_origins": [],
+            "exposed": {{"keys": [], "traits": [], "unknown": false}},
+            "reads_exposed": [], "unknown_leak": false}}"#,
         symbol("shallow"),
         symbol("twice"),
         symbol("negate"),
@@ -1582,6 +1584,21 @@ fn the_mir_facts_resolve_a_site_by_its_instance_s_calls() {
                 "signatures": {"DEEP": "fn(&main::Job, u8)"}}"#
         ),
         BTreeSet::from([shallow, twice])
+    );
+    // An exposed address's contents leak once a pointer is made from an
+    // integer.
+    let exposed = r#""exposed": {"keys": ["fn(i32) -> i32"], "traits": [], "unknown": false}"#;
+    assert_eq!(
+        targets(&format!(
+            r#"{{"leaked_types": ["fn(u32) -> u32"], {exposed}}}"#
+        )),
+        BTreeSet::from([shallow, twice])
+    );
+    assert_eq!(
+        targets(&format!(
+            r#"{{"leaked_types": ["fn(u32) -> u32"], {exposed}, "reads_exposed": ["main"]}}"#
+        )),
+        BTreeSet::from([shallow, twice, negate])
     );
     // A leak of unknown contents leaks every function made a pointer.
     assert_eq!(

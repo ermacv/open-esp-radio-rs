@@ -64,6 +64,10 @@ struct CrateFacts {
     edges: BTreeMap<String, BTreeSet<String>>,
     leaked_traits: BTreeSet<String>,
     signatures: BTreeMap<String, String>,
+    leak_origins: BTreeMap<String, BTreeSet<String>>,
+    unknown_origins: BTreeSet<String>,
+    exposed: Contents,
+    reads_exposed: BTreeSet<String>,
     trait_contents: BTreeMap<String, Contents>,
     unknown_leak: bool,
 }
@@ -131,6 +135,10 @@ pub struct MirFacts {
     edges: BTreeMap<String, BTreeSet<String>>,
     leaked_traits: BTreeSet<String>,
     signatures: BTreeMap<String, String>,
+    /// Where each leaked type and trait leaked, for the report.
+    leak_origins: BTreeMap<String, BTreeSet<String>>,
+    exposed: Contents,
+    reads_exposed: BTreeSet<String>,
     trait_contents: BTreeMap<String, Contents>,
     unknown_leak: bool,
     /// Every leaked function with the key of the pointer type it leaked as
@@ -220,6 +228,20 @@ impl MirFacts {
         }
         self.leaked_traits.extend(crate_facts.leaked_traits);
         self.signatures.extend(crate_facts.signatures);
+        for (key, origins) in crate_facts.leak_origins {
+            self.leak_origins.entry(key).or_default().extend(origins);
+        }
+        let unknown_origins = crate_facts.unknown_origins;
+        if !unknown_origins.is_empty() {
+            self.leak_origins
+                .entry("unknown".into())
+                .or_default()
+                .extend(unknown_origins);
+        }
+        self.exposed.keys.extend(crate_facts.exposed.keys);
+        self.exposed.traits.extend(crate_facts.exposed.traits);
+        self.exposed.unknown |= crate_facts.exposed.unknown;
+        self.reads_exposed.extend(crate_facts.reads_exposed);
         for (name, contents) in crate_facts.trait_contents {
             let into = self.trait_contents.entry(name).or_default();
             into.keys.extend(contents.keys);
@@ -234,6 +256,14 @@ impl MirFacts {
     /// implementors' contents leak, and a type transmuted into a leaked type
     /// leaks with it.
     fn close_leaks(&mut self) {
+        // A pointer made from an integer anywhere reaches every exposed
+        // address's memory.
+        if !self.reads_exposed.is_empty() {
+            self.leaked_types.extend(self.exposed.keys.iter().cloned());
+            self.leaked_traits
+                .extend(self.exposed.traits.iter().cloned());
+            self.unknown_leak |= self.exposed.unknown;
+        }
         let mut traits: Vec<String> = self.leaked_traits.iter().cloned().collect();
         while let Some(name) = traits.pop() {
             if let Some(contents) = self.trait_contents.get(&name) {
@@ -274,6 +304,12 @@ impl MirFacts {
             }
         }
         self.leaked = leaked;
+    }
+
+    /// Where each leaked function-pointer type and trait leaked (`unknown`:
+    /// where contents of unknown parts did): the sites a report names.
+    pub fn leak_origins(&self) -> &BTreeMap<String, BTreeSet<String>> {
+        &self.leak_origins
     }
 
     /// The function-pointer types whose functions a site of type `key`

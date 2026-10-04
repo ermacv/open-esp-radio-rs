@@ -82,6 +82,9 @@ pub struct PortStationProfile<'a> {
     /// element, an integrator's policy (the Espressif stack's is
     /// `oer-espressif-ieee80211-policy::he_txop::packet_padding`).
     pub he_packet_padding: fn(&[u8]) -> oer_ieee80211_upper_mac::HePacketPadding,
+    /// The TX Block Ack agreements the station originates; `None`
+    /// originates none.
+    pub tx_block_ack: Option<PortTxBlockAck>,
     pub phy: PhyMode,
     pub listen_interval: u16,
     /// The step between the station's CCMP packet numbers: one in the
@@ -90,6 +93,17 @@ pub struct PortStationProfile<'a> {
     pub ccmp_step: CcmpPacketNumberStep,
     /// The random source of the first SA Query transaction identifier.
     pub sa_query_random: fn() -> u32,
+}
+
+/// The TX Block Ack agreements a station originates once connected.
+#[derive(Clone, Copy, Debug)]
+pub struct PortTxBlockAck {
+    /// Which TIDs and Dialog Tokens: an integrator's policy (the Espressif
+    /// station's is `oer-espressif-ieee80211-policy::block_ack`).
+    pub policy: oer_ieee80211_sta::block_ack::StaTxBlockAckPolicy,
+    pub config: oer_ieee80211_sta::block_ack::StaTxBlockAckConfig,
+    /// Negotiations of each TID before the station gives it up.
+    pub attempt_limit: u8,
 }
 
 /// Why a phase of the station failed.
@@ -106,6 +120,8 @@ pub enum PortStationError<E, U> {
     Handshake(RsnHandshakeError<PortLinkError<E>, U>),
     /// The access point's elements give no associated peer.
     Peer(StaAssociatedPeerError),
+    /// The profile's TX Block Ack policy is not one an originator takes.
+    TxBlockAck(oer_ieee80211_sta::block_ack::StaTxBlockAckError),
     KeyInstall(RsnKeyInstallError<PortLinkError<E>>),
     State(StaAttemptStateError),
 }
@@ -734,11 +750,41 @@ impl<'p, X: PortStationEnv> StaAttemptPort for PortAttemptPort<'p, X> {
                 PortStationError::State(StaAttemptStateError::MissingAssociation),
             ));
         };
+        // As the vendor station: agreements for a QoS HT or HE association
+        // under CCMP.
+        let tx_block_ack = match owner.profile.tx_block_ack.filter(|_| {
+            config.peer_qos && owner.keys.is_some() && config.peer.phy != PhyMode::Legacy
+        }) {
+            Some(block_ack) => {
+                match oer_ieee80211_sta::block_ack::StaTxBlockAckOriginator::new(
+                    block_ack.policy,
+                    block_ack.config,
+                ) {
+                    Ok(mut originator) => {
+                        originator.queue_initial(block_ack.attempt_limit);
+                        Some(originator)
+                    }
+                    Err(error) => {
+                        return Err(StaConnectedEntryFailure::new(
+                            owner,
+                            StaFailureDisposition::Terminal,
+                            PortStationError::TxBlockAck(error),
+                        ));
+                    }
+                }
+            }
+            None => None,
+        };
         let packet_number = owner
             .packet_number
             .take()
             .unwrap_or(CcmpTxPacketNumber::new(owner.profile.ccmp_step));
-        owner.connection = Some(PortConnection::new(config, owner.keys, packet_number));
+        owner.connection = Some(PortConnection::new(
+            config,
+            owner.keys,
+            packet_number,
+            tx_block_ack,
+        ));
         Ok(owner)
     }
 }

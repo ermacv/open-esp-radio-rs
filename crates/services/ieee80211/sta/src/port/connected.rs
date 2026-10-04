@@ -500,6 +500,7 @@ impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
                             context.timer.now(),
                             status.original_subframes,
                             status.block_acknowledged_subframes,
+                            status.ack_snr_db,
                         ),
                     }
                     let delivered = match report {

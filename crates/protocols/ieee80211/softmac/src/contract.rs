@@ -348,6 +348,9 @@ pub struct MacAmpduTxStatus<Rate = PhyRate> {
     pub aggregate_rate: Rate,
     /// Original MPDUs acknowledged by one or more BlockAck responses.
     pub block_acknowledged_subframes: u16,
+    /// Signed ACK SNR sample of the last BlockAck, when the hardware
+    /// reports a valid one.
+    pub ack_snr_db: Option<i8>,
     /// MPDUs taken out of the aggregate after its last publication and
     /// sent as individual frames.
     pub individual_retries: MacIndividualRetries<Rate>,

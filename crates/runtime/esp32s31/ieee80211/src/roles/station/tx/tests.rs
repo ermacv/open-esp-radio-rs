@@ -1625,6 +1625,7 @@ fn block_ack_completion_releases_all_referenced_network_leases() {
             aggregate_rate: TxPhyRate::Ht(TEST_RATE),
             block_acknowledged_subframes: 2,
             individual_retries: MacIndividualRetries::NONE,
+            ack_snr_db: Some(96),
         })
     );
     send_frame(&mut device, 4);
@@ -1711,6 +1712,7 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
             aggregate_rate: TxPhyRate::Ht(TEST_RATE),
             block_acknowledged_subframes: 3,
             individual_retries: MacIndividualRetries::NONE,
+            ack_snr_db: Some(96),
         })
     );
     send_frame(&mut device, 4);

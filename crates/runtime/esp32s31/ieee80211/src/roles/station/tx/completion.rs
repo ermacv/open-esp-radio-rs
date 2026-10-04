@@ -178,6 +178,7 @@ where
             aggregate_rate: active.config.rate(),
             block_acknowledged_subframes: u16::from(active.retry.acknowledged()),
             individual_retries: MacIndividualRetries::NONE,
+            ack_snr_db: None,
         });
         #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
@@ -261,7 +262,12 @@ where
                     block_ack_snr_db: completion.tx.ack_snr_sample(),
                 });
             }
-            return self.apply_retry_decision(hardware, active, decision);
+            return self.apply_retry_decision(
+                hardware,
+                active,
+                decision,
+                completion.tx.ack_snr_sample(),
+            );
         }
 
         if service_event == AggregateTxServiceEvent::Completion {
@@ -315,6 +321,7 @@ where
                 aggregate_rate: active.config.rate(),
                 block_acknowledged_subframes: u16::from(active.retry.acknowledged()),
                 individual_retries: MacIndividualRetries::NONE,
+                ack_snr_db: None,
             });
             #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
@@ -336,6 +343,7 @@ where
         hardware: &mut H,
         mut active: AggregateActive<SLOTS>,
         decision: AmpduRetryDecision,
+        ack_snr_db: Option<i8>,
     ) -> Result<WifiTxProgress, AggregateTxError> {
         let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
         let republication = match decision {
@@ -410,6 +418,7 @@ where
                 aggregate_rate: active.config.rate(),
                 block_acknowledged_subframes: u16::from(active.retry.acknowledged()),
                 individual_retries: MacIndividualRetries::NONE,
+                ack_snr_db,
             };
             return self.start_unaggregated_retry(
                 hardware,
@@ -434,6 +443,7 @@ where
             aggregate_rate: active.config.rate(),
             block_acknowledged_subframes: u16::from(acknowledged),
             individual_retries: MacIndividualRetries::NONE,
+            ack_snr_db,
         });
         #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
@@ -478,12 +488,15 @@ where
             self.active = ConnectedTxActive::RequestingBlockAck(active);
             return Ok(progress);
         }
-        let block_ack = self
+        let report = self
             .ordinary
             .last_outcome()
             .ok_or(AggregateTxError::MissingOrdinaryRetryStatus)?
-            .report()
-            .block_ack;
+            .report();
+        let block_ack = report.block_ack;
+        let ack_snr_db = report
+            .completion
+            .and_then(|completion| completion.ack_snr_sample());
         #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
             observer.observe(AggregateTxObservation::BlockAckRequestCompleted {
@@ -497,7 +510,7 @@ where
             self.ordinary.now().as_micros(),
             block_ack_operational,
         );
-        self.apply_retry_decision(hardware, active, decision)
+        self.apply_retry_decision(hardware, active, decision, ack_snr_db)
     }
 
     fn observe_ordinary_rate_control(&mut self) {

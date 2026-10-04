@@ -9,11 +9,24 @@
 //! MIR instance is the innermost function the DWARF inlines at it, by its
 //! linkage name. The site is
 //! one of that instance's indirect calls, so it reaches the union of their
-//! candidates: the functions made pointers of each call's type, and each
-//! call's vtable entry over every type the image makes a `dyn` of the trait.
-//! An instance without facts, with a call the MIR names no target type for,
-//! or with a call through a type a transmute produces, leaves the site
-//! unresolved.
+//! candidates: the functions made pointers of each call's type and of every
+//! type transmuted into it, each call's vtable entry over every type the
+//! image makes a `dyn` of the trait, and every leaked function whose ABI fits
+//! the call. An instance without facts, or with a call the MIR names no
+//! target type for, leaves the site unresolved.
+//!
+//! A function leaves the candidates of another type's sites only when no
+//! address-taking of its type loses the type: the functions of a leaked
+//! function-pointer type (and of every type transmuted into one), the
+//! functions a constant holds untyped, and every vtable function of a leaked
+//! trait are candidates of every site whose ABI they fit. Calling a function
+//! through a pointer of another calling convention or argument count is
+//! undefined behavior, so those two are what fitting means; a vtable
+//! function, whose signature the facts do not give, fits every site. A site
+//! of a leaked trait's `dyn` also reaches the same entry of every leaked
+//! trait's vtables and every leaked function. A leak whose contents the
+//! driver could not enumerate leaks every function made a pointer and every
+//! vtable function.
 use crate::{Analysis, Dwarf, Fact, Resolutions, TransferKind};
 use object::{Object, ObjectSymbol};
 use oer_riscv_model::{Error, ErrorCode, Result};
@@ -29,13 +42,78 @@ enum IndirectCall {
     Unknown,
 }
 
+/// What the types made a `dyn` of a trait carry.
+#[derive(Debug, Default, Deserialize)]
+struct Contents {
+    keys: BTreeSet<String>,
+    traits: BTreeSet<String>,
+    unknown: bool,
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct CrateFacts {
     schema: u32,
     calls: BTreeMap<String, BTreeSet<IndirectCall>>,
     fn_pointers: BTreeMap<String, BTreeSet<String>>,
-    polluted: BTreeSet<String>,
     vtables: BTreeMap<String, BTreeMap<usize, BTreeSet<String>>>,
+    leaked_types: BTreeSet<String>,
+    leaked_functions: BTreeMap<String, String>,
+    edges: BTreeMap<String, BTreeSet<String>>,
+    leaked_traits: BTreeSet<String>,
+    trait_contents: BTreeMap<String, Contents>,
+    unknown_leak: bool,
+}
+
+/// The calling convention and argument count of a function-pointer type's
+/// key (`extern "C" fn(u8, bool) -> u32`); `None` when the key does not
+/// parse, which fits every site.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Signature<'a> {
+    abi: &'a str,
+    arguments: usize,
+}
+
+fn signature(key: &str) -> Option<Signature<'_>> {
+    let (abi, rest) = match key.strip_prefix("extern \"") {
+        Some(rest) => {
+            let (abi, rest) = rest.split_once("\" ")?;
+            (abi, rest)
+        }
+        None => ("Rust", key),
+    };
+    let inputs = rest.strip_prefix("fn(")?;
+    let (mut depth, mut arguments, mut empty) = (0usize, 0usize, true);
+    let mut characters = inputs.chars().peekable();
+    while let Some(character) = characters.next() {
+        match character {
+            '-' if characters.peek() == Some(&'>') => {
+                characters.next();
+            }
+            '(' | '[' | '<' | '{' => depth += 1,
+            ')' if depth == 0 => {
+                return Some(Signature {
+                    abi,
+                    arguments: if empty { 0 } else { arguments + 1 },
+                });
+            }
+            ')' | ']' | '>' | '}' => depth = depth.checked_sub(1)?,
+            ',' if depth == 0 => arguments += 1,
+            _ => {}
+        }
+        if !character.is_whitespace() {
+            empty = false;
+        }
+    }
+    None
+}
+
+/// Whether a leaked function of signature `function` may be called through
+/// a pointer of signature `site`.
+fn fits(site: Option<Signature>, function: Option<Signature>) -> bool {
+    match (site, function) {
+        (Some(site), Some(function)) => site == function,
+        _ => true,
+    }
 }
 
 /// The facts of every crate of an image, united.
@@ -43,8 +121,16 @@ struct CrateFacts {
 pub struct MirFacts {
     calls: BTreeMap<String, BTreeSet<IndirectCall>>,
     fn_pointers: BTreeMap<String, BTreeSet<String>>,
-    polluted: BTreeSet<String>,
     vtables: BTreeMap<String, BTreeMap<usize, BTreeSet<String>>>,
+    leaked_types: BTreeSet<String>,
+    leaked_functions: BTreeMap<String, String>,
+    edges: BTreeMap<String, BTreeSet<String>>,
+    leaked_traits: BTreeSet<String>,
+    trait_contents: BTreeMap<String, Contents>,
+    unknown_leak: bool,
+    /// Every leaked function with the key of the pointer type it leaked as
+    /// (`None`: a vtable function); computed once every crate is read.
+    leaked: BTreeSet<(Option<String>, String)>,
 }
 
 /// The key of a function's mangled `symbol`: demangled without the crate
@@ -65,6 +151,7 @@ impl MirFacts {
         for directory in directories {
             facts.read_directory(directory)?;
         }
+        facts.close_leaks();
         Ok(facts)
     }
 
@@ -97,13 +184,14 @@ impl MirFacts {
                 serde_json::from_str(text).map_err(|error| invalid(format!("facts: {error}")))?,
             )?;
         }
+        facts.close_leaks();
         Ok(facts)
     }
 
     fn add(&mut self, crate_facts: CrateFacts) -> Result<()> {
-        if crate_facts.schema != 1 {
+        if crate_facts.schema != 2 {
             return Err(invalid(format!(
-                "MIR facts of schema {}, this analysis reads 1",
+                "MIR facts of schema {}, this analysis reads 2",
                 crate_facts.schema
             )));
         }
@@ -113,14 +201,82 @@ impl MirFacts {
         for (key, functions) in crate_facts.fn_pointers {
             self.fn_pointers.entry(key).or_default().extend(functions);
         }
-        self.polluted.extend(crate_facts.polluted);
         for (name, entries) in crate_facts.vtables {
             let into = self.vtables.entry(name).or_default();
             for (entry, functions) in entries {
                 into.entry(entry).or_default().extend(functions);
             }
         }
+        self.leaked_types.extend(crate_facts.leaked_types);
+        self.leaked_functions.extend(crate_facts.leaked_functions);
+        for (target, sources) in crate_facts.edges {
+            self.edges.entry(target).or_default().extend(sources);
+        }
+        self.leaked_traits.extend(crate_facts.leaked_traits);
+        for (name, contents) in crate_facts.trait_contents {
+            let into = self.trait_contents.entry(name).or_default();
+            into.keys.extend(contents.keys);
+            into.traits.extend(contents.traits);
+            into.unknown |= contents.unknown;
+        }
+        self.unknown_leak |= crate_facts.unknown_leak;
         Ok(())
+    }
+
+    /// The leaks of every crate closed over each other: a leaked trait's
+    /// implementors' contents leak, and a type transmuted into a leaked type
+    /// leaks with it.
+    fn close_leaks(&mut self) {
+        let mut traits: Vec<String> = self.leaked_traits.iter().cloned().collect();
+        while let Some(name) = traits.pop() {
+            if let Some(contents) = self.trait_contents.get(&name) {
+                self.leaked_types.extend(contents.keys.iter().cloned());
+                self.unknown_leak |= contents.unknown;
+                for nested in &contents.traits {
+                    if self.leaked_traits.insert(nested.clone()) {
+                        traits.push(nested.clone());
+                    }
+                }
+            }
+        }
+        let mut types: Vec<String> = self.leaked_types.iter().cloned().collect();
+        while let Some(key) = types.pop() {
+            for source in self.edges.get(&key).into_iter().flatten() {
+                if self.leaked_types.insert(source.clone()) {
+                    types.push(source.clone());
+                }
+            }
+        }
+        let mut leaked = BTreeSet::new();
+        for (key, functions) in &self.fn_pointers {
+            if self.unknown_leak || self.leaked_types.contains(key) {
+                leaked.extend(functions.iter().map(|f| (Some(key.clone()), f.clone())));
+            }
+        }
+        for (function, key) in &self.leaked_functions {
+            leaked.insert((Some(key.clone()), function.clone()));
+        }
+        for (name, entries) in &self.vtables {
+            if self.unknown_leak || self.leaked_traits.contains(name) {
+                leaked.extend(entries.values().flatten().map(|f| (None, f.clone())));
+            }
+        }
+        self.leaked = leaked;
+    }
+
+    /// The function-pointer types whose functions a site of type `key`
+    /// reaches: itself and every type transmuted into it.
+    fn reaching<'a>(&'a self, key: &'a str) -> BTreeSet<&'a str> {
+        let mut types = BTreeSet::from([key]);
+        let mut work = vec![key];
+        while let Some(key) = work.pop() {
+            for source in self.edges.get(key).into_iter().flatten() {
+                if types.insert(source) {
+                    work.push(source);
+                }
+            }
+        }
+        types
     }
 
     /// The symbols the indirect calls of `instance` can reach; `None` when
@@ -132,25 +288,45 @@ impl MirFacts {
             match call {
                 IndirectCall::Unknown => return None,
                 IndirectCall::FnPointer(key) => {
-                    if self.polluted.contains(key) {
-                        return None;
+                    for reaching in self.reaching(key) {
+                        candidates.extend(
+                            self.fn_pointers
+                                .get(reaching)
+                                .into_iter()
+                                .flatten()
+                                .map(String::as_str),
+                        );
                     }
+                    let site = signature(key);
                     candidates.extend(
-                        self.fn_pointers
-                            .get(key)
+                        self.leaked
+                            .iter()
+                            .filter(|(leaked, _)| fits(site, leaked.as_deref().and_then(signature)))
+                            .map(|(_, function)| function.as_str()),
+                    );
+                }
+                IndirectCall::Dyn { r#trait, entry } => {
+                    candidates.extend(
+                        self.vtables
+                            .get(r#trait)
+                            .and_then(|entries| entries.get(entry))
                             .into_iter()
                             .flatten()
                             .map(String::as_str),
                     );
+                    // A leaked `dyn`'s vtable pointer may be any leaked
+                    // memory's.
+                    if self.unknown_leak || self.leaked_traits.contains(r#trait) {
+                        for (name, entries) in &self.vtables {
+                            if self.unknown_leak || self.leaked_traits.contains(name) {
+                                candidates.extend(
+                                    entries.get(entry).into_iter().flatten().map(String::as_str),
+                                );
+                            }
+                        }
+                        candidates.extend(self.leaked.iter().map(|(_, f)| f.as_str()));
+                    }
                 }
-                IndirectCall::Dyn { r#trait, entry } => candidates.extend(
-                    self.vtables
-                        .get(r#trait)
-                        .and_then(|entries| entries.get(entry))
-                        .into_iter()
-                        .flatten()
-                        .map(String::as_str),
-                ),
             }
         }
         Some(candidates)
@@ -209,7 +385,43 @@ pub fn mir_resolutions(
 
 #[cfg(test)]
 mod tests {
-    use super::function_key;
+    use super::{Signature, fits, function_key, signature};
+
+    /// A key's calling convention and argument count, through nested
+    /// function types, generics and tuples.
+    #[test]
+    fn a_signature_counts_the_top_level_arguments() {
+        let rust = |arguments| {
+            Some(Signature {
+                abi: "Rust",
+                arguments,
+            })
+        };
+        assert_eq!(signature("fn()"), rust(0));
+        assert_eq!(signature("fn() -> u32"), rust(0));
+        assert_eq!(signature("fn(u8, bool) -> u32"), rust(2));
+        assert_eq!(
+            signature("fn(fn(u8, u8) -> u8, core::option::Option<(u8, u16)>, [u8; 4])"),
+            rust(3)
+        );
+        assert_eq!(
+            signature("extern \"C\" fn(u32)"),
+            Some(Signature {
+                abi: "C",
+                arguments: 1
+            })
+        );
+        assert_eq!(signature("not a type"), None);
+        // A Rust function does not fit a C site, nor one of another arity;
+        // an unknown signature fits every site.
+        assert!(!fits(
+            signature("extern \"C\" fn(u32)"),
+            signature("fn(u32)")
+        ));
+        assert!(!fits(signature("fn(u32)"), signature("fn(u32, u32)")));
+        assert!(fits(signature("fn(u32) -> u8"), signature("fn(i8) -> u64")));
+        assert!(fits(signature("fn(u32)"), None));
+    }
 
     /// The keys `oer-mir-facts` gives the same symbols.
     #[test]

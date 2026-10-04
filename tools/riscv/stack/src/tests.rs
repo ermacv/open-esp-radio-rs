@@ -1447,8 +1447,10 @@ fn a_merged_function_of_another_type_stays_a_candidate() {
 }
 
 /// The MIR facts of the hook program's crate: `_start` calls through a
-/// `fn(u32) -> u32`, and the crate makes `shallow` and `twice` such pointers.
-fn hook_facts(elf: &[u8], call: &str, polluted: &str) -> MirFacts {
+/// `fn(u32) -> u32`, and the crate makes `shallow` and `twice` such pointers,
+/// `negate` a `fn(i32) -> i32` and `deep` a `fn(u8, u8)` (a stand-in arity);
+/// `extra` adds leak facts.
+fn hook_facts(elf: &[u8], call: &str, extra: &str) -> MirFacts {
     let symbol = |part: &str| {
         functions(elf)
             .unwrap()
@@ -1458,16 +1460,32 @@ fn hook_facts(elf: &[u8], call: &str, polluted: &str) -> MirFacts {
             .map(|name| crate::mir::function_key(&name))
             .unwrap()
     };
+    let extra = extra
+        .replace("NEGATE", &symbol("negate"))
+        .replace("DEEP", &symbol("deep"));
     let text = format!(
-        r#"{{"schema": 1, "krate": "main",
+        r#"{{"schema": 2, "krate": "main",
             "calls": {{"_start": [{call}]}},
-            "fn_pointers": {{"fn(u32) -> u32": ["{}", "{}"]}},
-            "polluted": [{polluted}],
-            "vtables": {{}}}}"#,
+            "fn_pointers": {{"fn(u32) -> u32": ["{}", "{}"],
+                             "fn(i32) -> i32": ["{}"],
+                             "fn(u8, u8)": ["{}"]}},
+            "vtables": {{}},
+            "leaked_types": [], "leaked_functions": {{}}, "edges": {{}},
+            "leaked_traits": [], "trait_contents": {{}}, "unknown_leak": false}}"#,
         symbol("shallow"),
         symbol("twice"),
+        symbol("negate"),
+        symbol("deep"),
     );
-    MirFacts::from_json(&[&text]).unwrap()
+    // The extra facts replace the base's fields of their names.
+    let mut facts: serde_json::Value = serde_json::from_str(&text).unwrap();
+    if !extra.is_empty() {
+        let extra: serde_json::Value = serde_json::from_str(&extra).unwrap();
+        for (field, value) in extra.as_object().unwrap() {
+            facts[field] = value.clone();
+        }
+    }
+    MirFacts::from_json(&[&facts.to_string()]).unwrap()
 }
 
 #[test]
@@ -1489,6 +1507,7 @@ fn the_mir_facts_resolve_a_site_by_its_instance_s_calls() {
             .address
     };
     let (start, shallow, twice) = (named("_start"), named("shallow"), named("twice"));
+    let (negate, deep) = (named("negate"), named("deep"));
     let site = analysis.functions[&start]
         .transfers
         .iter()
@@ -1501,8 +1520,7 @@ fn the_mir_facts_resolve_a_site_by_its_instance_s_calls() {
     let resolution = resolved.get(site).expect("resolved");
     assert_eq!(resolution.targets, BTreeSet::from([shallow, twice]));
     assert_eq!(resolution.facts, BTreeSet::from([Fact::Mir]));
-    // A call the MIR names no type for, or a type a transmute produces,
-    // leaves the site a hole.
+    // A call the MIR names no type for leaves the site a hole.
     let unknown = format!(r#"{pointer}, "unknown""#);
     let facts = hook_facts(&elf, &unknown, "");
     assert!(
@@ -1511,12 +1529,45 @@ fn the_mir_facts_resolve_a_site_by_its_instance_s_calls() {
             .get(site)
             .is_none()
     );
-    let facts = hook_facts(&elf, pointer, r#""fn(u32) -> u32""#);
-    assert!(
+    let targets = |extra: &str| {
+        let facts = hook_facts(&elf, pointer, extra);
         mir_resolutions(&elf, &analysis, &dwarf, &facts)
             .unwrap()
             .get(site)
-            .is_none()
+            .expect("resolved")
+            .targets
+            .clone()
+    };
+    // A leaked type's functions reach every site their ABI fits, and no
+    // site of another argument count.
+    assert_eq!(
+        targets(r#"{"leaked_types": ["fn(i32) -> i32", "fn(u8, u8)"]}"#),
+        BTreeSet::from([shallow, twice, negate])
+    );
+    // A type transmuted into the site's type reaches it.
+    assert_eq!(
+        targets(r#"{"edges": {"fn(u32) -> u32": ["fn(i32) -> i32"]}}"#),
+        BTreeSet::from([shallow, twice, negate])
+    );
+    // A function a constant holds untyped leaks as its own signature.
+    assert_eq!(
+        targets(r#"{"leaked_functions": {"NEGATE": "fn(i32) -> i32", "DEEP": "fn(u8, u8)"}}"#),
+        BTreeSet::from([shallow, twice, negate])
+    );
+    // A leaked trait leaks its vtable functions, of unknown signature, and
+    // what its implementors carry.
+    assert_eq!(
+        targets(
+            r#"{"vtables": {"main::Job": {"3": ["DEEP"]}},
+                "leaked_traits": ["main::Job"],
+                "trait_contents": {"main::Job": {"keys": ["fn(i32) -> i32"], "traits": [], "unknown": false}}}"#
+        ),
+        BTreeSet::from([shallow, twice, negate, deep])
+    );
+    // A leak of unknown contents leaks every function made a pointer.
+    assert_eq!(
+        targets(r#"{"unknown_leak": true}"#),
+        BTreeSet::from([shallow, twice, negate])
     );
 }
 

@@ -103,6 +103,8 @@ pub struct InterruptStacks {
     pub handlers: Vec<(u32, Vec<u32>)>,
     /// Function names by address, for the report.
     names: BTreeMap<u32, String>,
+    /// The source line of each hole, for the report.
+    locations: BTreeMap<u32, String>,
 }
 
 /// What an image's interrupt stacks must reach: the gate's policy, apart
@@ -181,8 +183,10 @@ impl InterruptStacks {
             .unwrap_or_else(|| format!("{address:#010x}"))
     }
 
-    /// Each hart's bound, its levels and their critical paths.
+    /// Each hart's bound, its levels and their critical paths, and each
+    /// level's holes by source line with how to close them.
     pub fn render(&self) -> String {
+        let mut reasons = BTreeSet::new();
         let name = |address: u32| self.name(address);
         let mut out = String::new();
         for hart in &self.harts {
@@ -211,9 +215,35 @@ impl InterruptStacks {
                 for (function, frame) in &level.bound.path {
                     let _ = writeln!(out, "    {frame:>6} {}", name(*function));
                 }
-                for (site, reason) in &level.bound.unresolved {
-                    let _ = writeln!(out, "    unresolved {reason} at {site:#010x}");
+                // Holes by source line: inlining spreads one line's call
+                // over many sites.
+                let mut holes: BTreeMap<(String, oer_riscv_stack::Reason), usize> = BTreeMap::new();
+                for &(site, reason) in &level.bound.unresolved {
+                    let at = self
+                        .locations
+                        .get(&site)
+                        .cloned()
+                        .unwrap_or_else(|| name(site));
+                    *holes.entry((at, reason)).or_default() += 1;
+                    reasons.insert(reason);
                 }
+                for ((at, reason), sites) in holes {
+                    let sites = if sites == 1 {
+                        String::new()
+                    } else {
+                        format!(" ({sites} sites)")
+                    };
+                    let _ = writeln!(out, "    hole: {reason} at {at}{sites}");
+                }
+            }
+        }
+        if !reasons.is_empty() {
+            let _ = writeln!(
+                out,
+                "how each hole can be made exact (advice, not a requirement):"
+            );
+            for reason in reasons {
+                let _ = writeln!(out, "  {reason}: {}", reason.hint());
             }
         }
         out
@@ -329,9 +359,16 @@ pub fn interrupt_stacks(root: &Path, elf: &Path) -> Result<InterruptStacks> {
             resolutions: &resolutions,
         },
     )?;
+    let locations = harts
+        .iter()
+        .flat_map(|hart: &HartStack| hart.levels.iter().chain([&hart.exception]))
+        .flat_map(|level| level.bound.unresolved.iter())
+        .filter_map(|&(site, _)| dwarf.location(site).map(|at| (site, at)))
+        .collect();
     Ok(InterruptStacks {
         harts,
         handlers,
+        locations,
         summaries: analysis.summaries.clone(),
         names,
     })
@@ -389,6 +426,7 @@ mod tests {
             summaries: BTreeSet::new(),
             handlers,
             names: BTreeMap::from([(0x2f00_1000, "TIMER".to_owned())]),
+            locations: BTreeMap::new(),
         }
     }
 
@@ -418,6 +456,7 @@ mod tests {
             summaries: BTreeSet::new(),
             handlers: Vec::new(),
             names: BTreeMap::new(),
+            locations: BTreeMap::new(),
         }
     }
 
@@ -457,6 +496,33 @@ mod tests {
         // The proven part alone must fit the usable stack with the margin.
         let over = u64::from(contract::IRQ_STACK_USABLE_BYTES);
         assert!(partial(over).check(Required::Partial).is_err());
+    }
+
+    #[test]
+    fn the_report_names_each_hole_by_source_line_and_how_to_close_it() {
+        use oer_riscv_stack::Reason;
+        let mut stacks = partial(100);
+        stacks.harts[0].exception.bound.unresolved = vec![
+            (0x10, Reason::LoadedCall),
+            (0x14, Reason::LoadedCall),
+            (0x20, Reason::Recursion),
+        ];
+        stacks.locations = BTreeMap::from([
+            (0x10, "driver/src/lib.rs:7".to_owned()),
+            (0x14, "driver/src/lib.rs:7".to_owned()),
+        ]);
+        let report = stacks.render();
+        assert!(report.contains("hart 0: 100 + ? of"), "{report}");
+        assert!(
+            report.contains(
+                "hole: indirect call through a loaded pointer at driver/src/lib.rs:7 (2 sites)"
+            ),
+            "{report}"
+        );
+        // A hole without a source line names its address.
+        assert!(report.contains("hole: recursion at 0x00000020"), "{report}");
+        assert!(report.contains(Reason::LoadedCall.hint()), "{report}");
+        assert!(report.contains(Reason::Recursion.hint()), "{report}");
     }
 
     #[test]

@@ -51,6 +51,18 @@ pub(crate) fn plain(name: &str) -> String {
     out
 }
 
+/// A source path from the toolchain's `library/`, or a crate's from its
+/// directory.
+fn short_path(file: &str) -> &str {
+    match file.find("/library/") {
+        Some(at) => &file[at + 1..],
+        None => file
+            .rfind("/src/")
+            .and_then(|at| file[..at].rfind('/'))
+            .map_or(file, |start| &file[start + 1..]),
+    }
+}
+
 impl Dwarf {
     /// Read the debug information of `elf`.
     pub fn read(elf: &[u8]) -> Result<Self> {
@@ -81,6 +93,19 @@ impl Dwarf {
             }
         }
         Ok(chain)
+    }
+
+    /// The source line of `address`, innermost of what is inlined there:
+    /// `path:line`, the path from the toolchain's `library/` or from the
+    /// crate's directory; `None` where the line tables cover no code.
+    pub fn location(&self, address: u32) -> Option<String> {
+        let location = self.context.find_location(u64::from(address)).ok()??;
+        let file = location.file?;
+        let short = short_path(file);
+        Some(match location.line {
+            Some(line) => format!("{short}:{line}"),
+            None => short.to_owned(),
+        })
     }
 
     /// The qualified name of the type the function entered at `function`
@@ -167,4 +192,22 @@ fn returns(dwarf: &gimli::Dwarf<Reader>) -> Result<BTreeMap<u32, String>> {
         .into_iter()
         .filter_map(|(low, target)| Some((low, names.get(&target)?.clone())))
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::short_path;
+
+    #[test]
+    fn a_source_path_starts_at_the_library_or_the_crate() {
+        assert_eq!(
+            short_path("/rustc/8bab26f4/library/core/src/fmt/mod.rs"),
+            "library/core/src/fmt/mod.rs"
+        );
+        assert_eq!(
+            short_path("/home/user/repo/crates/runtime/interrupt-table/src/lib.rs"),
+            "interrupt-table/src/lib.rs"
+        );
+        assert_eq!(short_path("main.rs"), "main.rs");
+    }
 }

@@ -119,6 +119,28 @@ pub enum Reason {
 }
 
 impl Reason {
+    /// How a firmware author can make such a site exact, as advice: the
+    /// analysis never requires it.
+    pub fn hint(self) -> &'static str {
+        match self {
+            Reason::StackSlotCall | Reason::LoadedCall | Reason::RegisterCall => {
+                "a generic parameter or an enum instead of a function pointer or `dyn` makes the call static"
+            }
+            Reason::IndirectJump => {
+                "a tail call through a pointer: a generic parameter or an enum makes it static"
+            }
+            Reason::NoCandidate => {
+                "the facts found no target: a fact source for this code (MIR) or a static call closes it"
+            }
+            Reason::OutsideImage => {
+                "a ROM function: a reviewed summary in the chip's ROM summaries bounds it"
+            }
+            Reason::IntoFunction => "a transfer into a function's middle: review the code",
+            Reason::Unframed => "assembly without a frame record: a reviewed frame bounds it",
+            Reason::Recursion => "recursion: a loop or a stated depth bounds it",
+        }
+    }
+
     /// The stage of the stack analysis that resolves this reason.
     pub fn closed_by(self) -> &'static str {
         match self {

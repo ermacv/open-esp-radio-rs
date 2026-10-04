@@ -21,8 +21,11 @@ observers the product does not carry) also passes a `partial + ?` hart with a
 warning. Either way the bound, or the proven part, must fit the usable stack
 with the contract's margin, and every table entry's slot symbol and the
 handler it calls must lie in SRAM (the slot's own direct calls: a call site no
-inlined function owns, by the DWARF). It writes each hart's levels and their
-critical paths to `interrupt-stack.txt`.
+inlined function owns, by the DWARF). It writes each hart's levels, their
+critical paths and their holes to `interrupt-stack.txt`: each hole by the
+source line the DWARF gives its site, with how many sites share it, and for
+each reason how a firmware author can make it exact (advice the gate never
+requires).
 
 The default `device` feature provides serial-device selection, a lease shared
 by xtask and HIL, and `write_segments`, which writes every flash segment

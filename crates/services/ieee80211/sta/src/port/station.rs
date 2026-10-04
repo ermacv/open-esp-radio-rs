@@ -230,17 +230,21 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         let Self {
             link,
             timer,
+            key_unwrap,
             security,
             connection,
             ..
         } = self;
         let connection = connection.as_mut().ok_or(PortLinkError::MissingState)?;
+        let (sequences, supplicant) = security.connected_parts();
         Ok((
             connection,
             ConnectionContext {
                 link,
                 timer,
-                sequences: &mut security.sequences,
+                sequences,
+                supplicant,
+                key_unwrap,
             },
         ))
     }

@@ -2,8 +2,8 @@
 //! agreements, SA Query, disconnection and power save.
 
 use oer_ieee80211_lower_mac::{
-    Ieee80211LowerMacPort, KeySelector, LowerMacSetting, MacAddress, RxBlockAckAgreement,
-    RxCryptoStatus, RxEvidence,
+    Cipher, Ieee80211LowerMacPort, KeyInstall, KeyScope, KeySelector, LowerMacSetting, MacAddress,
+    RxBlockAckAgreement, RxCryptoStatus, RxEvidence,
 };
 use oer_ieee80211_mac::{
     block_ack::{
@@ -30,6 +30,11 @@ use oer_ieee80211_mac::{
     station_beacon::parse_sta_beacon,
     station_power_save::StaAssociationId,
 };
+use oer_ieee80211_rsn::{
+    OwnedEapolFrame, RsnInterface, keys::RsnKeyKind, runner::RSN_HANDSHAKE_EAPOL_CAPACITY,
+    supplicant::RsnConnectedSupplicant,
+};
+use oer_ieee80211_rsn_service::supplicant::{RsnGroupMessage1Step, process_group_message1};
 use oer_ieee80211_sta::{
     modem_sleep::{PmBeacon, PmTraffic, SleepType},
     sa_query::{SaQueryStep, StationSaQuery},
@@ -43,7 +48,7 @@ use super::{
         PortStationEnv,
     },
     power::{PortPowerSave, PowerContext, acknowledged},
-    rsn::PortKeys,
+    rsn::{EAPOL_ETHER_TYPE, PortKeys, send_protected_eapol},
     wire,
 };
 
@@ -108,6 +113,11 @@ pub struct PortRxCounters {
     pub behind_window: u32,
     /// MPDUs that do not decapsulate.
     pub malformed: u32,
+    /// Group keys the access point replaced through a Group Key Handshake.
+    pub group_rekeys: u32,
+    /// EAPOL frames after the handshake that were not an authentic Group
+    /// Message 1 of the access point, or whose group key did not install.
+    pub eapol_rejected: u32,
 }
 
 /// The outcome of offering one frame for transmission.
@@ -138,6 +148,9 @@ pub struct PortConnection<P: Ieee80211LowerMacPort> {
     sa_query: StationSaQuery,
     power: Option<PortPowerSave<P>>,
     held: Option<HeldFrame>,
+    /// An EAPOL frame the access point sent under the pairwise key, awaiting
+    /// the Group Key Handshake.
+    eapol: Option<OwnedEapolFrame<RSN_HANDSHAKE_EAPOL_CAPACITY>>,
     counters: PortRxCounters,
 }
 
@@ -146,6 +159,10 @@ pub(crate) struct ConnectionContext<'a, 'p, X: PortStationEnv> {
     pub link: &'a mut PortLink<'p, X>,
     pub timer: &'a X::Timer,
     pub sequences: &'a mut StaTxSequenceCounters,
+    /// The supplicant of a WPA2 association, which answers the access
+    /// point's group rekeys.
+    pub supplicant: Option<&'a mut RsnConnectedSupplicant>,
+    pub key_unwrap: &'a mut X::KeyUnwrap,
 }
 
 impl<P: Ieee80211LowerMacPort> PortConnection<P> {
@@ -171,6 +188,7 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
             sa_query: StationSaQuery::new(),
             power: None,
             held: None,
+            eapol: None,
             counters: PortRxCounters::default(),
         }
     }
@@ -696,7 +714,82 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
             Some(tid) if self.block_ack(tid) => self.reorder_mpdu(tid, frame, deliver),
             _ => self.deliver(&frame, deliver),
         }
+        if let Some(eapol) = self.eapol.take() {
+            self.group_rekey(context, eapol).await?;
+        }
         Ok(())
+    }
+
+    /// Answer one EAPOL frame of the access point after the handshake: a
+    /// Group Message 1 replaces the group key through the port and is
+    /// answered with Group Message 2 under the pairwise key; a repeat of the
+    /// last one is answered again without a key change. Anything else, and a
+    /// group key that does not install, counts as rejected.
+    async fn group_rekey<X: PortStationEnv<Port = P>>(
+        &mut self,
+        context: &mut ConnectionContext<'_, '_, X>,
+        eapol: OwnedEapolFrame<RSN_HANDSHAKE_EAPOL_CAPACITY>,
+    ) -> Result<(), PortLinkError<PortError<X>>> {
+        let (Some(supplicant), Some(keys)) = (context.supplicant.as_deref_mut(), self.keys) else {
+            self.counters.eapol_rejected = self.counters.eapol_rejected.saturating_add(1);
+            return Ok(());
+        };
+        let Ok(step) = process_group_message1(supplicant, eapol, context.key_unwrap).await else {
+            self.counters.eapol_rejected = self.counters.eapol_rejected.saturating_add(1);
+            return Ok(());
+        };
+        let response = match step {
+            RsnGroupMessage1Step::Retransmit(response) => response,
+            RsnGroupMessage1Step::Install(request) => {
+                let RsnKeyKind::Group { key_id, .. } = request.group().kind() else {
+                    return Err(PortLinkError::MissingState);
+                };
+                let receive_sequence = *request.group().receive_sequence();
+                let installed = context.link.port().install_key(KeyInstall {
+                    vif: context.link.config().vif,
+                    cipher: Cipher::Ccmp128,
+                    scope: KeyScope::Group { key_id },
+                    key: request.group().key().as_bytes(),
+                });
+                let group = match &installed {
+                    Ok(Ok(group)) => Some(*group),
+                    _ => None,
+                };
+                let completed = supplicant.complete_group_key_install(request, group.is_some());
+                let group = match (installed, completed) {
+                    (Err(error), _) => return Err(PortLinkError::Port(error)),
+                    (Ok(Ok(group)), Ok(response)) => (group, response),
+                    _ => {
+                        self.counters.eapol_rejected =
+                            self.counters.eapol_rejected.saturating_add(1);
+                        return Ok(());
+                    }
+                };
+                let (group, response) = group;
+                if group != keys.group {
+                    context.link.apply(LowerMacSetting::RemoveKey(keys.group))?;
+                }
+                self.keys = Some(PortKeys {
+                    group,
+                    group_key_id: key_id,
+                    group_receive_sequence: receive_sequence,
+                    ..keys
+                });
+                self.group_replay =
+                    CcmpRxReplayState::from_receive_sequence(receive_sequence).unwrap_or_default();
+                self.counters.group_rekeys = self.counters.group_rekeys.saturating_add(1);
+                response
+            }
+        };
+        send_protected_eapol(
+            context.link,
+            self.config.bssid,
+            context.sequences.take_non_qos(),
+            &mut self.packet_number,
+            keys.pairwise,
+            response.as_bytes(),
+        )
+        .await
     }
 
     /// Buffer one MPDU of an agreement and deliver what its window releases.
@@ -803,9 +896,29 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
             self.counters.malformed = self.counters.malformed.saturating_add(1);
             return;
         };
+        let pairwise = protected && !wire::address1(bytes).is_some_and(wire::is_group);
         let mut ethernet = [0_u8; PORT_FRAME_CAPACITY];
         for parts in frames {
             match parts.and_then(|parts| parts.copy_to(&mut ethernet)) {
+                // The access point's EAPOL after the handshake belongs to the
+                // Group Key Handshake, never to the caller.
+                Ok(length)
+                    if pairwise
+                        && length >= ETHERNET_HEADER_LEN
+                        && u16::from_be_bytes([ethernet[12], ethernet[13]]) == EAPOL_ETHER_TYPE =>
+                {
+                    match OwnedEapolFrame::try_copy(
+                        RsnInterface::Station,
+                        self.config.bssid,
+                        &ethernet[ETHERNET_HEADER_LEN..length],
+                    ) {
+                        Ok(eapol) => self.eapol = Some(eapol),
+                        Err(_) => {
+                            self.counters.eapol_rejected =
+                                self.counters.eapol_rejected.saturating_add(1);
+                        }
+                    }
+                }
                 Ok(length) => {
                     self.counters.delivered = self.counters.delivered.saturating_add(1);
                     deliver(&ethernet[..length]);

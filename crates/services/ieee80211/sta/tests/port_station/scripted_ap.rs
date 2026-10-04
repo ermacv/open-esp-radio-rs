@@ -23,7 +23,7 @@ use oer_ieee80211_mac::{
     security::rsn::Akm,
 };
 use oer_ieee80211_rsn::{
-    EapolKeyFrame, EapolKeyMessage, Pmk, PtkContext,
+    EapolKeyFrame, EapolKeyMessage, Pmk, Ptk, PtkContext,
     aes::software_aes128_key_wrap,
     frames::{OwnedRsnIe, RsnGtk, RsnIgtk, RsnPlainKeyData, RsnTxFrame},
     sae::{SAE_COMMIT_LEN, SaeCommit, SaeCommitValues, SaeKeys},
@@ -98,6 +98,8 @@ pub struct ScriptedAp {
     sae_commit: Option<SaeCommit>,
     sae_keys: Option<SaeKeys>,
     pmk: Option<Pmk>,
+    /// The keys of the completed four-way handshake.
+    ptk: Option<Ptk>,
     replay_counter: u64,
 }
 
@@ -127,8 +129,36 @@ impl ScriptedAp {
                 ApSecurity::Wpa2Psk => Some(Pmk::derive(PASSPHRASE, SSID).unwrap()),
                 ApSecurity::Open | ApSecurity::Sae => None,
             },
+            ptk: None,
             replay_counter: 0,
         }
+    }
+
+    /// A Group Message 1 that replaces the group key with `key_id`, every
+    /// octet `key`, whose receive sequence counter is `rsc`.
+    pub fn group_message1(&mut self, key_id: u8, key: u8, rsc: [u8; 8]) -> Vec<u8> {
+        let ptk = self.ptk.as_ref().expect("a completed handshake");
+        let mut kde = [key; 24];
+        kde[..8].copy_from_slice(&[0xdd, 22, 0, 0x0f, 0xac, 1, key_id, 0]);
+        let wrapped = software_aes128_key_wrap(ptk.kek(), &kde).unwrap();
+        self.replay_counter += 1;
+        RsnTxFrame::<512>::group_message1(
+            self.akm(),
+            STA,
+            self.replay_counter,
+            rsc,
+            wrapped.as_bytes(),
+        )
+        .unwrap()
+        .authenticate(ptk)
+        .as_bytes()
+        .to_vec()
+    }
+
+    /// `eapol` to the station in a data MPDU: under the pairwise key with
+    /// `packet_number`, or in the clear without one.
+    pub fn eapol_to_station(&mut self, eapol: &[u8], packet_number: Option<u64>) -> Vec<u8> {
+        self.data(None, packet_number, false, EAPOL, eapol, AP)
     }
 
     /// The access point's SAE commit, drawn from `seed`.
@@ -339,6 +369,7 @@ impl ScriptedAp {
                 .authenticate(&ptk);
                 let data = self.data(None, None, false, EAPOL, message3.as_bytes(), AP);
                 self.outbox.push_back((data, meta(false)));
+                self.ptk = Some(ptk);
             }
             EapolKeyMessage::PairwiseMessage4 => self.handshake_complete = true,
             _ => {}

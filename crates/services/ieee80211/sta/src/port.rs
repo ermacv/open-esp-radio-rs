@@ -13,7 +13,7 @@
 //! | [`PortScan`] | `StaScanPort`, run by `StaScanBackend` and `StaCandidateScanService` | `Channel`, the `OTHER_BSS_MANAGEMENT` filter or `LowerMacMonitor`, Probe Requests |
 //! | [`PortJoin`] | `StaJoinBackend`, run by `StaJoinRunner` | Open System and SAE Authentication, Association, the `BSS_MEMBER` filter |
 //! | [`PortHandshake`], [`PortKeyInstall`] | `RsnHandshakeBackend`, `RsnKeyInstallBackend` | EAPOL frames, `install_key` of the pairwise and group keys |
-//! | [`PortConnection`] | The connected data plane | QoS data with CCMP headers, receive reordering, replay and duplicate checks, A-MSDU, Block Ack agreements, SA Query, disconnection |
+//! | [`PortConnection`] | The connected data plane | QoS data with CCMP headers, receive reordering, replay and duplicate checks, A-MSDU, Block Ack agreements, SA Query, group rekeys, disconnection |
 //! | [`PortPowerSave`] | Modem sleep of `oer_ieee80211_sta::modem_sleep` | `LowerMacBeaconTiming` TBTTs and TSF, `TxGate`, Null frames |
 //! | [`PortStation`], [`PortAttemptPort`] | `StaAttemptPort`, run by `StaAttempt` | All of the above, in order |
 //! | [`PortStationLifecycle`] | `StaLifecycleBackend`, run by `StaLifecycleService` | Attempts, the connection, backoff |

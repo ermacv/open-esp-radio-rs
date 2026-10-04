@@ -1002,3 +1002,78 @@ fn a_poisoned_port_ends_the_connection_and_every_send_body() {
     };
     assert!(oer_ieee80211_lower_mac::PortError::is_poisoned(&error));
 }
+
+#[test]
+fn the_access_point_replaces_the_group_key_through_the_port() {
+    on_large_stack(the_access_point_replaces_the_group_key_through_the_port_body);
+}
+
+fn the_access_point_replaces_the_group_key_through_the_port_body() {
+    use oer_ieee80211_rsn::EapolKeyMessage;
+    static PMKSA: StaSharedPmksa = StaSharedPmksa::new();
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Wpa2Psk);
+    let mut station = connect(&world, &mut ap, world.station(wpa2(&PMKSA)));
+    ap.absorb(world.model);
+    let before = station.connection().unwrap().keys().unwrap();
+    assert_eq!(before.group_key_id, 1);
+    let group_message2 = |ap: &ScriptedAp| {
+        ap.eapol_from_station
+            .iter()
+            .filter(|message| **message == EapolKeyMessage::GroupMessage2)
+            .count()
+    };
+    let mut delivered = Vec::new();
+
+    // A Group Message 1 under the pairwise key installs the new group key,
+    // removes the old one and is answered under the pairwise key.
+    let rsc = [5, 0, 0, 0, 0, 0, 0, 0];
+    let message1 = ap.group_message1(2, 0x77, rsc);
+    let frame = ap.eapol_to_station(&message1, Some(1));
+    ap.queue(frame);
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 5, &mut delivered),
+        None
+    );
+    ap.absorb(world.model);
+    assert_eq!(group_message2(&ap), 1);
+    let answer = world.model.submitted().into_iter().last().unwrap();
+    assert_eq!(answer.key, KeySelector::Key(before.pairwise));
+    assert_ne!(answer.frames[0][1] & 0x40, 0);
+    let connection = station.connection().unwrap();
+    let after = connection.keys().unwrap();
+    assert_eq!(after.group_key_id, 2);
+    assert_eq!(after.group_receive_sequence, rsc);
+    assert_ne!(after.group, before.group);
+    assert_eq!(after.pairwise, before.pairwise);
+    assert_eq!(connection.counters().group_rekeys, 1);
+    // EAPOL of the handshake never reaches the caller.
+    assert!(delivered.is_empty());
+
+    // The same Group Message 1 again is answered again; the key stays.
+    let frame = ap.eapol_to_station(&message1, Some(2));
+    ap.queue(frame);
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 5, &mut delivered),
+        None
+    );
+    ap.absorb(world.model);
+    assert_eq!(group_message2(&ap), 2);
+    let connection = station.connection().unwrap();
+    assert_eq!(connection.keys().unwrap(), after);
+    assert_eq!(connection.counters().group_rekeys, 1);
+
+    // An unprotected Group Message 1 after the keys is dropped unanswered.
+    let forged = ap.group_message1(1, 0x99, [9, 0, 0, 0, 0, 0, 0, 0]);
+    let frame = ap.eapol_to_station(&forged, None);
+    ap.queue(frame);
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 5, &mut delivered),
+        None
+    );
+    ap.absorb(world.model);
+    assert_eq!(group_message2(&ap), 2);
+    let connection = station.connection().unwrap();
+    assert_eq!(connection.keys().unwrap(), after);
+    assert_eq!(connection.counters().unprotected, 1);
+}

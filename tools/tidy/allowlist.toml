@@ -9,6 +9,26 @@ path = "tools/firmware/tests/fixtures/image_tool.rs"
 reason = "the image tests compile this stand-in image tool with rustc"
 
 [[uncompiled]]
+path = "tools/mir-facts/tests/fixtures/defining.rs"
+reason = "the MIR fact driver's tests compile a crate defining a type and a trait the key test reads through the driver"
+
+[[uncompiled]]
+path = "tools/mir-facts/tests/fixtures/leaks.rs"
+reason = "the MIR fact driver's tests compile a crate with one function-pointer type per way out of it through the driver"
+
+[[uncompiled]]
+path = "tools/mir-facts/tests/fixtures/sample.rs"
+reason = "the MIR fact driver's tests compile a crate with each kind of indirect call through the driver"
+
+[[uncompiled]]
+path = "tools/mir-facts/tests/fixtures/shims.rs"
+reason = "the MIR fact driver's tests compile a crate with drops of `dyn` and function-pointer shims through the driver"
+
+[[uncompiled]]
+path = "tools/mir-facts/tests/fixtures/using.rs"
+reason = "the MIR fact driver's tests compile a crate using another crate's type and trait through the driver"
+
+[[uncompiled]]
 path = "tools/process/tests/fixtures/process_tree.rs"
 reason = "the process tests compile this child-process tree with rustc"
 

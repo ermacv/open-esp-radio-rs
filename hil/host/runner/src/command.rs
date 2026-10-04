@@ -67,7 +67,8 @@ pub(crate) fn run() -> Result<()> {
             let catalog = Catalog::load(&catalog_path)?;
             let selected = catalog.get(&id)?;
             let chip = orchestration::select_chip(&root, &[selected], chip.as_deref())?;
-            let lab = lab::config::LabConfig::load(&lab_path, &chip, &choice)?;
+            let lab = lab::config::LabConfig::load(&lab_path, &chip, &choice)?
+                .with_peer_images(&peer_images([selected]))?;
             // The stand's lease takes the fixture software once granted.
             crate::execution::fixture_check::check_without_device(&root, &lab, selected)
         }
@@ -75,7 +76,8 @@ pub(crate) fn run() -> Result<()> {
             let catalog = Catalog::load(&catalog_path)?;
             let selected = selection.resolve(&catalog)?;
             let chip = orchestration::select_chip(&root, &selected, selection.chip.as_deref())?;
-            let lab = lab::config::LabConfig::load(&lab_path, &chip, &choice)?;
+            let lab = lab::config::LabConfig::load(&lab_path, &chip, &choice)?
+                .with_peer_images(&peer_images(selected.iter().copied()))?;
             let required = requirements(&selected);
             let _software = oer_hil_stand::software::SoftwareLease::acquire_for(&lab, required)?;
             crate::execution::doctor::run(&root, &lab, &selected)
@@ -288,8 +290,9 @@ pub(crate) fn run() -> Result<()> {
                     features: features.clone().unwrap_or_default(),
                 }),
             };
-            let lab = lab::config::LabConfig::load(&lab_path, &chip, &choice)?;
             let selected = selected.iter().collect::<Vec<_>>();
+            let lab = lab::config::LabConfig::load(&lab_path, &chip, &choice)?
+                .with_peer_images(&peer_images(selected.iter().copied()))?;
             let required = requirements(&selected);
             hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
             let invocation = orchestration::Invocation {
@@ -328,7 +331,8 @@ pub(crate) fn run() -> Result<()> {
             .resolve(&catalog)?;
             let selected = excluding(selected, &exclude)?;
             let chip = orchestration::select_chip(&root, &selected, chip.as_deref())?;
-            let lab = lab::config::LabConfig::load(&lab_path, &chip, &choice)?;
+            let lab = lab::config::LabConfig::load(&lab_path, &chip, &choice)?
+                .with_peer_images(&peer_images(selected.iter().copied()))?;
             let snapshot = oer_hil_source_snapshot::capture(
                 &root,
                 &source_include,
@@ -374,4 +378,20 @@ fn excluding<'a>(
         return Err("every selected HIL scenario is excluded".into());
     }
     Ok(kept)
+}
+
+/// The catalog images the peers of `selected` carry, each once.
+fn peer_images<'a>(
+    selected: impl IntoIterator<Item = &'a crate::scenario::Scenario>,
+) -> Vec<&'static str> {
+    let mut images = Vec::new();
+    for image in selected
+        .into_iter()
+        .filter_map(|scenario| scenario.family.peer_image())
+    {
+        if !images.contains(&image.name) {
+            images.push(image.name);
+        }
+    }
+    images
 }

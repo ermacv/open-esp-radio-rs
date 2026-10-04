@@ -889,6 +889,22 @@ pub(super) fn analyze_with(
                         effects
                             .gap
                             .get_or_insert(SemanticGapReason::UnexpandedControlFlow);
+                        // The registers at a jump the graph does not expand
+                        // yet, such as one through a jump table whose base a
+                        // register holds: a caller that reads the table from
+                        // them can supply its targets.
+                        if !return_pattern && !operations[i].opaque_call {
+                            sink.record(
+                                &FunctionRecord::CallInputs {
+                                    offset: node.offset,
+                                    registers: state
+                                        .iter()
+                                        .map(|v| public(*v, input, &symbols.sets))
+                                        .collect(),
+                                },
+                                control,
+                            )?;
+                        }
                     }
                     if !link && (return_pattern || local) {
                         None
@@ -1531,6 +1547,13 @@ mod tests {
                 .0
                 .iter()
                 .any(|r| matches!(r, FunctionRecord::Transfer { .. }))
+        );
+        // Its registers, from which a caller reads a jump table the graph
+        // does not expand yet.
+        assert!(
+            sink.0
+                .iter()
+                .any(|r| matches!(r, FunctionRecord::CallInputs { offset: 6, .. }))
         );
     }
     #[test]

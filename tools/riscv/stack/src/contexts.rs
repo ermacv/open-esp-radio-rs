@@ -19,7 +19,8 @@
 //! reach ([`Bound::level_drops`]): a hart with none is checked, one with any
 //! holds only under the nesting rule those sites may break. The rule's other
 //! half, that each line's CLIC level is its table entry's and stays so, is
-//! not checked: every hart assumes it ([`Assumption::TableLevels`]).
+//! the image's configuration: the firmware gate checks where its writers run
+//! ([`crate::instances`]).
 use crate::{Analysis, Assumption, Bound, Fact, LevelDrop, Resolutions, TableEntry, TrapEntry};
 use oer_riscv_model::Result;
 use std::collections::{BTreeMap, BTreeSet};
@@ -86,18 +87,14 @@ impl HartStack {
         drops
     }
 
-    /// What the sum assumes: the table levels, which no check covers yet,
-    /// and what the bounds of its levels and the exception assume. A hart
-    /// with a bound and none is proven, with some conditional on them.
+    /// What the bounds of its levels and the exception assume: a hart with
+    /// a bound and none is proven, with some conditional on them.
     pub fn assumptions(&self) -> BTreeSet<Assumption> {
-        let mut assumptions = BTreeSet::from([Assumption::TableLevels]);
-        assumptions.extend(
-            self.levels
-                .iter()
-                .chain([&self.exception])
-                .flat_map(|level| level.bound.assumptions.iter().copied()),
-        );
-        assumptions
+        self.levels
+            .iter()
+            .chain([&self.exception])
+            .flat_map(|level| level.bound.assumptions.iter().copied())
+            .collect()
     }
 }
 

@@ -1,5 +1,6 @@
 //! Facts an image's DWARF states: the chain of functions inlined at an
-//! address, and the type a function returns, by its qualified name.
+//! address, the type a function returns, by its qualified name, and where
+//! every copy of a function lies, inlined or not.
 use object::{Object, ObjectSection};
 use oer_riscv_model::{Error, ErrorCode, Result};
 use std::collections::BTreeMap;
@@ -167,4 +168,80 @@ fn returns(dwarf: &gimli::Dwarf<Reader>) -> Result<BTreeMap<u32, String>> {
         .into_iter()
         .filter_map(|(low, target)| Some((low, names.get(&target)?.clone())))
         .collect())
+}
+
+/// Where every copy of each function named in `functions` (by its demangled
+/// path, as [`Dwarf::inline_chain`] names functions) lies in `elf`: the
+/// entry of each out-of-line copy and the first address of each inlined one.
+pub fn instances(elf: &[u8], functions: &[&str]) -> Result<BTreeMap<String, Vec<u32>>> {
+    use gimli::Reader as _;
+    let dwarf = load(elf)?;
+    let error = |error: gimli::Error| invalid(format!("DWARF: {error}"));
+    // Each named subprogram's path, by its offset in `.debug_info`.
+    let mut names: BTreeMap<usize, String> = BTreeMap::new();
+    // Each copy's start and the offset of the subprogram it copies.
+    let mut copies: Vec<(u32, usize)> = Vec::new();
+    let mut units = dwarf.units();
+    while let Some(header) = units.next().map_err(error)? {
+        let unit = dwarf.unit(header).map_err(error)?;
+        let global = |value: gimli::AttributeValue<Reader>| match value {
+            gimli::AttributeValue::UnitRef(offset) => offset
+                .to_debug_info_offset(&unit.header)
+                .map(|offset| offset.0),
+            gimli::AttributeValue::DebugInfoRef(offset) => Some(offset.0),
+            _ => None,
+        };
+        let mut entries = unit.entries();
+        while let Some(entry) = entries.next_dfs().map_err(error)? {
+            let entry = entry.clone();
+            let offset = entries.offset();
+            let tag = entry.tag();
+            if tag != gimli::DW_TAG_subprogram && tag != gimli::DW_TAG_inlined_subroutine {
+                continue;
+            }
+            if let Some(value) = entry.attr_value(gimli::DW_AT_linkage_name)
+                && let Ok(linkage) = dwarf.attr_string(&unit, value)
+                && let Ok(linkage) = linkage.to_string_lossy()
+                && let Some(at) = offset.to_debug_info_offset(&unit.header)
+            {
+                let name = plain(&addr2line::demangle_auto(linkage, None));
+                names.insert(at.0, name);
+            }
+            // A copy names its subprogram by origin, or is one itself.
+            let origin = entry
+                .attr_value(gimli::DW_AT_abstract_origin)
+                .or_else(|| entry.attr_value(gimli::DW_AT_specification))
+                .and_then(global)
+                .or_else(|| offset.to_debug_info_offset(&unit.header).map(|at| at.0));
+            let start = match entry.attr_value(gimli::DW_AT_low_pc) {
+                Some(gimli::AttributeValue::Addr(low)) => Some(low),
+                _ => {
+                    let mut ranges = dwarf.die_ranges(&unit, &entry).map_err(error)?;
+                    ranges.next().map_err(error)?.map(|range| range.begin)
+                }
+            };
+            if let (Some(origin), Some(start)) = (origin, start)
+                && start != 0
+                && let Ok(start) = u32::try_from(start)
+            {
+                copies.push((start, origin));
+            }
+        }
+    }
+    let mut found: BTreeMap<String, Vec<u32>> = functions
+        .iter()
+        .map(|function| ((*function).to_owned(), Vec::new()))
+        .collect();
+    for (start, origin) in copies {
+        if let Some(name) = names.get(&origin)
+            && let Some(starts) = found.get_mut(name)
+        {
+            starts.push(start);
+        }
+    }
+    for starts in found.values_mut() {
+        starts.sort_unstable();
+        starts.dedup();
+    }
+    Ok(found)
 }

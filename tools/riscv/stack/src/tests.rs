@@ -1892,3 +1892,64 @@ fn a_bound_assumes_what_the_resolutions_it_takes_assume() {
         BTreeSet::from([Assumption::ExecutorInvariant])
     );
 }
+
+const WRITER_PROGRAM: &str = r#"
+#![no_std]
+#![no_main]
+
+static mut LEVEL: u8 = 0;
+
+#[inline(always)]
+fn writer(value: u8) {
+    unsafe { core::ptr::write_volatile(&raw mut LEVEL, value) };
+}
+
+#[inline(never)]
+fn start_up() {
+    writer(1);
+}
+
+#[inline(never)]
+fn elsewhere(value: u8) {
+    writer(value);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn _start() -> ! {
+    start_up();
+    elsewhere(2);
+    loop {}
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn keep() {}
+
+#[panic_handler]
+fn panic(_: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
+"#;
+
+#[test]
+fn every_inlined_copy_of_a_function_is_found_with_its_callers() {
+    let elf = compiled(WRITER_PROGRAM);
+    let dwarf = Dwarf::read(&elf).unwrap();
+    let found = instances(&elf, &["main::writer", "main::absent"]).unwrap();
+    assert!(found["main::absent"].is_empty());
+    let callers: BTreeSet<String> = found["main::writer"]
+        .iter()
+        .map(|&start| {
+            // The chain at a copy's start may begin inside what it inlines.
+            let chain = dwarf.inline_chain(start).unwrap();
+            let at = chain
+                .iter()
+                .position(|f| f == "main::writer")
+                .expect("a copy");
+            chain[at + 1].clone()
+        })
+        .collect();
+    assert_eq!(
+        callers,
+        BTreeSet::from(["main::start_up".to_owned(), "main::elsewhere".to_owned()])
+    );
+}

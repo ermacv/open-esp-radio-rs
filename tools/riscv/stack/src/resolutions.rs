@@ -32,12 +32,6 @@ pub enum Assumption {
     /// no reinterpreted memory puts another function there. The points-to
     /// analysis of the interrupt-reachable sites (#121) is to prove it.
     ExecutorInvariant,
-    /// The level rule's configuration half: each interrupt line's CLIC level
-    /// is the level its table entry names, and nothing changes it at run
-    /// time. The sum over levels rests on it with the other half, that no
-    /// handler lowers the running level, which the analysis checks
-    /// ([`crate::LevelDrop`]).
-    TableLevels,
 }
 
 impl std::fmt::Display for Assumption {
@@ -46,10 +40,6 @@ impl std::fmt::Display for Assumption {
             Self::ExecutorInvariant => {
                 "the executor invariant (a task header's poll_fn matches its storage, and an \
                  erased pointer is read back as its own type)"
-            }
-            Self::TableLevels => {
-                "the table levels (each interrupt line's CLIC level is its table entry's, \
-                 unchanged at run time)"
             }
         })
     }

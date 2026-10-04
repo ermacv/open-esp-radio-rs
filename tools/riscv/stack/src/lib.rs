@@ -40,7 +40,7 @@ use std::fmt;
 
 pub use cha::{TypeFacts, function_pointer_resolutions};
 pub use contexts::{HartStack, LevelStack, Stacks, interrupt_stacks};
-pub use dwarf::Dwarf;
+pub use dwarf::{Dwarf, instances};
 pub use image::{Function, functions, stack_sizes};
 pub use interrupts::{Field, TableEntry, TableLayout, interrupt_table};
 use oer_riscv_analysis::KnownJump;

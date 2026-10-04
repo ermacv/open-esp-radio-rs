@@ -39,6 +39,30 @@ pub const IPC_DISPATCH: [&str; 2] = [
     "esp_hal::interrupt::ipc::implem::callback_handler",
 ];
 
+/// The functions that set an interrupt line's CLIC level or route a source
+/// to a line, each with the only functions it may run inside: start-up and
+/// the IPC line's install for levels (each line's from esp-hal's constant
+/// priority map, the IPC line's the lowest), start-up and the table's routing
+/// capability for routes (each source to the line of its table level). A copy
+/// anywhere else could give a source a level other than its table entry's.
+pub const LEVEL_WRITERS: [(&str, &[&str]); 2] = [
+    (
+        "esp_hal::interrupt::arch::cpu_int::set_priority_raw",
+        &[
+            "esp_hal::interrupt::arch::init_vectoring",
+            "esp_hal::interrupt::ipc::implem::install_core",
+        ],
+    ),
+    (
+        "esp_hal::interrupt::map_raw",
+        &[
+            "esp_hal::interrupt::setup_interrupts",
+            "<esp_hal::interrupt::InterruptRoutes>::enable",
+            "<esp_hal::interrupt::InterruptRoutes>::disable",
+        ],
+    ),
+];
+
 /// Aligned bytes at the bottom of each interrupt stack whose stores trap.
 pub const IRQ_STACK_GUARD_BYTES: u32 = 1024;
 /// The margin the interrupt-stack bound keeps below the usable stack, in

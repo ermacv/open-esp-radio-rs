@@ -168,7 +168,13 @@ impl<'a> StaRateControl for ScriptedRate<'a> {
         self.log.borrow_mut().mpdus.push((attempts, acknowledged));
     }
 
-    fn observe_ampdu(&mut self, _now: oer_time::Instant, attempted: u16, acknowledged: u16) {
+    fn observe_ampdu(
+        &mut self,
+        _now: oer_time::Instant,
+        attempted: u16,
+        acknowledged: u16,
+        _ack_snr_db: Option<i8>,
+    ) {
         self.log.borrow_mut().ampdus.push((attempted, acknowledged));
     }
 }

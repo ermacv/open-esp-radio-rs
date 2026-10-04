@@ -82,6 +82,7 @@ fn exhausted_aggregate_emits_one_terminal_receipt() {
             aggregate_rate: TxPhyRate::Ht(TEST_RATE),
             block_acknowledged_subframes: 1,
             individual_retries: MacIndividualRetries::NONE,
+            ack_snr_db: Some(96),
         })
     );
     send_frame(&mut device, 4);

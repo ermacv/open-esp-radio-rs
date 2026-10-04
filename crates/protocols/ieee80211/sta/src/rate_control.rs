@@ -35,8 +35,15 @@ pub trait StaRateControl: Sized {
     fn observe_mpdu(&mut self, attempts: u8, acknowledged: bool, ack_snr_db: Option<i8>);
 
     /// An A-MPDU exchange ended at `now` with `acknowledged` of its
-    /// `attempted` subframes in its BlockAck.
-    fn observe_ampdu(&mut self, now: Instant, attempted: u16, acknowledged: u16);
+    /// `attempted` subframes in its BlockAck, with the BlockAck's ACK SNR
+    /// when the backend reported a valid one.
+    fn observe_ampdu(
+        &mut self,
+        now: Instant,
+        attempted: u16,
+        acknowledged: u16,
+        ack_snr_db: Option<i8>,
+    );
 }
 
 /// Every data frame at one configured rate, whatever its exchanges show.
@@ -60,5 +67,12 @@ impl StaRateControl for StaFixedRateControl {
 
     fn observe_mpdu(&mut self, _attempts: u8, _acknowledged: bool, _ack_snr_db: Option<i8>) {}
 
-    fn observe_ampdu(&mut self, _now: Instant, _attempted: u16, _acknowledged: u16) {}
+    fn observe_ampdu(
+        &mut self,
+        _now: Instant,
+        _attempted: u16,
+        _acknowledged: u16,
+        _ack_snr_db: Option<i8>,
+    ) {
+    }
 }

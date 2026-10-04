@@ -23,9 +23,10 @@ use oer_ieee80211_rsn::{
     supplicant::RsnStaKeyInstallRequest,
 };
 use oer_ieee80211_sta::attempt::Wpa2Message4Protection;
+use oer_ieee80211_upper_mac_service::client::{PortError, PortInput};
 
 use super::{
-    link::{PortConnectionFrame, PortError, PortInput, PortLink, PortLinkError, PortStationEnv},
+    link::{PortConnectionFrame, PortLink, PortLinkError, PortStationEnv},
     wire,
 };
 

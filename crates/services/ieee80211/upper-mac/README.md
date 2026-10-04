@@ -23,6 +23,18 @@ the backend's runner, takes every event and dispatches it:
   `resolve(id)` whether the completion still came or was lost in the gap;
 - the terminal `Poisoned` event ends `run()` and every wait.
 
+A service talks to the port through one `client::PortClient` per interface
+(`PortClientEnv` names the port, the planner's HE TXOP budget, the rate
+ladder and the backoff entropy; `PortClientConfig` the interface's VIF,
+address, role, power and retry limit). The client reads the router's receive
+and extension queues as `PortInput`s (`Frame(PortFrame)` in the port's own
+`RxBuffer`, `Tbtt`, `EventsLost`, `Poisoned`), transmits MPDUs and A-MPDUs
+through its `UpperMacTx`, and applies settings, the BSS's EDCA parameters,
+its interface configuration, retunes and lifecycle commands, with every
+failure a `PortClientError`. `PortMsdu` is the MSDU a service hands its
+application: the port's buffer, or parts to copy. The station service
+(`oer-ieee80211-sta-service`) builds on it.
+
 `UpperMacTx::new(&router, vif, planner)` binds one interface; the router
 allocates attempt identities outside the backend-reserved range.
 `send_mpdu(frame, key, request, ladder, entropy)` and, for a port with the

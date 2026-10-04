@@ -2,6 +2,7 @@
 //! and its lifecycle backend.
 
 use core::{convert::Infallible, marker::PhantomData};
+use oer_ieee80211_upper_mac_service::client::{PortClientEnv, PortError, PortMsdu, PortRxBuffer};
 
 use oer_ieee80211_lower_mac::{
     Channel, ChannelWidth, Ieee80211LowerMacPort, ReceiveFilter, RxEvidence, RxMeta,
@@ -57,10 +58,7 @@ use super::{
         PortConnectionSecurity, PortDisconnect, PortLinkProbe, PortLinkSupervisor, PortSend,
     },
     join::{PortAssociation, PortHePower, PortJoin},
-    link::{
-        PORT_FRAME_CAPACITY, PortError, PortLink, PortLinkError, PortMsdu, PortRxBuffer,
-        PortStationEnv,
-    },
+    link::{PORT_FRAME_CAPACITY, PortLink, PortLinkError, PortStationEnv},
     rsn::{BorrowedUnwrap, PortHandshake, PortKeyInstall, PortKeys},
     scan::{PortProbe, PortScan, PortScanTarget},
 };
@@ -258,7 +256,7 @@ pub struct PortStation<'p, X: PortStationEnv> {
 
 /// A connected station's connection and the context its phases run in.
 type ConnectionParts<'a, 'p, X> = (
-    &'a mut PortConnection<'p, <X as PortStationEnv>::Port, <X as PortStationEnv>::RateControl>,
+    &'a mut PortConnection<'p, <X as PortClientEnv>::Port, <X as PortStationEnv>::RateControl>,
     ConnectionContext<'a, 'p, X>,
 );
 

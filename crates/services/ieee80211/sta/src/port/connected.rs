@@ -46,14 +46,12 @@ use oer_ieee80211_sta::{
 use oer_ieee80211_upper_mac::{
     AmpduRequest, TxBody, TxReceiver, TxReport, TxRequest, ampdu::MAX_AMPDU_SUBFRAMES,
 };
+use oer_ieee80211_upper_mac_service::client::{PortError, PortFrame, PortInput, PortMsdu};
 use oer_ieee80211_upper_mac_service::{AmpduFrames, UpperMacTxError};
 use oer_time::{Clock, Duration, Instant};
 
 use super::{
-    link::{
-        PORT_FRAME_CAPACITY, PortConnectionFrame, PortError, PortFrame, PortInput, PortLink,
-        PortLinkError, PortMsdu, PortStationEnv,
-    },
+    link::{PORT_FRAME_CAPACITY, PortConnectionFrame, PortLink, PortLinkError, PortStationEnv},
     power::{PortPowerSave, PowerContext, acknowledged},
     rsn::{EAPOL_ETHER_TYPE, PortKeys, send_protected_eapol},
     tx_queue::{PORT_TX_QUEUE, TxQueue},

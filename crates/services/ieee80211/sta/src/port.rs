@@ -45,8 +45,7 @@ pub use join::{PortAssociation, PortHePower, PortJoin};
 pub use link::{
     EventRouter, NoAggregation, NoCoexistence, PORT_BACKLOG, PORT_EXCHANGES, PORT_FRAME_CAPACITY,
     PortAggregation, PortAmpduAggregation, PortCoexistence, PortCoexistenceRefused,
-    PortConnectionFrame, PortError, PortFrame, PortInput, PortLink, PortLinkCounters,
-    PortLinkError, PortMsdu, PortRouter, PortRxBuffer, PortStationConfig, PortStationEnv,
+    PortConnectionFrame, PortLink, PortLinkError, PortRouter, PortStationConfig, PortStationEnv,
 };
 pub use power::PortPowerSave;
 pub use rsn::{PortHandshake, PortKeyInstall, PortKeys};

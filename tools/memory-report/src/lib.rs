@@ -1,21 +1,15 @@
-//! Exact-ELF data placement, local machine-frame policy and linked-code views.
+//! Exact-ELF data placement and linked-code views.
 //!
 //! This host tool owns analysis, not firmware compilation or product readiness.
-//! Stack metadata measures local generated frames; task/Future storage belongs
-//! to static allocation accounting, and aggregate stack use needs runtime evidence.
+//! Stack bounds belong to `oer-riscv-stack` and the firmware's stack gate.
 //! Compiler mono estimates and linked symbol ranges remain separate views.
 #![forbid(unsafe_code)]
-
-/// This crate's directory in the repository: an image build records the
-/// crate's sources among its inputs, since they audit every image.
-pub const REPOSITORY_DIRECTORY: &str = "tools/memory-report";
 
 mod analyze;
 mod code;
 mod mono;
 mod policy;
 mod render;
-mod stack;
 
 use std::{io, path::PathBuf};
 
@@ -28,11 +22,6 @@ pub use policy::{
     RegionPolicy, ReservePolicy,
 };
 pub use render::{MemoryDiff, diff, render_audit, render_diff, render_report};
-pub use stack::{
-    CoverageCategory, CoveragePolicy, CoverageReview, ExecutionStack, StackBudget, StackCoverage,
-    StackCoverageFunction, StackCoverageOrigin, StackCoverageStatus, StackFrame, StackReport,
-    StackReviewedRuleMatches, StackSourceLocation, analyze_stack, audit_stack, render_stack_report,
-};
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -58,16 +47,6 @@ pub enum Error {
     Elf { path: PathBuf, message: String },
     #[error("memory audit failed\n{0}")]
     Audit(String),
-    #[error("stack audit failed\n{0}")]
-    StackAudit(String),
     #[error("failed to serialize JSON: {0}")]
     Json(#[from] serde_json::Error),
-}
-
-#[cfg(test)]
-mod repository_directory_tests {
-    #[test]
-    fn the_declared_directory_is_this_crate() {
-        assert!(env!("CARGO_MANIFEST_DIR").ends_with(super::REPOSITORY_DIRECTORY));
-    }
 }

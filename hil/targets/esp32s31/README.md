@@ -293,17 +293,19 @@ not attributed to the queued aggregate or exclusively to the connected BSS.
 Large socket buffers, task arenas and ordinary task stacks live in PSRAM.
 DMA-visible storage, dedicated trap/interrupt stacks, critical data and ISR
 text remain in internal SRAM. Every build audits
-placement and compiler stack frames: frames above 8 KiB require an explicit
-reviewed allowance, and every frame is rejected above the 50-KiB hard limit.
-The separate compiler move limit is 4 KiB. These limits are configured in
-`stack.toml`; runtime evidence independently enforces its absolute per-core
-headroom. Network endpoint construction also has a limit derived from the
-linked CPU1 stack size minus its call-chain reserve. Each core arms a hardware
+placement and bounds each stack from the function that runs on it: CPU0's
+`runtime_main`, CPU1's `runtime_cpu1_psram_main` and the bootstrap's
+`_start_rust`, each within its storage less its reserve (16 KiB on CPU0, 4 KiB
+on CPU1), plus the interrupt stacks. A task stack's bound may be partial,
+with its unresolved sites in `runtime-stack.txt`. The separate compiler move
+limit is 4 KiB. `stack.toml` extends the platform's policy with CPU1's stack;
+runtime evidence independently enforces the same absolute per-core headroom.
+Each core arms a hardware
 write watchpoint on the bottom word of its task stack when no debugger owns
 the watchpoint. Fatal CPU exceptions report the hart, faulting instruction,
 fault address and saved return address through the ROM console. Watchpoints
-and stack painting complement the frame audit; individual frame sizes alone
-cannot prove the maximum depth of nested or indirect calls.
+and stack painting complement the static bounds, which do not follow every
+indirect call.
 
 `data_plane` is selected by the startup command, not by rebuilding. Every
 repository scenario selects the production `split-radio-network` topology: it
@@ -368,7 +370,7 @@ so reporting memory support does not retain the product owner graph. Its
 4,096-byte maximum payload describes the per-frame benchmark command policy,
 independently of the product TCP buffer size.
 
-HIL retains its workload-specific `stack.toml` and diagnostic observers.
+HIL retains its `stack.toml` (CPU1's stack) and diagnostic observers.
 Board initialization, relocation and interrupt-stack mechanics belong to the
 shared platform; application images use the same mechanism through `cargo xtask
 build firmware`. A hardware scenario verdict remains a separate HIL responsibility.

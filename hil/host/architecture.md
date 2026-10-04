@@ -489,7 +489,7 @@ The host packages follow the roles of the
 - `oer-hil-image` owns build/rebuild and placement/stack auditing, builds
   from a frozen snapshot (`frozen`) and the records it hands to evidence
   (`record`, which also implements the recipe verification checks them
-  against); the reusable ELF analyzer remains `tools/memory-report`. The
+  against); the stack gate is `oer-esp32s31-firmware`'s, over `oer-riscv-stack`. The
   builder does not print: `artifact_report` returns the report the CLI
   publishes.
 - `oer-hil-stand` owns local configuration, the pre-run observation of the

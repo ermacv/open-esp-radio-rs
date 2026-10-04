@@ -104,7 +104,7 @@ HIL samples each on its own hart in thread mode. The CPU1 sampler also returns
 its task watermark, so the console does not inspect live foreign stack storage.
 Both IRQ measurements accompany Wi-Fi session evidence and stack queries.
 
-The [stack policy](stack.toml) sets `runtime_irq_minimum_free_bytes`; its current
+The [stack policy](../../../platform/esp32s31/stack.toml) sets the interrupt stacks' `minimum_free_bytes`; its current
 reserve is an engineering guard, not a qualified nesting bound. A sampling
 request that cannot complete fails explicitly. Read the
 [wire contract](../../protocol/diagnostics.md#stack-measurements) for absence semantics

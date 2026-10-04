@@ -18,13 +18,15 @@ use std::{
     process::Command,
 };
 
-use oer_memory_report::StackBudget;
+use crate::stack::StackPolicy;
 
 /// Configure `command`, a Cargo build of an image, with the compiler flags
-/// every image shares, building the image linker first.
+/// every image shares, building the image linker first. The stack policy
+/// gives the move limit and the headroom reserves the runtime's stack
+/// painting reads at compile time.
 pub fn configure_image_compiler(
     command: &mut Command,
-    budget: &StackBudget,
+    policy: &StackPolicy,
     target: &str,
 ) -> io::Result<()> {
     let linker = image_linker()?;
@@ -33,11 +35,14 @@ pub fn configure_image_compiler(
     // stack-size ELF section is consumed by a safe host-side parser.
     command.env("RUSTC_BOOTSTRAP", "1").env(
         "RUSTFLAGS",
-        image_rustflags(env::var("RUSTFLAGS").ok(), budget.max_move_bytes, &linker)?,
+        image_rustflags(env::var("RUSTFLAGS").ok(), policy.max_move_bytes, &linker)?,
     );
+    for (variable, value) in policy.runtime_environment() {
+        command.env(variable, value);
+    }
     // C and C++ that build scripts compile for the image (through the `cc`
-    // and `cmake` crates) emit the same `.stack_sizes` section, so the audit
-    // measures their frames as well.
+    // and `cmake` crates) emit the same `.stack_sizes` section, so the stack
+    // gate has their frames as well.
     for variable in c_flag_variables(target) {
         let flags = with_stack_sizes(env::var(&variable).ok());
         command.env(variable, flags);

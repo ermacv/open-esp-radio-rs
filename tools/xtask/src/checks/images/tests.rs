@@ -30,7 +30,7 @@ fn fixture_report(root: &Path, class: FinalImageClass, start: &Path) -> serde_js
         path.display().to_string()
     };
     json!({
-        "schema": 2,
+        "schema": 3,
         "image_class": class.id(), "target": TARGET,
         "network": FINAL_IMAGE_NETWORK, "profile": FINAL_IMAGE_PROFILE,
         "runtime_elf": make(&runtime_elf), "runtime_bin": make(&base.join("runtime.bin")),
@@ -42,7 +42,8 @@ fn fixture_report(root: &Path, class: FinalImageClass, start: &Path) -> serde_js
         "effective_bootstrap_lock": make(&base.join("bootstrap-Cargo.lock")),
         "application_image": make(&base.join("application.bin")),
         "application_sha256": format!("{:x}", Sha256::digest(b"fixture")),
-        "stack_frame_audit": "PASS", "move_size_audit": "PASS",
+        "interrupt_stack_audit": "PASS", "task_stack_audit": "PASS",
+        "move_size_audit": "PASS",
         "placement_audit": "PASS", "application_audit": "PASS",
         "autonomous_source_graph": "PASS", "flashed": false
     })

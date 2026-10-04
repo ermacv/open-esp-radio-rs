@@ -37,7 +37,7 @@ fn runtime_command(
     cache: &Path,
     lock: &oer_esp32s31_firmware::network::BuildLock,
     (features, no_default_features): (&[String], bool),
-    budget: &oer_memory_report::StackBudget,
+    policy: &oer_esp32s31_firmware::stack::StackPolicy,
 ) -> Result<std::process::Command> {
     let mut command = ctx.cargo();
     command
@@ -60,7 +60,7 @@ fn runtime_command(
     if !features.is_empty() {
         command.arg("--features").arg(features.join(","));
     }
-    oer_esp32s31_firmware::compiler::configure_image_compiler(&mut command, budget, target)?;
+    oer_esp32s31_firmware::compiler::configure_image_compiler(&mut command, policy, target)?;
     Ok(command)
 }
 
@@ -74,8 +74,7 @@ pub fn type_check(
 ) -> Result<()> {
     let (binary, manifest) = example(ctx, name)?;
     let target = oer_esp32s31_firmware::target(&ctx.root)?;
-    let budget =
-        oer_memory_report::StackBudget::load(&ctx.root.join("platform/esp32s31/stack.toml"))?;
+    let policy = stack_policy(ctx)?;
     let cache = ctx
         .root
         .join("target/firmware")
@@ -93,7 +92,7 @@ pub fn type_check(
         &cache.join("runtime"),
         &lock,
         (features, no_default_features),
-        &budget,
+        &policy,
     )?)?;
     lock.validate()?;
     println!("{name}: the runtime type-checks with the image flags");
@@ -115,8 +114,7 @@ pub fn build(
         .join(format!("esp32s31-{example_name}"));
     let workspace = workspace::Workspace::acquire(&directory_output)?;
     let output = workspace.output();
-    let budget =
-        oer_memory_report::StackBudget::load(&ctx.root.join("platform/esp32s31/stack.toml"))?;
+    let policy = stack_policy(ctx)?;
     let runtime_target = workspace.cache().join("runtime");
     // A patched dependency resolves into this private copy, never the
     // example's catalog. The examples share one workspace and its lockfile.
@@ -132,7 +130,7 @@ pub fn build(
         &runtime_target,
         &runtime_lock,
         (features, no_default_features),
-        &budget,
+        &policy,
     )?;
     process::run(&mut command)?;
     runtime_lock.validate()?;
@@ -140,14 +138,16 @@ pub fn build(
         &runtime_target.join(&target).join("release").join(binary),
         "runtime.elf",
     )?;
-    let interrupt_stacks =
-        oer_esp32s31_firmware::interrupt_stack::interrupt_stacks(&ctx.root, &runtime)?;
-    fs::write(
-        output.join("interrupt-stack.txt"),
-        interrupt_stacks.render(),
+    let stacks = oer_esp32s31_firmware::stack::audit_runtime_stacks(
+        &ctx.root,
+        &runtime,
+        &policy,
+        oer_esp32s31_firmware::interrupt_stack::Required::Proven,
+        output,
     )?;
-    interrupt_stacks.check(oer_esp32s31_firmware::interrupt_stack::Required::Proven)?;
-    audit_stack(&runtime, &output.join("runtime-stack.txt"), &budget)?;
+    for warning in stacks.warnings {
+        println!("warning: {warning}");
+    }
     let packed = output.join("runtime.bin");
     process::run(
         ctx.command(env::var_os("LLVM_OBJCOPY").unwrap_or_else(|| "llvm-objcopy".into()))
@@ -170,7 +170,7 @@ pub fn build(
         &bootstrap_target,
     );
     command.arg("--locked");
-    oer_esp32s31_firmware::compiler::configure_image_compiler(&mut command, &budget, &target)?;
+    oer_esp32s31_firmware::compiler::configure_image_compiler(&mut command, &policy, &target)?;
     process::run(&mut command)?;
     let bootstrap = workspace.snapshot(
         &bootstrap_target
@@ -179,7 +179,11 @@ pub fn build(
             .join(BOOTSTRAP_BIN),
         "bootstrap.elf",
     )?;
-    audit_stack(&bootstrap, &output.join("bootstrap-stack.txt"), &budget)?;
+    for warning in
+        oer_esp32s31_firmware::stack::audit_bootstrap_stack(&ctx.root, &bootstrap, &policy, output)?
+    {
+        println!("warning: {warning}");
+    }
     let image = output.join("application.bin");
     let mut command = ctx.command(env::var_os("ESPFLASH").unwrap_or_else(|| "espflash".into()));
     oer_esp32s31_firmware::save_image_command(&mut command, &ctx.root, &bootstrap, &image);
@@ -223,11 +227,9 @@ pub fn build(
     Ok(workspace.finish())
 }
 
-fn audit_stack(elf: &Path, output: &Path, budget: &oer_memory_report::StackBudget) -> Result<()> {
-    let report = oer_esp32s31_firmware::stack::analyze_elf_stack(elf, budget)?;
-    fs::write(output, oer_memory_report::render_stack_report(&report))?;
-    oer_memory_report::audit_stack(&report)?;
-    Ok(())
+/// The standalone examples' stack policy.
+fn stack_policy(ctx: &Context) -> Result<oer_esp32s31_firmware::stack::StackPolicy> {
+    oer_esp32s31_firmware::stack::StackPolicy::load(&ctx.root.join("platform/esp32s31/stack.toml"))
 }
 
 /// Flash the exact audited images and select ota_0 without erasing other partitions.

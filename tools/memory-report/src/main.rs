@@ -4,9 +4,9 @@ use std::{path::PathBuf, process::ExitCode};
 
 use clap::{Parser, Subcommand, ValueEnum};
 use oer_memory_report::{
-    MemoryPolicy, Result, StackBudget, analyze, analyze_code, analyze_mono, analyze_stack, audit,
-    audit_stack, diff, diff_code, render_audit, render_code_diff, render_code_report, render_diff,
-    render_mono_report, render_report, render_stack_report,
+    MemoryPolicy, Result, analyze, analyze_code, analyze_mono, audit, diff, diff_code,
+    render_audit, render_code_diff, render_code_report, render_diff, render_mono_report,
+    render_report,
 };
 
 #[derive(Debug, Parser)]
@@ -51,15 +51,6 @@ enum Command {
         before: PathBuf,
         #[arg(long)]
         after: PathBuf,
-        #[arg(long)]
-        policy: PathBuf,
-        #[arg(long, value_enum, default_value_t)]
-        format: OutputFormat,
-    },
-    /// Report and enforce compiler-measured firmware stack-frame sizes.
-    Stack {
-        #[arg(long)]
-        elf: PathBuf,
         #[arg(long)]
         policy: PathBuf,
         #[arg(long, value_enum, default_value_t)]
@@ -127,16 +118,6 @@ fn run(cli: Cli) -> Result<()> {
             let after = analyze(&after, &policy)?;
             let report = diff(&before, &after);
             print_value(format, &report, || render_diff(&report))?;
-        }
-        Command::Stack {
-            elf,
-            policy,
-            format,
-        } => {
-            let budget = StackBudget::load(&policy)?;
-            let report = analyze_stack(&elf, &budget)?;
-            print_value(format, &report, || render_stack_report(&report))?;
-            audit_stack(&report)?;
         }
     }
     Ok(())

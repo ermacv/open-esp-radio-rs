@@ -10,17 +10,17 @@ use std::path::{Path, PathBuf};
 use oer_esp32s31_platform_layout::interrupts as contract;
 use oer_esp32s31_platform_layout::memory;
 use oer_riscv_stack::{
-    Analysis, Assumption, Dwarf, Field, HartStack, Stacks, TableLayout, TypeFacts, address_taken,
-    analyze, function_pointer_resolutions, functions, interrupt_table, parse_summaries,
-    taken_addresses, trap_entry, vector_table, waker_resolutions, waker_vtables,
+    Analysis, Assumption, Dwarf, Field, HartStack, Stacks, TableLayout, interrupt_table,
+    parse_summaries, trap_entry, vector_table,
 };
 
 use crate::Result;
+use crate::stack::Image;
 
 /// The chip's vendor manifest, which pins the ROM ELF.
 const ARTIFACTS: &str = "verification/esp32s31/artifacts.toml";
 /// The reviewed summaries of ROM functions.
-const ROM_SUMMARIES: &str = "platform/esp32s31/linker/rom/functions.toml";
+pub(crate) const ROM_SUMMARIES: &str = "platform/esp32s31/linker/rom/functions.toml";
 
 /// Overrides the host-wide store of fetched vendor artifacts.
 pub const VENDOR_STORE_ENV: &str = "OER_VENDOR_CACHE";
@@ -138,7 +138,7 @@ const SHOWN: usize = 10;
 /// The assumptions the gate admits in a bound, each by name: a bound resting
 /// on one is conditional and passes with a warning; any other fails. Each
 /// leaves this list in the pull request that proves it (#119).
-const ADMITTED: &[Assumption] = &[Assumption::ExecutorInvariant];
+pub(crate) const ADMITTED: &[Assumption] = &[Assumption::ExecutorInvariant];
 
 /// What an image's interrupt stacks must reach: the gate's policy, apart
 /// from the analysis, which always reports all it can.
@@ -376,46 +376,36 @@ fn with_margin(bytes: u64) -> u64 {
     bytes + bytes * u64::from(contract::IRQ_STACK_MARGIN_PERCENT) / 100
 }
 
-/// Bound every hart's interrupt stack of the runtime ELF `elf`, with the
-/// pinned ROM of the repository at `root`.
 /// The names of the reviewed ROM summaries.
 pub fn rom_summaries(root: &Path) -> Result<Vec<String>> {
     let summaries = parse_summaries(&std::fs::read_to_string(root.join(ROM_SUMMARIES))?)?;
     Ok(summaries.into_iter().map(|summary| summary.name).collect())
 }
 
+/// Bound every hart's interrupt stack of the runtime ELF `elf`, with the
+/// pinned ROM of the repository at `root`.
 pub fn interrupt_stacks(root: &Path, elf: &Path) -> Result<InterruptStacks> {
-    let elf = std::fs::read(elf)?;
-    let rom = std::fs::read(rom_elf(root)?)?;
-    let summaries = parse_summaries(&std::fs::read_to_string(root.join(ROM_SUMMARIES))?)?;
-    let analysis = analyze(&elf, &[&rom], &summaries)?;
-    let functions = functions(&elf)?;
-    let mut names = BTreeMap::new();
-    for function in &functions {
-        if let Some(name) = function.names.first() {
-            names.insert(
-                function.address,
-                format!("{:#}", rustc_demangle::demangle(name)),
-            );
-        }
-    }
-    let address_of = |path: &str| -> Vec<u32> {
-        names
-            .iter()
-            .filter(|(_, name)| name.as_str() == path)
-            .map(|(&address, _)| address)
-            .collect()
-    };
+    interrupt_stacks_of(&Image::read(root, elf)?)
+}
+
+/// [`interrupt_stacks`] of an analysed runtime image.
+pub(crate) fn interrupt_stacks_of(image: &Image) -> Result<InterruptStacks> {
+    let Image {
+        elf,
+        analysis,
+        functions,
+        names,
+        dwarf,
+        resolutions,
+    } = image;
     let symbol = |name: &str| -> Result<u32> {
-        functions
-            .iter()
-            .find(|function| function.names.iter().any(|candidate| candidate == name))
-            .map(|function| function.address)
+        image
+            .symbol(name)
             .ok_or_else(|| format!("the runtime has no `{name}`").into())
     };
     let field = |(offset, size): (u32, u32)| Field { offset, size };
     let table = interrupt_table(
-        &elf,
+        elf,
         contract::TABLE_SYMBOL,
         &TableLayout {
             entry: contract::TABLE_ENTRY_BYTES,
@@ -425,21 +415,12 @@ pub fn interrupt_stacks(root: &Path, elf: &Path) -> Result<InterruptStacks> {
             handler: contract::TABLE_HANDLER,
         },
     )?;
-    let vectors = vector_table(&elf, contract::VECTOR_TABLE_SYMBOL)?
+    let vectors = vector_table(elf, contract::VECTOR_TABLE_SYMBOL)?
         .into_iter()
         .flatten()
-        .map(|entry| trap_entry(&elf, &functions, entry))
+        .map(|entry| trap_entry(elf, functions, entry))
         .collect::<oer_riscv_model::Result<Vec<_>>>()?;
-    let exception = trap_entry(&elf, &functions, symbol(contract::EXCEPTION_ENTRY_SYMBOL)?)?;
-    let dwarf = Dwarf::read(&elf)?;
-    let vtables = waker_vtables(&elf, &dwarf, &analysis)?;
-    let mut resolutions = waker_resolutions(&analysis, &dwarf, &vtables)?;
-    resolutions.extend(ipc_resolutions(&elf, &analysis, &address_of)?);
-    // Calls through a static's function pointer reach the taken functions of
-    // its type: the diagnostic observers' `OnceCell<fn(..)>`.
-    let types = TypeFacts::read(&elf)?;
-    let taken = taken_addresses(&elf)?;
-    resolutions.extend(function_pointer_resolutions(&analysis, &types, &taken));
+    let exception = trap_entry(elf, functions, symbol(contract::EXCEPTION_ENTRY_SYMBOL)?)?;
     // The handler a slot calls is a direct call of the slot's own code: a
     // call site no inlined function owns. Calls from a handler inlined into
     // the slot are the handler's.
@@ -467,11 +448,11 @@ pub fn interrupt_stacks(root: &Path, elf: &Path) -> Result<InterruptStacks> {
             (slot, calls)
         })
         .collect();
-    let level_writers = level_writers(&elf, &dwarf)?;
+    let level_writers = level_writers(elf, dwarf)?;
 
-    let sources = source_table(&elf)?;
+    let sources = source_table(elf)?;
     let harts = oer_riscv_stack::interrupt_stacks(
-        &analysis,
+        analysis,
         &Stacks {
             table: &table,
             cores: &contract::HARTS,
@@ -479,7 +460,7 @@ pub fn interrupt_stacks(root: &Path, elf: &Path) -> Result<InterruptStacks> {
             vectors: &vectors,
             exception,
             sources,
-            resolutions: &resolutions,
+            resolutions,
         },
     )?;
     let reached: BTreeSet<u32> = harts
@@ -487,12 +468,12 @@ pub fn interrupt_stacks(root: &Path, elf: &Path) -> Result<InterruptStacks> {
         .flat_map(|hart| hart.levels.iter())
         .flat_map(|level| level.bound.reached.iter().copied())
         .collect();
-    let handler_code = handler_code(&analysis, &reached, &names);
+    let handler_code = handler_code(analysis, &reached, names);
     Ok(InterruptStacks {
         harts,
         handlers,
         summaries: analysis.summaries.clone(),
-        names,
+        names: names.clone(),
         level_writers,
         handler_code,
     })
@@ -568,38 +549,6 @@ fn level_writers(elf: &[u8], dwarf: &Dwarf) -> Result<Vec<String>> {
         }
     }
     Ok(problems)
-}
-
-/// The targets of the IPC dispatch's call of the posted callback: the
-/// `handler` argument of every direct call of the only function that posts
-/// one; none when the image posts none.
-fn ipc_resolutions(
-    elf: &[u8],
-    analysis: &Analysis,
-    address_of: &dyn Fn(&str) -> Vec<u32>,
-) -> Result<oer_riscv_stack::Resolutions> {
-    let mut targets = BTreeSet::new();
-    for post in address_of(contract::IPC_POST) {
-        if address_taken(elf, post)? {
-            return Err(format!("`{}` is called through a pointer", contract::IPC_POST).into());
-        }
-        targets.extend(analysis.constant_arguments(post, contract::IPC_POST_HANDLER_ARGUMENT)?);
-    }
-    let mut resolutions = oer_riscv_stack::Resolutions::new();
-    for dispatch in contract::IPC_DISPATCH {
-        for function in address_of(dispatch) {
-            for transfer in &analysis.functions[&function].transfers {
-                if transfer.target.is_none() {
-                    resolutions.add(
-                        transfer.site,
-                        oer_riscv_stack::Fact::IpcPosts,
-                        targets.iter().copied(),
-                    );
-                }
-            }
-        }
-    }
-    Ok(resolutions)
 }
 
 /// The address of esp-hal's per-source handler table.

@@ -62,6 +62,20 @@ const BEACON_EVENT: CoexEventId = match CoexEventId::new(0) {
     None => unreachable!(),
 };
 
+/// The event a connection frame requests under the reconnect policy, whose
+/// priority it then carries (`coex_pti_get(46)`).
+const CONNECTION_EVENT: CoexEventId = match CoexEventId::new(46) {
+    Some(event) => event,
+    None => unreachable!(),
+};
+
+/// The slice event (`coex_pti_get(1)`), whose priority bounds a connection
+/// frame's scheduler priority.
+const SLICE_EVENT: CoexEventId = match CoexEventId::new(1) {
+    Some(event) => event,
+    None => unreachable!(),
+};
+
 /// The share of the schedule's first phase, or zero without one.
 fn first_share(schedule: &CoexSchedule) -> u8 {
     schedule
@@ -114,6 +128,11 @@ pub struct WifiCoexView {
     pub first_phase_share_percent: u8,
     /// `coex_pti_get(0)`.
     pub beacon_pti: CoexPti,
+    /// `coex_pti_get(46)`: the priority a connection frame carries under
+    /// the reconnect policy.
+    pub connection_pti: CoexPti,
+    /// `coex_pti_get(1)`: the slice event's priority.
+    pub slice_pti: CoexPti,
 }
 
 /// The latest [`WifiCoexView`], readable without the arbiter lease.
@@ -182,6 +201,8 @@ impl CoexSignals {
                 interval: 0,
                 first_phase_share_percent: first_share(&CoexSchedule::new()),
                 beacon_pti: CoexPtiTable::VENDOR.pti(BEACON_EVENT),
+                connection_pti: CoexPtiTable::VENDOR.pti(CONNECTION_EVENT),
+                slice_pti: CoexPtiTable::VENDOR.pti(SLICE_EVENT),
             }))),
         }
     }
@@ -630,6 +651,8 @@ impl<P, C, T> Drop for RadioGuard<'_, P, C, T> {
             interval: schedule.interval(),
             first_phase_share_percent: first_share(schedule),
             beacon_pti: self.lease.coex_pti(BEACON_EVENT),
+            connection_pti: self.lease.coex_pti(CONNECTION_EVENT),
+            slice_pti: self.lease.coex_pti(SLICE_EVENT),
         });
     }
 }

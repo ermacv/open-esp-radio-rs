@@ -148,7 +148,11 @@ interval, phase restarts and the flexible period. A refused effect ends the
 operation with `PortLinkError::Coexistence`. The beacon receive priority is
 the MAC's: the manager applies `LowerMacSetting::RxBeaconPriority`, and the
 backend receives beacons at its radio system's beacon-window priority, at
-zero, or withdraws the request.
+zero, or withdraws the request. Each connection frame (Probe Request,
+Authentication, Association, EAPOL) first asks the radio system for the air
+(`PortCoexistence::connection_frame`, the vendor's reconnect policy after a
+lost association); when it answers `true` the frame goes out at
+`CoexPriority::Elevated`.
 
 The station supervises its link as the S31 station does, in software above
 the port (`oer-ieee80211-sta`'s `StaLinkMonitor`, the profile's

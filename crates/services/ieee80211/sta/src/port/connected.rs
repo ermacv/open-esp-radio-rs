@@ -50,8 +50,8 @@ use oer_time::{Clock, Duration, Instant};
 
 use super::{
     link::{
-        PORT_FRAME_CAPACITY, PortError, PortFrame, PortInput, PortLink, PortLinkError,
-        PortStationEnv,
+        PORT_FRAME_CAPACITY, PortConnectionFrame, PortError, PortFrame, PortInput, PortLink,
+        PortLinkError, PortStationEnv,
     },
     power::{PortPowerSave, PowerContext, acknowledged},
     rsn::{EAPOL_ETHER_TYPE, PortKeys, send_protected_eapol},
@@ -1425,7 +1425,8 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
         .map_err(|_| PortLinkError::MissingState)?;
         context
             .link
-            .transmit(
+            .transmit_connection_frame(
+                PortConnectionFrame::ProbeRequest,
                 &frame[..length],
                 KeySelector::Plaintext,
                 WmmAccessCategory::Voice,

@@ -52,10 +52,10 @@ use oer_ieee80211_sta::{
 };
 use oer_ieee80211_sta_service::{
     port::{
-        EventRouter, PortCoexistence, PortCoexistenceRefused, PortDisconnect, PortLink,
-        PortLinkError, PortLinkSupervision, PortProbe, PortRouter, PortScan, PortScanTarget,
-        PortSend, PortStation, PortStationApplication, PortStationConfig, PortStationEnv,
-        PortStationLifecycle, PortStationProfile,
+        EventRouter, PortCoexistence, PortCoexistenceRefused, PortConnectionFrame, PortDisconnect,
+        PortLink, PortLinkError, PortLinkSupervision, PortProbe, PortRouter, PortScan,
+        PortScanTarget, PortSend, PortStation, PortStationApplication, PortStationConfig,
+        PortStationEnv, PortStationLifecycle, PortStationProfile,
     },
     scan::{StaCandidateScanService, StaScanBackend},
     station::StaLifecycleService,
@@ -131,6 +131,11 @@ struct ScriptedCoex {
     view: Cell<CoexView>,
     performed: RefCell<Vec<PmCoexAction>>,
     refuse: Cell<bool>,
+    /// Its reconnect policy is on: connection frames carry the elevated
+    /// priority.
+    reconnect: Cell<bool>,
+    /// The connection frames the station asked the air for.
+    connection_frames: RefCell<Vec<PortConnectionFrame>>,
 }
 
 impl PortCoexistence for &ScriptedCoex {
@@ -144,6 +149,11 @@ impl PortCoexistence for &ScriptedCoex {
         }
         self.performed.borrow_mut().push(action);
         Ok(())
+    }
+
+    async fn connection_frame(&mut self, frame: PortConnectionFrame) -> bool {
+        self.connection_frames.borrow_mut().push(frame);
+        self.reconnect.get() && frame != PortConnectionFrame::ProbeRequest
     }
 }
 
@@ -230,6 +240,8 @@ impl World {
                 view: Cell::new(CoexView::INACTIVE),
                 performed: RefCell::new(Vec::new()),
                 refuse: Cell::new(false),
+                reconnect: Cell::new(false),
+                connection_frames: RefCell::new(Vec::new()),
             })),
             timer: VirtualTimer {
                 now: Cell::new(1_000),
@@ -1092,6 +1104,68 @@ fn an_answered_probe_keeps_the_link_body() {
     ap.absorb(world.model);
     assert_eq!(ap.probe_destinations[probes_before..], [AP]);
     assert_eq!(station.connection().unwrap().link().probes_sent(), 0);
+}
+
+#[test]
+fn connection_frames_carry_the_elevated_priority_under_the_reconnect_policy() {
+    on_large_stack(connection_frames_carry_the_elevated_priority_under_the_reconnect_policy_body);
+}
+
+fn connection_frames_carry_the_elevated_priority_under_the_reconnect_policy_body() {
+    static PMKSA: StaSharedPmksa = StaSharedPmksa::new();
+    let world = World::new();
+    world.coex.reconnect.set(true);
+    let mut ap = ScriptedAp::new(ApSecurity::Wpa2Psk);
+    let mut station = connect(&world, &mut ap, world.station(wpa2(&PMKSA)));
+    // The station asked the air for its probes, its Authentication and
+    // Association and both of its handshake messages.
+    let frames = world.coex.connection_frames.borrow().clone();
+    assert!(frames.contains(&PortConnectionFrame::ProbeRequest));
+    assert_eq!(
+        frames
+            .iter()
+            .filter(|frame| **frame != PortConnectionFrame::ProbeRequest)
+            .copied()
+            .collect::<Vec<_>>(),
+        [
+            PortConnectionFrame::Authentication,
+            PortConnectionFrame::Association,
+            PortConnectionFrame::Eapol,
+            PortConnectionFrame::Eapol,
+        ]
+    );
+    // They went out at the elevated priority, the probes at the ordinary.
+    let coex_of = |frame_control: u8| {
+        world
+            .model
+            .submitted()
+            .iter()
+            .filter(|attempt| attempt.frames[0][0] == frame_control)
+            .map(|attempt| attempt.coex)
+            .collect::<Vec<_>>()
+    };
+    assert!(
+        coex_of(0x40)
+            .iter()
+            .all(|coex| *coex == CoexPriority::Normal)
+    );
+    assert_eq!(coex_of(0xb0), [CoexPriority::Elevated]);
+    assert_eq!(coex_of(0x00), [CoexPriority::Elevated]);
+    assert_eq!(coex_of(0x08), [CoexPriority::Elevated; 2]);
+
+    // Data is ordinary.
+    let before = world.model.submitted().len();
+    assert_eq!(
+        station.send(&ethernet(PEER, IPV4, b"data"), 0),
+        Ok(PortSend::Queued)
+    );
+    let mut delivered = Vec::new();
+    world.run_for(&mut ap, &mut station, 5, &mut delivered);
+    assert!(
+        world.model.submitted()[before..]
+            .iter()
+            .all(|attempt| attempt.coex == CoexPriority::Normal)
+    );
 }
 
 #[test]

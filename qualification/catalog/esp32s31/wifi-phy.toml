@@ -1129,9 +1129,9 @@ packages = ["oer-esp32s31-ieee80211"]
 id = "wifi-interfaces-and-operating-modes-lower-mac-port-coexistence-levels"
 section = "wifi-interfaces-and-operating-modes"
 title = "Lower-MAC port: coexistence priority levels"
-status = "fail-closed"
+status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "Reason: policy decision pending. An attempt at `CoexPriority::Normal` carries the static per-access-category priority of vendor data encapsulation (events 10-13 through `coex_pti_tab`). Which arbitration events the Idle, Elevated and Critical levels select is undecided, so those levels are refused as outside the limits rather than mapped by invention."
+scope-and-limitations = "An attempt at `CoexPriority::Normal` carries the static per-access-category priority of vendor data encapsulation (events 10-13 through `coex_pti_tab`). A single MPDU at `Elevated` is a connection frame under the radio system's reconnect policy: event 46's priority as the packet priority, the lesser of it and the slice event's as the scheduler priority, priority count 4000 (`pp_coex_tx_request`, `mac_tx_set_pti`); the port station marks its Authentication, Association and EAPOL frames so when `PortCoexistence::connection_frame` says the policy is on. Reason for the rest: policy decision pending. No reviewed event selects `Idle` or `Critical`, or an `Elevated` aggregate, so those are refused rather than mapped by invention."
 packages = ["oer-esp32s31-ieee80211"]
 
 [[items]]

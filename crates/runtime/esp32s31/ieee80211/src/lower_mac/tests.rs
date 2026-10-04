@@ -12,8 +12,8 @@ use oer_esp32s31_hal::types::{
 use oer_esp32s31_ieee80211::lower_mac::{AmpduBacking, AmpduBackingSource, Esp32s31AmpduOwner};
 use oer_esp32s31_ieee80211::{
     lower_mac::{
-        BeaconWindowPriority, LowerMacConfig, RxBeaconPriorityHardware, StationTbttHardware,
-        TxGateHardware,
+        ConnectionFramePriorities, LowerMacConfig, RadioCoexPriorities, RxBeaconPriorityHardware,
+        StationTbttHardware, TxGateHardware,
     },
     ordinary_tx::{OrdinaryTxOwner, WifiTxPowerPair, WifiTxResources},
     station_tsf::{StationTsfHardware, StationTsfWrite},
@@ -237,12 +237,19 @@ impl TxGateHardware for Hardware {
     fn set_power_save_tx_block(&mut self, _blocked: bool) {}
 }
 
-/// A radio system whose beacon-window event has priority zero.
-struct BeaconWindowZero;
+/// A radio system whose coexistence events all have priority zero.
+struct RadioZero;
 
-impl BeaconWindowPriority for BeaconWindowZero {
+impl RadioCoexPriorities for RadioZero {
     fn beacon_window_pti(&self) -> oer_esp32s31_hal::types::MacPti {
         oer_esp32s31_hal::types::MacPti::new(0).unwrap()
+    }
+
+    fn connection_frame_priorities(&self) -> ConnectionFramePriorities {
+        ConnectionFramePriorities {
+            packet: 0,
+            scheduler: 0,
+        }
     }
 }
 
@@ -395,7 +402,7 @@ fn install_core(
             publication_timeout,
             tsf_epoch: 1,
         },
-        &BeaconWindowZero,
+        &RadioZero,
     );
     assert!(
         port.install(Esp32s31LowerMacParts {
@@ -943,7 +950,7 @@ fn install_ampdu(port: &AmpduPort) -> &'static Backings {
             publication_timeout: oer_time::Duration::from_micros(250_000),
             tsf_epoch: 1,
         },
-        &BeaconWindowZero,
+        &RadioZero,
     );
     let tuned = std::boxed::Box::leak(std::boxed::Box::new(std::sync::Mutex::new(Vec::new())));
     assert!(

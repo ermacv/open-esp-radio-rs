@@ -16,7 +16,7 @@ use oer_ieee80211_sta::join::{
 };
 
 use super::{
-    link::{PortError, PortInput, PortLink, PortLinkError, PortStationEnv},
+    link::{PortConnectionFrame, PortError, PortInput, PortLink, PortLinkError, PortStationEnv},
     wire,
 };
 
@@ -82,8 +82,14 @@ impl<'a, 'p, X: PortStationEnv> PortJoin<'a, 'p, X> {
         let rate = self.link.config().management_rate;
         // The join runner times the response; an unacknowledged request is
         // one the access point did not answer.
+        let connection = if frame.first() == Some(&0xb0) {
+            PortConnectionFrame::Authentication
+        } else {
+            PortConnectionFrame::Association
+        };
         self.link
-            .transmit(
+            .transmit_connection_frame(
+                connection,
                 frame,
                 KeySelector::Plaintext,
                 WmmAccessCategory::Voice,

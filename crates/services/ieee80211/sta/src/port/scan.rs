@@ -15,7 +15,9 @@ use oer_ieee80211_sta::scan::{ActiveProbeOutcome, StaScanChannelContext, StaScan
 use oer_ieee80211_upper_mac_service::UpperMacTxError;
 use oer_time::{Clock, Duration, Instant};
 
-use super::link::{PortError, PortFrame, PortInput, PortLink, PortLinkError, PortStationEnv};
+use super::link::{
+    PortConnectionFrame, PortError, PortFrame, PortInput, PortLink, PortLinkError, PortStationEnv,
+};
 
 /// The Probe Request of an active scan.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -214,7 +216,8 @@ impl<X: PortStationEnv, const N: usize> StaScanPort for PortScan<'_, '_, X, N> {
         })?;
         match self
             .link
-            .transmit(
+            .transmit_connection_frame(
+                PortConnectionFrame::ProbeRequest,
                 &frame[..length],
                 KeySelector::Plaintext,
                 WmmAccessCategory::Voice,

@@ -52,25 +52,30 @@ use oer_ieee80211_ap::{
 };
 use oer_ieee80211_lower_mac::{
     Channel, Cipher, CoexPriority, Ieee80211LowerMacPort, KeyHandle, KeyInstall, KeyScope,
-    KeySelector, LowerMacBeaconTiming, LowerMacSetting, PhyRate, ReceiveFilter, SettingError,
-    VifTsf,
+    KeySelector, LowerMacBeaconTiming, LowerMacSetting, PhyRate, ReceiveFilter, RxCryptoStatus,
+    RxEvidence, RxMeta, SettingError, VifTsf,
 };
 use oer_ieee80211_mac::{
     ap::{
         ApAssociationResponseError, ApDataFrame, ApDataFrameError, ApManagementRequest,
-        ApPeerDisconnectKind, parse_ap_management_request, probe, probe::ResponseError,
-        profile::Advertisement, write_ap_peer_disconnect,
-        write_ht_association_response_frame_for_security, write_open_authentication_response,
-        write_sae_authentication,
+        ApPeerDisconnectKind, ApProtectedDataFrame, ApUnprotectedDataFrame,
+        parse_ap_management_request, probe, probe::ResponseError, profile::Advertisement,
+        write_ap_peer_disconnect, write_ht_association_response_frame_for_security,
+        write_open_authentication_response, write_sae_authentication,
     },
     beacon::{AP_BEACON_CAPACITY, ApBeaconBuildError, TimBitmapError, TimVirtualBitmap},
+    ccmp::{
+        CCMP_HEADER_LEN, CcmpHeader, CcmpKeyId, CcmpPacketNumberStep, CcmpReplayLane,
+        CcmpRxReplayState, CcmpTxPacketNumber,
+    },
     channel::WifiChannel,
     data::{
-        DataInterfaceRole, IEEE80211_LEGACY_DATA_HEADER_LEN, IEEE80211_QOS_DATA_HEADER_LEN,
+        DataDecapError, DataInterfaceRole, IEEE80211_LEGACY_DATA_HEADER_LEN,
+        IEEE80211_QOS_DATA_HEADER_LEN, RxDuplicateFilter, decapsulate_data_frames,
         plan_data_decapsulation,
     },
     protection::ApBssProtection,
-    qos::WmmAccessCategory,
+    qos::{WmmAccessCategory, WmmUserPriority},
     security::{ApSecurityPolicy, LinkProtection},
     sequence::SequenceNumber,
     ssid::WifiSsid,
@@ -82,7 +87,11 @@ use oer_ieee80211_rsn::{
 use oer_ieee80211_upper_mac::TxReport;
 use oer_ieee80211_upper_mac_service::{
     EventRouter,
-    client::{PortClient, PortClientEnv, PortClientError, PortError, PortInput},
+    client::{
+        PortClient, PortClientEnv, PortClientError, PortError, PortFrame, PortInput, PortMsdu,
+        PortRxBuffer,
+    },
+    queue::TxQueue,
 };
 use oer_time::{Clock, Duration, Instant, Timer};
 
@@ -218,9 +227,54 @@ pub struct PortApProfile<'a> {
     /// The rates, HT capabilities and WMM parameters the access point
     /// claims.
     pub advertisement: &'a Advertisement,
-    /// The rate of beacons and management frames.
+    /// The rate of beacons, management frames and group data.
     pub management_rate: PhyRate,
+    /// The rate of data to an associated peer.
+    pub data_rate: PhyRate,
     pub coex: CoexPriority,
+    /// The step of the CCMP packet numbers the access point sends under.
+    pub ccmp_step: CcmpPacketNumberStep,
+}
+
+/// The memory of one access point that the composition places: its beacon
+/// template and its transmit queue.
+pub struct PortApStorage {
+    beacon: [u8; AP_BEACON_CAPACITY],
+    queue: TxQueue,
+}
+
+impl PortApStorage {
+    pub const fn new() -> Self {
+        Self {
+            beacon: [0; AP_BEACON_CAPACITY],
+            queue: TxQueue::new(),
+        }
+    }
+}
+
+impl Default for PortApStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The outcome of offering one frame for transmission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PortApSend {
+    /// The frame waits in the transmit queue, which `run_until` sends.
+    Queued,
+    /// The transmit queue is full, or the frame exceeds its capacity.
+    Full,
+}
+
+/// A peer's link: its pairwise key, the CCMP packet numbers sent to it and
+/// received from it, and its duplicate filter.
+struct PeerLink {
+    peer: [u8; 6],
+    key: Option<KeyHandle>,
+    transmit: CcmpTxPacketNumber,
+    replay: CcmpRxReplayState,
+    duplicates: RxDuplicateFilter,
 }
 
 /// What the access point sent, admitted and ignored.
@@ -250,6 +304,21 @@ pub struct PortApCounters {
     pub sae_dropped: u32,
     /// Stations SAE authenticated.
     pub sae_accepted: u32,
+    /// Data MPDUs sent to a peer or the group.
+    pub data_sent: u32,
+    /// Queued frames for no authorized destination, dropped.
+    pub data_dropped: u32,
+    /// MSDUs handed to the application.
+    pub delivered: u32,
+    /// Received data MPDUs of no authorized peer, or under the wrong
+    /// protection.
+    pub rx_rejected: u32,
+    /// Retransmissions of an MPDU already received.
+    pub duplicates: u32,
+    /// Protected MPDUs whose packet number did not advance.
+    pub replayed: u32,
+    /// MPDUs that do not decapsulate, fragments included.
+    pub malformed: u32,
     /// Peers authorized by a completed four-way handshake.
     pub handshakes: u32,
 }
@@ -280,6 +349,17 @@ pub enum PortApError<E> {
     Key(SettingError),
     /// The port holds the keys of no more peers.
     KeysFull,
+    /// A key's transmit packet numbers are used up.
+    PacketNumbers,
+}
+
+/// Whether the backend decrypted and verified a protected frame.
+fn decrypted(meta: RxMeta) -> bool {
+    matches!(
+        meta.crypto,
+        RxEvidence::HardwareObserved(RxCryptoStatus::DecryptedAndIntegrityVerified)
+            | RxEvidence::ProtocolValidated(RxCryptoStatus::DecryptedAndIntegrityVerified)
+    )
 }
 
 impl<E> From<ApWpa2Error> for PortApError<E> {
@@ -323,8 +403,11 @@ pub struct PortAccessPoint<'p, X: PortApEnv> {
     service: AccessPointService<'p>,
     /// The group key the port holds, in a protected BSS.
     group_key: Option<KeyHandle>,
-    /// The pairwise key the port holds for each authorized peer.
-    pairwise_keys: [Option<([u8; 6], KeyHandle)>; AP_MAX_CLIENTS],
+    /// The link of each authorized peer.
+    links: [Option<PeerLink>; AP_MAX_CLIENTS],
+    /// The packet numbers of group data.
+    group_transmit: CcmpTxPacketNumber,
+    queue: &'p mut TxQueue,
     /// The protection the beacon template carries.
     advertised: ApBssProtection,
     /// Before it no Probe Response goes out.
@@ -342,13 +425,14 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         sae: X::Sae,
         profile: PortApProfile<'p>,
         service: AccessPointService<'p>,
-        storage: &'p mut [u8; AP_BEACON_CAPACITY],
+        storage: &'p mut PortApStorage,
     ) -> Result<Self, PortApBuildError> {
+        let PortApStorage { beacon, queue } = storage;
         if service.address() != client.config().address {
             return Err(PortApBuildError::AddressMismatch);
         }
         let beacon = ApBeacon::new(
-            storage,
+            beacon,
             profile.advertisement,
             client.config().address,
             profile.ssid,
@@ -368,7 +452,9 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             beacon,
             service,
             group_key: None,
-            pairwise_keys: [None; AP_MAX_CLIENTS],
+            links: [const { None }; AP_MAX_CLIENTS],
+            group_transmit: CcmpTxPacketNumber::new(profile.ccmp_step),
+            queue,
             advertised: ApBssProtection::default(),
             next_probe_response: Instant::EPOCH,
             counters: PortApCounters::default(),
@@ -433,16 +519,45 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             .map_err(PortApError::Key)
     }
 
-    /// Remove `peer`'s pairwise key from the port, if it holds one.
+    fn link_mut(&mut self, peer: [u8; 6]) -> Option<&mut PeerLink> {
+        self.links
+            .iter_mut()
+            .flatten()
+            .find(|link| link.peer == peer)
+    }
+
+    /// Open `peer`'s link, under `key` in a protected BSS.
+    fn open_link(
+        &mut self,
+        peer: [u8; 6],
+        key: Option<KeyHandle>,
+    ) -> Result<(), PortApError<PortError<X>>> {
+        let Some(slot) = self.links.iter_mut().find(|slot| slot.is_none()) else {
+            return Err(PortApError::KeysFull);
+        };
+        *slot = Some(PeerLink {
+            peer,
+            key,
+            transmit: CcmpTxPacketNumber::new(self.profile.ccmp_step),
+            replay: CcmpRxReplayState::default(),
+            duplicates: RxDuplicateFilter::new(),
+        });
+        Ok(())
+    }
+
+    /// Close `peer`'s link, removing its pairwise key from the port.
     fn remove_pairwise_key(&mut self, peer: [u8; 6]) -> Result<(), PortApError<PortError<X>>> {
         let Some(slot) = self
-            .pairwise_keys
+            .links
             .iter_mut()
-            .find(|slot| slot.is_some_and(|(address, _)| address == peer))
+            .find(|slot| slot.as_ref().is_some_and(|link| link.peer == peer))
         else {
             return Ok(());
         };
-        let Some((_, handle)) = slot.take() else {
+        let Some(PeerLink {
+            key: Some(handle), ..
+        }) = slot.take()
+        else {
             return Ok(());
         };
         self.client
@@ -451,6 +566,21 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 PortClientError::Setting(error) => PortApError::Key(error),
                 error => PortApError::Client(error),
             })
+    }
+
+    /// Queue one Ethernet-II frame for its destination, an authorized peer
+    /// or the group; `run_until` sends it.
+    pub fn send(&mut self, ethernet: &[u8], user_priority: WmmUserPriority) -> PortApSend {
+        if self.queue.push(ethernet, user_priority) {
+            PortApSend::Queued
+        } else {
+            PortApSend::Full
+        }
+    }
+
+    /// Whether the transmit queue has room.
+    pub const fn can_queue(&self) -> bool {
+        !self.queue.is_full()
     }
 
     /// Forget a peer: its pairwise key, its SAE session, then its state.
@@ -464,7 +594,11 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     /// Serve the BSS until `deadline`: a beacon at every TBTT, a response
     /// to every management request it answers, a close of every peer that
     /// went inactive.
-    pub async fn run_until(&mut self, deadline: Instant) -> Result<(), PortApError<PortError<X>>> {
+    pub async fn run_until(
+        &mut self,
+        deadline: Instant,
+        deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<X>>),
+    ) -> Result<(), PortApError<PortError<X>>> {
         loop {
             let now = self.timer.now();
             if self.beacon.publication_due(now) {
@@ -488,6 +622,10 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                     continue;
                 }
                 ApWpa2RetryProgress::None => {}
+            }
+            if let Some(frame) = self.queue.pop() {
+                self.transmit_data(frame.ethernet()).await?;
+                continue;
             }
             if now >= deadline {
                 return Ok(());
@@ -515,7 +653,9 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             };
             match woken {
                 Wake::Sae(peer, output) => self.sae_output(peer, output, now).await?,
-                Wake::Input(Some(PortInput::Frame(frame))) => self.receive(frame.bytes()).await?,
+                Wake::Input(Some(PortInput::Frame(frame))) => {
+                    self.receive(frame, now, deliver).await?;
+                }
                 Wake::Input(Some(PortInput::Poisoned)) => {
                     return Err(PortApError::Client(PortClientError::Poisoned));
                 }
@@ -588,8 +728,13 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         Ok(())
     }
 
-    async fn receive(&mut self, frame: &[u8]) -> Result<(), PortApError<PortError<X>>> {
-        let now = self.timer.now();
+    async fn receive(
+        &mut self,
+        received: PortFrame<PortRxBuffer<X>>,
+        now: Instant,
+        deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<X>>),
+    ) -> Result<(), PortApError<PortError<X>>> {
+        let frame = received.bytes();
         // Any frame of an associated peer keeps it; an authentication that
         // never associates ends at its own deadline.
         if let Some(sender) = frame
@@ -604,12 +749,11 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         {
             self.service.observe_activity(sender, now)?;
         }
-        // Data: only EAPOL of a peer in its handshake is served yet.
         if frame
             .first()
             .is_some_and(|control| (control >> 2) & 0b11 == 2)
         {
-            return self.receive_eapol(frame, now).await;
+            return self.receive_data(received, now, deliver).await;
         }
         let address = self.client.config().address;
         let retry = frame.get(1).is_some_and(|flags| flags & 0x08 != 0);
@@ -864,6 +1008,10 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             let message1: EapolFrame = self.service.begin_wpa2_frame(peer)?;
             self.send_eapol(peer, &message1, false).await?;
         }
+        // An Open BSS's peer is authorized by its association.
+        if !protected && !repeated && association_id != 0 && self.link_mut(peer).is_none() {
+            self.open_link(peer, None)?;
+        }
         Ok(())
     }
 
@@ -902,6 +1050,249 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         self.counters.eapol_sent = self.counters.eapol_sent.saturating_add(1);
         self.service
             .observe_wpa2_transmit(peer, retransmission, acknowledged, self.timer.now())?;
+        Ok(())
+    }
+
+    /// Send one queued frame: to an authorized peer under its pairwise key,
+    /// or to the group under the group key, as QoS data to a QoS peer in a
+    /// protected BSS. A frame for no authorized destination is dropped.
+    async fn transmit_data(&mut self, ethernet: &[u8]) -> Result<(), PortApError<PortError<X>>> {
+        let Some(destination) = ethernet
+            .get(..6)
+            .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())
+        else {
+            self.counters.data_dropped = self.counters.data_dropped.saturating_add(1);
+            return Ok(());
+        };
+        let group = destination[0] & 1 != 0;
+        let authorized = if group {
+            self.service.authorized_count() > 0
+        } else {
+            self.service.is_authorized(destination) && self.link_mut(destination).is_some()
+        };
+        if !authorized {
+            self.counters.data_dropped = self.counters.data_dropped.saturating_add(1);
+            return Ok(());
+        }
+        let access_point = self.service.address();
+        let mut mpdu = [0; oer_ieee80211_upper_mac_service::queue::PORT_FRAME_CAPACITY + 64];
+        let (length, key, rate) = if self.service.link_protection() == LinkProtection::Open {
+            let sequence_number = self.service.current_data_sequence();
+            let length = ApUnprotectedDataFrame {
+                access_point,
+                peer: destination,
+                sequence_number,
+                more_data: false,
+                ethernet,
+            }
+            .encode(&mut mpdu)?;
+            self.service.next_data_sequence();
+            let rate = if group {
+                self.profile.management_rate
+            } else {
+                self.profile.data_rate
+            };
+            (length, KeySelector::Plaintext, rate)
+        } else {
+            let peer_qos = !group
+                && self
+                    .service
+                    .peer_status(destination)
+                    .is_some_and(|status| status.qos_supported);
+            let sequence_number = if peer_qos {
+                self.service
+                    .current_qos_sequence(destination, oer_ieee80211_ap::AP_TX_BLOCK_ACK_TID)
+                    .ok_or(PortApError::Service(ApServiceError::UnknownPeer))?
+            } else {
+                self.service.current_data_sequence()
+            };
+            // The frame encodes before a packet number is spent.
+            let length = ApProtectedDataFrame {
+                access_point,
+                peer: destination,
+                sequence_number,
+                user_priority: 0,
+                peer_qos,
+                more_data: false,
+                ccmp_header: [0; CCMP_HEADER_LEN],
+                ethernet,
+            }
+            .encode(&mut mpdu)?;
+            let (header, key, rate) = if group {
+                let key_id = self.service.gtk()?.key_id();
+                let key = self.group_key.ok_or(PortApError::KeysFull)?;
+                let header = self
+                    .group_transmit
+                    .next_header(CcmpKeyId::new(key_id).ok_or(PortApError::KeysFull)?)
+                    .map_err(|_| PortApError::PacketNumbers)?;
+                (header, key, self.profile.management_rate)
+            } else {
+                let data_rate = self.profile.data_rate;
+                let link = self.link_mut(destination).ok_or(PortApError::KeysFull)?;
+                let key = link.key.ok_or(PortApError::KeysFull)?;
+                let header = link
+                    .transmit
+                    .next_header(CcmpKeyId::new(0).ok_or(PortApError::KeysFull)?)
+                    .map_err(|_| PortApError::PacketNumbers)?;
+                (header, key, data_rate)
+            };
+            let offset = if peer_qos {
+                IEEE80211_QOS_DATA_HEADER_LEN
+            } else {
+                IEEE80211_LEGACY_DATA_HEADER_LEN
+            };
+            mpdu[offset..offset + CCMP_HEADER_LEN].copy_from_slice(&header);
+            if peer_qos {
+                self.service
+                    .next_qos_sequence(destination, oer_ieee80211_ap::AP_TX_BLOCK_ACK_TID);
+            } else {
+                self.service.next_data_sequence();
+            }
+            (length, KeySelector::Key(key), rate)
+        };
+        self.client
+            .transmit(
+                &mpdu[..length],
+                key,
+                WmmAccessCategory::BestEffort,
+                rate,
+                self.profile.coex,
+            )
+            .await?;
+        self.counters.data_sent = self.counters.data_sent.saturating_add(1);
+        Ok(())
+    }
+
+    /// Serve one received data MPDU: EAPOL of a peer in its handshake, or
+    /// data of an authorized peer to the distribution system, checked for
+    /// duplicates and, in a protected BSS, for its decryption and packet
+    /// number, its MSDUs handed to the application.
+    async fn receive_data(
+        &mut self,
+        received: PortFrame<PortRxBuffer<X>>,
+        now: Instant,
+        deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<X>>),
+    ) -> Result<(), PortApError<PortError<X>>> {
+        let bytes = received.bytes();
+        let Some(peer) = bytes
+            .get(10..16)
+            .and_then(|address| <[u8; 6]>::try_from(address).ok())
+        else {
+            return Ok(());
+        };
+        let phase = self.service.peer_status(peer).map(|status| status.phase);
+        if phase == Some(ApPeerPhase::Securing) {
+            return self.receive_eapol(bytes, now).await;
+        }
+        // To the distribution system, from an authorized peer of this BSS.
+        if bytes.get(1).is_none_or(|flags| flags & 0x03 != 0x01)
+            || bytes.get(4..10) != Some(self.service.address().as_slice())
+            || phase != Some(ApPeerPhase::Authorized)
+        {
+            self.counters.rx_rejected = self.counters.rx_rejected.saturating_add(1);
+            return Ok(());
+        }
+        let qos = bytes[0] & 0x80 != 0;
+        let header = if qos {
+            IEEE80211_QOS_DATA_HEADER_LEN
+        } else {
+            IEEE80211_LEGACY_DATA_HEADER_LEN
+        };
+        let (Some(sequence), Some(tid)) = (
+            bytes
+                .get(22..24)
+                .map(|field| u16::from_le_bytes([field[0], field[1]])),
+            if qos {
+                bytes.get(24).map(|control| Some(control & 0x0f))
+            } else {
+                Some(None)
+            },
+        ) else {
+            self.counters.malformed = self.counters.malformed.saturating_add(1);
+            return Ok(());
+        };
+        let retry = bytes[1] & 0x08 != 0;
+        let protected_bss = self.service.link_protection() == LinkProtection::Ccmp;
+        let protected = bytes[1] & 0x40 != 0;
+        let meta = received.meta();
+        let Some(link) = self.link_mut(peer) else {
+            self.counters.rx_rejected = self.counters.rx_rejected.saturating_add(1);
+            return Ok(());
+        };
+        if link.duplicates.is_duplicate(retry, sequence, tid) {
+            self.counters.duplicates = self.counters.duplicates.saturating_add(1);
+            return Ok(());
+        }
+        let offset = match (protected_bss, protected) {
+            (false, false) => header,
+            (true, true) if decrypted(meta) => {
+                let Some(ccmp) = bytes
+                    .get(header..header + CCMP_HEADER_LEN)
+                    .and_then(|ccmp| <[u8; CCMP_HEADER_LEN]>::try_from(ccmp).ok())
+                    .and_then(|ccmp| CcmpHeader::parse(ccmp).ok())
+                    .filter(|ccmp| ccmp.key_id().value() == 0)
+                else {
+                    self.counters.malformed = self.counters.malformed.saturating_add(1);
+                    return Ok(());
+                };
+                let lane = tid.map_or(CcmpReplayLane::NonQos, CcmpReplayLane::Tid);
+                if link
+                    .replay
+                    .commit_immediate(lane, ccmp.packet_number())
+                    .is_err()
+                {
+                    self.counters.replayed = self.counters.replayed.saturating_add(1);
+                    return Ok(());
+                }
+                header + CCMP_HEADER_LEN
+            }
+            _ => {
+                self.counters.rx_rejected = self.counters.rx_rejected.saturating_add(1);
+                return Ok(());
+            }
+        };
+        let Some(length) = bytes.len().checked_sub(offset) else {
+            self.counters.malformed = self.counters.malformed.saturating_add(1);
+            return Ok(());
+        };
+        match plan_data_decapsulation(DataInterfaceRole::AccessPoint, bytes, offset, length) {
+            Ok(plan) => {
+                let payload = plan.payload_offset..plan.payload_offset + plan.payload_length;
+                if bytes.get(payload.clone()).is_none() || plan.ether_type == EAPOL_ETHER_TYPE {
+                    return Ok(());
+                }
+                self.counters.delivered = self.counters.delivered.saturating_add(1);
+                deliver(PortMsdu::Buffer {
+                    buffer: received.into_buffer(),
+                    destination: plan.destination,
+                    source: plan.source,
+                    ether_type: plan.ether_type,
+                    payload,
+                });
+            }
+            Err(DataDecapError::AmsduUnsupported) => {
+                let Ok(frames) =
+                    decapsulate_data_frames(DataInterfaceRole::AccessPoint, bytes, offset, length)
+                else {
+                    self.counters.malformed = self.counters.malformed.saturating_add(1);
+                    return Ok(());
+                };
+                for parts in frames {
+                    match parts {
+                        Ok(parts) if parts.ether_type == EAPOL_ETHER_TYPE => {}
+                        Ok(parts) => {
+                            self.counters.delivered = self.counters.delivered.saturating_add(1);
+                            deliver(PortMsdu::Parts(parts));
+                        }
+                        Err(_) => {
+                            self.counters.malformed = self.counters.malformed.saturating_add(1);
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+            Err(_) => self.counters.malformed = self.counters.malformed.saturating_add(1),
+        }
         Ok(())
     }
 
@@ -964,12 +1355,12 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     /// Install the verified handshake's pairwise key in the port, then open
     /// the peer's controlled port.
     fn authorize(&mut self, peer: [u8; 6], now: Instant) -> Result<(), PortApError<PortError<X>>> {
-        let Some(slot) = self.pairwise_keys.iter().position(Option::is_none) else {
+        if self.links.iter().all(Option::is_some) {
             return Err(PortApError::KeysFull);
-        };
+        }
         let key = *self.service.pending_ptk(peer)?.temporal_key();
         let handle = self.install_key(KeyScope::Pairwise { peer }, &key)?;
-        self.pairwise_keys[slot] = Some((peer, handle));
+        self.open_link(peer, Some(handle))?;
         self.service.authorize(peer, now)?;
         self.counters.handshakes = self.counters.handshakes.saturating_add(1);
         Ok(())

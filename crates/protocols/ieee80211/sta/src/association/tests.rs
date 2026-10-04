@@ -1,4 +1,4 @@
-use PhyMode::{He20, Ht20, Ht40};
+use PhyMode::{He20, Ht20, Ht40, Legacy};
 
 use Preference::{Automatic, ForceHt20, PreferHe20};
 
@@ -12,9 +12,17 @@ fn preference_respects_admitted_modes() {
         (false, true, He20, He20),
         (true, true, Ht40, He20),
     ] {
-        assert_eq!(select_phy(Automatic, ht40, he20), automatic);
-        assert_eq!(select_phy(PreferHe20, ht40, he20), prefer_he20);
-        assert_eq!(select_phy(ForceHt20, ht40, he20), Ht20);
+        assert_eq!(select_phy(Automatic, true, ht40, he20), automatic);
+        assert_eq!(select_phy(PreferHe20, true, ht40, he20), prefer_he20);
+        assert_eq!(select_phy(ForceHt20, true, ht40, he20), Ht20);
+    }
+}
+
+#[test]
+fn a_peer_without_ht_is_legacy_whatever_the_preference() {
+    for preference in [Automatic, PreferHe20, ForceHt20] {
+        assert_eq!(select_phy(preference, false, false, false), Legacy);
+        assert_eq!(select_phy(preference, false, true, true), Legacy);
     }
 }
 

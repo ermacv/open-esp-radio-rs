@@ -25,6 +25,8 @@ fn he_profile_owns_calibrated_power_derivation() {
         channel: 6,
         ..ScanRecord::EMPTY
     };
+    // An HE access point on 2.4 GHz carries HT Capabilities too.
+    access_point.ht_capability_ie_present = true;
     access_point.he_capability_ie[..HE20_MCS9_CAPABILITY.len()]
         .copy_from_slice(&HE20_MCS9_CAPABILITY);
     access_point.he_capability_ie_len = HE20_MCS9_CAPABILITY.len() as u8;

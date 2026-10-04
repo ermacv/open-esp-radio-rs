@@ -122,6 +122,15 @@ station answers, and one that does not verify, or arrives without a
 Management MIC element, counts in `bip_rejected`, as the vendor's
 `sta_bip_check` drops it.
 
+The station chooses its mode for each access point with
+`oer-ieee80211-sta`'s `select_association_phy` and the profile's
+`preference`, as the S31 station does: HE20, HT40 when the access point's
+HT elements agree on a secondary channel and the port tunes 40 MHz, HT20,
+or legacy for an access point without HT. An HT40 association tunes the
+primary channel with its secondary above or below (`ChannelWidth::Mhz40Above`
+or `Mhz40Below`). The station transmits at the link's data rate; a 40 MHz
+transmission waits for the rate bound by the peer's capabilities.
+
 A receive reorder window that buffers an MPDU behind a missing one waits
 the profile's `rx_reorder_gap` from the first MPDU it retained (the
 Espressif stack's 300 ms), then releases the buffered run past the gap and
@@ -140,10 +149,10 @@ backend receives beacons at its radio system's beacon-window priority, at
 zero, or withdraws the request.
 
 It does not yet do: beacon-loss monitoring (`link_monitor`), a data rate bound
-by the peer's capabilities, PS-Poll, the hardware beacon receive time
+by the peer's capabilities (and with it 40 MHz transmission), PS-Poll, the hardware beacon receive time
 (`PmAction::RxBeaconTime`: the S31 register model leaves the meaning of its
 second value open, so the port has no setting for it until that is
-established), 40 MHz channels and roaming.
+established), and roaming.
 
 Its tests (`tests/port_station`) run it over `oer-ieee80211-lower-mac`'s host
 model with a scripted access point on virtual time: an active scan, an Open

@@ -101,7 +101,7 @@ use oer_esp32s31_ieee80211_mac::{
     tx::{
         HeEdcaTxopLimit, HtAmpduDensity, LegacyTxQueue, TxError, TxPhyRate, TxSlot, TxSlotState,
         ampdu::{HeAmpduPolicy, HtAmpduHardware, HtAmpduTxError},
-        runtime::{he_txop_limit, require_ht_txop_support},
+        runtime::he_txop_limit,
     },
 };
 use oer_ieee80211_lower_mac::{
@@ -1897,9 +1897,7 @@ where
             .map(|len| len + common.hardware_mic_length + TX_FCS_SIZE);
         let (power_code, format) = match common.rate {
             TxPhyRate::Ht(rate) => {
-                // An HT aggregate keeps no TXOP limit, as the S31 station's
-                // aggregates do not.
-                require_ht_txop_support(txop_limit).map_err(|_| SubmitError::Unsupported)?;
+                // The access category's TXOP limit is the caller's to keep.
                 // The owner's own length rule: the rate's ceiling and the
                 // declared maximum it was configured with when lent.
                 let mut budget = buffer
@@ -1913,8 +1911,8 @@ where
                 (rate.power_lookup_code(), None)
             }
             TxPhyRate::He(rate) => {
-                // The access category's advertised TXOP limit bounds the
-                // aggregate's duration; the core sets no ceiling of its own.
+                // The HE program carries the access category's advertised
+                // TXOP limit; the core sets no ceiling of its own.
                 let txop = he_txop_limit(txop_limit, HeEdcaTxopLimit::DEFAULT)
                     .map_err(|_| SubmitError::Unsupported)?;
                 let policy = HeAmpduPolicy::new(rate, density, txop);

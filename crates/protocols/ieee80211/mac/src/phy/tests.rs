@@ -79,3 +79,60 @@ fn nominal_rates_follow_the_standard_tables() {
         5_500
     );
 }
+
+#[test]
+fn ppdu_durations_follow_the_txtime_of_each_format() {
+    // ERP-OFDM: 20 us preamble, 4 us symbols of 24 bits at 6 Mb/s, and the
+    // signal extension. A 32-octet BlockAck: (16 + 256 + 6) / 24 -> 12.
+    assert_eq!(
+        PhyRate::Legacy(LegacyRate::Ofdm6M).max_ppdu_duration_micros(32),
+        20 + 48 + 6
+    );
+    // DSSS 1 Mb/s with the long preamble: 192 us and 8 us an octet.
+    assert_eq!(
+        PhyRate::Legacy(LegacyRate::Dsss1M).max_ppdu_duration_micros(14),
+        192 + 112
+    );
+    // HT20 MCS 7, long GI, 1500 octets: 260 bits a symbol,
+    // (16 + 12000 + 6) / 260 -> 47 symbols after the 36 us preamble.
+    let ht = HtRate::new(HtMcs::new(7).unwrap(), PpduBandwidth::Mhz20, false).unwrap();
+    assert_eq!(
+        PhyRate::Ht(ht).max_ppdu_duration_micros(1_500),
+        36 + 47 * 4 + 6
+    );
+    // The short GI keeps the symbols and shortens them to 3.6 us.
+    let short = HtRate::new(HtMcs::new(7).unwrap(), PpduBandwidth::Mhz20, true).unwrap();
+    assert_eq!(
+        PhyRate::Ht(short).max_ppdu_duration_micros(1_500),
+        36 + 4 * 43 + 6
+    );
+    // HT40 doubles the bits a symbol.
+    let ht40 = HtRate::new(HtMcs::new(7).unwrap(), PpduBandwidth::Mhz40, false).unwrap();
+    assert!(
+        PhyRate::Ht(ht40).max_ppdu_duration_micros(1_500)
+            < PhyRate::Ht(ht).max_ppdu_duration_micros(1_500)
+    );
+    // HE20 MCS 7, one stream, 2x LTF and 0.8 us GI: 234 * 6 * 5/6 = 1170
+    // bits a 13.6 us symbol, (16 + 12000 + 6) / 1170 -> 11 symbols.
+    let he = HeRate::new(
+        HeMcs::new(7).unwrap(),
+        SpatialStreams::new(1).unwrap(),
+        PpduBandwidth::Mhz20,
+        HeGiLtf::Ltf2xGi800Ns,
+        FecCoding::Bcc,
+        false,
+    )
+    .unwrap();
+    assert_eq!(
+        PhyRate::He(he).max_ppdu_duration_micros(1_500),
+        (36_000_u32 + 7_200 + 11 * 13_600).div_ceil(1_000) + 16 + 6
+    );
+    // Longer PSDUs never take less time.
+    for rate in [
+        PhyRate::Ht(ht),
+        PhyRate::He(he),
+        PhyRate::Legacy(LegacyRate::Ofdm54M),
+    ] {
+        assert!(rate.max_ppdu_duration_micros(3_000) >= rate.max_ppdu_duration_micros(1_500));
+    }
+}

@@ -106,7 +106,9 @@ A-MPDU when that TID's agreement is operational, the keys are installed and
 the port aggregates at the data rate (`PortStationEnv::Aggregation`:
 `PortAmpduAggregation` over a port with `LowerMacAmpdu`, `NoAggregation`
 otherwise); the run is bounded by the agreement's window, the port's
-subframes and length and the peer's Maximum A-MPDU Length, and the
+subframes and length, the peer's Maximum A-MPDU Length and the TXOP limit
+of the access category in the association's EDCA set (the aggregate's
+`max_ppdu_duration_micros` and its BlockAck at 6 Mb/s after a SIFS), and the
 subframes keep the peer's minimum MPDU start spacing. Every other frame goes
 alone. `PortConnection::tx_counters` counts what left and was
 acknowledged; an exchange whose completion was lost counts as failed, and

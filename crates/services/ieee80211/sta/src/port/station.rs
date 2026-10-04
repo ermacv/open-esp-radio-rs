@@ -719,6 +719,9 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             bssid: candidate.bssid,
             association_id: StaAssociationId::new(association.association_id & 0x3fff)?,
             peer_qos: association.wmm,
+            edca: association
+                .wmm_parameters
+                .or_else(|| candidate.wmm_parameters()),
             management_protection: selected.security().protects_management(),
             sa_query_random: self.profile.sa_query_random,
             rx_reorder_gap: self.profile.rx_reorder_gap,

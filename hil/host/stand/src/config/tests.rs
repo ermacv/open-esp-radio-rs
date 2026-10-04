@@ -230,6 +230,11 @@ fn a_wifi_link_occupies_its_channel_and_secondary_channel() {
     assert_eq!(peer.high_khz, 2_426_000);
 }
 
+/// The configuration of a run whose peer carries the C5 IEEE 802.15.4 image.
+fn with_c5_peer(lab: LabConfig) -> LabConfig {
+    lab.with_peer_images(&["ieee802154-peer"]).unwrap()
+}
+
 #[test]
 fn the_device_under_test_and_the_peer_come_from_the_pool() {
     let file = stand_file(|_| {});
@@ -237,29 +242,26 @@ fn the_device_under_test_and_the_peer_come_from_the_pool() {
     assert_eq!((lab.dut.id.as_str(), lab.chip()), ("s31-a", "esp32s31"));
     assert_eq!(lab.dut.serial, std::path::PathBuf::from("/dev/tty-s31-a"));
     assert_eq!(lab.cell_id(), "berlin-open-radio");
-    // The peer is the other board; the device under test never is.
-    let peer = lab.peer_resolving(&attached).unwrap();
+    assert!(
+        lab.peer_resolving(&attached).is_err(),
+        "a run without peer images has no peer"
+    );
+    // The peer is a board of the peer image's chip.
+    let peer = with_c5_peer(lab).peer_resolving(&attached).unwrap();
     assert_eq!(
         peer,
         PeerBoardConfig::new("c5-a".into(), "esp32c5".into(), "/dev/tty-c5-a".into())
     );
-    let lab = load(file.path(), "esp32c5").unwrap();
+    // The device under test never is: an esp32c5 run has no esp32c5 peer.
+    let lab = with_c5_peer(load(file.path(), "esp32c5").unwrap());
     assert_eq!(lab.dut.id, "c5-a");
-    assert_eq!(lab.peer_resolving(&attached).unwrap().id, "s31-a");
-    // The C5 peer images do not run on the S31 the pool leaves.
-    let error = lab
-        .peer_for_image("ieee802154-peer")
-        .unwrap_err()
-        .to_string();
-    assert!(
-        error.contains("`ieee802154-peer` targets esp32c5"),
-        "{error}"
-    );
+    let error = lab.peer_resolving(&attached).unwrap_err().to_string();
+    assert!(error.contains("no esp32c5 peer board"), "{error}");
     assert!(load(file.path(), "esp32h2").is_err());
 }
 
 #[test]
-fn a_run_names_its_boards_when_the_pool_has_several() {
+fn a_run_names_its_device_under_test_when_the_pool_has_several() {
     let file = stand_file(second_s31);
     let several = load(file.path(), "esp32s31").err().unwrap().to_string();
     assert!(several.contains("s31-a, s31-b"), "{several}");
@@ -267,29 +269,52 @@ fn a_run_names_its_boards_when_the_pool_has_several() {
         dut: Some("s31-b".into()),
         peer: None,
     };
-    let lab = LabConfig::load_resolving(file.path(), "esp32s31", &choice, &attached).unwrap();
+    let lab = with_c5_peer(
+        LabConfig::load_resolving(file.path(), "esp32s31", &choice, &attached).unwrap(),
+    );
     assert_eq!(lab.dut.id, "s31-b");
-    let several = lab.peer_resolving(&attached).unwrap_err().to_string();
-    assert!(several.contains("--peer-board"), "{several}");
-    let choice = BoardChoice {
-        dut: Some("s31-b".into()),
-        peer: Some("c5-a".into()),
-    };
-    let lab = LabConfig::load_resolving(file.path(), "esp32s31", &choice, &attached).unwrap();
+    // The other S31 may be a peer, but not of the C5 peer image.
     assert_eq!(lab.peer_resolving(&attached).unwrap().id, "c5-a");
     let choice = BoardChoice {
         dut: Some("s31-b".into()),
-        peer: Some("s31-b".into()),
+        peer: Some("s31-a".into()),
     };
-    let lab = LabConfig::load_resolving(file.path(), "esp32s31", &choice, &attached).unwrap();
-    assert!(
-        lab.peer_resolving(&attached).is_err(),
-        "the device under test is no peer"
+    let lab = with_c5_peer(
+        LabConfig::load_resolving(file.path(), "esp32s31", &choice, &attached).unwrap(),
     );
+    let error = lab.peer_resolving(&attached).unwrap_err().to_string();
+    assert!(error.contains("no esp32c5 peer board"), "{error}");
 }
 
 #[test]
-fn a_board_without_a_chip_profile_fails_only_its_own_runs() {
+fn a_run_names_its_peer_when_the_pool_has_several_of_its_chip() {
+    let file = stand_file(|raw| {
+        let board: toml::Value = toml::from_str(
+            "id = \"c5-b\"\nusb-serial = \"38:44:BE:00:00:02\"\nchip = \"esp32c5\"\n\
+             radios = [\"ieee802154\"]\nroles = [\"peer\"]\n\
+             port = { hub = \"rsh-bottom\", port = 1 }\nreset = [\"power\"]\n",
+        )
+        .unwrap();
+        raw["board"].as_array_mut().unwrap().push(board);
+    });
+    let lab = with_c5_peer(load(file.path(), "esp32s31").unwrap());
+    let several = lab.peer_resolving(&attached).unwrap_err().to_string();
+    assert!(
+        several.contains("c5-a, c5-b") && several.contains("--peer-board"),
+        "{several}"
+    );
+    let choice = BoardChoice {
+        dut: None,
+        peer: Some("c5-b".into()),
+    };
+    let lab = with_c5_peer(
+        LabConfig::load_resolving(file.path(), "esp32s31", &choice, &attached).unwrap(),
+    );
+    assert_eq!(lab.peer_resolving(&attached).unwrap().id, "c5-b");
+}
+
+#[test]
+fn peers_of_other_chips_and_without_profiles_leave_the_run_alone() {
     let file = stand_file(|raw| {
         let board: toml::Value = toml::from_str(
             "id = \"c6-a\"\nusb-serial = \"40:4C:CA:00:00:01\"\nchip = \"esp32c6\"\n\
@@ -299,14 +324,25 @@ fn a_board_without_a_chip_profile_fails_only_its_own_runs() {
         .unwrap();
         raw["board"].as_array_mut().unwrap().push(board);
     });
+    // A C6 without a chip profile fails only a run that takes it as its
+    // device under test.
     let error = load(file.path(), "esp32c6").err().unwrap().to_string();
     assert!(error.contains("chip `esp32c6` has no profile"), "{error}");
-    let choice = BoardChoice {
-        dut: None,
-        peer: Some("c6-a".into()),
-    };
-    let lab = LabConfig::load_resolving(file.path(), "esp32s31", &choice, &attached).unwrap();
-    assert_eq!(lab.peer_resolving(&attached).unwrap().chip, "esp32c6");
+    let lab = with_c5_peer(load(file.path(), "esp32s31").unwrap());
+    assert_eq!(lab.peer_resolving(&attached).unwrap().id, "c5-a");
+}
+
+#[test]
+fn a_run_whose_peers_need_two_chips_is_refused() {
+    let file = stand_file(|_| {});
+    let lab = load(file.path(), "esp32s31").unwrap();
+    // Every catalog peer image targets the C5 today; one image is one chip.
+    assert!(
+        lab.clone()
+            .with_peer_images(&["ieee802154-peer", "openthread-peer"])
+            .is_ok()
+    );
+    assert!(lab.with_peer_images(&["no-such-peer"]).is_err());
 }
 
 #[test]
@@ -318,9 +354,10 @@ fn a_peer_that_is_not_attached_fails_only_the_runs_that_use_it() {
             other => Err(format!("board `{other}` is not attached").into()),
         }
     };
-    let lab =
+    let lab = with_c5_peer(
         LabConfig::load_resolving(file.path(), "esp32s31", &BoardChoice::default(), &only_s31)
-            .unwrap();
+            .unwrap(),
+    );
     let error = lab.peer_resolving(&only_s31).unwrap().serial().unwrap_err();
     assert!(error.to_string().contains("not attached"), "{error}");
 }

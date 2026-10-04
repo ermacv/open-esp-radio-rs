@@ -29,6 +29,9 @@ pub struct LabConfig {
     stand: oer_hil_stand_schema::StandFile,
     /// The boards the run named.
     choice: BoardChoice,
+    /// The chip of the run's peer images ([`Self::with_peer_images`]); none
+    /// when the run uses no peer.
+    peer_chip: Option<String>,
     /// The device under test of `chip`.
     pub dut: DeviceConfig,
     pub bluetooth_adapter: Option<oer_hil_fixture::bluetooth::model::Adapter>,
@@ -501,6 +504,7 @@ impl LabConfig {
             chip: chip.to_owned(),
             stand,
             choice: choice.clone(),
+            peer_chip: None,
             dut: DeviceConfig {
                 id: device_id,
                 serial: device_serial,
@@ -633,9 +637,35 @@ impl LabConfig {
         &self.chip
     }
 
-    /// The run's peer board: a board that may be a peer, other than the
-    /// device under test; the one the run named (`--peer-board`), or the
-    /// only one. Its port is resolved when a run uses it.
+    /// This configuration for a run whose scenarios bring their peers up to
+    /// the catalog `images`: its peer is a board of their chip
+    /// (`hil/peers/*/firmware.toml`). A run's peers share one chip.
+    pub fn with_peer_images(mut self, images: &[&str]) -> Result<Self> {
+        let root = repository_root()?;
+        let mut chips = images
+            .iter()
+            .map(|image| peer_image_chip(&root, image))
+            .collect::<Result<Vec<_>>>()?;
+        chips.sort();
+        chips.dedup();
+        self.peer_chip = match chips.as_slice() {
+            [] => None,
+            [chip] => Some(chip.clone()),
+            several => {
+                return Err(format!(
+                    "the run's peer images target {}; run their scenarios separately",
+                    several.join(" and ")
+                )
+                .into());
+            }
+        };
+        Ok(self)
+    }
+
+    /// The run's peer board: a board of the run's peer chip that may be a
+    /// peer, other than the device under test; the one the run named
+    /// (`--peer-board`), or the only one. Its port is resolved when a run
+    /// uses it.
     pub fn peer(&self) -> Result<PeerBoardConfig> {
         self.peer_resolving(&attached_port)
     }
@@ -644,12 +674,18 @@ impl LabConfig {
         &self,
         resolve: &dyn Fn(&oer_hil_stand_schema::Board) -> Result<PathBuf>,
     ) -> Result<PeerBoardConfig> {
+        let chip = self
+            .peer_chip
+            .as_deref()
+            .ok_or("this run's scenarios use no peer")?;
         let candidates = self
             .stand
             .board
             .iter()
             .filter(|board| {
-                board.has_role(oer_hil_stand_schema::BoardRole::Peer) && board.id != self.dut.id
+                board.chip == chip
+                    && board.has_role(oer_hil_stand_schema::BoardRole::Peer)
+                    && board.id != self.dut.id
             })
             .collect::<Vec<_>>();
         let board = match (self.choice.peer.as_deref(), candidates.as_slice()) {
@@ -657,15 +693,20 @@ impl LabConfig {
                 .iter()
                 .find(|board| board.id == chosen)
                 .ok_or_else(|| {
-                    format!("board `{chosen}` is not a peer board of the stand file besides the device under test")
+                    format!(
+                        "board `{chosen}` is no {chip} peer board of the stand file besides the device under test"
+                    )
                 })?,
             (None, [board]) => board,
             (None, []) => {
-                return Err("the stand file has no peer board besides the device under test".into());
+                return Err(format!(
+                    "the stand file has no {chip} peer board besides the device under test"
+                )
+                .into());
             }
             (None, several) => {
                 return Err(format!(
-                    "several boards can be the peer ({}); name one with --peer-board",
+                    "several {chip} boards can be the peer ({}); name one with --peer-board",
                     several.iter().map(|board| board.id.as_str()).collect::<Vec<_>>().join(", ")
                 )
                 .into());
@@ -678,8 +719,8 @@ impl LabConfig {
         })
     }
 
-    /// The run's peer board ([`Self::peer`]) for the catalog `image`, which
-    /// must target the board's chip.
+    /// The run's peer board ([`Self::peer`]) for the catalog `image`, one
+    /// of the run's peer images.
     pub fn peer_for_image(&self, image: &str) -> Result<PeerBoardConfig> {
         let peer = self.peer()?;
         let chip = peer_image_chip(&repository_root()?, image)?;
@@ -715,6 +756,7 @@ impl LabConfig {
             )
             .expect("the test stand file parses"),
             choice: BoardChoice::default(),
+            peer_chip: None,
             dut: DeviceConfig {
                 id: String::from("test-device"),
                 serial: PathBuf::from("/dev/ttyACM0"),

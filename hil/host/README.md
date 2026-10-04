@@ -123,9 +123,10 @@ Peer scenarios run against a reference peer board, an ESP32-C5 with an
 ESP-IDF catalog image: the [IEEE 802.15.4 peer](../peers/esp32c5-ieee802154/README.md),
 the [Thread peer](../peers/esp32c5-openthread/README.md) or the
 [Bluetooth LE Direct Test Mode peer](../peers/esp32c5-ble-dtm/README.md).
-The peer is a board of the pool with the `peer` role, other than the device
-under test; `--peer-board ID` names it when there are several, and its chip
-must be the one the scenario's peer image targets (`hil/peers/*/firmware.toml`).
+The peer is a board of the pool with the `peer` role and the chip the run's
+peer images target (`hil/peers/*/firmware.toml`), other than the device under
+test; boards of other chips never compete for it, and `--peer-board ID` names
+it when several of that chip qualify. A run's peer images share one chip.
 A run of a peer scenario claims the peer board beside the device under test
 and the air in its one lease. Before the first scenario that
 needs an image, the runner brings the board to that image's current catalog

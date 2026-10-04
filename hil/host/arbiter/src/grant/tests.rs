@@ -356,6 +356,15 @@ fn indivisible_work_runs_on_while_a_waiter_has_a_higher_balance() {
 fn status_and_board_report_the_latest_state() {
     let directory = tempfile::tempdir().unwrap();
     let arbiter = Arbiter::at(directory.path()).unwrap();
+    // A stand file without boards: status reports attached ports alone.
+    let stand = arbiter.stand_file().to_owned();
+    std::fs::write(
+        &stand,
+        "schema = 1\n[stand]\nid = \"test\"\nair = \"exclusive\"\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    std::fs::set_permissions(&stand, std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
     arbiter
         .record_board(
             None,

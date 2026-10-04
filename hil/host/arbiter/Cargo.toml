@@ -10,6 +10,7 @@ description = "Host-wide FIFO arbitration, budgets and board journal for the sin
 
 [dependencies]
 fs2 = "0.4"
+oer-hil-stand-schema = { path = "../../stand/schema" }
 oer-process = { path = "../../../tools/process" }
 rustix = { version = "1.1.4", features = ["param", "process"] }
 serde = { version = "1.0", features = ["derive"] }

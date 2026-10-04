@@ -113,7 +113,9 @@ struct Report {
 }
 
 pub fn run(minimum_packets: u16, output: &Path, context: &Context<'_>) -> Result<()> {
-    let peer_config = context.lab.peer.clone().ok_or("the lab has no [peer]")?;
+    let peer_config = context
+        .lab
+        .peer_for_image(crate::fixture::dtm_peer::DTM_PEER_IMAGE.name)?;
     let transcript = PeerTranscript::default();
     let mut report = Report::default();
     let result = context.with_capture(output, |capture| {

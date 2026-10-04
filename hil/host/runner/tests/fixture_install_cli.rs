@@ -17,7 +17,7 @@ fn dry_run(arguments: &[&str]) -> std::process::Output {
     fs::write(&invalid_lab, "this is not TOML = [").unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_oer-hil-runner"));
     command
-        .args(["--lab-config", invalid_lab.to_str().unwrap(), "fixture"])
+        .args(["--stand-file", invalid_lab.to_str().unwrap(), "fixture"])
         .args(arguments)
         .env("CARGO", cargo)
         .env(

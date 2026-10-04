@@ -64,9 +64,9 @@ ready for a scenario.
 
 ## Hardware route
 
-Copy `hil/lab.example.toml` to the mode-0600 lab configuration
-`~/.config/open-esp-radio/lab.toml`, shared by every checkout, configure
-the stable cell/DUT identities and required fixture values, install only the
+Copy `hil/stand/stand.example.toml` to the mode-0600 stand file
+`~/.config/open-esp-radio/stand.toml`, shared by every checkout, describe
+the stand's hubs and boards and the required fixture values, install only the
 helpers required by the selected scenario, then run `cargo hil doctor` and
 `cargo hil plan <scenario-id>`. Flash, replay, fixture-check and run commands
 can reset or modify the named DUT/fixture and require their exclusive leases;

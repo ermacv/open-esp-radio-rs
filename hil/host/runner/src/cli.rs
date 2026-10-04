@@ -9,9 +9,17 @@ use std::path::PathBuf;
     about = "Open ESP radio hardware-in-the-loop runner"
 )]
 pub(crate) struct Cli {
-    /// Complete local fixture configuration. Secrets never belong to scenarios.
+    /// The stand file (`~/.config/open-esp-radio/stand.toml` by default).
+    /// Secrets never belong to scenarios.
     #[arg(long, global = true)]
-    pub(crate) lab_config: Option<PathBuf>,
+    pub(crate) stand_file: Option<PathBuf>,
+    /// The device under test, by its stand-file id, when the pool has
+    /// several boards of the chip.
+    #[arg(long, global = true)]
+    pub(crate) board: Option<String>,
+    /// The peer board, by its stand-file id, when the pool has several.
+    #[arg(long, global = true)]
+    pub(crate) peer_board: Option<String>,
     #[command(subcommand)]
     pub(crate) command: CliCommand,
 }
@@ -25,7 +33,7 @@ pub(crate) enum CliCommand {
         #[command(subcommand)]
         command: FixtureCommand,
     },
-    /// Resolve scenario requirements offline, without opening a device or lab config.
+    /// Resolve scenario requirements offline, without opening a device or the stand file.
     Plan {
         #[command(flatten)]
         selection: Selection,

@@ -170,7 +170,7 @@ Single-cycle measurements do not replace the catalog's repeated AP lifecycle
 qualification scenarios.
 
 `plan [scenario] [--tag ...]` resolves requirements from the catalog offline;
-it does not read the lab configuration, inspect tools or contact hardware. `doctor`
+it does not read the stand file, inspect tools or contact hardware. `doctor`
 accepts the same selection and reports all independent environment checks as
 JSON, returning nonzero if any fail. With no selection it checks the whole
 catalog. It checks build/flash tools, scenario preconditions, required fixture
@@ -205,9 +205,8 @@ family's workload and acceptance criteria, never serial paths or secrets.
 projection (image, laboratory requirements, target initialization, named
 checks and Wi-Fi laboratory use); each family package owns its typed table,
 validation and execution, and the runner composes the families. Machine-local
-device, STA/AP and OpenWrt values live only in the mode-0600 lab
-configuration (`~/.config/open-esp-radio/lab.toml`, or a checkout's
-`hil/local.toml`).
+boards, STA/AP and OpenWrt values live only in the mode-0600 stand file
+(`~/.config/open-esp-radio/stand.toml`).
 `LabConfig` is immutable. Each workload receives its own execution context:
 borrowed laboratory inputs and the selected scenario's initialization settings.
 Experiment policies are never written back to the shared laboratory object.

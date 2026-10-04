@@ -167,6 +167,32 @@ impl Board {
     pub fn is_serial(&self, serial: &str) -> bool {
         self.usb_serial.eq_ignore_ascii_case(serial)
     }
+
+    /// Check the board's chip and radios against the chip profiles `chips`.
+    pub fn validate_chip(&self, chips: &[Profile]) -> Result<()> {
+        let name = &self.id;
+        let profile = chips
+            .iter()
+            .find(|profile| profile.id == self.chip)
+            .ok_or_else(|| {
+                error(format!(
+                    "board `{name}`: chip `{}` has no profile (platform/{}/chip.toml)",
+                    self.chip, self.chip
+                ))
+            })?;
+        match self
+            .radios
+            .iter()
+            .find(|radio| !radio.on(&profile.properties))
+        {
+            Some(radio) => Err(error(format!(
+                "board `{name}`: an {} has no {} radio",
+                self.chip,
+                radio.as_str()
+            ))),
+            None => Ok(()),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -255,7 +281,8 @@ pub fn default_path() -> Result<PathBuf> {
     let base = match std::env::var_os("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
         Some(base) => PathBuf::from(base),
         None => PathBuf::from(
-            std::env::var_os("HOME").ok_or_else(|| error("HOME is required to find the stand file"))?,
+            std::env::var_os("HOME")
+                .ok_or_else(|| error("HOME is required to find the stand file"))?,
         )
         .join(".config"),
     };
@@ -273,10 +300,14 @@ impl StandFile {
     /// are checked against their chips by [`Self::validate_chips`].
     pub fn load(path: &Path) -> Result<Self> {
         require_private(path)?;
-        let source = fs::read_to_string(path)
-            .map_err(|cause| Error(format!("cannot read the stand file `{}`: {cause}", path.display())))?;
-        let file = Self::parse(&source)
-            .map_err(|cause| Error(format!("{}: {cause}", path.display())))?;
+        let source = fs::read_to_string(path).map_err(|cause| {
+            Error(format!(
+                "cannot read the stand file `{}`: {cause}",
+                path.display()
+            ))
+        })?;
+        let file =
+            Self::parse(&source).map_err(|cause| Error(format!("{}: {cause}", path.display())))?;
         file.validate()
             .map_err(|cause| Error(format!("{}: {cause}", path.display())))?;
         Ok(file)
@@ -303,26 +334,15 @@ impl StandFile {
         self.validate_boards()
     }
 
-    /// Check each board's chip and radios against the chip profiles `chips`
-    /// (`platform/<chip>/chip.toml` of the checkout).
+    /// Check every board's chip and radios against the chip profiles
+    /// `chips` (`platform/<chip>/chip.toml` of the checkout), as the stand's
+    /// doctor does. A run checks only the boards it takes
+    /// ([`Board::validate_chip`]), so a board whose chip has no profile yet
+    /// keeps the rest of the stand usable.
     pub fn validate_chips(&self, chips: &[Profile]) -> Result<()> {
-        for board in &self.board {
-            let name = &board.id;
-            let profile = chips.iter().find(|profile| profile.id == board.chip).ok_or_else(|| {
-                error(format!(
-                    "board `{name}`: chip `{}` has no profile (platform/{}/chip.toml)",
-                    board.chip, board.chip
-                ))
-            })?;
-            if let Some(radio) = board.radios.iter().find(|radio| !radio.on(&profile.properties)) {
-                return Err(error(format!(
-                    "board `{name}`: an {} has no {} radio",
-                    board.chip,
-                    radio.as_str()
-                )));
-            }
-        }
-        Ok(())
+        self.board
+            .iter()
+            .try_for_each(|board| board.validate_chip(chips))
     }
 
     fn validate_hubs(&self) -> Result<()> {
@@ -347,7 +367,11 @@ impl StandFile {
                     return Err(error(format!("hub `{}`: ports count from 1", hub.id)));
                 }
             }
-            if let Some(port) = hub.protected.iter().find(|port| hub.switchable.contains(port)) {
+            if let Some(port) = hub
+                .protected
+                .iter()
+                .find(|port| hub.switchable.contains(port))
+            {
                 return Err(error(format!(
                     "hub `{}`: port {port} is both protected and switchable",
                     hub.id
@@ -355,7 +379,10 @@ impl StandFile {
             }
             for (port, &button) in &hub.buttons {
                 if !port.parse::<u8>().is_ok_and(|port| port > 0) {
-                    return Err(error(format!("hub `{}`: button port `{port}` is not a port", hub.id)));
+                    return Err(error(format!(
+                        "hub `{}`: button port `{port}` is not a port",
+                        hub.id
+                    )));
                 }
                 if button == 0 || !buttons.insert(button) {
                     return Err(error(format!(
@@ -378,7 +405,8 @@ impl StandFile {
             if !ids.insert(name.as_str()) {
                 return Err(error(format!("board `{name}` is described twice")));
             }
-            if board.usb_serial.is_empty() || !serials.insert(board.usb_serial.to_ascii_uppercase()) {
+            if board.usb_serial.is_empty() || !serials.insert(board.usb_serial.to_ascii_uppercase())
+            {
                 return Err(error(format!(
                     "board `{name}`: USB serial `{}` is empty or another board's",
                     board.usb_serial
@@ -389,7 +417,10 @@ impl StandFile {
             distinct(name, "roles", &board.roles)?;
             distinct(name, "reset", &board.reset)?;
             let hub = self.hub(&board.port.hub).ok_or_else(|| {
-                error(format!("board `{name}`: hub `{}` is not described", board.port.hub))
+                error(format!(
+                    "board `{name}`: hub `{}` is not described",
+                    board.port.hub
+                ))
             })?;
             let port = board.port.port;
             if port == 0 || hub.is_protected(port) {
@@ -459,12 +490,19 @@ impl StandFile {
                 return Err(error(format!(
                     "board `{chosen}` is an {} for {}; this run needs an {chip} for {}",
                     board.chip,
-                    board.roles.iter().map(|role| role.as_str()).collect::<Vec<_>>().join(", "),
+                    board
+                        .roles
+                        .iter()
+                        .map(|role| role.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
                     role.as_str()
                 )));
             }
             if Some(chosen) == excluding {
-                return Err(error(format!("board `{chosen}` already has another role in this run")));
+                return Err(error(format!(
+                    "board `{chosen}` already has another role in this run"
+                )));
             }
             return Ok(board);
         }
@@ -485,7 +523,11 @@ impl StandFile {
             several => Err(error(format!(
                 "several {chip} boards can be the {} ({}); name one",
                 role.as_str(),
-                several.iter().map(|board| board.id.as_str()).collect::<Vec<_>>().join(", ")
+                several
+                    .iter()
+                    .map(|board| board.id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ))),
         }
     }
@@ -515,7 +557,12 @@ fn distinct<T: Ord + Copy>(board: &str, field: &str, values: &[T]) -> Result<()>
 fn require_private(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let mode = fs::metadata(path)
-        .map_err(|cause| Error(format!("cannot read the stand file `{}`: {cause}", path.display())))?
+        .map_err(|cause| {
+            Error(format!(
+                "cannot read the stand file `{}`: {cause}",
+                path.display()
+            ))
+        })?
         .permissions()
         .mode();
     if mode & 0o077 != 0 {

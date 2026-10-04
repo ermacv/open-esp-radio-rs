@@ -36,15 +36,19 @@ pub(crate) fn run() -> Result<()> {
         command => command,
     };
     let lab_path = cli
-        .lab_config
+        .stand_file
         .unwrap_or(lab::config::LabConfig::default_path()?);
+    let choice = lab::config::BoardChoice {
+        dut: cli.board,
+        peer: cli.peer_board,
+    };
     let catalog_path = root.join("hil/scenarios");
 
     match command {
         CliCommand::Fixture {
             command:
                 crate::cli::FixtureCommand::Install { .. } | crate::cli::FixtureCommand::BuildHostapd,
-        } => unreachable!("install and build commands return before lab configuration is resolved"),
+        } => unreachable!("install and build commands return before the stand file is read"),
         CliCommand::Fixture {
             command:
                 crate::cli::FixtureCommand::BluetoothCheck {
@@ -63,7 +67,7 @@ pub(crate) fn run() -> Result<()> {
             let catalog = Catalog::load(&catalog_path)?;
             let selected = catalog.get(&id)?;
             let chip = orchestration::select_chip(&root, &[selected], chip.as_deref())?;
-            let lab = lab::config::LabConfig::load(&lab_path, &chip)?;
+            let lab = lab::config::LabConfig::load(&lab_path, &chip, &choice)?;
             // The stand's lease takes the fixture software once granted.
             crate::execution::fixture_check::check_without_device(&root, &lab, selected)
         }
@@ -71,7 +75,7 @@ pub(crate) fn run() -> Result<()> {
             let catalog = Catalog::load(&catalog_path)?;
             let selected = selection.resolve(&catalog)?;
             let chip = orchestration::select_chip(&root, &selected, selection.chip.as_deref())?;
-            let lab = lab::config::LabConfig::load(&lab_path, &chip)?;
+            let lab = lab::config::LabConfig::load(&lab_path, &chip, &choice)?;
             let required = requirements(&selected);
             let _software = oer_hil_stand::software::SoftwareLease::acquire_for(&lab, required)?;
             crate::execution::doctor::run(&root, &lab, &selected)
@@ -284,7 +288,7 @@ pub(crate) fn run() -> Result<()> {
                     features: features.clone().unwrap_or_default(),
                 }),
             };
-            let lab = lab::config::LabConfig::load(&lab_path, &chip)?;
+            let lab = lab::config::LabConfig::load(&lab_path, &chip, &choice)?;
             let selected = selected.iter().collect::<Vec<_>>();
             let required = requirements(&selected);
             hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
@@ -324,7 +328,7 @@ pub(crate) fn run() -> Result<()> {
             .resolve(&catalog)?;
             let selected = excluding(selected, &exclude)?;
             let chip = orchestration::select_chip(&root, &selected, chip.as_deref())?;
-            let lab = lab::config::LabConfig::load(&lab_path, &chip)?;
+            let lab = lab::config::LabConfig::load(&lab_path, &chip, &choice)?;
             let snapshot = oer_hil_source_snapshot::capture(
                 &root,
                 &source_include,

@@ -339,11 +339,6 @@ pub fn flash(
             drop(crate::hil_flash::reset_into_application(&port)?);
         }
     }
-    arbiter.register_device(oer_hil_arbiter::Device {
-        mac: mac.clone(),
-        chip: Some(entry.chip.clone()),
-        ..oer_hil_arbiter::Device::default()
-    })?;
     let (commit, dirty) = source_revision(&ctx.root, &entry.directory);
     arbiter.record_board_by(
         request.owner.clone(),

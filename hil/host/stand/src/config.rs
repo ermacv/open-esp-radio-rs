@@ -16,19 +16,22 @@ use zeroize::{Zeroize, Zeroizing};
 use crate::{Result, repository_root};
 use oer_hil_scenario::link::{PhyExpectation, WifiLabUse};
 
+/// The stand file's view a run uses: the pool and the fixture sections, with
+/// the run's device under test taken from the pool.
 #[derive(Clone)]
 pub struct LabConfig {
     path: PathBuf,
     cell_id: String,
     /// The chip of `dut`.
     chip: String,
-    /// Every device under test by chip, resolved by [`Self::for_chip`].
-    duts: std::collections::BTreeMap<String, RawDeviceConfig>,
+    /// The stand file's pool, from which [`Self::peer_for_image`] takes a
+    /// peer board.
+    stand: oer_hil_stand_schema::StandFile,
+    /// The boards the run named.
+    choice: BoardChoice,
     /// The device under test of `chip`.
     pub dut: DeviceConfig,
     pub bluetooth_adapter: Option<oer_hil_fixture::bluetooth::model::Adapter>,
-    /// The IEEE 802.15.4 reference peer (`hil/peers/esp32c5-ieee802154`).
-    pub peer: Option<PeerBoardConfig>,
     pub station: StationConfig,
     pub access_point: AccessPointConfig,
     pub station_fixture: StationFixtureConfig,
@@ -45,21 +48,26 @@ pub struct LegacyBssConfig {
     pub country: String,
 }
 
+/// The fixture sections of the stand file.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawLabConfig {
-    lab: RawLabIdentity,
-    /// Devices under test by chip id: `[duts.<chip>]`.
-    #[serde(default)]
-    duts: std::collections::BTreeMap<String, RawDeviceConfig>,
+struct RawFixtures {
     bluetooth: Option<RawBluetoothConfig>,
-    /// The reference peer board.
-    peer: Option<RawPeerBoardConfig>,
     station: RawStationConfig,
     access_point: RawAccessPointConfig,
     station_fixture: RawStationFixtureConfig,
     air_observer: Option<AirObserverConfig>,
     legacy_bss: Option<LegacyBssConfig>,
+}
+
+/// The boards a run names: needed only where the pool has several
+/// candidates of a chip and role, until the stand's scheduler assigns them.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct BoardChoice {
+    /// The device under test (`--board`).
+    pub dut: Option<String>,
+    /// The peer board (`--peer-board`).
+    pub peer: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -68,30 +76,22 @@ struct RawBluetoothConfig {
     adapter: String,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawPeerBoardConfig {
-    /// Defaults to `board`.
-    id: Option<String>,
-    serial: Option<PathBuf>,
-    /// A registered board name or MAC, resolved to its attached port.
-    board: Option<String>,
-}
-
-/// The reference peer board: a stable identity and its serial port. Each
-/// scenario that uses it names the catalog image it must carry.
+/// A peer board of a run: its stand-file id and its serial port. Each
+/// scenario that uses a peer names the catalog image it must carry.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PeerBoardConfig {
     pub id: String,
+    pub chip: String,
     /// The peer's port, or why its board has none: a board that is not
     /// attached fails only the runs that use the peer.
     port: std::result::Result<PathBuf, String>,
 }
 
 impl PeerBoardConfig {
-    pub fn new(id: String, serial: PathBuf) -> Self {
+    pub fn new(id: String, chip: String, serial: PathBuf) -> Self {
         Self {
             id,
+            chip,
             port: Ok(serial),
         }
     }
@@ -102,22 +102,6 @@ impl PeerBoardConfig {
             .clone()
             .map_err(|error| format!("peer board: {error}").into())
     }
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawLabIdentity {
-    id: String,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawDeviceConfig {
-    id: String,
-    serial: Option<PathBuf>,
-    /// A registered board name or MAC, resolved to its attached port.
-    board: Option<String>,
-    startup_artifact: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug)]
@@ -270,118 +254,67 @@ pub struct ExternalConfig {
     pub phys: Vec<PhyExpectation>,
 }
 
-/// `$XDG_CONFIG_HOME/open-esp-radio/lab.toml`, or `~/.config/...`.
-pub fn host_config_path() -> Result<PathBuf> {
-    let base = match std::env::var_os("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
-        Some(base) => PathBuf::from(base),
-        None => PathBuf::from(
-            std::env::var_os("HOME").ok_or("HOME is required to locate the host lab config")?,
-        )
-        .join(".config"),
-    };
-    Ok(base.join("open-esp-radio/lab.toml"))
-}
-
-/// A section's serial port: an explicit `serial`, or the attached port of
-/// its `board`.
-fn board_port(
-    section: &str,
-    serial: Option<PathBuf>,
-    board: Option<&str>,
-    chip: Option<&str>,
-    resolve: &dyn Fn(&str, Option<&str>) -> Result<PathBuf>,
-) -> Result<PathBuf> {
-    match (serial, board) {
-        (Some(serial), None) if !serial.as_os_str().is_empty() => Ok(serial),
-        (Some(_), None) => Err(format!("HIL lab config [{section}] has an empty serial").into()),
-        (None, Some(board)) => resolve(board, chip),
-        (Some(_), Some(_)) => {
-            Err(format!("HIL lab config [{section}] names both serial and board").into())
-        }
-        (None, None) => Err(format!("HIL lab config [{section}] needs serial or board").into()),
-    }
-}
-
-/// The serial port, id and startup artifact of `chip`'s device under test.
-fn resolve_dut(
-    duts: &std::collections::BTreeMap<String, RawDeviceConfig>,
-    chip: &str,
-    resolve: &dyn Fn(&str, Option<&str>) -> Result<PathBuf>,
-) -> Result<(PathBuf, String, Option<PathBuf>)> {
-    let device = duts.get(chip).cloned().ok_or_else(|| {
-        format!(
-            "HIL lab config has no device under test for {chip}; add [duts.{chip}] (configured: {})",
-            duts.keys().cloned().collect::<Vec<_>>().join(", ")
-        )
-    })?;
-    let serial = board_port(
-        &format!("duts.{chip}"),
-        device.serial,
-        device.board.as_deref(),
-        Some(chip),
-        resolve,
-    )?;
-    Ok((serial, device.id, device.startup_artifact))
-}
-
-/// Resolve a registered board name or MAC to its attached port, requiring
-/// `chip` when the registry knows the board's chip.
-fn resolve_board(board: &str, chip: Option<&str>) -> Result<PathBuf> {
-    let devices = oer_hil_arbiter::Arbiter::open()?.devices()?;
-    let mac = oer_hil_arbiter::board_mac(&devices, board)?;
-    if let (Some(required), Some(known)) = (
-        chip,
-        devices
-            .iter()
-            .find(|device| device.mac == mac)
-            .and_then(|device| device.chip.as_deref()),
-    ) && required != known
-    {
-        return Err(format!("board `{board}` is an {known}; this role needs an {required}").into());
-    }
+/// The serial port of `board`, found by its USB serial number among the
+/// attached ports.
+fn attached_port(board: &oer_hil_stand_schema::Board) -> Result<PathBuf> {
+    let mac = oer_hil_arbiter::normalize_mac(&board.usb_serial)?;
     oer_hil_arbiter::attached_ports()
         .into_iter()
         .find(|port| port.mac.as_deref() == Some(mac.as_str()))
         .map(|port| PathBuf::from(port.port))
-        .ok_or_else(|| format!("board `{board}` ({mac}) is not attached").into())
+        .ok_or_else(|| format!("board `{}` ({mac}) is not attached", board.id).into())
+}
+
+/// The chip a peer catalog image (`hil/peers/*/firmware.toml`) targets.
+pub fn peer_image_chip(root: &Path, image: &str) -> Result<String> {
+    let mut manifests = fs::read_dir(root.join("hil/peers"))?
+        .filter_map(|entry| entry.ok().map(|entry| entry.path().join("firmware.toml")))
+        .filter(|path| path.is_file())
+        .collect::<Vec<_>>();
+    manifests.sort();
+    for manifest in manifests {
+        let table: toml::Table = toml::from_str(&fs::read_to_string(&manifest)?)
+            .map_err(|error| format!("invalid {}: {error}", manifest.display()))?;
+        if table.get("image").and_then(toml::Value::as_str) == Some(image) {
+            return table
+                .get("chip")
+                .and_then(toml::Value::as_str)
+                .map(str::to_owned)
+                .ok_or_else(|| format!("{} names no chip", manifest.display()).into());
+        }
+    }
+    Err(format!("no peer catalog image `{image}` in hil/peers").into())
 }
 
 impl LabConfig {
-    /// This checkout's `hil/local.toml` when present, otherwise the host's
-    /// shared lab configuration, which every checkout reads.
+    /// The host's stand file, which every checkout reads.
     pub fn default_path() -> Result<PathBuf> {
-        let local = repository_root()?.join("hil/local.toml");
-        let host = host_config_path()?;
-        if local.exists() {
-            if host.exists() {
-                eprintln!(
-                    "hil: {} overrides the host lab config {}",
-                    local.display(),
-                    host.display()
-                );
-            }
-            return Ok(local);
-        }
-        Ok(host)
+        Ok(oer_hil_stand_schema::default_path()?)
     }
 
-    /// The configuration at `path` with `chip`'s device under test.
-    pub fn load(path: &Path, chip: &str) -> Result<Self> {
-        Self::load_resolving(path, chip, &resolve_board)
+    /// The stand file at `path` with `chip`'s device under test, the one
+    /// `choice` names or the only one of the pool.
+    pub fn load(path: &Path, chip: &str, choice: &BoardChoice) -> Result<Self> {
+        Self::load_resolving(path, chip, choice, &attached_port)
     }
 
-    /// Load with `resolve` mapping a `board` reference and its required chip
-    /// to the board's serial port.
+    /// Load with `resolve` mapping a board to its serial port.
     pub(crate) fn load_resolving(
         path: &Path,
         chip: &str,
-        resolve: &dyn Fn(&str, Option<&str>) -> Result<PathBuf>,
+        choice: &BoardChoice,
+        resolve: &dyn Fn(&oer_hil_stand_schema::Board) -> Result<PathBuf>,
     ) -> Result<Self> {
-        require_private_permissions(path)?;
-        let source = fs::read_to_string(path)
-            .map_err(|error| format!("cannot read HIL lab config `{}`: {error}", path.display()))?;
-        let mut raw: RawLabConfig = toml::from_str(&source)
-            .map_err(|error| format!("invalid HIL lab config `{}`: {error}", path.display()))?;
+        let mut stand = oer_hil_stand_schema::StandFile::load(path)?;
+        let root = repository_root()?;
+        let chips = oer_chip_profile::Profile::all(&root)?;
+        // The credentials stay in the zeroized fixture types alone.
+        let fixtures = std::mem::take(&mut stand.fixtures);
+        let mut raw: RawFixtures = toml::Value::Table(fixtures.into_iter().collect())
+            .try_into()
+            .map_err(|error| {
+                format!("invalid fixture sections in `{}`: {error}", path.display())
+            })?;
         if let Some(observer) = &raw.air_observer {
             for (name, value) in [
                 ("air_observer.ssh_target", &observer.ssh_target),
@@ -394,22 +327,18 @@ impl LabConfig {
                 return Err("independent OpenWrt observer requires a managed OpenWrt AP".into());
             }
         }
-        validate_identifier("lab.id", &raw.lab.id)?;
-        let root = repository_root()?;
-        let duts = std::mem::take(&mut raw.duts);
-        let supported = oer_chip_profile::supported(&root)?;
-        for (known, device) in &duts {
-            if !supported.contains(known) {
-                return Err(format!(
-                    "HIL lab config [duts.{known}] names no supported chip; supported: {}",
-                    supported.join(", ")
-                )
-                .into());
-            }
-            validate_identifier(&format!("duts.{known}.id"), &device.id)?;
-        }
-        let (device_serial, device_id, device_startup_artifact) =
-            resolve_dut(&duts, chip, resolve)?;
+        let board = stand.select_board(
+            chip,
+            oer_hil_stand_schema::BoardRole::Dut,
+            choice.dut.as_deref(),
+            None,
+        )?;
+        board
+            .validate_chip(&chips)
+            .map_err(|error| format!("{}: {error}", path.display()))?;
+        let device_serial = resolve(board)?;
+        let device_id = board.id.clone();
+        let device_startup_artifact = board.startup_artifact.clone();
         if raw.station.ssid.is_empty() || raw.station.ssid.len() > 32 {
             return Err("HIL station SSID must contain 1..=32 bytes".into());
         }
@@ -564,33 +493,14 @@ impl LabConfig {
             path: path.to_owned(),
             air_observer: raw.air_observer,
             legacy_bss: raw.legacy_bss,
-            cell_id: raw.lab.id,
+            cell_id: stand.stand.id.clone(),
             bluetooth_adapter: raw
                 .bluetooth
                 .map(|config| config.adapter.parse())
                 .transpose()?,
-            peer: raw
-                .peer
-                .map(|config| -> Result<_> {
-                    let id = config
-                        .id
-                        .clone()
-                        .or_else(|| config.board.clone())
-                        .unwrap_or_default();
-                    if id.trim().is_empty() {
-                        return Err("IEEE 802.15.4 peer id is empty".into());
-                    }
-                    // Only the board's attachment is deferred to the runs
-                    // that use the peer; a malformed section still fails.
-                    let port = match (config.serial, config.board.as_deref()) {
-                        (None, Some(board)) => resolve(board, None).map_err(|e| e.to_string()),
-                        (serial, board) => Ok(board_port("peer", serial, board, None, resolve)?),
-                    };
-                    Ok(PeerBoardConfig { id, port })
-                })
-                .transpose()?,
             chip: chip.to_owned(),
-            duts,
+            stand,
+            choice: choice.clone(),
             dut: DeviceConfig {
                 id: device_id,
                 serial: device_serial,
@@ -723,41 +633,64 @@ impl LabConfig {
         &self.chip
     }
 
-    /// The chips with a device under test.
-    pub fn chips(&self) -> Vec<&str> {
-        self.duts.keys().map(String::as_str).collect()
+    /// The run's peer board: a board that may be a peer, other than the
+    /// device under test; the one the run named (`--peer-board`), or the
+    /// only one. Its port is resolved when a run uses it.
+    pub fn peer(&self) -> Result<PeerBoardConfig> {
+        self.peer_resolving(&attached_port)
     }
 
-    /// This configuration with `chip`'s device under test, resolving its
-    /// board now so an absent board of another chip never fails a load.
-    pub fn for_chip(&self, chip: &str) -> Result<Self> {
-        self.for_chip_resolving(chip, &resolve_board)
-    }
-
-    pub(crate) fn for_chip_resolving(
+    pub(crate) fn peer_resolving(
         &self,
-        chip: &str,
-        resolve: &dyn Fn(&str, Option<&str>) -> Result<PathBuf>,
-    ) -> Result<Self> {
-        if chip == self.chip {
-            return Ok(self.clone());
-        }
-        let (serial, id, startup_artifact) = resolve_dut(&self.duts, chip, resolve)?;
-        let root = repository_root()?;
-        let mut lab = self.clone();
-        lab.chip = chip.to_owned();
-        lab.dut = DeviceConfig {
-            id,
-            serial,
-            startup_artifact: startup_artifact.map(|path| {
-                if path.is_absolute() {
-                    path
-                } else {
-                    root.join(path)
-                }
-            }),
+        resolve: &dyn Fn(&oer_hil_stand_schema::Board) -> Result<PathBuf>,
+    ) -> Result<PeerBoardConfig> {
+        let candidates = self
+            .stand
+            .board
+            .iter()
+            .filter(|board| {
+                board.has_role(oer_hil_stand_schema::BoardRole::Peer) && board.id != self.dut.id
+            })
+            .collect::<Vec<_>>();
+        let board = match (self.choice.peer.as_deref(), candidates.as_slice()) {
+            (Some(chosen), _) => *candidates
+                .iter()
+                .find(|board| board.id == chosen)
+                .ok_or_else(|| {
+                    format!("board `{chosen}` is not a peer board of the stand file besides the device under test")
+                })?,
+            (None, [board]) => board,
+            (None, []) => {
+                return Err("the stand file has no peer board besides the device under test".into());
+            }
+            (None, several) => {
+                return Err(format!(
+                    "several boards can be the peer ({}); name one with --peer-board",
+                    several.iter().map(|board| board.id.as_str()).collect::<Vec<_>>().join(", ")
+                )
+                .into());
+            }
         };
-        Ok(lab)
+        Ok(PeerBoardConfig {
+            id: board.id.clone(),
+            chip: board.chip.clone(),
+            port: resolve(board).map_err(|error| error.to_string()),
+        })
+    }
+
+    /// The run's peer board ([`Self::peer`]) for the catalog `image`, which
+    /// must target the board's chip.
+    pub fn peer_for_image(&self, image: &str) -> Result<PeerBoardConfig> {
+        let peer = self.peer()?;
+        let chip = peer_image_chip(&repository_root()?, image)?;
+        if peer.chip != chip {
+            return Err(format!(
+                "peer board `{}` is an {}; `{image}` targets {chip}; name another with --peer-board",
+                peer.id, peer.chip
+            )
+            .into());
+        }
+        Ok(peer)
     }
 
     pub fn path(&self) -> &Path {
@@ -771,14 +704,17 @@ impl LabConfig {
     #[cfg(any(test, feature = "test-support"))]
     pub fn for_test() -> Self {
         Self {
-            path: PathBuf::from("hil/local.toml"),
+            path: PathBuf::from("stand.toml"),
             air_observer: None,
             legacy_bss: None,
             cell_id: String::from("test-cell"),
             bluetooth_adapter: None,
-            peer: None,
             chip: String::from("esp32s31"),
-            duts: std::collections::BTreeMap::new(),
+            stand: oer_hil_stand_schema::StandFile::parse(
+                "schema = 1\n[stand]\nid = \"test-cell\"\nair = \"exclusive\"\n",
+            )
+            .expect("the test stand file parses"),
+            choice: BoardChoice::default(),
             dut: DeviceConfig {
                 id: String::from("test-device"),
                 serial: PathBuf::from("/dev/ttyACM0"),
@@ -1009,46 +945,6 @@ fn validate_shell_token(name: &str, value: &str) -> Result<()> {
     {
         return Err(format!("{name} contains unsupported characters").into());
     }
-    Ok(())
-}
-
-fn validate_identifier(name: &str, value: &str) -> Result<()> {
-    if value.is_empty()
-        || value.len() > 64
-        || !value
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-    {
-        return Err(format!(
-            "{name} must contain 1..=64 lowercase ASCII letters, digits or hyphens"
-        )
-        .into());
-    }
-    Ok(())
-}
-
-#[cfg(unix)]
-fn require_private_permissions(path: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt as _;
-    let metadata = fs::metadata(path).map_err(|error| {
-        format!(
-            "cannot inspect HIL lab config `{}`: {error}",
-            path.display()
-        )
-    })?;
-    let mode = metadata.permissions().mode() & 0o777;
-    if mode != 0o600 {
-        return Err(format!(
-            "HIL lab config `{}` contains credentials and must have mode 0600 (found {mode:04o})",
-            path.display()
-        )
-        .into());
-    }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn require_private_permissions(_path: &Path) -> Result<()> {
     Ok(())
 }
 

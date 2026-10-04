@@ -3,7 +3,7 @@
 Network scenarios prepare and restore a controlled access point, clients and
 passive observers; Bluetooth and network helpers are installed once per host.
 This guide covers their preparation, evidence boundaries and installation; the
-[host guide](README.md) covers the lab configuration that names them.
+[host guide](README.md) covers the stand file that names them.
 
 ## Prepare and restore network fixtures
 
@@ -111,7 +111,7 @@ more instrumented image is a separate experiment, not interchangeable evidence.
 
 Linux network and Bluetooth fixtures share one provisioning workflow. Preview
 the exact provider plan first; these commands do not execute any listed build,
-capability, sudo or hardware step and do not load the lab configuration:
+capability, sudo or hardware step and do not load the stand file:
 
 ```console
 cargo hil fixture install --provider linux-net --dry-run
@@ -154,7 +154,7 @@ the claim is granted.
 
 Bluetooth policy admits only named adapters. It defaults to the dedicated
 `hci0`; repeat `--adapter hciN` to install a sorted finite allow-list. Reinstall
-with the adapters selected by the private lab configuration before using
+with the adapters selected by the private stand file before using
 another controller.
 
 Cargo is the single installation entry point and runs as the unprivileged
@@ -400,7 +400,7 @@ remote files. Same-boot probes keep separate capture directories. Independent
 observer and host clocks are not assumed synchronized; correlate packet
 identities before comparing timestamps across hosts.
 
-An OpenWrt fixture may set `read_only = true` in its private lab configuration
+An OpenWrt fixture may set `read_only = true` in its private stand file
 when the AP also carries essential connectivity. HIL verifies the existing
 SSID, WPA2 credentials/settings and active PHY/channel geometry; it neither
 applies nor restores AP configuration. A mismatch fails before DUT traffic.

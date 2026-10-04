@@ -290,7 +290,6 @@ mod tests {
             chip: Some("esp32c5".into()),
             name: None,
             control: None,
-            unknown: Default::default(),
         }];
         assert_eq!(
             device_label(Some("38:44:BE:AA:25:64"), &devices),

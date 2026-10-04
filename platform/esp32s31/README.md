@@ -160,7 +160,7 @@ cargo xtask build firmware access-point --flash --monitor --port /dev/ttyACM0
 
 Select `station`, `access-point`, `monitor` or `thread`. Application
 credentials remain environment configuration of the example; HIL credentials
-remain lab configuration. Each successful invocation retains a separate bundle
+remain stand file. Each successful invocation retains a separate bundle
 under `target/firmware/esp32s31-<example>/<network-or-none>/build-<id>/`:
 `application.bin`, ROM `bootloader.bin`, partition/OTA images, packed runtime,
 `runtime.elf`, `bootstrap.elf`, both resolved lockfiles and

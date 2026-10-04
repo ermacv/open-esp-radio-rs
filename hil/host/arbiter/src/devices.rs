@@ -1,5 +1,7 @@
 //! Boards of the stand, identified by the MAC address that Espressif USB
-//! Serial/JTAG ports report as their USB serial number.
+//! Serial/JTAG ports report as their USB serial number. The stand file
+//! (`oer-hil-stand-schema`) describes them; the arbiter reads it and never
+//! writes it.
 
 use std::{fs, path::Path};
 
@@ -7,10 +9,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::Arbiter;
 
-const REGISTRY_SCHEMA: u32 = 1;
-
-/// A registered board. Unset fields are unknown. Boards have no fixed role:
-/// a scenario or other consumer chooses which board it uses in which role.
+/// A board of the stand file, as the arbiter controls it. Boards have no
+/// fixed role: a scenario or other consumer chooses which board it uses in
+/// which role.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Device {
     /// USB serial number, the chip's MAC address for USB Serial/JTAG.
@@ -20,9 +21,6 @@ pub struct Device {
     /// How the stand resets or powers the board out of band.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub control: Option<crate::Control>,
-    /// Fields a newer build wrote, kept when this build rewrites the record.
-    #[serde(flatten)]
-    pub unknown: crate::Unknown,
 }
 
 impl Device {
@@ -37,12 +35,50 @@ impl Device {
     }
 }
 
-#[derive(Debug, Default, Deserialize, Serialize)]
-struct Registry {
-    schema: u32,
-    devices: Vec<Device>,
-    #[serde(flatten)]
-    unknown: crate::Unknown,
+/// The boards of a stand file: a board's hub port is its power switch when
+/// its reset ladder powers it, and its UART bridge, if wired, its reset path.
+pub fn devices_of(file: &oer_hil_stand_schema::StandFile) -> crate::Result<Vec<Device>> {
+    use oer_hil_stand_schema::{ModemLine, ResetStep};
+    let line = |line: ModemLine| match line {
+        ModemLine::Rts => crate::control::Line::Rts,
+        ModemLine::Dtr => crate::control::Line::Dtr,
+    };
+    file.board
+        .iter()
+        .map(|board| {
+            let hub = file.hub(&board.port.hub).ok_or_else(|| {
+                format!(
+                    "board `{}`: hub `{}` is not described",
+                    board.id, board.port.hub
+                )
+            })?;
+            let power =
+                board
+                    .reset
+                    .contains(&ResetStep::Power)
+                    .then(|| crate::control::PowerControl {
+                        via: crate::control::PowerVia::Uhubctl,
+                        location: hub.usb2.clone(),
+                        port: u32::from(board.port.port),
+                    });
+            let reset = board
+                .uart_bridge
+                .as_ref()
+                .map(|bridge| crate::ResetControl {
+                    via: crate::control::ResetVia::UartRtsDtr,
+                    serial: bridge.serial.clone(),
+                    en: line(bridge.en),
+                    boot: line(bridge.boot),
+                });
+            Ok(Device {
+                mac: normalize_mac(&board.usb_serial)?,
+                chip: Some(board.chip.clone()),
+                name: Some(board.id.clone()),
+                control: (power.is_some() || reset.is_some())
+                    .then_some(crate::Control { reset, power }),
+            })
+        })
+        .collect()
 }
 
 /// A USB serial port attached now.
@@ -55,8 +91,8 @@ pub struct AttachedPort {
     pub product: Option<String>,
 }
 
-/// Whether the USB serial number `serial` is the reset bridge of a
-/// registered board: part of that board, not a board itself.
+/// Whether the USB serial number `serial` is the reset bridge of a board:
+/// part of that board, not a board itself.
 pub fn is_reset_bridge(serial: &str, devices: &[Device]) -> bool {
     devices.iter().any(|device| {
         device
@@ -85,8 +121,8 @@ pub fn attached_ports() -> Vec<AttachedPort> {
         .collect()
 }
 
-/// The MAC of a board named by its registered name, by its chip when it is
-/// the only registered board of that chip, or by its MAC.
+/// The MAC of a board named by its stand-file id, by its chip when it is
+/// the only board of that chip, or by its MAC.
 pub fn board_mac(devices: &[Device], board: &str) -> crate::Result<String> {
     if let Some(device) = devices
         .iter()
@@ -107,19 +143,19 @@ pub fn board_mac(devices: &[Device], board: &str) -> crate::Result<String> {
                 .map(|device| device.name.as_deref().unwrap_or(&device.mac))
                 .collect::<Vec<_>>();
             return Err(format!(
-                "several {board} boards are registered ({}); name one of them",
+                "the stand file has several {board} boards ({}); name one of them",
                 names.join(", ")
             )
             .into());
         }
     }
     normalize_mac(board).map_err(|_| {
-        format!("board `{board}` is neither a registered name, a chip nor a MAC; see `cargo hil devices`")
+        format!("board `{board}` is neither a board of the stand file, a chip nor a MAC; see the stand file")
             .into()
     })
 }
 
-/// The registered label of the board with `mac`, or the MAC.
+/// The label of the board with `mac`, or the MAC.
 pub fn device_label(devices: &[Device], mac: &str) -> String {
     crate::board::device_label(Some(mac), devices)
 }
@@ -136,136 +172,10 @@ pub fn port_mac(path: &Path) -> Option<String> {
 }
 
 impl Arbiter {
-    fn registry_path(&self) -> std::path::PathBuf {
-        self.directory().join("devices.json")
-    }
-
+    /// The boards of the stand file.
     pub fn devices(&self) -> crate::Result<Vec<Device>> {
-        let path = self.registry_path();
-        self.locked(|| read_registry(&path).map(|registry| registry.devices))
-    }
-
-    /// Merge the set fields of `update` into the device with its MAC.
-    pub fn set_device(&self, update: Device) -> crate::Result<Device> {
-        self.update_device(update, true)
-    }
-
-    /// Fill only fields that are still unknown.
-    pub fn register_device(&self, update: Device) -> crate::Result<Device> {
-        self.update_device(update, false)
-    }
-
-    fn update_device(&self, update: Device, overwrite: bool) -> crate::Result<Device> {
-        let mac = normalize_mac(&update.mac)?;
-        let path = self.registry_path();
-        self.locked(|| {
-            let mut registry = read_registry(&path)?;
-            let index = match registry.devices.iter().position(|device| device.mac == mac) {
-                Some(index) => index,
-                None => {
-                    registry.devices.push(Device {
-                        mac: mac.clone(),
-                        ..Device::default()
-                    });
-                    registry.devices.len() - 1
-                }
-            };
-            let device = &mut registry.devices[index];
-            for (field, value) in [
-                (&mut device.chip, update.chip),
-                (&mut device.name, update.name),
-            ] {
-                if value.is_some() && (overwrite || field.is_none()) {
-                    *field = value;
-                }
-            }
-            // Each path merges on its own: registering one keeps the other.
-            if let Some(update) = update.control {
-                let control = device.control.get_or_insert_with(Default::default);
-                if update.reset.is_some() && (overwrite || control.reset.is_none()) {
-                    control.reset = update.reset;
-                }
-                if update.power.is_some() && (overwrite || control.power.is_none()) {
-                    control.power = update.power;
-                }
-            }
-            name_by_chip(&mut registry.devices);
-            let device = registry.devices[index].clone();
-            registry.devices.sort_by(|a, b| a.mac.cmp(&b.mac));
-            let temporary = path.with_extension("json.tmp");
-            fs::write(&temporary, serde_json::to_vec_pretty(&registry)?)?;
-            fs::rename(&temporary, &path)?;
-            Ok(device)
-        })
-    }
-}
-
-/// Name boards after their chip: the only board of a chip is the chip, and
-/// several boards of one chip are the chip with the last four hexadecimal
-/// digits of their MAC, which is also what to write on the board. Names an
-/// operator chose otherwise are kept.
-fn name_by_chip(devices: &mut [Device]) {
-    let chips = devices
-        .iter()
-        .filter_map(|device| device.chip.clone())
-        .collect::<std::collections::BTreeSet<_>>();
-    for chip in chips {
-        let several = devices
-            .iter()
-            .filter(|device| device.chip.as_deref() == Some(chip.as_str()))
-            .count()
-            > 1;
-        for device in devices
-            .iter_mut()
-            .filter(|device| device.chip.as_deref() == Some(chip.as_str()))
-        {
-            let generated = device
-                .name
-                .as_deref()
-                .is_none_or(|name| name == chip || is_chip_tail_name(name, &chip));
-            if generated {
-                device.name = Some(if several {
-                    format!("{chip}-{}", mac_tail(&device.mac))
-                } else {
-                    chip.clone()
-                });
-            }
-        }
-    }
-}
-
-/// The last four hexadecimal digits of a MAC, lower case.
-fn mac_tail(mac: &str) -> String {
-    let digits = mac.replace(':', "").to_lowercase();
-    digits[digits.len().saturating_sub(4)..].to_owned()
-}
-
-fn is_chip_tail_name(name: &str, chip: &str) -> bool {
-    name.strip_prefix(chip)
-        .and_then(|rest| rest.strip_prefix('-'))
-        .is_some_and(|tail| tail.len() == 4 && tail.chars().all(|c| c.is_ascii_hexdigit()))
-}
-
-fn read_registry(path: &Path) -> crate::Result<Registry> {
-    match fs::read(path) {
-        Ok(bytes) => {
-            let registry: Registry = serde_json::from_slice(&bytes)?;
-            if registry.schema != REGISTRY_SCHEMA {
-                return Err(format!(
-                    "device registry {} has schema {}; update this checkout",
-                    path.display(),
-                    registry.schema
-                )
-                .into());
-            }
-            Ok(registry)
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Registry {
-            schema: REGISTRY_SCHEMA,
-            devices: Vec::new(),
-            unknown: Default::default(),
-        }),
-        Err(error) => Err(error.into()),
+        let file = oer_hil_stand_schema::StandFile::load(self.stand_file())?;
+        devices_of(&file)
     }
 }
 
@@ -290,45 +200,6 @@ pub fn normalize_mac(text: &str) -> crate::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn registering_a_reset_path_or_a_hub_port_keeps_the_other() {
-        let reset = crate::ResetControl {
-            via: crate::control::ResetVia::UartRtsDtr,
-            serial: "5B90165754".into(),
-            en: crate::control::Line::Rts,
-            boot: crate::control::Line::Dtr,
-        };
-        let power = crate::control::PowerControl {
-            via: crate::control::PowerVia::Uhubctl,
-            location: "3-8.3".into(),
-            port: 2,
-        };
-        let only = |reset, power| Device {
-            mac: "38:44:BE:AA:25:64".into(),
-            control: Some(crate::Control { reset, power }),
-            ..Device::default()
-        };
-        for order in [
-            [
-                only(Some(reset.clone()), None),
-                only(None, Some(power.clone())),
-            ],
-            [
-                only(None, Some(power.clone())),
-                only(Some(reset.clone()), None),
-            ],
-        ] {
-            let directory = tempfile::tempdir().unwrap();
-            let arbiter = crate::Arbiter::at(directory.path()).unwrap();
-            for update in order {
-                arbiter.set_device(update).unwrap();
-            }
-            let control = arbiter.devices().unwrap()[0].control.clone().unwrap();
-            assert_eq!(control.reset.as_ref(), Some(&reset));
-            assert_eq!(control.power.as_ref(), Some(&power));
-        }
-    }
 
     #[test]
     fn a_registered_reset_bridge_is_part_of_its_board() {
@@ -361,7 +232,6 @@ mod tests {
             chip: None,
             name: Some("esp32c5".into()),
             control: None,
-            unknown: Default::default(),
         }];
         assert_eq!(board_mac(&devices, "esp32c5").unwrap(), "38:44:BE:AA:25:64");
         // A chip names its only registered board, never one of several.
@@ -370,7 +240,6 @@ mod tests {
             chip: Some("esp32h2".into()),
             name: name.map(Into::into),
             control: None,
-            unknown: Default::default(),
         };
         let one = [chip_only(None, "AA:AA:AA:AA:AA:01")];
         assert_eq!(board_mac(&one, "esp32h2").unwrap(), "AA:AA:AA:AA:AA:01");
@@ -388,136 +257,59 @@ mod tests {
     }
 
     #[test]
-    fn boards_are_named_by_chip_and_by_mac_tail_once_a_chip_has_several() {
+    fn the_stand_file_gives_each_board_its_power_and_reset_paths() {
         let directory = tempfile::tempdir().unwrap();
         let arbiter = Arbiter::at(directory.path()).unwrap();
-        let register = |mac: &str, chip: &str| {
-            arbiter
-                .register_device(Device {
-                    mac: mac.into(),
-                    chip: Some(chip.into()),
-                    name: None,
-                    control: None,
-                    unknown: Default::default(),
-                })
-                .unwrap()
-        };
+        assert!(arbiter.devices().is_err(), "no stand file, no boards");
+        let file = oer_hil_stand_schema::StandFile::parse(STAND).unwrap();
+        let devices = devices_of(&file).unwrap();
+        assert_eq!(devices.len(), 2);
+        let s31 = &devices[0];
         assert_eq!(
-            register("38:44:BE:AA:25:64", "esp32c5").name.as_deref(),
-            Some("esp32c5")
+            (s31.mac.as_str(), s31.label()),
+            ("30:ED:A0:F3:F6:D0", "s31-a (esp32s31)".into())
         );
-        arbiter
-            .set_device(Device {
-                mac: "30:ED:A0:F3:F6:D0".into(),
-                chip: Some("esp32s31".into()),
-                name: Some("bench-dut".into()),
-                control: None,
-                unknown: Default::default(),
+        assert_eq!(s31.control, None, "no power step, no bridge");
+        let c5 = devices[1].control.as_ref().unwrap();
+        assert_eq!(
+            c5.power,
+            Some(crate::control::PowerControl {
+                via: crate::control::PowerVia::Uhubctl,
+                location: "3-8.3".into(),
+                port: 2,
             })
-            .unwrap();
-        assert_eq!(
-            register("38:44:BE:AA:99:0F", "esp32c5").name.as_deref(),
-            Some("esp32c5-990f")
         );
-        let names = arbiter
-            .devices()
-            .unwrap()
-            .into_iter()
-            .map(|device| device.name.unwrap())
-            .collect::<Vec<_>>();
-        // An operator's own name stays.
-        assert_eq!(names, ["bench-dut", "esp32c5-2564", "esp32c5-990f"]);
+        assert_eq!(c5.reset.as_ref().unwrap().serial, "5B90165754");
+        assert!(is_reset_bridge("5B90165754", &devices));
+        assert_eq!(board_mac(&devices, "c5-a").unwrap(), "38:44:BE:AA:25:64");
+        assert_eq!(board_mac(&devices, "esp32c5").unwrap(), "38:44:BE:AA:25:64");
     }
 
-    #[test]
-    fn set_overwrites_and_register_only_fills_unknown_fields() {
-        let directory = tempfile::tempdir().unwrap();
-        let arbiter = Arbiter::at(directory.path()).unwrap();
-        arbiter
-            .register_device(Device {
-                mac: "30:ed:a0:f3:f6:d0".into(),
-                chip: Some("esp32s31".into()),
-                ..Device::default()
-            })
-            .unwrap();
-        let device = arbiter
-            .register_device(Device {
-                mac: "30:ED:A0:F3:F6:D0".into(),
-                chip: Some("other".into()),
-                name: Some("esp32s31".into()),
-                ..Device::default()
-            })
-            .unwrap();
-        assert_eq!(device.chip.as_deref(), Some("esp32s31"));
-        assert_eq!(device.label(), "esp32s31");
-        arbiter
-            .set_device(Device {
-                mac: "30:ED:A0:F3:F6:D0".into(),
-                chip: Some("esp32c5".into()),
-                ..Device::default()
-            })
-            .unwrap();
-        let devices = arbiter.devices().unwrap();
-        assert_eq!(devices.len(), 1);
-        assert_eq!(devices[0].chip.as_deref(), Some("esp32c5"));
-        assert_eq!(devices[0].name.as_deref(), Some("esp32s31"));
-        // A control path is kept when a later update names none.
-        let control: crate::Control = serde_json::from_str(
-            r#"{"reset":{"via":"uart-rts-dtr","serial":"5B90165754","en":"rts","boot":"dtr"}}"#,
-        )
-        .unwrap();
-        arbiter
-            .set_device(Device {
-                mac: "30:ED:A0:F3:F6:D0".into(),
-                control: Some(control.clone()),
-                ..Device::default()
-            })
-            .unwrap();
-        arbiter
-            .register_device(Device {
-                mac: "30:ED:A0:F3:F6:D0".into(),
-                chip: Some("esp32s31".into()),
-                ..Device::default()
-            })
-            .unwrap();
-        assert_eq!(arbiter.devices().unwrap()[0].control, Some(control));
-    }
-
-    #[test]
-    fn fields_a_newer_build_wrote_survive_a_rewrite() {
-        let directory = tempfile::tempdir().unwrap();
-        let arbiter = Arbiter::at(directory.path()).unwrap();
-        fs::write(
-            directory.path().join("devices.json"),
-            serde_json::to_vec(&serde_json::json!({
-                "schema": REGISTRY_SCHEMA,
-                "future": {"kept": true},
-                "devices": [{"mac": "38:44:BE:AA:25:64", "chip": "esp32c5", "name": "esp32c5",
-                    "control": {"reset": {"via": "uart-rts-dtr", "serial": "5B90165754",
-                        "en": "rts", "boot": "dtr"}},
-                    "future_field": [1, 2]}],
-            }))
-            .unwrap(),
-        )
-        .unwrap();
-        arbiter
-            .register_device(Device {
-                mac: "30:ED:A0:F3:F6:D0".into(),
-                chip: Some("esp32s31".into()),
-                ..Device::default()
-            })
-            .unwrap();
-        let stored: serde_json::Value =
-            serde_json::from_slice(&fs::read(directory.path().join("devices.json")).unwrap())
-                .unwrap();
-        assert_eq!(stored["future"], serde_json::json!({"kept": true}));
-        let c5 = stored["devices"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|device| device["mac"] == "38:44:BE:AA:25:64")
-            .unwrap();
-        assert_eq!(c5["future_field"], serde_json::json!([1, 2]));
-        assert_eq!(c5["control"]["reset"]["serial"], "5B90165754");
-    }
+    const STAND: &str = r#"
+schema = 1
+[stand]
+id = "test"
+air = "exclusive"
+[[hub]]
+id = "mid"
+usb2 = "3-8.3"
+switchable = [2]
+[[board]]
+id = "s31-a"
+usb-serial = "30:ed:a0:f3:f6:d0"
+chip = "esp32s31"
+radios = ["wifi-2g4"]
+roles = ["dut"]
+port = { hub = "mid", port = 3 }
+reset = ["usb-jtag-rts"]
+[[board]]
+id = "c5-a"
+usb-serial = "38:44:BE:AA:25:64"
+chip = "esp32c5"
+radios = ["ieee802154"]
+roles = ["dut", "peer"]
+port = { hub = "mid", port = 2 }
+reset = ["jtag", "power"]
+uart-bridge = { serial = "5B90165754", en = "rts", boot = "dtr" }
+"#;
 }

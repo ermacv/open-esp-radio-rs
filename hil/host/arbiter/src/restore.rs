@@ -114,7 +114,6 @@ mod tests {
             chip: None,
             name: None,
             control: None,
-            unknown: Default::default(),
         };
         let devices = [device("AA"), device("BB")];
         let claims = [Claim::exclusive("board:AA"), Claim::exclusive(crate::AIR)];

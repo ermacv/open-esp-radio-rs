@@ -1,10 +1,42 @@
 use super::*;
 
+const EXAMPLE: &str = include_str!("../../../../stand/stand.example.toml");
+
+/// A board's port: `/dev/tty-<id>`, as if every board were attached.
+fn attached(board: &oer_hil_stand_schema::Board) -> crate::Result<std::path::PathBuf> {
+    Ok(format!("/dev/tty-{}", board.id).into())
+}
+
+fn load(path: &Path, chip: &str) -> crate::Result<LabConfig> {
+    LabConfig::load_resolving(path, chip, &BoardChoice::default(), &attached)
+}
+
+/// The example with `edit` applied, written to a private file.
+fn stand_file(edit: impl FnOnce(&mut toml::Value)) -> tempfile::NamedTempFile {
+    use std::io::Write;
+    let mut raw: toml::Value = toml::from_str(EXAMPLE).unwrap();
+    edit(&mut raw);
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    file.write_all(toml::to_string(&raw).unwrap().as_bytes())
+        .unwrap();
+    file
+}
+
+/// A second esp32s31 board on the bottom hub.
+fn second_s31(raw: &mut toml::Value) {
+    let board: toml::Value = toml::from_str(
+        "id = \"s31-b\"\nusb-serial = \"30:ED:A0:00:00:02\"\nchip = \"esp32s31\"\n\
+         radios = [\"wifi-2g4\"]\nroles = [\"dut\", \"peer\"]\n\
+         port = { hub = \"rsh-bottom\", port = 1 }\nreset = [\"power\"]\n",
+    )
+    .unwrap();
+    raw["board"].as_array_mut().unwrap().push(board);
+}
+
 #[test]
 fn linux_fixture_requires_explicit_radio_and_network_settings() {
     use std::io::Write;
-    let mut raw: toml::Value =
-        toml::from_str(include_str!("../../../../lab.example.toml")).unwrap();
+    let mut raw: toml::Value = toml::from_str(EXAMPLE).unwrap();
     raw["station_fixture"] = toml::from_str("kind='local-linux'\ninterface='wlan0'\nphys=['ht20','ht40','he20']\ncountry='DE'\nchannel=13\naddress='10.42.0.1/24'\n").unwrap();
     for (key, value, valid) in [
         ("country", toml::Value::String("DE".into()), true),
@@ -27,11 +59,7 @@ fn linux_fixture_requires_explicit_radio_and_network_settings() {
         let mut file = tempfile::NamedTempFile::new().unwrap();
         file.write_all(toml::to_string(&candidate).unwrap().as_bytes())
             .unwrap();
-        assert_eq!(
-            LabConfig::load(file.path(), "esp32s31").is_ok(),
-            valid,
-            "{key}"
-        );
+        assert_eq!(load(file.path(), "esp32s31").is_ok(), valid, "{key}");
     }
 }
 
@@ -87,8 +115,7 @@ fn ap_scenarios_resolve_both_radio_roles_from_one_channel_geometry() {
 fn openwrt_config(phys: &[&str]) -> tempfile::NamedTempFile {
     use std::io::Write;
 
-    let mut config: toml::Value =
-        toml::from_str(include_str!("../../../../lab.example.toml")).unwrap();
+    let mut config: toml::Value = toml::from_str(EXAMPLE).unwrap();
     config["station_fixture"]["phys"] = toml::Value::Array(
         phys.iter()
             .map(|phy| toml::Value::String((*phy).into()))
@@ -109,7 +136,7 @@ fn openwrt_accepts_each_declared_phy_and_multiple_profiles() {
         &["ht20", "ht40", "he20"][..],
     ] {
         let file = openwrt_config(phys);
-        let config = LabConfig::load(file.path(), "esp32s31").unwrap();
+        let config = load(file.path(), "esp32s31").unwrap();
         for phy in [
             PhyExpectation::Ht20,
             PhyExpectation::Ht40,
@@ -127,7 +154,7 @@ fn openwrt_accepts_each_declared_phy_and_multiple_profiles() {
 fn openwrt_rejects_empty_duplicate_and_unknown_phy_profiles() {
     for phys in [&[][..], &["ht40", "ht40"][..], &["unknown"][..]] {
         let file = openwrt_config(phys);
-        assert!(LabConfig::load(file.path(), "esp32s31").is_err());
+        assert!(load(file.path(), "esp32s31").is_err());
     }
 }
 
@@ -154,17 +181,9 @@ fn rejects_unsafe_fixture_tokens() {
 }
 
 #[test]
-fn physical_identity_is_stable_and_path_safe() {
-    assert!(validate_identifier("lab.id", "berlin-s31-01").is_ok());
-    assert!(validate_identifier("lab.id", "Berlin/S31").is_err());
-    assert!(validate_identifier("device.id", "").is_err());
-}
-
-#[test]
 fn independent_observer_accepts_only_safe_identifiers_and_managed_ap() {
     use std::io::Write;
-    let mut raw: toml::Value =
-        toml::from_str(include_str!("../../../../lab.example.toml")).unwrap();
+    let mut raw: toml::Value = toml::from_str(EXAMPLE).unwrap();
     raw.as_table_mut().unwrap().insert(
         "air_observer".into(),
         toml::from_str("ssh_target='lab-observer'\nphy='phy0'\ninterface='observe0'\n").unwrap(),
@@ -177,107 +196,13 @@ fn independent_observer_accepts_only_safe_identifiers_and_managed_ap() {
         let mut file = tempfile::NamedTempFile::new().unwrap();
         file.write_all(toml::to_string(&candidate).unwrap().as_bytes())
             .unwrap();
-        assert_eq!(LabConfig::load(file.path(), "esp32s31").is_ok(), !invalid);
+        assert_eq!(load(file.path(), "esp32s31").is_ok(), !invalid);
     }
     raw["station_fixture"] = toml::from_str("kind='external'\nphys=['ht40']\n").unwrap();
     let mut file = tempfile::NamedTempFile::new().unwrap();
     file.write_all(toml::to_string(&raw).unwrap().as_bytes())
         .unwrap();
-    assert!(LabConfig::load(file.path(), "esp32s31").is_err());
-}
-
-#[test]
-fn the_peer_board_is_optional_and_needs_an_identity() {
-    use std::io::Write;
-    let raw: toml::Value = toml::from_str(include_str!("../../../../lab.example.toml")).unwrap();
-    let load = |value: &toml::Value| {
-        let mut file = tempfile::NamedTempFile::new().unwrap();
-        file.write_all(toml::to_string(value).unwrap().as_bytes())
-            .unwrap();
-        LabConfig::load(file.path(), "esp32s31")
-    };
-    let lab = load(&raw).unwrap();
-    assert_eq!(
-        lab.peer,
-        Some(PeerBoardConfig::new(
-            String::from("esp32c5-peer-01"),
-            std::path::PathBuf::from("/dev/ttyUSB0"),
-        ))
-    );
-    let mut absent = raw.clone();
-    absent.as_table_mut().unwrap().remove("peer");
-    assert_eq!(load(&absent).unwrap().peer, None);
-    let mut anonymous = raw.clone();
-    anonymous["peer"]["id"] = toml::Value::String(String::from(" "));
-    assert!(load(&anonymous).is_err());
-}
-
-#[test]
-fn devices_are_named_by_serial_port_or_by_registered_board() {
-    use std::io::Write;
-    let raw: toml::Value = toml::from_str(include_str!("../../../../lab.example.toml")).unwrap();
-    let resolve = |board: &str, chip: Option<&str>| -> crate::Result<std::path::PathBuf> {
-        match (board, chip) {
-            ("esp32s31", Some("esp32s31")) => Ok("/dev/ttyACM0".into()),
-            ("esp32c5", None) => Ok("/dev/ttyACM1".into()),
-            _ => Err(format!("unexpected {board} {chip:?}").into()),
-        }
-    };
-    let load = |value: &toml::Value| {
-        let mut file = tempfile::NamedTempFile::new().unwrap();
-        file.write_all(toml::to_string(value).unwrap().as_bytes())
-            .unwrap();
-        LabConfig::load_resolving(file.path(), "esp32s31", &resolve)
-    };
-    let mut boards = raw.clone();
-    let device = boards["duts"]["esp32s31"].as_table_mut().unwrap();
-    device.remove("serial");
-    device.insert("board".into(), "esp32s31".into());
-    let peer = boards["peer"].as_table_mut().unwrap();
-    peer.remove("serial");
-    peer.remove("id");
-    peer.insert("board".into(), "esp32c5".into());
-    let lab = load(&boards).unwrap();
-    assert_eq!(lab.dut.serial, std::path::PathBuf::from("/dev/ttyACM0"));
-    assert_eq!(
-        lab.peer,
-        Some(PeerBoardConfig::new(
-            String::from("esp32c5"),
-            std::path::PathBuf::from("/dev/ttyACM1"),
-        ))
-    );
-    // A peer board that is not attached fails only the runs that use it.
-    let detached = |board: &str, chip: Option<&str>| -> crate::Result<std::path::PathBuf> {
-        match (board, chip) {
-            ("esp32s31", Some("esp32s31")) => Ok("/dev/ttyACM0".into()),
-            _ => Err(format!("board `{board}` is not attached").into()),
-        }
-    };
-    let mut file = tempfile::NamedTempFile::new().unwrap();
-    file.write_all(toml::to_string(&boards).unwrap().as_bytes())
-        .unwrap();
-    let lab = LabConfig::load_resolving(file.path(), "esp32s31", &detached).unwrap();
-    assert_eq!(lab.dut.serial, std::path::PathBuf::from("/dev/ttyACM0"));
-    let error = lab.peer.unwrap().serial().unwrap_err();
-    assert!(error.to_string().contains("not attached"), "{error}");
-    let mut both = boards.clone();
-    both["duts"]["esp32s31"]
-        .as_table_mut()
-        .unwrap()
-        .insert("serial".into(), "/dev/ttyACM0".into());
-    assert!(load(&both).is_err());
-    let mut neither = boards.clone();
-    neither["duts"]["esp32s31"]
-        .as_table_mut()
-        .unwrap()
-        .remove("board");
-    assert!(load(&neither).is_err());
-    let mut unknown = boards;
-    unknown["duts"]["esp32s31"]["board"] = "esp32c5".into();
-    assert!(
-        load(&unknown).is_err(),
-        "the device must resolve as an esp32s31"
-    );
+    assert!(load(file.path(), "esp32s31").is_err());
 }
 
 #[test]
@@ -306,63 +231,108 @@ fn a_wifi_link_occupies_its_channel_and_secondary_channel() {
 }
 
 #[test]
-fn devices_under_test_are_keyed_by_chip_and_a_load_names_its_chip() {
-    use std::io::Write;
-    let raw: toml::Value = toml::from_str(include_str!("../../../../lab.example.toml")).unwrap();
-    let resolve = |board: &str, chip: Option<&str>| -> crate::Result<std::path::PathBuf> {
-        match (board, chip) {
-            ("esp32c5", Some("esp32c5")) => Ok("/dev/ttyACM1".into()),
-            ("esp32c5", None) => Ok("/dev/ttyACM1".into()),
-            ("gone", _) => Err("board `gone` is not attached".into()),
-            _ => Err(format!("unexpected {board} {chip:?}").into()),
+fn the_device_under_test_and_the_peer_come_from_the_pool() {
+    let file = stand_file(|_| {});
+    let lab = load(file.path(), "esp32s31").unwrap();
+    assert_eq!((lab.dut.id.as_str(), lab.chip()), ("s31-a", "esp32s31"));
+    assert_eq!(lab.dut.serial, std::path::PathBuf::from("/dev/tty-s31-a"));
+    assert_eq!(lab.cell_id(), "berlin-open-radio");
+    // The peer is the other board; the device under test never is.
+    let peer = lab.peer_resolving(&attached).unwrap();
+    assert_eq!(
+        peer,
+        PeerBoardConfig::new("c5-a".into(), "esp32c5".into(), "/dev/tty-c5-a".into())
+    );
+    let lab = load(file.path(), "esp32c5").unwrap();
+    assert_eq!(lab.dut.id, "c5-a");
+    assert_eq!(lab.peer_resolving(&attached).unwrap().id, "s31-a");
+    // The C5 peer images do not run on the S31 the pool leaves.
+    let error = lab
+        .peer_for_image("ieee802154-peer")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("`ieee802154-peer` targets esp32c5"),
+        "{error}"
+    );
+    assert!(load(file.path(), "esp32h2").is_err());
+}
+
+#[test]
+fn a_run_names_its_boards_when_the_pool_has_several() {
+    let file = stand_file(second_s31);
+    let several = load(file.path(), "esp32s31").err().unwrap().to_string();
+    assert!(several.contains("s31-a, s31-b"), "{several}");
+    let choice = BoardChoice {
+        dut: Some("s31-b".into()),
+        peer: None,
+    };
+    let lab = LabConfig::load_resolving(file.path(), "esp32s31", &choice, &attached).unwrap();
+    assert_eq!(lab.dut.id, "s31-b");
+    let several = lab.peer_resolving(&attached).unwrap_err().to_string();
+    assert!(several.contains("--peer-board"), "{several}");
+    let choice = BoardChoice {
+        dut: Some("s31-b".into()),
+        peer: Some("c5-a".into()),
+    };
+    let lab = LabConfig::load_resolving(file.path(), "esp32s31", &choice, &attached).unwrap();
+    assert_eq!(lab.peer_resolving(&attached).unwrap().id, "c5-a");
+    let choice = BoardChoice {
+        dut: Some("s31-b".into()),
+        peer: Some("s31-b".into()),
+    };
+    let lab = LabConfig::load_resolving(file.path(), "esp32s31", &choice, &attached).unwrap();
+    assert!(
+        lab.peer_resolving(&attached).is_err(),
+        "the device under test is no peer"
+    );
+}
+
+#[test]
+fn a_board_without_a_chip_profile_fails_only_its_own_runs() {
+    let file = stand_file(|raw| {
+        let board: toml::Value = toml::from_str(
+            "id = \"c6-a\"\nusb-serial = \"40:4C:CA:00:00:01\"\nchip = \"esp32c6\"\n\
+             radios = [\"ieee802154\"]\nroles = [\"dut\", \"peer\"]\n\
+             port = { hub = \"rsh-bottom\", port = 2 }\nreset = [\"power\"]\n",
+        )
+        .unwrap();
+        raw["board"].as_array_mut().unwrap().push(board);
+    });
+    let error = load(file.path(), "esp32c6").err().unwrap().to_string();
+    assert!(error.contains("chip `esp32c6` has no profile"), "{error}");
+    let choice = BoardChoice {
+        dut: None,
+        peer: Some("c6-a".into()),
+    };
+    let lab = LabConfig::load_resolving(file.path(), "esp32s31", &choice, &attached).unwrap();
+    assert_eq!(lab.peer_resolving(&attached).unwrap().chip, "esp32c6");
+}
+
+#[test]
+fn a_peer_that_is_not_attached_fails_only_the_runs_that_use_it() {
+    let file = stand_file(|_| {});
+    let only_s31 = |board: &oer_hil_stand_schema::Board| -> crate::Result<std::path::PathBuf> {
+        match board.id.as_str() {
+            "s31-a" => Ok("/dev/ttyACM0".into()),
+            other => Err(format!("board `{other}` is not attached").into()),
         }
     };
-    let load = |value: &toml::Value, chip: &str| {
-        let mut file = tempfile::NamedTempFile::new().unwrap();
-        file.write_all(toml::to_string(value).unwrap().as_bytes())
+    let lab =
+        LabConfig::load_resolving(file.path(), "esp32s31", &BoardChoice::default(), &only_s31)
             .unwrap();
-        LabConfig::load_resolving(file.path(), chip, &resolve)
-    };
-    let dut = |board: &str| {
-        let mut table = toml::Table::new();
-        table.insert("id".into(), "esp32c5-dut".into());
-        table.insert("board".into(), board.into());
-        toml::Value::Table(table)
-    };
-    let mut both = raw.clone();
-    both["duts"]
-        .as_table_mut()
-        .unwrap()
-        .insert("esp32c5".into(), dut("esp32c5"));
-    let lab = load(&both, "esp32s31").unwrap();
-    assert_eq!(lab.chip(), "esp32s31");
-    assert_eq!(lab.chips(), ["esp32c5", "esp32s31"]);
-    let esp32c5 = load(&both, "esp32c5").unwrap();
-    assert_eq!(esp32c5.chip(), "esp32c5");
-    assert_eq!(esp32c5.dut.id, "esp32c5-dut");
-    assert_eq!(esp32c5.dut.serial, std::path::PathBuf::from("/dev/ttyACM1"));
-    assert_eq!(
-        lab.for_chip_resolving("esp32c5", &resolve).unwrap().dut.id,
-        "esp32c5-dut"
-    );
-    assert!(load(&both, "esp32h2").is_err());
-    // An unattached board of another chip does not fail a load for this one.
-    let mut absent = both.clone();
-    absent["duts"]["esp32c5"]["board"] = "gone".into();
-    let lab = load(&absent, "esp32s31").unwrap();
-    assert!(lab.for_chip_resolving("esp32c5", &resolve).is_err());
-    // An unknown chip is refused, and so are the removed tables.
-    let mut unknown = both.clone();
-    unknown["duts"]
-        .as_table_mut()
-        .unwrap()
-        .insert("esp32x9".into(), dut("esp32c5"));
-    assert!(load(&unknown, "esp32s31").is_err());
-    for removed in ["device", "targets", "ieee802154_peer"] {
-        let mut old = both.clone();
-        old.as_table_mut()
-            .unwrap()
-            .insert(removed.into(), toml::Value::Table(toml::Table::new()));
-        assert!(load(&old, "esp32s31").is_err(), "{removed}");
+    let error = lab.peer_resolving(&only_s31).unwrap().serial().unwrap_err();
+    assert!(error.to_string().contains("not attached"), "{error}");
+}
+
+#[test]
+fn the_lab_file_sections_are_gone() {
+    for removed in ["lab", "duts", "peer"] {
+        let file = stand_file(|raw| {
+            raw.as_table_mut()
+                .unwrap()
+                .insert(removed.into(), toml::Value::Table(toml::Table::new()));
+        });
+        assert!(load(file.path(), "esp32s31").is_err(), "{removed}");
     }
 }

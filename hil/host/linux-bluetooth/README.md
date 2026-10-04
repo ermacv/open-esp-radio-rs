@@ -37,7 +37,7 @@ can prevent restoration and must not be interpreted as a passing check.
 Each invocation creates a fresh directory under `target/hil/fixture-checks/`
 containing `helper.json`, `helper.stderr` and `result.json`. Missing permissions,
 rejected commands, timeouts, invalid responses and incomplete cleanup fail
-closed. The command needs no ESP, flashing or Wi-Fi lab configuration.
+closed. The command needs no ESP, flashing or stand file.
 
 This establishes DTM command acceptance on the selected adapter. It does not
 establish RF delivery: `result.json` always reports `rf_verified: false`. A
@@ -118,7 +118,7 @@ connection policy or qualified PHY budgets.
 
 ## ESP and adapter RF scenario
 
-Add the selected adapter to the private lab configuration:
+Add the selected adapter to the private stand file:
 
 ```toml
 [bluetooth]

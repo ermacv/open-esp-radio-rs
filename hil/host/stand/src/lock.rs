@@ -271,12 +271,13 @@ fn claims(
     if request.device {
         claims.push(Claim::board(&board_identity(&lab.dut.serial)));
     }
-    // A peer whose board is not attached is claimed by no port; the run's
-    // preflight reports it.
-    if let Some(serial) = lab
+    // A peer that is not attached or not chosen is claimed by no port; the
+    // run's preflight reports it.
+    if let Some(serial) = request
+        .required
         .peer
-        .as_ref()
-        .filter(|_| request.required.peer)
+        .then(|| lab.peer().ok())
+        .flatten()
         .and_then(|peer| peer.serial().ok())
     {
         claims.push(Claim::board(&board_identity(&serial)));
@@ -384,21 +385,11 @@ impl std::fmt::Display for FixtureBusy {
 
 impl std::error::Error for FixtureBusy {}
 
-/// Journal a change of the board the runner uses at `port`. The runner
-/// builds ESP32-S31 firmware, so a board without a known chip is registered
-/// as one. Failure is reported and never fails the run.
+/// Journal a change of the board the runner uses at `port`. Failure is
+/// reported and never fails the run.
 pub fn record_board(port: &Path, kind: oer_hil_arbiter::BoardEventKind) {
-    let result = oer_hil_arbiter::Arbiter::open().and_then(|arbiter| {
-        let device = oer_hil_arbiter::port_mac(port);
-        if let Some(mac) = &device {
-            arbiter.register_device(oer_hil_arbiter::Device {
-                mac: mac.clone(),
-                chip: Some(String::from("esp32s31")),
-                ..oer_hil_arbiter::Device::default()
-            })?;
-        }
-        arbiter.record_board(device, kind)
-    });
+    let result = oer_hil_arbiter::Arbiter::open()
+        .and_then(|arbiter| arbiter.record_board(oer_hil_arbiter::port_mac(port), kind));
     if let Err(error) = result {
         eprintln!("hil-arbiter: cannot record board change: {error}");
     }
@@ -549,11 +540,7 @@ fn resource_keys(
         )?);
     }
     if required.peer {
-        keys.push(peer_key(
-            lab.peer
-                .as_ref()
-                .ok_or("missing IEEE 802.15.4 peer fixture")?,
-        )?);
+        keys.push(peer_key(&lab.peer()?)?);
     }
     if required.local_radio() {
         keys.push(local_radio_key(Path::new("/sys/class/net/wlan0"))?);

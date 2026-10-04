@@ -539,11 +539,11 @@ impl LiveSuite<'_> {
     /// the peer board. The flash joins this run's lease, which holds the
     /// peer board, and is journaled like any catalog flash.
     fn restore_peer(&mut self, scenario: &Scenario) -> Result<()> {
-        let (Some(peer), Some(image)) = (self.lab.peer.as_ref(), scenario.family.peer_image())
-        else {
+        let Some(image) = scenario.family.peer_image() else {
             return Ok(());
         };
         let image = image.name;
+        let peer = self.lab.peer_for_image(image)?;
         // Once per image and run: the catalog build and the journal decide
         // whether the board already carries the current build.
         if self.peer_image == Some(image) {
@@ -575,10 +575,10 @@ impl LiveSuite<'_> {
     /// run's lease: a wedged console fails the scenario's precondition with
     /// its recovery instead of breaking it midway.
     fn peer_answers(&self, scenario: &Scenario) -> Result<()> {
-        let (Some(peer), Some(_)) = (self.lab.peer.as_ref(), scenario.family.peer_image()) else {
+        let Some(image) = scenario.family.peer_image() else {
             return Ok(());
         };
-        let path = peer.serial()?;
+        let path = self.lab.peer_for_image(image.name)?.serial()?;
         let live = oer_hil_link::peer_line::SerialLink::open(&path).and_then(|mut link| {
             oer_hil_link::peer_line::answers_sync(&mut link, PEER_SYNC_TIMEOUT)
         });
@@ -881,7 +881,12 @@ fn run_scenario_repetition(
     let lab = &resolved;
     let started_unix_millis = oer_hil_durable::unix_millis()?;
     let started = std::time::Instant::now();
-    let peer_serial = lab.peer.as_ref().and_then(|peer| peer.serial().ok());
+    // The USB watch follows the peer the scenario uses, when it has one.
+    let peer_serial = selected
+        .family
+        .peer_image()
+        .and_then(|image| lab.peer_for_image(image.name).ok())
+        .and_then(|peer| peer.serial().ok());
     let usb = oer_hil_stand::usb_events::UsbWatch::start(
         std::iter::once(lab.dut.serial.as_path()).chain(peer_serial.as_deref()),
         started_unix_millis,

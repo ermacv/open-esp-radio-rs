@@ -46,7 +46,7 @@ pub fn run(
     let adapter = context
         .lab
         .bluetooth_adapter
-        .ok_or("set [bluetooth] adapter in the local lab configuration")?;
+        .ok_or("set [bluetooth] adapter in the stand file")?;
     for boot in 1..=boots {
         let directory = output.join(format!("boot-{boot:03}"));
         context.with_capture(&directory, |capture| {

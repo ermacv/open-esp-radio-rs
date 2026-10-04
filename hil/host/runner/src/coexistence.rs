@@ -86,7 +86,7 @@ impl CoexistenceScenario {
         let adapter = context
             .lab
             .bluetooth_adapter
-            .ok_or("set [bluetooth] adapter in the local lab configuration")?;
+            .ok_or("set [bluetooth] adapter in the stand file")?;
         let duration = Duration::from_secs(u64::from(self.duration_seconds));
         context.with_capture(output, |capture| {
             let ready = await_udp_rx_ready(

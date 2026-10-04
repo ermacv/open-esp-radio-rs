@@ -10,7 +10,7 @@ fn plan_and_catalog_commands_ignore_an_invalid_lab_configuration() {
         &["scenario", "validate", "boot-smoke"][..],
     ] {
         let output = std::process::Command::new(env!("CARGO_BIN_EXE_oer-hil-runner"))
-            .arg("--lab-config")
+            .arg("--stand-file")
             .arg(&invalid_lab)
             .args(arguments)
             .output()

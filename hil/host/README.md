@@ -84,35 +84,37 @@ visible. Source compatibility is still checked per workload.
 | [Execution and evidence architecture](architecture.md) | Package ownership, the run lifecycle and the bundle contract |
 | [Stand arbiter](arbiter/README.md) | The queue, claims, balances and state files |
 
-## Configure the lab
+## Configure the stand
 
 Run the host interface through the workspace alias:
 
 ```console
 mkdir -p ~/.config/open-esp-radio
-cp hil/lab.example.toml ~/.config/open-esp-radio/lab.toml
-chmod 0600 ~/.config/open-esp-radio/lab.toml
+cp hil/stand/stand.example.toml ~/.config/open-esp-radio/stand.toml
+chmod 0600 ~/.config/open-esp-radio/stand.toml
 cargo hil doctor
 ```
 
-The lab configuration is `~/.config/open-esp-radio/lab.toml` (or under
-`$XDG_CONFIG_HOME`), shared by every checkout of this user. A checkout's
-`hil/local.toml` replaces it for that checkout, with a notice; `--lab-config`
-names another file. The lab configuration is the only source for the stable
-lab-cell and DUT identities, serial devices or board references (a name or MAC
-from `cargo hil devices`), STA/AP credentials and addresses, startup artifact and OpenWrt
-fixture. It is ignored by Git; scenarios contain no lab secrets or
-machine-specific paths. The identities are written into every run manifest so
-results from different cells and boards cannot be silently mixed.
+The stand file is `~/.config/open-esp-radio/stand.toml` (or under
+`$XDG_CONFIG_HOME`), shared by every checkout of this user; `--stand-file`
+names another file. Its schema and rules belong to
+[`oer-hil-stand-schema`](../stand/schema/README.md). It is the only source for
+the stand's identity, its hubs and pool of boards, STA/AP credentials and
+addresses and the fixtures; it lives outside the repository, and scenarios
+contain no lab secrets or machine-specific paths. The stand id and the
+boards' ids are written into every run manifest so results from different
+stands and boards cannot be silently mixed.
 
-Each device under test belongs to a chip: `[duts.<chip>]` names it (its
-identity, serial port or board, startup artifact), keyed by a chip id with a
-profile in `platform/<chip>/chip.toml`. There is no default chip: a command
-that uses a device under test takes it from its `--chip` or from the only chip
-that builds its scenarios' images, and resolves only that chip's board, so an
-absent board fails only runs for its chip.
+A run's device under test is a board of the pool with the `dut` role and the
+run's chip, which has a profile in `platform/<chip>/chip.toml`. There is no
+default chip: a command that uses a device under test takes it from its
+`--chip` or from the only chip that builds its scenarios' images, and checks
+and resolves only that board, so an absent board, or one whose chip has no
+profile yet, fails only the runs that take it. With several candidates of the
+chip, `--board ID` names one, until the stand's scheduler assigns boards.
 
-Multi-boot station lifecycle scenarios require a configured startup artifact.
+Multi-boot station lifecycle scenarios require the board's
+`startup-artifact`.
 Their first boot may create or replace it; every later boot must report
 `Restored` before the station lifecycle can qualify. This makes cold PHY cache
 replay an asserted transition rather than an informational UART message.
@@ -121,9 +123,11 @@ Peer scenarios run against a reference peer board, an ESP32-C5 with an
 ESP-IDF catalog image: the [IEEE 802.15.4 peer](../peers/esp32c5-ieee802154/README.md),
 the [Thread peer](../peers/esp32c5-openthread/README.md) or the
 [Bluetooth LE Direct Test Mode peer](../peers/esp32c5-ble-dtm/README.md).
-Name the board's stable identity and serial port, or its registered board
-name, in the `[peer]` table. A run of a peer scenario claims the peer board beside the device
-under test and the air in its one lease. Before the first scenario that
+The peer is a board of the pool with the `peer` role, other than the device
+under test; `--peer-board ID` names it when there are several, and its chip
+must be the one the scenario's peer image targets (`hil/peers/*/firmware.toml`).
+A run of a peer scenario claims the peer board beside the device under test
+and the air in its one lease. Before the first scenario that
 needs an image, the runner brings the board to that image's current catalog
 build with `cargo hil firmware flash IMAGE --if-changed`, and writes the
 image, application digest and commit the board journal recorded for it into
@@ -161,7 +165,7 @@ scenario with the owned Xarxa/Embassy network stack, the only network
 implementation; see the [implementation guide](../../docs/network-implementations.md).
 `cargo hil image build performance` and `cargo hil image build correctness`
 perform the same final stack/move, placement, source-graph and packed-image
-checks without flashing or loading private lab configuration. Each successful
+checks without flashing or loading private stand file. Each successful
 build emits one JSON report on stdout with class, target, profile, network,
 class-owned artifact paths and build-audit verdicts; diagnostics stay on stderr.
 An ELF or `application.bin` left beside a failed build is not a successful
@@ -281,7 +285,7 @@ rate and how many of its newest runs in a row did not pass; there is no
 derived history file to rebuild. Trends are scenario aggregates, not a proof
 of comparable firmware or fixture conditions. Verify the structure and content digests of one bundle with
 `cargo hil report verify <run-id>`, or omit the ID to verify all bundles. This
-also runs without a DUT or private lab configuration.
+also runs without a DUT or private stand file.
 
 Qualification v4 independently reads the sealed bundles instead of trusting a
 handwritten HIL status. A capability is HIL-qualified only when its declared

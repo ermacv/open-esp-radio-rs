@@ -60,6 +60,6 @@ where the reason is `invalid`, `timeout` or the HCI status as
 scenario: it takes the running peer over with `SYNC`, checks the protocol
 version, refuses arguments outside the table above before sending them, and
 returns the `@END` packet count. A scenario that uses the peer names
-`ble-dtm-peer` as its peer image, so the runner claims the peer board from
-the lab configuration's `[peer]` table in the run's lease and brings it to
+`ble-dtm-peer` as its peer image, so the runner claims the run's peer board
+from the stand file's pool in the run's lease and brings it to
 the current catalog build first.

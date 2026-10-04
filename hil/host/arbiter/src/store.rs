@@ -21,6 +21,8 @@ pub const DIRECTORY_ENV: &str = "OER_HIL_ARBITER_DIR";
 #[derive(Clone, Debug)]
 pub struct Arbiter {
     directory: PathBuf,
+    /// The stand file the arbiter reads the stand's boards from.
+    stand_file: PathBuf,
 }
 
 /// Whether `exe` is a Cargo test harness: Cargo places test executables in
@@ -48,13 +50,25 @@ impl Arbiter {
         }
         let home =
             std::env::var_os("HOME").ok_or("HOME is required to locate the HIL stand arbiter")?;
-        Self::at(PathBuf::from(home).join(".cache/open-esp-radio/arbiter"))
+        let mut arbiter = Self::at(PathBuf::from(home).join(".cache/open-esp-radio/arbiter"))?;
+        arbiter.stand_file = oer_hil_stand_schema::default_path()?;
+        Ok(arbiter)
     }
 
+    /// An arbiter in `directory`, which reads the stand's boards from the
+    /// `stand.toml` beside its state: a test's or a temporary stand's own.
     pub fn at(directory: impl Into<PathBuf>) -> crate::Result<Self> {
         let directory = directory.into();
         fs::create_dir_all(&directory)?;
-        Ok(Self { directory })
+        Ok(Self {
+            stand_file: directory.join("stand.toml"),
+            directory,
+        })
+    }
+
+    /// The stand file this arbiter reads the stand's boards from.
+    pub fn stand_file(&self) -> &Path {
+        &self.stand_file
     }
 
     /// Whether the stand's state was written by a newer build, whose schema

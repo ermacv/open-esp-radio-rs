@@ -42,16 +42,17 @@ use oer_ieee80211_sta::{
         AssociationAttemptOutcome, StaAttemptSecurity, StaPersonalCredentials,
         Wpa2Message4Protection,
     },
-    modem_sleep::{PmState, SleepType},
+    modem_sleep::{CoexView, PmCoexAction, PmCoexEvent, PmState, SleepType},
     pmksa::StaSharedPmksa,
     scan::{StaCandidateScanExit, StaScanConfig},
     station::{StaLifecycleExit, StaReconnectPolicy},
 };
 use oer_ieee80211_sta_service::{
     port::{
-        EventRouter, PortDisconnect, PortLink, PortLinkError, PortProbe, PortRouter, PortScan,
-        PortScanTarget, PortSend, PortStation, PortStationApplication, PortStationConfig,
-        PortStationEnv, PortStationLifecycle, PortStationProfile,
+        EventRouter, PortCoexistence, PortCoexistenceRefused, PortDisconnect, PortLink,
+        PortLinkError, PortProbe, PortRouter, PortScan, PortScanTarget, PortSend, PortStation,
+        PortStationApplication, PortStationConfig, PortStationEnv, PortStationLifecycle,
+        PortStationProfile,
     },
     scan::{StaCandidateScanService, StaScanBackend},
     station::StaLifecycleService,
@@ -121,6 +122,28 @@ impl BackoffEntropy for Seeded {
 
 struct Env<'a>(PhantomData<&'a ()>);
 
+/// The radio system's coexistence schedule as a script: the view the test
+/// sets, the effects the station asked for, and whether it refuses them.
+struct ScriptedCoex {
+    view: Cell<CoexView>,
+    performed: RefCell<Vec<PmCoexAction>>,
+    refuse: Cell<bool>,
+}
+
+impl PortCoexistence for &ScriptedCoex {
+    fn view(&self) -> CoexView {
+        self.view.get()
+    }
+
+    fn perform(&mut self, action: PmCoexAction) -> Result<(), PortCoexistenceRefused> {
+        if self.refuse.get() {
+            return Err(PortCoexistenceRefused);
+        }
+        self.performed.borrow_mut().push(action);
+        Ok(())
+    }
+}
+
 impl<'a> PortStationEnv for Env<'a> {
     type Port = LowerMacModel;
     type Budget = ProtectEveryHeTxop;
@@ -129,6 +152,7 @@ impl<'a> PortStationEnv for Env<'a> {
     type Timer = &'a VirtualTimer;
     type KeyUnwrap = RsnSoftwareAes;
     type Aggregation = oer_ieee80211_sta_service::port::PortAmpduAggregation;
+    type Coex = &'a ScriptedCoex;
 }
 
 const MANAGEMENT_RATE: PhyRate = PhyRate::Legacy(LegacyRate::Ofdm6M);
@@ -181,6 +205,7 @@ struct World {
     model: &'static LowerMacModel,
     router: &'static PortRouter<'static, Env<'static>>,
     timer: VirtualTimer,
+    coex: &'static ScriptedCoex,
 }
 
 impl World {
@@ -198,6 +223,11 @@ impl World {
         Self {
             model,
             router: Box::leak(Box::new(EventRouter::new(model, 1))),
+            coex: Box::leak(Box::new(ScriptedCoex {
+                view: Cell::new(CoexView::INACTIVE),
+                performed: RefCell::new(Vec::new()),
+                refuse: Cell::new(false),
+            })),
             timer: VirtualTimer {
                 now: Cell::new(1_000),
                 wanted: Cell::new(None),
@@ -233,6 +263,7 @@ impl World {
             ),
             FixedRate,
             Seeded(0x1357_9bdf),
+            self.coex,
             PortStationConfig {
                 vif: VifId(0),
                 address: STA,
@@ -774,6 +805,72 @@ fn a_reorder_gap_releases_the_buffered_run_after_its_timeout_body() {
     assert_eq!(&delivered[2][14..], b"d");
     assert_eq!(delivered.len(), 3);
     assert_eq!(station.connection().unwrap().counters().behind_window, 1);
+}
+
+/// Coexistence with a Bluetooth LE schedule: one beacon interval per
+/// period, half of phase 0 Wi-Fi's.
+const ACTIVE_COEX: CoexView = CoexView {
+    active: true,
+    current_period: 1,
+    flexible_period: 1,
+    interval: 1024,
+    phase0_share_percent: 50,
+};
+
+#[test]
+fn the_power_manager_asks_the_radio_system_for_the_beacon_window() {
+    on_large_stack(the_power_manager_asks_the_radio_system_for_the_beacon_window_body);
+}
+
+fn the_power_manager_asks_the_radio_system_for_the_beacon_window_body() {
+    let world = World::new();
+    world.coex.view.set(ACTIVE_COEX);
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    let mut station = connect(&world, &mut ap, world.station(open()));
+    world
+        .drive(&mut ap, station.enable_power_save(SleepType::None))
+        .unwrap();
+    // Starting under an active schedule sets its interval to the beacon
+    // interval, in 100 us units, and the flexible period.
+    assert_eq!(
+        *world.coex.performed.borrow(),
+        [
+            PmCoexAction::SetInterval(1024),
+            PmCoexAction::SetFlexiblePeriod(1),
+        ]
+    );
+
+    // At each TBTT the station restarts the schedule and requests the air
+    // for the beacon window.
+    let mut delivered = Vec::new();
+    ap.next_beacon_micros = Some(world.timer.now.get() + 10_000);
+    world.run_for(&mut ap, &mut station, 250, &mut delivered);
+    let performed = world.coex.performed.borrow();
+    assert!(performed.contains(&PmCoexAction::RestartPhases));
+    assert!(performed.iter().any(|action| matches!(
+        action,
+        PmCoexAction::Request {
+            event: PmCoexEvent::BeaconWindow,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn a_refused_coexistence_effect_fails_the_power_manager() {
+    on_large_stack(a_refused_coexistence_effect_fails_the_power_manager_body);
+}
+
+fn a_refused_coexistence_effect_fails_the_power_manager_body() {
+    let world = World::new();
+    world.coex.view.set(ACTIVE_COEX);
+    world.coex.refuse.set(true);
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    let mut station = connect(&world, &mut ap, world.station(open()));
+    assert_eq!(
+        world.drive(&mut ap, station.enable_power_save(SleepType::None)),
+        Err(PortLinkError::Coexistence)
+    );
 }
 
 #[test]

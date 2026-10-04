@@ -17,7 +17,9 @@ use oer_ieee80211_upper_mac::TxReport;
 use oer_ieee80211_upper_mac_service::UpperMacTxError;
 use oer_time::{Clock, Duration, Instant};
 
-use super::link::{BeaconTimingOps, PortError, PortLink, PortLinkError, PortStationEnv};
+use super::link::{
+    BeaconTimingOps, PortCoexistence, PortError, PortLink, PortLinkError, PortStationEnv,
+};
 
 /// Effect lists one input of the power manager may chain through Null
 /// completions.
@@ -54,9 +56,9 @@ const fn timer_index(timer: PmTimer) -> usize {
 /// | `Arm`, `Disarm` | Deadlines on the station's monotonic clock, due through [`Self::next_deadline`] |
 /// | `ReleaseHeldFrames` | the connection is told to send the frame it held |
 ///
-/// The port knows no coexistence schedule, so the manager runs with
-/// [`CoexView::INACTIVE`] and its coexistence and beacon-priority effects
-/// have no port operation. Each beacon of the access point also sets the
+/// | `Coex` | [`PortCoexistence::perform`] of the environment's radio system, whose [`PortCoexistence::view`] every input decides with |
+///
+/// Each beacon of the access point also sets the
 /// station TSF to the beacon's timestamp, so the TBTTs follow the access
 /// point.
 pub struct PortPowerSave<P: Ieee80211LowerMacPort> {
@@ -115,6 +117,10 @@ impl<X: PortStationEnv> PowerContext<'_, '_, X> {
             now: self.timer.now(),
         }
     }
+
+    fn coex(&self) -> CoexView {
+        self.link.coex().view()
+    }
 }
 
 impl<P: Ieee80211LowerMacPort> PortPowerSave<P> {
@@ -126,8 +132,7 @@ impl<P: Ieee80211LowerMacPort> PortPowerSave<P> {
         join_beacon: PmBeacon,
     ) -> Result<(), PortLinkError<PortError<X>>> {
         let mut actions = PmActions::new();
-        self.modem
-            .start(join_beacon, CoexView::INACTIVE, &mut actions);
+        self.modem.start(join_beacon, context.coex(), &mut actions);
         self.perform(context, actions).await
     }
 
@@ -137,7 +142,7 @@ impl<P: Ieee80211LowerMacPort> PortPowerSave<P> {
         context: &mut PowerContext<'_, '_, X>,
     ) -> Result<(), PortLinkError<PortError<X>>> {
         let mut actions = PmActions::new();
-        self.modem.stop(CoexView::INACTIVE, &mut actions);
+        self.modem.stop(context.coex(), &mut actions);
         self.perform(context, actions).await?;
         self.deadlines = [None; 5];
         self.set_gate(context.link, true)
@@ -151,7 +156,7 @@ impl<P: Ieee80211LowerMacPort> PortPowerSave<P> {
         let mut actions = PmActions::new();
         self.modem.tbtt(
             context.clock(),
-            CoexView::INACTIVE,
+            context.coex(),
             context.traffic,
             &mut actions,
         );
@@ -181,7 +186,7 @@ impl<P: Ieee80211LowerMacPort> PortPowerSave<P> {
                 }),
             },
             context.clock(),
-            CoexView::INACTIVE,
+            context.coex(),
             context.traffic,
             &mut actions,
         );
@@ -197,7 +202,7 @@ impl<P: Ieee80211LowerMacPort> PortPowerSave<P> {
     ) -> Result<(), PortLinkError<PortError<X>>> {
         let mut actions = PmActions::new();
         self.modem
-            .rx_data(group, more_data, CoexView::INACTIVE, &mut actions);
+            .rx_data(group, more_data, context.coex(), &mut actions);
         self.perform(context, actions).await
     }
 
@@ -211,7 +216,7 @@ impl<P: Ieee80211LowerMacPort> PortPowerSave<P> {
         let wait = self.modem.tx_data(
             true,
             context.clock(),
-            CoexView::INACTIVE,
+            context.coex(),
             context.traffic,
             &mut actions,
         );
@@ -229,7 +234,7 @@ impl<P: Ieee80211LowerMacPort> PortPowerSave<P> {
         self.modem.tx_data_done(
             acknowledged,
             context.clock(),
-            CoexView::INACTIVE,
+            context.coex(),
             context.traffic,
             &mut actions,
         );
@@ -253,22 +258,22 @@ impl<P: Ieee80211LowerMacPort> PortPowerSave<P> {
             match timer {
                 PmTimer::SliceEnd => {
                     self.modem
-                        .slice_end_timer(CoexView::INACTIVE, traffic, &mut actions);
+                        .slice_end_timer(context.coex(), traffic, &mut actions);
                 }
                 PmTimer::Active => {
                     self.modem
-                        .active_timer(CoexView::INACTIVE, traffic, &mut actions);
+                        .active_timer(context.coex(), traffic, &mut actions);
                 }
                 PmTimer::SleepDelay => self.modem.sleep_delay_timer(
                     context.clock(),
-                    CoexView::INACTIVE,
+                    context.coex(),
                     traffic,
                     &mut actions,
                 ),
                 PmTimer::Dream => self.modem.dream_timer(&mut actions),
                 PmTimer::Preemption => {
                     self.modem
-                        .preemption_timer(CoexView::INACTIVE, traffic, &mut actions);
+                        .preemption_timer(context.coex(), traffic, &mut actions);
                 }
             }
             self.perform(context, actions).await?;
@@ -368,7 +373,7 @@ impl<P: Ieee80211LowerMacPort> PortPowerSave<P> {
                     power_save,
                     acknowledged,
                     context.clock(),
-                    CoexView::INACTIVE,
+                    context.coex(),
                     context.traffic,
                     &mut followers,
                 );
@@ -405,14 +410,12 @@ impl<P: Ieee80211LowerMacPort> PortPowerSave<P> {
                 self.schedule = None;
                 self.program_tbtt(context.link)?;
             }
-            // Coexistence and beacon receive priorities have no port
-            // operation.
-            PmAction::CoexRequest { .. }
-            | PmAction::CoexRelease(_)
-            | PmAction::SetCoexInterval(_)
-            | PmAction::RestartCoexPhases
-            | PmAction::SetCoexFlexiblePeriod(_)
-            | PmAction::RxBeaconPriority(_)
+            PmAction::Coex(action) => context
+                .link
+                .coex_mut()
+                .perform(action)
+                .map_err(|_| PortLinkError::Coexistence)?,
+            PmAction::RxBeaconPriority(_)
             | PmAction::ClearRxBeaconPriority
             | PmAction::RxBeaconTime { .. } => {}
         }

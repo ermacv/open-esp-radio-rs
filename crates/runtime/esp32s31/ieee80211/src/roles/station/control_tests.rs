@@ -68,7 +68,7 @@ use oer_ieee80211_rsn_service::supplicant::process_frame;
 
 use oer_esp32s31_ieee80211_sta::{
     connected_control::{ConnectedPowerCommand, PowerCoexSnapshot},
-    modem_sleep::{CoexPhaseView, CoexView, PmCoexEvent, PmState},
+    modem_sleep::{CoexPhaseView, CoexView, PmCoexAction, PmCoexEvent, PmState},
 };
 
 use super::*;
@@ -1686,7 +1686,9 @@ fn a_shared_station_leaves_the_air_at_its_slice_end_and_holds_its_frames() {
     // Nine beacon intervals of 102.4 ms precede the join timestamp.
     assert_eq!(hardware.tbtt.unwrap().first_tbtt_tsf, 9 * 102_400);
     assert_eq!(hardware.beacon_pti, oer_esp32s31_hal::types::MacPti::new(7));
-    assert!(performed.contains(&ConnectedPowerCommand::SetCoexFlexiblePeriod(1)));
+    assert!(performed.contains(&ConnectedPowerCommand::Coex(
+        PmCoexAction::SetFlexiblePeriod(1)
+    )));
 
     // The Wi-Fi phase requests the slice and arms its end.
     link.perform_for_test(&mut |_| {}, Some(WIFI_SLICE), false);
@@ -1700,10 +1702,10 @@ fn a_shared_station_leaves_the_air_at_its_slice_end_and_holds_its_frames() {
     );
     assert!(performed.iter().any(|command| matches!(
         command,
-        ConnectedPowerCommand::CoexRequest {
+        ConnectedPowerCommand::Coex(PmCoexAction::Request {
             event: PmCoexEvent::Slice,
             ..
-        }
+        })
     )));
     assert!(control.admits_frames());
 

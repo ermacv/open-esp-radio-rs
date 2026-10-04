@@ -128,10 +128,17 @@ Espressif stack's 300 ms), then releases the buffered run past the gap and
 counts it in `reorder_gap_timeouts`; a full slot store releases the oldest
 run at once.
 
+The coexistence schedule belongs to the radio system the station shares its
+RF with, not to the Wi-Fi MAC behind the port: the environment names it once
+as `PortStationEnv::Coex` (`PortCoexistence`; `NoCoexistence` for a station
+alone on its RF). The power manager decides every input with its `view()`
+and hands it every `PmCoexAction`: event requests and releases, the schedule
+interval, phase restarts and the flexible period. A refused effect ends the
+operation with `PortLinkError::Coexistence`.
+
 It does not yet do: beacon-loss monitoring (`link_monitor`), a data rate bound
-by the peer's capabilities, PS-Poll,
-coexistence (the power manager runs with `CoexView::INACTIVE`), 40 MHz
-channels and roaming.
+by the peer's capabilities, PS-Poll, the beacon receive priority of
+coexistence, 40 MHz channels and roaming.
 
 Its tests (`tests/port_station`) run it over `oer-ieee80211-lower-mac`'s host
 model with a scripted access point on virtual time: an active scan, an Open

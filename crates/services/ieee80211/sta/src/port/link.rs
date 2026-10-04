@@ -20,6 +20,7 @@ use oer_ieee80211_mac::{
 };
 use oer_ieee80211_rsn::aes::AsyncRsnKeyUnwrap;
 use oer_ieee80211_softmac::BackoffEntropy;
+use oer_ieee80211_sta::modem_sleep::{CoexView, PmCoexAction};
 use oer_ieee80211_upper_mac::{
     HeTxopRtsBudget, MpduRequest, RateLadder, TxBody, TxPlanner, TxReceiver, TxReport, TxRequest,
 };
@@ -57,6 +58,41 @@ pub trait PortStationEnv {
     /// How the station sends A-MPDUs: [`PortAmpduAggregation`] over a port
     /// with [`LowerMacAmpdu`], [`NoAggregation`] over one without.
     type Aggregation: PortAggregation<Self>;
+    /// The coexistence schedule of the radio system the station shares its
+    /// RF with; [`NoCoexistence`] when it shares it with none.
+    type Coex: PortCoexistence;
+}
+
+/// The coexistence schedule of the radio system a station shares its RF
+/// with, which its integrator names once in [`PortStationEnv::Coex`].
+///
+/// The schedule belongs to the radio system every radio protocol shares,
+/// not to the Wi-Fi MAC behind the port: the station's power manager reads
+/// it and asks it for the air.
+pub trait PortCoexistence {
+    /// The schedule as the power manager decides with it.
+    fn view(&self) -> CoexView;
+
+    /// Perform one coexistence effect of the power manager.
+    fn perform(&mut self, action: PmCoexAction) -> Result<(), PortCoexistenceRefused>;
+}
+
+/// The radio system refused a coexistence effect; its integrator keeps the
+/// reason.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PortCoexistenceRefused;
+
+/// A station alone on its RF: coexistence is inactive and has no effects.
+pub struct NoCoexistence;
+
+impl PortCoexistence for NoCoexistence {
+    fn view(&self) -> CoexView {
+        CoexView::INACTIVE
+    }
+
+    fn perform(&mut self, _action: PmCoexAction) -> Result<(), PortCoexistenceRefused> {
+        Ok(())
+    }
 }
 
 /// How a station's port sends A-MPDUs, which its integrator names once in
@@ -236,6 +272,8 @@ pub enum PortLinkError<E> {
     ReceptionUnsupported,
     /// A phase ran without the state an earlier phase establishes.
     MissingState,
+    /// The radio system refused a coexistence effect.
+    Coexistence,
 }
 
 /// The outcome of a port setting call: the port's own failure outside, the
@@ -292,6 +330,7 @@ pub struct PortLink<'p, X: PortStationEnv> {
     entropy: X::Entropy,
     config: PortStationConfig,
     beacon_timing: Option<BeaconTimingOps<X::Port>>,
+    coex: X::Coex,
     counters: PortLinkCounters,
 }
 
@@ -303,6 +342,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         planner: TxPlanner<X::Budget>,
         ladder: X::Ladder,
         entropy: X::Entropy,
+        coex: X::Coex,
         config: PortStationConfig,
     ) -> Self {
         Self {
@@ -312,6 +352,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
             entropy,
             config,
             beacon_timing: None,
+            coex,
             counters: PortLinkCounters::default(),
         }
     }
@@ -324,6 +365,15 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
     {
         self.beacon_timing = Some(BeaconTimingOps::of_port());
         self
+    }
+
+    /// The coexistence schedule of the station's radio system.
+    pub const fn coex(&self) -> &X::Coex {
+        &self.coex
+    }
+
+    pub(crate) const fn coex_mut(&mut self) -> &mut X::Coex {
+        &mut self.coex
     }
 
     pub fn port(&self) -> &'p X::Port {

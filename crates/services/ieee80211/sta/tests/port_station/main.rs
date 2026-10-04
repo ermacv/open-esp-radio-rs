@@ -54,11 +54,10 @@ use oer_ieee80211_sta::{
 };
 use oer_ieee80211_sta_service::{
     port::{
-        EventRouter, PORT_FRAME_CAPACITY, PORT_TX_QUEUE, PortCoexistence, PortCoexistenceRefused,
-        PortConnection, PortConnectionFrame, PortDisconnect, PortLink, PortLinkError,
-        PortLinkSupervision, PortProbe, PortRouter, PortScan, PortScanTarget, PortSend,
-        PortStation, PortStationApplication, PortStationConfig, PortStationEnv,
-        PortStationLifecycle, PortStationProfile, PortStationStorage,
+        EventRouter, PortCoexistence, PortCoexistenceRefused, PortConnection, PortConnectionFrame,
+        PortDisconnect, PortLink, PortLinkError, PortLinkSupervision, PortProbe, PortRouter,
+        PortScan, PortScanTarget, PortSend, PortStation, PortStationApplication, PortStationConfig,
+        PortStationEnv, PortStationLifecycle, PortStationProfile, PortStationStorage,
     },
     scan::{StaCandidateScanService, StaScanBackend},
     station::StaLifecycleService,
@@ -68,6 +67,7 @@ use oer_ieee80211_upper_mac::{
 };
 use oer_ieee80211_upper_mac_service::UpperMacTxError;
 use oer_ieee80211_upper_mac_service::client::{PortClientEnv, PortMsdu};
+use oer_ieee80211_upper_mac_service::queue::{PORT_FRAME_CAPACITY, PORT_TX_QUEUE};
 use oer_time::{Clock, Duration, Instant, RadioInstant, Timer};
 
 use scripted_ap::{AP, AP_CHANNEL, ApSecurity, PASSPHRASE, RATES, SNONCE, SSID, STA, ScriptedAp};

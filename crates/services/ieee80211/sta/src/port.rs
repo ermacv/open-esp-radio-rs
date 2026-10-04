@@ -34,7 +34,6 @@ mod power;
 mod rsn;
 mod scan;
 mod station;
-mod tx_queue;
 mod wire;
 
 pub use connected::{
@@ -43,9 +42,9 @@ pub use connected::{
 };
 pub use join::{PortAssociation, PortHePower, PortJoin};
 pub use link::{
-    EventRouter, NoAggregation, NoCoexistence, PORT_BACKLOG, PORT_EXCHANGES, PORT_FRAME_CAPACITY,
-    PortAggregation, PortAmpduAggregation, PortCoexistence, PortCoexistenceRefused,
-    PortConnectionFrame, PortLink, PortLinkError, PortRouter, PortStationConfig, PortStationEnv,
+    EventRouter, NoAggregation, NoCoexistence, PORT_BACKLOG, PORT_EXCHANGES, PortAggregation,
+    PortAmpduAggregation, PortCoexistence, PortCoexistenceRefused, PortConnectionFrame, PortLink,
+    PortLinkError, PortRouter, PortStationConfig, PortStationEnv,
 };
 pub use power::PortPowerSave;
 pub use rsn::{PortHandshake, PortKeyInstall, PortKeys};
@@ -55,4 +54,3 @@ pub use station::{
     PortLinkSupervision, PortStation, PortStationApplication, PortStationError,
     PortStationLifecycle, PortStationProfile, PortStationStorage, PortTxBlockAck, PortUnwrapError,
 };
-pub use tx_queue::PORT_TX_QUEUE;

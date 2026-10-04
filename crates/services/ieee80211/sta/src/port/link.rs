@@ -187,8 +187,6 @@ pub struct PortStationConfig {
     pub retry_limit: u8,
 }
 
-/// Octets of one received MPDU the station keeps.
-pub const PORT_FRAME_CAPACITY: usize = 2_352;
 /// Received frames the router keeps for the station.
 pub const PORT_BACKLOG: usize = 4;
 

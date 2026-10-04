@@ -124,6 +124,7 @@ pub fn build(
         environment: oer_hil_evidence::build::BuildEnvironment::capture(),
         layout_seed: None,
         features: features.clone(),
+        rom_summaries: Default::default(),
     })
 }
 

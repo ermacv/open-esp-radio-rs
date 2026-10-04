@@ -30,6 +30,7 @@ fn build_inputs(root: &Path) -> Artifacts {
     Artifacts {
         features: oer_hil_image_class::FeatureDelta::default(),
         layout_seed: None,
+        rom_summaries: Default::default(),
         output: root.join("build"),
         runtime_elf: root.join("build/runtime.elf"),
 

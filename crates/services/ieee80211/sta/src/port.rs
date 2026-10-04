@@ -13,7 +13,7 @@
 //! | [`PortScan`] | `StaScanPort`, run by `StaScanBackend` and `StaCandidateScanService` | `Channel`, the `OTHER_BSS_MANAGEMENT` filter or `LowerMacMonitor`, Probe Requests |
 //! | [`PortJoin`] | `StaJoinBackend`, run by `StaJoinRunner` | Open System and SAE Authentication, Association, the `BSS_MEMBER` filter |
 //! | [`PortHandshake`], [`PortKeyInstall`] | `RsnHandshakeBackend`, `RsnKeyInstallBackend` | EAPOL frames, `install_key` of the pairwise and group keys |
-//! | [`PortConnection`] | The connected data plane | QoS data with CCMP headers, receive reordering, replay and duplicate checks, A-MSDU, Block Ack agreements, SA Query, group rekeys, disconnection |
+//! | [`PortConnection`] | The connected data plane | a transmit queue sent as MPDUs or A-MPDUs, QoS data with CCMP headers, TX Block Ack agreements, receive reordering, replay and duplicate checks, A-MSDU, Block Ack agreements, SA Query, group rekeys, disconnection |
 //! | [`PortPowerSave`] | Modem sleep of `oer_ieee80211_sta::modem_sleep` | `LowerMacBeaconTiming` TBTTs and TSF, `TxGate`, Null frames |
 //! | [`PortStation`], [`PortAttemptPort`] | `StaAttemptPort`, run by `StaAttempt` | All of the above, in order |
 //! | [`PortStationLifecycle`] | `StaLifecycleBackend`, run by `StaLifecycleService` | Attempts, the connection, backoff |
@@ -34,17 +34,18 @@ mod power;
 mod rsn;
 mod scan;
 mod station;
+mod tx_queue;
 mod wire;
 
 pub use connected::{
     PORT_REORDER_SLOTS, PORT_REORDER_WINDOW, PortConnection, PortConnectionConfig, PortDisconnect,
-    PortRxCounters, PortSend,
+    PortRxCounters, PortSend, PortTxCounters,
 };
 pub use join::{PortAssociation, PortHePower, PortJoin};
 pub use link::{
-    BeaconTimingOps, EventRouter, PORT_BACKLOG, PORT_EXCHANGES, PORT_FRAME_CAPACITY, PortError,
-    PortFrame, PortInput, PortLink, PortLinkCounters, PortLinkError, PortRouter, PortStationConfig,
-    PortStationEnv,
+    BeaconTimingOps, EventRouter, NoAggregation, PORT_BACKLOG, PORT_EXCHANGES, PORT_FRAME_CAPACITY,
+    PortAggregation, PortAmpduAggregation, PortError, PortFrame, PortInput, PortLink,
+    PortLinkCounters, PortLinkError, PortRouter, PortStationConfig, PortStationEnv,
 };
 pub use power::PortPowerSave;
 pub use rsn::{PortHandshake, PortKeyInstall, PortKeys};
@@ -53,3 +54,4 @@ pub use station::{
     PortAttemptError, PortAttemptPort, PortAttemptReport, PortStation, PortStationApplication,
     PortStationError, PortStationLifecycle, PortStationProfile, PortTxBlockAck, PortUnwrapError,
 };
+pub use tx_queue::PORT_TX_QUEUE;

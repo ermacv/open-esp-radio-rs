@@ -1,4 +1,9 @@
-use core::{cell::RefCell as TestCell, future::ready, pin::Pin};
+use core::{
+    cell::RefCell as TestCell,
+    future::ready,
+    pin::Pin,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 use std::vec::Vec;
 
 use embassy_futures::block_on;
@@ -25,7 +30,7 @@ use oer_esp32s31_ieee80211_mac::{
     init::{MacSnifferHardware, StaEspNowRxPolicyHardware, StaLinkRxPolicyHardware},
     irq::EVENT_TX_COMPLETE,
     rx::{
-        RxPhyInfo,
+        RxError, RxPhyInfo,
         hardware::{RxBlockAckHardware, S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
     },
     sta_ap_registers::StaApRegisterHardware,
@@ -364,7 +369,7 @@ type Port = Esp32s31LowerMac<
     512,
     1,
     2,
-    64,
+    TestRxUnit,
 >;
 
 /// A model slot in permanently retained storage, as target SRAM is.
@@ -447,9 +452,93 @@ fn take<P: Ieee80211LowerMacPort>(
     }
 }
 
-fn next_owned(port: &Port) -> Result<&'static Esp32s31LowerMacEvent<64>, EventsLost> {
+fn next_owned(port: &Port) -> Result<&'static Esp32s31LowerMacEvent<TestRxUnit>, EventsLost> {
     // Views borrow the owned event; tests compare leaked copies.
     take(port, port.run()).map(|event| &*std::boxed::Box::leak(std::boxed::Box::new(event)))
+}
+
+/// A receive unit of the tests: an MPDU after `prefix` bytes of hardware
+/// report, counting the units alive.
+#[derive(Debug)]
+struct TestRxUnit {
+    buffer: Vec<u8>,
+    prefix: usize,
+    stamp: Option<u32>,
+    decodes: bool,
+    live: &'static AtomicUsize,
+}
+
+impl TestRxUnit {
+    fn new(mpdu: &[u8], stamp: Option<u32>, live: &'static AtomicUsize) -> Self {
+        live.fetch_add(1, Ordering::Relaxed);
+        Self {
+            buffer: mpdu.to_vec(),
+            prefix: 0,
+            stamp,
+            decodes: true,
+            live,
+        }
+    }
+
+    fn prefixed(mpdu: &[u8], live: &'static AtomicUsize) -> Self {
+        let mut unit = Self::new(mpdu, None, live);
+        unit.buffer.splice(0..0, [0xa5; 12]);
+        unit.prefix = 12;
+        unit
+    }
+
+    fn undecodable(live: &'static AtomicUsize) -> Self {
+        let mut unit = Self::new(&[], None, live);
+        unit.decodes = false;
+        unit
+    }
+}
+
+impl Drop for TestRxUnit {
+    fn drop(&mut self) {
+        self.live.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+impl PartialEq for TestRxUnit {
+    fn eq(&self, other: &Self) -> bool {
+        self.buffer == other.buffer
+    }
+}
+
+impl Eq for TestRxUnit {}
+
+impl LowerMacRxUnit for TestRxUnit {
+    fn buffer(&self) -> &[u8] {
+        &self.buffer
+    }
+
+    fn normalized(&self) -> Result<NormalizedRxFrame<'_>, RxError> {
+        if !self.decodes {
+            return Err(RxError::Metadata);
+        }
+        let mpdu = &self.buffer[self.prefix..];
+        Ok(NormalizedRxFrame {
+            mpdu,
+            mpdu_offset: self.prefix,
+            metadata: MacRxMetadata {
+                channel: MacRxEvidence::Unavailable,
+                rate: MacRxEvidence::<RxPhyInfo>::Unavailable,
+                rssi_dbm: MacRxEvidence::HardwareObserved(-50),
+                crypto: MacRxEvidence::Unavailable,
+                s_mpdu: MacRxEvidence::Unavailable,
+                ampdu: MacRxEvidence::Unavailable,
+                amsdu: MacRxEvidence::Unavailable,
+            },
+            logical_length: mpdu.len(),
+            stamp: self.stamp,
+        })
+    }
+}
+
+/// A counter of one test's live receive units.
+fn live_units() -> &'static AtomicUsize {
+    std::boxed::Box::leak(std::boxed::Box::new(AtomicUsize::new(0)))
 }
 
 fn next(port: &Port) -> Result<LowerMacEvent<'static>, EventsLost> {
@@ -665,36 +754,17 @@ fn received_frames_are_copied_and_overflow_is_reported_once() {
     let mut mpdu = data_frame();
     mpdu[4..10].copy_from_slice(&STATION);
     mpdu[10..16].copy_from_slice(&BSSID);
-    let received = |mpdu: &'static [u8], stamp: Option<u32>| NormalizedRxFrame {
-        mpdu,
-        metadata: MacRxMetadata {
-            channel: MacRxEvidence::Unavailable,
-            rate: MacRxEvidence::<RxPhyInfo>::Unavailable,
-            rssi_dbm: MacRxEvidence::HardwareObserved(-50),
-            crypto: MacRxEvidence::Unavailable,
-            s_mpdu: MacRxEvidence::Unavailable,
-            ampdu: MacRxEvidence::Unavailable,
-            amsdu: MacRxEvidence::Unavailable,
-        },
-        logical_length: mpdu.len(),
-        stamp,
-    };
     let mpdu: &'static [u8] = std::boxed::Box::leak(std::boxed::Box::new(mpdu));
-    // A frame to the station as well, one byte longer than `FRAME`.
-    let mut long = [0_u8; 65];
-    long[..mpdu.len()].copy_from_slice(mpdu);
-    let long: &'static [u8] = std::boxed::Box::leak(std::boxed::Box::new(long));
-
-    // A frame longer than `FRAME` is reported as such, not as a loss.
-    port.on_received(&received(long, None));
-    assert_eq!(next(&port), Ok(LowerMacEvent::RxTooLong { length: 65 }));
+    let live = live_units();
 
     // Two fit the queue, the third is lost and reported after them. The
     // first was stamped now, the second carries a stamp later than now,
     // which has no place.
-    port.on_received(&received(mpdu, Some(MAC_AT_EPOCH)));
-    port.on_received(&received(mpdu, Some(MAC_AT_EPOCH + 1_000)));
-    port.on_received(&received(mpdu, None));
+    for stamp in [Some(MAC_AT_EPOCH), Some(MAC_AT_EPOCH + 1_000), None] {
+        assert_eq!(port.on_received(TestRxUnit::new(mpdu, stamp, live)), Ok(()));
+    }
+    // The lost frame's unit went back at once; the queued two are held.
+    assert_eq!(live.load(Ordering::Relaxed), 2);
     let mut stamps = std::vec::Vec::new();
     for _ in 0..2 {
         let Ok(LowerMacEvent::Received { frame, meta }) = next(&port) else {
@@ -727,6 +797,47 @@ fn received_frames_are_copied_and_overflow_is_reported_once() {
 }
 
 #[test]
+fn a_received_frame_is_its_unit_until_the_consumer_drops_it() {
+    let port = Port::new(ModelTimer);
+    install(&port, true);
+    port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+    assert_eq!(
+        next(&port),
+        Ok(LowerMacEvent::Lifecycle(LifecycleEvent::Enabled))
+    );
+    let mut mpdu = data_frame();
+    mpdu[4..10].copy_from_slice(&STATION);
+    mpdu[10..16].copy_from_slice(&BSSID);
+    let mpdu: &'static [u8] = std::boxed::Box::leak(std::boxed::Box::new(mpdu));
+    let live = live_units();
+
+    // The MPDU after a hardware prefix: the port lends it in place.
+    assert_eq!(port.on_received(TestRxUnit::prefixed(mpdu, live)), Ok(()));
+    let event = take(&port, port.run()).unwrap();
+    let Ok((buffer, _)) = Port::into_received(event) else {
+        panic!("a received frame");
+    };
+    assert_eq!(buffer.bytes(), mpdu);
+    assert_eq!(live.load(Ordering::Relaxed), 1);
+    drop(buffer);
+    assert_eq!(live.load(Ordering::Relaxed), 0);
+
+    // A unit no receive rule admits goes back at once.
+    let mut other = data_frame();
+    other[4..10].copy_from_slice(&[0x02, 0, 0, 0, 0, 0x77]);
+    other[10..16].copy_from_slice(&BSSID);
+    let other: &'static [u8] = std::boxed::Box::leak(std::boxed::Box::new(other));
+    assert_eq!(port.on_received(TestRxUnit::new(other, None, live)), Ok(()));
+    assert_eq!(live.load(Ordering::Relaxed), 0);
+    // A unit whose report does not decode is the caller's error.
+    assert_eq!(
+        port.on_received(TestRxUnit::undecodable(live)),
+        Err(RxError::Metadata)
+    );
+    assert_eq!(live.load(Ordering::Relaxed), 0);
+}
+
+#[test]
 fn a_receive_overflow_does_not_drop_completions() {
     let port = Port::new(ModelTimer);
     install(&port, true);
@@ -740,21 +851,9 @@ fn a_receive_overflow_does_not_drop_completions() {
     mpdu[10..16].copy_from_slice(&BSSID);
     let mpdu: &'static [u8] = std::boxed::Box::leak(std::boxed::Box::new(mpdu));
     assert_eq!(submit(&port, attempt(&port, 7, &data_frame())), Ok(Ok(())));
+    let live = live_units();
     for _ in 0..5 {
-        port.on_received(&NormalizedRxFrame {
-            mpdu,
-            metadata: MacRxMetadata {
-                channel: MacRxEvidence::Unavailable,
-                rate: MacRxEvidence::<RxPhyInfo>::Unavailable,
-                rssi_dbm: MacRxEvidence::HardwareObserved(-50),
-                crypto: MacRxEvidence::Unavailable,
-                s_mpdu: MacRxEvidence::Unavailable,
-                ampdu: MacRxEvidence::Unavailable,
-                amsdu: MacRxEvidence::Unavailable,
-            },
-            logical_length: mpdu.len(),
-            stamp: None,
-        });
+        assert_eq!(port.on_received(TestRxUnit::new(mpdu, None, live)), Ok(()));
     }
     with_hardware(&port, |hardware| {
         hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(0, 0));
@@ -916,7 +1015,7 @@ type AmpduPort = Esp32s31LowerMac<
     512,
     4,
     8,
-    64,
+    TestRxUnit,
     Backings,
     2,
     1,

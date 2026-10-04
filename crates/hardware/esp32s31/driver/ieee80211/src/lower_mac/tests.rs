@@ -1333,6 +1333,7 @@ fn receive_filters_map_onto_the_smallest_superset_policy() {
 
 fn normalized(mpdu: &[u8]) -> NormalizedRxFrame<'_> {
     NormalizedRxFrame {
+        mpdu_offset: 0,
         mpdu,
         metadata: MacRxMetadata {
             channel: MacRxEvidence::Unavailable,

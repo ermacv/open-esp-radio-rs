@@ -351,6 +351,9 @@ fn profile() -> PortStationProfile<'static> {
         he_power: None,
         he_packet_padding: oer_espressif_ieee80211_policy::he_txop::packet_padding,
         tx_block_ack: None,
+        rx_reorder_gap: Duration::from_micros(
+            oer_espressif_ieee80211_policy::block_ack::RX_REORDER_GAP_TIMEOUT_MICROS,
+        ),
         phy: PhyMode::Legacy,
         listen_interval: 3,
         ccmp_step: CcmpPacketNumberStep::new(1).unwrap(),
@@ -712,6 +715,65 @@ fn a_block_ack_window_releases_in_order_and_replays_and_duplicates_are_dropped_b
     ap.queue(bar);
     world.run_for(&mut ap, &mut station, 5, &mut delivered);
     assert_eq!(&delivered[4][14..], b"f");
+}
+
+#[test]
+fn a_reorder_gap_releases_the_buffered_run_after_its_timeout() {
+    on_large_stack(a_reorder_gap_releases_the_buffered_run_after_its_timeout_body);
+}
+
+fn a_reorder_gap_releases_the_buffered_run_after_its_timeout_body() {
+    static PMKSA: StaSharedPmksa = StaSharedPmksa::new();
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Wpa2Psk);
+    let mut station = connect(&world, &mut ap, world.station(wpa2(&PMKSA)));
+    let mut delivered = Vec::new();
+    let request = ap.addba_request(0, 8, 100);
+    ap.queue(request);
+    world.run_for(&mut ap, &mut station, 5, &mut delivered);
+
+    // Sequence 100 never arrives: 101 and 102 wait behind it.
+    for (sequence, packet_number, payload) in [(101, 2, b"b"), (102, 3, b"c")] {
+        let frame = ap.data_with_sequence(
+            sequence,
+            Some(0),
+            Some(packet_number),
+            false,
+            IPV4,
+            payload,
+            PEER,
+        );
+        ap.queue(frame);
+    }
+    world.run_for(&mut ap, &mut station, 5, &mut delivered);
+    world.run_for(&mut ap, &mut station, 290, &mut delivered);
+    assert!(delivered.is_empty());
+    assert_eq!(
+        station
+            .connection()
+            .unwrap()
+            .counters()
+            .reorder_gap_timeouts,
+        0
+    );
+
+    // The gap timeout, 300 ms from the first buffered MPDU, releases them.
+    world.run_for(&mut ap, &mut station, 10, &mut delivered);
+    let payloads: Vec<&[u8]> = delivered.iter().map(|frame| &frame[14..]).collect();
+    assert_eq!(payloads, [b"b", b"c"]);
+    let counters = station.connection().unwrap().counters();
+    assert_eq!(counters.reorder_gap_timeouts, 1);
+
+    // The window moved past the gap: a late 100 is behind it, and 103 is
+    // in order.
+    let late = ap.data_with_sequence(100, Some(0), Some(1), false, IPV4, b"a", PEER);
+    ap.queue(late);
+    let next = ap.data_with_sequence(103, Some(0), Some(4), false, IPV4, b"d", PEER);
+    ap.queue(next);
+    world.run_for(&mut ap, &mut station, 5, &mut delivered);
+    assert_eq!(&delivered[2][14..], b"d");
+    assert_eq!(delivered.len(), 3);
+    assert_eq!(station.connection().unwrap().counters().behind_window, 1);
 }
 
 #[test]

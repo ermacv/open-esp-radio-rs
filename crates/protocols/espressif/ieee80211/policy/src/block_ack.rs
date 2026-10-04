@@ -1,5 +1,6 @@
-//! The Espressif station's TX Block Ack originator policy: the TIDs it
-//! negotiates once connected and its Dialog Token sequence.
+//! The Espressif station's Block Ack policy: the TX agreements it
+//! negotiates once connected, its Dialog Token sequence and how long a
+//! receive reorder window waits for a missing MPDU.
 
 /// TX Block Ack TIDs the vendor station negotiates when its connection
 /// completes, in order.
@@ -19,6 +20,16 @@ pub const FIRST_DIALOG_TOKEN: u8 = 1;
 pub const fn next_dialog_token(current: u8) -> u8 {
     if current >= 62 { 0 } else { current + 1 }
 }
+
+/// How long a receive reorder window holds a buffered run behind a missing
+/// MPDU before it releases the run past the gap, from the first MPDU it
+/// retains.
+///
+/// SOURCE(esp32s31): complete `libnet80211.a[ieee80211_ht.o]::ieee80211_ampdu_reorder`
+/// starts its reorder age timer with 0x493e0 exactly when the first frame is
+/// retained; the timer is armed through the microsecond OSI timer-arm slot,
+/// a 300,000 us edge.
+pub const RX_REORDER_GAP_TIMEOUT_MICROS: u64 = 300_000;
 
 #[cfg(test)]
 mod tests {

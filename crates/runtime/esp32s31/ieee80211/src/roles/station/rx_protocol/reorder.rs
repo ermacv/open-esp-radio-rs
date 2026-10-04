@@ -489,7 +489,9 @@ where
                 // An unrepresentable deadline is never reached.
                 self.clock
                     .now()
-                    .checked_add(Duration::from_micros(RX_REORDER_GAP_TIMEOUT_MICROS))
+                    .checked_add(Duration::from_micros(
+                        oer_espressif_ieee80211_policy::block_ack::RX_REORDER_GAP_TIMEOUT_MICROS,
+                    ))
                     .unwrap_or(Instant::from_micros(u64::MAX))
             });
         } else {

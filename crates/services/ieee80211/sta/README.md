@@ -122,8 +122,13 @@ station answers, and one that does not verify, or arrives without a
 Management MIC element, counts in `bip_rejected`, as the vendor's
 `sta_bip_check` drops it.
 
-It does not yet do: beacon-loss monitoring (`link_monitor`), the reorder gap
-timer (a full slot store releases the oldest run instead), a data rate bound
+A receive reorder window that buffers an MPDU behind a missing one waits
+the profile's `rx_reorder_gap` from the first MPDU it retained (the
+Espressif stack's 300 ms), then releases the buffered run past the gap and
+counts it in `reorder_gap_timeouts`; a full slot store releases the oldest
+run at once.
+
+It does not yet do: beacon-loss monitoring (`link_monitor`), a data rate bound
 by the peer's capabilities, PS-Poll,
 coexistence (the power manager runs with `CoexView::INACTIVE`), 40 MHz
 channels and roaming.

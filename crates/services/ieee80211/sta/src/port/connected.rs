@@ -44,7 +44,7 @@ use oer_ieee80211_upper_mac::{
     AmpduRequest, TxBody, TxReceiver, TxReport, TxRequest, ampdu::MAX_AMPDU_SUBFRAMES,
 };
 use oer_ieee80211_upper_mac_service::{AmpduFrames, UpperMacTxError};
-use oer_time::{Clock, Instant};
+use oer_time::{Clock, Duration, Instant};
 
 use super::{
     link::{
@@ -85,6 +85,9 @@ pub struct PortConnectionConfig {
     pub management_protection: bool,
     /// The random source of the first SA Query transaction identifier.
     pub sa_query_random: fn() -> u32,
+    /// How long a receive reorder window holds a buffered run behind a
+    /// missing MPDU.
+    pub rx_reorder_gap: Duration,
     /// The access point's beacon interval, in time units.
     pub beacon_interval_tu: u16,
     /// The access point's TSF when the station joined.
@@ -131,6 +134,9 @@ pub struct PortRxCounters {
     /// Group-addressed robust management frames that did not verify under
     /// the IGTK, or arrived without one.
     pub bip_rejected: u32,
+    /// Buffered runs a reorder window released past a missing MPDU after
+    /// the gap timeout.
+    pub reorder_gap_timeouts: u32,
 }
 
 /// The outcome of offering one frame for transmission.
@@ -168,6 +174,8 @@ pub struct PortConnection<P: Ieee80211LowerMacPort> {
     duplicates: RxDuplicateFilter,
     reorder: [Option<RxReorderBuffer<PORT_REORDER_WINDOW, PORT_REORDER_SLOTS>>; TIDS],
     slots: [Option<PortFrame>; PORT_REORDER_SLOTS],
+    /// When each window that buffers an MPDU releases past its gap.
+    reorder_gaps: [Option<Instant>; TIDS],
     sa_query: StationSaQuery,
     power: Option<PortPowerSave<P>>,
     /// Frames waiting to be sent.
@@ -218,6 +226,7 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
             duplicates: RxDuplicateFilter::new(),
             reorder: [const { None }; TIDS],
             slots: [const { None }; PORT_REORDER_SLOTS],
+            reorder_gaps: [None; TIDS],
             sa_query: StationSaQuery::new(),
             power: None,
             queue: TxQueue::new(),
@@ -276,6 +285,7 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
             self.tx_block_ack
                 .as_ref()
                 .and_then(StaTxBlockAckOriginator::earliest_alarm_deadline),
+            self.reorder_gaps.iter().flatten().min().copied(),
         ]
         .into_iter()
         .flatten()
@@ -621,7 +631,7 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
     }
 
     /// Process inputs until `deadline`: received frames, TBTTs, the SA
-    /// Query and power-save timers. Every delivered Ethernet frame goes to
+    /// Query, power-save and reorder gap timers. Every delivered Ethernet frame goes to
     /// `deliver`. `Some` when the association ended.
     pub(crate) async fn run_until<X: PortStationEnv<Port = P>>(
         &mut self,
@@ -633,6 +643,7 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
             if let Some(disconnect) = self.expire(context).await? {
                 return Ok(Some(disconnect));
             }
+            self.expire_reorder_gaps(context.timer.now(), deliver);
             self.drain(context).await?;
             let now = context.timer.now();
             if now >= deadline {
@@ -1110,6 +1121,35 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
             response.as_bytes(),
         )
         .await
+    }
+
+    /// Release the buffered run of every window whose gap timed out, then
+    /// time the gap of every window that buffers an MPDU from the first one
+    /// it retained (a window that buffers nothing has no gap).
+    fn expire_reorder_gaps(&mut self, now: Instant, deliver: &mut impl FnMut(&[u8])) {
+        for tid in 0..TIDS {
+            if self.reorder_gaps[tid].is_some_and(|due| due <= now) {
+                self.reorder_gaps[tid] = None;
+                if let Some(buffer) = self.reorder[tid].as_mut() {
+                    let release = buffer.expire_gap();
+                    self.counters.reorder_gap_timeouts =
+                        self.counters.reorder_gap_timeouts.saturating_add(1);
+                    self.release(&release, deliver);
+                }
+            }
+            let buffers = self.reorder[tid]
+                .as_ref()
+                .is_some_and(|buffer| buffer.occupied() != 0);
+            self.reorder_gaps[tid] = if buffers {
+                Some(self.reorder_gaps[tid].unwrap_or_else(|| {
+                    // An unrepresentable deadline is never reached.
+                    now.checked_add(self.config.rx_reorder_gap)
+                        .unwrap_or(Instant::from_micros(u64::MAX))
+                }))
+            } else {
+                None
+            };
+        }
     }
 
     /// Buffer one MPDU of an agreement and deliver what its window releases.

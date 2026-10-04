@@ -256,7 +256,7 @@ pub(crate) struct AbsentDirectory {
 
 /// Which of `declared` (kind, repository path) do not exist below `root`;
 /// an empty path declares nothing. A dangling link, such as a checkout's
-/// `target/hil/<chip>/runs` before its first run, counts as absent.
+/// `target/hil/runs` before its first run, counts as absent.
 pub(crate) fn absent_directories(
     root: &Path,
     declared: &[(&'static str, &Path)],

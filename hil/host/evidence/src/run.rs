@@ -107,8 +107,9 @@ impl RunSession {
         let started = Instant::now();
         let started_unix_millis = unix_millis()?;
         let run_id = create_run_id(started_unix_millis);
+        // Build objects stay per chip; every chip's runs share one store.
         let target_directory = root.join("target/hil").join(target);
-        let runs = target_directory.join("runs");
+        let runs = root.join(RUNS);
         fs::create_dir_all(&runs)?;
         let directory = create_unique_directory(&runs, &run_id)?;
         let mut unpublished_directory = UnpublishedRunDirectory::new(directory.clone());
@@ -443,6 +444,10 @@ fn record_created_run(run_id: &str) -> Result<()> {
 
 /// The directory holding the observer builds of the runs in `runs`: the
 /// parent of the directory `runs` resolves to.
+/// Where a checkout keeps its HIL runs, every chip's: a link to the run store
+/// every checkout shares, beside which the store keeps its observer builds.
+pub const RUNS: &str = "target/hil/runs";
+
 pub fn observer_directory(runs: &Path) -> Result<PathBuf> {
     Ok(fs::canonicalize(runs)?
         .parent()

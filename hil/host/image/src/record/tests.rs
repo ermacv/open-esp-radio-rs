@@ -200,7 +200,7 @@ fn firmware_record_archives_the_exact_application() {
 fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
     let root = temporary_directory("firmware-replay");
     let target_directory = root.join("target/hil/esp32s31");
-    let runs_directory = target_directory.join("runs");
+    let runs_directory = root.join(oer_hil_evidence::run::RUNS);
     let repository_root = target_directory.clone();
     fs::create_dir_all(&runs_directory).unwrap();
     write_test_build_materials(&repository_root);
@@ -266,7 +266,8 @@ fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
 
     fs::remove_dir_all(source_directory).unwrap();
     let verified =
-        oer_hil_evidence::verify::verify(&root, "esp32s31", Some("replay-run"), &Recipe).unwrap();
+        oer_hil_evidence::verify::verify(&root, Some("esp32s31"), Some("replay-run"), &Recipe)
+            .unwrap();
     assert_eq!(verified.verified_run_ids, ["replay-run"]);
     fs::remove_dir_all(root).unwrap();
 }

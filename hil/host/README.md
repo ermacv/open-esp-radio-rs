@@ -38,7 +38,7 @@ hil/
 ```
 
 Target firmware lives under `hil/targets/<chip>`. Machine-readable evidence
-lives in immutable bundles under `target/hil/<chip>/runs`. The qualification
+lives in immutable bundles under `target/hil/runs`. The qualification
 evaluator independently checks those bundles; Markdown is not proof input.
 
 Vendor-linked oracles remain isolated under `verification`; they are
@@ -243,7 +243,7 @@ records the reduced count, and `cargo hil` does not note it as pending evidence.
 `cargo hil run-all` runs the scenarios carrying each `--tag`, or the whole
 catalog only with an explicit `--all`. It reuses each image across its scenario group but
 does not fail fast. Every invocation retains an immutable evidence bundle in
-`target/hil/esp32s31/runs/<run-id>/`, including a canonical JSON suite, JUnit
+`target/hil/runs/<run-id>/`, including a canonical JSON suite, JUnit
 XML, a standalone HTML report and the exact application image flashed for each
 firmware class. The flash operation reads that archived copy, binding firmware
 provenance to the bytes sent to the DUT. Completed and interrupted bundles also

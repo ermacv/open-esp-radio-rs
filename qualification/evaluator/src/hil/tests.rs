@@ -219,15 +219,18 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
     )
     .unwrap();
     assert_eq!(stale.summary().qualifying, 0);
-    let wrong_target = HilEvidenceIndex::rejection(HilEvidenceIndex::load(
+    // Every chip's runs share the store: another chip's run is neither
+    // evidence nor an invalid bundle of this program.
+    let other_chip = HilEvidenceIndex::load(
         &root,
         Path::new("runs"),
         Path::new("evidence"),
         "other-target",
         &repository,
-    ))
+    )
     .unwrap();
-    assert!(wrong_target.contains("configured target"));
+    assert_eq!(other_chip.summary().qualifying, 0);
+    assert!(other_chip.summary().invalid.is_empty());
 
     let mut manifest: serde_json::Value =
         serde_json::from_slice(&fs::read(run.join("manifest.json")).unwrap()).unwrap();

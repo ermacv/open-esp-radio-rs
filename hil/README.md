@@ -28,7 +28,7 @@ The evidence contract shared by the runner and the qualification evaluator —
 observer build identity, Cargo input projection and canonical scenarios —
 lives in the `schema/` crate; its `producer` feature adds the Cargo-running
 operations that only the runner and repository tools use.
-Generated runs stay below `target/hil/<chip>/runs`; they are not tracked.
+Generated runs stay below `target/hil/runs`; they are not tracked.
 A run never writes tracked files. After `run` or `run-all` from a
 clean tree, `cargo hil` notes the runs with passed scenarios as the checkout's
 pending evidence in `target/hil/pending-evidence.json`. `cargo hil evidence

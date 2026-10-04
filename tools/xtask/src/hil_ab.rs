@@ -345,7 +345,7 @@ fn record(
     seed: NonZeroU32,
     id: String,
 ) -> Result<()> {
-    let runs = crate::hil_store::shared_runs(crate::hil::HIL_TARGET)?;
+    let runs = crate::hil_store::shared_runs()?;
     let run = hil_runs::load(&runs.join(&id)).ok_or_else(|| format!("run {id} is unreadable"))?;
     report.runs.push(ArmRun {
         arm,

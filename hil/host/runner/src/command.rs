@@ -174,23 +174,15 @@ pub(crate) fn run() -> Result<()> {
         CliCommand::Report {
             command: ReportCommand::Verify { run_id, chip },
         } => {
-            use oer_hil_evidence::verify;
-            let chips = match (chip, run_id.as_deref()) {
-                (Some(chip), _) => vec![chip],
-                (None, Some(run)) => vec![verify::chip_of_run(&root, run)?],
-                (None, None) => verify::chips_with_runs(&root)?,
-            };
-            for chip in chips {
-                emit_json(
-                    &verify::verify(
-                        &root,
-                        &chip,
-                        run_id.as_deref(),
-                        &oer_hil_image::record::Recipe,
-                    )?,
-                    false,
-                )?;
-            }
+            emit_json(
+                &oer_hil_evidence::verify::verify(
+                    &root,
+                    chip.as_deref(),
+                    run_id.as_deref(),
+                    &oer_hil_image::record::Recipe,
+                )?,
+                false,
+            )?;
             Ok(())
         }
         CliCommand::Run {

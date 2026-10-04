@@ -296,6 +296,8 @@ enum LoadedRun {
     /// Published but not yet completion evidence (still running, or ended
     /// without completing).
     NotEvidence,
+    /// Another chip's run: every chip's runs share the store.
+    OtherChip,
     /// Validated evidence units and whether they are independent seals.
     Units {
         units: Vec<(RunManifest, SuiteResult)>,
@@ -319,9 +321,11 @@ fn load_run(run_directory: &Path, target: &str) -> Result<LoadedRun> {
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or_default()
-        || manifest.target != target
     {
-        return Err("manifest does not match run directory or configured target".into());
+        return Err("manifest does not match its run directory".into());
+    }
+    if manifest.target != target {
+        return Ok(LoadedRun::OtherChip);
     }
     let attempts = attempt::load(run_directory, &manifest)?;
     let independently_sealed = attempts.is_some();
@@ -602,6 +606,10 @@ impl HilEvidenceIndex {
                 }
                 Ok(LoadedRun::NotEvidence) => {
                     summary.bundles += 1;
+                    continue;
+                }
+                Ok(LoadedRun::OtherChip) => {
+                    summary.directories -= 1;
                     continue;
                 }
                 Ok(LoadedRun::Units {

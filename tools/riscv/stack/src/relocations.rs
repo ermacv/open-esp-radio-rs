@@ -104,6 +104,17 @@ impl Relocations {
         Ok(Self { words, tables })
     }
 
+    /// Every relocated word: its address and the address it holds.
+    pub(crate) fn words(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
+        self.words.iter().map(|(&at, &holds)| (at, holds))
+    }
+
+    /// The address the relocated word at `address` holds, if a relocation
+    /// names it.
+    pub(crate) fn word(&self, address: u32) -> Option<u32> {
+        self.words.get(&address).copied()
+    }
+
     /// Whether the compiler labelled a jump table at `base`.
     pub(crate) fn is_jump_table(&self, base: u32) -> bool {
         self.tables.contains_key(&base)
@@ -119,4 +130,43 @@ impl Relocations {
             .collect();
         (!entries.is_empty()).then_some(entries)
     }
+}
+
+/// Whether any allocated section of `elf` takes the address of `function`:
+/// a relocation that names it other than a call, a jump or a branch to it.
+/// Without one, every transfer to it is a direct call the analysis sees.
+pub fn address_taken(elf: &[u8], function: u32) -> Result<bool> {
+    // R_RISCV_BRANCH, _JAL, _CALL, _CALL_PLT, _RVC_BRANCH, _RVC_JUMP and
+    // _RELAX, which only marks the pair before it.
+    const TRANSFERS: [u32; 7] = [16, 17, 18, 19, 44, 45, 51];
+    let invalid = |message: &str| Error::new(ErrorCode::Integrity, message.to_owned());
+    let file = object::File::parse(elf).map_err(|_| invalid("invalid ELF"))?;
+    for section in file.sections() {
+        let object::SectionFlags::Elf { sh_flags } = section.flags() else {
+            continue;
+        };
+        if sh_flags & u64::from(object::elf::SHF_ALLOC) == 0 {
+            continue;
+        }
+        for (_, relocation) in section.relocations() {
+            let RelocationFlags::Elf { r_type } = relocation.flags() else {
+                continue;
+            };
+            if TRANSFERS.contains(&r_type) {
+                continue;
+            }
+            let base = match relocation.target() {
+                RelocationTarget::Symbol(index) => file
+                    .symbol_by_index(index)
+                    .map_err(|_| invalid("relocation to a missing symbol"))?
+                    .address(),
+                RelocationTarget::Absolute => 0,
+                _ => continue,
+            };
+            if base as i64 + relocation.addend() == i64::from(function) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }

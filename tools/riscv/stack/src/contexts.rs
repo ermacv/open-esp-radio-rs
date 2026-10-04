@@ -1,0 +1,141 @@
+//! The worst-case interrupt stack of each hart, from the image's interrupt
+//! table.
+//!
+//! A hart takes interrupts at the levels of its table entries, and at the
+//! levels the platform always uses (the IPC line's); a level preempts only a
+//! lower one, so the stack holds at most one interrupt per level at a time,
+//! with an exception on top. Each level costs its worst hardware-vector entry:
+//! the entry's frame below the interrupt stack's position plus the bound of
+//! the handler it calls, where the dispatcher's calls through the source
+//! table reach only the handlers the table routes to that hart at that level.
+use crate::{Analysis, Bound, Resolutions, TableEntry, TrapEntry};
+use oer_riscv_model::Result;
+use std::collections::{BTreeMap, BTreeSet};
+
+/// What the stacks of an image are bounded from.
+pub struct Stacks<'a> {
+    pub table: &'a [TableEntry],
+    /// The harts, by the table's core numbers.
+    pub cores: &'a [u32],
+    /// Levels every hart takes whatever the table holds.
+    pub always: &'a [u32],
+    /// The checked entries of the hardware vectors.
+    pub vectors: &'a [TrapEntry],
+    /// The checked entry of exceptions.
+    pub exception: TrapEntry,
+    /// The base of the dispatcher's source table: a call through it reaches
+    /// the handler of the source dispatched.
+    pub sources: u32,
+    /// Targets of other indirect sites, the same in every context.
+    pub resolutions: &'a Resolutions,
+}
+
+/// One level of one hart.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LevelStack {
+    pub level: u32,
+    /// Bytes the level adds; `None` when its bound is unknown.
+    pub bytes: Option<u64>,
+    /// The worst entry's frame and its handler's bound.
+    pub frame: u64,
+    pub bound: Bound,
+}
+
+/// One hart's interrupt stack.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HartStack {
+    pub core: u32,
+    pub levels: Vec<LevelStack>,
+    /// The exception on top of every level.
+    pub exception: LevelStack,
+    /// The sum of every level and the exception; `None` when one is unknown.
+    pub bytes: Option<u64>,
+}
+
+/// The interrupt stack of each hart.
+pub fn interrupt_stacks(analysis: &Analysis, stacks: &Stacks<'_>) -> Result<Vec<HartStack>> {
+    let dispatch_sites: BTreeSet<u32> = analysis
+        .functions
+        .values()
+        .flat_map(|facts| facts.table_bases.iter())
+        .filter(|&(_, &base)| base == stacks.sources)
+        .map(|(&site, _)| site)
+        .collect();
+    let mut harts = Vec::new();
+    for &core in stacks.cores {
+        let mut levels: BTreeSet<u32> = stacks
+            .table
+            .iter()
+            .filter(|entry| entry.core == core && entry.handler.is_some())
+            .map(|entry| entry.level)
+            .collect();
+        levels.extend(stacks.always);
+        let mut level_stacks = Vec::new();
+        for level in levels {
+            let handlers: BTreeSet<u32> = stacks
+                .table
+                .iter()
+                .filter(|entry| entry.core == core && entry.level == level)
+                .filter_map(|entry| entry.handler)
+                .collect();
+            let mut resolutions = stacks.resolutions.clone();
+            for &site in &dispatch_sites {
+                resolutions.insert(site, handlers.clone());
+            }
+            level_stacks.push(worst(analysis, level, stacks.vectors, &resolutions)?);
+        }
+        let exception = worst(analysis, 0, &[stacks.exception], stacks.resolutions)?;
+        let bytes = level_stacks
+            .iter()
+            .chain([&exception])
+            .map(|level| level.bytes)
+            .sum::<Option<u64>>();
+        harts.push(HartStack {
+            core,
+            levels: level_stacks,
+            exception,
+            bytes,
+        });
+    }
+    Ok(harts)
+}
+
+/// The deepest of `entries` at `level`: an unknown bound, else the most
+/// bytes.
+fn worst(
+    analysis: &Analysis,
+    level: u32,
+    entries: &[TrapEntry],
+    resolutions: &Resolutions,
+) -> Result<LevelStack> {
+    let mut worst: Option<LevelStack> = None;
+    let mut by_handler: BTreeMap<u32, Bound> = BTreeMap::new();
+    for entry in entries {
+        let bound = match by_handler.get(&entry.handler) {
+            Some(bound) => bound.clone(),
+            None => {
+                let bound = analysis.bound_with(entry.handler, resolutions)?;
+                by_handler.insert(entry.handler, bound.clone());
+                bound
+            }
+        };
+        let candidate = LevelStack {
+            level,
+            bytes: bound.bytes.map(|bytes| entry.frame + bytes),
+            frame: entry.frame,
+            bound,
+        };
+        let deeper = match (&worst, candidate.bytes) {
+            (None, _) => true,
+            (Some(current), bytes) => match (current.bytes, bytes) {
+                (Some(_), None) => true,
+                (Some(current), Some(bytes)) => bytes > current,
+                (None, _) => false,
+            },
+        };
+        if deeper {
+            worst = Some(candidate);
+        }
+    }
+    Ok(worst.expect("at least one entry"))
+}

@@ -8,9 +8,9 @@ publish = false
 
 [features]
 multicore = []
-## A diagnostic image's panic report: after the record, call the image's
-## `oer_platform_panic_diagnostics` instead of resetting.
-panic-diagnostics = []
+## After the record, call the image's `oer_platform_panic_hook`, which
+## records more of its state without formatting, then reset.
+panic-hook = []
 
 [dependencies]
 bytemuck = { version = "1.25.2", default-features = false, features = ["derive", "zeroable_maybe_uninit"] }

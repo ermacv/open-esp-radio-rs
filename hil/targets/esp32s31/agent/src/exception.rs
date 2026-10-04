@@ -29,21 +29,8 @@ pub fn install_stack_guard(bottom: usize) {
 #[unsafe(export_name = "ExceptionHandler")]
 #[unsafe(link_section = ".rwtext.exception")]
 unsafe extern "C" fn exception(context: &TrapFrame) -> ! {
-    let (cause, pc, value, task_sp, hart): (usize, usize, usize, usize, usize);
-    unsafe {
-        asm!("csrr {}, mcause", out(reg) cause, options(nomem, nostack));
-        asm!("csrr {}, mepc", out(reg) pc, options(nomem, nostack));
-        asm!("csrr {}, mtval", out(reg) value, options(nomem, nostack));
-        asm!("csrr {}, mscratch", out(reg) task_sp, options(nomem, nostack));
-        asm!("csrr {}, mhartid", out(reg) hart, options(nomem, nostack));
-        // A fatal exception cannot rely on a live executor or acquire a logger
-        // lock that the interrupted code may already hold.
-        super::ets_printf(
-            c"OPEN_RADIO_HIL runtime=EXCEPTION hart=%u mcause=%08x mepc=%08x mtval=%08x ra=%08x mscratch=%08x\r\n".as_ptr(),
-            hart, cause, pc, value, context.ra, task_sp,
-        );
-    }
-    loop {
-        unsafe { asm!("wfi", options(nomem, nostack)) };
-    }
+    // A fatal exception cannot rely on a live executor or acquire a logger
+    // lock that the interrupted code may already hold: it records the
+    // machine state without formatting and resets; the next boot reports it.
+    crate::fatal::record_exception(context.ra as u32)
 }

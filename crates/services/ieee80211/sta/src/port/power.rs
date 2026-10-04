@@ -1,6 +1,7 @@
 //! Station power save over the lower-MAC port.
 
 use core::marker::PhantomData;
+use oer_ieee80211_upper_mac_service::client::PortError;
 
 use oer_ieee80211_lower_mac::{
     KeySelector, LowerMacBeaconTiming, LowerMacSetting, MacAddress, RxBeaconPriority, TbttSchedule,
@@ -20,7 +21,7 @@ use oer_ieee80211_upper_mac::TxReport;
 use oer_ieee80211_upper_mac_service::UpperMacTxError;
 use oer_time::{Clock, Duration, Instant};
 
-use super::link::{PortCoexistence, PortError, PortLink, PortLinkError, PortStationEnv};
+use super::link::{PortCoexistence, PortLink, PortLinkError, PortStationEnv};
 
 /// Effect lists one input of the power manager may chain through Null
 /// completions.

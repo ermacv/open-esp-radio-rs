@@ -13,12 +13,10 @@ use oer_ieee80211_mac::{
 };
 use oer_ieee80211_sta::scan::{ActiveProbeOutcome, StaScanChannelContext, StaScanPort};
 use oer_ieee80211_upper_mac_service::UpperMacTxError;
+use oer_ieee80211_upper_mac_service::client::{PortError, PortFrame, PortInput, PortRxBuffer};
 use oer_time::{Clock, Duration, Instant};
 
-use super::link::{
-    PortConnectionFrame, PortError, PortFrame, PortInput, PortLink, PortLinkError, PortRxBuffer,
-    PortStationEnv,
-};
+use super::link::{PortConnectionFrame, PortLink, PortLinkError, PortStationEnv};
 
 /// The Probe Request of an active scan.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

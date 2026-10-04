@@ -2,12 +2,12 @@
 
 use oer_esp32s31_ieee80211_mac::{
     edca::{EdcaParametersError, EdcaQueues},
-    rate::control::{
-        HeLowMetricReportFeatures, StaLinkMetric, StaRateControlAssociation,
-        StaRateControlAssociationInput, StaRateControlPeerHighestRate, StaRateControlPhy,
-    },
+    tx::HtPeerAmpduParameters,
     tx::protection::{BasicRates, BssProtection, HePacketPadding, HeTxopDurationRtsThreshold},
-    tx::{HeMcs, HtPeerAmpduParameters},
+};
+use oer_espressif_ieee80211_policy::rate_control::{
+    HeLowMetricReportFeatures, StaLinkMetric, StaRateControlAssociation,
+    StaRateControlAssociationInput, StaRateControlPeerHighestRate, StaRateControlPhy,
 };
 use {
     oer_ieee80211_mac::extensions::wmm::WmmParameterSet,
@@ -192,12 +192,12 @@ impl StaPeerScanPolicy {
         let peer_highest_rate = if association_phy == PhyMode::He20 {
             he_capabilities.and_then(|capability| {
                 let maximum_mcs = match capability.receive_nss1 {
-                    HeMcsNssSupport::Mcs0To7 => HeMcs::Mcs7,
-                    HeMcsNssSupport::Mcs0To9 | HeMcsNssSupport::Mcs0To11 => HeMcs::Mcs9,
+                    HeMcsNssSupport::Mcs0To7 => 7,
+                    HeMcsNssSupport::Mcs0To9 | HeMcsNssSupport::Mcs0To11 => 9,
                     HeMcsNssSupport::NotSupported => return None,
                 };
                 Some(StaRateControlPeerHighestRate::he20_one_spatial_stream(
-                    maximum_mcs,
+                    oer_ieee80211_mac::phy::HeMcs::new(maximum_mcs).expect("HE MCS 7 and 9 exist"),
                 ))
             })
         } else {

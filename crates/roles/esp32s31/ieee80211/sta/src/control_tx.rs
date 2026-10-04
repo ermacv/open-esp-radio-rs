@@ -5,6 +5,7 @@
 //! the complete resource into [`SingleMpduTx`] after M4 succeeds.
 
 use core::future::Future;
+use oer_espressif_ieee80211_policy::rate_control::DEFAULT_CONTROL_SCHEDULE;
 
 pub use oer_esp32s31_ieee80211::tx::ControlTxConfig;
 
@@ -30,10 +31,7 @@ use oer_esp32s31_ieee80211::{
 
 use oer_esp32s31_ieee80211_mac::{
     edca::EdcaParametersError,
-    rate::{
-        control::DEFAULT_CONTROL_SCHEDULE,
-        schedule::{RateScheduleRef, schedule_publication_limit},
-    },
+    rate::schedule::{RateScheduleRef, schedule_publication_limit},
     tx::{
         HtPeerAmpduParameters, LegacyRate, LegacyTxQueue, TxCompletion, TxError, TxHardware,
         TxPhyRate,

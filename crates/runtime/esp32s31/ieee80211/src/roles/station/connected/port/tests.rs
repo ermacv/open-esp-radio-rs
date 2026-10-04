@@ -12,12 +12,12 @@ use crate::{
 
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
-use oer_esp32s31_ieee80211_mac::{
-    rate::control::{
-        HeLowMetricReportFeatures, StaLinkMetric, StaRateControlAssociation,
-        StaRateControlAssociationInput, StaRateControlPhy,
-    },
-    tx::{HtDuplicateTxEvidenceGaps, HtDuplicateTxRejection, HtDuplicateTxUnavailable},
+use oer_esp32s31_ieee80211_mac::tx::{
+    HtDuplicateTxEvidenceGaps, HtDuplicateTxRejection, HtDuplicateTxUnavailable,
+};
+use oer_espressif_ieee80211_policy::rate_control::{
+    HeLowMetricReportFeatures, StaLinkMetric, StaRateControlAssociation,
+    StaRateControlAssociationInput, StaRateControlPhy,
 };
 
 use oer_esp32s31_ieee80211_sta::connected_rx::{

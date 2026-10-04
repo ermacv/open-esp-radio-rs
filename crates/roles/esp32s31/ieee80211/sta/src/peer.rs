@@ -17,9 +17,10 @@ use oer_esp32s31_ieee80211_mac::{
     edca::EdcaParametersError,
     he::{He20InstallError, He20PeerHardware, program_he20_peer_state},
     init::StaNoiseFloorHardware,
-    rate::control::{BeamformingReportHardware, StaLinkMetric, StaRateControlAssociation},
+    rate::control::{BeamformingReportHardware, StaRateControlTx},
     tx::{HtPeerAmpduParameters, protection::BssProtection},
 };
+use oer_espressif_ieee80211_policy::rate_control::{StaLinkMetric, StaRateControlAssociation};
 
 use {
     oer_ieee80211_mac::extensions::wmm::WmmParameterSet, oer_ieee80211_mac::he::He20Capabilities,

@@ -12,6 +12,7 @@ depend on it, and portable code never does.
 | Module | Contents | Source |
 | --- | --- | --- |
 | `rate_schedule` | The nine rate-schedule arenas in their post-`rcAttach` state, the `rcGetRate` record walk, the `rcReachRetryLimit` publication budget and the `rcUpdatePhyMode` rate-to-record maps | `libpp.a[trc.o]` |
+| `rate_control` | The per-association rate control over those schedules: schedule selection at association (`StaRateControlAssociation`, `rcUpdatePhyMode`), the ordinary schedule lowered under retry pressure (`rcTxUpdatePer`), the independent A-MPDU schedule moved by BlockAck windows (`rcUpdateTxDoneAmpdu2`), the ACK-SNR filter and the beamforming report rate; values only | `libpp.a[trc.o]`, `libpp.a[if_hwctrl.o]::ic_set_trc`, `libnet80211.a[wl_cnx.o]::ic_set_sta` |
 | `rate_code` | `wifi_phy_rate_t` codes of the records as portable `PhyRate`s, by schedule | `esp_wifi_types_generic.h` |
 | `retry_ladder` | The ordinary-MPDU retry ladder of legacy, HT and HE rates (`EspressifRetryLadder`, a portable `RateLadder`) | `libpp.a[trc.o]::{rcGetRate, rcUpdatePhyMode}` |
 | `lmac` | Short and long retry limits (32), ACK-timeout accounting, the RTS threshold (2346 octets), the A-MPDU MSDU lifetime and aging margin, the A-MPDU retry policy and the default contention per access category | `libpp.a[lmac.o]::{lmacInit, lmacInitAc, lmacProcessAckTimeout, lmacMSDUAged}`, `libpp.a[pp.o]::ppResortTxAMPDU` |
@@ -25,9 +26,10 @@ The values were recovered from the ESP32-S31 libraries pinned in
 the vendor function it was read from. A chip of the family whose pinned
 libraries differ needs its own reviewed values before it uses them.
 
-The schedule walk and the retry ladder live here, not in the portable
-package, because they are inseparable from the vendor schedule bytes. The
-vendor's adaptive rate control (`trc`), which chooses a frame's first rate,
-stays in the ESP32-S31 MAC (`oer-esp32s31-ieee80211-mac`, `rate/control.rs`)
-for now: its interface is typed in chip rate and completion values that the
-station and access-point runtimes consume.
+The schedule walk, the retry ladder and the adaptive rate control (`trc`),
+which chooses a frame's first rate, live here, not in the portable package,
+because they are inseparable from the vendor schedule bytes. The rate
+control holds schedules, not PHY rates: a chip turns a schedule into its own
+rate (the ESP32-S31 MAC's `StaTxRatePolicy`, with its certification
+overrides) and programs its own beamforming report-rate registers, and a
+portable station decodes it through `rate_code`.

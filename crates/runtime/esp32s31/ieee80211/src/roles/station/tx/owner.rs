@@ -99,7 +99,7 @@ where
         ampdu: AggregateTxResources<'ampdu, B, SLOTS, AMPDU_BUFFER_SIZE>,
         config: AggregateTxConfig,
     ) -> Result<Self, AggregateTxError> {
-        use oer_esp32s31_ieee80211_mac::rate::control::{
+        use oer_espressif_ieee80211_policy::rate_control::{
             HeLowMetricReportFeatures, StaLinkMetric, StaRateControlAssociationInput,
             StaRateControlPhy,
         };

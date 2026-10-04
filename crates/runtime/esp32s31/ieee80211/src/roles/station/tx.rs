@@ -41,7 +41,7 @@ use oer_esp32s31_ieee80211::{
 
 use oer_esp32s31_ieee80211_mac::{
     rate::{
-        control::{AmpduRateObservationError, StaRateControlAssociation, StaTxRatePolicy},
+        control::{StaRateControlTx, StaTxRatePolicy},
         schedule::schedule_publication_limit,
     },
     tx::{
@@ -59,6 +59,9 @@ use oer_esp32s31_ieee80211_mac::{
             WmmTxopUnsupported,
         },
     },
+};
+use oer_espressif_ieee80211_policy::rate_control::{
+    AmpduRateObservationError, StaRateControlAssociation,
 };
 
 use oer_esp32s31_ieee80211_sta::single_mpdu_tx::{

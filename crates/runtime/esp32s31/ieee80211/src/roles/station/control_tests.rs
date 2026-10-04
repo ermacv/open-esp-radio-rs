@@ -532,7 +532,7 @@ fn make_tx<'a>(
                 management_protection: false,
                 access_category: WmmAccessCategory::BestEffort,
                 control_schedule:
-                    oer_esp32s31_ieee80211_mac::rate::control::DEFAULT_CONTROL_SCHEDULE,
+                    oer_espressif_ieee80211_policy::rate_control::DEFAULT_CONTROL_SCHEDULE,
                 publication_timeout: oer_time::Duration::from_micros(250_000),
             },
         },

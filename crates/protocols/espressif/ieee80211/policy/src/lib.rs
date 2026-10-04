@@ -11,6 +11,8 @@
 //!
 //! - [`rate_schedule`]: the `libpp.a` rate-schedule arenas, their record
 //!   walk and the rate-to-record maps;
+//! - [`rate_control`]: the per-association rate control over those
+//!   schedules, its selection and adaptation, as values;
 //! - [`rate_code`]: the `wifi_phy_rate_t` codes of those records as portable
 //!   rates;
 //! - [`retry_ladder`]: the ordinary-MPDU retry ladder over the schedules,
@@ -36,6 +38,7 @@ pub mod connection_coex;
 pub mod he_txop;
 pub mod lmac;
 pub mod rate_code;
+pub mod rate_control;
 pub mod rate_schedule;
 pub mod retry_ladder;
 pub mod station_link;

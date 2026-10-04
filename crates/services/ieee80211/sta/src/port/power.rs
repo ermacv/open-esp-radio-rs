@@ -1,7 +1,8 @@
 //! Station power save over the lower-MAC port.
 
 use oer_ieee80211_lower_mac::{
-    Ieee80211LowerMacPort, KeySelector, LowerMacSetting, MacAddress, TbttSchedule, VifTsf,
+    Ieee80211LowerMacPort, KeySelector, LowerMacSetting, MacAddress, RxBeaconPriority,
+    TbttSchedule, VifTsf,
 };
 use oer_ieee80211_mac::{
     qos::WmmAccessCategory,
@@ -56,6 +57,7 @@ const fn timer_index(timer: PmTimer) -> usize {
 /// | `Arm`, `Disarm` | Deadlines on the station's monotonic clock, due through [`Self::next_deadline`] |
 /// | `ReleaseHeldFrames` | the connection is told to send the frame it held |
 ///
+/// | `RxBeaconPriority`, `ClearRxBeaconPriority` | `LowerMacSetting::RxBeaconPriority`: the radio system's beacon-window priority, zero, or cleared |
 /// | `Coex` | [`PortCoexistence::perform`] of the environment's radio system, whose [`PortCoexistence::view`] every input decides with |
 ///
 /// Each beacon of the access point also sets the
@@ -415,9 +417,23 @@ impl<P: Ieee80211LowerMacPort> PortPowerSave<P> {
                 .coex_mut()
                 .perform(action)
                 .map_err(|_| PortLinkError::Coexistence)?,
-            PmAction::RxBeaconPriority(_)
-            | PmAction::ClearRxBeaconPriority
-            | PmAction::RxBeaconTime { .. } => {}
+            PmAction::RxBeaconPriority(beacon_window) => {
+                context
+                    .link
+                    .apply(LowerMacSetting::RxBeaconPriority(if beacon_window {
+                        RxBeaconPriority::BeaconWindow
+                    } else {
+                        RxBeaconPriority::Zero
+                    }))?;
+            }
+            PmAction::ClearRxBeaconPriority => {
+                context
+                    .link
+                    .apply(LowerMacSetting::RxBeaconPriority(RxBeaconPriority::Cleared))?;
+            }
+            // The hardware meaning of the vendor's beacon receive time is
+            // not established, so the port has no setting for it yet.
+            PmAction::RxBeaconTime { .. } => {}
         }
         Ok(None)
     }

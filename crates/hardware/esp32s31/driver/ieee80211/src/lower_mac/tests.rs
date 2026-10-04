@@ -83,6 +83,8 @@ struct Hardware {
     tbtt: Option<StaTbttSchedule>,
     tbtt_stops: usize,
     tx_blocked: bool,
+    rx_beacon_pti: Option<MacPti>,
+    rx_beacon_pti_clears: usize,
 }
 
 impl Hardware {
@@ -359,6 +361,25 @@ impl TxGateHardware for Hardware {
     }
 }
 
+impl RxBeaconPriorityHardware for Hardware {
+    fn set_rx_beacon_pti(&mut self, pti: MacPti) {
+        self.rx_beacon_pti = Some(pti);
+    }
+
+    fn clear_rx_beacon_pti(&mut self) {
+        self.rx_beacon_pti_clears += 1;
+    }
+}
+
+/// A radio system whose beacon-window event has priority 9.
+struct BeaconWindowNine;
+
+impl BeaconWindowPriority for BeaconWindowNine {
+    fn beacon_window_pti(&self) -> MacPti {
+        MacPti::new(9).unwrap()
+    }
+}
+
 struct Power;
 
 impl WifiTxPowerProfile for Power {
@@ -504,6 +525,7 @@ fn core() -> Core {
             publication_timeout: oer_time::Duration::from_micros(TIMEOUT),
             tsf_epoch: 1,
         },
+        &BeaconWindowNine,
     )
 }
 
@@ -1720,6 +1742,25 @@ fn the_station_tbtt_schedule_is_programmed_and_its_events_announce_the_next_tbtt
     .unwrap();
     assert_eq!(hardware.tbtt, None);
     assert_eq!(hardware.tbtt_stops, 2);
+}
+
+#[test]
+fn beacons_are_received_at_the_radio_system_s_beacon_window_priority() {
+    let priority = |priority| LowerMacSetting::RxBeaconPriority(priority);
+    let mut hardware = Hardware::default();
+    let mut core = enabled(&mut hardware);
+    core.apply(&mut hardware, priority(RxBeaconPriority::BeaconWindow))
+        .unwrap()
+        .unwrap();
+    assert_eq!(hardware.rx_beacon_pti, MacPti::new(9));
+    core.apply(&mut hardware, priority(RxBeaconPriority::Zero))
+        .unwrap()
+        .unwrap();
+    assert_eq!(hardware.rx_beacon_pti, MacPti::new(0));
+    core.apply(&mut hardware, priority(RxBeaconPriority::Cleared))
+        .unwrap()
+        .unwrap();
+    assert_eq!(hardware.rx_beacon_pti_clears, 1);
 }
 
 #[test]

@@ -257,6 +257,27 @@ pub enum LowerMacSetting {
     /// outside the backend's limits is `SettingError::Unsupported` and
     /// changes nothing. A backend starts with its own defaults.
     Edca(oer_ieee80211_mac::extensions::wmm::WmmParameterSet),
+    /// The coexistence priority the hardware receives the access point's
+    /// beacons with.
+    RxBeaconPriority(RxBeaconPriority),
+}
+
+/// The coexistence priority beacon reception requests from the radio
+/// system the station shares its RF with.
+///
+/// The station decides when beacon reception asks for the air; the value
+/// it asks with is the radio system's priority of its beacon-window event,
+/// which only the backend sharing the RF with that system knows. A backend
+/// alone on its RF accepts each as a no-op.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RxBeaconPriority {
+    /// Receive beacons at the radio system's priority of the beacon
+    /// window.
+    BeaconWindow,
+    /// Receive beacons at priority zero.
+    Zero,
+    /// Withdraw the beacon receive priority request after a beacon.
+    Cleared,
 }
 
 /// Why the backend refused a setting; nothing changed.

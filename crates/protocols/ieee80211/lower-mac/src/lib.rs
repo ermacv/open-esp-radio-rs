@@ -60,7 +60,7 @@ pub use capabilities::{
 };
 pub use control::{
     Cipher, KeyHandle, KeyInstall, KeyScope, LowerMacSetting, MacAddress, ReceiveFilter,
-    RxBlockAckAgreement, SettingError, VifConfig, VifId, VifRole, VifRoleSet,
+    RxBeaconPriority, RxBlockAckAgreement, SettingError, VifConfig, VifId, VifRole, VifRoleSet,
 };
 pub use extensions::{
     AmpduAttempt, AmpduBuffer, AmpduCapabilities, AmpduPayload, BeaconTimingCapabilities,

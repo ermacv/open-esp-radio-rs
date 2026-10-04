@@ -543,6 +543,16 @@ impl crate::lower_mac::StationTbttHardware for CooperativeRadioHardware<'_> {
     }
 }
 
+impl crate::lower_mac::RxBeaconPriorityHardware for CooperativeRadioHardware<'_> {
+    fn set_rx_beacon_pti(&mut self, pti: oer_esp32s31_hal::types::MacPti) {
+        CooperativeRadioHardware::set_rx_beacon_pti(self, pti);
+    }
+
+    fn clear_rx_beacon_pti(&mut self) {
+        CooperativeRadioHardware::clear_rx_beacon_pti(self);
+    }
+}
+
 impl crate::lower_mac::TxGateHardware for CooperativeRadioHardware<'_> {
     fn set_power_save_tx_block(&mut self, blocked: bool) {
         CooperativeRadioHardware::set_power_save_tx_block(self, blocked);

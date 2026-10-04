@@ -28,7 +28,7 @@ disallowed_methods = "deny"
 [workspace.dependencies]
 embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "9b59fce828af156cef0521a4b5c0f311efcfb1e8", default-features = false, features = ["esp32s31", "unstable"] }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "8930609f2af67e2e296a4d8f900ea3636a0acc6b", default-features = false, features = ["esp32s31", "unstable"] }
 oer-esp32s31-ieee80211-runtime = { path = "../../../crates/runtime/esp32s31/ieee80211" }
 oer-esp32s31-radio-esp-hal = { path = "../../../crates/adapters/esp-hal/esp32s31/radio", features = ["esp32s31"] }
 oer-memory = { path = "../../../crates/memory" }

@@ -464,7 +464,7 @@ pub(super) fn require_station_link(
 ) -> Result<()> {
     let expected_bandwidth = match link.phy {
         PhyExpectation::Ht40 => 40,
-        PhyExpectation::Ht20 | PhyExpectation::He20 => 20,
+        PhyExpectation::Legacy | PhyExpectation::Ht20 | PhyExpectation::He20 => 20,
     };
     let expected_security = if link.access_point_security.offers_sae() {
         oer_hil_protocol::wifi::StationLinkSecurity::Wpa3Personal

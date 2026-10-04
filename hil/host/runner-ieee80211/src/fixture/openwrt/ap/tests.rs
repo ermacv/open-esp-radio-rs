@@ -44,6 +44,29 @@ fn ht20_width_does_not_prove_he20() {
 }
 
 #[test]
+fn a_legacy_link_is_noht_and_proven_without_ht() {
+    let profile = Profile {
+        ht40_above: false,
+        phy: PhyExpectation::Legacy,
+        channel: 13,
+        management_frame_protection: ManagementFrameProtection::Disabled,
+        access_point_security: AccessPointSecurity::Wpa2Personal,
+        beacon: None,
+    };
+    assert_eq!(profile.htmode(), "NOHT");
+    let mut observed = observation(PhyExpectation::Ht20);
+    observed.htmode = "NOHT".into();
+    // An access point still advertising HT is not a legacy BSS.
+    observed.geometry = "channel 13 (2472 MHz), width: 20 MHz (no HT), center1: 2472 MHz".into();
+    assert!(profile.verify(&observed).is_err());
+    observed.ht = false;
+    profile.verify(&observed).unwrap();
+    // Nor is an HT20 channel.
+    observed.geometry = "channel 13 (2472 MHz), width: 20 MHz, center1: 2472 MHz".into();
+    assert!(profile.verify(&observed).is_err());
+}
+
+#[test]
 fn ht40_requires_the_requested_secondary_channel() {
     let profile = Profile {
         ht40_above: false,

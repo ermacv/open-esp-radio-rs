@@ -353,6 +353,9 @@ impl WifiScenario {
                 return Err("minimum_mcs requires a driver-observation image".into());
             }
             let maximum_mcs = match link.phy {
+                PhyExpectation::Legacy => {
+                    return Err("minimum_mcs requires an HT or HE link".into());
+                }
                 PhyExpectation::Ht20 | PhyExpectation::Ht40 => 7,
                 PhyExpectation::He20 => 9,
             };

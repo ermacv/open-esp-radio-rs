@@ -211,6 +211,19 @@ pub fn record_reflash(mac: Option<String>, origin: String) {
     }
 }
 
+/// Quarantine the board with `mac` when even its chip's recovery image did
+/// not bring it back: that was the last step the stand can take itself.
+pub fn quarantine_unrecovered(mac: &str, why: String, evidence: &Path) -> Option<Recovery> {
+    let arbiter = match Arbiter::open() {
+        Ok(arbiter) => arbiter,
+        Err(error) => {
+            eprintln!("hil-arbiter: cannot quarantine {mac}: {error}");
+            return None;
+        }
+    };
+    quarantine(&arbiter, mac, QuarantineTrigger::Unreachable, why, evidence)
+}
+
 /// The file a recovery records its ladder in, in the repetition's
 /// `post-mortem/`.
 pub const RECOVERY_FILE: &str = "recovery.json";

@@ -496,12 +496,22 @@ impl SuiteEffects for LiveSuite<'_> {
             ),
         };
         let mac = self.lab.dut_mac().ok();
-        match &answered {
-            Ok(()) => {
-                oer_hil_stand::recovery::record_reflash(mac, format!("run {}", session.id()));
+        let origin = format!("run {}", session.id());
+        match (after_reflash(answered), mac) {
+            (AfterReflash::Recovered, mac) => {
+                oer_hil_stand::recovery::record_reflash(mac, origin);
                 eprintln!("hil: the board answers its recovery image");
             }
-            Err(why) => eprintln!("hil: the recovery image did not bring the board back: {why}"),
+            (AfterReflash::Quarantine(why), Some(mac)) => {
+                oer_hil_stand::recovery::quarantine_unrecovered(
+                    &mac,
+                    why,
+                    &session.directory().join("recovery-image"),
+                );
+            }
+            (AfterReflash::Quarantine(why), None) => {
+                eprintln!("hil: {why}; the board's MAC is unknown, so it cannot be quarantined")
+            }
         }
         Ok(())
     }
@@ -786,6 +796,24 @@ fn execute_one(
         Some(result.outcome),
     )?;
     Ok(vec![result])
+}
+
+/// What follows the recovery image's flash.
+#[derive(Debug, Eq, PartialEq)]
+enum AfterReflash {
+    /// The board answers its recovery image: journal the recovery.
+    Recovered,
+    /// Nothing the stand can do brought it back: quarantine it, why.
+    Quarantine(String),
+}
+
+fn after_reflash(answered: std::result::Result<(), String>) -> AfterReflash {
+    match answered {
+        Ok(()) => AfterReflash::Recovered,
+        Err(why) => AfterReflash::Quarantine(format!(
+            "its chip's recovery image did not bring it back: {why}"
+        )),
+    }
 }
 
 /// Whether a scenario's end calls for the chip's recovery image: its image

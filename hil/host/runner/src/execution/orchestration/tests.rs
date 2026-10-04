@@ -552,3 +552,14 @@ fn a_silent_image_on_a_loadable_board_gets_the_recovery_image_once() {
         "once per image class and run"
     );
 }
+
+#[test]
+fn a_recovery_image_that_does_not_answer_quarantines_the_board() {
+    assert_eq!(super::after_reflash(Ok(())), super::AfterReflash::Recovered);
+    let super::AfterReflash::Quarantine(why) =
+        super::after_reflash(Err(String::from("no boot-smoke pass line")))
+    else {
+        panic!("a failed reflash must quarantine");
+    };
+    assert!(why.contains("recovery image") && why.contains("no boot-smoke pass line"));
+}

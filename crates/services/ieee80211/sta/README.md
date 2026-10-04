@@ -159,6 +159,15 @@ from that buffer; only an MPDU it keeps behind a gap is copied into the
 storage's slots (one longer than `PORT_FRAME_CAPACITY` is counted in
 `unbuffered` and dropped).
 
+The application receives each MSDU as a `PortMsdu`. The only MSDU of an
+MPDU delivered in order is `PortMsdu::Buffer`: the port's buffer with the
+Ethernet header fields and the payload's range, which a network stack that
+adopts the port's buffers rewrites in place and keeps without a copy (the
+ESP32-S31 staging buffer's `publish_ethernet_in_place`). The subframes of an
+A-MSDU and the MPDUs a reorder window kept are `PortMsdu::Parts`, which the
+application copies once. The access point's EAPOL after the handshake never
+reaches it.
+
 A receive reorder window that buffers an MPDU behind a missing one waits
 the profile's `rx_reorder_gap` from the first MPDU it retained (the
 Espressif stack's 300 ms), then releases the buffered run past the gap and

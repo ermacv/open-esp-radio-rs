@@ -105,6 +105,8 @@ pub struct InterruptStacks {
     names: BTreeMap<u32, String>,
     /// The source line of each hole, for the report.
     locations: BTreeMap<u32, String>,
+    /// Each fact source that could not run, with why: its sites stay holes.
+    unavailable: Vec<String>,
 }
 
 /// What an image's interrupt stacks must reach: the gate's policy, apart
@@ -237,6 +239,9 @@ impl InterruptStacks {
                 }
             }
         }
+        for source in &self.unavailable {
+            let _ = writeln!(out, "facts unavailable, their sites are holes: {source}");
+        }
         if !reasons.is_empty() {
             let _ = writeln!(
                 out,
@@ -311,9 +316,20 @@ pub fn interrupt_stacks(root: &Path, elf: &Path) -> Result<InterruptStacks> {
         .collect::<oer_riscv_model::Result<Vec<_>>>()?;
     let exception = trap_entry(&elf, &functions, symbol(contract::EXCEPTION_ENTRY_SYMBOL)?)?;
     let dwarf = Dwarf::read(&elf)?;
-    let vtables = waker_vtables(&elf, &dwarf, &analysis)?;
-    let mut resolutions = waker_resolutions(&analysis, &dwarf, &vtables)?;
-    resolutions.extend(ipc_resolutions(&elf, &analysis, &address_of)?);
+    // A fact source that cannot run gives no facts: its sites stay holes,
+    // and the report names why, rather than the whole gate failing.
+    let mut unavailable = Vec::new();
+    let mut resolutions = oer_riscv_stack::Resolutions::new();
+    match waker_vtables(&elf, &dwarf, &analysis)
+        .and_then(|vtables| waker_resolutions(&analysis, &dwarf, &vtables))
+    {
+        Ok(wakers) => resolutions.extend(wakers),
+        Err(error) => unavailable.push(format!("waker vtables: {error}")),
+    }
+    match ipc_resolutions(&elf, &analysis, &address_of) {
+        Ok(posts) => resolutions.extend(posts),
+        Err(error) => unavailable.push(format!("IPC posts: {error}")),
+    }
     // Calls through a static's function pointer reach the taken functions of
     // its type: the diagnostic observers' `OnceCell<fn(..)>`.
     let types = TypeFacts::read(&elf)?;
@@ -369,6 +385,7 @@ pub fn interrupt_stacks(root: &Path, elf: &Path) -> Result<InterruptStacks> {
         harts,
         handlers,
         locations,
+        unavailable,
         summaries: analysis.summaries.clone(),
         names,
     })
@@ -427,6 +444,7 @@ mod tests {
             handlers,
             names: BTreeMap::from([(0x2f00_1000, "TIMER".to_owned())]),
             locations: BTreeMap::new(),
+            unavailable: Vec::new(),
         }
     }
 
@@ -457,6 +475,7 @@ mod tests {
             handlers: Vec::new(),
             names: BTreeMap::new(),
             locations: BTreeMap::new(),
+            unavailable: Vec::new(),
         }
     }
 
@@ -523,6 +542,12 @@ mod tests {
         assert!(report.contains("hole: recursion at 0x00000020"), "{report}");
         assert!(report.contains(Reason::LoadedCall.hint()), "{report}");
         assert!(report.contains(Reason::Recursion.hint()), "{report}");
+        stacks.unavailable = vec!["IPC posts: a1 is not exact".to_owned()];
+        assert!(
+            stacks
+                .render()
+                .contains("facts unavailable, their sites are holes: IPC posts: a1 is not exact")
+        );
     }
 
     #[test]

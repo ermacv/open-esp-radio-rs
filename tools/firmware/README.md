@@ -25,7 +25,9 @@ inlined function owns, by the DWARF). It writes each hart's levels, their
 critical paths and their holes to `interrupt-stack.txt`: each hole by the
 source line the DWARF gives its site, with how many sites share it, and for
 each reason how a firmware author can make it exact (advice the gate never
-requires).
+requires). A fact source that cannot run (the waker vtables, the IPC posts)
+gives no facts: its sites stay holes and the report names why, rather than
+the gate failing.
 
 The default `device` feature provides serial-device selection, a lease shared
 by xtask and HIL, and `write_segments`, which writes every flash segment

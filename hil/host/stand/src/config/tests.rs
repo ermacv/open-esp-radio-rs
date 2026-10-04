@@ -379,3 +379,25 @@ fn the_lab_file_sections_are_gone() {
         assert!(load(file.path(), "esp32s31").is_err(), "{removed}");
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn a_board_is_addressed_by_its_by_id_link() {
+    let directory = tempfile::tempdir().unwrap();
+    for name in [
+        "usb-Espressif_USB_JTAG_serial_debug_unit_38:44:BE:AA:25:64-if00",
+        "usb-Espressif_USB_JTAG_serial_debug_unit_30:ED:A0:F3:F6:D0-if00",
+    ] {
+        std::os::unix::fs::symlink("/dev/null", directory.path().join(name)).unwrap();
+    }
+    assert_eq!(
+        by_id(directory.path(), "30:ED:A0:F3:F6:D0").unwrap(),
+        directory
+            .path()
+            .join("usb-Espressif_USB_JTAG_serial_debug_unit_30:ED:A0:F3:F6:D0-if00")
+    );
+    assert_eq!(by_id(directory.path(), "AA:AA:AA:AA:AA:AA"), None);
+    let file = stand_file(|_| {});
+    let lab = load(file.path(), "esp32s31").unwrap();
+    assert_eq!(lab.dut_mac().unwrap(), "30:ED:A0:00:00:01");
+}

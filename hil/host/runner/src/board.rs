@@ -73,6 +73,33 @@ pub(crate) fn archived(
     })
 }
 
+/// The device under test's port, ready for a flash: a board that is not on
+/// USB, because its image switched its USB Serial/JTAG off, is put into its
+/// ROM's download mode first through its hub port's power.
+pub(crate) fn flashable_port(lab: &oer_hil_stand::config::LabConfig) -> Result<std::path::PathBuf> {
+    let port = lab.dut.serial.clone();
+    if port.exists() {
+        return Ok(port);
+    }
+    let mac = lab.dut_mac()?;
+    let control = oer_hil_stand::control::BoardControl::of_board(&port, &mac)?;
+    let entry = control.download_entry().ok_or_else(|| {
+        format!(
+            "board `{}` is not on USB and does not reset by power; a person must reset it",
+            lab.dut.id
+        )
+    })?;
+    let banner = entry()?;
+    eprintln!(
+        "hil: board `{}` was not on USB; its ROM now waits for the flash: {}",
+        lab.dut.id,
+        oer_hil_stand::control::reset_line(&banner)
+            .as_deref()
+            .unwrap_or("no reset line")
+    );
+    Ok(port)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

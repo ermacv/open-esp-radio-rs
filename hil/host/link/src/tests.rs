@@ -579,3 +579,23 @@ fn pause_accepts_image_key_reply_only_in_the_established_boot() {
     assert!(station_unchanged_since_in(&events, 1).is_err());
     assert!(station_unchanged_since_in(&events, 0).is_err());
 }
+
+#[test]
+fn a_stream_ends_without_failure_only_after_an_expected_detach() {
+    let events = super::ProtocolEvents::default();
+    events.close(Some(super::LinkError::transport(
+        "serial reader reached end of stream",
+    )));
+    assert!(events.state.lock().unwrap().failure.is_some());
+    let events = super::ProtocolEvents::default();
+    events.state.lock().unwrap().expected_detach = true;
+    events.close(Some(super::LinkError::transport(
+        "serial reader reached end of stream",
+    )));
+    let state = events.state.lock().unwrap();
+    assert!(state.failure.is_none() && state.closed);
+    assert!(
+        state.check().is_ok(),
+        "the reply received before it still counts"
+    );
+}

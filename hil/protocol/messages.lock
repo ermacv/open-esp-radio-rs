@@ -147,6 +147,8 @@ system/stacks/get 3af83191bf626410 endpoint
 system/timebase-probe 5e565d5e923db7c7 property
 system/timebase/probe 1166b04f07380f1f endpoint
 system/timebase/probed 341699ecb055fc81 topic
+system/usb/disable 0341ab5f7efd972b endpoint
+system/usb/disabled 8571c744c847ea4b topic
 system/watchdog/armed ba82e77bc5b7470c topic
 system/watchdog/test c9be2bd5a613156d endpoint
 telemetry/core0-rx-cycles 951b7d9f4cd8314a property

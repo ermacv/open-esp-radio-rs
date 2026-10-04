@@ -299,6 +299,13 @@ requests! {
 }
 
 requests! {
+    /// The USB Serial/JTAG-off image's request beside the watchdog's.
+    pub enum UsbRequest (sessions = false) {
+        Disable(oer_hil_protocol::system::DisableUsb),
+    }
+}
+
+requests! {
     /// The panic-reset image's one request.
     pub enum PanicRequest (sessions = false) {
         Inject(oer_hil_protocol::system::InjectPanic),

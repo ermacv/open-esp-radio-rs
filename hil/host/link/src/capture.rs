@@ -183,13 +183,15 @@ impl SerialCapture {
     /// Observation includes counters from before this attachment. Persist them
     /// without interpreting historical target errors as a new scenario failure.
     fn finish_capture(mut self, qualify_target_health: bool) -> Result<String> {
-        let active = self
-            .protocol
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .health
-            .active;
+        // A target that left USB as expected has no link left to ask.
+        let active = {
+            let state = self
+                .protocol
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            state.health.active && !state.closed && !state.expected_detach
+        };
         let target_health = if active && self.check_link().is_ok() {
             Some(self.query_link_health(PROTOCOL_READY_TIMEOUT))
         } else {

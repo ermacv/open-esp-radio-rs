@@ -23,6 +23,8 @@ crate::messages! {
     topic HangInjected = "system/hang/injected";
     endpoint InjectPanic = "system/panic/inject" => crate::system::PanicInjected;
     topic PanicInjected = "system/panic/injected";
+    endpoint DisableUsb = "system/usb/disable" => crate::system::UsbDisabled;
+    topic UsbDisabled = "system/usb/disabled";
     endpoint GetStacks = "system/stacks/get" => crate::system::Stacks;
     topic Stacks = "system/stacks";
     endpoint GetInterruptStacks = "system/interrupt-stacks/get" => crate::system::InterruptStacks;
@@ -91,6 +93,15 @@ pub struct InjectPanic;
 /// The panic follows this acknowledgement.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
 pub struct PanicInjected;
+
+/// Diagnostic: once the acknowledgement is out, switch the USB Serial/JTAG
+/// off its pads, so the board leaves USB until a reset brings the ROM back.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
+pub struct DisableUsb;
+
+/// The USB Serial/JTAG leaves its pads after this acknowledgement.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
+pub struct UsbDisabled;
 
 /// Return the boot-lifetime CPU stack high-water marks. This diagnostic
 /// query is valid only outside an active traffic session.

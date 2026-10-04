@@ -3336,12 +3336,14 @@ name = "oer-hil-runner-system"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-platform-layout",
+ "oer-hil-arbiter",
  "oer-hil-durable",
  "oer-hil-execution",
  "oer-hil-image-class",
  "oer-hil-link",
  "oer-hil-protocol",
  "oer-hil-scenario",
+ "oer-hil-stand",
  "oer-hil-trace",
  "oer-process",
  "oer-trace",

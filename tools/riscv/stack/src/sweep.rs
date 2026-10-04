@@ -393,6 +393,9 @@ pub(crate) struct Swept {
     pub jumps: Vec<(u32, Vec<u32>)>,
     /// Instructions that can lower the interrupt level, by site.
     pub level_drops: Vec<(u32, LevelDrop)>,
+    /// Floating-point instructions and accesses of the floating-point CSRs
+    /// (`fflags`, `frm`, `fcsr`): each traps while `mstatus.FS` is off.
+    pub float_sites: Vec<u32>,
 }
 
 pub(crate) fn transfers(
@@ -414,6 +417,7 @@ pub(crate) fn transfers(
     let mut facts = [None::<Fact>; 32];
     let mut loads = [None::<Load>; 32];
     let mut level_drops = Vec::new();
+    let mut float_sites = Vec::new();
     while offset < bytes.len() {
         let pc = start + offset as u32;
         if merges.contains(&pc) {
@@ -442,6 +446,16 @@ pub(crate) fn transfers(
             && let Some(drop) = LevelDrop::of_csr(csr, op, source)
         {
             level_drops.push((pc, drop));
+        }
+        if matches!(
+            instruction,
+            Instruction::Float(_)
+                | Instruction::Extension(Extension::Csr {
+                    csr: 0x001..=0x003,
+                    ..
+                })
+        ) {
+            float_sites.push(pc);
         }
         let resolved = |target: u32, kind| Transfer {
             site: pc,
@@ -594,5 +608,6 @@ pub(crate) fn transfers(
         transfers,
         jumps,
         level_drops,
+        float_sites,
     })
 }

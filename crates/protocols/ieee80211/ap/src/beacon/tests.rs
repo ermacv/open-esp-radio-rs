@@ -1,6 +1,33 @@
 use oer_ieee80211_mac::beacon::{TimAssociationId, TimVirtualBitmap};
 
+use oer_ieee80211_mac::{
+    ap::profile::{LegacyRates, WmmParameters},
+    extensions::wmm::WmmAcParameters,
+    ht::HtLocalCapabilities,
+};
+
 use super::*;
+
+/// An advertisement of one-stream HT with the ordinary legacy rates.
+const ADVERTISEMENT: Advertisement = Advertisement::new(
+    LegacyRates::new(
+        [0x8b, 0x96, 0x82, 0x84, 0x0c, 0x18, 0x30, 0x60],
+        [0x6c, 0x12, 0x24, 0x48],
+    ),
+    HtLocalCapabilities::new(0x100c, 0x03, 0xff, 0x01),
+    WmmParameters::new(
+        4,
+        false,
+        [WmmAcParameters {
+            admission_control_mandatory: false,
+            aifsn: 3,
+            ecw_min: 4,
+            ecw_max: 10,
+            txop_limit_units_32_us: 0,
+        }; 4],
+    ),
+    0x0421,
+);
 
 const fn at(micros: u64) -> Instant {
     Instant::from_micros(micros)
@@ -12,6 +39,7 @@ fn static_storage_owns_beacon_dtim_and_next_deadline() {
     let ssid = WifiSsid::new(b"ap").unwrap();
     let mut beacon = ApBeacon::new(
         &mut storage,
+        &ADVERTISEMENT,
         [2; 6],
         &ssid,
         WifiChannel::mhz20(6).unwrap(),
@@ -66,6 +94,7 @@ fn late_publication_does_not_move_the_absolute_tbtt_schedule() {
     let ssid = WifiSsid::new(b"ap").unwrap();
     let mut beacon = ApBeacon::new(
         &mut storage,
+        &ADVERTISEMENT,
         [2; 6],
         &ssid,
         WifiChannel::mhz20(6).unwrap(),
@@ -110,6 +139,7 @@ fn the_tbtt_schedule_survives_the_u32_microsecond_boundary() {
     let ssid = WifiSsid::new(b"ap").unwrap();
     let mut beacon = ApBeacon::new(
         &mut storage,
+        &ADVERTISEMENT,
         [2; 6],
         &ssid,
         WifiChannel::mhz20(6).unwrap(),

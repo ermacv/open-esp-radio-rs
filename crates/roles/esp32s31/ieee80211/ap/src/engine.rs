@@ -6,7 +6,6 @@ mod rx;
 mod tx;
 
 use crate::{
-    beacon::ApBeacon,
     hardware::ApRuntimeHardware,
     rx::{
         ApOrdinaryPairwiseRxRequest, ApRxAdmission, ApRxAdmissionOperation, ApRxAdmissionRequest,
@@ -49,7 +48,7 @@ use oer_ieee80211_ap::{
     ApBufferedUnicastRelease, ApDownlinkAdmission, ApDownlinkDisposition, ApMlmeAction,
     ApPeerBinding, ApPeerClose, ApPeerCloseKind, ApPeerPhase, ApPeerPowerState, ApPeerStatus,
     ApPowerSaveAction, ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
-    pmksa::AP_PMKID_LEN, sae::ApSaeReply,
+    beacon::ApBeacon, pmksa::AP_PMKID_LEN, sae::ApSaeReply,
 };
 
 use oer_ieee80211_rsn::{OwnedEapolFrame, Pmk, frames::RsnTxFrame};

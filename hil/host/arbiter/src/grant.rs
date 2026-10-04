@@ -278,7 +278,11 @@ impl Arbiter {
             );
         }
         self.report_board(&request.owner);
-        let boards = crate::restore::claimed_boards(&claims, &self.devices().unwrap_or_default());
+        let (devices, unloaded) = boards_to_restore(self.devices(), self.stand_file());
+        if let Some(warning) = unloaded {
+            eprintln!("{warning}");
+        }
+        let boards = crate::restore::claimed_boards(&claims, &devices);
         // A holder that ended without its release left its boards as they were.
         crate::restore::restore(self, &boards, &format!("grant of lease #{id}"));
         Ok(Grant {
@@ -801,3 +805,22 @@ fn token() -> crate::Result<String> {
 
 #[cfg(test)]
 mod tests;
+
+/// The stand's boards for restoration, and the warning when the stand file
+/// does not load: such a grant restores no hub port, and says so rather than
+/// restore nothing in silence.
+pub(crate) fn boards_to_restore(
+    devices: crate::Result<Vec<crate::Device>>,
+    stand_file: &std::path::Path,
+) -> (Vec<crate::Device>, Option<String>) {
+    match devices {
+        Ok(devices) => (devices, None),
+        Err(error) => (
+            Vec::new(),
+            Some(format!(
+                "hil-arbiter: the stand file {} does not load, so no hub port is restored: {error}",
+                stand_file.display()
+            )),
+        ),
+    }
+}

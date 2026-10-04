@@ -781,3 +781,48 @@ fn describe_views(views: &[JobView<'_>]) -> String {
 
 #[cfg(test)]
 mod tests;
+
+/// `--board` and `--peer-board` of a command that starts runs, passed on to
+/// each run: the pool's boards to use where several of a chip qualify,
+/// until the stand's scheduler assigns them.
+#[derive(Clone, Debug, Default, Eq, PartialEq, clap::Args)]
+pub(crate) struct BoardChoiceArgs {
+    /// The device under test, by its stand-file id.
+    #[arg(long)]
+    pub board: Option<String>,
+    /// The peer board, by its stand-file id.
+    #[arg(long)]
+    pub peer_board: Option<String>,
+}
+
+impl BoardChoiceArgs {
+    /// The runner arguments that name the chosen boards.
+    pub(crate) fn arguments(&self) -> Vec<String> {
+        let mut arguments = Vec::new();
+        if let Some(board) = &self.board {
+            arguments.extend([String::from("--board"), board.clone()]);
+        }
+        if let Some(board) = &self.peer_board {
+            arguments.extend([String::from("--peer-board"), board.clone()]);
+        }
+        arguments
+    }
+}
+
+#[cfg(test)]
+mod board_choice_tests {
+    use super::BoardChoiceArgs;
+
+    #[test]
+    fn the_chosen_boards_reach_each_run() {
+        assert!(BoardChoiceArgs::default().arguments().is_empty());
+        let both = BoardChoiceArgs {
+            board: Some("s31-b".into()),
+            peer_board: Some("c5-a".into()),
+        };
+        assert_eq!(
+            both.arguments(),
+            ["--board", "s31-b", "--peer-board", "c5-a"]
+        );
+    }
+}

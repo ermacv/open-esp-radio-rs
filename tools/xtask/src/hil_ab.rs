@@ -56,6 +56,8 @@ pub(crate) struct AbCli {
     /// Layout seeds 1..=K, each built and run for both arms.
     #[arg(long, default_value_t = 1)]
     layout_seeds: u32,
+    #[command(flatten)]
+    boards: crate::hil_jobs::BoardChoiceArgs,
 }
 
 /// A variant as written on the command line, before its revision and
@@ -258,6 +260,7 @@ pub(crate) fn run(
         id: &id,
         directory: &directory,
         frozen,
+        boards: &cli.boards,
     };
     let mut loaded = Vec::new();
     // The first round of each seed builds each arm's images.
@@ -389,6 +392,8 @@ struct Session<'a> {
     directory: &'a Path,
     /// The xtask and runner every round runs.
     frozen: &'a crate::hil_jobs::Frozen,
+    /// The boards every run uses.
+    boards: &'a crate::hil_jobs::BoardChoiceArgs,
 }
 
 struct PreparedArm {
@@ -490,9 +495,10 @@ impl PreparedArm {
             id,
             directory,
             frozen,
+            boards,
         } = *session;
         let mut command = frozen.hil_command(ctx);
-        command.arg("run").args(scenarios);
+        command.arg("run").args(scenarios).args(boards.arguments());
         match launch {
             Launch::Build(seed) => {
                 command

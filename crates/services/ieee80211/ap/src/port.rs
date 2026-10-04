@@ -26,14 +26,29 @@
 //!   peer is authorized. [`PortAccessPoint::start`] installs the group key.
 //!   A peer's pairwise key is removed whenever the peer is.
 //!
-//! WPA3 (SAE and the IGTK) is not served yet: [`PortAccessPoint::new`]
-//! refuses a WPA3 service. The composition enables the port and polls the
-//! router beside the access point.
+//! - in a WPA3-Personal BSS, authenticates stations by SAE through the
+//!   environment's [`PortApSae`] executor, which the composition places
+//!   (another task, another core, or inline with [`InlineSae`]): the access
+//!   point hands each SAE frame on and goes on serving its BSS until the
+//!   output is ready, as the vendor runs its responder in a task of its own.
+//!   The IGTK reaches stations in Message 3; the port holds only the group
+//!   and pairwise keys.
+//!
+//! The composition enables the port and polls the router beside the access
+//! point.
+
+use core::{
+    future::poll_fn,
+    pin::pin,
+    task::{Context, Poll},
+};
 
 use oer_ieee80211_ap::{
     AP_MAX_CLIENTS, AccessPointService, ApAssociationCapabilities, ApMlmeAction, ApPeerClose,
     ApPeerCloseKind, ApPeerPhase, ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
-    beacon::ApBeacon, limits::AP_TIM_VIRTUAL_BITMAP_OCTETS,
+    beacon::ApBeacon,
+    limits::AP_TIM_VIRTUAL_BITMAP_OCTETS,
+    sae::{ApSaeFrame, ApSaeOutput, ApSaeRandom, ApSaeResponder, ApSaeResult},
 };
 use oer_ieee80211_lower_mac::{
     Channel, Cipher, CoexPriority, Ieee80211LowerMacPort, KeyHandle, KeyInstall, KeyScope,
@@ -46,6 +61,7 @@ use oer_ieee80211_mac::{
         ApPeerDisconnectKind, parse_ap_management_request, probe, probe::ResponseError,
         profile::Advertisement, write_ap_peer_disconnect,
         write_ht_association_response_frame_for_security, write_open_authentication_response,
+        write_sae_authentication,
     },
     beacon::{AP_BEACON_CAPACITY, ApBeaconBuildError, TimBitmapError, TimVirtualBitmap},
     channel::WifiChannel,
@@ -61,7 +77,7 @@ use oer_ieee80211_mac::{
     tsf::TsfInstant,
 };
 use oer_ieee80211_rsn::{
-    OwnedEapolFrame, RsnInterface, frames::RsnTxFrame, runner::RSN_HANDSHAKE_EAPOL_CAPACITY,
+    OwnedEapolFrame, Pmk, RsnInterface, frames::RsnTxFrame, runner::RSN_HANDSHAKE_EAPOL_CAPACITY,
 };
 use oer_ieee80211_upper_mac::TxReport;
 use oer_ieee80211_upper_mac_service::{
@@ -103,6 +119,85 @@ pub type PortApClient<'p, X> = PortClient<'p, X, PORT_AP_EXCHANGES, PORT_AP_BACK
 pub trait PortApEnv: PortClientEnv {
     type Timer: Timer;
     type Authenticator: PortApAuthenticator;
+    /// Where a WPA3 BSS's SAE responder runs; [`NoSae`] for another BSS.
+    type Sae: PortApSae;
+}
+
+/// The executor of an access point's SAE responder: the access point hands
+/// it one SAE frame at a time and takes the output when it is ready, so the
+/// elliptic-curve work of a Commit runs where the composition places it.
+pub trait PortApSae {
+    /// Take one received SAE frame; `false` while the output of the last
+    /// one was not taken, and the frame is dropped (the station repeats
+    /// it).
+    fn submit(&mut self, frame: ApSaeFrame<'_>, now: Instant) -> bool;
+    /// The station and output of the frame taken, once ready.
+    fn poll_output(&mut self, context: &mut Context<'_>) -> Poll<([u8; 6], ApSaeOutput)>;
+    /// Drop the session of a station the access point removed.
+    fn forget(&mut self, peer: [u8; 6]);
+}
+
+/// No SAE: the executor of an Open or WPA2 BSS.
+pub struct NoSae;
+
+impl PortApSae for NoSae {
+    fn submit(&mut self, _frame: ApSaeFrame<'_>, _now: Instant) -> bool {
+        false
+    }
+
+    fn poll_output(&mut self, _context: &mut Context<'_>) -> Poll<([u8; 6], ApSaeOutput)> {
+        Poll::Pending
+    }
+
+    fn forget(&mut self, _peer: [u8; 6]) {}
+}
+
+/// The responder run inline: a submitted frame's work is done before
+/// `submit` returns, and its output is ready at the next poll.
+pub struct InlineSae<R> {
+    responder: ApSaeResponder,
+    random: R,
+    ready: Option<([u8; 6], ApSaeOutput)>,
+}
+
+impl<R: ApSaeRandom> InlineSae<R> {
+    pub const fn new(responder: ApSaeResponder, random: R) -> Self {
+        Self {
+            responder,
+            random,
+            ready: None,
+        }
+    }
+}
+
+impl<R: ApSaeRandom> PortApSae for InlineSae<R> {
+    fn submit(&mut self, frame: ApSaeFrame<'_>, now: Instant) -> bool {
+        if self.ready.is_some() {
+            return false;
+        }
+        // Nothing waits in a queue: the frame is served at once.
+        let output = self.responder.receive(frame, now, 0, &mut self.random);
+        self.ready = Some((frame.peer, output));
+        true
+    }
+
+    fn poll_output(&mut self, _context: &mut Context<'_>) -> Poll<([u8; 6], ApSaeOutput)> {
+        self.ready.take().map_or(Poll::Pending, Poll::Ready)
+    }
+
+    fn forget(&mut self, peer: [u8; 6]) {
+        self.responder.forget(peer);
+    }
+}
+
+/// What the access point waits for between its deadlines.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "no_std without an allocator: one SAE output moves by value, once"
+)]
+enum Wake<B> {
+    Input(Option<PortInput<B>>),
+    Sae([u8; 6], ApSaeOutput),
 }
 
 /// The fresh material of each WPA2 four-way handshake the access point
@@ -144,11 +239,17 @@ pub struct PortApCounters {
     pub peers_left: u32,
     /// Peers the access point closed.
     pub peers_closed: u32,
-    /// Management requests the access point does not serve yet (SAE,
-    /// Block Ack actions).
+    /// Management requests the access point does not serve: SAE outside a
+    /// WPA3 BSS, Block Ack actions.
     pub unserved: u32,
     /// EAPOL-Key frames sent, retransmissions included.
     pub eapol_sent: u32,
+    /// SAE frames handed to the executor.
+    pub sae_frames: u32,
+    /// SAE frames dropped while the executor was busy.
+    pub sae_dropped: u32,
+    /// Stations SAE authenticated.
+    pub sae_accepted: u32,
     /// Peers authorized by a completed four-way handshake.
     pub handshakes: u32,
 }
@@ -159,9 +260,6 @@ pub enum PortApBuildError {
     Beacon(ApBeaconBuildError),
     /// The service's address is not the client's interface address.
     AddressMismatch,
-    /// The service's BSS is WPA3-Personal, whose SAE and IGTK the access
-    /// point does not serve yet.
-    SecurityUnsupported,
 }
 
 /// Why an access-point operation failed.
@@ -219,6 +317,7 @@ pub struct PortAccessPoint<'p, X: PortApEnv> {
     client: PortApClient<'p, X>,
     timer: X::Timer,
     authenticator: X::Authenticator,
+    sae: X::Sae,
     profile: PortApProfile<'p>,
     beacon: ApBeacon<'p>,
     service: AccessPointService<'p>,
@@ -240,15 +339,13 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         client: PortApClient<'p, X>,
         timer: X::Timer,
         authenticator: X::Authenticator,
+        sae: X::Sae,
         profile: PortApProfile<'p>,
         service: AccessPointService<'p>,
         storage: &'p mut [u8; AP_BEACON_CAPACITY],
     ) -> Result<Self, PortApBuildError> {
         if service.address() != client.config().address {
             return Err(PortApBuildError::AddressMismatch);
-        }
-        if service.security_policy() == ApSecurityPolicy::Wpa3Personal {
-            return Err(PortApBuildError::SecurityUnsupported);
         }
         let beacon = ApBeacon::new(
             storage,
@@ -266,6 +363,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             client,
             timer,
             authenticator,
+            sae,
             profile,
             beacon,
             service,
@@ -355,9 +453,10 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             })
     }
 
-    /// Forget a peer: its pairwise key, then its state.
+    /// Forget a peer: its pairwise key, its SAE session, then its state.
     fn remove_peer(&mut self, peer: [u8; 6]) -> Result<(), PortApError<PortError<X>>> {
         self.remove_pairwise_key(peer)?;
+        self.sae.forget(peer);
         self.service.remove_peer(peer)?;
         Ok(())
     }
@@ -401,12 +500,26 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             .into_iter()
             .flatten()
             .fold(deadline, Instant::min);
-            match self.client.next_input(&self.timer, wake).await {
-                Some(PortInput::Frame(frame)) => self.receive(frame.bytes()).await?,
-                Some(PortInput::Poisoned) => {
+            let woken = {
+                let Self {
+                    client, timer, sae, ..
+                } = self;
+                let mut input = pin!(client.next_input(&*timer, wake));
+                poll_fn(|context| {
+                    if let Poll::Ready((peer, output)) = sae.poll_output(context) {
+                        return Poll::Ready(Wake::Sae(peer, output));
+                    }
+                    input.as_mut().poll(context).map(Wake::Input)
+                })
+                .await
+            };
+            match woken {
+                Wake::Sae(peer, output) => self.sae_output(peer, output, now).await?,
+                Wake::Input(Some(PortInput::Frame(frame))) => self.receive(frame.bytes()).await?,
+                Wake::Input(Some(PortInput::Poisoned)) => {
                     return Err(PortApError::Client(PortClientError::Poisoned));
                 }
-                Some(PortInput::Tbtt(_) | PortInput::EventsLost) | None => {}
+                Wake::Input(Some(PortInput::Tbtt(_) | PortInput::EventsLost) | None) => {}
             }
         }
     }
@@ -537,6 +650,25 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 }
                 Ok(())
             }
+            Some(ApManagementRequest::SaeAuthentication {
+                peer,
+                transaction,
+                status,
+                body,
+            }) if self.service.security_policy() == ApSecurityPolicy::Wpa3Personal => {
+                let frame = ApSaeFrame {
+                    peer,
+                    transaction,
+                    status,
+                    body,
+                };
+                if self.sae.submit(frame, now) {
+                    self.counters.sae_frames = self.counters.sae_frames.saturating_add(1);
+                } else {
+                    self.counters.sae_dropped = self.counters.sae_dropped.saturating_add(1);
+                }
+                Ok(())
+            }
             Some(
                 ApManagementRequest::SaeAuthentication { .. }
                 | ApManagementRequest::BlockAck { .. },
@@ -571,6 +703,53 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         self.next_probe_response = now.saturating_add(PROBE_RESPONSE_INTERVAL);
         self.send_management(&response[..length]).await?;
         self.counters.probe_responses = self.counters.probe_responses.saturating_add(1);
+        Ok(())
+    }
+
+    /// Apply one SAE output: an accepted exchange authenticates the station
+    /// with its PMK (ending an earlier pairwise-key epoch), a failed one
+    /// forgets a station that never associated; then the replies go out in
+    /// order.
+    async fn sae_output(
+        &mut self,
+        peer: [u8; 6],
+        output: ApSaeOutput,
+        now: Instant,
+    ) -> Result<(), PortApError<PortError<X>>> {
+        match output.result {
+            ApSaeResult::Accepted { pmk, pmkid } => {
+                if self.service.peer_status(peer).is_some() {
+                    self.remove_pairwise_key(peer)?;
+                }
+                self.service
+                    .authenticate_sae(peer, Pmk::from_bytes(pmk), pmkid, now)?;
+                self.counters.sae_accepted = self.counters.sae_accepted.saturating_add(1);
+            }
+            ApSaeResult::Failed { .. } => {
+                if self
+                    .service
+                    .peer_status(peer)
+                    .is_some_and(|status| status.phase == ApPeerPhase::Authenticated)
+                {
+                    self.remove_peer(peer)?;
+                }
+            }
+            ApSaeResult::Continue => {}
+        }
+        for reply in output.replies() {
+            let sequence = self.service.next_management_sequence();
+            let mut frame = [0; AP_BEACON_CAPACITY];
+            let length = write_sae_authentication(
+                &mut frame,
+                self.service.address(),
+                reply.peer,
+                reply.transaction,
+                reply.status,
+                reply.body(),
+                sequence,
+            )?;
+            self.send_management(&frame[..length]).await?;
+        }
         Ok(())
     }
 

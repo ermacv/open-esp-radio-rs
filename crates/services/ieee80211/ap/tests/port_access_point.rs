@@ -8,12 +8,13 @@ use core::{
     task::{Context, Poll, Waker},
 };
 
+use oer_ieee80211_ap::sae::{ApSaeCredential, ApSaeRandom, ApSaeResponder};
 use oer_ieee80211_ap::{
     AccessPointClientLimit, AccessPointInactiveTimeout, AccessPointPeerStorage, AccessPointService,
     ApPeerPhase,
 };
 use oer_ieee80211_ap_service::port::{
-    PortAccessPoint, PortApAuthenticator, PortApBuildError, PortApClient, PortApEnv, PortApProfile,
+    InlineSae, NoSae, PortAccessPoint, PortApAuthenticator, PortApClient, PortApEnv, PortApProfile,
     PortApRouter,
 };
 use oer_ieee80211_lower_mac::{
@@ -32,6 +33,7 @@ use oer_ieee80211_mac::{
     qos::WmmAccessCategory,
     ssid::WifiSsid,
 };
+use oer_ieee80211_rsn::sae::{SaeCommit, SaeCommitValues, SaePassword, SaePasswordElement};
 use oer_ieee80211_rsn::{
     Pmk, Ptk, PtkContext,
     frames::{OwnedAssociationSecurityIes, OwnedRsnIe, RsnGtk, RsnIgtk, RsnTxFrame},
@@ -134,6 +136,36 @@ impl PortClientEnv for Env<'_> {
 impl<'a> PortApEnv for Env<'a> {
     type Timer = &'a VirtualTimer;
     type Authenticator = FixedMaterial;
+    type Sae = NoSae;
+}
+
+/// The environment of a WPA3 BSS, its SAE responder run inline.
+struct Wpa3Env<'a>(core::marker::PhantomData<&'a ()>);
+
+impl PortClientEnv for Wpa3Env<'_> {
+    type Port = LowerMacModel;
+    type Budget = ProtectEveryHeTxop;
+    type Ladder = FixedRate;
+    type Entropy = Seeded;
+}
+
+impl<'a> PortApEnv for Wpa3Env<'a> {
+    type Timer = &'a VirtualTimer;
+    type Authenticator = FixedMaterial;
+    type Sae = InlineSae<Counter>;
+}
+
+/// Deterministic SAE scalars.
+struct Counter(u8);
+
+impl ApSaeRandom for Counter {
+    fn fill(&mut self, bytes: &mut [u8]) {
+        for byte in bytes.iter_mut() {
+            self.0 = self.0.wrapping_add(0x3b);
+            *byte = self.0 | 0x10;
+        }
+        bytes[0] = 0x11;
+    }
 }
 
 /// The nonce and replay counter every handshake starts from.
@@ -174,7 +206,15 @@ fn model() -> LowerMacModel {
     model
 }
 
-fn client<'a>(router: &'a PortApRouter<'a, Env<'a>>) -> PortApClient<'a, Env<'a>> {
+fn client<'a, X>(router: &'a PortApRouter<'a, X>) -> PortApClient<'a, X>
+where
+    X: PortClientEnv<
+            Port = LowerMacModel,
+            Budget = ProtectEveryHeTxop,
+            Ladder = FixedRate,
+            Entropy = Seeded,
+        >,
+{
     PortClient::new(
         router,
         TxPlanner::new(
@@ -228,7 +268,7 @@ fn profile(ssid: &WifiSsid) -> PortApProfile<'_> {
 /// `stops` still ahead, and `at` runs at each new time.
 fn drive<T>(
     model: &LowerMacModel,
-    router: &PortApRouter<'_, Env<'_>>,
+    router: &oer_ieee80211_upper_mac_service::EventRouter<'_, LowerMacModel, 2, 4>,
     timer: &VirtualTimer,
     future: impl Future<Output = T>,
     stops: &[u64],
@@ -301,6 +341,7 @@ fn the_access_point_starts_its_bss_and_beacons_at_every_tbtt() {
         client(&router),
         &timer,
         FixedMaterial,
+        NoSae,
         profile(&ssid),
         service(),
         &mut storage,
@@ -374,6 +415,7 @@ fn a_probe_request_for_the_bss_or_any_ssid_is_answered_once_per_interval() {
         client(&router),
         &timer,
         FixedMaterial,
+        NoSae,
         profile(&ssid),
         service(),
         &mut storage,
@@ -463,11 +505,11 @@ fn sent_to_station(model: &LowerMacModel) -> Vec<(u8, u16)> {
 
 /// Run the access point until `until`, delivering each `(time, frame)` as
 /// the port receives it.
-fn serve(
+fn serve<X: PortApEnv<Port = LowerMacModel>>(
     model: &LowerMacModel,
-    router: &PortApRouter<'_, Env<'_>>,
+    router: &oer_ieee80211_upper_mac_service::EventRouter<'_, LowerMacModel, 2, 4>,
     timer: &VirtualTimer,
-    access_point: &mut PortAccessPoint<'_, Env<'_>>,
+    access_point: &mut PortAccessPoint<'_, X>,
     frames: &[(u64, Vec<u8>)],
     until: u64,
 ) {
@@ -500,6 +542,7 @@ fn an_open_station_authenticates_associates_and_leaves() {
         client(&router),
         &timer,
         FixedMaterial,
+        NoSae,
         profile(&ssid),
         service(),
         &mut storage,
@@ -572,6 +615,7 @@ fn an_inactive_peer_is_disassociated_and_deauthenticated() {
         client(&router),
         &timer,
         FixedMaterial,
+        NoSae,
         profile(&ssid),
         service(),
         &mut storage,
@@ -599,10 +643,10 @@ fn an_inactive_peer_is_disassociated_and_deauthenticated() {
 }
 
 #[test]
-fn a_wpa3_bss_is_refused_until_its_sae_is_served() {
+fn a_wpa3_station_authenticates_by_sae_while_the_bss_goes_on() {
     let model = model();
     let timer = VirtualTimer::default();
-    let router = PortApRouter::<Env<'_>>::new(&model, 1);
+    let router = PortApRouter::<Wpa3Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = [0; AP_BEACON_CAPACITY];
     let wpa3 = AccessPointService::new_wpa3(
@@ -613,17 +657,65 @@ fn a_wpa3_bss_is_refused_until_its_sae_is_served() {
         AccessPointInactiveTimeout::new(10).unwrap(),
         Box::leak(Box::new(AccessPointPeerStorage::new())),
     );
-    assert!(matches!(
-        PortAccessPoint::<Env<'_>>::new(
-            client(&router),
-            &timer,
-            FixedMaterial,
-            profile(&ssid),
-            wpa3,
-            &mut storage
+    let sae = InlineSae::new(
+        ApSaeResponder::new(
+            ADDRESS,
+            ApSaeCredential::derive(SSID, SaePassword::new(PASSPHRASE).unwrap()),
         ),
-        Err(PortApBuildError::SecurityUnsupported)
-    ));
+        Counter(0),
+    );
+    let mut access_point = PortAccessPoint::<Wpa3Env<'_>>::new(
+        client(&router),
+        &timer,
+        FixedMaterial,
+        sae,
+        profile(&ssid),
+        wpa3,
+        &mut storage,
+    )
+    .unwrap();
+    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+
+    // The station's Commit, built from the primitives the station role
+    // uses: the access point answers with its own Commit.
+    let pwe = SaePasswordElement::hunting_and_pecking(PASSPHRASE, STATION, ADDRESS).unwrap();
+    let commit = SaeCommit::new(pwe, [0x21; 32], [0x43; 32]).unwrap();
+    let mut body = [0; 160];
+    let length = commit.values().encode(None, false, &mut body).unwrap();
+    let start = timer.now.get();
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[(start + 1_000, sae_authentication(1, &body[..length]))],
+        start + 2_000,
+    );
+    let (transaction, status, reply) = last_sae_reply(&model);
+    assert_eq!((transaction, status), (1, 0));
+    let keys = commit
+        .process(SaeCommitValues::parse(&reply, false).unwrap())
+        .unwrap();
+
+    // Its Confirm: the access point accepts the station and confirms.
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[(start + 3_000, sae_authentication(2, &keys.own_confirm(1)))],
+        start + 4_000,
+    );
+    let (transaction, status, reply) = last_sae_reply(&model);
+    assert_eq!((transaction, status), (2, 0));
+    assert_eq!(keys.verify_peer_confirm(&reply), Ok(1));
+    assert_eq!(access_point.counters().sae_accepted, 1);
+    assert_eq!(
+        access_point.service().peer_status(STATION).unwrap().phase,
+        ApPeerPhase::Authenticated
+    );
+    // The BSS went on beaconing throughout.
+    assert!(access_point.counters().beacons >= 1);
 }
 
 /// The RSN element of a WPA2-Personal station: CCMP, PSK.
@@ -686,6 +778,7 @@ fn a_wpa2_station_completes_the_four_way_handshake_and_gets_its_key() {
         client(&router),
         &timer,
         FixedMaterial,
+        NoSae,
         profile(&ssid),
         wpa2,
         &mut storage,
@@ -783,6 +876,7 @@ fn a_silent_station_gets_message_1_again_and_is_closed_when_its_retries_run_out(
         client(&router),
         &timer,
         FixedMaterial,
+        NoSae,
         profile(&ssid),
         wpa2,
         &mut storage,
@@ -814,4 +908,30 @@ fn a_silent_station_gets_message_1_again_and_is_closed_when_its_retries_run_out(
         .collect();
     assert_eq!(teardown, [(0xa0, 2), (0xc0, 2)]);
     assert!(access_point.service().peer_status(STATION).is_none());
+}
+
+/// An SAE Authentication frame of the station.
+fn sae_authentication(transaction: u16, body: &[u8]) -> Vec<u8> {
+    let mut fixed = vec![3, 0];
+    fixed.extend_from_slice(&transaction.to_le_bytes());
+    fixed.extend_from_slice(&[0, 0]);
+    fixed.extend_from_slice(body);
+    management(11, false, &fixed)
+}
+
+/// The transaction, status and body of the last SAE Authentication frame
+/// the access point sent the station.
+fn last_sae_reply(model: &LowerMacModel) -> (u16, u16, Vec<u8>) {
+    let frame = model
+        .submitted()
+        .into_iter()
+        .map(|attempt| attempt.frames[0].clone())
+        .rfind(|frame| frame[0] == 0xb0 && frame[4..10] == STATION)
+        .expect("an SAE reply");
+    assert_eq!(u16::from_le_bytes([frame[24], frame[25]]), 3);
+    (
+        u16::from_le_bytes([frame[26], frame[27]]),
+        u16::from_le_bytes([frame[28], frame[29]]),
+        frame[30..].to_vec(),
+    )
 }

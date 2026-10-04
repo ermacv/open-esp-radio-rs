@@ -72,6 +72,9 @@ pub struct RxMeta {
     pub channel: Channel,
     pub rate: RxEvidence<PhyRate>,
     pub rssi_dbm: RxEvidence<i8>,
+    /// The receiver's noise floor when the frame arrived: a per-frame
+    /// measurement, or the PHY's running estimate read at reception (the
+    /// ESP32-S31's), observed either way.
     pub noise_floor_dbm: RxEvidence<i8>,
     /// Reception time in the port's radio clock, with the generation of
     /// the clock relation it was taken in.

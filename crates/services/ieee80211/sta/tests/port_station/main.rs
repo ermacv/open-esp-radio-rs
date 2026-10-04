@@ -54,8 +54,8 @@ use oer_ieee80211_sta::{
 };
 use oer_ieee80211_sta_service::{
     port::{
-        EventRouter, PORT_TX_QUEUE, PortCoexistence, PortCoexistenceRefused, PortConnection,
-        PortConnectionFrame, PortDisconnect, PortFrame, PortLink, PortLinkError,
+        EventRouter, PORT_FRAME_CAPACITY, PORT_TX_QUEUE, PortCoexistence, PortCoexistenceRefused,
+        PortConnection, PortConnectionFrame, PortDisconnect, PortLink, PortLinkError,
         PortLinkSupervision, PortProbe, PortRouter, PortScan, PortScanTarget, PortSend,
         PortStation, PortStationApplication, PortStationConfig, PortStationEnv,
         PortStationLifecycle, PortStationProfile, PortStationStorage,
@@ -797,6 +797,8 @@ fn a_block_ack_window_releases_in_order_and_replays_and_duplicates_are_dropped_b
     }
     world.run_for(&mut ap, &mut station, 5, &mut delivered);
     assert!(delivered.is_empty());
+    // The window keeps copies: every port buffer went back.
+    assert_eq!(world.model.rx_buffers_lent(), 0);
     let frame = ap.data_with_sequence(100, Some(0), Some(1), false, IPV4, b"a", PEER);
     ap.queue(frame);
     world.run_for(&mut ap, &mut station, 5, &mut delivered);
@@ -2036,7 +2038,7 @@ fn the_station_holds_no_frame_buffer_of_its_own() {
     >;
     // The scan table and every frame buffer are in the composition's
     // storage; the station and its connection are protocol state.
-    let frame = core::mem::size_of::<PortFrame>();
+    let frame = PORT_FRAME_CAPACITY;
     assert!(core::mem::size_of::<Connection>() < frame);
     assert!(core::mem::size_of::<Station>() < 2 * frame);
     assert!(core::mem::size_of::<PortStationStorage>() > 20 * frame);

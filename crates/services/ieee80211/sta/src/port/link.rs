@@ -11,7 +11,7 @@ use oer_ieee80211_lower_mac::{
     AmpduCapabilities, Channel, CoexPriority, EventsLost, FailureClass, Ieee80211LowerMacPort,
     KeySelector, LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacAmpdu,
     LowerMacBeaconTiming, LowerMacEvent, LowerMacSetting, MacAddress, PhyRate, ReceiveFilter,
-    RxMeta, SettingError, TbttEvent, TxPower, VifConfig, VifId, VifRole,
+    RxBuffer, RxMeta, SettingError, TbttEvent, TxPower, VifConfig, VifId, VifRole,
 };
 use oer_ieee80211_mac::{
     ccmp::CcmpTxPacketNumberError,
@@ -208,28 +208,20 @@ pub const PORT_BACKLOG: usize = 4;
 const FCS_LEN: u32 = 4;
 const CCMP_MIC_LEN: u32 = 8;
 
-/// One received MPDU, header to end of body, and its metadata.
-#[derive(Clone)]
-pub struct PortFrame {
-    bytes: [u8; PORT_FRAME_CAPACITY],
-    len: usize,
+/// One received MPDU, header to end of body, in the port's buffer, and its
+/// metadata. Dropping it returns the buffer to the port.
+pub struct PortFrame<B> {
+    buffer: B,
     meta: RxMeta,
 }
 
-impl PortFrame {
-    /// A copy of `frame`; `None` when it exceeds [`PORT_FRAME_CAPACITY`].
-    pub fn copy(frame: &[u8], meta: RxMeta) -> Option<Self> {
-        let mut bytes = [0; PORT_FRAME_CAPACITY];
-        bytes.get_mut(..frame.len())?.copy_from_slice(frame);
-        Some(Self {
-            bytes,
-            len: frame.len(),
-            meta,
-        })
+impl<B: RxBuffer> PortFrame<B> {
+    pub const fn new(buffer: B, meta: RxMeta) -> Self {
+        Self { buffer, meta }
     }
 
     pub fn bytes(&self) -> &[u8] {
-        &self.bytes[..self.len]
+        self.buffer.bytes()
     }
 
     pub const fn meta(&self) -> RxMeta {
@@ -237,17 +229,13 @@ impl PortFrame {
     }
 }
 
-/// One input of the port the station consumes.
-///
-/// A frame travels inline: the station allocates nothing, so the small
-/// variants share the frame's size.
-#[allow(
-    clippy::large_enum_variant,
-    reason = "no_std without an allocator: received frames move by value"
-)]
-#[derive(Clone)]
-pub enum PortInput {
-    Frame(PortFrame),
+/// The receive buffer of a station's port.
+pub type PortRxBuffer<X> = <<X as PortStationEnv>::Port as Ieee80211LowerMacPort>::RxBuffer;
+
+/// One input of the port the station consumes; a frame is the port's own
+/// buffer, never a copy.
+pub enum PortInput<B> {
+    Frame(PortFrame<B>),
     /// A TBTT of the station's interface, reported through
     /// [`LowerMacBeaconTiming`].
     Tbtt(TbttEvent),
@@ -261,8 +249,7 @@ pub enum PortInput {
 /// What the station dropped at the port boundary.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct PortLinkCounters {
-    /// Received MPDUs longer than [`PORT_FRAME_CAPACITY`] or the backend's
-    /// receive buffer.
+    /// Received MPDUs longer than the backend's receive buffer.
     pub oversized_frames: u32,
     /// Reports of lost port events.
     pub events_lost: u32,
@@ -491,7 +478,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
 
     /// The next input the router already holds: a TBTT first, then a
     /// received frame. It never waits.
-    pub async fn try_input(&mut self) -> Option<PortInput> {
+    pub async fn try_input(&mut self) -> Option<PortInput<PortRxBuffer<X>>> {
         poll_fn(|context| match self.poll_input(context) {
             Poll::Ready(input) => Poll::Ready(input),
             Poll::Pending => Poll::Ready(None),
@@ -504,7 +491,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         &mut self,
         timer: &T,
         deadline: Instant,
-    ) -> Option<PortInput> {
+    ) -> Option<PortInput<PortRxBuffer<X>>> {
         let mut wait = pin!(timer.wait_until(deadline));
         poll_fn(|context| {
             if let Poll::Ready(input) = self.poll_input(context) {
@@ -520,7 +507,10 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
 
     /// Poll the router's extension and receive queues once; `Ready(None)`
     /// never occurs, a poisoned port is [`PortInput::Poisoned`].
-    fn poll_input(&mut self, context: &mut core::task::Context<'_>) -> Poll<Option<PortInput>> {
+    fn poll_input(
+        &mut self,
+        context: &mut core::task::Context<'_>,
+    ) -> Poll<Option<PortInput<PortRxBuffer<X>>>> {
         loop {
             let router = self.router;
             match pin!(router.extension()).poll(context) {
@@ -537,7 +527,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
                 Poll::Pending => {}
             }
             return match pin!(router.received()).poll(context) {
-                Poll::Ready(Some(Ok(event))) => match self.frame(&event) {
+                Poll::Ready(Some(Ok(event))) => match self.frame(event) {
                     Some(input) => Poll::Ready(Some(input)),
                     None => continue,
                 },
@@ -548,28 +538,28 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         }
     }
 
-    fn lost(&mut self) -> PortInput {
+    fn lost(&mut self) -> PortInput<PortRxBuffer<X>> {
         self.counters.events_lost = self.counters.events_lost.saturating_add(1);
         PortInput::EventsLost
     }
 
-    /// The station's copy of a received frame; `None` for one it cannot
-    /// hold.
-    fn frame(&mut self, event: &<X::Port as Ieee80211LowerMacPort>::Event) -> Option<PortInput> {
-        match <X::Port as Ieee80211LowerMacPort>::view(event) {
-            LowerMacEvent::Received { frame, meta } => match PortFrame::copy(frame, meta) {
-                Some(frame) => Some(PortInput::Frame(frame)),
-                None => {
+    /// A received frame in the port's buffer; `None` for any other event,
+    /// counting a frame the backend could not hold.
+    fn frame(
+        &mut self,
+        event: <X::Port as Ieee80211LowerMacPort>::Event,
+    ) -> Option<PortInput<PortRxBuffer<X>>> {
+        match <X::Port as Ieee80211LowerMacPort>::into_received(event) {
+            Ok((buffer, meta)) => Some(PortInput::Frame(PortFrame::new(buffer, meta))),
+            Err(event) => {
+                if let LowerMacEvent::RxTooLong { .. } =
+                    <X::Port as Ieee80211LowerMacPort>::view(&event)
+                {
                     self.counters.oversized_frames =
                         self.counters.oversized_frames.saturating_add(1);
-                    None
                 }
-            },
-            LowerMacEvent::RxTooLong { .. } => {
-                self.counters.oversized_frames = self.counters.oversized_frames.saturating_add(1);
                 None
             }
-            _ => None,
         }
     }
 

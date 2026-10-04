@@ -1019,3 +1019,31 @@ fn an_edca_set_applies_whole_or_not_at_all() {
     );
     assert_eq!(model.edca(), Some(set));
 }
+
+#[test]
+fn a_received_frame_is_the_backend_s_buffer_until_it_is_dropped() {
+    let model = enabled_station();
+    assert_eq!(model.set_monitor(true), Ok(Ok(())));
+    let meta = RxMeta::unavailable(channel_six());
+    let beacon = management(8, [0xff; 6], OTHER_BSS);
+    model.receive(&beacon, meta);
+    assert_eq!(model.rx_buffers_lent(), 1);
+
+    let Ok((buffer, received)) = Model::into_received(next(&model)) else {
+        panic!("a received event lends its frame");
+    };
+    assert_eq!((buffer.bytes(), received), (beacon.as_slice(), meta));
+    assert_eq!(model.rx_buffers_lent(), 1);
+    drop(buffer);
+    assert_eq!(model.rx_buffers_lent(), 0);
+
+    // Any other event comes back unchanged.
+    assert_eq!(model.lifecycle(LifecycleCommand::Disable), Ok(Ok(())));
+    let Err(event) = Model::into_received(next(&model)) else {
+        panic!("a lifecycle event lends no frame");
+    };
+    assert_eq!(
+        Model::view(&event),
+        LowerMacEvent::Lifecycle(LifecycleEvent::Disabled)
+    );
+}

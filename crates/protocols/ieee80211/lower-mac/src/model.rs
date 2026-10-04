@@ -16,7 +16,7 @@
 //! Built for the crate's own tests and, with the `model` feature, for the
 //! tests of packages that drive the port.
 
-use alloc::{collections::VecDeque, vec, vec::Vec};
+use alloc::{collections::VecDeque, rc::Rc, vec, vec::Vec};
 use core::{
     cell::{Cell, RefCell},
     future::Future,
@@ -89,12 +89,44 @@ pub const MODEL_AMPDU: AmpduCapabilities = AmpduCapabilities {
 /// One owned event of the model.
 #[derive(Debug)]
 pub enum ModelEvent {
-    Received(Vec<u8>, RxMeta),
+    Received(ModelRxBuffer, RxMeta),
     Tx(TxCompletion),
     Tbtt(TbttEvent),
     Lifecycle(LifecycleEvent),
     /// The terminal event of a poisoned model.
     Poisoned,
+}
+
+/// A received frame the model lends: the bytes the test queued. The model
+/// counts the buffers it lent until they are dropped
+/// ([`LowerMacModel::rx_buffers_lent`]), as a backend whose receive buffer
+/// is a DMA credit would.
+#[derive(Debug)]
+pub struct ModelRxBuffer {
+    bytes: Vec<u8>,
+    lent: Rc<Cell<usize>>,
+}
+
+impl ModelRxBuffer {
+    fn lend(bytes: &[u8], lent: &Rc<Cell<usize>>) -> Self {
+        lent.set(lent.get() + 1);
+        Self {
+            bytes: bytes.to_vec(),
+            lent: Rc::clone(lent),
+        }
+    }
+}
+
+impl RxBuffer for ModelRxBuffer {
+    fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+impl Drop for ModelRxBuffer {
+    fn drop(&mut self) {
+        self.lent.set(self.lent.get() - 1);
+    }
 }
 
 /// A buffer of the model's bounded pool.
@@ -299,6 +331,8 @@ impl State {
 /// clock reads what the test last passed to [`LowerMacModel::set_now`].
 pub struct LowerMacModel {
     state: RefCell<State>,
+    /// Receive buffers lent and not yet dropped.
+    rx_lent: Rc<Cell<usize>>,
     /// The radio clock, as the test last set it.
     now: Cell<Ieee80211Instant>,
 }
@@ -324,8 +358,15 @@ impl LowerMacModel {
     pub fn new() -> Self {
         Self {
             state: RefCell::default(),
+            rx_lent: Rc::new(Cell::new(0)),
             now: Cell::new(Ieee80211Instant::from_micros(0)),
         }
+    }
+
+    /// Receive buffers the model lent, queued or with the consumer, and not
+    /// yet dropped.
+    pub fn rx_buffers_lent(&self) -> usize {
+        self.rx_lent.get()
     }
 
     /// Set the radio clock to `now`.
@@ -365,7 +406,10 @@ impl LowerMacModel {
         let mut state = self.state.borrow_mut();
         let admitted = state.monitor || state.vifs.iter().flatten().any(|vif| vif.admits(frame));
         if state.enabled && admitted {
-            state.push(ModelEvent::Received(frame.to_vec(), meta));
+            state.push(ModelEvent::Received(
+                ModelRxBuffer::lend(frame, &self.rx_lent),
+                meta,
+            ));
         }
     }
 
@@ -579,12 +623,23 @@ impl Future for NextModelEvent<'_> {
 
 impl Ieee80211LowerMacPort for LowerMacModel {
     type Event = ModelEvent;
+    type RxBuffer = ModelRxBuffer;
     type Error = ModelPoisoned;
     type TxBuffer = ModelBuffer;
 
+    fn into_received(event: ModelEvent) -> Result<(ModelRxBuffer, RxMeta), ModelEvent> {
+        match event {
+            ModelEvent::Received(frame, meta) => Ok((frame, meta)),
+            event => Err(event),
+        }
+    }
+
     fn view(event: &ModelEvent) -> LowerMacEvent<'_> {
         match event {
-            ModelEvent::Received(frame, meta) => LowerMacEvent::Received { frame, meta: *meta },
+            ModelEvent::Received(frame, meta) => LowerMacEvent::Received {
+                frame: frame.bytes(),
+                meta: *meta,
+            },
             ModelEvent::Tx(completion) => LowerMacEvent::TxCompleted(*completion),
             ModelEvent::Tbtt(_) => LowerMacEvent::Extension,
             ModelEvent::Lifecycle(event) => LowerMacEvent::Lifecycle(*event),

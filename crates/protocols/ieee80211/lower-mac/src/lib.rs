@@ -73,7 +73,7 @@ pub use oer_radio_port::{
     LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned, PortError, Projected, RadioEpoch,
 };
 pub use port::{Ieee80211LowerMacPort, LowerMacEvent, MpduAttempt, SubmitResult};
-pub use rx::{RxCryptoStatus, RxEvidence, RxMeta};
+pub use rx::{RxBuffer, RxCryptoStatus, RxEvidence, RxMeta};
 pub use tx::{
     Backoff, BlockAckReport, KeySelector, Protection, Refused, SubmitError, TxAttempt, TxBuffer,
     TxCompletion, TxFault, TxId, TxPayload, TxPower, TxResponse, TxStatus,

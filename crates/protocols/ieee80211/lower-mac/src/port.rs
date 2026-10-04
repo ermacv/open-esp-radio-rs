@@ -11,7 +11,7 @@ use oer_radio_port::{
 use crate::{
     capabilities::LowerMacCapabilities,
     control::{KeyHandle, KeyInstall, LowerMacSetting, SettingError},
-    rx::RxMeta,
+    rx::{RxBuffer, RxMeta},
     tx::{Refused, TxAttempt, TxBuffer, TxCompletion, TxId, TxPayload},
 };
 
@@ -116,9 +116,15 @@ pub trait Ieee80211LowerMacPort {
     type Error: PortError;
     /// Memory for one MPDU of an attempt.
     type TxBuffer: TxBuffer;
+    /// The memory of one received MPDU, lent with its event.
+    type RxBuffer: RxBuffer;
 
     /// The portable view of an owned event.
     fn view(event: &Self::Event) -> LowerMacEvent<'_>;
+
+    /// Take the frame out of a [`LowerMacEvent::Received`] event, with its
+    /// metadata; any other event comes back unchanged.
+    fn into_received(event: Self::Event) -> Result<(Self::RxBuffer, RxMeta), Self::Event>;
 
     /// What the backend accepts; it does not change while the port exists.
     fn capabilities(&self) -> LowerMacCapabilities;

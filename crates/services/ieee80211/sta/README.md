@@ -97,12 +97,25 @@ of the policy, in order, each from that TID's next sequence number, while the
 station is awake. A request that is not acknowledged or not answered within
 the negotiation timeout uses one of the TID's attempts and is sent again
 while attempts remain; the access point's answer ends them, and its DELBA as
-recipient ends the agreement. The agreements carry no aggregates yet.
+recipient ends the agreement.
+
+`PortStation::send` queues a frame (`PortSend::Queued`, or `Full` with the
+eight-frame queue full) and `run_until` sends the queue while the station is
+awake, a dozing station keeping it. A run of one user priority goes as one
+A-MPDU when that TID's agreement is operational, the keys are installed and
+the port aggregates at the data rate (`PortStationEnv::Aggregation`:
+`PortAmpduAggregation` over a port with `LowerMacAmpdu`, `NoAggregation`
+otherwise); the run is bounded by the agreement's window, the port's
+subframes and length and the peer's Maximum A-MPDU Length, and the
+subframes keep the peer's minimum MPDU start spacing. Every other frame goes
+alone. `PortConnection::tx_counters` counts what left and was
+acknowledged; an exchange whose completion was lost counts as failed, and
+any other error ends `run_until`.
 
 It does not yet do: BIP for group-addressed robust
 management frames, beacon-loss monitoring (`link_monitor`), the reorder gap
 timer (a full slot store releases the oldest run instead), a data rate bound
-by the peer's capabilities, A-MPDU transmission, PS-Poll,
+by the peer's capabilities, PS-Poll,
 coexistence (the power manager runs with `CoexView::INACTIVE`), 40 MHz
 channels and roaming.
 

@@ -128,6 +128,7 @@ impl<'a> PortStationEnv for Env<'a> {
     type Entropy = Seeded;
     type Timer = &'a VirtualTimer;
     type KeyUnwrap = RsnSoftwareAes;
+    type Aggregation = oer_ieee80211_sta_service::port::PortAmpduAggregation;
 }
 
 const MANAGEMENT_RATE: PhyRate = PhyRate::Legacy(LegacyRate::Ofdm6M);
@@ -212,6 +213,10 @@ impl World {
     }
 
     fn link(&self) -> PortLink<'static, Env<'_>> {
+        self.link_at(DATA_RATE)
+    }
+
+    fn link_at(&self, data_rate: PhyRate) -> PortLink<'static, Env<'_>> {
         PortLink::new(
             self.router,
             TxPlanner::new(
@@ -232,7 +237,7 @@ impl World {
                 vif: VifId(0),
                 address: STA,
                 management_rate: MANAGEMENT_RATE,
-                data_rate: DATA_RATE,
+                data_rate,
                 power: TxPower::Calibrated,
                 coex: CoexPriority::Normal,
                 retry_limit: 7,
@@ -249,8 +254,17 @@ impl World {
         security: StaAttemptSecurity<'a>,
         profile: PortStationProfile<'a>,
     ) -> PortStation<'a, Env<'a>> {
+        self.station_at(security, profile, DATA_RATE)
+    }
+
+    fn station_at<'a>(
+        &'a self,
+        security: StaAttemptSecurity<'a>,
+        profile: PortStationProfile<'a>,
+        data_rate: PhyRate,
+    ) -> PortStation<'a, Env<'a>> {
         PortStation::new(
-            self.link().with_beacon_timing(),
+            self.link_at(data_rate).with_beacon_timing(),
             &self.timer,
             RsnSoftwareAes,
             profile,
@@ -485,12 +499,17 @@ fn an_open_join_connects_and_exchanges_data_both_ways_body() {
     // Uplink: QoS data at the user priority's access category, each TID
     // numbering its own sequence.
     for (priority, payload) in [(0, b"best".as_slice()), (6, b"voice"), (0, b"again")] {
-        let sent = world.drive(
-            &mut ap,
+        assert_eq!(
             station.send(&ethernet(PEER, IPV4, payload), priority),
+            Ok(PortSend::Queued)
         );
-        assert!(matches!(sent, Ok(PortSend::Sent(_))));
     }
+    // The receive loop sends the queue.
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 5, &mut Vec::new()),
+        None
+    );
+    assert_eq!(station.connection().unwrap().tx_counters().mpdus, 3);
     ap.absorb(world.model);
     assert_eq!(ap.uplink.len(), 3);
     assert_eq!(ap.uplink[0].payload, b"best");
@@ -580,10 +599,15 @@ fn a_wpa2_psk_connection_installs_its_keys_through_the_port_body() {
 
     // Data leaves under the pairwise key with consecutive packet numbers.
     for payload in [b"one".as_slice(), b"two"] {
-        world
-            .drive(&mut ap, station.send(&ethernet(PEER, IPV4, payload), 0))
-            .unwrap();
+        assert_eq!(
+            station.send(&ethernet(PEER, IPV4, payload), 0),
+            Ok(PortSend::Queued)
+        );
     }
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 5, &mut Vec::new()),
+        None
+    );
     ap.absorb(world.model);
     assert_eq!(ap.uplink.len(), 2);
     assert!(
@@ -959,10 +983,15 @@ fn a_receive_loss_is_skipped_and_the_connection_goes_on_body() {
         None
     );
     assert_eq!(&delivered.last().unwrap()[14..], b"after");
-    assert!(matches!(
-        world.drive(&mut ap, station.send(&ethernet(PEER, IPV4, b"up"), 0)),
-        Ok(PortSend::Sent(_))
-    ));
+    assert_eq!(
+        station.send(&ethernet(PEER, IPV4, b"up"), 0),
+        Ok(PortSend::Queued)
+    );
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 5, &mut delivered),
+        None
+    );
+    assert_eq!(station.connection().unwrap().tx_counters().acknowledged, 1);
 }
 
 #[test]
@@ -981,16 +1010,30 @@ fn a_completion_lost_in_a_gap_fails_the_send_and_the_next_one_goes_out_body() {
         .map(|index| ap.data(None, None, false, IPV4, &[b'a' + index], PEER))
         .collect();
     burst(&world, &mut ap, &mut station, frames);
-    let sent = world.drive(&mut ap, station.send(&ethernet(PEER, IPV4, b"lost"), 0));
-    assert!(
-        matches!(
-            sent,
-            Err(PortLinkError::Tx(UpperMacTxError::CompletionLost { .. }))
-        ),
-        "the completion in the gap is reported lost"
+    assert_eq!(
+        station.send(&ethernet(PEER, IPV4, b"lost"), 0),
+        Ok(PortSend::Queued)
     );
-    let sent = world.drive(&mut ap, station.send(&ethernet(PEER, IPV4, b"next"), 0));
-    assert!(matches!(sent, Ok(PortSend::Sent(_))));
+    let mut delivered = Vec::new();
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 5, &mut delivered),
+        None
+    );
+    let counters = station.connection().unwrap().tx_counters();
+    assert_eq!(
+        counters.failed, 1,
+        "the completion in the gap is counted lost"
+    );
+    assert_eq!(
+        station.send(&ethernet(PEER, IPV4, b"next"), 0),
+        Ok(PortSend::Queued)
+    );
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 5, &mut delivered),
+        None
+    );
+    let counters = station.connection().unwrap().tx_counters();
+    assert_eq!((counters.mpdus, counters.acknowledged), (1, 1));
 }
 
 #[test]
@@ -1011,9 +1054,14 @@ fn a_poisoned_port_ends_the_connection_and_every_send_body() {
     let ran = world.drive(&mut ap, station.run_until(deadline, &mut |_| {}));
     assert!(matches!(ran, Err(PortLinkError::Poisoned)));
     assert!(world.router.poisoned());
-    let sent = world.drive(&mut ap, station.send(&ethernet(PEER, IPV4, b"late"), 0));
-    let Err(PortLinkError::Tx(UpperMacTxError::Port(error))) = sent else {
-        panic!("a send fails on the poisoned port");
+    // A frame still queues; sending it ends on the poisoned port.
+    assert_eq!(
+        station.send(&ethernet(PEER, IPV4, b"late"), 0),
+        Ok(PortSend::Queued)
+    );
+    let ran = world.drive(&mut ap, station.run_until(deadline, &mut |_| {}));
+    let Err(PortLinkError::Tx(UpperMacTxError::Port(error))) = ran else {
+        panic!("sending fails on the poisoned port: {ran:?}");
     };
     assert!(oer_ieee80211_lower_mac::PortError::is_poisoned(&error));
 }
@@ -1139,34 +1187,15 @@ fn the_station_negotiates_its_tx_block_ack_agreements() {
 }
 
 fn the_station_negotiates_its_tx_block_ack_agreements_body() {
-    use oer_ieee80211_mac::station::AssociationCapabilities;
-    use oer_ieee80211_sta::block_ack::{StaTxBlockAckConfig, StaTxBlockAckPolicy};
-    use oer_ieee80211_sta_service::port::PortTxBlockAck;
-    static HT: AssociationCapabilities = AssociationCapabilities {
-        ht20: scripted_ap::HT_CAPABILITIES,
-        ..CAPABILITIES
-    };
     static PMKSA: StaSharedPmksa = StaSharedPmksa::new();
     let world = World::new();
     let mut ap = ScriptedAp::new(ApSecurity::Wpa2Psk);
     ap.ht = true;
-    let mut profile = profile();
-    profile.capabilities = &HT;
-    profile.phy = PhyMode::Ht20;
-    profile.tx_block_ack = Some(PortTxBlockAck {
-        policy: StaTxBlockAckPolicy {
-            tids: &oer_espressif_ieee80211_policy::block_ack::STA_TX_BLOCK_ACK_TIDS,
-            first_dialog_token: oer_espressif_ieee80211_policy::block_ack::FIRST_DIALOG_TOKEN,
-            next_dialog_token: oer_espressif_ieee80211_policy::block_ack::next_dialog_token,
-        },
-        config: StaTxBlockAckConfig {
-            window: 32,
-            negotiation_timeout: Duration::from_millis(100),
-            amsdu_tids: 0,
-        },
-        attempt_limit: 2,
-    });
-    let mut station = connect(&world, &mut ap, world.station_with(wpa2(&PMKSA), profile));
+    let mut station = connect(
+        &world,
+        &mut ap,
+        world.station_with(wpa2(&PMKSA), block_ack_profile()),
+    );
     let requests = |ap: &ScriptedAp| {
         ap.actions
             .iter()
@@ -1228,4 +1257,119 @@ fn the_station_negotiates_its_tx_block_ack_agreements_body() {
     );
     let originator = station.connection().unwrap().tx_block_ack().unwrap();
     assert_eq!(originator.operational(0), None);
+}
+
+/// An HT station profile that originates the Espressif TX Block Ack
+/// agreements.
+fn block_ack_profile() -> PortStationProfile<'static> {
+    use oer_ieee80211_mac::station::AssociationCapabilities;
+    use oer_ieee80211_sta::block_ack::{StaTxBlockAckConfig, StaTxBlockAckPolicy};
+    use oer_ieee80211_sta_service::port::PortTxBlockAck;
+    static HT: AssociationCapabilities = AssociationCapabilities {
+        ht20: scripted_ap::HT_CAPABILITIES,
+        ..CAPABILITIES
+    };
+    let mut profile = profile();
+    profile.capabilities = &HT;
+    profile.phy = PhyMode::Ht20;
+    profile.tx_block_ack = Some(PortTxBlockAck {
+        policy: StaTxBlockAckPolicy {
+            tids: &oer_espressif_ieee80211_policy::block_ack::STA_TX_BLOCK_ACK_TIDS,
+            first_dialog_token: oer_espressif_ieee80211_policy::block_ack::FIRST_DIALOG_TOKEN,
+            next_dialog_token: oer_espressif_ieee80211_policy::block_ack::next_dialog_token,
+        },
+        config: StaTxBlockAckConfig {
+            window: 32,
+            negotiation_timeout: Duration::from_millis(100),
+            amsdu_tids: 0,
+        },
+        attempt_limit: 2,
+    });
+    profile
+}
+
+#[test]
+fn queued_frames_of_an_agreed_tid_leave_as_one_a_mpdu() {
+    on_large_stack(queued_frames_of_an_agreed_tid_leave_as_one_a_mpdu_body);
+}
+
+fn queued_frames_of_an_agreed_tid_leave_as_one_a_mpdu_body() {
+    use oer_ieee80211_mac::phy::{HtMcs, HtRate, PpduBandwidth};
+    static PMKSA: StaSharedPmksa = StaSharedPmksa::new();
+    let ht = PhyRate::Ht(HtRate::new(HtMcs::new(7).unwrap(), PpduBandwidth::Mhz20, true).unwrap());
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Wpa2Psk);
+    ap.ht = true;
+    let mut station = connect(
+        &world,
+        &mut ap,
+        world.station_at(wpa2(&PMKSA), block_ack_profile(), ht),
+    );
+    let mut delivered = Vec::new();
+    // The access point agrees to TID 0.
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 5, &mut delivered),
+        None
+    );
+    ap.absorb(world.model);
+    let request = ap
+        .actions
+        .iter()
+        .find(|action| action.starts_with(&[3, 0]))
+        .unwrap()
+        .clone();
+    let mut response = ap.management(0xd0, STA);
+    response.extend_from_slice(&scripted_ap::addba_response(request[2], 0, 0, 16));
+    ap.queue(response);
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 5, &mut delivered),
+        None
+    );
+    assert!(
+        station
+            .connection()
+            .unwrap()
+            .tx_block_ack()
+            .unwrap()
+            .operational(0)
+            .is_some()
+    );
+    let before = world.model.submitted().len();
+
+    // Four frames of TID 0 leave as one A-MPDU; the voice frame alone.
+    for payload in [b"a".as_slice(), b"b", b"c", b"d"] {
+        assert_eq!(
+            station.send(&ethernet(PEER, IPV4, payload), 0),
+            Ok(PortSend::Queued)
+        );
+    }
+    assert_eq!(
+        station.send(&ethernet(PEER, IPV4, b"voice"), 6),
+        Ok(PortSend::Queued)
+    );
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 5, &mut delivered),
+        None
+    );
+    let submitted = world.model.submitted();
+    let data: Vec<_> = submitted[before..]
+        .iter()
+        .filter(|attempt| attempt.frames[0][0] == 0x88)
+        .collect();
+    assert_eq!(data.len(), 2);
+    assert!(data[0].ampdu && data[0].frames.len() == 4);
+    assert!(!data[1].ampdu);
+    let counters = station.connection().unwrap().tx_counters();
+    assert_eq!(
+        (counters.aggregates, counters.subframes, counters.mpdus),
+        (1, 4, 1)
+    );
+    assert_eq!(counters.acknowledged, 5);
+    // The subframes carry consecutive sequence numbers of TID 0.
+    let sequences: Vec<u16> = data[0]
+        .frames
+        .iter()
+        .map(|frame| u16::from_le_bytes([frame[22], frame[23]]) >> 4)
+        .collect();
+    assert!(sequences.windows(2).all(|pair| pair[1] == pair[0] + 1));
 }

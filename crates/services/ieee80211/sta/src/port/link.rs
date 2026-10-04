@@ -8,10 +8,10 @@ use core::{
 };
 
 use oer_ieee80211_lower_mac::{
-    Channel, CoexPriority, EventsLost, FailureClass, Ieee80211LowerMacPort, KeySelector,
-    LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacBeaconTiming, LowerMacEvent,
-    LowerMacSetting, MacAddress, PhyRate, ReceiveFilter, RxMeta, SettingError, TbttEvent,
-    TbttSchedule, TxPower, VifConfig, VifId, VifRole, VifTsf,
+    AmpduCapabilities, Channel, CoexPriority, EventsLost, FailureClass, Ieee80211LowerMacPort,
+    KeySelector, LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacAmpdu,
+    LowerMacBeaconTiming, LowerMacEvent, LowerMacSetting, MacAddress, PhyRate, ReceiveFilter,
+    RxMeta, SettingError, TbttEvent, TbttSchedule, TxPower, VifConfig, VifId, VifRole, VifTsf,
 };
 use oer_ieee80211_mac::{
     ccmp::CcmpTxPacketNumberError,
@@ -24,7 +24,7 @@ use oer_ieee80211_upper_mac::{
     HeTxopRtsBudget, MpduRequest, RateLadder, TxBody, TxPlanner, TxReceiver, TxReport, TxRequest,
 };
 pub use oer_ieee80211_upper_mac_service::EventRouter;
-use oer_ieee80211_upper_mac_service::{UpperMacTx, UpperMacTxError};
+use oer_ieee80211_upper_mac_service::{AmpduFrames, UpperMacTx, UpperMacTxError};
 
 /// Exchanges of the station that wait for a completion at once.
 pub const PORT_EXCHANGES: usize = 2;
@@ -54,6 +54,70 @@ pub trait PortStationEnv {
     type Timer: Timer;
     /// The EAPOL-Key data unwrap of the WPA2 handshake.
     type KeyUnwrap: AsyncRsnKeyUnwrap;
+    /// How the station sends A-MPDUs: [`PortAmpduAggregation`] over a port
+    /// with [`LowerMacAmpdu`], [`NoAggregation`] over one without.
+    type Aggregation: PortAggregation<Self>;
+}
+
+/// How a station's port sends A-MPDUs, which its integrator names once in
+/// [`PortStationEnv::Aggregation`].
+pub trait PortAggregation<X: PortStationEnv + ?Sized> {
+    /// The port's A-MPDU capabilities; `None` sends every frame alone.
+    fn capabilities(port: &X::Port) -> Option<AmpduCapabilities>;
+
+    /// Send one A-MPDU through the link's transmit driver.
+    fn send(
+        link: &mut PortLink<'_, X>,
+        frames: AmpduFrames<'_>,
+        request: TxRequest,
+    ) -> impl Future<Output = Result<TxReport, PortLinkError<PortError<X>>>>
+    where
+        X: Sized;
+}
+
+/// A port without [`LowerMacAmpdu`]: the station sends every frame alone,
+/// its Block Ack agreements notwithstanding.
+pub struct NoAggregation;
+
+impl<X: PortStationEnv + ?Sized> PortAggregation<X> for NoAggregation {
+    fn capabilities(_port: &X::Port) -> Option<AmpduCapabilities> {
+        None
+    }
+
+    async fn send(
+        _link: &mut PortLink<'_, X>,
+        _frames: AmpduFrames<'_>,
+        _request: TxRequest,
+    ) -> Result<TxReport, PortLinkError<PortError<X>>>
+    where
+        X: Sized,
+    {
+        Err(PortLinkError::MissingState)
+    }
+}
+
+/// A port with [`LowerMacAmpdu`]: aggregates go through its A-MPDU
+/// attempts.
+pub struct PortAmpduAggregation;
+
+impl<X: PortStationEnv + ?Sized> PortAggregation<X> for PortAmpduAggregation
+where
+    X::Port: LowerMacAmpdu,
+{
+    fn capabilities(port: &X::Port) -> Option<AmpduCapabilities> {
+        Some(port.ampdu_capabilities())
+    }
+
+    async fn send(
+        link: &mut PortLink<'_, X>,
+        frames: AmpduFrames<'_>,
+        request: TxRequest,
+    ) -> Result<TxReport, PortLinkError<PortError<X>>>
+    where
+        X: Sized,
+    {
+        link.transmit_ampdu(frames, request).await
+    }
 }
 
 /// The port error type of an environment.
@@ -330,6 +394,28 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
             ..
         } = self;
         match tx.send_mpdu(frame, key, request, ladder, entropy).await {
+            Ok(report) => Ok(report),
+            Err(UpperMacTxError::Poisoned) => Err(PortLinkError::Poisoned),
+            Err(error) => Err(PortLinkError::Tx(error)),
+        }
+    }
+
+    /// Send one A-MPDU until the planner reports the exchange's end.
+    pub(crate) async fn transmit_ampdu(
+        &mut self,
+        frames: AmpduFrames<'_>,
+        request: TxRequest,
+    ) -> Result<TxReport, PortLinkError<PortError<X>>>
+    where
+        X::Port: LowerMacAmpdu,
+    {
+        let Self {
+            tx,
+            ladder,
+            entropy,
+            ..
+        } = self;
+        match tx.send_ampdu(frames, request, ladder, entropy).await {
             Ok(report) => Ok(report),
             Err(UpperMacTxError::Poisoned) => Err(PortLinkError::Poisoned),
             Err(error) => Err(PortLinkError::Tx(error)),

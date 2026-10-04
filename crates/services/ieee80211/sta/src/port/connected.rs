@@ -40,7 +40,10 @@ use oer_ieee80211_sta::{
     modem_sleep::{PmBeacon, PmTraffic, SleepType},
     sa_query::{SaQueryStep, StationSaQuery},
 };
-use oer_ieee80211_upper_mac::TxReport;
+use oer_ieee80211_upper_mac::{
+    AmpduRequest, TxBody, TxReceiver, TxReport, TxRequest, ampdu::MAX_AMPDU_SUBFRAMES,
+};
+use oer_ieee80211_upper_mac_service::{AmpduFrames, UpperMacTxError};
 use oer_time::{Clock, Instant};
 
 use super::{
@@ -50,6 +53,7 @@ use super::{
     },
     power::{PortPowerSave, PowerContext, acknowledged},
     rsn::{EAPOL_ETHER_TYPE, PortKeys, send_protected_eapol},
+    tx_queue::{PORT_TX_QUEUE, TxQueue},
     wire,
 };
 
@@ -129,16 +133,26 @@ pub struct PortRxCounters {
 /// The outcome of offering one frame for transmission.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PortSend {
-    /// The exchange ended with this report.
-    Sent(TxReport),
-    /// The station dozes; the frame waits for it to wake.
-    Held,
+    /// The frame waits in the transmit queue, which the receive loop
+    /// ([`PortStation::run_until`](super::PortStation::run_until)) sends.
+    Queued,
+    /// The transmit queue is full; nothing was queued.
+    Full,
 }
 
-struct HeldFrame {
-    ethernet: [u8; PORT_FRAME_CAPACITY],
-    len: usize,
-    user_priority: u8,
+/// What the transmit queue sent.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PortTxCounters {
+    /// Frames sent alone.
+    pub mpdus: u32,
+    /// A-MPDUs sent.
+    pub aggregates: u32,
+    /// Frames sent inside an A-MPDU.
+    pub subframes: u32,
+    /// Frames the access point acknowledged, alone or in a BlockAck.
+    pub acknowledged: u32,
+    /// Frames whose exchange ended without a report.
+    pub failed: u32,
 }
 
 /// The connected station's state over the port.
@@ -153,7 +167,11 @@ pub struct PortConnection<P: Ieee80211LowerMacPort> {
     slots: [Option<PortFrame>; PORT_REORDER_SLOTS],
     sa_query: StationSaQuery,
     power: Option<PortPowerSave<P>>,
-    held: Option<HeldFrame>,
+    /// Frames waiting to be sent.
+    queue: TxQueue,
+    /// The encoded subframes of the A-MPDU being sent.
+    subframes: [[u8; PORT_FRAME_CAPACITY + 64]; PORT_TX_QUEUE],
+    tx_counters: PortTxCounters,
     /// An EAPOL frame the access point sent under the pairwise key, awaiting
     /// the Group Key Handshake.
     eapol: Option<OwnedEapolFrame<RSN_HANDSHAKE_EAPOL_CAPACITY>>,
@@ -196,11 +214,23 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
             slots: [const { None }; PORT_REORDER_SLOTS],
             sa_query: StationSaQuery::new(),
             power: None,
-            held: None,
+            queue: TxQueue::new(),
+            subframes: [[0; PORT_FRAME_CAPACITY + 64]; PORT_TX_QUEUE],
+            tx_counters: PortTxCounters::default(),
             eapol: None,
             tx_block_ack,
             counters: PortRxCounters::default(),
         }
+    }
+
+    /// What the transmit queue sent.
+    pub const fn tx_counters(&self) -> PortTxCounters {
+        self.tx_counters
+    }
+
+    /// Whether the transmit queue takes another frame.
+    pub const fn can_queue(&self) -> bool {
+        !self.queue.is_full()
     }
 
     /// The station's TX Block Ack agreements, when it originates any.
@@ -247,7 +277,7 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
 
     fn traffic(&self) -> PmTraffic {
         PmTraffic {
-            tx_pending: self.held.is_some(),
+            tx_pending: !self.queue.is_empty(),
             connection_pending: false,
         }
     }
@@ -293,13 +323,13 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
         Ok(())
     }
 
-    /// Send one Ethernet-II frame to the access point's BSS.
-    pub(crate) async fn send<X: PortStationEnv<Port = P>>(
+    /// Queue one Ethernet-II frame to the access point's BSS; the receive
+    /// loop sends it.
+    pub(crate) fn send<E>(
         &mut self,
-        context: &mut ConnectionContext<'_, '_, X>,
         ethernet: &[u8],
         user_priority: u8,
-    ) -> Result<PortSend, PortLinkError<PortError<X>>> {
+    ) -> Result<PortSend, PortLinkError<E>> {
         if ethernet.len() < ETHERNET_HEADER_LEN || ethernet.len() > PORT_FRAME_CAPACITY {
             return Err(PortLinkError::Frame(
                 StationFrameError::EthernetFrameTooShort,
@@ -308,37 +338,197 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
         let priority = WmmUserPriority::new(user_priority).ok_or(PortLinkError::Frame(
             StationFrameError::UserPriorityOutOfRange,
         ))?;
-        let traffic = self.traffic();
+        Ok(if self.queue.push(ethernet, priority) {
+            PortSend::Queued
+        } else {
+            PortSend::Full
+        })
+    }
+
+    /// Send the queued frames while the station is awake: a run of one
+    /// user priority as an A-MPDU where its TX Block Ack agreement is
+    /// operational and the port aggregates at the data rate, every other
+    /// frame alone. An exchange that ended without a report counts as
+    /// failed; any other error ends the loop.
+    async fn drain<X: PortStationEnv<Port = P>>(
+        &mut self,
+        context: &mut ConnectionContext<'_, '_, X>,
+    ) -> Result<(), PortLinkError<PortError<X>>> {
         if let Some(power) = &mut self.power {
-            let wait = power
-                .tx_data(&mut Self::power_context(
-                    context,
-                    self.config.bssid,
-                    traffic,
-                ))
-                .await?;
-            if wait {
-                let mut held = HeldFrame {
-                    ethernet: [0; PORT_FRAME_CAPACITY],
-                    len: ethernet.len(),
-                    user_priority,
-                };
-                held.ethernet[..ethernet.len()].copy_from_slice(ethernet);
-                self.held = Some(held);
-                return Ok(PortSend::Held);
+            power.take_release();
+        }
+        while let Some(head) = self.queue.get(0) {
+            let priority = head.priority;
+            let traffic = self.traffic();
+            if let Some(power) = &mut self.power
+                && power
+                    .tx_data(&mut Self::power_context(
+                        context,
+                        self.config.bssid,
+                        traffic,
+                    ))
+                    .await?
+            {
+                return Ok(());
+            }
+            let run = self.aggregate_run::<X>(context, priority);
+            let sent = if run >= 2 {
+                self.transmit_aggregate(context, priority, run).await
+            } else {
+                let frame = self.queue.pop().ok_or(PortLinkError::MissingState)?;
+                self.transmit(context, frame.ethernet(), frame.priority)
+                    .await
+                    .map(|report| (report, 1))
+            };
+            let acknowledged_now = match sent {
+                Ok((report, frames)) => {
+                    let delivered = match report {
+                        TxReport::Mpdu(status) => u32::from(status.acknowledged == Some(true)),
+                        TxReport::Ampdu(status) => u32::from(status.block_acknowledged_subframes),
+                    };
+                    if frames == 1 {
+                        self.tx_counters.mpdus = self.tx_counters.mpdus.saturating_add(1);
+                    } else {
+                        self.tx_counters.aggregates = self.tx_counters.aggregates.saturating_add(1);
+                        self.tx_counters.subframes =
+                            self.tx_counters.subframes.saturating_add(frames as u32);
+                    }
+                    self.tx_counters.acknowledged =
+                        self.tx_counters.acknowledged.saturating_add(delivered);
+                    acknowledged(&report)
+                }
+                Err(PortLinkError::Tx(UpperMacTxError::CompletionLost { .. })) => {
+                    self.tx_counters.failed = self.tx_counters.failed.saturating_add(1);
+                    false
+                }
+                Err(error) => return Err(error),
+            };
+            let traffic = self.traffic();
+            if let Some(power) = &mut self.power {
+                power
+                    .tx_data_done(
+                        &mut Self::power_context(context, self.config.bssid, traffic),
+                        acknowledged_now,
+                    )
+                    .await?;
             }
         }
-        let report = self.transmit(context, ethernet, priority).await?;
-        let traffic = self.traffic();
-        if let Some(power) = &mut self.power {
-            power
-                .tx_data_done(
-                    &mut Self::power_context(context, self.config.bssid, traffic),
-                    acknowledged(&report),
-                )
-                .await?;
+        Ok(())
+    }
+
+    /// How many queued frames of `priority` from the head one A-MPDU
+    /// carries: those its operational agreement's window, the port's and
+    /// the peer's limits admit; one where no A-MPDU applies.
+    fn aggregate_run<X: PortStationEnv<Port = P>>(
+        &self,
+        context: &ConnectionContext<'_, '_, X>,
+        priority: WmmUserPriority,
+    ) -> usize {
+        let tid = priority.value();
+        let (Some(agreement), Some(capabilities), Some(_)) = (
+            self.tx_block_ack
+                .as_ref()
+                .and_then(|originator| originator.operational(tid)),
+            <X::Aggregation as super::link::PortAggregation<X>>::capabilities(context.link.port()),
+            self.keys,
+        ) else {
+            return 1;
+        };
+        if !self.config.peer_qos
+            || !capabilities
+                .formats
+                .contains_rate(context.link.config().data_rate)
+        {
+            return 1;
         }
-        Ok(PortSend::Sent(report))
+        let limit = usize::from(agreement.window)
+            .min(usize::from(capabilities.max_subframes))
+            .min(usize::from(MAX_AMPDU_SUBFRAMES))
+            .min(PORT_TX_QUEUE);
+        // The peer's Maximum A-MPDU Length Exponent and the port's limit.
+        let peer_length =
+            (1_u32 << (13 + u32::from(self.config.peer.ht_ampdu_parameters & 0x03))) - 1;
+        let maximum = peer_length.min(capabilities.max_length);
+        let mut length = 0_u32;
+        let mut run = 0;
+        for index in 0..self.queue.head_run(limit) {
+            let Some(frame) = self.queue.get(index) else {
+                break;
+            };
+            // Delimiter, MAC header, CCMP header, LLC/SNAP, MIC, FCS and
+            // padding to four octets: a bound of the encoded subframe.
+            let subframe = (4 + 26 + 8 + 8 + frame.ethernet().len() as u32 + 8 + 4 + 3) & !3;
+            if length + subframe > maximum {
+                break;
+            }
+            length += subframe;
+            run += 1;
+        }
+        run.max(1)
+    }
+
+    /// Send the first `run` queued frames of `priority` as one A-MPDU under
+    /// the pairwise key; the report and the frames it carried.
+    async fn transmit_aggregate<X: PortStationEnv<Port = P>>(
+        &mut self,
+        context: &mut ConnectionContext<'_, '_, X>,
+        priority: WmmUserPriority,
+        run: usize,
+    ) -> Result<(TxReport, usize), PortLinkError<PortError<X>>> {
+        let tid = priority.value();
+        let mut lengths = [0_u16; PORT_TX_QUEUE];
+        let mut first_sequence = None;
+        let mut key = KeySelector::Plaintext;
+        for (index, on_air) in lengths.iter_mut().enumerate().take(run) {
+            let frame = self.queue.pop().ok_or(PortLinkError::MissingState)?;
+            let sequence = context.sequences.take_qos(tid).ok_or(PortLinkError::Frame(
+                StationFrameError::UserPriorityOutOfRange,
+            ))?;
+            first_sequence.get_or_insert(sequence);
+            let mut out = [0_u8; PORT_FRAME_CAPACITY + 64];
+            let (length, selector) =
+                self.encode_data(context, frame.ethernet(), priority, sequence, &mut out)?;
+            self.subframes[index][..length].copy_from_slice(&out[..length]);
+            key = selector;
+            let mic = if matches!(selector, KeySelector::Key(_)) {
+                8
+            } else {
+                0
+            };
+            *on_air = (length + 4 + mic) as u16;
+        }
+        let first_sequence = first_sequence.ok_or(PortLinkError::MissingState)?;
+        let committed_at = context.link.port().now().map_err(PortLinkError::Port)?;
+        let request = AmpduRequest::new(tid, first_sequence, &lengths[..run], committed_at, true)
+            .ok_or(PortLinkError::MissingState)?;
+        let config = *context.link.config();
+        let request = TxRequest {
+            access_category: priority.access_category(),
+            initial_rate: config.data_rate,
+            receiver: TxReceiver::Individual,
+            power: config.power,
+            coex: config.coex,
+            mpdu_retry_limit: config.retry_limit,
+            body: TxBody::Ampdu(request),
+        };
+        let mut slices: [&[u8]; PORT_TX_QUEUE] = [&[]; PORT_TX_QUEUE];
+        for (index, slice) in slices.iter_mut().enumerate().take(run) {
+            let mic = if matches!(key, KeySelector::Key(_)) {
+                8
+            } else {
+                0
+            };
+            let length = usize::from(lengths[index]) - 4 - mic;
+            *slice = &self.subframes[index][..length];
+        }
+        let frames = AmpduFrames {
+            subframes: &slices[..run],
+            key,
+            min_mpdu_start_spacing: (self.config.peer.ht_ampdu_parameters >> 2) & 0x07,
+        };
+        <X::Aggregation as super::link::PortAggregation<X>>::send(context.link, frames, request)
+            .await
+            .map(|report| (report, run))
     }
 
     async fn transmit<X: PortStationEnv<Port = P>>(
@@ -348,9 +538,6 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
         priority: WmmUserPriority,
     ) -> Result<TxReport, PortLinkError<PortError<X>>> {
         let config = *context.link.config();
-        let destination: [u8; 6] = ethernet[..6].try_into().expect("six octets");
-        let ether_type = u16::from_be_bytes([ethernet[12], ethernet[13]]);
-        let payload = &ethernet[ETHERNET_HEADER_LEN..];
         let sequence_number = if self.config.peer_qos {
             context
                 .sequences
@@ -362,7 +549,35 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
             context.sequences.take_non_qos()
         };
         let mut frame = [0_u8; PORT_FRAME_CAPACITY + 64];
-        let (length, key) = match self.keys {
+        let (length, key) =
+            self.encode_data(context, ethernet, priority, sequence_number, &mut frame)?;
+        context
+            .link
+            .transmit(
+                &frame[..length],
+                key,
+                priority.access_category(),
+                config.data_rate,
+            )
+            .await
+    }
+
+    /// Encode `ethernet` as a data MPDU to the access point with
+    /// `sequence_number`: under the pairwise key once the keys are
+    /// installed, with the next CCMP packet number.
+    fn encode_data<X: PortStationEnv<Port = P>>(
+        &mut self,
+        context: &ConnectionContext<'_, '_, X>,
+        ethernet: &[u8],
+        priority: WmmUserPriority,
+        sequence_number: SequenceNumber,
+        frame: &mut [u8],
+    ) -> Result<(usize, KeySelector), PortLinkError<PortError<X>>> {
+        let config = *context.link.config();
+        let destination: [u8; 6] = ethernet[..6].try_into().expect("six octets");
+        let ether_type = u16::from_be_bytes([ethernet[12], ethernet[13]]);
+        let payload = &ethernet[ETHERNET_HEADER_LEN..];
+        Ok(match self.keys {
             Some(keys) => {
                 let ccmp_header = self
                     .packet_number
@@ -379,13 +594,13 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
                     ether_type,
                     payload,
                 }
-                .encode(&mut frame)
+                .encode(frame)
                 .map_err(PortLinkError::Frame)?;
                 (length, KeySelector::Key(keys.pairwise))
             }
             None => (
                 encode_open_data(
-                    &mut frame,
+                    frame,
                     config.address,
                     self.config.bssid,
                     ethernet,
@@ -395,16 +610,7 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
                 )?,
                 KeySelector::Plaintext,
             ),
-        };
-        context
-            .link
-            .transmit(
-                &frame[..length],
-                key,
-                priority.access_category(),
-                config.data_rate,
-            )
-            .await
+        })
     }
 
     /// Process inputs until `deadline`: received frames, TBTTs, the SA
@@ -420,12 +626,7 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
             if let Some(disconnect) = self.expire(context).await? {
                 return Ok(Some(disconnect));
             }
-            if self.power.as_mut().is_some_and(PortPowerSave::take_release)
-                && let Some(held) = self.held.take()
-            {
-                self.send(context, &held.ethernet[..held.len], held.user_priority)
-                    .await?;
-            }
+            self.drain(context).await?;
             let now = context.timer.now();
             if now >= deadline {
                 return Ok(None);
@@ -1109,7 +1310,7 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
             )
             .await?;
         }
-        self.held = None;
+        self.queue.clear();
         for tid in 0..TIDS as u8 {
             if let Some(mut buffer) = self.reorder[usize::from(tid)].take() {
                 let release = buffer.stop();

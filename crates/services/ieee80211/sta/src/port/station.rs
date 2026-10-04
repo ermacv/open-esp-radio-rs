@@ -277,14 +277,15 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         ))
     }
 
-    /// Send one Ethernet-II frame with `user_priority`.
-    pub async fn send(
+    /// Queue one Ethernet-II frame with `user_priority` for the access
+    /// point; [`Self::run_until`] sends it.
+    pub fn send(
         &mut self,
         ethernet: &[u8],
         user_priority: u8,
     ) -> Result<PortSend, PortLinkError<PortError<X>>> {
-        let (connection, mut context) = self.context()?;
-        connection.send(&mut context, ethernet, user_priority).await
+        let (connection, _) = self.context()?;
+        connection.send(ethernet, user_priority)
     }
 
     /// Receive until `deadline`, handing every Ethernet frame to `deliver`.
@@ -880,8 +881,10 @@ impl<'p, X: PortStationEnv, A: PortStationApplication> StaLifecycleBackend
                 let _ = station.disconnect().await;
                 return StaAttemptOutcome::Stopped { owner: station };
             }
-            while let Some((length, priority)) = self.application.next_transmit(&mut frame) {
-                if let Err(error) = station.send(&frame[..length], priority).await {
+            while station.connection().is_some_and(PortConnection::can_queue)
+                && let Some((length, priority)) = self.application.next_transmit(&mut frame)
+            {
+                if let Err(error) = station.send(&frame[..length], priority) {
                     let _ = station.end_connection(false).await;
                     return connected_failure(station, error);
                 }

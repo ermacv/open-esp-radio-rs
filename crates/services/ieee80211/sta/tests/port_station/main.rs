@@ -22,7 +22,7 @@ use std::{
 use oer_ieee80211_lower_mac::{
     Channel, ChannelWidth, CoexPriority, Ieee80211LowerMacPort, KeySelector, LifecycleCommand,
     LowerMacSetting, ReceiveFilter, RxBeaconPriority, TxPower, VifId,
-    model::{LowerMacModel, ModelOutcome},
+    model::{LowerMacModel, ModelOutcome, ModelRxBuffer},
 };
 use oer_ieee80211_mac::{
     ccmp::CcmpPacketNumberStep,
@@ -56,7 +56,7 @@ use oer_ieee80211_sta_service::{
     port::{
         EventRouter, PORT_FRAME_CAPACITY, PORT_TX_QUEUE, PortCoexistence, PortCoexistenceRefused,
         PortConnection, PortConnectionFrame, PortDisconnect, PortLink, PortLinkError,
-        PortLinkSupervision, PortProbe, PortRouter, PortScan, PortScanTarget, PortSend,
+        PortLinkSupervision, PortMsdu, PortProbe, PortRouter, PortScan, PortScanTarget, PortSend,
         PortStation, PortStationApplication, PortStationConfig, PortStationEnv,
         PortStationLifecycle, PortStationProfile, PortStationStorage,
     },
@@ -436,7 +436,7 @@ impl World {
             .unwrap();
         self.drive(
             ap,
-            station.run_until(deadline, &mut |ethernet| delivered.push(ethernet.to_vec())),
+            station.run_until(deadline, &mut |msdu| delivered.push(ethernet_of(&msdu))),
         )
         .unwrap()
     }
@@ -510,6 +510,14 @@ fn connect<'a>(
             )
         }
     }
+}
+
+/// The Ethernet-II frame of a delivered MSDU.
+fn ethernet_of(msdu: &PortMsdu<'_, ModelRxBuffer>) -> Vec<u8> {
+    let parts = msdu.parts();
+    let mut ethernet = vec![0; parts.length()];
+    parts.copy_to(&mut ethernet).unwrap();
+    ethernet
 }
 
 /// An Ethernet-II frame from the station's address.
@@ -1421,12 +1429,12 @@ struct Application<'a> {
     stop_after: u32,
 }
 
-impl PortStationApplication for Application<'_> {
+impl PortStationApplication<ModelRxBuffer> for Application<'_> {
     fn stop_requested(&mut self) -> bool {
         self.connections.get() >= self.stop_after
     }
 
-    fn deliver(&mut self, _ethernet: &[u8]) {}
+    fn deliver(&mut self, _msdu: PortMsdu<'_, ModelRxBuffer>) {}
 
     fn connected(&mut self, _config: &oer_ieee80211_sta_service::port::PortConnectionConfig) {
         self.connections.set(self.connections.get() + 1);
@@ -2042,4 +2050,60 @@ fn the_station_holds_no_frame_buffer_of_its_own() {
     assert!(core::mem::size_of::<Connection>() < frame);
     assert!(core::mem::size_of::<Station>() < 2 * frame);
     assert!(core::mem::size_of::<PortStationStorage>() > 20 * frame);
+}
+
+#[test]
+fn an_in_order_msdu_is_handed_on_in_the_port_s_buffer() {
+    on_large_stack(an_in_order_msdu_is_handed_on_in_the_port_s_buffer_body);
+}
+
+fn an_in_order_msdu_is_handed_on_in_the_port_s_buffer_body() {
+    static PMKSA: StaSharedPmksa = StaSharedPmksa::new();
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Wpa2Psk);
+    let mut station = connect(&world, &mut ap, world.station(wpa2(&PMKSA)));
+    let request = ap.addba_request(0, 8, 100);
+    ap.queue(request);
+    world.run_for(&mut ap, &mut station, 5, &mut Vec::new());
+    assert!(station.connection().unwrap().block_ack(0));
+
+    // 101 arrives before 100: the window keeps a copy of it. 100 is in
+    // order and travels in the port's buffer, which the application holds
+    // until it lets go; 101 follows from the copy as parts.
+    for (sequence, packet_number, payload) in [(101, 2, b"b"), (100, 1, b"a")] {
+        let frame = ap.data_with_sequence(
+            sequence,
+            Some(0),
+            Some(packet_number),
+            false,
+            IPV4,
+            payload,
+            PEER,
+        );
+        ap.queue(frame);
+    }
+    let mut delivered = Vec::new();
+    let deadline = world
+        .timer
+        .now()
+        .checked_add(Duration::from_millis(5))
+        .unwrap();
+    world
+        .drive(
+            &mut ap,
+            station.run_until(deadline, &mut |msdu| {
+                let in_buffer = matches!(msdu, PortMsdu::Buffer { .. });
+                delivered.push((
+                    in_buffer,
+                    world.model.rx_buffers_lent(),
+                    ethernet_of(&msdu)[14..].to_vec(),
+                ));
+            }),
+        )
+        .unwrap();
+    assert_eq!(
+        delivered,
+        [(true, 1, b"a".to_vec()), (false, 0, b"b".to_vec())]
+    );
+    assert_eq!(world.model.rx_buffers_lent(), 0);
 }

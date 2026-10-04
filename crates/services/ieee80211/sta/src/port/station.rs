@@ -57,7 +57,10 @@ use super::{
         PortConnectionSecurity, PortDisconnect, PortLinkProbe, PortLinkSupervisor, PortSend,
     },
     join::{PortAssociation, PortHePower, PortJoin},
-    link::{PORT_FRAME_CAPACITY, PortError, PortLink, PortLinkError, PortStationEnv},
+    link::{
+        PORT_FRAME_CAPACITY, PortError, PortLink, PortLinkError, PortMsdu, PortRxBuffer,
+        PortStationEnv,
+    },
     rsn::{BorrowedUnwrap, PortHandshake, PortKeyInstall, PortKeys},
     scan::{PortProbe, PortScan, PortScanTarget},
 };
@@ -376,7 +379,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
     pub async fn run_until(
         &mut self,
         deadline: oer_time::Instant,
-        deliver: &mut impl FnMut(&[u8]),
+        deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<X>>),
     ) -> Result<Option<PortDisconnect>, PortLinkError<PortError<X>>> {
         let (connection, mut context) = self.context()?;
         let ended = connection
@@ -996,7 +999,7 @@ fn link_metric(meta: RxMeta) -> Option<i8> {
 }
 
 /// The application a lifecycle-driven station serves.
-pub trait PortStationApplication {
+pub trait PortStationApplication<B> {
     /// Whether the station should leave and stop.
     fn stop_requested(&mut self) -> bool;
 
@@ -1006,8 +1009,9 @@ pub trait PortStationApplication {
         None
     }
 
-    /// One received Ethernet-II frame.
-    fn deliver(&mut self, ethernet: &[u8]);
+    /// One received Ethernet-II frame: the port's buffer to hand on where
+    /// the network stack adopts it, or parts to copy.
+    fn deliver(&mut self, msdu: PortMsdu<'_, B>);
 
     /// The station connected.
     fn connected(&mut self, _config: &PortConnectionConfig) {}
@@ -1030,7 +1034,7 @@ pub struct PortStationLifecycle<'p, X: PortStationEnv, A> {
     _station: PhantomData<fn() -> PortStation<'p, X>>,
 }
 
-impl<X: PortStationEnv, A: PortStationApplication> PortStationLifecycle<'_, X, A> {
+impl<X: PortStationEnv, A: PortStationApplication<PortRxBuffer<X>>> PortStationLifecycle<'_, X, A> {
     pub const fn new(application: A, poll: Duration) -> Self {
         Self {
             application,
@@ -1048,7 +1052,7 @@ impl<X: PortStationEnv, A: PortStationApplication> PortStationLifecycle<'_, X, A
     }
 }
 
-impl<'p, X: PortStationEnv, A: PortStationApplication> StaLifecycleBackend
+impl<'p, X: PortStationEnv, A: PortStationApplication<PortRxBuffer<X>>> StaLifecycleBackend
     for PortStationLifecycle<'p, X, A>
 {
     type Owner = PortStation<'p, X>;
@@ -1100,7 +1104,7 @@ impl<'p, X: PortStationEnv, A: PortStationApplication> StaLifecycleBackend
             };
             let application = &mut self.application;
             match station
-                .run_until(deadline, &mut |ethernet| application.deliver(ethernet))
+                .run_until(deadline, &mut |msdu| application.deliver(msdu))
                 .await
             {
                 Ok(None) => {}

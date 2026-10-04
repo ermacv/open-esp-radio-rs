@@ -3,6 +3,7 @@
 
 use core::{
     future::{Future, poll_fn},
+    ops::Range,
     pin::pin,
     task::Poll,
 };
@@ -15,6 +16,7 @@ use oer_ieee80211_lower_mac::{
 };
 use oer_ieee80211_mac::{
     ccmp::CcmpTxPacketNumberError,
+    data::EthernetFrameParts,
     qos::WmmAccessCategory,
     station::{AssociationRequestError, StationFrameError},
 };
@@ -226,6 +228,53 @@ impl<B: RxBuffer> PortFrame<B> {
 
     pub const fn meta(&self) -> RxMeta {
         self.meta
+    }
+
+    /// The port's buffer, to hand on.
+    pub fn into_buffer(self) -> B {
+        self.buffer
+    }
+}
+
+/// One received MSDU the station hands to its application, as an
+/// Ethernet-II frame.
+pub enum PortMsdu<'a, B> {
+    /// The only MSDU of an MPDU delivered in order, still in the port's
+    /// buffer: its payload is `buffer.bytes()[payload]`. An application
+    /// whose network stack adopts the port's buffers writes the Ethernet
+    /// header over the dead 802.11 prefix and hands the buffer on, without
+    /// a copy; any other copies [`Self::parts`].
+    Buffer {
+        buffer: B,
+        destination: MacAddress,
+        source: MacAddress,
+        ether_type: u16,
+        payload: Range<usize>,
+    },
+    /// An MSDU of an A-MSDU, or of an MPDU a reorder window kept: its
+    /// parts, which the application copies.
+    Parts(EthernetFrameParts<'a>),
+}
+
+impl<B: RxBuffer> PortMsdu<'_, B> {
+    /// The frame's Ethernet header fields and payload.
+    pub fn parts(&self) -> EthernetFrameParts<'_> {
+        match self {
+            Self::Buffer {
+                buffer,
+                destination,
+                source,
+                ether_type,
+                payload,
+            } => EthernetFrameParts {
+                destination: *destination,
+                source: *source,
+                ether_type: *ether_type,
+                // The station checked the range when it built the MSDU.
+                payload: buffer.bytes().get(payload.clone()).unwrap_or_default(),
+            },
+            Self::Parts(parts) => *parts,
+        }
     }
 }
 

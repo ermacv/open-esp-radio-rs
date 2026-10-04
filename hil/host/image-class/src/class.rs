@@ -179,7 +179,7 @@ impl ImageClass {
             Self::DiagnosticIeee802154EventStatus => "open-radio-hil,ieee802154-event-status-probe",
             Self::DiagnosticMemoryBenchmark => "open-radio-hil,memory-benchmark",
             Self::DiagnosticIeee802154EdEvent => "open-radio-hil,ieee802154-ed-event-probe",
-            Self::DiagnosticIeee802154Radio => "open-radio-hil,ieee802154-radio",
+            Self::DiagnosticIeee802154Radio => "open-radio-hil,ieee802154-radio,ieee802154-trace",
             Self::DiagnosticIeee802154Thread => "open-radio-hil,ieee802154-thread",
             Self::DiagnosticIeee802154Route => "open-radio-hil,ieee802154-route-probe",
         }

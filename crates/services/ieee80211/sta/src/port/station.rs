@@ -379,7 +379,15 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         self.link
             .retune(channel)
             .await
-            .map_err(|error| StaAttemptStepError::retry_current(PortStationError::Link(error)))
+            .map_err(|error| StaAttemptStepError::retry_current(PortStationError::Link(error)))?;
+        // Authentication and Association already contend with the access
+        // point's advertised parameters, as the vendor station does.
+        if let Some(parameters) = candidate.wmm_parameters() {
+            self.link.install_edca(parameters).map_err(|error| {
+                StaAttemptStepError::refresh_candidate(PortStationError::Link(error))
+            })?;
+        }
+        Ok(())
     }
 
     async fn authenticate(&mut self) -> StepResult<X> {
@@ -499,6 +507,16 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
 
     async fn program_peer(&mut self) -> StepResult<X> {
         let bssid = self.bssid()?;
+        // The Association Response's set replaces the advertised one.
+        if let Some(parameters) = self
+            .association
+            .as_ref()
+            .and_then(|response| response.wmm_parameters)
+        {
+            self.link.install_edca(parameters).map_err(|error| {
+                StaAttemptStepError::retry_current(PortStationError::Link(error))
+            })?;
+        }
         self.link
             .configure(Some(bssid), ReceiveFilter::BSS_MEMBER)
             .map_err(|error| StaAttemptStepError::retry_current(PortStationError::Link(error)))

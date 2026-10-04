@@ -18,7 +18,7 @@ unless the backend reports them in its `HardwareServices`.
 | --- | --- |
 | Submission | `tx_buffer(len)` lends a `TxBuffer` (`Ok(None)` when none is free, `Err` when the port cannot serve); the caller encodes the MPDU into it and submits `TxAttempt<TxPayload<TxBuffer>>`: caller `TxId`, `VifId`, `WmmAccessCategory`, the buffer with its `TxResponse`, `PhyRate`, `Protection` (none, RTS/CTS, CTS-to-self), `KeySelector`, `TxPower`, `Backoff` and the attempt's `CoexPriority`. A refusal is `Refused { error: SubmitError, attempt }`: nothing is sent and the attempt comes back with its buffer. An unsubmitted buffer goes back through `release_tx_buffer` |
 | Events | `next_event` yields owned events viewed as `LowerMacEvent`: `Received { frame, RxMeta }`, `TxCompleted(TxCompletion)` with `TxStatus`, ACK RSSI and SNR and the `BlockAckReport` (starting sequence, bitmap) of a BlockAckReq or A-MPDU, lifecycle terminals, `RxTooLong { length }` for a received MPDU longer than the backend's receive buffer, `Extension` for an event an extension trait views, and the terminal `Poisoned`. A loss is reported once as `EventsLost`, in place of the first dropped event |
-| Controls | `apply(LowerMacSetting)`: `Channel`, interface configuration (`VifConfig`: address, `VifRole`, BSSID, `ReceiveFilter`), key removal, receive Block Ack agreements and the global `TxGate`. `install_key` returns the `KeyHandle` attempts select |
+| Controls | `apply(LowerMacSetting)`: `Channel`, interface configuration (`VifConfig`: address, `VifRole`, BSSID, `ReceiveFilter`), key removal, receive Block Ack agreements, the `Edca` parameter set and the global `TxGate`. `install_key` returns the `KeyHandle` attempts select |
 | Capabilities | `LowerMacCapabilities`, the parametric limits: bands, widths, rates, `HardwareServices`, interfaces, transmit queues, longest MPDU, largest backoff, lowest power ceiling, coexistence levels, the PPDU formats of unicast no-ACK frames, each role's receive rules, key slots and receive Block Ack limits |
 | Lifecycle | `lifecycle(Enable / Disable / Quiesce)`, each with a terminal `LifecycleEvent`, and `cancel(TxId)`, whose terminal event is the attempt's completion; a failed command ends with `LifecycleEvent::Failed { command, class: FailureClass }` |
 | Clock | `now()` is the `Ieee80211Instant` (`oer_time::RadioInstant` of the port's `Ieee80211Radio` domain) of receive timestamps; `clock_info()` states its resolution and `RadioEpoch` and converts to monotonic time; `clock_sample()` reads both clocks back to back in the current generation, and `RxMeta::timestamp` is an `Ieee80211Stamp` that converts with a sample of its generation |
@@ -55,6 +55,12 @@ Rules a caller relies on:
   draw is `oer-ieee80211-softmac`'s `EdcaContention`: CWmin doubled per failed
   attempt up to CWmax, reset when the frame ends, over an injected random
   source.
+- **EDCA parameters.** `Edca(WmmParameterSet)` sets the AIFSN and TXOP
+  limit each access category's queue contends with, and `CWmin`/`CWmax` for
+  a backend that draws its own backoff; a backend starts with its defaults.
+  The set applies whole: one record outside the backend's limits refuses it
+  (`Unsupported`). A caller that draws the backoff above the port keeps the
+  contention windows in its own planner.
 - **Transmit gate.** `TxGate { open: false }` holds admitted attempts
   unpublished until it opens, for the station's own doze or a coexistence
   slice. A backend may refuse to close it while an attempt is published,
@@ -189,6 +195,7 @@ operations map onto the S31 seams as follows:
 | `Received`, `RxMeta` | `Esp32s31LowerMac::on_received` takes the `NormalizedRxFrame` of `mac/src/rx.rs`, narrowed by `VifConfig::admits`; `portable::rx_meta` on the configured channel |
 | `Channel` | 2.4 GHz, 20 and 40 MHz, while disabled; `Enable` retunes through `LowerMacRetune`, and a refused retune ends as a `Recoverable` `Failed { Enable }` with the port disabled |
 | `Vif`, `ReceiveFilter` | The smallest superset policy: station link policy six (`StaLinkRxPolicyHardware`) for the `BSS_MEMBER` rules, station ESP-NOW policy six mode two (`StaEspNowRxPolicyHardware`) when `OTHER_BSS_MANAGEMENT` is requested (the broadcast BSSID outside a BSS), access-point policy eight (`ApRxPolicyHardware`) for the `BSS_MEMBER` rules. Refused: other BSSs' management for the access point. One station and one access point; the station address is the one the cold start published |
+| `Edca` | `WifiTxRuntimePolicy::install_wmm`: all four records validated before any is installed; every attempt's AIFSN comes from its queue's record |
 | `TxGate` | `set_power_save_tx_block` on every ordinary queue; closing is refused (`Busy`) while an attempt is published, and an attempt admitted behind the closed gate is held and published when it opens |
 | `install_key`, `RemoveKey` | CCMP-128 through `CcmpKeyHardware`: the station's pairwise and group slots, the access point's pairwise slots (lowest free association slot) and group slot |
 | `AddRxBlockAck`, `RemoveRxBlockAck` | The eight ordinary banks of `RxBlockAckHardware` |

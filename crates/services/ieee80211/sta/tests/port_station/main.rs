@@ -1077,3 +1077,43 @@ fn the_access_point_replaces_the_group_key_through_the_port_body() {
     assert_eq!(connection.keys().unwrap(), after);
     assert_eq!(connection.counters().unprotected, 1);
 }
+
+#[test]
+fn the_station_contends_with_the_access_point_s_edca_parameters() {
+    on_large_stack(the_station_contends_with_the_access_point_s_edca_parameters_body);
+}
+
+fn the_station_contends_with_the_access_point_s_edca_parameters_body() {
+    use oer_ieee80211_mac::{extensions::wmm::parse_wmm_parameter_element, qos::WmmAccessCategory};
+    let advertised = scripted_ap::wmm_parameter_element(
+        1,
+        [(3, 4, 10, 0), (7, 4, 10, 0), (2, 3, 4, 94), (2, 2, 3, 47)],
+    );
+    let associated = scripted_ap::wmm_parameter_element(
+        2,
+        [(5, 5, 10, 0), (7, 4, 10, 0), (2, 3, 4, 94), (2, 2, 3, 47)],
+    );
+
+    // Only the beacon carries the parameters: the station keeps them.
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    ap.wmm_beacon = Some(advertised.clone());
+    let _station = connect(&world, &mut ap, world.station(open()));
+    let expected = parse_wmm_parameter_element(&advertised).unwrap();
+    assert_eq!(world.model.edca(), Some(expected));
+
+    // The Association Response's set replaces the advertised one.
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    ap.wmm_beacon = Some(advertised);
+    ap.wmm_association = Some(associated.clone());
+    let _station = connect(&world, &mut ap, world.station(open()));
+    let expected = parse_wmm_parameter_element(&associated).unwrap();
+    assert_eq!(world.model.edca(), Some(expected));
+    assert_eq!(
+        expected
+            .access_category(WmmAccessCategory::BestEffort)
+            .aifsn,
+        5
+    );
+}

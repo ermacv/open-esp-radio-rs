@@ -100,6 +100,11 @@ pub struct ScriptedAp {
     pmk: Option<Pmk>,
     /// The keys of the completed four-way handshake.
     ptk: Option<Ptk>,
+    /// The WMM Parameter Element of its beacons and Probe Responses.
+    pub wmm_beacon: Option<Vec<u8>>,
+    /// The WMM Parameter Element of its Association Response, in place of
+    /// the WMM Information element.
+    pub wmm_association: Option<Vec<u8>>,
     replay_counter: u64,
 }
 
@@ -130,6 +135,8 @@ impl ScriptedAp {
                 ApSecurity::Open | ApSecurity::Sae => None,
             },
             ptk: None,
+            wmm_beacon: None,
+            wmm_association: None,
             replay_counter: 0,
         }
     }
@@ -276,8 +283,12 @@ impl ScriptedAp {
                 response.extend_from_slice(&(ASSOCIATION_ID | 0xc000).to_le_bytes());
                 response.extend_from_slice(&[1, RATES.len() as u8]);
                 response.extend_from_slice(&RATES);
-                // A WMM Information element: the access point takes QoS data.
-                response.extend_from_slice(&[221, 7, 0x00, 0x50, 0xf2, 0x02, 0x00, 0x01, 0x00]);
+                // A WMM element: the access point takes QoS data.
+                match &self.wmm_association {
+                    Some(element) => response.extend_from_slice(element),
+                    None => response
+                        .extend_from_slice(&[221, 7, 0x00, 0x50, 0xf2, 0x02, 0x00, 0x01, 0x00]),
+                }
                 self.outbox.push_back((response, meta(false)));
                 if self.rsn().is_some() {
                     self.replay_counter += 1;
@@ -442,6 +453,9 @@ impl ScriptedAp {
         if let Some(rsn) = self.rsn() {
             frame.extend_from_slice(rsn);
         }
+        if let Some(wmm) = &self.wmm_beacon {
+            frame.extend_from_slice(wmm);
+        }
         frame
     }
 
@@ -539,6 +553,18 @@ fn on_channel(model: &LowerMacModel) -> bool {
 
 /// Metadata of a frame the backend received; a protected one was
 /// decrypted and verified.
+/// A WMM Parameter Element of `count` whose records, by ACI (best effort,
+/// background, video, voice), are `(AIFSN, ECWmin, ECWmax, TXOP)`.
+pub fn wmm_parameter_element(count: u8, records: [(u8, u8, u8, u16); 4]) -> Vec<u8> {
+    let mut element = vec![221, 24, 0x00, 0x50, 0xf2, 0x02, 0x01, 0x01, count & 0x0f, 0];
+    for (aci, (aifsn, ecw_min, ecw_max, txop)) in records.into_iter().enumerate() {
+        element.push(((aci as u8) << 5) | aifsn);
+        element.push((ecw_max << 4) | ecw_min);
+        element.extend_from_slice(&txop.to_le_bytes());
+    }
+    element
+}
+
 pub fn meta(protected: bool) -> RxMeta {
     let mut meta = RxMeta::unavailable(Channel::ghz2_4(AP_CHANNEL, ChannelWidth::Mhz20).unwrap());
     meta.rssi_dbm = RxEvidence::HardwareObserved(-40);

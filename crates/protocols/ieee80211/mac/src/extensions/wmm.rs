@@ -37,6 +37,20 @@ pub struct WmmParameterSet {
 }
 
 impl WmmParameterSet {
+    /// The set of `parameter_set_count` with one record per access
+    /// category, indexed by ACI.
+    pub const fn new(
+        parameter_set_count: u8,
+        uapsd: bool,
+        access_categories: [WmmAcParameters; 4],
+    ) -> Self {
+        Self {
+            parameter_set_count,
+            uapsd,
+            access_categories,
+        }
+    }
+
     pub const fn access_category(self, category: WmmAccessCategory) -> WmmAcParameters {
         self.access_categories[category.index()]
     }

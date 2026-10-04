@@ -995,3 +995,27 @@ fn tsf_relations_of_different_epochs_never_share_a_generation() {
     assert_eq!(first_jumped.generation().jump, second.generation().jump);
     assert_ne!(first_jumped.generation(), second.generation());
 }
+
+#[test]
+fn an_edca_set_applies_whole_or_not_at_all() {
+    use oer_ieee80211_mac::extensions::wmm::{WmmAcParameters, WmmParameterSet};
+    let model = enabled_station();
+    assert_eq!(model.edca(), None);
+    let record = |aifsn| WmmAcParameters {
+        admission_control_mandatory: false,
+        aifsn,
+        ecw_min: 4,
+        ecw_max: 10,
+        txop_limit_units_32_us: 94,
+    };
+    let set = WmmParameterSet::new(1, false, [record(3), record(7), record(2), record(2)]);
+    assert_eq!(model.apply(LowerMacSetting::Edca(set)), Ok(Ok(())));
+    assert_eq!(model.edca(), Some(set));
+    // An AIFSN below two keeps the set before it.
+    let refused = WmmParameterSet::new(2, false, [record(3), record(1), record(2), record(2)]);
+    assert_eq!(
+        model.apply(LowerMacSetting::Edca(refused)),
+        Ok(Err(SettingError::Unsupported))
+    );
+    assert_eq!(model.edca(), Some(set));
+}

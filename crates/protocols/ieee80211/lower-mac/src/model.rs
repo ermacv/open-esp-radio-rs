@@ -214,6 +214,8 @@ struct State {
     tsf: [ModelTsf; 2],
     keys: [bool; 4],
     rx_block_ack: Vec<RxBlockAckAgreement>,
+    /// The EDCA parameter set last applied, if any.
+    edca: Option<oer_ieee80211_mac::extensions::wmm::WmmParameterSet>,
     gate_closed: bool,
     monitor: bool,
     in_flight: Vec<InFlight>,
@@ -463,6 +465,11 @@ impl LowerMacModel {
         self.state.borrow().channel
     }
 
+    /// The EDCA parameter set last applied; `None` keeps the defaults.
+    pub fn edca(&self) -> Option<oer_ieee80211_mac::extensions::wmm::WmmParameterSet> {
+        self.state.borrow().edca
+    }
+
     /// Whether monitor reception runs.
     pub fn monitoring(&self) -> bool {
         self.state.borrow().monitor
@@ -693,6 +700,30 @@ impl Ieee80211LowerMacPort for LowerMacModel {
                     .any(|attempt| attempt.phase == Phase::Published) =>
             {
                 Err(SettingError::Busy)
+            }
+            LowerMacSetting::Edca(parameters) => {
+                use oer_ieee80211_mac::qos::WmmAccessCategory;
+                // AIFSN and the four-bit ECW fields as the element encodes them.
+                let valid = [
+                    WmmAccessCategory::BestEffort,
+                    WmmAccessCategory::Background,
+                    WmmAccessCategory::Video,
+                    WmmAccessCategory::Voice,
+                ]
+                .into_iter()
+                .map(|category| parameters.access_category(category))
+                .all(|record| {
+                    (2..=15).contains(&record.aifsn)
+                        && record.ecw_min <= 15
+                        && record.ecw_max <= 15
+                        && record.ecw_min <= record.ecw_max
+                });
+                if valid {
+                    state.edca = Some(parameters);
+                    Ok(())
+                } else {
+                    Err(SettingError::Unsupported)
+                }
             }
             LowerMacSetting::TxGate { open } => {
                 state.gate_closed = !open;

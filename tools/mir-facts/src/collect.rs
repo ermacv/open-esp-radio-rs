@@ -220,13 +220,18 @@ impl<'tcx> Walk<'tcx> {
             }
         }
         for (index, method) in methods {
+            let key = function_key(&method.mangled_name());
+            // The pointer type it is called as, for a leak's ABI check.
+            if let Some(pointer) = signature_key(self.tcx, method) {
+                self.facts.signatures.insert(key.clone(), pointer);
+            }
             self.facts
                 .vtables
                 .entry(name.clone())
                 .or_default()
                 .entry(index)
                 .or_default()
-                .insert(function_key(&method.mangled_name()));
+                .insert(key);
             self.queue.push(method);
         }
     }
@@ -396,6 +401,19 @@ impl MirVisitor for BodyVisitor<'_, '_> {
         }
         self.super_mir_const(constant, location);
     }
+}
+
+/// The function-pointer type an instance is called as: its signature with
+/// its generic arguments substituted (a drop glue's `fn(&mut T)`).
+fn signature_key(tcx: TyCtxt<'_>, instance: Instance) -> Option<String> {
+    let internal = rustc_internal::internal(tcx, instance);
+    let typing = rustc_middle::ty::TypingEnv::fully_monomorphized();
+    let signature = internal.ty(tcx, typing).fn_sig(tcx);
+    let signature = tcx.instantiate_bound_regions_with_erased(signature);
+    let pointer = rustc_middle::ty::Ty::new_fn_ptr(tcx, rustc_middle::ty::Binder::dummy(signature));
+    Some(fn_pointer_key(&with_resolve_crate_name!(
+        with_no_trimmed_paths!(with_no_visible_paths!(pointer.to_string()))
+    )))
 }
 
 fn is_fn_pointer(ty: Ty) -> bool {

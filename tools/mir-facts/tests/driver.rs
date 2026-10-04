@@ -203,6 +203,16 @@ fn drop_glue_and_pointer_shims_name_their_indirect_calls() {
     let drop = &calls["core::ptr::drop_glue::<alloc::boxed::Box<dyn shims::Job>>"][0]["dyn"];
     assert_eq!(drop["trait"], "shims::Job");
     assert_eq!(drop["entry"], 0);
+    // A vtable function records the pointer type it is called as.
+    let signatures = &facts["signatures"];
+    assert_eq!(
+        signatures["<shims::A as shims::Job>::run"],
+        "fn(&shims::A) -> u32"
+    );
+    assert_eq!(
+        signatures["core::ptr::drop_glue::<shims::A>"],
+        "fn(&mut shims::A)"
+    );
     // Dropping a function pointer calls nothing.
     assert!(calls.get("core::ptr::drop_glue::<fn() -> u32>").is_none());
     let _ = std::fs::remove_dir_all(&directory);

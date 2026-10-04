@@ -44,6 +44,9 @@ Each crate writes `<crate>-<hash>.json`:
 - `vtables`: each trait's vtable entries, by index, from every unsizing
   coercion to a `dyn` and every vtable a constant holds; entry 0 is the
   type's drop glue.
+- `signatures`: the function-pointer type each vtable function is called as
+  (a drop glue's `fn(&mut T)`, a method's signature with its `self`), so
+  that a leaked trait's functions reach only the sites their ABI fits.
 - `leaked_types`: function-pointer types whose values leave the type: cast
   to a pointer or an address (`f as *const ()`, an `AtomicPtr<()>`),
   transmuted to anything but another function-pointer type, a union's field,

@@ -45,6 +45,8 @@ pub struct Facts {
     /// function of their vtables, and everything their implementors carry
     /// (`trait_contents`), leaks.
     pub leaked_traits: BTreeSet<String>,
+    /// The function-pointer type each vtable function is called as.
+    pub signatures: BTreeMap<String, String>,
     /// What every type made a `dyn` of each trait carries.
     pub trait_contents: BTreeMap<String, crate::leaks::Contents>,
     /// A value whose contents cannot be enumerated left its type: every

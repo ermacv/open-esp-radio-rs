@@ -695,7 +695,10 @@ fn capabilities_are_the_s31_limits_on_2_4_ghz() {
         caps.individual_no_ack
             .contains_rate(PhyRate::Legacy(LegacyRate::Ofdm6M))
     );
-    assert_eq!(caps.access_point_receive_filters, ReceiveFilter::BSS_MEMBER);
+    assert_eq!(
+        caps.access_point_receive_filters,
+        ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::PROBE_REQUESTS)
+    );
     assert_eq!(usize::from(caps.key_slots), LOWER_MAC_KEY_SLOTS);
     assert_eq!(caps.rx_block_ack_agreements, RESOURCES.rx_block_ack_entries);
 }

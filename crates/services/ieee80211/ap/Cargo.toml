@@ -1,0 +1,28 @@
+[package]
+name = "oer-ieee80211-ap-service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Executor-independent Wi-Fi access point over the lower-MAC port"
+readme = "README.md"
+
+[dependencies]
+oer-time = { path = "../../../time" }
+oer-ieee80211-ap = { path = "../../../protocols/ieee80211/ap" }
+oer-ieee80211-lower-mac = { path = "../../../protocols/ieee80211/lower-mac" }
+oer-ieee80211-mac = { path = "../../../protocols/ieee80211/mac" }
+oer-ieee80211-upper-mac = { path = "../../../protocols/ieee80211/upper-mac" }
+oer-ieee80211-upper-mac-service = { path = "../upper-mac" }
+
+[dev-dependencies]
+oer-ieee80211-lower-mac = { path = "../../../protocols/ieee80211/lower-mac", features = ["model"] }
+oer-ieee80211-softmac = { path = "../../../protocols/ieee80211/softmac" }
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+layer = "service"
+platform = "portable"

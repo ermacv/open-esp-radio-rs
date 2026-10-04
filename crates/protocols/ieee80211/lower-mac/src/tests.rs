@@ -1047,3 +1047,24 @@ fn a_received_frame_is_the_backend_s_buffer_until_it_is_dropped() {
         LowerMacEvent::Lifecycle(LifecycleEvent::Disabled)
     );
 }
+
+#[test]
+fn an_access_point_receives_the_probe_requests_it_answers() {
+    let access_point = VifConfig {
+        address: OTHER_BSS,
+        role: VifRole::AccessPoint,
+        bssid: None,
+        receive: ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::PROBE_REQUESTS),
+    };
+    // Broadcast with the wildcard BSSID, and directed with its own.
+    assert!(access_point.admits(&management(4, [0xff; 6], [0xff; 6])));
+    assert!(access_point.admits(&management(4, OTHER_BSS, OTHER_BSS)));
+    // Another BSS's.
+    assert!(!access_point.admits(&management(4, [0xff; 6], [0x02, 0, 0, 0, 0, 0x55])));
+    // Without the rule, a wildcard request is another BSS's management.
+    let member = VifConfig {
+        receive: ReceiveFilter::BSS_MEMBER,
+        ..access_point
+    };
+    assert!(!member.admits(&management(4, [0xff; 6], [0xff; 6])));
+}

@@ -599,9 +599,13 @@ pub fn run(
     };
     for (workspace, packages) in by_workspace {
         let manifest = ctx.root.join(workspace);
+        // From the workspace's directory, Cargo reads the workspace's own
+        // `.cargo/config.toml` as well as the repository's above it.
+        let directory = manifest.parent().unwrap_or(&ctx.root).to_owned();
         step(&format!("clippy {}", label(&packages)), || {
             let mut command = ctx.cargo();
             command
+                .current_dir(&directory)
                 .args(["clippy", "--locked", "--all-targets", "--manifest-path"])
                 .arg(&manifest);
             for package in &packages {
@@ -619,6 +623,7 @@ pub fn run(
         step(&format!("test {}", label(&packages)), || {
             let mut command = ctx.cargo();
             command
+                .current_dir(&directory)
                 .args(["test", "--locked", "--no-fail-fast", "--manifest-path"])
                 .arg(&manifest);
             for package in &packages {

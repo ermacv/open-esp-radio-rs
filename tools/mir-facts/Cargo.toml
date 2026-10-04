@@ -1,0 +1,32 @@
+# The MIR fact driver is a workspace of its own: it links the toolchain's
+# `rustc_driver` (the `rustc-dev` component) through `rustc_private`, which no
+# other host tool needs, with its own lockfile and target directory.
+[workspace]
+members = ["."]
+resolver = "3"
+
+[package]
+name = "oer-mir-facts"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+publish = false
+description = "A rustc driver that records each crate's indirect-call facts from its MIR, beside an unchanged build"
+
+[package.metadata.open-radio]
+layer = "tool"
+platform = "host"
+
+[[bin]]
+name = "oer-mir-facts"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+
+[dev-dependencies]
+serde_json = "=1.0.151"
+
+[package.metadata.rust-analyzer]
+rustc_private = true

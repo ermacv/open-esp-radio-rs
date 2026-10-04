@@ -1,0 +1,4 @@
+# The driver links rustc_driver through `rustc_private`, an unstable feature
+# of the pinned stable toolchain.
+[env]
+RUSTC_BOOTSTRAP = "1"

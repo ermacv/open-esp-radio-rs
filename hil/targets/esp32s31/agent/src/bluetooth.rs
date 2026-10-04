@@ -100,7 +100,7 @@ pub(super) fn start(
 #[embassy_executor::task]
 #[allow(
     large_assignments,
-    reason = "the start result crosses one poll boundary; the linked-image stack-frame audit bounds this task"
+    reason = "the start result crosses one poll boundary; the linked image's stack gate and runtime stack painting check its stack use"
 )]
 async fn main(
     spawner: embassy_executor::Spawner,

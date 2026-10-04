@@ -712,7 +712,7 @@ async fn boot_smoke(mut console: boot_smoke_console::BootSmokeConsole) {
 #[embassy_executor::task]
 #[allow(
     large_assignments,
-    reason = "the top-level HIL owner graph is moved once into its static Embassy task arena; runtime stack placement and linked-frame audits remain authoritative"
+    reason = "the top-level HIL owner graph is moved once into its static Embassy task arena; runtime stack placement, the linked-image stack gate and runtime painting remain authoritative"
 )]
 async fn open_radio_hil_task(
     spawner: embassy_executor::Spawner,

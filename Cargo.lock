@@ -3964,6 +3964,7 @@ dependencies = [
  "oer-hil-schema",
  "oer-hil-source-snapshot",
  "oer-hil-stand",
+ "oer-hil-stand-schema",
  "oer-memory-report",
  "oer-probe-codegen",
  "oer-process",

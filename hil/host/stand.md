@@ -172,6 +172,34 @@ Each board is identified by the MAC address its USB Serial/JTAG port reports
 as USB serial number, independent of `/dev/ttyACM*` numbering. Every board is part of the
 stand: flash and use any board only under a lease.
 
+## The stand file
+
+`cargo hil stand discover` maps every Espressif board `uhubctl` reports to
+its stand-file hub, port and touch button and compares the result with the
+stand file: `ok` for a board on its port, `moved`, `missing` with why its
+port is empty (the port is off; the port is powered but empty, so its button
+is off or nothing is plugged in; another device is there; its hub is not
+attached) and `new`, with a `[[board]]` fragment to paste. It never changes
+the file. `--blink HUB:PORT` switches a switchable port off for five seconds
+under a lease of the port and of its board, to see which button it is; a
+protected port, which a cascaded hub hangs on, and a port `uhubctl` cannot
+cut are refused. `--verify-power BOARD` cycles the board's port under its
+lease and requires the ROM to report a power-on reset.
+
+`cargo hil stand doctor` checks the host around the stand file: the file
+(private, valid, every board's chip and radios against its profile), the
+repository's udev rule installed (`hil/stand/udev/`) and `uhubctl` reading
+every stand hub without sudo, and NetworkManager leaving `wlan0` to the
+fixtures (`hil/stand/networkmanager/`, installed in
+`/etc/NetworkManager/conf.d/`).
+
+```console
+cargo hil stand discover              # ok s31-a on rsh-mid:3 (button 6)
+cargo hil stand discover --blink rsh-bottom:2
+cargo hil stand discover --verify-power s31-a
+cargo hil stand doctor
+```
+
 ## Boards
 
 A board, or the whole stand, can be taken out of service: `cargo hil --owner

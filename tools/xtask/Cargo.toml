@@ -16,6 +16,7 @@ oer-hil-image-class = { path = "../../hil/host/image-class" }
 oer-chip-profile = { path = "../chip-profile" }
 oer-command-tree = { path = "../command-tree", features = ["clap"] }
 oer-hil-arbiter = { path = "../../hil/host/arbiter" }
+oer-hil-stand-schema = { path = "../../hil/stand/schema" }
 oer-hil-board = { path = "../../hil/host/board" }
 oer-hil-execution = { path = "../../hil/host/execution" }
 oer-hil-schema = { path = "../../hil/schema", features = ["producer"] }

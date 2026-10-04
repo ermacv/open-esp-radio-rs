@@ -210,6 +210,19 @@ pub(crate) fn board(
     Ok(std::process::ExitCode::SUCCESS)
 }
 
+/// Cycle `board`'s hub port under its lease and return the reset line its
+/// ROM reports (`cargo hil stand discover --verify-power`).
+pub(crate) fn power_reset_line(owner: String, board: &str) -> Result<Option<String>> {
+    let target = target(board)?;
+    let _grant = lease(
+        &target,
+        owner,
+        format!("stand discover --verify-power {board}"),
+        false,
+    )?;
+    reset(&target, Via::Power, false)
+}
+
 /// Whether a reset's ROM line shows the board booting from flash, or why not.
 fn booted(line: Option<&str>) -> std::result::Result<(), String> {
     match line {

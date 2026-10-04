@@ -194,14 +194,25 @@ impl PowerControl {
         self.action("cycle")
     }
 
+    /// Power the hub port off for `off`, then on again: long enough for a
+    /// person to see which button's light goes out.
+    pub fn cycle_holding(&self, off: Duration) -> crate::Result<()> {
+        self.action_delayed("cycle", off.as_secs().max(1))
+    }
+
     fn action(&self, action: &str) -> crate::Result<()> {
+        self.action_delayed(action, 2)
+    }
+
+    fn action_delayed(&self, action: &str, delay_secs: u64) -> crate::Result<()> {
         let PowerVia::Uhubctl = self.via;
         let output = oer_process::output(
             std::process::Command::new("uhubctl")
                 .args(["--location", &self.location, "--ports"])
                 .arg(self.port.to_string())
-                .args(["--action", action, "--delay", "2"]),
-            Some(Duration::from_secs(30)),
+                .args(["--action", action, "--delay"])
+                .arg(delay_secs.to_string()),
+            Some(Duration::from_secs(30 + delay_secs)),
         )?;
         if !output.status.success() {
             return Err(format!(

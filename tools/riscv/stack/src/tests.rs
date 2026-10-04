@@ -1192,29 +1192,24 @@ fn compiled(source: &str) -> Vec<u8> {
     elf
 }
 
-/// `program` linked against the library crate `shared` built from `library`,
-/// with several codegen units each, as images are.
-fn compiled_with_library(library: &str, program: &str) -> Vec<u8> {
+/// `program` linked against the library crate `shared` built from `library`
+/// at `library_debuginfo`, with several codegen units each, as images are.
+fn compiled_with_library(library: &str, library_debuginfo: &str, program: &str) -> Vec<u8> {
     let directory = std::env::temp_dir().join(format!(
         "oer-riscv-stack-{}-{}-library",
         std::process::id(),
         program.len()
     ));
     std::fs::create_dir_all(&directory).unwrap();
-    let rustc = |arguments: &[&std::ffi::OsStr]| {
+    let rustc = |debuginfo: &str, arguments: &[&std::ffi::OsStr]| {
         let status = std::process::Command::new("rustc")
             .env("RUSTC_BOOTSTRAP", "1")
             .args(["-Z", "emit-stack-sizes"])
             .args(["--edition", "2024"])
             .args(["--target", "riscv32imafc-unknown-none-elf"])
-            .args([
-                "-C",
-                "opt-level=s",
-                "-C",
-                "debuginfo=2",
-                "-C",
-                "panic=abort",
-            ])
+            .args(["-C", "opt-level=s", "-C", "panic=abort"])
+            .arg("-C")
+            .arg(format!("debuginfo={debuginfo}"))
             .args(["-C", "codegen-units=4"])
             .args(arguments)
             .status()
@@ -1226,33 +1221,39 @@ fn compiled_with_library(library: &str, program: &str) -> Vec<u8> {
     let output = directory.join("main.elf");
     std::fs::write(&library_source, library).unwrap();
     std::fs::write(&program_source, program).unwrap();
-    rustc(&[
-        "--crate-type".as_ref(),
-        "rlib".as_ref(),
-        "--crate-name".as_ref(),
-        "shared".as_ref(),
-        "--out-dir".as_ref(),
-        directory.as_os_str(),
-        library_source.as_os_str(),
-    ]);
+    rustc(
+        library_debuginfo,
+        &[
+            "--crate-type".as_ref(),
+            "rlib".as_ref(),
+            "--crate-name".as_ref(),
+            "shared".as_ref(),
+            "--out-dir".as_ref(),
+            directory.as_os_str(),
+            library_source.as_os_str(),
+        ],
+    );
     let rlib = directory.join("libshared.rlib");
     let mut extern_shared = std::ffi::OsString::from("shared=");
     extern_shared.push(&rlib);
-    rustc(&[
-        "--crate-type".as_ref(),
-        "bin".as_ref(),
-        "--extern".as_ref(),
-        extern_shared.as_os_str(),
-        "-C".as_ref(),
-        "link-arg=--emit-relocs".as_ref(),
-        "-C".as_ref(),
-        "link-arg=-e_start".as_ref(),
-        "-C".as_ref(),
-        "link-arg=--undefined=keep".as_ref(),
-        "-o".as_ref(),
-        output.as_os_str(),
-        program_source.as_os_str(),
-    ]);
+    rustc(
+        "2",
+        &[
+            "--crate-type".as_ref(),
+            "bin".as_ref(),
+            "--extern".as_ref(),
+            extern_shared.as_os_str(),
+            "-C".as_ref(),
+            "link-arg=--emit-relocs".as_ref(),
+            "-C".as_ref(),
+            "link-arg=-e_start".as_ref(),
+            "-C".as_ref(),
+            "link-arg=--undefined=keep".as_ref(),
+            "-o".as_ref(),
+            output.as_os_str(),
+            program_source.as_os_str(),
+        ],
+    );
     let elf = std::fs::read(&output).unwrap();
     let _ = std::fs::remove_dir_all(&directory);
     elf
@@ -1313,7 +1314,7 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
 /// another unit.
 #[test]
 fn a_type_named_in_another_crate_or_unit_still_matches() {
-    let elf = compiled_with_library(SHARED_LIBRARY, SHARED_PROGRAM);
+    let elf = compiled_with_library(SHARED_LIBRARY, "2", SHARED_PROGRAM);
     let analysis = analyze(&elf, &[], &[]).unwrap();
     let types = TypeFacts::read(&elf).unwrap();
     let taken = taken_addresses(&elf).unwrap();
@@ -1442,6 +1443,82 @@ fn a_merged_function_of_another_type_stays_a_candidate() {
             "{site:#x}: {resolutions:x?}"
         );
     }
+}
+
+const LIMITED_LIBRARY: &str = r#"
+#![no_std]
+#[inline(never)]
+pub fn limited(value: u32) -> u32 {
+    value.wrapping_mul(5) ^ 0x55
+}
+"#;
+
+const LIMITED_PROGRAM: &str = r#"
+#![no_std]
+#![no_main]
+
+static mut HOOK: Option<fn(u32) -> u32> = None;
+
+#[inline(never)]
+fn local(value: u32) -> u32 {
+    value >> 3
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn keep(on: bool) {
+    unsafe { HOOK = Some(if on { shared::limited } else { local }) };
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn _start() -> ! {
+    if let Some(hook) = unsafe { HOOK } {
+        core::hint::black_box(hook(1));
+    }
+    loop {}
+}
+
+#[panic_handler]
+fn panic(_: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
+"#;
+
+/// A crate built with limited debuginfo, as the precompiled `core` is,
+/// names its functions without their parameters: their shape is unknown, so
+/// they stay candidates of a field that takes arguments.
+#[test]
+fn a_function_of_a_unit_without_types_stays_a_candidate() {
+    let elf = compiled_with_library(LIMITED_LIBRARY, "limited", LIMITED_PROGRAM);
+    let analysis = analyze(&elf, &[], &[]).unwrap();
+    let types = TypeFacts::read(&elf).unwrap();
+    let taken = taken_addresses(&elf).unwrap();
+    let named = |name: &str| {
+        functions(&elf)
+            .unwrap()
+            .into_iter()
+            .find(|function| {
+                function
+                    .names
+                    .iter()
+                    .any(|candidate| candidate.contains(name))
+            })
+            .unwrap()
+            .address
+    };
+    let (start, limited) = (named("_start"), named("limited"));
+    let resolutions = function_pointer_resolutions(&analysis, &types, &taken);
+    let site = analysis.functions[&start]
+        .transfers
+        .iter()
+        .find(|transfer| transfer.target.is_none())
+        .unwrap()
+        .site;
+    assert!(
+        resolutions
+            .get(site)
+            .is_some_and(|resolution| resolution.targets.contains(&limited)),
+        "{resolutions:x?} limited={limited:#x}"
+    );
 }
 
 const WAKER_PROGRAM: &str = r#"

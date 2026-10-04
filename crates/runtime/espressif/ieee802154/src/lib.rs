@@ -71,7 +71,7 @@ use oer_time::{Duration, Instant, Timer};
 
 pub use oer_espressif_ieee802154_radio::{
     IEEE802154_ENH_ACK_PROBING_CAPACITY, IEEE802154_ENHANCED_ACK_IE_CAPACITY,
-    IEEE802154_RADIO_CAPABILITIES, Ieee802154Platform,
+    IEEE802154_RADIO_CAPABILITIES, Ieee802154Random,
 };
 
 /// A received frame copied out of the receive ring.
@@ -257,8 +257,8 @@ pub struct Ieee802154RuntimeParts<'storage, H> {
     pub hardware: H,
 }
 
-struct Installed<'storage, H> {
-    radio: Ieee802154Radio<'storage>,
+struct Installed<'storage, H, R> {
+    radio: Ieee802154Radio<'storage, R>,
     hardware: H,
 }
 
@@ -278,12 +278,12 @@ pub enum Ieee802154PauseError {
 /// interrupt entry does nothing, so the platform CPU route must stay closed
 /// until [`Ieee802154Runtime::resume`].
 #[must_use = "a paused radio must be resumed"]
-pub struct Ieee802154RuntimePaused<'storage, H> {
-    installed: Installed<'storage, H>,
+pub struct Ieee802154RuntimePaused<'storage, H, R> {
+    installed: Installed<'storage, H, R>,
     receiving: Option<oer_ieee802154::Channel>,
 }
 
-impl<H> Ieee802154RuntimePaused<'_, H> {
+impl<H, R> Ieee802154RuntimePaused<'_, H, R> {
     /// Borrow the hardware, for example to prove the MAC quiescent.
     pub fn hardware_mut(&mut self) -> &mut H {
         &mut self.installed.hardware
@@ -385,9 +385,9 @@ impl<M: RawMutex, const EVENTS: usize> Ieee802154RadioSink for QueueSink<'_, M, 
 /// included. Overflow drops the newest event and reports [`EventsLost`] once
 /// in its place. `T` is the image's monotonic time the delays wait on.
 // CAPABILITY: ieee802154-mac-operation-subset
-pub struct Ieee802154Runtime<'storage, M: RawMutex, H, T, const EVENTS: usize> {
+pub struct Ieee802154Runtime<'storage, M: RawMutex, H, T, R, const EVENTS: usize> {
     timer: T,
-    installed: Mutex<M, RefCell<Option<Installed<'storage, H>>>>,
+    installed: Mutex<M, RefCell<Option<Installed<'storage, H, R>>>>,
     events: EventQueue<M, EVENTS>,
     /// When the running backoff or retry delay ends.
     backoff_until: Mutex<M, Cell<Option<Instant>>>,
@@ -395,16 +395,28 @@ pub struct Ieee802154Runtime<'storage, M: RawMutex, H, T, const EVENTS: usize> {
     backoff_started: Signal<M, ()>,
 }
 
-impl<'storage, M: RawMutex, H: Ieee802154LowLevel, T: Timer + Default, const EVENTS: usize> Default
-    for Ieee802154Runtime<'storage, M, H, T, EVENTS>
+impl<
+    'storage,
+    M: RawMutex,
+    H: Ieee802154LowLevel,
+    T: Timer + Default,
+    R: Ieee802154Random,
+    const EVENTS: usize,
+> Default for Ieee802154Runtime<'storage, M, H, T, R, EVENTS>
 {
     fn default() -> Self {
         Self::new(T::default())
     }
 }
 
-impl<'storage, M: RawMutex, H: Ieee802154LowLevel, T: Timer, const EVENTS: usize>
-    Ieee802154Runtime<'storage, M, H, T, EVENTS>
+impl<
+    'storage,
+    M: RawMutex,
+    H: Ieee802154LowLevel,
+    T: Timer,
+    R: Ieee802154Random,
+    const EVENTS: usize,
+> Ieee802154Runtime<'storage, M, H, T, R, EVENTS>
 {
     /// An empty runtime whose delays wait on `timer`, suitable for a
     /// `static`.
@@ -448,14 +460,14 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, T: Timer, const EVENTS: usize
     pub fn install(
         &self,
         mut parts: Ieee802154RuntimeParts<'storage, H>,
-        platform: Ieee802154Platform,
+        random: R,
         defaults: Ieee802154PibDefaults,
     ) -> Result<(), Ieee802154RuntimeParts<'storage, H>> {
         #[allow(
             clippy::result_large_err,
             reason = "the no-alloc runtime returns the unconsumed owners by value"
         )]
-        let install = |installed: &RefCell<Option<Installed<'storage, H>>>| {
+        let install = |installed: &RefCell<Option<Installed<'storage, H, R>>>| {
             let mut installed = installed.borrow_mut();
             if installed.is_some() {
                 return Err(parts);
@@ -463,7 +475,7 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, T: Timer, const EVENTS: usize
             parts.engine.enable();
             parts.engine.mac_init(&mut parts.hardware, defaults);
             *installed = Some(Installed {
-                radio: Ieee802154Radio::new(parts.engine, platform),
+                radio: Ieee802154Radio::new(parts.engine, random),
                 hardware: parts.hardware,
             });
             Ok(())
@@ -508,7 +520,7 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, T: Timer, const EVENTS: usize
         clippy::result_large_err,
         reason = "the no-alloc runtime moves the paused owners by value"
     )]
-    pub fn pause(&self) -> Result<Ieee802154RuntimePaused<'storage, H>, Ieee802154PauseError> {
+    pub fn pause(&self) -> Result<Ieee802154RuntimePaused<'storage, H, R>, Ieee802154PauseError> {
         let result = self.pause_locked();
         trace::emit(|| match &result {
             Ok(paused) => Lease::Paused {
@@ -526,7 +538,9 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, T: Timer, const EVENTS: usize
         clippy::result_large_err,
         reason = "the no-alloc runtime moves the paused owners by value"
     )]
-    fn pause_locked(&self) -> Result<Ieee802154RuntimePaused<'storage, H>, Ieee802154PauseError> {
+    fn pause_locked(
+        &self,
+    ) -> Result<Ieee802154RuntimePaused<'storage, H, R>, Ieee802154PauseError> {
         self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
             let receiving = match installed
@@ -579,8 +593,8 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, T: Timer, const EVENTS: usize
     )]
     pub fn resume(
         &self,
-        paused: Ieee802154RuntimePaused<'storage, H>,
-    ) -> Result<(), Ieee802154RuntimePaused<'storage, H>> {
+        paused: Ieee802154RuntimePaused<'storage, H, R>,
+    ) -> Result<(), Ieee802154RuntimePaused<'storage, H, R>> {
         let receiving = paused.receiving.map(oer_ieee802154::Channel::get);
         let result = self.resume_locked(paused);
         trace::emit(|| match &result {
@@ -596,8 +610,8 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, T: Timer, const EVENTS: usize
     )]
     fn resume_locked(
         &self,
-        paused: Ieee802154RuntimePaused<'storage, H>,
-    ) -> Result<(), Ieee802154RuntimePaused<'storage, H>> {
+        paused: Ieee802154RuntimePaused<'storage, H, R>,
+    ) -> Result<(), Ieee802154RuntimePaused<'storage, H, R>> {
         self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
             if installed.is_some() {
@@ -631,10 +645,14 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, T: Timer, const EVENTS: usize
         })
     }
 
-    fn with_radio<R>(
+    fn with_radio<O>(
         &self,
-        entry: impl FnOnce(&mut Ieee802154Radio<'storage>, &mut H, &mut QueueSink<'_, M, EVENTS>) -> R,
-    ) -> Result<R, Ieee802154RuntimeError> {
+        entry: impl FnOnce(
+            &mut Ieee802154Radio<'storage, R>,
+            &mut H,
+            &mut QueueSink<'_, M, EVENTS>,
+        ) -> O,
+    ) -> Result<O, Ieee802154RuntimeError> {
         self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
             let installed = installed
@@ -768,10 +786,10 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, T: Timer, const EVENTS: usize
     /// # Errors
     ///
     /// No radio is installed.
-    pub fn with_pending_table<R>(
+    pub fn with_pending_table<O>(
         &self,
-        change: impl FnOnce(&mut PendingTable<PENDING_TABLE_SIZE>) -> R,
-    ) -> Result<R, Ieee802154RuntimeError> {
+        change: impl FnOnce(&mut PendingTable<PENDING_TABLE_SIZE>) -> O,
+    ) -> Result<O, Ieee802154RuntimeError> {
         self.with_radio(|radio, _, _| change(radio.engine().pending_table()))
     }
 
@@ -805,13 +823,13 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, T: Timer, const EVENTS: usize
 }
 
 /// Apply one portable setting to the radio under the runtime's lock.
-fn apply_setting<L: Ieee802154LowLevel + ?Sized>(
-    radio: &mut Ieee802154Radio<'_>,
+fn apply_setting<L: Ieee802154LowLevel + ?Sized, R: Ieee802154Random>(
+    radio: &mut Ieee802154Radio<'_, R>,
     hardware: &mut L,
     setting: RadioSetting<'_>,
 ) -> Result<(), SettingError> {
-    fn keys<'r>(
-        radio: &'r mut Ieee802154Radio<'_>,
+    fn keys<'r, R: Ieee802154Random>(
+        radio: &'r mut Ieee802154Radio<'_, R>,
         interface: Interface,
     ) -> Result<&'r mut Option<MacKeys>, SettingError> {
         let interfaces = radio.interfaces();
@@ -880,8 +898,8 @@ fn apply_setting<L: Ieee802154LowLevel + ?Sized>(
     Ok(())
 }
 
-impl<M: RawMutex, H, T: Timer, const EVENTS: usize> Ieee802154RadioPort
-    for Ieee802154Runtime<'_, M, H, T, EVENTS>
+impl<M: RawMutex, H, T: Timer, R: Ieee802154Random, const EVENTS: usize> Ieee802154RadioPort
+    for Ieee802154Runtime<'_, M, H, T, R, EVENTS>
 where
     H: Ieee802154LowLevel + Ieee802154RecentRssi,
 {
@@ -996,12 +1014,13 @@ where
 /// Host models of the hardware for tests of this runtime and the crates
 /// that drive it; host targets only, where no MAC writes received frames.
 #[cfg(all(any(test, feature = "model"), not(target_arch = "riscv32")))]
-impl<M: RawMutex, T: Timer, const EVENTS: usize>
+impl<M: RawMutex, T: Timer, R: Ieee802154Random, const EVENTS: usize>
     Ieee802154Runtime<
         '_,
         M,
         oer_espressif_ieee802154_engine::ll::model::Ieee802154LlModel,
         T,
+        R,
         EVENTS,
     >
 {
@@ -1037,10 +1056,10 @@ impl<M: RawMutex, T: Timer, const EVENTS: usize>
     /// # Errors
     ///
     /// No radio is installed.
-    pub fn with_model<R>(
+    pub fn with_model<O>(
         &self,
-        entry: impl FnOnce(&mut oer_espressif_ieee802154_engine::ll::model::Ieee802154LlModel) -> R,
-    ) -> Result<R, Ieee802154RuntimeError> {
+        entry: impl FnOnce(&mut oer_espressif_ieee802154_engine::ll::model::Ieee802154LlModel) -> O,
+    ) -> Result<O, Ieee802154RuntimeError> {
         self.with_radio(|_, hardware, _| entry(hardware))
     }
 }

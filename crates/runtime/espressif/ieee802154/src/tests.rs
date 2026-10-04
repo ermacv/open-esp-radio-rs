@@ -28,13 +28,20 @@ use oer_time::Duration;
 use oer_time_virtual::VirtualClock;
 
 use super::{
-    IEEE802154_RADIO_CAPABILITIES, Ieee802154Platform, Ieee802154RadioEvent, Ieee802154Runtime,
+    IEEE802154_RADIO_CAPABILITIES, Ieee802154RadioEvent, Ieee802154Random, Ieee802154Runtime,
     Ieee802154RuntimeError, Ieee802154RuntimeParts, Ieee802154TxRxStatistics,
 };
 
 static LEVELS: [i8; 1] = [0];
 
-const PLATFORM: Ieee802154Platform = Ieee802154Platform { random: || 21 };
+/// A random source that always draws 21.
+struct FixedRandom;
+
+impl Ieee802154Random for FixedRandom {
+    fn random(&mut self) -> u32 {
+        21
+    }
+}
 
 /// 2006 data frame without an ACK request, as MAC bytes.
 const MAC: [u8; 10] = [0x41, 0x98, 0x01, 0x34, 0x12, 0xff, 0xff, 0x78, 0x56, 0xaa];
@@ -54,7 +61,7 @@ fn channel(number: u8) -> Channel {
 }
 
 type Runtime<const EVENTS: usize> =
-    Ieee802154Runtime<'static, NoopRawMutex, Ieee802154LlModel, VirtualClock, EVENTS>;
+    Ieee802154Runtime<'static, NoopRawMutex, Ieee802154LlModel, VirtualClock, FixedRandom, EVENTS>;
 
 /// Poll `future` once, as an executor does after a wake.
 fn poll_once<F: core::future::Future>(
@@ -78,7 +85,7 @@ fn enabled<const EVENTS: usize>() -> Runtime<EVENTS> {
     let runtime = Runtime::new(VirtualClock::new());
     assert!(
         runtime
-            .install(parts(), PLATFORM, Ieee802154PibDefaults::default())
+            .install(parts(), FixedRandom, Ieee802154PibDefaults::default())
             .is_ok()
     );
     runtime
@@ -103,12 +110,12 @@ fn install_admits_commands_only_after_enable() {
     );
     assert!(
         runtime
-            .install(parts(), PLATFORM, Ieee802154PibDefaults::default())
+            .install(parts(), FixedRandom, Ieee802154PibDefaults::default())
             .is_ok()
     );
     assert!(
         runtime
-            .install(parts(), PLATFORM, Ieee802154PibDefaults::default())
+            .install(parts(), FixedRandom, Ieee802154PibDefaults::default())
             .is_err()
     );
     assert_eq!(runtime.state(), Ok(RadioState::Disabled));
@@ -232,7 +239,7 @@ fn uninstall_returns_the_parts_and_discards_events() {
     // The discarded frame stays a reported loss across a new install.
     assert!(
         runtime
-            .install(parts(), PLATFORM, Ieee802154PibDefaults::default())
+            .install(parts(), FixedRandom, Ieee802154PibDefaults::default())
             .is_ok()
     );
     assert_eq!(block_on(runtime.next_event()), Err(EventsLost));
@@ -246,7 +253,7 @@ fn lifecycle_commands_end_with_terminal_events() {
     let runtime = Runtime::<4>::new(VirtualClock::new());
     assert!(
         runtime
-            .install(parts(), PLATFORM, Ieee802154PibDefaults::default())
+            .install(parts(), FixedRandom, Ieee802154PibDefaults::default())
             .is_ok()
     );
     assert_eq!(runtime.lifecycle(LifecycleCommand::Enable), Ok(Ok(())));
@@ -292,7 +299,7 @@ fn uninstall_returns_the_coexistence_ptis_to_the_foundation_image() {
     let runtime = Runtime::<4>::new(VirtualClock::new());
     assert!(
         runtime
-            .install(parts, PLATFORM, Ieee802154PibDefaults::default())
+            .install(parts, FixedRandom, Ieee802154PibDefaults::default())
             .is_ok()
     );
     runtime.installed.lock(|installed| {
@@ -731,7 +738,7 @@ fn interface_keys_belong_to_the_interfaces_of_the_installed_radio() {
     let runtime = Runtime::<4>::new(VirtualClock::new());
     assert!(
         runtime
-            .install(parts, PLATFORM, Ieee802154PibDefaults::default())
+            .install(parts, FixedRandom, Ieee802154PibDefaults::default())
             .is_ok()
     );
     assert_eq!(runtime.capabilities().interfaces, 2);

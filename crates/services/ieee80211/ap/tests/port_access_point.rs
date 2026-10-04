@@ -8,8 +8,12 @@ use core::{
     task::{Context, Poll, Waker},
 };
 
+use oer_ieee80211_ap::{
+    AccessPointClientLimit, AccessPointInactiveTimeout, AccessPointPeerStorage, AccessPointService,
+    ApPeerPhase,
+};
 use oer_ieee80211_ap_service::port::{
-    PortAccessPoint, PortApClient, PortApEnv, PortApProfile, PortApRouter,
+    PortAccessPoint, PortApBuildError, PortApClient, PortApEnv, PortApProfile, PortApRouter,
 };
 use oer_ieee80211_lower_mac::{
     CoexPriority, Ieee80211LowerMacPort, LifecycleCommand, LowerMacBeaconTiming, MacAddress,
@@ -24,7 +28,6 @@ use oer_ieee80211_mac::{
     ht::HtLocalCapabilities,
     phy::LegacyRate,
     qos::WmmAccessCategory,
-    security::ApSecurityPolicy,
     ssid::WifiSsid,
 };
 use oer_ieee80211_softmac::{BackoffEntropy, EdcaContention};
@@ -179,13 +182,22 @@ fn client<'a>(router: &'a PortApRouter<'a, Env<'a>>) -> PortApClient<'a, Env<'a>
     )
 }
 
+/// An Open BSS of four peers whose inactivity closes them after 10 s.
+fn service() -> AccessPointService<'static> {
+    AccessPointService::new_open(
+        ADDRESS,
+        AccessPointClientLimit::new(4).unwrap(),
+        AccessPointInactiveTimeout::new(10).unwrap(),
+        Box::leak(Box::new(AccessPointPeerStorage::new())),
+    )
+}
+
 fn profile(ssid: &WifiSsid) -> PortApProfile<'_> {
     PortApProfile {
         ssid,
         channel: channel(),
         beacon_interval_tu: 100,
         dtim_period: 2,
-        security: ApSecurityPolicy::Open,
         advertisement: &ADVERTISEMENT,
         management_rate: RATE,
         coex: CoexPriority::Normal,
@@ -266,9 +278,14 @@ fn the_access_point_starts_its_bss_and_beacons_at_every_tbtt() {
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = [0; AP_BEACON_CAPACITY];
-    let mut access_point =
-        PortAccessPoint::<Env<'_>>::new(client(&router), &timer, profile(&ssid), &mut storage)
-            .unwrap();
+    let mut access_point = PortAccessPoint::<Env<'_>>::new(
+        client(&router),
+        &timer,
+        profile(&ssid),
+        service(),
+        &mut storage,
+    )
+    .unwrap();
 
     drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
     assert_eq!(model.channel(), Some(Channel::from_wifi_channel(channel())));
@@ -333,9 +350,14 @@ fn a_probe_request_for_the_bss_or_any_ssid_is_answered_once_per_interval() {
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = [0; AP_BEACON_CAPACITY];
-    let mut access_point =
-        PortAccessPoint::<Env<'_>>::new(client(&router), &timer, profile(&ssid), &mut storage)
-            .unwrap();
+    let mut access_point = PortAccessPoint::<Env<'_>>::new(
+        client(&router),
+        &timer,
+        profile(&ssid),
+        service(),
+        &mut storage,
+    )
+    .unwrap();
     drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
 
     // A wildcard request, a directed one inside the response interval, then
@@ -379,4 +401,205 @@ fn a_probe_request_for_the_bss_or_any_ssid_is_answered_once_per_interval() {
     }
     assert_eq!(access_point.counters().probe_responses, 2);
     assert_eq!(access_point.counters().probes_ignored, 2);
+}
+
+/// A management frame of the station to the access point.
+fn management(subtype: u8, retry: bool, body: &[u8]) -> Vec<u8> {
+    let mut frame = vec![subtype << 4, if retry { 0x08 } else { 0 }, 0, 0];
+    frame.extend_from_slice(&ADDRESS);
+    frame.extend_from_slice(&STATION);
+    frame.extend_from_slice(&ADDRESS);
+    frame.extend_from_slice(&[0, 0]);
+    frame.extend_from_slice(body);
+    frame
+}
+
+/// An Open System Authentication Request.
+fn authentication(retry: bool) -> Vec<u8> {
+    management(11, retry, &[0, 0, 1, 0, 0, 0])
+}
+
+/// An Association Request of an Open BSS station with the 802.11b/g rates.
+fn association() -> Vec<u8> {
+    let mut body = vec![0x21, 0x04, 10, 0];
+    body.extend_from_slice(&[0, SSID.len() as u8]);
+    body.extend_from_slice(SSID);
+    body.extend_from_slice(&[1, 8, 0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24]);
+    management(0, false, &body)
+}
+
+/// The subtypes and first body word of what the access point sent to the
+/// station, in order.
+fn sent_to_station(model: &LowerMacModel) -> Vec<(u8, u16)> {
+    model
+        .submitted()
+        .into_iter()
+        .map(|attempt| attempt.frames[0].clone())
+        .filter(|frame| frame[4..10] == STATION)
+        .map(|frame| (frame[0] >> 4, u16::from_le_bytes([frame[24], frame[25]])))
+        .collect()
+}
+
+/// Run the access point until `until`, delivering each `(time, frame)` as
+/// the port receives it.
+fn serve(
+    model: &LowerMacModel,
+    router: &PortApRouter<'_, Env<'_>>,
+    timer: &VirtualTimer,
+    access_point: &mut PortAccessPoint<'_, Env<'_>>,
+    frames: &[(u64, Vec<u8>)],
+    until: u64,
+) {
+    let stops: Vec<u64> = frames.iter().map(|(at, _)| *at).collect();
+    let mut sent = 0;
+    drive(
+        model,
+        router,
+        timer,
+        access_point.run_until(Instant::from_micros(until)),
+        &stops,
+        |now| {
+            while sent < frames.len() && frames[sent].0 <= now {
+                model.receive(&frames[sent].1, meta());
+                sent += 1;
+            }
+        },
+    )
+    .unwrap();
+}
+
+#[test]
+fn an_open_station_authenticates_associates_and_leaves() {
+    let model = model();
+    let timer = VirtualTimer::default();
+    let router = PortApRouter::<Env<'_>>::new(&model, 1);
+    let ssid = WifiSsid::new(SSID).unwrap();
+    let mut storage = [0; AP_BEACON_CAPACITY];
+    let mut access_point = PortAccessPoint::<Env<'_>>::new(
+        client(&router),
+        &timer,
+        profile(&ssid),
+        service(),
+        &mut storage,
+    )
+    .unwrap();
+    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+
+    let start = timer.now.get();
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[
+            (start + 1_000, authentication(false)),
+            (start + 2_000, association()),
+            // The station lost the acknowledgement of both responses and
+            // repeats them: each is answered again, the peer kept.
+            (start + 3_000, authentication(true)),
+            (start + 4_000, association()),
+        ],
+        start + 5_000,
+    );
+    let peer = access_point.service().peer_status(STATION).unwrap();
+    assert_eq!(peer.phase, ApPeerPhase::Authorized);
+    assert_ne!(peer.association_id, 0);
+    // Authentication (11) and Association Response (1) twice, both
+    // successful: status 0 after the fixed fields.
+    let sent = sent_to_station(&model);
+    assert_eq!(
+        sent.iter().map(|(subtype, _)| *subtype).collect::<Vec<_>>(),
+        [11, 1, 11, 1]
+    );
+    let responses: Vec<_> = model
+        .submitted()
+        .into_iter()
+        .map(|attempt| attempt.frames[0].clone())
+        .filter(|frame| frame[4..10] == STATION)
+        .collect();
+    // The authentication's status, the association's status and AID.
+    assert_eq!(u16::from_le_bytes([responses[0][28], responses[0][29]]), 0);
+    assert_eq!(u16::from_le_bytes([responses[1][26], responses[1][27]]), 0);
+    assert_eq!(
+        u16::from_le_bytes([responses[1][28], responses[1][29]]) & 0x3fff,
+        peer.association_id
+    );
+    assert_eq!(responses[1][28..30], responses[3][28..30]);
+
+    // The station deauthenticates: the access point forgets it.
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[(start + 6_000, management(12, false, &[3, 0]))],
+        start + 7_000,
+    );
+    assert!(access_point.service().peer_status(STATION).is_none());
+    assert_eq!(access_point.counters().peers_left, 1);
+}
+
+#[test]
+fn an_inactive_peer_is_disassociated_and_deauthenticated() {
+    let model = model();
+    let timer = VirtualTimer::default();
+    let router = PortApRouter::<Env<'_>>::new(&model, 1);
+    let ssid = WifiSsid::new(SSID).unwrap();
+    let mut storage = [0; AP_BEACON_CAPACITY];
+    let mut access_point = PortAccessPoint::<Env<'_>>::new(
+        client(&router),
+        &timer,
+        profile(&ssid),
+        service(),
+        &mut storage,
+    )
+    .unwrap();
+    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    let start = timer.now.get();
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[
+            (start + 1_000, authentication(false)),
+            (start + 2_000, association()),
+        ],
+        start + 12_000_000,
+    );
+    // Silent for the 10 s timeout: a Disassociation for inactivity (10,
+    // reason 4), then a Deauthentication (12, reason 2).
+    let sent = sent_to_station(&model);
+    assert_eq!(&sent[2..], &[(10, 4), (12, 2)]);
+    assert!(access_point.service().peer_status(STATION).is_none());
+    assert_eq!(access_point.counters().peers_closed, 1);
+}
+
+#[test]
+fn a_protected_bss_is_refused_until_its_handshake_is_served() {
+    let model = model();
+    let timer = VirtualTimer::default();
+    let router = PortApRouter::<Env<'_>>::new(&model, 1);
+    let ssid = WifiSsid::new(SSID).unwrap();
+    let mut storage = [0; AP_BEACON_CAPACITY];
+    let pmk = oer_ieee80211_rsn::Pmk::from_bytes([7; 32]);
+    let gtk = oer_ieee80211_rsn::frames::RsnGtk::new(1, true, [9; 16]).unwrap();
+    let wpa2 = AccessPointService::new(
+        ADDRESS,
+        pmk,
+        gtk,
+        AccessPointClientLimit::new(4).unwrap(),
+        AccessPointInactiveTimeout::new(10).unwrap(),
+        Box::leak(Box::new(AccessPointPeerStorage::new())),
+    );
+    assert!(matches!(
+        PortAccessPoint::<Env<'_>>::new(
+            client(&router),
+            &timer,
+            profile(&ssid),
+            wpa2,
+            &mut storage
+        ),
+        Err(PortApBuildError::SecurityUnsupported)
+    ));
 }

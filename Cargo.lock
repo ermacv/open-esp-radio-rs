@@ -3493,6 +3493,7 @@ dependencies = [
  "oer-ieee80211-ap",
  "oer-ieee80211-lower-mac",
  "oer-ieee80211-mac",
+ "oer-ieee80211-rsn",
  "oer-ieee80211-softmac",
  "oer-ieee80211-upper-mac",
  "oer-ieee80211-upper-mac-service",

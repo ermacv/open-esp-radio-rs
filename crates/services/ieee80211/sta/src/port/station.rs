@@ -3,7 +3,9 @@
 
 use core::{convert::Infallible, marker::PhantomData};
 
-use oer_ieee80211_lower_mac::{Channel, ChannelWidth, Ieee80211LowerMacPort, ReceiveFilter};
+use oer_ieee80211_lower_mac::{
+    Channel, ChannelWidth, Ieee80211LowerMacPort, ReceiveFilter, RxEvidence, RxMeta,
+};
 use oer_ieee80211_mac::{
     ccmp::{CcmpPacketNumberStep, CcmpTxPacketNumber},
     scan::{HtSecondaryChannel, ScanRecord, ScanTable},
@@ -33,6 +35,7 @@ use oer_ieee80211_sta::{
         StaAssociationSuccess, StaAuthenticationSuccess, StaJoinError, sae::StaSaeAuthentication,
     },
     modem_sleep::SleepType,
+    rate_control::StaRateControl,
     scan::{StaCandidateScanExit, StaScanConfig, StaScanError, StaScanPlanError},
     station::{
         StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaBackoffOutcome,
@@ -51,7 +54,7 @@ use crate::{
 use super::{
     connected::{
         ConnectionContext, PortConnection, PortConnectionConfig, PortDisconnect, PortLinkProbe,
-        PortSend,
+        PortLinkSupervisor, PortSend,
     },
     join::{PortAssociation, PortHePower, PortJoin},
     link::{PORT_FRAME_CAPACITY, PortError, PortLink, PortLinkError, PortStationEnv},
@@ -209,6 +212,8 @@ pub struct PortStation<'p, X: PortStationEnv> {
     candidate: Option<ScanRecord>,
     selected: Option<SelectedRsn>,
     association: Option<AssociationResponse>,
+    /// The receive metadata of the access point's Association Response.
+    response_meta: Option<RxMeta>,
     /// The access point as the association left it.
     peer: Option<StaAssociatedPeer>,
     pending: Option<RsnPendingKeyInstall>,
@@ -217,13 +222,13 @@ pub struct PortStation<'p, X: PortStationEnv> {
     /// management frames.
     bip: Option<oer_ieee80211_rsn::bip::BipReceiver>,
     packet_number: Option<CcmpTxPacketNumber>,
-    connection: Option<PortConnection<X::Port>>,
+    connection: Option<PortConnection<X::Port, X::RateControl>>,
     report: PortAttemptReport,
 }
 
 /// A connected station's connection and the context its phases run in.
 type ConnectionParts<'a, 'p, X> = (
-    &'a mut PortConnection<<X as PortStationEnv>::Port>,
+    &'a mut PortConnection<<X as PortStationEnv>::Port, <X as PortStationEnv>::RateControl>,
     ConnectionContext<'a, 'p, X>,
 );
 
@@ -246,6 +251,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             candidate: None,
             selected: None,
             association: None,
+            response_meta: None,
             peer: None,
             pending: None,
             keys: None,
@@ -292,7 +298,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
     }
 
     /// The connection of a connected station.
-    pub const fn connection(&self) -> Option<&PortConnection<X::Port>> {
+    pub const fn connection(&self) -> Option<&PortConnection<X::Port, X::RateControl>> {
         self.connection.as_ref()
     }
 
@@ -379,6 +385,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         self.connection = None;
         self.keys = None;
         self.association = None;
+        self.response_meta = None;
         self.selected = None;
         self.pending = None;
         self.packet_number = None;
@@ -575,16 +582,20 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             timer,
             profile,
             security,
+            response_meta,
             ..
         } = self;
-        let join = PortJoin::new(link, bssid).with_association(PortAssociation {
-            access_point: &candidate,
-            security: &selected,
-            phy,
-            capabilities: profile.capabilities,
-            listen_interval: profile.listen_interval,
-            he_power: profile.he_power,
-        });
+        *response_meta = None;
+        let join = PortJoin::new(link, bssid)
+            .with_response_meta(response_meta)
+            .with_association(PortAssociation {
+                access_point: &candidate,
+                security: &selected,
+                phy,
+                capabilities: profile.capabilities,
+                listen_interval: profile.listen_interval,
+                he_power: profile.he_power,
+            });
         let success = StaJoinRunner::new(join, &*timer)
             .associate(
                 address,
@@ -887,14 +898,22 @@ impl<'p, X: PortStationEnv> StaAttemptPort for PortAttemptPort<'p, X> {
             .take()
             .unwrap_or(CcmpTxPacketNumber::new(owner.profile.ccmp_step));
         let bip = owner.bip.take();
+        let rate = <X::RateControl as StaRateControl>::associate(
+            owner.link.rate_config(),
+            &config.peer,
+            owner.response_meta.and_then(link_metric),
+        );
         owner.connection = Some(PortConnection::new(
             config,
             owner.keys,
             packet_number,
             tx_block_ack,
             bip,
-            link,
-            probe,
+            PortLinkSupervisor {
+                monitor: link,
+                probe,
+            },
+            rate,
         ));
         if let Some(connection) = owner.connection.as_mut() {
             connection.arm_link(owner.timer.now());
@@ -916,6 +935,17 @@ impl<'p, X: PortStationEnv> StaAttemptPort for PortAttemptPort<'p, X> {
         }
         Ok(owner)
     }
+}
+
+/// The access point's signal over the noise floor in a frame's receive
+/// metadata, narrowed to a signed byte as the vendor's `ic_set_trc` does;
+/// `None` when the port reported either value unavailable.
+fn link_metric(meta: RxMeta) -> Option<i8> {
+    let value = |evidence: RxEvidence<i8>| match evidence {
+        RxEvidence::HardwareObserved(value) | RxEvidence::ProtocolValidated(value) => Some(value),
+        RxEvidence::Unavailable => None,
+    };
+    Some(value(meta.rssi_dbm)?.wrapping_sub(value(meta.noise_floor_dbm)?))
 }
 
 /// The application a lifecycle-driven station serves.

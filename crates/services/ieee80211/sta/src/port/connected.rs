@@ -40,6 +40,7 @@ use oer_ieee80211_sta::{
     block_ack::{StaTxBlockAckOriginator, StaTxBlockAckResponseDisposition},
     link_monitor::{StaLinkAction, StaLinkMonitor},
     modem_sleep::{PmBeacon, PmTraffic, SleepType},
+    rate_control::StaRateControl,
     sa_query::{SaQueryStep, StationSaQuery},
 };
 use oer_ieee80211_upper_mac::{
@@ -180,7 +181,7 @@ pub struct PortTxCounters {
 }
 
 /// The connected station's state over the port.
-pub struct PortConnection<P: LowerMacBeaconTiming> {
+pub struct PortConnection<P: LowerMacBeaconTiming, R> {
     config: PortConnectionConfig,
     keys: Option<PortKeys>,
     packet_number: CcmpTxPacketNumber,
@@ -210,7 +211,17 @@ pub struct PortConnection<P: LowerMacBeaconTiming> {
     link: StaLinkMonitor,
     /// The SSID and rates of the station's Probe Requests.
     probe: PortLinkProbe,
+    /// The association's rate control: the rate of each data frame, and
+    /// what its exchanges teach it.
+    rate: R,
     counters: PortRxCounters,
+}
+
+/// A connected station's supervision of its link: the monitor of its
+/// beacons and the Probe Request it sends when they stop.
+pub(crate) struct PortLinkSupervisor {
+    pub monitor: StaLinkMonitor,
+    pub probe: PortLinkProbe,
 }
 
 /// The SSID and supported rates a connected station's Probe Request
@@ -250,16 +261,20 @@ pub(crate) struct ConnectionContext<'a, 'p, X: PortStationEnv> {
     pub key_unwrap: &'a mut X::KeyUnwrap,
 }
 
-impl<P: LowerMacBeaconTiming> PortConnection<P> {
+impl<P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<P, R> {
     pub(crate) fn new(
         config: PortConnectionConfig,
         keys: Option<PortKeys>,
         packet_number: CcmpTxPacketNumber,
         tx_block_ack: Option<StaTxBlockAckOriginator>,
         bip: Option<BipReceiver>,
-        link: StaLinkMonitor,
-        probe: PortLinkProbe,
+        supervision: PortLinkSupervisor,
+        rate: R,
     ) -> Self {
+        let PortLinkSupervisor {
+            monitor: link,
+            probe,
+        } = supervision;
         let group_replay = keys
             .and_then(|keys| {
                 CcmpRxReplayState::from_receive_sequence(keys.group_receive_sequence).ok()
@@ -285,6 +300,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
             bip,
             link,
             probe,
+            rate,
             counters: PortRxCounters::default(),
         }
     }
@@ -298,6 +314,11 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
     /// The station's supervision of its link.
     pub const fn link(&self) -> &StaLinkMonitor {
         &self.link
+    }
+
+    /// The association's rate control.
+    pub const fn rate_control(&self) -> &R {
+        &self.rate
     }
 
     /// What the transmit queue sent.
@@ -361,7 +382,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
         }
     }
 
-    fn power_context<'a, 'p, X: PortStationEnv<Port = P>>(
+    fn power_context<'a, 'p, X: PortStationEnv<Port = P, RateControl = R>>(
         context: &'a mut ConnectionContext<'_, 'p, X>,
         bssid: MacAddress,
         traffic: PmTraffic,
@@ -377,7 +398,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
 
     /// Start the power manager of the association with `sleep_type`, or
     /// restart it with a new one.
-    pub(crate) async fn start_power<X: PortStationEnv<Port = P>>(
+    pub(crate) async fn start_power<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         sleep_type: SleepType,
@@ -436,7 +457,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
     /// operational and the port aggregates at the data rate, every other
     /// frame alone. An exchange that ended without a report counts as
     /// failed; any other error ends the loop.
-    async fn drain<X: PortStationEnv<Port = P>>(
+    async fn drain<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
     ) -> Result<(), PortLinkError<PortError<X>>> {
@@ -468,6 +489,19 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
             };
             let acknowledged_now = match sent {
                 Ok((report, frames)) => {
+                    // The rate control learns from every data exchange.
+                    match report {
+                        TxReport::Mpdu(status) => self.rate.observe_mpdu(
+                            status.attempts,
+                            status.acknowledged == Some(true),
+                            status.ack_snr_db,
+                        ),
+                        TxReport::Ampdu(status) => self.rate.observe_ampdu(
+                            context.timer.now(),
+                            status.original_subframes,
+                            status.block_acknowledged_subframes,
+                        ),
+                    }
                     let delivered = match report {
                         TxReport::Mpdu(status) => u32::from(status.acknowledged == Some(true)),
                         TxReport::Ampdu(status) => u32::from(status.block_acknowledged_subframes),
@@ -516,7 +550,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
         (units != 0).then_some(u32::from(units) * 32)
     }
 
-    fn aggregate_run<X: PortStationEnv<Port = P>>(
+    fn aggregate_run<X: PortStationEnv<Port = P, RateControl = R>>(
         &self,
         context: &ConnectionContext<'_, '_, X>,
         priority: WmmUserPriority,
@@ -531,11 +565,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
         ) else {
             return 1;
         };
-        if !self.config.peer_qos
-            || !capabilities
-                .formats
-                .contains_rate(context.link.config().data_rate)
-        {
+        if !self.config.peer_qos || !capabilities.formats.contains_rate(self.rate.ampdu_rate()) {
             return 1;
         }
         let limit = usize::from(agreement.window)
@@ -547,7 +577,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
             (1_u32 << (13 + u32::from(self.config.peer.ht_ampdu_parameters & 0x03))) - 1;
         let maximum = peer_length.min(capabilities.max_length);
         let txop = self.txop_limit_micros(priority);
-        let rate = context.link.config().data_rate;
+        let rate = self.rate.ampdu_rate();
         let mut length = 0_u32;
         let mut run = 0;
         for index in 0..self.queue.head_run(limit) {
@@ -575,7 +605,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
 
     /// Send the first `run` queued frames of `priority` as one A-MPDU under
     /// the pairwise key; the report and the frames it carried.
-    async fn transmit_aggregate<X: PortStationEnv<Port = P>>(
+    async fn transmit_aggregate<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         priority: WmmUserPriority,
@@ -610,7 +640,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
         let config = *context.link.config();
         let request = TxRequest {
             access_category: priority.access_category(),
-            initial_rate: config.data_rate,
+            initial_rate: self.rate.ampdu_rate(),
             receiver: TxReceiver::Individual,
             power: config.power,
             coex: config.coex,
@@ -637,13 +667,12 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
             .map(|report| (report, run))
     }
 
-    async fn transmit<X: PortStationEnv<Port = P>>(
+    async fn transmit<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         ethernet: &[u8],
         priority: WmmUserPriority,
     ) -> Result<TxReport, PortLinkError<PortError<X>>> {
-        let config = *context.link.config();
         let sequence_number = if self.config.peer_qos {
             context
                 .sequences
@@ -663,7 +692,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
                 &frame[..length],
                 key,
                 priority.access_category(),
-                config.data_rate,
+                self.rate.mpdu_rate(),
             )
             .await
     }
@@ -671,7 +700,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
     /// Encode `ethernet` as a data MPDU to the access point with
     /// `sequence_number`: under the pairwise key once the keys are
     /// installed, with the next CCMP packet number.
-    fn encode_data<X: PortStationEnv<Port = P>>(
+    fn encode_data<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &ConnectionContext<'_, '_, X>,
         ethernet: &[u8],
@@ -722,7 +751,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
     /// Process inputs until `deadline`: received frames, TBTTs, the SA
     /// Query, power-save and reorder gap timers. Every delivered Ethernet frame goes to
     /// `deliver`. `Some` when the association ended.
-    pub(crate) async fn run_until<X: PortStationEnv<Port = P>>(
+    pub(crate) async fn run_until<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         deadline: Instant,
@@ -751,7 +780,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
     }
 
     /// Run the SA Query and power-save timers that are due.
-    async fn expire<X: PortStationEnv<Port = P>>(
+    async fn expire<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
     ) -> Result<Option<PortDisconnect>, PortLinkError<PortError<X>>> {
@@ -789,7 +818,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
 
     /// Expire overdue ADDBA negotiations and send the next one that waits,
     /// unless the station dozes.
-    async fn negotiate_tx_block_ack<X: PortStationEnv<Port = P>>(
+    async fn negotiate_tx_block_ack<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         now: Instant,
@@ -822,7 +851,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
         Ok(())
     }
 
-    async fn input<X: PortStationEnv<Port = P>>(
+    async fn input<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         input: PortInput,
@@ -865,7 +894,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
         Ok(None)
     }
 
-    async fn management<X: PortStationEnv<Port = P>>(
+    async fn management<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         frame: &PortFrame,
@@ -991,7 +1020,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
         })
     }
 
-    async fn block_ack_action<X: PortStationEnv<Port = P>>(
+    async fn block_ack_action<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         body: &[u8],
@@ -1097,7 +1126,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
         }
     }
 
-    async fn data<X: PortStationEnv<Port = P>>(
+    async fn data<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         frame: PortFrame,
@@ -1157,7 +1186,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
     /// answered with Group Message 2 under the pairwise key; a repeat of the
     /// last one is answered again without a key change. Anything else, and a
     /// group key that does not install, counts as rejected.
-    async fn group_rekey<X: PortStationEnv<Port = P>>(
+    async fn group_rekey<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         eapol: OwnedEapolFrame<RSN_HANDSHAKE_EAPOL_CAPACITY>,
@@ -1400,7 +1429,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
 
     /// A Probe Request to the access point, or broadcast, carrying the
     /// station's SSID and rates, as the vendor's `send_ap_probe` sends.
-    async fn send_link_probe<X: PortStationEnv<Port = P>>(
+    async fn send_link_probe<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         directed: bool,
@@ -1436,7 +1465,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
             .map(|_| ())
     }
 
-    async fn send_sa_query<X: PortStationEnv<Port = P>>(
+    async fn send_sa_query<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         query: SaQuery,
@@ -1445,7 +1474,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
     }
 
     /// Send one Action frame, protected under management frame protection.
-    async fn send_action<X: PortStationEnv<Port = P>>(
+    async fn send_action<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         body: &[u8],
@@ -1455,7 +1484,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
             .map(|_| ())
     }
 
-    async fn send_management<X: PortStationEnv<Port = P>>(
+    async fn send_management<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         subtype: StaManagementSubtype,
@@ -1515,7 +1544,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
     /// Leave the association: send a Deauthentication while the station
     /// still owns it, stop power save, end the Block Ack agreements and
     /// remove the keys.
-    pub(crate) async fn leave<X: PortStationEnv<Port = P>>(
+    pub(crate) async fn leave<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         send_deauthentication: bool,

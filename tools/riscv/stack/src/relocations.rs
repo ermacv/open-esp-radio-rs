@@ -132,15 +132,15 @@ impl Relocations {
     }
 }
 
-/// Whether any allocated section of `elf` takes the address of `function`:
-/// a relocation that names it other than a call, a jump or a branch to it.
-/// Without one, every transfer to it is a direct call the analysis sees.
-pub fn address_taken(elf: &[u8], function: u32) -> Result<bool> {
+/// Every address an allocated section of `elf` takes: a relocation's target
+/// other than a call, a jump or a branch.
+pub fn taken_addresses(elf: &[u8]) -> Result<std::collections::BTreeSet<u32>> {
     // R_RISCV_BRANCH, _JAL, _CALL, _CALL_PLT, _RVC_BRANCH, _RVC_JUMP and
     // _RELAX, which only marks the pair before it.
     const TRANSFERS: [u32; 7] = [16, 17, 18, 19, 44, 45, 51];
     let invalid = |message: &str| Error::new(ErrorCode::Integrity, message.to_owned());
     let file = object::File::parse(elf).map_err(|_| invalid("invalid ELF"))?;
+    let mut taken = std::collections::BTreeSet::new();
     for section in file.sections() {
         let object::SectionFlags::Elf { sh_flags } = section.flags() else {
             continue;
@@ -163,10 +163,16 @@ pub fn address_taken(elf: &[u8], function: u32) -> Result<bool> {
                 RelocationTarget::Absolute => 0,
                 _ => continue,
             };
-            if base as i64 + relocation.addend() == i64::from(function) {
-                return Ok(true);
+            if let Ok(address) = u32::try_from(base as i64 + relocation.addend()) {
+                taken.insert(address & !1);
             }
         }
     }
-    Ok(false)
+    Ok(taken)
+}
+
+/// Whether any allocated section of `elf` takes the address of `function`.
+/// Without one, every transfer to it is a direct call the analysis sees.
+pub fn address_taken(elf: &[u8], function: u32) -> Result<bool> {
+    Ok(taken_addresses(elf)?.contains(&function))
 }

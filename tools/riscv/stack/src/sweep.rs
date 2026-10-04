@@ -51,6 +51,21 @@ pub struct Transfer {
     pub source: Option<TargetSource>,
     /// For an unresolved target loaded as `table[index]`, the table.
     pub table: Option<TableBase>,
+    /// For an unresolved target a word load put in its register, that load.
+    pub load: Option<Load>,
+}
+
+/// The word load an unresolved target comes from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Load {
+    /// The register the load's address is based on, unchanged from the load
+    /// to the transfer.
+    pub base: u8,
+    /// The load's offset from its base register: a vtable slot for a call
+    /// through a trait object.
+    pub offset: i32,
+    /// The address loaded from, when the base register holds a constant.
+    pub address: Option<u32>,
 }
 
 /// What an instruction writes to an integer register, for [`TargetSource`].
@@ -342,10 +357,12 @@ pub(crate) fn transfers(
     let mut writes = [None::<Write>; 32];
     let merges = merges(bytes, start, end);
     let mut facts = [None::<Fact>; 32];
+    let mut loads = [None::<Load>; 32];
     while offset < bytes.len() {
         let pc = start + offset as u32;
         if merges.contains(&pc) {
             facts = [None; 32];
+            loads = [None; 32];
         }
         let Some((instruction, length)) = decode(&bytes[offset..], Extensions::ALL) else {
             // An encoding outside the decoder's set (a CSR access, say) still
@@ -354,6 +371,7 @@ pub(crate) fn transfers(
             offset += if bytes[offset] & 3 == 3 { 4 } else { 2 };
             previous = None;
             facts = [None; 32];
+            loads = [None; 32];
             continue;
         };
         let resolved = |target: u32, kind| Transfer {
@@ -362,6 +380,7 @@ pub(crate) fn transfers(
             kind,
             source: None,
             table: None,
+            load: None,
         };
         match instruction {
             Instruction::Base(Inst::Jal {
@@ -439,6 +458,7 @@ pub(crate) fn transfers(
                             Some(Fact::TableEntry { base, .. }) => Some(base),
                             _ => None,
                         },
+                        load: loads[base.0 as usize],
                     }),
                 }
             }
@@ -448,8 +468,26 @@ pub(crate) fn transfers(
         }
         previous = upper(&instruction, pc);
         let next = fact(&instruction, pc, &facts, relocations);
+        let load = match instruction {
+            Instruction::Base(Inst::Lw { offset, base, .. }) => Some(Load {
+                base: base.0,
+                offset: offset.as_i32(),
+                address: match facts[base.0 as usize] {
+                    Some(Fact::Constant(value)) => Some(value.wrapping_add(offset.as_u32())),
+                    _ => None,
+                },
+            }),
+            _ => None,
+        };
         if let Some((register, how)) = write(&instruction) {
             writes[register as usize] = Some(how);
+            // A load based on this register no longer names its address.
+            for entry in &mut loads {
+                if entry.is_some_and(|load| load.base == register) {
+                    *entry = None;
+                }
+            }
+            loads[register as usize] = load;
             // A fact indexed off this register no longer holds.
             for fact in &mut facts {
                 if let Some(
@@ -478,6 +516,7 @@ pub(crate) fn transfers(
             Instruction::Base(Inst::Jal { dest: Reg(0), .. } | Inst::Jalr { .. })
         ) {
             facts = [None; 32];
+            loads = [None; 32];
         }
         offset += length;
     }

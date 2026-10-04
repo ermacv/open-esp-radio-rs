@@ -1314,3 +1314,116 @@ fn a_hart_stacks_one_interrupt_per_level_and_an_exception() {
     assert_eq!(levels(&harts[1]), [(1, Some(112))]);
     assert_eq!(harts[1].bytes, Some(112 + 96));
 }
+
+const HOOK_PROGRAM: &str = r#"
+#![no_std]
+#![no_main]
+
+static mut HOOK: Option<fn(u32) -> u32> = None;
+static mut OTHER: Option<fn(u8)> = None;
+static mut NEGATE: Option<fn(i32) -> i32> = None;
+
+#[inline(never)]
+fn shallow(value: u32) -> u32 {
+    value + 1
+}
+
+#[inline(never)]
+fn twice(value: u32) -> u32 {
+    value * 2
+}
+
+#[inline(never)]
+fn negate(value: i32) -> i32 {
+    -value
+}
+
+#[inline(never)]
+fn halve(value: i32) -> i32 {
+    value / 2
+}
+
+#[inline(never)]
+fn deep(value: u8) {
+    let mut buffer = [0u32; 64];
+    for (i, word) in buffer.iter_mut().enumerate() {
+        unsafe { core::ptr::write_volatile(word, i as u32 + u32::from(value)) };
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn keep(on: bool) {
+    unsafe {
+        HOOK = Some(if on { shallow } else { twice });
+        if on {
+            OTHER = Some(deep);
+        }
+        if let Some(other) = OTHER {
+            other(1);
+        }
+        NEGATE = Some(if on { negate } else { halve });
+        if let Some(negate) = NEGATE {
+            core::hint::black_box(negate(1));
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn _start(value: u32) -> u32 {
+    match unsafe { HOOK } {
+        Some(hook) => hook(value),
+        None => 0,
+    }
+}
+
+#[panic_handler]
+fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
+    loop {}
+}
+"#;
+
+#[test]
+fn a_call_through_a_static_s_function_pointer_reaches_the_taken_functions_of_its_type() {
+    let elf = compiled(HOOK_PROGRAM);
+    let analysis = analyze(&elf, &[], &[]).unwrap();
+    let types = TypeFacts::read(&elf).unwrap();
+    let taken = taken_addresses(&elf).unwrap();
+    let named = |name: &str| {
+        functions(&elf)
+            .unwrap()
+            .into_iter()
+            .find(|function| {
+                function
+                    .names
+                    .iter()
+                    .any(|candidate| candidate.contains(name))
+            })
+            .unwrap()
+            .address
+    };
+    let (start, shallow, twice, negate, deep) = (
+        named("_start"),
+        named("shallow"),
+        named("twice"),
+        named("negate"),
+        named("deep"),
+    );
+    assert!(taken.contains(&shallow) && taken.contains(&deep));
+    assert_eq!(analysis.bound(start).unwrap().bytes, None);
+    let resolutions = function_pointer_resolutions(&analysis, &types, &taken);
+    let site = analysis.functions[&start]
+        .transfers
+        .iter()
+        .find(|transfer| transfer.target.is_none())
+        .unwrap()
+        .site;
+    // `negate` and `halve` have the sizes of `fn(u32) -> u32` but `i32`, and
+    // `deep`'s parameter count differs: none can be the field's.
+    assert_eq!(
+        resolutions.get(&site),
+        Some(&BTreeSet::from([shallow, twice])),
+        "{resolutions:x?} negate={negate:#x}"
+    );
+    let bound = analysis.bound_with(start, &resolutions).unwrap();
+    assert!(bound.unresolved.is_empty(), "{bound:?}");
+}

@@ -6,9 +6,10 @@
 //! the current DMA descriptor.
 
 use crate::datapath::rx::reorder::{
-    RX_REORDER_BACKING_SLOT_COUNT, RX_REORDER_CURRENT_SLOT, RX_REORDER_GAP_TIMEOUT_MICROS,
-    RX_REORDER_SLOT_DOMAIN, RxReorderFrame, RxReorderFrameStorage, RxReorderStorageError,
+    RX_REORDER_BACKING_SLOT_COUNT, RX_REORDER_CURRENT_SLOT, RX_REORDER_SLOT_DOMAIN, RxReorderFrame,
+    RxReorderFrameStorage, RxReorderStorageError,
 };
+use oer_espressif_ieee80211_policy::block_ack::RX_REORDER_GAP_TIMEOUT_MICROS;
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_esp32s31_ieee80211_mac::{

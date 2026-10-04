@@ -45,9 +45,9 @@ use crate::datapath::{
     rx::{
         ethernet::PackedEthernetWriter,
         reorder::{
-            RX_REORDER_BACKING_SLOT_COUNT, RX_REORDER_CURRENT_SLOT, RX_REORDER_GAP_TIMEOUT_MICROS,
-            RX_REORDER_SLOT_DOMAIN, RxReorderCommand, RxReorderCommandReceiver, RxReorderFrame,
-            RxReorderFrameStorage, try_receive_rx_reorder_command,
+            RX_REORDER_BACKING_SLOT_COUNT, RX_REORDER_CURRENT_SLOT, RX_REORDER_SLOT_DOMAIN,
+            RxReorderCommand, RxReorderCommandReceiver, RxReorderFrame, RxReorderFrameStorage,
+            try_receive_rx_reorder_command,
         },
         staging::{
             StagedEthernetPublication, StagedRxDisposition, StagedRxFrame, StagedRxReceiver,

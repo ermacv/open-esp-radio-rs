@@ -27,14 +27,6 @@ pub use oer_esp32s31_ieee80211_mac::rx::ampdu::{
 /// control-plane progress while the RX protocol task is scheduled elsewhere.
 pub const RX_REORDER_COMMAND_CAPACITY: usize = 16;
 
-/// Vendor receive reorder age before the first buffered run crosses a gap.
-///
-/// Complete `libnet80211.a[ieee80211_ht.o]::ieee80211_ampdu_reorder` calls
-/// `ieee80211_ampdu_start_age_timer(0x493e0)` exactly when the first frame is
-/// retained. The call is routed through the microsecond OSI timer-arm slot, so
-/// the source-owned Embassy replacement keeps the same 300,000-us edge.
-pub const RX_REORDER_GAP_TIMEOUT_MICROS: u64 = 300_000;
-
 /// One logical slot for every sequence position in the vendor maximum window.
 pub const RX_REORDER_BACKING_SLOT_COUNT: usize = 64;
 /// Ephemeral owner identity used only while an in-order frame crosses

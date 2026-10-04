@@ -85,6 +85,11 @@ pub struct PortStationProfile<'a> {
     /// The TX Block Ack agreements the station originates; `None`
     /// originates none.
     pub tx_block_ack: Option<PortTxBlockAck>,
+    /// How long a receive reorder window holds a buffered run behind a
+    /// missing MPDU, from the first MPDU it retains: an integrator's policy
+    /// (the Espressif stack's is
+    /// `oer-espressif-ieee80211-policy::block_ack::RX_REORDER_GAP_TIMEOUT_MICROS`).
+    pub rx_reorder_gap: Duration,
     pub phy: PhyMode,
     pub listen_interval: u16,
     /// The step between the station's CCMP packet numbers: one in the
@@ -680,6 +685,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             peer_qos: association.wmm,
             management_protection: selected.security().protects_management(),
             sa_query_random: self.profile.sa_query_random,
+            rx_reorder_gap: self.profile.rx_reorder_gap,
             beacon_interval_tu: candidate.beacon_interval_tu,
             join_timestamp_tsf: candidate.timestamp,
         })

@@ -60,7 +60,6 @@ Cargo package identities are independent of this directory hierarchy.
 | `runtime/bluetooth/` | Portable service loop joining the in-process HCI transport, the LE Controller core and a radio port |
 | `runtime/esp32s31/{ieee80211,bluetooth,ieee802154}/` | Executor-independent radio execution over the `oer-time` ports; Wi-Fi role/datapath owners, the Bluetooth LE radio role driving scheduler list zero and the IEEE 802.15.4 acknowledged-IRQ handoff with cancellation-safe operation/DMA owners |
 | `adapters/embassy-net/owned/` | Owned-packet network adapter over the pinned Embassy/Xarxa forks |
-| `../experiments/network-engine/` | Experimental synchronous network engine; no production package depends on it, and its host tests drive the STA TX owner |
 | `composition/esp32s31/embassy/{ieee80211,bluetooth,ieee802154,radio}/` | Static resources, one-time claims, final bindings and the concrete lifecycle runners; `radio` starts the shared radio system (arbiter, PHY domain) with its periodic PHY tracking and coexistence schedule; Wi-Fi, Bluetooth and IEEE 802.15.4 start and stop as its clients, and Bluetooth adds its HCI Controller over the radio runtime |
 
 `memory` owns backing stability, range proofs and affine handoff; chip DMA
@@ -68,11 +67,8 @@ modules own hardware descriptors and controller transitions. `network/interface`
 is a dependency-free value boundary. The owned adapter, the only network
 integration, uses the pinned Git Embassy/Xarxa contract and its maintained
 packet-pool extensions over the radio scheduler and final SRAM allocator.
-`../experiments/network-engine` contains an experimental engine and physical materializer;
-no production package depends on it. Its host tests compose the STA TX owner
-through the runtime's `test-support` models. Product radio policy cannot
-depend on either network adapters or research; the architecture audit follows
-transitive normal/build dependencies across their domain paths.
+Product radio policy cannot depend on network adapters; the architecture
+audit follows transitive normal/build dependencies across their domain paths.
 
 Product resource profiles live in integration, which also executes whole-radio
 lifecycles. The [Embassy map](adapters/embassy/README.md) distinguishes external
@@ -199,9 +195,7 @@ state. Network adapters do not acquire radio policy or physical DMA ownership.
 
 Radio scheduling selects a flow before reserving scarce internal SRAM.
 Materialization transfers selected software work into a finite physical pool;
-terminal completion or proven abort returns that storage. The experimental
-research engine uses the shared egress and DMA contracts; its current
-repository consumer is a driver test.
+terminal completion or proven abort returns that storage.
 See the [egress architecture](../docs/wifi-egress.md) for queue,
 materialization, dependency and transport contracts.
 

@@ -111,13 +111,7 @@ fn heavy(ctx: &Context, files: &[String], affected: &BTreeSet<gate::Key>) -> Res
     {
         super::phy::run(ctx, super::CHIP)?;
     }
-    if files.iter().any(manifest)
-        || touches(&[
-            "crates/network",
-            "crates/adapters/embassy-net",
-            "experiments/network-engine",
-        ])
-    {
+    if files.iter().any(manifest) || touches(&["crates/network", "crates/adapters/embassy-net"]) {
         super::network::run(ctx)?;
     }
     if touches(&["registers/", "tools/registers/"]) {

@@ -84,7 +84,7 @@ fn owned_product_requires_one_pinned_xarxa_contract_but_allows_platform_forks() 
 }
 
 #[test]
-fn research_rejects_optional_and_renamed_stack_dependencies() {
+fn datapath_rejects_optional_and_renamed_stack_dependencies() {
     for stack in [
         "embassy-sync",
         "embassy-net-driver",
@@ -104,7 +104,7 @@ fn research_rejects_optional_and_renamed_stack_dependencies() {
                 .len(),
             1
         );
-        let error = audit(&fixture, metadata, Boundary::Research)
+        let error = audit(&fixture, metadata, Boundary::Datapath)
             .unwrap_err()
             .to_string();
         assert!(
@@ -116,7 +116,7 @@ fn research_rejects_optional_and_renamed_stack_dependencies() {
 }
 
 #[test]
-fn research_rejects_transitive_build_stack_but_allows_dev_only_stack() {
+fn datapath_rejects_transitive_build_stack_but_allows_dev_only_stack() {
     let fixture = Fixture::new();
     fixture.package("helper", "embassy-sync", "");
     fixture.package(
@@ -124,10 +124,10 @@ fn research_rejects_transitive_build_stack_but_allows_dev_only_stack() {
         "network-adapter-fixture",
         "[dev-dependencies]\nexecutor = { package = \"embassy-sync\", path = \"../helper\" }\n",
     );
-    audit(&fixture, fixture.metadata(), Boundary::Research).unwrap();
+    audit(&fixture, fixture.metadata(), Boundary::Datapath).unwrap();
     fixture.package("adapter", "network-adapter-fixture", "[dependencies]\nfacade = { package = \"device-registers\", path = \"../crates/hardware/test-radio\" }\n");
     fixture.package("crates/hardware/test-radio", "device-registers", "[build-dependencies]\ngenerator = { package = \"embassy-sync\", path = \"../../../helper\" }\n");
-    let error = audit(&fixture, fixture.metadata(), Boundary::Research)
+    let error = audit(&fixture, fixture.metadata(), Boundary::Datapath)
         .unwrap_err()
         .to_string();
     assert!(
@@ -160,7 +160,7 @@ worker = ["helper/executor"]
         let result = network::audit(
             &graph,
             &fixture.manifest,
-            Boundary::Research,
+            Boundary::Datapath,
             fixture.root(),
         );
         assert_eq!(result.is_ok(), accepted);

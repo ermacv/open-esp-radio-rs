@@ -112,8 +112,17 @@ alone. `PortConnection::tx_counters` counts what left and was
 acknowledged; an exchange whose completion was lost counts as failed, and
 any other error ends `run_until`.
 
-It does not yet do: BIP for group-addressed robust
-management frames, beacon-loss monitoring (`link_monitor`), the reorder gap
+An association that protects its management frames keeps the BIP receive
+state of its IGTK (`oer-ieee80211-rsn`'s `BipReceiver`), from Message 3 and
+each group rekey that carries one. A group-addressed robust management frame
+(Deauthentication, Disassociation, or an Action of a robust category) counts
+only when it verifies under that IGTK: a verified Deauthentication or
+Disassociation ends the association, a group Action carries nothing the
+station answers, and one that does not verify, or arrives without a
+Management MIC element, counts in `bip_rejected`, as the vendor's
+`sta_bip_check` drops it.
+
+It does not yet do: beacon-loss monitoring (`link_monitor`), the reorder gap
 timer (a full slot store releases the oldest run instead), a data rate bound
 by the peer's capabilities, PS-Poll,
 coexistence (the power manager runs with `CoexView::INACTIVE`), 40 MHz

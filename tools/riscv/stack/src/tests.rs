@@ -1539,10 +1539,15 @@ fn the_mir_facts_resolve_a_site_by_its_instance_s_calls() {
             .targets
             .clone()
     };
-    // A leaked type's functions reach every site their ABI fits, and no
-    // site of another argument count.
+    // A leaked type's functions reach every site of a leaked type their ABI
+    // fits, and no site of another argument count; a site whose own type
+    // never leaked keeps its own functions.
     assert_eq!(
         targets(r#"{"leaked_types": ["fn(i32) -> i32", "fn(u8, u8)"]}"#),
+        BTreeSet::from([shallow, twice])
+    );
+    assert_eq!(
+        targets(r#"{"leaked_types": ["fn(u32) -> u32", "fn(i32) -> i32", "fn(u8, u8)"]}"#),
         BTreeSet::from([shallow, twice, negate])
     );
     // A type transmuted into the site's type reaches it.
@@ -1552,7 +1557,10 @@ fn the_mir_facts_resolve_a_site_by_its_instance_s_calls() {
     );
     // A function a constant holds untyped leaks as its own signature.
     assert_eq!(
-        targets(r#"{"leaked_functions": {"NEGATE": "fn(i32) -> i32", "DEEP": "fn(u8, u8)"}}"#),
+        targets(
+            r#"{"leaked_types": ["fn(u32) -> u32"],
+                "leaked_functions": {"NEGATE": "fn(i32) -> i32", "DEEP": "fn(u8, u8)"}}"#
+        ),
         BTreeSet::from([shallow, twice, negate])
     );
     // A leaked trait leaks its vtable functions, by their signatures (of
@@ -1560,6 +1568,7 @@ fn the_mir_facts_resolve_a_site_by_its_instance_s_calls() {
     assert_eq!(
         targets(
             r#"{"vtables": {"main::Job": {"3": ["DEEP"]}},
+                "leaked_types": ["fn(u32) -> u32"],
                 "leaked_traits": ["main::Job"],
                 "trait_contents": {"main::Job": {"keys": ["fn(i32) -> i32"], "traits": [], "unknown": false}}}"#
         ),
@@ -1568,6 +1577,7 @@ fn the_mir_facts_resolve_a_site_by_its_instance_s_calls() {
     assert_eq!(
         targets(
             r#"{"vtables": {"main::Job": {"3": ["DEEP"]}},
+                "leaked_types": ["fn(u32) -> u32"],
                 "leaked_traits": ["main::Job"],
                 "signatures": {"DEEP": "fn(&main::Job, u8)"}}"#
         ),

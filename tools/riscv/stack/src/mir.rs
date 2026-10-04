@@ -11,15 +11,18 @@
 //! one of that instance's indirect calls, so it reaches the union of their
 //! candidates: the functions made pointers of each call's type and of every
 //! type transmuted into it, each call's vtable entry over every type the
-//! image makes a `dyn` of the trait, and every leaked function whose ABI fits
-//! the call. An instance without facts, or with a call the MIR names no
+//! image makes a `dyn` of the trait, and, when the call's own type leaked,
+//! every leaked function whose ABI fits the call. An instance without facts, or with a call the MIR names no
 //! target type for, leaves the site unresolved.
 //!
 //! A function leaves the candidates of another type's sites only when no
 //! address-taking of its type loses the type: the functions of a leaked
 //! function-pointer type (and of every type transmuted into one), the
 //! functions a constant holds untyped, and every vtable function of a leaked
-//! trait are candidates of every site whose ABI they fit. Calling a function
+//! trait are candidates of every site of a leaked type whose ABI they fit.
+//! A site of a type that never leaked needs none of them: a value of another
+//! type reaches its slots only through a reinterpretation, and a
+//! reinterpretation leaks the types of both its sides. Calling a function
 //! through a pointer of another calling convention or argument count is
 //! undefined behavior, so those two are what fitting means; a vtable
 //! function fits by the signature the facts record for it. A site
@@ -305,6 +308,13 @@ impl MirFacts {
                                 .flatten()
                                 .map(String::as_str),
                         );
+                    }
+                    // A value of another type reaches this type's slots
+                    // only through a reinterpretation, which leaks both
+                    // sides: a type that never leaked holds only its own
+                    // functions and those transmuted into it.
+                    if !(self.unknown_leak || self.leaked_types.contains(key)) {
+                        continue;
                     }
                     let site = signature(key);
                     candidates.extend(

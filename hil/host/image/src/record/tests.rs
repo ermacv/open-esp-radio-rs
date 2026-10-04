@@ -29,6 +29,7 @@ fn test_artifacts(
         chip: String::from("esp32s31"),
         rust_target: String::from(TARGET),
         layout_seed: None,
+        rom_summaries: Default::default(),
         features: oer_hil_image_class::FeatureDelta::default(),
         output: application.parent().unwrap().to_path_buf(),
         runtime_elf: runtime_elf.to_path_buf(),

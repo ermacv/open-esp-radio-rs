@@ -150,6 +150,9 @@ pub struct Artifacts {
     pub layout_seed: Option<NonZeroU32>,
     /// Runtime features added to or removed from the class's own.
     pub features: FeatureDelta,
+    /// The reviewed ROM summaries the image's stack analysis applied; empty
+    /// for an image without one. A summary no image applies is stale.
+    pub rom_summaries: std::collections::BTreeSet<String>,
 }
 
 /// The profile of `chip` in the repository this runner was built from.
@@ -766,6 +769,7 @@ fn build_resolved(
         environment: oer_hil_evidence::build::BuildEnvironment::capture(),
         layout_seed,
         features: features.clone(),
+        rom_summaries: interrupt_stacks.summaries,
     })
 }
 

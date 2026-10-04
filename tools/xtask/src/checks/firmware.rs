@@ -3,6 +3,7 @@
 //! every class's outcome instead of stopping at the first failure.
 
 use std::{
+    collections::BTreeSet,
     path::PathBuf,
     time::{Duration, Instant},
 };
@@ -27,6 +28,8 @@ pub struct Outcome {
     pub class: ImageClass,
     pub elapsed: Duration,
     pub failure: Option<String>,
+    /// The ROM summaries the class's image applied.
+    pub summaries: BTreeSet<String>,
 }
 
 /// Every class with the runtime features its image builds with, and how to
@@ -244,7 +247,36 @@ pub fn run(ctx: &Context, selected: &[ImageClass], depth: Depth, jobs: usize) ->
     outcomes.sort_by_key(|(index, _)| *index);
     let outcomes: Vec<Outcome> = outcomes.into_iter().map(|(_, outcome)| outcome).collect();
     print!("{}", summary(&outcomes));
-    verdict(&outcomes)
+    verdict(&outcomes)?;
+    // Only the whole catalog, built, shows which summaries no image uses.
+    if selected.is_empty() && depth == Depth::Build {
+        let reviewed = oer_esp32s31_firmware::interrupt_stack::rom_summaries(&ctx.root)?;
+        stale_summaries(&reviewed, &outcomes)?;
+    }
+    Ok(())
+}
+
+/// Fails naming every reviewed ROM summary no class's image applied: a
+/// summary of a ROM function no image reaches is stale.
+fn stale_summaries(reviewed: &[String], outcomes: &[Outcome]) -> Result<()> {
+    let applied: BTreeSet<&String> = outcomes
+        .iter()
+        .flat_map(|outcome| &outcome.summaries)
+        .collect();
+    let stale: Vec<&str> = reviewed
+        .iter()
+        .filter(|name| !applied.contains(name))
+        .map(String::as_str)
+        .collect();
+    if stale.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "no image class reaches the ROM functions of these summaries; remove them: {}",
+            stale.join(", ")
+        )
+        .into())
+    }
 }
 
 /// Copies the compiled units of `seed`'s build caches into `class`'s, by
@@ -313,18 +345,22 @@ fn build_one(
     let started = Instant::now();
     let result = match depth {
         Depth::Build => match frozen {
-            Some(frozen) => {
-                oer_hil_image::frozen::build(frozen, class, None, &Default::default()).map(|_| ())
-            }
+            Some(frozen) => oer_hil_image::frozen::build(frozen, class, None, &Default::default())
+                .map(|artifacts| artifacts.rom_summaries),
             None => Err("a full build needs the frozen sources".into()),
         },
 
-        Depth::TypeCheck => oer_hil_image::check(&ctx.root, class),
+        Depth::TypeCheck => oer_hil_image::check(&ctx.root, class).map(|()| BTreeSet::new()),
+    };
+    let (summaries, failure) = match result {
+        Ok(summaries) => (summaries, None),
+        Err(error) => (BTreeSet::new(), Some(error.to_string())),
     };
     let outcome = Outcome {
         class,
         elapsed: started.elapsed(),
-        failure: result.err().map(|error| error.to_string()),
+        failure,
+        summaries,
     };
     println!(
         "check firmware: {} {} ({}s)",
@@ -384,11 +420,28 @@ pub fn verdict(outcomes: &[Outcome]) -> Result<()> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_summary_no_class_applied_is_stale() {
+        let reviewed = ["memset".to_owned(), "memcpy".to_owned()];
+        let mut first = outcome(ImageClass::SystemWatchdog, None);
+        first.summaries.insert("memset".to_owned());
+        let second = outcome(ImageClass::SystemPanicReset, None);
+        let error = stale_summaries(&reviewed, &[first, second])
+            .unwrap_err()
+            .to_string();
+        assert!(error.ends_with("remove them: memcpy"), "{error}");
+        let mut both = outcome(ImageClass::SystemPanicReset, None);
+        both.summaries
+            .extend(["memset".to_owned(), "memcpy".to_owned()]);
+        assert!(stale_summaries(&reviewed, &[both]).is_ok());
+    }
+
     fn outcome(class: ImageClass, failure: Option<&str>) -> Outcome {
         Outcome {
             class,
             elapsed: Duration::from_secs(3),
             failure: failure.map(str::to_owned),
+            summaries: BTreeSet::new(),
         }
     }
 

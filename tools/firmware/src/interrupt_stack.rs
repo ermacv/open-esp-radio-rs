@@ -95,6 +95,9 @@ fn hex(bytes: &[u8]) -> String {
 /// Each hart's interrupt stack of the runtime ELF `elf`.
 pub struct InterruptStacks {
     pub harts: Vec<HartStack>,
+    /// The ROM summaries the image's analysis applied: those of the ROM
+    /// functions it reaches.
+    pub summaries: BTreeSet<String>,
     /// Function names by address, for the report.
     names: BTreeMap<u32, String>,
 }
@@ -178,6 +181,12 @@ fn with_margin(bytes: u64) -> u64 {
 
 /// Bound every hart's interrupt stack of the runtime ELF `elf`, with the
 /// pinned ROM of the repository at `root`.
+/// The names of the reviewed ROM summaries.
+pub fn rom_summaries(root: &Path) -> Result<Vec<String>> {
+    let summaries = parse_summaries(&std::fs::read_to_string(root.join(ROM_SUMMARIES))?)?;
+    Ok(summaries.into_iter().map(|summary| summary.name).collect())
+}
+
 pub fn interrupt_stacks(root: &Path, elf: &Path) -> Result<InterruptStacks> {
     let elf = std::fs::read(elf)?;
     let rom = std::fs::read(rom_elf(root)?)?;
@@ -249,7 +258,11 @@ pub fn interrupt_stacks(root: &Path, elf: &Path) -> Result<InterruptStacks> {
             resolutions: &resolutions,
         },
     )?;
-    Ok(InterruptStacks { harts, names })
+    Ok(InterruptStacks {
+        harts,
+        summaries: analysis.summaries.clone(),
+        names,
+    })
 }
 
 /// The targets of the IPC dispatch's call of the posted callback: the

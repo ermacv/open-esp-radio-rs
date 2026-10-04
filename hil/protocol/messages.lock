@@ -50,6 +50,7 @@ ieee802154/ed-event/probed daa0c9f319fbd8ff topic
 ieee802154/event-status-probe 4f3b8f083fec5d7d property
 ieee802154/event-status/probe 4c83ec3259d36e1a endpoint
 ieee802154/event-status/probed ef5f59091325ade1 topic
+ieee802154/mac-trace b53047517efad896 property
 ieee802154/route-probe 8d7810c66b58ac45 property
 ieee802154/route/probe ce75f8c241d17b6e endpoint
 ieee802154/route/probed 3674d4b7db90a546 topic

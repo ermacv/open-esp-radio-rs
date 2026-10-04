@@ -33,7 +33,13 @@ pub enum ImageClass {
     DiagnosticStationExit,
     DiagnosticIeee802154EventStatus,
     DiagnosticIeee802154EdEvent,
+    /// The IEEE 802.15.4 radio image as the product builds its radio: the
+    /// image vendor comparisons boot.
     DiagnosticIeee802154Radio,
+    /// The IEEE 802.15.4 radio image recording the MAC trace, for the
+    /// scenarios against the reference peer: a failed one's post-mortem
+    /// holds the last MAC events.
+    DiagnosticIeee802154RadioTrace,
     /// The IEEE 802.15.4 radio image with OpenThread over its client.
     DiagnosticIeee802154Thread,
     /// The IEEE 802.15.4 same-bit and level-retrigger route probe.
@@ -60,7 +66,7 @@ impl ImageClass {
         }
     }
 
-    pub const ALL: [Self; 26] = [
+    pub const ALL: [Self; 27] = [
         Self::BluetoothSecureGatt,
         Self::BluetoothGatt,
         Self::SystemWatchdog,
@@ -84,6 +90,7 @@ impl ImageClass {
         Self::DiagnosticIeee802154EventStatus,
         Self::DiagnosticIeee802154EdEvent,
         Self::DiagnosticIeee802154Radio,
+        Self::DiagnosticIeee802154RadioTrace,
         Self::DiagnosticIeee802154Thread,
         Self::DiagnosticIeee802154Route,
         Self::DiagnosticMemoryBenchmark,
@@ -108,6 +115,7 @@ impl ImageClass {
                 | Self::DiagnosticIeee802154EventStatus
                 | Self::DiagnosticIeee802154EdEvent
                 | Self::DiagnosticIeee802154Radio
+                | Self::DiagnosticIeee802154RadioTrace
                 | Self::DiagnosticIeee802154Thread
                 | Self::DiagnosticIeee802154Route
                 | Self::DiagnosticMemoryBenchmark
@@ -139,6 +147,7 @@ impl ImageClass {
             Self::DiagnosticIeee802154EventStatus => "diagnostic-ieee802154-event-status",
             Self::DiagnosticIeee802154EdEvent => "diagnostic-ieee802154-ed-event",
             Self::DiagnosticIeee802154Radio => "diagnostic-ieee802154-radio",
+            Self::DiagnosticIeee802154RadioTrace => "diagnostic-ieee802154-radio-trace",
             Self::DiagnosticIeee802154Thread => "diagnostic-ieee802154-thread",
             Self::DiagnosticIeee802154Route => "diagnostic-ieee802154-route",
             Self::DiagnosticMemoryBenchmark => "diagnostic-memory-benchmark",
@@ -179,7 +188,10 @@ impl ImageClass {
             Self::DiagnosticIeee802154EventStatus => "open-radio-hil,ieee802154-event-status-probe",
             Self::DiagnosticMemoryBenchmark => "open-radio-hil,memory-benchmark",
             Self::DiagnosticIeee802154EdEvent => "open-radio-hil,ieee802154-ed-event-probe",
-            Self::DiagnosticIeee802154Radio => "open-radio-hil,ieee802154-radio,ieee802154-trace",
+            Self::DiagnosticIeee802154Radio => "open-radio-hil,ieee802154-radio",
+            Self::DiagnosticIeee802154RadioTrace => {
+                "open-radio-hil,ieee802154-radio,ieee802154-trace"
+            }
             Self::DiagnosticIeee802154Thread => "open-radio-hil,ieee802154-thread",
             Self::DiagnosticIeee802154Route => "open-radio-hil,ieee802154-route-probe",
         }

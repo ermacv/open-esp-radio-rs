@@ -432,10 +432,14 @@ trace for the host, which pages it out through the
 `station-exit-evidence` feature also enables the station runtime's own trace
 events. With an IEEE 802.15.4 image, the `ieee802154-trace` feature records
 the MAC engine, runtime and transmit power-sequence events of
-[`oer-ieee802154-trace`](../../../crates/hardware/ieee802154/trace/README.md). `diagnostic-ieee802154-radio` always
-builds with it, so a failed peer scenario's post-mortem holds the last MAC
-events before the failure: whether a lost frame never reached the radio, was
-aborted (with its reason) or was handled late.
+[`oer-ieee802154-trace`](../../../crates/hardware/ieee802154/trace/README.md). `diagnostic-ieee802154-radio-trace`
+builds with it and serves the scenarios against the reference peer, so a
+failed one's post-mortem holds the last MAC events before the failure:
+whether a lost frame never reached the radio, was aborted (with its reason)
+or was handled late. `diagnostic-ieee802154-radio` builds without it: the
+trace reads the power registers on every transmission and spends interrupt
+time, and the vendor calibration comparison boots that image as the
+product's radio.
 
 ## Local dependency overrides
 

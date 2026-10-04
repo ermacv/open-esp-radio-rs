@@ -79,7 +79,7 @@ fn the_radio_less_classes_need_no_driver_observation() {
 
 #[test]
 fn image_classes_are_stable_and_do_not_use_workload_environment() {
-    assert_eq!(oer_hil_image_class::ImageClass::ALL.len(), 26);
+    assert_eq!(oer_hil_image_class::ImageClass::ALL.len(), 27);
     assert_eq!(
         oer_hil_image_class::ImageClass::SystemPanicReset.runtime_features(),
         "system-panic-reset"
@@ -138,6 +138,10 @@ fn image_classes_are_stable_and_do_not_use_workload_environment() {
     );
     assert_eq!(
         oer_hil_image_class::ImageClass::DiagnosticIeee802154Radio.runtime_features(),
+        "open-radio-hil,ieee802154-radio"
+    );
+    assert_eq!(
+        oer_hil_image_class::ImageClass::DiagnosticIeee802154RadioTrace.runtime_features(),
         "open-radio-hil,ieee802154-radio,ieee802154-trace"
     );
     assert_eq!(

@@ -256,7 +256,10 @@ fn the_device_under_test_and_the_peer_come_from_the_pool() {
     let lab = with_c5_peer(load(file.path(), "esp32c5").unwrap());
     assert_eq!(lab.dut.id, "c5-a");
     let error = lab.peer_resolving(&attached).unwrap_err().to_string();
-    assert!(error.contains("no esp32c5 peer board"), "{error}");
+    assert!(
+        error.contains("no esp32c5 board for peer besides `c5-a`"),
+        "{error}"
+    );
     assert!(load(file.path(), "esp32h2").is_err());
 }
 
@@ -264,7 +267,10 @@ fn the_device_under_test_and_the_peer_come_from_the_pool() {
 fn a_run_names_its_device_under_test_when_the_pool_has_several() {
     let file = stand_file(second_s31);
     let several = load(file.path(), "esp32s31").err().unwrap().to_string();
-    assert!(several.contains("s31-a, s31-b"), "{several}");
+    assert!(
+        several.contains("s31-a, s31-b") && several.contains("--board"),
+        "{several}"
+    );
     let choice = BoardChoice {
         dut: Some("s31-b".into()),
         peer: None,
@@ -283,7 +289,7 @@ fn a_run_names_its_device_under_test_when_the_pool_has_several() {
         LabConfig::load_resolving(file.path(), "esp32s31", &choice, &attached).unwrap(),
     );
     let error = lab.peer_resolving(&attached).unwrap_err().to_string();
-    assert!(error.contains("no esp32c5 peer board"), "{error}");
+    assert!(error.contains("an esp32s31 for dut"), "{error}");
 }
 
 #[test]

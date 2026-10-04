@@ -10,7 +10,6 @@ description = "HIL board support: how the stand flashes, starts and resets a chi
 
 [dependencies]
 oer-chip-profile = { path = "../../../tools/chip-profile" }
-oer-hil-arbiter = { path = "../arbiter" }
 oer-process = { path = "../../../tools/process" }
 serialport = { version = "4.8.1", default-features = false }
 

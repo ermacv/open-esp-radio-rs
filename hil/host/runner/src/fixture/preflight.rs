@@ -138,7 +138,7 @@ pub(crate) fn scenario_precondition(lab: &LabConfig, selected: &Scenario) -> Opt
     let plan = selected.plan();
     if let Some(image) = selected.family.peer_image()
         && let Err(error) = lab
-            .peer_for_image(image.name)
+            .peer()
             .and_then(|peer| peer.serial())
             .and_then(|serial| {
                 oer_hil_stand::lock::require_board_image(&serial, image.name, image.reflash)

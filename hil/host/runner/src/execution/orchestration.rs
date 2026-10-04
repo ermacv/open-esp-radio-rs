@@ -543,7 +543,7 @@ impl LiveSuite<'_> {
             return Ok(());
         };
         let image = image.name;
-        let peer = self.lab.peer_for_image(image)?;
+        let peer = self.lab.peer()?;
         // Once per image and run: the catalog build and the journal decide
         // whether the board already carries the current build.
         if self.peer_image == Some(image) {
@@ -575,10 +575,10 @@ impl LiveSuite<'_> {
     /// run's lease: a wedged console fails the scenario's precondition with
     /// its recovery instead of breaking it midway.
     fn peer_answers(&self, scenario: &Scenario) -> Result<()> {
-        let Some(image) = scenario.family.peer_image() else {
+        if scenario.family.peer_image().is_none() {
             return Ok(());
-        };
-        let path = self.lab.peer_for_image(image.name)?.serial()?;
+        }
+        let path = self.lab.peer()?.serial()?;
         let live = oer_hil_link::peer_line::SerialLink::open(&path).and_then(|mut link| {
             oer_hil_link::peer_line::answers_sync(&mut link, PEER_SYNC_TIMEOUT)
         });
@@ -885,7 +885,7 @@ fn run_scenario_repetition(
     let peer_serial = selected
         .family
         .peer_image()
-        .and_then(|image| lab.peer_for_image(image.name).ok())
+        .and_then(|_| lab.peer().ok())
         .and_then(|peer| peer.serial().ok());
     let usb = oer_hil_stand::usb_events::UsbWatch::start(
         std::iter::once(lab.dut.serial.as_path()).chain(peer_serial.as_deref()),

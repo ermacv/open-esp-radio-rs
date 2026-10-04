@@ -24,7 +24,7 @@ pub struct LabConfig {
     cell_id: String,
     /// The chip of `dut`.
     chip: String,
-    /// The stand file's pool, from which [`Self::peer_for_image`] takes a
+    /// The stand file's pool, from which [`Self::peer`] takes a
     /// peer board.
     stand: oer_hil_stand_schema::StandFile,
     /// The boards the run named.
@@ -330,12 +330,14 @@ impl LabConfig {
                 return Err("independent OpenWrt observer requires a managed OpenWrt AP".into());
             }
         }
-        let board = stand.select_board(
-            chip,
-            oer_hil_stand_schema::BoardRole::Dut,
-            choice.dut.as_deref(),
-            None,
-        )?;
+        let board = stand
+            .select_board(
+                chip,
+                oer_hil_stand_schema::BoardRole::Dut,
+                choice.dut.as_deref(),
+                None,
+            )
+            .map_err(|error| format!("{error} (--board)"))?;
         board
             .validate_chip(&chips)
             .map_err(|error| format!("{}: {error}", path.display()))?;
@@ -678,60 +680,20 @@ impl LabConfig {
             .peer_chip
             .as_deref()
             .ok_or("this run's scenarios use no peer")?;
-        let candidates = self
+        let board = self
             .stand
-            .board
-            .iter()
-            .filter(|board| {
-                board.chip == chip
-                    && board.has_role(oer_hil_stand_schema::BoardRole::Peer)
-                    && board.id != self.dut.id
-            })
-            .collect::<Vec<_>>();
-        let board = match (self.choice.peer.as_deref(), candidates.as_slice()) {
-            (Some(chosen), _) => *candidates
-                .iter()
-                .find(|board| board.id == chosen)
-                .ok_or_else(|| {
-                    format!(
-                        "board `{chosen}` is no {chip} peer board of the stand file besides the device under test"
-                    )
-                })?,
-            (None, [board]) => board,
-            (None, []) => {
-                return Err(format!(
-                    "the stand file has no {chip} peer board besides the device under test"
-                )
-                .into());
-            }
-            (None, several) => {
-                return Err(format!(
-                    "several {chip} boards can be the peer ({}); name one with --peer-board",
-                    several.iter().map(|board| board.id.as_str()).collect::<Vec<_>>().join(", ")
-                )
-                .into());
-            }
-        };
+            .select_board(
+                chip,
+                oer_hil_stand_schema::BoardRole::Peer,
+                self.choice.peer.as_deref(),
+                Some(&self.dut.id),
+            )
+            .map_err(|error| format!("{error} (--peer-board)"))?;
         Ok(PeerBoardConfig {
             id: board.id.clone(),
             chip: board.chip.clone(),
             port: resolve(board).map_err(|error| error.to_string()),
         })
-    }
-
-    /// The run's peer board ([`Self::peer`]) for the catalog `image`, one
-    /// of the run's peer images.
-    pub fn peer_for_image(&self, image: &str) -> Result<PeerBoardConfig> {
-        let peer = self.peer()?;
-        let chip = peer_image_chip(&repository_root()?, image)?;
-        if peer.chip != chip {
-            return Err(format!(
-                "peer board `{}` is an {}; `{image}` targets {chip}; name another with --peer-board",
-                peer.id, peer.chip
-            )
-            .into());
-        }
-        Ok(peer)
     }
 
     pub fn path(&self) -> &Path {

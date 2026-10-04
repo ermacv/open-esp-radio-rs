@@ -519,3 +519,18 @@ fn divisible_work_renews_a_lease_after_a_third_of_the_hard_limit() {
     // The step after a renewal has the rest of a fresh lease.
     assert!(HARD_LIMIT - RENEW_AFTER >= Duration::from_secs(40 * 60));
 }
+
+#[test]
+fn a_stand_file_that_does_not_load_is_reported_at_the_grant() {
+    let directory = tempfile::tempdir().unwrap();
+    let arbiter = Arbiter::at(directory.path()).unwrap();
+    let (devices, warning) = super::boards_to_restore(arbiter.devices(), arbiter.stand_file());
+    assert!(devices.is_empty());
+    let warning = warning.unwrap();
+    assert!(
+        warning.contains("stand.toml does not load, so no hub port is restored"),
+        "{warning}"
+    );
+    let (_, none) = super::boards_to_restore(Ok(Vec::new()), arbiter.stand_file());
+    assert_eq!(none, None);
+}

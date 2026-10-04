@@ -49,6 +49,8 @@ pub(crate) struct BisectCli {
     /// Build every tested image with this code layout seed.
     #[arg(long, value_name = "SEED")]
     layout_seed: Option<NonZeroU32>,
+    #[command(flatten)]
+    boards: crate::hil_jobs::BoardChoiceArgs,
 }
 
 /// What one tested revision showed.
@@ -284,6 +286,7 @@ pub fn run(ctx: &Context, owner: &str, args: &[OsString]) -> Result<std::process
         owner,
         scenario: &cli.scenario,
         layout_seed: cli.layout_seed,
+        boards: &cli.boards,
         current,
         worktree: directory.join(format!("bisect-{id}")),
         arbiter: directory.join("arbiter"),
@@ -340,6 +343,9 @@ struct Bisection<'a> {
     owner: &'a str,
     scenario: &'a str,
     layout_seed: Option<NonZeroU32>,
+    /// The boards every run uses; a revision's own runner from before the
+    /// stand file does not know these flags.
+    boards: &'a crate::hil_jobs::BoardChoiceArgs,
     current: String,
     worktree: PathBuf,
     arbiter: PathBuf,
@@ -385,10 +391,14 @@ impl Bisection<'_> {
         }
     }
 
+    /// The run's layout seed and chosen boards.
     fn seed_arguments(&self) -> Vec<String> {
-        self.layout_seed
+        let mut arguments = self
+            .layout_seed
             .map(|seed| vec![String::from("--layout-seed"), seed.to_string()])
-            .unwrap_or_default()
+            .unwrap_or_default();
+        arguments.extend(self.boards.arguments());
+        arguments
     }
 
     /// This checkout's runner, building the revision's firmware from a

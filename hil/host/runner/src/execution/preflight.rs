@@ -93,13 +93,38 @@ pub(crate) fn validate_flashed_image(
     }
 }
 
+/// How the host recognizes an image of a class once it boots.
+#[derive(Debug, Eq, PartialEq)]
+enum Recognition {
+    /// By the image keys its protocol reports.
+    ImageKeys,
+    /// The boot smoke image speaks no protocol: by its console's pass line.
+    BootSmokeLine,
+}
+
+fn recognition(class: ImageClass) -> Recognition {
+    if class == ImageClass::BootSmoke {
+        Recognition::BootSmokeLine
+    } else {
+        Recognition::ImageKeys
+    }
+}
+
 /// Whether the device, reset, answers as an image of `class`; why not
 /// otherwise.
 pub(crate) fn answers_as(
     lab: &LabConfig,
-    class: oer_hil_image_class::ImageClass,
+    class: ImageClass,
     directory: &Path,
 ) -> std::result::Result<(), String> {
+    if recognition(class) == Recognition::BootSmokeLine {
+        return SerialCapture::start_with_reset(lab, directory)
+            .and_then(|capture| {
+                let passed = capture.wait_for_boot_smoke(Duration::from_secs(10));
+                capture.finish_with(passed)
+            })
+            .map_err(|error| error.to_string());
+    }
     let image_keys = image_keys_of(lab, directory).map_err(|error| error.to_string())?;
     match oer_hil_image_class::classify_flashed(lab.chip(), &image_keys) {
         Some(found) if found == class => Ok(()),

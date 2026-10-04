@@ -141,6 +141,27 @@ impl InterruptStacks {
         }
         let mut warnings = Vec::new();
         for hart in &self.harts {
+            // The sum over levels holds only where nothing lowers the level.
+            let drops = hart.level_drops();
+            if !drops.is_empty() {
+                match required {
+                    Required::Proven => {
+                        return Err(format!(
+                            "hart {}'s interrupt stack is conditional: its handlers can lower \
+                             the interrupt level, so one level may nest in itself:\n{}",
+                            hart.core,
+                            self.render()
+                        )
+                        .into());
+                    }
+                    Required::Partial => warnings.push(format!(
+                        "hart {}'s interrupt stack is conditional on the nesting rule, which {} \
+                         sites may break: they are in the report",
+                        hart.core,
+                        drops.len()
+                    )),
+                }
+            }
             let bytes = match (hart.bytes, required) {
                 (Some(bytes), _) => bytes,
                 (None, Required::Proven) => {
@@ -194,6 +215,22 @@ impl InterruptStacks {
                     .map_or(format!("{} + ?", hart.partial), |bytes| bytes.to_string()),
                 contract::IRQ_STACK_USABLE_BYTES
             );
+            let drops = hart.level_drops();
+            if drops.is_empty() {
+                let _ = writeln!(
+                    out,
+                    "  nesting: checked, no handler can lower the interrupt level"
+                );
+            } else {
+                let _ = writeln!(
+                    out,
+                    "  nesting: conditional, a level may nest in itself where a handler lowers \
+                     the interrupt level:"
+                );
+                for (site, drop) in drops {
+                    let _ = writeln!(out, "    {drop} at {site:#010x}");
+                }
+            }
             for level in hart.levels.iter().chain([&hart.exception]) {
                 let label = if level.level == 0 {
                     "exception".to_owned()
@@ -399,6 +436,7 @@ mod tests {
             partial,
             unresolved: Vec::new(),
             path: Vec::new(),
+            level_drops: Vec::new(),
         };
         let level = oer_riscv_stack::LevelStack {
             level: 0,
@@ -457,6 +495,24 @@ mod tests {
         // The proven part alone must fit the usable stack with the margin.
         let over = u64::from(contract::IRQ_STACK_USABLE_BYTES);
         assert!(partial(over).check(Required::Partial).is_err());
+    }
+
+    #[test]
+    fn a_handler_that_can_lower_the_level_leaves_its_hart_conditional() {
+        // A bound with no instruction that lowers the level is checked.
+        let mut stacks = partial(1000);
+        stacks.harts[0].bytes = Some(1000);
+        assert!(stacks.check(Required::Proven).unwrap().is_empty());
+        assert!(stacks.render().contains("nesting: checked"));
+        // One such instruction breaks the sum over levels: no proof, and a
+        // warning under the partial policy.
+        stacks.harts[0].exception.bound.level_drops =
+            vec![(0x2f00_1000, oer_riscv_stack::LevelDrop::Return)];
+        let error = stacks.check(Required::Proven).unwrap_err().to_string();
+        assert!(error.contains("conditional"), "{error}");
+        let warnings = stacks.check(Required::Partial).unwrap();
+        assert!(warnings[0].contains("nesting rule"), "{warnings:?}");
+        assert!(stacks.render().contains("a trap return at 0x2f001000"));
     }
 
     #[test]

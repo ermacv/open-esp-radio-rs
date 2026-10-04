@@ -2,7 +2,9 @@
 //! whole extent, independent of which code its control-flow graph reaches.
 use crate::image::{Function, function_bytes, read_only_word};
 use crate::relocations::Relocations;
-use oer_riscv_decode::{Extension, Extensions, Float, Inst, Instruction, Reg, Register, decode};
+use oer_riscv_decode::{
+    CsrOp, Extension, Extensions, Float, Inst, Instruction, Operand, Reg, Register, decode,
+};
 use oer_riscv_model::*;
 use std::collections::BTreeSet;
 
@@ -332,12 +334,65 @@ fn upper(instruction: &Instruction, pc: u32) -> Option<(u8, u32)> {
     }
 }
 
+/// An instruction that can lower the hart's interrupt level (CLIC
+/// `mintstatus.mil`) while it runs: the only way an interrupt of a level
+/// can preempt a handler of the same level. Raising or lowering the
+/// threshold or setting `mstatus.MIE` cannot: an interrupt preempts only
+/// above both the threshold and `mil`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum LevelDrop {
+    /// `mret`, `sret` or `dret`: restores `mil` from `mcause.mpil`.
+    Return,
+    /// A write of `mnxti` (0x345): takes the next pending interrupt and sets
+    /// `mil` to its level.
+    NextInterrupt,
+    /// A write of `mintstatus` (0xfb1).
+    Status,
+}
+
+impl LevelDrop {
+    const MNXTI: u16 = 0x345;
+    const MINTSTATUS: u16 = 0xfb1;
+
+    /// The drop an undecoded 32-bit word is.
+    fn of_word(word: u32) -> Option<Self> {
+        matches!(word, 0x3020_0073 | 0x1020_0073 | 0x7b20_0073).then_some(Self::Return)
+    }
+
+    /// The drop a CSR access is: a write of `mnxti` or `mintstatus` (a read,
+    /// `csrrs`/`csrrc` of `x0` or 0, has no effect on either).
+    pub(crate) fn of_csr(csr: u16, op: CsrOp, source: Operand) -> Option<Self> {
+        let writes = match (op, source) {
+            (CsrOp::Write, _) => true,
+            (_, Operand::Register(register)) => register != 0,
+            (_, Operand::Immediate(value)) => value != 0,
+        };
+        match csr {
+            Self::MNXTI if writes => Some(Self::NextInterrupt),
+            Self::MINTSTATUS if writes => Some(Self::Status),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for LevelDrop {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Return => "a trap return",
+            Self::NextInterrupt => "a write of mnxti",
+            Self::Status => "a write of mintstatus",
+        })
+    }
+}
+
 /// Every call and out-of-function jump of `function` in `elf`.
 /// What a sweep finds in one function.
 pub(crate) struct Swept {
     pub transfers: Vec<Transfer>,
     /// Indirect jumps through a table of known entries, with every entry.
     pub jumps: Vec<(u32, Vec<u32>)>,
+    /// Instructions that can lower the interrupt level, by site.
+    pub level_drops: Vec<(u32, LevelDrop)>,
 }
 
 pub(crate) fn transfers(
@@ -358,6 +413,7 @@ pub(crate) fn transfers(
     let merges = merges(bytes, start, end);
     let mut facts = [None::<Fact>; 32];
     let mut loads = [None::<Load>; 32];
+    let mut level_drops = Vec::new();
     while offset < bytes.len() {
         let pc = start + offset as u32;
         if merges.contains(&pc) {
@@ -365,15 +421,28 @@ pub(crate) fn transfers(
             loads = [None; 32];
         }
         let Some((instruction, length)) = decode(&bytes[offset..], Extensions::ALL) else {
-            // An encoding outside the decoder's set (a CSR access, say) still
+            // An encoding outside the decoder's set (a trap return, say) still
             // has its length in its low bits; it carries no direct transfer,
             // and the value analysis classifies it.
+            if let Some(word) = bytes.get(offset..offset + 4)
+                && let Some(drop) =
+                    LevelDrop::of_word(u32::from_le_bytes(word.try_into().expect("4 bytes")))
+            {
+                level_drops.push((pc, drop));
+            }
             offset += if bytes[offset] & 3 == 3 { 4 } else { 2 };
             previous = None;
             facts = [None; 32];
             loads = [None; 32];
             continue;
         };
+        if let Instruction::Extension(Extension::Csr {
+            op, source, csr, ..
+        }) = instruction
+            && let Some(drop) = LevelDrop::of_csr(csr, op, source)
+        {
+            level_drops.push((pc, drop));
+        }
         let resolved = |target: u32, kind| Transfer {
             site: pc,
             target: Some(target),
@@ -521,5 +590,9 @@ pub(crate) fn transfers(
         }
         offset += length;
     }
-    Ok(Swept { transfers, jumps })
+    Ok(Swept {
+        transfers,
+        jumps,
+        level_drops,
+    })
 }

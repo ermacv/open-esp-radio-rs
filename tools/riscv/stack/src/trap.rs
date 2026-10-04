@@ -462,6 +462,11 @@ impl State {
                         Operand::Register(0) | Operand::Immediate(0)
                     )
                 );
+                // The entry runs at the interrupt's level until its handler:
+                // nothing on the way may lower it.
+                if crate::LevelDrop::of_csr(csr, op, source).is_some() {
+                    return Step::Fail("an entry that lowers the interrupt level");
+                }
                 let old = if csr == MSCRATCH {
                     self.scratch
                 } else {

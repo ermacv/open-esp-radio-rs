@@ -1,0 +1,152 @@
+//! A repetition's observed interrupt-stack use against the image's static
+//! bound.
+//!
+//! Every ESP32-S31 image build proves a bound on each hart's interrupt stack
+//! (`interrupt-stack gate`); a device watermark above it means the analysis
+//! missed a path, so the repetition fails. The bound is recomputed from the
+//! run's archived runtime ELF by the current analyzer, so a replayed image
+//! is checked too.
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+use oer_hil_evidence::run::{Comparison, Measurement, MeasurementUnit};
+
+/// Each hart's bound in bytes, by hart.
+type Bounds = BTreeMap<u32, u64>;
+
+/// A watermark's capacity and free bytes, as far as recorded.
+#[derive(Default)]
+struct Watermark {
+    capacity: Option<u64>,
+    free: Option<u64>,
+}
+
+/// Each hart's peak observed interrupt-stack use in `measurements`: the
+/// largest `capacity - free` of its `stack.cpuN-irq` watermarks.
+pub(crate) fn observed_peaks(measurements: &[Measurement]) -> BTreeMap<u32, u64> {
+    let mut values: BTreeMap<(&str, u32), Watermark> = BTreeMap::new();
+    for measurement in measurements {
+        let Some((prefix, rest)) = measurement.name.rsplit_once(".stack.cpu") else {
+            continue;
+        };
+        let Some((core, field)) = rest.split_once("-irq.") else {
+            continue;
+        };
+        let Ok(core) = core.parse::<u32>() else {
+            continue;
+        };
+        let entry = values.entry((prefix, core)).or_default();
+        match field {
+            "capacity" => entry.capacity = Some(measurement.value),
+            "free" => entry.free = Some(measurement.value),
+            _ => {}
+        }
+    }
+    let mut peaks = BTreeMap::new();
+    for ((_, core), watermark) in values {
+        if let (Some(capacity), Some(free)) = (watermark.capacity, watermark.free) {
+            let used = capacity.saturating_sub(free);
+            let peak = peaks.entry(core).or_insert(0);
+            *peak = (*peak).max(used);
+        }
+    }
+    peaks
+}
+
+/// The evaluated `stack.cpuN-irq.used` of each observed hart against its
+/// bound; an error names a hart observed without a bound.
+pub(crate) fn evaluate(
+    peaks: &BTreeMap<u32, u64>,
+    bounds: &BTreeMap<u32, u64>,
+) -> Result<Vec<Measurement>, String> {
+    peaks
+        .iter()
+        .map(|(&core, &used)| {
+            let bound = bounds.get(&core).ok_or_else(|| {
+                format!("hart {core}'s interrupt stack was observed but the image has no bound")
+            })?;
+            Ok(Measurement::observed(
+                format!("stack.cpu{core}-irq.used"),
+                used,
+                MeasurementUnit::Bytes,
+            )
+            .evaluated(Comparison::AtMost, *bound))
+        })
+        .collect()
+}
+
+/// Each hart's static interrupt-stack bound of the runtime ELF at `elf`,
+/// computed once per ELF.
+pub(crate) fn bounds(elf: &Path) -> Result<Bounds, String> {
+    static BOUNDS: Mutex<BTreeMap<PathBuf, Result<Bounds, String>>> = Mutex::new(BTreeMap::new());
+    let mut cache = BOUNDS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    cache
+        .entry(elf.to_owned())
+        .or_insert_with(|| {
+            let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+            let stacks = oer_hil_image::stack::interrupt_stacks(&root, elf)
+                .map_err(|error| format!("interrupt-stack bound of {}: {error}", elf.display()))?;
+            stacks
+                .harts
+                .iter()
+                .map(|hart| {
+                    hart.bytes
+                        .map(|bytes| (hart.core, bytes))
+                        .ok_or_else(|| format!("hart {}'s interrupt stack has no bound", hart.core))
+                })
+                .collect()
+        })
+        .clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use oer_hil_evidence::run::MeasurementVerdict;
+
+    fn bytes(name: &str, value: u64) -> Measurement {
+        Measurement::observed(name, value, MeasurementUnit::Bytes)
+    }
+
+    #[test]
+    fn a_hart_s_peak_is_its_largest_watermark_use() {
+        let measurements = [
+            bytes("target.a.request-1.stack.cpu0-irq.capacity", 32768),
+            bytes("target.a.request-1.stack.cpu0-irq.free", 30000),
+            bytes("target.a.request-1.stack.cpu0-irq.minimum-free", 4096),
+            bytes("target.a.session-2.stack.cpu0-irq.capacity", 32768),
+            bytes("target.a.session-2.stack.cpu0-irq.free", 29000),
+            bytes("target.a.request-1.stack.cpu1-irq.capacity", 32768),
+            bytes("target.a.request-1.stack.cpu1-irq.free", 31768),
+            // A task stack is not an interrupt stack.
+            bytes("target.a.request-1.stack.cpu0.capacity", 8192),
+            bytes("target.a.request-1.stack.cpu0.free", 10),
+        ];
+        assert_eq!(
+            observed_peaks(&measurements),
+            BTreeMap::from([(0, 3768), (1, 1000)])
+        );
+    }
+
+    #[test]
+    fn a_use_above_the_static_bound_fails_and_an_unbounded_hart_is_an_error() {
+        let peaks = BTreeMap::from([(0, 3768), (1, 1000)]);
+        let evaluated = evaluate(&peaks, &BTreeMap::from([(0, 3500), (1, 1000)])).unwrap();
+        let verdicts: Vec<_> = evaluated
+            .iter()
+            .map(|measurement| (measurement.name.as_str(), measurement.verdict))
+            .collect();
+        assert_eq!(
+            verdicts,
+            [
+                ("stack.cpu0-irq.used", Some(MeasurementVerdict::Failed)),
+                ("stack.cpu1-irq.used", Some(MeasurementVerdict::Passed)),
+            ]
+        );
+        assert!(evaluate(&peaks, &BTreeMap::from([(0, 4000)])).is_err());
+    }
+}

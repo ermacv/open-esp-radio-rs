@@ -151,7 +151,11 @@ sampling from the IRQ stack or before initialization. Measurements describe
 observed writes, not the maximum possible depth or unwritten stack reservations.
 The maximum is the image build's interrupt-stack gate: a static bound per hart
 from the image's interrupt table ([firmware tooling](../../tools/firmware/README.md)),
-under the contract `layout`'s `interrupts` module states.
+under the contract `layout`'s `interrupts` module states. Each HIL repetition
+holds the two to each other: its peak watermark use per hart is recorded as
+`stack.cpuN-irq.used`, evaluated at most the bound the current analyzer
+computes from the run's archived runtime ELF, and a use above it (a path the
+analysis missed) or a hart without a bound fails the repetition.
 
 From the repository root:
 

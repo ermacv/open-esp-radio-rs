@@ -1,10 +1,16 @@
 //! Bounded AP beacon storage and executor-time TSF publication.
+//!
+//! The beacon is a template the access point stamps at each publication:
+//! the TSF (its own time since its TSF restarted), the management sequence,
+//! the TIM and the DTIM count. Its schedule is an absolute TBTT cursor that a
+//! late publication does not move.
 
 #[cfg(test)]
 use oer_ieee80211_mac::beacon::dtim;
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_ieee80211_mac::{
+    ap::profile::Advertisement,
     beacon::{
         AP_BEACON_CAPACITY, ApBeaconBuildError, ApBeaconProtectionError, TimPartialVirtualBitmap,
         stamp, update_bss_protection, write_ht_beacon, write_tim_partial_virtual_bitmap,
@@ -32,12 +38,13 @@ pub struct ApBeacon<'storage> {
 }
 
 impl<'storage> ApBeacon<'storage> {
-    pub(crate) fn advertisement(&self) -> &[u8] {
+    /// The beacon's body, which a probe response repeats.
+    pub fn advertisement(&self) -> &[u8] {
         &self.storage[..self.len]
     }
 
     /// Replace the template's ERP and HT Operation protection fields.
-    pub(crate) fn set_bss_protection(
+    pub fn set_bss_protection(
         &mut self,
         protection: ApBssProtection,
     ) -> Result<(), ApBeaconProtectionError> {
@@ -50,6 +57,7 @@ impl<'storage> ApBeacon<'storage> {
     )]
     pub fn new(
         storage: &'storage mut [u8; AP_BEACON_CAPACITY],
+        advertisement: &Advertisement,
         access_point: [u8; 6],
         ssid: &WifiSsid,
         channel: WifiChannel,
@@ -59,7 +67,7 @@ impl<'storage> ApBeacon<'storage> {
         security: ApSecurityPolicy,
     ) -> Result<Self, ApBeaconBuildError> {
         let len = write_ht_beacon(
-            &crate::profile::ADVERTISEMENT,
+            advertisement,
             storage,
             access_point,
             ssid,
@@ -78,7 +86,8 @@ impl<'storage> ApBeacon<'storage> {
         })
     }
 
-    pub(crate) const fn from_initialized(
+    /// A beacon over a template already written into `storage`.
+    pub const fn from_initialized(
         storage: &'storage mut [u8; AP_BEACON_CAPACITY],
         len: usize,
         beacon_interval_tu: u16,

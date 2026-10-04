@@ -10,7 +10,7 @@ It is independent of the executor and network stack.
 | `transaction` | One finite protocol/TX transaction, retaining its owner until completion |
 | `tx`, `ampdu`, `rx` | S31 frame preparation, aggregate admission and receive processing |
 | `security` | Key installation and pairwise receive ownership |
-| `beacon`, `profile` | Beacon construction and implemented local capability claims |
+| `profile` | Implemented local capability claims, which the portable beacon (`oer-ieee80211-ap::beacon`) and association responses advertise |
 
 The transaction owner composes these parts; the hardware contract does not
 acquire another radio. The runtime supplies timers, DMA/IRQ progress and

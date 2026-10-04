@@ -43,3 +43,17 @@ fn an_esp32c5_system_image_is_classified_by_its_chip() {
     let staged = ImageClass::Performance.image_keys_on("esp32s31").unwrap();
     assert!(check_flashed_image_keys("esp32c5", scenario, &staged).is_err());
 }
+
+#[test]
+fn the_boot_smoke_recovery_image_is_recognized_by_its_pass_line() {
+    // It reports no image keys, so no key check could ever accept it.
+    assert!(ImageClass::BootSmoke.image_keys_on("esp32s31").is_none());
+    assert_eq!(
+        recognition(ImageClass::BootSmoke),
+        Recognition::BootSmokeLine
+    );
+    assert_eq!(
+        recognition(ImageClass::SystemWatchdog),
+        Recognition::ImageKeys
+    );
+}

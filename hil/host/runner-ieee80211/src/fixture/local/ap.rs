@@ -29,6 +29,9 @@ impl AccessPoint {
         station: &StationConfig,
         phy: PhyExpectation,
     ) -> Result<Self> {
+        if phy == PhyExpectation::Legacy {
+            return Err("the local Linux AP fixture serves HT and HE links only".into());
+        }
         let input = profile(config, station, phy)?;
         probe(config, phy)?;
         // Own cleanup before any helper mutation, including failed setup.

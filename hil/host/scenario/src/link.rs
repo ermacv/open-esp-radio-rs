@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PhyExpectation {
+    /// A non-HT BSS: the access point advertises no HT or HE elements.
+    Legacy,
     He20,
     Ht20,
     Ht40,
@@ -14,6 +16,7 @@ pub enum PhyExpectation {
 impl PhyExpectation {
     pub const fn id(self) -> &'static str {
         match self {
+            Self::Legacy => "legacy",
             Self::He20 => "he20",
             Self::Ht20 => "ht20",
             Self::Ht40 => "ht40",

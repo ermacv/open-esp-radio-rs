@@ -449,7 +449,7 @@ pub fn resolve_station_mac(config: &OpenWrtConfig, target: Ipv4Addr) -> Result<S
 
 fn require_width(phy: PhyExpectation, observed: u8) -> Result<()> {
     let expected = match phy {
-        PhyExpectation::He20 | PhyExpectation::Ht20 => 20,
+        PhyExpectation::Legacy | PhyExpectation::He20 | PhyExpectation::Ht20 => 20,
         PhyExpectation::Ht40 => 40,
     };
     if observed != expected {

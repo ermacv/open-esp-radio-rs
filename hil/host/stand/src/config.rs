@@ -620,7 +620,9 @@ impl LabConfig {
         match lab.fixture_phy(wifi) {
             PhyExpectation::Ht40 if above => (center - 11_000, center + 31_000),
             PhyExpectation::Ht40 => (center - 31_000, center + 11_000),
-            PhyExpectation::Ht20 | PhyExpectation::He20 => (center - 11_000, center + 11_000),
+            PhyExpectation::Legacy | PhyExpectation::Ht20 | PhyExpectation::He20 => {
+                (center - 11_000, center + 11_000)
+            }
         }
     }
 
@@ -631,7 +633,9 @@ impl LabConfig {
         if wifi.access_point {
             if let Some(link) = wifi.link {
                 lab.access_point.channel_width = match link {
-                    PhyExpectation::Ht20 | PhyExpectation::He20 => WifiChannelWidth::Mhz20,
+                    PhyExpectation::Legacy | PhyExpectation::Ht20 | PhyExpectation::He20 => {
+                        WifiChannelWidth::Mhz20
+                    }
                     PhyExpectation::Ht40
                         if self.access_point.channel_width.bandwidth_mhz() == 40 =>
                     {

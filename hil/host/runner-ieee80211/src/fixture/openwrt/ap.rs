@@ -86,6 +86,7 @@ impl Profile {
 
     fn htmode(self) -> &'static str {
         match self.phy {
+            PhyExpectation::Legacy => "NOHT",
             PhyExpectation::He20 => "HE20",
             PhyExpectation::Ht20 => "HT20",
             PhyExpectation::Ht40 if self.ht40_above => "HT40+",
@@ -105,15 +106,21 @@ impl Profile {
             "HT40-" => frequency - 10,
             _ => frequency,
         };
+        // `iw` names a non-HT channel's width "20 MHz (no HT)".
+        let width = if self.phy == PhyExpectation::Legacy {
+            format!("{width} MHz (no HT)")
+        } else {
+            format!("{width} MHz")
+        };
         let geometry = format!(
-            "channel {} ({frequency} MHz), width: {width} MHz, center1: {center} MHz",
+            "channel {} ({frequency} MHz), width: {width}, center1: {center} MHz",
             self.channel
         );
         if !observed.enabled
             || observed.channel != self.channel
             || !(observed.htmode == self.htmode()
                 || (self.phy == PhyExpectation::Ht40 && observed.htmode == "HT40"))
-            || !observed.ht
+            || observed.ht != (self.phy != PhyExpectation::Legacy)
             || observed.he != (self.phy == PhyExpectation::He20)
             || !observed
                 .geometry

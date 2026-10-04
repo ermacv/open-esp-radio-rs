@@ -88,6 +88,9 @@ pub fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
             PhyExpectation::He20 => {
                 return Err("AP qualification does not claim an HE20 PHY".into());
             }
+            PhyExpectation::Legacy => {
+                return Err("AP qualification does not claim a legacy PHY".into());
+            }
         };
         if context.lab.access_point.bandwidth_mhz() != expected_bandwidth_mhz {
             return Err(format!(

@@ -20,6 +20,10 @@ use crate::{
     },
 };
 
+/// The UDP workloads claim A-MPDU and receive reorder evidence, which a
+/// non-HT link does not have.
+const LEGACY_UDP: &str = "UDP traffic workloads need an HT or HE link";
+
 pub(super) fn execute(
     scenario: &WifiScenario,
     output: &Path,
@@ -296,6 +300,7 @@ fn station_udp_traffic(
                 payload,
                 phy: link.phy,
                 expected_rx_format: match link.phy {
+                    PhyExpectation::Legacy => return Err(LEGACY_UDP.into()),
                     PhyExpectation::He20 => 4,
                     PhyExpectation::Ht20 | PhyExpectation::Ht40 => 2,
                 },
@@ -320,6 +325,7 @@ fn station_udp_traffic(
         ),
         Direction::Tx => {
             let (bandwidth_mhz, minimum_rate_kbps) = match link.phy {
+                PhyExpectation::Legacy => return Err(LEGACY_UDP.into()),
                 PhyExpectation::He20 => (20, 114_700),
                 PhyExpectation::Ht40 | PhyExpectation::Ht20 => (40, 135_000),
             };

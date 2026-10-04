@@ -11,7 +11,6 @@
 extern crate std;
 
 pub mod ampdu;
-pub mod beacon;
 pub mod engine;
 pub mod hardware;
 pub mod profile;

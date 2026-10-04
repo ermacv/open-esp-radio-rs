@@ -73,6 +73,9 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         Some("owner") => return owner(ctx, &args[1..]),
         Some("__command-tree") => return command_tree(ctx),
         Some("devices") => return devices(ctx, &options, &args[1..]),
+        Some("stand") => {
+            return crate::hil_stand::stand(ctx, || options.owner(ctx), &args[1..]);
+        }
         Some("fixtures") => {
             let lab = oer_hil_stand::config::LabConfig::default_path()?;
             print!(
@@ -281,6 +284,8 @@ Stand commands (shared by every checkout of this user):
   cargo hil board flashed --image IMAGE ...   journal a flash made inside a lease
   cargo hil fixtures                  host Wi-Fi radios, Bluetooth adapter and OpenWrt hosts: key, interfaces, channel, CCA busy
   cargo hil devices [--json]          the stand file's boards: name, chip, port, health, last firmware
+  cargo hil stand discover [--blink HUB:PORT | --verify-power BOARD]   attached boards against the stand file
+  cargo hil stand doctor              the stand file, uhubctl without sudo, NetworkManager leaving wlan0
   cargo hil devices reset BOARD [--download]   reset through the board's UART bridge
   cargo hil [--owner NAME] devices maintenance BOARD|--stand --reason TEXT   only NAME may claim BOARD (or the stand) until release; other runs wait
   cargo hil devices release BOARD [--confirm reset|power-cycle|rom-answers]
@@ -492,6 +497,7 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
         "board",
         "peer",
         "devices",
+        "stand",
         "fixtures",
         "firmware",
         "flash",
@@ -529,6 +535,7 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
         ("runs", RunsCli::command()),
         ("firmware", FirmwareCli::command()),
         ("devices", DevicesCli::command()),
+        ("stand", crate::hil_stand::StandCli::command()),
         ("peer", crate::hil_board::PeerCli::command()),
         ("flash", crate::hil_flash::FlashCli::command()),
         ("profile", ProfileCli::command()),

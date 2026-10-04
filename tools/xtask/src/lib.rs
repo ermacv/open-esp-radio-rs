@@ -31,6 +31,7 @@ pub mod hil_jobs;
 pub mod hil_jtag;
 pub mod hil_perf;
 pub mod hil_runs;
+pub mod hil_stand;
 pub mod hil_store;
 pub mod paths;
 pub mod phase;

@@ -326,6 +326,8 @@ fn profile() -> PortStationProfile<'static> {
             supported_rates: &RATES,
         }),
         capabilities: &CAPABILITIES,
+        he_power: None,
+        he_packet_padding: oer_espressif_ieee80211_policy::he_txop::packet_padding,
         phy: PhyMode::Legacy,
         listen_interval: 3,
         ccmp_step: CcmpPacketNumberStep::new(1).unwrap(),
@@ -541,6 +543,10 @@ fn a_wpa2_psk_connection_installs_its_keys_through_the_port_body() {
     );
     assert!(ap.handshake_complete);
     assert!(station.security().has_connected_wpa2());
+    // The connection keeps the access point as the association left it.
+    let peer = station.connection().unwrap().config().peer;
+    assert_eq!(peer.phy, PhyMode::Legacy);
+    assert_eq!(peer.he_peer_state, None);
     let keys = station
         .connection()
         .unwrap()

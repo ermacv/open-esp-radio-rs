@@ -1536,6 +1536,7 @@ dependencies = [
  "oer-ieee80211-mac",
  "oer-ieee80211-rsn",
  "oer-ieee80211-trace",
+ "oer-ieee80211-upper-mac",
  "oer-time",
  "oer-trace",
 ]

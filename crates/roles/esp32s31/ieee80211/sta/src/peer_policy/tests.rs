@@ -134,22 +134,3 @@ fn scan_policy_collects_every_bss_protection_fact() {
     );
     assert_eq!(protection.he_txop_rts_threshold, None);
 }
-
-#[test]
-fn vendor_packet_padding_follows_nominal_padding_or_the_ru242_ppe_exception() {
-    let mut element = HE20_MCS9_CAPABILITY.to_vec();
-    element[18] = 0x40;
-    assert_eq!(vendor_packet_padding(&element), HePacketPadding::Us8);
-    element[18] = 0x00;
-    assert_eq!(vendor_packet_padding(&element), HePacketPadding::None);
-
-    // PPE Thresholds present: RU242 selected, PPET16 zero and PPET8 None.
-    element[15] |= 0x80;
-    element.extend_from_slice(&[0x08, 0x1c]);
-    element[24] = 0x08;
-    element[25] = 0x1c;
-    assert_eq!(vendor_packet_padding(&element), HePacketPadding::Us16);
-    element[25] = 0x00;
-    assert_eq!(vendor_packet_padding(&element), HePacketPadding::None);
-    assert_eq!(vendor_packet_padding(&element[..10]), HePacketPadding::None);
-}

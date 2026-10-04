@@ -79,10 +79,21 @@ and to the transmit planner (each access category's contention window). An
 access point without the element leaves the backend's defaults; a later
 change of the set in its beacons is not followed.
 
+Associated, the station keeps its access point as the association left it
+(`StaAssociatedPeer` of `oer-ieee80211-sta`, in `PortConnectionConfig::peer`):
+the PHY, the HT capabilities and A-MPDU parameters, the HE capabilities, HE
+state and BSS color, and the BSS protection facts, which the transmit planner
+applies from then on. The nominal HE packet padding is the integrator's
+policy (`PortStationProfile::he_packet_padding`). An HE association carries
+the station's HE power elements (`PortStationProfile::he_power`), from its
+calibrated transmit power; without them the HE Association Request is
+refused. The data rate is still the profile's: the peer's capabilities do
+not yet bound it.
+
 It does not yet do: BIP for group-addressed robust
 management frames, beacon-loss monitoring (`link_monitor`), the reorder gap
-timer (a full slot store releases the oldest run instead), HT/HE association capabilities beyond the
-caller's elements, A-MPDU transmission and TX Block Ack agreements, PS-Poll,
+timer (a full slot store releases the oldest run instead), a data rate bound
+by the peer's capabilities, A-MPDU transmission and TX Block Ack agreements, PS-Poll,
 coexistence (the power manager runs with `CoexView::INACTIVE`), 40 MHz
 channels and roaming.
 

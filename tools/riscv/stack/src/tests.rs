@@ -1790,3 +1790,72 @@ fn a_call_through_a_static_s_function_pointer_reaches_the_taken_functions_of_its
     let bound = analysis.bound_with(start, &resolutions).unwrap();
     assert!(bound.unresolved.is_empty(), "{bound:?}");
 }
+
+const MRET: u32 = 0x3020_0073;
+/// `csrrsi a0, mnxti, 8`: takes the next pending interrupt.
+const TAKE_NEXT: u32 = 0x3454_6573;
+
+#[test]
+fn only_an_instruction_that_lowers_the_level_breaks_the_nesting_rule() {
+    // The interrupt controller lets an interrupt preempt only above both the
+    // threshold and the running level: lowering the threshold, setting MIE,
+    // restoring mstatus after a critical section and reading mintstatus or
+    // mnxti leave the running level.
+    let benign = Symbol {
+        name: "benign",
+        words: vec![
+            0x3470_1073, // csrw mintthresh, zero
+            0x3004_6073, // csrsi mstatus, 8
+            0x3005_1073, // csrw mstatus, a0
+            0xfb10_2573, // csrr a0, mintstatus
+            0x3450_2573, // csrr a0, mnxti
+            RET,
+        ],
+        frame: Some(0),
+    };
+    let returns = Symbol {
+        name: "returns",
+        words: vec![MRET],
+        frame: Some(0),
+    };
+    let next = Symbol {
+        name: "next",
+        words: vec![TAKE_NEXT, RET],
+        frame: Some(0),
+    };
+    let (benign_at, returns_at, next_at) = (TEXT, TEXT + 24, TEXT + 28);
+    let caller_at = TEXT + 36;
+    let caller = Symbol {
+        name: "caller",
+        words: vec![
+            SP_DOWN_16,
+            SAVE_RA,
+            call(caller_at + 8, returns_at),
+            LOAD_RA,
+            SP_UP_16,
+            RET,
+        ],
+        frame: Some(16),
+    };
+    let elf = executable(&[benign, returns, next, caller]);
+    let analysis = analyze(&elf, &[], &[]).unwrap();
+    let drops = |root| analysis.bound(root).unwrap().level_drops;
+    assert_eq!(drops(benign_at), []);
+    assert_eq!(drops(returns_at), [(returns_at, LevelDrop::Return)]);
+    assert_eq!(drops(next_at), [(next_at, LevelDrop::NextInterrupt)]);
+    // A handler reaches a drop through its calls.
+    assert_eq!(drops(caller_at), [(returns_at, LevelDrop::Return)]);
+}
+
+#[test]
+fn a_trap_entry_must_not_lower_the_level_before_its_handler() {
+    let mut entry = PLATFORM_ENTRY.to_vec();
+    entry.push(TAKE_NEXT);
+    let (elf, _) = trap_image(&entry);
+    let functions = functions(&elf).unwrap();
+    let error = trap_entry(&elf, &functions, TEXT).unwrap_err();
+    assert!(
+        error.message.contains("lowers the interrupt level"),
+        "{error:?}"
+    );
+}

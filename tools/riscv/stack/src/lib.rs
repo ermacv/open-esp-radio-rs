@@ -47,7 +47,7 @@ use oer_riscv_analysis::KnownJump;
 pub use relocations::{address_taken, taken_addresses};
 pub use resolutions::{Fact, Resolution, Resolutions};
 pub use summaries::{Summary, parse as parse_summaries};
-pub use sweep::{Load, TableBase, TargetSource, Transfer, TransferKind};
+pub use sweep::{LevelDrop, Load, TableBase, TargetSource, Transfer, TransferKind};
 pub use trap::{TrapEntry, trap_entry, vector_table};
 pub use wakers::{waker_resolutions, waker_vtables};
 
@@ -88,6 +88,8 @@ pub struct FunctionFacts {
     /// The exact integer registers at each unresolved transfer the value
     /// analysis reached, by site.
     pub unresolved_registers: BTreeMap<u32, [Option<u32>; 32]>,
+    /// Instructions that can lower the interrupt level, by site.
+    pub level_drops: Vec<(u32, LevelDrop)>,
 }
 
 /// Why a reachable site or function leaves a bound unknown.
@@ -168,6 +170,9 @@ pub struct Bound {
     /// Deepest path over what is resolved, root first, with each function's
     /// frame. A partial path when [`Self::bytes`] is `None`.
     pub path: Vec<(u32, u64)>,
+    /// Instructions that can lower the interrupt level in every function the
+    /// root reaches over what is resolved.
+    pub level_drops: Vec<(u32, LevelDrop)>,
 }
 
 impl Bound {
@@ -429,6 +434,7 @@ fn function_facts(
         complete: observation.complete,
         transfers,
         site_depths: observation.site_depths,
+        level_drops: swept.level_drops,
     })
 }
 
@@ -455,12 +461,19 @@ impl Analysis {
             unresolved: BTreeSet::new(),
         };
         let (bytes, path) = walk.visit(root);
+        // Every function the walk entered has its memo entry.
+        let level_drops = walk
+            .memo
+            .keys()
+            .flat_map(|function| self.functions[function].level_drops.iter().copied())
+            .collect();
         Ok(Bound {
             root,
             bytes: walk.unresolved.is_empty().then_some(bytes),
             partial: bytes,
             unresolved: walk.unresolved.into_iter().collect(),
             path,
+            level_drops,
         })
     }
 

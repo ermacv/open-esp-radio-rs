@@ -8,7 +8,17 @@
 //! the entry's frame below the interrupt stack's position plus the bound of
 //! the handler it calls, where the dispatcher's calls through the source
 //! table reach only the handlers the table routes to that hart at that level.
-use crate::{Analysis, Bound, Fact, Resolutions, TableEntry, TrapEntry};
+//!
+//! The sum over levels rests on the interrupt controller (CLIC): an interrupt
+//! preempts only above both the threshold and the running level
+//! `mintstatus.mil`, which the hardware sets on entry. Lowering the threshold
+//! or setting `mstatus.MIE` inside a handler therefore lets no interrupt of
+//! its own level in; only an instruction that lowers `mil` (a trap return, a
+//! write of `mnxti` or `mintstatus`) can. The trap-entry check refuses one on
+//! the way to the handler, and each level's bound lists those its handlers
+//! reach ([`Bound::level_drops`]): a hart with none is checked, one with any
+//! holds only under the nesting rule those sites may break.
+use crate::{Analysis, Bound, Fact, LevelDrop, Resolutions, TableEntry, TrapEntry};
 use oer_riscv_model::Result;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -56,6 +66,23 @@ pub struct HartStack {
     /// The sum over what is resolved (`partial + ?` when [`Self::bytes`] is
     /// unknown).
     pub partial: u64,
+}
+
+impl HartStack {
+    /// The instructions that can lower the interrupt level in a handler of
+    /// any level or the exception: the sites where the nesting rule the sum
+    /// rests on may break. Empty when the rule is checked.
+    pub fn level_drops(&self) -> Vec<(u32, LevelDrop)> {
+        let mut drops: Vec<(u32, LevelDrop)> = self
+            .levels
+            .iter()
+            .chain([&self.exception])
+            .flat_map(|level| level.bound.level_drops.iter().copied())
+            .collect();
+        drops.sort_unstable();
+        drops.dedup();
+        drops
+    }
 }
 
 /// The interrupt stack of each hart.

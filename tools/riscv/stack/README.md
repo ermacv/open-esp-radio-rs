@@ -150,6 +150,17 @@ handler's bound, where the dispatcher's calls through the source table reach
 only the handlers the table routes to that hart at that level; an exception
 on top. A level's bound is unknown when its handler's is.
 
+The sum over levels rests on the CLIC: an interrupt preempts only above both
+the threshold and the running level `mintstatus.mil`, which the hardware sets
+on entry, so lowering the threshold, setting `mstatus.MIE` or restoring
+`mstatus` after a critical section lets no interrupt of the handler's own
+level in. Only an instruction that lowers `mil` can (`LevelDrop`): a trap
+return (`mret`, `sret`, `dret`), or a write of `mnxti` or `mintstatus`. The
+trap-entry check refuses one before the handler call; each bound lists those
+its root reaches (`Bound::level_drops`, over what is resolved), and
+`HartStack::level_drops` gathers a hart's. A hart with none has its nesting
+checked; one with any is conditional on the rule those sites may break.
+
 ```console
 cargo test -p oer-riscv-stack
 ```

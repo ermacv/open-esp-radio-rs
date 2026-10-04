@@ -30,6 +30,10 @@ pub(crate) enum Via {
     Rts,
     /// Reset the CPU through the chip's JTAG with OpenOCD.
     Jtag,
+    /// Cycle the power of the board's hub port, then, as soon as its USB
+    /// returns, reset it into the ROM's download mode: the stand's way into a
+    /// board whose image switches its USB Serial/JTAG off.
+    Download,
     /// Cycle the power of the board's hub port: off, then on. The
     /// stand's only way to switch a hub port; a lease runs no `uhubctl`.
     Power,
@@ -242,6 +246,7 @@ fn reset_path(via: Via) -> oer_hil_arbiter::ResetPath {
         Via::Rts => oer_hil_arbiter::ResetPath::Rts,
         Via::Jtag => oer_hil_arbiter::ResetPath::Jtag,
         Via::Power => oer_hil_arbiter::ResetPath::Power,
+        Via::Download => oer_hil_arbiter::ResetPath::Download,
     }
 }
 
@@ -396,6 +401,15 @@ fn reset(target: &Target, via: Via) -> Result<Option<String>> {
                 .ok_or("the board is not in the stand file")?;
             crate::hil_jtag::reset(chip, &target.mac)?;
             lines
+        }
+        Via::Download => {
+            let control =
+                oer_hil_stand::control::BoardControl::of_board(&target.port, &target.mac)?;
+            let entry = control.download_entry().ok_or(
+                "the board does not reset by power; add `power` to its `reset` in the stand file",
+            )?;
+            let banner = entry()?;
+            return Ok(oer_hil_arbiter::control::reset_line(&banner).map(str::to_owned));
         }
         Via::Power => {
             let power = target

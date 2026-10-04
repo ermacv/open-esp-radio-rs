@@ -53,7 +53,6 @@ pub(crate) fn validate_flashed_image(
     let escalation = oer_hil_stand::recovery::escalate_boot_loop(
         &lab.dut.serial,
         None,
-        lab.chip(),
         found,
         output,
         &origin,
@@ -68,20 +67,26 @@ pub(crate) fn validate_flashed_image(
         Some(image_keys) => {
             eprintln!(
                 "hil: {:?} cleared the boot loop",
-                escalation.steps.last().map(|step| step.step)
+                escalation.ladder.steps.last().map(|step| step.step)
             );
             check_flashed_image_keys(lab.chip(), selected, &image_keys)
         }
         None => Err(format!(
-            "{error}; the bootloader reset in a loop ({}) and {} did not clear it: the board is \
-             quarantined for a person (see {})",
+            "{error}; the bootloader reset in a loop ({}) and {} did not clear it: {} (see {})",
             escalation.boot_loop.reset_line,
             escalation
+                .ladder
                 .steps
                 .iter()
                 .map(|step| format!("{:?}", step.step))
                 .collect::<Vec<_>>()
                 .join(", "),
+            match escalation.ladder.end {
+                oer_hil_stand::control::LadderEnd::Loadable { .. } => {
+                    "its ROM answers, so firmware can be loaded again"
+                }
+                _ => "the board is quarantined for a person",
+            },
             oer_hil_stand::recovery::RESET_ESCALATION_FILE
         )
         .into()),

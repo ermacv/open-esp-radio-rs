@@ -6,6 +6,7 @@
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
 pub mod config;
+pub mod control;
 mod dut;
 mod error;
 pub use error::Error;

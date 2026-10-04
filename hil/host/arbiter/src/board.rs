@@ -76,8 +76,11 @@ pub enum ResetPath {
     Rts,
     /// The CPU reset through the chip's JTAG.
     Jtag,
-    /// A power cycle of the board's registered hub port.
+    /// A power cycle of the board's hub port.
     Power,
+    /// A power cycle, then a reset into the ROM's download mode as soon as
+    /// the board's USB returns.
+    Download,
 }
 
 impl std::fmt::Display for BoardEvent {
@@ -161,6 +164,9 @@ pub enum RecoveryStep {
     /// A system reset through the chip's builtin USB-JTAG (OpenOCD `reset
     /// run`), which clears low-power state an RTS reset leaves.
     JtagReset,
+    /// Its hub port's power cycled and, as soon as its USB returned, a reset
+    /// into the ROM's download mode through its USB Serial/JTAG.
+    DownloadEntry,
 }
 
 fn short_hash(hash: &str) -> &str {

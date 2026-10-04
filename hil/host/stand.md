@@ -239,7 +239,10 @@ RTS before DTR so opening a port never resets the chip, and hold a lease of
 the board while they use it; a script or terminal that opens a board's port
 itself can reset the chip.
 `cargo hil board reset BOARD` resets through the USB Serial/JTAG RTS line
-(default), `--via jtag` through OpenOCD and the chip's debug module, or
+(default), `--via jtag` through OpenOCD and the chip's debug module,
+`--via download` by cycling the power of the board's hub port and, as soon as
+its USB returns, resetting it into the ROM's download mode (the recovery
+ladder's entry for a board whose image switches its USB Serial/JTAG off), or
 `--via power` by cycling the
 power of the board's hub port (off, then on), and prints the reset
 line the ROM reports. A hub port is switched only that way, under the board's

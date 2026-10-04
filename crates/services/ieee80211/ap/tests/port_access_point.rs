@@ -15,17 +15,17 @@ use oer_ieee80211_ap::{
 };
 use oer_ieee80211_ap_service::port::{
     InlineSae, NoSae, PortAccessPoint, PortApAuthenticator, PortApClient, PortApEnv, PortApProfile,
-    PortApRouter,
+    PortApRouter, PortApSend, PortApStorage,
 };
 use oer_ieee80211_lower_mac::{
-    CoexPriority, Ieee80211LowerMacPort, KeyScope, LifecycleCommand, LowerMacBeaconTiming,
-    MacAddress, PhyRate, ReceiveFilter, RxMeta, TxPower, VifId, VifRole,
+    CoexPriority, Ieee80211LowerMacPort, KeyScope, KeySelector, LifecycleCommand,
+    LowerMacBeaconTiming, MacAddress, PhyRate, ReceiveFilter, RxCryptoStatus, RxEvidence, RxMeta,
+    TxPower, VifId, VifRole,
     model::{LowerMacModel, ModelOutcome},
 };
-use oer_ieee80211_mac::security::rsn::Akm;
 use oer_ieee80211_mac::{
     ap::profile::{Advertisement, LegacyRates, WmmParameters},
-    beacon::{AP_BEACON_CAPACITY, dtim},
+    beacon::dtim,
     channel::{Channel, WifiChannel},
     extensions::wmm::WmmAcParameters,
     ht::HtLocalCapabilities,
@@ -33,6 +33,7 @@ use oer_ieee80211_mac::{
     qos::WmmAccessCategory,
     ssid::WifiSsid,
 };
+use oer_ieee80211_mac::{ccmp::CcmpPacketNumberStep, qos::WmmUserPriority, security::rsn::Akm};
 use oer_ieee80211_rsn::sae::{SaeCommit, SaeCommitValues, SaePassword, SaePasswordElement};
 use oer_ieee80211_rsn::{
     Pmk, Ptk, PtkContext,
@@ -50,6 +51,7 @@ const ADDRESS: MacAddress = [0x02, 0, 0, 0, 0, 0x0a];
 const STATION: MacAddress = [0x02, 0, 0, 0, 0, 0x5a];
 const SSID: &[u8] = b"port-ap";
 const RATE: PhyRate = PhyRate::Legacy(LegacyRate::Dsss1M);
+const DATA_RATE: PhyRate = PhyRate::Legacy(LegacyRate::Ofdm24M);
 /// 100 TU.
 const INTERVAL: u64 = 102_400;
 
@@ -259,6 +261,8 @@ fn profile(ssid: &WifiSsid) -> PortApProfile<'_> {
         dtim_period: 2,
         advertisement: &ADVERTISEMENT,
         management_rate: RATE,
+        data_rate: DATA_RATE,
+        ccmp_step: CcmpPacketNumberStep::new(1).unwrap(),
         coex: CoexPriority::Normal,
     }
 }
@@ -336,7 +340,7 @@ fn the_access_point_starts_its_bss_and_beacons_at_every_tbtt() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = [0; AP_BEACON_CAPACITY];
+    let mut storage = PortApStorage::new();
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
         client(&router),
         &timer,
@@ -369,7 +373,7 @@ fn the_access_point_starts_its_bss_and_beacons_at_every_tbtt() {
         &model,
         &router,
         &timer,
-        access_point.run_until(deadline),
+        access_point.run_until(deadline, &mut |_| {}),
         &[],
         |_| {},
     )
@@ -410,7 +414,7 @@ fn a_probe_request_for_the_bss_or_any_ssid_is_answered_once_per_interval() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = [0; AP_BEACON_CAPACITY];
+    let mut storage = PortApStorage::new();
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
         client(&router),
         &timer,
@@ -442,7 +446,7 @@ fn a_probe_request_for_the_bss_or_any_ssid_is_answered_once_per_interval() {
         &model,
         &router,
         &timer,
-        access_point.run_until(deadline),
+        access_point.run_until(deadline, &mut |_| {}),
         &stops,
         |now| {
             while sent < requests.len() && requests[sent].0 <= now {
@@ -512,23 +516,42 @@ fn serve<X: PortApEnv<Port = LowerMacModel>>(
     access_point: &mut PortAccessPoint<'_, X>,
     frames: &[(u64, Vec<u8>)],
     until: u64,
-) {
+) -> Vec<Vec<u8>> {
     let stops: Vec<u64> = frames.iter().map(|(at, _)| *at).collect();
     let mut sent = 0;
+    let mut delivered = Vec::new();
     drive(
         model,
         router,
         timer,
-        access_point.run_until(Instant::from_micros(until)),
+        access_point.run_until(Instant::from_micros(until), &mut |msdu| {
+            let parts = msdu.parts();
+            let mut ethernet = vec![0; parts.length()];
+            parts.copy_to(&mut ethernet).unwrap();
+            delivered.push(ethernet);
+        }),
         &stops,
         |now| {
             while sent < frames.len() && frames[sent].0 <= now {
-                model.receive(&frames[sent].1, meta());
+                // A protected data MPDU arrives decrypted by the backend.
+                let frame = &frames[sent].1;
+                let meta = if frame[0] & 0x0c == 0x08 && frame[1] & 0x40 != 0 {
+                    RxMeta {
+                        crypto: RxEvidence::HardwareObserved(
+                            RxCryptoStatus::DecryptedAndIntegrityVerified,
+                        ),
+                        ..meta()
+                    }
+                } else {
+                    meta()
+                };
+                model.receive(frame, meta);
                 sent += 1;
             }
         },
     )
     .unwrap();
+    delivered
 }
 
 #[test]
@@ -537,7 +560,7 @@ fn an_open_station_authenticates_associates_and_leaves() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = [0; AP_BEACON_CAPACITY];
+    let mut storage = PortApStorage::new();
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
         client(&router),
         &timer,
@@ -610,7 +633,7 @@ fn an_inactive_peer_is_disassociated_and_deauthenticated() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = [0; AP_BEACON_CAPACITY];
+    let mut storage = PortApStorage::new();
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
         client(&router),
         &timer,
@@ -648,7 +671,7 @@ fn a_wpa3_station_authenticates_by_sae_while_the_bss_goes_on() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Wpa3Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = [0; AP_BEACON_CAPACITY];
+    let mut storage = PortApStorage::new();
     let wpa3 = AccessPointService::new_wpa3(
         ADDRESS,
         RsnGtk::new(1, true, [9; 16]).unwrap(),
@@ -765,7 +788,7 @@ fn a_wpa2_station_completes_the_four_way_handshake_and_gets_its_key() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = [0; AP_BEACON_CAPACITY];
+    let mut storage = PortApStorage::new();
     let wpa2 = AccessPointService::new(
         ADDRESS,
         Pmk::derive(PASSPHRASE, SSID).unwrap(),
@@ -863,7 +886,7 @@ fn a_silent_station_gets_message_1_again_and_is_closed_when_its_retries_run_out(
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = [0; AP_BEACON_CAPACITY];
+    let mut storage = PortApStorage::new();
     let wpa2 = AccessPointService::new(
         ADDRESS,
         Pmk::derive(PASSPHRASE, SSID).unwrap(),
@@ -934,4 +957,234 @@ fn last_sae_reply(model: &LowerMacModel) -> (u16, u16, Vec<u8>) {
         u16::from_le_bytes([frame[28], frame[29]]),
         frame[30..].to_vec(),
     )
+}
+
+/// An Ethernet-II frame between `destination` and `source`.
+fn ethernet(destination: [u8; 6], source: [u8; 6], payload: &[u8]) -> Vec<u8> {
+    let mut frame = destination.to_vec();
+    frame.extend_from_slice(&source);
+    frame.extend_from_slice(&[0x08, 0x00]);
+    frame.extend_from_slice(payload);
+    frame
+}
+
+/// A data MPDU of the station to the distribution system, carrying `body`
+/// after its header (an LLC/SNAP IPv4 payload, behind a CCMP header when
+/// `ccmp` names its packet number).
+fn uplink(sequence: u16, ccmp: Option<u64>, payload: &[u8]) -> Vec<u8> {
+    let mut mpdu = vec![0x08, if ccmp.is_some() { 0x41 } else { 0x01 }, 0, 0];
+    mpdu.extend_from_slice(&ADDRESS);
+    mpdu.extend_from_slice(&STATION);
+    mpdu.extend_from_slice(&[0x02, 0, 0, 0, 0, 0x99]);
+    mpdu.extend_from_slice(&(sequence << 4).to_le_bytes());
+    if let Some(packet_number) = ccmp {
+        let pn = packet_number.to_le_bytes();
+        mpdu.extend_from_slice(&[pn[0], pn[1], 0, 0x20, pn[2], pn[3], pn[4], pn[5]]);
+    }
+    mpdu.extend_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x00]);
+    mpdu.extend_from_slice(payload);
+    mpdu
+}
+
+/// The data MPDUs the access point sent `destination`.
+fn downlink(model: &LowerMacModel, destination: [u8; 6]) -> Vec<(Vec<u8>, KeySelector, PhyRate)> {
+    model
+        .submitted()
+        .into_iter()
+        .filter(|attempt| {
+            attempt.frames[0][0] & 0x0c == 0x08 && attempt.frames[0][4..10] == destination
+        })
+        .filter(|attempt| {
+            // Not the handshake's EAPOL.
+            !attempt.frames[0]
+                .windows(2)
+                .any(|pair| pair == [0x88, 0x8e])
+        })
+        .map(|attempt| (attempt.frames[0].clone(), attempt.key, attempt.rate))
+        .collect()
+}
+
+#[test]
+fn an_open_bss_carries_data_both_ways_for_its_associated_peers() {
+    let model = model();
+    let timer = VirtualTimer::default();
+    let router = PortApRouter::<Env<'_>>::new(&model, 1);
+    let ssid = WifiSsid::new(SSID).unwrap();
+    let mut storage = PortApStorage::new();
+    let mut access_point = PortAccessPoint::<Env<'_>>::new(
+        client(&router),
+        &timer,
+        FixedMaterial,
+        NoSae,
+        profile(&ssid),
+        service(),
+        &mut storage,
+    )
+    .unwrap();
+    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    let start = timer.now.get();
+
+    // Before the station associates, its downlink has nowhere to go.
+    let best_effort = WmmUserPriority::new(0).unwrap();
+    assert_eq!(
+        access_point.send(
+            &ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], b"early"),
+            best_effort
+        ),
+        PortApSend::Queued
+    );
+    serve(&model, &router, &timer, &mut access_point, &[], start + 500);
+    assert_eq!(access_point.counters().data_dropped, 1);
+
+    let delivered = serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[
+            (start + 1_000, authentication(false)),
+            (start + 2_000, association()),
+            (start + 3_000, uplink(1, None, b"up")),
+            // The station's retransmission of it is a duplicate.
+            (start + 3_500, {
+                let mut retry = uplink(1, None, b"up");
+                retry[1] |= 0x08;
+                retry
+            }),
+        ],
+        start + 4_000,
+    );
+    assert_eq!(
+        delivered,
+        [ethernet([0x02, 0, 0, 0, 0, 0x99], STATION, b"up")]
+    );
+    assert_eq!(access_point.counters().duplicates, 1);
+
+    assert_eq!(
+        access_point.send(
+            &ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], b"down"),
+            best_effort
+        ),
+        PortApSend::Queued
+    );
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[],
+        start + 5_000,
+    );
+    let sent = downlink(&model, STATION);
+    assert_eq!(sent.len(), 1);
+    let (frame, key, rate) = &sent[0];
+    // From the DS, plaintext, at the data rate.
+    assert_eq!(
+        (frame[1] & 0x43, *key, *rate),
+        (0x02, KeySelector::Plaintext, DATA_RATE)
+    );
+    assert!(frame.ends_with(b"down"));
+}
+
+#[test]
+fn a_wpa2_bss_carries_data_under_each_key_and_drops_replays() {
+    let model = model();
+    let timer = VirtualTimer::default();
+    let router = PortApRouter::<Env<'_>>::new(&model, 1);
+    let ssid = WifiSsid::new(SSID).unwrap();
+    let mut storage = PortApStorage::new();
+    let wpa2 = AccessPointService::new(
+        ADDRESS,
+        Pmk::derive(PASSPHRASE, SSID).unwrap(),
+        RsnGtk::new(1, true, [0x55; 16]).unwrap(),
+        AccessPointClientLimit::new(4).unwrap(),
+        AccessPointInactiveTimeout::new(10).unwrap(),
+        Box::leak(Box::new(AccessPointPeerStorage::new())),
+    );
+    let mut access_point = PortAccessPoint::<Env<'_>>::new(
+        client(&router),
+        &timer,
+        FixedMaterial,
+        NoSae,
+        profile(&ssid),
+        wpa2,
+        &mut storage,
+    )
+    .unwrap();
+    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    let ptk = ptk();
+    let rsn_ie = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
+    let security_ies = OwnedAssociationSecurityIes::<128>::try_copy(&rsn_ie, &[]).unwrap();
+    let message2 = RsnTxFrame::<512>::message2_with_security_ies(
+        Akm::Psk,
+        ADDRESS,
+        REPLAY_COUNTER,
+        SNONCE,
+        &security_ies,
+    )
+    .unwrap()
+    .authenticate(&ptk);
+    let message4 = RsnTxFrame::<512>::message4(Akm::Psk, ADDRESS, REPLAY_COUNTER + 1)
+        .unwrap()
+        .authenticate(&ptk);
+    let start = timer.now.get();
+    let delivered = serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[
+            (start + 1_000, authentication(false)),
+            (start + 2_000, rsn_association()),
+            (start + 3_000, eapol(message2.as_bytes())),
+            (start + 4_000, eapol(message4.as_bytes())),
+            (start + 5_000, uplink(1, Some(1), b"one")),
+            // A new sequence whose packet number does not advance.
+            (start + 6_000, uplink(2, Some(1), b"replay")),
+            // Plaintext data after the keys are in.
+            (start + 7_000, uplink(3, None, b"plain")),
+        ],
+        start + 8_000,
+    );
+    assert_eq!(
+        delivered,
+        [ethernet([0x02, 0, 0, 0, 0, 0x99], STATION, b"one")]
+    );
+    assert_eq!(access_point.counters().replayed, 1);
+    assert_eq!(access_point.counters().rx_rejected, 1);
+
+    let best_effort = WmmUserPriority::new(0).unwrap();
+    access_point.send(
+        &ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], b"down"),
+        best_effort,
+    );
+    access_point.send(
+        &ethernet([0xff; 6], [0x02, 0, 0, 0, 0, 0x99], b"all"),
+        best_effort,
+    );
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[],
+        start + 9_000,
+    );
+    // To the peer under its pairwise key with its first packet number; to
+    // the group under the group key at the management rate.
+    let unicast = downlink(&model, STATION);
+    let (frame, key, rate) = &unicast[0];
+    assert_eq!((frame[1] & 0x40, *rate), (0x40, DATA_RATE));
+    assert_eq!(
+        *key,
+        KeySelector::Key(oer_ieee80211_lower_mac::KeyHandle(1))
+    );
+    assert_eq!((frame[24], frame[27] & 0x20, frame[27] >> 6), (1, 0x20, 0));
+    let group = downlink(&model, [0xff; 6]);
+    let (frame, key, rate) = &group[0];
+    assert_eq!(
+        *key,
+        KeySelector::Key(oer_ieee80211_lower_mac::KeyHandle(0))
+    );
+    assert_eq!((frame[27] >> 6, *rate), (1, RATE));
 }

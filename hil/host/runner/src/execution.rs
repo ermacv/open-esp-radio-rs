@@ -8,6 +8,7 @@ use oer_hil_evidence::run::{Failure, FailureKind, Outcome};
 pub(crate) mod doctor;
 pub(crate) mod firmware;
 pub(crate) mod fixture_check;
+pub(crate) mod interrupt_stack;
 pub(crate) mod orchestration;
 pub(crate) mod preflight;
 #[cfg(test)]
@@ -110,6 +111,7 @@ pub(crate) fn execute_workload(
             .is_some_and(|error| oer_process::is_cancelled(&**error)),
         failure: result.err().map(|error| classify(&*error)),
     };
+    check_interrupt_stacks(lab.chip(), elf.as_deref(), &mut evidence);
     if let Some(finding) = post_mortem {
         let _ = oer_hil_durable::atomic_json(
             &output.join("post-mortem/post-mortem.json"),
@@ -139,6 +141,58 @@ pub(crate) fn execute_workload(
         });
     }
     evidence
+}
+
+/// Hold each hart's observed interrupt-stack use of an ESP32-S31 repetition
+/// to the image's static bound: a watermark above it fails the repetition,
+/// as does an observed hart the bound cannot be computed for.
+fn check_interrupt_stacks(chip: &str, elf: Option<&Path>, evidence: &mut ExecutionEvidence) {
+    if chip != "esp32s31" {
+        return;
+    }
+    let peaks = interrupt_stack::observed_peaks(&evidence.measurements);
+    if peaks.is_empty() {
+        return;
+    }
+    let evaluated = elf
+        .ok_or_else(|| "the run archived no runtime ELF to bound the interrupt stacks".to_owned())
+        .and_then(interrupt_stack::bounds)
+        .and_then(|bounds| interrupt_stack::evaluate(&peaks, &bounds));
+    match evaluated {
+        Ok(measurements) => {
+            let exceeded: Vec<String> = measurements
+                .iter()
+                .filter(|measurement| {
+                    measurement.verdict == Some(oer_hil_evidence::run::MeasurementVerdict::Failed)
+                })
+                .map(|measurement| {
+                    format!(
+                        "{} {} > static bound {}",
+                        measurement.name,
+                        measurement.value,
+                        measurement.threshold.map_or(0, |threshold| threshold.value)
+                    )
+                })
+                .collect();
+            evidence.measurements.extend(measurements);
+            if !exceeded.is_empty() {
+                evidence.failure.get_or_insert_with(|| {
+                    Failure::new(
+                        FailureKind::Scenario,
+                        format!(
+                            "observed interrupt-stack use exceeds the static bound: {}",
+                            exceeded.join(", ")
+                        ),
+                    )
+                });
+            }
+        }
+        Err(error) => {
+            evidence
+                .failure
+                .get_or_insert_with(|| Failure::new(FailureKind::Infrastructure, error));
+        }
+    }
 }
 
 /// The runtime ELF the run archived for `image`, found from a repetition's

@@ -183,15 +183,13 @@ pub struct Trace {
 // fails without one.
 unsafe extern "Rust" {
     /// The image's monotonic time in microseconds, which stamps records:
-    /// every image that records defines it once (`#[unsafe(no_mangle)] fn
-    /// oer_trace_now_micros() -> u64`). A direct call, so a record made in
-    /// an interrupt has a stack bound.
-    safe fn oer_trace_now_micros() -> u64;
+    /// every image that records declares it once with [`clock!`](crate::clock).
+    safe fn __oer_trace_now_micros() -> u64;
 }
 
 impl Trace {
-    /// A trace over `retained`, whose records the image's
-    /// `oer_trace_now_micros` stamps.
+    /// A trace over `retained`, whose records the image's [`clock!`](crate::clock)
+    /// stamps.
     pub const fn new<const ENTRIES: usize, const SLOTS: usize, const WORDS: usize>(
         retained: &'static Retained<ENTRIES, SLOTS, WORDS>,
     ) -> Self {
@@ -214,7 +212,7 @@ impl Trace {
     #[cfg(feature = "record")]
     #[inline(always)]
     pub(crate) fn now_us(&self) -> u32 {
-        oer_trace_now_micros() as u32
+        __oer_trace_now_micros() as u32
     }
 
     pub fn geometry(&self) -> Geometry {

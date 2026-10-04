@@ -11,18 +11,14 @@
 //!
 //! The image places one [`Retained`] in memory that survives the resets it
 //! cares about and builds one [`Trace`] over it; with the `record` feature it
-//! defines the function that reads its monotonic time in microseconds, which
-//! every record calls directly:
+//! names, with [`clock!`], the function that reads its monotonic time in
+//! microseconds:
 //!
 //! ```ignore
 //! #[unsafe(link_section = ".rtc_fast.persistent")]
 //! static RETAINED: oer_trace::Retained<512, 2, 1024> = oer_trace::Retained::new();
 //! static TRACE: oer_trace::Trace = oer_trace::Trace::new(&RETAINED);
-//!
-//! #[unsafe(no_mangle)]
-//! fn oer_trace_now_micros() -> u64 {
-//!     now_micros()
-//! }
+//! oer_trace::clock!(oer_time_embassy::now_micros);
 //!
 //! let boot = oer_trace::install(&TRACE); // holds what the previous boot left
 //! // ... drain `boot.previous` if it matters ...
@@ -166,6 +162,24 @@ pub fn capture(point: Kind, fill: impl FnOnce(&mut SnapshotWriter<'_>)) {
     }
     #[cfg(not(feature = "record"))]
     let _ = (point, fill);
+}
+
+/// Name the image's trace clock: a `fn() -> u64` of monotonic time in
+/// microseconds, which stamps every record. An image declares it once, like
+/// a global time driver: the trace is global, so the clock is bound at link
+/// time and every record calls it directly. A recording image without one
+/// fails to link on `__oer_trace_now_micros`.
+#[macro_export]
+macro_rules! clock {
+    ($now_micros:path) => {
+        const _: () = {
+            #[allow(unsafe_code, reason = "the trace's clock is bound at link time")]
+            #[unsafe(export_name = "__oer_trace_now_micros")]
+            fn now_micros() -> u64 {
+                $now_micros()
+            }
+        };
+    };
 }
 
 #[cfg(test)]

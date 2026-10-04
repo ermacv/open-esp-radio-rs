@@ -1953,3 +1953,34 @@ fn every_inlined_copy_of_a_function_is_found_with_its_callers() {
         BTreeSet::from(["main::start_up".to_owned(), "main::elsewhere".to_owned()])
     );
 }
+
+#[test]
+fn a_bound_names_what_it_reaches_and_each_function_its_floating_point() {
+    // fadd.s fa0, fa0, fa1; frcsr a0 (csrr a0, fcsr).
+    let float = Symbol {
+        name: "float",
+        words: vec![0x00b5_7553, 0x0030_2573, RET],
+        frame: Some(0),
+    };
+    let caller_at = TEXT + 12;
+    let caller = Symbol {
+        name: "caller",
+        words: vec![
+            SP_DOWN_16,
+            SAVE_RA,
+            call(caller_at + 8, TEXT),
+            LOAD_RA,
+            SP_UP_16,
+            RET,
+        ],
+        frame: Some(16),
+    };
+    let elf = executable(&[float, caller]);
+    let analysis = analyze(&elf, &[], &[]).unwrap();
+    assert_eq!(analysis.functions[&TEXT].float_sites, [TEXT, TEXT + 4]);
+    assert!(analysis.functions[&caller_at].float_sites.is_empty());
+    assert_eq!(
+        analysis.bound(caller_at).unwrap().reached,
+        BTreeSet::from([TEXT, caller_at])
+    );
+}

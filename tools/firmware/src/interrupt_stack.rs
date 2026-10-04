@@ -8,6 +8,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use oer_esp32s31_platform_layout::interrupts as contract;
+use oer_esp32s31_platform_layout::memory;
 use oer_riscv_stack::{
     Analysis, Assumption, Dwarf, Field, HartStack, Stacks, TableLayout, TypeFacts, address_taken,
     analyze, function_pointer_resolutions, functions, interrupt_table, parse_summaries,
@@ -108,7 +109,31 @@ pub struct InterruptStacks {
     /// DWARF shows no copy: where a source may take a level other than its
     /// table entry's. Empty when the table levels are checked.
     pub level_writers: Vec<String>,
+    /// What the interrupt handlers' code does that interrupt context should
+    /// not, over what is resolved.
+    pub handler_code: HandlerCode,
 }
+
+/// What the code every interrupt level reaches (its handlers and what they
+/// call, over what is resolved; the exception's panic path apart) does that
+/// interrupt context should not. A hole may hide more; what is listed is
+/// there.
+#[derive(Debug, Default)]
+pub struct HandlerCode {
+    /// Floating-point instructions and floating-point CSR accesses, by
+    /// function and site: the handlers run with `mstatus.FS` off, so each
+    /// raises an illegal-instruction exception.
+    pub float: Vec<(u32, u32)>,
+    /// Calls into the panic machinery (`core::panicking`), by caller and
+    /// callee: an interrupt that can panic.
+    pub panics: Vec<(u32, u32)>,
+    /// Functions in a cached region (flash or PSRAM): code that cannot run
+    /// while the cache is off.
+    pub cached: Vec<u32>,
+}
+
+/// Sites of each kind the report lists.
+const SHOWN: usize = 10;
 
 /// The assumptions the gate admits in a bound, each by name: a bound resting
 /// on one is conditional and passes with a warning; any other fails. Each
@@ -136,6 +161,15 @@ impl InterruptStacks {
             oer_esp32s31_platform_layout::memory::SRAM
                 .contains_range(u64::from(address), u64::from(address) + 4)
         };
+        // A floating-point instruction in a handler traps: the handlers run
+        // with the FPU off.
+        if let Some((function, site)) = self.handler_code.float.first() {
+            return Err(format!(
+                "interrupt context runs floating point at {site:#010x} in {}, with the FPU off",
+                self.name(*function)
+            )
+            .into());
+        }
         // The sum over levels needs each source at its table level.
         if !self.level_writers.is_empty() {
             return Err(format!(
@@ -253,6 +287,28 @@ impl InterruptStacks {
             for problem in &self.level_writers {
                 let _ = writeln!(out, "  {problem}");
             }
+        }
+        let code = &self.handler_code;
+        let _ = writeln!(
+            out,
+            "handler code: {} floating-point sites, {} calls into the panic machinery, {} \
+             functions in cached memory",
+            code.float.len(),
+            code.panics.len(),
+            code.cached.len()
+        );
+        for (function, site) in code.float.iter().take(SHOWN) {
+            let _ = writeln!(
+                out,
+                "  floating point at {site:#010x} in {}",
+                name(*function)
+            );
+        }
+        for (caller, callee) in code.panics.iter().take(SHOWN) {
+            let _ = writeln!(out, "  {} calls {}", name(*caller), name(*callee));
+        }
+        for function in code.cached.iter().take(SHOWN) {
+            let _ = writeln!(out, "  in cached memory: {}", name(*function));
         }
         for hart in &self.harts {
             let _ = writeln!(
@@ -412,6 +468,7 @@ pub fn interrupt_stacks(root: &Path, elf: &Path) -> Result<InterruptStacks> {
         })
         .collect();
     let level_writers = level_writers(&elf, &dwarf)?;
+
     let sources = source_table(&elf)?;
     let harts = oer_riscv_stack::interrupt_stacks(
         &analysis,
@@ -425,13 +482,61 @@ pub fn interrupt_stacks(root: &Path, elf: &Path) -> Result<InterruptStacks> {
             resolutions: &resolutions,
         },
     )?;
+    let reached: BTreeSet<u32> = harts
+        .iter()
+        .flat_map(|hart| hart.levels.iter())
+        .flat_map(|level| level.bound.reached.iter().copied())
+        .collect();
+    let handler_code = handler_code(&analysis, &reached, &names);
     Ok(InterruptStacks {
         harts,
         handlers,
         summaries: analysis.summaries.clone(),
         names,
         level_writers,
+        handler_code,
     })
+}
+
+/// What the functions in `reached` do that interrupt context should not.
+fn handler_code(
+    analysis: &Analysis,
+    reached: &BTreeSet<u32>,
+    names: &BTreeMap<u32, String>,
+) -> HandlerCode {
+    let panicking = |address: u32| {
+        names
+            .get(&address)
+            .is_some_and(|name| name.starts_with("core::panicking::"))
+    };
+    let mut code = HandlerCode::default();
+    for &function in reached {
+        let Some(facts) = analysis.functions.get(&function) else {
+            continue;
+        };
+        code.float
+            .extend(facts.float_sites.iter().map(|&site| (function, site)));
+        if !panicking(function) {
+            code.panics.extend(
+                facts
+                    .transfers
+                    .iter()
+                    .filter_map(|transfer| transfer.target)
+                    .filter(|&target| panicking(target))
+                    .map(|target| (function, target)),
+            );
+        }
+        let at = (u64::from(function), u64::from(function) + 4);
+        if [memory::FLASH_XIP, memory::PSRAM]
+            .iter()
+            .any(|region| region.contains_range(at.0, at.1))
+        {
+            code.cached.push(function);
+        }
+    }
+    code.panics.sort_unstable();
+    code.panics.dedup();
+    code
 }
 
 /// Where a CLIC level or route writer runs outside the functions it may run
@@ -518,6 +623,7 @@ mod tests {
             handlers,
             names: BTreeMap::from([(0x2f00_1000, "TIMER".to_owned())]),
             level_writers: Vec::new(),
+            handler_code: HandlerCode::default(),
         }
     }
 
@@ -530,6 +636,7 @@ mod tests {
             path: Vec::new(),
             level_drops: Vec::new(),
             assumptions: BTreeSet::new(),
+            reached: BTreeSet::new(),
         };
         let level = oer_riscv_stack::LevelStack {
             level: 0,
@@ -550,6 +657,7 @@ mod tests {
             handlers: Vec::new(),
             names: BTreeMap::new(),
             level_writers: Vec::new(),
+            handler_code: HandlerCode::default(),
         }
     }
 
@@ -647,6 +755,24 @@ mod tests {
             assert!(error.contains("table levels are not checked"), "{error}");
         }
         assert!(stacks.render().contains("levels: not checked"));
+    }
+
+    #[test]
+    fn floating_point_in_a_handler_fails_and_the_rest_is_reported() {
+        let mut stacks = partial(1000);
+        stacks.harts[0].bytes = Some(1000);
+        stacks.handler_code.panics = vec![(0x2f00_1000, 0x4000_0000)];
+        stacks.handler_code.cached = vec![0x4000_0000];
+        assert!(stacks.check(Required::Proven).is_ok());
+        let report = stacks.render();
+        assert!(
+            report.contains("1 calls into the panic machinery"),
+            "{report}"
+        );
+        assert!(report.contains("1 functions in cached memory"), "{report}");
+        stacks.handler_code.float = vec![(0x2f00_1000, 0x2f00_1004)];
+        let error = stacks.check(Required::Partial).unwrap_err().to_string();
+        assert!(error.contains("floating point at 0x2f001004"), "{error}");
     }
 
     #[test]

@@ -170,6 +170,11 @@ table assumes nothing. `HartStack::assumptions` gathers a hart's. A hart with
 a bound and no assumption is proven; with some, conditional on them. The
 firmware gate admits exactly the named ones, each until a change proves it.
 
+A bound also lists every function its root reaches over what is resolved
+(`Bound::reached`), and each function its floating-point instructions and
+floating-point CSR accesses (`FunctionFacts::float_sites`): what checks of a
+context's code, such as the firmware gate's interrupt-context checks, read.
+
 The nesting rule's other half, each source at its table level for good, is
 the image's configuration. `instances` finds every copy of a function in the
 DWARF, out of line or inlined; the firmware gate requires each copy of the

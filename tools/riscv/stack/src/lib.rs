@@ -90,6 +90,8 @@ pub struct FunctionFacts {
     pub unresolved_registers: BTreeMap<u32, [Option<u32>; 32]>,
     /// Instructions that can lower the interrupt level, by site.
     pub level_drops: Vec<(u32, LevelDrop)>,
+    /// Floating-point instructions and floating-point CSR accesses, by site.
+    pub float_sites: Vec<u32>,
 }
 
 /// Why a reachable site or function leaves a bound unknown.
@@ -176,6 +178,9 @@ pub struct Bound {
     /// What the resolutions the root's walk took assume: a bound with any
     /// is conditional on them.
     pub assumptions: BTreeSet<Assumption>,
+    /// Every function the root reaches over what is resolved, the root
+    /// included: what checks of a context's code read.
+    pub reached: BTreeSet<u32>,
 }
 
 impl Bound {
@@ -438,6 +443,7 @@ fn function_facts(
         transfers,
         site_depths: observation.site_depths,
         level_drops: swept.level_drops,
+        float_sites: swept.float_sites,
     })
 }
 
@@ -479,6 +485,7 @@ impl Analysis {
             path,
             level_drops,
             assumptions: walk.assumptions,
+            reached: walk.memo.keys().copied().collect(),
         })
     }
 

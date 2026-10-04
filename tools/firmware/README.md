@@ -21,8 +21,15 @@ observers the product does not carry) also passes a `partial + ?` hart with a
 warning. Either way the bound, or the proven part, must fit the usable stack
 with the contract's margin, and every table entry's slot symbol and the
 handler it calls must lie in SRAM (the slot's own direct calls: a call site no
-inlined function owns, by the DWARF). It writes each hart's levels and their
-critical paths to `interrupt-stack.txt`.
+inlined function owns, by the DWARF). A hart with a bound is `proven`, or
+`conditional` on the assumptions it names; the gate admits only the executor
+invariant (`ADMITTED`), each assumption until a change proves it. Every copy
+of a CLIC level or route writer must run where the contract's
+`LEVEL_WRITERS` allows, and no handler may lower the running level. Over the
+code every interrupt level reaches, a floating-point instruction fails (the
+handlers run with the FPU off); calls into the panic machinery and functions
+in cached memory (flash, PSRAM) are listed. It writes all of this, each
+hart's levels and their critical paths to `interrupt-stack.txt`.
 
 The default `device` feature provides serial-device selection, a lease shared
 by xtask and HIL, and `write_segments`, which writes every flash segment

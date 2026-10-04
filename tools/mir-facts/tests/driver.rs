@@ -82,10 +82,10 @@ fn a_crate_s_facts_name_the_candidates_of_its_pointer_and_dyn_calls() {
     assert_eq!(dyn_call[0]["dyn"]["trait"], "sample::Speak");
     let entry = dyn_call[0]["dyn"]["entry"].as_u64().unwrap().to_string();
     let pointers = &facts["fn_pointers"]["fn(u32) -> u32"];
-    assert_eq!(symbols_containing(pointers, "6double").len(), 1);
-    assert_eq!(symbols_containing(pointers, "6triple").len(), 1);
+    assert_eq!(symbols_containing(pointers, "sample::double").len(), 1);
+    assert_eq!(symbols_containing(pointers, "sample::triple").len(), 1);
     let speak = &facts["vtables"]["sample::Speak"][entry.as_str()];
-    assert_eq!(symbols_containing(speak, "5speak").len(), 2);
+    assert_eq!(symbols_containing(speak, "Speak>::speak").len(), 2);
     // Entry 0 is each type's drop glue.
     assert_eq!(
         facts["vtables"]["sample::Speak"]["0"]

@@ -32,8 +32,7 @@ real `rustc` untouched. Without `OER_MIR_FACTS_DIR` the wrapper only compiles.
 
 Each crate writes `<crate>-<hash>.json`:
 
-- `calls`: each instance with indirect calls, by its mangled symbol (as the
-  ELF names it): a call through a function pointer of a type
+- `calls`: each instance with indirect calls, by its function key: a call through a function pointer of a type
   (`fn_pointer`), or through a `dyn` vtable (`dyn`: the principal trait and
   the vtable entry index, the header's drop, size and align being 0, 1, 2),
   or `unknown` where the MIR names no target type (a `dyn` without a
@@ -48,8 +47,12 @@ Each crate writes `<crate>-<hash>.json`:
 - `polluted`: function-pointer types a transmute produces from another type:
   a call through one may reach any function.
 
-A function-pointer type is keyed by its ABI, inputs and output as rustc
-prints them, without lifetimes, binders or `unsafe`, which codegen erases.
+A function is keyed by its symbol demangled without the crate hashes a
+compilation gives it (`core::fmt::write`, `<sample::A as sample::Speak>::speak`),
+so that the precompiled `core` matches the facts of `core` compiled apart from
+the toolchain's sources; two functions of one path only unite their facts. A
+function-pointer type is keyed by its ABI, inputs and output as rustc prints
+them, without lifetimes, binders or `unsafe`, which codegen erases.
 
 The walk starts at every monomorphic item of the crate and its statics, and
 follows direct calls, coercions and constants to every instance with a body,

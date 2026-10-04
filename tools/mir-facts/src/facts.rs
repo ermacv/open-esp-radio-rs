@@ -1,6 +1,8 @@
 //! The facts of one crate, written as `<crate>-<hash>.json`.
 //!
-//! Every function is named by its mangled symbol, as the ELF names it. A
+//! Every function is named by [`function_key`]: its symbol demangled,
+//! without crate hashes, so that a precompiled crate's functions match the
+//! facts of the same crate compiled apart from its sources. A
 //! function-pointer type is named by [`fn_pointer_key`]: its ABI, inputs and
 //! output as rustc prints them, without lifetimes or safety, which codegen
 //! erases.
@@ -34,6 +36,27 @@ pub struct Facts {
     pub polluted: BTreeSet<String>,
     /// Each trait's vtable entries, by entry index, by symbol.
     pub vtables: BTreeMap<String, BTreeMap<usize, BTreeSet<String>>>,
+}
+
+/// The key of a function's mangled `symbol`: demangled without the crate
+/// hashes a compilation gives it. Two functions of one path (two versions
+/// of a crate) share a key, which only unites their facts.
+pub fn function_key(symbol: &str) -> String {
+    let demangled = match rustc_demangle::try_demangle(symbol) {
+        Ok(demangled) => format!("{demangled:#}"),
+        Err(_) => symbol.to_owned(),
+    };
+    let mut key = String::with_capacity(demangled.len());
+    let mut depth = 0_u32;
+    for c in demangled.chars() {
+        match c {
+            '[' => depth += 1,
+            ']' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => key.push(c),
+            _ => {}
+        }
+    }
+    key
 }
 
 /// The key of a function-pointer type printed `ty`: without lifetimes,
@@ -87,7 +110,20 @@ pub fn write(directory: &Path, facts: &Facts) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::fn_pointer_key;
+    use super::{fn_pointer_key, function_key};
+
+    #[test]
+    fn a_function_key_drops_the_crate_hashes() {
+        assert_eq!(
+            function_key("_RNvCs4YwXaCc3kOe_6sample8call_dyn"),
+            "sample::call_dyn"
+        );
+        assert_eq!(
+            function_key("_ZN4core3fmt5write17h0123456789abcdefE"),
+            "core::fmt::write"
+        );
+        assert_eq!(function_key("_start"), "_start");
+    }
 
     #[test]
     fn a_key_drops_lifetimes_binders_and_safety() {

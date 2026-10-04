@@ -1,7 +1,7 @@
 //! The indirect-call facts of the crate being compiled: a walk over every
 //! instance its monomorphic items reach through direct calls, coercions and
 //! constants, reading each instance's MIR.
-use crate::facts::{Facts, IndirectCall, fn_pointer_key};
+use crate::facts::{Facts, IndirectCall, fn_pointer_key, function_key};
 use rustc_public::mir::alloc::{AllocId, GlobalAlloc};
 use rustc_public::mir::mono::{Instance, InstanceKind, StaticDef};
 use rustc_public::mir::visit::{Location, MirVisitor};
@@ -75,7 +75,7 @@ impl Walk {
         let mut visitor = BodyVisitor {
             walk: self,
             locals: body.locals().to_vec(),
-            symbol: instance.mangled_name(),
+            symbol: function_key(&instance.mangled_name()),
         };
         visitor.visit_body(&body);
     }
@@ -94,7 +94,7 @@ impl Walk {
             .fn_pointers
             .entry(fn_pointer_key(&pointer.to_string()))
             .or_default()
-            .insert(function.mangled_name());
+            .insert(function_key(&function.mangled_name()));
         self.queue.push(function);
     }
 
@@ -116,7 +116,7 @@ impl Walk {
                 .or_default()
                 .entry(index)
                 .or_default()
-                .insert(method.mangled_name());
+                .insert(function_key(&method.mangled_name()));
             self.queue.push(method);
         }
     }

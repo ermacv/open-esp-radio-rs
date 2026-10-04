@@ -41,12 +41,14 @@ use oer_ieee80211_rsn::{
 };
 use oer_ieee80211_softmac::{BackoffEntropy, EdcaContention};
 use oer_ieee80211_sta::{
+    association::StaAssociatedPeer,
     attempt::{
         AssociationAttemptOutcome, StaAttemptSecurity, StaPersonalCredentials,
         Wpa2Message4Protection,
     },
     modem_sleep::{CoexView, PmCoexAction, PmCoexEvent, PmState, SleepType},
     pmksa::StaSharedPmksa,
+    rate_control::StaRateControl,
     scan::{StaCandidateScanExit, StaScanConfig},
     station::{StaLifecycleExit, StaReconnectPolicy},
 };
@@ -125,6 +127,52 @@ impl BackoffEntropy for Seeded {
 
 struct Env<'a>(PhantomData<&'a ()>);
 
+/// What the station told its rate control.
+#[derive(Default)]
+struct RateLog {
+    /// The link metric each association started from.
+    link_metrics: Vec<Option<i8>>,
+    /// Each single MPDU's attempts and acknowledgement.
+    mpdus: Vec<(u8, bool)>,
+    /// Each A-MPDU's subframes and acknowledged subframes.
+    ampdus: Vec<(u16, u16)>,
+}
+
+/// One fixed rate that records what the station tells it.
+struct ScriptedRate<'a> {
+    rate: PhyRate,
+    log: &'a RefCell<RateLog>,
+}
+
+impl<'a> StaRateControl for ScriptedRate<'a> {
+    type Config = (PhyRate, &'a RefCell<RateLog>);
+
+    fn associate(
+        (rate, log): (PhyRate, &'a RefCell<RateLog>),
+        _peer: &StaAssociatedPeer,
+        link_metric: Option<i8>,
+    ) -> Self {
+        log.borrow_mut().link_metrics.push(link_metric);
+        Self { rate, log }
+    }
+
+    fn mpdu_rate(&self) -> PhyRate {
+        self.rate
+    }
+
+    fn ampdu_rate(&self) -> PhyRate {
+        self.rate
+    }
+
+    fn observe_mpdu(&mut self, attempts: u8, acknowledged: bool, _ack_snr_db: Option<i8>) {
+        self.log.borrow_mut().mpdus.push((attempts, acknowledged));
+    }
+
+    fn observe_ampdu(&mut self, _now: oer_time::Instant, attempted: u16, acknowledged: u16) {
+        self.log.borrow_mut().ampdus.push((attempted, acknowledged));
+    }
+}
+
 /// The radio system's coexistence schedule as a script: the view the test
 /// sets, the effects the station asked for, and whether it refuses them.
 struct ScriptedCoex {
@@ -166,6 +214,7 @@ impl<'a> PortStationEnv for Env<'a> {
     type KeyUnwrap = RsnSoftwareAes;
     type Aggregation = oer_ieee80211_sta_service::port::PortAmpduAggregation;
     type Coex = &'a ScriptedCoex;
+    type RateControl = ScriptedRate<'a>;
 }
 
 const MANAGEMENT_RATE: PhyRate = PhyRate::Legacy(LegacyRate::Ofdm6M);
@@ -219,6 +268,7 @@ struct World {
     router: &'static PortRouter<'static, Env<'static>>,
     timer: VirtualTimer,
     coex: &'static ScriptedCoex,
+    rate_log: &'static RefCell<RateLog>,
 }
 
 impl World {
@@ -236,6 +286,7 @@ impl World {
         Self {
             model,
             router: Box::leak(Box::new(EventRouter::new(model, 1))),
+            rate_log: Box::leak(Box::new(RefCell::new(RateLog::default()))),
             coex: Box::leak(Box::new(ScriptedCoex {
                 view: Cell::new(CoexView::INACTIVE),
                 performed: RefCell::new(Vec::new()),
@@ -279,11 +330,11 @@ impl World {
             FixedRate,
             Seeded(0x1357_9bdf),
             self.coex,
+            (data_rate, self.rate_log),
             PortStationConfig {
                 vif: VifId(0),
                 address: STA,
                 management_rate: MANAGEMENT_RATE,
-                data_rate,
                 power: TxPower::Calibrated,
                 coex: CoexPriority::Normal,
                 retry_limit: 7,
@@ -1205,6 +1256,28 @@ fn triggers_and_sounding_announcements_are_not_answered_body() {
 }
 
 #[test]
+fn the_rate_control_starts_from_the_association_response_and_learns_from_each_frame() {
+    on_large_stack(
+        the_rate_control_starts_from_the_association_response_and_learns_from_each_frame_body,
+    );
+}
+
+fn the_rate_control_starts_from_the_association_response_and_learns_from_each_frame_body() {
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    let mut station = connect(&world, &mut ap, world.station(open()));
+    // -40 dBm over a -96 dBm noise floor.
+    assert_eq!(world.rate_log.borrow().link_metrics, [Some(56)]);
+    assert_eq!(
+        station.send(&ethernet(PEER, IPV4, b"data"), 0),
+        Ok(PortSend::Queued)
+    );
+    let mut delivered = Vec::new();
+    world.run_for(&mut ap, &mut station, 5, &mut delivered);
+    assert_eq!(world.rate_log.borrow().mpdus, [(1, true)]);
+}
+
+#[test]
 fn power_save_dozes_and_wakes_for_buffered_traffic_at_a_tbtt() {
     on_large_stack(power_save_dozes_and_wakes_for_buffered_traffic_at_a_tbtt_body);
 }
@@ -1854,6 +1927,9 @@ fn queued_frames_of_an_agreed_tid_leave_as_one_a_mpdu_body() {
         (counters.aggregates, counters.subframes, counters.mpdus),
         (1, 4, 1)
     );
+    // The rate control saw the aggregate's BlockAck and the voice frame.
+    assert_eq!(world.rate_log.borrow().ampdus, [(4, 4)]);
+    assert_eq!(world.rate_log.borrow().mpdus.last(), Some(&(1, true)));
     assert_eq!(counters.acknowledged, 5);
     // The subframes carry consecutive sequence numbers of TID 0.
     let sequences: Vec<u16> = data[0]

@@ -87,8 +87,19 @@ applies from then on. The nominal HE packet padding is the integrator's
 policy (`PortStationProfile::he_packet_padding`). An HE association carries
 the station's HE power elements (`PortStationProfile::he_power`), from its
 calibrated transmit power; without them the HE Association Request is
-refused. The data rate is still the profile's: the peer's capabilities do
-not yet bound it.
+refused.
+
+The station's data rates are its rate control's (`PortStationEnv::RateControl`,
+an `oer-ieee80211-sta` `StaRateControl`, configured by the value `PortLink::new`
+takes): one controller per association, started from the peer and the link
+metric of the Association Response (its signal over its noise floor, or
+`None` when the port reported either unavailable). It gives the rate of a
+data MPDU and of an A-MPDU, and learns from each one's outcome: attempts,
+acknowledgement and ACK SNR, or the BlockAck's acknowledged subframes.
+`StaFixedRateControl` keeps one rate; the Espressif controller
+(`oer-espressif-ieee80211-policy::rate_control::EspressifRateControl`)
+adapts as the vendor station does, within the association's width, guard
+interval and coding.
 
 A QoS HT or HE association under CCMP negotiates the TX Block Ack
 agreements of `PortStationProfile::tx_block_ack` once connected, through
@@ -103,7 +114,7 @@ recipient ends the agreement.
 eight-frame queue full) and `run_until` sends the queue while the station is
 awake, a dozing station keeping it. A run of one user priority goes as one
 A-MPDU when that TID's agreement is operational, the keys are installed and
-the port aggregates at the data rate (`PortStationEnv::Aggregation`:
+the port aggregates at the rate control's A-MPDU rate (`PortStationEnv::Aggregation`:
 `PortAmpduAggregation` over a port with `LowerMacAmpdu`, `NoAggregation`
 otherwise); the run is bounded by the agreement's window, the port's
 subframes and length, the peer's Maximum A-MPDU Length and the TXOP limit
@@ -130,8 +141,7 @@ The station chooses its mode for each access point with
 HT elements agree on a secondary channel and the port tunes 40 MHz, HT20,
 or legacy for an access point without HT. An HT40 association tunes the
 primary channel with its secondary above or below (`ChannelWidth::Mhz40Above`
-or `Mhz40Below`). The station transmits at the link's data rate; a 40 MHz
-transmission waits for the rate bound by the peer's capabilities.
+or `Mhz40Below`), and its rate control sends at 40 MHz.
 
 A receive reorder window that buffers an MPDU behind a missing one waits
 the profile's `rx_reorder_gap` from the first MPDU it retained (the
@@ -167,8 +177,7 @@ response and beamformee feedback have no verified path on any backend, so
 the port has no extension for them (#153, #154) and a profile advertises
 neither (the S31 station's HE elements clear both).
 
-It does not yet do: a data rate bound
-by the peer's capabilities (and with it 40 MHz transmission), PS-Poll, the hardware beacon receive time
+It does not yet do: PS-Poll, the hardware beacon receive time
 (`PmAction::RxBeaconTime`: the S31 register model leaves the meaning of its
 second value open, so the port has no setting for it until that is
 established), and roaming.

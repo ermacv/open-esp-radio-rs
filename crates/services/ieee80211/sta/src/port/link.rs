@@ -20,7 +20,10 @@ use oer_ieee80211_mac::{
 };
 use oer_ieee80211_rsn::aes::AsyncRsnKeyUnwrap;
 use oer_ieee80211_softmac::BackoffEntropy;
-use oer_ieee80211_sta::modem_sleep::{CoexView, PmCoexAction};
+use oer_ieee80211_sta::{
+    modem_sleep::{CoexView, PmCoexAction},
+    rate_control::StaRateControl,
+};
 use oer_ieee80211_upper_mac::{
     HeTxopRtsBudget, MpduRequest, RateLadder, TxBody, TxPlanner, TxReceiver, TxReport, TxRequest,
 };
@@ -62,6 +65,10 @@ pub trait PortStationEnv {
     /// The coexistence schedule of the radio system the station shares its
     /// RF with; [`NoCoexistence`] when it shares it with none.
     type Coex: PortCoexistence;
+    /// How the station picks its data rates: one controller per
+    /// association (`StaFixedRateControl`, or the Espressif
+    /// `EspressifRateControl` of `oer-espressif-ieee80211-policy`).
+    type RateControl: StaRateControl;
 }
 
 /// The coexistence schedule of the radio system a station shares its RF
@@ -187,8 +194,6 @@ pub struct PortStationConfig {
     pub address: MacAddress,
     /// The first rate of management, EAPOL and Null frames.
     pub management_rate: PhyRate,
-    /// The first rate of data frames.
-    pub data_rate: PhyRate,
     pub power: TxPower,
     pub coex: CoexPriority,
     /// Transmissions one MPDU may make, the first included.
@@ -317,6 +322,7 @@ pub struct PortLink<'p, X: PortStationEnv> {
     entropy: X::Entropy,
     config: PortStationConfig,
     coex: X::Coex,
+    rate: <X::RateControl as StaRateControl>::Config,
     counters: PortLinkCounters,
 }
 
@@ -329,6 +335,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         ladder: X::Ladder,
         entropy: X::Entropy,
         coex: X::Coex,
+        rate: <X::RateControl as StaRateControl>::Config,
         config: PortStationConfig,
     ) -> Self {
         Self {
@@ -338,8 +345,14 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
             entropy,
             config,
             coex,
+            rate,
             counters: PortLinkCounters::default(),
         }
+    }
+
+    /// What every association's rate controller is configured with.
+    pub const fn rate_config(&self) -> <X::RateControl as StaRateControl>::Config {
+        self.rate
     }
 
     /// The coexistence schedule of the station's radio system.

@@ -661,6 +661,7 @@ pub fn addba_response(dialog_token: u8, tid: u8, status: u16, window: u16) -> Ve
 pub fn meta(protected: bool) -> RxMeta {
     let mut meta = RxMeta::unavailable(Channel::ghz2_4(AP_CHANNEL, ChannelWidth::Mhz20).unwrap());
     meta.rssi_dbm = RxEvidence::HardwareObserved(-40);
+    meta.noise_floor_dbm = RxEvidence::HardwareObserved(-96);
     meta.crypto = RxEvidence::HardwareObserved(if protected {
         RxCryptoStatus::DecryptedAndIntegrityVerified
     } else {

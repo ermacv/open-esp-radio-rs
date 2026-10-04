@@ -32,4 +32,5 @@ because they are inseparable from the vendor schedule bytes. The rate
 control holds schedules, not PHY rates: a chip turns a schedule into its own
 rate (the ESP32-S31 MAC's `StaTxRatePolicy`, with its certification
 overrides) and programs its own beamforming report-rate registers, and a
-portable station decodes it through `rate_code`.
+portable station uses it through `EspressifRateControl`, the station's
+`StaRateControl` seam, which decodes its schedules through `rate_code`.

@@ -150,7 +150,15 @@ the MAC's: the manager applies `LowerMacSetting::RxBeaconPriority`, and the
 backend receives beacons at its radio system's beacon-window priority, at
 zero, or withdraws the request.
 
-It does not yet do: beacon-loss monitoring (`link_monitor`), a data rate bound
+The station supervises its link as the S31 station does, in software above
+the port (`oer-ieee80211-sta`'s `StaLinkMonitor`, the profile's
+`PortLinkSupervision`): each beacon and each Probe Response of its access
+point keeps the link; after `timeout` without one (the Espressif 6 s) it
+sends the probes of `STATION_LINK_PROBE`, three addressed to the access
+point and two broadcast, 500 ms apart, and leaves with
+`PortDisconnect::BeaconLoss` after the last goes unanswered.
+
+It does not yet do: a data rate bound
 by the peer's capabilities (and with it 40 MHz transmission), PS-Poll, the hardware beacon receive time
 (`PmAction::RxBeaconTime`: the S31 register model leaves the meaning of its
 second value open, so the port has no setting for it until that is

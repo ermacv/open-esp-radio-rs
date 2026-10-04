@@ -52,7 +52,8 @@ pub use power::PortPowerSave;
 pub use rsn::{PortHandshake, PortKeyInstall, PortKeys};
 pub use scan::{PortProbe, PortScan, PortScanTarget};
 pub use station::{
-    PortAttemptError, PortAttemptPort, PortAttemptReport, PortStation, PortStationApplication,
-    PortStationError, PortStationLifecycle, PortStationProfile, PortTxBlockAck, PortUnwrapError,
+    LinkSupervisionError, PortAttemptError, PortAttemptPort, PortAttemptReport,
+    PortLinkSupervision, PortStation, PortStationApplication, PortStationError,
+    PortStationLifecycle, PortStationProfile, PortTxBlockAck, PortUnwrapError,
 };
 pub use tx_queue::PORT_TX_QUEUE;

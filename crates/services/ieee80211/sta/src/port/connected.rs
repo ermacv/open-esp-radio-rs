@@ -19,8 +19,9 @@ use oer_ieee80211_mac::{
         DataInterfaceRole, ETHERNET_HEADER_LEN, RxDuplicateFilter, decapsulate_data_frames,
         plan_data_encapsulation,
     },
+    management::{BROADCAST_ADDRESS, ProbeRequest},
     management_protection::{SA_QUERY_CATEGORY, SaQuery, is_robust_action_category},
-    qos::WmmUserPriority,
+    qos::{WmmAccessCategory, WmmUserPriority},
     sequence::SequenceNumber,
     station::{
         StaDisconnect, StaDisconnectKind, StaManagementFrame, StaManagementSubtype,
@@ -37,6 +38,7 @@ use oer_ieee80211_rsn::{
 use oer_ieee80211_rsn_service::supplicant::{RsnGroupMessage1Step, process_group_message1};
 use oer_ieee80211_sta::{
     block_ack::{StaTxBlockAckOriginator, StaTxBlockAckResponseDisposition},
+    link_monitor::{StaLinkAction, StaLinkMonitor},
     modem_sleep::{PmBeacon, PmTraffic, SleepType},
     sa_query::{SaQueryStep, StationSaQuery},
 };
@@ -70,6 +72,7 @@ pub const PORT_REORDER_SLOTS: usize = 8;
 pub const PORT_REORDER_WINDOW: usize = 64;
 const TIDS: usize = 8;
 const MANAGEMENT_HEADER_LEN: usize = 24;
+const PROBE_RESPONSE_SUBTYPE: u8 = 5;
 const BEACON_SUBTYPE: u8 = 8;
 const DISASSOCIATION_SUBTYPE: u8 = 10;
 const DEAUTHENTICATION_SUBTYPE: u8 = 12;
@@ -113,6 +116,8 @@ pub enum PortDisconnect {
     Disassociated { reason_code: u16 },
     /// The access point did not answer an SA Query in time.
     SaQueryTimeout,
+    /// Neither beacons nor answers to the station's probes came back.
+    BeaconLoss,
     /// The station left.
     Local,
 }
@@ -200,7 +205,38 @@ pub struct PortConnection<P: LowerMacBeaconTiming> {
     tx_block_ack: Option<StaTxBlockAckOriginator>,
     /// The BIP receive state under the association's IGTK.
     bip: Option<BipReceiver>,
+    /// Beacons keep the link; when they stop the station probes its
+    /// access point before it gives the association up.
+    link: StaLinkMonitor,
+    /// The SSID and rates of the station's Probe Requests.
+    probe: PortLinkProbe,
     counters: PortRxCounters,
+}
+
+/// The SSID and supported rates a connected station's Probe Request
+/// carries.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct PortLinkProbe {
+    ssid: [u8; 32],
+    ssid_len: u8,
+    rates: [u8; 12],
+    rates_len: u8,
+}
+
+impl PortLinkProbe {
+    /// `None` for an SSID or a rate set longer than a Probe Request
+    /// carries.
+    pub(crate) fn new(ssid: &[u8], rates: &[u8]) -> Option<Self> {
+        let mut probe = Self {
+            ssid: [0; 32],
+            ssid_len: u8::try_from(ssid.len()).ok()?,
+            rates: [0; 12],
+            rates_len: u8::try_from(rates.len()).ok()?,
+        };
+        probe.ssid.get_mut(..ssid.len())?.copy_from_slice(ssid);
+        probe.rates.get_mut(..rates.len())?.copy_from_slice(rates);
+        Some(probe)
+    }
 }
 
 /// What one connection operation borrows from its station.
@@ -221,6 +257,8 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
         packet_number: CcmpTxPacketNumber,
         tx_block_ack: Option<StaTxBlockAckOriginator>,
         bip: Option<BipReceiver>,
+        link: StaLinkMonitor,
+        probe: PortLinkProbe,
     ) -> Self {
         let group_replay = keys
             .and_then(|keys| {
@@ -245,8 +283,21 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
             eapol: None,
             tx_block_ack,
             bip,
+            link,
+            probe,
             counters: PortRxCounters::default(),
         }
+    }
+
+    /// Start the beacon window at the association-complete edge.
+    pub(crate) fn arm_link(&mut self, now: Instant) {
+        // A window past the representable time is never reached.
+        let _ = self.link.arm(now);
+    }
+
+    /// The station's supervision of its link.
+    pub const fn link(&self) -> &StaLinkMonitor {
+        &self.link
     }
 
     /// What the transmit queue sent.
@@ -296,6 +347,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
                 .as_ref()
                 .and_then(StaTxBlockAckOriginator::earliest_alarm_deadline),
             self.reorder_gaps.iter().flatten().min().copied(),
+            self.link.deadline(),
         ]
         .into_iter()
         .flatten()
@@ -712,6 +764,15 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
             }
             SaQueryStep::TimedOut => return Ok(Some(PortDisconnect::SaQueryTimeout)),
         }
+        match self.link.due(now) {
+            Some(StaLinkAction::Probe { directed }) => {
+                self.send_link_probe(context, directed).await?;
+                // A window past the representable time is never reached.
+                let _ = self.link.probe_sent(context.timer.now());
+            }
+            Some(StaLinkAction::Lost) => return Ok(Some(PortDisconnect::BeaconLoss)),
+            None => {}
+        }
         let traffic = self.traffic();
         if let Some(power) = &mut self.power {
             power
@@ -827,6 +888,7 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
                 if let Ok(beacon) =
                     parse_sta_beacon(bytes, self.config.bssid, self.config.association_id.get())
                 {
+                    let _ = self.link.observe_beacon(context.timer.now(), beacon);
                     let traffic = self.traffic();
                     if let Some(power) = &mut self.power {
                         power
@@ -837,6 +899,14 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
                             .await?;
                     }
                 }
+                Ok(None)
+            }
+            // The access point answered a probe: the link is reachable.
+            PROBE_RESPONSE_SUBTYPE
+                if wire::address1(bytes) == Some(address)
+                    && wire::address2(bytes) == Some(self.config.bssid) =>
+            {
+                let _ = self.link.observe_probe_response(context.timer.now());
                 Ok(None)
             }
             DISASSOCIATION_SUBTYPE | DEAUTHENTICATION_SUBTYPE => {
@@ -1326,6 +1396,43 @@ impl<P: LowerMacBeaconTiming> PortConnection<P> {
                 }
             }
         }
+    }
+
+    /// A Probe Request to the access point, or broadcast, carrying the
+    /// station's SSID and rates, as the vendor's `send_ap_probe` sends.
+    async fn send_link_probe<X: PortStationEnv<Port = P>>(
+        &mut self,
+        context: &mut ConnectionContext<'_, '_, X>,
+        directed: bool,
+    ) -> Result<(), PortLinkError<PortError<X>>> {
+        let config = *context.link.config();
+        let destination = if directed {
+            self.config.bssid
+        } else {
+            BROADCAST_ADDRESS
+        };
+        let probe = self.probe;
+        let mut frame = [0_u8; 128];
+        let length = ProbeRequest {
+            destination,
+            source: config.address,
+            bssid: destination,
+            sequence_number: context.sequences.take_non_qos(),
+            ssid: &probe.ssid[..usize::from(probe.ssid_len)],
+            supported_rates: &probe.rates[..usize::from(probe.rates_len)],
+        }
+        .encode(&mut frame)
+        .map_err(|_| PortLinkError::MissingState)?;
+        context
+            .link
+            .transmit(
+                &frame[..length],
+                KeySelector::Plaintext,
+                WmmAccessCategory::Voice,
+                config.management_rate,
+            )
+            .await
+            .map(|_| ())
     }
 
     async fn send_sa_query<X: PortStationEnv<Port = P>>(

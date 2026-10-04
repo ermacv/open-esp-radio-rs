@@ -90,6 +90,19 @@ impl Walk<'_> {
         if !self.seen.insert(instance.mangled_name()) {
             return;
         }
+        // A shim calling a function pointer as a closure (`<fn() as
+        // FnMut<()>>::call_mut`) calls its `Self`; rustc gives it no body.
+        if matches!(
+            rustc_internal::internal(self.tcx, instance).def,
+            rustc_middle::ty::InstanceKind::FnPtrShim(..)
+        ) && let Some(GenericArgKind::Type(self_ty)) = instance.args().0.first()
+            && is_fn_pointer(*self_ty)
+        {
+            let key = function_key(&instance.mangled_name());
+            let pointer = fn_pointer_key(&canonical_type(self.tcx, *self_ty));
+            self.call(&key, IndirectCall::FnPointer(pointer));
+            return;
+        }
         // A precompiled crate's own functions carry no MIR.
         if !instance.has_body() {
             return;
@@ -97,6 +110,7 @@ impl Walk<'_> {
         let Some(body) = instance.body() else {
             return;
         };
+
         let mut visitor = BodyVisitor {
             walk: self,
             locals: body.locals().to_vec(),
@@ -182,6 +196,28 @@ struct BodyVisitor<'a, 'tcx> {
 
 impl MirVisitor for BodyVisitor<'_, '_> {
     fn visit_terminator(&mut self, terminator: &Terminator, location: Location) {
+        // A drop runs the place's drop glue: a `dyn`'s through its vtable's
+        // entry 0, any other type's directly.
+        if let TerminatorKind::Drop { place, .. } = &terminator.kind
+            && let Ok(ty) = place.ty(&self.locals)
+        {
+            match principal(ty) {
+                Some(principal) => self.walk.call(
+                    &self.symbol,
+                    IndirectCall::Dyn {
+                        r#trait: canonical_trait(self.walk.tcx, &principal),
+                        entry: 0,
+                    },
+                ),
+                None => {
+                    if let TyKind::RigidTy(RigidTy::Dynamic(..)) = ty.kind() {
+                        self.walk.call(&self.symbol, IndirectCall::Unknown);
+                    } else {
+                        self.walk.queue.push(Instance::resolve_drop_in_place(ty));
+                    }
+                }
+            }
+        }
         if let TerminatorKind::Call { func, .. } = &terminator.kind
             && let Ok(ty) = func.ty(&self.locals)
         {

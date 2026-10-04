@@ -183,3 +183,27 @@ fn a_type_and_a_trait_key_alike_in_every_crate() {
     );
     let _ = std::fs::remove_dir_all(&directory);
 }
+
+/// A drop of a `dyn` value calls its vtable's entry 0, and a function
+/// pointer called as a closure calls through the pointer: both are indirect
+/// calls of their instance.
+#[test]
+fn drop_glue_and_pointer_shims_name_their_indirect_calls() {
+    let tests = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let directory =
+        std::env::temp_dir().join(format!("oer-mir-facts-shims-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    compile(&directory, &tests.join("shims.rs"), &[]);
+    let facts = crate_facts(&directory, "shims");
+    let calls = &facts["calls"];
+    assert_eq!(
+        calls["<fn() -> u32 as core::ops::function::FnMut<()>>::call_mut"][0]["fn_pointer"],
+        "fn() -> u32"
+    );
+    let drop = &calls["core::ptr::drop_glue::<alloc::boxed::Box<dyn shims::Job>>"][0]["dyn"];
+    assert_eq!(drop["trait"], "shims::Job");
+    assert_eq!(drop["entry"], 0);
+    // Dropping a function pointer calls nothing.
+    assert!(calls.get("core::ptr::drop_glue::<fn() -> u32>").is_none());
+    let _ = std::fs::remove_dir_all(&directory);
+}

@@ -30,6 +30,7 @@
 //! executor.
 
 pub mod client;
+pub mod queue;
 pub mod router;
 
 pub use router::{Awaited, EventRouter, Registration, RouterFull};

@@ -138,12 +138,6 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         &self,
         rate: crate::tx::HtRate,
     ) -> Result<HtAmpduLengthAccumulator, HtAmpduTxError> {
-        if !matches!(
-            self.state,
-            crate::tx::TxSlotState::Free | crate::tx::TxSlotState::Reserved
-        ) {
-            return Err(HtAmpduTxError::Stale);
-        }
         let max_bytes = rate
             .vendor_ampdu_byte_limit()
             .map_or(self.max_aggregate_bytes, |limit| {
@@ -151,6 +145,41 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             });
         let max_subframes = u8::try_from(SLOTS)
             .map_err(|_| HtAmpduTxError::Length(HtAmpduLengthError::InvalidLimits))?;
+        self.length_budget(max_subframes, max_bytes)
+    }
+
+    /// The HE counterpart of [`Self::ht_length_budget`]: the aggregate is
+    /// bounded by the configured ceiling, by the A-PSDU the rate carries
+    /// within the policy's TXOP limit, and by the 32 subframes an HE
+    /// aggregate publication holds.
+    pub fn he_length_budget(
+        &self,
+        policy: super::HeAmpduPolicy,
+    ) -> Result<HtAmpduLengthAccumulator, HtAmpduTxError> {
+        let apep = policy
+            .rate()
+            .checked_maximum_apep_bytes(policy.txop_limit())
+            .ok_or(HtAmpduTxError::Length(HtAmpduLengthError::InvalidLimits))?;
+        let max_bytes = u16::try_from(apep)
+            .unwrap_or(u16::MAX)
+            .min(self.max_aggregate_bytes);
+        let max_subframes = u8::try_from(SLOTS)
+            .map_err(|_| HtAmpduTxError::Length(HtAmpduLengthError::InvalidLimits))?
+            .min(32);
+        self.length_budget(max_subframes, max_bytes)
+    }
+
+    fn length_budget(
+        &self,
+        max_subframes: u8,
+        max_bytes: u16,
+    ) -> Result<HtAmpduLengthAccumulator, HtAmpduTxError> {
+        if !matches!(
+            self.state,
+            crate::tx::TxSlotState::Free | crate::tx::TxSlotState::Reserved
+        ) {
+            return Err(HtAmpduTxError::Stale);
+        }
         let mut budget = HtAmpduLengthAccumulator::new(max_subframes, max_bytes)
             .map_err(HtAmpduTxError::Length)?;
         if self.count != 0 {

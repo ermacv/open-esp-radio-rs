@@ -217,6 +217,7 @@ struct State {
     /// The EDCA parameter set last applied, if any.
     edca: Option<oer_ieee80211_mac::extensions::wmm::WmmParameterSet>,
     rx_beacon_priority: Option<crate::RxBeaconPriority>,
+    he_bss_color: Option<(VifId, u8)>,
     gate_closed: bool,
     monitor: bool,
     in_flight: Vec<InFlight>,
@@ -476,6 +477,11 @@ impl LowerMacModel {
         self.state.borrow().rx_beacon_priority
     }
 
+    /// The last HE BSS color applied, with its interface.
+    pub fn he_bss_color(&self) -> Option<(VifId, u8)> {
+        self.state.borrow().he_bss_color
+    }
+
     /// Whether monitor reception runs.
     pub fn monitoring(&self) -> bool {
         self.state.borrow().monitor
@@ -733,6 +739,13 @@ impl Ieee80211LowerMacPort for LowerMacModel {
             }
             LowerMacSetting::RxBeaconPriority(priority) => {
                 state.rx_beacon_priority = Some(priority);
+                Ok(())
+            }
+            LowerMacSetting::HeBssColor { color, .. } if color > 63 => {
+                Err(SettingError::Unsupported)
+            }
+            LowerMacSetting::HeBssColor { vif, color } => {
+                state.he_bss_color = Some((vif, color));
                 Ok(())
             }
             LowerMacSetting::TxGate { open } => {

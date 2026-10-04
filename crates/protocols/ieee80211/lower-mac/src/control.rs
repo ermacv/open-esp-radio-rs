@@ -260,6 +260,12 @@ pub enum LowerMacSetting {
     /// The coexistence priority the hardware receives the access point's
     /// beacons with.
     RxBeaconPriority(RxBeaconPriority),
+    /// The BSS color of an interface's HE BSS (0-63), which its HE PPDUs
+    /// carry. An association sets it from the access point's HE Operation
+    /// and again whenever the BSS changes its color; a value above 63 is
+    /// `SettingError::Unsupported`. A backend without HE accepts it as a
+    /// no-op.
+    HeBssColor { vif: VifId, color: u8 },
 }
 
 /// The coexistence priority beacon reception requests from the radio

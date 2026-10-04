@@ -603,6 +603,18 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             .planner_mut()
             .protection_mut()
             .install_bss(peer.protection);
+        // An HE association's PPDUs carry the BSS color of its HE Operation.
+        if peer.phy == PhyMode::He20 {
+            let vif = self.link.config().vif;
+            self.link
+                .apply(oer_ieee80211_lower_mac::LowerMacSetting::HeBssColor {
+                    vif,
+                    color: peer.he_bss_color,
+                })
+                .map_err(|error| {
+                    StaAttemptStepError::retry_current(PortStationError::Link(error))
+                })?;
+        }
         self.peer = Some(peer);
         self.link
             .configure(Some(bssid), ReceiveFilter::BSS_MEMBER)

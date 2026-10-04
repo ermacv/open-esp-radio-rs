@@ -180,6 +180,25 @@ fn verified(path: &Path, expected: &str) -> Result<bool> {
     Ok(path.is_file() && sha256(path)? == expected)
 }
 
+/// A local build's state against its pin.
+#[derive(Debug, PartialEq, Eq)]
+enum LocalBuild {
+    Pinned,
+    /// Not built on this host: optional, not an error.
+    Absent,
+    Differs,
+}
+
+fn local_build(path: &Path, expected: &str) -> Result<LocalBuild> {
+    Ok(if !path.is_file() {
+        LocalBuild::Absent
+    } else if verified(path, expected)? {
+        LocalBuild::Pinned
+    } else {
+        LocalBuild::Differs
+    })
+}
+
 /// `https://github.com/<owner>/<repo>` as `<owner>/<repo>`.
 fn github(repository: &str) -> Result<&str> {
     repository
@@ -441,14 +460,20 @@ pub fn run(ctx: &Context, chip: &str) -> Result<()> {
             .expect("parsed sources");
         let result = if source.kind == Kind::Local {
             let path = ctx.root.join(&artifact.path);
-            if verified(&path, &artifact.sha256)? {
-                Ok(path)
-            } else {
-                Err(format!(
-                    "local build {} is missing or differs from the pin",
-                    path.display()
-                )
-                .into())
+            match local_build(&path, &artifact.sha256)? {
+                LocalBuild::Pinned => Ok(path),
+                // Local builds are optional: a host without one skips it.
+                LocalBuild::Absent => {
+                    println!(
+                        "{:<16} skipped: local build {} absent",
+                        artifact.id,
+                        path.display()
+                    );
+                    continue;
+                }
+                LocalBuild::Differs => {
+                    Err(format!("local build {} differs from the pin", path.display()).into())
+                }
             }
         } else {
             fetch(&ctx.root, source, artifact)
@@ -471,6 +496,18 @@ pub fn run(ctx: &Context, chip: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_absent_local_build_is_optional_and_a_changed_one_fails() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("sdk.elf");
+        let pin = "0".repeat(64);
+        assert_eq!(local_build(&path, &pin).unwrap(), LocalBuild::Absent);
+        std::fs::write(&path, b"built").unwrap();
+        assert_eq!(local_build(&path, &pin).unwrap(), LocalBuild::Differs);
+        let actual = sha256(&path).unwrap();
+        assert_eq!(local_build(&path, &actual).unwrap(), LocalBuild::Pinned);
+    }
 
     #[test]
     fn tracked_manifests_parse_with_complete_sources() {

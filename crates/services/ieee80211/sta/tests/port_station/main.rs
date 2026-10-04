@@ -21,7 +21,7 @@ use std::{
 
 use oer_ieee80211_lower_mac::{
     Channel, ChannelWidth, CoexPriority, Ieee80211LowerMacPort, KeySelector, LifecycleCommand,
-    LowerMacSetting, ReceiveFilter, TxPower, VifId,
+    LowerMacSetting, ReceiveFilter, RxBeaconPriority, TxPower, VifId,
     model::{LowerMacModel, ModelOutcome},
 };
 use oer_ieee80211_mac::{
@@ -838,6 +838,11 @@ fn the_power_manager_asks_the_radio_system_for_the_beacon_window_body() {
             PmCoexAction::SetInterval(1024),
             PmCoexAction::SetFlexiblePeriod(1),
         ]
+    );
+    // Beacon reception asks for the air at the beacon-window priority.
+    assert_eq!(
+        world.model.rx_beacon_priority(),
+        Some(RxBeaconPriority::BeaconWindow)
     );
 
     // At each TBTT the station restarts the schedule and requests the air

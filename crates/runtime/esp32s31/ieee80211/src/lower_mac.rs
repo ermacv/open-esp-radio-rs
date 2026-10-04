@@ -70,6 +70,20 @@ use oer_esp32s31_ieee80211::{
     tx::WifiTxWake,
 };
 use oer_esp32s31_ieee80211_mac::rx::NormalizedRxFrame;
+
+/// The radio system's beacon-window priority, as its last released guard
+/// left it: the source a core receives beacons at when the station asks
+/// ([`LowerMacCore::new`]).
+#[cfg(target_arch = "riscv32")]
+pub struct RadioBeaconWindow<'a>(pub &'a oer_esp32s31_radio_runtime::WifiCoexViewCell);
+
+#[cfg(target_arch = "riscv32")]
+impl oer_esp32s31_ieee80211::lower_mac::BeaconWindowPriority for RadioBeaconWindow<'_> {
+    fn beacon_window_pti(&self) -> oer_esp32s31_hal::types::MacPti {
+        oer_esp32s31_hal::types::MacPti::new(u32::from(self.0.get().beacon_pti.value()))
+            .expect("coexistence priorities are four-bit values")
+    }
+}
 use oer_ieee80211_lower_mac::{
     AmpduCapabilities, BeaconTimingCapabilities, CancelError, ClockInfo, EventsLost, FailureClass,
     Ieee80211LowerMacPort, Ieee80211Stamp, KeyHandle, KeyInstall, LifecycleCommand, LifecycleError,

@@ -216,6 +216,7 @@ struct State {
     rx_block_ack: Vec<RxBlockAckAgreement>,
     /// The EDCA parameter set last applied, if any.
     edca: Option<oer_ieee80211_mac::extensions::wmm::WmmParameterSet>,
+    rx_beacon_priority: Option<crate::RxBeaconPriority>,
     gate_closed: bool,
     monitor: bool,
     in_flight: Vec<InFlight>,
@@ -468,6 +469,11 @@ impl LowerMacModel {
     /// The EDCA parameter set last applied; `None` keeps the defaults.
     pub fn edca(&self) -> Option<oer_ieee80211_mac::extensions::wmm::WmmParameterSet> {
         self.state.borrow().edca
+    }
+
+    /// The last beacon receive priority applied.
+    pub fn rx_beacon_priority(&self) -> Option<crate::RxBeaconPriority> {
+        self.state.borrow().rx_beacon_priority
     }
 
     /// Whether monitor reception runs.
@@ -724,6 +730,10 @@ impl Ieee80211LowerMacPort for LowerMacModel {
                 } else {
                     Err(SettingError::Unsupported)
                 }
+            }
+            LowerMacSetting::RxBeaconPriority(priority) => {
+                state.rx_beacon_priority = Some(priority);
+                Ok(())
             }
             LowerMacSetting::TxGate { open } => {
                 state.gate_closed = !open;

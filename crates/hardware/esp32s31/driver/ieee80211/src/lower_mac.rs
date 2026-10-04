@@ -76,7 +76,7 @@ use core::pin::Pin;
 
 use oer_time::Clock;
 
-use oer_esp32s31_hal::types::StaTbttSchedule;
+use oer_esp32s31_hal::types::{MacPti, StaTbttSchedule};
 use oer_ieee80211_lower_mac::TsfGeneration;
 use oer_ieee80211_mac::tsf::TsfInstant;
 
@@ -108,10 +108,10 @@ use oer_ieee80211_lower_mac::{
     CancelError, Channel, Cipher, CoexPriority, CoexPrioritySet, FailureClass, KeyHandle,
     KeyInstall, KeyScope, KeySelector, LifecycleCommand, LifecycleError, LifecycleEvent,
     LowerMacCapabilities, LowerMacSetting, MacAddress, MonitorCapabilities, MpduAttempt,
-    PhyFormatSet, PhyRate, Protection, RateSupport, ReceiveFilter, Refused, RxBlockAckAgreement,
-    RxMeta, SettingError, SubmitError, TbttEvent, TbttSchedule, TxBuffer, TxCompletion, TxFault,
-    TxId, TxPayload, TxPower, TxResponse, TxStatus, VifConfig, VifId, VifRole, VifRoleSet, VifTsf,
-    WidthSet,
+    PhyFormatSet, PhyRate, Protection, RateSupport, ReceiveFilter, Refused, RxBeaconPriority,
+    RxBlockAckAgreement, RxMeta, SettingError, SubmitError, TbttEvent, TbttSchedule, TxBuffer,
+    TxCompletion, TxFault, TxId, TxPayload, TxPower, TxResponse, TxStatus, VifConfig, VifId,
+    VifRole, VifRoleSet, VifTsf, WidthSet,
 };
 use oer_ieee80211_mac::{
     channel::{Band, WifiChannel},
@@ -254,6 +254,21 @@ pub trait TxGateHardware {
     fn set_power_save_tx_block(&mut self, blocked: bool);
 }
 
+/// The beacon receive priority registers (`hal_set_rx_beacon_pti`,
+/// `hal_clear_rx_beacon_pti`).
+pub trait RxBeaconPriorityHardware {
+    /// Receive beacons at `pti`, the beacon and the shared priority alike.
+    fn set_rx_beacon_pti(&mut self, pti: MacPti);
+    /// Withdraw the beacon receive priority request.
+    fn clear_rx_beacon_pti(&mut self);
+}
+
+/// The radio system's coexistence priority of its beacon-window event
+/// (`coex_pti_get(0)`), which beacon reception asks for the air with.
+pub trait BeaconWindowPriority {
+    fn beacon_window_pti(&self) -> MacPti;
+}
+
 /// Every register seam the core drives; [`HtAmpduHardware`] includes the
 /// ordinary queues' `TxHardware`.
 pub trait LowerMacHardware:
@@ -269,6 +284,7 @@ pub trait LowerMacHardware:
     + StationTsfHardware
     + StationTbttHardware
     + TxGateHardware
+    + RxBeaconPriorityHardware
 {
 }
 
@@ -285,6 +301,7 @@ impl<H> LowerMacHardware for H where
         + StationTsfHardware
         + StationTbttHardware
         + TxGateHardware
+        + RxBeaconPriorityHardware
 {
 }
 
@@ -524,6 +541,9 @@ pub struct LowerMacCore<
     /// The attempt of each ordinary queue, by its hardware index
     /// ([`LegacyTxQueue::hardware_index`]).
     queues: [Option<Attempt<'slot, S, BUFFER_SIZE, AMPDU_SLOTS>>; LOWER_MAC_TX_QUEUES],
+    /// The radio system's beacon-window priority, which beacon reception
+    /// asks for the air with.
+    beacon_window: &'slot dyn BeaconWindowPriority,
 }
 
 impl<'slot, P, E, T, const BUFFER_SIZE: usize, const TX_BUFFERS: usize>
@@ -535,12 +555,15 @@ where
 {
     /// A disabled core without aggregates over an idle ordinary TX owner
     /// and the idle slots it lends as transmit buffers.
+    /// `beacon_window` is the radio system the core shares its RF with:
+    /// beacon reception asks for the air at its beacon-window priority.
     pub fn new(
         tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
         spare: [Pin<&'slot mut TxSlot<BUFFER_SIZE>>; TX_BUFFERS],
         config: LowerMacConfig,
+        beacon_window: &'slot dyn BeaconWindowPriority,
     ) -> Self {
-        Self::build(tx, spare, [], None, config)
+        Self::build(tx, spare, [], None, config, beacon_window)
     }
 }
 
@@ -567,6 +590,7 @@ where
         ampdu: [Esp32s31AmpduOwner<'slot, S::Backing, AMPDU_SLOTS>; AMPDU_BUFFERS],
         ampdu_source: Option<&'slot S>,
         config: LowerMacConfig,
+        beacon_window: &'slot dyn BeaconWindowPriority,
     ) -> Self {
         Self {
             tx,
@@ -589,6 +613,7 @@ where
                 config.tsf_epoch,
             ),
             queues: [const { None }; LOWER_MAC_TX_QUEUES],
+            beacon_window,
         }
     }
 
@@ -1213,7 +1238,29 @@ where
                 .policy_mut()
                 .install_wmm(parameters)
                 .map_err(|_| SettingError::Unsupported)),
+            LowerMacSetting::RxBeaconPriority(priority) => {
+                Ok(self.set_rx_beacon_priority(hardware, priority))
+            }
         }
+    }
+
+    // SOURCE(esp32s31): complete pinned `libpp.a[pm_coex.o]::pm_coex_update_rx_beacon_pti`
+    // passes `coex_pti_get(0)`, or zero, as both arguments of
+    // `hal_set_rx_beacon_pti`.
+    fn set_rx_beacon_priority<H: RxBeaconPriorityHardware>(
+        &mut self,
+        hardware: &mut H,
+        priority: RxBeaconPriority,
+    ) -> Result<(), SettingError> {
+        match priority {
+            RxBeaconPriority::BeaconWindow => {
+                hardware.set_rx_beacon_pti(self.beacon_window.beacon_window_pti());
+            }
+            RxBeaconPriority::Zero => hardware
+                .set_rx_beacon_pti(MacPti::new(0).expect("priority zero is a valid MAC priority")),
+            RxBeaconPriority::Cleared => hardware.clear_rx_beacon_pti(),
+        }
+        Ok(())
     }
 
     fn set_channel(&mut self, channel: Channel) -> Result<(), SettingError> {
@@ -1715,15 +1762,16 @@ where
     S: AmpduBackingSource,
 {
     /// A disabled core that also lends `ampdu` idle aggregate owners, whose
-    /// subframes `source` backs.
+    /// subframes `source` backs. `beacon_window` is as for [`Self::new`].
     pub fn with_ampdu(
         tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
         spare: [Pin<&'slot mut TxSlot<BUFFER_SIZE>>; TX_BUFFERS],
         ampdu: [Esp32s31AmpduOwner<'slot, S::Backing, AMPDU_SLOTS>; AMPDU_BUFFERS],
         source: &'slot S,
         config: LowerMacConfig,
+        beacon_window: &'slot dyn BeaconWindowPriority,
     ) -> Self {
-        Self::build(tx, spare, ampdu, Some(source), config)
+        Self::build(tx, spare, ampdu, Some(source), config, beacon_window)
     }
 
     /// Lend an idle aggregate owner; `None` without aggregate owners or

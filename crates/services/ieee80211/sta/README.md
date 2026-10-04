@@ -134,11 +134,16 @@ as `PortStationEnv::Coex` (`PortCoexistence`; `NoCoexistence` for a station
 alone on its RF). The power manager decides every input with its `view()`
 and hands it every `PmCoexAction`: event requests and releases, the schedule
 interval, phase restarts and the flexible period. A refused effect ends the
-operation with `PortLinkError::Coexistence`.
+operation with `PortLinkError::Coexistence`. The beacon receive priority is
+the MAC's: the manager applies `LowerMacSetting::RxBeaconPriority`, and the
+backend receives beacons at its radio system's beacon-window priority, at
+zero, or withdraws the request.
 
 It does not yet do: beacon-loss monitoring (`link_monitor`), a data rate bound
-by the peer's capabilities, PS-Poll, the beacon receive priority of
-coexistence, 40 MHz channels and roaming.
+by the peer's capabilities, PS-Poll, the hardware beacon receive time
+(`PmAction::RxBeaconTime`: the S31 register model leaves the meaning of its
+second value open, so the port has no setting for it until that is
+established), 40 MHz channels and roaming.
 
 Its tests (`tests/port_station`) run it over `oer-ieee80211-lower-mac`'s host
 model with a scripted access point on virtual time: an active scan, an Open

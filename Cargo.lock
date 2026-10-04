@@ -2579,11 +2579,11 @@ dependencies = [
  "object 0.39.1",
  "oer-chip-profile",
  "oer-esp32s31-platform-layout",
- "oer-memory-report",
  "oer-process",
  "oer-riscv-model",
  "oer-riscv-stack",
  "rustc-demangle",
+ "serde",
  "serialport",
  "sha2 0.10.9",
  "tempfile",
@@ -3168,7 +3168,6 @@ dependencies = [
  "oer-hil-evidence",
  "oer-hil-image-class",
  "oer-hil-source-snapshot",
- "oer-memory-report",
  "oer-process",
  "serde",
  "serde_json",
@@ -3662,7 +3661,6 @@ dependencies = [
 name = "oer-memory-report"
 version = "0.1.0"
 dependencies = [
- "addr2line",
  "clap",
  "object 0.39.1",
  "oer-command-tree",
@@ -3969,7 +3967,6 @@ dependencies = [
  "oer-hil-source-snapshot",
  "oer-hil-stand",
  "oer-hil-stand-schema",
- "oer-memory-report",
  "oer-probe-codegen",
  "oer-process",
  "oer-register-model",

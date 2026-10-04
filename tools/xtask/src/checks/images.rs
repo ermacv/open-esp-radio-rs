@@ -152,13 +152,14 @@ fn validate_final_image_report(
             return Err(format!("HIL report {field} must identify {expected}").into());
         }
     }
-    if report.get("schema").and_then(serde_json::Value::as_u64) != Some(2)
+    if report.get("schema").and_then(serde_json::Value::as_u64) != Some(3)
         || report.get("flashed").and_then(serde_json::Value::as_bool) != Some(false)
     {
         return Err("HIL build report has invalid schema or flashed state".into());
     }
     for field in [
-        "stack_frame_audit",
+        "interrupt_stack_audit",
+        "task_stack_audit",
         "move_size_audit",
         "placement_audit",
         "application_audit",

@@ -12,7 +12,7 @@ radio role, executor or network-stack dependency.
 | `layout` | Address map, the stage-two placement and the stage-two header/checksum shared with the host packer and auditor |
 | `linker` | Semantic code, data, DMA and stack sections over the `layout` symbols |
 | `partitions` | Application partition layout |
-| `stack.toml` | Frame budgets for standalone application composition |
+| `stack.toml` | Stack policy: each stack's root function, storage and reserve, the move limit and the frame-coverage review (`stack-coverage.toml`); HIL extends it |
 
 The runtime owns every image's `#[panic_handler]`. It writes a bounded record
 of the panic to `.rtc_fast.persistent` without formatting (the end of the
@@ -174,9 +174,12 @@ remain stand file. Each successful invocation retains a separate bundle
 under `target/firmware/esp32s31-<example>/<network-or-none>/build-<id>/`:
 `application.bin`, ROM `bootloader.bin`, partition/OTA images, packed runtime,
 `runtime.elf`, `bootstrap.elf`, both resolved lockfiles and
-placement/stack reports. The build rejects invalid placement and oversized
-frames before flash. Frame budgets and boundary watchpoints do not prove the
-maximum aggregate depth of every possible call chain.
+placement/stack reports. The build rejects invalid placement and a stack whose
+root's call-chain bound does not fit its storage less its reserve before flash.
+A task stack's bound may be partial (the executor's task polls are indirect
+calls the analysis does not resolve); its report names every unresolved site,
+and runtime stack painting and boundary watchpoints check the exercised
+chains.
 
 The host [firmware library](../../tools/firmware/README.md) supplies packing and
 structural checks to `xtask` and HIL. HIL retains its image classification,

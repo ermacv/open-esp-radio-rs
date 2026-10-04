@@ -14,12 +14,12 @@ image = [
     "dep:fs2",
     "dep:oer-chip-profile",
     "dep:oer-esp32s31-platform-layout",
-    "dep:oer-memory-report",
     "dep:oer-process",
     "dep:oer-riscv-model",
     "dep:oer-riscv-stack",
     "dep:object",
     "dep:rustc-demangle",
+    "dep:serde",
     "dep:sha2",
 ]
 
@@ -33,12 +33,12 @@ serialport = { version = "4.8.1", default-features = false, optional = true }
 sha2 = { version = "0.10", optional = true }
 oer-chip-profile = { path = "../chip-profile", optional = true }
 oer-esp32s31-platform-layout = { path = "../../platform/esp32s31/layout", optional = true }
-oer-memory-report = { path = "../memory-report", optional = true }
 oer-process = { path = "../process", optional = true }
 oer-riscv-model = { path = "../riscv/model", optional = true }
 oer-riscv-stack = { path = "../riscv/stack", optional = true }
 object = { version = "=0.39.1", default-features = false, features = ["elf", "read", "std"], optional = true }
 rustc-demangle = { version = "=0.1.28", optional = true }
+serde = { version = "=1.0.229", features = ["derive"], optional = true }
 
 [lints]
 workspace = true

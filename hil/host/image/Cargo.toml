@@ -17,7 +17,6 @@ oer-hil-durable = { path = "../durable" }
 oer-hil-evidence = { path = "../evidence" }
 oer-hil-image-class = { path = "../image-class" }
 oer-hil-source-snapshot = { path = "../source-snapshot" }
-oer-memory-report = { path = "../../../tools/memory-report" }
 oer-process = { path = "../../../tools/process" }
 fs2 = "0.4"
 object = { version = "=0.39.1", default-features = false, features = ["elf", "read", "std"] }

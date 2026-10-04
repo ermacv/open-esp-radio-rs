@@ -146,8 +146,8 @@ pub fn configuration(
 }
 
 /// The sources of the code that builds, packs and audits every image: this
-/// package, the image classifier, the source snapshot, the firmware packer
-/// and the memory auditor, without their tests and prose.
+/// package, the image classifier, the source snapshot and the firmware
+/// packer and stack gate, without their tests and prose.
 fn builder(repository: &Path) -> Result<BTreeSet<PathBuf>> {
     let mut files = BTreeSet::new();
     let mut pending = Vec::new();
@@ -156,7 +156,6 @@ fn builder(repository: &Path) -> Result<BTreeSet<PathBuf>> {
         oer_hil_image_class::REPOSITORY_DIRECTORY,
         oer_hil_source_snapshot::REPOSITORY_DIRECTORY,
         oer_esp32s31_firmware::REPOSITORY_DIRECTORY,
-        oer_memory_report::REPOSITORY_DIRECTORY,
     ] {
         let package = Path::new(package);
         for name in ["Cargo.toml", "build.rs"] {
@@ -306,8 +305,6 @@ mod tests {
             ("tools/firmware/src/lib.rs", ""),
             ("tools/firmware/src/flash/tests.rs", ""),
             ("tools/firmware/README.md", ""),
-            ("tools/memory-report/Cargo.toml", ""),
-            ("tools/memory-report/src/lib.rs", ""),
         ] {
             write_file(&root.join(path), content);
         }
@@ -333,8 +330,6 @@ mod tests {
             "rust-toolchain.toml",
             "tools/firmware/Cargo.toml",
             "tools/firmware/src/lib.rs",
-            "tools/memory-report/Cargo.toml",
-            "tools/memory-report/src/lib.rs",
         ];
         assert_eq!(
             files,

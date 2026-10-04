@@ -37,7 +37,10 @@ use oer_esp32s31_firmware::network::NETWORK_FEATURE;
 use oer_esp32s31_firmware::{BOOTSTRAP_BIN, audit_application_image, pack_runtime};
 
 /// Version of the `image build`/`image flash` artifact report on stdout.
-const ARTIFACT_REPORT_SCHEMA: u16 = 2;
+const ARTIFACT_REPORT_SCHEMA: u16 = 3;
+
+/// The HIL images' stack policy, which extends the platform's.
+const STACK_POLICY: &str = "hil/targets/esp32s31/stack.toml";
 
 #[derive(Serialize)]
 pub struct ArtifactReport<'a> {
@@ -65,7 +68,7 @@ pub struct ArtifactReport<'a> {
     application_image: String,
     application_sha256: String,
     interrupt_stack_audit: &'a str,
-    stack_frame_audit: &'a str,
+    task_stack_audit: &'a str,
     move_size_audit: &'a str,
     placement_audit: &'a str,
     application_audit: &'a str,
@@ -95,7 +98,7 @@ pub fn artifact_report(
         runtime_bin: staged.map(|(runtime_bin, ..)| runtime_bin.display().to_string()),
         runtime_stack_report: artifacts
             .output
-            .join("runtime-stack.txt")
+            .join(oer_esp32s31_firmware::stack::RUNTIME_REPORT)
             .display()
             .to_string(),
         placement_report: artifacts.output.join("placement.txt").display().to_string(),
@@ -103,7 +106,7 @@ pub fn artifact_report(
         bootstrap_stack_report: staged.map(|_| {
             artifacts
                 .output
-                .join("bootstrap-stack.txt")
+                .join(oer_esp32s31_firmware::stack::BOOTSTRAP_REPORT)
                 .display()
                 .to_string()
         }),
@@ -114,7 +117,7 @@ pub fn artifact_report(
         application_image: artifacts.application_image.display().to_string(),
         application_sha256: sha256_file(&artifacts.application_image)?,
         interrupt_stack_audit: "PASS",
-        stack_frame_audit: "PASS",
+        task_stack_audit: "PASS",
         move_size_audit: "PASS",
         placement_audit: "PASS",
         application_audit: "PASS",
@@ -309,14 +312,17 @@ pub fn check(root: &Path, class: oer_hil_image_class::ImageClass) -> Result<()> 
         &root.join("hil/targets/esp32s31"),
         &cache.join("check-lock"),
     )?;
-    let stack_budget =
-        oer_memory_report::StackBudget::load(&root.join("hil/targets/esp32s31/stack.toml"))?;
+    let stack_policy = oer_esp32s31_firmware::stack::StackPolicy::load(&root.join(STACK_POLICY))?;
     let mut command = runtime_command(root, "check", class, &target);
     command
         .arg("--release")
         .env("CARGO_TARGET_DIR", cache.join("runtime"));
     lock.configure(&mut command);
-    crate::stack::configure_image_compiler(&mut command, &stack_budget, &target)?;
+    oer_esp32s31_firmware::compiler::configure_image_compiler(
+        &mut command,
+        &stack_policy,
+        &target,
+    )?;
     ensure_fetched(
         root,
         &root.join("hil/targets/esp32s31/Cargo.toml"),
@@ -593,8 +599,7 @@ fn build_resolved(
     let application_image = output.join("application.bin");
 
     let runtime_features = features.apply(&class.build_features(NETWORK_FEATURE));
-    let stack_policy_path = root.join("hil/targets/esp32s31/stack.toml");
-    let stack_budget = oer_memory_report::StackBudget::load(&stack_policy_path)?;
+    let stack_policy = oer_esp32s31_firmware::stack::StackPolicy::load(&root.join(STACK_POLICY))?;
     let mut runtime = cargo_command();
     runtime
         .current_dir(root)
@@ -617,7 +622,11 @@ fn build_resolved(
     add_local_esp_hal_patches(&mut runtime, local_esp_hal);
     add_local_embassy_patches(&mut runtime, local_embassy);
     add_local_xarxa_patches(&mut runtime, local_xarxa);
-    crate::stack::configure_image_compiler(&mut runtime, &stack_budget, &target)?;
+    oer_esp32s31_firmware::compiler::configure_image_compiler(
+        &mut runtime,
+        &stack_policy,
+        &target,
+    )?;
     if !overridden {
         ensure_fetched(root, &manifest, |command| runtime_lock.configure(command))?;
     }
@@ -632,13 +641,6 @@ fn build_resolved(
         runtime_lock.validate()?;
     }
 
-    // Interrupt contexts first: their bound comes from the whole image.
-    let interrupt_stacks =
-        oer_esp32s31_firmware::interrupt_stack::interrupt_stacks(root, &runtime_elf)
-            .map_err(|error| log.failed("interrupt-stack bound", error))?;
-    let interrupt_stack_path = output.join("interrupt-stack.txt");
-    fs::write(&interrupt_stack_path, interrupt_stacks.render())?;
-    eprintln!("interrupt_stack_report={}", interrupt_stack_path.display());
     // A diagnostic image's observers are not the product's: its interrupt
     // stacks may be `partial + ?`, with their holes named.
     let required = if class.diagnostic() {
@@ -646,22 +648,29 @@ fn build_resolved(
     } else {
         oer_esp32s31_firmware::interrupt_stack::Required::Proven
     };
-    for warning in interrupt_stacks
-        .check(required)
-        .map_err(|error| log.failed("interrupt-stack gate", error))?
-    {
+    let stacks = oer_esp32s31_firmware::stack::audit_runtime_stacks(
+        root,
+        &runtime_elf,
+        &stack_policy,
+        required,
+        &output,
+    );
+    eprintln!(
+        "interrupt_stack_report={}",
+        output
+            .join(oer_esp32s31_firmware::stack::INTERRUPT_REPORT)
+            .display()
+    );
+    eprintln!(
+        "stack_report={}",
+        output
+            .join(oer_esp32s31_firmware::stack::RUNTIME_REPORT)
+            .display()
+    );
+    let stacks = stacks.map_err(|error| log.failed("runtime stack gate", error))?;
+    for warning in &stacks.warnings {
         eprintln!("warning: {warning}");
     }
-
-    let stack_report = crate::stack::analyze_elf_stack(&runtime_elf, &stack_budget)?;
-    let stack_report_path = output.join("runtime-stack.txt");
-    fs::write(
-        &stack_report_path,
-        oer_memory_report::render_stack_report(&stack_report),
-    )?;
-    eprintln!("stack_report={}", stack_report_path.display());
-    oer_memory_report::audit_stack(&stack_report)
-        .map_err(|error| log.failed("runtime stack audit", error.into()))?;
 
     let mut objcopy = Command::new(program_from_env("LLVM_OBJCOPY", "llvm-objcopy"));
     objcopy
@@ -694,7 +703,11 @@ fn build_resolved(
     }
     bootstrap_lock.configure(&mut bootstrap);
     add_bootstrap_patches(&mut bootstrap, local_esp_hal);
-    crate::stack::configure_image_compiler(&mut bootstrap, &stack_budget, &target)?;
+    oer_esp32s31_firmware::compiler::configure_image_compiler(
+        &mut bootstrap,
+        &stack_policy,
+        &target,
+    )?;
     if local_esp_hal.is_none() {
         ensure_fetched(
             root,
@@ -705,18 +718,21 @@ fn build_resolved(
     log.run(&mut bootstrap, "build Flash/SRAM bootstrap")?;
     require_file(&compiled_bootstrap_elf, "bootstrap ELF")?;
     fs::copy(&compiled_bootstrap_elf, &bootstrap_elf)?;
-    let bootstrap_stack_report = crate::stack::analyze_elf_stack(&bootstrap_elf, &stack_budget)?;
-    let bootstrap_stack_report_path = output.join("bootstrap-stack.txt");
-    fs::write(
-        &bootstrap_stack_report_path,
-        oer_memory_report::render_stack_report(&bootstrap_stack_report),
-    )?;
+    let bootstrap_stack = oer_esp32s31_firmware::stack::audit_bootstrap_stack(
+        root,
+        &bootstrap_elf,
+        &stack_policy,
+        &output,
+    );
     eprintln!(
         "bootstrap_stack_report={}",
-        bootstrap_stack_report_path.display()
+        output
+            .join(oer_esp32s31_firmware::stack::BOOTSTRAP_REPORT)
+            .display()
     );
-    oer_memory_report::audit_stack(&bootstrap_stack_report)
-        .map_err(|error| log.failed("bootstrap stack audit", error.into()))?;
+    for warning in bootstrap_stack.map_err(|error| log.failed("bootstrap stack gate", error))? {
+        eprintln!("warning: {warning}");
+    }
 
     let mut save_image = Command::new(program_from_env("ESPFLASH", "espflash"));
     oer_esp32s31_firmware::save_image_command(
@@ -748,8 +764,8 @@ fn build_resolved(
             Path::new("platform/esp32s31"),
         ],
         &[
-            Path::new("hil/targets/esp32s31/stack.toml"),
-            // The interrupt-stack gate's ROM pin and summaries.
+            Path::new(STACK_POLICY),
+            // The stack gate's ROM pin and summaries.
             Path::new("verification/esp32s31/artifacts.toml"),
             Path::new("platform/esp32s31/linker/rom/functions.toml"),
             Path::new(oer_esp32s31_firmware::PARTITION_TABLE),
@@ -761,7 +777,7 @@ fn build_resolved(
     eprintln!("runtime_crc32={crc:08x}");
     eprintln!("placement_audit=PASS");
     eprintln!("interrupt_stack_audit=PASS");
-    eprintln!("stack_frame_audit=PASS");
+    eprintln!("task_stack_audit=PASS");
     eprintln!("autonomous_source_graph=PASS");
     Ok(Artifacts {
         chip: String::from(oer_esp32s31_firmware::CHIP),
@@ -779,7 +795,7 @@ fn build_resolved(
         environment: oer_hil_evidence::build::BuildEnvironment::capture(),
         layout_seed,
         features: features.clone(),
-        rom_summaries: interrupt_stacks.summaries,
+        rom_summaries: stacks.summaries,
     })
 }
 

@@ -145,7 +145,7 @@ pub(crate) fn execute_workload(
 
 /// Hold each hart's observed interrupt-stack use of an ESP32-S31 repetition
 /// to the image's static bound: a watermark above it fails the repetition,
-/// as does an observed hart the bound cannot be computed for.
+/// as does an analysis that cannot run; a `partial + ?` hart is only observed.
 fn check_interrupt_stacks(chip: &str, elf: Option<&Path>, evidence: &mut ExecutionEvidence) {
     if chip != "esp32s31" {
         return;

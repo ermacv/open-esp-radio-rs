@@ -156,7 +156,9 @@ under the contract `layout`'s `interrupts` module states. Each HIL repetition
 holds the two to each other: its peak watermark use per hart is recorded as
 `stack.cpuN-irq.used`, evaluated at most the bound the current analyzer
 computes from the run's archived runtime ELF, and a use above it (a path the
-analysis missed) or a hart without a bound fails the repetition.
+analysis missed) fails the repetition, as does an analysis that cannot run. A
+hart the analysis leaves `partial + ?` (a diagnostic image) is only observed:
+that number is no bound to hold a watermark to.
 
 From the repository root:
 

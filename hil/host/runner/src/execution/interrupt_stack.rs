@@ -13,8 +13,9 @@ use std::sync::Mutex;
 
 use oer_hil_evidence::run::{Comparison, Measurement, MeasurementUnit};
 
-/// Each hart's bound in bytes, by hart.
-type Bounds = BTreeMap<u32, u64>;
+/// Each hart's bound in bytes, by hart; `None` for a hart the analysis left
+/// `partial + ?` (a diagnostic image), which no observation can be held to.
+type Bounds = BTreeMap<u32, Option<u64>>;
 
 /// A watermark's capacity and free bytes, as far as recorded.
 #[derive(Default)]
@@ -55,24 +56,28 @@ pub(crate) fn observed_peaks(measurements: &[Measurement]) -> BTreeMap<u32, u64>
     peaks
 }
 
-/// The evaluated `stack.cpuN-irq.used` of each observed hart against its
-/// bound; an error names a hart observed without a bound.
+/// The `stack.cpuN-irq.used` of each observed hart: evaluated against its
+/// bound, or only observed where the bound is `partial + ?`; an error names
+/// a hart the image's analysis does not know.
 pub(crate) fn evaluate(
     peaks: &BTreeMap<u32, u64>,
-    bounds: &BTreeMap<u32, u64>,
+    bounds: &Bounds,
 ) -> Result<Vec<Measurement>, String> {
     peaks
         .iter()
         .map(|(&core, &used)| {
             let bound = bounds.get(&core).ok_or_else(|| {
-                format!("hart {core}'s interrupt stack was observed but the image has no bound")
+                format!("hart {core}'s interrupt stack was observed but the image has no such hart")
             })?;
-            Ok(Measurement::observed(
+            let used = Measurement::observed(
                 format!("stack.cpu{core}-irq.used"),
                 used,
                 MeasurementUnit::Bytes,
-            )
-            .evaluated(Comparison::AtMost, *bound))
+            );
+            Ok(match bound {
+                Some(bound) => used.evaluated(Comparison::AtMost, *bound),
+                None => used,
+            })
         })
         .collect()
 }
@@ -93,11 +98,7 @@ pub(crate) fn bounds(elf: &Path) -> Result<Bounds, String> {
             stacks
                 .harts
                 .iter()
-                .map(|hart| {
-                    hart.bytes
-                        .map(|bytes| (hart.core, bytes))
-                        .ok_or_else(|| format!("hart {}'s interrupt stack has no bound", hart.core))
-                })
+                .map(|hart| Ok((hart.core, hart.bytes)))
                 .collect()
         })
         .clone()
@@ -135,7 +136,8 @@ mod tests {
     #[test]
     fn a_use_above_the_static_bound_fails_and_an_unbounded_hart_is_an_error() {
         let peaks = BTreeMap::from([(0, 3768), (1, 1000)]);
-        let evaluated = evaluate(&peaks, &BTreeMap::from([(0, 3500), (1, 1000)])).unwrap();
+        let evaluated =
+            evaluate(&peaks, &BTreeMap::from([(0, Some(3500)), (1, Some(1000))])).unwrap();
         let verdicts: Vec<_> = evaluated
             .iter()
             .map(|measurement| (measurement.name.as_str(), measurement.verdict))
@@ -147,6 +149,10 @@ mod tests {
                 ("stack.cpu1-irq.used", Some(MeasurementVerdict::Passed)),
             ]
         );
-        assert!(evaluate(&peaks, &BTreeMap::from([(0, 4000)])).is_err());
+        assert!(evaluate(&peaks, &BTreeMap::from([(0, Some(4000))])).is_err());
+        // A `partial + ?` hart is observed, never held to a number.
+        let observed = evaluate(&peaks, &BTreeMap::from([(0, None), (1, Some(1000))])).unwrap();
+        assert_eq!(observed[0].threshold, None);
+        assert_eq!(observed[0].verdict, None);
     }
 }

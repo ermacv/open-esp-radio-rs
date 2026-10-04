@@ -14,7 +14,7 @@ use oer_esp32s31_hal::owner::RadioRuntimeOwner;
 
 use oer_esp32s31_pac::{RadioPhyRegisters, WifiRadioRegisters};
 
-use oer_esp32s31_ieee80211_mac::ap_tsf::{reset_and_start_access_point_tsf, stop_access_point_tsf};
+use oer_esp32s31_ieee80211_mac::ap_tsf::AccessPointTsf;
 
 mod ampdu_resort;
 mod calibration_leaves;
@@ -1724,7 +1724,7 @@ oer_probe_macros::probe! {
     pub fn open_libpp_ap_tsf_trace_hal_disable_softap_tsf() {
         let mut owner = RadioRuntimeOwner::claim_for_validation();
         let mut hardware = owner.wifi_mac_hal();
-        stop_access_point_tsf(&mut hardware);
+        AccessPointTsf::new(0).stop(&mut hardware);
     }
 }
 
@@ -1733,7 +1733,7 @@ oer_probe_macros::probe! {
         if selector == 0 {
             let mut owner = RadioRuntimeOwner::claim_for_validation();
             let mut hardware = owner.wifi_mac_hal();
-            reset_and_start_access_point_tsf(&mut hardware);
+            AccessPointTsf::new(0).restart(&mut hardware);
         }
     }
 }

@@ -67,6 +67,7 @@ pub(crate) fn run_all(
             flashed: None,
             peer_image: None,
             peer_flash: None,
+            recovered: Vec::new(),
         };
         execute_selected(&mut session, &mut operations, selected)?
     };
@@ -109,6 +110,7 @@ pub(crate) fn run_one(
             flashed: None,
             peer_image: None,
             peer_flash: None,
+            recovered: Vec::new(),
         };
         let results = execute_one(&mut session, &mut operations, selected)?;
         operations.run_then(then.as_deref(), &mut session)?;
@@ -152,6 +154,7 @@ pub(crate) fn run_many(
             flashed: None,
             peer_image: None,
             peer_flash: None,
+            recovered: Vec::new(),
         };
         let results = execute_selected(&mut session, &mut operations, selected)?;
         operations.run_then(then.as_deref(), &mut session)?;
@@ -368,6 +371,9 @@ struct LiveSuite<'a> {
     peer_image: Option<&'static str>,
     /// What the board journal recorded for that image's flash.
     peer_flash: Option<oer_hil_stand::lock::PeerImageRecord>,
+    /// The image classes whose silence this run already answered with the
+    /// recovery image.
+    recovered: Vec<ImageClass>,
 }
 
 trait SuiteEffects {
@@ -383,6 +389,11 @@ trait SuiteEffects {
         scenario: &Scenario,
         session: &RunSession,
     ) -> Result<ScenarioResult>;
+    /// After a scenario: when its image stopped answering after it booted
+    /// and the board is still loadable, flash the chip's recovery image.
+    fn after_scenario(&mut self, _scenario: &Scenario, _session: &mut RunSession) -> Result<()> {
+        Ok(())
+    }
     /// A boundary between steps of divisible work. An over-budget lease that
     /// blocks waiting requests yields here and queues again; the image of
     /// `class` is then flashed again before the next scenario.
@@ -448,6 +459,51 @@ impl SuiteEffects for LiveSuite<'_> {
             };
         self.flashed = failure.is_none().then_some((class, archive));
         Ok(failure)
+    }
+
+    fn after_scenario(&mut self, scenario: &Scenario, session: &mut RunSession) -> Result<()> {
+        let class = scenario.image();
+        if !needs_recovery_image(
+            oer_hil_stand::recovery::image_silent(class.id()),
+            oer_hil_stand::recovery::device_quarantined(),
+            self.recovered.contains(&class),
+        ) {
+            return Ok(());
+        }
+        self.recovered.push(class);
+        let build = match &self.firmware {
+            FirmwarePreparation::BuildCurrent(build)
+            | FirmwarePreparation::Selected(RunFirmware::BuildCurrent(build)) => build.clone(),
+            FirmwarePreparation::Selected(RunFirmware::Replay(_)) => oer_hil_image::CurrentBuild {
+                layout_seed: None,
+                features: Default::default(),
+            },
+        };
+        let recovery = ImageClass::BootSmoke;
+        eprintln!(
+            "hil: the {} image went silent after booting; flashing the {} recovery image",
+            class.id(),
+            recovery.id()
+        );
+        let failure = firmware::prepare_image(self.root, self.lab, recovery, build, session)?;
+        self.flashed = failure.is_none().then_some((recovery, None));
+        let answered = match failure {
+            Some(failure) => Err(failure.message),
+            None => crate::execution::preflight::answers_as(
+                self.lab,
+                recovery,
+                &session.directory().join("recovery-image"),
+            ),
+        };
+        let mac = self.lab.dut_mac().ok();
+        match &answered {
+            Ok(()) => {
+                oer_hil_stand::recovery::record_reflash(mac, format!("run {}", session.id()));
+                eprintln!("hil: the board answers its recovery image");
+            }
+            Err(why) => eprintln!("hil: the recovery image did not bring the board back: {why}"),
+        }
+        Ok(())
     }
 
     fn execute_scenario(
@@ -678,6 +734,7 @@ fn execute_selected(
             )?;
             let result = effects.execute_scenario(scenario, session)?;
             session.seal_scenario(scenario, &result)?;
+            effects.after_scenario(scenario, session)?;
             session.record_event(
                 RunEventKind::ScenarioFinished,
                 Some(scenario.id()),
@@ -721,6 +778,7 @@ fn execute_one(
     )?;
     let result = effects.execute_scenario(selected, session)?;
     session.seal_scenario(selected, &result)?;
+    effects.after_scenario(selected, session)?;
     session.record_event(
         RunEventKind::ScenarioFinished,
         Some(selected.id()),
@@ -728,6 +786,13 @@ fn execute_one(
         Some(result.outcome),
     )?;
     Ok(vec![result])
+}
+
+/// Whether a scenario's end calls for the chip's recovery image: its image
+/// went silent after booting, the board can still be loaded (not
+/// quarantined), and the run has not yet answered that image's silence.
+fn needs_recovery_image(image_silent: bool, quarantined: bool, already: bool) -> bool {
+    image_silent && !quarantined && !already
 }
 
 /// The image classes `selected` runs on, in the order runs build them.

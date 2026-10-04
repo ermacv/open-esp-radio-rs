@@ -191,6 +191,26 @@ pub fn recover(
     }
 }
 
+/// Journal that the board with `mac` answered its chip's recovery image
+/// after the runner flashed it; failure is reported, never fatal.
+pub fn record_reflash(mac: Option<String>, origin: String) {
+    let recorded = Arbiter::open().and_then(|arbiter| {
+        arbiter.record_board_by(
+            String::from("stand"),
+            mac,
+            oer_hil_arbiter::BoardEventKind::Recovered {
+                step: RecoveryStep::Reflash,
+                hardware: false,
+                reset_line: None,
+                origin,
+            },
+        )
+    });
+    if let Err(error) = recorded {
+        eprintln!("hil-arbiter: cannot record the reflash: {error}");
+    }
+}
+
 /// The file a recovery records its ladder in, in the repetition's
 /// `post-mortem/`.
 pub const RECOVERY_FILE: &str = "recovery.json";

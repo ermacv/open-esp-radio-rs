@@ -535,3 +535,20 @@ fn a_run_takes_the_named_chip_or_the_only_one_that_builds_its_images() {
         "esp32s31"
     );
 }
+
+#[test]
+fn a_silent_image_on_a_loadable_board_gets_the_recovery_image_once() {
+    assert!(super::needs_recovery_image(true, false, false));
+    assert!(
+        !super::needs_recovery_image(false, false, false),
+        "the image answers"
+    );
+    assert!(
+        !super::needs_recovery_image(true, true, false),
+        "a quarantined board waits for a person"
+    );
+    assert!(
+        !super::needs_recovery_image(true, false, true),
+        "once per image class and run"
+    );
+}

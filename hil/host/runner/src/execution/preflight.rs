@@ -93,6 +93,21 @@ pub(crate) fn validate_flashed_image(
     }
 }
 
+/// Whether the device, reset, answers as an image of `class`; why not
+/// otherwise.
+pub(crate) fn answers_as(
+    lab: &LabConfig,
+    class: oer_hil_image_class::ImageClass,
+    directory: &Path,
+) -> std::result::Result<(), String> {
+    let image_keys = image_keys_of(lab, directory).map_err(|error| error.to_string())?;
+    match oer_hil_image_class::classify_flashed(lab.chip(), &image_keys) {
+        Some(found) if found == class => Ok(()),
+        Some(found) => Err(format!("it answers as {} instead", found.id())),
+        None => Err(String::from("its image keys name no image class")),
+    }
+}
+
 /// Reset the device and ask its image for its image keys, capturing the
 /// console into `directory`.
 fn image_keys_of(lab: &LabConfig, directory: &Path) -> Result<DeviceImageKeys> {

@@ -104,6 +104,12 @@ without a reset, names the code addresses from the image's ELF and writes them
 to `post-mortem/jtag.json`, so the place it stopped survives the resets below.
 The read never changes the repetition's outcome.
 
+Every flash of the device under test addresses the board by its
+`/dev/serial/by-id` link, which a power cycle does not change; when the board
+is not on USB at all, because its image switched its USB Serial/JTAG off, the
+runner first puts its ROM into download mode through its hub port's power (the
+ladder's download entry) and then flashes.
+
 A target that does not answer within those 20 s climbs the recovery ladder
 (`oer_hil_stand::control::climb`): the resets of its stand-file `reset`
 ladder in order (an RTS pulse on its USB Serial/JTAG port, a system reset
@@ -119,7 +125,10 @@ symbolized like a hang: stuck in code, or idle in its executor. A step that brin
 the port had vanished or the ROM waited for a download. When the ROM answers
 a reset, booting from flash or waiting for a download, but the firmware does
 not, the failure names a firmware or host fault: the stand can reflash the
-board, so it goes on serving. The run then records its remaining repetitions of that
+board, so it goes on serving. Once that scenario ends, the runner flashes the
+chip's recovery image, `boot-smoke` built from the run's sources, checks that
+it answers as itself and journals a `Reflash` recovery, so the board is left
+working, once per image class and run. The run then records its remaining repetitions of that
 image class as `blocked` without touching the board, so a broken image frees
 the lease within about a minute instead of repeating the wait. Only a board whose ROM stays silent after every
 step of its ladder, the download entry included, which no script can bring

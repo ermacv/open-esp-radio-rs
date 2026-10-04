@@ -258,14 +258,35 @@ pub struct ExternalConfig {
 }
 
 /// The serial port of `board`, found by its USB serial number among the
-/// attached ports.
+/// attached ports: its `/dev/serial/by-id` link, which names the board and
+/// so survives a power cycle that gives the board another `/dev/ttyACM*`.
 fn attached_port(board: &oer_hil_stand_schema::Board) -> Result<PathBuf> {
     let mac = oer_hil_arbiter::normalize_mac(&board.usb_serial)?;
-    oer_hil_arbiter::attached_ports()
+    let port = oer_hil_arbiter::attached_ports()
         .into_iter()
         .find(|port| port.mac.as_deref() == Some(mac.as_str()))
         .map(|port| PathBuf::from(port.port))
-        .ok_or_else(|| format!("board `{}` ({mac}) is not attached", board.id).into())
+        .ok_or_else(|| format!("board `{}` ({mac}) is not attached", board.id))?;
+    Ok(by_id(Path::new(BY_ID), &mac).unwrap_or(port))
+}
+
+/// Where udev names serial ports by their device.
+const BY_ID: &str = "/dev/serial/by-id";
+
+/// The link in `directory` that names the USB Serial/JTAG port of the board
+/// with `mac`.
+fn by_id(directory: &Path, mac: &str) -> Option<PathBuf> {
+    let mut links = fs::read_dir(directory)
+        .ok()?
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.to_ascii_uppercase().contains(mac))
+        })
+        .collect::<Vec<_>>();
+    links.sort();
+    links.into_iter().next()
 }
 
 /// The chip a peer catalog image (`hil/peers/*/firmware.toml`) targets.
@@ -698,6 +719,16 @@ impl LabConfig {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// The device under test's USB serial number, the MAC of its USB
+    /// Serial/JTAG port.
+    pub fn dut_mac(&self) -> Result<String> {
+        let board = self
+            .stand
+            .board(&self.dut.id)
+            .ok_or_else(|| format!("board `{}` is not in the stand file", self.dut.id))?;
+        oer_hil_arbiter::normalize_mac(&board.usb_serial)
     }
 
     pub fn cell_id(&self) -> &str {

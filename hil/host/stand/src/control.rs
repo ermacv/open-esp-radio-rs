@@ -312,7 +312,7 @@ pub fn saved_pc(banner: &str) -> Option<u32> {
 }
 
 /// The ROM's last reset line in `console`.
-fn reset_line(console: &str) -> Option<String> {
+pub fn reset_line(console: &str) -> Option<String> {
     oer_hil_arbiter::control::reset_line(console).map(str::to_owned)
 }
 

@@ -167,6 +167,8 @@ pub enum RecoveryStep {
     /// Its hub port's power cycled and, as soon as its USB returned, a reset
     /// into the ROM's download mode through its USB Serial/JTAG.
     DownloadEntry,
+    /// Its chip's recovery image (`boot-smoke`) flashed, and it answered.
+    Reflash,
 }
 
 fn short_hash(hash: &str) -> &str {

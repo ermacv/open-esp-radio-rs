@@ -2,7 +2,7 @@
 //! agreements, SA Query, disconnection and power save.
 
 use oer_ieee80211_lower_mac::{
-    Cipher, Ieee80211LowerMacPort, KeyInstall, KeyScope, KeySelector, LowerMacSetting, MacAddress,
+    Cipher, KeyInstall, KeyScope, KeySelector, LowerMacBeaconTiming, LowerMacSetting, MacAddress,
     RxBlockAckAgreement, RxCryptoStatus, RxEvidence,
 };
 use oer_ieee80211_mac::{
@@ -165,7 +165,7 @@ pub struct PortTxCounters {
 }
 
 /// The connected station's state over the port.
-pub struct PortConnection<P: Ieee80211LowerMacPort> {
+pub struct PortConnection<P: LowerMacBeaconTiming> {
     config: PortConnectionConfig,
     keys: Option<PortKeys>,
     packet_number: CcmpTxPacketNumber,
@@ -204,7 +204,7 @@ pub(crate) struct ConnectionContext<'a, 'p, X: PortStationEnv> {
     pub key_unwrap: &'a mut X::KeyUnwrap,
 }
 
-impl<P: Ieee80211LowerMacPort> PortConnection<P> {
+impl<P: LowerMacBeaconTiming> PortConnection<P> {
     pub(crate) fn new(
         config: PortConnectionConfig,
         keys: Option<PortKeys>,
@@ -313,17 +313,24 @@ impl<P: Ieee80211LowerMacPort> PortConnection<P> {
         }
     }
 
-    /// Start modem sleep of `sleep_type` over the port's beacon timing.
-    pub(crate) async fn enable_power_save<X: PortStationEnv<Port = P>>(
+    /// Start the power manager of the association with `sleep_type`, or
+    /// restart it with a new one.
+    pub(crate) async fn start_power<X: PortStationEnv<Port = P>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         sleep_type: SleepType,
     ) -> Result<(), PortLinkError<PortError<X>>> {
-        let ops = context
-            .link
-            .beacon_timing()
-            .ok_or(PortLinkError::MissingState)?;
-        let mut power = PortPowerSave::new(sleep_type, ops);
+        if let Some(mut power) = self.power.take() {
+            let traffic = self.traffic();
+            power
+                .stop(&mut Self::power_context(
+                    context,
+                    self.config.bssid,
+                    traffic,
+                ))
+                .await?;
+        }
+        let mut power = PortPowerSave::new(sleep_type);
         let join_beacon = PmBeacon {
             timestamp_tsf: self.config.join_timestamp_tsf,
             interval_tu: self.config.beacon_interval_tu,

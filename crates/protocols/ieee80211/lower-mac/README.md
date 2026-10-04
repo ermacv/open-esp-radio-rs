@@ -135,7 +135,7 @@ vendor stack are the family package `oer-espressif-ieee80211-policy`.
 | User | What it drives over the port |
 | --- | --- |
 | `oer-ieee80211-upper-mac-service` (`UpperMacTx`) | One frame exchange as a sequence of attempts of the transmit planner |
-| `oer-ieee80211-sta-service` (`port`) | The whole station: scan, Open System and SAE joins, the WPA2 handshake with `install_key`, the connected data plane with receive Block Ack agreements, SA Query and disconnection, and power save over `LowerMacBeaconTiming` and `TxGate`; `LowerMacMonitor` only for a scan whose station filters lack `OTHER_BSS_MANAGEMENT` |
+| `oer-ieee80211-sta-service` (`port`) | The whole station: scan, Open System and SAE joins, the WPA2 handshake with `install_key`, the connected data plane with receive Block Ack agreements, SA Query and disconnection, and its power manager over `LowerMacBeaconTiming` (which it requires), `TxGate` and `RxBeaconPriority`; `LowerMacMonitor` only for a scan whose station filters lack `OTHER_BSS_MANAGEMENT` |
 
 The port has a single event consumer: `oer-ieee80211-upper-mac-service`'s
 `EventRouter`, which every `UpperMacTx` and the station's `PortLink` read

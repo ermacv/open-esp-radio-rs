@@ -85,6 +85,10 @@ pub struct PortStationProfile<'a> {
     /// The TX Block Ack agreements the station originates; `None`
     /// originates none.
     pub tx_block_ack: Option<PortTxBlockAck>,
+    /// The power manager's sleep type for each association: the Espressif
+    /// station's default is `SleepType::None`, which sleeps only for
+    /// coexistence.
+    pub sleep_type: SleepType,
     /// How long a receive reorder window holds a buffered run behind a
     /// missing MPDU, from the first MPDU it retains: an integrator's policy
     /// (the Espressif stack's is
@@ -314,14 +318,13 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         Ok(ended)
     }
 
-    /// Start modem sleep; the port must report TBTTs
-    /// ([`PortLink::with_beacon_timing`]).
-    pub async fn enable_power_save(
+    /// Restart the association's power manager with `sleep_type`.
+    pub async fn set_sleep_type(
         &mut self,
         sleep_type: SleepType,
     ) -> Result<(), PortLinkError<PortError<X>>> {
         let (connection, mut context) = self.context()?;
-        connection.enable_power_save(&mut context, sleep_type).await
+        connection.start_power(&mut context, sleep_type).await
     }
 
     /// Leave the association with a Deauthentication.
@@ -799,6 +802,21 @@ impl<'p, X: PortStationEnv> StaAttemptPort for PortAttemptPort<'p, X> {
             tx_block_ack,
             bip,
         ));
+        // The power manager runs for every association: it decides when the
+        // station dozes and when it asks its radio system for the air.
+        let sleep_type = owner.profile.sleep_type;
+        let started = match owner.context() {
+            Ok((connection, mut context)) => connection.start_power(&mut context, sleep_type).await,
+            Err(error) => Err(error),
+        };
+        if let Err(error) = started {
+            owner.connection = None;
+            return Err(StaConnectedEntryFailure::new(
+                owner,
+                StaFailureDisposition::RetryCurrentCandidate,
+                PortStationError::Link(error),
+            ));
+        }
         Ok(owner)
     }
 }

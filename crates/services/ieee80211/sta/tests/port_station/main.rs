@@ -295,7 +295,7 @@ impl World {
         data_rate: PhyRate,
     ) -> PortStation<'a, Env<'a>> {
         PortStation::new(
-            self.link_at(data_rate).with_beacon_timing(),
+            self.link_at(data_rate),
             &self.timer,
             RsnSoftwareAes,
             profile,
@@ -382,6 +382,7 @@ fn profile() -> PortStationProfile<'static> {
         he_power: None,
         he_packet_padding: oer_espressif_ieee80211_policy::he_txop::packet_padding,
         tx_block_ack: None,
+        sleep_type: SleepType::None,
         rx_reorder_gap: Duration::from_micros(
             oer_espressif_ieee80211_policy::block_ack::RX_REORDER_GAP_TIMEOUT_MICROS,
         ),
@@ -827,11 +828,11 @@ fn the_power_manager_asks_the_radio_system_for_the_beacon_window_body() {
     world.coex.view.set(ACTIVE_COEX);
     let mut ap = ScriptedAp::new(ApSecurity::Open);
     let mut station = connect(&world, &mut ap, world.station(open()));
-    world
-        .drive(&mut ap, station.enable_power_save(SleepType::None))
-        .unwrap();
+    // The power manager runs for the association without being asked.
     // Starting under an active schedule sets its interval to the beacon
     // interval, in 100 us units, and the flexible period.
+    let power = station.connection().unwrap().power_save().unwrap();
+    assert_eq!(power.state(), PmState::Awake);
     assert_eq!(
         *world.coex.performed.borrow(),
         [
@@ -869,11 +870,13 @@ fn a_refused_coexistence_effect_fails_the_power_manager() {
 fn a_refused_coexistence_effect_fails_the_power_manager_body() {
     let world = World::new();
     world.coex.view.set(ACTIVE_COEX);
-    world.coex.refuse.set(true);
     let mut ap = ScriptedAp::new(ApSecurity::Open);
     let mut station = connect(&world, &mut ap, world.station(open()));
+    // A new sleep type restarts the manager, whose stop sets the flexible
+    // period; the radio system refuses it.
+    world.coex.refuse.set(true);
     assert_eq!(
-        world.drive(&mut ap, station.enable_power_save(SleepType::None)),
+        world.drive(&mut ap, station.set_sleep_type(SleepType::MinModem)),
         Err(PortLinkError::Coexistence)
     );
 }
@@ -888,7 +891,7 @@ fn power_save_dozes_and_wakes_for_buffered_traffic_at_a_tbtt_body() {
     let mut ap = ScriptedAp::new(ApSecurity::Open);
     let mut station = connect(&world, &mut ap, world.station(open()));
     world
-        .drive(&mut ap, station.enable_power_save(SleepType::MinModem))
+        .drive(&mut ap, station.set_sleep_type(SleepType::MinModem))
         .unwrap();
     let mut delivered = Vec::new();
 

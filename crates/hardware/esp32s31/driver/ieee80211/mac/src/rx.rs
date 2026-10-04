@@ -870,6 +870,9 @@ pub fn decode_normalized_rx_metadata(buffer: &[u8]) -> Option<MacRxMetadata<RxPh
 #[derive(Clone, Copy, Debug)]
 pub struct NormalizedRxFrame<'frame> {
     pub mpdu: &'frame [u8],
+    /// Where `mpdu` starts in the receive buffer, after the hardware's
+    /// prefix: an owner of the buffer finds the MPDU again from it.
+    pub mpdu_offset: usize,
     pub metadata: MacRxMetadata<RxPhyInfo>,
     pub logical_length: usize,
     /// The receive timestamp of the prefix: the raw MAC local time of the
@@ -906,6 +909,7 @@ pub fn view_normalized_rx_frame<'frame>(
     let metadata = decode_normalized_rx_metadata(segment.buffer).ok_or(RxError::Metadata)?;
     Ok(NormalizedRxFrame {
         mpdu,
+        mpdu_offset: layout.frame_offset,
         metadata,
         logical_length: layout.expected_frame_length,
         stamp: decode_rx_local_timestamp(segment.buffer),

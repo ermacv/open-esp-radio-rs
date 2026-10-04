@@ -13,8 +13,9 @@
 //! lifecycle command (`LifecycleError::Busy`) while its queue could not hold
 //! the terminal event it would owe. TBTT events and received frames have
 //! queues of their own; an overflow of either is reported as [`EventsLost`]
-//! in that queue's order, and a received MPDU longer than `FRAME` is
-//! reported as [`LowerMacEvent::RxTooLong`], not as a loss. Completions are
+//! in that queue's order; a received frame holds its receive unit (on the
+//! target, the staging pool's DMA buffer) until the consumer drops it, and
+//! a frame dropped with an overflow returns it at once. Completions are
 //! taken first, then lifecycle terminals, TBTTs and received frames; the
 //! loss ordering rule holds within each queue. A fault poisons the port:
 //! the queued events are still reported, then [`LowerMacEvent::Poisoned`]
@@ -49,6 +50,7 @@
 use core::{
     cell::{Cell, RefCell},
     convert::Infallible,
+    ops::Range,
 };
 
 use embassy_futures::select::{Either, select, select4};
@@ -69,7 +71,9 @@ use oer_esp32s31_ieee80211::{
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile},
     tx::WifiTxWake,
 };
-use oer_esp32s31_ieee80211_mac::rx::NormalizedRxFrame;
+use oer_esp32s31_ieee80211_mac::rx::{
+    NormalizedRxFrame, RxError, RxIngressConfig, pool::NetworkRxFrame, view_normalized_rx_frame,
+};
 
 /// The radio system's coexistence priorities, as its last released guard
 /// left them: the source a core asks for the air with
@@ -129,31 +133,69 @@ pub trait LowerMacRetune {
     fn retune(&mut self, channel: WifiChannel) -> impl Future<Output = bool>;
 }
 
-/// A received MPDU the port lends: its first `length` bytes in `frame`, the
-/// port's copy of the receive buffer.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Esp32s31RxBuffer<const FRAME: usize> {
-    frame: [u8; FRAME],
-    length: usize,
+/// One unit of the receive producer: an owned receive buffer whose MPDU and
+/// hardware metadata the port reads in place. Dropping it returns the
+/// buffer to its producer.
+pub trait LowerMacRxUnit {
+    /// The whole receive buffer, the hardware's prefix included.
+    fn buffer(&self) -> &[u8];
+    /// The MPDU and metadata the hardware reported for the unit.
+    fn normalized(&self) -> Result<NormalizedRxFrame<'_>, RxError>;
 }
 
-impl<const FRAME: usize> RxBuffer for Esp32s31RxBuffer<FRAME> {
+/// A staging-pool DMA buffer, the target's receive unit, with the ingress
+/// configuration of the ring it came from.
+pub struct Esp32s31StagedRx<'pool, const SLOTS: usize, const CAPACITY: usize> {
+    frame: NetworkRxFrame<'pool, SLOTS, CAPACITY>,
+    config: RxIngressConfig,
+}
+
+impl<'pool, const SLOTS: usize, const CAPACITY: usize> Esp32s31StagedRx<'pool, SLOTS, CAPACITY> {
+    pub const fn new(
+        frame: NetworkRxFrame<'pool, SLOTS, CAPACITY>,
+        config: RxIngressConfig,
+    ) -> Self {
+        Self { frame, config }
+    }
+}
+
+impl<const SLOTS: usize, const CAPACITY: usize> LowerMacRxUnit
+    for Esp32s31StagedRx<'_, SLOTS, CAPACITY>
+{
+    fn buffer(&self) -> &[u8] {
+        self.frame.segment().buffer
+    }
+
+    fn normalized(&self) -> Result<NormalizedRxFrame<'_>, RxError> {
+        view_normalized_rx_frame(&self.frame.segment(), self.config)
+    }
+}
+
+/// A received MPDU the port lends: the receive unit itself, with where the
+/// MPDU lies in its buffer. Nothing is copied.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Esp32s31RxBuffer<U> {
+    unit: U,
+    mpdu: Range<usize>,
+}
+
+impl<U: LowerMacRxUnit> RxBuffer for Esp32s31RxBuffer<U> {
     fn bytes(&self) -> &[u8] {
-        &self.frame[..self.length]
+        // The port located the MPDU when it received the unit.
+        self.unit
+            .buffer()
+            .get(self.mpdu.clone())
+            .unwrap_or_default()
     }
 }
 
 /// One owned event of the port.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Esp32s31LowerMacEvent<const FRAME: usize> {
+pub enum Esp32s31LowerMacEvent<U> {
     /// A received MPDU.
     Received {
-        frame: Esp32s31RxBuffer<FRAME>,
+        frame: Esp32s31RxBuffer<U>,
         meta: RxMeta,
-    },
-    /// A received MPDU longer than `FRAME` was dropped.
-    RxTooLong {
-        length: usize,
     },
     TxCompleted(TxCompletion),
     Lifecycle(LifecycleEvent),
@@ -163,7 +205,7 @@ pub enum Esp32s31LowerMacEvent<const FRAME: usize> {
     Poisoned,
 }
 
-impl<const FRAME: usize> Esp32s31LowerMacEvent<FRAME> {
+impl<U: LowerMacRxUnit> Esp32s31LowerMacEvent<U> {
     /// Lend the event as a portable value.
     pub fn portable(&self) -> LowerMacEvent<'_> {
         match self {
@@ -171,7 +213,6 @@ impl<const FRAME: usize> Esp32s31LowerMacEvent<FRAME> {
                 frame: frame.bytes(),
                 meta: *meta,
             },
-            Self::RxTooLong { length } => LowerMacEvent::RxTooLong { length: *length },
             Self::TxCompleted(completion) => LowerMacEvent::TxCompleted(*completion),
             Self::Lifecycle(event) => LowerMacEvent::Lifecycle(*event),
             Self::Tbtt(_) => LowerMacEvent::Extension,
@@ -257,11 +298,11 @@ impl<M: RawMutex, T, const N: usize> EventQueue<M, T, N> {
 }
 
 /// The queues of the port, one per kind of event.
-struct Queues<M: RawMutex, const EVENTS: usize, const FRAME: usize> {
+struct Queues<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> {
     completions: EventQueue<M, TxCompletion, COMPLETION_SLOTS>,
     lifecycle: EventQueue<M, LifecycleEvent, LIFECYCLE_SLOTS>,
     tbtt: EventQueue<M, TbttEvent, TBTT_CAPACITY>,
-    received: EventQueue<M, Esp32s31LowerMacEvent<FRAME>, EVENTS>,
+    received: EventQueue<M, Esp32s31LowerMacEvent<U>, EVENTS>,
     /// Completions owed: admitted attempts whose completion was not taken.
     owed_completions: Mutex<M, Cell<usize>>,
     /// Lifecycle terminals owed.
@@ -271,7 +312,7 @@ struct Queues<M: RawMutex, const EVENTS: usize, const FRAME: usize> {
     changed: Signal<M, ()>,
 }
 
-impl<M: RawMutex, const EVENTS: usize, const FRAME: usize> Queues<M, EVENTS, FRAME> {
+impl<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> Queues<M, EVENTS, U> {
     const fn new() -> Self {
         Self {
             completions: EventQueue::new(),
@@ -286,7 +327,7 @@ impl<M: RawMutex, const EVENTS: usize, const FRAME: usize> Queues<M, EVENTS, FRA
 
     /// The next queued event: completions, lifecycle terminals, TBTTs,
     /// then received frames.
-    fn take(&self) -> Option<Result<Esp32s31LowerMacEvent<FRAME>, EventsLost>> {
+    fn take(&self) -> Option<Result<Esp32s31LowerMacEvent<U>, EventsLost>> {
         if let Some(entry) = self.completions.take() {
             if entry.is_ok() {
                 self.owed_completions
@@ -370,12 +411,12 @@ struct Installed<
 }
 
 /// The sink of one locked entry: events go to their queues.
-struct QueueSink<'a, M: RawMutex, const EVENTS: usize, const FRAME: usize> {
-    queues: &'a Queues<M, EVENTS, FRAME>,
+struct QueueSink<'a, M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> {
+    queues: &'a Queues<M, EVENTS, U>,
 }
 
-impl<M: RawMutex, const EVENTS: usize, const FRAME: usize> LowerMacSink
-    for QueueSink<'_, M, EVENTS, FRAME>
+impl<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> LowerMacSink
+    for QueueSink<'_, M, EVENTS, U>
 {
     fn tx_completed(&mut self, completion: TxCompletion) {
         self.queues.completions.push(completion);
@@ -394,8 +435,8 @@ impl<M: RawMutex, const EVENTS: usize, const FRAME: usize> LowerMacSink
 ///
 /// `TX_BUFFERS` counts the transmit buffers the core lends, `EVENTS` bounds
 /// the received frames waiting for the consumer (a loss marker included)
-/// and `FRAME` the bytes of one received MPDU; a longer MPDU is reported as
-/// [`LowerMacEvent::RxTooLong`].
+/// and `U` is the unit of the receive producer, which a received frame
+/// holds until the consumer drops it.
 /// `S`, `AMPDU_SLOTS` and `AMPDU_BUFFERS` are the core's aggregate memory,
 /// subframes per aggregate and aggregate owners; with the default
 /// [`NoAmpdu`] the port has no aggregates and no [`LowerMacAmpdu`].
@@ -410,7 +451,7 @@ pub struct Esp32s31LowerMac<
     const BUFFER_SIZE: usize,
     const TX_BUFFERS: usize,
     const EVENTS: usize,
-    const FRAME: usize,
+    U: LowerMacRxUnit,
     S: AmpduBacking = NoAmpdu,
     const AMPDU_SLOTS: usize = 2,
     const AMPDU_BUFFERS: usize = 0,
@@ -442,7 +483,7 @@ pub struct Esp32s31LowerMac<
     /// The channel an admitted `Enable` waits to be tuned to.
     pending_retune: Mutex<M, Cell<Option<WifiChannel>>>,
     fault: Mutex<M, Cell<Option<LowerMacFault>>>,
-    queues: Queues<M, EVENTS, FRAME>,
+    queues: Queues<M, EVENTS, U>,
     /// Raised when a deadline, a retune, an install or a fault may have
     /// started, so the runner rearms.
     wake: Signal<M, ()>,
@@ -463,7 +504,7 @@ impl<
     const BUFFER_SIZE: usize,
     const TX_BUFFERS: usize,
     const EVENTS: usize,
-    const FRAME: usize,
+    U: LowerMacRxUnit,
     const AMPDU_SLOTS: usize,
     const AMPDU_BUFFERS: usize,
 > Default
@@ -478,7 +519,7 @@ impl<
         BUFFER_SIZE,
         TX_BUFFERS,
         EVENTS,
-        FRAME,
+        U,
         S,
         AMPDU_SLOTS,
         AMPDU_BUFFERS,
@@ -509,7 +550,7 @@ impl<
     const BUFFER_SIZE: usize,
     const TX_BUFFERS: usize,
     const EVENTS: usize,
-    const FRAME: usize,
+    U: LowerMacRxUnit,
     const AMPDU_SLOTS: usize,
     const AMPDU_BUFFERS: usize,
 >
@@ -524,7 +565,7 @@ impl<
         BUFFER_SIZE,
         TX_BUFFERS,
         EVENTS,
-        FRAME,
+        U,
         S,
         AMPDU_SLOTS,
         AMPDU_BUFFERS,
@@ -641,7 +682,7 @@ where
     }
 
     /// Run one entry under the lock; a fault poisons the port.
-    fn with_core<U>(
+    fn with_core<V>(
         &self,
         entry: impl FnOnce(
             &mut LowerMacCore<
@@ -656,9 +697,9 @@ where
                 AMPDU_BUFFERS,
             >,
             &mut H,
-            &mut QueueSink<'_, M, EVENTS, FRAME>,
-        ) -> Result<U, LowerMacFault>,
-    ) -> Result<U, Esp32s31LowerMacError> {
+            &mut QueueSink<'_, M, EVENTS, U>,
+        ) -> Result<V, LowerMacFault>,
+    ) -> Result<V, Esp32s31LowerMacError> {
         if let Some(fault) = self.fault.lock(Cell::get) {
             return Err(Esp32s31LowerMacError::Poisoned(fault));
         }
@@ -708,14 +749,15 @@ where
         }
     }
 
-    /// One MPDU of the receive producer, copied into the receive queue while
-    /// the port receives and a receive rule or monitor reception admits it.
-    /// An MPDU longer than `FRAME` is reported as
-    /// [`LowerMacEvent::RxTooLong`].
-    pub fn on_received(&self, frame: &NormalizedRxFrame<'_>)
+    /// One unit of the receive producer, queued as it is while the port
+    /// receives and a receive rule or monitor reception admits its MPDU;
+    /// a unit the port does not queue is dropped, which returns its buffer.
+    /// A unit whose hardware report does not decode is the error.
+    pub fn on_received(&self, unit: U) -> Result<(), RxError>
     where
         T: ReceptionClock,
     {
+        let frame = unit.normalized()?;
         // The receive timestamp, in the generation it was taken in; a
         // frame received before the snapshot always has its place unless a
         // break left it without one.
@@ -723,29 +765,24 @@ where
             .stamp
             .and_then(|raw| self.timer.snapshot()?.stamp(raw))
             .map_or(RxEvidence::Unavailable, RxEvidence::HardwareObserved);
-        let _ = self.with_core(|core, hardware, sink| {
-            if let Some((bytes, mut meta)) = core.received(&*hardware, frame) {
+        let received = self.with_core(|core, hardware, _| {
+            Ok(core.received(&*hardware, &frame).map(|(bytes, mut meta)| {
                 meta.timestamp = stamp;
-                let mut owned = [0; FRAME];
-                let event = match owned.get_mut(..bytes.len()) {
-                    Some(prefix) => {
-                        prefix.copy_from_slice(bytes);
-                        Esp32s31LowerMacEvent::Received {
-                            frame: Esp32s31RxBuffer {
-                                frame: owned,
-                                length: bytes.len(),
-                            },
-                            meta,
-                        }
-                    }
-                    None => Esp32s31LowerMacEvent::RxTooLong {
-                        length: bytes.len(),
-                    },
-                };
-                sink.queues.received.push(event);
-            }
-            Ok(())
+                (frame.mpdu_offset..frame.mpdu_offset + bytes.len(), meta)
+            }))
         });
+        if let Ok(Some((mpdu, meta))) = received {
+            // Queued under the core's lock, as every event is: a port
+            // poisoned meanwhile drops the unit instead.
+            let _ = self.with_core(|_, _, sink| {
+                sink.queues.received.push(Esp32s31LowerMacEvent::Received {
+                    frame: Esp32s31RxBuffer { unit, mpdu },
+                    meta,
+                });
+                Ok(())
+            });
+        }
+        Ok(())
     }
 
     /// The port's runner: the publication watchdog of the attempts in
@@ -817,7 +854,7 @@ where
 
     /// Take the next event: the queued ones in their order, then the
     /// terminal [`Esp32s31LowerMacEvent::Poisoned`] of a poisoned port.
-    async fn wait_event(&self) -> Result<Esp32s31LowerMacEvent<FRAME>, EventsLost> {
+    async fn wait_event(&self) -> Result<Esp32s31LowerMacEvent<U>, EventsLost> {
         loop {
             if let Some(event) = self.queues.take() {
                 return event;
@@ -852,8 +889,8 @@ impl<M: RawMutex, R> Drop for RetuneGuard<'_, M, R> {
 
 /// Admit `attempt` through `admit` only while the completion queue has room
 /// for its completion, and count the completion it then owes.
-fn owe_completion<M: RawMutex, A, const EVENTS: usize, const FRAME: usize>(
-    queues: &Queues<M, EVENTS, FRAME>,
+fn owe_completion<M: RawMutex, A, const EVENTS: usize, U: LowerMacRxUnit>(
+    queues: &Queues<M, EVENTS, U>,
     attempt: A,
     admit: impl FnOnce(A) -> Result<Result<(), Refused<A>>, LowerMacFault>,
 ) -> Result<Result<(), Refused<A>>, LowerMacFault> {
@@ -884,7 +921,7 @@ impl<
     const BUFFER_SIZE: usize,
     const TX_BUFFERS: usize,
     const EVENTS: usize,
-    const FRAME: usize,
+    U: LowerMacRxUnit,
     const AMPDU_SLOTS: usize,
     const AMPDU_BUFFERS: usize,
 > Ieee80211LowerMacPort
@@ -899,7 +936,7 @@ impl<
         BUFFER_SIZE,
         TX_BUFFERS,
         EVENTS,
-        FRAME,
+        U,
         S,
         AMPDU_SLOTS,
         AMPDU_BUFFERS,
@@ -912,18 +949,18 @@ where
     R: LowerMacRetune,
     S: AmpduBacking,
 {
-    type Event = Esp32s31LowerMacEvent<FRAME>;
+    type Event = Esp32s31LowerMacEvent<U>;
     type Error = Esp32s31LowerMacError;
     type TxBuffer = Esp32s31TxBuffer<'slot, BUFFER_SIZE>;
-    type RxBuffer = Esp32s31RxBuffer<FRAME>;
+    type RxBuffer = Esp32s31RxBuffer<U>;
 
-    fn view(event: &Esp32s31LowerMacEvent<FRAME>) -> LowerMacEvent<'_> {
+    fn view(event: &Esp32s31LowerMacEvent<U>) -> LowerMacEvent<'_> {
         event.portable()
     }
 
     fn into_received(
-        event: Esp32s31LowerMacEvent<FRAME>,
-    ) -> Result<(Esp32s31RxBuffer<FRAME>, RxMeta), Esp32s31LowerMacEvent<FRAME>> {
+        event: Esp32s31LowerMacEvent<U>,
+    ) -> Result<(Esp32s31RxBuffer<U>, RxMeta), Esp32s31LowerMacEvent<U>> {
         match event {
             Esp32s31LowerMacEvent::Received { frame, meta } => Ok((frame, meta)),
             event => Err(event),
@@ -969,7 +1006,7 @@ where
         Ok(admitted)
     }
 
-    async fn next_event(&self) -> Result<Esp32s31LowerMacEvent<FRAME>, EventsLost> {
+    async fn next_event(&self) -> Result<Esp32s31LowerMacEvent<U>, EventsLost> {
         self.wait_event().await
     }
 
@@ -1050,7 +1087,7 @@ impl<
     const BUFFER_SIZE: usize,
     const TX_BUFFERS: usize,
     const EVENTS: usize,
-    const FRAME: usize,
+    U: LowerMacRxUnit,
     const AMPDU_SLOTS: usize,
     const AMPDU_BUFFERS: usize,
 > LowerMacBeaconTiming
@@ -1065,7 +1102,7 @@ impl<
         BUFFER_SIZE,
         TX_BUFFERS,
         EVENTS,
-        FRAME,
+        U,
         S,
         AMPDU_SLOTS,
         AMPDU_BUFFERS,
@@ -1134,7 +1171,7 @@ where
         self.with_core(|core, hardware, _| Ok(core.stop_tbtt(hardware, vif)))
     }
 
-    fn tbtt(event: &Esp32s31LowerMacEvent<FRAME>) -> Option<TbttEvent> {
+    fn tbtt(event: &Esp32s31LowerMacEvent<U>) -> Option<TbttEvent> {
         match event {
             Esp32s31LowerMacEvent::Tbtt(event) => Some(*event),
             _ => None,
@@ -1153,7 +1190,7 @@ impl<
     const BUFFER_SIZE: usize,
     const TX_BUFFERS: usize,
     const EVENTS: usize,
-    const FRAME: usize,
+    U: LowerMacRxUnit,
     const AMPDU_SLOTS: usize,
     const AMPDU_BUFFERS: usize,
 > LowerMacMonitor
@@ -1168,7 +1205,7 @@ impl<
         BUFFER_SIZE,
         TX_BUFFERS,
         EVENTS,
-        FRAME,
+        U,
         S,
         AMPDU_SLOTS,
         AMPDU_BUFFERS,
@@ -1205,7 +1242,7 @@ impl<
     const BUFFER_SIZE: usize,
     const TX_BUFFERS: usize,
     const EVENTS: usize,
-    const FRAME: usize,
+    U: LowerMacRxUnit,
     const AMPDU_SLOTS: usize,
     const AMPDU_BUFFERS: usize,
 > LowerMacAmpdu
@@ -1220,7 +1257,7 @@ impl<
         BUFFER_SIZE,
         TX_BUFFERS,
         EVENTS,
-        FRAME,
+        U,
         S,
         AMPDU_SLOTS,
         AMPDU_BUFFERS,

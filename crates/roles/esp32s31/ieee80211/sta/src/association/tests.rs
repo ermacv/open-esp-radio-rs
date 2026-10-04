@@ -48,3 +48,15 @@ fn he_profile_owns_calibrated_power_derivation() {
         [0, 0, 1, 1, 2, 2, 4, 5, 0]
     );
 }
+
+#[test]
+fn a_legacy_access_point_fails_the_association_profile() {
+    let access_point = ScanRecord {
+        channel: 6,
+        ..ScanRecord::EMPTY
+    };
+    assert_eq!(
+        esp32s31_sta_association_profile(&access_point, Preference::Automatic, &Power),
+        Err(StaAssociationProfileError::LegacyUnsupported)
+    );
+}

@@ -98,14 +98,34 @@ pub struct InterruptStacks {
     /// The ROM summaries the image's analysis applied: those of the ROM
     /// functions it reaches.
     pub summaries: BTreeSet<String>,
+    /// Each table entry's vector-slot symbol and the functions it calls
+    /// itself (the handler, unless inlined into it).
+    pub handlers: Vec<(u32, Vec<u32>)>,
     /// Function names by address, for the report.
     names: BTreeMap<u32, String>,
 }
 
 impl InterruptStacks {
     /// The gate: every hart's bound is known and, with the margin, fits the
-    /// usable interrupt stack.
+    /// usable interrupt stack, and every entry's handler runs from SRAM.
     pub fn check(&self) -> Result<()> {
+        let in_sram = |address: u32| {
+            oer_esp32s31_platform_layout::memory::SRAM
+                .contains_range(u64::from(address), u64::from(address) + 4)
+        };
+        for (slot, calls) in &self.handlers {
+            if let Some(outside) = std::iter::once(slot)
+                .chain(calls)
+                .find(|address| !in_sram(**address))
+            {
+                return Err(format!(
+                    "the interrupt handler `{}` runs {} from outside SRAM",
+                    self.name(*slot),
+                    self.name(*outside)
+                )
+                .into());
+            }
+        }
         for hart in &self.harts {
             let Some(bytes) = hart.bytes else {
                 return Err(format!(
@@ -130,14 +150,16 @@ impl InterruptStacks {
         Ok(())
     }
 
+    fn name(&self, address: u32) -> String {
+        self.names
+            .get(&address)
+            .cloned()
+            .unwrap_or_else(|| format!("{address:#010x}"))
+    }
+
     /// Each hart's bound, its levels and their critical paths.
     pub fn render(&self) -> String {
-        let name = |address: u32| {
-            self.names
-                .get(&address)
-                .cloned()
-                .unwrap_or_else(|| format!("{address:#010x}"))
-        };
+        let name = |address: u32| self.name(address);
         let mut out = String::new();
         for hart in &self.harts {
             let _ = writeln!(
@@ -245,6 +267,33 @@ pub fn interrupt_stacks(root: &Path, elf: &Path) -> Result<InterruptStacks> {
     for (site, targets) in function_pointer_resolutions(&analysis, &types, &taken) {
         resolutions.entry(site).or_insert(targets);
     }
+    // The handler a slot calls is a direct call of the slot's own code: a
+    // call site no inlined function owns. Calls from a handler inlined into
+    // the slot are the handler's.
+    let handlers = table
+        .iter()
+        .filter_map(|entry| entry.handler)
+        .map(|slot| {
+            let calls = analysis
+                .functions
+                .get(&slot)
+                .map(|facts| {
+                    facts
+                        .transfers
+                        .iter()
+                        .filter_map(|transfer| {
+                            let target = transfer.target?;
+                            let own = dwarf
+                                .inline_chain(transfer.site)
+                                .map_or(true, |chain| chain.len() <= 1);
+                            own.then_some(target)
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            (slot, calls)
+        })
+        .collect();
     let sources = source_table(&elf)?;
     let harts = oer_riscv_stack::interrupt_stacks(
         &analysis,
@@ -260,6 +309,7 @@ pub fn interrupt_stacks(root: &Path, elf: &Path) -> Result<InterruptStacks> {
     )?;
     Ok(InterruptStacks {
         harts,
+        handlers,
         summaries: analysis.summaries.clone(),
         names,
     })
@@ -306,6 +356,30 @@ fn source_table(elf: &[u8]) -> Result<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn stacks(handlers: Vec<(u32, Vec<u32>)>) -> InterruptStacks {
+        InterruptStacks {
+            harts: Vec::new(),
+            summaries: BTreeSet::new(),
+            handlers,
+            names: BTreeMap::from([(0x2f00_1000, "TIMER".to_owned())]),
+        }
+    }
+
+    #[test]
+    fn a_handler_called_from_outside_sram_fails_the_gate() {
+        let sram = oer_esp32s31_platform_layout::memory::SRAM.origin + 0x1000;
+        let psram = oer_esp32s31_platform_layout::memory::PSRAM.origin;
+        // A slot whose handler was inlined into it calls nothing itself.
+        assert!(stacks(vec![(sram, Vec::new())]).check().is_ok());
+        assert!(stacks(vec![(sram, vec![sram + 0x40])]).check().is_ok());
+        let error = stacks(vec![(sram, vec![psram])])
+            .check()
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("`TIMER`"), "{error}");
+        assert!(stacks(vec![(psram, Vec::new())]).check().is_err());
+    }
 
     #[test]
     fn the_margin_is_a_share_of_the_bound() {

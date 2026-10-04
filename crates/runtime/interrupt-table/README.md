@@ -11,8 +11,6 @@ For each entry the macro defines:
 - the source's strong handler symbol, named as the source, which the chip's
   vector slot of the source links to: a second handler for one source fails
   the link;
-- `__oer_interrupt_body_<SOURCE>`, a word holding the handler function's
-  address, for the tools that check where the handler lies;
 - a token type, neither `Copy` nor `Clone`, which `Interrupts::take` hands out
   once per image. `enable` and `disable` take only a token; `enable` routes
   the source to the table's level on the table's core and fails on another

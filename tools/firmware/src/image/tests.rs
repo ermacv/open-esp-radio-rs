@@ -70,20 +70,3 @@ fn cancellation_stops_both_placement_inspection_tools() {
         assert!(!Path::new(&format!("/proc/{tool}")).exists());
     }
 }
-
-#[test]
-fn the_handler_word_is_read_at_its_address_in_its_section() {
-    let table = "5032d878 g     O .rodata\t00000004 __oer_interrupt_body_SYSTIMER_TARGET2\n2f003a9e g     F .isr.text\t00000164 SYSTIMER_TARGET2\n";
-    assert_eq!(
-        body_words(table),
-        [(
-            "SYSTIMER_TARGET2".to_owned(),
-            0x5032_d878,
-            ".rodata".to_owned()
-        )]
-    );
-    // Another section's row before it, and the word across two rows.
-    let dump = "Contents of section .runtime.header:\n 50010000 53544732 01000000\nContents of section .rodata:\n 5032d870 00000000 00000000 ee37\n 5032d87a 1b50 0000\n";
-    assert_eq!(dumped_word(dump, 0x5032_d878), Some(0x501b_37ee));
-    assert_eq!(dumped_word(dump, 0x5032_d900), None);
-}

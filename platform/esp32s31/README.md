@@ -79,8 +79,9 @@ the macro links each handler into its source's slot of esp-hal's
 `Priority` (`u8`), the `Cpu` (a 4-byte C enum at offset 4) and the handler
 address at offset 8 (zero for an entry a `cfg` leaves out); compile-time
 assertions in `interrupts.rs` keep that layout, which the stack analysis
-reads. The runtime's placement audit requires every entry's slot
-symbol and handler function in SRAM. Installing a hart's
+reads. The interrupt-stack gate requires every entry's slot
+symbol, and the handler it calls unless the handler is inlined into it, in
+SRAM. Installing a hart's
 interrupt stack silences every source of that hart's entries and checks the
 slots; `enable_interrupts_after_handoff` checks again that every slot holds its
 handler and every table source is silent or routed to its level. An owner

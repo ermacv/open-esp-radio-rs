@@ -25,9 +25,9 @@ use core::{
 use oer_ieee80211_datapath::SoftwareTxFrame;
 use oer_ieee80211_lower_mac::{
     Channel, CoexPriority, EventsLost, FailureClass, Ieee80211LowerMacPort, KeySelector,
-    LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacAmpdu, LowerMacBeaconTiming,
-    LowerMacEvent, LowerMacSetting, MacAddress, PhyRate, ReceiveFilter, RxBuffer, RxMeta,
-    SettingError, TbttEvent, TxPower, VifConfig, VifId, VifRole,
+    LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacAirReservation, LowerMacAmpdu,
+    LowerMacBeaconTiming, LowerMacEvent, LowerMacSetting, MacAddress, PhyRate, ReceiveFilter,
+    RxBuffer, RxMeta, SettingError, TbttEvent, TxCompletion, TxPower, VifConfig, VifId, VifRole,
 };
 use oer_ieee80211_mac::{data::EthernetFrameParts, qos::WmmAccessCategory};
 use oer_ieee80211_softmac::BackoffEntropy;
@@ -335,6 +335,34 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
         } = self;
         match tx.send_ampdu(frames, request, ladder, entropy).await {
             Ok(report) => Ok(report),
+            Err(UpperMacTxError::Poisoned) => Err(PortClientError::Poisoned),
+            Err(error) => Err(PortClientError::Tx(error)),
+        }
+    }
+
+    /// Reserve the interface's air for `duration` with a CTS-to-self on the
+    /// voice queue at `rate`, and wait until it went out.
+    pub async fn reserve_air(
+        &mut self,
+        duration: oer_time::Duration,
+        rate: PhyRate,
+        coex: CoexPriority,
+    ) -> Result<TxCompletion, PortClientError<PortError<X>>>
+    where
+        X::Port: LowerMacAirReservation,
+    {
+        match self
+            .tx
+            .reserve_air(
+                duration,
+                WmmAccessCategory::Voice,
+                rate,
+                self.config.power,
+                coex,
+            )
+            .await
+        {
+            Ok(completion) => Ok(completion),
             Err(UpperMacTxError::Poisoned) => Err(PortClientError::Poisoned),
             Err(error) => Err(PortClientError::Tx(error)),
         }

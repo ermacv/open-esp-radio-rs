@@ -63,8 +63,9 @@ pub use control::{
     RxBeaconPriority, RxBlockAckAgreement, SettingError, VifConfig, VifId, VifRole, VifRoleSet,
 };
 pub use extensions::{
-    AmpduAttempt, AmpduBuffer, AmpduCapabilities, AmpduPayload, BeaconTimingCapabilities,
-    LowerMacAmpdu, LowerMacBeaconTiming, LowerMacCancelPublished, LowerMacMonitor,
+    AirReservation, AirReservationAttempt, AmpduAttempt, AmpduBuffer, AmpduCapabilities,
+    AmpduPayload, BeaconTimingCapabilities, LowerMacAirReservation, LowerMacAmpdu,
+    LowerMacBeaconTiming, LowerMacCancelPublished, LowerMacMonitor, MAX_AIR_RESERVATION,
     MonitorCapabilities, TSF_DRIFT_PPM, TbttEvent, TbttSchedule, TsfGeneration, TsfProjectionError,
     TsfRelation, TsfSample, TsfSetKind, TsfVifMismatch, VifTsf,
 };

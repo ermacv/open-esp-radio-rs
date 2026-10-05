@@ -45,11 +45,13 @@ pub use router::{
 };
 
 use oer_ieee80211_lower_mac::{
-    AmpduBuffer, AmpduPayload, CancelError, Ieee80211LowerMacPort, KeySelector, LowerMacAmpdu,
+    AirReservation, AmpduBuffer, AmpduPayload, Backoff, CancelError, CoexPriority,
+    Ieee80211LowerMacPort, KeySelector, LowerMacAirReservation, LowerMacAmpdu, PhyRate, Protection,
     ReclaimError, Refused, SubmitError, TxAttempt, TxBody as PortTxBody, TxBuffer, TxCompletion,
-    TxId, TxPayload, TxResponse, VifId,
+    TxId, TxPayload, TxPower, TxResponse, VifId,
 };
 use oer_ieee80211_mac::block_ack::encode_block_ack_request;
+use oer_ieee80211_mac::qos::WmmAccessCategory;
 use oer_ieee80211_softmac::BackoffEntropy;
 use oer_ieee80211_upper_mac::{
     AttemptContent, HeTxopRtsBudget, RateLadder, TxAttemptPlan, TxBody, TxExchange, TxPlanError,
@@ -392,6 +394,48 @@ where
             Ok(()) | Err(ReclaimError::Unknown) => completion,
             Err(ReclaimError::Running) => Err(UpperMacTxError::BodiesHeld { attempt: id }),
         }
+    }
+}
+
+impl<'r, 'p, P, B, const WAITERS: usize, const RX: usize> UpperMacTx<'r, 'p, P, B, WAITERS, RX>
+where
+    P: LowerMacAirReservation,
+    B: HeTxopRtsBudget,
+{
+    /// Reserve the interface's air for `duration` with a CTS-to-self, sent
+    /// once after the access category's AIFS with no further backoff, and
+    /// wait until it went out: its completion.
+    pub async fn reserve_air(
+        &self,
+        duration: oer_time::Duration,
+        access_category: WmmAccessCategory,
+        rate: PhyRate,
+        power: TxPower,
+        coex: CoexPriority,
+    ) -> Result<TxCompletion, UpperMacTxError<P::Error>> {
+        let Ok(registration) = self.router.register(self.router.next_id()) else {
+            return Err(UpperMacTxError::RouterFull);
+        };
+        let attempt = TxAttempt {
+            id: registration.id(),
+            vif: self.vif,
+            access_category,
+            payload: AirReservation { duration },
+            rate,
+            protection: Protection::None,
+            key: KeySelector::Plaintext,
+            power,
+            backoff: Backoff::Slots(0),
+            coex,
+        };
+        if let Err(Refused { error, .. }) = self
+            .port
+            .submit_air_reservation(attempt)
+            .map_err(UpperMacTxError::Port)?
+        {
+            return Err(UpperMacTxError::Refused(error));
+        }
+        self.completion(&registration, &mut [], |_| None).await
     }
 }
 

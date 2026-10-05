@@ -255,27 +255,26 @@ pub struct PortApProfile<'a> {
     pub rx_reorder_gap: Duration,
 }
 
-/// Frames the access point holds for dozing peers and for the next DTIM,
-/// together.
-pub const PORT_AP_BUFFERED: usize = 8;
-
 /// The memory of one access point that the composition places: its beacon
-/// template, its transmit queue and the frames it holds for power save.
-pub struct PortApStorage {
+/// template, its transmit queue, the `HELD` frames it holds for power save
+/// (for every dozing peer and the next DTIM together; the composition sizes
+/// it for its peers' traffic and its memory) and its peers' receive
+/// reordering.
+pub struct PortApStorage<const HELD: usize> {
     beacon: [u8; AP_BEACON_CAPACITY],
     queue: TxQueue,
-    buffered: PowerSaveBuffer,
+    held: [Option<HeldFrame>; HELD],
     /// The peers' receive Block Ack agreements, one per peer at most on
     /// average, and their kept MPDUs.
     reorder: RxReorder<AP_MAX_CLIENTS>,
 }
 
-impl PortApStorage {
+impl<const HELD: usize> PortApStorage<HELD> {
     pub const fn new() -> Self {
         Self {
             beacon: [0; AP_BEACON_CAPACITY],
             queue: TxQueue::new(),
-            buffered: PowerSaveBuffer::new(),
+            held: [const { None }; HELD],
             reorder: RxReorder::new(),
         }
     }
@@ -283,7 +282,7 @@ impl PortApStorage {
 
 /// One frame held for power save: an Ethernet-II frame for a dozing peer,
 /// or for the group until the next DTIM.
-struct HeldFrame {
+pub struct HeldFrame {
     order: u32,
     ethernet: [u8; PORT_FRAME_CAPACITY],
     len: usize,
@@ -307,15 +306,16 @@ impl HeldFrame {
 
 /// The frames held for power save, shared by every dozing peer and the
 /// group, each released oldest first for its destination.
-struct PowerSaveBuffer {
-    frames: [Option<HeldFrame>; PORT_AP_BUFFERED],
+struct PowerSaveBuffer<'p> {
+    frames: &'p mut [Option<HeldFrame>],
     next_order: u32,
 }
 
-impl PowerSaveBuffer {
-    const fn new() -> Self {
+impl<'p> PowerSaveBuffer<'p> {
+    fn new(frames: &'p mut [Option<HeldFrame>]) -> Self {
+        frames.iter_mut().for_each(|slot| *slot = None);
         Self {
-            frames: [const { None }; PORT_AP_BUFFERED],
+            frames,
             next_order: 0,
         }
     }
@@ -357,7 +357,7 @@ impl PowerSaveBuffer {
 
     /// Drop every frame held for `peer`.
     fn drop_for(&mut self, peer: [u8; 6]) {
-        for slot in &mut self.frames {
+        for slot in self.frames.iter_mut() {
             if slot.as_ref().is_some_and(|held| held.destination() == peer) {
                 *slot = None;
             }
@@ -365,7 +365,7 @@ impl PowerSaveBuffer {
     }
 }
 
-impl Default for PortApStorage {
+impl<const HELD: usize> Default for PortApStorage<HELD> {
     fn default() -> Self {
         Self::new()
     }
@@ -536,7 +536,7 @@ pub struct PortAccessPoint<'p, X: PortApEnv> {
     /// The packet numbers of group data.
     group_transmit: CcmpTxPacketNumber,
     queue: &'p mut TxQueue,
-    buffered: &'p mut PowerSaveBuffer,
+    buffered: PowerSaveBuffer<'p>,
     reorder: &'p mut RxReorder<AP_MAX_CLIENTS>,
     /// The protection the beacon template carries.
     advertised: ApBssProtection,
@@ -548,21 +548,22 @@ pub struct PortAccessPoint<'p, X: PortApEnv> {
 impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     /// An access point of `profile` and `service` over `client`, its beacon
     /// template in `storage`.
-    pub fn new(
+    pub fn new<const HELD: usize>(
         client: PortApClient<'p, X>,
         timer: X::Timer,
         authenticator: X::Authenticator,
         sae: X::Sae,
         profile: PortApProfile<'p>,
         service: AccessPointService<'p>,
-        storage: &'p mut PortApStorage,
+        storage: &'p mut PortApStorage<HELD>,
     ) -> Result<Self, PortApBuildError> {
         let PortApStorage {
             beacon,
             queue,
-            buffered,
+            held,
             reorder,
         } = storage;
+        let buffered = PowerSaveBuffer::new(held);
         if service.address() != client.config().address {
             return Err(PortApBuildError::AddressMismatch);
         }

@@ -73,8 +73,11 @@ impl HostTransmission {
     }
 }
 
-pub fn send(config: Config) -> Result<HostTransmission> {
-    let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?;
+/// Send one paced flow from `source`, the source address of the route the
+/// caller validated. The socket binds it, so a route that disappears during
+/// the flow fails the send rather than leaving through another interface.
+pub fn send(source: Ipv4Addr, config: Config) -> Result<HostTransmission> {
+    let socket = UdpSocket::bind(SocketAddrV4::new(source, 0))?;
     socket.connect(SocketAddrV4::new(config.address, config.port))?;
     socket.set_write_timeout(Some(Duration::from_secs(2)))?;
     send_with(config, &socket, &mut SystemClock, |packet| {

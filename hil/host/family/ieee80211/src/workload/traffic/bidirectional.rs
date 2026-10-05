@@ -283,13 +283,16 @@ pub fn run(options: Config, output: &Path, context: &Context<'_>, policy: RunPol
         ],
         link_requirements: SessionLinkRequirements::tx_block_ack(0),
     })?;
-    let host_result = send_paced_udp(PacedUdpConfig {
-        address: options.address,
-        port: options.port,
-        rate_bps: options.rate_bps,
-        duration: options.duration,
-        payload: options.payload,
-    });
+    let host_result = send_paced_udp(
+        host_route.source(),
+        PacedUdpConfig {
+            address: options.address,
+            port: options.port,
+            rate_bps: options.rate_bps,
+            duration: options.duration,
+            payload: options.payload,
+        },
+    );
     let structured = capture.wait_for_session(session, Duration::from_secs(5));
     let tx_bursts = receiver.finish(
         structured

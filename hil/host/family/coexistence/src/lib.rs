@@ -147,13 +147,16 @@ impl Workload for CoexistenceScenario {
             // offers UDP; the capture serves it only after the interval.
             let (host, echoes) = std::thread::scope(|scope| {
                 let echoes = scope.spawn(|| echo.run(duration));
-                let host = send_paced_udp(PacedUdpConfig {
-                    address: ready.address,
-                    port: UDP_PORT,
-                    rate_bps: self.rx_bps,
-                    duration,
-                    payload: usize::from(self.payload_bytes),
-                });
+                let host = send_paced_udp(
+                    route.source(),
+                    PacedUdpConfig {
+                        address: ready.address,
+                        port: UDP_PORT,
+                        rate_bps: self.rx_bps,
+                        duration,
+                        payload: usize::from(self.payload_bytes),
+                    },
+                );
                 (host, echoes.join())
             });
             let echoes = echoes.map_err(|_| "echo load panicked")??;

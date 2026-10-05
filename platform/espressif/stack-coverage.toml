@@ -7,6 +7,12 @@
 schema = 1
 
 [[reviewed]]
+symbols = ["esp_hal::interrupt::__rtos_implementation::local::stub"]
+category = "assembly"
+source = "esp-hal@e7739ccf esp-hal/src/interrupt/__rtos_implementation.rs local::stub #[naked]"
+reason = "Naked context-switch stub retained by esp-hal initialization on ESP32-C5. The staged runtime replaces its vector with the SRAM stack-switching entries and uses its own executor, so the stub is not dispatched. No compiler frame or call-chain bound is claimed."
+
+[[reviewed]]
 symbols = ["_mtvt_table", "_runtime_mtvt_table", "_mtvt_table2", "_vector_table"]
 category = "vector-data"
 source = "platform/espressif/staged-runtime/src/stacks.rs; esp-hal@890fd49 esp-hal/src/interrupt/riscv/clic.rs and esp-riscv-rt/src/lib.rs"

@@ -18,7 +18,7 @@ esp32s31 = [
 
 [dependencies]
 critical-section = { version = "1.2.0", optional = true }
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "46a45a813177122cc7485723c07d54751b3ef921", default-features = false, features = ["esp32s31", "static-interrupts", "unstable"], optional = true }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "e7739ccfb4288ac9547d3fa9adeb69221709268d", default-features = false, features = ["esp32s31", "static-interrupts", "unstable"], optional = true }
 oer-interrupt-table = { path = "../../../../runtime/interrupt-table", optional = true }
 oer-espressif-interrupt-table-esp-hal = { path = "../../espressif/interrupt-table", features = ["esp32s31"], optional = true }
 

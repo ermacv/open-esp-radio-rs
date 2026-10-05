@@ -20,7 +20,10 @@ they read `SRAM_ORIGIN`, `RUNTIME_PSRAM_ORIGIN`, `HART_COUNT`,
 `STAGE_TWO_MAGIC` and the other symbols emitted by `build`. Stage two has
 one placement: code, data and task stacks in PSRAM; interrupt entries,
 per-hart interrupt stacks, hot code, critical state and DMA state in
-internal SRAM.
+internal SRAM. The shared panic handler and compiler panic entry helpers
+also stay in SRAM, since an exception or interrupt may reach them with
+caches unavailable. HAL owns the register-only reset preparation for each
+chip; it must not reacquire locks held by the failing context.
 
 ## Layout seed
 

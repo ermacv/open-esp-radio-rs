@@ -72,6 +72,13 @@ SECTIONS
     KEEP(*(.isr.text .isr.text.*));
     KEEP(*(.flash.critical.text .flash.critical.text.*));
     *(.rwtext .rwtext.*);
+    /* Compiler panic entry helpers can run from an interrupt or an
+       exception while caches are unavailable. Match their pinned compiler's v0
+       Rust input-section names; the platform's own record/reset code marks
+       itself .flash.critical.text.panic. Formatting stays in thread code. */
+    *(.text.*_R*4core9panicking*);
+    *(.text.*_R*4core6option13expect_failed*);
+    *(.text.*_R*4core6result13unwrap_failed*);
     . = ALIGN(4);
     __runtime_isr_end = ABSOLUTE(.);
   } > INTERNAL_LOW

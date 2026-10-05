@@ -100,7 +100,11 @@ pub(crate) async fn run(console: Console) {
             }
         },
     );
-    embassy_futures::join::join(serving, test_watchdog(console.service)).await;
+    // Keep the large console future in its final storage; joining pinned
+    // references avoids moving it into another future on the task stack.
+    let serving = core::pin::pin!(serving);
+    let testing = core::pin::pin!(test_watchdog(console.service));
+    embassy_futures::join::join(serving, testing).await;
 }
 
 /// Arms the SoC deadline watchdog for each test and misbehaves as asked.

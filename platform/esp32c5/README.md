@@ -24,10 +24,14 @@ clock: see the ESP32-C5 entry of the [hardware errata](../../docs/hardware-errat
 
 ## Build
 
-esp-hal comes from the owner's fork, branch `oer/c5-staged` (revision
-`46a45a81`): fixed-origin PSRAM mapping (`PsramOrigin::Fixed`), code
+esp-hal comes from the owner's fork, branch `oer/c5-panic-reset` (revision
+`e7739ccf`): fixed-origin PSRAM mapping (`PsramOrigin::Fixed`), code
 preparation in PSRAM and re-initialized interrupt vectoring after the
-handoff on the ESP32-C5. Images are built by the
+handoff on the ESP32-C5. The shared panic handler records into retained
+RAM and resets without formatting. HAL restores UART0's undivided XTAL
+clock directly, so reset cannot reacquire a clock-tree lock held at panic;
+chip register access stays in HAL. The shared linker places panic entry
+helpers and the record/reset path in SRAM. Images are built by the
 [image pipeline](../../tools/image/README.md) from `chip.toml` (boot
 `staged`, the `[flash]` map: application QIO at 80 MHz on 16 MiB, DIO
 bootloader). The HIL agent (`hil/targets/esp32c5/agent`) runs on the staged
@@ -36,8 +40,9 @@ runtime; its image classes are `boot-smoke` and `system-watchdog`:
 ```console
 cargo hil images check --chip esp32c5 --all --type-check
 cargo hil image build boot-smoke --chip esp32c5
+cargo hil run --chip esp32c5 boot-smoke system-watchdog
 ```
 
-Flash and PSRAM stay at 80 MHz; 120 MHz needs esp-hal's MSPI timing tuning
-for this chip. The staged boot is type-checked on the host; it is
-not yet validated on the stand.
+The [HIL scenarios](../../hil/targets/esp32c5/README.md) exercise the staged
+handoff, timer wake and watchdog resets on the stand. Flash and PSRAM stay
+at 80 MHz; 120 MHz needs esp-hal's MSPI timing tuning for this chip.

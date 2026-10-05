@@ -84,9 +84,9 @@ for the runtime ELF (`audit_runtime_stacks`) and one for the bootstrap ELF
 (`audit_bootstrap_stack`). Each analyses its ELF once with `oer-riscv-stack`,
 the pinned ROM and its summaries, and resolves indirect sites with the same
 facts (waker vtables, IPC posts, function-pointer field types). The policy is
-a target's `stack.toml` (schema 5): `platform/esp32s31/stack.toml` for the
-examples, extended by `hil/targets/esp32s31/stack.toml`, which adds the second
-core's stack only HIL images start. Each stack names the function that runs on
+a chip's `platform/<chip>/stack.toml` (schema 5), extended by the HIL
+target's policy. S31 HIL adds the second core's task stack; C5 uses the same
+coverage and interrupt-stack gates on its single hart. Each stack names the function that runs on
 it from its top (its root, by symbol), its storage (a sized symbol, or a
 linker script's bottom and top symbols) and `minimum_free_bytes`: the root's
 worst-case call chain (`Analysis::bound_with`) must leave the storage that
@@ -157,11 +157,11 @@ PSRAM trap and interrupt entry first swaps to its SRAM stack; the caller's
 audit runs beside it.
 
 A stack policy that names no stacks sets only the move limit: the image is
-compiled with every image flag and no stack gate runs. The esp32c5's
-(`hil/targets/esp32c5/stack.toml`, 8192 bytes: its agent's main task moves a
-4800-byte console future once) is one:
-the stack analysis needs the chip's ROM ELF, which its `artifacts.toml` does
-not pin yet.
+compiled with every image flag and no stack gate runs. Staged S31 and C5
+images both name their stacks and pin their ROM inputs. C5 keeps the
+4096-byte move limit; its console pins the large serving and watchdog
+futures separately before joining their references, avoiding a second move
+of the console state.
 
 ## Comparing images
 

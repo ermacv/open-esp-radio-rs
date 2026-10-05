@@ -124,16 +124,6 @@ pub enum EspHalBluetoothInterruptSource {
     NrtDefault,
 }
 
-impl EspHalBluetoothInterruptSource {
-    const fn interrupt(self) -> Interrupt {
-        match self {
-            Self::Primary => PRIMARY_INTERRUPT,
-            Self::ModemLpTimer => MODEM_LP_TIMER_INTERRUPT,
-            Self::NrtDefault => NRT_INTERRUPT,
-        }
-    }
-}
-
 /// Required route disposition after one full Controller interrupt service.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[must_use = "fatal service failure must quarantine its asserted CPU route"]

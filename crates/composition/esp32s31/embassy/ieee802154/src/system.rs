@@ -41,9 +41,7 @@ use oer_espressif_ieee802154_engine::{
 use oer_espressif_ieee802154_runtime::{
     Ieee802154Random, Ieee802154Runtime, Ieee802154RuntimeError, Ieee802154RuntimeParts,
 };
-use oer_ieee802154::Ieee802154RadioPort;
 use oer_time_embassy::EmbassyClock;
-use static_cell::ConstStaticCell;
 
 use crate::maintenance::{
     Ieee802154PhyMaintenance, MAINTENANCE_PERIOD_MICROS, next_attempt_micros,
@@ -88,11 +86,11 @@ pub fn ieee802154_interrupt() {
     RUNTIME.on_interrupt();
 }
 
-/// The engine's DMA frames. The MAC DMA reaches internal SRAM alone
-/// ([`IEEE802154_DMA_WINDOW`](oer_esp32s31_hal::ieee802154::IEEE802154_DMA_WINDOW)), so they
-/// live in the platform's DMA-visible section whatever the image's data
-/// placement; one engine takes them.
 oer_memory::zeroed_static! {
+    /// The engine's DMA frames. The MAC DMA reaches internal SRAM alone
+    /// ([`IEEE802154_DMA_WINDOW`](oer_esp32s31_hal::ieee802154::IEEE802154_DMA_WINDOW)), so they
+    /// live in the platform's DMA-visible section whatever the image's data
+    /// placement; one engine takes them.
     static ENGINE_BUFFERS: oer_memory::zeroed::ZeroedStatic<Ieee802154EngineBuffers> =
         zeroed in ".dma.bss.open_radio_ieee802154_engine";
 }
@@ -530,7 +528,7 @@ fn coexistence(
 
 impl Ieee802154System {
     /// The runtime that accepts commands and yields events: the client's
-    /// [`Ieee802154RadioPort`].
+    /// [`oer_ieee802154::Ieee802154RadioPort`].
     pub fn runtime(&self) -> &'static Ieee802154SystemRuntime {
         &RUNTIME
     }

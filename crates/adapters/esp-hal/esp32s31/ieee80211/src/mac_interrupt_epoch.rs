@@ -86,6 +86,12 @@ enum Phase {
     Active(Cpu),
 }
 
+impl Default for EspHalMacInterruptRoute {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EspHalMacInterruptRoute {
     pub const fn new() -> Self {
         Self {

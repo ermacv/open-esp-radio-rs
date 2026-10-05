@@ -125,6 +125,7 @@ impl Slot {
         checksum: 0,
     };
 
+    #[unsafe(link_section = ".flash.critical.text.panic")]
     fn sum(&self) -> u32 {
         let mut sum = 0x811c_9dc5_u32;
         let mut mix = |word: u32| sum = (sum ^ word).wrapping_mul(0x0100_0193);
@@ -185,6 +186,7 @@ pub fn take_previous() -> Option<PanicRecord> {
 }
 
 /// Record `info` in the retained slot without formatting.
+#[unsafe(link_section = ".flash.critical.text.panic")]
 fn record(info: &core::panic::PanicInfo<'_>) {
     let hart: usize;
     let sp: usize;
@@ -234,6 +236,7 @@ unsafe extern "Rust" {
 }
 
 #[panic_handler]
+#[unsafe(link_section = ".flash.critical.text.panic")]
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
     record(info);
     #[cfg(feature = "panic-hook")]
@@ -249,6 +252,7 @@ fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
 /// It copies through iterators, without an index whose bounds check could
 /// fail: a panic while recording re-enters the handler, a call-graph cycle
 /// that leaves every interrupt's stack bound unknown.
+#[unsafe(link_section = ".flash.critical.text.panic")]
 fn file_tail(file: &str) -> ([u8; FILE_BYTES], u32) {
     let bytes = file.as_bytes();
     let mut kept = [0; FILE_BYTES];
@@ -265,6 +269,7 @@ fn file_tail(file: &str) -> ([u8; FILE_BYTES], u32) {
 
 /// The first [`MESSAGE_BYTES`] of `message`, zero-padded, and how many there
 /// are; like [`file_tail`], without an index.
+#[unsafe(link_section = ".flash.critical.text.panic")]
 fn message_head(message: &str) -> ([u8; MESSAGE_BYTES], u32) {
     let mut kept = [0; MESSAGE_BYTES];
     let mut length = 0;

@@ -14,7 +14,7 @@ esp32s31 = ["dep:esp-hal", "esp-hal/esp32s31"]
 esp32c5 = ["dep:esp-hal", "esp-hal/esp32c5"]
 
 [dependencies]
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "46a45a813177122cc7485723c07d54751b3ef921", default-features = false, features = ["static-interrupts", "unstable"], optional = true }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "e7739ccfb4288ac9547d3fa9adeb69221709268d", default-features = false, features = ["static-interrupts", "unstable"], optional = true }
 oer-interrupt-table = { path = "../../../../runtime/interrupt-table" }
 
 [lints]

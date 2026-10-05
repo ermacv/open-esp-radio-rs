@@ -30,7 +30,7 @@ oer-hil-image-keys = { path = "../../image-keys" }
 static_cell = "2.1.1"
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-time = "0.5.1"
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "46a45a813177122cc7485723c07d54751b3ef921", default-features = false, features = ["esp32c5", "static-interrupts", "rt", "unstable"] }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "e7739ccfb4288ac9547d3fa9adeb69221709268d", default-features = false, features = ["esp32c5", "static-interrupts", "rt", "unstable"] }
 oer-espressif-staged-runtime = { path = "../../../platform/espressif/staged-runtime", features = ["esp32c5"] }
 oer-esp32c5-platform-board = { path = "../../../platform/esp32c5/board", features = ["stage-two"] }
 oer-esp32c5-platform-layout = { path = "../../../platform/esp32c5/layout" }

@@ -1213,6 +1213,26 @@ mod linux {
         Ok(Some(generation))
     }
 
+    /// Every operation of the laptop network helper the operator runs
+    /// without a password: each `case` of `hil/host/linux-net/open-radio-net`.
+    pub(crate) const LINUX_NET_OPERATIONS: [&str; 15] = [
+        "ap",
+        "capabilities",
+        "identity",
+        "client",
+        "client-aqm",
+        "observer",
+        "monitor",
+        "monitor-1",
+        "monitor-6",
+        "monitor-11",
+        "managed",
+        "stop",
+        "status",
+        "usb-reset",
+        "kernel-log",
+    ];
+
     pub(crate) fn policy_bytes(bundle: &Bundle) -> Result<Vec<u8>> {
         let operator = &bundle.operator;
         validate_operator(operator)?;
@@ -1222,22 +1242,7 @@ mod linux {
                 lines.push(format!(
                     "{operator} ALL=(root) NOPASSWD: /usr/local/libexec/open-radio-probe \"\""
                 ));
-                for operation in [
-                    "ap",
-                    "capabilities",
-                    "identity",
-                    "client",
-                    "observer",
-                    "monitor",
-                    "monitor-1",
-                    "monitor-6",
-                    "monitor-11",
-                    "managed",
-                    "stop",
-                    "status",
-                    "usb-reset",
-                    "kernel-log",
-                ] {
+                for operation in LINUX_NET_OPERATIONS {
                     lines.push(format!(
                         "{operator} ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net {operation}"
                     ));
@@ -1546,7 +1551,7 @@ mod linux {
 
     #[cfg(test)]
     pub(crate) mod test_support {
-        pub(crate) use super::{Effects, Layout, Stage, apply, policy_bytes};
+        pub(crate) use super::{Effects, LINUX_NET_OPERATIONS, Layout, Stage, apply, policy_bytes};
     }
 }
 

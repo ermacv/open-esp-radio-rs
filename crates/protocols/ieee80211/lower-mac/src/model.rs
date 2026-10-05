@@ -16,7 +16,8 @@
 //! reports its terminal event and refuses every later call.
 //!
 //! Built for the crate's own tests and, with the `model` feature, for the
-//! tests of packages that drive the port.
+//! tests of packages that drive the port. [`ModelAir`] joins several models
+//! as radios on one medium.
 
 use alloc::{collections::VecDeque, rc::Rc, vec, vec::Vec};
 use core::{
@@ -35,6 +36,9 @@ use oer_ieee80211_mac::{
 };
 
 use crate::*;
+
+mod air;
+pub use air::ModelAir;
 
 /// Events the model's queue holds before it reports a loss.
 pub const MODEL_EVENT_CAPACITY: usize = 4;
@@ -520,6 +524,24 @@ impl<O: TxBody> LowerMacModel<O> {
     /// Outcomes queued by [`Self::respond`] that no attempt has used yet.
     pub fn pending_responses(&self) -> usize {
         self.state.borrow().responses.len()
+    }
+
+    /// The attempts published to the air and not yet ended, with their
+    /// queues.
+    pub fn published(&self) -> Vec<(u8, SubmittedAttempt)> {
+        let state = self.state.borrow();
+        state
+            .in_flight
+            .iter()
+            .filter(|attempt| attempt.phase == Phase::Published)
+            .filter_map(|attempt| {
+                let submitted = state
+                    .submitted
+                    .iter()
+                    .rfind(|submitted| submitted.id == attempt.id)?;
+                Some((attempt.queue, submitted.clone()))
+            })
+            .collect()
     }
 
     /// Every admitted attempt so far, in admission order.

@@ -50,6 +50,18 @@ advertisement with a DSSS rate;
 `roles/esp32s31/ieee80211/ap/src/profile.rs` selects the hardware
 advertisement. The portable codec carries no implicit ESP32-S31 profile.
 
+`ap/src/coordinator.rs` decides the channel of a port a station and an
+access point share (`ChannelCoordinator`): the station's BSS decides it, and
+the access point follows within its `ApFollowPolicy` (2.4 GHz alone by
+default, never a channel that needs radar detection; `ApUnservable` says
+whether the access point stops or the station leaves where it may not
+follow). It turns the upstream's announced switch into the access point's own
+announcement, counted in the beacons that fit before the upstream's instant,
+with one retune of the port at the access point's switch, and searches for an
+upstream lost without an announcement in short absences after the access
+point's TBTTs, densely and then sparsely (`ApSearchPolicy`). It takes facts
+and returns `CoordinatorAction`s; the port's owner carries them out.
+
 [`lower-mac`](lower-mac/README.md) declares the radio port every Wi-Fi backend
 implements; one submission is one hardware transmission attempt. Optional
 features are its extension traits. `softmac/src/edca.rs` draws the EDCA

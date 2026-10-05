@@ -43,6 +43,12 @@ pub struct StaBeaconObservation {
     pub capability_information: u16,
     pub tim: Option<StaTimObservation>,
     pub protection: StaBeaconProtection,
+    /// The BSS's announced move to another channel, if the beacon carries
+    /// one. A malformed announcement is reported here and leaves the rest of
+    /// the beacon valid: the station decides what it does without one.
+    pub channel_switch: Option<
+        Result<crate::channel_switch::ChannelSwitch, crate::channel_switch::ChannelSwitchError>,
+    >,
 }
 
 /// BSS protection fields advertised by one beacon.
@@ -144,12 +150,15 @@ pub fn parse_sta_beacon(
         offset = body_end;
     }
 
+    let channel_switch =
+        crate::channel_switch::parse_channel_switch(&mpdu[FIXED_BEACON_LENGTH..]).transpose();
     Ok(StaBeaconObservation {
         timestamp_tsf: crate::tsf::TsfInstant::from_micros(u64::from_le_bytes(timestamp)),
         interval_tu,
         capability_information: u16::from_le_bytes([mpdu[34], mpdu[35]]),
         tim,
         protection,
+        channel_switch,
     })
 }
 

@@ -7,6 +7,7 @@ const BEACON: StaBeaconObservation = StaBeaconObservation {
     capability_information: 0,
     tim: None,
     protection: StaBeaconProtection::UNPROTECTED,
+    channel_switch: None,
 };
 
 #[test]

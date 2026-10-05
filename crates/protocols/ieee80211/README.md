@@ -27,6 +27,7 @@ protocol that owns them:
 | `data/duplicate` | Association/peer-scoped receive retry history |
 | `qos` | Typed traffic intent, UP/AC and DSCP classification helpers |
 | `channel` | `Channel` (2.4 GHz and 5 GHz, 20/40 MHz geometry of the global operating classes) and the 2.4 GHz `WifiChannel` the role owners configure |
+| `channel_switch` | `ChannelSwitch`: the Channel Switch and Extended Channel Switch Announcements in beacons and action frames, their target `Channel`, and their encoding; the switch's timing belongs to the caller |
 | `phy` | `PhyRate`: validated non-HT, HT and HE SU rates |
 | `extensions/wmm` | WMM AC parameters and vendor IE parsing |
 | `extensions/espressif/esp_now` | ESP-NOW v1/v2 framing and protected-envelope validation |

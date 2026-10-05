@@ -113,3 +113,24 @@ fn malformed_and_unrepresentable_announcements_are_refused() {
         Err(ChannelSwitchError::Channel(_))
     ));
 }
+
+#[test]
+fn an_extended_announcement_round_trips_with_its_operating_class() {
+    for (target, class) in [
+        (channel(Band::Ghz5, 36, ChannelWidth::Mhz20), 115),
+        (channel(Band::Ghz5, 161, ChannelWidth::Mhz40Below), 127),
+        (channel(Band::Ghz5, 100, ChannelWidth::Mhz40Above), 122),
+        (channel(Band::Ghz2_4, 6, ChannelWidth::Mhz40Below), 84),
+    ] {
+        let announcement = ChannelSwitch::extended_to(target, ChannelSwitchMode::Continue, 4);
+        assert_eq!(announcement.operating_class, Some(class));
+        let mut elements = [0_u8; 6];
+        let length = announcement.encode_elements(&mut elements).unwrap();
+        assert_eq!(elements[..2], [60, 4]);
+        let parsed = parse_channel_switch(&elements[..length]).unwrap().unwrap();
+        // The other band's channel is named by the class, not the band the
+        // station is on.
+        assert_eq!(parsed.target(Band::Ghz2_4), Ok(target));
+        assert_eq!(parsed.target(Band::Ghz5), Ok(target));
+    }
+}

@@ -7,7 +7,7 @@
 
 use crate::{
     ap::profile::Advertisement,
-    channel::WifiChannel,
+    channel::{Band, Channel},
     ht::{ht_capability_ie, ht_operation_ie},
     protection::ApBssProtection,
     security::ApSecurityPolicy,
@@ -25,7 +25,12 @@ const BEACON_FIXED_BODY_LEN: usize = 12;
 pub enum ApBeaconBuildError {
     InvalidPrimaryChannel,
     InvalidDtimPeriod,
-    OutputTooSmall { required: usize },
+    /// A 5 GHz BSS advertises a DSSS or HR/DSSS rate (1, 2, 5.5 or
+    /// 11 Mbit/s), which that band does not carry.
+    DsssRateIn5Ghz,
+    OutputTooSmall {
+        required: usize,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -159,15 +164,28 @@ pub fn write_ht_beacon(
     output: &mut [u8],
     access_point: [u8; 6],
     ssid: &WifiSsid,
-    channel: WifiChannel,
+    channel: Channel,
     beacon_interval_tu: u16,
     dtim_period: u8,
     management_sequence: SequenceNumber,
     security: ApSecurityPolicy,
     protection: ApBssProtection,
 ) -> Result<usize, ApBeaconBuildError> {
-    if !(1..=13).contains(&channel.primary()) {
+    // The 2.4 GHz BSS carries the DSSS Parameter Set and the ERP element;
+    // a 5 GHz one carries neither, nor any DSSS rate.
+    let ghz2_4 = channel.band() == Band::Ghz2_4;
+    if ghz2_4 && !(1..=13).contains(&channel.number()) {
         return Err(ApBeaconBuildError::InvalidPrimaryChannel);
+    }
+    if !ghz2_4
+        && profile
+            .legacy_rates
+            .supported()
+            .iter()
+            .chain(profile.legacy_rates.extended())
+            .any(|rate| matches!(rate & 0x7f, 2 | 4 | 11 | 22))
+    {
+        return Err(ApBeaconBuildError::DsssRateIn5Ghz);
     }
     if dtim_period == 0 {
         return Err(ApBeaconBuildError::InvalidDtimPeriod);
@@ -184,9 +202,9 @@ pub fn write_ht_beacon(
         + ssid.as_bytes().len()
         + 2
         + profile.legacy_rates.supported().len()
-        + 3
+        + if ghz2_4 { 3 } else { 0 }
         + 7
-        + 3
+        + if ghz2_4 { 3 } else { 0 }
         + rsn.len()
         + 2
         + profile.legacy_rates.extended().len()
@@ -212,7 +230,9 @@ pub fn write_ht_beacon(
     let mut offset = MANAGEMENT_HEADER_LEN + BEACON_FIXED_BODY_LEN;
     write_element(frame, &mut offset, 0, ssid.as_bytes());
     write_element(frame, &mut offset, 1, profile.legacy_rates.supported());
-    write_element(frame, &mut offset, 3, &[channel.primary()]);
+    if ghz2_4 {
+        write_element(frame, &mut offset, 3, &[channel.number()]);
+    }
     // Bitmap offset zero plus two octets covers AID 1..=15 without aliasing
     // AID 8..=15 onto the first byte. Bit zero of bitmap control remains the
     // independent DTIM multicast indication maintained by `stamp`.
@@ -222,12 +242,14 @@ pub fn write_ht_beacon(
         5,
         &[dtim_period - 1, dtim_period, 0, 0, 0],
     );
-    write_element(
-        frame,
-        &mut offset,
-        ERP_ELEMENT_ID,
-        &[protection.erp_information()],
-    );
+    if ghz2_4 {
+        write_element(
+            frame,
+            &mut offset,
+            ERP_ELEMENT_ID,
+            &[protection.erp_information()],
+        );
+    }
     if !rsn.is_empty() {
         copy_record(frame, &mut offset, rsn);
     }
@@ -243,14 +265,16 @@ pub fn write_ht_beacon(
 }
 
 const ERP_ELEMENT_ID: u8 = 42;
+const DSSS_PARAMETER_SET_ELEMENT_ID: u8 = 3;
 const HT_OPERATION_ELEMENT_ID: u8 = 61;
 
 /// Replace the ERP Information and HT Operation protection fields of one
 /// beacon or probe-response template in place.
 ///
 /// Every other byte, including the TIM that [`write_tim_partial_virtual_bitmap`]
-/// resizes, is retained. A template without both elements is rejected
-/// unchanged.
+/// resizes, is retained. A 2.4 GHz template (one with a DSSS Parameter Set)
+/// needs both elements, a 5 GHz one the HT Operation; a template without
+/// them is rejected unchanged.
 pub fn update_bss_protection(
     frame: &mut [u8],
     protection: ApBssProtection,
@@ -258,6 +282,7 @@ pub fn update_bss_protection(
     const FIXED_BEACON_LENGTH: usize = MANAGEMENT_HEADER_LEN + BEACON_FIXED_BODY_LEN;
     let mut erp = None;
     let mut ht_operation = None;
+    let mut dsss = false;
     let mut offset = FIXED_BEACON_LENGTH;
     while offset + 2 <= frame.len() {
         let id = frame[offset];
@@ -268,16 +293,22 @@ pub fn update_bss_protection(
         }
         match id {
             ERP_ELEMENT_ID if length == 1 => erp = Some(value),
+            DSSS_PARAMETER_SET_ELEMENT_ID => dsss = true,
             // Primary Channel, Information byte zero, then byte one.
             HT_OPERATION_ELEMENT_ID if length == 22 => ht_operation = Some(value + 2),
             _ => {}
         }
         offset = value + length;
     }
-    let (Some(erp), Some(ht_operation)) = (erp, ht_operation) else {
+    let Some(ht_operation) = ht_operation else {
         return Err(ApBeaconProtectionError::MissingProtectionElement);
     };
-    frame[erp] = protection.erp_information();
+    if dsss && erp.is_none() {
+        return Err(ApBeaconProtectionError::MissingProtectionElement);
+    }
+    if let Some(erp) = erp {
+        frame[erp] = protection.erp_information();
+    }
     frame[ht_operation] = protection.ht.information_byte();
     Ok(())
 }

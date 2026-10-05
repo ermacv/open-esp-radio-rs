@@ -302,7 +302,7 @@ fn station_selection_and_access_point_admission_meet_at_one_association() {
             &mut beacon,
             access_point,
             &ssid,
-            WifiChannel::mhz20(6).unwrap(),
+            oer_ieee80211_mac::channel::Channel::from_wifi_channel(WifiChannel::mhz20(6).unwrap()),
             100,
             1,
             SequenceNumber::new(1).unwrap(),

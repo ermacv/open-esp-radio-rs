@@ -165,10 +165,13 @@ fn he20_access_point() -> ScanRecord {
 
 fn ht40_mcs32_access_point() -> ScanRecord {
     let channel = WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Above).unwrap();
-    let mut capability = ht_capability_ie(TEST_HT_CAPABILITIES, channel);
+    let mut capability = ht_capability_ie(
+        TEST_HT_CAPABILITIES,
+        oer_ieee80211_mac::channel::Channel::from_wifi_channel(channel),
+    );
     HtDuplicateMcs32::new().advertise_receive_only(&mut capability);
     let operation = ht_operation_ie(
-        channel,
+        oer_ieee80211_mac::channel::Channel::from_wifi_channel(channel),
         oer_ieee80211_mac::protection::HtOperationProtection::default(),
     );
 

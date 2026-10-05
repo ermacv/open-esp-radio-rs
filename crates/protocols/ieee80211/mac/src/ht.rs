@@ -5,7 +5,7 @@
 //! advertises HT20 or HT40; callers cannot independently select contradictory
 //! capability and operation elements.
 
-use crate::channel::{WifiChannel, WifiChannelWidth};
+use crate::channel::{Channel, WifiChannelWidth};
 use crate::protection::HtOperationProtection;
 
 pub const HT_CAPABILITY_IE_LEN: usize = 28;
@@ -78,7 +78,7 @@ impl HtLocalCapabilities {
 /// Build the complete one-stream HT Capabilities element for one BSS.
 pub const fn ht_capability_ie(
     local_ht: HtLocalCapabilities,
-    channel: WifiChannel,
+    channel: Channel,
 ) -> [u8; HT_CAPABILITY_IE_LEN] {
     ht_capability_ie_for_peer(local_ht, channel, None)
 }
@@ -91,7 +91,7 @@ pub const fn ht_capability_ie(
 /// record and therefore retain the local interface value.
 pub const fn ht_capability_ie_for_peer(
     local_ht: HtLocalCapabilities,
-    channel: WifiChannel,
+    channel: Channel,
     peer: Option<HtPeerCapabilities>,
 ) -> [u8; HT_CAPABILITY_IE_LEN] {
     // Channel geometry owns the width and short-GI bits even when the
@@ -137,13 +137,13 @@ pub const fn ht_capability_ie_for_peer(
 /// Build the complete HT Operation element for one validated BSS channel and
 /// its current protection requirements.
 pub const fn ht_operation_ie(
-    channel: WifiChannel,
+    channel: Channel,
     protection: HtOperationProtection,
 ) -> [u8; HT_OPERATION_IE_LEN] {
     let mut element = [0_u8; 24];
     element[0] = 61;
     element[1] = 22;
-    element[2] = channel.primary();
+    element[2] = channel.number();
     element[3] = match channel.width() {
         // Secondary-channel offset zero and STA channel width zero select
         // HT20.

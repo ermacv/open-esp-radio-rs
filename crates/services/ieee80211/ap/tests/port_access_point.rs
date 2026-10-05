@@ -20,8 +20,8 @@ use oer_ieee80211_ap::{
     ApPeerPhase,
 };
 use oer_ieee80211_ap_service::port::{
-    InlineSae, NoSae, PortAccessPoint, PortApAuthenticator, PortApClient, PortApEnv, PortApParts,
-    PortApProfile, PortApRouter, PortApStorage,
+    InlineSae, NoSae, PortAccessPoint, PortApAuthenticator, PortApBand, PortApBands, PortApClient,
+    PortApEnv, PortApParts, PortApProfile, PortApRouter, PortApStorage,
 };
 use oer_ieee80211_lower_mac::{
     CoexPriority, Ieee80211LowerMacPort, KeyHandle, KeyScope, KeySelector, LifecycleCommand,
@@ -63,6 +63,8 @@ const STATION: MacAddress = [0x02, 0, 0, 0, 0, 0x5a];
 const SSID: &[u8] = b"port-ap";
 const RATE: PhyRate = PhyRate::Legacy(LegacyRate::Dsss1M);
 const DATA_RATE: PhyRate = PhyRate::Legacy(LegacyRate::Ofdm24M);
+/// The management rate of a 5 GHz BSS.
+const OFDM_RATE: PhyRate = PhyRate::Legacy(LegacyRate::Ofdm6M);
 /// 100 TU.
 const INTERVAL: u64 = 102_400;
 
@@ -341,11 +343,16 @@ const RETRY: TxBlockAckRetry = TxBlockAckRetry {
 fn profile(ssid: &WifiSsid) -> PortApProfile<'_> {
     PortApProfile {
         ssid,
-        channel: channel(),
+        channel: Channel::from_wifi_channel(channel()),
         beacon_interval_tu: 100,
         dtim_period: 2,
-        advertisement: &ADVERTISEMENT,
-        management_rate: RATE,
+        bands: PortApBands {
+            ghz2_4: Some(PortApBand {
+                advertisement: &ADVERTISEMENT,
+                management_rate: RATE,
+            }),
+            ghz5: None,
+        },
         ccmp_step: CcmpPacketNumberStep::new(1).unwrap(),
         rx_reorder_gap: oer_time::Duration::from_millis(300),
         tx_block_ack_retry: RETRY,
@@ -2257,4 +2264,158 @@ fn an_announced_channel_switch_moves_the_bss_at_its_tbtt() {
         access_point.channel_switched(),
         Err(oer_ieee80211_ap_service::port::PortApError::NoChannelSwitch)
     ));
+}
+
+/// [`ADVERTISEMENT`] with the OFDM rates of a 5 GHz BSS.
+const OFDM_ADVERTISEMENT: Advertisement = Advertisement::new(
+    LegacyRates::new(
+        [0x8c, 0x12, 0x98, 0x24, 0xb0, 0x48, 0x60, 0x6c],
+        [0x8c, 0x98, 0xb0, 0x6c],
+    ),
+    ADVERTISEMENT.ht,
+    ADVERTISEMENT.wmm,
+    0x0001,
+);
+
+#[test]
+fn a_two_band_access_point_moves_to_5_ghz_with_an_extended_announcement() {
+    use oer_ieee80211_ap_service::port::{PortApBuildError, PortApError, PortApEvent};
+    use oer_ieee80211_mac::channel::Band;
+    use oer_ieee80211_mac::channel_switch::{ChannelSwitchMode, parse_channel_switch};
+
+    let model = model();
+    let timer = VirtualTimer::default();
+    let router = PortApRouter::<Env<'_>>::new(&model, 1);
+    let ssid = WifiSsid::new(SSID).unwrap();
+    let two_bands = PortApProfile {
+        bands: PortApBands {
+            ghz2_4: Some(PortApBand {
+                advertisement: &ADVERTISEMENT,
+                management_rate: RATE,
+            }),
+            ghz5: Some(PortApBand {
+                advertisement: &OFDM_ADVERTISEMENT,
+                management_rate: OFDM_RATE,
+            }),
+        },
+        ..profile(&ssid)
+    };
+    // A channel shared with radar is never served.
+    let mut storage = PortApStorage::<8, TestFrame>::new();
+    let radar = Channel::ghz5(52, ChannelWidth::Mhz20).unwrap();
+    assert!(matches!(
+        PortAccessPoint::<Env<'_>>::new(
+            PortApParts {
+                client: client(&router),
+                timer: &timer,
+                authenticator: FixedMaterial,
+                sae: NoSae,
+                rate_control: DATA_RATE,
+                frames: frames(),
+            },
+            PortApProfile {
+                channel: radar,
+                ..two_bands
+            },
+            service(),
+            &mut storage,
+        ),
+        Err(PortApBuildError::UnservableChannel(channel)) if channel == radar
+    ));
+    let mut storage = PortApStorage::<8, TestFrame>::new();
+    let mut access_point = PortAccessPoint::<Env<'_>>::new(
+        PortApParts {
+            client: client(&router),
+            timer: &timer,
+            authenticator: FixedMaterial,
+            sae: NoSae,
+            rate_control: DATA_RATE,
+            frames: frames(),
+        },
+        two_bands,
+        service(),
+        &mut storage,
+    )
+    .unwrap();
+    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    let start = timer.now.get();
+    drive(
+        &model,
+        &router,
+        &timer,
+        access_point.run_until(Instant::from_micros(start + 1), &mut |_| {}),
+        &[],
+        |_| {},
+    )
+    .unwrap();
+    assert!(matches!(
+        access_point.announce_channel_switch(radar, ChannelSwitchMode::Continue, 2),
+        Err(PortApError::UnsupportedChannel(channel)) if channel == radar
+    ));
+
+    let target = Channel::ghz5(36, ChannelWidth::Mhz20).unwrap();
+    access_point
+        .announce_channel_switch(target, ChannelSwitchMode::Continue, 1)
+        .unwrap();
+    let event = drive(
+        &model,
+        &router,
+        &timer,
+        access_point.run_until(Instant::from_micros(start + 10 * INTERVAL), &mut |_| {}),
+        &[],
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(event, Some(PortApEvent::ChannelSwitch { target }));
+    let beacons: Vec<Vec<u8>> = model
+        .submitted()
+        .into_iter()
+        .filter(|attempt| attempt.frames[0][0] == 0x80)
+        .map(|attempt| attempt.frames[0].clone())
+        .collect();
+    // The move to the other band names its operating class.
+    let announced = parse_channel_switch(&beacons[1][36..]).unwrap().unwrap();
+    assert_eq!(announced.operating_class, Some(115));
+    assert_eq!(announced.target(Band::Ghz2_4), Ok(target));
+
+    drive(
+        &model,
+        &router,
+        &timer,
+        access_point.client_mut().retune(target),
+        &[],
+        |_| {},
+    )
+    .unwrap();
+    access_point.channel_switched().unwrap();
+    drive(
+        &model,
+        &router,
+        &timer,
+        access_point.run_until(Instant::from_micros(start + 2 * INTERVAL + 1), &mut |_| {}),
+        &[],
+        |_| {},
+    )
+    .unwrap();
+    // The 5 GHz beacon: OFDM rates only, no DSSS Parameter Set, no ERP.
+    let last = model
+        .submitted()
+        .into_iter()
+        .rfind(|attempt| attempt.frames[0][0] == 0x80)
+        .unwrap()
+        .frames[0]
+        .clone();
+    let mut ids = Vec::new();
+    let mut offset = 36;
+    while offset + 2 <= last.len() {
+        ids.push(last[offset]);
+        if last[offset] == 1 {
+            assert_eq!(
+                &last[offset + 2..offset + 10],
+                OFDM_ADVERTISEMENT.legacy_rates.supported()
+            );
+        }
+        offset += 2 + usize::from(last[offset + 1]);
+    }
+    assert!(!ids.contains(&3) && !ids.contains(&42) && !ids.contains(&60));
 }

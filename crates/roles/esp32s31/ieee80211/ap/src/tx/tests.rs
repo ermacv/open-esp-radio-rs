@@ -128,8 +128,11 @@ fn peer_ht_rate_requires_matching_bss_and_peer_width() {
     use oer_ieee80211_mac::ht::{ht_capability_ie, ht_peer_capabilities};
 
     let ht40 = WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Above).unwrap();
-    let wide_peer =
-        ht_peer_capabilities(&ht_capability_ie(crate::profile::HT_CAPABILITIES, ht40)).unwrap();
+    let wide_peer = ht_peer_capabilities(&ht_capability_ie(
+        crate::profile::HT_CAPABILITIES,
+        oer_ieee80211_mac::channel::Channel::from_wifi_channel(ht40),
+    ))
+    .unwrap();
     assert_eq!(
         peer_ht_rate(ht40, wide_peer),
         Some(HtRate::new(
@@ -141,7 +144,7 @@ fn peer_ht_rate_requires_matching_bss_and_peer_width() {
 
     let narrow_peer = ht_peer_capabilities(&ht_capability_ie(
         crate::profile::HT_CAPABILITIES,
-        WifiChannel::mhz20(6).unwrap(),
+        oer_ieee80211_mac::channel::Channel::from_wifi_channel(WifiChannel::mhz20(6).unwrap()),
     ))
     .unwrap();
     assert_eq!(
@@ -163,7 +166,10 @@ fn ap_mcs32_request_reaches_the_shared_frontier_without_replacing_fallback() {
     use oer_ieee80211_mac::ht::{HtDuplicateMcs32, ht_capability_ie, ht_peer_capabilities};
 
     let channel = WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Above).unwrap();
-    let mut capability = ht_capability_ie(crate::profile::HT_CAPABILITIES, channel);
+    let mut capability = ht_capability_ie(
+        crate::profile::HT_CAPABILITIES,
+        oer_ieee80211_mac::channel::Channel::from_wifi_channel(channel),
+    );
     HtDuplicateMcs32::new().advertise_receive_only(&mut capability);
     let peer = ht_peer_capabilities(&capability).unwrap();
     let fallback = peer_ht_rate(channel, peer).unwrap();

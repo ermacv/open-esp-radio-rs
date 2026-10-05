@@ -278,7 +278,7 @@ fn mixed_bss_protects_ordinary_data_with_cts_to_self_at_a_dsss_rate() {
     service.authenticate_open(target, oer_time::Instant::from_micros(1));
     let ht_ie = oer_ieee80211_mac::ht::ht_capability_ie(
         crate::profile::HT_CAPABILITIES,
-        WifiChannel::mhz20(6).unwrap(),
+        oer_ieee80211_mac::channel::Channel::from_wifi_channel(WifiChannel::mhz20(6).unwrap()),
     );
     service
         .associate_open(

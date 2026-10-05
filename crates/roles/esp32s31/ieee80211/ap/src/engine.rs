@@ -444,7 +444,7 @@ impl<'storage> ApEngine<'storage> {
             beacon_storage,
             service.address(),
             ssid,
-            channel,
+            oer_ieee80211_mac::channel::Channel::from_wifi_channel(channel),
             beacon_interval_tu,
             dtim_period,
             SequenceNumber::ZERO,

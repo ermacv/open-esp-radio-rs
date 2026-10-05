@@ -9,7 +9,16 @@ fn a_link_failure_is_retried_and_an_image_failure_is_not() {
         &mut || {
             calls += 1;
             if calls == 1 {
-                Err("espflash: Protocol error (os error 71)".into())
+                Err(FlashFailure {
+                    port: "/dev/test".into(),
+                    operation: "connect ROM loader",
+                    source: espflash::Error::Connection(
+                        std::io::Error::new(std::io::ErrorKind::TimedOut, "waiting for ROM sync")
+                            .into(),
+                    )
+                    .into(),
+                }
+                .into())
             } else {
                 Ok(calls)
             }
@@ -24,7 +33,10 @@ fn a_link_failure_is_retried_and_an_image_failure_is_not() {
         ATTEMPTS,
         &mut || -> crate::Result<()> {
             calls += 1;
-            Err("the HIL application overlaps the next flash region".into())
+            Err(espflash::Error::InvalidElf(
+                std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into(),
+            )
+            .into())
         },
         |_, _| {},
     );
@@ -40,7 +52,7 @@ fn a_link_that_keeps_failing_ends_after_the_last_attempt() {
         ATTEMPTS,
         &mut || -> crate::Result<()> {
             calls += 1;
-            Err("serial port timed out".into())
+            Err(std::io::Error::from(std::io::ErrorKind::TimedOut).into())
         },
         |_, _| resets += 1,
     );
@@ -56,4 +68,29 @@ fn a_start_by_power_leaves_the_chip_in_its_rom() {
         After::of(oer_chip_profile::Start::PowerOn),
         After::StayInBootloader
     );
+}
+
+#[test]
+fn connection_context_preserves_the_typed_cause_and_diagnostic() {
+    let error = FlashFailure {
+        port: "/dev/test".into(),
+        operation: "connect ROM loader",
+        source: espflash::Error::Connection(
+            std::io::Error::new(std::io::ErrorKind::TimedOut, "waiting for ROM sync").into(),
+        )
+        .into(),
+    };
+    assert!(
+        error
+            .source()
+            .unwrap()
+            .downcast_ref::<espflash::Error>()
+            .is_some()
+    );
+    assert!(transient_failure(&error));
+    assert!(error.to_string().contains("waiting for ROM sync"));
+    assert!(error.to_string().contains("/dev/test"));
+    assert!(!transient_failure(&std::io::Error::from(
+        std::io::ErrorKind::PermissionDenied
+    )));
 }

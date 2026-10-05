@@ -8,12 +8,23 @@
 //! selection last: an interrupted write leaves the previous selection
 //! pointing at an image whose checksum no longer validates instead of a
 //! half-written one. A failure of the serial link is retried; a failure of
-//! the image is not.
+//! the image is not. Transport errors retain their typed espflash cause through
+//! port context, so connection failures are retried and diagnostics include the
+//! cause. The serial port starts with a three-second timeout as espflash
+//! requires before its first connection handshake.
+//! `write_bins_to_flash` also performs the configured post-write reset. The
+//! writer leaves that transition to espflash; repeating it would send a stub
+//! command to a chip that has already returned to the ROM loader.
 #![forbid(unsafe_code)]
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-use std::path::Path;
+use std::{
+    error::Error,
+    fmt,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use oer_image_bundle::Snapshot;
 
@@ -40,10 +51,7 @@ impl After {
 /// name) board at `port` through one connection, retrying a failed link.
 pub fn write(port: &Path, chip: &str, snapshot: &Snapshot, after: After) -> crate::Result<()> {
     let chip = espflash_chip(chip)?;
-    with_retries(port, || {
-        write_once(port, chip, snapshot, after)
-            .map_err(|error| format!("flash through {}: {error}", port.display()).into())
-    })
+    with_retries(port, || write_once(port, chip, snapshot, after))
 }
 
 /// The espflash name of the chip at `port`, from its ROM; the chip is reset
@@ -84,7 +92,9 @@ fn connect(
         port,
         oer_device_port::Settings::CONSOLE
             .lines(oer_device_port::Lines::Kept)
-            .timeout(std::time::Duration::ZERO),
+            // Flasher::connect calls Connection::begin before setting its own
+            // timeout; reset banner reads and flushes need a bounded wait too.
+            .timeout(Duration::from_secs(3)),
     )?
     .into_native();
     let connection = Connection::new(
@@ -108,14 +118,23 @@ fn write_once(
 ) -> crate::Result<()> {
     use espflash::{image_format::Segment as Region, target::DefaultProgressCallback};
 
-    let mut flasher = connect(port, after, Some(chip))?;
+    let context = |operation, source| -> Box<dyn Error + Send + Sync> {
+        Box::new(FlashFailure {
+            port: port.to_owned(),
+            operation,
+            source,
+        })
+    };
+    let mut flasher =
+        connect(port, after, Some(chip)).map_err(|source| context("connect ROM loader", source))?;
     let regions = snapshot
         .segments
         .iter()
         .map(|segment| Region::new(segment.offset, &segment.data))
         .collect::<Vec<_>>();
-    flasher.write_bins_to_flash(&regions, &mut DefaultProgressCallback)?;
-    flasher.connection().reset_after(true, chip)?;
+    flasher
+        .write_bins_to_flash(&regions, &mut DefaultProgressCallback)
+        .map_err(|source| context("write segments", source.into()))?;
     Ok(())
 }
 
@@ -149,7 +168,7 @@ fn retry_transient<T>(
     loop {
         match operation() {
             Ok(value) => return Ok(value),
-            Err(error) if attempt < attempts && transient_failure(&error.to_string()) => {
+            Err(error) if attempt < attempts && transient_failure(error.as_ref()) => {
                 between(attempt, &error.to_string());
                 attempt += 1;
             }
@@ -158,20 +177,67 @@ fn retry_transient<T>(
     }
 }
 
-/// Whether a flash failure lies in the serial link to the chip, which a new
-/// connection can clear, rather than in the image.
-fn transient_failure(message: &str) -> bool {
-    const LINK_FAILURES: [&str; 6] = [
-        "Protocol error",
-        "timed out",
-        "Timeout",
-        "Broken pipe",
-        "Input/output error",
-        "Failed to connect",
-    ];
-    LINK_FAILURES
-        .iter()
-        .any(|failure| message.contains(failure))
+/// Keep the port context without erasing espflash's typed failure and cause.
+#[derive(Debug)]
+struct FlashFailure {
+    port: PathBuf,
+    operation: &'static str,
+    source: Box<dyn Error + Send + Sync>,
+}
+
+impl fmt::Display for FlashFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "flash through {} ({}): {}",
+            self.port.display(),
+            self.operation,
+            self.source
+        )?;
+        let mut cause = self.source.source();
+        while let Some(error) = cause {
+            write!(formatter, ": {error}")?;
+            cause = error.source();
+        }
+        Ok(())
+    }
+}
+
+impl Error for FlashFailure {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(self.source.as_ref())
+    }
+}
+
+/// Connection and transport failures can clear on reconnect. Image and
+/// configuration failures must keep their original error without a retry.
+fn transient_failure(mut error: &(dyn Error + 'static)) -> bool {
+    loop {
+        if let Some(error) = error.downcast_ref::<espflash::Error>() {
+            return matches!(
+                error,
+                espflash::Error::Connection(_) | espflash::Error::Flashing(_)
+            );
+        }
+        if let Some(error) = error.downcast_ref::<std::io::Error>()
+            && matches!(
+                error.kind(),
+                std::io::ErrorKind::TimedOut
+                    | std::io::ErrorKind::WouldBlock
+                    | std::io::ErrorKind::BrokenPipe
+                    | std::io::ErrorKind::ConnectionReset
+                    | std::io::ErrorKind::ConnectionAborted
+                    | std::io::ErrorKind::Interrupted
+                    | std::io::ErrorKind::UnexpectedEof
+            )
+        {
+            return true;
+        }
+        match error.source() {
+            Some(cause) => error = cause,
+            None => return false,
+        }
+    }
 }
 
 #[cfg(test)]

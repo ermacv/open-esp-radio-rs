@@ -33,7 +33,7 @@ use oer_ieee80211_mac::{
     ap::profile::{Advertisement, LegacyRates, WmmParameters},
     beacon::dtim,
     block_ack::{ADDBA_ACTION_BODY_LEN, TxBlockAckRetry, write_successful_addba_response},
-    channel::{Channel, WifiChannel},
+    channel::{Channel, ChannelWidth, WifiChannel},
     extensions::wmm::WmmAcParameters,
     ht::HtLocalCapabilities,
     phy::{HtMcs, HtRate, LegacyRate, PpduBandwidth},
@@ -2148,4 +2148,113 @@ fn a_frame_the_aggregate_does_not_admit_stays_with_the_network_for_the_next_turn
         );
         assert_eq!(returned(), before + 3);
     });
+}
+
+#[test]
+fn an_announced_channel_switch_moves_the_bss_at_its_tbtt() {
+    use oer_ieee80211_ap_service::port::PortApEvent;
+    use oer_ieee80211_mac::channel_switch::{ChannelSwitchMode, parse_channel_switch};
+
+    let model = model();
+    let timer = VirtualTimer::default();
+    let router = PortApRouter::<Env<'_>>::new(&model, 1);
+    let ssid = WifiSsid::new(SSID).unwrap();
+    let mut storage = PortApStorage::<8, TestFrame>::new();
+    let mut access_point = PortAccessPoint::<Env<'_>>::new(
+        PortApParts {
+            client: client(&router),
+            timer: &timer,
+            authenticator: FixedMaterial,
+            sae: NoSae,
+            rate_control: DATA_RATE,
+            frames: frames(),
+        },
+        profile(&ssid),
+        service(),
+        &mut storage,
+    )
+    .unwrap();
+    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    let start = timer.now.get();
+    // The first beacon starts the schedule.
+    drive(
+        &model,
+        &router,
+        &timer,
+        access_point.run_until(Instant::from_micros(start + 1), &mut |_| {}),
+        &[],
+        |_| {},
+    )
+    .unwrap();
+
+    // Channel 11 after two more beacons.
+    let target = Channel::ghz2_4(11, ChannelWidth::Mhz20).unwrap();
+    access_point
+        .announce_channel_switch(target, ChannelSwitchMode::Continue, 2)
+        .unwrap();
+    let event = drive(
+        &model,
+        &router,
+        &timer,
+        access_point.run_until(Instant::from_micros(start + 10 * INTERVAL), &mut |_| {}),
+        &[],
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(event, Some(PortApEvent::ChannelSwitch { target }));
+    // The switch is due at the third TBTT, before its beacon.
+    assert_eq!(timer.now.get(), start + 3 * INTERVAL);
+    let beacons = |model: &Model| -> Vec<Vec<u8>> {
+        model
+            .submitted()
+            .into_iter()
+            .filter(|attempt| attempt.frames[0][0] == 0x80)
+            .map(|attempt| attempt.frames[0].clone())
+            .collect()
+    };
+    let counts: Vec<_> = beacons(&model)
+        .iter()
+        .map(|frame| {
+            parse_channel_switch(&frame[36..])
+                .unwrap()
+                .map(|switch| switch.count)
+        })
+        .collect();
+    assert_eq!(counts, [None, Some(2), Some(1)]);
+
+    // The owner moves the port, and the BSS beacons on channel 11.
+    drive(
+        &model,
+        &router,
+        &timer,
+        access_point.client_mut().retune(target),
+        &[],
+        |_| {},
+    )
+    .unwrap();
+    access_point.channel_switched().unwrap();
+    assert_eq!(model.channel(), Some(target));
+    let event = drive(
+        &model,
+        &router,
+        &timer,
+        access_point.run_until(Instant::from_micros(start + 3 * INTERVAL + 1), &mut |_| {}),
+        &[],
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(event, None);
+    let last = beacons(&model).pop().unwrap();
+    assert_eq!(parse_channel_switch(&last[36..]).unwrap(), None);
+    let ds = last[36..]
+        .windows(3)
+        .position(|window| window[0] == 3 && window[1] == 1)
+        .unwrap();
+    assert_eq!(last[36 + ds + 2], 11);
+    assert_eq!(access_point.counters().beacons, 4);
+    // Nothing is due once the switch is done.
+    assert!(matches!(
+        access_point.channel_switched(),
+        Err(oer_ieee80211_ap_service::port::PortApError::NoChannelSwitch)
+    ));
 }

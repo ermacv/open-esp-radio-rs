@@ -38,7 +38,10 @@ submission per attempt.
 | `PortStationLifecycle` | `StaLifecycleBackend` | Attempts through `StaAttempt`, the connection served for a `PortStationApplication`, backoff |
 
 The integrator names its port, transmit-policy parameters, backoff entropy,
-timer and key-data unwrap once in a `PortStationEnv`, and supplies the
+timer, key-data unwrap and the network's transmit source
+(`PortStationEnv::Frames`, a `DestinationTxQueues` of
+[`oer-ieee80211-datapath`](../../../protocols/ieee80211/datapath/src/lib.rs))
+once in a `PortStationEnv`, and supplies the
 station's addresses, rates, channels, capabilities and the CCMP
 packet-number step in `PortStationConfig` and `PortStationProfile`; the
 Espressif step is a value of
@@ -59,8 +62,8 @@ gap are gone and the connection goes on.
 
 The composition places the station's memory: `PortStation::new` borrows a
 `PortStationStorage` (the scan table and the `PortConnectionBuffers`: the
-receive reorder windows and the MPDUs they hold, the transmit queue and the
-encoded A-MPDU subframes), usually a `static` in the memory the target
+receive reorder windows and the MPDUs they hold and the encoded A-MPDU
+subframes) and the network's `Frames`, usually a `static` in the memory the target
 chooses. Each connection borrows those buffers for its association, empties
 them as it starts and returns them when it ends, so the station and its
 connection are protocol state of a few kilobytes and nothing large is built
@@ -120,11 +123,17 @@ after the profile's retry interval, while attempts remain
 (`PortTxBlockAck::retry`); the access point's answer ends them, and its DELBA as
 recipient ends the agreement.
 
-`PortStation::send` queues a frame (`PortSend::Queued`, or `Full` with the
-eight-frame queue full) and `run_until` sends the queue while the station is
-awake, a dozing station keeping it. A run of one user priority goes as one
+The station has no transmit queue of its own: while it is awake
+`run_until` takes the network's frames, destination after destination, one
+at a time when it is ready to send them, and encodes each into its MPDU
+(an A-MPDU's subframe returns the frame to the network once encoded); a
+dozing station leaves them with the network. A frame's user priority is
+its own (`classify_ethernet_wmm`: the VLAN PCP or the IP DSCP; 0 to a
+non-QoS access point), and a frame of another priority than the run it
+follows waits for its own exchange. A run of one user priority goes as one
 A-MPDU when that TID's agreement is operational, the keys are installed and
-the port aggregates at the rate control's A-MPDU rate (`PortClientEnv::Aggregation`:
+the port aggregates at the rate control's A-MPDU rate, at most
+`PORT_AMPDU_SUBFRAMES` (`PortClientEnv::Aggregation`:
 `PortAmpduAggregation` over a port with `LowerMacAmpdu`, `NoAggregation`
 otherwise); the run (`AmpduLimits`) is bounded by the agreement's window, the port's
 subframes and length, the peer's Maximum A-MPDU Length and the TXOP limit

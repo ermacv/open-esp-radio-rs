@@ -20,8 +20,17 @@ use super::{
 struct State<const N: usize> {
     queues: TxQueues<[u8; 6], QueuedPacket, N, TransportFlow>,
     receiver_waker: WakerRegistration,
-    receiver_wait: Option<([u8; 6], usize)>,
+    receiver_wait: Option<ReceiverWait>,
     radio_cursor: usize,
+}
+
+/// What the radio waits for.
+#[derive(Clone, Copy)]
+enum ReceiverWait {
+    /// At least `minimum` frames for one destination.
+    Destination([u8; 6], usize),
+    /// A frame for any destination.
+    Any,
 }
 
 pub(super) struct TxQueue<M: RawMutex, const N: usize> {
@@ -73,8 +82,11 @@ impl<M: RawMutex, const N: usize> TxQueue<M, N> {
         let result = self.state.lock(|state| {
             let mut state = state.borrow_mut();
             state.queues.push_flow(destination, flow, packet)?;
-            if state.receiver_wait.is_some_and(|(selected, minimum)| {
-                destination == selected && state.queues.len_for(selected) >= minimum
+            if state.receiver_wait.is_some_and(|wait| match wait {
+                ReceiverWait::Destination(selected, minimum) => {
+                    destination == selected && state.queues.len_for(selected) >= minimum
+                }
+                ReceiverWait::Any => true,
             }) {
                 state.receiver_wait = None;
                 state.receiver_waker.wake();
@@ -101,9 +113,23 @@ impl<M: RawMutex, const N: usize> TxQueue<M, N> {
                 state.receiver_wait = None;
                 Poll::Ready(())
             } else {
-                state.receiver_wait = Some((destination, minimum.max(1)));
+                state.receiver_wait = Some(ReceiverWait::Destination(destination, minimum.max(1)));
                 state.receiver_waker.register(context.waker());
                 Poll::Pending
+            }
+        })
+    }
+
+    pub(super) fn poll_ready_any(&self, context: &mut Context<'_>) -> Poll<()> {
+        self.state.lock(|state| {
+            let mut state = state.borrow_mut();
+            if state.queues.is_empty() {
+                state.receiver_wait = Some(ReceiverWait::Any);
+                state.receiver_waker.register(context.waker());
+                Poll::Pending
+            } else {
+                state.receiver_wait = None;
+                Poll::Ready(())
             }
         })
     }

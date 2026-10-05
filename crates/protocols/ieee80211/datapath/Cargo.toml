@@ -13,6 +13,8 @@ oer-network-interface = { path = "../../../network/interface" }
 
 [features]
 default = []
+# `memory::MemoryTxQueues`: a host model of a network's TX source.
+model = []
 
 [lints]
 workspace = true

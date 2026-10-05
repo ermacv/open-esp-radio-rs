@@ -4,7 +4,6 @@
 use core::{convert::Infallible, marker::PhantomData};
 use oer_ieee80211_upper_mac::rate_control::{RateControl, link_metric};
 use oer_ieee80211_upper_mac_service::client::{PortClientEnv, PortError, PortMsdu, PortRxBuffer};
-use oer_ieee80211_upper_mac_service::queue::PORT_FRAME_CAPACITY;
 
 use oer_ieee80211_lower_mac::{
     Channel, ChannelWidth, Ieee80211LowerMacPort, ReceiveFilter, RxMeta,
@@ -56,10 +55,10 @@ use crate::{
 use super::{
     connected::{
         ConnectionContext, PortConnection, PortConnectionBuffers, PortConnectionConfig,
-        PortConnectionSecurity, PortDisconnect, PortLinkProbe, PortLinkSupervisor, PortSend,
+        PortConnectionSecurity, PortDisconnect, PortLinkProbe, PortLinkSupervisor,
     },
     join::{PortAssociation, PortHePower, PortJoin},
-    link::{PortLink, PortLinkError, PortStationEnv},
+    link::{PortLink, PortLinkError, PortStationEnv, PortStationFrame},
     rsn::{BorrowedUnwrap, PortHandshake, PortKeyInstall, PortKeys},
     scan::{PortProbe, PortScan, PortScanTarget},
 };
@@ -252,6 +251,12 @@ pub struct PortStation<'p, X: PortStationEnv> {
     packet_number: Option<CcmpTxPacketNumber>,
     /// The frame buffers a connection borrows; `None` while one holds them.
     buffers: Option<&'p mut PortConnectionBuffers>,
+    /// The network's frames to send.
+    frames: &'p X::Frames,
+    /// The destination last served.
+    cursor: Option<[u8; 6]>,
+    /// A frame taken from the network that waits for its own exchange.
+    frontier: Option<PortStationFrame<X>>,
     connection: Option<PortConnection<'p, X::Port, X::RateControl>>,
     report: PortAttemptReport,
 }
@@ -270,6 +275,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         profile: PortStationProfile<'p>,
         security: StaAttemptSecurity<'p>,
         storage: &'p mut PortStationStorage,
+        frames: &'p X::Frames,
     ) -> Self {
         let PortStationStorage { table, connection } = storage;
         Self {
@@ -290,6 +296,9 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             bip: None,
             packet_number: None,
             buffers: Some(connection),
+            frames,
+            cursor: None,
+            frontier: None,
             connection: None,
             report: PortAttemptReport::default(),
         }
@@ -347,6 +356,9 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             key_unwrap,
             security,
             connection,
+            frames,
+            cursor,
+            frontier,
             ..
         } = self;
         let connection = connection.as_mut().ok_or(PortLinkError::MissingState)?;
@@ -359,19 +371,11 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
                 sequences,
                 supplicant,
                 key_unwrap,
+                frames,
+                cursor,
+                frontier,
             },
         ))
-    }
-
-    /// Queue one Ethernet-II frame with `user_priority` for the access
-    /// point; [`Self::run_until`] sends it.
-    pub fn send(
-        &mut self,
-        ethernet: &[u8],
-        user_priority: u8,
-    ) -> Result<PortSend, PortLinkError<PortError<X>>> {
-        let (connection, _) = self.context()?;
-        connection.send(ethernet, user_priority)
     }
 
     /// Receive until `deadline`, handing every Ethernet frame to `deliver`.
@@ -992,12 +996,6 @@ pub trait PortStationApplication<B> {
     /// Whether the station should leave and stop.
     fn stop_requested(&mut self) -> bool;
 
-    /// The next Ethernet-II frame to send, written into `ethernet`: its
-    /// length and user priority.
-    fn next_transmit(&mut self, _ethernet: &mut [u8]) -> Option<(usize, u8)> {
-        None
-    }
-
     /// One received Ethernet-II frame: the port's buffer to hand on where
     /// the network stack adopts it, or parts to copy.
     fn deliver(&mut self, msdu: PortMsdu<'_, B>);
@@ -1073,19 +1071,10 @@ impl<'p, X: PortStationEnv, A: PortStationApplication<PortRxBuffer<X>>> StaLifec
         if let Some(connection) = station.connection() {
             self.application.connected(connection.config());
         }
-        let mut frame = [0_u8; PORT_FRAME_CAPACITY];
         loop {
             if self.application.stop_requested() {
                 let _ = station.disconnect().await;
                 return StaAttemptOutcome::Stopped { owner: station };
-            }
-            while station.connection().is_some_and(PortConnection::can_queue)
-                && let Some((length, priority)) = self.application.next_transmit(&mut frame)
-            {
-                if let Err(error) = station.send(&frame[..length], priority) {
-                    let _ = station.end_connection(false).await;
-                    return connected_failure(station, error);
-                }
             }
             let deadline = station.timer.now().checked_add(self.poll);
             let Some(deadline) = deadline else {

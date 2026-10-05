@@ -3,6 +3,7 @@
 
 use core::future::Future;
 
+use oer_ieee80211_datapath::DestinationTxQueues;
 use oer_ieee80211_lower_mac::{
     AmpduCapabilities, Channel, CoexPriority, FailureClass, KeySelector, LifecycleCommand,
     LifecycleError, LowerMacSetting, MacAddress, PhyRate, ReceiveFilter, SettingError, TxPower,
@@ -54,7 +55,14 @@ pub trait PortStationEnv: PortClientEnv {
     /// association (`FixedRateControl`, or the Espressif
     /// `EspressifRateControl` of `oer-espressif-ieee80211-policy`).
     type RateControl: RateControl;
+    /// Where the frames the station sends wait: the network's own owners,
+    /// queued by Ethernet destination, which the station takes when it
+    /// sends them.
+    type Frames: DestinationTxQueues;
 }
+
+/// A frame the station sends: an owner of its network's source.
+pub type PortStationFrame<X> = <<X as PortStationEnv>::Frames as DestinationTxQueues>::Frame;
 
 /// The coexistence schedule of the radio system a station shares its RF
 /// with, which its integrator names once in [`PortStationEnv::Coex`].

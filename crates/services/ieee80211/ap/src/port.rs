@@ -50,6 +50,7 @@ use oer_ieee80211_ap::{
     beacon::ApBeacon,
     sae::{ApSaeFrame, ApSaeOutput, ApSaeRandom, ApSaeResponder, ApSaeResult},
 };
+use oer_ieee80211_datapath::{DestinationTxQueues, SoftwareTxFrame};
 use oer_ieee80211_lower_mac::{
     Channel, Cipher, CoexPriority, Ieee80211LowerMacPort, KeyHandle, KeyInstall, KeyScope,
     KeySelector, LowerMacBeaconTiming, LowerMacSetting, PhyRate, ReceiveFilter, RxCryptoStatus,
@@ -76,7 +77,7 @@ use oer_ieee80211_mac::{
     },
     ht::HtPeerCapabilities,
     protection::ApBssProtection,
-    qos::{WmmAccessCategory, WmmUserPriority},
+    qos::WmmAccessCategory,
     security::{ApSecurityPolicy, LinkProtection},
     sequence::SequenceNumber,
     ssid::WifiSsid,
@@ -88,17 +89,17 @@ use oer_ieee80211_rsn::{
 };
 use oer_ieee80211_upper_mac::{
     TxBody, TxReceiver, TxReport, TxRequest,
-    aggregate::AmpduLimits,
+    aggregate::{AmpduLimits, AmpduRun},
     rate_control::{RateControl, RatePeer, link_metric},
 };
 use oer_ieee80211_upper_mac_service::{
     EventRouter,
-    aggregate::{AmpduSubframes, PortAggregation},
+    aggregate::{AmpduSubframes, PORT_AMPDU_SUBFRAMES, PortAggregation},
     client::{
         PortClient, PortClientEnv, PortClientError, PortError, PortFrame, PortInput, PortMsdu,
         PortRxBuffer,
     },
-    queue::{PORT_MPDU_CAPACITY, PORT_TX_QUEUE, TxQueue},
+    frame::PORT_MPDU_CAPACITY,
 };
 use oer_time::{Clock, Duration, Instant, Timer};
 
@@ -107,7 +108,6 @@ use oer_ieee80211_ap::{
 };
 use oer_ieee80211_mac::ap::{ApPowerSaveObservation, observe_ap_power_save_for_access_point};
 use oer_ieee80211_mac::beacon::dtim;
-use oer_ieee80211_upper_mac_service::queue::PORT_FRAME_CAPACITY;
 
 use oer_ieee80211_lower_mac::{RxBlockAckAgreement, VifId};
 use oer_ieee80211_mac::ap::ApActionFrame;
@@ -158,7 +158,14 @@ pub trait PortApEnv: PortClientEnv {
     /// station: one controller per peer (`FixedRateControl`, or the
     /// Espressif `EspressifRateControl` of `oer-espressif-ieee80211-policy`).
     type RateControl: RateControl;
+    /// Where the frames the access point sends wait: the network's own
+    /// owners, queued by Ethernet destination, which the access point takes
+    /// when it sends them or holds for a dozing peer.
+    type Frames: DestinationTxQueues;
 }
+
+/// A frame the access point sends: an owner of its network's source.
+pub type PortApFrame<X> = <<X as PortApEnv>::Frames as DestinationTxQueues>::Frame;
 
 /// The executor of an access point's SAE responder: the access point hands
 /// it one SAE frame at a time and takes the output when it is ready, so the
@@ -235,6 +242,8 @@ impl<R: ApSaeRandom> PortApSae for InlineSae<R> {
 enum Wake<B> {
     Input(Option<PortInput<B>>),
     Sae([u8; 6], ApSaeOutput),
+    /// The network queued a frame.
+    Frames,
 }
 
 /// The fresh material of each WPA2 four-way handshake the access point
@@ -274,21 +283,19 @@ pub struct PortApProfile<'a> {
 /// (for every dozing peer and the next DTIM together; the composition sizes
 /// it for its peers' traffic and its memory) and its peers' receive
 /// reordering.
-pub struct PortApStorage<const HELD: usize> {
+pub struct PortApStorage<const HELD: usize, F> {
     beacon: [u8; AP_BEACON_CAPACITY],
-    queue: TxQueue,
     subframes: AmpduSubframes,
-    held: [Option<HeldFrame>; HELD],
+    held: [Option<HeldFrame<F>>; HELD],
     /// The peers' receive Block Ack agreements, one per peer at most on
     /// average, and their kept MPDUs.
     reorder: RxReorder<AP_MAX_CLIENTS>,
 }
 
-impl<const HELD: usize> PortApStorage<HELD> {
+impl<const HELD: usize, F> PortApStorage<HELD, F> {
     pub const fn new() -> Self {
         Self {
             beacon: [0; AP_BEACON_CAPACITY],
-            queue: TxQueue::new(),
             subframes: AmpduSubframes::new(),
             held: [const { None }; HELD],
             reorder: RxReorder::new(),
@@ -296,39 +303,40 @@ impl<const HELD: usize> PortApStorage<HELD> {
     }
 }
 
-/// One frame held for power save: an Ethernet-II frame for a dozing peer,
-/// or for the group until the next DTIM.
-pub struct HeldFrame {
+/// One frame held for power save, the network's own owner: for a dozing
+/// peer, or for the group until the next DTIM.
+pub struct HeldFrame<F> {
     order: u32,
-    ethernet: [u8; PORT_FRAME_CAPACITY],
-    len: usize,
+    frame: F,
 }
 
-impl HeldFrame {
-    fn ethernet(&self) -> &[u8] {
-        &self.ethernet[..self.len]
-    }
-
+impl<F: SoftwareTxFrame> HeldFrame<F> {
     fn destination(&self) -> [u8; 6] {
-        let mut destination = [0; 6];
-        destination.copy_from_slice(&self.ethernet[..6]);
-        destination
+        destination(self.frame.ethernet()).unwrap_or_default()
     }
 
     fn is_group(&self) -> bool {
-        self.ethernet[0] & 1 != 0
+        self.frame
+            .ethernet()
+            .first()
+            .is_some_and(|octet| octet & 1 != 0)
     }
+}
+
+/// The Ethernet destination of `ethernet`.
+fn destination(ethernet: &[u8]) -> Option<[u8; 6]> {
+    ethernet.get(..6)?.try_into().ok()
 }
 
 /// The frames held for power save, shared by every dozing peer and the
 /// group, each released oldest first for its destination.
-struct PowerSaveBuffer<'p> {
-    frames: &'p mut [Option<HeldFrame>],
+struct PowerSaveBuffer<'p, F> {
+    frames: &'p mut [Option<HeldFrame<F>>],
     next_order: u32,
 }
 
-impl<'p> PowerSaveBuffer<'p> {
-    fn new(frames: &'p mut [Option<HeldFrame>]) -> Self {
+impl<'p, F: SoftwareTxFrame> PowerSaveBuffer<'p, F> {
+    fn new(frames: &'p mut [Option<HeldFrame<F>>]) -> Self {
         frames.iter_mut().for_each(|slot| *slot = None);
         Self {
             frames,
@@ -336,27 +344,21 @@ impl<'p> PowerSaveBuffer<'p> {
         }
     }
 
-    /// Hold `ethernet`; `false` when every slot is taken.
-    fn hold(&mut self, ethernet: &[u8]) -> bool {
+    /// Hold `frame`; the frame back when every slot is taken.
+    fn hold(&mut self, frame: F) -> Result<(), F> {
         let Some(slot) = self.frames.iter_mut().find(|slot| slot.is_none()) else {
-            return false;
+            return Err(frame);
         };
-        if ethernet.len() > PORT_FRAME_CAPACITY || ethernet.len() < 6 {
-            return false;
-        }
-        let mut held = HeldFrame {
+        *slot = Some(HeldFrame {
             order: self.next_order,
-            ethernet: [0; PORT_FRAME_CAPACITY],
-            len: ethernet.len(),
-        };
-        held.ethernet[..ethernet.len()].copy_from_slice(ethernet);
-        *slot = Some(held);
+            frame,
+        });
         self.next_order = self.next_order.wrapping_add(1);
-        true
+        Ok(())
     }
 
     /// Take the oldest frame `matches` selects.
-    fn take_oldest(&mut self, matches: impl Fn(&HeldFrame) -> bool) -> Option<HeldFrame> {
+    fn take_oldest(&mut self, matches: impl Fn(&HeldFrame<F>) -> bool) -> Option<HeldFrame<F>> {
         let index = self
             .frames
             .iter()
@@ -381,19 +383,10 @@ impl<'p> PowerSaveBuffer<'p> {
     }
 }
 
-impl<const HELD: usize> Default for PortApStorage<HELD> {
+impl<const HELD: usize, F> Default for PortApStorage<HELD, F> {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// The outcome of offering one frame for transmission.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PortApSend {
-    /// The frame waits in the transmit queue, which `run_until` sends.
-    Queued,
-    /// The transmit queue is full, or the frame exceeds its capacity.
-    Full,
 }
 
 /// An associated peer's link: its rate control, its pairwise key once
@@ -566,10 +559,13 @@ pub struct PortAccessPoint<'p, X: PortApEnv> {
     rate_control: <X::RateControl as RateControl>::Config,
     /// The packet numbers of group data.
     group_transmit: CcmpTxPacketNumber,
-    queue: &'p mut TxQueue,
+    /// The network's frames to send.
+    frames: &'p X::Frames,
+    /// The destination last served: the next turn goes to the one after it.
+    cursor: Option<[u8; 6]>,
     /// The subframes of the A-MPDU being sent.
     subframes: &'p mut AmpduSubframes,
-    buffered: PowerSaveBuffer<'p>,
+    buffered: PowerSaveBuffer<'p, PortApFrame<X>>,
     reorder: &'p mut RxReorder<AP_MAX_CLIENTS>,
     /// The protection the beacon template carries.
     advertised: ApBssProtection,
@@ -587,6 +583,8 @@ pub struct PortApParts<'p, X: PortApEnv> {
     pub authenticator: X::Authenticator,
     pub sae: X::Sae,
     pub rate_control: <X::RateControl as RateControl>::Config,
+    /// The network's frames to send.
+    pub frames: &'p X::Frames,
 }
 
 impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
@@ -596,7 +594,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         parts: PortApParts<'p, X>,
         profile: PortApProfile<'p>,
         service: AccessPointService<'p>,
-        storage: &'p mut PortApStorage<HELD>,
+        storage: &'p mut PortApStorage<HELD, PortApFrame<X>>,
     ) -> Result<Self, PortApBuildError> {
         let PortApParts {
             client,
@@ -604,10 +602,10 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             authenticator,
             sae,
             rate_control,
+            frames,
         } = parts;
         let PortApStorage {
             beacon,
-            queue,
             subframes,
             held,
             reorder,
@@ -640,7 +638,8 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             links: [const { None }; AP_MAX_CLIENTS],
             rate_control,
             group_transmit: CcmpTxPacketNumber::new(profile.ccmp_step),
-            queue,
+            frames,
+            cursor: None,
             subframes,
             buffered,
             reorder,
@@ -778,21 +777,6 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             })
     }
 
-    /// Queue one Ethernet-II frame for its destination, an authorized peer
-    /// or the group; `run_until` sends it.
-    pub fn send(&mut self, ethernet: &[u8], user_priority: WmmUserPriority) -> PortApSend {
-        if self.queue.push(ethernet, user_priority) {
-            PortApSend::Queued
-        } else {
-            PortApSend::Full
-        }
-    }
-
-    /// Whether the transmit queue has room.
-    pub const fn can_queue(&self) -> bool {
-        !self.queue.is_full()
-    }
-
     /// Forget a peer: its link and pairwise key, its SAE session, the frames
     /// held for it, then its state.
     fn remove_peer(&mut self, peer: [u8; 6]) -> Result<(), PortApError<PortError<X>>> {
@@ -840,8 +824,8 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             if self.expire_tx_block_ack(now) {
                 continue;
             }
-            if let Some(frame) = self.queue.pop() {
-                self.dispatch(frame.ethernet()).await?;
+            if let Some(frame) = self.next_frame() {
+                self.dispatch(frame).await?;
                 continue;
             }
             if now >= deadline {
@@ -859,12 +843,19 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             .fold(deadline, Instant::min);
             let woken = {
                 let Self {
-                    client, timer, sae, ..
+                    client,
+                    timer,
+                    sae,
+                    frames,
+                    ..
                 } = self;
                 let mut input = pin!(client.next_input(&*timer, wake));
                 poll_fn(|context| {
                     if let Poll::Ready((peer, output)) = sae.poll_output(context) {
                         return Poll::Ready(Wake::Sae(peer, output));
+                    }
+                    if frames.poll_ready_any(context).is_ready() {
+                        return Poll::Ready(Wake::Frames);
                     }
                     input.as_mut().poll(context).map(Wake::Input)
                 })
@@ -872,6 +863,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             };
             match woken {
                 Wake::Sae(peer, output) => self.sae_output(peer, output, now).await?,
+                Wake::Frames => {}
                 Wake::Input(Some(PortInput::Frame(frame))) => {
                     self.receive(frame, now, deliver).await?;
                 }
@@ -964,7 +956,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                     .complete_buffered_group_release(release, false)?;
                 break;
             };
-            self.transmit_data(held.ethernet(), release.more_data())
+            self.transmit_data(held.frame.ethernet(), release.more_data())
                 .await?;
             self.counters.released = self.counters.released.saturating_add(1);
             self.service
@@ -1008,7 +1000,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 .complete_buffered_unicast_release(release, false)?;
             return Ok(());
         };
-        self.transmit_data(held.ethernet(), release.more_data())
+        self.transmit_data(held.frame.ethernet(), release.more_data())
             .await?;
         self.counters.released = self.counters.released.saturating_add(1);
         self.service
@@ -1016,13 +1008,20 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         Ok(())
     }
 
-    /// Send one queued frame now, or hold it for a dozing peer or for the
-    /// next DTIM while any authorized peer dozes.
-    async fn dispatch(&mut self, ethernet: &[u8]) -> Result<(), PortApError<PortError<X>>> {
-        let Some(destination) = ethernet
-            .get(..6)
-            .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())
-        else {
+    /// The next frame to send: the head of the destination after the last
+    /// one served, so every destination with frames gets its turn.
+    fn next_frame(&mut self) -> Option<PortApFrame<X>> {
+        let (destination, _) = self.frames.next_head_after(self.cursor)?;
+        self.cursor = Some(destination);
+        self.frames.try_take_for(destination)
+    }
+
+    /// Send one frame now, with the frames for its peer that follow it as an
+    /// A-MPDU where one applies, or hold it for a dozing peer or for the next
+    /// DTIM while any authorized peer dozes. A frame for no authorized
+    /// destination is dropped, its owner returned to the network.
+    async fn dispatch(&mut self, frame: PortApFrame<X>) -> Result<(), PortApError<PortError<X>>> {
+        let Some(destination) = destination(frame.ethernet()) else {
             self.counters.data_dropped = self.counters.data_dropped.saturating_add(1);
             return Ok(());
         };
@@ -1046,21 +1045,17 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             }
         };
         let Some(identity) = hold else {
-            let run = if destination[0] & 1 == 0 {
+            if destination[0] & 1 == 0 {
                 // An offer a failed attempt left goes with the peer's data.
                 let now = self.timer.now();
                 self.send_due_tx_block_ack_offer(destination, now).await?;
-                self.aggregate_run(destination, ethernet.len())
-            } else {
-                1
-            };
-            return if run >= 2 {
-                self.transmit_aggregate(destination, ethernet, run).await
-            } else {
-                self.transmit_data(ethernet, false).await
-            };
+                if let Some(run) = self.aggregate_run(destination, &frame) {
+                    return self.transmit_aggregate(destination, frame, run).await;
+                }
+            }
+            return self.transmit_data(frame.ethernet(), false).await;
         };
-        if !self.buffered.hold(ethernet) {
+        if self.buffered.hold(frame).is_err() {
             self.counters.held_dropped = self.counters.held_dropped.saturating_add(1);
             return Ok(());
         }
@@ -1488,7 +1483,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             return Ok(());
         }
         let access_point = self.service.address();
-        let mut mpdu = [0; oer_ieee80211_upper_mac_service::queue::PORT_FRAME_CAPACITY + 64];
+        let mut mpdu = [0; PORT_MPDU_CAPACITY];
         let (length, key) = if self.service.link_protection() == LinkProtection::Open {
             let sequence_number = self.service.current_data_sequence();
             let length = ApUnprotectedDataFrame {
@@ -1605,62 +1600,51 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         Ok((length, key, sequence_number))
     }
 
-    /// How many frames for `destination` one A-MPDU carries: the head of
-    /// `head_len` octets and the queued frames for it that follow, as the
-    /// peer's operational TX Block Ack agreement, the port, the peer's HT
-    /// A-MPDU Parameters and the Best Effort TXOP limit the BSS advertises
-    /// admit at the peer's A-MPDU rate; one where no A-MPDU applies.
-    fn aggregate_run(&self, destination: [u8; 6], head_len: usize) -> usize {
-        let Some(status) = self.service.peer_status(destination) else {
-            return 1;
-        };
-        let (Some(agreement), Some(ht), Some(port), true) = (
-            status.tx_block_ack,
-            status.ht,
-            <X::Aggregation as PortAggregation<X>>::capabilities(self.client.port()),
-            status.qos_supported && self.service.link_protection() == LinkProtection::Ccmp,
-        ) else {
-            return 1;
-        };
+    /// The A-MPDU run that `head` for `destination` begins, its head and the
+    /// next frame the network queued for the peer admitted: where the peer's
+    /// operational TX Block Ack agreement, the port, the peer's HT A-MPDU
+    /// Parameters and the Best Effort TXOP limit the BSS advertises admit
+    /// two frames at the peer's A-MPDU rate. `None` sends `head` alone.
+    fn aggregate_run(&self, destination: [u8; 6], head: &PortApFrame<X>) -> Option<AmpduRun> {
+        let status = self.service.peer_status(destination)?;
+        if !status.qos_supported || self.service.link_protection() != LinkProtection::Ccmp {
+            return None;
+        }
+        let agreement = status.tx_block_ack?;
+        let ht = status.ht?;
+        let port = <X::Aggregation as PortAggregation<X>>::capabilities(self.client.port())?;
+        let link = self
+            .links
+            .iter()
+            .flatten()
+            .find(|link| link.peer == destination)?;
         let txop = self
             .profile
             .advertisement
             .wmm
             .access_category(WmmAccessCategory::BestEffort)
             .txop_limit_units_32_us;
-        let Some(link) = self
-            .links
-            .iter()
-            .flatten()
-            .find(|link| link.peer == destination)
-        else {
-            return 1;
-        };
-        let limits = AmpduLimits {
+        let mut run = AmpduLimits {
             window: agreement.window,
             port,
             peer_ampdu_parameters: ht.ampdu_parameters(),
             txop_limit_micros: (txop != 0).then_some(u32::from(txop) * 32),
             rate: link.rate.ampdu_rate(),
-        };
-        let queue = &*self.queue;
-        let following = (0..PORT_TX_QUEUE)
-            .map_while(|index| queue.get(index))
-            .take_while(|frame| frame.ethernet().get(..6) == Some(destination.as_slice()))
-            .map(|frame| frame.ethernet().len());
-        limits
-            .run(core::iter::once(head_len).chain(following))
-            .max(1)
+        }
+        .begin()?;
+        let next = self.frames.head_for(destination)?;
+        (run.admit(head.ethernet().len()) && run.admit(next.ethernet_bytes)).then_some(run)
     }
 
-    /// Send `head` and the `run - 1` queued frames for `destination` that
-    /// follow it as one A-MPDU of TID 0 under the peer's pairwise key, at
-    /// the peer's A-MPDU rate.
+    /// Send `head` and the frames the network queued for `destination` that
+    /// `run` admits after it, taken one at a time, as one A-MPDU of TID 0
+    /// under the peer's pairwise key, at the peer's A-MPDU rate. A frame the
+    /// run does not admit stays in the network's queue.
     async fn transmit_aggregate(
         &mut self,
         destination: [u8; 6],
-        head: &[u8],
-        run: usize,
+        head: PortApFrame<X>,
+        mut run: AmpduRun,
     ) -> Result<(), PortApError<PortError<X>>> {
         let spacing = self
             .service
@@ -1670,25 +1654,35 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         self.subframes.clear();
         let mut first_sequence = None;
         let mut mpdu = [0_u8; PORT_MPDU_CAPACITY];
-        for index in 0..run {
-            let queued;
-            let ethernet = if index == 0 {
-                head
-            } else {
-                queued = self
-                    .queue
-                    .pop()
-                    .ok_or(PortApError::Service(ApServiceError::UnknownPeer))?;
-                queued.ethernet()
-            };
+        // The run admitted the head and the next frame already.
+        let mut admitted = 1_usize;
+        let mut frame = Some(head);
+        while let Some(owner) = frame.take() {
             let (length, key, sequence) =
-                self.encode_protected(destination, true, false, ethernet, &mut mpdu)?;
+                self.encode_protected(destination, true, false, owner.ethernet(), &mut mpdu)?;
+            // The subframe is encoded: the network's owner goes back.
+            drop(owner);
             first_sequence.get_or_insert(sequence);
             self.subframes.push(|buffer| {
                 buffer[..length].copy_from_slice(&mpdu[..length]);
                 Ok::<_, PortApError<PortError<X>>>((length, KeySelector::Key(key)))
             })?;
+            if self.subframes.len() == PORT_AMPDU_SUBFRAMES {
+                break;
+            }
+            let admitted_next = if admitted == 1 {
+                true
+            } else {
+                self.frames
+                    .head_for(destination)
+                    .is_some_and(|next| run.admit(next.ethernet_bytes))
+            };
+            if admitted_next {
+                admitted += 1;
+                frame = self.frames.try_take_for(destination);
+            }
         }
+        let run = self.subframes.len();
         let first_sequence =
             first_sequence.ok_or(PortApError::Service(ApServiceError::UnknownPeer))?;
         let committed_at = self
@@ -1715,7 +1709,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             mpdu_retry_limit: config.retry_limit,
             body: TxBody::Ampdu(ampdu),
         };
-        let mut slices = [&[][..]; PORT_TX_QUEUE];
+        let mut slices = [&[][..]; PORT_AMPDU_SUBFRAMES];
         let frames = self.subframes.frames(&mut slices, spacing);
         let report =
             <X::Aggregation as PortAggregation<X>>::send(&mut self.client, frames, request).await?;

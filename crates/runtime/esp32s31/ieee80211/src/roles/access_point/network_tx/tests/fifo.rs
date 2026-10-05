@@ -77,4 +77,8 @@ impl<S: SelectedBurstMaterializer, const EMPTY_SNAPSHOT: bool> DestinationTxQueu
     ) -> core::task::Poll<()> {
         panic!("synchronous selection does not poll readiness");
     }
+
+    fn poll_ready_any(&self, _: &mut core::task::Context<'_>) -> core::task::Poll<()> {
+        panic!("synchronous selection does not poll readiness");
+    }
 }

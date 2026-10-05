@@ -20,6 +20,7 @@ use std::{
     vec::Vec,
 };
 
+use oer_ieee80211_datapath::{SoftwareTxFrame, memory::MemoryTxQueues};
 use oer_ieee80211_lower_mac::{
     Channel, ChannelWidth, CoexPriority, Ieee80211LowerMacPort, KeySelector, LifecycleCommand,
     LowerMacSetting, ReceiveFilter, RxBeaconPriority, TxPower, VifId,
@@ -55,7 +56,7 @@ use oer_ieee80211_sta_service::{
     port::{
         EventRouter, PortCoexistence, PortCoexistenceRefused, PortConnection, PortConnectionFrame,
         PortDisconnect, PortLink, PortLinkError, PortLinkSupervision, PortProbe, PortRouter,
-        PortScan, PortScanTarget, PortSend, PortStation, PortStationApplication, PortStationConfig,
+        PortScan, PortScanTarget, PortStation, PortStationApplication, PortStationConfig,
         PortStationEnv, PortStationLifecycle, PortStationProfile, PortStationStorage,
     },
     scan::{StaCandidateScanService, StaScanBackend},
@@ -66,7 +67,8 @@ use oer_ieee80211_upper_mac::{
 };
 use oer_ieee80211_upper_mac_service::UpperMacTxError;
 use oer_ieee80211_upper_mac_service::client::{PortClientEnv, PortMsdu};
-use oer_ieee80211_upper_mac_service::queue::{PORT_FRAME_CAPACITY, PORT_TX_QUEUE};
+use oer_ieee80211_upper_mac_service::frame::PORT_FRAME_CAPACITY;
+use oer_network_interface::NetworkInterfaceId;
 use oer_time::{Clock, Duration, Instant, RadioInstant, Timer};
 
 use scripted_ap::{AP, AP_CHANNEL, ApSecurity, PASSPHRASE, RATES, SNONCE, SSID, STA, ScriptedAp};
@@ -124,6 +126,37 @@ impl BackoffEntropy for Seeded {
         self.0 = x;
         x
     }
+}
+
+/// One of the network's frames: dropping it returns its owner.
+struct TestFrame(Vec<u8>);
+
+impl SoftwareTxFrame for TestFrame {
+    fn interface(&self) -> NetworkInterfaceId {
+        NetworkInterfaceId::new(0)
+    }
+
+    fn ethernet(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl Drop for TestFrame {
+    fn drop(&mut self) {
+        RETURNED.with(|returned| returned.set(returned.get() + 1));
+    }
+}
+
+/// The network's queues the station takes its frames from.
+type TestFrames = MemoryTxQueues<TestFrame, 32>;
+
+thread_local! {
+    /// Frames returned to the network: sent, dropped or released.
+    static RETURNED: Cell<usize> = const { Cell::new(0) };
+}
+
+fn returned() -> usize {
+    RETURNED.with(Cell::get)
 }
 
 struct Env<'a>(PhantomData<&'a ()>);
@@ -225,6 +258,7 @@ impl<'a> PortStationEnv for Env<'a> {
     type KeyUnwrap = RsnSoftwareAes;
     type Coex = &'a ScriptedCoex;
     type RateControl = ScriptedRate<'a>;
+    type Frames = TestFrames;
 }
 
 const MANAGEMENT_RATE: PhyRate = PhyRate::Legacy(LegacyRate::Ofdm6M);
@@ -279,6 +313,7 @@ struct World {
     timer: VirtualTimer,
     coex: &'static ScriptedCoex,
     rate_log: &'static RefCell<RateLog>,
+    frames: &'static TestFrames,
 }
 
 impl World {
@@ -297,6 +332,7 @@ impl World {
             model,
             router: Box::leak(Box::new(EventRouter::new(model, 1))),
             rate_log: Box::leak(Box::new(RefCell::new(RateLog::default()))),
+            frames: Box::leak(Box::new(TestFrames::new())),
             coex: Box::leak(Box::new(ScriptedCoex {
                 view: Cell::new(CoexView::INACTIVE),
                 performed: RefCell::new(Vec::new()),
@@ -377,7 +413,13 @@ impl World {
             profile,
             security,
             Box::leak(Box::new(PortStationStorage::new())),
+            self.frames,
         )
+    }
+
+    /// Hand the station the network's Ethernet-II frame `ethernet`.
+    fn send(&self, ethernet: &[u8]) {
+        assert!(self.frames.push(TestFrame(ethernet.to_vec())).is_ok());
     }
 
     /// Poll `future` to its end: between polls the access point answers
@@ -536,6 +578,13 @@ fn ethernet(destination: [u8; 6], ether_type: u16, payload: &[u8]) -> Vec<u8> {
 const PEER: [u8; 6] = [0x02, 0x77, 0, 0, 0, 9];
 const IPV4: u16 = 0x0800;
 
+/// An IPv4 payload marked Expedited Forwarding (DSCP 46): user priority 6.
+fn voice(payload: &[u8]) -> Vec<u8> {
+    let mut packet = vec![0x45, 46 << 2];
+    packet.extend_from_slice(payload);
+    packet
+}
+
 #[test]
 fn an_active_scan_finds_the_access_point_on_its_channel() {
     on_large_stack(an_active_scan_finds_the_access_point_on_its_channel_body);
@@ -624,11 +673,8 @@ fn an_open_join_connects_and_exchanges_data_both_ways_body() {
 
     // Uplink: QoS data at the user priority's access category, each TID
     // numbering its own sequence.
-    for (priority, payload) in [(0, b"best".as_slice()), (6, b"voice"), (0, b"again")] {
-        assert_eq!(
-            station.send(&ethernet(PEER, IPV4, payload), priority),
-            Ok(PortSend::Queued)
-        );
+    for payload in [b"best".to_vec(), voice(b"voice"), b"again".to_vec()] {
+        world.send(&ethernet(PEER, IPV4, &payload));
     }
     // The receive loop sends the queue.
     assert_eq!(
@@ -725,10 +771,7 @@ fn a_wpa2_psk_connection_installs_its_keys_through_the_port_body() {
 
     // Data leaves under the pairwise key with consecutive packet numbers.
     for payload in [b"one".as_slice(), b"two"] {
-        assert_eq!(
-            station.send(&ethernet(PEER, IPV4, payload), 0),
-            Ok(PortSend::Queued)
-        );
+        world.send(&ethernet(PEER, IPV4, payload));
     }
     assert_eq!(
         world.run_for(&mut ap, &mut station, 5, &mut Vec::new()),
@@ -1103,10 +1146,7 @@ fn an_aggregate_and_its_block_ack_stay_within_the_txop_limit_body() {
     let before = world.model.submitted().len();
 
     for payload in [b"a".as_slice(), b"b", b"c", b"d"] {
-        assert_eq!(
-            station.send(&ethernet(PEER, IPV4, payload), 0),
-            Ok(PortSend::Queued)
-        );
+        world.send(&ethernet(PEER, IPV4, payload));
     }
     assert_eq!(
         world.run_for(&mut ap, &mut station, 5, &mut delivered),
@@ -1227,10 +1267,7 @@ fn connection_frames_carry_the_elevated_priority_under_the_reconnect_policy_body
 
     // Data is ordinary.
     let before = world.model.submitted().len();
-    assert_eq!(
-        station.send(&ethernet(PEER, IPV4, b"data"), 0),
-        Ok(PortSend::Queued)
-    );
+    world.send(&ethernet(PEER, IPV4, b"data"));
     let mut delivered = Vec::new();
     world.run_for(&mut ap, &mut station, 5, &mut delivered);
     assert!(
@@ -1289,10 +1326,7 @@ fn the_rate_control_starts_from_the_association_response_and_learns_from_each_fr
     let mut station = connect(&world, &mut ap, world.station(open()));
     // -40 dBm over a -96 dBm noise floor.
     assert_eq!(world.rate_log.borrow().link_metrics, [Some(56)]);
-    assert_eq!(
-        station.send(&ethernet(PEER, IPV4, b"data"), 0),
-        Ok(PortSend::Queued)
-    );
+    world.send(&ethernet(PEER, IPV4, b"data"));
     let mut delivered = Vec::new();
     world.run_for(&mut ap, &mut station, 5, &mut delivered);
     assert_eq!(world.rate_log.borrow().mpdus, [(1, true)]);
@@ -1567,10 +1601,7 @@ fn a_receive_loss_is_skipped_and_the_connection_goes_on_body() {
         None
     );
     assert_eq!(&delivered.last().unwrap()[14..], b"after");
-    assert_eq!(
-        station.send(&ethernet(PEER, IPV4, b"up"), 0),
-        Ok(PortSend::Queued)
-    );
+    world.send(&ethernet(PEER, IPV4, b"up"));
     assert_eq!(
         world.run_for(&mut ap, &mut station, 5, &mut delivered),
         None
@@ -1594,10 +1625,7 @@ fn a_completion_lost_in_a_gap_fails_the_send_and_the_next_one_goes_out_body() {
         .map(|index| ap.data(None, None, false, IPV4, &[b'a' + index], PEER))
         .collect();
     burst(&world, &mut ap, &mut station, frames);
-    assert_eq!(
-        station.send(&ethernet(PEER, IPV4, b"lost"), 0),
-        Ok(PortSend::Queued)
-    );
+    world.send(&ethernet(PEER, IPV4, b"lost"));
     let mut delivered = Vec::new();
     assert_eq!(
         world.run_for(&mut ap, &mut station, 5, &mut delivered),
@@ -1608,10 +1636,7 @@ fn a_completion_lost_in_a_gap_fails_the_send_and_the_next_one_goes_out_body() {
         counters.failed, 1,
         "the completion in the gap is counted lost"
     );
-    assert_eq!(
-        station.send(&ethernet(PEER, IPV4, b"next"), 0),
-        Ok(PortSend::Queued)
-    );
+    world.send(&ethernet(PEER, IPV4, b"next"));
     assert_eq!(
         world.run_for(&mut ap, &mut station, 5, &mut delivered),
         None
@@ -1639,10 +1664,7 @@ fn a_poisoned_port_ends_the_connection_and_every_send_body() {
     assert!(matches!(ran, Err(PortLinkError::Poisoned)));
     assert!(world.router.poisoned());
     // A frame still queues; sending it ends on the poisoned port.
-    assert_eq!(
-        station.send(&ethernet(PEER, IPV4, b"late"), 0),
-        Ok(PortSend::Queued)
-    );
+    world.send(&ethernet(PEER, IPV4, b"late"));
     let ran = world.drive(&mut ap, station.run_until(deadline, &mut |_| {}));
     let Err(PortLinkError::Tx(UpperMacTxError::Port(error))) = ran else {
         panic!("sending fails on the poisoned port: {ran:?}");
@@ -1927,15 +1949,9 @@ fn queued_frames_of_an_agreed_tid_leave_as_one_a_mpdu_body() {
 
     // Four frames of TID 0 leave as one A-MPDU; the voice frame alone.
     for payload in [b"a".as_slice(), b"b", b"c", b"d"] {
-        assert_eq!(
-            station.send(&ethernet(PEER, IPV4, payload), 0),
-            Ok(PortSend::Queued)
-        );
+        world.send(&ethernet(PEER, IPV4, payload));
     }
-    assert_eq!(
-        station.send(&ethernet(PEER, IPV4, b"voice"), 6),
-        Ok(PortSend::Queued)
-    );
+    world.send(&ethernet(PEER, IPV4, &voice(b"voice")));
     assert_eq!(
         world.run_for(&mut ap, &mut station, 5, &mut delivered),
         None
@@ -2028,20 +2044,24 @@ fn a_new_connection_takes_the_storage_s_buffers_back_empty_body() {
     let world = World::new();
     let mut ap = ScriptedAp::new(ApSecurity::Open);
     let mut station = connect(&world, &mut ap, world.station(open()));
-    // Fill the transmit queue without sending it.
-    for _ in 0..PORT_TX_QUEUE {
-        assert_eq!(
-            station.send(&ethernet(PEER, IPV4, b"data"), 0),
-            Ok(PortSend::Queued)
-        );
+    // Frames the connection never ran to send.
+    for _ in 0..4 {
+        world.send(&ethernet(PEER, IPV4, b"data"));
     }
-    assert!(!station.connection().unwrap().can_queue());
+    let before = returned();
     assert_eq!(world.drive(&mut ap, station.disconnect()), Ok(()));
     assert!(station.connection().is_none());
+    // The station took none of them: they stay the network's.
+    assert_eq!((world.frames.len(), returned()), (4, before));
 
-    // The next association borrows the same buffers, emptied.
-    let station = connect(&world, &mut ap, station);
-    assert!(station.connection().unwrap().can_queue());
+    // The next association borrows the same buffers and sends them.
+    let mut station = connect(&world, &mut ap, station);
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 5, &mut Vec::new()),
+        None
+    );
+    assert!(world.frames.is_empty());
+    assert_eq!(returned(), before + 4);
 }
 
 #[test]

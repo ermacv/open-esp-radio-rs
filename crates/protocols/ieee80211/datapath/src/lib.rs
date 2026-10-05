@@ -16,6 +16,8 @@ use oer_memory::{
 use oer_network_interface::NetworkInterfaceId;
 
 pub mod airtime;
+#[cfg(any(test, feature = "model"))]
+pub mod memory;
 
 mod queues;
 
@@ -281,6 +283,10 @@ pub trait DestinationTxQueues {
             .map_or(0, |head| head.pending_frames)
     }
     fn try_take_for(&self, destination: [u8; 6]) -> Option<Self::Frame>;
+    /// Register and check, atomically with publication, that any destination
+    /// has a frame: the wait of a radio that selects among destinations
+    /// itself, whichever one becomes ready.
+    fn poll_ready_any(&self, context: &mut core::task::Context<'_>) -> core::task::Poll<()>;
     /// Register and check the selected queue atomically with publication.
     fn poll_ready_for(
         &self,

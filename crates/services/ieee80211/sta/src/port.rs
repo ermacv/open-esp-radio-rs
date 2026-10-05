@@ -38,13 +38,13 @@ mod wire;
 
 pub use connected::{
     PortConnection, PortConnectionBuffers, PortConnectionConfig, PortDisconnect, PortRxCounters,
-    PortSend, PortTxCounters,
+    PortTxCounters,
 };
 pub use join::{PortAssociation, PortHePower, PortJoin};
 pub use link::{
     EventRouter, NoCoexistence, PORT_BACKLOG, PORT_EXCHANGES, PortCoexistence,
     PortCoexistenceRefused, PortConnectionFrame, PortLink, PortLinkError, PortRouter,
-    PortStationConfig, PortStationEnv,
+    PortStationConfig, PortStationEnv, PortStationFrame,
 };
 pub use power::PortPowerSave;
 pub use rsn::{PortHandshake, PortKeyInstall, PortKeys};

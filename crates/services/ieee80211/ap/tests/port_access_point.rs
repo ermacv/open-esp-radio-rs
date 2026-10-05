@@ -1,10 +1,12 @@
 //! The access point over the lower-MAC host model: virtual time drives its
 //! beacon schedule, and the test plays the stations that probe it.
 
-use core::cell::RefCell;
+use core::cell::{Cell, RefCell};
+
+use oer_ieee80211_datapath::{SoftwareTxFrame, memory::MemoryTxQueues};
+use oer_network_interface::NetworkInterfaceId;
 
 use core::{
-    cell::Cell,
     future::{Future, poll_fn},
     pin::pin,
     task::{Context, Poll, Waker},
@@ -19,7 +21,7 @@ use oer_ieee80211_ap::{
 };
 use oer_ieee80211_ap_service::port::{
     InlineSae, NoSae, PortAccessPoint, PortApAuthenticator, PortApClient, PortApEnv, PortApParts,
-    PortApProfile, PortApRouter, PortApSend, PortApStorage,
+    PortApProfile, PortApRouter, PortApStorage,
 };
 use oer_ieee80211_lower_mac::{
     CoexPriority, Ieee80211LowerMacPort, KeyHandle, KeyScope, KeySelector, LifecycleCommand,
@@ -38,7 +40,7 @@ use oer_ieee80211_mac::{
     qos::WmmAccessCategory,
     ssid::WifiSsid,
 };
-use oer_ieee80211_mac::{ccmp::CcmpPacketNumberStep, qos::WmmUserPriority, security::rsn::Akm};
+use oer_ieee80211_mac::{ccmp::CcmpPacketNumberStep, security::rsn::Akm};
 use oer_ieee80211_rsn::sae::{SaeCommit, SaeCommitValues, SaePassword, SaePasswordElement};
 use oer_ieee80211_rsn::{
     Pmk, Ptk, PtkContext,
@@ -134,6 +136,61 @@ impl BackoffEntropy for Seeded {
     }
 }
 
+/// One Ethernet-II frame the network queued: an owner, whose drop counts
+/// as its return to the network.
+pub struct TestFrame(Vec<u8>);
+
+impl SoftwareTxFrame for TestFrame {
+    fn interface(&self) -> NetworkInterfaceId {
+        NetworkInterfaceId::new(0)
+    }
+
+    fn ethernet(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl Drop for TestFrame {
+    fn drop(&mut self) {
+        RETURNED.with(|returned| returned.set(returned.get() + 1));
+    }
+}
+
+type TestFrames = MemoryTxQueues<TestFrame, 32>;
+
+thread_local! {
+    /// The source of this test's access point.
+    static FRAMES: Cell<Option<&'static TestFrames>> = const { Cell::new(None) };
+    /// Frames returned to the network: sent, dropped or released.
+    static RETURNED: Cell<usize> = const { Cell::new(0) };
+}
+
+/// A fresh source of the network's frames for this test's access point.
+fn frames() -> &'static TestFrames {
+    let frames = Box::leak(Box::new(TestFrames::new()));
+    FRAMES.with(|current| current.set(Some(frames)));
+    frames
+}
+
+/// Queue one Ethernet-II frame in the network's source the access point
+/// sends from.
+fn send(ethernet: &[u8]) {
+    FRAMES.with(|current| {
+        assert!(
+            current
+                .get()
+                .expect("an access point's source")
+                .push(TestFrame(ethernet.to_vec()))
+                .is_ok()
+        );
+    });
+}
+
+/// Frames returned to the network so far in this test.
+fn returned() -> usize {
+    RETURNED.with(Cell::get)
+}
+
 struct Env<'a>(core::marker::PhantomData<&'a ()>);
 
 impl PortClientEnv for Env<'_> {
@@ -149,6 +206,7 @@ impl<'a> PortApEnv for Env<'a> {
     type Authenticator = FixedMaterial;
     type Sae = NoSae;
     type RateControl = FixedRateControl;
+    type Frames = TestFrames;
 }
 
 /// The environment of a WPA3 BSS, its SAE responder run inline.
@@ -167,6 +225,7 @@ impl<'a> PortApEnv for Wpa3Env<'a> {
     type Authenticator = FixedMaterial;
     type Sae = InlineSae<Counter>;
     type RateControl = FixedRateControl;
+    type Frames = TestFrames;
 }
 
 /// Deterministic SAE scalars.
@@ -360,7 +419,7 @@ fn the_access_point_starts_its_bss_and_beacons_at_every_tbtt() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::<8>::new();
+    let mut storage = PortApStorage::<8, TestFrame>::new();
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
         PortApParts {
             client: client(&router),
@@ -368,6 +427,7 @@ fn the_access_point_starts_its_bss_and_beacons_at_every_tbtt() {
             authenticator: FixedMaterial,
             sae: NoSae,
             rate_control: DATA_RATE,
+            frames: frames(),
         },
         profile(&ssid),
         service(),
@@ -437,7 +497,7 @@ fn a_probe_request_for_the_bss_or_any_ssid_is_answered_once_per_interval() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::<8>::new();
+    let mut storage = PortApStorage::<8, TestFrame>::new();
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
         PortApParts {
             client: client(&router),
@@ -445,6 +505,7 @@ fn a_probe_request_for_the_bss_or_any_ssid_is_answered_once_per_interval() {
             authenticator: FixedMaterial,
             sae: NoSae,
             rate_control: DATA_RATE,
+            frames: frames(),
         },
         profile(&ssid),
         service(),
@@ -586,7 +647,7 @@ fn an_open_station_authenticates_associates_and_leaves() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::<8>::new();
+    let mut storage = PortApStorage::<8, TestFrame>::new();
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
         PortApParts {
             client: client(&router),
@@ -594,6 +655,7 @@ fn an_open_station_authenticates_associates_and_leaves() {
             authenticator: FixedMaterial,
             sae: NoSae,
             rate_control: DATA_RATE,
+            frames: frames(),
         },
         profile(&ssid),
         service(),
@@ -662,7 +724,7 @@ fn an_inactive_peer_is_disassociated_and_deauthenticated() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::<8>::new();
+    let mut storage = PortApStorage::<8, TestFrame>::new();
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
         PortApParts {
             client: client(&router),
@@ -670,6 +732,7 @@ fn an_inactive_peer_is_disassociated_and_deauthenticated() {
             authenticator: FixedMaterial,
             sae: NoSae,
             rate_control: DATA_RATE,
+            frames: frames(),
         },
         profile(&ssid),
         service(),
@@ -703,7 +766,7 @@ fn a_wpa3_station_authenticates_by_sae_while_the_bss_goes_on() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Wpa3Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::<8>::new();
+    let mut storage = PortApStorage::<8, TestFrame>::new();
     let wpa3 = AccessPointService::new_wpa3(
         ADDRESS,
         RsnGtk::new(1, true, [9; 16]).unwrap(),
@@ -726,6 +789,7 @@ fn a_wpa3_station_authenticates_by_sae_while_the_bss_goes_on() {
             authenticator: FixedMaterial,
             sae,
             rate_control: DATA_RATE,
+            frames: frames(),
         },
         profile(&ssid),
         wpa3,
@@ -823,7 +887,7 @@ fn a_wpa2_station_completes_the_four_way_handshake_and_gets_its_key() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::<8>::new();
+    let mut storage = PortApStorage::<8, TestFrame>::new();
     let wpa2 = AccessPointService::new(
         ADDRESS,
         Pmk::derive(PASSPHRASE, SSID).unwrap(),
@@ -839,6 +903,7 @@ fn a_wpa2_station_completes_the_four_way_handshake_and_gets_its_key() {
             authenticator: FixedMaterial,
             sae: NoSae,
             rate_control: DATA_RATE,
+            frames: frames(),
         },
         profile(&ssid),
         wpa2,
@@ -924,7 +989,7 @@ fn a_silent_station_gets_message_1_again_and_is_closed_when_its_retries_run_out(
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::<8>::new();
+    let mut storage = PortApStorage::<8, TestFrame>::new();
     let wpa2 = AccessPointService::new(
         ADDRESS,
         Pmk::derive(PASSPHRASE, SSID).unwrap(),
@@ -940,6 +1005,7 @@ fn a_silent_station_gets_message_1_again_and_is_closed_when_its_retries_run_out(
             authenticator: FixedMaterial,
             sae: NoSae,
             rate_control: DATA_RATE,
+            frames: frames(),
         },
         profile(&ssid),
         wpa2,
@@ -1051,7 +1117,7 @@ fn an_open_bss_carries_data_both_ways_for_its_associated_peers() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::<8>::new();
+    let mut storage = PortApStorage::<8, TestFrame>::new();
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
         PortApParts {
             client: client(&router),
@@ -1059,6 +1125,7 @@ fn an_open_bss_carries_data_both_ways_for_its_associated_peers() {
             authenticator: FixedMaterial,
             sae: NoSae,
             rate_control: DATA_RATE,
+            frames: frames(),
         },
         profile(&ssid),
         service(),
@@ -1069,14 +1136,7 @@ fn an_open_bss_carries_data_both_ways_for_its_associated_peers() {
     let start = timer.now.get();
 
     // Before the station associates, its downlink has nowhere to go.
-    let best_effort = WmmUserPriority::new(0).unwrap();
-    assert_eq!(
-        access_point.send(
-            &ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], b"early"),
-            best_effort
-        ),
-        PortApSend::Queued
-    );
+    send(&ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], b"early"));
     serve(&model, &router, &timer, &mut access_point, &[], start + 500);
     assert_eq!(access_point.counters().data_dropped, 1);
 
@@ -1104,13 +1164,7 @@ fn an_open_bss_carries_data_both_ways_for_its_associated_peers() {
     );
     assert_eq!(access_point.counters().duplicates, 1);
 
-    assert_eq!(
-        access_point.send(
-            &ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], b"down"),
-            best_effort
-        ),
-        PortApSend::Queued
-    );
+    send(&ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], b"down"));
     serve(
         &model,
         &router,
@@ -1136,7 +1190,7 @@ fn a_wpa2_bss_carries_data_under_each_key_and_drops_replays() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::<8>::new();
+    let mut storage = PortApStorage::<8, TestFrame>::new();
     let wpa2 = AccessPointService::new(
         ADDRESS,
         Pmk::derive(PASSPHRASE, SSID).unwrap(),
@@ -1152,6 +1206,7 @@ fn a_wpa2_bss_carries_data_under_each_key_and_drops_replays() {
             authenticator: FixedMaterial,
             sae: NoSae,
             rate_control: DATA_RATE,
+            frames: frames(),
         },
         profile(&ssid),
         wpa2,
@@ -1199,16 +1254,8 @@ fn a_wpa2_bss_carries_data_under_each_key_and_drops_replays() {
     );
     assert_eq!(access_point.counters().replayed, 1);
     assert_eq!(access_point.counters().rx_rejected, 1);
-
-    let best_effort = WmmUserPriority::new(0).unwrap();
-    access_point.send(
-        &ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], b"down"),
-        best_effort,
-    );
-    access_point.send(
-        &ethernet([0xff; 6], [0x02, 0, 0, 0, 0, 0x99], b"all"),
-        best_effort,
-    );
+    send(&ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], b"down"));
+    send(&ethernet([0xff; 6], [0x02, 0, 0, 0, 0, 0x99], b"all"));
     serve(
         &model,
         &router,
@@ -1274,7 +1321,7 @@ fn associated<'a, const HELD: usize>(
     router: &'a PortApRouter<'a, Env<'a>>,
     timer: &'a VirtualTimer,
     ssid: &'a WifiSsid,
-    storage: &'a mut PortApStorage<HELD>,
+    storage: &'a mut PortApStorage<HELD, TestFrame>,
 ) -> PortAccessPoint<'a, Env<'a>> {
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
         PortApParts {
@@ -1283,6 +1330,7 @@ fn associated<'a, const HELD: usize>(
             authenticator: FixedMaterial,
             sae: NoSae,
             rate_control: DATA_RATE,
+            frames: frames(),
         },
         profile(ssid),
         service(),
@@ -1311,14 +1359,13 @@ fn a_dozing_peer_s_frames_wait_for_its_ps_poll_or_its_wake_up() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::<8>::new();
+    let mut storage = PortApStorage::<8, TestFrame>::new();
     let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
     let aid = access_point
         .service()
         .peer_status(STATION)
         .unwrap()
         .association_id;
-    let best_effort = WmmUserPriority::new(0).unwrap();
     let from = [0x02, 0, 0, 0, 0, 0x99];
 
     // The station dozes: its frame is held, and the next beacon's TIM says
@@ -1332,7 +1379,7 @@ fn a_dozing_peer_s_frames_wait_for_its_ps_poll_or_its_wake_up() {
         &[(start + 1_000, null_data(true))],
         start + 2_000,
     );
-    access_point.send(&ethernet(STATION, from, b"held"), best_effort);
+    send(&ethernet(STATION, from, b"held"));
     serve(
         &model,
         &router,
@@ -1362,8 +1409,8 @@ fn a_dozing_peer_s_frames_wait_for_its_ps_poll_or_its_wake_up() {
     assert_eq!(sent[0].0[1] & 0x20, 0);
 
     // Two more wait; when it wakes both go out, More Data set on the first.
-    access_point.send(&ethernet(STATION, from, b"first"), best_effort);
-    access_point.send(&ethernet(STATION, from, b"second"), best_effort);
+    send(&ethernet(STATION, from, b"first"));
+    send(&ethernet(STATION, from, b"second"));
     let now = timer.now.get();
     serve(
         &model,
@@ -1386,7 +1433,7 @@ fn group_frames_wait_for_the_dtim_while_a_peer_dozes() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::<8>::new();
+    let mut storage = PortApStorage::<8, TestFrame>::new();
     let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
     let start = timer.now.get();
     serve(
@@ -1398,10 +1445,7 @@ fn group_frames_wait_for_the_dtim_while_a_peer_dozes() {
         start + 2_000,
     );
 
-    access_point.send(
-        &ethernet([0xff; 6], [0x02, 0, 0, 0, 0, 0x99], b"group"),
-        WmmUserPriority::new(0).unwrap(),
-    );
+    send(&ethernet([0xff; 6], [0x02, 0, 0, 0, 0, 0x99], b"group"));
     // Run past two TBTTs: one of them is the DTIM (period 2).
     serve(
         &model,
@@ -1456,7 +1500,7 @@ fn a_peer_s_block_ack_agreement_reorders_its_data_until_it_ends() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::<8>::new();
+    let mut storage = PortApStorage::<8, TestFrame>::new();
     let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
     let now = timer.now.get();
     let delivered = serve(
@@ -1515,7 +1559,7 @@ fn the_composition_sizes_the_frames_held_for_dozing_peers() {
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     // Room for one held frame only.
-    let mut storage = PortApStorage::<1>::new();
+    let mut storage = PortApStorage::<1, TestFrame>::new();
     let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
     let start = timer.now.get();
     serve(
@@ -1526,10 +1570,9 @@ fn the_composition_sizes_the_frames_held_for_dozing_peers() {
         &[(start + 1_000, null_data(true))],
         start + 2_000,
     );
-    let best_effort = WmmUserPriority::new(0).unwrap();
     let from = [0x02, 0, 0, 0, 0, 0x99];
-    access_point.send(&ethernet(STATION, from, b"kept"), best_effort);
-    access_point.send(&ethernet(STATION, from, b"dropped"), best_effort);
+    send(&ethernet(STATION, from, b"kept"));
+    send(&ethernet(STATION, from, b"dropped"));
     serve(
         &model,
         &router,
@@ -1592,7 +1635,7 @@ fn with_ht_peer(
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::<8>::new();
+    let mut storage = PortApStorage::<8, TestFrame>::new();
     let wpa2 = AccessPointService::new(
         ADDRESS,
         Pmk::derive(PASSPHRASE, SSID).unwrap(),
@@ -1608,6 +1651,7 @@ fn with_ht_peer(
             authenticator: FixedMaterial,
             sae: NoSae,
             rate_control: HT_DATA_RATE,
+            frames: frames(),
         },
         profile(&ssid),
         wpa2,
@@ -1707,12 +1751,8 @@ fn a_peer_that_accepts_the_tx_block_ack_agreement_gets_aggregates_until_it_ends_
         // Three frames for the peer go as one A-MPDU of consecutive
         // sequence numbers from the agreement's start, under its key, at
         // the data rate.
-        let best_effort = WmmUserPriority::new(0).unwrap();
         for payload in [&b"one"[..], b"two", b"three"] {
-            access_point.send(
-                &ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], payload),
-                best_effort,
-            );
+            send(&ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], payload));
         }
         serve(model, router, timer, access_point, &[], at + 3_000);
         assert_eq!(
@@ -1745,10 +1785,7 @@ fn a_peer_that_accepts_the_tx_block_ack_agreement_gets_aggregates_until_it_ends_
             at + 5_000,
         );
         for payload in [&b"four"[..], b"five"] {
-            access_point.send(
-                &ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], payload),
-                best_effort,
-            );
+            send(&ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], payload));
         }
         serve(model, router, timer, access_point, &[], at + 6_000);
         assert_eq!(
@@ -1778,16 +1815,12 @@ fn an_unanswered_offer_is_made_again_with_the_peer_s_data_after_the_interval() {
                 .is_none()
         );
         // Within the interval the peer's frames go alone, offering nothing.
-        let best_effort = WmmUserPriority::new(0).unwrap();
-        let send = |access_point: &mut PortAccessPoint<'_, Env<'_>>, payloads: &[&[u8]]| {
+        let send_all = |payloads: &[&[u8]]| {
             for payload in payloads {
-                access_point.send(
-                    &ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], payload),
-                    best_effort,
-                );
+                send(&ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], payload));
             }
         };
-        send(access_point, &[b"one", b"two"]);
+        send_all(&[b"one", b"two"]);
         serve(model, router, timer, access_point, &[], at + 201_000);
         let attempts = data_attempts(model);
         assert_eq!(attempts.len(), 2);
@@ -1801,7 +1834,7 @@ fn an_unanswered_offer_is_made_again_with_the_peer_s_data_after_the_interval() {
         // After it, the peer's data brings the second offer first.
         serve(model, router, timer, access_point, &[], at + 1_150_000);
         assert_eq!(addba_requests(model).len(), 1);
-        send(access_point, &[b"three"]);
+        send_all(&[b"three"]);
         serve(model, router, timer, access_point, &[], at + 1_151_000);
         let requests = addba_requests(model);
         assert_eq!(requests.len(), 2);
@@ -1820,7 +1853,7 @@ fn an_unanswered_offer_is_made_again_with_the_peer_s_data_after_the_interval() {
             at + 1_153_000,
         );
         assert_eq!(access_point.counters().tx_agreements, 1);
-        send(access_point, &[b"four", b"five"]);
+        send_all(&[b"four", b"five"]);
         serve(model, router, timer, access_point, &[], at + 1_154_000);
         assert_eq!(
             data_attempts(model).last().unwrap(),
@@ -1891,6 +1924,7 @@ impl<'a> PortApEnv for RateEnv<'a> {
     type Authenticator = FixedMaterial;
     type Sae = NoSae;
     type RateControl = Recorded<'a>;
+    type Frames = TestFrames;
 }
 
 /// An Association Request of an Open BSS HT station.
@@ -1908,7 +1942,7 @@ fn each_associated_peer_gets_its_own_rate_control_from_its_association() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<RateEnv<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::<8>::new();
+    let mut storage = PortApStorage::<8, TestFrame>::new();
     let log = RefCell::new(RateLog::default());
     let peer_rate = PhyRate::Legacy(LegacyRate::Ofdm36M);
     let mut access_point = PortAccessPoint::<RateEnv<'_>>::new(
@@ -1918,6 +1952,7 @@ fn each_associated_peer_gets_its_own_rate_control_from_its_association() {
             authenticator: FixedMaterial,
             sae: NoSae,
             rate_control: (peer_rate, &log),
+            frames: frames(),
         },
         profile(&ssid),
         service(),
@@ -1957,14 +1992,8 @@ fn each_associated_peer_gets_its_own_rate_control_from_its_association() {
 
     // The peer's data goes at its controller's rate, which learns from it;
     // the group's at the management rate, which teaches it nothing.
-    access_point.send(
-        &ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], b"down"),
-        WmmUserPriority::new(0).unwrap(),
-    );
-    access_point.send(
-        &ethernet([0xff; 6], [0x02, 0, 0, 0, 0, 0x99], b"all"),
-        WmmUserPriority::new(0).unwrap(),
-    );
+    send(&ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], b"down"));
+    send(&ethernet([0xff; 6], [0x02, 0, 0, 0, 0, 0x99], b"all"));
     serve(
         &model,
         &router,
@@ -1991,4 +2020,80 @@ fn each_associated_peer_gets_its_own_rate_control_from_its_association() {
         start + 8_000,
     );
     assert_eq!(log.borrow().peers[1..], [(PhyMode::Legacy, false, None)]);
+}
+
+#[test]
+fn frames_held_for_a_dozing_peer_stay_the_network_s_owners_until_it_leaves() {
+    let model = model();
+    let timer = VirtualTimer::default();
+    let router = PortApRouter::<Env<'_>>::new(&model, 1);
+    let ssid = WifiSsid::new(SSID).unwrap();
+    let mut storage = PortApStorage::<8, TestFrame>::new();
+    let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
+    let from = [0x02, 0, 0, 0, 0, 0x99];
+    let start = timer.now.get();
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[(start + 1_000, null_data(true))],
+        start + 2_000,
+    );
+    let before = returned();
+    send(&ethernet(STATION, from, b"one"));
+    send(&ethernet(STATION, from, b"two"));
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[],
+        start + 3_000,
+    );
+    // Held: taken from the network's queue, not copied, not returned.
+    assert_eq!(access_point.counters().held, 2);
+    assert_eq!(returned(), before);
+    FRAMES.with(|frames| assert!(frames.get().unwrap().is_empty()));
+    // The peer leaves: the access point returns both owners.
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[(start + 4_000, management(12, false, &[3, 0]))],
+        start + 5_000,
+    );
+    assert_eq!(returned(), before + 2);
+    assert!(downlink(&model, STATION).is_empty());
+}
+
+#[test]
+fn a_frame_the_aggregate_does_not_admit_stays_with_the_network_for_the_next_turn() {
+    with_ht_peer(|model, router, timer, access_point, at| {
+        let (token, start) = addba_requests(model)[0];
+        // An agreement of two frames.
+        let mut response = [0_u8; ADDBA_ACTION_BODY_LEN];
+        write_successful_addba_response(&mut response, token, 0, 2).unwrap();
+        serve(
+            model,
+            router,
+            timer,
+            access_point,
+            &[(at + 1_000, block_ack_action(&response))],
+            at + 2_000,
+        );
+        let before = returned();
+        for payload in [&b"one"[..], b"two", b"three"] {
+            send(&ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], payload));
+        }
+        serve(model, router, timer, access_point, &[], at + 3_000);
+        // Two go as the window's aggregate; the third waits in the network's
+        // queue and goes on its own turn, alone.
+        assert_eq!(
+            data_attempts(model),
+            [(vec![start, start + 1], true), (vec![start + 2], false)]
+        );
+        assert_eq!(returned(), before + 3);
+    });
 }

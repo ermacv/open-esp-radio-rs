@@ -40,7 +40,8 @@ pub mod router;
 pub mod rx_hold;
 
 pub use router::{
-    AttachError, Attachment, Awaited, EventRouter, ROUTER_VIFS, Registration, RouterFull,
+    AttachError, Attachment, Awaited, EventRouter, PORT_BACKLOG, PORT_EXCHANGES, PortRouter,
+    ROUTER_VIFS, Registration, RouterFull,
 };
 
 use oer_ieee80211_lower_mac::{

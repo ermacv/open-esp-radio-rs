@@ -358,7 +358,7 @@ fn profile(ssid: &WifiSsid) -> PortApProfile<'_> {
 /// `stops` still ahead, and `at` runs at each new time.
 fn drive<T>(
     model: &Model,
-    router: &oer_ieee80211_upper_mac_service::EventRouter<'_, Model, 2, 4>,
+    router: &oer_ieee80211_upper_mac_service::PortRouter<'_, Model>,
     timer: &VirtualTimer,
     future: impl Future<Output = T>,
     stops: &[u64],
@@ -605,7 +605,7 @@ fn sent_to_station(model: &Model) -> Vec<(u8, u16)> {
 /// the port receives it.
 fn serve<X: PortApEnv<Port = Model>>(
     model: &Model,
-    router: &oer_ieee80211_upper_mac_service::EventRouter<'_, Model, 2, 4>,
+    router: &oer_ieee80211_upper_mac_service::PortRouter<'_, Model>,
     timer: &VirtualTimer,
     access_point: &mut PortAccessPoint<'_, X>,
     frames: &[(u64, Vec<u8>)],
@@ -1632,7 +1632,7 @@ fn block_ack_action(body: &[u8]) -> Vec<u8> {
 fn with_ht_peer(
     test: impl FnOnce(
         &Model,
-        &oer_ieee80211_upper_mac_service::EventRouter<'_, Model, 2, 4>,
+        &oer_ieee80211_upper_mac_service::PortRouter<'_, Model>,
         &VirtualTimer,
         &mut PortAccessPoint<'_, Env<'_>>,
         u64,

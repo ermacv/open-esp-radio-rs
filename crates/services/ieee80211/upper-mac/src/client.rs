@@ -35,7 +35,9 @@ use oer_ieee80211_upper_mac::{
 };
 use oer_time::{Instant, Timer};
 
-use crate::{AmpduFrames, EventRouter, UpperMacTx, UpperMacTxError, aggregate::PortAggregation};
+use crate::{
+    AmpduFrames, EventRouter, MpduParts, UpperMacTx, UpperMacTxError, aggregate::PortAggregation,
+};
 
 const FCS_LEN: u32 = 4;
 const CCMP_MIC_LEN: u32 = 8;
@@ -250,13 +252,14 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
     /// response.
     pub async fn transmit(
         &mut self,
-        frame: &[u8],
+        frame: MpduParts<'_>,
         key: KeySelector,
         access_category: WmmAccessCategory,
         rate: PhyRate,
         coex: CoexPriority,
     ) -> Result<TxReport, PortClientError<PortError<X>>> {
         let address1: [u8; 6] = frame
+            .header
             .get(4..10)
             .and_then(|address| address.try_into().ok())
             .ok_or(PortClientError::FrameTooShort)?;

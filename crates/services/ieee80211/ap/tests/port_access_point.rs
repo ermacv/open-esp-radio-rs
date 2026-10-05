@@ -2069,6 +2069,49 @@ fn frames_held_for_a_dozing_peer_stay_the_network_s_owners_until_it_leaves() {
 }
 
 #[test]
+fn an_aggregate_carries_more_than_eight_subframes_each_its_owner_s_payload() {
+    with_ht_peer(|model, router, timer, access_point, at| {
+        let (token, start) = addba_requests(model)[0];
+        let mut response = [0_u8; ADDBA_ACTION_BODY_LEN];
+        write_successful_addba_response(&mut response, token, 0, 32).unwrap();
+        serve(
+            model,
+            router,
+            timer,
+            access_point,
+            &[(at + 1_000, block_ack_action(&response))],
+            at + 2_000,
+        );
+        let before = returned();
+        let payloads: Vec<Vec<u8>> = (0..12_u8)
+            .map(|n| vec![0x40 + n; 30 + usize::from(n)])
+            .collect();
+        for payload in &payloads {
+            send(&ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], payload));
+        }
+        serve(model, router, timer, access_point, &[], at + 3_000);
+        // One aggregate of all twelve.
+        assert_eq!(
+            data_attempts(model),
+            [((start..start + 12).collect::<Vec<_>>(), true)]
+        );
+        // Each subframe ends in its frame's payload, gathered from the
+        // network's owner after the header.
+        let aggregate = model
+            .submitted()
+            .into_iter()
+            .find(|attempt| attempt.ampdu)
+            .unwrap();
+        for (subframe, payload) in aggregate.frames.iter().zip(&payloads) {
+            assert!(subframe.ends_with(payload));
+        }
+        // The owners went back once the exchange ended.
+        assert_eq!(returned(), before + 12);
+        FRAMES.with(|frames| assert!(frames.get().unwrap().is_empty()));
+    });
+}
+
+#[test]
 fn a_frame_the_aggregate_does_not_admit_stays_with_the_network_for_the_next_turn() {
     with_ht_peer(|model, router, timer, access_point, at| {
         let (token, start) = addba_requests(model)[0];

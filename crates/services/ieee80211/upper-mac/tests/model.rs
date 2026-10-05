@@ -29,7 +29,7 @@ use oer_ieee80211_upper_mac::{
     TxReport, TxRequest,
 };
 use oer_ieee80211_upper_mac_service::{
-    AmpduFrames, EventRouter, UpperMacTx, UpperMacTxError,
+    AmpduFrames, EventRouter, MpduParts, UpperMacTx, UpperMacTxError,
     client::{PortClient, PortClientConfig, PortClientEnv, PortClientError},
 };
 
@@ -196,7 +196,7 @@ fn a_frame_acknowledged_at_the_first_attempt_is_sent_once() {
     let report = run(exchange(
         &router,
         tx.send_mpdu(
-            &frame,
+            MpduParts::whole(&frame),
             KeySelector::Plaintext,
             mpdu_request(&frame, 4),
             &Ladder,
@@ -229,7 +229,7 @@ fn a_missing_ack_retries_down_the_ladder_with_the_retry_bit_until_the_limit() {
     let report = run(exchange(
         &router,
         tx.send_mpdu(
-            &frame,
+            MpduParts::whole(&frame),
             KeySelector::Plaintext,
             mpdu_request(&frame, 3),
             &Ladder,
@@ -271,7 +271,7 @@ fn a_cts_timeout_resends_under_the_same_protection_without_the_retry_bit() {
     let report = run(exchange(
         &router,
         tx.send_mpdu(
-            &frame,
+            MpduParts::whole(&frame),
             KeySelector::Plaintext,
             mpdu_request(&frame, 4),
             &Ladder,
@@ -335,7 +335,11 @@ fn a_partial_block_ack_resends_only_the_unacknowledged_subframes() {
             )
         })
         .collect();
-    let slices: Vec<&[u8]> = frames.iter().map(Vec::as_slice).collect();
+    // Each subframe in two parts the port's buffer gathers.
+    let slices: Vec<MpduParts<'_>> = frames
+        .iter()
+        .map(|frame| MpduParts::new(&frame[..24], &frame[24..]))
+        .collect();
     // 200 and 202 acknowledged, then the rest.
     model.respond([
         ModelOutcome::BlockAck(BlockAckReport {
@@ -388,7 +392,11 @@ fn one_unacknowledged_subframe_is_resent_alone() {
     let frames: Vec<Vec<u8>> = (0..3)
         .map(|index| qos_data(10 + index, [0; 8], 30))
         .collect();
-    let slices: Vec<&[u8]> = frames.iter().map(Vec::as_slice).collect();
+    // Each subframe in two parts the port's buffer gathers.
+    let slices: Vec<MpduParts<'_>> = frames
+        .iter()
+        .map(|frame| MpduParts::new(&frame[..24], &frame[24..]))
+        .collect();
     model.respond([
         ModelOutcome::BlockAck(BlockAckReport {
             start_sequence: SequenceNumber::new(10).unwrap(),
@@ -446,7 +454,7 @@ fn the_contention_window_doubles_on_failures_and_resets_after_the_frame() {
         run(exchange(
             &router,
             tx.send_mpdu(
-                &frame,
+                MpduParts::whole(&frame),
                 KeySelector::Plaintext,
                 mpdu_request(&frame, 4),
                 &Ladder,
@@ -502,7 +510,7 @@ fn a_retry_repeats_its_packet_number_and_the_next_frame_takes_a_higher_one() {
         run(exchange(
             &router,
             tx.send_mpdu(
-                frame,
+                MpduParts::whole(frame),
                 KeySelector::Plaintext,
                 mpdu_request(frame, 4),
                 &Ladder,
@@ -540,7 +548,7 @@ fn a_refused_attempt_releases_its_buffer_and_reports_the_refusal() {
     let result = run(exchange(
         &router,
         tx.send_mpdu(
-            &frame,
+            MpduParts::whole(&frame),
             KeySelector::Plaintext,
             mpdu_request(&frame, 4),
             &Ladder,
@@ -600,7 +608,7 @@ fn concurrent_exchanges_on_two_access_categories_keep_their_own_completions() {
     let vo_frame = qos_data(31, [2, 0, 0, 0x20, 0, 0, 0, 0], 40);
     let mut entropy_1 = Seeded(1);
     let mut be = pin!(best_effort.send_mpdu(
-        &be_frame,
+        MpduParts::whole(&be_frame),
         KeySelector::Plaintext,
         request_on(&be_frame, WmmAccessCategory::BestEffort),
         &Ladder,
@@ -608,7 +616,7 @@ fn concurrent_exchanges_on_two_access_categories_keep_their_own_completions() {
     ));
     let mut entropy_2 = Seeded(2);
     let mut vo = pin!(voice.send_mpdu(
-        &vo_frame,
+        MpduParts::whole(&vo_frame),
         KeySelector::Plaintext,
         request_on(&vo_frame, WmmAccessCategory::Voice),
         &Ladder,
@@ -685,7 +693,7 @@ fn a_loss_is_recovered_by_cancelling_the_attempt_in_flight() {
     let frame = qos_data(40, [5, 0, 0, 0x20, 0, 0, 0, 0], 40);
     let mut entropy_3 = Seeded(1);
     let mut send = pin!(tx.send_mpdu(
-        &frame,
+        MpduParts::whole(&frame),
         KeySelector::Plaintext,
         mpdu_request(&frame, 4),
         &Ladder,
@@ -727,7 +735,7 @@ fn a_completion_lost_in_the_gap_ends_the_exchange_without_a_report() {
     let frame = qos_data(41, [6, 0, 0, 0x20, 0, 0, 0, 0], 40);
     let mut entropy_4 = Seeded(1);
     let mut send = pin!(tx.send_mpdu(
-        &frame,
+        MpduParts::whole(&frame),
         KeySelector::Plaintext,
         mpdu_request(&frame, 4),
         &Ladder,
@@ -763,7 +771,7 @@ fn a_poisoned_port_ends_every_exchange() {
     let frame = qos_data(42, [7, 0, 0, 0x20, 0, 0, 0, 0], 40);
     let mut entropy_5 = Seeded(1);
     let mut send = pin!(tx.send_mpdu(
-        &frame,
+        MpduParts::whole(&frame),
         KeySelector::Plaintext,
         mpdu_request(&frame, 4),
         &Ladder,
@@ -848,7 +856,7 @@ fn a_frame_without_its_first_address_is_refused_before_the_port() {
         run(exchange(
             &router,
             client.transmit(
-                &short,
+                MpduParts::whole(&short),
                 KeySelector::Plaintext,
                 WmmAccessCategory::Voice,
                 OFDM24,

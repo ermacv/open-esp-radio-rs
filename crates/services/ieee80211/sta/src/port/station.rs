@@ -2,7 +2,9 @@
 //! and its lifecycle backend.
 
 use core::{convert::Infallible, marker::PhantomData};
+use oer_ieee80211_datapath::SoftwareTxFrame;
 use oer_ieee80211_upper_mac::rate_control::{RateControl, link_metric};
+use oer_ieee80211_upper_mac_service::aggregate::AmpduSubframes;
 use oer_ieee80211_upper_mac_service::client::{PortClientEnv, PortError, PortMsdu, PortRxBuffer};
 
 use oer_ieee80211_lower_mac::{
@@ -208,21 +210,25 @@ type StepResult<X> = Result<(), StaAttemptStepError<PortAttemptError<X>>>;
 /// station's size is here, so a `static` (or a placement the target
 /// chooses, such as external RAM) keeps it off the stack; the station
 /// itself holds only protocol state.
-pub struct PortStationStorage {
+pub struct PortStationStorage<F> {
     table: ScanTable,
     connection: PortConnectionBuffers,
+    /// The headers of one A-MPDU's subframes and the network's frames
+    /// they carry.
+    subframes: AmpduSubframes<F>,
 }
 
-impl PortStationStorage {
+impl<F: SoftwareTxFrame> PortStationStorage<F> {
     pub const fn new() -> Self {
         Self {
             table: ScanTable::new(),
             connection: PortConnectionBuffers::new(),
+            subframes: AmpduSubframes::new(),
         }
     }
 }
 
-impl Default for PortStationStorage {
+impl<F: SoftwareTxFrame> Default for PortStationStorage<F> {
     fn default() -> Self {
         Self::new()
     }
@@ -257,6 +263,8 @@ pub struct PortStation<'p, X: PortStationEnv> {
     cursor: Option<[u8; 6]>,
     /// A frame taken from the network that waits for its own exchange.
     frontier: Option<PortStationFrame<X>>,
+    /// The subframes of the A-MPDU being sent.
+    subframes: &'p mut AmpduSubframes<PortStationFrame<X>>,
     connection: Option<PortConnection<'p, X::Port, X::RateControl>>,
     report: PortAttemptReport,
 }
@@ -274,10 +282,14 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         key_unwrap: X::KeyUnwrap,
         profile: PortStationProfile<'p>,
         security: StaAttemptSecurity<'p>,
-        storage: &'p mut PortStationStorage,
+        storage: &'p mut PortStationStorage<PortStationFrame<X>>,
         frames: &'p X::Frames,
     ) -> Self {
-        let PortStationStorage { table, connection } = storage;
+        let PortStationStorage {
+            table,
+            connection,
+            subframes,
+        } = storage;
         Self {
             link,
             timer,
@@ -299,6 +311,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             frames,
             cursor: None,
             frontier: None,
+            subframes,
             connection: None,
             report: PortAttemptReport::default(),
         }
@@ -359,6 +372,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             frames,
             cursor,
             frontier,
+            subframes,
             ..
         } = self;
         let connection = connection.as_mut().ok_or(PortLinkError::MissingState)?;
@@ -374,6 +388,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
                 frames,
                 cursor,
                 frontier,
+                subframes,
             },
         ))
     }

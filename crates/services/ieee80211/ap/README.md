@@ -32,9 +32,9 @@ all (`wifi-security-wpa3-personal-access-point` is `absent`). Data: each authori
 its handshake) has a link holding its pairwise key, the CCMP packet numbers
 sent to it, its receive replay state and its duplicate filter.
 `run_until(deadline, deliver)` takes the network's frames, one destination
-after another, one at a time when it is ready to send them, and encodes each
-into its MPDU (an A-MPDU's subframe returns the frame to the network once
-encoded) to an authorized peer
+after another, one at a time when it is ready to send them, and sends each,
+its MPDU header encoded and its payload from the network's owner
+(`MpduParts`), which it keeps until the exchange ends, to an authorized peer
 (plaintext in an Open BSS; under its pairwise key, as QoS data to a QoS peer,
 in a protected one) at its rate control's rate, or to the group (under the group key)
 at the management rate, dropping one for no authorized destination
@@ -72,7 +72,8 @@ at its A-MPDU rate (`aggregates`, `aggregated_acknowledged`), as many as the
 agreement's window, the port (`PortClientEnv::Aggregation`), the peer's HT
 A-MPDU Parameters and the Best Effort TXOP limit the BSS advertises admit
 (`AmpduLimits`), keeping the peer's minimum MPDU start spacing; the
-subframes are encoded into `PortApStorage`'s `AmpduSubframes`. An Open BSS
+subframes' headers and the network's frames that carry their payloads are
+kept in `PortApStorage`'s `AmpduSubframes` until the exchange ends. An Open BSS
 offers no agreement.
 Rate control: a peer's link opens at its association, in every BSS, with
 its own `RateControl`, built for the peer's HT width in the BSS (HT40 where

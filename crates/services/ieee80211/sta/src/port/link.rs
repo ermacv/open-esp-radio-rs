@@ -19,7 +19,7 @@ use oer_ieee80211_sta::modem_sleep::{CoexView, PmCoexAction};
 use oer_ieee80211_upper_mac::{TxPlanner, TxReport, TxRequest, rate_control::RateControl};
 pub use oer_ieee80211_upper_mac_service::EventRouter;
 use oer_ieee80211_upper_mac_service::{
-    AmpduFrames, UpperMacTx, UpperMacTxError,
+    AmpduFrames, MpduParts, UpperMacTx, UpperMacTxError,
     aggregate::PortAggregation,
     client::{
         PortClient, PortClientConfig, PortClientCounters, PortClientEnv, PortClientError,
@@ -265,7 +265,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
     /// exchange's end. A group-addressed frame solicits no response.
     pub async fn transmit(
         &mut self,
-        frame: &[u8],
+        frame: MpduParts<'_>,
         key: KeySelector,
         access_category: WmmAccessCategory,
         rate: PhyRate,
@@ -295,7 +295,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         };
         Ok(self
             .client
-            .transmit(frame, key, access_category, rate, coex)
+            .transmit(MpduParts::whole(frame), key, access_category, rate, coex)
             .await?)
     }
 

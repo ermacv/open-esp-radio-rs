@@ -36,10 +36,19 @@ failure a `PortClientError`. `PortMsdu` is the MSDU a service hands its
 application: the port's buffer, or parts to copy. A service sends no copy of a frame from a queue
 of its own: it takes the network's owners from its source
 (`oer-ieee80211-datapath`'s `DestinationTxQueues`) when it sends them, and
-`frame` names the sizes it keeps (`PORT_FRAME_CAPACITY`, and
-`PORT_MPDU_CAPACITY` for an MPDU it encodes). `aggregate::AmpduSubframes`
-holds the encoded subframes of one A-MPDU, at most `PORT_AMPDU_SUBFRAMES`, and
-makes its `AmpduRequest` (on-air lengths with FCS and MIC) and the
+`frame` names the sizes it keeps (`PORT_FRAME_CAPACITY`,
+`PORT_MPDU_HEADER_CAPACITY` for the header it encodes before an Ethernet
+frame's payload, `PORT_MPDU_CAPACITY` for a whole MPDU) and splits an
+Ethernet-II frame into the header a service encodes and the payload it
+sends unchanged (`split_ethernet`). An MPDU goes to the port as
+`MpduParts { header, body }`: a data frame's encoded header and its payload,
+borrowed from the network's owner, or a management frame whole
+(`MpduParts::whole`); each attempt gathers both into the buffer the port
+lends, the only copy of the payload, and a retransmission reads the owner
+again. `aggregate::AmpduSubframes<F>` holds one A-MPDU, at most
+`PORT_AMPDU_SUBFRAMES` (32) subframes: each one's header and the network's
+frame `F` that carries its payload, kept until `clear` when the exchange
+ends, and makes its `AmpduRequest` (on-air lengths with FCS and MIC) and the
 `AmpduFrames` the client sends; how many frames it carries is
 `oer-ieee80211-upper-mac`'s `AmpduLimits`.
 `reorder::RxReorder<AGREEMENTS>` reorders the receive Block Ack agreements
@@ -54,7 +63,7 @@ station and access-point services build on all of them.
 
 `UpperMacTx::new(&router, vif, planner)` binds one interface; the router
 allocates attempt identities outside the backend-reserved range.
-`send_mpdu(frame, key, request, ladder, entropy)` and, for a port with the
+`send_mpdu(MpduParts, key, request, ladder, entropy)` and, for a port with the
 `LowerMacAmpdu` extension,
 `send_ampdu(AmpduFrames { subframes, key, min_mpdu_start_spacing }, request,
 ladder, entropy)` run one exchange to its `TxReport`:

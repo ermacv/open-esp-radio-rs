@@ -93,7 +93,7 @@ use oer_ieee80211_upper_mac::{
     rate_control::{RateControl, RatePeer, link_metric},
 };
 use oer_ieee80211_upper_mac_service::{
-    EventRouter, TxMpdu,
+    PORT_BACKLOG, PORT_EXCHANGES, TxMpdu,
     aggregate::{AmpduSubframes, PORT_AMPDU_SUBFRAMES, PortAggregation},
     client::{
         PortClient, PortClientEnv, PortClientError, PortError, PortFrame, PortInput, PortMsdu,
@@ -119,11 +119,6 @@ use oer_ieee80211_upper_mac_service::reorder::{
     CURRENT_SLOT, Offer, PORT_REORDER_WINDOW, ReorderRelease, RxReorder,
 };
 
-/// Exchanges of the access point that wait for a completion at once.
-pub const PORT_AP_EXCHANGES: usize = 2;
-/// Received frames the router keeps for the access point.
-pub const PORT_AP_BACKLOG: usize = 4;
-
 /// Probe Responses go out at most once per this interval, whoever asks: a
 /// sender that changes its address gains no more air.
 const PROBE_RESPONSE_INTERVAL: Duration = Duration::from_millis(10);
@@ -139,12 +134,13 @@ const EAPOL_ETHER_TYPE: u16 = 0x888e;
 /// An EAPOL-Key frame of the four-way handshake.
 type EapolFrame = RsnTxFrame<RSN_HANDSHAKE_EAPOL_CAPACITY>;
 
-/// The event router of an access point's port.
+/// The event router of an access point's port, shared with a station
+/// beside the access point.
 pub type PortApRouter<'p, X> =
-    EventRouter<'p, <X as PortClientEnv>::Port, PORT_AP_EXCHANGES, PORT_AP_BACKLOG>;
+    oer_ieee80211_upper_mac_service::PortRouter<'p, <X as PortClientEnv>::Port>;
 
 /// The access point's client of the port.
-pub type PortApClient<'p, X> = PortClient<'p, X, PORT_AP_EXCHANGES, PORT_AP_BACKLOG>;
+pub type PortApClient<'p, X> = PortClient<'p, X, PORT_EXCHANGES, PORT_BACKLOG>;
 
 /// The types an access point over the port is built from: its port and
 /// transmit policy ([`PortClientEnv`]), the image's monotonic time and the

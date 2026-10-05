@@ -17,7 +17,6 @@ use oer_ieee80211_mac::{
 use oer_ieee80211_rsn::aes::AsyncRsnKeyUnwrap;
 use oer_ieee80211_sta::modem_sleep::{CoexView, PmCoexAction};
 use oer_ieee80211_upper_mac::{TxPlanner, TxReport, TxRequest, rate_control::RateControl};
-pub use oer_ieee80211_upper_mac_service::EventRouter;
 use oer_ieee80211_upper_mac_service::{
     AmpduFrames, AttachError, TxMpdu, UpperMacTx, UpperMacTxError,
     aggregate::PortAggregation,
@@ -26,16 +25,15 @@ use oer_ieee80211_upper_mac_service::{
         PortError, PortInput, PortRxBuffer,
     },
 };
+pub use oer_ieee80211_upper_mac_service::{EventRouter, PORT_BACKLOG, PORT_EXCHANGES};
 use oer_time::{Instant, Timer};
 
-/// Exchanges of the station that wait for a completion at once.
-pub const PORT_EXCHANGES: usize = 2;
-
 /// The event router of a station's port: the one consumer of the port's
-/// events, which the composition polls ([`EventRouter::run`]) beside the
-/// station and the backend's runner.
+/// events, shared with an access point beside the station, which the
+/// composition polls ([`EventRouter::run`]) beside its clients and the
+/// backend's runner.
 pub type PortRouter<'p, X> =
-    EventRouter<'p, <X as PortClientEnv>::Port, PORT_EXCHANGES, PORT_BACKLOG>;
+    oer_ieee80211_upper_mac_service::PortRouter<'p, <X as PortClientEnv>::Port>;
 
 /// The types one station over the port is built from.
 ///
@@ -132,9 +130,6 @@ pub struct PortStationConfig {
     /// Transmissions one MPDU may make, the first included.
     pub retry_limit: u8,
 }
-
-/// Received frames the router keeps for the station.
-pub const PORT_BACKLOG: usize = 4;
 
 /// Why a station operation over the port failed.
 #[derive(Debug, Eq, PartialEq)]

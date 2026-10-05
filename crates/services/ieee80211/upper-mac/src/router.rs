@@ -63,6 +63,17 @@ pub struct RouterFull;
 /// Interfaces one router serves: a station and an access point.
 pub const ROUTER_VIFS: usize = 2;
 
+/// Exchanges of one port that wait for a completion at once: two for each
+/// interface's client.
+pub const PORT_EXCHANGES: usize = 2 * ROUTER_VIFS;
+
+/// Received frames the router keeps for each interface.
+pub const PORT_BACKLOG: usize = 4;
+
+/// The event router of a port all its clients share: every client of one
+/// port, a station and an access point beside it, takes this one.
+pub type PortRouter<'p, P> = EventRouter<'p, P, PORT_EXCHANGES, PORT_BACKLOG>;
+
 /// Why an interface could not attach to the router.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AttachError {

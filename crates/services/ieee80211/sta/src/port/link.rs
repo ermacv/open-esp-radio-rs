@@ -74,8 +74,12 @@ pub trait PortCoexistence {
     /// The schedule as the power manager decides with it.
     fn view(&self) -> CoexView;
 
-    /// Perform one coexistence effect of the power manager.
-    fn perform(&mut self, action: PmCoexAction) -> Result<(), PortCoexistenceRefused>;
+    /// Perform one coexistence effect of the power manager; a radio system
+    /// whose schedule is shared under a lock takes it.
+    fn perform(
+        &mut self,
+        action: PmCoexAction,
+    ) -> impl Future<Output = Result<(), PortCoexistenceRefused>>;
 
     /// Ask the air for one connection frame the station is about to send,
     /// as the radio system's reconnect policy does after a lost
@@ -106,7 +110,7 @@ impl PortCoexistence for NoCoexistence {
         CoexView::INACTIVE
     }
 
-    fn perform(&mut self, _action: PmCoexAction) -> Result<(), PortCoexistenceRefused> {
+    async fn perform(&mut self, _action: PmCoexAction) -> Result<(), PortCoexistenceRefused> {
         Ok(())
     }
 

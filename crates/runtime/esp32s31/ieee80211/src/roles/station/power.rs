@@ -24,14 +24,73 @@ use embassy_sync::{
     channel::Channel,
     signal::Signal,
 };
-use oer_esp32s31_coex::CoexError;
+use oer_esp32s31_coex::{CoexClientRequest, CoexError, CoexEventId, timer_index};
 use oer_esp32s31_ieee80211_sta::{
     connected_control::{ConnectedPowerCommand, POWER_COMMAND_CAPACITY, PowerCoexSnapshot},
-    modem_sleep::CoexPhaseView,
+    modem_sleep::{CoexPhaseView, PmCoexAction, PmCoexEvent},
 };
 
 #[cfg(target_arch = "riscv32")]
 pub use agent::{StationRf, StationRfPower, finish_station_power, run_station_power_agent};
+
+/// The coexistence arbiter's effects the power manager asks for: the radio
+/// system under its lease.
+pub trait CoexRadio {
+    /// Program a Wi-Fi request of `request.event` on its policy timer.
+    fn request_wifi_coex(&mut self, request: CoexClientRequest) -> Result<(), CoexError>;
+    /// Withdraw the request of `event`.
+    fn release_coex(&mut self, event: CoexEventId) -> Result<(), CoexError>;
+    fn set_coex_interval(&mut self, interval: u32);
+    fn restart_coex_phases(&mut self);
+    fn set_coex_flexible_period(&mut self, period: u8);
+}
+
+/// Perform one coexistence effect of the power manager on `radio`, for the
+/// direct station's power agent and the port station alike.
+pub fn apply_coex_action(
+    radio: &mut impl CoexRadio,
+    action: PmCoexAction,
+) -> Result<(), CoexError> {
+    match action {
+        // The vendor core programs only events with a policy timer; for the
+        // others `coex_core_request` and `coex_core_release` return
+        // `ESP_ERR_INVALID_ARG`, which power management ignores. On the S31
+        // that leaves the slice request as the only effective one.
+        //
+        // SOURCE: complete pinned `libcoexist.a[coexist_core.o]::
+        // coex_core_request` and `coex_core_timer_idx_get`.
+        PmCoexAction::Request { event, .. } | PmCoexAction::Release(event)
+            if timer_index(coex_event(event)).is_none() =>
+        {
+            Ok(())
+        }
+        PmCoexAction::Request {
+            event,
+            duration_micros,
+        } => radio.request_wifi_coex(CoexClientRequest {
+            event: coex_event(event),
+            latency: 0,
+            duration: duration_micros,
+        }),
+        PmCoexAction::Release(event) => radio.release_coex(coex_event(event)),
+        PmCoexAction::SetInterval(interval) => {
+            radio.set_coex_interval(interval);
+            Ok(())
+        }
+        PmCoexAction::RestartPhases => {
+            radio.restart_coex_phases();
+            Ok(())
+        }
+        PmCoexAction::SetFlexiblePeriod(period) => {
+            radio.set_coex_flexible_period(period);
+            Ok(())
+        }
+    }
+}
+
+fn coex_event(event: PmCoexEvent) -> CoexEventId {
+    CoexEventId::new(event.id()).expect("power management requests defined events")
+}
 
 /// Why the power agent stopped serving its station.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -199,11 +258,11 @@ mod agent {
 
     use embassy_futures::select::{Either, Either3, select, select3};
 
-    use oer_esp32s31_coex::{CoexClientRequest, CoexEventId, timer_index};
+    use oer_esp32s31_coex::{CoexClientRequest, CoexError, CoexEventId};
     use oer_esp32s31_hal::{shared_radio::PlatformClockProvider, types::MacPti};
     use oer_esp32s31_ieee80211_sta::{
         connected_control::{ConnectedPowerCommand, PowerCoexSnapshot},
-        modem_sleep::{CoexPhaseView, CoexView, PmCoexAction, PmCoexEvent},
+        modem_sleep::{CoexPhaseView, CoexView},
     };
     use oer_esp32s31_radio_runtime::{
         CoexPreemptionEnd, RadioGuard, RadioSystem, WifiCoexViewCell,
@@ -327,13 +386,25 @@ mod agent {
         }
     }
 
-    trait CoexEventOf {
-        fn coex_event(self) -> CoexEventId;
-    }
+    impl<P, C: PlatformClockProvider, T: oer_time::Timer> super::CoexRadio for RadioGuard<'_, P, C, T> {
+        fn request_wifi_coex(&mut self, request: CoexClientRequest) -> Result<(), CoexError> {
+            RadioGuard::request_wifi_coex(self, request).map(|_| ())
+        }
 
-    impl CoexEventOf for PmCoexEvent {
-        fn coex_event(self) -> CoexEventId {
-            CoexEventId::new(self.id()).expect("power management requests defined events")
+        fn release_coex(&mut self, event: CoexEventId) -> Result<(), CoexError> {
+            RadioGuard::release_coex(self, event).map(|_| ())
+        }
+
+        fn set_coex_interval(&mut self, interval: u32) {
+            RadioGuard::set_coex_interval(self, interval);
+        }
+
+        fn restart_coex_phases(&mut self) {
+            RadioGuard::restart_coex_phases(self);
+        }
+
+        fn set_coex_flexible_period(&mut self, period: u8) {
+            RadioGuard::set_coex_flexible_period(self, period);
         }
     }
 
@@ -437,39 +508,8 @@ mod agent {
         K: crate::mac_clock::ReceptionClock + ?Sized,
     {
         match command {
-            // The vendor core programs only events with a policy timer; for
-            // the others `coex_core_request` and `coex_core_release` return
-            // `ESP_ERR_INVALID_ARG`, which power management ignores. On the
-            // S31 that leaves the slice request as the only effective one.
-            //
-            // SOURCE: complete pinned `libcoexist.a[coexist_core.o]::
-            // coex_core_request` and `coex_core_timer_idx_get`.
-            ConnectedPowerCommand::Coex(PmCoexAction::Request { event, .. })
-            | ConnectedPowerCommand::Coex(PmCoexAction::Release(event))
-                if timer_index(event.coex_event()).is_none() => {}
-            ConnectedPowerCommand::Coex(PmCoexAction::Request {
-                event,
-                duration_micros,
-            }) => {
-                radio
-                    .request_wifi_coex(CoexClientRequest {
-                        event: event.coex_event(),
-                        latency: 0,
-                        duration: duration_micros,
-                    })
-                    .map_err(StationPowerFailure::Coex)?;
-            }
-            ConnectedPowerCommand::Coex(PmCoexAction::Release(event)) => {
-                radio
-                    .release_coex(event.coex_event())
-                    .map_err(StationPowerFailure::Coex)?;
-            }
-            ConnectedPowerCommand::Coex(PmCoexAction::SetInterval(interval)) => {
-                radio.set_coex_interval(interval)
-            }
-            ConnectedPowerCommand::Coex(PmCoexAction::RestartPhases) => radio.restart_coex_phases(),
-            ConnectedPowerCommand::Coex(PmCoexAction::SetFlexiblePeriod(period)) => {
-                radio.set_coex_flexible_period(period)
+            ConnectedPowerCommand::Coex(action) => {
+                super::apply_coex_action(radio, action).map_err(StationPowerFailure::Coex)?;
             }
             ConnectedPowerCommand::RfSleep => {
                 super::trace_counter(mac_clock, |mac_local_time, monotonic_micros| {
@@ -507,5 +547,95 @@ fn trace_counter<K: crate::mac_clock::ReceptionClock + ?Sized>(
 ) {
     if let Some((counter, monotonic)) = mac_clock.counter_reading() {
         emit(counter, monotonic.as_micros() as u32);
+    }
+}
+
+#[cfg(test)]
+mod coex_tests {
+    use std::vec::Vec;
+
+    use super::*;
+
+    /// A radio that records the effects it performs.
+    #[derive(Default)]
+    struct Recording {
+        effects: Vec<&'static str>,
+        requests: Vec<CoexClientRequest>,
+        refuse: Option<CoexError>,
+    }
+
+    impl CoexRadio for Recording {
+        fn request_wifi_coex(&mut self, request: CoexClientRequest) -> Result<(), CoexError> {
+            if let Some(error) = self.refuse {
+                return Err(error);
+            }
+            self.requests.push(request);
+            self.effects.push("request");
+            Ok(())
+        }
+
+        fn release_coex(&mut self, _event: CoexEventId) -> Result<(), CoexError> {
+            self.effects.push("release");
+            Ok(())
+        }
+
+        fn set_coex_interval(&mut self, _interval: u32) {
+            self.effects.push("interval");
+        }
+
+        fn restart_coex_phases(&mut self) {
+            self.effects.push("restart");
+        }
+
+        fn set_coex_flexible_period(&mut self, _period: u8) {
+            self.effects.push("flexible");
+        }
+    }
+
+    /// A power-management event with a policy timer, and one without.
+    fn events() -> (PmCoexEvent, PmCoexEvent) {
+        let mut timed = None;
+        let mut untimed = None;
+        for event in [
+            PmCoexEvent::BeaconWindow,
+            PmCoexEvent::Slice,
+            PmCoexEvent::GroupTraffic,
+        ] {
+            match timer_index(coex_event(event)) {
+                Some(_) => timed = timed.or(Some(event)),
+                None => untimed = untimed.or(Some(event)),
+            }
+        }
+        (timed.unwrap(), untimed.unwrap())
+    }
+
+    #[test]
+    fn only_events_with_a_policy_timer_reach_the_arbiter() {
+        let (timed, untimed) = events();
+        let mut radio = Recording::default();
+        for action in [
+            PmCoexAction::Request {
+                event: untimed,
+                duration_micros: 10,
+            },
+            PmCoexAction::Release(untimed),
+            PmCoexAction::Request {
+                event: timed,
+                duration_micros: 1_000,
+            },
+            PmCoexAction::Release(timed),
+            PmCoexAction::SetInterval(102_400),
+            PmCoexAction::RestartPhases,
+            PmCoexAction::SetFlexiblePeriod(3),
+        ] {
+            assert_eq!(apply_coex_action(&mut radio, action), Ok(()));
+        }
+        assert_eq!(
+            radio.effects,
+            ["request", "release", "interval", "restart", "flexible"]
+        );
+        assert_eq!(radio.requests[0].event, coex_event(timed));
+        assert_eq!(radio.requests[0].duration, 1_000);
+        assert_eq!(radio.requests[0].latency, 0);
     }
 }

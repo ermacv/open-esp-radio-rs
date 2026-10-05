@@ -418,6 +418,7 @@ impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
                 .link
                 .coex_mut()
                 .perform(action)
+                .await
                 .map_err(|_| PortLinkError::Coexistence)?,
             PmAction::RxBeaconPriority(beacon_window) => {
                 context

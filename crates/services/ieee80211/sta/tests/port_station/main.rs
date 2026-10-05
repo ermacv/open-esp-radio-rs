@@ -238,7 +238,7 @@ impl PortCoexistence for &ScriptedCoex {
         self.view.get()
     }
 
-    fn perform(&mut self, action: PmCoexAction) -> Result<(), PortCoexistenceRefused> {
+    async fn perform(&mut self, action: PmCoexAction) -> Result<(), PortCoexistenceRefused> {
         if self.refuse.get() {
             return Err(PortCoexistenceRefused);
         }

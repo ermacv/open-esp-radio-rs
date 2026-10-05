@@ -22,7 +22,11 @@ mod join;
 mod join_port;
 mod lifecycle;
 pub mod network;
+#[cfg(target_arch = "riscv32")]
+mod port_coexistence;
 pub mod power;
+#[cfg(target_arch = "riscv32")]
+pub use port_coexistence::Esp32s31PortCoexistence;
 #[cfg(target_arch = "riscv32")]
 mod reclaim;
 mod resources;

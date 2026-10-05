@@ -1173,3 +1173,69 @@ fn an_aggregate_s_bodies_come_back_by_subframe() {
     );
     assert_eq!(back, [(1, b"one".to_vec()), (2, b"two".to_vec())]);
 }
+
+/// A radio on `channel` whose access point interface is `PEER`.
+fn access_point_on(channel: Channel) -> Model {
+    let model = Model::new();
+    assert_eq!(model.apply(LowerMacSetting::Channel(channel)), Ok(Ok(())));
+    assert_eq!(model.lifecycle(LifecycleCommand::Enable), Ok(Ok(())));
+    assert_eq!(
+        Model::view(&next(&model)),
+        LowerMacEvent::Lifecycle(LifecycleEvent::Enabled)
+    );
+    assert_eq!(
+        model.apply(LowerMacSetting::Vif {
+            vif: ACCESS_POINT,
+            config: Some(VifConfig {
+                address: PEER,
+                role: VifRole::AccessPoint,
+                bssid: Some(PEER),
+                receive: ReceiveFilter::BSS_MEMBER,
+            }),
+        }),
+        Ok(Ok(()))
+    );
+    model
+}
+
+#[test]
+fn the_air_carries_a_frame_to_the_radio_on_its_channel_which_acknowledges_it() {
+    use crate::model::ModelAir;
+
+    let station = enabled_station();
+    let access_point = access_point_on(channel_six());
+    let air = ModelAir::new([&station, &access_point]);
+    assert!(!air.step());
+
+    assert_eq!(station.submit(mpdu(&station, 1, 7)), Ok(Ok(())));
+    assert!(air.step());
+    assert_eq!(next_completion(&station).status, TxStatus::Success);
+    let LowerMacEvent::Received { .. } = Model::view(&next(&access_point)) else {
+        panic!("the access point received nothing");
+    };
+    assert_eq!(station.in_flight(), 0);
+
+    // To an address nobody has, the frame goes unacknowledged.
+    let mut frame = header(8);
+    frame[4..10].copy_from_slice(&OTHER_BSS);
+    let lost = attempt(
+        2,
+        TxPayload {
+            frame: buffer(&station, &frame),
+            body: None,
+            response: TxResponse::Ack,
+        },
+        OFDM24,
+    );
+    assert_eq!(station.submit(lost), Ok(Ok(())));
+    assert!(air.step());
+    assert_eq!(next_completion(&station).status, TxStatus::AckTimeout);
+
+    // A radio on another channel hears nothing.
+    let elsewhere = access_point_on(Channel::ghz2_4(11, ChannelWidth::Mhz20).unwrap());
+    let apart = ModelAir::new([&station, &elsewhere]);
+    assert_eq!(station.submit(mpdu(&station, 3, 9)), Ok(Ok(())));
+    assert!(apart.step());
+    assert_eq!(next_completion(&station).status, TxStatus::AckTimeout);
+    assert_eq!(elsewhere.queued_events(), 0);
+}

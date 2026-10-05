@@ -167,6 +167,18 @@ value: its radio clock (`now`) reads what the test last passed to
 the port test against it, as `oer-ieee80211-upper-mac-service` and
 `oer-ieee80211-sta-service` do.
 
+`ModelAir` joins several models as radios on one medium, so a test runs
+real drivers against each other (an access point on one model, its stations
+on others) instead of scripting one side. Each `step` carries every
+published attempt (`published`): each other enabled radio on the sender's
+primary channel receives its MPDUs as its interfaces' filters admit them,
+and the attempt ends `Success` when it solicits no response (a group or
+control frame) or a radio on the channel has an interface of its first
+address, `AckTimeout` otherwise. The model ciphers nothing: a protected
+frame arrives decrypted and verified when the receiver holds a pairwise key
+of its transmitter (a group key for a group frame) and is not received
+otherwise. Air time, contention, loss and reception levels are not modelled.
+
 The ESP32-S31 MAC converts its chip values in
 [`mac/src/portable.rs`](../../../hardware/esp32s31/driver/ieee80211/mac/src/portable.rs):
 `TxPhyRate` to and from `PhyRate`, the receive prefix `RxPhyInfo` to

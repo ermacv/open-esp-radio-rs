@@ -166,6 +166,7 @@ mod tests {
             enqueued_unix: 0,
             claims: vec![Claim::board("AA")],
             priority: Default::default(),
+            job: None,
             unknown: Default::default(),
         }
     }

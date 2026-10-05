@@ -6,6 +6,7 @@ description: Use before committing or pushing in this repository, when running t
 # Gate, push and CI
 
 Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gate-and-push),
+[the check registry](../../../tools/xtask/README.md#the-check-registry),
 [the push gate](../../../tools/xtask/README.md#the-push-gate) and
 [output](../../../tools/xtask/README.md#output).
 
@@ -16,12 +17,16 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    only through pull requests.
 2. **Iterate** with `cargo test -p <package> <test>` in the background.
 3. **Gate uncommitted work** with `cargo xtask check changed`
-   (`run_in_background: true`), under a minute warm. It runs tidy, fmt of the
-   selected packages, `lock --check` and capability checks when relevant,
-   Clippy of the changed packages and their reverse dependents, and the tests
-   of the changed packages. `--full` adds what CI runs: tests of the
-   dependents, `check docs`, API docs, image type-checks, PHY, network,
-   register and provenance audits. Use it only when that set is the point.
+   (`run_in_background: true`), under a minute warm. It runs the fast checks
+   of the registry the change selects: tidy, fmt of the selected packages,
+   `lock --check` and capability checks when relevant, Clippy of the changed
+   packages and their reverse dependents, the tests of the changed packages
+   and, for chip code, image type-checks. `--full` adds the full-tier checks
+   CI runs for the change: tests of the dependents, `check docs`, API docs,
+   architecture, examples, PHY, network, register, qualification and
+   provenance checks. Use it only when that set is the point.
+   `cargo xtask check tier --list` prints every check with its tier and CI
+   job.
 4. **Read failures from the summary.** It prints at most 60 lines of
    diagnostics and the log path under `target/xtask/logs/`; open that log with
    a bounded read (`tail -n 200`, Grep) rather than rerunning with `--verbose`.
@@ -36,11 +41,14 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    user's review first. To resolve a conflict with `main`, rebase the
    branch and push again: `push` rewrites only its own branch, with
    `--force-with-lease`. Never push to `main` directly.
-7. **CI** runs on every branch push; `.github/workflows/ci.yml` is the full
-   check and each step is one command in [the xtask reference](../../../tools/xtask/README.md).
-   A failed check on the pull request is fixed on the same branch and pushed
-   again with `cargo xtask push`.
-8. **Red `main` first.** The session start and the gate print a red `main`.
+7. **CI** runs on every branch push: each job of `.github/workflows/ci.yml`
+   runs `cargo xtask check tier full --job <job>`, so a failed job is
+   reproduced locally with the same command. A new check is a registry
+   entry (`tools/xtask/src/registry.rs`), never a workflow step. A failed
+   check on the pull request is fixed on the same branch and pushed again
+   with `cargo xtask push`.
+8. **Red `main` first.** The session start (`cargo xtask ci-status`) and the
+   gate print a red `main`.
    Fixing it comes before other work: `gh run view <id> --log-failed`,
    reproduce the job's command locally, fix it on a branch.
 
@@ -50,6 +58,8 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
   after a pull that changed a lock file.
 - Examples: `cargo xtask build firmware <example> --type-check`.
 - Image classes: `cargo xtask check firmware --list`, then
-  `cargo xtask check firmware --class <class> --type-check`.
+  `cargo xtask check firmware --class <class> --type-check`; without
+  `--type-check` the class's image bundle is built with every gate, and
+  `performance`/`correctness` also pass Blobray's final radio target audit.
 - Blobray: `--manifest-path tools/blobray/Cargo.toml`.
 - `cargo xtask sweep` lists rebuildable caches when the disk runs low.

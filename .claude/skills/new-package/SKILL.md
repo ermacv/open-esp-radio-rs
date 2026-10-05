@@ -1,13 +1,14 @@
 ---
 name: new-package
-description: Use when creating, splitting, moving, renaming or reclassifying a Cargo package in this repository, or editing the package.metadata.open-radio table (layer, platform, chip, family, inputs) or package dependencies across layers.
+description: Use when creating, splitting, moving, renaming or reclassifying a Cargo package in this repository, or editing the package.metadata.open-radio table (layer, platform, chip, family, host-layer, inputs) or package dependencies across layers.
 ---
 
 # Add or move a package
 
 Read first (about 3k tokens): [package names](../../../docs/architecture.md#package-names),
 [package classification](../../../docs/architecture.md#package-classification),
-[layer dependencies](../../../docs/architecture.md#layer-dependencies) and the
+[layer dependencies](../../../docs/architecture.md#layer-dependencies),
+[host layers](../../../docs/architecture.md#host-layers) and the
 [tidy checks](../../../tools/tidy/README.md).
 
 ## Checklist
@@ -22,9 +23,18 @@ Read first (about 3k tokens): [package names](../../../docs/architecture.md#pack
    scope: production, experimental or development) and a `platform` —
    `portable`, `host`, `chip` (with `chip = "<id>"`) or `family` (with
    `family = "<id>"`). Declare `inputs` for repository files
-   outside the package its tests read, so the gate follows them.
+   outside the package its tests read, so the gate follows them. A HIL
+   package names its `hil` role (`observation`, `orchestration` or
+   `operation`), a verification package its `evidence` role, and every host
+   development package its `host-layer` (`entry`, `orchestration`,
+   `execution`, `verification`, `stand`, `build` or `foundation`; a
+   portable one may). Every key is
+   typed by `oer-repo` (`tools/repo/src/classification.rs`); a new key goes
+   there, never into a second reader.
 4. **Dependencies** follow the layer table; build dependencies are host or
-   portable; internal packages never depend on the `oer` facade.
+   portable; internal packages never depend on the `oer` facade. A host
+   package depends only on its own host layer and those below, and only an
+   entry crate spawns `cargo hil` or `cargo xtask`.
 5. **Lints.** Inherit `[lints] workspace = true`; a crate root declares its
    unsafe policy ([UNSAFE.md](../../../crates/UNSAFE.md)).
 6. **Docs.** Add `[package.metadata.docs.rs]` (chip packages set
@@ -37,7 +47,7 @@ Read first (about 3k tokens): [package names](../../../docs/architecture.md#pack
 ## Commands (all `run_in_background: true`)
 
 ```console
-cargo xtask check tidy
+cargo tidy check
 cargo xtask lock --check
 cargo xtask check architecture
 cargo xtask check changed

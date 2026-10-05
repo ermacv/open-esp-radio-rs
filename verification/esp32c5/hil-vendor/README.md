@@ -2,11 +2,11 @@
 
 ESP-IDF applications that run vendor code on the stand's ESP32-C5, so
 hardware cross-checks observe the device under test from a vendor
-implementation on the air. `cargo xtask vendor-firmware --chip esp32c5
-[PROJECT]` builds them against the pinned ESP-IDF and the pinned vendor
-archives of [`artifacts.toml`](../artifacts.toml); outputs stay in
-`target/vendor-firmware/esp32c5/<project>/`. A project with a `firmware.toml`
-is also an entry of the stand's firmware catalog, so `cargo hil firmware flash
+implementation on the air. Each project is an entry of the stand's firmware
+catalog (its `firmware.toml`): `cargo hil firmware build <image>` builds it
+against the pinned ESP-IDF and the pinned vendor archives of
+[`artifacts.toml`](../artifacts.toml), with outputs in
+`target/vendor-firmware/esp32c5/<project>/`, and `cargo hil firmware flash
 <image> --board esp32c5` builds, flashes and journals it.
 
 | Project | Behavior |

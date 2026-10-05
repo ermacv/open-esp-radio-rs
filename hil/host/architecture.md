@@ -4,8 +4,9 @@ This document defines the host runner's ownership and evidence bundle
 contract. Operational setup and commands are in the
 [HIL host guide](README.md).
 
-The `runner*` packages own the typed CLI, scenario catalog, build/flash
-orchestration and UART evidence. `linux-net/` contains only privileged fixture operations.
+The runner owns the typed CLI, scenario catalog and build/flash
+orchestration; the family crates own their workloads, and the link owns the
+UART evidence. `linux-net/` contains only privileged fixture operations.
 [Linux Bluetooth setup](linux-bluetooth/README.md) installs the privileged helper
 for finite DTM adapter checks and the connection and key-failure central
 operations.
@@ -14,18 +15,29 @@ Separate Cargo packages bound the privilege and radio-family scopes:
 
 | Package | Binaries | Role |
 | --- | --- | --- |
-| `cli/` (`oer-hil-cli`) | `oer-hil-cli` (`cargo hil`) | The stand's commands (leases, boards, owners, devices, jobs, the shared run store, evidence records, performance, A/B and bisection, the ESP-IDF firmware catalog and its pinned ESP-IDF builds) and the launch of the runner it builds, with the observer receipt; xtask uses it as a library for `hil-observer`, `vendor-firmware` and `sweep` |
-| `runner/` (`oer-hil-runner`) | `oer-hil-runner` | Unprivileged CLI, run orchestration, workload dispatch and the cross-family fixture preflight |
-| `execution/` (`oer-hil-execution`) | none | The repetition context, failure classification, per-repetition fixture cleanup evidence, profile reports and the workload operations shared by radio families |
-| `stand/` (`oer-hil-stand`) | none | Stand operation: laboratory configuration and locks, the cell's pre-run observation, fixture software leases, recovery and post-mortem; implements the link's `Dut` and `StationNetwork` ports |
-| `link/` (`oer-hil-link`) | none | The host/target link: one UART capture and its protocol exchange, readiness, reboots and validation, the host traffic transports and measurements; reaches the board only through its `Dut` and `StationNetwork` ports; also the reference peers' line console |
+| `cli/` (`oer-hil-cli`) | `oer-hil-cli` (`cargo hil`) | The stand's commands, as argument parsing and calls into the stand packages below (leases, boards, owners, devices, stand discovery and doctor, fixtures, flash, the ESP-IDF firmware catalog), the analyses (`runs`, `perf`, the dashboard's runs), the experiments (`ab`, `bisect`) and the launch of every run through `oer-hil-experiment`; pending evidence; the frozen binaries and detached processes of jobs |
+| `runner/` (`oer-hil-runner`) | `oer-hil-runner` | Unprivileged CLI and the run core: selection, lease, images, repetitions and seal. It names the family crates once, in its family registry (`scenario.rs`), and reaches every family, fixture provider and preflight through it. Its one extension point is `run --then` ([stand guide](stand.md)), a shell command inside the run's lease after the scenarios that is recorded as events and never changes the outcome |
+| `workload/` (`oer-hil-workload`) | none | What a workload runs against: the repetition `Context`, its one result writer (`results`, sealed as `observations.json`), `for_each_boot`, `require_keys`, failure classification, per-repetition cleanup evidence, the measurements recorder, the type-erased `Fixtures`, `BoardImages` (the run's writer of the board under test's images, through the flash operation), and the family registry contract (`family::{Workload, Kind, Registry, FixtureProvider}`) |
+| `lab/` (`oer-hil-lab`) | none | A run's stand operation: its laboratory configuration, the fixture lock it holds, the cell's pre-run observation, fixture software leases, recovery and post-mortem; implements the link's `Dut` and `StationNetwork` ports. It actuates no hardware and writes no flash record |
+| `link/` (`oer-hil-link`) | none | The host/target link: one DUT session (`SerialCapture`) with the generic exchange (`call`, `request`, `command`, `wait_command`), reboots and the startup artifact; reaches the board only through its `Dut` and `StationNetwork` ports; and the reference peers' `PeerConsole` with the whole `@` line grammar (`peer`) |
 | `image/` (`oer-hil-image`) | none | The image builder: firmware construction from the live tree or a frozen source snapshot, placement and stack audits, and the firmware and build records it hands to evidence |
-| `evidence/` (`oer-hil-evidence`) | none | Sealed run evidence: the run writer and its seal, build provenance and the content-addressed object store, verification of a recorded run against the image builder's recipe, reports, and the experiment and laboratory records a run keeps |
+| `run-bundle/` (`oer-hil-run-bundle`) | none | The run bundle: its typed documents, the one writer and its seal, the one typed reader (`RunBundle`) every consumer uses, the qualification evaluator included, integrity verification, the run store with its sidecars and pending evidence (`RunStore`), the run receipt, build provenance and the content-addressed object store, offline verification against the image builder's recipe, and the experiment and laboratory records a run keeps |
+| `analysis/` (`oer-hil-analysis`) | none | Analyses of run bundles: the one measurement aggregation and comparison, run queries, retention, performance baselines, A/B arm comparison, the dashboard's runs and the JUnit/HTML views a run seals |
+| `experiment/` (`oer-hil-experiment`) | none | `launch_run`, the one way a run is launched (its runs come from the runner's receipt), the job a launch runs as, A/B experiments and bisection |
 | `scenario/` (`oer-hil-scenario`) | none | The family-independent scenario envelope, catalog and campaign plan, with the laboratory requirements, Wi-Fi link vocabulary and target settings a scenario declares |
-| `image-class/` (`oer-hil-image-class`) | none | Image classes, their build features and the image keys each class serves, and the check of a device's reported keys against them |
+| `image-class/` (`oer-hil-image-class`) | none | Image classes, their build features and the image keys each class serves, the check of a device's reported keys against them, and where a chip's HIL images are built from (`agent`: the agent's workspace, package and manifest, the bootstrap) |
 | `source-snapshot/` (`oer-hil-source-snapshot`) | none | Source snapshots: capture of the repository and local dependency checkouts, their identity, and verified materialization into build workspaces |
-| `durable/` (`oer-hil-durable`) | none | Durable host files: atomic replacement, content digests and timestamps |
-| `runner-ieee80211/`, `runner-bluetooth/`, `runner-system/`, `runner-ieee802154/` | none | One radio family's workloads and fixtures; each depends on `oer-hil-execution`, never on another family |
+| `family/ieee80211/`, `family/bluetooth/`, `family/system/`, `family/ieee802154/` (`oer-hil-family-*`) | none | One radio family: its scenario table (`ScenarioFamily`: validation, plan, requirements, image keys, peer image, air use), its `Workload` and its target exchanges; each depends on `oer-hil-workload`, never on another family |
+| `family/coexistence/` (`oer-hil-family-coexistence`) | none | The joint Wi-Fi and Bluetooth workload, the one family that composes two others |
+| `family/phy/` (`oer-hil-family-phy`) | none | The PHY workload: the vendor-versus-production calibration cross-check, which writes the vendor firmware and the scenario's image alternately through the run's `BoardImages` and records the comparison of `oer-esp32s31-phy-vendor-calibration` as its typed result |
+| `family/ieee80211-fixture/` (`oer-hil-family-ieee80211-fixture`) | none | The Wi-Fi fixtures (local Linux and OpenWrt access points, hostapd, host network routes, air monitors) and their `FixtureProvider` |
+| `family/ieee80211-evidence/` (`oer-hil-family-ieee80211-evidence`) | none | Radio-evidence analysis of Wi-Fi sessions: air captures, protection and the RX delivery frontier |
+| `net-traffic/` (`oer-hil-net-traffic`) | none | Host traffic against the target's network sessions: session start and evidence, readiness, paced UDP and TCP, offered load and the one ICMP method (datagram sockets) |
+| `../stand/model/` (`oer-hil-stand-model`) | none | The stand file, the one resolver of a board name (id, chip or MAC) and the XDG paths of the stand's state |
+| `board/` (`oer-hil-board`) | none | Board I/O: attached ports and a board's `/dev/serial/by-id` port, the one flash writer (espflash library, the chip from its profile, retries, unchanged segments skipped, OTA selection last), starts, the one reset ladder, OpenOCD, hub power and consoles |
+| `arbiter/` (`oer-hil-arbiter`) | none | Claims, the queue and its job tickets, balances, preemption, maintenance, the lock files (the final exclusion layer) and the board journal with its one flash writer |
+| `flash/` (`oer-hil-flash`) | none | The flash operation, the only way the host writes a board: lease, write, journal, start; and the ESP-IDF catalog flash |
+| `stand-host/` (`oer-hil-stand-host`) | none | The stand's host: discovery of its boards, the host doctor, fixture reachability and the one SSH helper to its OpenWrt hosts |
 | `fixture/` (`oer-hil-fixture`) | `open-radio-bluetooth`, `open-radio-probe` | Finite Linux helpers; the library is their versioned request/report contract with the runner |
 | `fixture-install/` (`oer-hil-fixture-install`) | `open-radio-fixture-install` and the three fixed launchers | Root-executed installation and admission; the runner uses the same library to plan and prepare |
 
@@ -36,7 +48,7 @@ The three packages deny `unsafe_code` at their crate roots, and the helper and
 installer binaries forbid it. System calls go through `rustix`. Raw memory
 reaches the kernel in three places, each with its `SAFETY` justification:
 `fixture/src/linux_socket.rs` for link-layer, HCI and L2CAP addresses,
-`BT_SECURITY` and `SO_MEMINFO`; `fixture-install/src/launcher/handoff.rs` for the
+`BT_SECURITY`, `SO_MEMINFO` and `SO_BINDTODEVICE`; `fixture-install/src/launcher/handoff.rs` for the
 lease descriptor passed across `exec`; and the runner's adoption of the serial
 port descriptor.
 
@@ -63,7 +75,7 @@ An installation therefore waits only for runs using its provider, never for a
 queued run, and runs queued after it wait for the new generation.
 
 The runner entry point in `runner/src/main.rs` registers the executable's build
-identity with `oer-hil-evidence`, then maps the top-level result to the process exit
+identity with `oer-hil-run-bundle`, then maps the top-level result to the process exit
 status. `runner/src/command.rs` owns CLI
 startup and command-specific dispatch. Run selection and the suite/scenario/
 repetition lifecycle are in `runner/src/execution/orchestration.rs`, while
@@ -73,8 +85,10 @@ publication before calling the existing image and device owners.
 hardware-facing scenario/image checks, and `execution/doctor.rs` the
 selection-scoped environment report; declarative resource discovery remains
 under `oer_hil_scenario::requirements`. Machine JSON retains its dedicated descriptor in
-`execution/src/output.rs`. Workload dispatch and typed execution evidence remain
-in `runner/src/execution.rs`; `evidence::run::RunSession` is still the sole run
+`workload/src/output.rs`. Workload dispatch through the family registry and
+typed execution evidence remain in `runner/src/execution.rs`; a workload's
+typed results leave its repetition through `Context::finish`, the one
+`observations.json` writer; `oer_hil_run_bundle::run::RunSession` is the sole run
 writer and sealing owner.
 
 ## One run lifecycle
@@ -85,13 +99,13 @@ claim an earlier physical action:
 | Order | Owner and durable result |
 | --- | --- |
 | 1. Selection and plan | CLI/catalog code resolves typed scenarios. `RunSession` creates a unique directory and writes `plan.json`. |
-| 2. Firmware archive | `image` builds every selected class whose scenarios meet their configuration preconditions, before the stand is leased. `RunSession::record_firmware` stores the subjects and returns the run-local `firmware/<class>/application.bin`. An explicit replay source is validated by `evidence::verify` under the lease. |
-| 3. Leases and lab provenance | The runner waits for the [arbiter](arbiter/README.md) lease on the boards, fixtures and air the selection claims. The lab guard then acquires the cooperative serial, local-wiphy and managed-OpenWrt leases required by that selection; these are local user-account locks, not distributed reservations. While they are held, `lab::provenance` records the secret-free topology before any flash. |
-| 4. Flash | The chip's board support (`oer-hil-board`; the runner's `board` module chooses the flow from the chip profile's `boot`) gives `espflash` that archived application path together with the recorded bootstrap/partition images. The workload never flashes a different build-tree copy. |
+| 2. Firmware archive | `image` builds every selected class whose scenarios meet their configuration preconditions, before the stand is leased. `RunSession::record_firmware` stores the subjects and returns the run-local `firmware/<class>/application.bin`. An explicit replay source is validated by `oer_hil_run_bundle::verify` under the lease. |
+| 3. Leases and lab provenance | The runner waits for the [arbiter](arbiter/README.md) lease on the boards, fixtures and air the selection claims. The run's fixture lock then takes the arbiter's lock files of its boards (by MAC), the local wiphy and the managed OpenWrt host its selection uses; these are local user-account locks, not distributed reservations. While they are held, `lab::provenance` records the secret-free topology before any flash. |
+| 4. Flash | The flash operation (`oer-hil-flash`) writes the bundle around that archived application under the run's lock of the board, through board I/O's one writer, journals it and starts it as the chip profile says. The workload never flashes a different build-tree copy. |
 | 5. Repetitions | `fixture::prepared` owns peer/host preparation; `session` owns serial reset, raw `uart.bin`, decoded protocol and target-health state; a workload owns its child processes and typed observations. Primary failures remain distinct from infrastructure failures. |
 | 6. Cleanup and attachment indexing | Each repetition enters a cleanup scope before fixture preparation. Cleanup/restoration finishes before attachments and `result.json` are collected. `cleanup.json` preserves every attempted restoration and its failure independently of the workload result. |
-| 7. Suite and seal | After all scenario results, `RunSession::finish` writes `suite.json`, JUnit, HTML and the final event/manifest, then writes `integrity.json`. |
-| 8. Independent evaluation | Qualification reads the sealed bundle through its own reader and applies target requirements, exact commit/clean-source policy and repetition rules. Runner `PASS`, HTML and a valid hash inventory are insufficient on their own. |
+| 7. Suite and seal | After all scenario results, `RunSession::finish` writes `suite.json`, the JUnit and HTML views `oer-hil-analysis` renders, and the final event/manifest, then writes `integrity.json`. |
+| 8. Independent evaluation | Qualification reads the sealed bundle through the run bundle's one reader, verifies its seals and hashes every sealed file again at admission, and applies target requirements, exact commit/clean-source policy and repetition rules. Runner `PASS`, HTML and a valid hash inventory are insufficient on their own. |
 
 SIGINT/SIGTERM wakes owned protocol and process waits. Ordinary unwinding
 finalizes captures, restores fixtures where possible, marks the run
@@ -101,7 +115,7 @@ it never replaces the workload cause or creates a pass. Abrupt termination
 cannot run those owners' destructors and may leave only incrementally written
 UART bytes with no completed seal.
 
-The flash tool owns the flash subprocess, a capture owns its serial process and
+The flash operation owns the write, a capture owns its serial process and
 files, and each fixture owner may restore only the interface/process it
 created. Loss of SSH or an identity mismatch can make restoration impossible;
 the runner records that ambiguity instead of claiming a reusable lab state.
@@ -230,8 +244,8 @@ AP scenarios select a controlled Linux or OpenWrt client. The Linux fixture
 leases WLAN as a managed WPA2 client without a gateway and restores
 NetworkManager on every return path. Lifecycle, ICMP,
 UDP and TCP are independent workloads over the same declared image class.
-Correctness scenarios record terminal AP observations in
-`access-point-report.json`; performance scenarios reject driver observations
+Correctness scenarios record terminal AP observations as the repetition's
+`access-point` observation; performance scenarios reject driver observations
 and retain only transport, external-fixture and stack evidence. AP IP policy
 belongs to HIL, not to the radio driver request.
 
@@ -366,8 +380,9 @@ packet captures use their configured duration plus shutdown allowance. Remote
 process lifetimes additionally depend on the OpenWrt scripts' timeouts and traps.
 
 Serial-device and fixture leases live in the user's host cache, outside
-individual checkouts. Serial leases are shared with `cargo xtask build firmware <example> --flash`
-and use USB identity when available, otherwise the canonical device path.
+individual checkouts. Serial leases are shared with `cargo hil flash` and
+the verification captures, and use USB identity when available, otherwise the
+canonical device path.
 A run additionally leases every required local wiphy and the managed OpenWrt
 host boot. Local client/monitor interfaces sharing a radio conflict. The remote boot identity makes different SSH aliases and radio
 interfaces on one OpenWrt host conflict; the whole host is reserved because
@@ -453,11 +468,13 @@ scenario lifecycle without invoking Cargo. The resulting run imports all
 available firmware subjects, effective lock and tracked source patches into
 its own CAS-backed bundle; it remains verifiable after the source run is
 removed. Its manifest records the source run and source integrity digest, and
-the independent qualification reader deliberately excludes replayed firmware
-from direct current-source evidence. `run-all` does not accept `--firmware-from`.
+the qualification evaluator deliberately excludes replayed firmware from
+direct current-source evidence. `run-all` does not accept `--firmware-from`.
 
-The qualification evaluator consumes these same sealed bundles through an
-independent reader. `qualification/targets/<chip>/*.toml` maps capabilities to
+The qualification evaluator consumes these same sealed bundles through the
+run bundle's one reader; its independence is the seals it verifies and the
+files it hashes again when it admits a run, not a second reader.
+`qualification/targets/<chip>/*.toml` maps capabilities to
 scenario IDs and minimum passing repetitions; only a bundle produced from the
 current source composition or admitted by an explicit property/build review
 can satisfy the HIL axis. A verified snapshot that matches every file the
@@ -478,22 +495,28 @@ The host packages follow the roles of the
   rules and the campaign plan, with the requirements, Wi-Fi link vocabulary
   and target settings a scenario declares; `oer-hil-image-class` owns image
   identities, their feature recipes and the keys each class serves.
-- `oer-hil-evidence` owns sealed run models, the run writer and its seal,
-  build provenance and the content-addressed object store, verification and
-  the bundle's HTML/JUnit reports. It depends on no stand, board or image
+- `oer-hil-run-bundle` owns the bundle's typed documents, the run writer and
+  its seal, the one typed reader, integrity verification, the run store and
+  its sidecars, the run receipt, build provenance and the content-addressed
+  object store, and verification. It depends on no stand, board or image
   builder code: the image builder hands it firmware records and implements
   `verify::FirmwareRecipe`, which verification checks build records against,
-  and a run reports its interruption through a callback its caller
-  publishes. `oer-hil-source-snapshot` captures and verifies the sources
-  builds and runs are made from, and `oer-hil-durable` provides atomic files,
+  the runner hands `RunSession::finish` the renderer of its HTML/JUnit views
+  (`oer-hil-analysis`), and a run reports its interruption through a
+  callback its caller publishes. `oer-hil-analysis` reads bundles for every
+  query, statistic and view; `oer-hil-experiment` launches every run. `oer-hil-source-snapshot` captures and verifies the sources
+  builds and runs are made from, and `oer-durable` provides atomic files,
   digests and timestamps to every producer.
-- `oer-hil-image` owns build/rebuild and placement/stack auditing, builds
-  from a frozen snapshot (`frozen`) and the records it hands to evidence
-  (`record`, which also implements the recipe verification checks them
-  against); the stack gate is `oer-esp32s31-firmware`'s, over `oer-riscv-stack`. The
-  builder does not print: `artifact_report` returns the report the CLI
-  publishes.
-- `oer-hil-stand` owns local configuration, the pre-run observation of the
+- `oer-hil-image` turns an image class into an image spec for the one image
+  pipeline, [`oer-image`](../../tools/image/README.md) (the class's features
+  and network, each chip's agent and HIL stack policy, the radio observers'
+  placement audit), builds from a frozen snapshot (`frozen`) and writes the
+  records it hands to evidence (`record`, which also implements the recipe
+  verification checks them against). The pipeline compiles, runs every gate
+  (over `oer-riscv-stack`) and encodes the bundle's flash files, the
+  ESP-IDF catalog bootloader of an ESP-IDF chip included. The builder does
+  not print: `artifact_report` returns the report the CLI publishes.
+- `oer-hil-lab` owns local configuration, the pre-run observation of the
   cell, the exclusive fixture guard, fixture software leases and the
   laboratory error type, and implements the link's ports for the leased
   board. Each family
@@ -519,25 +542,25 @@ The host packages follow the roles of the
   without a reset, for its boot evidence and trace, and classifies hangs and
   unexpected resets; its `recovery` owns the reset ladder for a target that
   does not answer and decides whether its board is recoverable or
-  quarantined. `oer-hil-execution`'s `failure` classifies errors as scenario or
+  quarantined. `oer-hil-workload`'s `failure` classifies errors as scenario or
   infrastructure failures.
 
 Dependencies form a directed acyclic graph that Cargo enforces: the binary
 depends on the family packages and the image builder, each family on
-`oer-hil-execution`, and `oer-hil-execution` on the stand, link, scenario and
-evidence
-packages, never the reverse. The stand depends on the link to implement its
-ports, never the reverse. The image builder depends on evidence, never the
-reverse, and nothing but the binary, `oer-hil-cli` and `xtask` depends on the builder.
-The runner never depends on `oer-hil-cli`: it reaches it only as a process,
-named by `OER_HIL_CLI`, to build a chip's catalog bootloader. The `test-support` features of `oer-hil-execution`, `oer-hil-stand`,
-`oer-hil-scenario`, `oer-hil-evidence` and `oer-hil-source-snapshot` expose
+`oer-hil-workload`, and `oer-hil-workload` on the stand, link, scenario and
+run bundle packages, never the reverse. The stand depends on the link to
+implement its ports, never the reverse. The image builder depends on the run
+bundle, never the reverse, and nothing but the binary, `oer-hil-experiment`,
+`oer-hil-cli` and `xtask` depends on the builder. The runner never depends
+on `oer-hil-cli` or `oer-hil-experiment`, and no library runs `cargo hil`. The `test-support` features of `oer-hil-workload`, `oer-hil-lab`,
+`oer-hil-scenario`, `oer-hil-run-bundle` and `oer-hil-source-snapshot` expose
 their test doubles and fixtures to the other packages' tests.
 
-The recursive [catalog contract](../scenarios/README.md) is checked independently
-by the runner and qualification evaluator. Shared synthetic input documents
-exercise both readers; qualification never imports execution or validation
-implementation from the runner. Tests are adjacent files within each owner.
+The recursive [catalog contract](../scenarios/README.md) has one discovery,
+`oer_hil_scenario::catalog::documents`: the runner parses each document with
+its family's types, and the qualification evaluator keeps each as a value;
+qualification never imports execution or family implementation from the
+runner. Tests are adjacent files within each owner.
 
 A capture that begins at a reset expects the boot's unsolicited Hello at
 target message zero. The USB Serial/JTAG can drop the first bytes of that

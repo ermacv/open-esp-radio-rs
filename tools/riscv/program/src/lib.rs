@@ -386,34 +386,29 @@ pub fn code_symbols(
     memory: &WorkingMemory,
     control: &mut dyn RunControl,
 ) -> Result<Vec<(u32, String)>> {
-    use object::{Object, ObjectSymbol, SymbolKind};
     let mut bytes = memory.bytes(
         usize::try_from(source.len()).map_err(|_| invalid("ELF size overflow"))?,
         control.position(),
     )?;
     source.read_at(0, &mut bytes, control)?;
-    let file = object::File::parse(&*bytes).map_err(|_| invalid("invalid executable ELF"))?;
-    if file.kind() != object::ObjectKind::Executable
-        || file.architecture() != object::Architecture::Riscv32
-    {
-        return Err(invalid("code symbols require a static RV32 executable"));
-    }
+    let file = oer_elf::Elf::executable(&bytes)
+        .map_err(|_| invalid("code symbols require a static RV32 executable"))?;
     let mut symbols = Vec::new();
     for symbol in file.symbols() {
         control.checkpoint(1)?;
-        if symbol.is_undefined() || symbol.kind() != SymbolKind::Text {
-            continue;
-        }
-        let Ok(name) = symbol.name() else { continue };
-        if name.is_empty() || name.starts_with('$') {
+        if !symbol.defined
+            || symbol.kind != oer_elf::SymbolKind::Text
+            || symbol.name.is_empty()
+            || symbol.name.starts_with('$')
+        {
             continue;
         }
         let address =
-            u32::try_from(symbol.address()).map_err(|_| invalid("symbol address exceeds RV32"))?;
+            u32::try_from(symbol.address).map_err(|_| invalid("symbol address exceeds RV32"))?;
         symbols
             .try_reserve(1)
             .map_err(|_| Error::new(ErrorCode::ResourceLimited, "symbol allocation refused"))?;
-        symbols.push((address, name.to_owned()));
+        symbols.push((address, symbol.name.to_owned()));
     }
     symbols.sort_unstable();
     symbols.dedup();

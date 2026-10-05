@@ -11,9 +11,9 @@ use oer_command_tree::CommandNode;
 /// each tool's command tree comes from.
 pub(super) const TOOLS: [(&str, TreeSource); 6] = [
     ("xtask", TreeSource::Alias),
+    ("tidy", TreeSource::Alias),
     ("hil", TreeSource::Alias),
     ("qualification", TreeSource::Alias),
-    ("memory", TreeSource::Alias),
     ("registers", TreeSource::Alias),
     // Blobray is a separate, standalone workspace; its tests keep this file
     // equal to its live tree, so the check need not build it.

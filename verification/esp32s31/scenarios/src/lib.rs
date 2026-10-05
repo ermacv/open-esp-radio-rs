@@ -61,7 +61,8 @@ pub const PROBES_TARGET: &str = "riscv32imafc-unknown-none-elf";
 
 #[cfg(test)]
 mod tests {
-    use crate::artifacts::{SourceKind, manifest, path, sha256};
+    use crate::artifacts::{manifest, path, sha256};
+    use oer_vendor_artifacts::SourceKind;
     use std::path::Path;
 
     #[test]

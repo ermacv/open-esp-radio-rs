@@ -1,8 +1,14 @@
-//! Direct subprocess arguments and owned command lifetimes, without a shell.
+//! Direct subprocess arguments and owned command lifetimes, without a shell;
+//! the repository checkout a tool acts on, Git, and live-process facts.
 
+pub mod git;
 #[cfg(unix)]
 mod guardian;
 pub mod owned;
+#[cfg(unix)]
+pub mod proc;
+mod repository;
+pub use repository::{Checkout, built_root, checkout_of};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 

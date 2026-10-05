@@ -17,20 +17,9 @@ use std::{env, fs, path::PathBuf, process::Command};
 const ATTRIBUTES: &str = "+m,+a,+f,+c,+zba,+zbb,+zbs,+zcb,+zcmp";
 
 fn objdump() -> PathBuf {
-    if let Some(path) = env::var_os("LLVM_OBJDUMP") {
-        return path.into();
-    }
-    let rustc = env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
-    let run = |args: &[&str]| {
-        let output = Command::new(&rustc).args(args).output().unwrap();
-        String::from_utf8(output.stdout).unwrap()
-    };
-    let sysroot = run(&["--print", "sysroot"]);
-    let host = run(&["-vV"])
-        .lines()
-        .find_map(|line| line.strip_prefix("host: ").map(str::to_owned))
-        .unwrap();
-    PathBuf::from(sysroot.trim()).join(format!("lib/rustlib/{host}/bin/llvm-objdump"))
+    oer_toolchain::program(oer_toolchain::Tool::LlvmObjdump)
+        .unwrap()
+        .into()
 }
 
 /// A relocatable RV32 ELF whose only content is `code` in `.text`.

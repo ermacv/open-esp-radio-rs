@@ -44,7 +44,7 @@ fn observer_reference<S: serde::Serializer>(
     observer: &Option<std::sync::Arc<serde_json::Value>>,
     serializer: S,
 ) -> std::result::Result<S::Ok, S::Error> {
-    use oer_hil_schema::observer_store::{EMBEDDED, REFERENCED};
+    use oer_hil_observer::store::{EMBEDDED, REFERENCED};
     match observer.as_deref() {
         Some(record) if record["schema"] == EMBEDDED => serde_json::json!({
             "schema": REFERENCED,
@@ -65,7 +65,7 @@ fn shared_observer(
     record: &serde_json::Value,
     store: &Path,
 ) -> Result<std::sync::Arc<serde_json::Value>> {
-    use oer_hil_schema::observer_store::{self, REFERENCED};
+    use oer_hil_observer::store::{self as observer_store, REFERENCED};
     use std::{
         collections::HashMap,
         sync::{Arc, Mutex, OnceLock},
@@ -122,13 +122,7 @@ impl ObservationSubject {
             &manifest.firmware,
             Some(scenario),
         )?;
-        subject.observer = manifest
-            .runner
-            .as_ref()
-            .and_then(|r| r.get("observer"))
-            .filter(|v| !v.is_null())
-            .cloned()
-            .map(std::sync::Arc::new);
+        subject.observer = manifest.observer().cloned().map(std::sync::Arc::new);
         // The store holding the run's referenced observer build is beside the
         // directory the run's directory resolves into.
         let store = fs::canonicalize(run)?
@@ -151,36 +145,26 @@ impl ObservationSubject {
     pub(super) fn from_parts(
         run: &Path,
         repository: &RepositoryProvenance,
-        artifacts: &[FirmwareArtifactProvenance],
+        artifacts: &[FirmwareArtifact],
         scenario: Option<&str>,
     ) -> Result<Self> {
         let mut firmware = Vec::new();
         for artifact in artifacts {
-            if artifact.image.as_ref().is_some_and(|id| !valid_id(id))
-                || artifact
-                    .build_id
-                    .as_ref()
-                    .is_some_and(|id| !valid_sha256(id))
+            if artifact
+                .build_id
+                .as_ref()
+                .is_some_and(|id| !valid_sha256(id))
             {
                 return Err("HIL firmware subject has an invalid image or build identity".into());
             }
-            let application = match (
-                &artifact.application_path,
-                artifact.application_size_bytes,
-                &artifact.application_sha256,
-            ) {
-                (None, None, None) => None,
-                (Some(path), Some(size), Some(hash)) => {
-                    let identity = file(run, path)?.ok_or("HIL application subject is missing")?;
-                    if identity.size_bytes != size || &identity.sha256 != hash {
-                        return Err(
-                            "HIL application subject disagrees with its archived bytes".into()
-                        );
-                    }
-                    Some(identity)
-                }
-                _ => return Err("HIL application subject identity is incomplete".into()),
-            };
+            let application = file(run, &artifact.application_path)?
+                .ok_or("HIL application subject is missing")?;
+            if application.size_bytes != artifact.application_size_bytes
+                || application.sha256 != artifact.application_sha256
+            {
+                return Err("HIL application subject disagrees with its archived bytes".into());
+            }
+            let application = Some(application);
             let build_provenance = artifact
                 .build_provenance_path
                 .as_ref()
@@ -189,7 +173,7 @@ impl ObservationSubject {
                 })
                 .transpose()?;
             firmware.push(FirmwareIdentity {
-                image: artifact.image.clone(),
+                image: Some(artifact.image.id().to_owned()),
                 build_id: artifact.build_id.clone(),
                 application,
                 build_provenance,

@@ -50,7 +50,14 @@ cargo test --manifest-path verification/esp32s31/host/ieee802154/Cargo.toml
 cargo run --manifest-path verification/esp32s31/host/ieee802154/Cargo.toml -- list
 cargo run --manifest-path verification/esp32s31/host/ieee802154/Cargo.toml -- run transmit-with-ack
 cargo run --manifest-path verification/esp32s31/host/ieee802154/Cargo.toml -- compare transmit-with-ack
+cargo run --manifest-path verification/esp32s31/host/ieee802154/Cargo.toml -- shard --index <directory>
 ```
+
+`shard` compares every catalog scenario, each in its own process, and writes
+the stand's evidence shard `ieee802154-host` through `oer-vendor-evidence`
+when all of them compare MATCH; `compare` exits 0 for MATCH, 1 for DIFF and 2
+for INCOMPLETE. `cargo xtask evidence --chip esp32s31 ieee802154-host` runs
+it as the stand's producer.
 
 The compiled driver keeps its state in C globals, so each process runs one
 scenario. `run` prints the scenario's boundary trace, one record per line;

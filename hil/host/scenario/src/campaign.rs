@@ -6,7 +6,6 @@
 use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 use crate::{Catalog, Result, Scenario, ScenarioFamily, requirements::Requirements};
 use oer_hil_image_class::ImageClass;
@@ -113,10 +112,9 @@ impl Plan {
                 }
                 Ok(Entry {
                     scenario: scenario.id().to_owned(),
-                    scenario_sha256: format!(
-                        "{:x}",
-                        Sha256::digest(serde_json::to_vec(&procedure(scenario)?)?)
-                    ),
+                    scenario_sha256: oer_durable::sha256_bytes(&serde_json::to_vec(&procedure(
+                        scenario,
+                    )?)?),
                     image: plan.image,
                     repetitions: scenario.repetitions(),
                     requirements: plan.requirements,

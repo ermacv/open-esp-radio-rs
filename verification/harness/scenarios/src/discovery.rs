@@ -12,7 +12,6 @@ use blobray_domain::{
     CallBinding, CallBoundary, CallDeclaration, CallRepetition, CallResponse, ExecutionCase,
     ExecutionEvidence, ExecutionGap, ExecutionStop, Invocation, MemoryAccess, RegionLifetime,
 };
-use object::{Object, ObjectSymbol, SymbolKind};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -53,22 +52,23 @@ impl Symbols {
     pub fn of(elfs: &[&[u8]], registers: crate::registers::Registers) -> Self {
         let mut ranges = BTreeMap::new();
         for bytes in elfs {
-            let Ok(file) = object::File::parse(*bytes) else {
+            let Ok(file) = oer_elf::Elf::parse(bytes) else {
                 continue;
             };
             for symbol in file.symbols() {
-                let (Ok(name), Some(_)) = (symbol.name(), symbol.section_index()) else {
-                    continue;
-                };
-                if !matches!(symbol.kind(), SymbolKind::Data | SymbolKind::Text)
-                    || symbol.size() == 0
+                let name = symbol.name;
+                if symbol.section.is_none()
+                    || !matches!(
+                        symbol.kind,
+                        oer_elf::SymbolKind::Data | oer_elf::SymbolKind::Text
+                    )
+                    || symbol.size == 0
                 {
                     continue;
                 }
-                let (Ok(address), Ok(size)) = (
-                    u32::try_from(symbol.address()),
-                    u32::try_from(symbol.size()),
-                ) else {
+                let (Ok(address), Ok(size)) =
+                    (u32::try_from(symbol.address), u32::try_from(symbol.size))
+                else {
                     continue;
                 };
                 ranges

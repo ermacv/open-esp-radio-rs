@@ -17,10 +17,9 @@ impl ProcessIdentity {
     }
 
     pub(crate) fn of(pid: u32) -> Option<Self> {
-        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
         Some(Self {
             pid,
-            start_ticks: start_ticks(&stat)?,
+            start_ticks: oer_process::proc::start_ticks(pid)?,
         })
     }
 
@@ -29,49 +28,9 @@ impl ProcessIdentity {
     }
 }
 
-/// When the live process `pid` started, in Unix milliseconds, to the
-/// resolution of the kernel's boot time (one second).
-pub fn process_started_unix_millis(pid: u32) -> Option<u64> {
-    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    let boot_seconds: u64 = std::fs::read_to_string("/proc/stat")
-        .ok()?
-        .lines()
-        .find_map(|line| line.strip_prefix("btime "))?
-        .trim()
-        .parse()
-        .ok()?;
-    let ticks_per_second = rustix::param::clock_ticks_per_second();
-    Some(boot_seconds * 1000 + start_ticks(&stat)? * 1000 / ticks_per_second)
-}
-
-/// Field 22 of `/proc/<pid>/stat`. The command name (field 2) is enclosed in
-/// parentheses and may itself contain spaces or parentheses.
-fn start_ticks(stat: &str) -> Option<u64> {
-    let (_, fields) = stat.rsplit_once(')')?;
-    // After the command name the next field is field 3 (state).
-    fields.split_whitespace().nth(22 - 3)?.parse().ok()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn this_process_started_before_now() {
-        let started = process_started_unix_millis(std::process::id()).unwrap();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-        assert!(started <= now + 1000 && now - started < 24 * 3600 * 1000);
-    }
-
-    #[test]
-    fn start_time_skips_command_names_with_spaces_and_parentheses() {
-        let stat = "42 (a (b) c) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 777 19";
-        assert_eq!(start_ticks(stat), Some(777));
-        assert_eq!(start_ticks("42 (x) S 1"), None);
-    }
 
     #[test]
     fn a_process_is_alive_until_it_exits() {

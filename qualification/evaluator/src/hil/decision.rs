@@ -225,10 +225,7 @@ impl HilEvidenceIndex {
                 .definitions
                 .get(&requirement.scenario)
                 .map(|document| {
-                    format!(
-                        "{:x}",
-                        Sha256::digest(procedure::normalize(document).to_string().as_bytes())
-                    )
+                    oer_durable::sha256_bytes(procedure::normalize(document).to_string().as_bytes())
                 }),
             observations: Vec::new(),
             unsupported: catalog

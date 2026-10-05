@@ -49,13 +49,6 @@ fn places(decisions: &[Decision]) -> Vec<(PathBuf, (&'static str, &'static str))
         .collect()
 }
 
-/// Repository root: this package lives three directories below it.
-pub fn root() -> Result<PathBuf> {
-    Ok(Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../..")
-        .canonicalize()?)
-}
-
 /// A source line of one file, relative to the repository root.
 pub type SourceLine = (PathBuf, u32);
 
@@ -103,37 +96,20 @@ pub struct LineMap {
 impl LineMap {
     /// The lines within the chip's hardware scope of every instruction in `pcs` of `elf`.
     pub fn new(elf: &[u8], pcs: &BTreeSet<u32>, root: &Path) -> Result<Self> {
-        use object::{Object, ObjectSection};
-        let file = object::File::parse(elf)?;
-        let endian = gimli::RunTimeEndian::Little;
-        let dwarf = gimli::Dwarf::load(|id| {
-            let data = file
-                .section_by_name(id.name())
-                .and_then(|section| section.data().ok())
-                .unwrap_or(&[]);
-            Ok::<_, gimli::Error>(gimli::EndianSlice::new(data, endian))
-        })?;
-        let context = addr2line::Context::from_dwarf(dwarf)?;
+        let symbolizer = oer_elf::dwarf::Symbolizer::new(elf)?;
         let root = root.canonicalize()?;
         let mut lines = BTreeMap::new();
         for pc in pcs {
             let mut located = vec![];
-            let mut frames = context
-                .find_frames(u64::from(*pc))
-                .skip_all_loads()
+            let frames = symbolizer
+                .frames(u64::from(*pc))
                 .map_err(|e| invalid(format!("debug information at {pc:#x}: {e}")))?;
-            while let Some(frame) = frames
-                .next()
-                .map_err(|e| invalid(format!("debug information at {pc:#x}: {e}")))?
-            {
-                let Some(location) = frame.location else {
-                    continue;
-                };
-                let (Some(path), Some(line)) = (location.file, location.line) else {
+            for frame in frames {
+                let (Some(path), Some(line)) = (frame.file, frame.line) else {
                     continue;
                 };
                 if let Some(file) = scopes().find_map(|scope| {
-                    Path::new(path)
+                    Path::new(&path)
                         .strip_prefix(root.join(scope))
                         .ok()
                         .map(|relative| Path::new(scope).join(relative))

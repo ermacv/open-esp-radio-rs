@@ -49,8 +49,9 @@ without this policy still require the exact `required-capabilities` list.
 Inventory sections, items and references are navigation, not reviewed claims.
 They name implementation owners as Cargo `packages` and non-code artifacts
 (documentation, register models, qualification targets, vendor profiles) as
-repository-relative `documents`. Package names must be members reported by
-`cargo metadata`, so moving files inside a package never edits a catalog; a
+repository-relative `documents`. Package names must name a package of some
+workspace of the repository model (`oer-repo`), so moving files inside a
+package never edits a catalog; a
 document inside a package directory is rejected in favour of the package.
 Source contracts keep explicit reviewed `source-paths`: their file set is part
 of the reviewed claim and of HIL property identity.

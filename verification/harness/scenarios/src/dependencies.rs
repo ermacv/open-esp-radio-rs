@@ -9,7 +9,7 @@
 //! dependency that cannot be attributed makes the scenario fall back to its
 //! probe's whole source closure, stated in the result.
 use crate::harness::{Result, invalid};
-use object::{Object, ObjectSection, ObjectSymbol, SectionKind, SymbolKind};
+use oer_elf::dwarf::{Dwarf, Symbolizer, gimli};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -27,19 +27,6 @@ pub struct Dependencies {
     pub fallback: Option<String>,
 }
 
-type Dwarf<'a> = gimli::Dwarf<gimli::EndianSlice<'a, gimli::RunTimeEndian>>;
-
-fn load_dwarf<'a>(file: &object::File<'a>) -> Result<Dwarf<'a>> {
-    let endian = gimli::RunTimeEndian::Little;
-    Ok(gimli::Dwarf::load(|id| {
-        let data = file
-            .section_by_name(id.name())
-            .and_then(|section| section.data().ok())
-            .unwrap_or(&[]);
-        Ok::<_, gimli::Error>(gimli::EndianSlice::new(data, endian))
-    })?)
-}
-
 /// `path` relative to the canonical repository `root`, when inside it.
 fn relative(path: &Path, root: &Path) -> Option<PathBuf> {
     let absolute = if path.is_absolute() {
@@ -53,7 +40,8 @@ fn relative(path: &Path, root: &Path) -> Option<PathBuf> {
 
 /// The declaration file of every data variable DWARF places at a fixed
 /// address, by that address.
-fn declarations(dwarf: &Dwarf<'_>) -> Result<BTreeMap<u64, PathBuf>> {
+fn declarations(dwarf: &Dwarf) -> Result<BTreeMap<u64, PathBuf>> {
+    use gimli::Reader as _;
     let mut files = BTreeMap::new();
     let mut units = dwarf.units();
     while let Some(header) = units.next()? {
@@ -89,14 +77,14 @@ fn declarations(dwarf: &Dwarf<'_>) -> Result<BTreeMap<u64, PathBuf>> {
                 path.push(
                     dwarf
                         .attr_string(&unit, directory)?
-                        .to_string_lossy()
+                        .to_string_lossy()?
                         .as_ref(),
                 );
             }
             path.push(
                 dwarf
                     .attr_string(&unit, file.path_name())?
-                    .to_string_lossy()
+                    .to_string_lossy()?
                     .as_ref(),
             );
             files.insert(address, path);
@@ -140,17 +128,17 @@ fn attribute(
 }
 
 /// The address ranges of the functions the image's probe catalog declares.
-fn declared_ranges(file: &object::File<'_>) -> Result<Vec<(u64, u64)>> {
+fn declared_ranges(file: &oer_elf::Elf<'_>) -> Result<Vec<(u64, u64)>> {
     let Some(section) = file.section_by_name(oer_probe_codegen::SECTION) else {
         return Ok(vec![]);
     };
-    let catalog: oer_probe_codegen::Catalog = serde_json::from_slice(section.data()?)?;
+    let catalog: oer_probe_codegen::Catalog = serde_json::from_slice(section.data)?;
     let names: BTreeSet<&str> = catalog.entries.iter().map(|e| e.symbol.as_str()).collect();
     Ok(file
         .symbols()
-        .filter(|s| s.kind() == SymbolKind::Text && s.size() > 0)
-        .filter(|s| s.name().is_ok_and(|n| names.contains(n)))
-        .map(|s| (s.address(), s.address() + s.size()))
+        .filter(|s| s.kind == oer_elf::SymbolKind::Text && s.size > 0)
+        .filter(|s| names.contains(s.name))
+        .map(|s| (s.address, s.address + s.size))
         .collect())
 }
 
@@ -174,21 +162,21 @@ pub fn of(
     root: &Path,
 ) -> Result<Dependencies> {
     let root = root.canonicalize()?;
-    let file = object::File::parse(elf)?;
-    let dwarf = load_dwarf(&file)?;
+    let file = oer_elf::Elf::parse(elf)?;
+    let dwarf = oer_elf::dwarf::load(&file)?;
     let mut result = Dependencies::default();
     let mut fallback = |reason: String| {
         if result.fallback.is_none() {
             result.fallback = Some(reason);
         }
     };
-    let context = addr2line::Context::from_dwarf(load_dwarf(&file)?)?;
+    let symbolizer = Symbolizer::new(elf)?;
     // Only the probe's own code: the executions also run the linked vendor
     // image, whose instructions are not production's.
     let text: Vec<(u64, u64)> = file
         .sections()
-        .filter(|s| s.kind() == SectionKind::Text)
-        .map(|s| (s.address(), s.address() + s.size()))
+        .filter(|s| s.executable && !s.nobits)
+        .map(|s| (s.address, s.address + s.size))
         .collect();
     let probe: Vec<u32> = executed
         .iter()
@@ -211,20 +199,12 @@ pub fn of(
         &probe,
         &root,
         |pc| {
-            let mut paths = vec![];
-            let mut frames = context
-                .find_frames(u64::from(pc))
-                .skip_all_loads()
-                .map_err(|e| invalid(format!("debug information at {pc:#x}: {e}")))?;
-            while let Some(frame) = frames
-                .next()
+            Ok(symbolizer
+                .frames(u64::from(pc))
                 .map_err(|e| invalid(format!("debug information at {pc:#x}: {e}")))?
-            {
-                if let Some(path) = frame.location.and_then(|l| l.file) {
-                    paths.push(PathBuf::from(path));
-                }
-            }
-            Ok(paths)
+                .into_iter()
+                .filter_map(|frame| frame.file.map(PathBuf::from))
+                .collect())
         },
         in_declaration,
     )?;
@@ -235,30 +215,17 @@ pub fn of(
     let declarations = declarations(&dwarf)?;
     let named: Vec<(u64, u64, String)> = file
         .symbols()
-        .filter(|s| s.kind() == SymbolKind::Data && s.size() > 0)
+        .filter(|s| s.kind == oer_elf::SymbolKind::Data && s.size > 0)
         // Compiler-generated anonymous constants carry no declaration: the
         // content digest stands for them.
-        .filter(|s| {
-            !s.name()
-                .is_ok_and(|n| n.starts_with(".L") || n.starts_with("anon."))
-        })
-        .map(|s| {
-            (
-                s.address(),
-                s.address() + s.size(),
-                s.name().unwrap_or_default().to_owned(),
-            )
-        })
+        .filter(|s| !(s.name.starts_with(".L") || s.name.starts_with("anon.")))
+        .map(|s| (s.address, s.address + s.size, s.name.to_owned()))
         .collect();
+    // Initialized data: allocated, neither code nor thread-local, with bytes.
     let data: Vec<(u64, u64, &[u8])> = file
         .sections()
-        .filter(|s| {
-            matches!(
-                s.kind(),
-                SectionKind::ReadOnlyData | SectionKind::ReadOnlyString | SectionKind::Data
-            )
-        })
-        .filter_map(|s| Some((s.address(), s.address() + s.size(), s.data().ok()?)))
+        .filter(|s| s.allocated && !s.executable && !s.tls && !s.nobits)
+        .map(|s| (s.address, s.address + s.size, s.data))
         .collect();
     let mut regions = vec![];
     for (start, end) in merge(reads) {

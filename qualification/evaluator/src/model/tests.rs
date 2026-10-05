@@ -217,39 +217,39 @@ pub(crate) fn native_shard(
     root: &Path,
     suite: &str,
     roots: &[(&str, &str, &str)],
-) -> scenario_evidence::Index {
+) -> oer_vendor_evidence::Index {
     let path = PathBuf::from("production");
     if !root.join(&path).exists() {
         fs::create_dir_all(root.join("production/src")).unwrap();
         fs::write(root.join("production/src/lib.rs"), b"production-input").unwrap();
     }
-    let index = scenario_evidence::Index {
-        schema: scenario_evidence::SCHEMA,
-        command: scenario_evidence::COMMAND.into(),
+    let index = oer_vendor_evidence::Index {
+        schema: oer_vendor_evidence::SCHEMA,
+        command: oer_vendor_evidence::BLOBRAY.into(),
         target: "test-radio".into(),
         scenario: suite.into(),
         inputs: BTreeMap::new(),
-        sources: vec![scenario_evidence::SourceDigest {
-            sha256: scenario_evidence::digest_directory(root, &path).unwrap(),
+        sources: vec![oer_vendor_evidence::SourceDigest {
+            sha256: oer_vendor_evidence::digest_directory(root, &path).unwrap(),
             path,
         }],
-        dependence: scenario_evidence::Dependence::whole_closure("test"),
+        dependence: oer_vendor_evidence::Dependence::whole_closure("test"),
         entries: roots
             .iter()
-            .map(|(suite, source, symbol)| scenario_evidence::Entry {
+            .map(|(suite, source, symbol)| oer_vendor_evidence::Entry {
                 suite: (*suite).into(),
                 source: (*source).into(),
                 symbol: (*symbol).into(),
                 production: format!("open_{symbol}"),
-                verdict: scenario_evidence::MATCH.into(),
+                verdict: oer_vendor_evidence::MATCH.into(),
                 cases: 1,
                 reviews: vec!["ab".repeat(32)],
-                coverage: Some(scenario_evidence::Coverage {
-                    blocks: scenario_evidence::Count {
+                coverage: Some(oer_vendor_evidence::Coverage {
+                    blocks: oer_vendor_evidence::Count {
                         reached: 1,
                         total: 1,
                     },
-                    directions: scenario_evidence::Count {
+                    directions: oer_vendor_evidence::Count {
                         reached: 0,
                         total: 0,
                     },
@@ -257,13 +257,13 @@ pub(crate) fn native_shard(
                     excluded: 0,
                     untriaged: 0,
                 }),
-                observation: Some(scenario_evidence::Observation {
+                observation: Some(oer_vendor_evidence::Observation {
                     executed: 1,
                     observed: 1,
                     reviewed: 0,
                     untriaged: 0,
                 }),
-                state: Some(scenario_evidence::State {
+                state: Some(oer_vendor_evidence::State {
                     written: 1,
                     compared: 1,
                     reviewed: 0,
@@ -319,7 +319,7 @@ fn native_index_supports_only_current_match_entries_of_the_referenced_suite() {
     assert!(!reloaded(root, &shard).supports(&reference));
 }
 
-fn reloaded(root: &Path, shard: &scenario_evidence::Index) -> NativeEvidence {
+fn reloaded(root: &Path, shard: &oer_vendor_evidence::Index) -> NativeEvidence {
     NativeEvidence {
         shards: vec![(shard.clone(), shard.is_current(root))],
     }
@@ -332,8 +332,8 @@ fn a_stale_shard_leaves_other_scenarios_current() {
     fs::create_dir_all(root.join("other/src")).unwrap();
     fs::write(root.join("other/src/lib.rs"), b"other-input").unwrap();
     let mut other = native_shard(root, "other", &[("other", "archive", "other_root")]);
-    other.sources = vec![scenario_evidence::SourceDigest {
-        sha256: scenario_evidence::digest_directory(root, Path::new("other")).unwrap(),
+    other.sources = vec![oer_vendor_evidence::SourceDigest {
+        sha256: oer_vendor_evidence::digest_directory(root, Path::new("other")).unwrap(),
         path: PathBuf::from("other"),
     }];
     let radio = native_shard(root, "radio", &[("radio", "archive", "set_channel")]);
@@ -344,7 +344,7 @@ fn a_stale_shard_leaves_other_scenarios_current() {
             root.join(directory).join(format!(
                 "{}.{}",
                 shard.scenario,
-                scenario_evidence::SHARD_EXTENSION
+                oer_vendor_evidence::SHARD_EXTENSION
             )),
             serde_json::to_vec(shard).unwrap(),
         )
@@ -368,12 +368,12 @@ fn a_stale_shard_leaves_other_scenarios_current() {
 fn cross_scenario_views_follow_every_shard() {
     let fixture = fixture_root("views");
     let root = &fixture.0;
-    let location = |function: &str| scenario_evidence::Location {
+    let location = |function: &str| oer_vendor_evidence::Location {
         function: function.into(),
         offset: 4,
-        kind: scenario_evidence::LocationKind::Block,
+        kind: oer_vendor_evidence::LocationKind::Block,
     };
-    let line = |line| scenario_evidence::SourceLine {
+    let line = |line| oer_vendor_evidence::SourceLine {
         path: PathBuf::from("production/src/lib.rs"),
         line,
     };
@@ -384,7 +384,7 @@ fn cross_scenario_views_follow_every_shard() {
     let mut second = native_shard(root, "second", &[]);
     second.functions = vec!["shared".into()];
     second.observed = vec![line(2)];
-    let evidence = scenario_evidence::Evidence {
+    let evidence = oer_vendor_evidence::Evidence {
         shards: vec![(first.clone(), true), (second.clone(), true)],
     };
     // The second scenario's closure covers the shared location.
@@ -392,7 +392,7 @@ fn cross_scenario_views_follow_every_shard() {
     // The second scenario observes line 2.
     assert_eq!(evidence.unobserved(), vec![line(1)]);
     second.untriaged = vec![location("shared")];
-    let evidence = scenario_evidence::Evidence {
+    let evidence = oer_vendor_evidence::Evidence {
         shards: vec![(first, true), (second, true)],
     };
     assert_eq!(
@@ -414,7 +414,7 @@ fn corrupt_unsupported_and_non_match_native_indexes_fail_closed() {
     fs::write(root.join(&path), "{not-json").unwrap();
     assert!(NativeEvidence::load(root, directory, "test-radio").is_err());
     let valid = native_shard(root, "radio", &[("radio", "archive", "set_channel")]);
-    let write = |index: &scenario_evidence::Index| {
+    let write = |index: &oer_vendor_evidence::Index| {
         fs::write(root.join(&path), serde_json::to_vec(index).unwrap()).unwrap();
     };
     write(&valid);
@@ -472,7 +472,7 @@ fn corrupt_unsupported_and_non_match_native_indexes_fail_closed() {
 fn native_index_coverage_must_account_for_every_uncovered_location() {
     let fixture = fixture_root("coverage");
     let evidence = native_shard(&fixture.0, "radio", &[("radio", "archive", "set_channel")]);
-    let rejected = |mutate: &dyn Fn(&mut scenario_evidence::Index)| {
+    let rejected = |mutate: &dyn Fn(&mut oer_vendor_evidence::Index)| {
         let mut index = evidence.clone();
         mutate(&mut index);
         index.validate("test-radio").is_err()
@@ -496,10 +496,10 @@ fn native_index_coverage_must_account_for_every_uncovered_location() {
     covered.entries[0].coverage.as_mut().unwrap().blocks.total = 2;
     covered.entries[0].coverage.as_mut().unwrap().untriaged = 1;
     covered.validate("test-radio").unwrap();
-    let location = |offset| scenario_evidence::Location {
+    let location = |offset| oer_vendor_evidence::Location {
         function: "set_channel".into(),
         offset,
-        kind: scenario_evidence::LocationKind::Block,
+        kind: oer_vendor_evidence::LocationKind::Block,
     };
     let mut listed = evidence.clone();
     listed.entries[0].coverage.as_mut().unwrap().blocks.total = 2;
@@ -518,10 +518,10 @@ fn native_index_coverage_must_account_for_every_uncovered_location() {
     let mut open = evidence.clone();
     open.entries[0].coverage.as_mut().unwrap().open = 1;
     open.entries[0].coverage.as_mut().unwrap().untriaged = 1;
-    open.untriaged = vec![scenario_evidence::Location {
+    open.untriaged = vec![oer_vendor_evidence::Location {
         function: "set_channel".into(),
         offset: 8,
-        kind: scenario_evidence::LocationKind::Followed,
+        kind: oer_vendor_evidence::LocationKind::Followed,
     }];
     open.validate("test-radio").unwrap();
 }
@@ -534,7 +534,7 @@ fn native_index_state_must_account_for_every_written_byte() {
     let mut index = evidence.clone();
     index.entries[0].state.as_mut().unwrap().written = 2;
     assert!(index.validate("test-radio").is_err());
-    let range = |offset, length| scenario_evidence::StateRange {
+    let range = |offset, length| oer_vendor_evidence::StateRange {
         symbol: "phy_param".into(),
         offset,
         length,
@@ -559,7 +559,7 @@ fn native_index_state_must_account_for_every_written_byte() {
 fn native_index_observation_must_account_for_every_executed_line() {
     let fixture = fixture_root("observation");
     let evidence = native_shard(&fixture.0, "radio", &[("radio", "archive", "set_channel")]);
-    let rejected = |mutate: &dyn Fn(&mut scenario_evidence::Index)| {
+    let rejected = |mutate: &dyn Fn(&mut oer_vendor_evidence::Index)| {
         let mut index = evidence.clone();
         mutate(&mut index);
         index.validate("test-radio").is_err()
@@ -570,7 +570,7 @@ fn native_index_observation_must_account_for_every_executed_line() {
         .as_mut()
         .unwrap()
         .executed = 2));
-    let line = |line| scenario_evidence::SourceLine {
+    let line = |line| oer_vendor_evidence::SourceLine {
         path: "production/src/lib.rs".into(),
         line,
     };
@@ -582,7 +582,7 @@ fn native_index_observation_must_account_for_every_executed_line() {
     // Listed lines are relative, ascending and unique.
     listed.unobserved = vec![line(3), line(3)];
     assert!(listed.validate("test-radio").is_err());
-    listed.unobserved = vec![scenario_evidence::SourceLine {
+    listed.unobserved = vec![oer_vendor_evidence::SourceLine {
         path: "/production/src/lib.rs".into(),
         line: 3,
     }];
@@ -598,7 +598,7 @@ fn source_compiled_entries_carry_no_blobray_metrics() {
     shard.validate("test-radio").unwrap();
     let text = serde_json::to_string(&shard).unwrap();
     assert!(!text.contains("\"coverage\""));
-    let reloaded: scenario_evidence::Index = serde_json::from_str(&text).unwrap();
+    let reloaded: oer_vendor_evidence::Index = serde_json::from_str(&text).unwrap();
     assert_eq!(reloaded, shard);
 }
 

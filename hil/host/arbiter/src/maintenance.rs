@@ -144,7 +144,7 @@ impl Arbiter {
             mac: mac.to_owned(),
             owner: QUARANTINE_OWNER.to_owned(),
             reason,
-            since_unix: crate::unix_now(),
+            since_unix: oer_durable::unix_seconds(),
             kind: ServiceKind::Quarantine,
             trigger: Some(trigger),
             evidence,
@@ -296,10 +296,7 @@ fn read(path: &std::path::Path) -> crate::Result<Boards> {
 }
 
 fn write(path: &std::path::Path, boards: &Boards) -> crate::Result<()> {
-    let temporary = path.with_extension("json.tmp");
-    fs::write(&temporary, serde_json::to_vec_pretty(boards)?)?;
-    fs::rename(&temporary, path)?;
-    Ok(())
+    oer_durable::atomic_write(path, &serde_json::to_vec_pretty(boards)?)
 }
 
 #[cfg(test)]

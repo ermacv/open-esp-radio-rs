@@ -30,9 +30,8 @@ mod linux {
 
     use super::{InstallResult, Provider, Result};
     use crate::{
-        Artifact, BUNDLE_SCHEMA, Bundle, InstallState, RECEIPT_SCHEMA,
-        model::validate_adapters,
-        prepare::{sha256, validate_operator},
+        Artifact, BUNDLE_SCHEMA, Bundle, InstallState, RECEIPT_SCHEMA, model::validate_adapters,
+        prepare::validate_operator,
     };
 
     const JOURNAL_SCHEMA: u32 = 1;
@@ -343,7 +342,7 @@ mod linux {
         };
         let previous_generation = previous_current.clone();
         let policy = policy_bytes(&bundle)?;
-        let policy_sha256 = sha256(&policy);
+        let policy_sha256 = oer_durable::sha256_bytes(&policy);
         let mut base = InstallResult {
             schema: RECEIPT_SCHEMA,
             provider,
@@ -726,7 +725,7 @@ mod linux {
         }
         let mut identity = bundle.clone();
         identity.generation.clear();
-        if sha256(&serde_json::to_vec(&identity)?) != bundle.generation {
+        if oer_durable::sha256_bytes(&serde_json::to_vec(&identity)?) != bundle.generation {
             return Err("prepared bundle generation does not match its manifest".into());
         }
         Ok(())
@@ -825,7 +824,9 @@ mod linux {
             let path = generation.join(&artifact.file_name);
             require_secure_file(layout, &path, artifact.mode)?;
             let bytes = fs::read(&path)?;
-            if bytes.len() as u64 != artifact.size_bytes || sha256(&bytes) != artifact.sha256 {
+            if bytes.len() as u64 != artifact.size_bytes
+                || oer_durable::sha256_bytes(&bytes) != artifact.sha256
+            {
                 return Err(
                     format!("installed artifact identity mismatch: {}", path.display()).into(),
                 );
@@ -1052,7 +1053,7 @@ mod linux {
                     || metadata.uid() != layout.expected_uid
                     || metadata.gid() != layout.expected_gid
                     || metadata.mode() & 0o777 != artifact.mode
-                    || sha256(&fs::read(&target)?) != artifact.sha256
+                    || oer_durable::sha256_bytes(&fs::read(&target)?) != artifact.sha256
                 {
                     return Err(format!(
                         "stable fixture launcher differs from the committed artifact: {}",
@@ -1330,7 +1331,7 @@ mod linux {
         recovery_error: Option<String>,
     ) -> InstallResult {
         let policy_sha256 = policy_bytes(&journal.bundle)
-            .map(|bytes| sha256(&bytes))
+            .map(|bytes| oer_durable::sha256_bytes(&bytes))
             .unwrap_or_default();
         InstallResult {
             schema: RECEIPT_SCHEMA,

@@ -10,14 +10,21 @@ publish = false
 description = "Typed ESP32-S31 vendor-comparison scenarios driven through the Blobray CLI"
 
 [dependencies]
+oer-elf = { path = "../../../tools/elf" }
+oer-durable = { path = "../../../tools/durable" }
+oer-process = { path = "../../../tools/process" }
+oer-vendor-evidence = { path = "../../../verification/evidence" }
 oer-riscv-model = { path = "../../../tools/riscv/model" }
 blobray-application = { path = "../../../tools/blobray/crates/application" }
 blobray-domain = { path = "../../../tools/blobray/crates/domain" }
 oer-vendor-scenario-engine = { path = "../../harness/scenarios" }
+oer-esp32s31-phy-relation = { path = "../phy-relation" }
 clap = { version = "=4.5.48", features = ["derive"] }
-object = { version = "=0.39.1", default-features = false, features = ["elf", "read", "std"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 toml = "=1.1.4"
+
+[dev-dependencies]
+oer-vendor-artifacts = { path = "../../../tools/vendor-artifacts" }
 
 [lints]
 workspace = true
@@ -26,3 +33,4 @@ workspace = true
 layer = "verification"
 evidence = "verdict"
 platform = "host"
+host-layer = "verification"

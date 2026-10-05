@@ -56,7 +56,7 @@ where the reason is `invalid`, `timeout` or the HCI status as
 
 ## Host driver
 
-`hil_bluetooth::fixture::dtm_peer::DtmPeer` drives this protocol from a
+`oer_hil_family_bluetooth::fixture::dtm_peer::DtmPeer` drives this protocol from a
 scenario: it takes the running peer over with `SYNC`, checks the protocol
 version, refuses arguments outside the table above before sending them, and
 returns the `@END` packet count. A scenario that uses the peer names

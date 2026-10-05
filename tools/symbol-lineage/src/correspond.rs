@@ -32,7 +32,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use serde::Serialize;
 
 use crate::archive::Revision;
-use crate::body::similarity_ppm;
+use oer_vendor_provenance::fingerprint::similarity_ppm;
 
 /// Candidates kept after the shingle prefilter.
 const PREFILTER_CANDIDATES: usize = 6;
@@ -146,17 +146,14 @@ impl<'a> State<'a> {
     }
 
     fn insert(&mut self, left: usize, right: usize, evidence: Evidence) {
-        let (left_body, right_body) = (
-            &self.left.functions[left].body,
-            &self.right.functions[right].body,
-        );
-        let identical = left_body.fingerprint == right_body.fingerprint;
+        let (left_body, right_body) = (&self.left.functions[left], &self.right.functions[right]);
+        let identical = left_body.code == right_body.code;
         let similarity_ppm = match evidence {
             Evidence::Similar { ppm }
             | Evidence::Dominant { ppm, .. }
             | Evidence::Neighbourhood { ppm, .. } => ppm,
             _ if identical => 1_000_000,
-            _ => similarity_ppm(&left_body.parcels, &right_body.parcels),
+            _ => similarity_ppm(&left_body.tokens, &right_body.tokens),
         };
         self.pairs.insert(
             left,
@@ -191,24 +188,24 @@ impl<'a> State<'a> {
     }
 
     fn pair_exact_bodies(&mut self) {
-        let mut left_bodies: HashMap<[u8; 32], Vec<usize>> = HashMap::new();
+        let mut left_bodies: HashMap<&str, Vec<usize>> = HashMap::new();
         for index in self.unpaired_left() {
             left_bodies
-                .entry(self.left.functions[index].body.fingerprint)
+                .entry(self.left.functions[index].code.as_str())
                 .or_default()
                 .push(index);
         }
-        let mut right_bodies: HashMap<[u8; 32], Vec<usize>> = HashMap::new();
+        let mut right_bodies: HashMap<&str, Vec<usize>> = HashMap::new();
         for index in self.unpaired_right() {
             right_bodies
-                .entry(self.right.functions[index].body.fingerprint)
+                .entry(self.right.functions[index].code.as_str())
                 .or_default()
                 .push(index);
         }
         for (fingerprint, lefts) in left_bodies {
             if let (&[left], Some(&[right])) = (
                 lefts.as_slice(),
-                right_bodies.get(&fingerprint).map(Vec::as_slice),
+                right_bodies.get(fingerprint).map(Vec::as_slice),
             ) {
                 self.insert(left, right, Evidence::ExactBody);
             }
@@ -222,8 +219,8 @@ impl<'a> State<'a> {
             let mut votes: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
             let mut voters: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
             for pair in self.pairs.values() {
-                let left_calls = &self.left.functions[pair.left].body.calls;
-                let right_calls = &self.right.functions[pair.right].body.calls;
+                let left_calls = &self.left.functions[pair.left].calls;
+                let right_calls = &self.right.functions[pair.right].calls;
                 for (left_position, right_position) in
                     self.corresponding_calls(left_calls, right_calls)
                 {
@@ -255,8 +252,8 @@ impl<'a> State<'a> {
             let mut progressed = false;
             for (left, right) in accepted {
                 let score = similarity_ppm(
-                    &self.left.functions[left].body.parcels,
-                    &self.right.functions[right].body.parcels,
+                    &self.left.functions[left].tokens,
+                    &self.right.functions[right].tokens,
                 );
                 if score < policy.call_graph_minimum_ppm {
                     rejected.insert((left, right));
@@ -370,25 +367,24 @@ impl<'a> State<'a> {
         let rights: Vec<usize> = self.unpaired_right().collect();
         let right_shingles: Vec<HashSet<u64>> = rights
             .iter()
-            .map(|index| self.right.functions[*index].body.shingles())
+            .map(|index| self.right.functions[*index].shingles())
             .collect();
         // Best and second-best score per function, in both directions.
         let mut best_right: HashMap<usize, (usize, u32, u32)> = HashMap::new();
         let mut best_left: HashMap<usize, (usize, u32, u32)> = HashMap::new();
         for left in lefts {
-            let body = &self.left.functions[left].body;
+            let body = &self.left.functions[left];
             let shingles = body.shingles();
             let mut candidates: Vec<(u64, usize)> = rights
                 .iter()
                 .zip(&right_shingles)
-                .filter(|(right, _)| comparable(body.size, self.right.functions[**right].body.size))
+                .filter(|(right, _)| comparable(body.size, self.right.functions[**right].size))
                 .map(|(right, other)| (jaccard_ppm(&shingles, other), *right))
                 .collect();
             candidates.sort_by(|a, b| b.cmp(a));
             candidates.truncate(PREFILTER_CANDIDATES);
             for (_, right) in candidates {
-                let score =
-                    similarity_ppm(&body.parcels, &self.right.functions[right].body.parcels);
+                let score = similarity_ppm(&body.tokens, &self.right.functions[right].tokens);
                 record(&mut best_right, left, right, score);
                 record(&mut best_left, right, left, score);
             }
@@ -491,7 +487,7 @@ impl Calls {
         let mut callees = vec![BTreeSet::new(); count];
         let mut callers = vec![BTreeSet::new(); count];
         for (caller, function) in revision.functions.iter().enumerate() {
-            for callee in &function.body.calls {
+            for callee in &function.calls {
                 if let Some(&callee) = names.get(callee.as_str()) {
                     callees[caller].insert(callee);
                     callers[callee].insert(caller);
@@ -542,12 +538,12 @@ fn best_expected(
     other: &Revision,
     policy: Policy,
 ) -> Option<(usize, u32, u32)> {
-    let body = &this.functions[index].body;
+    let body = &this.functions[index];
     let mut scored: Vec<(u32, u32, usize)> = candidates
         .into_iter()
-        .filter(|(candidate, _)| comparable(body.size, other.functions[*candidate].body.size))
+        .filter(|(candidate, _)| comparable(body.size, other.functions[*candidate].size))
         .map(|(candidate, support)| {
-            let ppm = similarity_ppm(&body.parcels, &other.functions[candidate].body.parcels);
+            let ppm = similarity_ppm(&body.tokens, &other.functions[candidate].tokens);
             (support, ppm, candidate)
         })
         .filter(|(_, ppm, _)| *ppm >= policy.neighbourhood_minimum_ppm)

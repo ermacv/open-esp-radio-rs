@@ -1,12 +1,9 @@
 //! The relocations a link kept with `--emit-relocs`, each checked against
 //! the bytes it describes: what the toolchain knows about a jump table, read
 //! back instead of reconstructed from machine code.
-use object::{Object, ObjectSection, ObjectSymbol, RelocationFlags, RelocationTarget};
+use oer_elf::rv32::{self, Role};
 use oer_riscv_model::{Error, ErrorCode, Result};
 use std::collections::BTreeMap;
-
-/// `R_RISCV_32`: a word that holds an address.
-const R_RISCV_32: u32 = 1;
 
 /// The address words of an image's allocated data, by address.
 pub(crate) struct Relocations {
@@ -20,45 +17,29 @@ impl Relocations {
     /// Read the relocations `elf` kept; none when it kept none.
     pub(crate) fn read(elf: &[u8]) -> Result<Self> {
         let invalid = |message: String| Error::new(ErrorCode::Integrity, message);
-        let file = object::File::parse(elf).map_err(|_| invalid("invalid ELF".into()))?;
+        let file = oer_elf::Elf::parse(elf).map_err(|_| invalid("invalid ELF".into()))?;
         let mut words = BTreeMap::new();
         for section in file.sections() {
-            let Ok(data) = section.data() else { continue };
-            let object::SectionFlags::Elf { sh_flags } = section.flags() else {
-                continue;
-            };
-            let allocated = sh_flags & u64::from(object::elf::SHF_ALLOC) != 0;
-            let code = sh_flags & u64::from(object::elf::SHF_EXECINSTR) != 0;
-            if !allocated || code || data.is_empty() {
+            if !section.allocated || section.executable || section.data.is_empty() {
                 continue;
             }
-            for (offset, relocation) in section.relocations() {
-                let RelocationFlags::Elf { r_type: R_RISCV_32 } = relocation.flags() else {
+            let relocations = file
+                .relocations(section.index)
+                .map_err(|error| invalid(error.to_string()))?;
+            for relocation in relocations {
+                if rv32::kind(relocation.r_type).role != Role::Word {
                     continue;
-                };
-                let base = match relocation.target() {
-                    RelocationTarget::Symbol(index) => file
-                        .symbol_by_index(index)
-                        .map_err(|_| invalid("relocation to a missing symbol".into()))?
-                        .address(),
-                    RelocationTarget::Section(index) => file
-                        .section_by_index(index)
-                        .map_err(|_| invalid("relocation to a missing section".into()))?
-                        .address(),
-                    // No symbol: the addend is the address.
-                    RelocationTarget::Absolute => 0,
-                    _ => return Err(invalid("relocation without a target".into())),
-                };
-                let target = u32::try_from(base as i64 + relocation.addend())
+                }
+                let target = file
+                    .target_address(&relocation)
+                    .map_err(|error| invalid(error.to_string()))?;
+                let target = u32::try_from(target)
                     .map_err(|_| invalid("relocation target beyond RV32".into()))?;
-                let address =
-                    u32::try_from(offset).map_err(|_| invalid("relocation beyond RV32".into()))?;
-                let at = usize::try_from(offset - section.address())
-                    .map_err(|_| invalid("relocation outside its section".into()))?;
-                let word = data.get(at..at + 4).ok_or_else(|| {
+                let address = u32::try_from(relocation.at)
+                    .map_err(|_| invalid("relocation beyond RV32".into()))?;
+                let held = section.word(relocation.at).ok_or_else(|| {
                     invalid(format!("relocation at {address:#010x} outside its section"))
                 })?;
-                let held = u32::from_le_bytes([word[0], word[1], word[2], word[3]]);
                 if held != target {
                     return Err(invalid(format!(
                         "relocation at {address:#010x} names {target:#010x}, the word holds {held:#010x}"
@@ -70,8 +51,8 @@ impl Relocations {
         // Every symbol address of each section, to find where a table ends.
         let mut addresses: BTreeMap<usize, Vec<u64>> = BTreeMap::new();
         for symbol in file.symbols() {
-            if let Some(index) = symbol.section_index() {
-                addresses.entry(index.0).or_default().push(symbol.address());
+            if let Some(index) = symbol.section {
+                addresses.entry(index).or_default().push(symbol.address);
             }
         }
         for list in addresses.values_mut() {
@@ -80,22 +61,21 @@ impl Relocations {
         }
         let mut tables = BTreeMap::new();
         for symbol in file.symbols() {
-            let Ok(name) = symbol.name() else { continue };
-            if !name.starts_with(".LJTI") {
+            if !symbol.name.starts_with(".LJTI") {
                 continue;
             }
-            let start = symbol.address();
-            let Some(index) = symbol.section_index() else {
+            let start = symbol.address;
+            let Some(index) = symbol.section else {
                 continue;
             };
-            let Ok(section) = file.section_by_index(index) else {
+            let Ok(section) = file.section(index) else {
                 continue;
             };
-            let list = &addresses[&index.0];
+            let list = &addresses[&index];
             let next = list
                 .get(list.partition_point(|&address| address <= start))
                 .copied()
-                .unwrap_or(section.address() + section.size());
+                .unwrap_or(section.address + section.size);
             let (Ok(start), Ok(next)) = (u32::try_from(start), u32::try_from(next)) else {
                 continue;
             };
@@ -133,37 +113,29 @@ impl Relocations {
 }
 
 /// Every address an allocated section of `elf` takes: a relocation's target
-/// other than a call, a jump or a branch.
+/// other than a call, a jump, a branch or a linker hint.
 pub fn taken_addresses(elf: &[u8]) -> Result<std::collections::BTreeSet<u32>> {
-    // R_RISCV_BRANCH, _JAL, _CALL, _CALL_PLT, _RVC_BRANCH, _RVC_JUMP and
-    // _RELAX, which only marks the pair before it.
-    const TRANSFERS: [u32; 7] = [16, 17, 18, 19, 44, 45, 51];
-    let invalid = |message: &str| Error::new(ErrorCode::Integrity, message.to_owned());
-    let file = object::File::parse(elf).map_err(|_| invalid("invalid ELF"))?;
+    let invalid = |message: String| Error::new(ErrorCode::Integrity, message);
+    let file = oer_elf::Elf::parse(elf).map_err(|_| invalid("invalid ELF".into()))?;
     let mut taken = std::collections::BTreeSet::new();
-    for section in file.sections() {
-        let object::SectionFlags::Elf { sh_flags } = section.flags() else {
-            continue;
-        };
-        if sh_flags & u64::from(object::elf::SHF_ALLOC) == 0 {
-            continue;
-        }
-        for (_, relocation) in section.relocations() {
-            let RelocationFlags::Elf { r_type } = relocation.flags() else {
-                continue;
-            };
-            if TRANSFERS.contains(&r_type) {
+    for section in file.sections().filter(|section| section.allocated) {
+        let relocations = file
+            .relocations(section.index)
+            .map_err(|error| invalid(error.to_string()))?;
+        for relocation in relocations {
+            if rv32::transfers(relocation.r_type)
+                || rv32::kind(relocation.r_type).role == Role::Hint
+                || matches!(
+                    relocation.target,
+                    oer_elf::Target::Section(_) | oer_elf::Target::Other
+                )
+            {
                 continue;
             }
-            let base = match relocation.target() {
-                RelocationTarget::Symbol(index) => file
-                    .symbol_by_index(index)
-                    .map_err(|_| invalid("relocation to a missing symbol"))?
-                    .address(),
-                RelocationTarget::Absolute => 0,
-                _ => continue,
-            };
-            if let Ok(address) = u32::try_from(base as i64 + relocation.addend()) {
+            let target = file
+                .target_address(&relocation)
+                .map_err(|error| invalid(error.to_string()))?;
+            if let Ok(address) = u32::try_from(target) {
                 taken.insert(address & !1);
             }
         }

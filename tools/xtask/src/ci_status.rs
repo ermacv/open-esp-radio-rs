@@ -1,4 +1,6 @@
-//! The state of GitHub CI on `main`, as `check changed` and `push` report it.
+//! The state of GitHub CI on `main`, as `check changed`, `push` and `cargo
+//! xtask ci-status` report it; the session start hook runs `ci-status`
+//! through the built `oer-xtask` executable, so this is the one reader.
 //!
 //! CI verifies `main` after every push: the source checks, both final HIL
 //! images with their audits, and every image class once a night. A failure
@@ -8,8 +10,8 @@
 
 use std::{collections::BTreeSet, path::Path};
 
-use crate::Context;
 use oer_process as process;
+use oer_process::Checkout;
 use serde::Deserialize;
 
 /// A workflow run as `gh run list --json` reports it.
@@ -139,11 +141,11 @@ struct Job {
 /// One line per workflow whose newest finished run on `main` failed, naming
 /// the failed jobs; empty when CI is green. An error names why `gh` could
 /// not tell.
-pub fn report(ctx: &Context) -> Result<Vec<String>, String> {
+pub fn report(ctx: &Checkout) -> Result<Vec<String>, String> {
     report_with(ctx, "gh")
 }
 
-fn report_with(ctx: &Context, gh: &str) -> Result<Vec<String>, String> {
+fn report_with(ctx: &Checkout, gh: &str) -> Result<Vec<String>, String> {
     let workflows =
         workflows(&ctx.root).map_err(|error| format!("cannot read .github/workflows: {error}"))?;
     let output = process::capture(ctx.command(gh).args([
@@ -207,8 +209,9 @@ fn report_with(ctx: &Context, gh: &str) -> Result<Vec<String>, String> {
 
 /// Prints [`report`]'s lines, or one warning line when CI's state is
 /// unknown, prefixed with `label`.
-pub fn print(ctx: &Context, label: &str) {
+pub fn print(ctx: &Checkout, label: &str) {
     match report(ctx) {
+        Ok(failures) if failures.is_empty() => println!("{label}: CI on main is green"),
         Ok(failures) => {
             for failure in failures {
                 println!("{label}: {failure}");
@@ -305,7 +308,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(directory.path().join("Cargo.toml"), "[workspace]\n").unwrap();
         std::fs::create_dir_all(directory.path().join(".github/workflows")).unwrap();
-        let ctx = Context::new(directory.path()).unwrap();
+        let ctx = Checkout::new(directory.path()).unwrap();
         assert_eq!(
             report_with(&ctx, "oer-gh-that-does-not-exist"),
             Err("`gh` is not installed".to_owned())

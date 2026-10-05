@@ -4,7 +4,6 @@
 //! behavior. Generated files live in Cargo's output directory. The catalog
 //! describes declared Rust boundary types; it does not infer private layouts.
 
-use object::{Object, ObjectSection, ObjectSegment, ObjectSymbol};
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 use serde::{Deserialize, Serialize};
@@ -321,22 +320,13 @@ pub fn build(root: &Path, image: &str, out_dir: &Path) -> Result<()> {
 /// undefined, duplicate or non-executable entries, including malformed catalogs.
 /// Code folding may give different symbols the same address; that is valid.
 pub fn validate_elf(bytes: &[u8], image: &str) -> Result<Catalog> {
-    let file = object::File::parse(bytes)?;
-    if file.format() != object::BinaryFormat::Elf
-        || file.kind() != object::ObjectKind::Executable
-        || file.architecture() != object::Architecture::Riscv32
-        || !file.is_little_endian()
-    {
-        return Err("probe image must be a linked little-endian RV32 ELF".into());
-    }
-    let sections: Vec<_> = file
-        .sections()
-        .filter(|s| s.name().ok() == Some(SECTION))
-        .collect();
+    let file = oer_elf::Elf::executable(bytes)
+        .map_err(|_| "probe image must be a linked little-endian RV32 ELF")?;
+    let sections: Vec<_> = file.sections().filter(|s| s.name == SECTION).collect();
     if sections.len() != 1 {
         return Err("expected one probe catalog section".into());
     }
-    let catalog: Catalog = serde_json::from_slice(sections[0].data()?)?;
+    let catalog: Catalog = serde_json::from_slice(sections[0].data)?;
     validate_catalog(&catalog)?;
     if catalog.image != image {
         return Err("probe catalog image mismatch".into());
@@ -344,24 +334,24 @@ pub fn validate_elf(bytes: &[u8], image: &str) -> Result<Catalog> {
     for entry in &catalog.entries {
         let symbols: Vec<_> = file
             .symbols()
-            .filter(|s| s.name().ok() == Some(entry.symbol.as_str()) && s.is_definition())
+            .filter(|s| s.name == entry.symbol.as_str() && s.defined)
             .collect();
         if symbols.len() != 1 {
             return Err(format!("missing or ambiguous entry {}", entry.symbol).into());
         }
         let symbol = &symbols[0];
-        let section =
-            file.section_by_index(symbol.section_index().ok_or("entry has no section")?)?;
+        let section = file.section(symbol.section.ok_or("entry has no section")?)?;
         let executable_mapping = file.segments().any(|segment| {
-            matches!(segment.flags(), object::SegmentFlags::Elf { p_flags } if p_flags & object::elf::PF_X != 0)
-                && symbol.address() >= segment.address()
-                && symbol.address() < segment.address().saturating_add(segment.file_range().1)
+            segment.executable
+                && symbol.address >= segment.address
+                && symbol.address < segment.address.saturating_add(segment.data.len() as u64)
         });
         if !executable_mapping
-            || symbol.kind() != object::SymbolKind::Text
-            || section.kind() != object::SectionKind::Text
-            || symbol.address() < section.address()
-            || symbol.address() >= section.address().saturating_add(section.size())
+            || symbol.kind != oer_elf::SymbolKind::Text
+            || !section.executable
+            || section.nobits
+            || symbol.address < section.address
+            || symbol.address >= section.address.saturating_add(section.size)
         {
             return Err(format!("entry is not executable: {}", entry.symbol).into());
         }

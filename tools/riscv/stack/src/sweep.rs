@@ -297,7 +297,7 @@ fn merges(bytes: &[u8], start: u32, end: u32) -> BTreeSet<u32> {
 }
 
 /// The `entries` words of the unwritable table at `base`, if all are there.
-fn table_words(file: &object::File<'_>, base: u32, entries: u32) -> Option<Vec<u32>> {
+fn table_words(file: &oer_elf::Elf<'_>, base: u32, entries: u32) -> Option<Vec<u32>> {
     (0..entries)
         .map(|i| read_only_word(file, base.wrapping_add(4 * i)))
         .collect()
@@ -404,7 +404,7 @@ pub(crate) fn transfers(
     relocations: &Relocations,
 ) -> Result<Swept> {
     let file =
-        object::File::parse(elf).map_err(|_| Error::new(ErrorCode::Integrity, "invalid ELF"))?;
+        oer_elf::Elf::parse(elf).map_err(|_| Error::new(ErrorCode::Integrity, "invalid ELF"))?;
     let bytes = function_bytes(&file, function)?;
     let (start, end) = (function.address, function.address + function.size);
     let outside = |target: u32| target < start || target >= end;

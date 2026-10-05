@@ -13,12 +13,12 @@ description = "HIL scenarios: the family-independent envelope, catalog, campaign
 test-support = []
 
 [dependencies]
+oer-durable = { path = "../../../tools/durable" }
 oer-hil-image-class = { path = "../image-class" }
 oer-hil-protocol = { path = "../../protocol", features = ["registry"] }
 oer-hil-schema = { path = "../../schema" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-sha2 = "0.10"
 toml = "1.1"
 
 [lints]
@@ -27,4 +27,5 @@ workspace = true
 [package.metadata.open-radio]
 layer = "hil"
 platform = "host"
+host-layer = "execution"
 hil = "observation"

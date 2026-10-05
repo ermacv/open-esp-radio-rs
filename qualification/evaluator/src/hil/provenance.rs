@@ -3,60 +3,28 @@
 //! Diagnostic overrides remain valid run bundles, but a clean main checkout alone
 //! does not establish the identity of their firmware inputs.
 
-use super::snapshot::Source as SourceMaterial;
 use super::*;
+use oer_hil_run_bundle::build::{
+    BUILD_PROVENANCE_SCHEMA, BuildProvenance, BuildSubjectRole, SourceMaterial, SourceRebuildStatus,
+};
 
-#[derive(Deserialize)]
-struct BuildProvenance {
-    schema: u16,
-    build_id: String,
-    build_type: String,
-    source_reconstructable: bool,
-    sources: Vec<SourceMaterial>,
-    files: Vec<FileMaterial>,
-    parameters: Option<serde_json::Value>,
-    #[serde(default)]
-    subjects: Vec<BuildSubject>,
-}
+/// The build type of a HIL firmware record this evaluator can bind.
+const BUILD_TYPE: &str = "open-esp-radio-hil-firmware/v1";
 
-#[derive(Deserialize)]
-struct BuildSubject {
-    role: String,
-    size_bytes: u64,
-    sha256: String,
-}
-
-fn application_bound(provenance: &BuildProvenance, artifact: &FirmwareArtifactProvenance) -> bool {
-    let Some(image) = artifact.image.as_deref() else {
-        return false;
-    };
-    if provenance
-        .parameters
-        .as_ref()
-        .and_then(|p| p.get("image"))
-        .and_then(serde_json::Value::as_str)
-        != Some(image)
-    {
+fn application_bound(provenance: &BuildProvenance, artifact: &FirmwareArtifact) -> bool {
+    if provenance.parameters.image != artifact.image {
         return false;
     }
     let applications = provenance
         .subjects
         .iter()
-        .filter(|s| s.role == "application")
+        .filter(|s| s.role == BuildSubjectRole::Application)
         .collect::<Vec<_>>();
     let [application] = applications.as_slice() else {
         return false;
     };
-    artifact.application_path.is_some()
-        && artifact.application_size_bytes == Some(application.size_bytes)
-        && artifact.application_sha256.as_ref() == Some(&application.sha256)
-}
-
-#[derive(Deserialize)]
-struct FileMaterial {
-    name: String,
-    path: PathBuf,
-    sha256: String,
+    artifact.application_size_bytes == application.size_bytes
+        && artifact.application_sha256 == application.sha256
 }
 
 #[derive(Deserialize)]
@@ -97,8 +65,8 @@ pub(super) fn current_sources(root: &Path, run: &Path, manifest: &RunManifest) -
             return Err("HIL build provenance path must be contained in the run bundle".into());
         }
         let provenance: BuildProvenance = read_json(&run.join(path))?;
-        if provenance.schema != 1
-            || provenance.build_type != "open-esp-radio-hil-firmware/v1"
+        if provenance.schema != BUILD_PROVENANCE_SCHEMA
+            || provenance.build_type != BUILD_TYPE
             || &provenance.build_id != build_id
             || !valid_sha256(build_id)
         {
@@ -106,13 +74,7 @@ pub(super) fn current_sources(root: &Path, run: &Path, manifest: &RunManifest) -
         }
         // An image built with other runtime features than its class's is an
         // experiment's: it is not the class's image and never qualifies.
-        if !provenance.source_reconstructable
-            || provenance
-                .parameters
-                .as_ref()
-                .and_then(|parameters| parameters.get("features"))
-                .is_some()
-        {
+        if !provenance.source_reconstructable || !provenance.parameters.features.is_empty() {
             return Ok(Binding::Unavailable);
         }
         let Some(primary) = provenance.sources.first() else {
@@ -128,10 +90,11 @@ pub(super) fn current_sources(root: &Path, run: &Path, manifest: &RunManifest) -
         for source in &provenance.sources {
             if !names.insert(&source.name)
                 || (source.dirty
-                    && (source.rebuild_status != "source-snapshot" || source.name != "repository"))
+                    && (source.rebuild_status != SourceRebuildStatus::SourceSnapshot
+                        || source.name != "repository"))
                 || !matches!(
-                    source.rebuild_status.as_str(),
-                    "clean-commit" | "source-snapshot"
+                    source.rebuild_status,
+                    SourceRebuildStatus::CleanCommit | SourceRebuildStatus::SourceSnapshot
                 )
                 || !valid_sha256(&source.workspace_sha256)
                 || !source.limitations.is_empty()
@@ -144,12 +107,12 @@ pub(super) fn current_sources(root: &Path, run: &Path, manifest: &RunManifest) -
         if provenance
             .sources
             .iter()
-            .any(|s| s.rebuild_status == "source-snapshot")
+            .any(|s| s.rebuild_status == SourceRebuildStatus::SourceSnapshot)
         {
             if !provenance
                 .sources
                 .iter()
-                .all(|s| s.rebuild_status == "source-snapshot")
+                .all(|s| s.rebuild_status == SourceRebuildStatus::SourceSnapshot)
                 || !application_bound(&provenance, artifact)
             {
                 return Ok(Binding::Unavailable);
@@ -158,7 +121,7 @@ pub(super) fn current_sources(root: &Path, run: &Path, manifest: &RunManifest) -
                 stale = true;
             }
         }
-        if primary.rebuild_status != "source-snapshot" {
+        if primary.rebuild_status != SourceRebuildStatus::SourceSnapshot {
             binding = Binding::Commit;
         }
         // Bind the pin authority to this checkout, rather than trusting the

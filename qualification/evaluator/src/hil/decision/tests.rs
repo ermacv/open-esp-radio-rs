@@ -80,7 +80,7 @@ pub(in crate::hil) fn scenario(id: &str, outcomes: &[&str]) -> Value {
         .iter()
         .map(|s| serde_json::from_value(json!(s)).unwrap())
         .collect();
-    let outcome = aggregate_outcome(parsed);
+    let outcome = oer_hil_run_bundle::run::aggregate_outcome(parsed);
     json!({
         "schema":2,"scenario":id,"outcome":outcome,"required_repetitions":outcomes.len(),
         "failure":null,
@@ -137,7 +137,7 @@ fn subject_and_failure_identity_survive_a_different_evaluator_checkout() {
     fs::write(run.join("application.bin"), b"the observed firmware").unwrap();
     let mut manifest: Value = read_json(&run.join("manifest.json")).unwrap();
     let artifact = &mut manifest["firmware"][0];
-    artifact["image"] = json!("ble-radio");
+    artifact["image"] = json!("bluetooth-gatt");
     artifact["application_path"] = json!("application.bin");
     artifact["application_size_bytes"] =
         json!(fs::metadata(run.join("application.bin")).unwrap().len());
@@ -146,7 +146,7 @@ fn subject_and_failure_identity_survive_a_different_evaluator_checkout() {
     fs::create_dir_all(run.join("scenarios/ble-att")).unwrap();
     write(
         &run.join("scenarios/ble-att/scenario.json"),
-        &json!({"id":"ble-att", "image":"ble-radio"}),
+        &json!({"id":"ble-att", "image":"bluetooth-gatt"}),
     );
     write(
         &run.join("lab-provenance.json"),
@@ -215,7 +215,7 @@ fn subject_and_failure_identity_survive_a_different_evaluator_checkout() {
     // An edited and resealed procedure is a new observation, even with the same run name.
     write(
         &run.join("scenarios/ble-att/scenario.json"),
-        &json!({"id":"ble-att", "image":"ble-radio", "changed":true}),
+        &json!({"id":"ble-att", "image":"bluetooth-gatt", "changed":true}),
     );
     super::super::tests::seal(&run);
     let changed = serde_json::to_value(
@@ -257,12 +257,11 @@ fn a_seal_cannot_hide_an_application_identity_that_disagrees_with_its_bytes() {
         .remove("application_size_bytes");
     write(&run.join("manifest.json"), &manifest);
     super::super::tests::seal(&run);
+    // An incomplete identity is outside the bundle's format.
     assert!(
-        fixture
-            .load()
-            .unwrap_err()
-            .to_string()
-            .contains("identity is incomplete")
+        HilEvidenceIndex::rejection(fixture.load())
+            .unwrap()
+            .contains("application_size_bytes")
     );
 }
 

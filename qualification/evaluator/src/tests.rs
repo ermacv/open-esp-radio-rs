@@ -22,7 +22,7 @@ impl StaticProgramRoot {
         fs::create_dir_all(path.join("qualification/targets")).unwrap();
         fs::write(
             path.join("scenarios/static.toml"),
-            "schema = 5\nid = \"static\"\nrole = \"investigation\"\nrepetitions = 1\n[system]\nkind = \"boot-smoke\"\n",
+            "schema = 5\nid = \"static\"\ndescription = \"static\"\nrole = \"investigation\"\nrepetitions = 1\n[system]\nkind = \"boot-smoke\"\n",
         )
         .unwrap();
         fs::write(path.join("Cargo.toml"), "[workspace]\n").unwrap();
@@ -96,6 +96,7 @@ runs = "missing-runs"
             details: false,
             hil_target: None,
             runs: Vec::new(),
+            pending: false,
             changed: Vec::new(),
         })
     }
@@ -150,8 +151,10 @@ fn engineering_commands_require_explicit_inputs_and_limit_focus_to_views() {
         );
     }
     assert!(
-        parse_arguments(["gate", "--manifest", "a.toml", "--capability", "ble"].map(str::to_owned))
-            .is_err()
+        parse_arguments(
+            ["evaluate", "--manifest", "a.toml", "--capability", "ble"].map(str::to_owned)
+        )
+        .is_err()
     );
 }
 
@@ -328,20 +331,22 @@ host-tests = [{manifest = "crate/Cargo.toml", filter = "owner::tests", source = 
 }
 
 #[test]
-fn removed_check_command_is_rejected() {
-    let error = parse_arguments([
-        "check".to_owned(),
-        "--manifest".to_owned(),
-        "qualification/test.toml".to_owned(),
-    ])
-    .unwrap_err();
-    assert!(error.to_string().contains("unknown qualification command"));
+fn removed_commands_are_rejected() {
+    for removed in ["check", "gate"] {
+        let error = parse_arguments([
+            removed.to_owned(),
+            "--manifest".to_owned(),
+            "qualification/test.toml".to_owned(),
+        ])
+        .unwrap_err();
+        assert!(error.to_string().contains("unknown qualification command"));
+    }
 }
 
 #[test]
 fn command_rejects_silent_extra_options() {
     let error = parse_arguments([
-        "gate".to_owned(),
+        "evaluate".to_owned(),
         "--manifest".to_owned(),
         "test.toml".to_owned(),
         "--best-effort".to_owned(),
@@ -512,7 +517,7 @@ fn each_command_accepts_exactly_the_options_its_tree_lists() {
                 arguments.drain(at..at + 2);
             }
             arguments.push(option.to_string());
-            if *option != "--details" {
+            if !matches!(*option, "--details" | "--pending") {
                 arguments.push(String::from("value"));
             }
             assert_eq!(
@@ -531,7 +536,6 @@ fn each_command_accepts_exactly_the_options_its_tree_lists() {
             "plan",
             "validate",
             "evaluate",
-            "gate",
             "hil-evidence",
             "catalog"
         ]

@@ -5,7 +5,6 @@
 //! zero word is an entry the build left out.
 use crate::image::read_only_word;
 use crate::relocations::Relocations;
-use object::{Object, ObjectSymbol};
 use oer_riscv_model::{Error, ErrorCode, Result};
 
 /// Where one field lies in a table entry, in bytes.
@@ -41,13 +40,13 @@ pub struct TableEntry {
 /// The entries of the table `symbol` holds in `elf`.
 pub fn interrupt_table(elf: &[u8], symbol: &str, layout: &TableLayout) -> Result<Vec<TableEntry>> {
     let invalid = |message: String| Error::new(ErrorCode::Integrity, message);
-    let file = object::File::parse(elf).map_err(|_| invalid("invalid ELF".into()))?;
+    let file = oer_elf::Elf::parse(elf).map_err(|_| invalid("invalid ELF".into()))?;
     let relocations = Relocations::read(elf)?;
     let slice = file
         .symbols()
-        .find(|candidate| candidate.name() == Ok(symbol))
+        .find(|candidate| candidate.name == symbol)
         .ok_or_else(|| Error::new(ErrorCode::NotFound, format!("no `{symbol}` in the image")))?;
-    let at = u32::try_from(slice.address()).map_err(|_| invalid("table beyond RV32".into()))?;
+    let at = u32::try_from(slice.address).map_err(|_| invalid("table beyond RV32".into()))?;
     let word = |address: u32| {
         read_only_word(&file, address)
             .ok_or_else(|| invalid(format!("{address:#010x} is not read-only data")))

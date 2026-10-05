@@ -6,9 +6,9 @@
 //! run: the riscv-arch-test checkout must resolve to the pinned commit and the
 //! Sail archive must have the pinned SHA-256. The check then runs the ignored
 //! `riscv_conformance` test of `blobray-cli` with them and the caller's clang.
-use crate::{Context, Result};
+use crate::Result;
 use oer_process as process;
-use sha2::{Digest, Sha256};
+use oer_process::Checkout;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -45,17 +45,17 @@ struct Sail {
 
 /// Fetch and verify the pinned inputs, then run the conformance test with
 /// the clang `cc`, which needs the riscv32 target and lld.
-pub fn run(ctx: &Context, cc: &Path) -> Result<()> {
+pub fn run(ctx: &Checkout, cc: &Path) -> Result<()> {
     let inputs: Inputs = toml::from_str(&fs::read_to_string(ctx.root.join(INPUTS))?)?;
     if inputs.schema != 1 {
         return Err(format!("{INPUTS}: unsupported schema {}", inputs.schema).into());
     }
     let directory = ctx.root.join("target/isa-conformance");
     fs::create_dir_all(&directory)?;
-    let suite = arch_test(ctx, &directory, &inputs.arch_test)?;
+    let suite = arch_test(&directory, &inputs.arch_test)?;
     let sail = sail(ctx, &directory, &inputs.sail)?;
     process::run(
-        crate::blobray::cargo(ctx, "test")
+        oer_toolchain::blobray::cargo(&ctx.root, "test")
             .args([
                 "--locked",
                 "-p",
@@ -73,7 +73,7 @@ pub fn run(ctx: &Context, cc: &Path) -> Result<()> {
 
 /// The riscv-arch-test checkout at the pinned commit, fetched without the
 /// history and with only the test environment and the pinned suites.
-fn arch_test(ctx: &Context, directory: &Path, pin: &ArchTest) -> Result<PathBuf> {
+fn arch_test(directory: &Path, pin: &ArchTest) -> Result<PathBuf> {
     let suites: Vec<&str> = pin.suite.iter().map(|s| s.name.as_str()).collect();
     let checkout = directory.join(format!(
         "riscv-arch-test-{}-{}",
@@ -86,11 +86,7 @@ fn arch_test(ctx: &Context, directory: &Path, pin: &ArchTest) -> Result<PathBuf>
             fs::remove_dir_all(&partial)?;
         }
         fs::create_dir_all(&partial)?;
-        let git = |args: &[&str]| {
-            let mut command = ctx.command("git");
-            command.arg("-C").arg(&partial).args(args);
-            process::run(&mut command)
-        };
+        let git = |args: &[&str]| oer_process::git::run(&partial, args);
         git(&["init", "--quiet"])?;
         git(&["remote", "add", "origin", &pin.repository])?;
         let mut sparse = vec!["sparse-checkout".to_owned(), "set".to_owned()];
@@ -113,12 +109,7 @@ fn arch_test(ctx: &Context, directory: &Path, pin: &ArchTest) -> Result<PathBuf>
         git(&["checkout", "--quiet", "FETCH_HEAD"])?;
         fs::rename(&partial, &checkout)?;
     }
-    let head = process::capture(
-        ctx.command("git")
-            .arg("-C")
-            .arg(&checkout)
-            .args(["rev-parse", "HEAD"]),
-    )?;
+    let head = process::capture(oer_process::git::command(&checkout).args(["rev-parse", "HEAD"]))?;
     let head = String::from_utf8(head.stdout)?;
     if head.trim() != pin.revision {
         return Err(format!(
@@ -134,9 +125,9 @@ fn arch_test(ctx: &Context, directory: &Path, pin: &ArchTest) -> Result<PathBuf>
 }
 
 /// The Sail simulator from the pinned release archive.
-fn sail(ctx: &Context, directory: &Path, pin: &Sail) -> Result<PathBuf> {
+fn sail(ctx: &Checkout, directory: &Path, pin: &Sail) -> Result<PathBuf> {
     let archive = directory.join(format!("sail-{}.tar.gz", pin.sha256));
-    if !archive.is_file() || sha256(&archive)? != pin.sha256 {
+    if !archive.is_file() || oer_durable::sha256_file(&archive)? != pin.sha256 {
         let partial = archive.with_extension("partial");
         process::run(
             ctx.command("curl")
@@ -150,7 +141,7 @@ fn sail(ctx: &Context, directory: &Path, pin: &Sail) -> Result<PathBuf> {
                 .arg(&partial)
                 .arg(&pin.url),
         )?;
-        let actual = sha256(&partial)?;
+        let actual = oer_durable::sha256_file(&partial)?;
         if actual != pin.sha256 {
             fs::remove_file(&partial)?;
             return Err(format!(
@@ -177,11 +168,4 @@ fn sail(ctx: &Context, directory: &Path, pin: &Sail) -> Result<PathBuf> {
         return Err(format!("the Sail archive has no {}", pin.binary).into());
     }
     Ok(binary)
-}
-
-fn sha256(path: &Path) -> Result<String> {
-    Ok(Sha256::digest(fs::read(path)?)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect())
 }

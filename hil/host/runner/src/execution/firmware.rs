@@ -1,16 +1,17 @@
 //! Run-local firmware preparation and exact-image flash ordering.
 
-use oer_hil_evidence::run::RunEventKind;
+use oer_hil_run_bundle::run::RunEventKind;
 use std::path::Path;
 
 use crate::Result;
-use oer_hil_evidence::{
+use oer_hil_arbiter::lock::BoardLock;
+use oer_hil_image::{Artifacts, CurrentBuild};
+use oer_hil_image_class::ImageClass;
+use oer_hil_lab::config::LabConfig;
+use oer_hil_run_bundle::{
     run::{Failure, FailureKind, Outcome, PlannedFirmware, RunSession},
     verify::ArchivedFirmware,
 };
-use oer_hil_image::{Artifacts, CurrentBuild};
-use oer_hil_image_class::ImageClass;
-use oer_hil_stand::config::LabConfig;
 
 pub(crate) enum RunFirmware {
     BuildCurrent(CurrentBuild),
@@ -34,13 +35,14 @@ impl RunFirmware {
 pub(crate) fn prepare_run_image(
     root: &Path,
     lab: &LabConfig,
+    lock: &BoardLock,
     class: ImageClass,
     firmware: &RunFirmware,
     session: &mut RunSession,
 ) -> Result<Option<Failure>> {
     match firmware {
-        RunFirmware::BuildCurrent(build) => prepare_image(root, lab, class, build.clone(), session),
-        RunFirmware::Replay(archived) => prepare_replayed_image(root, lab, archived, session),
+        RunFirmware::BuildCurrent(build) => prepare_image(lab, lock, class, build.clone(), session),
+        RunFirmware::Replay(archived) => prepare_replayed_image(root, lab, lock, archived, session),
     }
 }
 
@@ -51,14 +53,14 @@ pub(crate) enum Built {
 }
 
 pub(crate) fn prepare_image(
-    root: &Path,
     lab: &LabConfig,
+    lock: &BoardLock,
     class: ImageClass,
     build: CurrentBuild,
     session: &mut RunSession,
 ) -> Result<Option<Failure>> {
     let built = build_image(class, build, session)?;
-    flash_built(root, lab, class, built, session)
+    flash_built(lab, lock, class, built, session)
 }
 
 /// Build and archive one image class. This needs no hardware, so runs do it
@@ -95,15 +97,15 @@ pub(crate) fn build_image(
 }
 
 pub(crate) fn flash_built(
-    root: &Path,
     lab: &LabConfig,
+    lock: &BoardLock,
     class: ImageClass,
     built: Built,
     session: &mut RunSession,
 ) -> Result<Option<Failure>> {
     match built {
         Built::Archived(artifacts) => {
-            flash_archived_artifacts(root, lab, class, &artifacts, session)
+            flash_archived_artifacts(lab, lock, class, &artifacts, session)
         }
         Built::Failed(failure) => Ok(Some(failure)),
     }
@@ -112,37 +114,31 @@ pub(crate) fn flash_built(
 /// Flash an image this run already archived, again after the stand's lease
 /// was yielded and the board may carry other firmware.
 pub(crate) fn flash_archived_artifacts(
-    root: &Path,
     lab: &LabConfig,
+    lock: &BoardLock,
     class: ImageClass,
     artifacts: &Artifacts,
     session: &mut RunSession,
 ) -> Result<Option<Failure>> {
-    let failure = flash_archived_build(class, artifacts, session, |artifacts| {
-        crate::board::flash_dut(
-            &*crate::board::for_chip(root, &artifacts.chip)?,
-            &crate::board::built(artifacts),
-            lab,
-        )
-    })?;
-    if failure.is_none() {
-        let repository = session.repository();
-        oer_hil_stand::lock::record_flash(
-            &lab.dut.serial,
-            class.id(),
-            &artifacts.application_image,
-            Some(repository.commit.clone()),
-            Some(repository.dirty),
-            format!("run {}", session.id()),
-        );
-    }
-    Ok(failure)
+    let repository = session.repository();
+    let flash = crate::board::Flash {
+        image: class.id(),
+        revision: oer_hil_flash::Revision {
+            commit: Some(repository.commit.clone()),
+            dirty: Some(repository.dirty),
+        },
+        origin: format!("run {}", session.id()),
+    };
+    flash_archived_build(class, artifacts, session, |artifacts| {
+        crate::board::flash_dut(lab, lock, &artifacts.bundle, flash)
+    })
 }
 
 /// Flash a replayed image again after the stand's lease was yielded.
 pub(crate) fn reflash_replayed(
     root: &Path,
     lab: &LabConfig,
+    lock: &BoardLock,
     archived: &ArchivedFirmware,
     session: &mut RunSession,
 ) -> Result<Option<Failure>> {
@@ -161,9 +157,14 @@ pub(crate) fn reflash_replayed(
     )
     .and_then(|image| {
         crate::board::flash_dut(
-            &*crate::board::for_chip(root, &archived.target)?,
-            &image,
             lab,
+            lock,
+            &image,
+            crate::board::Flash {
+                image: archived.image.id(),
+                revision: oer_hil_flash::Revision::default(),
+                origin: format!("run {} replaying run {}", session.id(), archived.run_id),
+            },
         )
     }) {
         oer_process::check_cancelled()?;
@@ -184,14 +185,6 @@ pub(crate) fn reflash_replayed(
         Some(archived.image),
         Some(Outcome::Passed),
     )?;
-    oer_hil_stand::lock::record_flash(
-        &lab.dut.serial,
-        archived.image.id(),
-        &archived.application_path,
-        None,
-        None,
-        format!("run {} replaying run {}", session.id(), archived.run_id),
-    );
     Ok(None)
 }
 
@@ -211,8 +204,7 @@ fn archive_built(
     mut artifacts: Artifacts,
     session: &mut RunSession,
 ) -> Result<Artifacts> {
-    artifacts.application_image =
-        oer_hil_image::record::firmware::record(session, class, &artifacts)?;
+    artifacts.bundle = oer_hil_image::record::firmware::record(session, class, &artifacts)?;
     session.record_event(
         RunEventKind::ImageBuildFinished,
         None,
@@ -254,33 +246,25 @@ fn flash_archived_build(
 fn prepare_replayed_image(
     root: &Path,
     lab: &LabConfig,
+    lock: &BoardLock,
     archived: &ArchivedFirmware,
     session: &mut RunSession,
 ) -> Result<Option<Failure>> {
     let run_id = session.id().to_owned();
-    let mut flashed = None;
-    let failure = import_and_flash_replay(archived, session, |application| {
+    import_and_flash_replay(archived, session, |application| {
         let image =
             crate::board::archived(root, &archived.target, application, &run_id, archived.image)?;
         crate::board::flash_dut(
-            &*crate::board::for_chip(root, &archived.target)?,
-            &image,
             lab,
-        )?;
-        flashed = Some(application.to_owned());
-        Ok(())
-    })?;
-    if let Some(application) = flashed {
-        oer_hil_stand::lock::record_flash(
-            &lab.dut.serial,
-            archived.image.id(),
-            &application,
-            None,
-            None,
-            format!("run {run_id} replaying run {}", archived.run_id),
-        );
-    }
-    Ok(failure)
+            lock,
+            &image,
+            crate::board::Flash {
+                image: archived.image.id(),
+                revision: oer_hil_flash::Revision::default(),
+                origin: format!("run {run_id} replaying run {}", archived.run_id),
+            },
+        )
+    })
 }
 
 fn import_and_flash_replay(
@@ -355,14 +339,7 @@ fn archive_build_log(
     class: ImageClass,
     run: &Path,
 ) -> Option<std::path::PathBuf> {
-    let mut cause = Some(error);
-    let failed = loop {
-        let current = cause?;
-        if let Some(failed) = current.downcast_ref::<oer_hil_image::BuildStepFailed>() {
-            break failed;
-        }
-        cause = current.source();
-    };
+    let failed = oer_hil_image::failed_step(error)?;
     let text = std::fs::read_to_string(&failed.log).ok()?;
     let lines = text.lines().collect::<Vec<_>>();
     let tail = lines[lines.len().saturating_sub(BUILD_LOG_TAIL)..].join("\n");

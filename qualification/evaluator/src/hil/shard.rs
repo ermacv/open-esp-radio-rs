@@ -8,8 +8,9 @@
 //! firmware and observer were built from. A shard supports qualification
 //! while those sources are unchanged, whatever else the repository changed.
 use super::*;
-use crate::model::scenario_evidence::{SourceDigest, digest_directory};
-use oer_hil_schema::observer_store;
+use oer_hil_observer::store as observer_store;
+use oer_hil_run_bundle::build::{BuildParameters, BuildProvenance};
+use oer_vendor_evidence::{SourceDigest, digest_directory};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -98,7 +99,7 @@ impl Snapshot {
     fn digest(&self, path: &Path) -> Result<String> {
         use sha2::{Digest as _, Sha256};
         if let Some(bytes) = self.0.get(path) {
-            return Ok(format!("{:x}", Sha256::digest(bytes)));
+            return Ok(oer_durable::sha256_bytes(bytes));
         }
         let mut hash = Sha256::new();
         let mut any = false;
@@ -235,35 +236,21 @@ pub(super) fn load(root: &Path, directory: &Path, target: &str) -> Result<Vec<(S
 pub(crate) fn tracked_sources(root: &Path, observers: &[&Value]) -> Result<Vec<PathBuf>> {
     let mut paths = BTreeSet::new();
     let chips = super::chips::all(root)?;
+    let model = oer_repo::Model::load(&oer_repo::Repo::load(root)?)?;
     let workspaces = chips
         .iter()
         .flat_map(|chip| chip.packages.iter().map(|(workspace, _)| workspace))
         .collect::<BTreeSet<_>>();
     for workspace in workspaces {
-        let output = Command::new("cargo")
-            .current_dir(root)
-            .args(["metadata", "--format-version", "1", "--offline", "--locked"])
-            .arg("--manifest-path")
-            .arg(workspace)
-            .output()?;
-        if !output.status.success() {
-            return Err(String::from_utf8_lossy(&output.stderr).into_owned().into());
-        }
-        let metadata: Value = serde_json::from_slice(&output.stdout)?;
-        let root_path = root.canonicalize()?;
-        for package in metadata["packages"]
-            .as_array()
-            .ok_or("cargo metadata packages")?
-        {
-            if !package["source"].is_null() {
-                continue;
-            }
-            let manifest = Path::new(package["manifest_path"].as_str().ok_or("manifest path")?);
-            let directory = manifest
-                .parent()
-                .ok_or("manifest directory")?
-                .canonicalize()?;
-            paths.insert(directory.strip_prefix(&root_path)?.to_path_buf());
+        let workspace = workspace.to_string_lossy();
+        let members: Vec<_> = model.members(&workspace).collect();
+        for package in model.closure(
+            &members,
+            oer_repo::closure::Edges::All,
+            None,
+            &oer_repo::closure::Features::All,
+        )? {
+            paths.insert(PathBuf::from(&package.directory));
         }
     }
     paths.extend(observer_directories(observers)?);
@@ -296,8 +283,8 @@ fn observer_directories(observers: &[&Value]) -> Result<BTreeSet<PathBuf>> {
 /// `firmware/<image>/source-inputs.json`, its own observer's manifest
 /// directories, the build files and the Cargo configuration the builds read.
 /// `None` when a firmware image records no inputs, such as a replay or an
-/// older bundle, or when its list lacks a package that `cargo tree`
-/// independently finds in the image.
+/// older bundle, or when its list lacks a package the repository model's
+/// closure of the image (its target and features) independently finds.
 ///
 /// The digests of these sources are taken from the current tree when the
 /// shard is recorded. That is sound only because `distill` records
@@ -313,7 +300,7 @@ fn observation_sources(
         run,
         &subject.firmware,
         subject.observer.as_deref(),
-        &|provenance| image_packages(root, provenance),
+        &|provenance| image_packages(root, &provenance.parameters),
     )
 }
 
@@ -336,14 +323,14 @@ fn images_inherited_flags(
             .join("firmware")
             .join(image)
             .join("build-provenance.json");
-        let Some(provenance) = read_optional_json::<Value>(&path)? else {
+        let Some(provenance) = read_optional_json::<BuildProvenance>(&path)? else {
             continue;
         };
-        let environment = &provenance["environment"];
-        if !environment["inherited_rustflags"].is_null() {
+        let environment = &provenance.environment;
+        if environment.inherited_rustflags.is_some() {
             return Ok(Some("RUSTFLAGS"));
         }
-        if !environment["inherited_encoded_rustflags"].is_null() {
+        if environment.inherited_encoded_rustflags.is_some() {
             return Ok(Some("CARGO_ENCODED_RUSTFLAGS"));
         }
     }
@@ -351,15 +338,15 @@ fn images_inherited_flags(
 }
 
 /// Repository package directories of an image's runtime and bootstrap, with
-/// the runtime features its build provenance records, from `cargo tree`.
-fn image_packages(root: &Path, provenance: &Value) -> Result<Option<BTreeSet<PathBuf>>> {
-    let parameters = &provenance["parameters"];
-    let (Some(features), Some(target)) = (
-        parameters["runtime_features"].as_str(),
-        parameters["target"].as_str(),
-    ) else {
-        return Ok(None);
-    };
+/// the runtime features its build provenance records: the path packages
+/// their normal and build dependencies reach for the image's target, as the
+/// repository model resolves the features (the HIL agent without its
+/// default features, the bootstrap with them).
+fn image_packages(root: &Path, parameters: &BuildParameters) -> Result<Option<BTreeSet<PathBuf>>> {
+    let (features, target) = (
+        parameters.runtime_features.as_str(),
+        parameters.target.as_str(),
+    );
     let root = root.canonicalize()?;
     // The image's chip is the one whose firmware compiles for its target.
     let Some(chip) = super::chips::all(&root)?
@@ -368,35 +355,38 @@ fn image_packages(root: &Path, provenance: &Value) -> Result<Option<BTreeSet<Pat
     else {
         return Ok(None);
     };
+    let model = oer_repo::Model::load(&oer_repo::Repo::load(&root)?)?;
+    let triple = oer_repo::closure::Target::new(target)?;
     let mut packages = BTreeSet::new();
-    for (index, (workspace, package)) in chip.packages.iter().enumerate() {
+    for (index, (workspace, name)) in chip.packages.iter().enumerate() {
+        let workspace = workspace.to_string_lossy();
+        let package = model
+            .members(&workspace)
+            .find(|package| package.name == *name)
+            .ok_or_else(|| format!("{workspace} has no package {name}"))?;
         // The runtime features apply to the HIL agent, listed first.
-        let features = (index == 0).then_some(features);
-        let mut command = Command::new("cargo");
-        command
-            .current_dir(&root)
-            .args(["tree", "--offline", "--locked", "--manifest-path"])
-            .arg(workspace)
-            .args(["-p", package])
-            .args(["--target", target, "-e", "normal,build", "--prefix", "none"])
-            .args(["--format", "{p}"]);
-        if let Some(features) = features {
-            command.args(["--no-default-features", "--features", features]);
-        }
-        let output = command.output()?;
-        if !output.status.success() {
-            return Ok(None);
-        }
-        for line in String::from_utf8_lossy(&output.stdout).lines() {
-            let Some(path) = line
-                .rsplit_once(" (")
-                .map(|(_, path)| path.trim_end_matches(" (*)").trim_end_matches(')'))
-            else {
-                continue;
-            };
-            if let Ok(relative) = Path::new(path).strip_prefix(&root) {
-                packages.insert(relative.to_owned());
+        let selection = if index == 0 {
+            oer_repo::closure::Features::Resolved {
+                default: false,
+                features: features
+                    .split(',')
+                    .filter(|feature| !feature.is_empty())
+                    .map(str::to_owned)
+                    .collect(),
             }
+        } else {
+            oer_repo::closure::Features::Resolved {
+                default: true,
+                features: Vec::new(),
+            }
+        };
+        for package in model.closure(
+            &[package],
+            oer_repo::closure::Edges::Build,
+            Some(&triple),
+            &selection,
+        )? {
+            packages.insert(PathBuf::from(&package.directory));
         }
     }
     Ok(Some(packages))
@@ -406,7 +396,7 @@ fn recorded_sources(
     run: &Path,
     images: &[subject::FirmwareIdentity],
     observer: Option<&Value>,
-    packages: &dyn Fn(&Value) -> Result<Option<BTreeSet<PathBuf>>>,
+    packages: &dyn Fn(&BuildProvenance) -> Result<Option<BTreeSet<PathBuf>>>,
 ) -> Result<Option<Vec<PathBuf>>> {
     if images.is_empty() {
         return Ok(None);
@@ -428,9 +418,9 @@ fn recorded_sources(
             files.insert(path);
         }
         // A list that silently lost a package would make a stale shard look
-        // current: every package `cargo tree` finds must be listed.
+        // current: every package the image's closure holds must be listed.
         let Some(provenance) =
-            read_optional_json::<Value>(&directory.join("build-provenance.json"))?
+            read_optional_json::<BuildProvenance>(&directory.join("build-provenance.json"))?
         else {
             return Ok(None);
         };
@@ -782,7 +772,43 @@ pub(crate) fn observers(index: &HilEvidenceIndex) -> Vec<&Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use oer_hil_run_bundle::build::{BuildEnvironment, BuildReproducibility};
     use serde_json::json;
+
+    /// A build provenance of the correctness image for `target` with
+    /// `features`, built under `environment`.
+    fn provenance(target: &str, features: &str, environment: BuildEnvironment) -> BuildProvenance {
+        BuildProvenance {
+            schema: oer_hil_run_bundle::build::BUILD_PROVENANCE_SCHEMA,
+            build_id: String::from("build"),
+            build_type: String::from("test"),
+            parameters: BuildParameters {
+                image: oer_hil_image_class::ImageClass::Correctness,
+                network: None,
+                runtime_profile: String::from("profile"),
+                target: target.to_owned(),
+                runtime_features: features.to_owned(),
+                layout_seed: None,
+                features: Default::default(),
+            },
+            sources: Vec::new(),
+            files: Vec::new(),
+            environment,
+            subjects: Vec::new(),
+            source_reconstructable: false,
+            reproducibility: BuildReproducibility::Unverified,
+        }
+    }
+
+    fn environment(rustflags: Option<&str>, encoded: Option<&str>) -> BuildEnvironment {
+        BuildEnvironment {
+            tools: Vec::new(),
+            inherited_rustflags: rustflags.map(str::to_owned),
+            inherited_encoded_rustflags: encoded.map(str::to_owned),
+            cargo_incremental: String::from("0"),
+            source_date_epoch: None,
+        }
+    }
 
     fn image(name: &str, replayed: bool) -> subject::FirmwareIdentity {
         subject::FirmwareIdentity {
@@ -810,7 +836,7 @@ mod tests {
             .unwrap();
             fs::write(
                 directory.join("build-provenance.json"),
-                serde_json::to_vec(&json!({"parameters": {}})).unwrap(),
+                serde_json::to_vec(&provenance("t", "", environment(None, None))).unwrap(),
             )
             .unwrap();
         };
@@ -827,7 +853,7 @@ mod tests {
         let observer = json!({"build": {"resolved": {"manifests": {
             "hil/host/runner/Cargo.toml": {}
         }}}});
-        let radio = |_: &Value| Ok(Some(BTreeSet::from([PathBuf::from("crates/radio")])));
+        let radio = |_: &BuildProvenance| Ok(Some(BTreeSet::from([PathBuf::from("crates/radio")])));
         let sources = recorded_sources(
             &run,
             &[image("correctness", false)],
@@ -851,8 +877,8 @@ mod tests {
             );
         }
         assert!(sources.windows(2).all(|w| w[0] < w[1]), "sorted and unique");
-        // A package `cargo tree` finds but the list lacks: the broad binding.
-        let more = |_: &Value| {
+        // A package the image closure holds but the list lacks: the broad binding.
+        let more = |_: &BuildProvenance| {
             Ok(Some(BTreeSet::from([
                 PathBuf::from("crates/radio"),
                 PathBuf::from("crates/wifi"),
@@ -860,7 +886,7 @@ mod tests {
         };
         let recorded =
             |images: &[subject::FirmwareIdentity],
-             packages: &dyn Fn(&Value) -> Result<Option<BTreeSet<PathBuf>>>| {
+             packages: &dyn Fn(&BuildProvenance) -> Result<Option<BTreeSet<PathBuf>>>| {
                 recorded_sources(&run, images, None, packages).unwrap()
             };
         assert!(recorded(&[image("correctness", false)], &more).is_none());
@@ -887,13 +913,14 @@ mod tests {
     }
 
     #[test]
-    fn cargo_tree_finds_the_packages_of_one_image() {
+    fn the_model_finds_the_packages_of_one_image() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let provenance = json!({"parameters": {
-            "runtime_features": "bluetooth-hil,phy-rx-hot-sram",
-            "target": "riscv32imafc-unknown-none-elf"
-        }});
-        let packages = image_packages(&root, &provenance).unwrap().unwrap();
+        let image = provenance(
+            "riscv32imafc-unknown-none-elf",
+            "bluetooth-hil,phy-rx-hot-sram",
+            environment(None, None),
+        );
+        let packages = image_packages(&root, &image.parameters).unwrap().unwrap();
         for expected in [
             "hil/targets/esp32s31/agent",
             "crates/hardware/esp32s31/driver/bluetooth",
@@ -910,8 +937,10 @@ mod tests {
                 .any(|package| package.starts_with("crates/protocols/ieee80211")),
             "{packages:?}"
         );
+        // A target no chip compiles for names no packages.
+        let foreign = provenance("x86_64-unknown-linux-gnu", "", environment(None, None));
         assert!(
-            image_packages(&root, &json!({"parameters": {}}))
+            image_packages(&root, &foreign.parameters)
                 .unwrap()
                 .is_none()
         );
@@ -920,23 +949,23 @@ mod tests {
     #[test]
     fn firmware_built_with_inherited_flags_is_never_recorded() {
         let run = std::env::temp_dir().join(format!("oer-shard-flags-{}", std::process::id()));
-        let provenance = |environment: Value| {
+        let write = |environment: BuildEnvironment| {
             fs::create_dir_all(run.join("firmware/correctness")).unwrap();
             fs::write(
                 run.join("firmware/correctness/build-provenance.json"),
-                serde_json::to_vec(&json!({"environment": environment})).unwrap(),
+                serde_json::to_vec(&provenance("t", "", environment)).unwrap(),
             )
             .unwrap();
         };
         let images = [image("correctness", false)];
-        provenance(json!({"inherited_rustflags": null, "inherited_encoded_rustflags": null}));
+        write(environment(None, None));
         assert_eq!(images_inherited_flags(&run, &images).unwrap(), None);
-        provenance(json!({"inherited_rustflags": "-Copt-level=0"}));
+        write(environment(Some("-Copt-level=0"), None));
         assert_eq!(
             images_inherited_flags(&run, &images).unwrap(),
             Some("RUSTFLAGS")
         );
-        provenance(json!({"inherited_encoded_rustflags": "-g"}));
+        write(environment(None, Some("-g")));
         assert_eq!(
             images_inherited_flags(&run, &images).unwrap(),
             Some("CARGO_ENCODED_RUSTFLAGS")

@@ -52,11 +52,13 @@ the candidate pools, so a later round can pair a function whose closest
 rival has since been paired elsewhere, and a call-graph or neighbourhood vote
 can use pairs found by similarity.
 
-A normalized body masks exactly the immediate bits that each RISC-V
+Bodies are compared by the vendor fingerprint of
+[`oer-vendor-provenance`](../vendor-provenance/README.md), the one that
+registers cited vendor functions: it masks exactly the bits that each RISC-V
 relocation resolves at link time. Opcodes, registers, relocation types and
 branch targets inside the function stay significant; target symbol names do
-not. Similarity is the longest common subsequence of 16-bit parcels relative
-to both lengths.
+not. Similarity is the longest common subsequence of its per-instruction
+tokens relative to both lengths.
 
 Ambiguity is never resolved by choice. Duplicate names or bodies stay
 unpaired unless their neighbourhoods tell them apart, and competing votes or

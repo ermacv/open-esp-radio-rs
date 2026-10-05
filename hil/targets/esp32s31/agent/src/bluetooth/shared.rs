@@ -95,7 +95,7 @@ async fn application(host: BluetoothHostTransport) {
     let mut runner = stack.runner();
     let state = Cell::new(BluetoothGattEvidence::default());
     let host = core::pin::pin!(runner.run());
-    let application = core::pin::pin!(gatt_application::gatt::run(&stack, |event| {
+    let application = core::pin::pin!(oer_bluetooth_gatt_trouble::gatt::run(&stack, |event| {
         gatt::observe(&state, event);
         EVIDENCE.lock(|evidence| evidence.set(Some(state.get())));
     }));

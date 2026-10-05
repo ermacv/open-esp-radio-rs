@@ -115,8 +115,13 @@ impl Write for Serial {
 
 /// A capture over a fake serial link whose writes succeed or fail.
 pub fn capture(output: &Output, fail_write: bool) -> (SerialCapture, Input) {
+    capture_at(&output.0, fail_write)
+}
+
+/// [`capture`] into the directory `output`, which the caller owns.
+pub fn capture_at(output: &Path, fail_write: bool) -> (SerialCapture, Input) {
     let (input, rx) = serial_pair();
-    let capture = SerialCapture::start_transport(&output.0, move || {
+    let capture = SerialCapture::start_transport(output, move || {
         Ok(Serial {
             input: rx,
             fail_write,
@@ -183,9 +188,15 @@ pub fn activate(capture: &SerialCapture, input: &Input) {
 
 /// A capture whose host commands are delivered to the returned receiver.
 pub fn capture_with_commands(output: &Output) -> (SerialCapture, Input, mpsc::Receiver<Vec<u8>>) {
+    capture_with_commands_at(&output.0)
+}
+
+/// [`capture_with_commands`] into the directory `output`, which the caller
+/// owns.
+pub fn capture_with_commands_at(output: &Path) -> (SerialCapture, Input, mpsc::Receiver<Vec<u8>>) {
     let (input, rx) = serial_pair();
     let (writes, commands) = mpsc::channel();
-    let capture = SerialCapture::start_transport(&output.0, move || {
+    let capture = SerialCapture::start_transport(output, move || {
         Ok(Serial {
             input: rx,
             fail_write: false,
@@ -266,4 +277,50 @@ pub fn answer_image_keys(
         message_sequence += 1;
     }
     message_sequence
+}
+
+/// A healthy fake target of boot `boot_id`: it greets with its `Hello` and
+/// answers every link-health request until the host stops writing, so a
+/// capture finishes cleanly.
+pub fn healthy_target(
+    input: Input,
+    commands: mpsc::Receiver<Vec<u8>>,
+    boot_id: u64,
+) -> std::thread::JoinHandle<()> {
+    input.send(Ok(frame(hello(boot_id, 0)))).unwrap();
+    std::thread::spawn(move || {
+        let mut sequence = 1;
+        while let Ok(bytes) = commands.recv() {
+            let mut requests = Vec::new();
+            FrameDecoder::new().feed(WireKind::Command, &bytes, |frame| {
+                if let Ok(frame) = frame
+                    && let Ok(request) = Received::from_frame(&frame)
+                {
+                    requests.push(request);
+                }
+            });
+            for request in requests {
+                if request.is::<oer_hil_protocol::base::GetLinkHealth>() {
+                    let _ = input.send(Ok(frame(Envelope::new(
+                        boot_id,
+                        sequence,
+                        request.session_id,
+                        request.request_id,
+                        oer_hil_protocol::base::LinkHealth {
+                            rx_frames: 1,
+                            rx_cobs_errors: 0,
+                            rx_checksum_errors: 0,
+                            rx_decode_errors: 0,
+                            rx_overflows: 0,
+                            tx_frames: 1,
+                            tx_dropped: 0,
+                            text_dropped: 0,
+                            text_truncated: 0,
+                        },
+                    ))));
+                    sequence += 1;
+                }
+            }
+        }
+    })
 }

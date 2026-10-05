@@ -174,6 +174,7 @@ mod tests {
             enqueued_unix: id,
             claims,
             priority: Default::default(),
+            job: None,
             unknown: Default::default(),
         }
     }

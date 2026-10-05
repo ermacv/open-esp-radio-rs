@@ -71,7 +71,7 @@ impl Arbiter {
             holder.preempted.get_or_insert_with(|| Preemption {
                 by: by.to_owned(),
                 reason: reason.to_owned(),
-                unix_ms: crate::unix_now_ms(),
+                unix_ms: oer_durable::unix_millis(),
                 unknown: crate::Unknown::default(),
             });
             Ok((

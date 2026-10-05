@@ -3,7 +3,8 @@
 
 use std::{ffi::OsString, path::PathBuf, process::ExitCode};
 
-use oer_hil_cli::{Context, Result};
+use oer_hil_cli::Result;
+use oer_process::Checkout;
 
 /// A leading `--root PATH` (or `--root=PATH`) names the checkout to act on,
 /// as the installed `oer-stand` and a job's detached process pass it; every
@@ -29,8 +30,8 @@ fn split_root(mut args: Vec<OsString>) -> Result<(Option<PathBuf>, Vec<OsString>
 fn run() -> Result<ExitCode> {
     let (root, args) = split_root(std::env::args_os().skip(1).collect())?;
     let ctx = match root {
-        Some(root) => Context::new(root)?,
-        None => Context::discover()?,
+        Some(root) => Checkout::new(root)?,
+        None => Checkout::discover("cargo hil")?,
     };
     let _signals = oer_process::install_signal_handlers()?;
     oer_hil_cli::command::run(&ctx, &args)

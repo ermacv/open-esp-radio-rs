@@ -9,9 +9,10 @@ private vendor artifacts live here.
 | `<chip>/artifacts.toml` | The single pin (repository, revision, SHA-256) of every vendor archive, ROM ELF and SDK firmware |
 | `<chip>/facts/` | Cited-function fingerprints (`provenance.toml`) and recovered name maps |
 | `<chip>/probes/`, `<chip>/scenarios/` | Compiled production entries and typed Blobray comparisons |
-| `<chip>/evidence/` | Generated scenario shards and hardware cross-check summaries |
+| `<chip>/evidence/` | Generated scenario shards (`evidence/scenarios`, written only through `oer-vendor-evidence`); hardware cross-checks are HIL run bundles |
 | `<chip>/hil-vendor/`, `<chip>/hardware/` | Vendor firmware and board cross-checks |
-| `harness/`, `schema/` | Probe generation, the chip-neutral scenario engine, the shard schema |
+| `harness/` | Probe generation and the chip-neutral scenario engine |
+| `evidence/` | `oer-vendor-evidence`: the shard format, the one shard reader and writer, currency, the verdict source policy and the `Producer` contract (Blobray engine, host stands) |
 
 ## Rules
 

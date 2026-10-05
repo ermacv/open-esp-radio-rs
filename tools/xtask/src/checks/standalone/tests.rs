@@ -22,9 +22,9 @@ fn extraction_uses_source_inventory_and_includes_new_binary_targets() {
     write(&source.join("target/cached-output"), "not source");
     write(&source.join("_oracles/private-input"), "not source");
     write(&repository.path().join("crates/source.rs"), "not Blobray");
-    let context = Context::new(repository.path()).unwrap();
-    process::run(context.command("git").args(["init", "--quiet"])).unwrap();
-    let files = paths::source_files(&context).unwrap();
+    let context = Checkout::new(repository.path()).unwrap();
+    process::run(oer_process::git::command(&context.root).args(["init", "--quiet"])).unwrap();
+    let files = source_files(&context).unwrap();
     extract(&source, destination.path(), files).unwrap();
     assert!(destination.path().join("src/main.rs").is_file());
     assert!(destination.path().join("src/bin/new-launcher.rs").is_file());
@@ -79,7 +79,7 @@ fn extraction_rejects_source_symlink_outside_blobray() {
 fn extracted_cargo_commands_own_their_config_and_output_directory() {
     let repository = tempfile::tempdir().unwrap();
     write(&repository.path().join("Cargo.toml"), "[workspace]\n");
-    let context = Context::new(repository.path()).unwrap();
+    let context = Checkout::new(repository.path()).unwrap();
     let extraction = tempfile::tempdir().unwrap();
     let command = command(
         &context,
@@ -103,7 +103,7 @@ fn extraction_preserves_caller_toolchain_or_uses_the_repository_channel() {
         &repository.path().join("rust-toolchain.toml"),
         "[toolchain]\nchannel = 'repository-pin'\n",
     );
-    let context = Context::new(repository.path()).unwrap();
+    let context = Checkout::new(repository.path()).unwrap();
     assert_eq!(
         selected_toolchain(&context, None).unwrap(),
         OsStr::new("repository-pin")

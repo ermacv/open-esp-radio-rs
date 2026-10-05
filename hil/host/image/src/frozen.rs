@@ -2,14 +2,12 @@
 
 use std::path::{Path, PathBuf};
 
-use oer_hil_durable::atomic_json;
-use oer_hil_image_class::{FeatureDelta, ImageClass};
+use oer_durable::atomic_json;
+use oer_hil_image_class::{FeatureDelta, ImageClass, NETWORK};
 use oer_hil_source_snapshot::FrozenSources;
+use oer_image::Overrides;
 
-use crate::{
-    Artifacts, BuildPlacement, LayoutSeed, LocalOverrides, Result, build_resolved, chip_build_root,
-    chip_profile, esp_idf, seed_suffix,
-};
+use crate::{Artifacts, LayoutSeed, Placement, Result, built, chip_build_root, seed_suffix, spec};
 
 /// The base of the host's build slots for `chip` images (`<base>-<n>`).
 pub fn build_slots(chip: &str) -> Result<PathBuf> {
@@ -22,12 +20,13 @@ pub fn compile_cache(frozen: &FrozenSources, class: ImageClass) -> PathBuf {
         "{}-{}-{}",
         class.runtime_profile(),
         class.id(),
-        oer_esp32s31_firmware::network::NETWORK
+        NETWORK
     ))
 }
 
-/// Build `class` for `chip` from `frozen` through the pipeline of its boot
-/// flow.
+/// Build `class` for `chip` from `frozen` through the image pipeline of
+/// the chip's boot kind. The snapshot's own esp-hal, Embassy and Xarxa
+/// sources, when it holds them, replace the pinned ones.
 pub fn build_for_chip(
     frozen: &FrozenSources,
     chip: &str,
@@ -35,68 +34,56 @@ pub fn build_for_chip(
     layout_seed: LayoutSeed,
     features: &FeatureDelta,
 ) -> Result<Artifacts> {
-    let profile = chip_profile(chip)?;
-    if profile.boot == oer_chip_profile::Boot::Staged {
-        return build(frozen, class, layout_seed, features);
-    }
-    if layout_seed.is_some() {
-        return Err(format!("{chip} images have no layout seeds").into());
-    }
     frozen.verify_unchanged()?;
+    let staged = crate::network(crate::chip_profile(chip)?.boot).is_some();
+    let directory = if staged {
+        format!(
+            "{}-{NETWORK}{}{}",
+            class.id(),
+            seed_suffix(layout_seed),
+            features.suffix()
+        )
+    } else {
+        format!("{}{}", class.id(), features.suffix())
+    };
     let output = chip_build_root(chip)?
         .join("snapshot-builds")
         .join(frozen.snapshot().id())
-        .join(format!("{}{}", class.id(), features.suffix()));
-    let artifacts = esp_idf::build(
+        .join(directory);
+    let spec = spec(
         &frozen.repository(),
-        &profile,
+        chip,
         class,
-        features,
-        &output,
-        &compile_cache(frozen, class),
+        (layout_seed, features),
+        Overrides {
+            esp_hal: frozen.source_root("esp-hal"),
+            embassy: frozen.source_root("embassy"),
+            xarxa: frozen.source_root("xarxa"),
+        },
+        Placement {
+            output: output.clone(),
+            cache: compile_cache(frozen, class),
+        },
     )?;
+    let artifacts = built(&spec, features)?;
     finish(frozen, &output)?;
     Ok(artifacts)
 }
 
-/// Build the staged esp32s31 image `class` from `frozen`.
+/// Build the staged image `class` from `frozen`.
 pub fn build(
     frozen: &FrozenSources,
     class: ImageClass,
     layout_seed: LayoutSeed,
     features: &FeatureDelta,
 ) -> Result<Artifacts> {
-    frozen.verify_unchanged()?;
-    let esp_hal = frozen.source_root("esp-hal");
-    let embassy = frozen.source_root("embassy");
-    let xarxa = frozen.source_root("xarxa");
-    let output = chip_build_root("esp32s31")?
-        .join("snapshot-builds")
-        .join(frozen.snapshot().id())
-        .join(format!(
-            "{}-{}{}{}",
-            class.id(),
-            oer_esp32s31_firmware::network::NETWORK,
-            seed_suffix(layout_seed),
-            features.suffix()
-        ));
-    let artifacts = build_resolved(
-        &frozen.repository(),
+    build_for_chip(
+        frozen,
+        oer_image::staged::CHIP,
         class,
-        LocalOverrides {
-            esp_hal: esp_hal.as_deref(),
-            embassy: embassy.as_deref(),
-            xarxa: xarxa.as_deref(),
-        },
-        BuildPlacement {
-            output: Some(&output),
-            cache: &compile_cache(frozen, class),
-            layout_seed,
-            features,
-        },
-    )?;
-    finish(frozen, &output)?;
-    Ok(artifacts)
+        layout_seed,
+        features,
+    )
 }
 
 /// Confirm the checkout did not change during the build and record which
@@ -109,7 +96,7 @@ fn finish(frozen: &FrozenSources, output: &Path) -> Result<()> {
 
 /// Build `class` for the chip of `session` from the sources it bound.
 pub fn build_for_run(
-    session: &oer_hil_evidence::run::RunSession,
+    session: &oer_hil_run_bundle::run::RunSession,
     class: ImageClass,
     build: crate::CurrentBuild,
 ) -> Result<Artifacts> {

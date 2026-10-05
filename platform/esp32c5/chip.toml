@@ -29,3 +29,7 @@ cores = 1
 bootloader = 0x2000
 partition-table = 0x8000
 application = 0x10000
+# How a written image starts: the writer leaves the ROM in download mode,
+# and a power-on reset (RTS without power control) starts the image; an RTS
+# reset out of download mode leaves the esp32c5's USB console silent.
+start = "power-on"

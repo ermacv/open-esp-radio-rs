@@ -1,0 +1,32 @@
+[package]
+name = "oer-hil-stand-host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "The HIL stand's host: discovery of its boards, the host doctor, fixture reachability and the one SSH helper for its OpenWrt hosts"
+
+[dependencies]
+oer-chip-profile = { path = "../../../tools/chip-profile" }
+oer-hil-arbiter = { path = "../arbiter" }
+oer-hil-board = { path = "../board" }
+oer-hil-stand-model = { path = "../../stand/model" }
+oer-process = { path = "../../../tools/process" }
+serde = { version = "1.0", features = ["derive"] }
+toml = "1.1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+layer = "hil"
+platform = "host"
+host-layer = "stand"
+# Its SSH helper drives the OpenWrt fixtures a run observes through, so the
+# evidence closures include it.
+hil = "orchestration"

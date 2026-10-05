@@ -14,8 +14,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{Context, Result};
+use crate::Result;
 use oer_process as process;
+use oer_process::Checkout;
 
 /// Subdirectories of `target/` that are never worth cloning: incremental
 /// session data is keyed to this checkout's paths, HIL outputs live in the
@@ -33,12 +34,12 @@ pub fn skipped(relative: &Path) -> bool {
 
 /// Creates `path` as a worktree on `branch` (new, from `from`) and seeds its
 /// build outputs.
-pub fn add(ctx: &Context, path: &Path, branch: &str, from: &str) -> Result<()> {
+pub fn add(ctx: &Checkout, path: &Path, branch: &str, from: &str) -> Result<()> {
     if path.exists() {
         return Err(format!("worktree: {} already exists", path.display()).into());
     }
     process::run(
-        ctx.command("git")
+        oer_process::git::command(&ctx.root)
             .args(["worktree", "add", "-b", branch])
             .arg(path)
             .arg(from),
@@ -117,7 +118,7 @@ fn prune(target: &Path) -> Result<()> {
 
 /// Turns this checkout's `target/` into a btrfs subvolume once, so every
 /// later `add` snapshots it instantly. Run it while no build uses `target/`.
-pub fn prepare(ctx: &Context) -> Result<()> {
+pub fn prepare(ctx: &Checkout) -> Result<()> {
     let target = ctx.root.join("target");
     if target.exists() && is_subvolume(&target)? {
         println!("worktree: {} is already a subvolume", target.display());
@@ -248,9 +249,14 @@ fn remove_incremental(profile: &Path) -> Result<()> {
 }
 
 /// Removes a worktree added by [`add`], including its private `target/`.
-pub fn remove(ctx: &Context, path: &Path) -> Result<()> {
+pub fn remove(ctx: &Checkout, path: &Path) -> Result<()> {
     let listed = String::from_utf8(
-        process::capture(ctx.command("git").args(["worktree", "list", "--porcelain"]))?.stdout,
+        process::capture(oer_process::git::command(&ctx.root).args([
+            "worktree",
+            "list",
+            "--porcelain",
+        ]))?
+        .stdout,
     )?;
     let path = path.canonicalize()?;
     if !listed
@@ -272,7 +278,11 @@ pub fn remove(ctx: &Context, path: &Path) -> Result<()> {
     if target.is_dir() {
         fs::remove_dir_all(&target)?;
     }
-    process::run(ctx.command("git").args(["worktree", "remove"]).arg(&path))?;
+    process::run(
+        oer_process::git::command(&ctx.root)
+            .args(["worktree", "remove"])
+            .arg(&path),
+    )?;
     println!("worktree: removed {}", path.display());
     Ok(())
 }

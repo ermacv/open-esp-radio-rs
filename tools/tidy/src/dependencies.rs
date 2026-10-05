@@ -17,7 +17,7 @@ use crate::{Context, Result, reachability};
 pub fn check(context: &Context<'_>) -> Result<Vec<String>> {
     let mut problems = vec![];
     let mut excused = BTreeSet::new();
-    for package in &context.manifests.packages {
+    for package in context.model.packages() {
         let Some(reach) = context.reach.get(&package.manifest) else {
             continue;
         };
@@ -33,7 +33,7 @@ pub fn check(context: &Context<'_>) -> Result<Vec<String>> {
             if let Some(target) = dependency
                 .path
                 .as_deref()
-                .and_then(|path| context.manifests.package_at(path))
+                .and_then(|path| context.model.package_at(path))
             {
                 crate_names.push(target.library.clone());
             }
@@ -63,7 +63,7 @@ pub fn check(context: &Context<'_>) -> Result<Vec<String>> {
         }
     }
     for (index, entry) in context.allowlist.unused_dependencies.iter().enumerate() {
-        let declared = context.manifests.packages.iter().any(|package| {
+        let declared = context.model.packages().iter().any(|package| {
             package.manifest == entry.manifest
                 && package
                     .dependencies

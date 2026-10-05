@@ -11,7 +11,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{DeviceImageKeys, ImageClass};
+use crate::ImageClass;
+use oer_hil_protocol::DeviceImageKeys;
 
 /// The runtime manifests of this tree, by chip.
 const RUNTIME_MANIFESTS: [(&str, &str); 2] = [

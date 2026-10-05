@@ -1,5 +1,5 @@
 //! ISA-only function decoder and relocation interpretation; no I/O authority.
-use object::elf::*;
+use oer_elf::rv32::{self, Role};
 use oer_riscv_decode::{Extension, Extensions, Inst, Instruction};
 use oer_riscv_model::*;
 pub struct RiscvDecoder;
@@ -112,15 +112,13 @@ impl FunctionDecoder for RiscvDecoder {
         let mut target = r.target.clone();
         let mut addend = r.addend;
         let mut paired = None;
-        let kind = match r.relocation_type {
-            R_RISCV_CALL | R_RISCV_CALL_PLT => ReferenceKind::Call,
-            R_RISCV_BRANCH | R_RISCV_JAL | R_RISCV_RVC_BRANCH | R_RISCV_RVC_JUMP => {
-                ReferenceKind::Branch
-            }
-            R_RISCV_HI20 | R_RISCV_LO12_I | R_RISCV_LO12_S | R_RISCV_PCREL_HI20 | R_RISCV_32 => {
+        let kind = match rv32::kind(r.relocation_type).role {
+            Role::Call => ReferenceKind::Call,
+            Role::Jump | Role::Branch => ReferenceKind::Branch,
+            Role::AbsoluteHigh | Role::AbsoluteLow | Role::PcRelativeHigh | Role::Word => {
                 ReferenceKind::Address
             }
-            R_RISCV_PCREL_LO12_I | R_RISCV_PCREL_LO12_S => {
+            Role::PcRelativeLow => {
                 let mut found = None;
                 let mut count = 0;
                 if r.target.section == Some(section) && r.addend == Some(0) {
@@ -130,7 +128,8 @@ impl FunctionDecoder for RiscvDecoder {
                         .take_while(|hi| hi.offset == r.target.offset)
                     {
                         control.checkpoint(1)?;
-                        if hi.offset == r.target.offset && hi.relocation_type == R_RISCV_PCREL_HI20
+                        if hi.offset == r.target.offset
+                            && rv32::kind(hi.relocation_type).role == Role::PcRelativeHigh
                         {
                             found = Some(hi);
                             count += 1;
@@ -147,8 +146,8 @@ impl FunctionDecoder for RiscvDecoder {
                     ReferenceKind::Unknown
                 }
             }
-            R_RISCV_NONE | R_RISCV_RELAX | R_RISCV_ALIGN => ReferenceKind::Metadata,
-            _ => ReferenceKind::Unknown,
+            Role::Hint => ReferenceKind::Metadata,
+            Role::Other => ReferenceKind::Unknown,
         };
         let known = kind != ReferenceKind::Unknown
             && (kind == ReferenceKind::Metadata
@@ -166,6 +165,7 @@ impl FunctionDecoder for RiscvDecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use oer_elf::rv32::{R_RISCV_PCREL_HI20, R_RISCV_PCREL_LO12_I};
     fn relocation(offset: u64, kind: u32, target_offset: u64) -> FunctionRelocation {
         FunctionRelocation {
             section: 9,
@@ -266,6 +266,8 @@ mod tests {
         ));
     }
 }
+
+pub mod listing;
 
 /// Every form the decoder knows: the ESP32-S31's instruction set without Zcmt.
 pub fn decode_instruction(bytes: &[u8]) -> Option<(Instruction, usize)> {

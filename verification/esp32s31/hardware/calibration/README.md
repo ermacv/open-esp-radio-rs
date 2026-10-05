@@ -3,85 +3,91 @@
 Compares the cold PHY calibration of the pinned vendor firmware with the
 production calibration on the same ESP32-S31 board. The comparison uses the
 reviewed `phy_param` relation that the Blobray tracking scenario also uses
-([`committed.rs`](../../scenarios/src/phy/committed.rs)). The production
-side goes through the same projection functions as the comparison probes
-([`calibration_projection.rs`](../../probes/radio/library/src/calibration_projection.rs)).
+([`oer-esp32s31-phy-relation`](../../phy-relation/README.md)'s `committed`).
+The production side goes through the same projection functions as the
+comparison probes (its `projection`).
 It does not depend on Blobray peripheral models.
 
+This package is a library: what is compared and how. The capture is a HIL
+run: the `phy` family's `vendor-calibration` workload
+([`oer-hil-family-phy`](../../../../hil/host/family/phy/README.md)) and its
+scenarios in [`hil/scenarios/phy`](../../../../hil/scenarios/phy):
+
 ```console
-cargo build -p oer-esp32s31-phy-vendor-calibration
-cargo hil --owner <name> lease --board esp32s31 --air exclusive -- \
-    target/debug/oer-esp32s31-phy-vendor-calibration capture --output <new directory>
-cargo run -p oer-esp32s31-phy-vendor-calibration -- compare --captures <directory>
+cargo hil run phy-vendor-calibration
+cargo hil run phy-vendor-calibration-restart
+cargo hil run phy-vendor-calibration-ieee802154
+cargo hil run phy-vendor-calibration-ieee802154-restart
 ```
 
-The capture builds the vendor project it flashes with `cargo xtask
-vendor-firmware --chip esp32s31 <project>` when this checkout has no build of
-it yet, as in a new worktree; a failed build stops the capture and names that
-command.
+The run builds the production image class like any scenario and the vendor
+project it flashes against the pinned ESP-IDF (the image pipeline's
+`esp_idf::idf` build, incremental), with the HIL bootloader, partition table
+and OTA selection the pipeline encodes around the vendor application. Every
+flash goes through the run's flash operation under its lease and lock of
+the board, which journals it. The results are the run bundle's: each boot is
+a typed observation (`vendor-boot-NN`, `production-boot-NN`, `boots::VendorBoot`
+and `boots::ProductionBoot`), the images both sides ran are `images`, and the
+comparison is `comparison` (`compare::Summary`); a verdict other than MATCH
+fails the repetition. Nothing is written to the repository.
 
 ## Capture
 
-`capture` runs under a lease of the esp32s31 board with exclusive air,
-since cold calibration measures TX and RX DC and IQ that another
-transmission would bias. It holds the board's device lease and records
-every flash in the
-board journal. For each of `--boots` rounds (ten by default) it takes these
-steps:
+Cold calibration measures TX and RX DC and IQ that another transmission
+would bias, so the scenarios claim the 2.4 GHz band. For each of the
+table's `boots` rounds the workload takes these steps:
 
-1. Flash the [vendor calibration firmware](../../hil-vendor/README.md) into
-   `ota_0`, reset the board and keep the boot's `phy_param` report. Then
-   request every readable register of the published radio-PHY ownership
-   partition (`RadioPhyPeripherals` of `registers/esp32s31/policy/api.toml`,
+1. Flash the [vendor calibration firmware](../../hil-vendor/README.md),
+   reset the board and keep the boot's `phy_param` report. Then request
+   every readable register of the published radio-PHY ownership partition
+   (`RadioPhyPeripherals` of `registers/esp32s31/policy/api.toml`,
    registers from the published SVD). A read that resets the chip, such as
    a register whose clock domain the Wi-Fi calibration leaves off, is
    recorded as unreadable and the reads continue after the new boot. Then
    request every register of the analog image: each analog-I2C register a
    reviewed `PhyI2cField` of the PAC API policy occupies (its
    `register-image`), read through the ESP-IDF analog-I2C driver.
-2. Flash the production image class (`--production-image`, `correctness` by
-   default) and prepare one reset with a fresh startup artifact path, so the
-   boot calibrates fully and publishes its retained calibration. Then read
-   the radio-PHY register image (HIL `PhyRegisterImage`) at the indices the
-   vendor boot of the round read, and the whole analog image (HIL
-   `PhyAnalogImage`, one production analog-I2C read per register).
+2. Write the scenario's production image back and boot it with a fresh
+   startup artifact path, so the boot calibrates fully and publishes its
+   retained calibration. Then read the radio-PHY register image (HIL
+   `PhyRegisterImage`) at the indices the vendor boot of the round read,
+   and the whole analog image (HIL `PhyAnalogImage`, one production
+   analog-I2C read per register).
 
-`--lifecycle ieee802154` and `ieee802154-restart` read the registers with
-the IEEE 802.15.4 radio instead of Wi-Fi holding the PHY. The vendor side is
-the [IEEE 802.15.4 reference firmware](../../hil-vendor/ieee802154-reference)
+`lifecycle = "ieee802154"` and `"ieee802154-restart"` read the registers
+with the IEEE 802.15.4 radio instead of Wi-Fi holding the PHY. The vendor
+side is the [IEEE 802.15.4 reference firmware](../../hil-vendor/ieee802154-reference)
 configured on channel 15 at 21 dBm and receiving, after one driver disable
 and enable for the restart point, read through its `PEEK` and `ANALOG`
 commands; a read that resets or hangs the chip is recorded as unreadable
 after a board reset. Production runs the `diagnostic-ieee802154-radio`
 image's IEEE 802.15.4 session on the same channel. These points compare
-register state only and write their summary beside their captures. The
-production image must serve the register images during the session.
+register state only.
 
 At these points the vendor side can also investigate what production does
-not publish. Each `--vendor-window ADDRESS:WORDS` (hexadecimal address,
-decimal word count) is read with `PEEK` into `vendor-NN.windows`;
-`--vendor-transmit` then sends one data frame without CCA or acknowledgement
-request and reads the analog image and the windows again into
-`vendor-NN.transmitted.*`. `--vendor-only` neither builds nor boots
-production, and `compare` rejects such a capture: production serves only
-its register partition, so the windows are evidence for an investigation,
-not a comparison.
+not publish. Each `vendor_windows` entry (`{ address, words }`) is read with
+`PEEK` into the boot's `windows`; `vendor_transmit` then sends one data
+frame without CCA or acknowledgement request and reads the analog image and
+the windows again (`transmitted`). `vendor_only` boots only the vendor
+firmware and compares nothing: production serves only its register
+partition, so the windows are evidence for an investigation, not a
+comparison.
 
-`--lifecycle` selects when both sides report their registers. `cold`, the
-default, reads them after the cold calibration and the Wi-Fi bring-up.
-`restart` first restarts the Wi-Fi radio once: the vendor firmware stops
-and starts its Wi-Fi client, and requires that stopping it released every
-PHY modem, which closes RF; production runs its idle radio restart
-(`RestartRadio`) and requires that RF was closed and woken. A vendor read
-that resets the chip is followed by another restart before the reads
-continue.
+`lifecycle` selects when both sides report their registers. `cold` reads
+them after the cold calibration and the Wi-Fi bring-up. `restart` first
+restarts the Wi-Fi radio once: the vendor firmware stops and starts its
+Wi-Fi client, and requires that stopping it released every PHY modem, which
+closes RF; production runs its idle radio restart (`RestartRadio`) and
+requires that RF was closed and woken. A vendor read that resets the chip is
+followed by another restart before the reads continue. `image` and
+`vendor_project` replace the point's own production image class and vendor
+project.
 
 Alternating the sides exposes both to the same board temperature drift.
-Captures stay in the ignored output directory.
 
 ## Compare
 
-`compare` does the following:
+`compare::compare` does the following:
 
 - Decodes each production artifact with the target's own codec.
 - Rebuilds the retained PHY state and projects it onto the relation's output
@@ -93,8 +99,8 @@ reference. A field's margin is the widest range its vendor boots span in any
 one element. An element passes when every production value lies within its
 vendor range widened by that margin.
 
-Every field carries a review in [`tolerances.toml`](tolerances.toml) with
-these parts:
+Every field carries a review in [`tolerances.toml`](src/tolerances.toml), which
+the library compiles in, with these parts:
 
 - whether its elements are signed;
 - which bits the relation models (`mask`);
@@ -107,11 +113,7 @@ these parts:
 
 A field without a review leaves the verdict INCOMPLETE.
 
-The summary of a `cold` capture goes to
-[`evidence/hardware/calibration.json`](../../evidence/hardware/calibration.json),
-that of a `restart` capture to
-[`evidence/hardware/calibration-restart.json`](../../evidence/hardware/calibration-restart.json),
-unless `--output` names a path. It records:
+The summary records:
 
 - the capture date, lifecycle point and verdict;
 - both images;
@@ -142,3 +144,7 @@ the tracking roots commit them:
 
 Committed state outside `phy_param`, and `phy_param` bytes outside the
 relation, are reported as uncovered, not compared.
+
+```console
+cargo test -p oer-esp32s31-phy-vendor-calibration
+```

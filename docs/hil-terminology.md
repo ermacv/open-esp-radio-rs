@@ -18,7 +18,7 @@ and the [protocol](../hil/protocol/README.md) define the contracts in detail.
 | Fixture provider | The installable host software that operates one kind of fixture (`linux-net`, `linux-bluetooth`). |
 | Air | The shared radio medium, claimed as a resource like a board. |
 | Stand | Everything one host operates for HIL: its boards, fixtures and air, and the arbiter that orders access to them. |
-| Board support | The host operations for one chip: build inputs, flash, reset, console, JTAG and post-mortem, selected by the chip profile's boot flow. |
+| Board support | The host operations on one board: flash, start, reset, console, JTAG and post-mortem, parametrized by its chip's profile. |
 | Recovery | Bringing a board that does not answer back to a flashable state; a board that cannot be recovered is quarantined. |
 | Quarantine | A board withheld from leases until a person or a later recovery returns it. |
 
@@ -99,13 +99,14 @@ table; the verdict depends on no stand operation.
 | --- | --- | --- |
 | Wire contract | Messages, keys, framing; the platform trace events; which keys an image built with given features serves | `oer-hil-protocol`, `oer-hil-trace`, `oer-hil-image-keys` |
 | HIL agent | How a board serves the protocol | `oer-hil-agent` and the chip runtimes under `hil/targets/` |
-| Board support | How one chip is flashed, reset, observed and examined after a failure | `oer-hil-board` (the port, the ESP-IDF bootloader flow, resets), `oer-esp32s31-hil-board` (the staged flow, calibration slots), `oer-hil-stand` (`post_mortem`) |
-| Stand | Who holds which board, fixture and air; recovery and quarantine | `oer-hil-stand-schema` (the stand file), `oer-hil-arbiter`, `oer-hil-stand` (configuration, locks, cell observation, fixture software leases, `recovery`) and `cargo hil` |
+| Board support | How a board is flashed, started, reset, observed and examined after a failure | `oer-hil-board` (board I/O: ports, the one flash writer, starts, the reset ladder, OpenOCD, power, consoles), `oer-hil-flash` (the flash operation: lease, write, journal, start), `oer-hil-lab` (`post_mortem`) |
+| Stand | Who holds which board, fixture and air; recovery and quarantine | `oer-hil-stand-model` (the stand file, board names, state paths), `oer-hil-arbiter` (claims, queue, job tickets, lock files, board journal), `oer-hil-stand-host` (discovery, doctor, fixtures, SSH), `oer-hil-lab` (a run's configuration and lock, cell observation, fixture software leases, `recovery`) and `cargo hil` |
 | Fixtures | Preparation and restoration of host equipment; privileged installation | `oer-hil-fixture`, `oer-hil-fixture-install` and each family's fixture module |
-| Image builder | Which bytes an image class produces and from which sources, and the firmware and build records it hands to evidence | `oer-hil-image` (`frozen` builds from a source snapshot, `record` writes the records and implements the recipe verification checks them against) and `tools/firmware` |
-| Execution | How a workload drives the DUT, peers and fixtures and records observations | `oer-hil-runner`, `oer-hil-link` (the capture, protocol exchange and measurements, through its `Dut` port), `oer-hil-execution` (`context`) and the `oer-hil-runner-<family>` packages |
+| Image builder | Which bytes an image class produces and from which sources, and the firmware and build records it hands to evidence | `oer-hil-image` (each class's spec for the image pipeline, `frozen` builds from a source snapshot, `record` writes the records and implements the recipe verification checks them against) over the image pipeline `oer-image` (`tools/image`) |
+| Execution | How a workload drives the DUT, peers and fixtures and records observations | `oer-hil-runner` (the run core and its family registry), `oer-hil-link` (the DUT session and its generic exchange, through its `Dut` port; the peer console), `oer-hil-workload` (`context`, typed `results`, `boots`, `fixture`, the `family` contract), `oer-hil-net-traffic` (host network traffic) and the `oer-hil-family-<family>` packages |
 | Verdict | Which checks pass for a scenario's observations | `oer-hil-image-class` (the image a scenario needs and the keys it must serve), the scenario model and campaign plan in `oer-hil-scenario` and each family's workloads |
-| Evidence | How a run is written, sealed and verified | `oer-hil-evidence`, `oer-hil-source-snapshot` (the sources a run and its images were built from), `oer-hil-durable` and `oer-hil-schema` |
+| Evidence | How a run is written, sealed, read and verified | `oer-hil-run-bundle` (the format, the one writer and the one reader, integrity, the run store), `oer-hil-source-snapshot` (the sources a run and its images were built from), `oer-hil-observer` (the observer's build identity), `oer-durable` (tools) and `oer-hil-schema` |
+| Analysis and experiments | What runs show and how runs are launched and compared | `oer-hil-analysis` (queries, the one measurement aggregation and comparison, performance, views) and `oer-hil-experiment` (the one run launch, A/B, bisection) |
 | Qualification | Whether sealed evidence establishes readiness | `oer-qualification` |
 
 ## Retired words

@@ -288,3 +288,55 @@ impl InitializationConfiguration {
         self.ipv4.validate()
     }
 }
+
+/// The target initialization a host session applies: the role-neutral
+/// [`InitializationConfiguration`] without the network addresses, which come
+/// from the station network, and the power save a station start selects. A
+/// HIL scenario declares it; the host link sends it.
+#[cfg(feature = "registry")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TargetSettings {
+    pub ap_scheduler: WifiApScheduler,
+    pub data_plane: WifiDataPlanePlacement,
+    pub rx_checksum: WifiRxChecksumPolicy,
+    pub tx_udp_checksum: WifiTxUdpChecksumPolicy,
+    pub tx_buffer: WifiTxBufferPolicy,
+    pub rx_continuation: WifiRxContinuationPolicy,
+    pub l1_cache_counters: bool,
+    /// The power save the station runs once started.
+    pub station_power_save: WifiStationPowerSave,
+}
+
+#[cfg(feature = "registry")]
+impl Default for TargetSettings {
+    fn default() -> Self {
+        Self {
+            ap_scheduler: Default::default(),
+            data_plane: WifiDataPlanePlacement::SplitRadioNetwork,
+            rx_checksum: WifiRxChecksumPolicy::Software,
+            tx_udp_checksum: WifiTxUdpChecksumPolicy::Software,
+            tx_buffer: WifiTxBufferPolicy::OwnedSramPromotion,
+            rx_continuation: WifiRxContinuationPolicy::ImmediateSoftwareProbe,
+            l1_cache_counters: false,
+            station_power_save: WifiStationPowerSave::None,
+        }
+    }
+}
+
+#[cfg(feature = "registry")]
+impl TargetSettings {
+    /// The initialization message of these settings for a station network's
+    /// addresses.
+    pub fn initialization(self, ipv4: NetworkIpv4Configuration) -> InitializationConfiguration {
+        InitializationConfiguration {
+            ap_scheduler: self.ap_scheduler,
+            ipv4,
+            data_plane: self.data_plane,
+            rx_checksum: self.rx_checksum,
+            tx_udp_checksum: self.tx_udp_checksum,
+            tx_buffer: self.tx_buffer,
+            rx_continuation: self.rx_continuation,
+            l1_cache_counters: self.l1_cache_counters,
+        }
+    }
+}

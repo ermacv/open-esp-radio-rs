@@ -1,6 +1,8 @@
 //! Build HIL firmware image classes the way `cargo hil image build` does,
 //! with the link-time stack, placement and application audits, and report
-//! every class's outcome instead of stopping at the first failure.
+//! every class's outcome instead of stopping at the first failure. A built
+//! final image (`performance`, `correctness`) is also audited by Blobray:
+//! its runtime must make no call into the vendor radio ROM.
 
 use std::{
     collections::BTreeSet,
@@ -11,7 +13,8 @@ use std::{
 use oer_hil_image_class::ImageClass;
 use oer_hil_source_snapshot::FrozenSources;
 
-use crate::{Context, Result};
+use crate::Result;
+use oer_process::Checkout;
 
 /// How far each class is taken.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -30,7 +33,19 @@ pub struct Outcome {
     pub failure: Option<String>,
     /// The ROM summaries the class's image applied.
     pub summaries: BTreeSet<String>,
+    /// The built runtime ELF.
+    pub runtime_elf: Option<PathBuf>,
 }
+
+/// The classes whose built image Blobray audits for calls into the vendor
+/// radio ROM: the images a product ships.
+const FINAL: [ImageClass; 2] = [ImageClass::Performance, ImageClass::Correctness];
+
+/// The vendor radio ROM ranges no final image may call into.
+const FORBIDDEN: [&str; 2] = [
+    "esp32s31-eco0-radio-api=0x2f800bf0..0x2f8016bc",
+    "esp32s31-eco0-radio-body=0x2f823c12..0x2f83e6d0",
+];
 
 /// Every class with the runtime features its image builds with, and how to
 /// type-check one.
@@ -40,7 +55,7 @@ pub fn list() -> String {
         text.push_str(&format!(
             "{:<36} {}\n",
             class.id(),
-            class.build_features(oer_esp32s31_firmware::network::NETWORK_FEATURE)
+            class.build_features(oer_hil_image_class::NETWORK_FEATURE)
         ));
     }
     text.push_str(
@@ -119,7 +134,7 @@ fn last_inputs(
         schema: u32,
         files: Vec<PathBuf>,
     }
-    let name = format!("{}-{}", class.id(), oer_hil_image::NETWORK);
+    let name = format!("{}-{}", class.id(), oer_hil_image_class::NETWORK);
     let newest = std::fs::read_dir(builds.join("snapshot-builds"))
         .ok()?
         .flatten()
@@ -127,8 +142,7 @@ fn last_inputs(
         .filter_map(|path| Some((std::fs::metadata(&path).ok()?.modified().ok()?, path)))
         .max()?;
     let inputs: SourceInputs = serde_json::from_slice(&std::fs::read(newest.1).ok()?).ok()?;
-    (inputs.schema == oer_hil_image::source_inputs::SCHEMA)
-        .then(|| inputs.files.into_iter().collect())
+    (inputs.schema == oer_image::source_inputs::SCHEMA).then(|| inputs.files.into_iter().collect())
 }
 
 /// Classes waiting to build, and the outcomes of those that did.
@@ -146,7 +160,7 @@ struct Queue {
 /// each finishes, the classes of its family start from a copy-on-write copy
 /// of its compiled units, so a dependency is compiled once per family
 /// instead of once per class.
-pub fn run(ctx: &Context, selected: &[ImageClass], depth: Depth, jobs: usize) -> Result<()> {
+pub fn run(ctx: &Checkout, selected: &[ImageClass], depth: Depth, jobs: usize) -> Result<()> {
     // A full build compiles a snapshot of this checkout in one of the host's
     // build slots, whose paths and caches every checkout shares.
     let frozen = match depth {
@@ -245,15 +259,50 @@ pub fn run(ctx: &Context, selected: &[ImageClass], depth: Depth, jobs: usize) ->
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .outcomes;
     outcomes.sort_by_key(|(index, _)| *index);
-    let outcomes: Vec<Outcome> = outcomes.into_iter().map(|(_, outcome)| outcome).collect();
+    let mut outcomes: Vec<Outcome> = outcomes.into_iter().map(|(_, outcome)| outcome).collect();
+    if depth == Depth::Build {
+        audit_final_images(&mut outcomes, |elf| final_image_audit(ctx, elf))?;
+    }
     print!("{}", summary(&outcomes));
     verdict(&outcomes)?;
     // Only the whole catalog, built, shows which summaries no image uses.
     if selected.is_empty() && depth == Depth::Build {
-        let reviewed = oer_esp32s31_firmware::interrupt_stack::rom_summaries(&ctx.root)?;
+        let reviewed = oer_image::interrupt_stack::rom_summaries(&ctx.root)?;
         stale_summaries(&reviewed, &outcomes)?;
     }
     Ok(())
+}
+
+/// Audit every built final image with `audit`; a failed audit fails its
+/// class.
+fn audit_final_images(
+    outcomes: &mut [Outcome],
+    mut audit: impl FnMut(&std::path::Path) -> Result<()>,
+) -> Result<()> {
+    for outcome in outcomes
+        .iter_mut()
+        .filter(|outcome| FINAL.contains(&outcome.class) && outcome.failure.is_none())
+    {
+        let elf = outcome
+            .runtime_elf
+            .clone()
+            .ok_or("a built final image names its runtime ELF")?;
+        if let Err(error) = audit(&elf) {
+            outcome.failure = Some(format!("final radio target audit: {error}"));
+        }
+    }
+    Ok(())
+}
+
+/// Blobray's target audit of the runtime ELF `runtime`, with the Blobray
+/// host built first.
+fn final_image_audit(ctx: &Checkout, runtime: &std::path::Path) -> Result<()> {
+    let mut command = ctx.command(oer_toolchain::blobray::host(&ctx.root)?);
+    command.args(["audit-targets", "--artifact"]).arg(runtime);
+    for range in FORBIDDEN {
+        command.args(["--forbid", range]);
+    }
+    oer_process::run_with_shutdown_grace(&mut command, Duration::from_secs(20))
 }
 
 /// Fails naming every reviewed ROM summary no class's image applied: a
@@ -326,7 +375,7 @@ fn share_units(frozen: &FrozenSources, seed: ImageClass, class: ImageClass) -> R
 
 /// Builds or type-checks `class`, the `index`th of `total`.
 fn build_one(
-    ctx: &Context,
+    ctx: &Checkout,
     frozen: Option<&FrozenSources>,
     class: ImageClass,
     index: usize,
@@ -346,21 +395,29 @@ fn build_one(
     let result = match depth {
         Depth::Build => match frozen {
             Some(frozen) => oer_hil_image::frozen::build(frozen, class, None, &Default::default())
-                .map(|artifacts| artifacts.rom_summaries),
+                .map(|artifacts| {
+                    (
+                        artifacts.bundle.rom_summaries.clone(),
+                        Some(artifacts.bundle.runtime_elf()),
+                    )
+                }),
             None => Err("a full build needs the frozen sources".into()),
         },
 
-        Depth::TypeCheck => oer_hil_image::check(&ctx.root, class).map(|()| BTreeSet::new()),
+        Depth::TypeCheck => {
+            oer_hil_image::check(&ctx.root, class).map(|()| (BTreeSet::new(), None))
+        }
     };
-    let (summaries, failure) = match result {
-        Ok(summaries) => (summaries, None),
-        Err(error) => (BTreeSet::new(), Some(error.to_string())),
+    let (summaries, runtime_elf, failure) = match result {
+        Ok((summaries, runtime_elf)) => (summaries, runtime_elf, None),
+        Err(error) => (BTreeSet::new(), None, Some(error.to_string())),
     };
     let outcome = Outcome {
         class,
         elapsed: started.elapsed(),
         failure,
         summaries,
+        runtime_elf,
     };
     println!(
         "check firmware: {} {} ({}s)",
@@ -442,7 +499,33 @@ mod tests {
             elapsed: Duration::from_secs(3),
             failure: failure.map(str::to_owned),
             summaries: BTreeSet::new(),
+            runtime_elf: Some(PathBuf::from(format!("/{}/runtime.elf", class.id()))),
         }
+    }
+
+    #[test]
+    fn only_built_final_images_are_audited_and_a_failed_audit_fails_its_class() {
+        let mut outcomes = [
+            outcome(ImageClass::Performance, None),
+            outcome(ImageClass::Correctness, Some("link failed")),
+            outcome(ImageClass::SystemWatchdog, None),
+        ];
+        let mut audited = Vec::new();
+        audit_final_images(&mut outcomes, |elf| {
+            audited.push(elf.to_owned());
+            Err("calls the radio ROM".into())
+        })
+        .unwrap();
+        assert_eq!(audited, [PathBuf::from("/performance/runtime.elf")]);
+        assert!(
+            outcomes[0]
+                .failure
+                .as_deref()
+                .unwrap()
+                .contains("calls the radio ROM")
+        );
+        assert_eq!(outcomes[1].failure.as_deref(), Some("link failed"));
+        assert!(outcomes[2].failure.is_none());
     }
 
     #[test]
@@ -452,13 +535,13 @@ mod tests {
             let directory = builds.path().join("snapshot-builds/abc").join(format!(
                 "{}-{}",
                 class.id(),
-                oer_hil_image::NETWORK
+                oer_hil_image_class::NETWORK
             ));
             std::fs::create_dir_all(&directory).unwrap();
             std::fs::write(
                 directory.join("source-inputs.json"),
                 serde_json::json!({
-                    "schema": oer_hil_image::source_inputs::SCHEMA,
+                    "schema": oer_image::source_inputs::SCHEMA,
                     "files": files,
                 })
                 .to_string(),
@@ -493,10 +576,10 @@ mod tests {
             &[
                 "crates/wifi/src/lib.rs",
                 "hil/targets/esp32s31/stack.toml",
-                "tools/firmware/src/lib.rs",
+                "tools/image/src/lib.rs",
             ],
         );
-        assert_eq!(changed(&["tools/firmware/src/lib.rs"]), [wifi]);
+        assert_eq!(changed(&["tools/image/src/lib.rs"]), [wifi]);
         for unread in ["Cargo.lock", "hil/host/runner/src/main.rs", "docs/guide.md"] {
             assert!(changed(&[unread]).is_empty(), "{unread}");
         }
@@ -504,7 +587,7 @@ mod tests {
         let old = builds.path().join("snapshot-builds/abc").join(format!(
             "{}-{}",
             wifi.id(),
-            oer_hil_image::NETWORK
+            oer_hil_image_class::NETWORK
         ));
         std::fs::write(
             old.join("source-inputs.json"),
@@ -515,7 +598,7 @@ mod tests {
         std::fs::remove_dir_all(builds.path().join("snapshot-builds/abc").join(format!(
             "{}-{}",
             bluetooth.id(),
-            oer_hil_image::NETWORK
+            oer_hil_image_class::NETWORK
         )))
         .unwrap();
         assert!(

@@ -3,7 +3,8 @@
 //! files can break, checked within a minute warm. CI is the full check of
 //! every pull request.
 //!
-//! Selection reads the tree through `oer-tidy`'s model, without Cargo:
+//! Selection reads the tree through the repository model (`oer-repo`),
+//! without Cargo:
 //!
 //! - a file inside a package selects that package; a workspace's own
 //!   manifest, and the files every build reads (`rust-toolchain.toml`,
@@ -12,29 +13,22 @@
 //! - a package's `open-radio.inputs` patterns name files outside it that its
 //!   tests read (the evaluator reads the catalogs, xtask the workflows), so
 //!   a change there selects it too;
-//! - one `cargo metadata --no-deps` per workspace adds every package that
-//!   depends on a selected one, through any dependency kind.
+//! - the model's path-dependency graph adds every package of the same
+//!   workspace that depends on a selected one, through any dependency kind.
 //!
-//! The gate then runs the integrity tier over the whole tree, `cargo fmt`
-//! of every workspace a Rust file changed in, the lock check of every
-//! workspace whose manifests changed, the capability check when catalogs or
-//! code changed, Clippy of the selected host packages and their dependents,
-//! so a changed interface fails where it is used, and the tests of the
-//! selected host packages with a time limit ([`Depth::Fast`]). The tests of
-//! the dependents, the Markdown check, firmware, images, the PHY audit,
-//! registers, provenance and API documentation are CI's; `check changed
-//! --full` runs them locally ([`Depth::Full`]).
+//! What runs for a selection is the check registry's
+//! ([`crate::registry`]): each check's trigger reads the [`Change`].
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    path::{Path, PathBuf},
-    time::{Duration, Instant},
+    path::Path,
+    time::Duration,
 };
 
-use oer_process as process;
-use oer_tidy::classification::Platform;
+use oer_repo::{Model, Platform};
 
-use crate::{Context, Result, cargo};
+use crate::{Result, registry::Tier};
+use oer_process::Checkout;
 
 /// Files every build of every workspace reads.
 const GLOBAL: &[&str] = &[
@@ -44,9 +38,9 @@ const GLOBAL: &[&str] = &[
     "rustfmt.toml",
 ];
 
-/// The image classes CI type-checks on every pull request; the gate
+/// The image classes CI builds on every pull request; the gate
 /// type-checks them whenever chip code changes.
-const FINAL_IMAGES: [oer_hil_image_class::ImageClass; 2] = [
+pub const FINAL_IMAGES: [oer_hil_image_class::ImageClass; 2] = [
     oer_hil_image_class::ImageClass::Performance,
     oer_hil_image_class::ImageClass::Correctness,
 ];
@@ -75,59 +69,53 @@ pub struct Package {
 }
 
 /// The packages and workspaces of the tree.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Tree {
+    /// The repository model the gate reads.
+    pub model: Model,
     pub packages: Vec<Package>,
     /// Root manifests of every workspace.
     pub workspaces: Vec<String>,
 }
 
 impl Tree {
-    /// The tree of the checkout at `root`, as `oer-tidy` reads it.
+    /// The tree of the checkout at `root`.
     pub fn load(root: &Path) -> Result<Self> {
-        let repo = oer_tidy::repo::Repo::from_git(root)?;
-        let manifests = oer_tidy::manifest::Manifests::load(&repo)?;
-        let owners = oer_tidy::workspaces::owners(&manifests);
+        Ok(Self::of(Model::load(&oer_repo::Repo::from_git(root)?)?))
+    }
+
+    /// The gate's view of `model`.
+    pub fn of(model: Model) -> Self {
         let mut packages = Vec::new();
-        for package in &manifests.packages {
-            let Some(workspace) = owners.get(&package.manifest) else {
+        for package in model.packages() {
+            let Some(workspace) = model.workspace_of(package) else {
                 continue;
             };
-            let platform = oer_tidy::classification::of(package).map(|class| class.platform);
-            let inputs = package
-                .open_radio
-                .as_ref()
-                .and_then(|table| table.get("inputs"))
-                .and_then(toml::Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(toml::Value::as_str)
-                .map(str::to_owned)
-                .collect();
+            let class = model.classification(package);
+            let platform = class.as_ref().map(|class| &class.platform);
             packages.push(Package {
                 name: package.name.clone(),
                 directory: package.directory.clone(),
-                workspace: workspace.clone(),
+                workspace: workspace.to_owned(),
                 host: workspace == "Cargo.toml"
                     || matches!(platform, Ok(Platform::Host | Platform::Portable)),
                 chip: matches!(platform, Ok(Platform::Chip(_) | Platform::Family(_))),
-                inputs,
+                inputs: class.map(|class| class.inputs.clone()).unwrap_or_default(),
             });
         }
-        Ok(Self {
+        Self {
+            workspaces: model.workspaces().to_vec(),
+            model,
             packages,
-            workspaces: oer_tidy::workspaces::discover(&manifests),
-        })
+        }
     }
 
-    /// The package whose directory holds `path`, the innermost one.
+    /// The package a path belongs to ([`Model::owner`]).
     fn owner(&self, path: &str) -> Option<&Package> {
+        let owner = self.model.owner(path)?;
         self.packages
             .iter()
-            .filter(|package| {
-                package.directory.is_empty() || path.starts_with(&format!("{}/", package.directory))
-            })
-            .max_by_key(|package| package.directory.len())
+            .find(|package| package.directory == owner.directory)
     }
 }
 
@@ -228,7 +216,7 @@ pub fn select(tree: &Tree, changed: &[String]) -> Selection {
             if package
                 .inputs
                 .iter()
-                .any(|pattern| oer_tidy::classification::input_matches(pattern, path))
+                .any(|pattern| oer_repo::classification::input_matches(pattern, path))
             {
                 selection
                     .packages
@@ -247,38 +235,15 @@ fn prefix(directory: &str) -> String {
     }
 }
 
-/// One `[[package]]` entry of a lock file: its identity and dependencies.
+/// The `(name, version, source, dependencies)` of every entry of a lock
+/// file; an unreadable or absent lock has none.
 type LockEntry = (String, String, Option<String>, Vec<String>);
 
 fn lock_entries(text: &str) -> Vec<LockEntry> {
-    let Ok(lock) = text.parse::<toml::Table>() else {
-        return Vec::new();
-    };
-    lock.get("package")
-        .and_then(toml::Value::as_array)
+    oer_repo::lock::parse(text, "Cargo.lock")
+        .unwrap_or_default()
         .into_iter()
-        .flatten()
-        .filter_map(|entry| {
-            let field = |key: &str| {
-                entry
-                    .get(key)
-                    .and_then(toml::Value::as_str)
-                    .map(str::to_owned)
-            };
-            Some((
-                field("name")?,
-                field("version")?,
-                field("source"),
-                entry
-                    .get("dependencies")
-                    .and_then(toml::Value::as_array)
-                    .into_iter()
-                    .flatten()
-                    .filter_map(toml::Value::as_str)
-                    .map(str::to_owned)
-                    .collect(),
-            ))
-        })
+        .map(|entry| (entry.name, entry.version, entry.source, entry.dependencies))
         .collect()
 }
 
@@ -335,7 +300,7 @@ pub fn lock_dependents(old: &str, new: &str) -> BTreeSet<String> {
 /// `changed` alters, comparing each lock at `base` with the lock at `to`,
 /// or in the working tree when `to` is `None`.
 pub fn select_locks(
-    ctx: &Context,
+    ctx: &Checkout,
     tree: &Tree,
     changed: &[String],
     base: &str,
@@ -347,8 +312,12 @@ pub fn select_locks(
         .filter(|path| path.rsplit('/').next() == Some("Cargo.lock"))
     {
         let workspace = format!("{}Cargo.toml", lock.trim_end_matches("Cargo.lock"));
-        let at =
-            |revision: &str| git(ctx, &["show", &format!("{revision}:{lock}")]).unwrap_or_default();
+        let at = |revision: &str| {
+            oer_process::git::output(&ctx.root, ["show", &format!("{revision}:{lock}")])
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+                .unwrap_or_default()
+        };
         let old = at(base);
         let new = match to {
             Some(revision) => at(revision),
@@ -367,101 +336,38 @@ pub fn select_locks(
     Ok(())
 }
 
-/// The path dependencies of every member of one workspace, by name.
-pub type Edges = BTreeMap<String, BTreeSet<String>>;
-
-/// `selected` and, transitively, every package of `edges` that depends on
-/// one of them.
-pub fn dependents(edges: &Edges, selected: &BTreeSet<String>) -> BTreeSet<String> {
-    let mut found = selected.clone();
-    loop {
-        let before = found.len();
-        for (package, dependencies) in edges {
-            if !found.contains(package) && dependencies.iter().any(|d| found.contains(d)) {
-                found.insert(package.clone());
-            }
-        }
-        if found.len() == before {
-            return found;
-        }
-    }
-}
-
-/// Every member of `workspace` with the members it depends on by path,
-/// through every dependency kind: one `cargo metadata --no-deps`.
-pub fn edges(ctx: &Context, workspace: &str) -> Result<Edges> {
-    let metadata = cargo::metadata_no_deps(ctx, &ctx.root.join(workspace))?;
-    let members: Vec<_> = metadata
-        .packages
-        .iter()
-        .filter(|package| metadata.workspace_members.contains(&package.id))
-        .collect();
-    let by_directory: BTreeMap<_, _> = members
-        .iter()
-        .filter_map(|package| Some((package.manifest_path.parent()?, package.name.to_string())))
-        .collect();
-    Ok(members
-        .iter()
-        .map(|package| {
-            let dependencies = package
-                .dependencies
-                .iter()
-                .filter_map(|dependency| by_directory.get(&dependency.path.as_deref()?).cloned())
-                .collect();
-            (package.name.to_string(), dependencies)
-        })
-        .collect())
-}
-
-/// The selected packages and every package depending on one of them.
-pub fn affected(ctx: &Context, selection: &Selection) -> Result<BTreeSet<Key>> {
-    let mut by_workspace: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
+/// The selected packages and every package of the same workspace that
+/// depends on one of them, through any dependency kind.
+pub fn affected(tree: &Tree, selection: &Selection) -> BTreeSet<Key> {
+    let mut by_workspace: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     for (workspace, package) in &selection.packages {
-        by_workspace
-            .entry(workspace)
-            .or_default()
-            .insert(package.clone());
+        by_workspace.entry(workspace).or_default().insert(package);
     }
     let mut affected = BTreeSet::new();
     for (workspace, selected) in by_workspace {
-        for package in dependents(&edges(ctx, workspace)?, &selected) {
-            affected.insert((workspace.to_owned(), package));
+        let members: Vec<&oer_repo::Package> = tree.model.members(workspace).collect();
+        let chosen: Vec<&oer_repo::Package> = members
+            .iter()
+            .copied()
+            .filter(|package| selected.contains(package.name.as_str()))
+            .collect();
+        for package in tree.model.dependents(&members, &chosen) {
+            affected.insert((workspace.to_owned(), package.name.clone()));
         }
     }
-    Ok(affected)
+    affected
 }
 
-/// One step's outcome, printed as it ends.
-fn step(name: &str, work: impl FnOnce() -> Result<()>) -> Result<()> {
-    let started = Instant::now();
-    let result = work();
-    println!(
-        "gate: {} {name} ({:.1} s)",
-        if result.is_ok() { "PASS" } else { "FAIL" },
-        started.elapsed().as_secs_f64()
-    );
-    result.map_err(|error| format!("{name}: {error}").into())
-}
-
-/// How much of a change the gate checks.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Depth {
-    /// Clippy of the affected packages, the tests of the selected ones; the
-    /// Markdown check is CI's.
-    Fast,
-    /// Clippy and the tests of every affected package, and the Markdown check.
-    Full,
-}
-
-/// The packages whose tests the gate runs at `depth`.
+/// The packages whose tests a change at `tier` runs: the selected ones,
+/// and from [`Tier::Full`] on every affected one.
 pub fn tested<'a>(
-    depth: Depth,
+    tier: Tier,
     selection: &Selection,
     affected: &'a BTreeSet<Key>,
 ) -> BTreeSet<&'a Key> {
     affected
         .iter()
-        .filter(|key| depth == Depth::Full || selection.packages.contains(*key))
+        .filter(|key| tier >= Tier::Full || selection.packages.contains(*key))
         .collect()
 }
 
@@ -499,184 +405,63 @@ pub fn image_classes(
         .collect()
 }
 
-/// Runs the gate for `selection` at `depth`, with Clippy of the packages of
-/// `affected` the host builds and the tests [`tested`] names.
-pub fn run(
-    ctx: &Context,
-    tree: &Tree,
-    selection: &Selection,
-    affected: &BTreeSet<Key>,
-    depth: Depth,
-) -> Result<()> {
-    step("tidy", || crate::checks::tidy::run(ctx))?;
-    for workspace in &selection.format {
-        // Only the selected packages: formatting the whole root workspace
-        // takes 15 s, its changed packages a fraction of that.
-        let packages: Vec<&str> = selection
-            .packages
-            .iter()
-            .filter(|(owner, _)| owner == workspace)
-            .map(|(_, name)| name.as_str())
-            .collect();
-        step(&format!("fmt {workspace}"), || {
-            let mut command = ctx.cargo();
-            command
-                .args(["fmt", "--manifest-path"])
-                .arg(ctx.root.join(workspace));
-            for package in &packages {
-                command.args(["-p", package]);
-            }
-            process::run(command.args(["--", "--check"]))
-        })?;
-    }
-    if !selection.locks.is_empty() {
-        let manifests: Vec<PathBuf> = selection
-            .locks
-            .iter()
-            .map(|workspace| ctx.root.join(workspace))
-            .collect();
-        step("lock --check", || {
-            crate::checks::metadata::check_locks(ctx, &manifests)
-        })?;
-    }
-    if selection.docs {
-        match depth {
-            Depth::Full => step("check docs", || crate::checks::docs::run(ctx))?,
-            Depth::Fast => println!("gate: check docs left to CI"),
-        }
-    }
-    if let Some(anchored) = &selection.capabilities {
-        let files: Vec<PathBuf> = anchored.iter().map(PathBuf::from).collect();
-        step("check capabilities", || {
-            crate::checks::docs::capabilities(ctx, &files)
-        })?;
-    }
-    let host: BTreeSet<&Key> = affected
-        .iter()
-        .filter(|(workspace, name)| {
-            tree.packages
-                .iter()
-                .any(|p| &p.workspace == workspace && &p.name == name && p.host)
+/// A change as the checks see it: its files, the tree, what it selects and
+/// reaches, and the tier it is checked at.
+#[derive(Clone, Debug)]
+pub struct Change {
+    pub files: Vec<String>,
+    pub tree: Tree,
+    pub selection: Selection,
+    pub affected: BTreeSet<Key>,
+    pub tier: Tier,
+}
+
+impl Change {
+    /// The change of `files` against `base`, whose locks are compared with
+    /// the lock at `to`, or in the working tree when `to` is `None`.
+    pub fn of(
+        ctx: &Checkout,
+        files: Vec<String>,
+        base: &str,
+        to: Option<&str>,
+        tier: Tier,
+    ) -> Result<Self> {
+        let tree = Tree::load(&ctx.root)?;
+        let mut selection = select(&tree, &files);
+        select_locks(ctx, &tree, &files, base, to, &mut selection)?;
+        let affected = affected(&tree, &selection);
+        Ok(Self {
+            files,
+            tree,
+            selection,
+            affected,
+            tier,
         })
-        .collect();
-    let chip = chip_code(tree, affected);
-    if !chip.is_empty() {
-        // Chip-target code is invisible to the host checks below:
-        // type-check the final images and every class whose image compiles
-        // a package with that code, so an interface change it still uses
-        // fails here. Full builds and the examples remain CI's.
-        let changed: BTreeSet<&str> = chip.iter().map(|(_, name)| name.as_str()).collect();
-        let mut graphs = Vec::new();
-        for class in oer_hil_image_class::ImageClass::ALL {
-            graphs.push((class, oer_hil_image::packages(&ctx.root, class)?));
-        }
-        let classes = image_classes(&changed, &graphs);
-        println!(
-            "gate: {} package(s) with chip code; type-checking {} image class(es)",
-            chip.len(),
-            classes.len()
-        );
-        step("type-check affected images", || {
-            crate::checks::firmware::run(
-                ctx,
-                &classes,
-                crate::checks::firmware::Depth::TypeCheck,
-                crate::checks::firmware::default_jobs(),
-            )
-        })?;
     }
-    let tested = tested(depth, selection, affected);
-    let mut by_workspace: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-    for (workspace, name) in &host {
-        by_workspace.entry(workspace).or_default().push(name);
-    }
-    let label = |packages: &[&str]| {
-        if packages.len() <= 4 {
-            packages.join(", ")
-        } else {
-            format!("{} packages", packages.len())
-        }
-    };
-    for (workspace, packages) in by_workspace {
-        let manifest = ctx.root.join(workspace);
-        step(&format!("clippy {}", label(&packages)), || {
-            let mut command = ctx.cargo();
-            command
-                .args(["clippy", "--locked", "--all-targets", "--manifest-path"])
-                .arg(&manifest);
-            for package in &packages {
-                command.args(["-p", package]);
-            }
-            process::run(command.args(["--", "-D", "warnings"]))
-        })?;
-        let packages: Vec<&str> = packages
-            .into_iter()
-            .filter(|name| tested.contains(&(workspace.to_owned(), (*name).to_owned())))
-            .collect();
-        if packages.is_empty() {
-            continue;
-        }
-        step(&format!("test {}", label(&packages)), || {
-            let mut command = ctx.cargo();
-            command
-                .args(["test", "--locked", "--no-fail-fast", "--manifest-path"])
-                .arg(&manifest);
-            for package in &packages {
-                command.args(["-p", package]);
-            }
-            process::run_with_timeout(&mut command, TEST_LIMIT)
-        })?;
-        if workspace == "Cargo.toml" {
-            let metadata = cargo::metadata_no_deps(ctx, &manifest)?;
-            for package in metadata
-                .packages
-                .iter()
-                .filter(|package| packages.contains(&package.name.as_str()))
-            {
-                if crate::checks::common::test_feature_sets(package)?.is_empty() {
-                    continue;
-                }
-                step(&format!("feature sets {}", package.name), || {
-                    crate::checks::feature_sets::test(ctx, package)
-                })?;
-            }
-        }
-    }
-    Ok(())
 }
 
 /// The merge base of `HEAD` and `base`.
-pub fn merge_base(ctx: &Context, base: &str) -> Result<String> {
-    Ok(git(ctx, &["merge-base", "HEAD", base])?.trim().to_owned())
+pub fn merge_base(ctx: &Checkout, base: &str) -> Result<String> {
+    oer_process::git::text(&ctx.root, ["merge-base", "HEAD", base])
 }
 
 /// The files `HEAD` changed against `merge_base`.
-pub fn committed(ctx: &Context, merge_base: &str) -> Result<Vec<String>> {
-    lines(ctx, &["diff", "--name-only", merge_base, "HEAD"])
+pub fn committed(ctx: &Checkout, merge_base: &str) -> Result<Vec<String>> {
+    oer_process::git::lines(&ctx.root, ["diff", "--name-only", merge_base, "HEAD"])
 }
 
 /// The files of the working tree that differ from `HEAD`: modified, staged
 /// and untracked but not ignored.
-pub fn uncommitted(ctx: &Context) -> Result<Vec<String>> {
-    let mut files: BTreeSet<String> = lines(ctx, &["diff", "--name-only", "HEAD"])?
-        .into_iter()
-        .collect();
-    files.extend(lines(ctx, &["ls-files", "--others", "--exclude-standard"])?);
+pub fn uncommitted(ctx: &Checkout) -> Result<Vec<String>> {
+    let mut files: BTreeSet<String> =
+        oer_process::git::lines(&ctx.root, ["diff", "--name-only", "HEAD"])?
+            .into_iter()
+            .collect();
+    files.extend(oer_process::git::lines(
+        &ctx.root,
+        ["ls-files", "--others", "--exclude-standard"],
+    )?);
     Ok(files.into_iter().collect())
-}
-
-pub fn git(ctx: &Context, arguments: &[&str]) -> Result<String> {
-    Ok(String::from_utf8(
-        process::capture(ctx.command("git").args(arguments))?.stdout,
-    )?)
-}
-
-fn lines(ctx: &Context, arguments: &[&str]) -> Result<Vec<String>> {
-    Ok(git(ctx, arguments)?
-        .lines()
-        .filter(|line| !line.is_empty())
-        .map(str::to_owned)
-        .collect())
 }
 
 #[cfg(test)]

@@ -30,10 +30,10 @@ pub(crate) fn all(root: &Path) -> Result<Vec<ChipFirmware>> {
     };
     let mut chips = Vec::new();
     for profile in Profile::all(root).map_err(|error| error.to_string())? {
-        let agent = relative(profile.hil_agent_workspace(root))?;
+        let agent = relative(oer_hil_image_class::agent::workspace(&profile, root))?;
         let platform = relative(profile.platform_workspace(root))?;
         let mut packages = Vec::new();
-        for (workspace, package) in profile.hil_image_packages(root) {
+        for (workspace, package) in oer_hil_image_class::agent::image_packages(&profile, root) {
             packages.push((relative(workspace)?.join("Cargo.toml"), package));
         }
         let build_files = [

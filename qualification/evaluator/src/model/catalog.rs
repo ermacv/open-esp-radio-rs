@@ -2,11 +2,10 @@
 
 use super::{
     BTreeMap, BTreeSet, CapabilityDocument, HilConfig, ManifestDocument, Path, PathBuf,
-    QUALIFICATION_SCHEMA, Result, ScenarioCatalog, Sha256, StaticContext, VerificationConfig, fs,
-    slug, validate_capability_declaration, validate_relative_path,
+    QUALIFICATION_SCHEMA, Result, ScenarioCatalog, StaticContext, VerificationConfig, fs, slug,
+    validate_capability_declaration, validate_relative_path,
 };
 use serde::{Deserialize, Serialize};
-use sha2::Digest as _;
 
 mod imports;
 mod workspace;
@@ -307,7 +306,7 @@ impl CatalogView {
                 id: catalog_id.clone(),
                 schema: document.schema,
                 path: relative.clone(),
-                sha256: sha256(input.as_bytes()),
+                sha256: oer_durable::sha256_bytes(input.as_bytes()),
             });
             loaded_catalogs.push(LoadedCatalog {
                 id: catalog_id,
@@ -573,7 +572,7 @@ impl ManifestDocument {
             id: self.target.clone(),
             schema: self.schema,
             path: display_path(root, program_path),
-            sha256: sha256(program_input.as_bytes()),
+            sha256: oer_durable::sha256_bytes(program_input.as_bytes()),
         });
         let mut origins = BTreeMap::new();
         let view = CatalogView::load_with_program(
@@ -737,10 +736,6 @@ fn display_path(root: &Path, path: &Path) -> PathBuf {
     absolute
         .strip_prefix(root)
         .map_or_else(|_| absolute.clone(), Path::to_path_buf)
-}
-
-fn sha256(input: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(input))
 }
 
 #[cfg(test)]

@@ -11,17 +11,26 @@ description = "Fail-closed qualification evaluator for the open radio driver"
 [dependencies]
 oer-chip-profile = { path = "../../tools/chip-profile" }
 oer-command-tree = { path = "../../tools/command-tree" }
+oer-hil-image-class = { path = "../../hil/host/image-class" }
 oer-hil-schema = { path = "../../hil/schema" }
+oer-hil-observer = { path = "../../hil/observer" }
+oer-hil-run-bundle = { path = "../../hil/host/run-bundle" }
+oer-hil-scenario = { path = "../../hil/host/scenario" }
+oer-repo = { path = "../../tools/repo" }
 oer-tidy = { path = "../../tools/tidy" }
+oer-vendor-evidence = { path = "../../verification/evidence" }
 serde = { version = "=1.0.229", features = ["derive", "rc"] }
 serde_json = "=1.0.151"
 sha2 = "=0.10.9"
+oer-durable = { path = "../../tools/durable" }
+oer-process = { path = "../../tools/process" }
 toml = "=1.1.4"
 toml_edit = { version = "=0.25.13", features = ["serde"] }
 tar = { version = "0.4", default-features = false }
 
 [dev-dependencies]
-oer-hil-schema = { path = "../../hil/schema", features = ["producer"] }
+oer-hil-run-bundle = { path = "../../hil/host/run-bundle", features = ["test-support"] }
+oer-hil-observer = { path = "../../hil/observer", features = ["producer"] }
 tempfile = "=3.27.0"
 
 [lints]
@@ -30,6 +39,7 @@ workspace = true
 [package.metadata.open-radio]
 layer = "qualification"
 platform = "host"
+host-layer = "entry"
 # The tests read every catalog, program and review, and resolve image
-# sources with `cargo tree` over the HIL targets' manifests.
-inputs = ["qualification", "hil/targets/**/Cargo.toml"]
+# sources through the repository model of this checkout.
+inputs = ["qualification", "**/Cargo.toml", "platform/*/chip.toml"]

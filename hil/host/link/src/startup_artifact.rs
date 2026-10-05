@@ -1,8 +1,8 @@
 //! Host-owned persistence for one opaque HIL startup artifact.
 
 use std::{
-    fs::{self, OpenOptions},
-    io::{ErrorKind, Write},
+    fs::{self},
+    io::ErrorKind,
     path::Path,
 };
 
@@ -97,40 +97,6 @@ impl Assembler {
         }
         Ok(Some(std::mem::take(&mut self.bytes)))
     }
-}
-
-pub fn persist_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    let file_name = path.file_name().ok_or_else(|| {
-        format!(
-            "startup artifact path `{}` has no file name",
-            path.display()
-        )
-    })?;
-    let temporary = parent.join(format!(
-        ".{}.{}.tmp",
-        file_name.to_string_lossy(),
-        std::process::id()
-    ));
-    let write_result = (|| -> std::io::Result<()> {
-        let mut file = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(&temporary)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        fs::rename(&temporary, path)
-    })();
-    if let Err(error) = write_result {
-        let _ = fs::remove_file(&temporary);
-        return Err(format!(
-            "cannot persist startup artifact `{}`: {error}",
-            path.display()
-        )
-        .into());
-    }
-    Ok(())
 }
 
 #[cfg(test)]

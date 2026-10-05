@@ -7,7 +7,8 @@ Reads the hook input JSON on stdin and blocks (exit 2, one line on stderr):
   or binding index, vendor fact registries): grep it with an explicit path;
 - a Bash command that reads such a file whole (cat, head, sed, ...);
 - a foreground Bash build, test, check or HIL run: rerun it with
-  run_in_background;
+  run_in_background (which commands those are is xtask's export in
+  heavy-commands.json, written by `cargo xtask hooks`);
 - `pkill -f` / `pgrep -f` in any mode: wait on a PID or a job instead;
 - `uhubctl` with an action (`-a`, `--action`): a hub port is switched only by
   `cargo hil board reset BOARD --via power`, a power cycle under the board's
@@ -49,12 +50,19 @@ WRAPPERS = {"command", "builtin", "noglob", "nohup", "exec", "time", "nice",
 WRAPPER_VALUE_FLAGS = {"-n", "-c", "-k", "-s", "--signal", "--kill-after",
                        "-i", "-o", "-e", "-u", "--unset", "-C", "--chdir"}
 
-CARGO_HEAVY = {"build", "b", "test", "t", "clippy", "check", "c", "doc", "d",
-               "nextest", "bench", "miri"}
 CARGO_VALUE_FLAGS = {"--color", "-C", "--config", "-Z", "--explain"}
-XTASK_HEAVY = ("check", "push", "build", "doc", "compare", "evidence",
-               "vendor-scenario", "vendor-firmware")
-HIL_HEAVY = {"run", "run-all", "wait", "lease", "flash"}
+
+# Which commands are heavy is exported by xtask (`cargo xtask hooks` writes
+# heavy-commands.json from oer_xtask::hooks; a test keeps it current).
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                       "heavy-commands.json"), encoding="utf-8") as listing:
+    HEAVY = json.load(listing)
+CARGO_HEAVY = set(HEAVY["cargo"])
+XTASK_HEAVY = tuple(HEAVY["xtask"])
+XTASK_LISTING = set(HEAVY["xtask_listing"])
+HIL_HEAVY = set(HEAVY["hil"])
+HIL_PAIRS = [list(pair) for pair in HEAVY["hil_pairs"]]
+HIL_DEFERRED = set(HEAVY["hil_deferred"])
 
 BACKGROUND_HINT = (
     "builds, tests, checks and HIL runs run with run_in_background: true; "
@@ -177,16 +185,17 @@ def heavy_command(words):
     operands = [w for i, w in enumerate(rest)
                 if not w.startswith("-") and not (i and rest[i - 1] in {"--root", "--owner"})]
     if sub == "xtask" and operands and operands[0].startswith(XTASK_HEAVY):
-        if operands[0] == "check" and "--list" in rest:
+        if XTASK_LISTING & set(rest):
             return None
         return f"cargo xtask {operands[0]}"
     if sub == "hil" and operands:
         if operands[0] in HIL_HEAVY:
-            if operands[0] != "wait" and ("--enqueue" in rest or "--validate-only" in rest):
+            if operands[0] != "wait" and HIL_DEFERRED & set(rest):
                 return None
             return f"cargo hil {operands[0]}"
-        if operands[:2] == ["image", "build"]:
-            return "cargo hil image build"
+        for pair in HIL_PAIRS:
+            if operands[:2] == pair:
+                return "cargo hil " + " ".join(pair)
     return None
 
 

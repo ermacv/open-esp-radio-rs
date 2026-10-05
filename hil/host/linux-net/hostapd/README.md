@@ -7,7 +7,7 @@ sudo. No prebuilt binary from
 `/tmp` or an unrelated system package is used.
 
 The source is [hostapd 2.12](https://w1.fi/releases/hostapd-2.12.tar.gz), pinned
-by archive SHA-256 in `hil/host/runner/src/fixture/hostapd.rs`. The tracked `build.config`
+by archive SHA-256 in `hil/host/family/ieee80211-fixture/src/hostapd.rs`. The tracked `build.config`
 enables nl80211, HT/VHT/HE, WPA2 and control sockets for this fixture.
 `300-noscan.patch` is the unmodified OpenWrt patch from commit
 [4abffae9b4e82604716cdcb30886469a435fe8bc](https://github.com/openwrt/openwrt/blob/4abffae9b4e82604716cdcb30886469a435fe8bc/package/network/services/hostapd/patches/300-noscan.patch).

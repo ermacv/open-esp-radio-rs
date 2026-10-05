@@ -1,15 +1,8 @@
-use std::{
-    fs::{self, File, OpenOptions},
-    io::Write as _,
-    path::Path,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::path::Path;
 
 use serde::Serialize;
 
 use crate::{Result, model::Qualification};
-
-static REPORT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Serialize)]
 struct Summary {
@@ -305,43 +298,5 @@ pub(crate) fn write_json(qualification: &Qualification, path: &Path) -> Result<(
 }
 
 pub(crate) fn write_serialized(value: &impl Serialize, path: &Path) -> Result<()> {
-    let parent = path.parent().ok_or_else(|| {
-        format!(
-            "qualification report path has no parent: {}",
-            path.display()
-        )
-    })?;
-    fs::create_dir_all(parent)?;
-    let mut output = serde_json::to_vec_pretty(value)?;
-    output.push(b'\n');
-    let file_name = path
-        .file_name()
-        .ok_or_else(|| {
-            format!(
-                "qualification report path has no file name: {}",
-                path.display()
-            )
-        })?
-        .to_string_lossy();
-    let temporary = parent.join(format!(
-        ".{file_name}.tmp-{}-{}",
-        std::process::id(),
-        REPORT_COUNTER.fetch_add(1, Ordering::Relaxed)
-    ));
-    let result = (|| -> Result<()> {
-        let mut file = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&temporary)?;
-        file.write_all(&output)?;
-        file.flush()?;
-        file.sync_all()?;
-        fs::rename(&temporary, path)?;
-        File::open(parent)?.sync_all()?;
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(temporary);
-    }
-    result
+    Ok(oer_durable::atomic_json(path, value).map_err(|error| error.to_string())?)
 }

@@ -5,19 +5,23 @@
   ],
   "dependencies": {
     "common": [
-      "oer-hil-execution",
+      "oer-hil-workload",
       "oer-hil-board",
       "oer-hil-image-class",
-      "oer-hil-durable",
+      "oer-durable",
       "oer-hil-source-snapshot",
       "oer-hil-scenario",
-      "oer-hil-evidence",
+      "oer-hil-run-bundle",
+      "oer-hil-analysis",
       "oer-hil-image",
+      "oer-image",
       "oer-hil-link",
-      "oer-hil-stand",
-      "oer-esp32s31-hil-board",
+      "oer-hil-lab",
+      "oer-hil-flash",
+      "oer-hil-arbiter",
       "rustix",
       "oer-process",
+      "oer-toolchain",
       "oer-command-tree",
       "oer-hil-fixture-install",
       "clap",
@@ -25,25 +29,31 @@
       "oer-hil-protocol",
       "serde",
       "serde_json",
-      "oer-hil-schema",
+      "oer-hil-observer",
       "sha2",
       "toml_edit"
     ],
     "wifi": [
-      "oer-hil-runner-ieee80211"
+      "oer-hil-family-ieee80211",
+      "oer-hil-family-ieee80211-fixture"
     ],
     "bluetooth": [
-      "oer-hil-runner-bluetooth"
+      "oer-hil-family-bluetooth"
     ],
     "system": [
-      "oer-hil-runner-system"
+      "oer-hil-family-system"
     ],
     "ieee802154": [
-      "oer-hil-runner-ieee802154"
+      "oer-hil-family-ieee802154"
     ],
     "coexistence": [
-      "oer-hil-runner-ieee80211",
-      "oer-hil-runner-bluetooth"
+      "oer-hil-family-coexistence",
+      "oer-hil-family-ieee80211",
+      "oer-hil-family-ieee80211-fixture",
+      "oer-hil-family-bluetooth"
+    ],
+    "phy": [
+      "oer-hil-family-phy"
     ]
   },
   "timing": {
@@ -56,7 +66,6 @@
     "wifi/station-ap-absence": false,
     "wifi/station-sleep": false,
     "wifi/role": true,
-    "wifi/phy-watchdog": true,
     "wifi/monitor-capture": true,
     "wifi/access-point": true,
     "wifi/station-access-point": true,
@@ -84,7 +93,8 @@
     "ieee802154/channel-energy": false,
     "ieee802154/live-rssi": false,
     "ieee802154/thread-exchange": false,
-    "ieee802154/route-probe": false
+    "ieee802154/route-probe": false,
+    "phy/vendor-calibration": false
   },
   "build": {
     "profile": "debug"

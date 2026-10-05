@@ -8,7 +8,7 @@ use crate::evidence::{
 };
 use crate::harness::{
     Budget, Buffer, Input, Result, case, data_request, filled, invalid, known, named_object,
-    named_section, region, selection, sha256, symbol, words,
+    named_section, region, selection, symbol, words,
 };
 use crate::layout::*;
 use crate::phy::{PhyImage, Right, image_layout};
@@ -314,7 +314,9 @@ impl Gain {
         );
         let exported = session.data("coefficients", &request)?;
         let coefficients = exported.bytes;
-        if exported.payload.as_str() != OBJECT_SHA || sha256(&coefficients) != COEFFICIENT_SHA {
+        if exported.payload.as_str() != OBJECT_SHA
+            || oer_durable::sha256_bytes(&coefficients) != COEFFICIENT_SHA
+        {
             return Err(invalid("gain object or coefficient identity mismatch"));
         }
         let mut roots: Vec<&str> = vec![

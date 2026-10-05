@@ -15,7 +15,7 @@ Layers and edges: [layer dependencies](../../../docs/architecture.md#layer-depen
 - Family policy: `crates/protocols/espressif/ieee80211/policy` (Espressif TX policy data).
 - Services, portable: `crates/services/ieee80211/{sta,upper-mac,rsn}`; runtime glue `crates/runtime/ieee80211`.
 - ESP32-S31: driver `crates/hardware/esp32s31/driver/ieee80211/{mac,dma}`, roles `crates/roles/esp32s31/ieee80211/{sta,ap}`, runtime `crates/runtime/esp32s31/ieee80211`, composition `crates/composition/esp32s31/embassy/ieee80211`, esp-hal adapter `crates/adapters/esp-hal/esp32s31/ieee80211`.
-- Facade: `crates/oer` features `wifi`, `esp32s31-wifi`. Applications: `examples/esp32s31/{station,access-point,monitor}`. HIL: `hil/scenarios/ieee80211/`.
+- Facade: `crates/oer` features `wifi`, `esp32s31-wifi`. Applications: `examples/esp32s31/{station,access-point,monitor}`. HIL: `hil/scenarios/ieee80211/`, workloads in `hil/host/family/ieee80211` (fixtures `-fixture`, air analysis `-evidence`).
 
 ## Port
 

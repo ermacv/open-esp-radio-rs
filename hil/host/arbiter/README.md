@@ -1,9 +1,13 @@
 # HIL stand arbiter
 
 `oer-hil-arbiter` orders access to the HIL stand between every checkout of one
-host user. The [host guide](../stand.md) describes the
-commands; this crate owns the queue, leases, claims, owner balances and the board
-journal.
+host user and is the one owner of hardware exclusion. The
+[host guide](../stand.md) describes the commands; this crate owns the queue,
+leases, claims, owner balances, preemption and maintenance, the lock files,
+the job tickets of deferred `cargo hil` runs and the board journal. It
+actuates no hardware: it reads the stand file through the stand model
+(`oer-hil-stand-model`) and returns a board's hub port to its working state
+through board I/O (`oer-hil-board`).
 
 ## Ownership
 
@@ -48,8 +52,19 @@ journal.
   preempted, which stops its charge in the next settlement, then signals its
   verified process `SIGTERM` and `SIGKILL` after the grace. The holder's
   release, or the reaping of a killed holder, records the preemption.
-- The runner's fixture lock and the firmware flash command take the lease before
-  their device and fixture `flock`s, which remain the final exclusion.
+- `lock` is the final exclusion layer: `BoardLock` (one lock file per
+  board, named by its MAC) and `ResourceLock` (one per fixture key) in the
+  stand model's lock directory, `open-esp-radio/leases` of the XDG cache
+  directory, which does not move with `OER_HIL_ARBITER_DIR`. A holder takes
+  them only once granted (`Arbiter::lease_board` does both for one board;
+  the runner's fixture lock for a run's boards and fixtures) and releases
+  them before its grant; `wait_while_busy` waits for a process outside the
+  queue that still holds one.
+- `jobs` are the deferred `cargo hil` runs: `jobs/<id>.json` records each
+  job's command, owner, order (`--after`) and outcome, and every request its
+  process and runner make carries its id (`OER_HIL_JOB`), so the queue
+  names each holder's and waiter's job and a job's phase is read from the
+  queue (`jobs::phase`).
 
 A board can be taken out of service: under maintenance it serves only the
 owner who took it out; in quarantine it serves nobody. The runner quarantines
@@ -59,11 +74,17 @@ and releases it with `cargo hil devices release MAC --confirm
 reset|power-cycle`. A board whose ROM answers the stand's reset is recovered
 by reflashing and never quarantined.
 
-The arbiter reports board changes but never restores board state. A board is
-identified by the USB serial number of its port, which Espressif USB
-Serial/JTAG ports set to the chip's MAC address. The arbiter reads the
-stand's boards, their chips and hub ports from the stand file
-(`oer-hil-stand-schema`) and never writes it; `Arbiter::at` reads the
+The board journal (`journal`) reports board changes but never restores
+board state. Its only writer of a flash is `Arbiter::record_flash(owner, mac,
+ImageIdentity { name, sha256, commit, dirty, origin })`, called by the flash
+operation (`oer-hil-flash`) and by `cargo hil lease --flashed`;
+`record_board` records every other change and refuses a flash.
+`latest_flash` and `carries(mac, name, sha256)` read it back. A board is
+identified by its MAC, the USB serial number Espressif USB Serial/JTAG ports
+report. The arbiter reads the stand's boards, their chips and hub ports from
+the user's stand file and never writes it: `Arbiter::open` reads it however
+`OER_HIL_ARBITER_DIR` moves the state, `with_stand_file` names another (a
+runner's `--stand-file`), and `Arbiter::at`, a test's arbiter, reads the
 `stand.toml` beside its own state.
 
 Checkouts of different versions share the directory. Readers ignore journal
@@ -72,16 +93,17 @@ newer schema is refused rather than rewritten.
 
 ## State
 
-The directory is `~/.cache/open-esp-radio/arbiter`, or `OER_HIL_ARBITER_DIR`.
+The directory is `open-esp-radio/arbiter` in the XDG cache directory (`$XDG_CACHE_HOME`, else `~/.cache`), or `OER_HIL_ARBITER_DIR`, as the stand model's `paths` names it.
 Every change happens under `arbiter.lock`:
 
 | File | Content |
 | --- | --- |
-| `state.json` | Schema 3: queue tickets and holders with their claims, each with PID and kernel start time, every recently active owner's balance and the time they were last advanced. Another schema is refused, never converted: a newer one asks for a newer checkout; for an older one, let its holders and waiters finish and remove the file |
+| `state.json` | Schema 3: queue tickets and holders with their claims and job, each with PID and kernel start time, every recently active owner's balance and the time they were last advanced. Another schema is refused, never converted: a newer one asks for a newer checkout; for an older one, let its holders and waiters finish and remove the file |
 | `history.jsonl` | Completed leases: owner, work, scenarios, duration, the time charged, the owner's balance at release, the grant's reason and `released`, `yielded-to-balance`, `hard-limit`, `preempted-on-request` (with who preempted it and why) or `abandoned` |
 | `board.jsonl` | Flashes, startup-artifact uploads and writes, automatic recoveries, quarantine releases and soaks, with owner, checkout and board MAC |
 | `owners.json` | Schema 1: checkout directory to registered owner; the innermost registered directory decides |
 | `maintenance.json` | Schema 1: boards out of service, each with its owner or quarantine, reason, trigger and evidence path |
+| `jobs/<id>.json` | One deferred `cargo hil` run: command, owner, checkout, `--after`, process, log, the files it was fixed with and its state; removed a week after it was enqueued |
 
 Each transaction first removes tickets and holders whose process no longer
 exists; the start time prevents a recycled PID from keeping a lease alive. The
@@ -93,6 +115,6 @@ The arbiter is local to one host and user account and polls every 500 ms; it is
 not a distributed reservation. Duration estimates, used only for expected
 starts, count only released leases of the identical command line or of single
 scenarios. Claims are cooperative: a
-command that claims one board and uses another is not detected. Commands that bypass `cargo hil` and `cargo xtask
-build firmware --flash`, such as a manual `espflash`, are not ordered unless run
+command that claims one board and uses another is not detected. Commands that bypass `cargo hil`,
+such as a manual `espflash`, are not ordered unless run
 as `cargo hil lease --board NAME -- COMMAND`.

@@ -9,6 +9,5 @@
 #![forbid(unsafe_code)]
 
 pub mod archive;
-pub mod body;
 pub mod correspond;
 pub mod lineage;

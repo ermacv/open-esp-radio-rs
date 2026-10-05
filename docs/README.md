@@ -52,7 +52,7 @@ You do not need to read every component reference to make a first change.
 - [Qualification programs](../qualification/README.md).
 - [Register publication](../registers/esp32s31/publication/README.md).
 - [Vendor verification](../verification/README.md).
-- [Blobray](../tools/blobray/README.md), [memory analysis](../tools/memory-report/README.md)
+- [Blobray](../tools/blobray/README.md), [the ELF view](../tools/elf/README.md)
   and [repository commands](../tools/xtask/README.md).
 
 The [ESP32-S31 radio capability map](../crates/hardware/esp32s31/driver/FEATURES.md) indexes

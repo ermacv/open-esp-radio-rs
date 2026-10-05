@@ -93,3 +93,28 @@ Publication checks reference validity, selected applicability, reviewed semantic
 memory ranges, API safety and generated source consistency. They do not qualify
 hardware or prove equivalence to vendor behavior. Review policy, source provenance
 and required recovered tables remain with `registers/`.
+
+## Checks the gate calls
+
+`oer_register_tool::checks` holds the register rules other tools run, so no
+caller keeps its own copy:
+
+- `pac_transactions::check`: a handwritten PAC module
+  (`crates/hardware/*/pac/src`) never loops, except a `while` walking an
+  index over a fixed-length table; polling and retries belong to the HAL.
+  `cargo xtask check architecture` runs it.
+- `shared_words::check`: every MMIO word a write transaction of the radio
+  PAC (`policy/api.toml`, through the published SVD) and pinned esp-hal both
+  store to has a reviewed entry in `registers/<chip>/shared-words.toml`, and
+  no reviewed word is no longer shared. `cargo xtask check architecture`
+  resolves the esp-hal and platform PAC sources and runs it.
+- `inventory`: the publication's owned MMIO regions and declared words
+  (`model`), Blobray's `register-accesses` records (`observations`), their
+  classification and the report; `inventory::run` (behind `cargo xtask
+  register-inventory`) runs Blobray over the pinned binaries, ranks the
+  provenance registry's cited functions first and writes the report.
+
+`ChipSources` resolves the files a chip's publication manifest names
+without validating them. The binding index format is
+`oer_register_contracts::bindings::BindingIndex`, which the generator writes
+and every reader (the vendor harness's address naming) parses.

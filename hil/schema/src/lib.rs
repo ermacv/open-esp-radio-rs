@@ -1,21 +1,14 @@
-//! Shared HIL evidence contract.
+//! The contract between the HIL producers and the qualification evaluator.
 //!
 //! The runner produces evidence and the qualification evaluator independently
-//! assesses it; both must compute the same observer build identity and the
-//! same canonical scenario form. This crate owns those definitions. Evaluation
+//! assesses it; both must read the same run vocabulary, the same canonical
+//! scenario form and the same source-snapshot manifest. This crate owns those
+//! definitions. The observer's build identity is
+//! [`oer-hil-observer`](../observer/README.md)'s, and the run bundle's format
+//! [`oer-hil-run-bundle`](../host/run-bundle/README.md)'s. Evaluation
 //! decisions stay with each consumer.
 #![forbid(unsafe_code)]
 
-pub mod artifacts;
-pub mod cargo_inputs;
-pub mod observer;
-pub mod observer_store;
 pub mod run;
 pub mod scenario;
 pub mod snapshot;
-
-// Producer operations run Cargo; evaluators read prepared descriptors instead.
-#[cfg(feature = "producer")]
-pub mod compile;
-#[cfg(feature = "producer")]
-pub mod resolve;

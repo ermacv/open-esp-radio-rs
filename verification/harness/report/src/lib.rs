@@ -9,10 +9,10 @@
 pub mod inspect;
 pub mod triage;
 
+use oer_vendor_scenario_engine::coverage;
 use oer_vendor_scenario_engine::findings::{Findings, RunReport};
 use oer_vendor_scenario_engine::harness::Result;
 use oer_vendor_scenario_engine::registers::Registers;
-use oer_vendor_scenario_engine::{coverage, observation};
 
 /// The report every scenario binary passes to the engine.
 #[derive(Default)]
@@ -29,7 +29,7 @@ impl RunReport for Reviewer {
             let code = triage::Code::of(
                 &untriaged.images,
                 Registers::load(
-                    &observation::root()?.join(oer_vendor_scenario_engine::chip().registers),
+                    &oer_process::built_root().join(oer_vendor_scenario_engine::chip().registers),
                 )?,
                 coverage::diagnostic(untriaged.decisions),
             )?;

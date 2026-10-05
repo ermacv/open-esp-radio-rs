@@ -1,16 +1,13 @@
 //! Facts an image's DWARF states: the chain of functions inlined at an
 //! address, the type a function returns, by its qualified name, and where
 //! every copy of a function lies, inlined or not.
-use object::{Object, ObjectSection};
+use oer_elf::dwarf::{Reader, Symbolizer, gimli};
 use oer_riscv_model::{Error, ErrorCode, Result};
 use std::collections::BTreeMap;
-use std::rc::Rc;
-
-type Reader = gimli::EndianRcSlice<gimli::RunTimeEndian>;
 
 /// The debug information of one ELF.
 pub struct Dwarf {
-    context: addr2line::Context<Reader>,
+    symbolizer: Symbolizer,
     /// A function's entry address and the qualified name of its return type.
     returns: BTreeMap<u32, String>,
 }
@@ -20,20 +17,8 @@ fn invalid(message: impl Into<String>) -> Error {
 }
 
 fn load(elf: &[u8]) -> Result<gimli::Dwarf<Reader>> {
-    let file = object::File::parse(elf).map_err(|_| invalid("invalid ELF"))?;
-    gimli::Dwarf::load(
-        |id: gimli::SectionId| -> std::result::Result<Reader, gimli::Error> {
-            let data = file
-                .section_by_name(id.name())
-                .and_then(|section| section.uncompressed_data().ok())
-                .unwrap_or_default();
-            Ok(gimli::EndianRcSlice::new(
-                Rc::from(&*data),
-                gimli::RunTimeEndian::Little,
-            ))
-        },
-    )
-    .map_err(|error| invalid(format!("DWARF: {error}")))
+    let file = oer_elf::Elf::parse(elf).map_err(|_| invalid("invalid ELF"))?;
+    oer_elf::dwarf::load(&file).map_err(|error| invalid(error.to_string()))
 }
 
 /// A demangled name without the crate disambiguators v0 symbols carry
@@ -56,32 +41,24 @@ impl Dwarf {
     /// Read the debug information of `elf`.
     pub fn read(elf: &[u8]) -> Result<Self> {
         let returns = returns(&load(elf)?)?;
-        let context = addr2line::Context::from_dwarf(load(elf)?)
-            .map_err(|error| invalid(format!("DWARF: {error}")))?;
-        Ok(Self { context, returns })
+        let symbolizer = Symbolizer::new(elf).map_err(|error| invalid(error.to_string()))?;
+        Ok(Self {
+            symbolizer,
+            returns,
+        })
     }
 
     /// The functions inlined at `address`, innermost first, by their
     /// demangled paths; empty where the DWARF covers no code.
     pub fn inline_chain(&self, address: u32) -> Result<Vec<String>> {
-        let mut frames = self
-            .context
-            .find_frames(u64::from(address))
-            .skip_all_loads()
-            .map_err(|error| invalid(format!("DWARF at {address:#010x}: {error}")))?;
-        let mut chain = Vec::new();
-        while let Some(frame) = frames
-            .next()
-            .map_err(|error| invalid(format!("DWARF at {address:#010x}: {error}")))?
-        {
-            if let Some(function) = frame.function {
-                let name = function
-                    .demangle()
-                    .map_err(|error| invalid(format!("DWARF at {address:#010x}: {error}")))?;
-                chain.push(plain(&name));
-            }
-        }
-        Ok(chain)
+        Ok(self
+            .symbolizer
+            .frames(u64::from(address))
+            .map_err(|error| invalid(error.to_string()))?
+            .into_iter()
+            .filter_map(|frame| frame.function)
+            .map(|name| plain(&name))
+            .collect())
     }
 
     /// The qualified name of the type the function entered at `function`
@@ -204,7 +181,7 @@ pub fn instances(elf: &[u8], functions: &[&str]) -> Result<BTreeMap<String, Vec<
                 && let Ok(linkage) = linkage.to_string_lossy()
                 && let Some(at) = offset.to_debug_info_offset(&unit.header)
             {
-                let name = plain(&addr2line::demangle_auto(linkage, None));
+                let name = plain(&oer_elf::demangle(&linkage));
                 names.insert(at.0, name);
             }
             // A copy names its subprogram by origin, or is one itself.

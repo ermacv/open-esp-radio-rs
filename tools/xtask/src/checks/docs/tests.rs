@@ -18,7 +18,7 @@ fn markdown_parser_checks_references_paths_anchors_and_source_lines() {
         "# Index\n\n[target](target%20file.md#héllo-world)\n[duplicate](target%20file.md#héllo-world-1)\n[manual](target%20file.md#manual)\n[line](../source.rs#L2-L3)\n[external](https://example.com)\n\n```markdown\n[not a link](missing.md)\n```\n",
     )
     .unwrap();
-    let context = Context::new(repository.path()).unwrap();
+    let context = Checkout::new(repository.path()).unwrap();
     let summary = check_markdown(&context, std::slice::from_ref(&index)).unwrap();
     assert_eq!(summary.documents, 2);
     assert_eq!(summary.local_links, 4);
@@ -85,8 +85,9 @@ fn owned_document_discovery_excludes_arbitrary_untracked_markdown() {
     .unwrap();
     fs::create_dir_all(repository.path().join("crate")).unwrap();
     fs::write(repository.path().join("crate/README.md"), "# Owner\n").unwrap();
-    let context = Context::new(repository.path()).unwrap();
-    let documents = owned_documents(&context, &[]).unwrap();
+    let context = Checkout::new(repository.path()).unwrap();
+    let repo = oer_repo::Repo::from_git(&context.root).unwrap();
+    let documents = owned_documents(&context, &repo, &[]).unwrap();
     assert!(documents.iter().any(|path| path.ends_with("README.md")));
     assert!(documents.iter().any(|path| path.ends_with("docs/new.md")));
     assert!(

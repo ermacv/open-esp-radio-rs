@@ -1,6 +1,6 @@
 //! The executed host observer has its own build subject, separate from firmware.
 use super::*;
-pub(super) use oer_hil_schema::observer as build_inputs;
+pub(super) use oer_hil_observer::inputs as build_inputs;
 use serde_json::{Value, json};
 
 /// One prepared configuration shared by archive loading and shards. Loading it
@@ -21,9 +21,7 @@ impl Current {
         }
     }
     fn read(root: &Path) -> Result<Self> {
-        let path = std::env::var_os("OER_OBSERVER_RECEIPT")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| root.join("target/hil/current-observer.json"));
+        let path = oer_hil_observer::receipt::selected(root);
         let receipt: Value = read_json(&path).map_err(|error| format!(
             "current observer configuration unavailable ({}): {error}; prepare with cargo xtask hil-observer", path.display()))?;
         let build = &receipt["build"];
@@ -135,7 +133,7 @@ fn lock_dependencies(resolved: &Value) -> Result<Value> {
                 .values()
                 .find(|m| m["package"]["name"] == package["name"])
                 .ok_or("local dependency manifest missing")?;
-            Some(oer_hil_schema::cargo_inputs::dependency_names_in(
+            Some(oer_hil_observer::cargo_inputs::dependency_names_in(
                 manifest,
                 &resolved["manifests"]["Cargo.toml"],
             )?)
@@ -225,12 +223,39 @@ fn selected(path: &Path, prefixes: &[PathBuf]) -> bool {
     })
 }
 
+/// The regular files below `directory`, relative to it and sorted; a
+/// symlink or special file is an error.
+fn regular_files(directory: &Path) -> Result<Vec<PathBuf>> {
+    let mut found = Vec::new();
+    let mut pending = vec![PathBuf::new()];
+    while let Some(relative) = pending.pop() {
+        for entry in fs::read_dir(directory.join(&relative))? {
+            let entry = entry?;
+            let kind = entry.file_type()?;
+            let child = relative.join(entry.file_name());
+            if kind.is_dir() {
+                pending.push(child);
+            } else if kind.is_file() {
+                found.push(child);
+            } else {
+                return Err(format!(
+                    "observer input contains a symlink or special file: {}",
+                    entry.path().display()
+                )
+                .into());
+            }
+        }
+    }
+    found.sort();
+    Ok(found)
+}
+
 fn inputs(root: &Path, prefixes: &[PathBuf]) -> Result<BTreeMap<String, String>> {
     let mut files = BTreeMap::new();
     for relative in prefixes {
         let path = root.join(relative);
         if fs::symlink_metadata(&path)?.file_type().is_dir() {
-            for (child, _) in collect_inventory(&path, false)? {
+            for child in regular_files(&path)? {
                 if child
                     .extension()
                     .is_some_and(|e| e == "rs" || e == "uc" || e == "sh")
@@ -296,10 +321,9 @@ pub(super) fn assess(
             .as_str()
             .is_some_and(valid_sha256)
         || proof["build_sha256"].as_str()
-            != Some(&format!(
-                "{:x}",
-                Sha256::digest(serde_json::to_vec(&proof["build"])?)
-            ))
+            != Some(&oer_durable::sha256_bytes(&serde_json::to_vec(
+                &proof["build"],
+            )?))
     {
         return Ok(Compatibility::IdentityDiffers);
     }
@@ -382,7 +406,7 @@ pub(super) fn assess(
 }
 
 #[cfg(test)]
-pub(super) use oer_hil_schema::observer::required_configuration;
+pub(super) use oer_hil_observer::inputs::required_configuration;
 
 fn profile_configuration(resolved: &Value) -> Value {
     let Some(mut name) = resolved["selected_profile"].as_str() else {
@@ -428,23 +452,26 @@ mod tests {
         let family = |kind: &str| {
             let names = build_inputs::dependencies(&registry, kind).unwrap();
             [
-                "oer-hil-runner-ieee80211",
-                "oer-hil-runner-bluetooth",
-                "oer-hil-runner-system",
-                "oer-hil-runner-ieee802154",
+                "oer-hil-family-ieee80211",
+                "oer-hil-family-bluetooth",
+                "oer-hil-family-system",
+                "oer-hil-family-ieee802154",
+                "oer-hil-family-phy",
             ]
             .into_iter()
             .filter(|package| names.contains(*package))
             .collect::<Vec<_>>()
         };
+        let mut used = std::collections::BTreeSet::new();
         for document in catalog.definitions.values() {
             let workload = build_inputs::workload(document).unwrap();
+            used.insert(workload.clone());
             let kind = workload.as_str();
             let packages = family(kind);
             if kind == build_inputs::COEXISTENCE_WORKLOAD {
                 assert_eq!(
                     packages,
-                    ["oer-hil-runner-ieee80211", "oer-hil-runner-bluetooth"],
+                    ["oer-hil-family-ieee80211", "oer-hil-family-bluetooth"],
                     "the joint workload selects both radio families"
                 );
             } else {
@@ -457,12 +484,21 @@ mod tests {
             assert!(
                 build_inputs::dependencies(&registry, kind)
                     .unwrap()
-                    .contains("oer-hil-execution")
+                    .contains("oer-hil-workload")
             );
         }
-        assert_eq!(family("wifi/station-udp"), ["oer-hil-runner-ieee80211"]);
-        assert_eq!(family("bluetooth/dtm"), ["oer-hil-runner-bluetooth"]);
-        assert_eq!(family("system/boot-smoke"), ["oer-hil-runner-system"]);
+        // Every classified workload is some catalog scenario's: a stale
+        // entry would keep scoping inputs no run reads.
+        for workload in build_inputs::workloads(&registry).unwrap() {
+            assert!(
+                used.contains(&workload),
+                "{workload} is no catalog scenario's workload"
+            );
+        }
+        assert_eq!(family("wifi/station-udp"), ["oer-hil-family-ieee80211"]);
+        assert_eq!(family("bluetooth/dtm"), ["oer-hil-family-bluetooth"]);
+        assert_eq!(family("system/boot-smoke"), ["oer-hil-family-system"]);
+        assert_eq!(family("phy/vendor-calibration"), ["oer-hil-family-phy"]);
         assert!(!data_inputs(&root).unwrap().is_empty());
     }
 
@@ -471,10 +507,10 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let projection = json!({"manifests": {
             "hil/host/runner/Cargo.toml": {},
-            "hil/host/runner-ieee80211/Cargo.toml": {},
+            "hil/host/family/ieee80211/Cargo.toml": {},
         }});
         let prefixes = source_inputs(&root, &projection).unwrap();
-        let wifi = Path::new("hil/host/runner-ieee80211/src/workload/traffic/rx_traffic.rs");
+        let wifi = Path::new("hil/host/family/ieee80211/src/workload/traffic/rx_traffic.rs");
         assert!(selected(wifi, &prefixes));
         assert!(selected(
             Path::new("hil/host/runner/src/execution.rs"),
@@ -485,11 +521,11 @@ mod tests {
             &prefixes
         ));
         assert!(!selected(
-            Path::new("hil/host/runner-bluetooth/src/workload/bluetooth/deadline.rs"),
+            Path::new("hil/host/family/bluetooth/src/workload/bluetooth/gatt.rs"),
             &prefixes
         ));
         assert!(!selected(
-            Path::new("hil/host/runner-ieee80211/src/workload/traffic/tests.rs"),
+            Path::new("hil/host/family/ieee80211/src/workload/traffic/bidirectional/tests.rs"),
             &prefixes
         ));
         assert!(!selected(Path::new("Cargo.lock"), &prefixes));

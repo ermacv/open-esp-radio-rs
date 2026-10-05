@@ -193,8 +193,8 @@ fn a_relocated_low_part_names_the_symbol_once() {
         literal: None,
     };
     corpus.functions[0].references = BTreeMap::from([
-        (0, relocation(object::elf::R_RISCV_HI20)),
-        (4, relocation(object::elf::R_RISCV_LO12_I)),
+        (0, relocation(oer_elf::rv32::R_RISCV_HI20)),
+        (4, relocation(oer_elf::rv32::R_RISCV_LO12_I)),
     ]);
     let text = fields(&corpus, &[0xc]);
     assert!(text.contains("&g->0xc R test::load+0x4"));
@@ -220,12 +220,12 @@ fn a_printed_register_field_is_tied_to_its_conversion() {
         literal: Some("gain=%d\n".into()),
     };
     corpus.functions[0].references = BTreeMap::from([
-        (0x14, format(object::elf::R_RISCV_HI20)),
-        (0x18, format(object::elf::R_RISCV_LO12_I)),
+        (0x14, format(oer_elf::rv32::R_RISCV_HI20)),
+        (0x18, format(oer_elf::rv32::R_RISCV_LO12_I)),
         (
             0x1c,
             Reference {
-                kind: object::elf::R_RISCV_CALL_PLT,
+                kind: oer_elf::rv32::R_RISCV_CALL_PLT,
                 target: "printf".into(),
                 addend: 0,
                 literal: None,
@@ -266,8 +266,8 @@ fn a_tail_call_prints_like_a_call() {
         literal: Some("gain=%d\n".into()),
     };
     corpus.functions[0].references = BTreeMap::from([
-        (0x14, format(object::elf::R_RISCV_HI20)),
-        (0x18, format(object::elf::R_RISCV_LO12_I)),
+        (0x14, format(oer_elf::rv32::R_RISCV_HI20)),
+        (0x18, format(oer_elf::rv32::R_RISCV_LO12_I)),
     ]);
     let text = prints(&corpus, 0x2010_d830, 0x2010_d834);
     assert!(

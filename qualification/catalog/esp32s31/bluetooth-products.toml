@@ -112,7 +112,7 @@ implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
 depends-on = ["peripheral-link-security"]
-vendor-not-applicable = "host-security-and-gatt-application-policy-over-independently-qualified-controller"
+vendor-not-applicable = "host-security-and-oer-bluetooth-gatt-trouble-policy-over-independently-qualified-controller"
 hil-requirements = [
   { scenario = "bluetooth-trouble-secure-gatt", minimum-repetitions = 3 },
   { scenario = "bluetooth-trouble-secure-gatt-hci-read-failure", minimum-repetitions = 3 },
@@ -130,10 +130,10 @@ id = "secure-gatt-current-host-boundary"
 composition = "production"
 scope = "The portable GATT application owns Numeric Comparison policy with console confirmation, authenticated ATT access, caller-owned asynchronous bond storage with a bounded RAM backend and the Host epoch runner"
 limits = "The HIL secure GATT image composes the Host with the production Controller and restarts the Controller epoch on request; coordinated terminal fault disposition remains open. Bond insertion must succeed before application authorization; restored encryption must match the retained record. RAM bonds do not survive SoC reset; imported metadata does not prove pairing-method provenance. Repeated eligible evidence is required; source coverage does not qualify the product"
-source-paths = ["examples/bluetooth-gatt/src/security/gatt.rs", "examples/bluetooth-gatt/src/security/epoch.rs", "examples/bluetooth-gatt/src/security/bonds.rs", "examples/bluetooth-gatt/src/security/comparison.rs", "examples/bluetooth-gatt/src/security/console.rs", "hil/targets/esp32s31/agent/src/bluetooth/secure.rs"]
+source-paths = ["crates/adapters/trouble/bluetooth/gatt/src/security/gatt.rs", "crates/adapters/trouble/bluetooth/gatt/src/security/epoch.rs", "crates/adapters/trouble/bluetooth/gatt/src/security/bonds.rs", "crates/adapters/trouble/bluetooth/gatt/src/security/comparison.rs", "crates/adapters/trouble/bluetooth/gatt/src/security/console.rs", "hil/targets/esp32s31/agent/src/bluetooth/secure.rs"]
 
 [capabilities.development]
-knowledge = ["examples/bluetooth-gatt/src/security/gatt.rs"]
+knowledge = ["crates/adapters/trouble/bluetooth/gatt/src/security/gatt.rs"]
 
 [capabilities.catalog-scope]
 chip = "esp32s31"

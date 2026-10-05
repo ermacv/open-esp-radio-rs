@@ -1,0 +1,107 @@
+use super::{pending::Pending, *};
+
+#[test]
+fn a_checkout_links_to_the_store_and_refuses_runs_of_its_own() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = RunStore::at(directory.path().join("store"));
+    let first = directory.path().join("first");
+    assert_eq!(store.link(&first).unwrap(), Linked::Created);
+    assert_eq!(store.link(&first).unwrap(), Linked::Existing);
+    assert_eq!(
+        RunStore::of_runs(&first.join(CHECKOUT_RUNS))
+            .unwrap()
+            .root(),
+        fs::canonicalize(store.root()).unwrap()
+    );
+
+    let empty = directory.path().join("empty");
+    fs::create_dir_all(empty.join(CHECKOUT_RUNS)).unwrap();
+    assert_eq!(store.link(&empty).unwrap(), Linked::Created);
+
+    let own = directory.path().join("own");
+    fs::create_dir_all(own.join(CHECKOUT_RUNS).join("a-run")).unwrap();
+    assert!(store.link(&own).is_err());
+    assert!(own.join(CHECKOUT_RUNS).join("a-run").is_dir());
+}
+
+#[test]
+fn notes_sidecars_default_to_empty_and_keep_typed_notes() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = RunStore::at(directory.path());
+    assert!(store.read::<Notes>(Sidecar::Pins).unwrap().is_empty());
+    let note = Note {
+        by: "wifi".into(),
+        reason: "cited".into(),
+        unix_millis: 7,
+    };
+    store
+        .note(Sidecar::Pins, "1-a", Some(note.clone()))
+        .unwrap();
+    store
+        .note(Sidecar::Quarantine, "s", Some(note.clone()))
+        .unwrap();
+    assert_eq!(store.read::<Notes>(Sidecar::Pins).unwrap()["1-a"], note);
+    store.note(Sidecar::Pins, "1-a", None).unwrap();
+    assert!(store.read::<Notes>(Sidecar::Pins).unwrap().is_empty());
+    assert_eq!(store.read::<Notes>(Sidecar::Quarantine).unwrap().len(), 1);
+    fs::write(store.sidecar_path(Sidecar::Pins), b"[1]").unwrap();
+    assert!(store.read::<Notes>(Sidecar::Pins).is_err());
+}
+
+#[test]
+fn a_run_id_names_one_directory_of_the_store() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = RunStore::at(directory.path());
+    for id in ["", "..", "a/b", ".hidden"] {
+        assert!(store.open(id).is_err(), "{id}");
+    }
+    assert!(store.open("1-missing").is_err());
+    assert!(store.ids_newest_first().unwrap().is_empty());
+}
+
+#[test]
+fn a_path_below_a_run_belongs_to_that_run() {
+    let directory = tempfile::tempdir().unwrap();
+    let run = directory.path().join("runs/1-a");
+    fs::create_dir_all(run.join("scenarios/s/repetition-001")).unwrap();
+    assert_eq!(run_of(&run.join("scenarios/s/repetition-001")), None);
+    fs::write(run.join("manifest.json"), b"{}").unwrap();
+    assert_eq!(
+        run_of(&run.join("scenarios/s/repetition-001")).as_deref(),
+        Some("1-a")
+    );
+}
+
+fn entry(run: &str, scenarios: &[&str]) -> Pending {
+    Pending {
+        run: run.into(),
+        scenarios: scenarios.iter().map(|s| s.to_string()).collect(),
+        owner: String::from("wifi"),
+    }
+}
+
+#[test]
+fn the_pending_list_keeps_runs_with_passed_scenarios_until_recorded() {
+    let root = tempfile::tempdir().unwrap();
+    pending::remember(
+        root.path(),
+        &[entry("r1", &["a"]), entry("r2", &[]), entry("r3", &["b"])],
+    )
+    .unwrap();
+    pending::remember(root.path(), &[entry("r1", &["a"])]).unwrap();
+    assert_eq!(
+        pending::load(root.path()).unwrap(),
+        [entry("r1", &["a"]), entry("r3", &["b"])]
+    );
+    pending::forget(root.path(), &[String::from("r1")]).unwrap();
+    assert_eq!(pending::load(root.path()).unwrap(), [entry("r3", &["b"])]);
+}
+
+#[test]
+fn a_pending_entry_names_its_owner() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join(pending::PENDING);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, br#"[{"run":"r1","scenarios":["a"]}]"#).unwrap();
+    assert!(pending::load(root.path()).is_err());
+}

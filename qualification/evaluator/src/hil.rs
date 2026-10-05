@@ -1,6 +1,5 @@
 //! Independent consumption of immutable HIL run bundles.
 
-mod attempt;
 mod checks;
 mod chips;
 mod closure;
@@ -19,7 +18,6 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     path::{Component, Path, PathBuf},
-    process::Command,
 };
 
 use serde::{Deserialize, Serialize};
@@ -27,8 +25,19 @@ use sha2::{Digest, Sha256};
 
 use crate::Result;
 
-const HIL_RUN_SCHEMA: u16 = 2;
-const HIL_SCENARIO_SCHEMA: u16 = 5;
+// The bundle's documents, their structural validation and the seals are the
+// run bundle's own, read through its one reader: a field or variant the
+// producer learns is known here at once, never split into two copies.
+// Independence comes from verifying the seals and hashing every file again
+// at admission, through that shared code, never from a second reader.
+use oer_hil_run_bundle::{
+    RunBundle,
+    run::{
+        FirmwareArtifact, PlannedFirmware, RUN_SCHEMA, RepositoryProvenance, RunManifest,
+        SuiteResult,
+        validation::{safe_relative, valid_sha256, validate_suite},
+    },
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct RepositoryState {
@@ -38,11 +47,13 @@ pub(crate) struct RepositoryState {
 
 impl RepositoryState {
     pub(crate) fn read(root: &Path) -> Result<Self> {
-        let commit = git_output(root, &["rev-parse", "HEAD"])?;
-        let status = git_output(
+        let commit = oer_process::git::text(root, ["rev-parse", "HEAD"])
+            .map_err(|error| error.to_string())?;
+        let status = oer_process::git::text(
             root,
-            &["status", "--porcelain=v1", "--untracked-files=normal"],
-        )?;
+            ["status", "--porcelain=v1", "--untracked-files=normal"],
+        )
+        .map_err(|error| error.to_string())?;
         Ok(Self {
             commit,
             dirty: !status.is_empty(),
@@ -66,38 +77,30 @@ pub(crate) struct ScenarioCatalog {
 }
 
 impl ScenarioCatalog {
+    /// The catalog at `catalog` below the trusted repository `root`,
+    /// discovered and validated by the scenario catalog's one reader
+    /// ([`oer_hil_scenario::catalog::documents`]); this evaluator keeps each
+    /// document as a value and never imports the runner's family types.
     pub(crate) fn load(root: &Path, catalog: &Path) -> Result<Self> {
-        // The caller selects the repository root. Below that trusted root,
-        // every catalog path component must remain a normal directory.
-        let mut directory = root.canonicalize()?;
-        for component in catalog.components() {
-            let Component::Normal(name) = component else {
-                return Err("HIL scenario catalog must be a contained relative path".into());
-            };
-            directory.push(name);
-            if !fs::symlink_metadata(&directory)?.file_type().is_dir() {
-                return Err(format!(
-                    "HIL scenario catalog path is not a regular directory: {}",
-                    directory.display()
-                )
-                .into());
-            }
+        if catalog.as_os_str().is_empty()
+            || !catalog
+                .components()
+                .all(|component| matches!(component, Component::Normal(_)))
+        {
+            return Err("HIL scenario catalog must be a contained relative path".into());
         }
-        if !fs::symlink_metadata(&directory)?.file_type().is_dir() {
-            return Err(format!(
-                "HIL scenario catalog is not a regular directory: {}",
-                directory.display()
-            )
-            .into());
-        }
+        let documents = oer_hil_scenario::catalog::documents(&root.canonicalize()?.join(catalog))
+            .map_err(|error| error.to_string())?;
         let mut repetitions = BTreeMap::new();
         let mut roles = BTreeMap::new();
-        let mut documents = BTreeMap::new();
-        Self::read_directory(&directory, &mut repetitions, &mut roles, &mut documents)?;
-        if repetitions.is_empty() {
-            return Err(format!("HIL scenario catalog is empty: {}", directory.display()).into());
+        let mut definitions = BTreeMap::new();
+        for document in documents {
+            let id = document.header.id;
+            repetitions.insert(id.clone(), document.header.repetitions);
+            roles.insert(id.clone(), document.header.role);
+            definitions.insert(id, document.value);
         }
-        let checks = documents
+        let checks = definitions
             .iter()
             .map(|(id, document)| Ok((id.clone(), checks::contracts(document)?)))
             .collect::<Result<_>>()?;
@@ -105,78 +108,8 @@ impl ScenarioCatalog {
             repetitions,
             roles,
             checks,
-            definitions: documents,
+            definitions,
         })
-    }
-
-    // Independent input validation: this consumer never imports the runner's
-    // execution catalog or accepts its in-memory verdict as qualification.
-    fn read_directory(
-        directory: &Path,
-        repetitions: &mut BTreeMap<String, u8>,
-        roles: &mut BTreeMap<String, ScenarioRole>,
-        documents: &mut BTreeMap<String, serde_json::Value>,
-    ) -> Result<()> {
-        let mut entries = fs::read_dir(directory)?.collect::<std::io::Result<Vec<_>>>()?;
-        entries.sort_by_key(fs::DirEntry::file_name);
-        for entry in entries {
-            let path = entry.path();
-            let kind = entry.file_type()?;
-            if kind.is_dir() {
-                Self::read_directory(&path, repetitions, roles, documents)?;
-                continue;
-            }
-            if !kind.is_file() {
-                return Err(format!(
-                    "HIL scenario catalog contains a non-regular entry: {}",
-                    path.display()
-                )
-                .into());
-            }
-            if entry.file_name() == "README.md" {
-                continue;
-            }
-            if path.extension().and_then(|value| value.to_str()) != Some("toml") {
-                return Err(format!(
-                    "HIL scenario catalog contains a non-TOML entry: {}",
-                    path.display()
-                )
-                .into());
-            }
-            let input = fs::read_to_string(&path)?;
-            let document: ScenarioDocument = toml_edit::de::from_str(&input)
-                .map_err(|error| format!("{}: {error}", path.display()))?;
-            if document.schema != HIL_SCENARIO_SCHEMA
-                || document.id.is_empty()
-                || !document
-                    .id
-                    .bytes()
-                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-                || path.file_stem().and_then(|value| value.to_str()) != Some(&document.id)
-                || !(1..=20).contains(&document.repetitions)
-            {
-                return Err(
-                    format!("invalid HIL scenario catalog entry: {}", path.display()).into(),
-                );
-            }
-            let value: serde_json::Value = toml_edit::de::from_str(&input)?;
-            if !has_one_family(&value) {
-                return Err(format!(
-                    "HIL scenario must name exactly one family table: {}",
-                    path.display()
-                )
-                .into());
-            }
-            if repetitions
-                .insert(document.id.clone(), document.repetitions)
-                .is_some()
-            {
-                return Err(format!("duplicate HIL scenario id {}", document.id).into());
-            }
-            roles.insert(document.id.clone(), document.role);
-            documents.insert(document.id, value);
-        }
-        Ok(())
     }
 
     /// Whether `scenario` is an investigation scenario, which no observation
@@ -300,20 +233,29 @@ enum LoadedRun {
     OtherChip,
     /// Validated evidence units and whether they are independent seals.
     Units {
-        units: Vec<(RunManifest, SuiteResult)>,
+        bundle: Box<RunBundle>,
+        units: Vec<Unit>,
         independently_sealed: bool,
     },
 }
 
-/// Validates one run directory's manifest, seals and integrity; an error
-/// means the published bundle cannot be trusted as evidence.
+/// One completion boundary: the manifest and suite a seal fixed, and the
+/// seal, relative to its run.
+struct Unit {
+    manifest: RunManifest,
+    suite: SuiteResult,
+    seal: PathBuf,
+}
+
+/// Validates one run directory's manifest, seals and integrity through the
+/// run bundle's reader, every sealed file hashed again; an error means the
+/// published bundle cannot be trusted as evidence.
 fn load_run(run_directory: &Path, target: &str) -> Result<LoadedRun> {
-    let Some(manifest): Option<RunManifest> =
-        read_optional_json(&run_directory.join("manifest.json"))?
-    else {
+    let Some(bundle) = RunBundle::open(run_directory).map_err(|error| error.to_string())? else {
         return Ok(LoadedRun::Unpublished);
     };
-    if manifest.schema != HIL_RUN_SCHEMA {
+    let manifest = bundle.manifest();
+    if manifest.schema != RUN_SCHEMA {
         return Err(format!("unsupported manifest schema {}", manifest.schema).into());
     }
     if manifest.run_id
@@ -327,31 +269,65 @@ fn load_run(run_directory: &Path, target: &str) -> Result<LoadedRun> {
     if manifest.target != target {
         return Ok(LoadedRun::OtherChip);
     }
-    let attempts = attempt::load(run_directory, &manifest)?;
+    bundle.validate().map_err(|error| error.to_string())?;
+    let attempts = bundle.attempts().map_err(|error| error.to_string())?;
     let independently_sealed = attempts.is_some();
     let units = if let Some(attempts) = attempts {
-        attempts
+        let mut units = Vec::new();
+        for attempt in attempts {
+            let result = &attempt.suite.scenarios[0];
+            // Only a Wi-Fi procedure names its image; other families imply
+            // it. An explicit one must be the image the seal fixed.
+            let document = bundle
+                .scenario_document(&result.scenario)
+                .map_err(|error| error.to_string())?;
+            if document
+                .pointer("/wifi/image")
+                .is_some_and(|declared| declared.as_str() != Some(result.image.id()))
+            {
+                return Err("HIL attempt subject, procedure or result is inconsistent".into());
+            }
+            units.push(Unit {
+                manifest: attempt.manifest,
+                suite: attempt.suite,
+                seal: attempt.seal,
+            });
+        }
+        units
     } else {
         // Whole-invocation evidence and independently sealed attempts
         // are different completion boundaries in the current format.
         if manifest.state == RunState::Running {
             return Ok(LoadedRun::NotEvidence);
         }
-        verify_integrity(run_directory)?;
+        bundle.integrity().map_err(|error| error.to_string())?;
         if manifest.state != RunState::Completed {
             return Ok(LoadedRun::NotEvidence);
         }
-        let suite: SuiteResult = read_json(&run_directory.join("suite.json"))?;
-        validate_suite(&suite, &manifest, run_directory)?;
-        vec![(manifest, suite)]
+        let suite = bundle
+            .suite()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| {
+                format!(
+                    "completed HIL run has no suite: {}",
+                    run_directory.display()
+                )
+            })?;
+        validate_suite(&suite, manifest).map_err(|error| error.to_string())?;
+        vec![Unit {
+            manifest: manifest.clone(),
+            suite,
+            seal: PathBuf::from(oer_hil_run_bundle::run::INTEGRITY),
+        }]
     };
     if units
         .iter()
-        .any(|(manifest, _)| !valid_sha256(&manifest.repository.workspace_sha256))
+        .any(|unit| !valid_sha256(&unit.manifest.repository.workspace_sha256))
     {
         return Err("invalid workspace digest".into());
     }
     Ok(LoadedRun::Units {
+        bundle: Box::new(bundle),
         units,
         independently_sealed,
     })
@@ -409,49 +385,10 @@ struct CompletionSeal {
     sha256: String,
 }
 
-#[derive(Deserialize)]
-struct ScenarioDocument {
-    schema: u16,
-    id: String,
-    role: ScenarioRole,
-    #[serde(default = "one_repetition")]
-    repetitions: u8,
-}
-
-/// What a scenario is for. A scenario is a qualification scenario because a
-/// program references it; [`ScenarioCatalog::check_roles`] holds the declared
-/// role to the programs.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum ScenarioRole {
-    Qualification,
-    Investigation,
-}
-
-const fn one_repetition() -> u8 {
-    1
-}
-
-/// Exactly one radio-family table carries the executable procedure; a Wi-Fi
-/// table names its image and a tagged workload, the others are tagged
-/// workloads themselves.
-pub(crate) fn has_one_family(document: &serde_json::Value) -> bool {
-    let tables = ["wifi", "bluetooth", "system", "ieee802154", "coexistence"]
-        .into_iter()
-        .filter_map(|family| Some((family, document.get(family)?)))
-        .collect::<Vec<_>>();
-    let [(family, table)] = tables.as_slice() else {
-        return false;
-    };
-    if *family == "wifi" {
-        table["image"].is_string() && table["workload"]["kind"].is_string()
-    } else if *family == "coexistence" {
-        // The joint workload is untagged: its table is the workload itself.
-        table["phy"].is_string()
-    } else {
-        table["kind"].is_string()
-    }
-}
+/// What a scenario is for; a scenario is a qualification scenario because a
+/// program references it, and [`ScenarioCatalog::check_roles`] holds the
+/// declared role to the programs.
+pub(crate) use oer_hil_scenario::Role as ScenarioRole;
 
 impl HilEvidenceIndex {
     #[cfg(test)]
@@ -596,7 +533,7 @@ impl HilEvidenceIndex {
             summary.directories += 1;
             // One untrustworthy bundle is reported and excluded; it cannot
             // count as evidence, and the other runs stay evaluable.
-            let (units, independently_sealed) = match load_run(&run_directory, target) {
+            let (bundle, units) = match load_run(&run_directory, target) {
                 Ok(LoadedRun::Unpublished) => {
                     // HIL producers can create their output directory before
                     // the first durable run document is published; such a
@@ -613,6 +550,7 @@ impl HilEvidenceIndex {
                     continue;
                 }
                 Ok(LoadedRun::Units {
+                    bundle,
                     units,
                     independently_sealed,
                 }) => {
@@ -620,7 +558,7 @@ impl HilEvidenceIndex {
                     if independently_sealed {
                         summary.sealed_attempts += units.len();
                     }
-                    (units, independently_sealed)
+                    (bundle, units)
                 }
                 Err(error) => {
                     summary.bundles += 1;
@@ -634,22 +572,33 @@ impl HilEvidenceIndex {
             let mut current_producer = false;
             let mut qualifying = false;
             // Counters describe enclosing invocations, not individual seals.
-            let outer: RunManifest = read_json(&run_directory.join("manifest.json"))?;
-            if outer.state == RunState::Completed {
+            if bundle.manifest().state == RunState::Completed {
                 summary.completed += 1;
-                if !units.is_empty() && units.iter().all(|(_, s)| s.outcome == Outcome::Passed) {
+                if !units.is_empty()
+                    && units
+                        .iter()
+                        .all(|unit| unit.suite.outcome == Outcome::Passed)
+                {
                     summary.passing += 1;
                 }
             }
-            for (manifest, suite) in units {
+            let plan_replays_firmware = matches!(
+                bundle
+                    .plan()
+                    .map_err(|error| error.to_string())?
+                    .and_then(|plan| plan.firmware),
+                Some(PlannedFirmware::Replay { .. })
+            );
+            for Unit {
+                manifest,
+                suite,
+                seal,
+            } in units
+            {
                 let artifact_replays_firmware = manifest
                     .firmware
                     .iter()
                     .any(|artifact| artifact.replayed_from.is_some());
-                let plan_replays_firmware =
-                    read_optional_json::<RunPlanProvenance>(&run_directory.join("plan.json"))?
-                        .and_then(|plan| plan.firmware)
-                        .is_some_and(|firmware| firmware.source == PlannedFirmwareSource::Replay);
                 let replays_firmware = artifact_replays_firmware || plan_replays_firmware;
                 // Exact snapshot bytes establish identity independently of Git
                 // bookkeeping.
@@ -690,14 +639,9 @@ impl HilEvidenceIndex {
                 }
                 let mut seen = BTreeSet::new();
                 for scenario in suite.scenarios {
-                    let path = if independently_sealed {
-                        PathBuf::from("attempts").join(format!("{}.json", scenario.scenario))
-                    } else {
-                        PathBuf::from("integrity.json")
-                    };
                     let completion_seal = Some(CompletionSeal {
-                        sha256: sha256_file(&run_directory.join(&path))?,
-                        path,
+                        sha256: sha256_file(&run_directory.join(&seal))?,
+                        path: seal.clone(),
                     });
                     let subject = Some(subject::ObservationSubject::load(
                         &run_directory,
@@ -720,12 +664,16 @@ impl HilEvidenceIndex {
                             completion_seal,
                             subject,
                             run_directory: Some(run_directory.clone()),
-                            failure: scenario.failure,
+                            failure: scenario
+                                .failure
+                                .as_ref()
+                                .map(serde_json::to_value)
+                                .transpose()?,
                             repetition_failures: scenario
                                 .repetitions
                                 .iter()
-                                .map(|r| r.failure.clone())
-                                .collect(),
+                                .map(|r| r.failure.as_ref().map(serde_json::to_value).transpose())
+                                .collect::<std::result::Result<_, _>>()?,
                             started_unix_millis: suite.started_unix_millis,
                             outcome: scenario.outcome,
                             repetition_outcomes: scenario
@@ -737,9 +685,15 @@ impl HilEvidenceIndex {
                             repetitions: scenario.repetitions.len(),
                             measurements: scenario
                                 .repetitions
-                                .into_iter()
-                                .map(|repetition| repetition.measurements)
-                                .collect(),
+                                .iter()
+                                .map(|repetition| {
+                                    repetition
+                                        .measurements
+                                        .iter()
+                                        .map(serde_json::to_value)
+                                        .collect::<std::result::Result<Vec<_>, _>>()
+                                })
+                                .collect::<std::result::Result<_, _>>()?,
                             procedure_document: None,
                             source_bound: false,
                             stale_snapshot,
@@ -784,416 +738,20 @@ impl HilEvidenceIndex {
     }
 }
 
-// The run vocabulary is the runner's own, from the shared schema: a variant
-// the runner learns is known here at once, never split into two copies.
+// The run vocabulary is the runner's own, from the shared schema.
 use oer_hil_schema::run::{Outcome, RunState};
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, serde::Serialize)]
-struct RepositoryProvenance {
-    commit: String,
-    dirty: bool,
-    workspace_sha256: String,
-}
-
-#[derive(Deserialize)]
-struct RunManifest {
-    schema: u16,
-    run_id: String,
-    target: String,
-    state: RunState,
-    started_unix_millis: u64,
-    finished_unix_millis: Option<u64>,
-    duration_millis: Option<u64>,
-    repository: RepositoryProvenance,
-    #[serde(default)]
-    runner: Option<serde_json::Value>,
-    #[serde(default)]
-    firmware: Vec<FirmwareArtifactProvenance>,
-}
-
-#[derive(Deserialize)]
-struct FirmwareArtifactProvenance {
-    #[serde(default)]
-    replayed_from: Option<serde::de::IgnoredAny>,
-    build_id: Option<String>,
-    build_provenance_path: Option<PathBuf>,
-    image: Option<String>,
-    application_path: Option<PathBuf>,
-    application_size_bytes: Option<u64>,
-    application_sha256: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct RunPlanProvenance {
-    #[serde(default)]
-    firmware: Option<PlannedFirmwareProvenance>,
-}
-
-#[derive(Deserialize)]
-struct PlannedFirmwareProvenance {
-    source: PlannedFirmwareSource,
-}
-
-#[derive(Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-enum PlannedFirmwareSource {
-    BuildCurrent,
-    Replay,
-}
-
-#[derive(Deserialize)]
-struct SuiteResult {
-    schema: u16,
-    run_id: String,
-    target: String,
-    outcome: Outcome,
-    started_unix_millis: u64,
-    finished_unix_millis: u64,
-    duration_millis: u64,
-    counts: SuiteCounts,
-    scenarios: Vec<ScenarioResult>,
-}
-
-#[derive(Deserialize, Eq, PartialEq)]
-struct SuiteCounts {
-    scenarios: usize,
-    passed: usize,
-    failed: usize,
-    broken: usize,
-    skipped: usize,
-    blocked: usize,
-    interrupted: usize,
-}
-
-impl SuiteCounts {
-    fn from_scenarios(scenarios: &[ScenarioResult]) -> Self {
-        let mut counts = Self {
-            scenarios: scenarios.len(),
-            passed: 0,
-            failed: 0,
-            broken: 0,
-            skipped: 0,
-            blocked: 0,
-            interrupted: 0,
-        };
-        for scenario in scenarios {
-            match scenario.outcome {
-                Outcome::Passed => counts.passed += 1,
-                Outcome::Failed => counts.failed += 1,
-                Outcome::Broken => counts.broken += 1,
-                Outcome::Skipped => counts.skipped += 1,
-                Outcome::Blocked | Outcome::BoardQuarantined => counts.blocked += 1,
-                Outcome::Interrupted => counts.interrupted += 1,
-            }
-        }
-        counts
-    }
-}
-
-#[derive(Deserialize)]
-struct ScenarioResult {
-    schema: u16,
-    scenario: String,
-    outcome: Outcome,
-    required_repetitions: u8,
-    repetitions: Vec<RepetitionResult>,
-    failure: Option<serde_json::Value>,
-}
-
-#[derive(Deserialize)]
-struct RepetitionResult {
-    schema: u16,
-    repetition: u8,
-    outcome: Outcome,
-    #[serde(default)]
-    measurements: Vec<serde_json::Value>,
-    failure: Option<serde_json::Value>,
-}
-
-#[derive(Deserialize)]
-struct IntegrityIndex {
-    schema: u16,
-    run_id: String,
-    files: Vec<IntegrityFile>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
-struct IntegrityFile {
-    path: PathBuf,
-    size_bytes: u64,
-    sha256: String,
-}
-
-fn validate_suite(suite: &SuiteResult, manifest: &RunManifest, directory: &Path) -> Result<()> {
-    if suite.schema != HIL_RUN_SCHEMA
-        || suite.run_id != manifest.run_id
-        || suite.target != manifest.target
-        || suite.started_unix_millis != manifest.started_unix_millis
-        || Some(suite.finished_unix_millis) != manifest.finished_unix_millis
-        || Some(suite.duration_millis) != manifest.duration_millis
-        || suite.counts != SuiteCounts::from_scenarios(&suite.scenarios)
-    {
-        return Err(format!(
-            "HIL suite does not match its manifest or counts: {}",
-            directory.display()
-        )
-        .into());
-    }
-    let expected_suite = if suite
-        .scenarios
-        .iter()
-        .all(|scenario| scenario.outcome == Outcome::Passed)
-    {
-        Outcome::Passed
-    } else {
-        Outcome::Failed
-    };
-    if suite.outcome != expected_suite {
-        return Err(format!(
-            "HIL suite outcome is inconsistent with its scenarios: {}",
-            directory.display()
-        )
-        .into());
-    }
-    let mut seen = BTreeSet::new();
-    for scenario in &suite.scenarios {
-        if scenario.schema != HIL_RUN_SCHEMA
-            || !valid_id(&scenario.scenario)
-            || !(1..=20).contains(&scenario.required_repetitions)
-            || !seen.insert(&scenario.scenario)
-        {
-            return Err(format!(
-                "invalid or duplicate HIL scenario in {}",
-                directory.display()
-            )
-            .into());
-        }
-        if scenario.repetitions.is_empty() {
-            if scenario.outcome != Outcome::Blocked || scenario.failure.is_none() {
-                return Err(format!(
-                    "HIL scenario {} has no repetitions without a blocking failure",
-                    scenario.scenario
-                )
-                .into());
-            }
-            continue;
-        }
-        if scenario.repetitions.len() != usize::from(scenario.required_repetitions)
-            || scenario.outcome
-                != aggregate_outcome(
-                    scenario
-                        .repetitions
-                        .iter()
-                        .map(|repetition| repetition.outcome),
-                )
-        {
-            return Err(format!(
-                "HIL scenario {} has inconsistent repetitions",
-                scenario.scenario
-            )
-            .into());
-        }
-        for (index, repetition) in scenario.repetitions.iter().enumerate() {
-            if repetition.schema != HIL_RUN_SCHEMA
-                || usize::from(repetition.repetition) != index + 1
-                || (repetition.outcome == Outcome::Passed && repetition.failure.is_some())
-                || (matches!(
-                    repetition.outcome,
-                    Outcome::Failed
-                        | Outcome::Broken
-                        | Outcome::Blocked
-                        | Outcome::Interrupted
-                        | Outcome::BoardQuarantined
-                ) && repetition.failure.is_none())
-            {
-                return Err(format!(
-                    "HIL scenario {} has an invalid repetition sequence",
-                    scenario.scenario
-                )
-                .into());
-            }
-            measurement::validate(&repetition.measurements, repetition.outcome)?;
-        }
-    }
-    Ok(())
-}
-
-fn aggregate_outcome(outcomes: impl IntoIterator<Item = Outcome>) -> Outcome {
-    let observed = outcomes.into_iter().collect::<Vec<_>>();
-    if !observed.is_empty() && observed.iter().all(|outcome| *outcome == Outcome::Passed) {
-        Outcome::Passed
-    } else if observed.contains(&Outcome::Interrupted) {
-        Outcome::Interrupted
-    } else if observed.contains(&Outcome::BoardQuarantined) {
-        Outcome::BoardQuarantined
-    } else if observed.contains(&Outcome::Broken) {
-        Outcome::Broken
-    } else if observed.contains(&Outcome::Failed) {
-        Outcome::Failed
-    } else if observed.contains(&Outcome::Blocked) {
-        Outcome::Blocked
-    } else {
-        Outcome::Skipped
-    }
-}
-
-fn verify_integrity(run_directory: &Path) -> Result<()> {
-    verify_integrity_named(
-        run_directory,
-        run_directory
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or_default(),
-    )
-}
-
-fn verify_integrity_named(run_directory: &Path, identity: &str) -> Result<()> {
-    let path = run_directory.join("integrity.json");
-    let index: IntegrityIndex = read_json(&path)?;
-    if index.schema != HIL_RUN_SCHEMA || index.run_id != identity {
-        return Err(format!("invalid HIL integrity identity: {}", path.display()).into());
-    }
-    let mut declared = index.files;
-    declared.sort();
-    let mut unique = BTreeSet::new();
-    for file in &declared {
-        if !safe_relative(&file.path)
-            || file.path == Path::new("integrity.json")
-            || !valid_sha256(&file.sha256)
-            || !unique.insert(file.path.clone())
-        {
-            return Err(format!("invalid HIL integrity entry: {}", file.path.display()).into());
-        }
-        let actual = run_directory.join(&file.path);
-        let metadata = fs::symlink_metadata(&actual)?;
-        if !metadata.file_type().is_file()
-            || metadata.len() != file.size_bytes
-            || sha256_file(&actual)? != file.sha256
-        {
-            return Err(format!("HIL integrity mismatch: {}", actual.display()).into());
-        }
-    }
-    let declared_inventory = declared
-        .iter()
-        .map(|file| (file.path.clone(), file.size_bytes))
-        .collect::<Vec<_>>();
-    let actual_inventory = collect_integrity_inventory(run_directory)?;
-    if declared_inventory != actual_inventory {
-        return Err(format!(
-            "HIL run does not match its sealed inventory: {}",
-            run_directory.display()
-        )
-        .into());
-    }
-    Ok(())
-}
-
-fn collect_integrity_inventory(directory: &Path) -> Result<Vec<(PathBuf, u64)>> {
-    collect_inventory(directory, true)
-}
-
-fn collect_inventory(directory: &Path, exclude_integrity: bool) -> Result<Vec<(PathBuf, u64)>> {
-    fn visit(
-        root: &Path,
-        directory: &Path,
-        output: &mut Vec<(PathBuf, u64)>,
-        exclude_integrity: bool,
-    ) -> Result<()> {
-        let mut entries = fs::read_dir(directory)?.collect::<std::io::Result<Vec<_>>>()?;
-        entries.sort_by_key(std::fs::DirEntry::file_name);
-        for entry in entries {
-            let file_type = entry.file_type()?;
-            if file_type.is_dir() {
-                visit(root, &entry.path(), output, exclude_integrity)?;
-            } else if file_type.is_file() {
-                let relative = entry.path().strip_prefix(root)?.to_owned();
-                if exclude_integrity && relative == Path::new("integrity.json") {
-                    continue;
-                }
-                output.push((relative, entry.metadata()?.len()));
-            } else {
-                return Err(format!(
-                    "HIL run contains a symlink or special file: {}",
-                    entry.path().display()
-                )
-                .into());
-            }
-        }
-        Ok(())
-    }
-
-    let mut output = Vec::new();
-    visit(directory, directory, &mut output, exclude_integrity)?;
-    output.sort();
-    Ok(output)
-}
-
-fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    let input = fs::read(path)
-        .map_err(|error| format!("cannot read HIL evidence {}: {error}", path.display()))?;
-    serde_json::from_slice(&input)
-        .map_err(|error| format!("cannot parse HIL evidence {}: {error}", path.display()).into())
-}
-
-fn read_optional_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Option<T>> {
-    let input = match fs::read(path) {
-        Ok(input) => input,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => {
-            return Err(format!("cannot read HIL evidence {}: {error}", path.display()).into());
-        }
-    };
-    serde_json::from_slice(&input)
-        .map(Some)
-        .map_err(|error| format!("cannot parse HIL evidence {}: {error}", path.display()).into())
-}
-
-fn safe_relative(path: &Path) -> bool {
-    !path.as_os_str().is_empty()
-        && !path.is_absolute()
-        && path
-            .components()
-            .all(|component| matches!(component, Component::Normal(_)))
-}
-
-fn valid_sha256(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-
-fn valid_id(value: &str) -> bool {
-    value
-        .bytes()
-        .next()
-        .is_some_and(|byte| byte.is_ascii_lowercase())
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-        && !value.ends_with('-')
-        && !value.contains("--")
-}
 
 fn sha256_file(path: &Path) -> Result<String> {
     crate::hash_cache::sha256_file(path)
 }
 
-fn git_output(root: &Path, arguments: &[&str]) -> Result<String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(arguments)
-        .output()?;
-    if !output.status.success() {
-        return Err(format!(
-            "git {} failed with status {}",
-            arguments.join(" "),
-            output.status
-        )
-        .into());
-    }
-    Ok(String::from_utf8(output.stdout)?.trim().to_owned())
+fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
+    oer_hil_run_bundle::run::validation::read_json(path).map_err(|error| error.to_string().into())
+}
+
+fn read_optional_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Option<T>> {
+    oer_hil_run_bundle::run::validation::read_optional_json(path)
+        .map_err(|error| error.to_string().into())
 }
 
 #[cfg(test)]
@@ -1201,6 +759,9 @@ mod tests;
 
 #[cfg(test)]
 mod catalog_tests;
+
+#[cfg(test)]
+mod attempt_tests;
 
 #[cfg(test)]
 mod provenance_tests;

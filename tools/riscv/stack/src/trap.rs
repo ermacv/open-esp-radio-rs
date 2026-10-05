@@ -12,14 +12,12 @@
 //! learn only from an unsigned comparison of the two values.
 use crate::image::{Function, parse};
 use crate::sweep::destination;
-use object::{Object, ObjectSection, ObjectSymbol, RelocationFlags, RelocationTarget};
+use oer_elf::rv32::{self, Role};
 use oer_riscv_decode::{Extension, Extensions, Float, Inst, Instruction, decode};
 use oer_riscv_model::{Error, ErrorCode, Result};
 
 /// `mscratch`.
 const MSCRATCH: u16 = 0x340;
-/// `R_RISCV_32`: a word that holds an address.
-const R_RISCV_32: u32 = 1;
 /// Instructions one path of an entry may execute before its handler.
 const MAX_STEPS: usize = 512;
 /// Paths one entry may take before its handler.
@@ -42,48 +40,38 @@ pub fn vector_table(elf: &[u8], symbol: &str) -> Result<Vec<Option<u32>>> {
     let file = parse(elf)?;
     let table = file
         .symbols()
-        .find(|s| s.name() == Ok(symbol))
+        .find(|s| s.name == symbol)
         .ok_or_else(|| invalid(format!("no vector table `{symbol}`")))?;
-    let (start, size) = (table.address(), table.size());
+    let (start, size) = (table.address, table.size);
     if size == 0 || size % 4 != 0 {
         return Err(invalid(format!("vector table `{symbol}` has no word size")));
     }
     let section = table
-        .section_index()
-        .and_then(|index| file.section_by_index(index).ok())
+        .section
+        .and_then(|index| file.section(index).ok())
         .ok_or_else(|| invalid(format!("vector table `{symbol}` in no section")))?;
-    let data = section
-        .data()
-        .map_err(|_| invalid("unreadable vector table section".into()))?;
     let word = |address: u64| {
-        let at = (address - section.address()) as usize;
-        data.get(at..at + 4)
-            .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]))
+        section
+            .word(address)
             .ok_or_else(|| invalid(format!("vector table `{symbol}` exceeds its section")))
     };
     let mut slots = vec![None; (size / 4) as usize];
-    for (offset, relocation) in section.relocations() {
+    let relocations = file
+        .relocations(section.index)
+        .map_err(|error| invalid(error.to_string()))?;
+    for relocation in relocations {
+        let offset = relocation.at;
         if offset < start || offset >= start + size {
             continue;
         }
-        let RelocationFlags::Elf { r_type: R_RISCV_32 } = relocation.flags() else {
+        if rv32::kind(relocation.r_type).role != Role::Word {
             return Err(invalid(format!(
                 "vector table `{symbol}` slot at {offset:#010x} is no address word"
             )));
-        };
-        let base = match relocation.target() {
-            RelocationTarget::Symbol(index) => file
-                .symbol_by_index(index)
-                .map_err(|_| invalid("relocation to a missing symbol".into()))?
-                .address(),
-            RelocationTarget::Section(index) => file
-                .section_by_index(index)
-                .map_err(|_| invalid("relocation to a missing section".into()))?
-                .address(),
-            RelocationTarget::Absolute => 0,
-            _ => return Err(invalid("relocation without a target".into())),
-        };
-        let target = (base as i64 + relocation.addend()) as u32;
+        }
+        let target = file
+            .target_address(&relocation)
+            .map_err(|error| invalid(error.to_string()))? as u32;
         if word(offset)? != target || offset % 4 != 0 {
             return Err(invalid(format!(
                 "vector table `{symbol}` slot at {offset:#010x} differs from its relocation"
@@ -176,22 +164,13 @@ pub fn trap_entry(elf: &[u8], functions: &[Function], entry: u32) -> Result<Trap
 }
 
 /// The code bytes at `address`, to the end of their section.
-fn code<'a>(file: &object::File<'a>, address: u32) -> Option<&'a [u8]> {
+fn code<'a>(file: &oer_elf::Elf<'a>, address: u32) -> Option<&'a [u8]> {
     let address = u64::from(address);
     file.sections().find_map(|section| {
-        let object::SectionFlags::Elf { sh_flags } = section.flags() else {
-            return None;
-        };
-        if sh_flags & u64::from(object::elf::SHF_EXECINSTR) == 0
-            || address < section.address()
-            || address >= section.address() + section.size()
-        {
+        if !section.executable || !section.contains(address) {
             return None;
         }
-        section
-            .data()
-            .ok()?
-            .get((address - section.address()) as usize..)
+        section.data.get((address - section.address) as usize..)
     })
 }
 

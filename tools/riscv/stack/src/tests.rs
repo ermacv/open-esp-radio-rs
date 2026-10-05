@@ -890,7 +890,7 @@ fn only_data_neither_writable_nor_executable_reads_as_constant() {
         &[0x1234_5678],
         true,
     );
-    let file = object::File::parse(elf.as_slice()).unwrap();
+    let file = oer_elf::Elf::parse(elf.as_slice()).unwrap();
     assert_eq!(image::read_only_word(&file, RODATA), Some(0x1234_5678));
     // Code loaded into RAM may hold a table the program rewrites.
     assert_eq!(image::read_only_word(&file, TEXT), None);

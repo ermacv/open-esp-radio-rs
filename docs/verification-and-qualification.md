@@ -109,8 +109,10 @@ Vendor evidence comes from the typed vendor scenarios in
 [`verification/esp32s31/scenarios`](../verification/esp32s31/scenarios).
 The native evidence index is the directory `evidence/scenarios` of
 [`verification/esp32s31`](../verification/esp32s31/README.md)
-([schema](../verification/schema/scenario-evidence.rs)), one shard per
-scenario named after it. `vendor-scenario <scenario> --index <directory>`
+([`oer-vendor-evidence`](../verification/evidence/README.md)), one shard per
+scenario named after it, written only through that crate's writer by a
+producer: the typed scenarios or a host stand's `shard` command.
+`vendor-scenario <scenario> --index <directory>`
 writes that scenario's shard when it passes with no unmet obligation;
 `vendor-scenario all --index <directory>` runs every scenario under one budget
 and, only when all of them pass, writes every shard. A scenario run rewrites
@@ -226,8 +228,8 @@ derives:
 ## HIL evidence path
 
 Qualification reads sealed run bundles from the shared run store and tracked
-HIL evidence shards (`hil/evidence/<target>`), which `cargo hil evidence record`
-writes explicitly from qualifying runs; running a scenario never writes tracked
+HIL evidence shards (`hil/evidence/<target>`), which `cargo qualification
+hil-evidence` writes explicitly from qualifying runs; running a scenario never writes tracked
 files. The [qualification reference](../qualification/README.md) describes the
 shard binding. Qualification manifests name exact scenario requirements rather
 than dated narrative files:
@@ -314,10 +316,6 @@ cargo xtask evidence --chip esp32s31
 cargo qualification evaluate \
   --manifest qualification/targets/esp32s31/wifi-sta.toml \
   --json-report target/qualification/wifi-sta.json
-
-cargo qualification gate \
-  --manifest qualification/targets/esp32s31/wifi-sta.toml
 ```
 
-`validate` is the normal source-tree consistency check. `gate` is intentionally
-expected to fail while any required claim remains incomplete.
+`validate` is the normal source-tree consistency check.

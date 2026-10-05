@@ -103,7 +103,7 @@ fn record(common: &Common, scenario: &str, claims: &session::Claims) -> Result<(
             env!("CARGO_PKG_NAME"),
             &common.verdict,
         )?;
-        shard::write(directory, &index)?;
+        shard::record(directory, &index)?;
     }
     Ok(())
 }
@@ -111,7 +111,7 @@ fn record(common: &Common, scenario: &str, claims: &session::Claims) -> Result<(
 /// Every scenario; each reviewed decision must still review something.
 fn all(common: &Common, report: &dyn RunReport) -> Result<()> {
     let claims = phy_i2c(common, report)?;
-    let root = observation::root()?;
+    let root = oer_process::built_root();
     let unobserved = claims.lines.unobserved();
     let mut sources = observation::Sources::default();
     sources.check(&root, decisions::observation::DECISIONS, &unobserved)?;

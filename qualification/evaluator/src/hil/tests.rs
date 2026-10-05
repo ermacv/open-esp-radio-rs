@@ -65,38 +65,133 @@ fn scenario_catalog_rejects_non_current_schema() {
 
     let error = ScenarioCatalog::load(&root, Path::new("scenarios")).unwrap_err();
     assert!(
-        error
-            .to_string()
-            .contains("invalid HIL scenario catalog entry")
+        error.to_string().contains("future-scenario.toml"),
+        "{error}"
     );
 
     fs::remove_dir_all(root).unwrap();
 }
 
-pub(super) fn seal(run: &Path) {
-    let manifest: serde_json::Value = read_json(&run.join("manifest.json")).unwrap();
-    let files = collect_integrity_inventory(run)
-        .unwrap()
-        .into_iter()
-        .map(|(name, size)| {
-            let path = run.join(&name);
+/// Fill the run bundle documents of `run` that a test wrote with only the
+/// fields it cares about: every field the bundle's typed format requires and
+/// the test left out gets a neutral value, and the documents take the
+/// format's schema. A firmware entry without an application gets an empty
+/// one, archived in the run.
+pub(super) fn complete(run: &Path) {
+    fn fill(value: &mut serde_json::Value, defaults: serde_json::Value) {
+        if let (Some(object), serde_json::Value::Object(defaults)) =
+            (value.as_object_mut(), defaults)
+        {
+            for (key, default) in defaults {
+                object.entry(key).or_insert(default);
+            }
+        }
+    }
+    let schema = json!(oer_hil_run_bundle::run::RUN_SCHEMA);
+    let empty = oer_durable::sha256_bytes(b"");
+    let manifest_path = run.join("manifest.json");
+    if let Ok(bytes) = fs::read(&manifest_path)
+        && let Ok(mut manifest) = serde_json::from_slice::<serde_json::Value>(&bytes)
+        && manifest.is_object()
+    {
+        manifest["schema"] = schema.clone();
+        fill(
+            &mut manifest,
             json!({
-                "path": name,
-                "size_bytes": size,
-                "sha256": sha256_file(&path).unwrap(),
-            })
-        })
-        .collect::<Vec<_>>();
-    fs::write(
-        run.join("integrity.json"),
-        serde_json::to_vec_pretty(&json!({
-            "schema": 2,
-            "run_id": manifest["run_id"],
-            "files": files,
-        }))
-        .unwrap(),
-    )
-    .unwrap();
+                "finished_unix_millis": null, "duration_millis": null, "invocation": [],
+                "runner": {}, "cell": {"cell_id": "cell", "device_id": "dut",
+                "serial_device": "/dev/ttyACM0"}, "firmware": [], "messages_used": [],
+            }),
+        );
+        fill(
+            &mut manifest["runner"],
+            json!({"package": "oer-hil-runner", "version": "1", "messages_lock_sha256": "00",
+                   "host_os": "linux", "host_arch": "x86_64", "tools": []}),
+        );
+        for artifact in manifest["firmware"].as_array_mut().unwrap() {
+            let image = artifact["image"]
+                .as_str()
+                .unwrap_or("boot-smoke")
+                .to_owned();
+            if artifact.get("application_path").is_none() {
+                let path = PathBuf::from("firmware")
+                    .join(&image)
+                    .join("application.bin");
+                fs::create_dir_all(run.join(path.parent().unwrap())).unwrap();
+                fs::write(run.join(&path), b"").unwrap();
+                fill(
+                    artifact,
+                    json!({"application_path": path, "application_size_bytes": 0,
+                           "application_sha256": empty}),
+                );
+            }
+            fill(
+                artifact,
+                json!({"image": image, "runtime_elf_sha256": empty}),
+            );
+            if let Some(origin) = artifact.get_mut("replayed_from") {
+                fill(
+                    origin,
+                    json!({"source_integrity_sha256": empty, "firmware_repository":
+                           {"commit": "older", "dirty": false, "workspace_sha256": empty}}),
+                );
+            }
+        }
+        fs::write(
+            &manifest_path,
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+    }
+    let suite_path = run.join("suite.json");
+    if let Ok(bytes) = fs::read(&suite_path)
+        && let Ok(mut suite) = serde_json::from_slice::<serde_json::Value>(&bytes)
+        && suite.get("scenarios").is_some()
+    {
+        suite["schema"] = schema.clone();
+        for scenario in suite["scenarios"].as_array_mut().unwrap() {
+            scenario["schema"] = schema.clone();
+            fill(scenario, json!({"image": "boot-smoke", "failure": null}));
+            let id = scenario["scenario"].as_str().unwrap_or_default().to_owned();
+            for repetition in scenario["repetitions"].as_array_mut().unwrap() {
+                repetition["schema"] = schema.clone();
+                let number = repetition["repetition"].as_u64().unwrap_or_default();
+                fill(
+                    repetition,
+                    json!({"started_unix_millis": 0, "duration_millis": 0,
+                           "artifact_directory": format!("scenarios/{id}/repetition-{number:03}"),
+                           "attachments": [], "measurements": [], "failure": null}),
+                );
+            }
+        }
+        fs::write(&suite_path, serde_json::to_vec_pretty(&suite).unwrap()).unwrap();
+    }
+    let plan_path = run.join("plan.json");
+    if let Ok(bytes) = fs::read(&plan_path)
+        && let Ok(mut plan) = serde_json::from_slice::<serde_json::Value>(&bytes)
+    {
+        let id = run.file_name().unwrap().to_string_lossy().into_owned();
+        plan["schema"] = schema.clone();
+        fill(
+            &mut plan,
+            json!({"run_id": id, "selection": "test", "entries": []}),
+        );
+        if plan["firmware"]["source"] == "replay" {
+            fill(
+                &mut plan["firmware"],
+                json!({"image": "boot-smoke", "application_sha256": empty}),
+            );
+        }
+        fs::write(&plan_path, serde_json::to_vec_pretty(&plan).unwrap()).unwrap();
+    }
+}
+
+/// [`complete`] the run's documents, then seal it as its writer does.
+pub(super) fn seal(run: &Path) {
+    complete(run);
+    let manifest: serde_json::Value = read_json(&run.join("manifest.json")).unwrap();
+    oer_hil_run_bundle::run::write_integrity_index(run, manifest["run_id"].as_str().unwrap())
+        .unwrap();
 }
 
 #[test]
@@ -464,6 +559,7 @@ fn unsealed_completed_run_still_fails_closed() {
     )
     .unwrap();
 
+    complete(&run);
     let repository = RepositoryState {
         commit: "abc123".to_owned(),
         dirty: false,
@@ -505,7 +601,7 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
         serde_json::from_str(include_str!("../../../../hil/schema/observer-inputs.json")).unwrap();
     fs::write(
         root.join("hil/schema/observer-inputs.json"),
-        serde_json::to_vec(&json!({"schema":4,"data":["observer.rs"],"timing":registry["timing"],"dependencies":{"common":[],"wifi":[],"bluetooth":[],"system":[],"ieee802154":[],"coexistence":[]},"build":{"profile":"debug","opt_level":"0","debug":"true"}}))
+        serde_json::to_vec(&json!({"schema":4,"data":["observer.rs"],"timing":registry["timing"],"dependencies":{"common":[],"wifi":[],"bluetooth":[],"system":[],"ieee802154":[],"coexistence":[],"phy":[]},"build":{"profile":"debug","opt_level":"0","debug":"true"}}))
             .unwrap(),
     )
     .unwrap();
@@ -534,7 +630,7 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
         .unwrap()
         .to_owned();
     manifest["runner"] =
-        json!({"observer": oer_hil_schema::observer_store::detach(&embedded, &store).unwrap()});
+        json!({"observer": oer_hil_observer::store::detach(&embedded, &store).unwrap()});
 
     manifest["firmware"] = json!([{
         "build_id": "ab".repeat(32),
@@ -545,13 +641,20 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
         serde_json::to_vec(&manifest).unwrap(),
     )
     .unwrap();
+    let lock = root.join("Cargo.lock");
     let provenance = json!({
         "schema": 1,
         "build_type": "open-esp-radio-hil-firmware/v1",
         "build_id": "ab".repeat(32),
+        "parameters": {
+            "image": "boot-smoke", "network": null, "runtime_profile": "release",
+            "target": "riscv32imafc-unknown-none-elf", "runtime_features": "",
+        },
         "source_reconstructable": true,
         "sources": [{
             "name": "repository",
+            "checkout_path": root,
+            "remote": null,
             "commit": manifest["repository"]["commit"],
             "workspace_sha256": manifest["repository"]["workspace_sha256"],
             "dirty": false,
@@ -559,12 +662,22 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
             "limitations": [],
             "untracked_files": [],
             "tracked_patch_path": null,
+            "tracked_patch_size_bytes": null,
+            "tracked_patch_sha256": null,
         }],
         "files": [{
             "name": "workspace-lock",
             "path": "Cargo.lock",
-            "sha256": sha256_file(&root.join("Cargo.lock")).unwrap(),
+            "archive_path": null,
+            "size_bytes": fs::metadata(&lock).unwrap().len(),
+            "sha256": sha256_file(&lock).unwrap(),
         }],
+        "environment": {
+            "tools": [], "inherited_rustflags": null, "inherited_encoded_rustflags": null,
+            "cargo_incremental": "0", "source_date_epoch": null,
+        },
+        "subjects": [],
+        "reproducibility": "unverified",
     });
     fs::write(
         run.join("build-provenance.json"),
@@ -576,7 +689,7 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
 pub(super) fn prepare_observer(root: &Path) -> serde_json::Value {
     let registry = read_json(&root.join("hil/schema/observer-inputs.json")).unwrap();
     let configuration = observer::required_configuration(root, &registry).unwrap();
-    use oer_hil_schema::resolve;
+    use oer_hil_observer::resolve;
     let mut resolved = resolve::resolve(
         root,
         configuration["environment"]["TARGET"].as_str().unwrap(),
@@ -666,7 +779,7 @@ fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
         read_json(&root.join("evidence/station-reconnect.json")).unwrap();
     let observer = &shard["subject"]["observer"];
     assert!(observer.get("build").is_none());
-    let build = oer_hil_schema::observer_store::path(
+    let build = oer_hil_observer::store::path(
         &root.join(evidence),
         observer["build_sha256"].as_str().unwrap(),
     )
@@ -734,7 +847,7 @@ fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
 /// fails closed.
 #[test]
 fn a_referenced_observer_build_is_the_only_stored_form() {
-    use oer_hil_schema::observer_store;
+    use oer_hil_observer::store as observer_store;
     let root = std::env::temp_dir().join(format!(
         "open-radio-qualification-hil-observer-{}",
         std::process::id()
@@ -1000,4 +1113,64 @@ fn a_recorded_run_binds_its_own_snapshot_and_touches_only_its_scenarios() {
         shard::RunVerdict::NotFound
     );
     fs::remove_dir_all(root).unwrap();
+}
+
+fn no_views(
+    _: &oer_hil_run_bundle::run::SuiteResult,
+    _: &oer_hil_run_bundle::run::RunManifest,
+) -> oer_hil_run_bundle::run::Views {
+    oer_hil_run_bundle::run::Views::default()
+}
+
+/// The evaluator admits exactly what the runner's writer seals, through the
+/// run bundle's one reader, and still refuses it once a sealed file changes.
+#[test]
+fn a_bundle_the_writer_seals_is_admitted_through_the_shared_reader() {
+    use oer_hil_run_bundle::run::{RepetitionResult, ScenarioResult, test_support::session};
+    let root = tempfile::tempdir().unwrap();
+    let run = root.path().join("runs/1700000000000-00000abc");
+    fs::create_dir_all(run.join("scenarios/boot-smoke/repetition-001")).unwrap();
+    let scenario = ScenarioResult::from_repetitions(
+        String::from("boot-smoke"),
+        oer_hil_image_class::ImageClass::BootSmoke,
+        1,
+        vec![RepetitionResult {
+            schema: oer_hil_run_bundle::run::RUN_SCHEMA,
+            repetition: 1,
+            outcome: Outcome::Passed,
+            started_unix_millis: 1,
+            duration_millis: 1,
+            artifact_directory: PathBuf::from("scenarios/boot-smoke/repetition-001"),
+            attachments: Vec::new(),
+            measurements: Vec::new(),
+            failure: None,
+        }],
+    );
+    session(&run).finish(vec![scenario], no_views).unwrap();
+    let load = || {
+        HilEvidenceIndex::load(
+            root.path(),
+            Path::new("runs"),
+            Path::new("evidence"),
+            "esp32s31",
+            &RepositoryState {
+                commit: String::new(),
+                dirty: false,
+            },
+        )
+    };
+    let index = load().unwrap();
+    assert!(
+        index.summary().invalid.is_empty(),
+        "{:?}",
+        index.summary().invalid
+    );
+    assert_eq!((index.summary().bundles, index.summary().completed), (1, 1));
+    assert_eq!(index.scenarios["boot-smoke"].len(), 1);
+    let suite = run.join("suite.json");
+    let mut bytes = fs::read(&suite).unwrap();
+    bytes.push(b'\n');
+    fs::write(&suite, bytes).unwrap();
+    let rejected = HilEvidenceIndex::rejection(load()).unwrap();
+    assert!(rejected.contains("sealed file inventory"), "{rejected}");
 }

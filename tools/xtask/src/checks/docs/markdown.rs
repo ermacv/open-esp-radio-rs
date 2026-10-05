@@ -1,7 +1,8 @@
 //! Local Markdown links and anchors, independent of Cargo documentation builds.
 
 use super::LinkSummary;
-use crate::{Context, Result};
+use crate::Result;
+use oer_process::Checkout;
 use pulldown_cmark::{BrokenLink, CodeBlockKind, CowStr, Event, Options, Parser, Tag, TagEnd};
 use std::{
     borrow::Cow,
@@ -163,11 +164,7 @@ fn holds_file(directory: &Path) -> bool {
 pub(super) fn ignored(root: &Path, path: &str) -> bool {
     let directory = format!("{}/", path.trim_end_matches('/'));
     [path, directory.as_str()].into_iter().any(|candidate| {
-        std::process::Command::new("git")
-            .current_dir(root)
-            .args(["check-ignore", "--quiet", "--no-index", candidate])
-            .status()
-            .is_ok_and(|status| status.success())
+        oer_process::git::output(root, ["check-ignore", "--quiet", "--no-index", candidate]).is_ok()
     })
 }
 
@@ -257,7 +254,7 @@ fn html_attribute(attributes: &str, wanted: &str) -> Option<String> {
     None
 }
 
-pub(super) fn check_markdown(ctx: &Context, initial: &[PathBuf]) -> Result<LinkSummary> {
+pub(super) fn check_markdown(ctx: &Checkout, initial: &[PathBuf]) -> Result<LinkSummary> {
     let root = ctx.root.canonicalize()?;
     let mut queue = initial.iter().cloned().collect::<VecDeque<_>>();
     let mut documents = BTreeMap::<PathBuf, ParsedMarkdown>::new();

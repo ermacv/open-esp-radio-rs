@@ -100,10 +100,7 @@ pub(crate) fn rename_owner(path: &Path, old: &str, new: &str) -> crate::Result<(
         }
         renamed.push('\n');
     }
-    let temporary = path.with_extension("jsonl.tmp");
-    fs::write(&temporary, renamed)?;
-    fs::rename(&temporary, path)?;
-    Ok(())
+    oer_durable::atomic_write(path, renamed.as_bytes())
 }
 
 pub(crate) fn read(path: &Path) -> crate::Result<Vec<LeaseRecord>> {
@@ -142,10 +139,7 @@ pub(crate) fn retain_newest<T: for<'a> Deserialize<'a> + Serialize>(
         text.extend(serde_json::to_vec(record)?);
         text.push(b'\n');
     }
-    let temporary = path.with_extension("jsonl.tmp");
-    fs::write(&temporary, text)?;
-    fs::rename(temporary, path)?;
-    Ok(())
+    oer_durable::atomic_write(path, &text)
 }
 
 #[cfg(test)]

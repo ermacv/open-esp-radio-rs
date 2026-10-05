@@ -2,155 +2,114 @@
 
 use crate::{
     Result,
-    scenario::{Family, Scenario},
+    scenario::{Families, Scenario},
 };
-use oer_hil_evidence::run::{Failure, FailureKind};
-use oer_hil_stand::config::{LabConfig, StationFixtureConfig};
+use oer_hil_lab::config::LabConfig;
+use oer_hil_run_bundle::run::{Failure, FailureKind};
+use oer_hil_scenario::ScenarioFamily as _;
+use oer_hil_workload::family::Registry as _;
 
+/// The laboratory checks a scenario needs before it may run: its
+/// preconditions, then every fixture provider's check of its requirements.
 pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
     let plan = scenario.plan();
     let resolved = lab.resolve(plan.wifi);
     let lab = &resolved;
     if let Some(failure) = scenario_precondition(lab, scenario) {
-        return Err(oer_hil_stand::Error::new(failure.message).into());
+        return Err(oer_hil_lab::Error::new(failure.message).into());
     }
-    let required = plan.requirements;
-    if let StationFixtureConfig::OpenWrt(config) = &lab.station_fixture
-        && config.read_only
-        && (required.station_control || required.openwrt_client || required.openwrt_tx_monitor)
-    {
-        return Err(oer_hil_stand::Error::new(
-            "scenario requires mutations forbidden by read-only OpenWrt fixture",
-        )
-        .into());
-    }
-    if required.air_observer && lab.air_observer.is_none() {
-        return Err(
-            oer_hil_stand::Error::new("scenario requires the independent [air_observer]").into(),
-        );
-    }
-    if (required.non_ht_member || required.legacy_bss)
-        && !matches!(lab.station_fixture, StationFixtureConfig::OpenWrt(_))
-    {
-        return Err(oer_hil_stand::Error::new(
-            "induced BSS protection requires the OpenWrt station fixture",
-        )
-        .into());
-    }
-    if required.legacy_bss && lab.legacy_bss.is_none() {
-        return Err(oer_hil_stand::Error::new(
-            "scenario requires the [legacy_bss] laboratory capability",
-        )
-        .into());
-    }
-    if required.probe_load {
-        if !std::path::Path::new("/usr/local/libexec/open-radio-probe").is_file() {
-            return Err(oer_hil_stand::Error::new(
-                "probe load requires cargo hil fixture install --provider linux-net",
-            )
-            .into());
-        }
-        oer_hil_image::require_program(std::ffi::OsStr::new("tshark"))?;
-    }
-    if required.station_network {
-        oer_hil_execution::fixture::cleanup::require_healthy()?;
-    }
-    hil_wifi::fixture::local::network_helper::require_for(lab, required)?;
-    if required.station_network {
-        match &lab.station_fixture {
-            StationFixtureConfig::OpenWrt(config) => {
-                let phy = lab.fixture_phy(plan.wifi);
-                hil_wifi::fixture::openwrt::ap::probe(
-                    config,
-                    hil_wifi::fixture::openwrt::ap::Profile::new(
-                        config,
-                        phy,
-                        plan.wifi.management_frame_protection,
-                        plan.wifi.access_point_security,
-                        plan.wifi.access_point_beacon,
-                    ),
-                )
-                .map_err(oer_hil_stand::Error::context)?;
-                // Both directions consume remote counters and command-line capture tools.
-                if required.station_udp_rx_capture || required.station_udp_tx_capture {
-                    hil_wifi::fixture::openwrt::evidence::doctor_tools(config)?;
-                }
-            }
-            StationFixtureConfig::LocalLinux(config) => {
-                hil_wifi::fixture::local::ap::check(
-                    config,
-                    &lab.station,
-                    lab.fixture_phy(plan.wifi),
-                )
-                .map_err(oer_hil_stand::Error::context)?;
-                if required.station_udp_rx_capture || required.station_udp_tx_capture {
-                    oer_hil_image::require_program(std::ffi::OsStr::new("dumpcap"))?;
-                }
-            }
-            StationFixtureConfig::External(_) if required.station_control => {
-                return Err(oer_hil_stand::Error::new(
-                    "scenario requires a controllable AP fixture",
-                )
-                .into());
-            }
-            StationFixtureConfig::External(_) => {}
-        }
-    }
-    if required.laptop_client {
-        hil_wifi::fixture::local::client::doctor()?;
-    }
-    if required.openwrt_client {
-        let StationFixtureConfig::OpenWrt(config) = &lab.station_fixture else {
-            return Err(oer_hil_stand::Error::new("scenario requires an OpenWrt client").into());
-        };
-        hil_wifi::fixture::openwrt::client::doctor(&lab.access_point, config)?;
-    }
-    if required.openwrt_tx_monitor {
-        let StationFixtureConfig::OpenWrt(config) = &lab.station_fixture else {
-            return Err(oer_hil_stand::Error::new("scenario requires an OpenWrt monitor").into());
-        };
-        hil_wifi::fixture::openwrt::tx_monitor::doctor(config)?;
-    }
-    if required.laptop_air_monitor {
-        hil_wifi::fixture::local::air_monitor::doctor()?;
+    for provider in Families::FIXTURES {
+        provider.check(lab, &plan)?;
     }
     Ok(())
 }
 
-/// Scenario-specific Bluetooth adapter checks and the station fixture PHY.
-pub(crate) fn scenario_precondition(lab: &LabConfig, selected: &Scenario) -> Option<Failure> {
-    let adapter_preflight = match &selected.family {
-        Family::Bluetooth(bluetooth) => bluetooth.adapter_preflight(),
-        Family::Coexistence(_) => {
-            Some(hil_bluetooth::fixture::bluetooth::att::preflight as fn(_) -> crate::Result<()>)
+/// Refuse a peer board whose newest journaled flash is another image than
+/// `expected`. A board without a journaled flash passes; the consumer's own
+/// handshake decides.
+fn require_peer_image(
+    lab: &LabConfig,
+    peer: &oer_hil_lab::config::PeerBoardConfig,
+    expected: &str,
+    reflash: &str,
+) -> crate::Result<()> {
+    let arbiter = oer_hil_arbiter::Arbiter::open()?.with_stand_file(lab.path().to_owned());
+    other_image(arbiter.latest_flash(&peer.mac)?.as_ref(), expected).map_or(
+        Ok(()),
+        |(image, owner)| {
+            Err(format!(
+                "board {} carries `{image}` flashed by {owner}, not `{expected}`; {reflash}",
+                lab.stand().label(&peer.mac)
+            )
+            .into())
+        },
+    )
+}
+
+/// The image and its flasher when `latest` is a flash of another image than
+/// `expected`.
+fn other_image(
+    latest: Option<&oer_hil_arbiter::BoardEvent>,
+    expected: &str,
+) -> Option<(String, String)> {
+    match latest.map(|event| (&event.kind, &event.owner)) {
+        Some((oer_hil_arbiter::BoardEventKind::Flashed { image, .. }, owner))
+            if image != expected =>
+        {
+            Some((image.clone(), owner.clone()))
         }
-        Family::Wifi(_) | Family::System(_) | Family::Ieee802154(_) => None,
-    };
-    if let Some(preflight) = adapter_preflight {
-        let result = lab
-            .bluetooth_adapter
-            .ok_or_else(|| "missing [bluetooth] adapter in the stand file".into())
-            .and_then(preflight);
-        if let Err(error) = result {
-            return Some(Failure::new(FailureKind::Precondition, error.to_string()));
-        }
+        _ => None,
     }
-    let plan = selected.plan();
+}
+
+/// What a scenario needs of the laboratory before it may run: its family's
+/// precondition, the peer image it uses on the peer board, and each fixture
+/// provider's precondition of its plan. A failure blocks the scenario.
+pub(crate) fn scenario_precondition(lab: &LabConfig, selected: &Scenario) -> Option<Failure> {
+    let precondition = |error: Box<dyn std::error::Error + Send + Sync>| {
+        Some(Failure::new(FailureKind::Precondition, error.to_string()))
+    };
+    if let Err(error) = selected.family.precondition(lab) {
+        return precondition(error);
+    }
     if let Some(image) = selected.family.peer_image()
         && let Err(error) = lab
             .peer()
-            .and_then(|peer| peer.serial())
-            .and_then(|serial| {
-                oer_hil_stand::lock::require_board_image(&serial, image.name, image.reflash)
-            })
+            .and_then(|peer| require_peer_image(lab, &peer, image.name, image.reflash))
     {
-        return Some(Failure::new(FailureKind::Precondition, error.to_string()));
+        return precondition(error);
     }
-    if !plan.requirements.station_network {
-        return None;
+    let plan = selected.plan();
+    Families::FIXTURES
+        .iter()
+        .find_map(|provider| provider.precondition(lab, &plan).err())
+        .and_then(precondition)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_peer_is_refused_only_when_its_newest_flash_is_another_image() {
+        let flash = |image: &str| oer_hil_arbiter::BoardEvent {
+            unix: 1,
+            owner: String::from("bluetooth"),
+            checkout: None,
+            device: Some(String::from("38:44:BE:AA:25:64")),
+            kind: oer_hil_arbiter::BoardEventKind::Flashed {
+                image: image.to_owned(),
+                application_sha256: String::from("ab"),
+                commit: None,
+                dirty: None,
+                origin: String::from("test"),
+            },
+        };
+        assert_eq!(other_image(None, "peer"), None);
+        assert_eq!(other_image(Some(&flash("peer")), "peer"), None);
+        assert_eq!(
+            other_image(Some(&flash("ble-peer")), "peer"),
+            Some((String::from("ble-peer"), String::from("bluetooth")))
+        );
     }
-    lab.station_fixture
-        .require_phy(lab.fixture_phy(plan.wifi))
-        .err()
-        .map(|error| Failure::new(FailureKind::Precondition, error.to_string()))
 }

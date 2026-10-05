@@ -17,9 +17,10 @@ use std::{
     path::Path,
 };
 
+use oer_hil_run_bundle::RunStore;
 use serde_json::{Value, json};
 
-use crate::{Result, runs};
+use crate::Result;
 
 /// The port the page is bookmarked at; `--port` overrides it.
 const DEFAULT_PORT: u16 = 8765;
@@ -30,17 +31,17 @@ const PAGE: &str = include_str!("dashboard.html");
 const FIXTURE_REFRESH: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// The host fixtures as last probed, refreshed by a background thread.
-static FIXTURES: std::sync::Mutex<Vec<crate::fixtures::Fixture>> =
+static FIXTURES: std::sync::Mutex<Vec<oer_hil_stand_host::fixtures::Fixture>> =
     std::sync::Mutex::new(Vec::new());
 
 /// Probe the host fixtures now and every [`FIXTURE_REFRESH`] after.
 fn watch_fixtures() {
-    let Ok(lab) = oer_hil_stand::config::LabConfig::default_path() else {
+    let Ok(lab) = oer_hil_lab::config::LabConfig::default_path() else {
         return;
     };
     std::thread::spawn(move || {
         loop {
-            let fixtures = crate::fixtures::probe(&lab);
+            let fixtures = oer_hil_stand_host::fixtures::probe(&lab);
             *FIXTURES
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = fixtures;
@@ -49,7 +50,7 @@ fn watch_fixtures() {
     });
 }
 
-pub fn serve(runs: &Path, args: &[std::ffi::OsString]) -> Result<std::process::ExitCode> {
+pub fn serve(store: &RunStore, args: &[std::ffi::OsString]) -> Result<std::process::ExitCode> {
     let port = match args {
         [] => DEFAULT_PORT,
         [flag, port] if flag == "--port" => port
@@ -90,7 +91,7 @@ pub fn serve(runs: &Path, args: &[std::ffi::OsString]) -> Result<std::process::E
             Ok((stream, _)) => {
                 stream.set_nonblocking(false)?;
                 // A client that disconnects mid-request only loses its response.
-                let _ = handle(stream, runs);
+                let _ = handle(stream, store);
             }
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                 std::thread::sleep(std::time::Duration::from_millis(100));
@@ -141,7 +142,7 @@ impl Instance {
             .as_secs();
         Ok(Self {
             pid: std::process::id(),
-            started_unix_millis: oer_hil_arbiter::process_started_unix_millis(std::process::id())
+            started_unix_millis: oer_process::proc::started_unix_millis(std::process::id())
                 .ok_or("cannot read this process's start time")?,
             port,
             build: format!("{}@{modified}", exe.display()),
@@ -153,14 +154,11 @@ impl Instance {
     }
 
     fn write(&self, path: &Path) -> Result<()> {
-        let mut file = tempfile::NamedTempFile::new_in(path.parent().ok_or("no parent")?)?;
-        serde_json::to_writer(&mut file, self)?;
-        file.persist(path)?;
-        Ok(())
+        oer_durable::atomic_write(path, &serde_json::to_vec(self)?)
     }
 
     fn alive(&self) -> bool {
-        oer_hil_arbiter::process_started_unix_millis(self.pid) == Some(self.started_unix_millis)
+        oer_process::proc::started_unix_millis(self.pid) == Some(self.started_unix_millis)
     }
 
     /// Remove `record` when it still names this dashboard, so a stopped
@@ -185,7 +183,7 @@ impl Instance {
     }
 }
 
-fn handle(mut stream: TcpStream, runs: &Path) -> Result<()> {
+fn handle(mut stream: TcpStream, store: &RunStore) -> Result<()> {
     stream.set_read_timeout(Some(std::time::Duration::from_secs(5)))?;
     let mut reader = BufReader::new(&stream);
     let mut request = String::new();
@@ -196,7 +194,7 @@ fn handle(mut stream: TcpStream, runs: &Path) -> Result<()> {
         header.clear();
     }
     let path = request.split_whitespace().nth(1).unwrap_or("/");
-    let (status, content_type, body) = respond(path, runs);
+    let (status, content_type, body) = respond(path, store);
     write!(
         stream,
         "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
@@ -206,10 +204,10 @@ fn handle(mut stream: TcpStream, runs: &Path) -> Result<()> {
     Ok(())
 }
 
-fn respond(path: &str, runs: &Path) -> (&'static str, &'static str, String) {
+fn respond(path: &str, store: &RunStore) -> (&'static str, &'static str, String) {
     match path.split('?').next().unwrap_or(path) {
         "/" => ("200 OK", "text/html; charset=utf-8", PAGE.to_owned()),
-        path if path.starts_with("/runs/") => match run_report(runs, &path["/runs/".len()..]) {
+        path if path.starts_with("/runs/") => match run_report(store, &path["/runs/".len()..]) {
             Some(report) => ("200 OK", "text/html; charset=utf-8", report),
             None => (
                 "404 Not Found",
@@ -225,7 +223,7 @@ fn respond(path: &str, runs: &Path) -> (&'static str, &'static str, String) {
                 String::from("no such job log"),
             ),
         },
-        "/status.json" => match snapshot(runs) {
+        "/status.json" => match snapshot(store) {
             Ok(value) => (
                 "200 OK",
                 "application/json",
@@ -251,10 +249,10 @@ fn plain_id(id: &str) -> bool {
 }
 
 /// `/runs/<id>/report.html`: the run's HTML report from the store.
-fn run_report(runs: &Path, rest: &str) -> Option<String> {
+fn run_report(store: &RunStore, rest: &str) -> Option<String> {
     let id = rest.strip_suffix("/report.html")?;
     plain_id(id)
-        .then(|| std::fs::read_to_string(runs.join(id).join("report.html")).ok())
+        .then(|| std::fs::read_to_string(store.run(id).join("report.html")).ok())
         .flatten()
 }
 
@@ -267,24 +265,27 @@ fn job_log(rest: &str) -> Option<String> {
     if !plain_id(id) {
         return None;
     }
-    let log = crate::jobs::Jobs::open().ok()?.read(id).ok()?.log?;
+    let log = oer_hil_arbiter::Arbiter::open()
+        .ok()?
+        .jobs()
+        .read(id)
+        .ok()?
+        .log?;
     let bytes = std::fs::read(log).ok()?;
     let start = bytes.len().saturating_sub(JOB_LOG_TAIL);
     Some(String::from_utf8_lossy(&bytes[start..]).into_owned())
 }
 
 /// The stand and its newest runs.
-fn snapshot(runs: &Path) -> Result<Value> {
+fn snapshot(store: &RunStore) -> Result<Value> {
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
     let status = arbiter.status()?;
-    let jobs = crate::jobs::Jobs::open()?.unfinished();
+    let jobs = arbiter.jobs().unfinished();
     let mut history = arbiter.history()?;
     history.reverse();
     history.truncate(RECENT_LEASES);
     Ok(json!({
-        "generated_unix": std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_secs(),
+        "generated_unix": oer_durable::unix_seconds(),
         "holders": status.holders,
         "queue": status.queue,
         "balances": status.balances,
@@ -293,104 +294,9 @@ fn snapshot(runs: &Path) -> Result<Value> {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner),
         "maintenance": status.maintenance,
-        "jobs": crate::jobs::views(&jobs, &status),
+        "jobs": oer_hil_arbiter::jobs::views(&jobs, &status),
         "leases": history,
-        "runs": newest_runs(runs, RECENT_RUNS),
-    }))
-}
-
-/// The `count` newest runs, newest first. Run directories start with their
-/// start time, so only those are read.
-fn newest_runs(runs: &Path, count: usize) -> Vec<Value> {
-    let Ok(entries) = std::fs::read_dir(runs) else {
-        return Vec::new();
-    };
-    let mut names = entries
-        .flatten()
-        .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .filter(|name| name.starts_with(|character: char| character.is_ascii_digit()))
-        .collect::<Vec<_>>();
-    names.sort_unstable_by(|a, b| b.cmp(a));
-    names
-        .into_iter()
-        .filter_map(|name| runs::load(&runs.join(name)))
-        .take(count)
-        .map(|run| {
-            json!({
-                "id": run.id,
-                "started_millis": run.started_millis,
-                "state": run.state,
-                "outcome": run.outcome,
-                "commit": run.commit.as_deref().map(|commit| &commit[..commit.len().min(12)]),
-                "dirty": run.dirty,
-                "checkout": run.checkout,
-                "scenarios": run.scenarios.iter().map(|scenario| json!({
-                    "id": scenario.id,
-                    "outcome": scenario.outcome,
-                })).collect::<Vec<_>>(),
-                "progress": (run.state == runs::State::Running)
-                    .then(|| progress(&run.directory))
-                    .flatten(),
-                // A run still marked running whose runner is gone ended
-                // without sealing its bundle.
-                "abandoned": run.state == runs::State::Running
-                    && !runs::runner_alive(&run.directory, run.started_millis),
-                "report": run.directory.join("report.html").is_file(),
-                "experiment_arm": std::fs::read(run.directory.join("manifest.json"))
-                    .ok()
-                    .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-                    .and_then(|manifest| manifest["experiment"]["arm"].as_str().map(str::to_owned)),
-            })
-        })
-        .collect()
-}
-
-/// Where a running run is: its latest step, the scenario it is in, and how
-/// many of its planned scenarios finished. `None` when its events or plan
-/// cannot be read or use a vocabulary this build does not know.
-fn progress(run: &Path) -> Option<Value> {
-    use oer_hil_evidence::run::{PlanDisposition, RunPlan};
-    use oer_hil_schema::run::{RunEvent, RunEventKind};
-    let events = std::fs::read_to_string(run.join("events.jsonl"))
-        .ok()?
-        .lines()
-        .map(serde_json::from_str::<RunEvent>)
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .ok()?;
-    let plan: RunPlan = serde_json::from_slice(&std::fs::read(run.join("plan.json")).ok()?).ok()?;
-    let planned = plan
-        .entries
-        .iter()
-        .filter(|entry| entry.disposition == PlanDisposition::Selected)
-        .count();
-    let finished = events
-        .iter()
-        .filter(|event| {
-            matches!(
-                event.kind,
-                RunEventKind::ScenarioFinished | RunEventKind::ScenarioBlocked
-            )
-        })
-        .count();
-    let latest = events.last()?;
-    let current = events
-        .iter()
-        .rev()
-        .find(|event| event.kind == RunEventKind::ScenarioStarted)
-        .filter(|started| {
-            !events.iter().any(|event| {
-                event.kind == RunEventKind::ScenarioFinished
-                    && event.scenario == started.scenario
-                    && event.timestamp_unix_millis >= started.timestamp_unix_millis
-            })
-        })
-        .and_then(|started| started.scenario.clone());
-    Some(json!({
-        "step": latest.kind.id(),
-        "step_since_millis": latest.timestamp_unix_millis,
-        "scenario": current,
-        "finished": finished,
-        "planned": planned,
+        "runs": oer_hil_analysis::dashboard::newest_runs(store, RECENT_RUNS),
     }))
 }
 
@@ -398,29 +304,33 @@ fn progress(run: &Path) -> Option<Value> {
 mod tests {
     use super::*;
 
-    fn run(runs: &Path, id: &str, outcome: &str) {
-        let directory = runs.join(id);
-        std::fs::create_dir_all(&directory).unwrap();
-        std::fs::write(
-            directory.join("manifest.json"),
-            json!({"state": "completed", "outcome": outcome, "started_at_unix_ms": 1}).to_string(),
-        )
-        .unwrap();
+    fn run(store: &RunStore, id: &str) {
+        oer_hil_run_bundle::run::test_support::write_run(
+            &store.run(id),
+            1,
+            oer_hil_run_bundle::run::RunState::Completed,
+            Vec::new(),
+            |_| {},
+        );
     }
 
     #[test]
     fn a_report_link_reaches_only_a_report_inside_the_store() {
         let directory = tempfile::tempdir().unwrap();
-        let runs = directory.path().join("runs");
-        run(&runs, "1790000000000-1f2e", "passed");
-        std::fs::write(runs.join("1790000000000-1f2e/report.html"), "<p>report</p>").unwrap();
-        std::fs::write(directory.path().join("report.html"), "outside").unwrap();
+        let store = RunStore::at(directory.path());
+        run(&store, "1790000000000-1f2e");
+        std::fs::write(
+            store.run("1790000000000-1f2e").join("report.html"),
+            "<p>report</p>",
+        )
+        .unwrap();
+        std::fs::write(store.runs().join("report.html"), "outside").unwrap();
         assert_eq!(
-            run_report(&runs, "1790000000000-1f2e/report.html").as_deref(),
+            run_report(&store, "1790000000000-1f2e/report.html").as_deref(),
             Some("<p>report</p>")
         );
-        assert_eq!(run_report(&runs, "../report.html"), None);
-        assert_eq!(run_report(&runs, "1790000000000-1f2e/manifest.json"), None);
+        assert_eq!(run_report(&store, "../report.html"), None);
+        assert_eq!(run_report(&store, "1790000000000-1f2e/manifest.json"), None);
         assert_eq!(job_log("../../etc/passwd.log"), None);
     }
 
@@ -460,57 +370,14 @@ mod tests {
     }
 
     #[test]
-    fn a_running_run_reports_its_step_scenario_and_finished_count() {
-        let run = tempfile::tempdir().unwrap();
-        let event = |millis: u64, kind: &str, scenario: Option<&str>| {
-            json!({"timestamp_unix_millis": millis, "kind": kind, "scenario": scenario,
-                   "image": null, "outcome": null})
-            .to_string()
-        };
-        std::fs::write(
-            run.path().join("events.jsonl"),
-            [
-                event(1, "run-started", None),
-                event(2, "scenario-started", Some("a")),
-                event(3, "scenario-finished", Some("a")),
-                event(4, "scenario-started", Some("b")),
-            ]
-            .join("\n"),
-        )
-        .unwrap();
-        let entry = |scenario: &str, disposition: &str| {
-            json!({"scenario": scenario, "image": "correctness", "repetitions": 1,
-                   "disposition": disposition, "reason": null})
-        };
-        std::fs::write(
-            run.path().join("plan.json"),
-            json!({"schema": 2, "run_id": "r", "selection": "s", "entries": [
-                entry("a", "selected"), entry("b", "selected"), entry("c", "selected"),
-                entry("d", "filtered"),
-            ]})
-            .to_string(),
-        )
-        .unwrap();
-        assert_eq!(
-            progress(run.path()).unwrap(),
-            json!({"step": "scenario-started", "step_since_millis": 4, "scenario": "b",
-                   "finished": 1, "planned": 3})
-        );
-        // An event this build does not know is not guessed at.
-        let mut events = std::fs::read_to_string(run.path().join("events.jsonl")).unwrap();
-        events.push_str(&format!("\n{}", event(5, "future-step", None)));
-        std::fs::write(run.path().join("events.jsonl"), events).unwrap();
-        assert_eq!(progress(run.path()), None);
-    }
-
-    #[test]
     fn the_page_and_its_newest_runs_are_served() {
-        let store = tempfile::tempdir().unwrap();
-        run(store.path(), "1000-a", "failed");
-        run(store.path(), "2000-b", "passed");
-        run(store.path(), "3000-c", "passed");
-        std::fs::create_dir_all(store.path().join("runs.before-shared-store")).unwrap();
-        let newest = newest_runs(store.path(), 2);
+        let directory = tempfile::tempdir().unwrap();
+        let store = RunStore::at(directory.path());
+        run(&store, "1000-a");
+        run(&store, "2000-b");
+        run(&store, "3000-c");
+        std::fs::create_dir_all(store.runs().join("runs.before-shared-store")).unwrap();
+        let newest = oer_hil_analysis::dashboard::newest_runs(&store, 2);
         assert_eq!(
             newest
                 .iter()
@@ -518,10 +385,10 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["3000-c", "2000-b"]
         );
-        let (status, content_type, body) = respond("/", store.path());
+        let (status, content_type, body) = respond("/", &store);
         assert_eq!(status, "200 OK");
         assert!(content_type.starts_with("text/html"));
         assert!(body.contains("status.json"));
-        assert_eq!(respond("/missing", store.path()).0, "404 Not Found");
+        assert_eq!(respond("/missing", &store).0, "404 Not Found");
     }
 }

@@ -11,8 +11,7 @@
 //! no files in the snapshot and makes the snapshot stale.
 
 use super::*;
-use serde_json::Value;
-use std::process::Command;
+use oer_repo::closure::{Edges, Features};
 
 /// The host package that executes scenarios and records the observation.
 const RUNNER: &str = "oer-hil-runner";
@@ -29,40 +28,49 @@ const FILES: [&str; 4] = [
     "rust-toolchain",
 ];
 
-/// Runner files that only operate the stand and never shape a passed
-/// observation, left out of every closure so that stand work does not stale
-/// the evidence: the arbiter's leases, queue and board registry, the flash
-/// transactions (a wrong image fails the run's own image check), and the
-/// post-mortem, recovery, USB-event and profile reports of failed
-/// repetitions. The arbiter's spectrum claims decide the air a run shares
-/// and stay in. Tests and prose of runner packages are left out too.
-const STAND_OPERATION: [&str; 6] = [
-    "hil/host/arbiter",
-    "hil/host/board",
-    "hil/host/stand/src/post_mortem.rs",
-    "hil/host/stand/src/recovery.rs",
-    "hil/host/stand/src/usb_events.rs",
-    "hil/host/execution/src/profile.rs",
-];
+/// The host packages of a checkout that bear on its runs: the runner's path
+/// packages, and the stand operation packages among the HIL packages
+/// (`open-radio.hil = "operation"`), which never shape a passed
+/// observation and stay out of every closure, so stand work does not stale
+/// the evidence.
+#[derive(Default)]
+pub(super) struct Host {
+    pub(super) runner: BTreeSet<PathBuf>,
+    pub(super) operation: BTreeSet<PathBuf>,
+}
 
-/// Files below [`STAND_OPERATION`] that do shape an observation.
-const OBSERVING: [&str; 1] = ["hil/host/arbiter/src/spectrum.rs"];
-
-/// Whether `path` operates the stand or tests or documents a package,
-/// rather than shaping an observation.
-fn is_stand_operation(path: &Path) -> bool {
-    if OBSERVING.iter().any(|file| path == Path::new(file)) {
-        return false;
+impl Host {
+    /// The runner and stand operation packages of the checkout at `root`.
+    pub(super) fn of(root: &Path) -> Result<Self> {
+        Self::from_model(&oer_repo::Model::load(&oer_repo::Repo::load(root)?)?)
     }
-    STAND_OPERATION
-        .iter()
-        .any(|prefix| path.starts_with(prefix))
-        || (path.starts_with("hil/host")
-            && (path.extension().is_some_and(|extension| extension == "md")
-                || path.file_name().is_some_and(|name| name == "tests.rs")
-                || path.components().any(|component| {
-                    matches!(component.as_os_str().to_str(), Some("tests" | "testdata"))
-                })))
+
+    fn from_model(model: &oer_repo::Model) -> Result<Self> {
+        let runner = model.package(RUNNER)?;
+        let runner = model
+            .closure(&[runner], Edges::Build, None, &Features::All)?
+            .into_iter()
+            .map(|package| PathBuf::from(&package.directory))
+            .collect();
+        let mut operation = BTreeSet::new();
+        for package in model.packages() {
+            if model.classification(package)?.hil == Some(oer_repo::Hil::Operation) {
+                operation.insert(PathBuf::from(&package.directory));
+            }
+        }
+        Ok(Self { runner, operation })
+    }
+}
+
+/// Whether `path` tests or documents a HIL host package rather than shaping
+/// an observation.
+fn is_test_or_prose(path: &Path) -> bool {
+    path.starts_with("hil/host")
+        && (path.extension().is_some_and(|extension| extension == "md")
+            || path.file_name().is_some_and(|name| name == "tests.rs")
+            || path.components().any(|component| {
+                matches!(component.as_os_str().to_str(), Some("tests" | "testdata"))
+            }))
 }
 
 pub(super) struct Closure {
@@ -72,6 +80,8 @@ pub(super) struct Closure {
     /// Directories inside those that cannot shape this closure's
     /// observation: the HIL protocol modules a run exchanged no message of.
     excluded: BTreeSet<PathBuf>,
+    /// The stand operation packages, never part of a closure.
+    operation: BTreeSet<PathBuf>,
 }
 
 /// The HIL protocol package and its wire lock.
@@ -120,9 +130,11 @@ fn unused_protocol_modules(lock: &str, used: &[String]) -> Result<BTreeSet<PathB
 }
 
 impl Closure {
-    /// The closure of the checkout at `root`, from Cargo's locked metadata.
+    /// The closure of the checkout at `root`: every path package of each
+    /// chip's firmware workspaces and the runner's path packages.
     pub(super) fn of(root: &Path) -> Result<Self> {
         let root = root.canonicalize()?;
+        let model = oer_repo::Model::load(&oer_repo::Repo::load(&root)?)?;
         let mut directories = DIRECTORIES
             .map(PathBuf::from)
             .into_iter()
@@ -133,21 +145,24 @@ impl Closure {
                 .iter()
                 .flat_map(|chip| chip.directories.iter().cloned()),
         );
-        for (workspace, _) in chips.iter().flat_map(|chip| &chip.packages) {
-            let metadata = metadata(&root, &root.join(workspace))?;
-            for package in metadata["packages"].as_array().into_iter().flatten() {
-                if package["source"].is_null()
-                    && let Some(directory) = package_directory(&root, package)
-                {
-                    directories.insert(directory);
-                }
+        let workspaces: BTreeSet<String> = chips
+            .iter()
+            .flat_map(|chip| &chip.packages)
+            .map(|(workspace, _)| workspace.to_string_lossy().into_owned())
+            .collect();
+        for workspace in &workspaces {
+            let members: Vec<_> = model.members(workspace).collect();
+            for package in model.closure(&members, Edges::All, None, &Features::All)? {
+                directories.insert(PathBuf::from(&package.directory));
             }
         }
-        directories.extend(runner_directories(&root)?);
+        let host = Host::from_model(&model)?;
+        directories.extend(host.runner);
         Ok(Self {
             directories,
             files: BTreeSet::new(),
             excluded: BTreeSet::new(),
+            operation: host.operation,
         })
     }
 
@@ -155,15 +170,10 @@ impl Closure {
     /// firmware image builds read, which each build recorded as
     /// `source-inputs.json` (sources, workspace and Cargo configuration,
     /// policies and the image builder), the files of the scenarios it
-    /// executed and the runner's packages (`runner`, from
-    /// [`runner_directories`]). A change to another image class, crate or
-    /// scenario leaves it current. `None` when an image of the run has no
-    /// complete record.
-    pub(super) fn of_run(
-        root: &Path,
-        run: &Path,
-        runner: &BTreeSet<PathBuf>,
-    ) -> Result<Option<Self>> {
+    /// executed and the runner's packages (`host`, from [`Host::of`]). A
+    /// change to another image class, crate or scenario leaves it current.
+    /// `None` when an image of the run has no complete record.
+    pub(super) fn of_run(root: &Path, run: &Path, host: &Host) -> Result<Option<Self>> {
         let mut files = BTreeSet::new();
         let mut images = 0;
         for image in fs::read_dir(run.join("firmware"))? {
@@ -190,31 +200,28 @@ impl Closure {
         files.extend(scenario_files(root, &scenarios)?);
         // A run that lists the messages it exchanged binds only the protocol
         // modules they belong to; without that list it binds all of them.
-        let manifest = match fs::read(run.join("manifest.json")) {
-            Ok(bytes) => serde_json::from_slice::<Value>(&bytes)?,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Value::Null,
-            Err(error) => return Err(error.into()),
-        };
-        let excluded = match manifest["messages_used"].as_array() {
-            Some(used) => {
-                let used = used
-                    .iter()
-                    .map(|path| path.as_str().map(str::to_owned))
-                    .collect::<Option<Vec<_>>>()
-                    .ok_or("messages_used holds a non-string path")?;
-                unused_protocol_modules(&fs::read_to_string(root.join(PROTOCOL_LOCK))?, &used)?
-            }
+        let bundle = oer_hil_run_bundle::RunBundle::open(run).map_err(|error| error.to_string())?;
+        let excluded = match bundle {
+            Some(bundle) => unused_protocol_modules(
+                &fs::read_to_string(root.join(PROTOCOL_LOCK))?,
+                &bundle.manifest().messages_used,
+            )?,
             None => BTreeSet::new(),
         };
         Ok(Some(Self {
-            directories: runner.clone(),
+            directories: host.runner.clone(),
             files,
             excluded,
+            operation: host.operation.clone(),
         }))
     }
 
     pub(super) fn contains(&self, path: &Path) -> bool {
-        if is_stand_operation(path)
+        if is_test_or_prose(path)
+            || self
+                .operation
+                .iter()
+                .any(|package| path.starts_with(package))
             || self
                 .excluded
                 .iter()
@@ -231,11 +238,12 @@ impl Closure {
     }
 
     #[cfg(test)]
-    pub(super) fn from_directories(directories: &[&str]) -> Self {
+    pub(super) fn from_directories(directories: &[&str], operation: &[&str]) -> Self {
         Self {
             directories: directories.iter().map(PathBuf::from).collect(),
             files: BTreeSet::new(),
             excluded: BTreeSet::new(),
+            operation: operation.iter().map(PathBuf::from).collect(),
         }
     }
 }
@@ -304,95 +312,14 @@ fn scenario_files(root: &Path, scenarios: &BTreeSet<String>) -> Result<BTreeSet<
     Ok(files)
 }
 
-/// Directories of the path packages the HIL runner of the checkout at `root`
-/// depends on.
-pub(super) fn runner_directories(root: &Path) -> Result<BTreeSet<PathBuf>> {
-    runner_packages(root, &metadata(root, &root.join("Cargo.toml"))?)
-}
-
-fn metadata(root: &Path, manifest: &Path) -> Result<Value> {
-    let output = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
-        .current_dir(root)
-        .args(["metadata", "--format-version", "1", "--offline", "--locked"])
-        .arg("--manifest-path")
-        .arg(manifest)
-        .output()?;
-    if !output.status.success() {
-        return Err(format!(
-            "cannot list the packages of {}: {}",
-            manifest.display(),
-            String::from_utf8_lossy(&output.stderr).trim()
-        )
-        .into());
-    }
-    Ok(serde_json::from_slice(&output.stdout)?)
-}
-
-/// The repository-relative directory of a package inside `root`.
-fn package_directory(root: &Path, package: &Value) -> Option<PathBuf> {
-    let manifest = Path::new(package["manifest_path"].as_str()?);
-    let directory = manifest.parent()?.canonicalize().ok()?;
-    directory.strip_prefix(root).ok().map(Path::to_owned)
-}
-
-/// Directories of the path packages the runner depends on, transitively.
-fn runner_packages(root: &Path, metadata: &Value) -> Result<BTreeSet<PathBuf>> {
-    let packages = metadata["packages"]
-        .as_array()
-        .ok_or("workspace metadata lists no packages")?;
-    let by_id = packages
-        .iter()
-        .filter_map(|package| Some((package["id"].as_str()?, package)))
-        .collect::<BTreeMap<_, _>>();
-    let runner = packages
-        .iter()
-        .find(|package| package["name"] == RUNNER && package["source"].is_null())
-        .and_then(|package| package["id"].as_str())
-        .ok_or("the workspace has no HIL runner package")?;
-    let nodes = metadata["resolve"]["nodes"]
-        .as_array()
-        .ok_or("workspace metadata has no dependency graph")?
-        .iter()
-        .filter_map(|node| Some((node["id"].as_str()?, node)))
-        .collect::<BTreeMap<_, _>>();
-    let mut pending = vec![runner];
-    let mut seen = BTreeSet::new();
-    let mut directories = BTreeSet::new();
-    while let Some(id) = pending.pop() {
-        if !seen.insert(id) {
-            continue;
-        }
-        let Some(package) = by_id.get(id) else {
-            continue;
-        };
-        if !package["source"].is_null() {
-            continue;
-        }
-        if let Some(directory) = package_directory(root, package) {
-            directories.insert(directory);
-        }
-        for dependency in nodes
-            .get(id)
-            .and_then(|node| node["deps"].as_array())
-            .into_iter()
-            .flatten()
-        {
-            if let Some(id) = dependency["pkg"].as_str() {
-                pending.push(id);
-            }
-        }
-    }
-    Ok(directories)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn only_build_and_run_inputs_are_in_the_closure() {
-        let closure = Closure::from_directories(&["crates/hardware/esp32s31/hal", "hil/scenarios"]);
+        let closure =
+            Closure::from_directories(&["crates/hardware/esp32s31/hal", "hil/scenarios"], &[]);
         assert!(closure.contains(Path::new("crates/hardware/esp32s31/hal/src/lib.rs")));
         assert!(closure.contains(Path::new("hil/scenarios/system/boot-smoke.toml")));
         assert!(closure.contains(Path::new("Cargo.lock")));
@@ -403,29 +330,30 @@ mod tests {
 
     #[test]
     fn stand_operation_leaves_the_evidence_current_and_observing_code_does_not() {
-        let closure = Closure::from_directories(&[
-            "hil/host/arbiter",
-            "hil/host/stand",
-            "hil/host/link",
-            "hil/host/evidence",
-            "hil/host/runner-ieee80211",
-        ]);
+        let closure = Closure::from_directories(
+            &[
+                "hil/host/arbiter",
+                "hil/host/board",
+                "hil/host/lab",
+                "hil/host/link",
+                "hil/host/run-bundle",
+                "hil/host/family/ieee80211",
+            ],
+            &["hil/host/board"],
+        );
         for neutral in [
-            "hil/host/arbiter/src/queue.rs",
             "hil/host/board/src/esp_idf.rs",
-            "hil/host/stand/src/post_mortem.rs",
-            "hil/host/stand/src/recovery.rs",
             "hil/host/link/src/tests.rs",
-            "hil/host/link/tests/session.rs",
-            "hil/host/stand/README.md",
+            "hil/host/family/ieee80211/README.md",
         ] {
             assert!(!closure.contains(Path::new(neutral)), "{neutral}");
         }
         for observing in [
             "hil/host/arbiter/src/spectrum.rs",
+            "hil/host/lab/src/recovery.rs",
             "hil/host/link/src/lib.rs",
-            "hil/host/evidence/src/verify.rs",
-            "hil/host/runner-ieee80211/src/workload/traffic.rs",
+            "hil/host/run-bundle/src/verify.rs",
+            "hil/host/family/ieee80211/src/workload/traffic/rx_traffic.rs",
         ] {
             assert!(closure.contains(Path::new(observing)), "{observing}");
         }
@@ -444,7 +372,7 @@ mod tests {
                 .map(|module| Path::new(PROTOCOL).join("src").join(module))
                 .collect()
         );
-        let mut closure = Closure::from_directories(&["hil/protocol"]);
+        let mut closure = Closure::from_directories(&["hil/protocol"], &[]);
         closure.excluded = unused;
         assert!(
             closure.contains(Path::new("hil/protocol/src/wifi/rx.rs")),
@@ -475,45 +403,44 @@ mod tests {
     }
 
     #[test]
-    fn every_stand_operation_path_exists() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        for path in STAND_OPERATION.iter().chain(&OBSERVING) {
-            assert!(root.join(path).exists(), "{path} no longer exists");
+    fn the_runner_closure_follows_path_dependencies_and_roles_name_stand_operation() {
+        let root = tempfile::tempdir().unwrap();
+        let hil = |name: &str, role: &str, dependencies: &str| {
+            format!(
+                "[package]\nname = \"{name}\"\n[dependencies]\n{dependencies}\n\
+                 [dev-dependencies]\ntest-only = {{ path = \"../test-only\" }}\n\
+                 [package.metadata.open-radio]\nlayer = \"hil\"\nplatform = \"host\"\nhil = \"{role}\"\nhost-layer = \"execution\"\n"
+            )
+        };
+        for (directory, text) in [
+            (
+                "hil/host/runner",
+                hil(
+                    RUNNER,
+                    "orchestration",
+                    "core = { path = \"../core\" }\nboard = { path = \"../board\" }\nserde = \"1\"",
+                ),
+            ),
+            ("hil/host/core", hil("core", "observation", "")),
+            ("hil/host/board", hil("board", "operation", "")),
+            ("hil/host/test-only", hil("test-only", "observation", "")),
+            ("tools/other", hil("other", "observation", "")),
+        ] {
+            fs::create_dir_all(root.path().join(directory)).unwrap();
+            fs::write(root.path().join(directory).join("Cargo.toml"), text).unwrap();
         }
-    }
-
-    #[test]
-    fn the_runner_closure_follows_path_dependencies_only() {
-        let root = std::env::temp_dir().join(format!("closure-{}", std::process::id()));
-        for directory in ["hil/host/runner", "hil/host/core", "tools/other"] {
-            fs::create_dir_all(root.join(directory)).unwrap();
-        }
-        let root = root.canonicalize().unwrap();
-        let manifest = |directory: &str| root.join(directory).join("Cargo.toml");
-        let metadata = json!({
-            "packages": [
-                {"id": "runner", "name": RUNNER, "source": null,
-                 "manifest_path": manifest("hil/host/runner")},
-                {"id": "core", "name": "core", "source": null,
-                 "manifest_path": manifest("hil/host/core")},
-                {"id": "other", "name": "other", "source": null,
-                 "manifest_path": manifest("tools/other")},
-                {"id": "serde", "name": "serde", "source": "registry+https://github.com/rust-lang/crates.io-index",
-                 "manifest_path": "/registry/serde/Cargo.toml"},
-            ],
-            "resolve": {"nodes": [
-                {"id": "runner", "deps": [{"pkg": "core"}, {"pkg": "serde"}]},
-                {"id": "core", "deps": [{"pkg": "serde"}]},
-                {"id": "other", "deps": []},
-                {"id": "serde", "deps": []},
-            ]},
-        });
+        let host = Host::of(root.path()).unwrap();
         assert_eq!(
-            runner_packages(&root, &metadata).unwrap(),
+            host.runner,
             BTreeSet::from([
+                PathBuf::from("hil/host/board"),
                 PathBuf::from("hil/host/core"),
                 PathBuf::from("hil/host/runner")
             ])
+        );
+        assert_eq!(
+            host.operation,
+            BTreeSet::from([PathBuf::from("hil/host/board")])
         );
     }
 }

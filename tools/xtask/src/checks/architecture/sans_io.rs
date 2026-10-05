@@ -9,18 +9,15 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::{
-    Result,
-    checks::common::{ProductionPackage, classification},
-};
+use crate::{Result, checks::common::Classified};
 
 /// The layer whose packages must stay sans-IO.
-const SANS_IO_LAYER: &str = "protocol";
+const SANS_IO_LAYER: oer_repo::Layer = oer_repo::Layer::Protocol;
 
-pub fn check(packages: &[ProductionPackage]) -> Result<()> {
+pub fn check(packages: &[Classified]) -> Result<()> {
     let mut violations = Vec::new();
     for item in packages {
-        if classification(&item.package)?.layer != SANS_IO_LAYER {
+        if item.class.layer != SANS_IO_LAYER {
             continue;
         }
         let source = item

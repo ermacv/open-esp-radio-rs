@@ -2,8 +2,9 @@
 //!
 //! The triage report names the addresses and bit masks it resolves from the
 //! published model, so a reviewer reads `MAC.TX_CONFIG` and its fields rather
-//! than an upper immediate and a shift.
-use serde::Deserialize;
+//! than an upper immediate and a shift. The index is read through the
+//! register publication's own reader ([`BindingIndex`]).
+use oer_register_contracts::bindings::BindingIndex;
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -11,29 +12,6 @@ use std::path::Path;
 const WORD: u32 = 4;
 /// Bits of one byte.
 const BYTE_BITS: u32 = 8;
-
-#[derive(Deserialize)]
-struct Bindings {
-    #[serde(default)]
-    registers: Vec<Bound>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "kebab-case")]
-struct Bound {
-    address: u32,
-    identity: String,
-    #[serde(default)]
-    fields: Vec<BoundField>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "kebab-case")]
-struct BoundField {
-    svd_name: String,
-    bit_offset: u32,
-    bit_width: u32,
-}
 
 /// One published register.
 #[derive(Clone, Debug)]
@@ -58,7 +36,7 @@ impl Registers {
     /// The registers of bindings `text`. A word two published registers
     /// share names both.
     pub fn parse(text: &str) -> crate::harness::Result<Self> {
-        let bindings: Bindings = toml::from_str(text)?;
+        let bindings = BindingIndex::parse(text)?;
         let mut by_address: BTreeMap<u32, Register> = BTreeMap::new();
         for bound in bindings.registers {
             let fields = bound
@@ -155,17 +133,28 @@ mod tests {
 
     const BINDINGS: &str = r#"
 schema = 2
+crate-name = "oer_chip_pac_raw"
 [[registers]]
 address = 0x20104020
+width = 32
+access = "read-write"
 identity = "MAC.TX_CONFIG"
+peripheral = "MAC"
+peripheral-type = "Mac"
+peripheral-module = "mac"
+register-method = "tx_config"
 [[registers.fields]]
 svd-name = "ENABLE"
+method = "enable"
 bit-offset = 0
 bit-width = 1
+access = "read-write"
 [[registers.fields]]
 svd-name = "COLOR"
+method = "color"
 bit-offset = 16
 bit-width = 6
+access = "read-write"
 "#;
 
     #[test]

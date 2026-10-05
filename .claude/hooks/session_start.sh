@@ -1,8 +1,9 @@
 #!/bin/sh
-# SessionStart context for Claude Code: branch and upstream state, free disk
-# space and, when oer-tidy is already built, the tidy checks. Prints at most
-# a few lines; Claude Code adds them to the session's context. POSIX sh with
-# git, df, awk and, if present, timeout and cargo.
+# SessionStart context for Claude Code: branch and upstream state, CI on main
+# (when oer-xtask is already built), free disk space and, when oer-tidy is
+# already built, the tidy checks. Prints at most a few lines; Claude Code adds
+# them to the session's context. POSIX sh with git, df, awk and, if present,
+# timeout and cargo.
 
 root=${CLAUDE_PROJECT_DIR:-$(pwd)}
 cd "$root" 2>/dev/null || exit 0
@@ -45,32 +46,21 @@ if [ -n "$branch" ]; then
 fi
 
 # CI on main: each workflow of the tree whose newest finished verdict on main
-# failed. Fixing a red main comes before other work.
-if command -v gh >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-    workflows=$(sed -n 's/^name:[[:space:]]*//p' .github/workflows/*.yml 2>/dev/null | tr -d "'\"")
-    runs=$(bounded 5 gh run list --branch main --limit 30 \
-        --json workflowName,status,conclusion,createdAt,url 2>/dev/null)
-    if [ -n "$runs" ]; then
-        red=$(printf '%s' "$runs" | jq -r --arg workflows "$workflows" '
-            ($workflows | split("\n")) as $names
-            | [.[] | select(.status == "completed")
-                   | select(.conclusion == "success" or .conclusion == "failure"
-                            or .conclusion == "timed_out" or .conclusion == "startup_failure")
-                   | select(.workflowName as $n | $names | index($n))]
-            | group_by(.workflowName)
-            | map(max_by(.createdAt))
-            | map(select(.conclusion != "success"))
-            | .[] | "\(.workflowName) \(.url)"')
-        if [ -n "$red" ]; then
-            echo "$red" | while read -r name url; do
-                echo "ci: main is RED: $name failed ($url); fix it before other work"
-            done
-        else
-            echo "ci: main is green"
-        fi
+# failed. Fixing a red main comes before other work. The one reader of CI's
+# state is `cargo xtask ci-status`; a hook cannot wait for its build, so the
+# executable an earlier build left runs directly, and a checkout that never
+# built xtask is told how to ask.
+target=${CARGO_TARGET_DIR:-$root/target}
+case $target in /*) ;; *) target=$root/$target ;; esac
+if [ -x "$target/debug/oer-xtask" ]; then
+    output=$(bounded 15 "$target/debug/oer-xtask" --root "$root" ci-status 2>&1)
+    if [ -n "$output" ]; then
+        echo "$output"
     else
-        echo "ci: state of main unknown (gh gave no answer within 5 s)"
+        echo "ci: state of main unknown (no answer within 15 s)"
     fi
+else
+    echo "ci: state of main unknown; \`cargo xtask ci-status\` (background) builds and asks"
 fi
 
 # Free disk space of the checkout's file system.
@@ -87,8 +77,6 @@ fi
 
 # Tidy, only when its binary exists: a cold build takes a while, a warm run
 # about two seconds. A busy build directory or a slow run is skipped.
-target=${CARGO_TARGET_DIR:-$root/target}
-case $target in /*) ;; *) target=$root/$target ;; esac
 if [ -x "$target/debug/oer-tidy" ] && command -v cargo >/dev/null 2>&1; then
     output=$(bounded 30 cargo tidy check 2>&1)
     status=$?
@@ -97,10 +85,10 @@ if [ -x "$target/debug/oer-tidy" ] && command -v cargo >/dev/null 2>&1; then
     elif [ "$status" -eq 124 ]; then
         echo "tidy: skipped (no result within 30 s; the build directory may be busy)"
     else
-        echo "tidy: FAILED; run \`cargo xtask check tidy\` in the background. First lines:"
+        echo "tidy: FAILED; run \`cargo tidy check\` in the background. First lines:"
         echo "$output" | grep -v ': ok$' | head -n 6
     fi
 else
-    echo "tidy: not built yet; \`cargo xtask check tidy\` (background) builds and runs it"
+    echo "tidy: not built yet; \`cargo tidy check\` (background) builds and runs it"
 fi
 exit 0

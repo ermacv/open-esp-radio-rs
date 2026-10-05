@@ -8,35 +8,33 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+oer-durable = { path = "../durable" }
+oer-elf = { path = "../elf" }
 oer-hil-image = { path = "../../hil/host/image" }
 oer-hil-source-snapshot = { path = "../../hil/host/source-snapshot" }
 oer-hil-image-class = { path = "../../hil/host/image-class" }
 oer-chip-profile = { path = "../chip-profile" }
 oer-command-tree = { path = "../command-tree", features = ["clap"] }
 oer-hil-arbiter = { path = "../../hil/host/arbiter" }
-oer-hil-cli = { path = "../../hil/host/cli" }
-oer-probe-codegen = { path = "../../verification/harness/codegen" }
+oer-hil-observer = { path = "../../hil/observer", features = ["producer"] }
 oer-process = { path = "../process" }
+oer-toolchain = { path = "../toolchain" }
 oer-tidy = { path = "../tidy" }
+oer-repo = { path = "../repo" }
+oer-esp32s31-platform-layout = { path = "../../platform/esp32s31/layout" }
 oer-vendor-artifacts = { path = "../vendor-artifacts" }
-oer-register-model = { path = "../registers/model" }
+oer-vendor-provenance = { path = "../vendor-provenance" }
+oer-vendor-evidence = { path = "../../verification/evidence", features = ["producers"] }
+oer-register-tool = { path = "../registers" }
 fs2 = "0.4"
-roxmltree = "=0.20.0"
-sha2 = "0.10"
-serialport = { version = "4.8.1", default-features = false }
-oer-esp32s31-firmware = { path = "../firmware" }
+oer-image = { path = "../image" }
 cargo_metadata = "=0.23.1"
 clap = { version = "=4.5.48", features = ["derive"] }
-object = { version = "=0.39.1", default-features = false, features = ["archive", "elf", "read", "std"] }
 pulldown-cmark = { version = "=0.13.0", default-features = false }
-rustc-demangle = "=0.1.28"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
 tempfile = "=3.27.0"
 toml = "=1.1.4"
-
-[target.'cfg(unix)'.dependencies]
-libc = "=0.2.189"
 
 [lints]
 workspace = true
@@ -44,5 +42,6 @@ workspace = true
 [package.metadata.open-radio]
 layer = "tool"
 platform = "host"
-# The tests read the workflows and the chip profiles.
-inputs = [".github/workflows", "platform/*/chip.toml"]
+host-layer = "entry"
+# The tests read the workflows, the hooks and the chip profiles.
+inputs = [".github/workflows", ".claude/hooks", "platform/*/chip.toml"]

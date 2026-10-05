@@ -92,7 +92,10 @@ fn qualification_checks_every_firmware_source_against_current_pins() {
         ("commit", json!("34".repeat(20))),
         ("rebuild_status", json!("tracked-patch")),
         ("limitations", json!(["untracked-content-not-archived"])),
-        ("untracked_files", json!([{"path": "untracked.rs"}])),
+        (
+            "untracked_files",
+            json!([{"path": "untracked.rs", "size_bytes": 1, "sha256": "00".repeat(32)}]),
+        ),
         ("tracked_patch_path", json!("source.patch")),
         ("name", json!("unknown-override")),
         ("name", json!("repository")),
@@ -129,7 +132,10 @@ fn qualification_checks_every_firmware_source_against_current_pins() {
     write(&run.join("manifest.json"), &missing);
     check(false);
     let mut multiple = good_manifest.clone();
-    multiple["firmware"].as_array_mut().unwrap().push(json!({}));
+    multiple["firmware"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"image": "correctness"}));
     write(&run.join("manifest.json"), &multiple);
     check(false);
     let mut escaping = good_manifest;

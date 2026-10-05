@@ -1,10 +1,3 @@
-#[path = "../../../verification/schema/scenario-evidence.rs"]
-#[allow(
-    dead_code,
-    reason = "the scenario runner derives the cross-scenario views; qualification reads verdicts"
-)]
-pub(crate) mod scenario_evidence;
-use sha2::Sha256;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
@@ -304,10 +297,6 @@ impl Qualification {
             .keys()
             .filter(|id| self.is_ready(id))
             .count()
-    }
-
-    pub(crate) fn all_required_ready(&self) -> bool {
-        !self.capabilities.is_empty() && self.ready_count() == self.capabilities.len()
     }
 }
 
@@ -1320,12 +1309,12 @@ fn validate_dependencies(capabilities: &BTreeMap<String, Capability>) -> Result<
 /// The shards of the native scenario evidence index, each with whether its
 /// sources are current. A missing index directory supports no claim.
 pub(crate) struct NativeEvidence {
-    pub(crate) shards: Vec<(scenario_evidence::Index, bool)>,
+    pub(crate) shards: Vec<(oer_vendor_evidence::Index, bool)>,
 }
 
 impl NativeEvidence {
     fn load(root: &Path, path: &Path, target: &str) -> Result<Self> {
-        let evidence = scenario_evidence::Evidence::load(root, path, target)
+        let evidence = oer_vendor_evidence::Evidence::load(root, path, target)
             .map_err(|error| format!("scenario evidence index {}: {error}", path.display()))?;
         Ok(Self {
             shards: evidence.shards,
@@ -1341,7 +1330,7 @@ impl NativeEvidence {
                 && shard.entries.iter().any(|entry| {
                     entry.source == reference.source
                         && entry.symbol == reference.symbol
-                        && entry.verdict == scenario_evidence::MATCH
+                        && entry.verdict == oer_vendor_evidence::MATCH
                 })
         })
     }

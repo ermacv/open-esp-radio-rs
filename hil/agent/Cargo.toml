@@ -16,7 +16,7 @@ wifi = ["oer-hil-protocol/wifi"]
 system = ["oer-hil-protocol/system"]
 secure-gatt = [
     "dep:bt-hci",
-    "dep:gatt-application",
+    "dep:oer-bluetooth-gatt-trouble",
     "dep:trouble-host",
     "oer-hil-protocol/bluetooth",
 ]
@@ -34,7 +34,7 @@ bt-hci = { version = "=0.10.1", optional = true }
 embedded-io-async = "0.7.0"
 embassy-futures = "0.1.2"
 log = "0.4"
-gatt-application = { package = "oer-example-bluetooth-gatt", path = "../../examples/bluetooth-gatt", optional = true, features = ["secure"] }
+oer-bluetooth-gatt-trouble = { path = "../../crates/adapters/trouble/bluetooth/gatt", optional = true, features = ["secure"] }
 trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", rev = "a6af435ba1539cead0afce04718ad8a089bcc4b9", optional = true, default-features = false, features = ["default-packet-pool", "gatt", "peripheral"] }
 # The same stack pins and features as the HIL target workspace.
 embassy-net-owned = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "4868fd9acfd4191173cd6531b537d6009d3ae5d0", optional = true, default-features = false, features = ["icmp-ping-reply", "dhcpv4", "medium-ethernet", "ipv4", "ipv4-fragmentation", "ipv4-reassembly", "tcp", "tcp-listener", "udp"] }
@@ -53,6 +53,7 @@ workspace = true
 [package.metadata.open-radio]
 layer = "hil"
 platform = "portable"
+host-layer = "execution"
 hil = "observation"
 # The protocol and network code behind these features has its own tests.
 test-feature-sets = ["secure-gatt", "owned-network"]

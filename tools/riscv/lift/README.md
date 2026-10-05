@@ -4,7 +4,15 @@
 implementations of [`oer-riscv-model`](../model/README.md) and RISC-V relocation
 interpretation. It receives bytes and structural facts, never a
 archive path or loader capability. Unsupported encodings remain
-explicit gaps.
+explicit gaps. Relocation types are classified by the one RV32 relocation
+table of [`oer-elf`](../../elf/README.md) (`rv32::kind`), never a local list.
+
+`listing::normalize` writes a linked function as placement-independent lines:
+it decodes each instruction and replaces every address the code forms
+(branch and jump targets, `lui`/`auipc` pairs and what completes them through
+registers, address words in code) by the location the caller's `Placement`
+names. `cargo xtask compare elf` compares these listings instead of
+disassembler text.
 
 Decoding belongs to [`oer-riscv-decode`](../decode/README.md),
 selected with every extension it decodes: ESP-IDF builds the ESP32-S31 for

@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use oer_process as process;
-use oer_xtask::Context;
+use oer_process::Checkout;
 use serde_json::Value;
 use std::{
     fs,
@@ -9,7 +9,7 @@ use std::{
 
 pub struct Fixture {
     pub temporary: tempfile::TempDir,
-    pub context: Context,
+    pub context: Checkout,
     pub manifest: PathBuf,
 }
 impl Fixture {
@@ -19,7 +19,7 @@ impl Fixture {
             .tempdir()
             .unwrap();
         fs::write(temporary.path().join("Cargo.toml"),"[workspace]\nmembers = [\"adapter\", \"helper\", \"crates/hardware/test-radio\"]\nresolver = \"3\"\n").unwrap();
-        let context = Context::new(temporary.path()).unwrap();
+        let context = Checkout::new(temporary.path()).unwrap();
         let manifest = context.root.join("adapter/Cargo.toml");
         let fixture = Self {
             temporary,
@@ -45,14 +45,11 @@ impl Fixture {
     }
     pub fn metadata(&self) -> Value {
         process::capture(
-            self.context
-                .cargo()
-                .args(["generate-lockfile", "--offline"]),
+            oer_toolchain::cargo_in(&self.context.root).args(["generate-lockfile", "--offline"]),
         )
         .unwrap();
         let output = process::capture(
-            self.context
-                .cargo()
+            oer_toolchain::cargo_in(&self.context.root)
                 .args([
                     "metadata",
                     "--format-version",
@@ -67,6 +64,6 @@ impl Fixture {
         serde_json::from_slice(&output.stdout).unwrap()
     }
     pub fn git(&self, args: &[&str]) {
-        process::capture(self.context.command("git").args(args)).unwrap();
+        process::capture(oer_process::git::command(&self.context.root).args(args)).unwrap();
     }
 }

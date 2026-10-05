@@ -21,8 +21,6 @@ use std::{
     process::Command,
 };
 
-use object::{Object, ObjectSection, ObjectSymbol, SectionKind, read::archive::ArchiveFile};
-
 /// An input section bound for a zeroed region that carries an initializer.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InitializedZeroSection {
@@ -239,13 +237,10 @@ pub fn check_inputs(arguments: &[OsString]) -> Result<Vec<InitializedZeroSection
 }
 
 fn check_file(name: &str, data: &[u8], violations: &mut Vec<InitializedZeroSection>) {
-    if let Ok(archive) = ArchiveFile::parse(data) {
-        for member in archive.members().flatten() {
-            let Ok(member_data) = member.data(data) else {
-                continue;
-            };
-            let member_name = String::from_utf8_lossy(member.name());
-            check_object(&format!("{name}({member_name})"), member_data, violations);
+    if data.starts_with(b"!<arch>\n") {
+        // A thin archive holds no members of its own to check.
+        for (member, member_data) in oer_elf::members(data).unwrap_or_default() {
+            check_object(&format!("{name}({member})"), member_data, violations);
         }
         return;
     }
@@ -256,40 +251,29 @@ fn check_object(name: &str, data: &[u8], violations: &mut Vec<InitializedZeroSec
     if !data.starts_with(b"\x7fELF") {
         return;
     }
-    let Ok(file) = object::File::parse(data) else {
+    let Ok(file) = oer_elf::Elf::parse(data) else {
         return;
     };
     for section in file.sections() {
-        let Ok(section_name) = section.name() else {
-            continue;
-        };
-        if !oer_esp32s31_platform_layout::zeroed::is_zeroed_input(section_name)
-            || matches!(
-                section.kind(),
-                SectionKind::UninitializedData
-                    | SectionKind::UninitializedTls
-                    | SectionKind::Common
-            )
-        {
+        if !oer_esp32s31_platform_layout::zeroed::is_zeroed_input(section.name) || section.nobits {
             continue;
         }
-        let nonzero_bytes = section
-            .data()
-            .map(|bytes| bytes.iter().filter(|&&byte| byte != 0).count() as u64)
-            .unwrap_or(0);
-        let relocations = section.relocations().count() as u64;
+        let nonzero_bytes = section.data.iter().filter(|&&byte| byte != 0).count() as u64;
+        let relocations = file
+            .relocations(section.index)
+            .map_or(0, |relocations| relocations.len() as u64);
         if nonzero_bytes == 0 && relocations == 0 {
             continue;
         }
         let symbols = file
             .symbols()
-            .filter(|symbol| symbol.section_index() == Some(section.index()))
-            .filter_map(|symbol| symbol.name().ok().map(str::to_owned))
+            .filter(|symbol| symbol.section == Some(section.index))
+            .map(|symbol| symbol.name.to_owned())
             .filter(|symbol| !symbol.is_empty() && !symbol.starts_with('$'))
             .collect();
         violations.push(InitializedZeroSection {
             file: name.to_owned(),
-            section: section_name.to_owned(),
+            section: section.name.to_owned(),
             nonzero_bytes,
             relocations,
             symbols,

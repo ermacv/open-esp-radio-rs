@@ -169,6 +169,35 @@ pub fn set_bluetooth_security_low(socket: impl AsFd) -> io::Result<()> {
     }
 }
 
+/// Send and receive only through network interface `interface`
+/// (`SO_BINDTODEVICE`; unprivileged since Linux 5.7 on an unbound socket).
+pub fn bind_to_device(socket: impl AsFd, interface: &str) -> io::Result<()> {
+    if interface.is_empty() || interface.len() >= libc::IFNAMSIZ || interface.contains('\0') {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("`{interface}` is not an interface name"),
+        ));
+    }
+    #[allow(unsafe_code, reason = "rustix has no SO_BINDTODEVICE option")]
+    // SAFETY: the option value is the interface name's initialized bytes,
+    // whose pointer and length stay valid for the call on a borrowed live
+    // socket; the kernel reads at most that length.
+    let result = unsafe {
+        libc::setsockopt(
+            socket.as_fd().as_raw_fd(),
+            libc::SOL_SOCKET,
+            libc::SO_BINDTODEVICE,
+            interface.as_ptr().cast(),
+            interface.len() as libc::socklen_t,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
 /// The socket's cumulative dropped-packet count from `SO_MEMINFO`, including
 /// a final loss with no later ancillary message.
 pub fn dropped_packets(socket: impl AsFd) -> io::Result<u32> {
@@ -196,4 +225,26 @@ pub fn dropped_packets(socket: impl AsFd) -> io::Result<u32> {
         ));
     }
     Ok(info[8])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_socket_binds_to_an_interface_by_name_and_refuses_a_bad_name() {
+        let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        bind_to_device(&socket, "lo").unwrap();
+        assert_eq!(
+            bind_to_device(&socket, "").unwrap_err().kind(),
+            io::ErrorKind::InvalidInput
+        );
+        assert_eq!(
+            bind_to_device(&socket, "an-interface-name-too-long")
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidInput
+        );
+        assert!(bind_to_device(&socket, "oer-absent0").is_err());
+    }
 }

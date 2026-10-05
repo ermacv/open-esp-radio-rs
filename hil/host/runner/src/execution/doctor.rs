@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::scenario::{Scenario, requirements};
 use crate::{Result, fixture};
 use oer_hil_image as image;
-use oer_hil_stand::config::LabConfig;
+use oer_hil_lab::config::LabConfig;
 
 #[derive(Default, Serialize)]
 struct Checks {
@@ -53,19 +53,12 @@ pub(crate) fn run(root: &Path, lab: &LabConfig, scenarios: &[&Scenario]) -> Resu
             .ok_or_else(|| "missing embedded HIL workspace".into())
     })?;
     checks.run("serial-device", || fs_device_exists(&lab.dut.serial))?;
-    for (variable, program) in [
-        ("CARGO", "cargo"),
-        ("LLVM_OBJCOPY", "llvm-objcopy"),
-        ("LLVM_OBJDUMP", "llvm-objdump"),
-        ("LLVM_NM", "llvm-nm"),
-        ("ESPFLASH", "espflash"),
-    ] {
-        checks.run(format!("tool-{program}"), || {
-            image::require_program(&image::program_from_env(variable, program))
+    for tool in oer_toolchain::Tool::ALL {
+        checks.run(format!("tool-{}", tool.name()), || {
+            oer_toolchain::require(tool)
         })?;
     }
     checks.run("source-dependencies", || {
-        image::ensure_no_old_application_dependency(root)?;
         image::ensure_vendor_dependencies_absent(root)
     })?;
     for scenario in scenarios {
@@ -74,7 +67,7 @@ pub(crate) fn run(root: &Path, lab: &LabConfig, scenarios: &[&Scenario]) -> Resu
         })?;
     }
     checks.run("resource-ownership", || {
-        oer_hil_stand::lock::FixtureLock::probe_for(lab, required)
+        oer_hil_lab::lock::FixtureLock::probe_for(lab, required)
     })?;
     crate::emit_json(
         &serde_json::json!({

@@ -8,13 +8,11 @@ use std::{
 use fs2::FileExt as _;
 
 use crate::{
-    board::BoardEvent,
     history::{self, LeaseOutcome, LeaseRecord},
     state::{STATE_SCHEMA, State},
 };
 
-/// Overrides the per-user arbiter directory, for tests and separate stands.
-pub const DIRECTORY_ENV: &str = "OER_HIL_ARBITER_DIR";
+use oer_hil_stand_model::paths::ARBITER_ENV;
 
 /// One stand per host user: every checkout shares this directory, as the
 /// fixture leases already do.
@@ -34,29 +32,27 @@ fn is_test_executable(exe: &Path) -> bool {
 }
 
 impl Arbiter {
-    /// The stand's arbiter: `$OER_HIL_ARBITER_DIR`, or the user's one. A
-    /// test process is refused the user's one: its leases, balances and
-    /// board records would be the stand's.
+    /// The stand's arbiter: its state in the stand model's arbiter directory
+    /// (`$OER_HIL_ARBITER_DIR` for a private one), its boards from the
+    /// user's stand file, which a private arbiter shares. A test process is
+    /// refused the user's one: its leases, balances and board records would
+    /// be the stand's.
     pub fn open() -> crate::Result<Self> {
-        if let Some(directory) = std::env::var_os(DIRECTORY_ENV) {
-            return Self::at(PathBuf::from(directory));
-        }
-        if std::env::current_exe().is_ok_and(|exe| is_test_executable(&exe)) {
+        if std::env::var_os(ARBITER_ENV).is_none_or(|value| value.is_empty())
+            && std::env::current_exe().is_ok_and(|exe| is_test_executable(&exe))
+        {
             return Err(format!(
                 "a test must not open the stand's arbiter: use Arbiter::at with a temporary \
-                 directory, or set {DIRECTORY_ENV}"
+                 directory, or set {ARBITER_ENV}"
             )
             .into());
         }
-        let home =
-            std::env::var_os("HOME").ok_or("HOME is required to locate the HIL stand arbiter")?;
-        let mut arbiter = Self::at(PathBuf::from(home).join(".cache/open-esp-radio/arbiter"))?;
-        arbiter.stand_file = oer_hil_stand_schema::default_path()?;
-        Ok(arbiter)
+        Ok(Self::at(oer_hil_stand_model::paths::arbiter()?)?
+            .with_stand_file(oer_hil_stand_model::paths::stand_file()?))
     }
 
     /// An arbiter in `directory`, which reads the stand's boards from the
-    /// `stand.toml` beside its state: a test's or a temporary stand's own.
+    /// `stand.toml` beside its state: a test's own.
     pub fn at(directory: impl Into<PathBuf>) -> crate::Result<Self> {
         let directory = directory.into();
         fs::create_dir_all(&directory)?;
@@ -66,9 +62,21 @@ impl Arbiter {
         })
     }
 
+    /// This arbiter reading the stand's boards from `stand_file`: the one a
+    /// runner was given with `--stand-file`.
+    pub fn with_stand_file(mut self, stand_file: PathBuf) -> Self {
+        self.stand_file = stand_file;
+        self
+    }
+
     /// The stand file this arbiter reads the stand's boards from.
     pub fn stand_file(&self) -> &Path {
         &self.stand_file
+    }
+
+    /// The stand file, loaded.
+    pub fn stand(&self) -> crate::Result<oer_hil_stand_model::StandFile> {
+        Ok(oer_hil_stand_model::StandFile::load(&self.stand_file)?)
     }
 
     /// Whether the stand's state was written by a newer build, whose schema
@@ -133,13 +141,11 @@ impl Arbiter {
             Err(error) => return Err(error.into()),
         };
         let mut state = before.clone();
-        crate::balance::settle(&mut state, crate::unix_now_ms());
+        crate::balance::settle(&mut state, oer_durable::unix_millis());
         self.reap(&mut state)?;
         let result = action(&mut state)?;
         if state != before {
-            let temporary = path.with_extension("json.tmp");
-            fs::write(&temporary, serde_json::to_vec_pretty(&state)?)?;
-            fs::rename(&temporary, &path)?;
+            oer_durable::atomic_write(&path, &serde_json::to_vec_pretty(&state)?)?;
         }
         Ok(result)
     }
@@ -158,7 +164,7 @@ impl Arbiter {
                     owner: holder.ticket.owner.clone(),
                     work: holder.ticket.work.clone(),
                     granted_unix: holder.granted_unix,
-                    released_unix: crate::unix_now(),
+                    released_unix: oer_durable::unix_seconds(),
                     outcome: if holder.preempted.is_some() {
                         LeaseOutcome::PreemptedOnRequest
                     } else {
@@ -166,7 +172,7 @@ impl Arbiter {
                     },
                     charged_ms: crate::preempt::charged_ms(
                         &holder,
-                        crate::unix_now()
+                        oer_durable::unix_seconds()
                             .saturating_sub(holder.granted_unix)
                             .saturating_mul(1000),
                     ),
@@ -191,57 +197,6 @@ impl Arbiter {
     pub fn history(&self) -> crate::Result<Vec<LeaseRecord>> {
         history::read(&self.history_path())
     }
-
-    pub fn board_events(&self) -> crate::Result<Vec<BoardEvent>> {
-        history::read_lines(&self.board_path())
-    }
-
-    /// The newest journaled flash of the board with `mac`.
-    pub fn latest_flash(&self, mac: &str) -> crate::Result<Option<BoardEvent>> {
-        Ok(self.board_events()?.into_iter().rev().find(|event| {
-            event.device.as_deref() == Some(mac)
-                && matches!(event.kind, crate::BoardEventKind::Flashed { .. })
-        }))
-    }
-
-    /// Append a change of the board with MAC `device` (the DUT when unknown),
-    /// attributed to the current owner.
-    pub fn record_board(
-        &self,
-        device: Option<String>,
-        kind: crate::BoardEventKind,
-    ) -> crate::Result<()> {
-        // A journal entry is not a lease: it names an unregistered owner as such.
-        let owner =
-            crate::grant::owner_from_environment().unwrap_or_else(|_| String::from("unregistered"));
-        self.record_board_by(owner, device, kind)
-    }
-
-    /// [`Self::record_board`] attributed to `owner`.
-    pub fn record_board_by(
-        &self,
-        owner: String,
-        device: Option<String>,
-        kind: crate::BoardEventKind,
-    ) -> crate::Result<()> {
-        let event = BoardEvent {
-            unix: crate::unix_now(),
-            owner,
-            checkout: std::env::current_dir()
-                .ok()
-                .map(|directory| directory.display().to_string()),
-            device,
-            kind,
-        };
-        let path = self.board_path();
-        self.locked(|| {
-            history::append_line(&path, &event)?;
-            if fs::metadata(&path)?.len() > 1 << 20 {
-                history::retain_newest::<BoardEvent>(&path)?;
-            }
-            Ok(())
-        })
-    }
 }
 
 #[cfg(test)]
@@ -255,7 +210,7 @@ mod guard_tests {
         )));
         assert!(!is_test_executable(Path::new("/r/target/debug/oer-xtask")));
         // This very test runs from deps/.
-        if std::env::var_os(DIRECTORY_ENV).is_none() {
+        if std::env::var_os(ARBITER_ENV).is_none() {
             let error = Arbiter::open().err().unwrap().to_string();
             assert!(error.contains("a test must not open"), "{error}");
         }

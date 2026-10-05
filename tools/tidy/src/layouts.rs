@@ -13,37 +13,11 @@
 
 use std::collections::BTreeSet;
 
-use crate::{Context, Result, workspaces};
+use oer_repo::lock::{Locked, parse as locked};
+
+use crate::{Context, Result};
 
 const MARKER: &str = "REVIEWED-LAYOUT:";
-
-/// One locked package: its name, version and source.
-struct Locked {
-    name: String,
-    version: String,
-    source: Option<String>,
-}
-
-fn locked(text: &str, lock: &str) -> Result<Vec<Locked>> {
-    let document: toml::Table = toml::from_str(text).map_err(|error| format!("{lock}: {error}"))?;
-    let packages = document
-        .get("package")
-        .and_then(toml::Value::as_array)
-        .ok_or_else(|| format!("{lock}: no [[package]] entries"))?;
-    Ok(packages
-        .iter()
-        .filter_map(|package| {
-            Some(Locked {
-                name: package.get("name")?.as_str()?.to_owned(),
-                version: package.get("version")?.as_str()?.to_owned(),
-                source: package
-                    .get("source")
-                    .and_then(toml::Value::as_str)
-                    .map(str::to_owned),
-            })
-        })
-        .collect())
-}
 
 /// Whether `package` is locked at `reviewed`: its version, or a prefix of
 /// its git revision.
@@ -54,10 +28,8 @@ fn matches(package: &Locked, reviewed: &str) -> bool {
     reviewed.len() >= 7
         && reviewed.bytes().all(|byte| byte.is_ascii_hexdigit())
         && package
-            .source
-            .as_deref()
-            .and_then(|source| source.rsplit_once('#'))
-            .is_some_and(|(_, revision)| revision.starts_with(reviewed))
+            .revision()
+            .is_some_and(|revision| revision.starts_with(reviewed))
 }
 
 /// The `(package, version)` an anchor on `line` names.
@@ -74,14 +46,20 @@ fn anchor(line: &str) -> Option<std::result::Result<(&str, &str), ()>> {
 /// Every anchor names a package its workspace still locks at the reviewed
 /// release.
 pub fn check(context: &Context<'_>) -> Result<Vec<String>> {
-    let owners = workspaces::owners(&context.manifests);
     let mut seen = BTreeSet::new();
     let mut problems = vec![];
     for (manifest, reach) in &context.reach {
-        let Some(root) = owners.get(manifest) else {
+        let Some(root) = context
+            .model
+            .manifests
+            .packages
+            .iter()
+            .find(|package| package.manifest == *manifest)
+            .and_then(|package| context.model.workspace_of(package))
+        else {
             continue;
         };
-        let lock = format!("{}Cargo.lock", root.trim_end_matches("Cargo.toml"));
+        let lock = oer_repo::workspaces::lock_of(root);
         for file in &reach.files {
             if !seen.insert((file.clone(), lock.clone())) {
                 continue;

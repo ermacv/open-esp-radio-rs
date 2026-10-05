@@ -27,11 +27,11 @@ The peer is a board of the stand file's pool with the `peer` role
 other consumers. Before a
 run's first IEEE 802.15.4 peer scenario, `cargo hil run` brings the board up
 to the current catalog build of the scenario's peer image within the run's
-lease, which holds the peer board: `cargo hil firmware flash IMAGE
---if-changed` builds the image (from the shared ESP-IDF cache, quickly once
-built) and flashes and journals it unless the board's newest recorded flash is
-that image with the same digest, so a fixed peer reaches the board without a
-manual flash. `doctor` and `fixture check` do not flash: they report
+lease, which holds and locks the peer board: the flash operation's catalog
+flash, as `cargo hil firmware flash IMAGE --if-changed` runs it, builds the
+image (from the shared ESP-IDF cache, quickly once built) and flashes and
+journals it unless the board's newest recorded flash is that image with the
+same digest, so a fixed peer reaches the board without a manual flash. `doctor` and `fixture check` do not flash: they report
 the other image and who flashed it. A board without a recorded flash is
 accepted; the peer's `@READY` handshake then decides.
 

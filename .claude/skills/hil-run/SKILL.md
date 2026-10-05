@@ -24,17 +24,25 @@ host: [hardware route](../../../hil/README.md#hardware-route).
    - several scenarios: one `cargo hil run a b c`, one lease. In zsh pass
      the names literally or as an array, not as one unquoted `$VAR`.
 3. **Debug quickly.** `--repetitions N` (1–20) for a look; such runs are
-   never pending evidence. Images build before the run queues.
+   never pending evidence. Images build before the run queues, as image
+   bundles of the one pipeline (`oer-image`); `cargo hil image build <class>`
+   builds one without the stand, and `cargo hil flash --board B <bundle>`
+   writes a bundle by hand through the one flash operation (lease, write,
+   journal, start).
 4. **Untracked sources** must be named with `--source-include PATH` or
    `--include-untracked`; the runner refuses to guess.
 5. **Investigate.** `cargo hil runs why <run-id>` and `cargo hil runs show
    <run-id>` name the failure and artifact paths; read those files, never an
-   observer JSON or the whole bundle
+   observer JSON or the whole bundle. A repetition's typed results are its
+   `observations.json`
    ([find and compare runs](../../../hil/host/runs.md#find-and-compare-runs)).
-6. **Stand state.** `cargo hil queue` shows holders and boards; wait for a
-   board in service with `cargo hil wait --service`.
-7. **Evidence (optional).** From a clean tree, `cargo hil evidence record`
-   writes shards to `hil/evidence/<chip>/`; commit them with the change they
+6. **Stand state.** `cargo hil queue` shows holders, jobs and boards; wait
+   for a board in service with `cargo hil wait --service`. A flash made
+   outside `cargo hil` is journaled with `cargo hil lease --board B --flashed
+   IMAGE --application FILE --device B -- COMMAND`.
+7. **Evidence (optional).** From a clean tree, `cargo qualification
+   hil-evidence --hil-target <chip> --pending` writes shards to
+   `hil/evidence/<chip>/`; commit them with the change they
    qualify. Stale evidence is information; qualification runs on a baseline
    the user chooses.
 

@@ -11,7 +11,6 @@ use blobray_domain::{
 };
 use oer_probe_codegen::Catalog;
 use oer_riscv_model::{CallAbi, WorkingMemory};
-use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, fs, path::Path};
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -76,7 +75,7 @@ pub fn authenticate(inputs: &[Input<'_>]) -> Result<(Vec<String>, Vec<Vec<u8>>)>
     let mut contents = Vec::with_capacity(inputs.len());
     for input in inputs {
         let bytes = fs::read(input.path)?;
-        let actual = sha256(&bytes);
+        let actual = oer_durable::sha256_bytes(&bytes);
         if let Some(expected) = input.sha256
             && actual != expected
         {
@@ -89,13 +88,6 @@ pub fn authenticate(inputs: &[Input<'_>]) -> Result<(Vec<String>, Vec<Vec<u8>>)>
         contents.push(bytes);
     }
     Ok((identities, contents))
-}
-
-pub fn sha256(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
 }
 
 pub fn objects(inventory: &[ArtifactInventory], input: usize) -> &[ObjectInventory] {

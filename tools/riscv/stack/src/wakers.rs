@@ -32,7 +32,7 @@ fn slot(function: &str) -> Option<usize> {
 
 /// Each `RawWakerVTable` of `elf`: its four functions, by slot.
 pub fn waker_vtables(elf: &[u8], dwarf: &Dwarf, analysis: &Analysis) -> Result<Vec<[u32; 4]>> {
-    let file = object::File::parse(elf)
+    let file = oer_elf::Elf::parse(elf)
         .map_err(|_| Error::new(ErrorCode::Integrity, "invalid ELF".to_owned()))?;
     let relocations = Relocations::read(elf)?;
     let function = |address: u32| {

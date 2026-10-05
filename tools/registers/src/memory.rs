@@ -31,6 +31,14 @@ struct Region {
     alias_of: Option<String>,
 }
 impl Memory {
+    /// The `start..end` of the MMIO region `name`.
+    pub fn mmio(&self, name: &str) -> Option<(u64, u64)> {
+        self.regions
+            .iter()
+            .find(|region| region.name == name && region.kind == "mmio")
+            .map(|region| (region.start, region.end_exclusive))
+    }
+
     pub fn load(path: &Path) -> Result<Self> {
         Ok(toml_edit::de::from_str(&std::fs::read_to_string(path)?)?)
     }

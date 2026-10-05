@@ -3,21 +3,23 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use oer_hil_evidence::run::{
+use oer_hil_image_class::ImageClass;
+use oer_hil_run_bundle::run::{
     collect_integrity_files,
     test_support::{session, session_for, temporary_directory, write_test_build_materials},
 };
-use oer_hil_image_class::ImageClass;
 
 use super::{Recipe, firmware};
-use crate::{Artifacts, BootArtifacts};
-use oer_esp32s31_firmware::network::{NETWORK, NETWORK_FEATURE};
+use crate::Artifacts;
+use oer_hil_image_class::{NETWORK, NETWORK_FEATURE};
+use oer_image::bundle::{Lock, Staged, files};
 
 /// The Rust target of the fixture images.
 const TARGET: &str = "riscv32imafc-unknown-none-elf";
 
-/// Owned-Xarxa correctness artifacts over the given files, with one lock
-/// standing in for both effective locks and a host-independent environment.
+/// Owned-Xarxa correctness artifacts: a staged bundle beside `application`
+/// holding the given files, with one lock standing in for both effective
+/// locks and a host-independent environment.
 fn test_artifacts(
     application: &Path,
     runtime_elf: &Path,
@@ -25,23 +27,47 @@ fn test_artifacts(
     bootstrap_elf: &Path,
     lock: &Path,
 ) -> Artifacts {
-    Artifacts {
-        chip: String::from("esp32s31"),
-        rust_target: String::from(TARGET),
-        layout_seed: None,
-        rom_summaries: Default::default(),
-        features: oer_hil_image_class::FeatureDelta::default(),
-        output: application.parent().unwrap().to_path_buf(),
-        runtime_elf: runtime_elf.to_path_buf(),
-        effective_embedded_lock: lock.to_path_buf(),
-        application_image: application.to_path_buf(),
-        boot: BootArtifacts::Staged {
-            runtime_bin: runtime_bin.to_path_buf(),
-            bootstrap_elf: bootstrap_elf.to_path_buf(),
-            effective_bootstrap_lock: lock.to_path_buf(),
+    let directory = application.parent().unwrap().join("bundle");
+    fs::create_dir_all(&directory).unwrap();
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let profile = oer_chip_profile::Profile::load(&repository, "esp32s31").unwrap();
+    let mut bundle =
+        oer_image::ImageBundle::new(&directory, &profile, profile.flash.clone().unwrap());
+    for (source, name) in [
+        (application, files::APPLICATION),
+        (runtime_elf, files::RUNTIME_ELF),
+        (runtime_bin, files::RUNTIME_BIN),
+        (bootstrap_elf, files::BOOTSTRAP_ELF),
+        (lock, files::RUNTIME_LOCK),
+        (lock, files::BOOTSTRAP_LOCK),
+    ] {
+        fs::copy(source, directory.join(name)).unwrap();
+    }
+    fs::write(directory.join(files::BOOTLOADER), b"bootloader").unwrap();
+    fs::write(directory.join(files::PARTITIONS), b"partitions").unwrap();
+    fs::write(
+        directory.join(files::SOURCE_INPUTS),
+        r#"{"schema":2,"files":[]}"#,
+    )
+    .unwrap();
+    bundle.staged = Some(Staged {
+        bootstrap_package: "oer-esp32s31-platform-bootstrap".into(),
+    });
+    bundle.locks = vec![
+        Lock {
+            committed: "hil/targets/esp32s31/Cargo.lock".into(),
+            file: files::RUNTIME_LOCK.into(),
         },
-        source_inputs: None,
-        environment: oer_hil_evidence::build::BuildEnvironment::synthetic(),
+        Lock {
+            committed: "platform/esp32s31/Cargo.lock".into(),
+            file: files::BOOTSTRAP_LOCK.into(),
+        },
+    ];
+    assert_eq!(bundle.rust_target, TARGET);
+    Artifacts {
+        bundle,
+        features: oer_hil_image_class::FeatureDelta::default(),
+        environment: oer_hil_run_bundle::build::BuildEnvironment::synthetic(),
     }
 }
 
@@ -131,7 +157,7 @@ fn firmware_record_archives_the_exact_application() {
         .build_provenance_path
         .as_ref()
         .expect("build provenance path");
-    let provenance: oer_hil_evidence::build::BuildProvenance =
+    let provenance: oer_hil_run_bundle::build::BuildProvenance =
         serde_json::from_slice(&fs::read(run_directory.join(provenance_path)).unwrap()).unwrap();
     assert_eq!(provenance.build_id, artifact.build_id.clone().unwrap());
     assert_eq!(provenance.subjects.len(), 4);
@@ -149,7 +175,9 @@ fn firmware_record_archives_the_exact_application() {
     assert!(provenance.source_reconstructable);
     let object_root = root.join("objects/sha256");
     let first_objects = collect_integrity_files(&object_root).unwrap();
-    assert_eq!(first_objects.len(), 8);
+    // The application, both ELFs, the runtime binary, the lock, the build
+    // provenance, the source inputs and the snapshot materials.
+    assert_eq!(first_objects.len(), 9);
     assert!(
         firmware::record(
             &mut first_session,
@@ -200,7 +228,7 @@ fn firmware_record_archives_the_exact_application() {
 fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
     let root = temporary_directory("firmware-replay");
     let target_directory = root.join("target/hil/esp32s31");
-    let runs_directory = root.join(oer_hil_evidence::run::RUNS);
+    let runs_directory = root.join(oer_hil_run_bundle::store::CHECKOUT_RUNS);
     let repository_root = target_directory.clone();
     fs::create_dir_all(&runs_directory).unwrap();
     write_test_build_materials(&repository_root);
@@ -235,9 +263,11 @@ fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
         ),
     )
     .unwrap();
-    source.finish(Vec::new()).unwrap();
+    source
+        .finish(Vec::new(), |_, _| Default::default())
+        .unwrap();
 
-    let archived = oer_hil_evidence::verify::archived_firmware(
+    let archived = oer_hil_run_bundle::verify::archived_firmware(
         &root,
         "esp32s31",
         "source-run",
@@ -262,11 +292,13 @@ fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
             .source_run_id,
         "source-run"
     );
-    replay.finish(Vec::new()).unwrap();
+    replay
+        .finish(Vec::new(), |_, _| Default::default())
+        .unwrap();
 
     fs::remove_dir_all(source_directory).unwrap();
     let verified =
-        oer_hil_evidence::verify::verify(&root, Some("esp32s31"), Some("replay-run"), &Recipe)
+        oer_hil_run_bundle::verify::verify(&root, Some("esp32s31"), Some("replay-run"), &Recipe)
             .unwrap();
     assert_eq!(verified.verified_run_ids, ["replay-run"]);
     fs::remove_dir_all(root).unwrap();
@@ -288,7 +320,7 @@ fn provenance_records_the_network_implementation_and_its_feature() {
         vec![],
         vec![],
         vec![],
-        oer_hil_evidence::build::BuildEnvironment::synthetic(),
+        oer_hil_run_bundle::build::BuildEnvironment::synthetic(),
     )
     .unwrap();
     assert_eq!(provenance.parameters.network.as_deref(), Some(NETWORK));

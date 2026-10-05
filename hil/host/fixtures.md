@@ -59,7 +59,7 @@ section and the schema-13 network helper.
 
 Every 802.11 air observer (the laptop monitor, the OpenWrt TX-monitor tap and
 the probe-load management capture) decodes its capture through
-`hil_wifi::evidence::air`: one tshark run with a fixed field set yields typed
+`oer_hil_family_ieee80211::evidence::air`: one tshark run with a fixed field set yields typed
 `AirFrame` records, and each analyzer works on those frames in memory. A
 malformed record, unparsable field or invalid timestamp fails the whole
 capture; absent fields stay absent.
@@ -77,11 +77,13 @@ watchdogs and file limits remain failure bounds. Passive observers use the AP's
 actual primary frequency, width and center frequency, including HE20 geometry.
 Tshark parsing and monitor setup/teardown are invoked by the runner.
 
-AP workload evidence and qualification are separate. `cycle-progress.json`
-retains each available traffic, link and teardown result even if another stage
-fails; `access-point-report.json` retains completed boots/cycles and the boot
-error. Multi-client UDP additionally writes `delivery-progress.json` before
-applying gates, including partial host sends, target evidence and worker errors.
+AP workload evidence and qualification are separate. The repetition's
+observations keep each cycle's progress (`cycle-NNN-progress`: every available
+traffic, link and teardown result even if another stage fails) and the
+`access-point` observation (completed boots/cycles and the boot error), each
+replaced as the workload advances. Multi-client UDP additionally records its
+delivery progress before applying gates, including partial host sends, target
+evidence and worker errors.
 
 Host UDP collectors finish from the correlated `network::Finished` transport count.
 Complete delivery returns immediately. If packets remain undelivered, a two-second

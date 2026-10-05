@@ -9,7 +9,7 @@ publish = false
 description = "RV32 function decoding, relocation interpretation and lifting to the program model's operations"
 
 [dependencies]
-object = { version = "=0.39.1", default-features = false, features = ["elf"] }
+oer-elf = { path = "../../elf" }
 oer-riscv-decode = { path = "../decode" }
 oer-riscv-model = { path = "../model" }
 
@@ -19,3 +19,4 @@ workspace = true
 [package.metadata.open-radio]
 layer = "tool"
 platform = "host"
+host-layer = "build"

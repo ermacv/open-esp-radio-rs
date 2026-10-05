@@ -8,8 +8,9 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use crate::{Context, Result, cargo, checks::common};
+use crate::{Result, cargo, checks::common};
 use oer_process as process;
+use oer_process::Checkout;
 
 /// One `cargo doc` invocation: a workspace, an optional target and packages.
 #[derive(Debug, Eq, PartialEq)]
@@ -82,8 +83,8 @@ pub fn groups(manifest: &Path, metadata: &cargo_metadata::Metadata) -> Result<Ve
     Ok(groups.into_values().collect())
 }
 
-pub fn command(ctx: &Context, subcommand: &str, group: &Group) -> std::process::Command {
-    let mut command = ctx.cargo();
+pub fn command(ctx: &Checkout, subcommand: &str, group: &Group) -> std::process::Command {
+    let mut command = oer_toolchain::cargo_in(&ctx.root);
     let mut flags = std::env::var("RUSTDOCFLAGS").unwrap_or_default();
     flags.push_str(" -D warnings");
     command
@@ -104,14 +105,16 @@ pub fn command(ctx: &Context, subcommand: &str, group: &Group) -> std::process::
 
 /// Document the root workspace and every other workspace that owns a
 /// production package, then run the root workspace's doctests on the host.
-pub fn run(ctx: &Context) -> Result<()> {
-    let mut manifests = vec![ctx.root.join("Cargo.toml").canonicalize()?];
-    for package in common::production_packages(ctx)? {
-        if !package.workspace_member {
-            let manifest = cargo::workspace_manifest(ctx, &package.manifest)?;
-            if !manifests.contains(&manifest) {
-                manifests.push(manifest);
-            }
+pub fn run(ctx: &Checkout) -> Result<()> {
+    let model = common::model(ctx)?;
+    let mut manifests = vec![ctx.root.join("Cargo.toml")];
+    for package in common::production_packages(&ctx.root, &model)? {
+        let workspace = model
+            .workspace_of(&package.package)
+            .ok_or_else(|| format!("{} belongs to no workspace", package.package.manifest))?;
+        let manifest = ctx.root.join(workspace);
+        if !manifests.contains(&manifest) {
+            manifests.push(manifest);
         }
     }
     for manifest in manifests {
@@ -119,10 +122,12 @@ pub fn run(ctx: &Context) -> Result<()> {
             process::run(command(ctx, "doc", &group).arg("--no-deps"))?;
         }
     }
-    process::run(
-        ctx.cargo()
-            .args(["test", "--doc", "--workspace", "--locked"]),
-    )
+    process::run(oer_toolchain::cargo_in(&ctx.root).args([
+        "test",
+        "--doc",
+        "--workspace",
+        "--locked",
+    ]))
 }
 
 #[cfg(test)]

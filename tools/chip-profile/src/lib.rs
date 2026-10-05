@@ -52,10 +52,11 @@ pub struct Profile {
     pub espflash_chip: String,
     /// Silicon revisions the repository's models and pins describe.
     pub revisions: Vec<String>,
-    /// Where an ESP-IDF bootloader chip's HIL images lie in flash; the
-    /// runner writes and replays them there.
+    /// Where the chip's images lie in flash: the image pipeline encodes
+    /// for it, and every flash writes there. `None` for a chip that has no
+    /// images yet.
     #[serde(default)]
-    pub flash: Option<FlashLayout>,
+    pub flash: Option<FlashMap>,
     /// What the chip has.
     pub properties: Properties,
 }
@@ -87,15 +88,45 @@ pub struct Properties {
     pub cores: u8,
 }
 
-/// Flash offsets of an ESP-IDF application image: the chip's second-stage
-/// bootloader, the partition table and the partition that holds the
-/// application.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+/// The chip's flash map (`[flash]` of its `chip.toml`): where the
+/// second-stage bootloader, the partition table, the application and the
+/// OTA selection lie, and the partition tables the platform defines.
+///
+/// A partition table named here is the source of the partitions it holds;
+/// the image pipeline checks that `application` and `otadata` are the
+/// offsets of its first application partition and its OTA data partition.
+/// A chip whose ESP-IDF build makes its partition table names none.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub struct FlashLayout {
+pub struct FlashMap {
     pub bootloader: u32,
     pub partition_table: u32,
+    /// The partition an image's application is written to.
     pub application: u32,
+    /// The OTA data partition, which selects the application slot; `None`
+    /// when the bootloader boots a factory application.
+    #[serde(default)]
+    pub otadata: Option<u32>,
+    /// The partition table images boot with, as a CSV relative to the
+    /// repository root.
+    #[serde(default)]
+    pub partitions: Option<PathBuf>,
+    /// How a written image starts.
+    pub start: Start,
+}
+
+/// How the stand starts an image it wrote into a board's flash.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Start {
+    /// The writer's hard reset after the last segment starts the image.
+    Reset,
+    /// The writer leaves the ROM in its download mode; a power-on reset of
+    /// the board's hub port starts the image, or an RTS reset on a board
+    /// that does not reset by power. An RTS reset out of download mode starts
+    /// an esp32c5's image with its USB Serial/JTAG console silent, and the
+    /// writer's own reset can leave it in download mode.
+    PowerOn,
 }
 
 impl Profile {
@@ -150,22 +181,6 @@ impl Profile {
         root.join(directory).join(&self.id)
     }
 
-    /// The Cargo workspace of the chip's HIL agent firmware.
-    pub fn hil_agent_workspace(&self, root: &Path) -> PathBuf {
-        self.directory(root, "hil/targets")
-    }
-
-    /// The package of the chip's HIL agent firmware in that workspace.
-    pub fn hil_agent_package(&self) -> String {
-        format!("oer-{}-hil-agent", self.id)
-    }
-
-    /// The manifest of that package, which declares the features the
-    /// agent's images select from.
-    pub fn hil_agent_manifest(&self, root: &Path) -> PathBuf {
-        self.hil_agent_workspace(root).join("agent/Cargo.toml")
-    }
-
     /// The Cargo workspace of the chip's platform, which holds the
     /// bootstrap of a staged boot.
     pub fn platform_workspace(&self, root: &Path) -> PathBuf {
@@ -177,16 +192,11 @@ impl Profile {
     pub fn bootstrap_package(&self) -> Option<String> {
         (self.boot == Boot::Staged).then(|| format!("oer-{}-platform-bootstrap", self.id))
     }
+}
 
-    /// Every `(workspace, package)` a HIL image of the chip is built from:
-    /// the HIL agent and, for a staged boot, the platform's bootstrap.
-    pub fn hil_image_packages(&self, root: &Path) -> Vec<(PathBuf, String)> {
-        let mut packages = vec![(self.hil_agent_workspace(root), self.hil_agent_package())];
-        if let Some(bootstrap) = self.bootstrap_package() {
-            packages.push((self.platform_workspace(root), bootstrap));
-        }
-        packages
-    }
+/// The Rust target of `id`'s firmware, from its `chip.toml`.
+pub fn rust_target(root: &Path, id: &str) -> Result<String> {
+    Ok(Profile::load(root, id)?.rust_target)
 }
 
 /// The family of every supported chip, keyed by chip id.
@@ -232,52 +242,6 @@ mod tests {
     }
 
     #[test]
-    fn every_chip_s_hil_agent_workspace_declares_its_package() {
-        let root = repository();
-        for chip in Profile::all(&root).unwrap() {
-            let workspace = chip.hil_agent_workspace(&root);
-            let package = chip.hil_agent_package();
-            let declared = std::fs::read_dir(&workspace)
-                .unwrap()
-                .filter_map(|entry| {
-                    let manifest = entry.unwrap().path().join("Cargo.toml");
-                    let text = std::fs::read_to_string(manifest).ok()?;
-                    let manifest: toml::Table = toml::from_str(&text).ok()?;
-                    Some(manifest.get("package")?.get("name")?.as_str()?.to_owned())
-                })
-                .any(|name| name == package);
-            assert!(
-                declared,
-                "{} declares no package {package}",
-                workspace.display()
-            );
-        }
-    }
-
-    #[test]
-    fn every_image_package_is_declared_in_its_workspace() {
-        let root = repository();
-        for chip in Profile::all(&root).unwrap() {
-            for (workspace, package) in chip.hil_image_packages(&root) {
-                let text = std::fs::read_to_string(workspace.join("Cargo.toml")).unwrap();
-                let members: toml::Table = toml::from_str(&text).unwrap();
-                let listed = members["workspace"]["members"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .filter_map(|member| {
-                        let manifest = workspace.join(member.as_str()?).join("Cargo.toml");
-                        let manifest: toml::Table =
-                            toml::from_str(&std::fs::read_to_string(manifest).ok()?).ok()?;
-                        Some(manifest.get("package")?.get("name")?.as_str()?.to_owned())
-                    })
-                    .any(|name| name == package);
-                assert!(listed, "{} has no member {package}", workspace.display());
-            }
-        }
-    }
-
-    #[test]
     fn the_tracked_profiles_load() {
         let root = repository();
         let chips = Profile::all(&root).unwrap();
@@ -286,9 +250,13 @@ mod tests {
         assert_eq!(families(&root).unwrap().len(), chips.len());
         let esp32c5 = Profile::load(&root, "esp32c5").unwrap();
         assert_eq!(esp32c5.boot, Boot::EspIdfBootloader);
-        let flash = esp32c5.flash.unwrap();
+        let flash = esp32c5.flash.clone().unwrap();
         assert!(flash.bootloader < flash.partition_table);
         assert!(flash.partition_table < flash.application);
+        assert_eq!((flash.otadata, flash.partitions), (None, None));
+        let esp32s31 = Profile::load(&root, "esp32s31").unwrap().flash.unwrap();
+        assert!(esp32s31.partition_table < esp32s31.otadata.unwrap());
+        assert!(root.join(esp32s31.partitions.unwrap()).is_file());
         assert_eq!(
             esp32c5.directory(&root, "verification"),
             root.join("verification/esp32c5")

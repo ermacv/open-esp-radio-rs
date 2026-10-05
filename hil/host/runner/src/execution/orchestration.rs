@@ -1,6 +1,6 @@
 //! Suite, scenario and repetition lifecycle orchestration.
 
-use oer_hil_evidence::run::RunEventKind;
+use oer_hil_run_bundle::run::RunEventKind;
 use std::{
     ffi::OsString,
     fs,
@@ -8,14 +8,16 @@ use std::{
 };
 
 use crate::{Result, emit_json, fixture};
-use oer_hil_evidence::run::{
+use oer_hil_image_class::ImageClass;
+use oer_hil_lab::config::LabConfig;
+use oer_hil_run_bundle::run::{
     Failure, FailureKind, Outcome, PlanDisposition, PlanEntry, PlannedFirmware, RUN_SCHEMA,
     RepetitionResult, RunPlan, RunSession, ScenarioResult,
 };
-use oer_hil_image_class::ImageClass;
-use oer_hil_stand::config::LabConfig;
 
-use crate::scenario::{Catalog, Scenario, requirements};
+use crate::scenario::{Catalog, Families, Scenario, requirements};
+use oer_hil_scenario::ScenarioFamily as _;
+use oer_hil_workload::family::Registry as _;
 
 use super::{
     firmware::{self, RunFirmware},
@@ -285,10 +287,12 @@ pub(crate) const AIR_STRICT_TAG: &str = "air-strict";
 /// without CSMA, DTM or a throughput flood.
 pub(crate) const AIR_NOISY_TAG: &str = "air-noisy";
 
-/// How `scenario` uses the air: its family's ranges, tolerant of others'
-/// protocol traffic and transmitting normally unless its tags say otherwise.
-pub(crate) fn air_use(lab: &LabConfig, scenario: &Scenario) -> Vec<oer_hil_stand::lock::Spectrum> {
-    use oer_hil_stand::lock::{Emits, Need, Spectrum};
+/// How `scenario` uses the air: the ranges its family states, tolerant of
+/// others' protocol traffic and transmitting normally unless its tags say
+/// otherwise.
+pub(crate) fn air_use(lab: &LabConfig, scenario: &Scenario) -> Vec<oer_hil_lab::lock::Spectrum> {
+    use oer_hil_lab::lock::{BAND_2G4, Emits, Need, Spectrum};
+    use oer_hil_scenario::{AirUse, ScenarioFamily as _};
     let tagged = |tag: &str| scenario.header.tags.iter().any(|known| known == tag);
     let need = if tagged(AIR_EXCLUSIVE_TAG) || tagged(AIR_STRICT_TAG) {
         Need::Strict
@@ -302,9 +306,15 @@ pub(crate) fn air_use(lab: &LabConfig, scenario: &Scenario) -> Vec<oer_hil_stand
     };
     scenario
         .family
-        .air_ranges(lab, scenario.plan().wifi)
+        .air_use()
         .into_iter()
-        .map(|range| Spectrum::new(range, need, emits))
+        .map(|air| match air {
+            AirUse::Band2G4 => Spectrum::new(BAND_2G4, need, emits),
+            AirUse::Ieee802154Channel(channel) => Spectrum::ieee802154(channel, need, emits),
+            AirUse::WifiLink => {
+                Spectrum::new(lab.wifi_range_khz(scenario.plan().wifi), need, emits)
+            }
+        })
         .collect()
 }
 
@@ -314,14 +324,14 @@ pub(crate) fn air_use(lab: &LabConfig, scenario: &Scenario) -> Vec<oer_hil_stand
 pub(crate) fn lease_request(
     lab: &LabConfig,
     selected: &[&Scenario],
-) -> oer_hil_stand::lock::LeaseRequest {
+) -> oer_hil_lab::lock::LeaseRequest {
     let mut air = Vec::new();
     for range in selected.iter().flat_map(|scenario| air_use(lab, scenario)) {
         if !air.contains(&range) {
             air.push(range);
         }
     }
-    oer_hil_stand::lock::LeaseRequest {
+    oer_hil_lab::lock::LeaseRequest {
         required: requirements(selected),
         scenarios: selected
             .iter()
@@ -338,16 +348,16 @@ fn lease_stand(
     session: &mut RunSession,
     lab: &LabConfig,
     selected: &[&Scenario],
-) -> Result<oer_hil_stand::lock::FixtureLock> {
+) -> Result<oer_hil_lab::lock::FixtureLock> {
     session.record_event(RunEventKind::StandLeaseRequested, None, None, None)?;
     let request = lease_request(lab, selected);
-    let fixture = oer_hil_stand::lock::FixtureLock::lease(lab, request.clone())?;
+    let fixture = oer_hil_lab::lock::FixtureLock::lease(lab, request.clone())?;
     session.record_event(RunEventKind::StandLeaseGranted, None, None, None)?;
-    oer_hil_durable::atomic_json(
+    oer_durable::atomic_json(
         &session.directory().join("air.json"),
-        &oer_hil_stand::lock::air_record(&request)?,
+        &oer_hil_lab::lock::air_record(&request)?,
     )?;
-    let lab_provenance = oer_hil_stand::provenance::capture(lab, requirements(selected))?;
+    let lab_provenance = oer_hil_lab::provenance::capture(lab, requirements(selected))?;
     session.record_lab_provenance(&lab_provenance)?;
     session.record_event(RunEventKind::LabProvenanceCaptured, None, None, None)?;
     Ok(fixture)
@@ -364,13 +374,13 @@ struct LiveSuite<'a> {
     firmware: FirmwarePreparation<'a>,
     /// Images built before the lease; a class without one is prepared whole.
     prebuilt: Vec<(ImageClass, firmware::Built)>,
-    lease: Option<oer_hil_stand::lock::FixtureLock>,
+    lease: Option<oer_hil_lab::lock::FixtureLock>,
     /// The class on the device and, when built by this run, its archive.
     flashed: Option<(ImageClass, Option<Box<oer_hil_image::Artifacts>>)>,
     /// The peer image this run brought up to its current catalog build.
     peer_image: Option<&'static str>,
     /// What the board journal recorded for that image's flash.
-    peer_flash: Option<oer_hil_stand::lock::PeerImageRecord>,
+    peer_flash: Option<PeerImageRecord>,
     /// The image classes whose silence this run already answered with the
     /// recovery image.
     recovered: Vec<ImageClass>,
@@ -443,19 +453,33 @@ impl SuiteEffects for LiveSuite<'_> {
                     firmware::Built::Failed(_) => None,
                 };
                 (
-                    firmware::flash_built(self.root, self.lab, class, built, session)?,
+                    firmware::flash_built(self.lab, self.device_lock()?, class, built, session)?,
                     archive,
                 )
             } else {
-                let failure = match &self.firmware {
-                    FirmwarePreparation::BuildCurrent(build) => {
-                        firmware::prepare_image(self.root, self.lab, class, build.clone(), session)?
+                let lock = self.device_lock()?;
+                match &self.firmware {
+                    FirmwarePreparation::BuildCurrent(build)
+                    | FirmwarePreparation::Selected(RunFirmware::BuildCurrent(build)) => {
+                        // The archive stays known, so a workload can write
+                        // the scenario's image back (`BoardImages`).
+                        let built = firmware::build_image(class, build.clone(), session)?;
+                        let archive = match &built {
+                            firmware::Built::Archived(artifacts) => Some(artifacts.clone()),
+                            firmware::Built::Failed(_) => None,
+                        };
+                        (
+                            firmware::flash_built(self.lab, lock, class, built, session)?,
+                            archive,
+                        )
                     }
-                    FirmwarePreparation::Selected(firmware) => {
-                        firmware::prepare_run_image(self.root, self.lab, class, firmware, session)?
-                    }
-                };
-                (failure, None)
+                    FirmwarePreparation::Selected(firmware) => (
+                        firmware::prepare_run_image(
+                            self.root, self.lab, lock, class, firmware, session,
+                        )?,
+                        None,
+                    ),
+                }
             };
         self.flashed = failure.is_none().then_some((class, archive));
         Ok(failure)
@@ -464,8 +488,8 @@ impl SuiteEffects for LiveSuite<'_> {
     fn after_scenario(&mut self, scenario: &Scenario, session: &mut RunSession) -> Result<()> {
         let class = scenario.image();
         if !needs_recovery_image(
-            oer_hil_stand::recovery::image_silent(class.id()),
-            oer_hil_stand::recovery::device_quarantined(),
+            oer_hil_lab::recovery::image_silent(class.id()),
+            oer_hil_lab::recovery::device_quarantined(),
             self.recovered.contains(&class),
         ) {
             return Ok(());
@@ -485,7 +509,8 @@ impl SuiteEffects for LiveSuite<'_> {
             class.id(),
             recovery.id()
         );
-        let failure = firmware::prepare_image(self.root, self.lab, recovery, build, session)?;
+        let failure =
+            firmware::prepare_image(self.lab, self.device_lock()?, recovery, build, session)?;
         self.flashed = failure.is_none().then_some((recovery, None));
         let answered = match failure {
             Some(failure) => Err(failure.message),
@@ -495,22 +520,19 @@ impl SuiteEffects for LiveSuite<'_> {
                 &session.directory().join("recovery-image"),
             ),
         };
-        let mac = self.lab.dut_mac().ok();
+        let mac = self.lab.dut.mac.clone();
         let origin = format!("run {}", session.id());
-        match (after_reflash(answered), mac) {
-            (AfterReflash::Recovered, mac) => {
-                oer_hil_stand::recovery::record_reflash(mac, origin);
+        match after_reflash(answered) {
+            AfterReflash::Recovered => {
+                oer_hil_lab::recovery::record_reflash(Some(mac), origin);
                 eprintln!("hil: the board answers its recovery image");
             }
-            (AfterReflash::Quarantine(why), Some(mac)) => {
-                oer_hil_stand::recovery::quarantine_unrecovered(
+            AfterReflash::Quarantine(why) => {
+                oer_hil_lab::recovery::quarantine_unrecovered(
                     &mac,
                     why,
                     &session.directory().join("recovery-image"),
                 );
-            }
-            (AfterReflash::Quarantine(why), None) => {
-                eprintln!("hil: {why}; the board's MAC is unknown, so it cannot be quarantined")
             }
         }
         Ok(())
@@ -526,9 +548,40 @@ impl SuiteEffects for LiveSuite<'_> {
         {
             let directory = session.scenario_directory(scenario.id());
             fs::create_dir_all(&directory)?;
-            oer_hil_durable::atomic_json(&directory.join("peer-image.json"), record)?;
+            oer_durable::atomic_json(&directory.join("peer-image.json"), record)?;
         }
-        run_scenario(self.lab, scenario, session)
+        let images = match &self.flashed {
+            Some((class, Some(artifacts))) if *class == scenario.image() => {
+                let repository = session.repository();
+                Some(RunImages {
+                    lab: self.lab,
+                    lock: self.device_lock()?,
+                    class: *class,
+                    bundle: &artifacts.bundle,
+                    revision: oer_hil_flash::Revision {
+                        commit: Some(repository.commit.clone()),
+                        dirty: Some(repository.dirty),
+                    },
+                    origin: format!("run {}", session.id()),
+                    flashed: std::sync::atomic::AtomicBool::new(false),
+                })
+            }
+            _ => None,
+        };
+        let result = run_scenario(
+            self.lab,
+            scenario,
+            session,
+            images
+                .as_ref()
+                .map(|images| images as &dyn oer_hil_workload::context::BoardImages),
+        );
+        // A workload that wrote another image leaves the board's image
+        // unknown: the next scenario flashes its own.
+        if images.is_some_and(|images| images.flashed.into_inner()) {
+            self.flashed = None;
+        }
+        result
     }
 
     fn yield_point(
@@ -556,7 +609,11 @@ impl SuiteEffects for LiveSuite<'_> {
         match self.flashed.take() {
             Some((flashed, Some(artifacts))) if flashed == class => {
                 let failure = firmware::flash_archived_artifacts(
-                    self.root, self.lab, class, &artifacts, session,
+                    self.lab,
+                    self.device_lock()?,
+                    class,
+                    &artifacts,
+                    session,
                 )?;
                 self.flashed = failure.is_none().then_some((class, Some(artifacts)));
                 Ok(failure)
@@ -564,7 +621,13 @@ impl SuiteEffects for LiveSuite<'_> {
             Some((flashed, None)) if flashed == class => {
                 let failure = match self.firmware {
                     FirmwarePreparation::Selected(RunFirmware::Replay(archived)) => {
-                        firmware::reflash_replayed(self.root, self.lab, archived, session)?
+                        firmware::reflash_replayed(
+                            self.root,
+                            self.lab,
+                            self.device_lock()?,
+                            archived,
+                            session,
+                        )?
                     }
                     _ => return self.prepare_image(class, session),
                 };
@@ -601,39 +664,52 @@ impl LiveSuite<'_> {
         session.record_event(kind, None, None, None)
     }
 
-    /// Flash the catalog's peer image when another consumer's image is on
-    /// the peer board. The flash joins this run's lease, which holds the
-    /// peer board, and is journaled like any catalog flash.
+    /// The run's lock of its device under test.
+    fn device_lock(&self) -> Result<&oer_hil_arbiter::lock::BoardLock> {
+        self.lease
+            .as_ref()
+            .and_then(oer_hil_lab::lock::FixtureLock::device)
+            .ok_or_else(|| "the run holds no lease of its device under test".into())
+    }
+
+    /// Bring the peer board to the catalog's peer image when another
+    /// consumer's image or an older build is on it: the flash operation's
+    /// catalog flash under this run's lock of the peer board, journaled like
+    /// any flash. The scenario's `peer-image.json` records what the journal
+    /// says the board carries.
     fn restore_peer(&mut self, scenario: &Scenario) -> Result<()> {
         let Some(image) = scenario.family.peer_image() else {
             return Ok(());
         };
         let image = image.name;
-        let peer = self.lab.peer()?;
         // Once per image and run: the catalog build and the journal decide
         // whether the board already carries the current build.
         if self.peer_image == Some(image) {
             return Ok(());
         }
-        let lease = self.lease.as_ref().ok_or("the run holds no stand lease")?;
-        let board = oer_hil_stand::lock::board_identity(&peer.serial()?);
-        let mut command =
-            std::process::Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
-        command
-            .current_dir(self.root)
-            .args([
-                "hil",
-                "firmware",
-                "flash",
+        let lock = self
+            .lease
+            .as_ref()
+            .and_then(oer_hil_lab::lock::FixtureLock::peer)
+            .ok_or("the run holds no lease of its peer board")?;
+        let board = self.lab.peer_board()?;
+        let arbiter = oer_hil_arbiter::Arbiter::open()?.with_stand_file(self.lab.path().to_owned());
+        oer_hil_flash::catalog::flash(
+            self.root,
+            &arbiter,
+            &oer_hil_arbiter::owner_from_environment()?,
+            lock,
+            &board,
+            &oer_hil_flash::catalog::Request {
                 image,
-                "--board",
-                &board,
-                "--if-changed",
-            ])
-            .envs(lease.environment());
-        oer_process::run(&mut command)?;
+                chip: board.chip(),
+                if_changed: true,
+                via: oer_hil_board::Via::Usb,
+                origin: "HIL run",
+            },
+        )?;
         self.peer_image = Some(image);
-        self.peer_flash = oer_hil_stand::lock::peer_flash(&board, image)?;
+        self.peer_flash = peer_image_record(&arbiter, board.mac(), image)?;
         Ok(())
     }
 
@@ -645,9 +721,8 @@ impl LiveSuite<'_> {
             return Ok(());
         }
         let path = self.lab.peer()?.serial()?;
-        let live = oer_hil_link::peer_line::SerialLink::open(&path).and_then(|mut link| {
-            oer_hil_link::peer_line::answers_sync(&mut link, PEER_SYNC_TIMEOUT)
-        });
+        let live = oer_hil_link::peer::SerialLink::open(&path)
+            .and_then(|mut link| oer_hil_link::peer::answers_sync(&mut link, PEER_SYNC_TIMEOUT));
         match live {
             Ok(true) => Ok(()),
             Ok(false) => Err(format!(
@@ -658,6 +733,85 @@ impl LiveSuite<'_> {
             Err(error) => Err(format!("{error}; {PEER_WEDGE}").into()),
         }
     }
+}
+
+/// The run's writer of the board under test's images during one scenario:
+/// the scenario's archived bundle, written back through the flash operation
+/// under the run's lock of the board, like any flash of the run.
+struct RunImages<'a> {
+    lab: &'a LabConfig,
+    lock: &'a oer_hil_arbiter::lock::BoardLock,
+    class: ImageClass,
+    bundle: &'a oer_image::ImageBundle,
+    revision: oer_hil_flash::Revision,
+    origin: String,
+    /// Whether the workload wrote any image.
+    flashed: std::sync::atomic::AtomicBool,
+}
+
+impl oer_hil_workload::context::BoardImages for RunImages<'_> {
+    fn scenario_image(&self) -> &oer_image::ImageBundle {
+        self.bundle
+    }
+
+    fn flash(&self, bundle: &oer_image::ImageBundle, name: &str) -> Result<()> {
+        self.flashed
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        crate::board::flash_dut(
+            self.lab,
+            self.lock,
+            bundle,
+            crate::board::Flash {
+                image: name,
+                revision: self.revision.clone(),
+                origin: self.origin.clone(),
+            },
+        )
+    }
+
+    fn restore(&self) -> Result<()> {
+        self.flash(self.bundle, self.class.id())
+    }
+}
+
+/// The catalog image the reference peer board carried during a scenario,
+/// from the board journal's newest flash of the board. Written into the
+/// scenario's directory, so the scenario's seal binds the peer firmware.
+#[derive(Clone, Debug, serde::Serialize)]
+pub(crate) struct PeerImageRecord {
+    pub schema: u8,
+    pub board: String,
+    pub image: String,
+    pub application_sha256: String,
+    pub commit: Option<String>,
+    pub dirty: Option<bool>,
+}
+
+/// The journal's newest flash of the board with `mac`, when it is `image`.
+fn peer_image_record(
+    arbiter: &oer_hil_arbiter::Arbiter,
+    mac: &str,
+    image: &str,
+) -> Result<Option<PeerImageRecord>> {
+    Ok(arbiter
+        .latest_flash(mac)?
+        .and_then(|event| match event.kind {
+            oer_hil_arbiter::BoardEventKind::Flashed {
+                image: flashed,
+                application_sha256,
+                commit,
+                dirty,
+                ..
+            } if flashed == image => Some(PeerImageRecord {
+                schema: 1,
+                board: mac.to_owned(),
+                image: flashed,
+                application_sha256,
+                commit,
+                dirty,
+            }),
+            _ => None,
+        }))
 }
 
 /// How long one `SYNC` of the preflight waits for the peer's `@READY`.
@@ -863,7 +1017,7 @@ fn start_run(
         invocation.arguments,
     )?;
     session.report_interruption_to(|report| {
-        let _ = oer_hil_execution::emit_json(report, false);
+        let _ = oer_hil_workload::emit_json(report, false);
     });
     if let Some(snapshot) = invocation.snapshot {
         session.bind_source_snapshot(
@@ -903,14 +1057,14 @@ fn start_run(
     for scenario in selected {
         let directory = session.scenario_directory(scenario.id());
         fs::create_dir_all(&directory)?;
-        oer_hil_durable::atomic_json(&directory.join("scenario.json"), scenario)?;
+        oer_durable::atomic_json(&directory.join("scenario.json"), scenario)?;
     }
     Ok(session)
 }
 
 fn finish_run(session: RunSession, results: Vec<ScenarioResult>) -> Result<()> {
     oer_process::check_cancelled()?;
-    let (suite, completion) = session.finish(results)?;
+    let (suite, completion) = session.finish(results, oer_hil_analysis::report::views)?;
     emit_json(&completion, false)?;
     // Cancellation of a derived history update occurs after the run was
     // sealed. Publish completion first, then preserve the CLI signal status.
@@ -934,10 +1088,11 @@ fn run_scenario(
     lab: &LabConfig,
     selected: &Scenario,
     session: &RunSession,
+    images: Option<&dyn oer_hil_workload::context::BoardImages>,
 ) -> Result<ScenarioResult> {
     let scenario_output = session.scenario_directory(selected.id());
     fs::create_dir_all(&scenario_output)?;
-    oer_hil_durable::atomic_json(&scenario_output.join("scenario.json"), selected)?;
+    oer_durable::atomic_json(&scenario_output.join("scenario.json"), selected)?;
     let mut repetitions = Vec::with_capacity(usize::from(selected.repetitions()));
     for number in 1..=selected.repetitions() {
         oer_process::check_cancelled()?;
@@ -947,7 +1102,7 @@ fn run_scenario(
         let output = session.directory().join(&relative);
         fs::create_dir_all(&output)?;
         repetitions.push(run_scenario_repetition(
-            lab, selected, number, &relative, &output,
+            lab, selected, number, &relative, &output, images,
         )?);
         // The next iteration checks cancellation. After the last repetition,
         // publish its completed boundary before observing campaign cancellation.
@@ -958,7 +1113,7 @@ fn run_scenario(
         selected.repetitions(),
         repetitions,
     );
-    oer_hil_durable::atomic_json(&scenario_output.join("result.json"), &result)?;
+    oer_durable::atomic_json(&scenario_output.join("result.json"), &result)?;
     Ok(result)
 }
 
@@ -968,11 +1123,12 @@ fn run_scenario_repetition(
     repetition: u8,
     artifacts: &Path,
     output: &Path,
+    images: Option<&dyn oer_hil_workload::context::BoardImages>,
 ) -> Result<RepetitionResult> {
     let plan = selected.plan();
     let resolved = lab.resolve(plan.wifi);
     let lab = &resolved;
-    let started_unix_millis = oer_hil_durable::unix_millis()?;
+    let started_unix_millis = oer_durable::unix_millis();
     let started = std::time::Instant::now();
     // The USB watch follows the peer the scenario uses, when it has one.
     let peer_serial = selected
@@ -980,12 +1136,12 @@ fn run_scenario_repetition(
         .peer_image()
         .and_then(|_| lab.peer().ok())
         .and_then(|peer| peer.serial().ok());
-    let usb = oer_hil_stand::usb_events::UsbWatch::start(
+    let usb = oer_hil_lab::usb_events::UsbWatch::start(
         std::iter::once(lab.dut.serial.as_path()).chain(peer_serial.as_deref()),
         started_unix_millis,
     );
-    let cleanup = oer_hil_execution::fixture::cleanup::Scope::new(output);
-    if oer_hil_stand::recovery::device_quarantined() {
+    let cleanup = oer_hil_workload::fixture::cleanup::Scope::new(output);
+    if oer_hil_lab::recovery::device_quarantined() {
         return finalize_repetition(
             repetition,
             artifacts,
@@ -1002,7 +1158,7 @@ fn run_scenario_repetition(
             Vec::new(),
         );
     }
-    if oer_hil_stand::recovery::image_silent(selected.image().id()) {
+    if oer_hil_lab::recovery::image_silent(selected.image().id()) {
         return finalize_repetition(
             repetition,
             artifacts,
@@ -1023,12 +1179,16 @@ fn run_scenario_repetition(
             Vec::new(),
         );
     }
+    let mut fixtures = oer_hil_workload::fixture::Fixtures::default();
     let (outcome, failure, measurements) = match fixture::preflight::check(lab, selected)
-        .and_then(|()| hil_wifi::fixture::prepared::Prepared::start(lab, &plan, output))
-        .and_then(|fixture| {
-            preflight::validate_flashed_image(lab, selected, output)?;
-            Ok(fixture)
-        }) {
+        .and_then(|()| {
+            for provider in Families::FIXTURES {
+                provider.prepare(lab, &plan, output, &mut fixtures)?;
+            }
+            Ok(())
+        })
+        .and_then(|()| preflight::validate_flashed_image(lab, selected, output))
+    {
         Err(error) => {
             let mut failure = super::classify(&*error);
             let outcome =
@@ -1042,11 +1202,13 @@ fn run_scenario_repetition(
                 };
             (outcome, Some(failure), Vec::new())
         }
-        Ok(fixture) => {
-            let evidence = super::execute_workload(lab, selected, output, &fixture);
+        Ok(()) => {
+            let evidence = super::execute_workload(lab, selected, output, &fixtures, images);
             (evidence.outcome(), evidence.failure, evidence.measurements)
         }
     };
+    // The fixtures are restored, in their cleanup scope, before it closes.
+    drop(fixtures);
     finalize_repetition(
         repetition,
         artifacts,
@@ -1065,14 +1227,14 @@ fn run_scenario_repetition(
 fn finalize_repetition(
     repetition: u8,
     artifacts: &Path,
-    usb: &oer_hil_stand::usb_events::UsbWatch,
+    usb: &oer_hil_lab::usb_events::UsbWatch,
     output: &Path,
     started_unix_millis: u64,
     started: std::time::Instant,
-    cleanup: oer_hil_execution::fixture::cleanup::Scope,
+    cleanup: oer_hil_workload::fixture::cleanup::Scope,
     mut outcome: Outcome,
     mut failure: Option<Failure>,
-    measurements: Vec<oer_hil_evidence::run::Measurement>,
+    measurements: Vec<oer_hil_run_bundle::run::Measurement>,
 ) -> Result<RepetitionResult> {
     let cleanup = cleanup.finish()?;
     let cleanup_failures = cleanup
@@ -1081,19 +1243,19 @@ fn finalize_repetition(
         .collect::<Vec<_>>();
     apply_cleanup_failures(&mut outcome, &mut failure, &cleanup_failures);
     usb.record(output);
-    let attachments = oer_hil_evidence::run::collect_attachments(output, artifacts)?;
+    let attachments = oer_hil_run_bundle::run::collect_attachments(output, artifacts)?;
     let result = RepetitionResult {
         schema: RUN_SCHEMA,
         repetition,
         outcome,
         started_unix_millis,
-        duration_millis: oer_hil_evidence::run::duration_millis(started.elapsed()),
+        duration_millis: oer_hil_run_bundle::run::duration_millis(started.elapsed()),
         artifact_directory: artifacts.to_owned(),
         attachments,
         measurements,
         failure,
     };
-    oer_hil_durable::atomic_json(&output.join("result.json"), &result)?;
+    oer_durable::atomic_json(&output.join("result.json"), &result)?;
     Ok(result)
 }
 
@@ -1121,7 +1283,7 @@ fn write_blocked_scenario(
 ) -> Result<ScenarioResult> {
     let output = session.scenario_directory(selected.id());
     fs::create_dir_all(&output)?;
-    oer_hil_durable::atomic_json(&output.join("scenario.json"), selected)?;
+    oer_durable::atomic_json(&output.join("scenario.json"), selected)?;
     let result = ScenarioResult::blocked(
         selected.id().to_owned(),
         selected.image(),

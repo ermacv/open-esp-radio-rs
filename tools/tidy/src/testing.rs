@@ -2,9 +2,10 @@
 
 use std::fs;
 
+use oer_repo::Repo;
 use tempfile::TempDir;
 
-use crate::{Context, repo::Repo};
+use crate::Context;
 
 /// A temporary directory holding `files` as `(path, contents)`.
 pub fn tree(files: &[(&str, &str)]) -> TempDir {

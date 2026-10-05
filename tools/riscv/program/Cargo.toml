@@ -10,6 +10,7 @@ description = "Static RV32 ELF images of the program model: load segments, const
 
 [dependencies]
 object = { version = "=0.39.1", default-features = false, features = ["elf", "read", "std"] }
+oer-elf = { path = "../../elf" }
 oer-riscv-model = { path = "../model" }
 
 [lints]
@@ -18,3 +19,4 @@ workspace = true
 [package.metadata.open-radio]
 layer = "tool"
 platform = "host"
+host-layer = "build"

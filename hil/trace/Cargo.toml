@@ -25,4 +25,5 @@ workspace = true
 [package.metadata.open-radio]
 layer = "hil"
 platform = "portable"
+host-layer = "execution"
 hil = "observation"

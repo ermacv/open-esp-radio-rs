@@ -1,21 +1,8 @@
 //! Independent validation of captured source identities and every archived byte.
 use super::*;
-use serde_json::Value;
 
-#[derive(Deserialize, PartialEq)]
-pub(super) struct Source {
-    pub(super) name: String,
-    pub(super) commit: String,
-    pub(super) dirty: bool,
-    pub(super) workspace_sha256: String,
-    pub(super) rebuild_status: String,
-    pub(super) limitations: Vec<Value>,
-    pub(super) untracked_files: Vec<Value>,
-    pub(super) tracked_patch_path: Option<PathBuf>,
-}
-fn digest(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
-}
+/// A source a build record cites: the run bundle's own record.
+pub(super) use oer_hil_run_bundle::build::SourceMaterial as Source;
 
 // The producer writes the manifest with the same types, so its fields and
 // their order, which a source's identity digests, are one contract.
@@ -34,7 +21,7 @@ pub(super) fn verified(directory: &Path, sources: &[Source]) -> Result<Option<Ma
     let snapshot: Snapshot = read_json(&directory.join("snapshot.json"))?;
     if manifest.schema != MANIFEST_SCHEMA
         || snapshot.schema != 1
-        || digest(&serde_json::to_vec(&manifest)?) != snapshot.snapshot_id
+        || oer_durable::sha256_bytes(&serde_json::to_vec(&manifest)?) != snapshot.snapshot_id
         || sha256_file(&directory.join("sources.tar"))? != snapshot.archive_sha256
         || sources.len() != manifest.sources.len()
     {
@@ -45,7 +32,7 @@ pub(super) fn verified(directory: &Path, sources: &[Source]) -> Result<Option<Ma
         if captured.name != source.name
             || captured.commit != source.commit
             || captured.dirty != source.dirty
-            || digest(&serde_json::to_vec(captured)?) != source.workspace_sha256
+            || oer_durable::sha256_bytes(&serde_json::to_vec(captured)?) != source.workspace_sha256
         {
             return Ok(None);
         }
@@ -90,7 +77,8 @@ pub(super) fn verified(directory: &Path, sources: &[Source]) -> Result<Option<Ma
 /// A direct observation binds the complete current source selection. Property
 /// reviews deliberately bind a narrower, explicitly reviewed set elsewhere.
 /// The closure of the checkout at `root`, computed once per evaluation;
-/// `None` when Cargo cannot list it, and then every file is compared.
+/// `None` when the repository model cannot be read, and then every file is
+/// compared.
 fn closure_of(root: &Path) -> Option<std::sync::Arc<super::closure::Closure>> {
     static CLOSURES: std::sync::Mutex<
         BTreeMap<PathBuf, Option<std::sync::Arc<super::closure::Closure>>>,
@@ -108,18 +96,19 @@ fn closure_of(root: &Path) -> Option<std::sync::Arc<super::closure::Closure>> {
         .clone()
 }
 
-/// The runner directories of the checkout at `root`, computed once per
-/// evaluation; `None` when Cargo cannot list them.
-fn runner_of(root: &Path) -> Option<std::sync::Arc<BTreeSet<PathBuf>>> {
-    static RUNNERS: std::sync::Mutex<BTreeMap<PathBuf, Option<std::sync::Arc<BTreeSet<PathBuf>>>>> =
-        std::sync::Mutex::new(BTreeMap::new());
+/// The runner and stand operation packages of the checkout at `root`,
+/// computed once per evaluation; `None` when the model cannot be read.
+fn runner_of(root: &Path) -> Option<std::sync::Arc<super::closure::Host>> {
+    static RUNNERS: std::sync::Mutex<
+        BTreeMap<PathBuf, Option<std::sync::Arc<super::closure::Host>>>,
+    > = std::sync::Mutex::new(BTreeMap::new());
     let root = root.canonicalize().ok()?;
     RUNNERS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .entry(root.clone())
         .or_insert_with(|| {
-            super::closure::runner_directories(&root)
+            super::closure::Host::of(&root)
                 .ok()
                 .map(std::sync::Arc::new)
         })
@@ -154,18 +143,15 @@ pub(super) fn unchanged_since(root: &Path, run: &Path, commit: &str) -> Result<b
 /// `commit`, counting untracked files as differences.
 fn unchanged_within(root: &Path, closure: &super::closure::Closure, commit: &str) -> Result<bool> {
     let git = |arguments: &[&str]| -> Result<Option<Vec<PathBuf>>> {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(root)
-            .args(arguments)
-            .output()?;
-        Ok(output.status.success().then(|| {
-            String::from_utf8_lossy(&output.stdout)
-                .split('\0')
-                .filter(|path| !path.is_empty())
-                .map(PathBuf::from)
-                .collect()
-        }))
+        Ok(oer_process::git::output(root, arguments)
+            .ok()
+            .map(|stdout| {
+                String::from_utf8_lossy(&stdout)
+                    .split('\0')
+                    .filter(|path| !path.is_empty())
+                    .map(PathBuf::from)
+                    .collect()
+            }))
     };
     // The commit's tree against the working tree, staged or not.
     let Some(changed) = git(&["diff", "--name-only", "--no-renames", "-z", commit, "--"])? else {
@@ -190,27 +176,25 @@ pub(super) fn current(root: &Path, run: &Path, sources: &[Source]) -> Result<boo
     let Some(repository) = manifest.sources.first() else {
         return Ok(false);
     };
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args([
+    let Ok(stdout) = oer_process::git::output(
+        root,
+        [
             "ls-files",
             "--cached",
             "--others",
             "--exclude-standard",
             "-z",
-        ])
-        .output()?;
-    if !output.status.success() {
+        ],
+    ) else {
         return Ok(false);
-    }
+    };
     let closure = run_closure(root, run);
     let relevant = |path: &Path| {
         closure
             .as_ref()
             .is_none_or(|closure| closure.contains(path))
     };
-    let tracked = std::str::from_utf8(&output.stdout)?
+    let tracked = std::str::from_utf8(&stdout)?
         .split('\0')
         .filter(|p| !p.is_empty())
         .map(PathBuf::from)

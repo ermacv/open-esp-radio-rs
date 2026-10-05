@@ -11,18 +11,13 @@
 //! Image builds read a snapshot through [`FrozenSources`]; run evidence
 //! records it and verification re-derives each source's [`identity`].
 
-/// This package's directory in the repository.
-pub const REPOSITORY_DIRECTORY: &str = "hil/host/source-snapshot";
-
-use oer_hil_durable::{Result, atomic_json};
-use oer_process::CommandExt as _;
+use oer_durable::{Result, atomic_json};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     path::{Component, Path, PathBuf},
-    process::Command,
 };
 
 pub use oer_hil_schema::snapshot::SourceInput;
@@ -30,53 +25,35 @@ use oer_hil_schema::snapshot::{
     FileInput, MANIFEST_SCHEMA, Manifest, UntrackedInput, UntrackedReason,
 };
 
-/// The firmware workspaces whose path packages an image build reads.
-const FIRMWARE_WORKSPACES: [&str; 3] = [
-    "hil/targets/esp32s31/Cargo.toml",
-    "platform/esp32s31/bootstrap/Cargo.toml",
-    "hil/targets/esp32c5/Cargo.toml",
-];
-
 /// Repository directories of the HIL host packages and scenarios, whose
 /// untracked files `--include-untracked` also archives.
 const HIL_HOST_INPUTS: [&str; 3] = ["hil/host", "hil/schema", "hil/scenarios"];
 
 /// Repository-relative directories of the path packages the firmware
-/// workspaces build, from Cargo's locked metadata.
+/// workspaces build: every workspace an image of some chip is built from
+/// (its HIL agent's and, for a staged boot, its platform's), with every path
+/// package their members reach, as the repository model reads them.
 pub fn image_packages(root: &Path) -> Result<Vec<PathBuf>> {
-    #[derive(Deserialize)]
-    struct Metadata {
-        packages: Vec<Package>,
-    }
-    #[derive(Deserialize)]
-    struct Package {
-        source: Option<String>,
-        manifest_path: PathBuf,
-    }
-    let root = root.canonicalize()?;
+    let model = oer_repo::Model::load(&oer_repo::Repo::load(root)?)?;
     let mut directories = BTreeSet::new();
-    for workspace in FIRMWARE_WORKSPACES {
-        let output = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
-            .args(["metadata", "--format-version", "1", "--offline", "--locked"])
-            .arg("--manifest-path")
-            .arg(root.join(workspace))
-            .supervised_output()?;
-        if !output.status.success() {
-            return Err(format!(
-                "cannot list the packages of {workspace}: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            )
-            .into());
-        }
-        let metadata: Metadata = serde_json::from_slice(&output.stdout)?;
-        for package in metadata.packages.into_iter().filter(|p| p.source.is_none()) {
-            let directory = package
-                .manifest_path
-                .parent()
-                .ok_or("package manifest has no directory")?
-                .canonicalize()?;
-            if let Ok(relative) = directory.strip_prefix(&root) {
-                directories.insert(relative.to_owned());
+    for profile in model.chips.profiles() {
+        for (workspace, _) in oer_hil_image_class::agent::image_packages(profile, root) {
+            let workspace = workspace
+                .strip_prefix(root)
+                .map_err(|_| "a firmware workspace outside the repository")?
+                .join("Cargo.toml");
+            let workspace = workspace.to_string_lossy();
+            let members: Vec<_> = model.members(&workspace).collect();
+            if members.is_empty() {
+                return Err(format!("{workspace} is no workspace with members").into());
+            }
+            for package in model.closure(
+                &members,
+                oer_repo::closure::Edges::All,
+                None,
+                &oer_repo::closure::Features::All,
+            )? {
+                directories.insert(PathBuf::from(&package.directory));
             }
         }
     }
@@ -313,7 +290,7 @@ impl FrozenSources {
                 let metadata = fs::symlink_metadata(&path)?;
                 if !metadata.is_file()
                     || metadata.len() != file.size_bytes
-                    || oer_hil_durable::sha256_file(&path)? != file.sha256
+                    || oer_durable::sha256_file(&path)? != file.sha256
                 {
                     return Err(format!(
                         "frozen build input changed: {}:{}",
@@ -467,20 +444,8 @@ fn source_include_arguments(unresolved: &[(&str, &Path)]) -> String {
 }
 
 fn git(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(args)
-        .supervised_output()?;
-    if !output.status.success() {
-        return Err(format!(
-            "source snapshot Git query failed in {}: {}",
-            root.display(),
-            String::from_utf8_lossy(&output.stderr)
-        )
-        .into());
-    }
-    Ok(output.stdout)
+    oer_process::git::output(root, args)
+        .map_err(|error| format!("source snapshot Git query failed: {error}").into())
 }
 
 fn paths(bytes: &[u8]) -> Result<BTreeSet<PathBuf>> {
@@ -514,6 +479,13 @@ fn contained(path: &Path) -> Result<()> {
 /// snapshot neither requires nor archives.
 const EVIDENCE_OUTPUTS: &[&str] = &["hil/evidence"];
 
+/// The Git state a snapshot archives: the index's tracked paths and the
+/// untracked, unignored files, from Git directly rather than through the
+/// repository model (`oer_repo::Repo`), whose file set answers a different
+/// question. The model lists files present on disk below the skipped
+/// components (`target`, `_oracles`); an archive must also name a tracked
+/// file the worktree deleted, keep a symlink as one, and read every
+/// component, or a rebuild from it would not be the checkout's state.
 fn select(name: &str, root: &Path) -> Result<Selection> {
     let top = String::from_utf8(git(root, &["rev-parse", "--show-toplevel"])?)?;
     if Path::new(top.trim()).canonicalize()? != root.canonicalize()? {
@@ -715,7 +687,7 @@ fn capture_roots_once(
         sources,
     };
     let snapshot_id = digest(&serde_json::to_vec(&manifest)?);
-    let archive_sha256 = oer_hil_durable::sha256_file(&archive_path)?;
+    let archive_sha256 = oer_durable::sha256_file(&archive_path)?;
     atomic_json(&staging.path().join("manifest.json"), &manifest)?;
     let snapshot = Snapshot {
         schema: 1,
@@ -730,7 +702,7 @@ fn capture_roots_once(
             != fs::read(staging.path().join("manifest.json"))?
             || fs::read(snapshot.directory.join("snapshot.json"))?
                 != fs::read(staging.path().join("snapshot.json"))?
-            || oer_hil_durable::sha256_file(&snapshot.directory.join("sources.tar"))?
+            || oer_durable::sha256_file(&snapshot.directory.join("sources.tar"))?
                 != snapshot.archive_sha256
         {
             return Err("existing source snapshot has conflicting or corrupted content".into());

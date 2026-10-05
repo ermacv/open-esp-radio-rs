@@ -4,13 +4,13 @@
 //! Build-only records are immutable build subjects without fabricated
 //! hardware observations.
 use crate::{Artifacts, Result, chip_profile, frozen::build_slots};
-use oer_hil_durable::{atomic_json, sha256_file};
-use oer_hil_evidence::{
+use oer_durable::{atomic_json, sha256_file};
+use oer_hil_image_class::ImageClass;
+use oer_hil_run_bundle::{
     build,
     run::{FirmwareArchive, FirmwareArtifact, RepositoryProvenance},
     verify::FirmwareRecipe,
 };
-use oer_hil_image_class::ImageClass;
 use serde::Serialize;
 use std::{
     fs,
@@ -73,16 +73,16 @@ pub fn publish(
             firmware: vec![artifact],
         },
     )?;
-    oer_hil_evidence::run::write_integrity_index(directory, "build-only")?;
+    oer_hil_run_bundle::run::write_integrity_index(directory, "build-only")?;
     let id = sha256_file(&directory.join("integrity.json"))?;
     let destination = builds.join(id);
     if destination.exists() {
         if !fs::symlink_metadata(&destination)?.file_type().is_dir()
             || sha256_file(&destination.join("integrity.json"))?
                 != sha256_file(&directory.join("integrity.json"))?
-            || serde_json::to_value(oer_hil_evidence::run::collect_integrity_files(
+            || serde_json::to_value(oer_hil_run_bundle::run::collect_integrity_files(
                 &destination,
-            )?)? != serde_json::to_value(oer_hil_evidence::run::collect_integrity_files(
+            )?)? != serde_json::to_value(oer_hil_run_bundle::run::collect_integrity_files(
                 directory,
             )?)?
         {
@@ -101,7 +101,7 @@ pub mod firmware;
 pub struct Recipe;
 
 impl FirmwareRecipe for Recipe {
-    fn rust_target(&self, chip: &str) -> oer_hil_evidence::Result<String> {
+    fn rust_target(&self, chip: &str) -> oer_hil_run_bundle::Result<String> {
         Ok(chip_profile(chip)?.rust_target)
     }
 
@@ -109,15 +109,15 @@ impl FirmwareRecipe for Recipe {
         &self,
         image: ImageClass,
         network: Option<&str>,
-    ) -> oer_hil_evidence::Result<String> {
+    ) -> oer_hil_run_bundle::Result<String> {
         Ok(match network {
-            Some(oer_esp32s31_firmware::network::NETWORK) => {
-                image.build_features(oer_esp32s31_firmware::network::NETWORK_FEATURE)
+            Some(oer_hil_image_class::NETWORK) => {
+                image.build_features(oer_hil_image_class::NETWORK_FEATURE)
             }
             Some(other) => {
                 return Err(format!(
                     "unknown network integration `{other}` (expected {})",
-                    oer_esp32s31_firmware::network::NETWORK
+                    oer_hil_image_class::NETWORK
                 )
                 .into());
             }

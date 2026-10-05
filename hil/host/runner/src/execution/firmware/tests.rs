@@ -19,32 +19,44 @@ fn build_inputs(root: &Path) -> Artifacts {
     ] {
         write(&root.join(relative), relative.as_bytes());
     }
-    for (relative, bytes) in [
-        ("build/application.bin", b"exact application".as_slice()),
-        ("build/runtime.elf", b"runtime elf".as_slice()),
-        ("build/runtime.bin", b"runtime bin".as_slice()),
-        ("build/bootstrap.elf", b"bootstrap elf".as_slice()),
+    let build = root.join("build");
+    for (name, bytes) in [
+        ("application.bin", b"exact application".as_slice()),
+        ("runtime.elf", b"runtime elf".as_slice()),
+        ("runtime.bin", b"runtime bin".as_slice()),
+        ("bootstrap.elf", b"bootstrap elf".as_slice()),
+        ("bootloader.bin", b"bootloader".as_slice()),
+        ("partitions.bin", b"partitions".as_slice()),
+        ("otadata.bin", b"otadata".as_slice()),
+        ("runtime-Cargo.lock", b"lock".as_slice()),
+        ("bootstrap-Cargo.lock", b"lock".as_slice()),
+        (
+            "source-inputs.json",
+            br#"{"schema":2,"files":[]}"#.as_slice(),
+        ),
     ] {
-        write(&root.join(relative), bytes);
+        write(&build.join(name), bytes);
+    }
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let profile = oer_chip_profile::Profile::load(&repository, "esp32s31").unwrap();
+    let mut bundle = oer_image::ImageBundle::new(&build, &profile, profile.flash.clone().unwrap());
+    bundle.staged = Some(oer_image::bundle::Staged {
+        bootstrap_package: "oer-esp32s31-platform-bootstrap".into(),
+    });
+    bundle.otadata = true;
+    for (committed, file) in [
+        ("hil/targets/esp32s31/Cargo.lock", "runtime-Cargo.lock"),
+        ("platform/esp32s31/Cargo.lock", "bootstrap-Cargo.lock"),
+    ] {
+        bundle.locks.push(oer_image::bundle::Lock {
+            committed: committed.into(),
+            file: file.into(),
+        });
     }
     Artifacts {
+        bundle,
         features: oer_hil_image_class::FeatureDelta::default(),
-        layout_seed: None,
-        rom_summaries: Default::default(),
-        output: root.join("build"),
-        runtime_elf: root.join("build/runtime.elf"),
-
-        effective_embedded_lock: root.join("hil/targets/esp32s31/Cargo.lock"),
-        boot: oer_hil_image::BootArtifacts::Staged {
-            runtime_bin: root.join("build/runtime.bin"),
-            bootstrap_elf: root.join("build/bootstrap.elf"),
-            effective_bootstrap_lock: root.join("platform/esp32s31/Cargo.lock"),
-        },
-        chip: String::from("esp32s31"),
-        rust_target: String::from("riscv32imafc-unknown-none-elf"),
-        application_image: root.join("build/application.bin"),
-        source_inputs: None,
-        environment: oer_hil_evidence::build::BuildEnvironment::synthetic(),
+        environment: oer_hil_run_bundle::build::BuildEnvironment::synthetic(),
     }
 }
 
@@ -73,7 +85,7 @@ fn session(root: &Path) -> RunSession {
 fn built_firmware_is_archived_before_the_exact_run_local_path_is_flashed() {
     let root = tempfile::tempdir().unwrap();
     let artifacts = build_inputs(root.path());
-    let build_path = artifacts.application_image.clone();
+    let build_path = artifacts.bundle.application();
     let mut session = session(root.path());
     let run_directory = session.directory().to_owned();
     let flashed = RefCell::new(None::<PathBuf>);
@@ -83,10 +95,14 @@ fn built_firmware_is_archived_before_the_exact_run_local_path_is_flashed() {
         artifacts,
         &mut session,
         |artifacts| {
-            flashed.replace(Some(artifacts.application_image.clone()));
+            flashed.replace(Some(artifacts.bundle.application()));
             assert_eq!(
-                fs::read(&artifacts.application_image).unwrap(),
+                fs::read(artifacts.bundle.application()).unwrap(),
                 b"exact application"
+            );
+            assert_eq!(
+                fs::read(artifacts.bundle.bootloader()).unwrap(),
+                b"bootloader"
             );
             Ok(())
         },
@@ -96,9 +112,14 @@ fn built_firmware_is_archived_before_the_exact_run_local_path_is_flashed() {
     assert!(failure.is_none());
     let flashed = flashed.into_inner().expect("flash call");
     assert_ne!(flashed, build_path);
+    assert!(
+        flashed.ends_with("correctness/application.bin"),
+        "{}",
+        flashed.display()
+    );
     assert_eq!(
-        flashed,
-        run_directory.join("firmware/correctness/application.bin")
+        fs::read(run_directory.join("firmware/correctness/application.bin")).unwrap(),
+        b"exact application"
     );
 }
 
@@ -141,9 +162,11 @@ fn replay_import_is_archived_before_flashing_the_new_run_local_path() {
     let mut source = session(root.path());
     let source_id = source.id().to_owned();
     archive_and_flash_built(ImageClass::Correctness, artifacts, &mut source, |_| Ok(())).unwrap();
-    source.finish(Vec::new()).unwrap();
+    source
+        .finish(Vec::new(), oer_hil_analysis::report::views)
+        .unwrap();
 
-    let archived = oer_hil_evidence::verify::archived_firmware(
+    let archived = oer_hil_run_bundle::verify::archived_firmware(
         root.path(),
         "esp32s31",
         &source_id,
@@ -175,9 +198,11 @@ fn corrupt_replay_is_rejected_before_flash_without_a_build_fallback() {
     let mut source = session(root.path());
     let source_id = source.id().to_owned();
     archive_and_flash_built(ImageClass::Correctness, artifacts, &mut source, |_| Ok(())).unwrap();
-    source.finish(Vec::new()).unwrap();
+    source
+        .finish(Vec::new(), oer_hil_analysis::report::views)
+        .unwrap();
 
-    let archived = oer_hil_evidence::verify::archived_firmware(
+    let archived = oer_hil_run_bundle::verify::archived_firmware(
         root.path(),
         "esp32s31",
         &source_id,

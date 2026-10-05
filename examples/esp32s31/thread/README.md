@@ -43,7 +43,7 @@ leader. Without it the device starts OpenThread but does not join.
 
 ```console
 THREAD_DATASET=0e08... cargo xtask build firmware thread
-THREAD_DATASET=0e08... cargo xtask build firmware thread --flash --monitor --port /dev/ttyACM0
+cargo hil flash --board <board> --monitor 30s target/firmware/esp32s31-thread/build-<id>
 ```
 
 `openthread-sys` has no prebuilt library for this chip's single-float ABI,

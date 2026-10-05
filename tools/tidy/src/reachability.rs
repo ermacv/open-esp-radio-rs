@@ -6,10 +6,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{
-    Result,
-    repo::{Repo, join, parent},
+use oer_repo::{
+    Repo,
+    files::{join, parent},
 };
+
+use crate::Result;
 
 /// One module-graph event of a source file.
 #[derive(Clone, Debug, PartialEq)]

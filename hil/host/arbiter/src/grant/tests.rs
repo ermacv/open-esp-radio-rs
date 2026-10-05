@@ -41,9 +41,10 @@ fn ticket(id: u64, owner: &str, process: ProcessIdentity, claims: Vec<Claim>) ->
         work: format!("work {id}"),
         estimate_secs: 60,
         process,
-        enqueued_unix: crate::unix_now(),
+        enqueued_unix: oer_durable::unix_seconds(),
         claims: normalize(&claims),
         priority: Default::default(),
+        job: None,
         unknown: Default::default(),
     }
 }
@@ -54,7 +55,7 @@ fn hold(arbiter: &Arbiter, ticket: Ticket) {
             state.holders.push(Holder {
                 ticket,
                 token: "other".into(),
-                granted_unix: crate::unix_now(),
+                granted_unix: oer_durable::unix_seconds(),
                 reason: None,
                 preempted: None,
                 unknown: Default::default(),
@@ -81,7 +82,7 @@ fn set_balance(arbiter: &Arbiter, owner: &str, minutes: i64) {
                 owner.into(),
                 Balance {
                     balance_ms: minutes * 60_000,
-                    last_active_unix_ms: crate::unix_now_ms(),
+                    last_active_unix_ms: oer_durable::unix_millis(),
                     ..Balance::default()
                 },
             );
@@ -376,12 +377,30 @@ fn status_and_board_report_the_latest_state() {
         )
         .unwrap();
     let (holder, identity) = other_process();
-    hold(
-        &arbiter,
-        ticket(4, "802154", identity, vec![Claim::board("esp32c5")]),
-    );
+    let mut leased = ticket(4, "802154", identity, vec![Claim::board("esp32c5")]);
+    leased.job = Some(String::from("17-a"));
+    hold(&arbiter, leased);
     let status = arbiter.status().unwrap();
     assert_eq!(status.holders[0].owner, "802154");
+    // The lease is its job's ticket: the job's phase is read from the queue.
+    assert_eq!(status.holders[0].job.as_deref(), Some("17-a"));
+    let mut job = crate::jobs::Job::new(
+        "802154",
+        vec![String::from("run"), String::from("s")],
+        "/checkout".into(),
+        None,
+    );
+    job.id = String::from("17-a");
+    job.state = crate::jobs::JobState::Started;
+    assert_eq!(
+        crate::jobs::phase(&job, &status),
+        crate::jobs::Phase::Holding
+    );
+    job.id = String::from("18-b");
+    assert_eq!(
+        crate::jobs::phase(&job, &status),
+        crate::jobs::Phase::Building
+    );
     assert_eq!(status.holders[0].claims, "board:esp32c5");
     assert_eq!(status.startup_artifacts.len(), 1);
     assert!(
@@ -524,13 +543,17 @@ fn divisible_work_renews_a_lease_after_a_third_of_the_hard_limit() {
 fn a_stand_file_that_does_not_load_is_reported_at_the_grant() {
     let directory = tempfile::tempdir().unwrap();
     let arbiter = Arbiter::at(directory.path()).unwrap();
-    let (devices, warning) = super::boards_to_restore(arbiter.devices(), arbiter.stand_file());
-    assert!(devices.is_empty());
+    let (stand, warning) = super::boards_to_restore(arbiter.stand(), arbiter.stand_file());
+    assert!(stand.is_none());
     let warning = warning.unwrap();
     assert!(
         warning.contains("stand.toml does not load, so no hub port is restored"),
         "{warning}"
     );
-    let (_, none) = super::boards_to_restore(Ok(Vec::new()), arbiter.stand_file());
+    let empty = oer_hil_stand_model::StandFile::parse(
+        "schema = 1\n[stand]\nid = \"t\"\nair = \"exclusive\"\n",
+    )
+    .unwrap();
+    let (_, none) = super::boards_to_restore(Ok(empty), arbiter.stand_file());
     assert_eq!(none, None);
 }

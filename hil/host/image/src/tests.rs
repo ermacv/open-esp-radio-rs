@@ -162,51 +162,6 @@ fn removed_rx_phy_images_are_rejected_by_both_decoders() {
 }
 
 #[test]
-fn firmware_builds_drop_inherited_cargo_overrides_that_change_the_image() {
-    let names = [
-        "CARGO_PROFILE_RELEASE_OPT_LEVEL",
-        "CARGO_BUILD_RUSTFLAGS",
-        "CARGO_TARGET_RISCV32IMAFC_UNKNOWN_NONE_ELF_RUSTFLAGS",
-        "CARGO_BUILD_JOBS",
-        "CARGO_TARGET_DIR",
-        "RUSTFLAGS",
-        "PATH",
-    ]
-    .map(std::ffi::OsString::from);
-    assert_eq!(
-        super::inherited_build_overrides(names.into_iter()),
-        [
-            "CARGO_PROFILE_RELEASE_OPT_LEVEL",
-            "CARGO_BUILD_RUSTFLAGS",
-            "CARGO_TARGET_RISCV32IMAFC_UNKNOWN_NONE_ELF_RUSTFLAGS",
-        ]
-        .map(std::ffi::OsString::from)
-    );
-}
-
-#[test]
-fn the_bootstrap_takes_only_the_esp_hal_override() {
-    // A patch the bootstrap does not use would change its lock file, which
-    // its --locked build refuses; a local Xarxa or Embassy must not reach it.
-    let mut command = Command::new("cargo");
-    add_bootstrap_patches(&mut command, Some(Path::new("/esp-hal")));
-    let arguments = command
-        .get_args()
-        .map(|argument| argument.to_string_lossy().into_owned())
-        .collect::<Vec<_>>();
-    assert!(
-        arguments
-            .iter()
-            .any(|argument| argument.contains("esp-hal"))
-    );
-    assert!(
-        !arguments
-            .iter()
-            .any(|argument| argument.contains("xarxa") || argument.contains("embassy"))
-    );
-}
-
-#[test]
 fn the_classes_that_sample_the_program_counter_are_those_whose_features_enable_it() {
     let manifest: toml::Table =
         toml::from_str(include_str!("../../../targets/esp32s31/agent/Cargo.toml")).unwrap();
@@ -245,18 +200,6 @@ fn the_classes_that_sample_the_program_counter_are_those_whose_features_enable_i
 }
 
 #[test]
-fn an_inherited_layout_seed_never_reaches_a_build() {
-    let command = super::cargo_command();
-    assert!(
-        command
-            .get_envs()
-            .any(|(name, value)| name == super::LAYOUT_SEED_ENV && value.is_none()),
-        "cargo_command must remove {}",
-        super::LAYOUT_SEED_ENV
-    );
-}
-
-#[test]
 fn a_seeded_build_has_artifacts_of_its_own() {
     assert_eq!(super::seed_suffix(None), "");
     let seven = super::seed_suffix(std::num::NonZeroU32::new(7));
@@ -283,28 +226,6 @@ fn the_shared_compile_caches_move_only_when_overridden() {
 }
 
 #[test]
-fn an_unchanged_embedded_runtime_keeps_its_timestamp() {
-    let directory = tempfile::tempdir().unwrap();
-    let source = directory.path().join("runtime.bin");
-    let target = directory.path().join("bootstrap/stage-two-runtime.bin");
-    fs::write(&source, b"runtime").unwrap();
-    replace_if_changed(&source, &target).unwrap();
-    let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1);
-    fs::File::options()
-        .write(true)
-        .open(&target)
-        .unwrap()
-        .set_modified(old)
-        .unwrap();
-    replace_if_changed(&source, &target).unwrap();
-    assert_eq!(fs::metadata(&target).unwrap().modified().unwrap(), old);
-    fs::write(&source, b"changed").unwrap();
-    replace_if_changed(&source, &target).unwrap();
-    assert_eq!(fs::read(&target).unwrap(), b"changed");
-    assert_ne!(fs::metadata(&target).unwrap().modified().unwrap(), old);
-}
-
-#[test]
 fn cargo_tree_lines_name_their_packages() {
     let tree = "oer-esp32s31-hil-agent v0.1.0 (/repo/hil/targets/esp32s31/agent)\n\
                 critical-section v1.2.0\n\
@@ -319,4 +240,73 @@ fn cargo_tree_lines_name_their_packages() {
         .map(str::to_owned)
         .into()
     );
+}
+
+#[test]
+fn the_esp32c5_target_builds_the_boot_smoke_and_system_watchdog_images() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    assert!(serves(&root, "esp32c5", ImageClass::BootSmoke).unwrap());
+    assert!(serves(&root, "esp32c5", ImageClass::SystemWatchdog).unwrap());
+    assert!(!serves(&root, "esp32c5", ImageClass::Correctness).unwrap());
+}
+
+#[test]
+fn each_chip_s_spec_takes_its_agent_policy_and_network() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let placement = || Placement {
+        output: "/out".into(),
+        cache: "/cache".into(),
+    };
+    let staged = spec(
+        &root,
+        "esp32s31",
+        ImageClass::Correctness,
+        (None, &FeatureDelta::default()),
+        Overrides::default(),
+        placement(),
+    )
+    .unwrap();
+    assert_eq!(staged.application.package, "oer-esp32s31-hil-agent");
+    assert!(
+        staged
+            .application
+            .features
+            .contains(&NETWORK_FEATURE.to_owned())
+    );
+    assert_eq!(
+        staged.stack_policy,
+        Path::new("hil/targets/esp32s31/stack.toml")
+    );
+    assert!(staged.audit.is_some());
+    assert_eq!(staged.builders, [BUILDER]);
+    let diagnostic = spec(
+        &root,
+        "esp32s31",
+        ImageClass::DiagnosticTaskPoll,
+        (None, &FeatureDelta::default()),
+        Overrides::default(),
+        placement(),
+    )
+    .unwrap();
+    assert_eq!(diagnostic.interrupts, Required::Partial);
+    let esp_idf = spec(
+        &root,
+        "esp32c5",
+        ImageClass::SystemWatchdog,
+        (None, &FeatureDelta::default()),
+        Overrides::default(),
+        placement(),
+    )
+    .unwrap();
+    assert_eq!(esp_idf.application.package, "oer-esp32c5-hil-agent");
+    assert_eq!(
+        esp_idf.application.workspace,
+        Path::new("hil/targets/esp32c5")
+    );
+    assert_eq!(esp_idf.application.features, ["system-watchdog"]);
+    assert_eq!(
+        esp_idf.stack_policy,
+        Path::new("hil/targets/esp32c5/stack.toml")
+    );
+    assert!(esp_idf.audit.is_none());
 }

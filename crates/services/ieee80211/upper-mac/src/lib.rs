@@ -37,6 +37,7 @@ pub mod client;
 pub mod frame;
 pub mod reorder;
 pub mod router;
+pub mod rx_hold;
 
 pub use router::{Awaited, EventRouter, Registration, RouterFull};
 
